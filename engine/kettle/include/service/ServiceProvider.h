@@ -1,6 +1,7 @@
 #pragma once
 
 #include <service/ServiceHost.h>
+#include <logging/LoggingProvider.h>
 #include <cassert>
 
 //=============================================================================
@@ -48,6 +49,13 @@ public:
         assert(Host && "ServiceProvider used after construction phase");
         return Host->GetAll<T>();
     }
+
+	template <typename T>
+	Logger& GetLogger() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->GetLoggingProvider().GetLogger<T>();
+	}
 
 	// Manually invalidate — for use when scoped lifetime isn't sufficient
 	void Invalidate() { Host = nullptr; }

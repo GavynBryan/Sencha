@@ -2,6 +2,7 @@
 
 #include <service/BatchArray.h>
 #include <service/IService.h>
+#include <logging/LoggingProvider.h>
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
@@ -35,10 +36,14 @@ public:
 	template <typename T>
 	void RemoveAll();
 
+	LoggingProvider& GetLoggingProvider() { return Logging; }
+	const LoggingProvider& GetLoggingProvider() const { return Logging; }
+
 private:
 	void RemoveFromOwnership(IService* service);
 	std::vector<std::unique_ptr<IService>> Services;
 	std::unordered_map<std::type_index, std::vector<IService*>> Registry;
+	LoggingProvider Logging;
 };
 
 template <typename T, typename TInterface, typename... Args>

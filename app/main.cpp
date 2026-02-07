@@ -7,6 +7,8 @@
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
 #include <system/SystemHost.h>
+#include <logging/ConsoleLogSink.h>
+#include <logging/FileLogSink.h>
 #include <iostream>
 
 //=============================================================================
@@ -54,10 +56,21 @@ private:
     bool bVisible;
 };
 
+class Game {};
+
 int main()
 {
     // -- Services --
     ServiceHost services;
+
+    services.GetLoggingProvider().SetMinLevel(LogLevel::Debug);
+    services.GetLoggingProvider().AddSink<ConsoleLogSink>();
+    services.GetLoggingProvider().AddSink<FileLogSink>("game.log");
+
+    auto logger = services.GetLoggingProvider().GetLogger<Game>();
+
+    logger.Info("Starting RenderSystem demo...");
+
     services.AddService<RenderContextService>();
     services.AddService<BatchArray<IRenderable>>();
 
@@ -85,6 +98,7 @@ int main()
     {
         ServiceProvider provider(services);
         systems.AddSystem<RenderSystem>(0, provider);
+        logger.Info("RenderSystem added to SystemHost.");
     }
 
     systems.Init();
@@ -100,6 +114,8 @@ int main()
     hTriangle.Reset();
     contexts.GetContext(idB)->bIsActive = true;
     systems.Update();
+
+    logger.Info("RenderSystem demo complete.");
 
     systems.Shutdown();
     return 0;
