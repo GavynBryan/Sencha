@@ -42,6 +42,13 @@ public:
 		return Host->TryGet<T>();
 	}
 
+    template <typename T>
+    std::vector<T*> GetAll() const
+    {
+        assert(Host && "ServiceProvider used after construction phase");
+        return Host->GetAll<T>();
+    }
+
 	// Manually invalidate — for use when scoped lifetime isn't sufficient
 	void Invalidate() { Host = nullptr; }
 
