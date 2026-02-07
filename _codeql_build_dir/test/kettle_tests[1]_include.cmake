@@ -1,5 +1,0 @@
-if(EXISTS "/home/runner/work/Sencha/Sencha/_codeql_build_dir/test/kettle_tests[1]_tests.cmake")
-  include("/home/runner/work/Sencha/Sencha/_codeql_build_dir/test/kettle_tests[1]_tests.cmake")
-else()
-  add_test(kettle_tests_NOT_BUILT kettle_tests_NOT_BUILT)
-endif()
