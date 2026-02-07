@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <service/GameServiceHost.h>
+#include <service/ServiceHost.h>
 
 // --- Test fixtures / helpers ---
 
@@ -22,17 +22,17 @@ class StandaloneService : public IService {};
 
 // --- Tests ---
 
-TEST(GameServiceHost, AddAndGetByConcreteType)
+TEST(ServiceHost, AddAndGetByConcreteType)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& service = host.AddService<StandaloneService>();
     auto& retrieved = host.Get<StandaloneService>();
     EXPECT_EQ(&service, &retrieved);
 }
 
-TEST(GameServiceHost, AddWithInterfaceRegistersUnderBothTypes)
+TEST(ServiceHost, AddWithInterfaceRegistersUnderBothTypes)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& service = host.AddService<TestServiceA, ITestInterface>();
 
     // Retrievable by concrete type
@@ -44,49 +44,49 @@ TEST(GameServiceHost, AddWithInterfaceRegistersUnderBothTypes)
     EXPECT_EQ(&service, &byInterface);
 }
 
-TEST(GameServiceHost, TryGetReturnsNullptrWhenMissing)
+TEST(ServiceHost, TryGetReturnsNullptrWhenMissing)
 {
-    GameServiceHost host;
+    ServiceHost host;
     EXPECT_EQ(host.TryGet<StandaloneService>(), nullptr);
 }
 
-TEST(GameServiceHost, TryGetReturnsPointerWhenPresent)
+TEST(ServiceHost, TryGetReturnsPointerWhenPresent)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& service = host.AddService<StandaloneService>();
     auto* retrieved = host.TryGet<StandaloneService>();
     EXPECT_EQ(&service, retrieved);
 }
 
-TEST(GameServiceHost, HasReturnsFalseWhenMissing)
+TEST(ServiceHost, HasReturnsFalseWhenMissing)
 {
-    GameServiceHost host;
+    ServiceHost host;
     EXPECT_FALSE(host.Has<StandaloneService>());
 }
 
-TEST(GameServiceHost, HasReturnsTrueWhenPresent)
+TEST(ServiceHost, HasReturnsTrueWhenPresent)
 {
-    GameServiceHost host;
+    ServiceHost host;
     host.AddService<StandaloneService>();
     EXPECT_TRUE(host.Has<StandaloneService>());
 }
 
-TEST(GameServiceHost, GetThrowsWhenMissing)
+TEST(ServiceHost, GetThrowsWhenMissing)
 {
-    GameServiceHost host;
+    ServiceHost host;
     EXPECT_THROW(host.Get<StandaloneService>(), std::runtime_error);
 }
 
-TEST(GameServiceHost, GetAllReturnsEmpty)
+TEST(ServiceHost, GetAllReturnsEmpty)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto result = host.GetAll<ITestInterface>();
     EXPECT_TRUE(result.empty());
 }
 
-TEST(GameServiceHost, GetAllReturnsMultipleServices)
+TEST(ServiceHost, GetAllReturnsMultipleServices)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& a = host.AddService<TestServiceA, ITestInterface>();
     auto& b = host.AddService<TestServiceB, ITestInterface>();
 
@@ -96,9 +96,9 @@ TEST(GameServiceHost, GetAllReturnsMultipleServices)
     EXPECT_EQ(all[1], &b);
 }
 
-TEST(GameServiceHost, GetAllByInterfacePreservesConcreteIdentity)
+TEST(ServiceHost, GetAllByInterfacePreservesConcreteIdentity)
 {
-    GameServiceHost host;
+    ServiceHost host;
     host.AddService<TestServiceA, ITestInterface>();
     host.AddService<TestServiceB, ITestInterface>();
 
@@ -107,9 +107,9 @@ TEST(GameServiceHost, GetAllByInterfacePreservesConcreteIdentity)
     EXPECT_EQ(all[1]->Value(), 99);
 }
 
-TEST(GameServiceHost, RemoveServiceRemovesFromAllRegistrations)
+TEST(ServiceHost, RemoveServiceRemovesFromAllRegistrations)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& service = host.AddService<TestServiceA, ITestInterface>();
 
     host.RemoveService(service);
@@ -118,9 +118,9 @@ TEST(GameServiceHost, RemoveServiceRemovesFromAllRegistrations)
     EXPECT_FALSE(host.Has<ITestInterface>());
 }
 
-TEST(GameServiceHost, RemoveAllRemovesAllOfType)
+TEST(ServiceHost, RemoveAllRemovesAllOfType)
 {
-    GameServiceHost host;
+    ServiceHost host;
     host.AddService<TestServiceA, ITestInterface>();
     host.AddService<TestServiceB, ITestInterface>();
 
@@ -132,9 +132,9 @@ TEST(GameServiceHost, RemoveAllRemovesAllOfType)
     EXPECT_FALSE(host.Has<TestServiceB>());
 }
 
-TEST(GameServiceHost, MultipleIndependentServices)
+TEST(ServiceHost, MultipleIndependentServices)
 {
-    GameServiceHost host;
+    ServiceHost host;
     auto& a = host.AddService<TestServiceA>();
     auto& standalone = host.AddService<StandaloneService>();
 

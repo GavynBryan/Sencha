@@ -2,6 +2,7 @@
 
 #include <system/ISystem.h>
 
+class ServiceProvider;
 class RenderContextService;
 class IRenderable;
 template<typename T> class BatchArray;
@@ -14,14 +15,13 @@ template<typename T> class BatchArray;
 // EndFrame -> Present) and draws all IRenderables registered in the
 // BatchArray<IRenderable>.
 //
-// Dependencies are injected explicitly via the constructor:
-//   - RenderContextService& : provides the set of render targets
-//   - BatchArray<IRenderable>& : provides the set of renderable objects
+// Dependencies are resolved from a ServiceProvider at construction time.
+// The system caches only the specific service references it needs.
 //=============================================================================
 class RenderSystem : public ISystem
 {
 public:
-	RenderSystem(RenderContextService& contextService, BatchArray<IRenderable>& renderables);
+	explicit RenderSystem(const ServiceProvider& provider);
 
 private:
 	void Update() override;

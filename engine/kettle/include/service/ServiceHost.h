@@ -11,7 +11,7 @@
 #include <memory>
 #include <utility>
 
-class GameServiceHost
+class ServiceHost
 {
 public:
 	template <typename T, typename TInterface = T, typename... Args>
@@ -42,13 +42,12 @@ private:
 };
 
 template <typename T, typename TInterface, typename... Args>
-T& GameServiceHost::AddService(Args&&... args)
+T& ServiceHost::AddService(Args&&... args)
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	static_assert(std::is_base_of<TInterface, T>::value, "T must derive from TInterface");
 
 	auto service = std::make_unique<T>(std::forward<Args>(args)...);
-	service->SetHost(this);
 	auto* rawService = service.get();
 
 	Services.emplace_back(std::move(service));
@@ -65,7 +64,7 @@ T& GameServiceHost::AddService(Args&&... args)
 }
 
 template <typename T>
-T& GameServiceHost::Get() const
+T& ServiceHost::Get() const
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
@@ -76,7 +75,7 @@ T& GameServiceHost::Get() const
 }
 
 template <typename T>
-T* GameServiceHost::TryGet() const
+T* ServiceHost::TryGet() const
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
@@ -87,7 +86,7 @@ T* GameServiceHost::TryGet() const
 }
 
 template <typename T>
-bool GameServiceHost::Has() const
+bool ServiceHost::Has() const
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
@@ -95,7 +94,7 @@ bool GameServiceHost::Has() const
 }
 
 template <typename T>
-std::vector<T*> GameServiceHost::GetAll() const
+std::vector<T*> ServiceHost::GetAll() const
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
@@ -112,7 +111,7 @@ std::vector<T*> GameServiceHost::GetAll() const
 }
 
 template <typename T>
-void GameServiceHost::RemoveService(T& service)
+void ServiceHost::RemoveService(T& service)
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	IService* raw = &service;
@@ -131,7 +130,7 @@ void GameServiceHost::RemoveService(T& service)
 }
 
 template <typename T>
-void GameServiceHost::RemoveAll()
+void ServiceHost::RemoveAll()
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
@@ -153,7 +152,7 @@ void GameServiceHost::RemoveAll()
 	}
 }
 
-void GameServiceHost::RemoveFromOwnership(IService* service)
+inline void ServiceHost::RemoveFromOwnership(IService* service)
 {
 	Services.erase(std::remove_if(Services.begin(), Services.end(),
 		[service](const std::unique_ptr<IService>& s) { return s.get() == service; }),

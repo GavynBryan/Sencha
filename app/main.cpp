@@ -4,7 +4,8 @@
 #include <render/RenderContextService.h>
 #include <render/RenderSystem.h>
 #include <service/BatchArray.h>
-#include <service/GameServiceHost.h>
+#include <service/ServiceHost.h>
+#include <service/ServiceProvider.h>
 #include <system/SystemHost.h>
 #include <iostream>
 
@@ -56,7 +57,7 @@ private:
 int main()
 {
     // -- Services --
-    GameServiceHost services;
+    ServiceHost services;
     services.AddService<RenderContextService>();
     services.AddService<BatchArray<IRenderable>>();
 
@@ -79,9 +80,12 @@ int main()
     BatchArrayHandle hTriangle(&renderables, &triangle);
     BatchArrayHandle hHidden(&renderables, &hiddenQuad);
 
-    // -- System --
+    // -- Systems --
     SystemHost systems;
-    systems.AddSystem<RenderSystem>(0, contexts, renderables);
+    {
+        ServiceProvider provider(services);
+        systems.AddSystem<RenderSystem>(0, provider);
+    }
 
     systems.Init();
 

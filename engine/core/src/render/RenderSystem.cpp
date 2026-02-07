@@ -3,10 +3,11 @@
 #include <render/IRenderable.h>
 #include <render/IGraphicsAPI.h>
 #include <service/BatchArray.h>
+#include <service/ServiceProvider.h>
 
-RenderSystem::RenderSystem(RenderContextService& contextService, BatchArray<IRenderable>& renderables)
-	: ContextService(contextService)
-	, Renderables(renderables)
+RenderSystem::RenderSystem(const ServiceProvider& provider)
+	: ContextService(provider.Get<RenderContextService>())
+	, Renderables(provider.Get<BatchArray<IRenderable>>())
 {
 }
 
