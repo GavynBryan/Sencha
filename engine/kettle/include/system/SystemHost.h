@@ -78,7 +78,7 @@ bool SystemHost::Has() const
 	return Registry.find(std::type_index(typeid(T))) != Registry.end();
 }
 
-void SystemHost::Init()
+inline void SystemHost::Init()
 {
 	SortSystems();
 	for (auto& entry : Systems) {
@@ -87,14 +87,14 @@ void SystemHost::Init()
 	Initialized = true;
 }
 
-void SystemHost::Update()
+inline void SystemHost::Update()
 {
 	for (auto& entry : Systems) {
 		entry.System->Update();
 	}
 }
 
-void SystemHost::Shutdown()
+inline void SystemHost::Shutdown()
 {
 	// Shutdown in reverse order
 	for (auto it = Systems.rbegin(); it != Systems.rend(); ++it) {
@@ -105,7 +105,7 @@ void SystemHost::Shutdown()
 	Initialized = false;
 }
 
-void SystemHost::SortSystems()
+inline void SystemHost::SortSystems()
 {
 	std::sort(Systems.begin(), Systems.end(),
 		[](const SystemEntry& a, const SystemEntry& b)
