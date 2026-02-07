@@ -31,8 +31,8 @@ void SystemHost::Shutdown()
 void SystemHost::SortSystems()
 {
 	std::sort(Systems.begin(), Systems.end(),
-		[](const SystemEntry& a, const SystemEntry& b) {
+		[](const SystemEntry& a, const SystemEntry& b)
+		{
 			return a.Order < b.Order;
-		}
-	);
+		});
 }

@@ -1,66 +1,82 @@
+// main_test2.cpp
+// Test #2: One service, three systems, different phases
+// Simulate PreUpdate, Update, PostUpdate via ordering priorities.
+
 #include <service/GameServiceHost.h>
 #include <system/SystemHost.h>
 #include <iostream>
 
-class IPrintable {
+class CounterService : public IService {
 public:
-    virtual ~IPrintable() = default;
-    virtual void Print() const = 0;
-};
-
-class CounterService: public IService, public IPrintable {
-public:
-    void Increment() {
-        counter++;
-    }
+    void Add(int v) { counter += v; }
+    int Get() const { return counter; }
 private:
     int counter = 0;
-public:
-    void Print() const override {
-        std::cout << "Counter: " << counter << std::endl;
-    }
 };
 
-class IncrementSystem : public ISystem {
+// PreUpdate phase: decide what should happen this frame
+class PreUpdateSystem : public ISystem {
 public:
-    IncrementSystem(GameServiceHost& host)
-        : service(host.Get<CounterService>()) {}
+    explicit PreUpdateSystem(GameServiceHost& host)
+        : counter(host.Get<CounterService>()) {}
 
     void Update() override {
-        service.Increment();
+        // Pre phase sets up a consistent "rule"
+        // (for demo, we add 10 before the main update)
+        counter.Add(10);
     }
+
 private:
-    CounterService& service;
+    CounterService& counter;
 };
 
-class PrintSystem : public ISystem {
+// Update phase: main simulation step
+class UpdateSystem : public ISystem {
 public:
-    PrintSystem(GameServiceHost& host)
-        : printable(host.GetAll<IPrintable>()) {}
+    explicit UpdateSystem(GameServiceHost& host)
+        : counter(host.Get<CounterService>()) {}
 
     void Update() override {
-        for (const auto& p : printable) {
-            p->Print();
-        }
+        // Main phase adds 1
+        counter.Add(1);
     }
+
 private:
-    std::vector<IPrintable*> printable;
+    CounterService& counter;
 };
 
-int main()
-{
+// PostUpdate phase: observe results, emit events, logging, etc.
+class PostUpdateSystem : public ISystem {
+public:
+    explicit PostUpdateSystem(GameServiceHost& host)
+        : counter(host.Get<CounterService>()) {}
+
+    void Update() override {
+        std::cout << "Counter: " << counter.Get() << "\n";
+    }
+
+private:
+    CounterService& counter;
+};
+
+int main() {
     GameServiceHost serviceHost;
     SystemHost systemHost;
 
-    serviceHost.AddService<CounterService, IPrintable>();
-    systemHost.AddSystem<IncrementSystem>(0, serviceHost);
-    systemHost.AddSystem<PrintSystem>(1, serviceHost);
+    serviceHost.AddService<CounterService>();
+
+    // Phase ordering by priority:
+    // 0 = PreUpdate, 1 = Update, 2 = PostUpdate
+    systemHost.AddSystem<PreUpdateSystem>(0, serviceHost);
+    systemHost.AddSystem<UpdateSystem>(1, serviceHost);
+    systemHost.AddSystem<PostUpdateSystem>(2, serviceHost);
 
     systemHost.Init();
 
     for (int i = 0; i < 5; ++i) {
         systemHost.Update();
     }
+
     systemHost.Shutdown();
     return 0;
 }
