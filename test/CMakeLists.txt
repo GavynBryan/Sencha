@@ -15,11 +15,12 @@ enable_testing()
 
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/kettle/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp
 )
 
-add_executable(kettle_tests ${TEST_SOURCES})
+add_executable(engine_tests ${TEST_SOURCES})
 
-target_link_libraries(kettle_tests PRIVATE engine GTest::gtest_main)
+target_link_libraries(engine_tests PRIVATE engine GTest::gtest_main)
 
 include(GoogleTest)
-gtest_discover_tests(kettle_tests)
+gtest_discover_tests(engine_tests)
