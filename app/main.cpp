@@ -1,82 +1,102 @@
-// main_test2.cpp
-// Test #2: One service, three systems, different phases
-// Simulate PreUpdate, Update, PostUpdate via ordering priorities.
-
+#include <render/IGraphicsAPI.h>
+#include <render/IRenderable.h>
+#include <render/RenderContext.h>
+#include <render/RenderContextService.h>
+#include <render/RenderSystem.h>
+#include <service/BatchArray.h>
 #include <service/GameServiceHost.h>
 #include <system/SystemHost.h>
 #include <iostream>
 
-class CounterService : public IService {
+//=============================================================================
+// ConsoleGraphicsAPI
+//
+// Fake backend that prints frame lifecycle to stdout.
+//=============================================================================
+class ConsoleGraphicsAPI : public IGraphicsAPI
+{
 public:
-    void Add(int v) { counter += v; }
-    int Get() const { return counter; }
-private:
-    int counter = 0;
-};
+    explicit ConsoleGraphicsAPI(const char* name) : Name(name) {}
 
-// PreUpdate phase: decide what should happen this frame
-class PreUpdateSystem : public ISystem {
-public:
-    explicit PreUpdateSystem(GameServiceHost& host)
-        : counter(host.Get<CounterService>()) {}
-
-    void Update() override {
-        // Pre phase sets up a consistent "rule"
-        // (for demo, we add 10 before the main update)
-        counter.Add(10);
-    }
+    bool IsValid() const override { return true; }
+    void BeginFrame() override { std::cout << "  [" << Name << "] BeginFrame\n"; }
+    void Clear() override     { std::cout << "  [" << Name << "] Clear\n"; }
+    void EndFrame() override  { std::cout << "  [" << Name << "] EndFrame\n"; }
+    void Present() override   { std::cout << "  [" << Name << "] Present\n"; }
 
 private:
-    CounterService& counter;
+    const char* Name;
 };
 
-// Update phase: main simulation step
-class UpdateSystem : public ISystem {
+//=============================================================================
+// TriangleRenderable / QuadRenderable
+//
+// Fake renderables with different render orders and visibility.
+//=============================================================================
+class TriangleRenderable : public IRenderable
+{
 public:
-    explicit UpdateSystem(GameServiceHost& host)
-        : counter(host.Get<CounterService>()) {}
+    void Render(IGraphicsAPI&) override { std::cout << "    -> Draw Triangle\n"; }
+    int GetRenderOrder() const override { return 10; }
+};
 
-    void Update() override {
-        // Main phase adds 1
-        counter.Add(1);
-    }
+class QuadRenderable : public IRenderable
+{
+public:
+    QuadRenderable(bool visible) : bVisible(visible) {}
+
+    void Render(IGraphicsAPI&) override { std::cout << "    -> Draw Quad\n"; }
+    int GetRenderOrder() const override { return 5; }
+    bool IsVisible() const override { return bVisible; }
 
 private:
-    CounterService& counter;
+    bool bVisible;
 };
 
-// PostUpdate phase: observe results, emit events, logging, etc.
-class PostUpdateSystem : public ISystem {
-public:
-    explicit PostUpdateSystem(GameServiceHost& host)
-        : counter(host.Get<CounterService>()) {}
+int main()
+{
+    // -- Services --
+    GameServiceHost services;
+    services.AddService<RenderContextService>();
+    services.AddService<BatchArray<IRenderable>>();
 
-    void Update() override {
-        std::cout << "Counter: " << counter.Get() << "\n";
-    }
+    auto& contexts = services.Get<RenderContextService>();
+    auto& renderables = services.Get<BatchArray<IRenderable>>();
 
-private:
-    CounterService& counter;
-};
+    // -- Two fake windows --
+    ConsoleGraphicsAPI windowA("Window-A");
+    ConsoleGraphicsAPI windowB("Window-B");
 
-int main() {
-    GameServiceHost serviceHost;
-    SystemHost systemHost;
+    uint32_t idA = contexts.AddContext(&windowA);
+    uint32_t idB = contexts.AddContext(&windowB);
 
-    serviceHost.AddService<CounterService>();
+    // -- Renderables --
+    QuadRenderable quad(true);
+    TriangleRenderable triangle;
+    QuadRenderable hiddenQuad(false);
 
-    // Phase ordering by priority:
-    // 0 = PreUpdate, 1 = Update, 2 = PostUpdate
-    systemHost.AddSystem<PreUpdateSystem>(0, serviceHost);
-    systemHost.AddSystem<UpdateSystem>(1, serviceHost);
-    systemHost.AddSystem<PostUpdateSystem>(2, serviceHost);
+    BatchArrayHandle hQuad(&renderables, &quad);
+    BatchArrayHandle hTriangle(&renderables, &triangle);
+    BatchArrayHandle hHidden(&renderables, &hiddenQuad);
 
-    systemHost.Init();
+    // -- System --
+    SystemHost systems;
+    systems.AddSystem<RenderSystem>(0, contexts, renderables);
 
-    for (int i = 0; i < 5; ++i) {
-        systemHost.Update();
-    }
+    systems.Init();
 
-    systemHost.Shutdown();
+    std::cout << "=== Frame 1: two windows, three renderables (one hidden) ===\n";
+    systems.Update();
+
+    std::cout << "\n=== Frame 2: deactivate Window-B ===\n";
+    contexts.GetContext(idB)->bIsActive = false;
+    systems.Update();
+
+    std::cout << "\n=== Frame 3: remove triangle, reactivate Window-B ===\n";
+    hTriangle.Reset();
+    contexts.GetContext(idB)->bIsActive = true;
+    systems.Update();
+
+    systems.Shutdown();
     return 0;
 }
