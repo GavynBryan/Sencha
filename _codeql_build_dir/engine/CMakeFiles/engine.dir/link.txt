@@ -1,0 +1,2 @@
+/usr/bin/ar qc libengine.a CMakeFiles/engine.dir/core/src/render/RenderContextService.cpp.o CMakeFiles/engine.dir/core/src/render/RenderSystem.cpp.o
+/usr/bin/ranlib libengine.a
