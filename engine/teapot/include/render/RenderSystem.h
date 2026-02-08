@@ -5,6 +5,7 @@
 class ServiceProvider;
 class RenderContextService;
 class IRenderable;
+class Logger;
 template<typename T> class BatchArray;
 
 //=============================================================================
@@ -28,4 +29,5 @@ private:
 
 	RenderContextService& ContextService;
 	BatchArray<IRenderable>& Renderables;
+	Logger& Log;
 };

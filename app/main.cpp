@@ -64,16 +64,20 @@ int main()
     // -- Services --
     ServiceHost services;
 
-    services.GetLoggingProvider().SetMinLevel(LogLevel::Debug);
-    services.GetLoggingProvider().AddSink<ConsoleLogSink>();
-    services.GetLoggingProvider().AddSink<FileLogSink>("game.log");
+    auto& loggingProvider = services.GetLoggingProvider();
 
-    auto logger = services.GetLoggingProvider().GetLogger<Game>();
+    loggingProvider.SetMinLevel(LogLevel::Debug);
+    loggingProvider.AddSink<ConsoleLogSink>();
+    loggingProvider.AddSink<FileLogSink>("game.log");
+
+    auto& logger = loggingProvider.GetLogger<Game>();
 
     logger.Info("Starting RenderSystem demo...");
 
-    services.AddService<RenderContextService>();
+    services.AddService<RenderContextService>(loggingProvider);
     services.AddService<BatchArray<IRenderable>>();
+
+    ServiceProvider provider(services);
 
     auto& contexts = services.Get<RenderContextService>();
     auto& renderables = services.Get<BatchArray<IRenderable>>();
@@ -97,7 +101,6 @@ int main()
     // -- Systems --
     SystemHost systems;
     {
-        ServiceProvider provider(services);
         systems.AddSystem<RenderSystem>(0, provider);
         logger.Info("RenderSystem added to SystemHost.");
     }

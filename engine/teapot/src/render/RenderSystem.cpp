@@ -4,11 +4,17 @@
 #include <render/IGraphicsAPI.h>
 #include <batch/BatchArray.h>
 #include <service/ServiceProvider.h>
+#include <logging/Logger.h>
 
 RenderSystem::RenderSystem(const ServiceProvider& provider)
 	: ContextService(provider.Get<RenderContextService>())
 	, Renderables(provider.Get<BatchArray<IRenderable>>())
+	, Log(provider.GetLogger<RenderSystem>())
 {
+	if(!&Renderables)
+	{
+		Log.Error("RenderSystem initialized without a BatchArray<IRenderable> service!");
+	}
 }
 
 void RenderSystem::Update()
