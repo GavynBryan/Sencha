@@ -2,7 +2,7 @@
 #include <render/RenderContextService.h>
 #include <render/IRenderable.h>
 #include <render/IGraphicsAPI.h>
-#include <service/BatchArray.h>
+#include <batch/BatchArray.h>
 #include <service/ServiceProvider.h>
 
 RenderSystem::RenderSystem(const ServiceProvider& provider)

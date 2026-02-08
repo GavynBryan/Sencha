@@ -3,7 +3,8 @@
 #include <render/RenderContext.h>
 #include <render/RenderContextService.h>
 #include <render/RenderSystem.h>
-#include <service/BatchArray.h>
+#include <batch/BatchArray.h>
+#include <batch/BatchArrayHandle.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
 #include <system/SystemHost.h>

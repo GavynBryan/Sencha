@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
-#include <service/BatchArray.h>
+#include <batch/BatchArray.h>
+#include <batch/BatchArrayHandle.h>
 
 // --- Test helpers ---
 
