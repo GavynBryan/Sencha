@@ -7,7 +7,7 @@
 // specific rendering backend (SFML, OpenGL, SDL, DirectX) or windowing
 // system (SDL, GLFW, etc.).
 //
-// Implementations live at the COMMON layer of the engine, not in core or
+// Implementations live at the COMMON layer of the engine, not in teapot or
 // kettle. Each RenderContext holds a pointer to an IGraphicsAPI that
 // handles the actual rendering for that context's window/surface.
 //

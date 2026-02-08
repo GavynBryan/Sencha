@@ -39,9 +39,9 @@ The engine is organized into three layers, each with a strict downward-only depe
 
 ```
 ┌─────────────────────────────────────┐
-│              Common                 │  ← Implementation layer
+│              Infuser                 │  ← Implementation layer
 ├─────────────────────────────────────┤
-│               Core                  │  ← Mid-level abstractions
+│               Teapot                  │  ← Mid-level abstractions
 ├─────────────────────────────────────┤
 │              Kettle                 │  ← Bootstrap / Ring 0
 └─────────────────────────────────────┘
@@ -57,20 +57,20 @@ Kettle is the foundation of the engine—ring 0. It provides the bootstrapping i
 
 Kettle is purely structural. It defines interfaces and hosts but contains no concrete game logic. An application built with nothing but Kettle will still compile and run.
 
-### Core
+### Teapot
 
-Core builds on Kettle with lower-level abstractions that most games will need but that don't assume a specific backend or game design:
+Teapot builds on Kettle with lower-level abstractions that most games will need but that don't assume a specific backend or game design:
 
 - **Rendering** — `RenderSystem`, `RenderContextService`, `RenderContext`, `IRenderable`, and `IGraphicsAPI`.
 - Base definitions for actors and components.
 - Collision primitives.
 - Some foundational service and system implementations.
 
-Core answers the question *"what does a game need?"* without answering *"how does your game work?"*
+Teapot answers the question *"what does a game need?"* without answering *"how does your game work?"*
 
-### Common
+### Infuser
 
-*(Planned)* Common is the opinionated implementation layer. It supplies concrete rendering backends, component definitions, and other defaults that make it fast to get a game running. Everything in Common is opt-in—if you don't want the engine's assumptions, leave this layer out entirely and build on Core or Kettle directly.
+*(Planned)* Infuser is the opinionated implementation layer. It supplies concrete rendering backends, component definitions, and other defaults that make it fast to get a game running. Everything in Infuser is opt-in—if you don't want the engine's assumptions, leave this layer out entirely and build on Teapot or Kettle directly.
 
 ## Building
 
