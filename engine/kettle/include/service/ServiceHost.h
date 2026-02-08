@@ -1,6 +1,5 @@
 #pragma once
 
-#include <service/BatchArray.h>
 #include <service/IService.h>
 #include <logging/LoggingProvider.h>
 #include <algorithm>
