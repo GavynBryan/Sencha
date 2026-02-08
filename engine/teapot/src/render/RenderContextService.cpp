@@ -1,5 +1,12 @@
 #include <render/RenderContextService.h>
+#include <logging/LoggingProvider.h>
+#include <logging/Logger.h>
 #include <algorithm>
+
+RenderContextService::RenderContextService(LoggingProvider& provider)
+	: Log(provider.GetLogger<RenderContextService>())
+{
+}
 
 uint32_t RenderContextService::AddContext(IGraphicsAPI* graphicsAPI)
 {
@@ -9,15 +16,23 @@ uint32_t RenderContextService::AddContext(IGraphicsAPI* graphicsAPI)
 	context.bIsActive = true;
 
 	Contexts.push_back(context);
+	Log.Info("Added RenderContext with ID {}", context.Id);
 	return context.Id;
 }
 
 void RenderContextService::RemoveContext(uint32_t id)
 {
-	Contexts.erase(
-		std::remove_if(Contexts.begin(), Contexts.end(),
-			[id](const RenderContext& ctx) { return ctx.Id == id; }),
-		Contexts.end());
+	auto it = std::remove_if(Contexts.begin(), Contexts.end(),
+		[id](const RenderContext& ctx) { return ctx.Id == id; });
+	if (it != Contexts.end())
+	{
+		Contexts.erase(it, Contexts.end());
+		Log.Info("Removed RenderContext with ID {}", id);
+	}
+	else
+	{
+		Log.Info("RenderContext with ID {} not found", id);
+	}
 }
 
 RenderContext* RenderContextService::GetContext(uint32_t id)

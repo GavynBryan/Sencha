@@ -6,6 +6,9 @@
 #include <span>
 #include <vector>
 
+class LoggingProvider;
+class Logger;
+
 //=============================================================================
 // RenderContextService
 //
@@ -20,6 +23,8 @@
 class RenderContextService : public IService
 {
 public:
+	RenderContextService(LoggingProvider& provider);
+
 	uint32_t AddContext(IGraphicsAPI* graphicsAPI);
 	void RemoveContext(uint32_t id);
 
@@ -35,4 +40,6 @@ public:
 private:
 	std::vector<RenderContext> Contexts;
 	uint32_t NextId = 0;
+
+	Logger& Log;
 };

@@ -33,6 +33,14 @@
 class LoggingProvider
 {
 public:
+	LoggingProvider() = default;
+
+	// Non-copyable
+	LoggingProvider(const LoggingProvider&) = delete;
+	LoggingProvider& operator=(const LoggingProvider&) = delete;
+	LoggingProvider(LoggingProvider&&) = default;
+	LoggingProvider& operator=(LoggingProvider&&) = default;
+
 	// -- Sink management ----------------------------------------------------
 
 	template <typename TSink, typename... Args>
