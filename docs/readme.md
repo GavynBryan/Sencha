@@ -52,8 +52,12 @@ The engine is organized into three layers, each with a strict downward-only depe
 Kettle is the foundation of the engine—ring 0. It provides the bootstrapping infrastructure that everything else is built on:
 
 - **Logging** — `LoggingProvider`, `Logger`, log sinks (`ConsoleLogSink`, `FileLogSink`), and log levels.
-- **Service hosting** — `ServiceHost`, `IService`, `ServiceProvider`, and the `BatchArray` container.
+- **Service hosting** — `ServiceHost`, `IService`, and `ServiceProvider`.
 - **System hosting** — `SystemHost` and `ISystem`.
+- **RAII lifetime** — `LifetimeHandle<TokenT>` and `ILifetimeOwner`. A single, type-safe RAII primitive that pairs an owner with a typed token. Construction calls `Attach`; destruction calls `Detach`. No `void*` is ever visible in the public API.
+- **Batch containers**
+  - `RefBatch<T>` — stores *pointers* to externally-owned objects. O(1) add/remove via swap-and-pop. Used with `RefBatchHandle<T>` (an alias for `LifetimeHandle<T*>`).
+  - `DataBatch<T>` — *owns* a contiguous `vector<T>` for cache-friendly, Data-Oriented Design iteration. Items are created via `Emplace()`, which returns a `LifetimeHandle<DataBatchKey>`. Swap-and-pop removal keeps the data dense.
 
 Kettle is purely structural. It defines interfaces and hosts but contains no concrete game logic. An application built with nothing but Kettle will still compile and run.
 
