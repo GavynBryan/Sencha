@@ -11,5 +11,7 @@ if(MINGW)
 endif()
 
 add_subdirectory(engine)
+add_subdirectory(engine/infuser)
 add_subdirectory(app)
 add_subdirectory(test)
+add_subdirectory(examples/maze)
