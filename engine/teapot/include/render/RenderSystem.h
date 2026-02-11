@@ -6,7 +6,7 @@ class ServiceProvider;
 class RenderContextService;
 class IRenderable;
 class Logger;
-template<typename T> class BatchArray;
+template<typename T> class RefBatch;
 
 //=============================================================================
 // RenderSystem
@@ -14,7 +14,7 @@ template<typename T> class BatchArray;
 // System that renders all active RenderContexts each frame. For each
 // context, it runs the frame lifecycle (BeginFrame -> Clear -> Render ->
 // EndFrame -> Present) and draws all IRenderables registered in the
-// BatchArray<IRenderable>.
+// RefBatch<IRenderable>.
 //
 // Dependencies are resolved from a ServiceProvider at construction time.
 // The system caches only the specific service references it needs.
@@ -28,6 +28,6 @@ private:
 	void Update() override;
 
 	RenderContextService& ContextService;
-	BatchArray<IRenderable>& Renderables;
+	RefBatch<IRenderable>& Renderables;
 	Logger& Log;
 };

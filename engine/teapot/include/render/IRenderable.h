@@ -7,8 +7,8 @@ class IGraphicsAPI;
 //
 // Interface for any object that can be rendered. Does not assume 2D or 3D.
 //
-// Concrete renderables register themselves into a BatchArray<IRenderable>
-// (via BatchArrayHandle) so that RenderSystem can iterate all active
+// Concrete renderables register themselves into a RefBatch<IRenderable>
+// (via RefBatchHandle) so that RenderSystem can iterate all active
 // renderables efficiently each frame.
 //
 // Extensibility:

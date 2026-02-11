@@ -3,8 +3,9 @@
 #include <render/RenderContext.h>
 #include <render/RenderContextService.h>
 #include <render/RenderSystem.h>
-#include <batch/BatchArray.h>
-#include <batch/BatchArrayHandle.h>
+#include <batch/RefBatch.h>
+#include <batch/DataBatch.h>
+#include <raii/RefBatchHandle.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
 #include <system/SystemHost.h>
@@ -75,12 +76,12 @@ int main()
     logger.Info("Starting RenderSystem demo...");
 
     services.AddService<RenderContextService>(loggingProvider);
-    services.AddService<BatchArray<IRenderable>>();
+    services.AddService<RefBatch<IRenderable>>();
 
     ServiceProvider provider(services);
 
     auto& contexts = services.Get<RenderContextService>();
-    auto& renderables = services.Get<BatchArray<IRenderable>>();
+    auto& renderables = services.Get<RefBatch<IRenderable>>();
 
     // -- Two fake windows --
     ConsoleGraphicsAPI windowA("Window-A");
@@ -94,9 +95,9 @@ int main()
     TriangleRenderable triangle;
     QuadRenderable hiddenQuad(false);
 
-    BatchArrayHandle hQuad(&renderables, &quad);
-    BatchArrayHandle hTriangle(&renderables, &triangle);
-    BatchArrayHandle hHidden(&renderables, &hiddenQuad);
+    RefBatchHandle<IRenderable> hQuad(&renderables, &quad);
+    RefBatchHandle<IRenderable> hTriangle(&renderables, &triangle);
+    RefBatchHandle<IRenderable> hHidden(&renderables, &hiddenQuad);
 
     // -- Systems --
     SystemHost systems;
@@ -120,6 +121,39 @@ int main()
     systems.Update();
 
     logger.Info("RenderSystem demo complete.");
+
+    // =====================================================================
+    // DataBatch demo: cache-friendly, owned-data particle simulation
+    // =====================================================================
+    std::cout << "\n=== DataBatch<Particle> — Cache-friendly DOD demo ===\n";
+
+    struct Particle
+    {
+        float X = 0.0f, Y = 0.0f, Life = 1.0f;
+    };
+
+    DataBatch<Particle> particles;
+
+    auto p1 = particles.Emplace(0.0f, 0.0f, 1.0f);
+    auto p2 = particles.Emplace(5.0f, 3.0f, 0.8f);
+    auto p3 = particles.Emplace(2.0f, 7.0f, 0.5f);
+
+    logger.Info("Emplaced 3 particles into DataBatch.");
+
+    // Contiguous iteration — this is the whole point of DOD.
+    for (auto& p : particles)
+        p.Life -= 0.1f;
+
+    // Typed handle access — no void* anywhere.
+    if (auto* p = particles.TryGet(p1))
+        std::cout << "  Particle 1 life after tick: " << p->Life << "\n";
+
+    // RAII removal: resetting a handle removes the item.
+    p2.Reset();
+    std::cout << "  After removing particle 2: "
+              << particles.Count() << " particles remain.\n";
+
+    logger.Info("DataBatch demo complete.");
 
     systems.Shutdown();
     return 0;
