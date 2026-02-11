@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <system/SystemHost.h>
+#include <kettle/system/SystemHost.h>
 
 // --- Test helpers ---
 

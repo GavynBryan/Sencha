@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include <logging/LoggingProvider.h>
-#include <logging/ConsoleLogSink.h>
-#include <service/ServiceHost.h>
-#include <service/ServiceProvider.h>
+#include <kettle/logging/LoggingProvider.h>
+#include <kettle/logging/ConsoleLogSink.h>
+#include <kettle/service/ServiceHost.h>
+#include <kettle/service/ServiceProvider.h>
 
 // --- Test sink that captures messages ---
 

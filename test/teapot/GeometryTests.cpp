@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <geometry/IGeometry.h>
+#include <teapot/geometry/IGeometry.h>
 #include <cmath>
 
 //=============================================================================

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <service/ServiceHost.h>
+#include <kettle/service/ServiceHost.h>
 
 // --- Test fixtures / helpers ---
 

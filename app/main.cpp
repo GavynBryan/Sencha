@@ -1,20 +1,20 @@
-#include <render/IGraphicsAPI.h>
-#include <render/IRenderable.h>
-#include <render/RenderData.h>
-#include <render/RenderContext.h>
-#include <render/RenderContextService.h>
-#include <render/RenderSystem.h>
-#include <render/RenderSystem2D.h>
-#include <render/RenderSystem3D.h>
-#include <geometry/IGeometry.h>
-#include <batch/RefBatch.h>
-#include <batch/DataBatch.h>
-#include <raii/RefBatchHandle.h>
-#include <service/ServiceHost.h>
-#include <service/ServiceProvider.h>
-#include <system/SystemHost.h>
-#include <logging/ConsoleLogSink.h>
-#include <logging/FileLogSink.h>
+#include <teapot/render/IGraphicsAPI.h>
+#include <teapot/render/IRenderable.h>
+#include <teapot/render/RenderData.h>
+#include <teapot/render/RenderContext.h>
+#include <teapot/render/RenderContextService.h>
+#include <teapot/render/RenderSystem.h>
+#include <teapot/render/RenderSystem2D.h>
+#include <teapot/render/RenderSystem3D.h>
+#include <teapot/geometry/IGeometry.h>
+#include <kettle/batch/RefBatch.h>
+#include <kettle/batch/DataBatch.h>
+#include <kettle/raii/RefBatchHandle.h>
+#include <kettle/service/ServiceHost.h>
+#include <kettle/service/ServiceProvider.h>
+#include <kettle/system/SystemHost.h>
+#include <kettle/logging/ConsoleLogSink.h>
+#include <kettle/logging/FileLogSink.h>
 #include <iostream>
 
 //=============================================================================

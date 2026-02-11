@@ -1,18 +1,16 @@
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/kettle/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/teapot/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/teapot/*.cpp
 )
 
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/kettle/include/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/teapot/include/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/kettle/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/teapot/*.h
 )
 
 add_library(engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 
 target_include_directories(engine PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/kettle/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/teapot/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # ---------------------------------------------------------------------------
@@ -23,18 +21,14 @@ find_package(GLEW QUIET)
 
 if(OpenGL_FOUND AND GLEW_FOUND)
     file(GLOB_RECURSE INFUSER_SOURCES CONFIGURE_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/infuser/src/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/infuser/*.cpp
     )
 
     file(GLOB_RECURSE INFUSER_HEADERS CONFIGURE_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/infuser/include/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/infuser/*.h
     )
 
     add_library(infuser STATIC ${INFUSER_SOURCES} ${INFUSER_HEADERS})
-
-    target_include_directories(infuser PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/infuser/include
-    )
 
     target_link_libraries(infuser PUBLIC engine OpenGL::GL GLEW::GLEW)
 

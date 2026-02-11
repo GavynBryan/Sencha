@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <batch/RefBatch.h>
-#include <raii/RefBatchHandle.h>
+#include <kettle/batch/RefBatch.h>
+#include <kettle/raii/RefBatchHandle.h>
 
 // --- Test helpers ---
 

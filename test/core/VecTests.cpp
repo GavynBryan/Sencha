@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <math/Vec.h>
+#include <teapot/math/Vec.h>
 #include <sstream>
 
 // --- Construction ---

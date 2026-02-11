@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <batch/DataBatch.h>
+#include <kettle/batch/DataBatch.h>
 
 // --- Test helpers ---
 
