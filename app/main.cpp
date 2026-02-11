@@ -1,8 +1,12 @@
 #include <render/IGraphicsAPI.h>
 #include <render/IRenderable.h>
+#include <render/RenderData.h>
 #include <render/RenderContext.h>
 #include <render/RenderContextService.h>
 #include <render/RenderSystem.h>
+#include <render/RenderSystem2D.h>
+#include <render/RenderSystem3D.h>
+#include <geometry/IGeometry.h>
 #include <batch/RefBatch.h>
 #include <batch/DataBatch.h>
 #include <raii/RefBatchHandle.h>
@@ -16,7 +20,7 @@
 //=============================================================================
 // ConsoleGraphicsAPI
 //
-// Fake backend that prints frame lifecycle to stdout.
+// Fake backend that prints frame lifecycle and submit calls to stdout.
 //=============================================================================
 class ConsoleGraphicsAPI : public IGraphicsAPI
 {
@@ -29,33 +33,32 @@ public:
     void EndFrame() override  { std::cout << "  [" << Name << "] EndFrame\n"; }
     void Present() override   { std::cout << "  [" << Name << "] Present\n"; }
 
+    void Submit2D(const Vec2& pos, const Vec2& scale, float rot) override
+    {
+        std::cout << "    -> Submit2D pos=(" << pos.X() << "," << pos.Y()
+                  << ") scale=(" << scale.X() << "," << scale.Y()
+                  << ") rot=" << rot << "\n";
+    }
+
+    void Submit3D(const Vec3& pos, const Vec3& scale, const Vec3& rot) override
+    {
+        std::cout << "    -> Submit3D pos=(" << pos.X() << "," << pos.Y() << "," << pos.Z()
+                  << ") scale=(" << scale.X() << "," << scale.Y() << "," << scale.Z()
+                  << ") rot=(" << rot.X() << "," << rot.Y() << "," << rot.Z() << ")\n";
+    }
+
 private:
     const char* Name;
 };
 
 //=============================================================================
-// TriangleRenderable / QuadRenderable
-//
-// Fake renderables with different render orders and visibility.
+// Custom IRenderable (escape hatch — virtual dispatch path)
 //=============================================================================
-class TriangleRenderable : public IRenderable
+class DebugOverlay : public IRenderable
 {
 public:
-    void Render(IGraphicsAPI&) override { std::cout << "    -> Draw Triangle\n"; }
-    int GetRenderOrder() const override { return 10; }
-};
-
-class QuadRenderable : public IRenderable
-{
-public:
-    QuadRenderable(bool visible) : bVisible(visible) {}
-
-    void Render(IGraphicsAPI&) override { std::cout << "    -> Draw Quad\n"; }
-    int GetRenderOrder() const override { return 5; }
-    bool IsVisible() const override { return bVisible; }
-
-private:
-    bool bVisible;
+    void Render(IGraphicsAPI&) override { std::cout << "    -> Draw DebugOverlay\n"; }
+    int GetRenderOrder() const override { return 100; }
 };
 
 class Game {};
@@ -66,95 +69,129 @@ int main()
     ServiceHost services;
 
     auto& loggingProvider = services.GetLoggingProvider();
-
     loggingProvider.SetMinLevel(LogLevel::Debug);
     loggingProvider.AddSink<ConsoleLogSink>();
     loggingProvider.AddSink<FileLogSink>("game.log");
 
     auto& logger = loggingProvider.GetLogger<Game>();
 
-    logger.Info("Starting RenderSystem demo...");
+    // =====================================================================
+    // 1. DataBatch-based 2D rendering (cache-friendly DOD path)
+    // =====================================================================
+    logger.Info("=== DataBatch 2D Rendering Demo ===");
 
     services.AddService<RenderContextService>(loggingProvider);
+    services.AddService<DataBatch<RenderData2D>>();
+    services.AddService<DataBatch<RenderData3D>>();
     services.AddService<RefBatch<IRenderable>>();
 
-    ServiceProvider provider(services);
-
     auto& contexts = services.Get<RenderContextService>();
-    auto& renderables = services.Get<RefBatch<IRenderable>>();
+    auto& renderables2D = services.Get<DataBatch<RenderData2D>>();
+    auto& renderables3D = services.Get<DataBatch<RenderData3D>>();
+    auto& customRenderables = services.Get<RefBatch<IRenderable>>();
 
-    // -- Two fake windows --
     ConsoleGraphicsAPI windowA("Window-A");
-    ConsoleGraphicsAPI windowB("Window-B");
-
     uint32_t idA = contexts.AddContext(&windowA);
-    uint32_t idB = contexts.AddContext(&windowB);
 
-    // -- Renderables --
-    QuadRenderable quad(true);
-    TriangleRenderable triangle;
-    QuadRenderable hiddenQuad(false);
+    // Emplace 2D renderables into the DataBatch — contiguous, cache-friendly
+    auto sprite1 = renderables2D.Emplace(RenderData2D{
+        .Position = {0.2f, 0.3f},
+        .Scale = {0.5f, 0.5f},
+        .Rotation = 0.0f,
+        .RenderOrder = 5,
+        .bIsVisible = true
+    });
 
-    RefBatchHandle<IRenderable> hQuad(&renderables, &quad);
-    RefBatchHandle<IRenderable> hTriangle(&renderables, &triangle);
-    RefBatchHandle<IRenderable> hHidden(&renderables, &hiddenQuad);
+    auto sprite2 = renderables2D.Emplace(RenderData2D{
+        .Position = {-0.4f, 0.1f},
+        .Scale = {0.3f, 0.3f},
+        .Rotation = 0.785f,
+        .RenderOrder = 10,
+        .bIsVisible = true
+    });
 
-    // -- Systems --
+    auto hiddenSprite = renderables2D.Emplace(RenderData2D{
+        .Position = {0.0f, 0.0f},
+        .Scale = {1.0f, 1.0f},
+        .Rotation = 0.0f,
+        .RenderOrder = 1,
+        .bIsVisible = false
+    });
+
+    // Register systems
+    ServiceProvider provider(services);
     SystemHost systems;
-    {
-        systems.AddSystem<RenderSystem>(0, provider);
-        logger.Info("RenderSystem added to SystemHost.");
-    }
+    systems.AddSystem<RenderSystem2D>(0, provider);
+    systems.AddSystem<RenderSystem3D>(1, provider);
+    systems.AddSystem<RenderSystem>(2, provider);
 
     systems.Init();
 
-    std::cout << "=== Frame 1: two windows, three renderables (one hidden) ===\n";
+    std::cout << "=== Frame 1: 2D DataBatch rendering (3 sprites, 1 hidden) ===\n";
     systems.Update();
 
-    std::cout << "\n=== Frame 2: deactivate Window-B ===\n";
-    contexts.GetContext(idB)->bIsActive = false;
+    // RAII removal — resetting a handle removes from the batch
+    std::cout << "\n=== Frame 2: remove sprite2 via RAII handle ===\n";
+    sprite2.Reset();
     systems.Update();
-
-    std::cout << "\n=== Frame 3: remove triangle, reactivate Window-B ===\n";
-    hTriangle.Reset();
-    contexts.GetContext(idB)->bIsActive = true;
-    systems.Update();
-
-    logger.Info("RenderSystem demo complete.");
 
     // =====================================================================
-    // DataBatch demo: cache-friendly, owned-data particle simulation
+    // 2. DataBatch-based 3D rendering
     // =====================================================================
-    std::cout << "\n=== DataBatch<Particle> — Cache-friendly DOD demo ===\n";
+    std::cout << "\n=== Frame 3: add 3D objects ===\n";
 
-    struct Particle
-    {
-        float X = 0.0f, Y = 0.0f, Life = 1.0f;
-    };
+    auto cube1 = renderables3D.Emplace(RenderData3D{
+        .Position = {0.0f, 0.0f, -2.0f},
+        .Scale = {0.5f, 0.5f, 0.5f},
+        .Rotation = {0.0f, 0.785f, 0.0f},
+        .RenderOrder = 0,
+        .bIsVisible = true
+    });
 
-    DataBatch<Particle> particles;
+    auto cube2 = renderables3D.Emplace(RenderData3D{
+        .Position = {1.0f, 0.5f, -3.0f},
+        .Scale = {0.3f, 0.3f, 0.3f},
+        .Rotation = {0.3f, 0.0f, 0.6f},
+        .RenderOrder = 1,
+        .bIsVisible = true
+    });
 
-    auto p1 = particles.Emplace(0.0f, 0.0f, 1.0f);
-    auto p2 = particles.Emplace(5.0f, 3.0f, 0.8f);
-    auto p3 = particles.Emplace(2.0f, 7.0f, 0.5f);
+    systems.Update();
 
-    logger.Info("Emplaced 3 particles into DataBatch.");
+    // =====================================================================
+    // 3. Custom IRenderable (virtual dispatch escape hatch)
+    // =====================================================================
+    std::cout << "\n=== Frame 4: add custom IRenderable (debug overlay) ===\n";
 
-    // Contiguous iteration — this is the whole point of DOD.
-    for (auto& p : particles)
-        p.Life -= 0.1f;
+    DebugOverlay overlay;
+    RefBatchHandle<IRenderable> hOverlay(&customRenderables, &overlay);
 
-    // Typed handle access — no void* anywhere.
-    if (auto* p = particles.TryGet(p1))
-        std::cout << "  Particle 1 life after tick: " << p->Life << "\n";
+    systems.Update();
 
-    // RAII removal: resetting a handle removes the item.
-    p2.Reset();
-    std::cout << "  After removing particle 2: "
-              << particles.Count() << " particles remain.\n";
+    // =====================================================================
+    // 4. IGeometry service demo
+    // =====================================================================
+    std::cout << "\n=== IGeometry Service Demo ===\n";
 
-    logger.Info("DataBatch demo complete.");
+    services.AddService<EuclideanGeometry2D, IGeometry2D>();
+    auto& geo = services.Get<IGeometry2D>();
 
+    Vec2 playerPos(0.0f, 0.0f);
+    Vec2 enemyPos(3.0f, 4.0f);
+
+    float dist = geo.Distance(playerPos, enemyPos);
+    std::cout << "  Distance player->enemy: " << dist << "\n";
+
+    Vec2 dir = geo.Direction(playerPos, enemyPos);
+    std::cout << "  Direction: (" << dir.X() << ", " << dir.Y() << ")\n";
+
+    Vec2 moved = geo.MoveToward(playerPos, enemyPos, 2.0f);
+    std::cout << "  Move 2 units toward enemy: (" << moved.X() << ", " << moved.Y() << ")\n";
+
+    Vec2 lerped = geo.Interpolate(playerPos, enemyPos, 0.5f);
+    std::cout << "  Midpoint: (" << lerped.X() << ", " << lerped.Y() << ")\n";
+
+    logger.Info("All demos complete.");
     systems.Shutdown();
     return 0;
 }

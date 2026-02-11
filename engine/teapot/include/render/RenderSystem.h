@@ -11,13 +11,20 @@ template<typename T> class RefBatch;
 //=============================================================================
 // RenderSystem
 //
-// System that renders all active RenderContexts each frame. For each
-// context, it runs the frame lifecycle (BeginFrame -> Clear -> Render ->
-// EndFrame -> Present) and draws all IRenderables registered in the
-// RefBatch<IRenderable>.
+// Virtual-dispatch render system for custom renderables. Iterates a
+// RefBatch<IRenderable> each frame and calls Render() on each visible
+// entry for every active RenderContext.
 //
-// Dependencies are resolved from a ServiceProvider at construction time.
-// The system caches only the specific service references it needs.
+// For cache-friendly, data-oriented rendering prefer RenderSystem2D or
+// RenderSystem3D, which iterate DataBatch<RenderData2D/3D> and call
+// IGraphicsAPI::Submit2D/Submit3D with plain data. This system remains
+// available as an escape hatch for objects that need bespoke rendering
+// logic (debug overlays, procedural effects, etc.).
+//
+// Dependencies (resolved from ServiceProvider at construction):
+//   - RenderContextService    — all render targets
+//   - RefBatch<IRenderable>   — all active custom renderables
+//   - Logger                  — logging
 //=============================================================================
 class RenderSystem : public ISystem
 {
