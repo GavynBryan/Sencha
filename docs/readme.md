@@ -39,9 +39,9 @@ The engine is organized into three layers, each with a strict downward-only depe
 
 ```
 ┌─────────────────────────────────────┐
-│              Infuser                 │  ← Implementation layer
+│              Infuser                │  ← Implementation layer
 ├─────────────────────────────────────┤
-│               Teapot                  │  ← Mid-level abstractions
+│               Teapot                │  ← Mid-level abstractions
 ├─────────────────────────────────────┤
 │              Kettle                 │  ← Bootstrap / Ring 0
 └─────────────────────────────────────┘
