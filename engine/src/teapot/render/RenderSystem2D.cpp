@@ -41,7 +41,7 @@ void RenderSystem2D::Update()
 		{
 			if (data.bIsVisible)
 			{
-				api.Submit2D(data.Position, data.Scale, data.Rotation);
+				api.Submit2D(data.Transform);
 			}
 		}
 

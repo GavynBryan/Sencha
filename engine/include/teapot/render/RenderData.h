@@ -1,6 +1,6 @@
 #pragma once
 
-#include <teapot/math/Vec.h>
+#include <teapot/math/Transform.h>
 
 //=============================================================================
 // RenderData2D
@@ -14,9 +14,7 @@
 //=============================================================================
 struct RenderData2D
 {
-	Vec2 Position{};
-	Vec2 Scale{1.0f, 1.0f};
-	float Rotation = 0.0f;
+	Transform2D Transform{};
 	int RenderOrder = 0;
 	bool bIsVisible = true;
 };
@@ -29,9 +27,7 @@ struct RenderData2D
 //=============================================================================
 struct RenderData3D
 {
-	Vec3 Position{};
-	Vec3 Scale{1.0f, 1.0f, 1.0f};
-	Vec3 Rotation{};
+	Transform3D Transform{};
 	int RenderOrder = 0;
 	bool bIsVisible = true;
 };

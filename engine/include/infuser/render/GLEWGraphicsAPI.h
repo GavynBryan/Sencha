@@ -47,8 +47,8 @@ public:
 	void Present() override;
 
 	void SetClearColor(float r, float g, float b, float a) override;
-	void Submit2D(const Vec2& position, const Vec2& scale, float rotation) override;
-	void Submit3D(const Vec3& position, const Vec3& scale, const Vec3& rotation) override;
+	void Submit2D(const Transform2D& transform) override;
+	void Submit3D(const Transform3D& transform) override;
 
 private:
 	void SetupShaders();

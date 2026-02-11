@@ -33,18 +33,18 @@ public:
     void EndFrame() override  { std::cout << "  [" << Name << "] EndFrame\n"; }
     void Present() override   { std::cout << "  [" << Name << "] Present\n"; }
 
-    void Submit2D(const Vec2& pos, const Vec2& scale, float rot) override
+    void Submit2D(const Transform2D& t) override
     {
-        std::cout << "    -> Submit2D pos=(" << pos.X() << "," << pos.Y()
-                  << ") scale=(" << scale.X() << "," << scale.Y()
-                  << ") rot=" << rot << "\n";
+        std::cout << "    -> Submit2D pos=(" << t.Position.X() << "," << t.Position.Y()
+                  << ") scale=(" << t.Scale.X() << "," << t.Scale.Y()
+                  << ") rot=" << t.Rotation << "\n";
     }
 
-    void Submit3D(const Vec3& pos, const Vec3& scale, const Vec3& rot) override
+    void Submit3D(const Transform3D& t) override
     {
-        std::cout << "    -> Submit3D pos=(" << pos.X() << "," << pos.Y() << "," << pos.Z()
-                  << ") scale=(" << scale.X() << "," << scale.Y() << "," << scale.Z()
-                  << ") rot=(" << rot.X() << "," << rot.Y() << "," << rot.Z() << ")\n";
+        std::cout << "    -> Submit3D pos=(" << t.Position.X() << "," << t.Position.Y() << "," << t.Position.Z()
+                  << ") scale=(" << t.Scale.X() << "," << t.Scale.Y() << "," << t.Scale.Z()
+                  << ") rot=(" << t.Rotation.X() << "," << t.Rotation.Y() << "," << t.Rotation.Z() << ")\n";
     }
 
 private:
@@ -95,25 +95,19 @@ int main()
 
     // Emplace 2D renderables into the DataBatch — contiguous, cache-friendly
     auto sprite1 = renderables2D.Emplace(RenderData2D{
-        .Position = {0.2f, 0.3f},
-        .Scale = {0.5f, 0.5f},
-        .Rotation = 0.0f,
+        .Transform = {{0.2f, 0.3f}, {0.5f, 0.5f}, 0.0f},
         .RenderOrder = 5,
         .bIsVisible = true
     });
 
     auto sprite2 = renderables2D.Emplace(RenderData2D{
-        .Position = {-0.4f, 0.1f},
-        .Scale = {0.3f, 0.3f},
-        .Rotation = 0.785f,
+        .Transform = {{-0.4f, 0.1f}, {0.3f, 0.3f}, 0.785f},
         .RenderOrder = 10,
         .bIsVisible = true
     });
 
     auto hiddenSprite = renderables2D.Emplace(RenderData2D{
-        .Position = {0.0f, 0.0f},
-        .Scale = {1.0f, 1.0f},
-        .Rotation = 0.0f,
+        .Transform = {{0.0f, 0.0f}, {1.0f, 1.0f}, 0.0f},
         .RenderOrder = 1,
         .bIsVisible = false
     });
@@ -141,17 +135,13 @@ int main()
     std::cout << "\n=== Frame 3: add 3D objects ===\n";
 
     auto cube1 = renderables3D.Emplace(RenderData3D{
-        .Position = {0.0f, 0.0f, -2.0f},
-        .Scale = {0.5f, 0.5f, 0.5f},
-        .Rotation = {0.0f, 0.785f, 0.0f},
+        .Transform = {{0.0f, 0.0f, -2.0f}, {0.5f, 0.5f, 0.5f}, {0.0f, 0.785f, 0.0f}},
         .RenderOrder = 0,
         .bIsVisible = true
     });
 
     auto cube2 = renderables3D.Emplace(RenderData3D{
-        .Position = {1.0f, 0.5f, -3.0f},
-        .Scale = {0.3f, 0.3f, 0.3f},
-        .Rotation = {0.3f, 0.0f, 0.6f},
+        .Transform = {{1.0f, 0.5f, -3.0f}, {0.3f, 0.3f, 0.3f}, {0.3f, 0.0f, 0.6f}},
         .RenderOrder = 1,
         .bIsVisible = true
     });

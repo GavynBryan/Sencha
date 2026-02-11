@@ -227,12 +227,12 @@ void GLEWGraphicsAPI::Present()
 // 2D submission
 //=============================================================================
 
-void GLEWGraphicsAPI::Submit2D(const Vec2& position, const Vec2& scale, float rotation)
+void GLEWGraphicsAPI::Submit2D(const Transform2D& transform)
 {
 	glUseProgram(ShaderProgram2D);
-	glUniform2f(Uniform2D_Position, position.X(), position.Y());
-	glUniform2f(Uniform2D_Scale, scale.X(), scale.Y());
-	glUniform1f(Uniform2D_Rotation, rotation);
+	glUniform2f(Uniform2D_Position, transform.Position.X(), transform.Position.Y());
+	glUniform2f(Uniform2D_Scale, transform.Scale.X(), transform.Scale.Y());
+	glUniform1f(Uniform2D_Rotation, transform.Rotation);
 
 	glBindVertexArray(QuadVAO);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -243,12 +243,12 @@ void GLEWGraphicsAPI::Submit2D(const Vec2& position, const Vec2& scale, float ro
 // 3D submission
 //=============================================================================
 
-void GLEWGraphicsAPI::Submit3D(const Vec3& position, const Vec3& scale, const Vec3& rotation)
+void GLEWGraphicsAPI::Submit3D(const Transform3D& transform)
 {
 	glUseProgram(ShaderProgram3D);
-	glUniform3f(Uniform3D_Position, position.X(), position.Y(), position.Z());
-	glUniform3f(Uniform3D_Scale, scale.X(), scale.Y(), scale.Z());
-	glUniform3f(Uniform3D_Rotation, rotation.X(), rotation.Y(), rotation.Z());
+	glUniform3f(Uniform3D_Position, transform.Position.X(), transform.Position.Y(), transform.Position.Z());
+	glUniform3f(Uniform3D_Scale, transform.Scale.X(), transform.Scale.Y(), transform.Scale.Z());
+	glUniform3f(Uniform3D_Rotation, transform.Rotation.X(), transform.Rotation.Y(), transform.Rotation.Z());
 
 	glBindVertexArray(CubeVAO);
 	glDrawArrays(GL_TRIANGLES, 0, 36);

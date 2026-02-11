@@ -1,6 +1,6 @@
 #pragma once
 
-#include <teapot/math/Vec.h>
+#include <teapot/math/Transform.h>
 
 //=============================================================================
 // IGraphicsAPI
@@ -44,9 +44,9 @@ public:
 
 	// -- 2D submission ------------------------------------------------------
 
-	virtual void Submit2D(const Vec2& position, const Vec2& scale, float rotation) { (void)position; (void)scale; (void)rotation; }
+	virtual void Submit2D(const Transform2D& transform) { (void)transform; }
 
 	// -- 3D submission ------------------------------------------------------
 
-	virtual void Submit3D(const Vec3& position, const Vec3& scale, const Vec3& rotation) { (void)position; (void)scale; (void)rotation; }
+	virtual void Submit3D(const Transform3D& transform) { (void)transform; }
 };
