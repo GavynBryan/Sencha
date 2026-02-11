@@ -1,7 +1,0 @@
-[2026-02-09 20:22:09.363] [INFO] Game: Starting RenderSystem demo...
-[2026-02-09 20:22:09.363] [INFO] RenderContextService: Added RenderContext with ID 0
-[2026-02-09 20:22:09.363] [INFO] RenderContextService: Added RenderContext with ID 1
-[2026-02-09 20:22:09.363] [INFO] Game: RenderSystem added to SystemHost.
-[2026-02-09 20:22:09.363] [INFO] Game: RenderSystem demo complete.
-[2026-02-09 20:22:09.363] [INFO] Game: Emplaced 3 particles into DataBatch.
-[2026-02-09 20:22:09.363] [INFO] Game: DataBatch demo complete.
