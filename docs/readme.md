@@ -12,7 +12,7 @@ Every dependency is explicit. Services are registered by hand, systems declare e
 
 There is no magic. If a system touches a service, you can trace that relationship back to the line of code where you set it up.
 
-## Architecture at a Glance
+## Architecture
 
 ### Systems & Services
 
