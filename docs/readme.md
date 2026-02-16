@@ -39,9 +39,9 @@ The engine is organized into three layers, each with a strict downward-only depe
 
 ```
 ┌─────────────────────────────────────┐
-│              Infuser                 │  ← Implementation layer
+│              Infuser                │  ← Implementation layer
 ├─────────────────────────────────────┤
-│               Teapot                  │  ← Mid-level abstractions
+│               Teapot                │  ← Mid-level abstractions
 ├─────────────────────────────────────┤
 │              Kettle                 │  ← Bootstrap / Ring 0
 └─────────────────────────────────────┘
@@ -63,12 +63,7 @@ Kettle is purely structural. It defines interfaces and hosts but contains no con
 
 ### Teapot
 
-Teapot builds on Kettle with lower-level abstractions that most games will need but that don't assume a specific backend or game design:
-
-- **Rendering** — `RenderSystem`, `RenderContextService`, `RenderContext`, `IRenderable`, and `IGraphicsAPI`.
-- Base definitions for actors and components.
-- Collision primitives.
-- Some foundational service and system implementations.
+Teapot includes lower-level abstractions and data structures that most games will need, but doesn't assume a specific backend or game design.
 
 Teapot answers the question *"what does a game need?"* without answering *"how does your game work?"*
 
