@@ -9,6 +9,23 @@
 #include <string_view>
 
 //=============================================================================
+//LevelToString
+//static helper to convert LogLevel enum to string for output formatting.
+//=============================================================================
+static constexpr const char* LevelToString(LogLevel level)
+{
+	switch (level)
+	{
+		case LogLevel::Debug:    return "DEBUG";
+		case LogLevel::Info:     return "INFO";
+		case LogLevel::Warning:  return "WARN";
+		case LogLevel::Error:    return "ERROR";
+		case LogLevel::Critical: return "CRIT";
+		default:                 return "???";
+	}
+}
+
+//=============================================================================
 // ILogSink
 //
 // Abstract output destination for log messages. Implementations decide

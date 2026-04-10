@@ -15,25 +15,5 @@
 class ConsoleLogSink : public ILogSink
 {
 public:
-	void Write(LogLevel level, std::string_view category, std::string_view message) override
-	{
-		if (level < MinLevel) return;
-
-		std::ostream& out = (level >= LogLevel::Error) ? std::cerr : std::cout;
-		out << "[" << Timestamp() << "] [" << LevelToString(level) << "] " << category << ": " << message << "\n";
-	}
-
-private:
-	static constexpr const char* LevelToString(LogLevel level)
-	{
-		switch (level)
-		{
-			case LogLevel::Debug:    return "DEBUG";
-			case LogLevel::Info:     return "INFO";
-			case LogLevel::Warning:  return "WARN";
-			case LogLevel::Error:    return "ERROR";
-			case LogLevel::Critical: return "CRIT";
-			default:                 return "???";
-		}
-	}
+	void Write(LogLevel level, std::string_view category, std::string_view message) override;
 };
