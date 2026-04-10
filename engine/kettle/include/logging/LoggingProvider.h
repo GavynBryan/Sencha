@@ -63,6 +63,8 @@ public:
 
 	// -- Logger factory -----------------------------------------------------
 
+	// Returns a logger for the specified type T.
+	// Resolves from cache or creates a new one if it doesn't exist. 
 	template <typename T>
 	Logger& GetLogger()
 	{
@@ -80,6 +82,8 @@ public:
 	}
 
 private:
+	// Helper to clean up type names for logger categories. 
+	// Strips common compiler-specific prefixes and decorations.
 	static std::string CleanTypeName(const char* name)
 	{
 		std::string result(name);
