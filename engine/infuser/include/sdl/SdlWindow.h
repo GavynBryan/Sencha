@@ -1,0 +1,46 @@
+#pragma once
+
+#include <service/IService.h>
+#include <logging/Logger.h>
+#include <window/IWindow.h>
+#include <window/WindowCreateInfo.h>
+#include <vulkan/IVulkanSurfaceProvider.h>
+
+struct SDL_Window;
+
+class SdlWindow : public IWindow, public IVulkanSurfaceProvider, public IService
+{
+public:
+    SdlWindow(Logger& logger, const WindowCreateInfo& createInfo);
+    ~SdlWindow() override;
+
+    SdlWindow(const SdlWindow&) = delete;
+    SdlWindow& operator=(const SdlWindow&) = delete;
+    SdlWindow(SdlWindow&&) = delete;
+    SdlWindow& operator=(SdlWindow&&) = delete;
+
+    [[nodiscard]] bool IsValid() const override;
+    void Close() override;
+
+    [[nodiscard]] std::string GetTitle() const override;
+    void SetTitle(std::string_view title) override;
+
+    [[nodiscard]] WindowExtent GetExtent() const override;
+    void SetSize(uint32_t width, uint32_t height) override;
+
+    [[nodiscard]] bool IsResizable() const override;
+    void SetResizable(bool resizable) override;
+
+    [[nodiscard]] WindowMode GetMode() const override;
+    void SetMode(WindowMode mode) override;
+
+    void Show() override;
+    void Hide() override;
+
+    [[nodiscard]] std::vector<const char*> GetRequiredInstanceExtensions() const override;
+    [[nodiscard]] VkSurfaceKHR CreateSurface(VkInstance instance) const override;
+
+private:
+    Logger& Log;
+    SDL_Window* Window = nullptr;
+};
