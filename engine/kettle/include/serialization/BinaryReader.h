@@ -27,6 +27,9 @@ public:
     [[nodiscard]]
     bool ReadBytes(char* buffer, std::streamsize count);
 
+    // Direct stream access for seekable operations (e.g. chunk skipping).
+    std::istream& GetStream() { return Stream; }
+
 private:
     std::istream& Stream;
 };

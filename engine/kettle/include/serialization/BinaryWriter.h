@@ -1,3 +1,5 @@
+#pragma once
+
 #include <ostream>
 #include <type_traits>
 
@@ -24,6 +26,9 @@ public:
 
     [[nodiscard]]
     bool WriteBytes(const char* buffer, std::streamsize count);
+
+    // Direct stream access for seekable operations (e.g. chunk size patching).
+    std::ostream& GetStream() { return Stream; }
 
 private:
     std::ostream& Stream;
