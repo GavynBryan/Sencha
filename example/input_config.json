@@ -1,0 +1,14 @@
+{
+	"actions": [
+		{ "name": "Jump" },
+		{ "name": "MoveLeft" },
+		{ "name": "Shoot" },
+		{ "name": "Quit" }
+	],
+	"bindings": [
+		{ "action": "Jump",     "device": "Keyboard", "control": "Space",  "trigger": "Pressed" },
+		{ "action": "MoveLeft", "device": "Keyboard", "control": "A",      "trigger": "Held" },
+		{ "action": "Shoot",    "device": "Mouse",    "control": "Left",   "trigger": "Pressed" },
+		{ "action": "Quit",     "device": "Keyboard", "control": "Escape", "trigger": "Pressed" }
+	]
+}
