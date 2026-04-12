@@ -1,0 +1,40 @@
+{
+	"actions": [
+		{ "name": "Jump" },
+		{ "name": "Pause" },
+		{ "name": "MoveLeft" },
+		{ "name": "MoveRight" },
+		{ "name": "Shoot" },
+		{ "name": "Aim" },
+		{ "name": "Reload" },
+		{ "name": "Interact" },
+		{ "name": "ScrollUp" },
+		{ "name": "ScrollDown" }
+	],
+	"bindings": [
+		{ "action": "Jump",       "device": "Keyboard", "control": "Space",     "trigger": "Pressed" },
+		{ "action": "Pause",      "device": "Keyboard", "control": "Escape",    "trigger": "Pressed" },
+		{ "action": "MoveLeft",   "device": "Keyboard", "control": "A",         "trigger": "Held" },
+		{ "action": "MoveRight",  "device": "Keyboard", "control": "D",         "trigger": "Held" },
+		{ "action": "Interact",   "device": "Keyboard", "control": "E",         "trigger": "Pressed" },
+		{ "action": "Reload",     "device": "Keyboard", "control": "R",         "trigger": "Pressed" },
+		{ "action": "Shoot",      "device": "Mouse",    "control": "Left",      "trigger": "Pressed" },
+		{ "action": "Aim",        "device": "Mouse",    "control": "Right",     "trigger": "Held" },
+		{ "action": "ScrollUp",   "device": "Mouse",    "control": "WheelUp",   "trigger": "Pressed" },
+		{ "action": "ScrollDown", "device": "Mouse",    "control": "WheelDown", "trigger": "Pressed" }
+	],
+	"contexts": [
+		{
+			"name": "Gameplay",
+			"actions": ["Jump", "MoveLeft", "MoveRight", "Shoot", "Aim", "Reload", "Interact"]
+		},
+		{
+			"name": "UI",
+			"actions": ["ScrollUp", "ScrollDown", "Interact"]
+		},
+		{
+			"name": "Paused",
+			"actions": ["Pause"]
+		}
+	]
+}
