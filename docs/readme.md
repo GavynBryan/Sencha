@@ -1,88 +1,146 @@
 # Sencha
 
-Sencha is a game engine built on the marriage of Entity-Component-System architecture and service-oriented design. Rather than choosing one paradigm or the other, Sencha treats **systems** and **services** as first-class, composable building blocks—and it makes every connection between them visible to you.
+Sencha is a C++20 game engine project built around explicit systems, explicit services, and a small set of engine layers that can be used independently.
+
+It is not trying to hide the machinery. Services are registered by hand, systems receive what they need through visible construction paths, and backend implementation code stays behind opt-in interfaces. If a piece of code depends on something, the goal is that you can trace the relationship directly.
 
 Sencha is best enjoyed without added sweeteners.
 
-## Design Philosophy
+## Current Status
 
-Sencha is built around one conviction: **you should always know what's going on under the hood.**
+Sencha is early and actively changing. The repository currently contains:
 
-Every dependency is explicit. Services are registered by hand, systems declare exactly which services they need through constructor injection, and nothing is resolved behind the scenes by a hidden runtime. Even if you never write low-level engine code yourself, you are the one orchestrating it—wiring services into hosts, choosing which systems process them, and deciding the order they run in.
+- Core service and system hosting.
+- Logging with console and file sinks.
+- RAII lifetime handles for attach/detach ownership patterns.
+- Dense batch containers for referenced and owned data.
+- Event buffers.
+- A lightweight JSON DOM and parser for load-time config.
+- Binary serialization helpers.
+- An input mapping pipeline that compiles JSON config into runtime binding tables.
+- Basic math, identity, and window abstraction types.
+- SDL3-backed window, video, and input ingestion services.
+- Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frame flow.
+- GoogleTest coverage for the core Kettle features.
+- Small examples for input mapping and SDL/Vulkan window startup.
 
-There is no magic. If a system touches a service, you can trace that relationship back to the line of code where you set it up.
+The engine is still more framework than finished product. APIs may move while the foundation settles.
 
-## Architecture at a Glance
+## Architecture
 
-### Systems & Services
+Sencha is organized into three engine layers:
 
-A **service** is a container of data or state (e.g. a collection of renderables, a render context manager). A **system** is a unit of logic that processes one or more services each frame.
-
-The relationship between systems and services is many-to-many:
-
-- A single system can consume multiple services.
-- A single service can be processed by multiple systems.
-
-This flexibility opens the door to unconventional (sometimes surreal) game design.
-
-### No Privileged World
-
-Most engines funnel everything through a single "world" or "scene" object that owns all entities and dictates what gets updated and rendered. Sencha has no such gatekeeper.
-
-Any container of objects can have its own service and its own system to process it. A particle field, a UI layer, a debug overlay, a data-driven cutscene—none of these need to be actors in a world to participate in the frame. They register into a service, a system picks them up, and they render, collide, or behave alongside actors through the exact same mechanisms.
-
-This means the boundary between "engine object" and "game object" is yours to draw, not the engine's. If something should exist, give it a service. If something should happen to it, give it a system. That's it.
-
-## Engine Layers
-
-The engine is organized into three layers, each with a strict downward-only dependency rule: **no layer depends on any layer above it.**
-
+```text
+Infuser  - Concrete backend implementations, currently SDL3 and Vulkan pieces.
+Teapot   - Mid-level engine abstractions such as math, identity, and window types.
+Kettle   - Bootstrap infrastructure: services, systems, logging, input, data, and utilities.
 ```
-┌─────────────────────────────────────┐
-│              Infuser                │  ← Implementation layer
-├─────────────────────────────────────┤
-│               Teapot                │  ← Mid-level abstractions
-├─────────────────────────────────────┤
-│              Kettle                 │  ← Bootstrap / Ring 0
-└─────────────────────────────────────┘
+
+Dependencies flow downward only:
+
+```text
+Infuser -> Teapot -> Kettle
 ```
+
+Higher layers may use lower layers. Lower layers should not know that higher layers exist.
 
 ### Kettle
 
-Kettle is the foundation of the engine—ring 0. It provides the bootstrapping infrastructure that everything else is built on:
+Kettle is the foundation layer. It contains:
 
-- **Logging** — `LoggingProvider`, `Logger`, log sinks (`ConsoleLogSink`, `FileLogSink`), and log levels.
-- **Service hosting** — `ServiceHost`, `IService`, and `ServiceProvider`.
-- **System hosting** — `SystemHost` and `ISystem`.
-- **RAII lifetime** — `LifetimeHandle<TokenT>` and `ILifetimeOwner`. A single, type-safe RAII primitive that pairs an owner with a typed token. Construction calls `Attach`; destruction calls `Detach`. No `void*` is ever visible in the public API.
-- **Batch containers**
-  - `RefBatch<T>` — stores *pointers* to externally-owned objects. O(1) add/remove via swap-and-pop. Used with `RefBatchHandle<T>` (an alias for `LifetimeHandle<T*>`).
-  - `DataBatch<T>` — *owns* a contiguous `vector<T>` for cache-friendly, Data-Oriented Design iteration. Items are created via `Emplace()`, which returns a `LifetimeHandle<DataBatchKey>`. Swap-and-pop removal keeps the data dense.
+- `ServiceHost`, `ServiceProvider`, and `IService` for explicit service registration and lookup.
+- `SystemHost` and `ISystem` for ordered system execution.
+- `LoggingProvider`, `Logger`, `ConsoleLogSink`, `FileLogSink`, and `LogLevel`.
+- `LifetimeHandle<TokenT>` and `ILifetimeOwner` for typed RAII attach/detach lifetimes.
+- `RefBatch<T>` for tracking externally-owned objects with O(1) swap-and-pop removal.
+- `DataBatch<T>` for owning dense, cache-friendly vectors of data.
+- `EventBuffer<T>` for frame-local event accumulation.
+- `JsonParser` and `JsonValue` for load-time configuration.
+- `BinaryReader`, `BinaryWriter`, and serialization helper functions.
+- The input action, binding, queue, state, raw buffer, and mapping types.
 
-Kettle is purely structural. It defines interfaces and hosts but contains no concrete game logic. An application built with nothing but Kettle will still compile and run.
+Kettle is intentionally structural. It gives applications a small set of primitives, then gets out of the way.
 
 ### Teapot
 
-Teapot includes lower-level abstractions and data structures that most games will need, but doesn't assume a specific backend or game design.
-
-Teapot answers the question *"what does a game need?"* without answering *"how does your game work?"*
+Teapot contains backend-agnostic game-facing abstractions. At the moment, that includes math vectors, identity helpers, and window interface types. It answers "what shape does this concept have?" without choosing SDL, Vulkan, or any other implementation.
 
 ### Infuser
 
-*(Planned)* Infuser is the opinionated implementation layer. It supplies concrete rendering backends, component definitions, and other defaults that make it fast to get a game running. Everything in Infuser is opt-in—if you don't want the engine's assumptions, leave this layer out entirely and build on Teapot or Kettle directly.
+Infuser contains concrete integrations. Current implementations include:
 
-## Building
+- SDL3 video and window services.
+- SDL3 input ingestion and control resolution.
+- Vulkan instance, physical device, logical device, queue, surface, swapchain, and frame services.
 
-Sencha uses **CMake** (≥ 3.20) and targets **C++20**.
+Infuser is opt-in in spirit: applications can build against the lower layers directly when they want their own backends.
 
-```bash
+## Repository Layout
+
+```text
+app/       Minimal application target.
+docs/      Project notes and secondary documentation.
+engine/    Engine source split into kettle, teapot, and infuser.
+example/   Small executable examples.
+test/      GoogleTest-based engine tests.
+```
+
+## Requirements
+
+- CMake 3.20 or newer.
+- A C++20 compiler.
+- SDL3 with a CMake package available to `find_package(SDL3 REQUIRED CONFIG)`.
+- Vulkan SDK when `SENCHA_ENABLE_VULKAN` is enabled.
+- Git and network access on first configure so CMake can fetch GoogleTest.
+
+Vulkan support is enabled by default. Disable it if you only want the non-Vulkan engine and input examples.
+
+## Build
+
+Configure and build:
+
+```powershell
 cmake -S . -B build
 cmake --build build
 ```
 
-Tests are built automatically and can be run via CTest:
+Configure without Vulkan:
 
-```bash
-cd build
-ctest --output-on-failure
+```powershell
+cmake -S . -B build -DSENCHA_ENABLE_VULKAN=OFF
+cmake --build build
 ```
+
+Run tests:
+
+```powershell
+ctest --test-dir build --output-on-failure
+```
+
+## Examples
+
+After building, the example executables are placed under the CMake build tree.
+
+Input mapping example:
+
+```powershell
+.\build\example\SenchaInputSystem\SenchaInputSystem.exe
+```
+
+SDL/Vulkan window example, when Vulkan is enabled:
+
+```powershell
+.\build\example\SdlVulkanWindow\SdlVulkanWindow.exe
+```
+
+## Design Notes
+
+Sencha favors visible wiring over hidden runtime behavior:
+
+- Services are ordinary objects owned by a host.
+- Systems declare dependencies through construction.
+- Logging categories are tied to requesting types.
+- Load-time formats compile into runtime tables before hot-path use.
+- Backends live behind interfaces instead of leaking upward through the whole engine.
+
+That makes the code a little more explicit at setup time, but it keeps ownership, dependency direction, and update order easy to inspect.
