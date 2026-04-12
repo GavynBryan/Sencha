@@ -104,6 +104,23 @@ TEST(Transform2, PointVsVectorTransformBehavior)
 	ExpectVecNear(t.TransformVector(Vec2(1.0f, 0.0f)), Vec2(0.0f, 2.0f));
 }
 
+TEST(Transform2, DirectionHelpersUseRotationOnly)
+{
+	Transform2f t(Vec2(10.0f, 20.0f), Pi / 2.0f, Vec2(5.0f, 7.0f));
+
+	ExpectVecNear(t.Forward(), Vec2(-1.0f, 0.0f));
+	ExpectVecNear(t.Right(), Vec2(0.0f, 1.0f));
+}
+
+TEST(Transform2, DirectionHelpersMatchMatrixRotation)
+{
+	Transform2f t(Vec2(10.0f, 20.0f), Pi / 2.0f, Vec2(5.0f, 7.0f));
+	Mat3 rotation = Mat3::MakeRotationZ(t.Rotation);
+
+	ExpectVecNear(t.Forward(), TransformVector(rotation, Vec2::Up()));
+	ExpectVecNear(t.Right(), TransformVector(rotation, Vec2::Right()));
+}
+
 TEST(Transform2, ToMat3MatchesHelpers)
 {
 	Transform2f t(Vec2(3.0f, -2.0f), Pi / 2.0f, Vec2(2.0f, 3.0f));
@@ -208,6 +225,35 @@ TEST(Transform3, PointVsVectorTransformBehavior)
 	ExpectVecNear(t.TransformVector(Vec3(1.0f, 0.0f, 0.0f)), Vec3(0.0f, 2.0f, 0.0f));
 }
 
+TEST(Transform3, DirectionHelpersUseRotationOnly)
+{
+	Transform3f t(
+		Vec3(10.0f, 20.0f, 30.0f),
+		Quatf::FromAxisAngle(Vec3(0.0f, 0.0f, 1.0f), Pi / 2.0f),
+		Vec3(5.0f, 7.0f, 9.0f));
+
+	ExpectVecNear(t.Forward(), Vec3(0.0f, 0.0f, -1.0f));
+	ExpectVecNear(t.Right(), Vec3(0.0f, 1.0f, 0.0f));
+	ExpectVecNear(t.Up(), Vec3(-1.0f, 0.0f, 0.0f));
+}
+
+TEST(Transform3, DirectionHelpersMatchQuaternionAndMatrixRotation)
+{
+	Transform3f t(
+		Vec3(10.0f, 20.0f, 30.0f),
+		Quatf::FromAxisAngle(Vec3(0.0f, 1.0f, 0.0f), Pi / 2.0f),
+		Vec3(5.0f, 7.0f, 9.0f));
+	Mat3 rotation = t.Rotation.ToMat3();
+
+	ExpectVecNear(t.Forward(), t.Rotation.RotateVector(Vec3::Forward()));
+	ExpectVecNear(t.Right(), t.Rotation.RotateVector(Vec3::Right()));
+	ExpectVecNear(t.Up(), t.Rotation.RotateVector(Vec3::Up()));
+
+	ExpectVecNear(t.Forward(), rotation * Vec3::Forward());
+	ExpectVecNear(t.Right(), rotation * Vec3::Right());
+	ExpectVecNear(t.Up(), rotation * Vec3::Up());
+}
+
 TEST(Transform3, ToMat4MatchesHelpers)
 {
 	Transform3f t(
@@ -249,4 +295,3 @@ TEST(Transform3, CompositionAppliesRightThenLeft)
 	ExpectVecNear(composed.TransformPoint(point), a.TransformPoint(b.TransformPoint(point)));
 	EXPECT_TRUE(composed.ToMat4().NearlyEquals(a.ToMat4() * b.ToMat4()));
 }
-

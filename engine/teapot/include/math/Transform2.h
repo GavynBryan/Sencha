@@ -14,6 +14,7 @@
 //
 // Conventions:
 //   - Rotation is radians around the positive Z axis.
+//   - Local Forward is +Y in the XY plane; local Right is +X.
 //   - Points and vectors are transformed as Translation * Rotation * Scale.
 //   - A * B means "apply B first, then A", matching Mat and Quat composition.
 //   - ToMat3() emits a row-major Mat compatible with Mat * Vec.
@@ -85,6 +86,18 @@ struct Transform2
 		);
 	}
 
+	Vec<2, T> Forward() const
+		requires std::floating_point<T>
+	{
+		return RotateDirection(Vec<2, T>::Up());
+	}
+
+	Vec<2, T> Right() const
+		requires std::floating_point<T>
+	{
+		return RotateDirection(Vec<2, T>::Right());
+	}
+
 	Mat<3, 3, T> ToMat3() const
 		requires std::floating_point<T>
 	{
@@ -126,6 +139,17 @@ struct Transform2
 	}
 
 private:
+	Vec<2, T> RotateDirection(const Vec<2, T>& direction) const
+		requires std::floating_point<T>
+	{
+		T c = std::cos(Rotation);
+		T s = std::sin(Rotation);
+		return Vec<2, T>(
+			c * direction.Data[0] - s * direction.Data[1],
+			s * direction.Data[0] + c * direction.Data[1]
+		);
+	}
+
 	static constexpr Vec<2, T> ComponentScale(const Vec<2, T>& a, const Vec<2, T>& b)
 	{
 		return Vec<2, T>(a.Data[0] * b.Data[0], a.Data[1] * b.Data[1]);

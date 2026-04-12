@@ -14,6 +14,7 @@
 // 3D translation, quaternion rotation, and scale for Sencha's column-vector math.
 //
 // Conventions:
+//   - Local Forward is -Z, local Right is +X, and local Up is +Y.
 //   - Points and vectors are transformed as Translation * Rotation * Scale.
 //   - A * B means "apply B first, then A", matching Mat and Quat composition.
 //   - ToMat4() emits a row-major Mat compatible with Mat * Vec.
@@ -77,6 +78,24 @@ struct Transform3
 		requires std::floating_point<T>
 	{
 		return Rotation.RotateVector(ComponentScale(vector, Scale));
+	}
+
+	Vec<3, T> Forward() const
+		requires std::floating_point<T>
+	{
+		return Rotation.RotateVector(Vec<3, T>::Forward());
+	}
+
+	Vec<3, T> Right() const
+		requires std::floating_point<T>
+	{
+		return Rotation.RotateVector(Vec<3, T>::Right());
+	}
+
+	Vec<3, T> Up() const
+		requires std::floating_point<T>
+	{
+		return Rotation.RotateVector(Vec<3, T>::Up());
 	}
 
 	Mat<3, 3, T> ToMat3() const

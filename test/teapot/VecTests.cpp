@@ -34,6 +34,32 @@ TEST(Vec, OneFactory)
 		EXPECT_FLOAT_EQ(v[i], 1.0f);
 }
 
+// --- Direction Factories ---
+
+TEST(Vec, DirectionFactories2D)
+{
+	EXPECT_EQ(Vec2::Right(), Vec2(1.0f, 0.0f));
+	EXPECT_EQ(Vec2::Left(), Vec2(-1.0f, 0.0f));
+	EXPECT_EQ(Vec2::Up(), Vec2(0.0f, 1.0f));
+	EXPECT_EQ(Vec2::Down(), Vec2(0.0f, -1.0f));
+}
+
+TEST(Vec, DirectionFactories3D)
+{
+	EXPECT_EQ(Vec3::Forward(), Vec3(0.0f, 0.0f, -1.0f));
+	EXPECT_EQ(Vec3::Backward(), Vec3(0.0f, 0.0f, 1.0f));
+	EXPECT_EQ(Vec3::Right(), Vec3(1.0f, 0.0f, 0.0f));
+	EXPECT_EQ(Vec3::Left(), Vec3(-1.0f, 0.0f, 0.0f));
+	EXPECT_EQ(Vec3::Up(), Vec3(0.0f, 1.0f, 0.0f));
+	EXPECT_EQ(Vec3::Down(), Vec3(0.0f, -1.0f, 0.0f));
+}
+
+TEST(Vec, DirectionConventionIsRightHanded)
+{
+	EXPECT_EQ(Vec3::Right().Cross(Vec3::Up()), Vec3::Backward());
+	EXPECT_EQ(Vec3::Up().Cross(Vec3::Forward()), Vec3::Left());
+}
+
 // --- Named Accessors ---
 
 TEST(Vec, NamedAccessors2D)
@@ -326,11 +352,15 @@ TEST(Vec, ConstexprOperations)
 	constexpr float dot = a.Dot(b);
 	constexpr Vec3 zero = Vec3::Zero();
 	constexpr Vec3 one  = Vec3::One();
+	constexpr Vec3 forward = Vec3::Forward();
+	constexpr Vec2 right = Vec2::Right();
 
 	EXPECT_FLOAT_EQ(sum.X(), 5.0f);
 	EXPECT_FLOAT_EQ(dot, 32.0f);
 	EXPECT_FLOAT_EQ(zero.X(), 0.0f);
 	EXPECT_FLOAT_EQ(one.X(), 1.0f);
+	EXPECT_FLOAT_EQ(forward.Z(), -1.0f);
+	EXPECT_FLOAT_EQ(right.X(), 1.0f);
 }
 
 // --- Stream Output ---
