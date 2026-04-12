@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <window/IWindow.h>
 #include <window/WindowCreateInfo.h>
 
@@ -11,7 +11,7 @@ class SdlVideoService;
 class SdlWindow : public IWindow, public IService
 {
 public:
-    SdlWindow(Logger& logger, SdlVideoService& video, const WindowCreateInfo& createInfo);
+    SdlWindow(LoggingProvider& logging, SdlVideoService& video, const WindowCreateInfo& createInfo);
     ~SdlWindow() override;
 
     SdlWindow(const SdlWindow&) = delete;

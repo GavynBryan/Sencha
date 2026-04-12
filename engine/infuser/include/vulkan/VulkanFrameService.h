@@ -1,6 +1,6 @@
 #pragma once
 
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <service/IService.h>
 #include <vulkan/vulkan.h>
 
@@ -34,7 +34,7 @@ struct VulkanFrame
 class VulkanFrameService : public IService
 {
 public:
-    VulkanFrameService(Logger& logger,
+    VulkanFrameService(LoggingProvider& logging,
                        VulkanDeviceService& device,
                        VulkanQueueService& queues,
                        VulkanSwapchainService& swapchain,

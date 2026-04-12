@@ -30,6 +30,11 @@ public:
 class AlphaSystem {};
 class BetaSystem {};
 
+namespace
+{
+	class AnonymousLocalSystem {};
+}
+
 // --- LoggingProvider tests ---
 
 TEST(LoggingProvider, GetLoggerReturnsSameInstanceForSameType)
@@ -59,6 +64,15 @@ TEST(LoggingProvider, LoggerCategoryContainsTypeName)
 
 	auto& logger = provider.GetLogger<AlphaSystem>();
 	EXPECT_NE(logger.GetCategory().find("AlphaSystem"), std::string::npos);
+}
+
+TEST(LoggingProvider, LoggerCategoryStripsAnonymousNamespace)
+{
+	LoggingProvider provider;
+	provider.AddSink<TestLogSink>();
+
+	auto& logger = provider.GetLogger<AnonymousLocalSystem>();
+	EXPECT_EQ(logger.GetCategory(), "AnonymousLocalSystem");
 }
 
 TEST(LoggingProvider, LoggerWritesToSink)

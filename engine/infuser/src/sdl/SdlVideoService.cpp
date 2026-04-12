@@ -2,8 +2,8 @@
 
 #include <SDL3/SDL.h>
 
-SdlVideoService::SdlVideoService(Logger& logger)
-    : Log(logger)
+SdlVideoService::SdlVideoService(LoggingProvider& logging)
+    : Log(logging.GetLogger<SdlVideoService>())
 {
     if (SDL_WasInit(SDL_INIT_VIDEO) != 0)
     {

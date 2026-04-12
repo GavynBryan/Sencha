@@ -1,6 +1,6 @@
 #pragma once
 
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <service/IService.h>
 #include <window/WindowTypes.h>
 
@@ -27,7 +27,7 @@ public:
         WindowExtent Extent;
     };
 
-    SdlWindowService(Logger& logger, SdlVideoService& video);
+    SdlWindowService(LoggingProvider& logging, SdlVideoService& video);
     ~SdlWindowService() override;
 
     SdlWindowService(const SdlWindowService&) = delete;
@@ -68,6 +68,7 @@ private:
     void RefreshState(WindowRecord& record);
 
     Logger& Log;
+    LoggingProvider& Logging;
     SdlVideoService& Video;
     std::vector<WindowRecord> Windows;
     WindowId PrimaryWindowId = 0;

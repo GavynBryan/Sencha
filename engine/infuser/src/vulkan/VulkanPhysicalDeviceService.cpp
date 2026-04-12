@@ -37,11 +37,11 @@ namespace
 }
 
 VulkanPhysicalDeviceService::VulkanPhysicalDeviceService(
-    Logger& logger,
+    LoggingProvider& logging,
     VulkanInstanceService& instance,
     const VulkanBootstrapPolicy& policy,
     const VulkanSurfaceService* surface)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanPhysicalDeviceService>())
     , Instance(instance.GetInstance())
     , Surface(surface)
 {

@@ -3,12 +3,21 @@
 #include <logging/Logger.h>
 #include <logging/ILogSink.h>
 #include <logging/LogLevel.h>
+#include <cstdlib>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <typeindex>
 #include <typeinfo>
 #include <unordered_map>
 #include <vector>
+
+#if defined(__has_include)
+#if __has_include(<cxxabi.h>)
+#define SENCHA_HAS_CXA_DEMANGLE 1
+#include <cxxabi.h>
+#endif
+#endif
 
 //=============================================================================
 // LoggingProvider
@@ -82,22 +91,121 @@ public:
 	}
 
 private:
-	// Helper to clean up type names for logger categories. 
-	// Strips common compiler-specific prefixes and decorations.
+	// Helper to clean up type names for logger categories.
+	// Strips common compiler-specific prefixes and anonymous namespace noise.
 	static std::string CleanTypeName(const char* name)
 	{
-		std::string result(name);
-		// MSVC decorates names with "class " / "struct " prefixes
-		if (result.starts_with("class "))       result = result.substr(6);
-		else if (result.starts_with("struct "))  result = result.substr(7);
-		// GCC/MinGW mangles names with a leading length prefix (e.g. "4Game")
-		// Strip leading digits to recover the clean name.
+		std::string result = DemangleTypeName(name);
+		StripTypePrefix(result);
+		StripAnonymousNamespaceQualifier(result);
+
+		if (auto component = TryGetLastItaniumComponent(result); !component.empty())
+		{
+			result = component;
+		}
+
+		// GCC/MinGW can expose simple names with a leading length prefix
+		// (e.g. "4Game") when demangling is unavailable.
 		size_t start = 0;
 		while (start < result.size() && result[start] >= '0' && result[start] <= '9')
+		{
 			++start;
+		}
 		if (start > 0 && start < result.size())
+		{
 			result = result.substr(start);
+		}
 		return result;
+	}
+
+	static std::string DemangleTypeName(const char* name)
+	{
+#if defined(SENCHA_HAS_CXA_DEMANGLE)
+		int status = 0;
+		char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
+		if (status == 0 && demangled)
+		{
+			std::string result(demangled);
+			std::free(demangled);
+			return result;
+		}
+
+		std::free(demangled);
+#endif
+		return std::string(name);
+	}
+
+	static void StripTypePrefix(std::string& name)
+	{
+		static constexpr std::string_view Prefixes[] = {
+			"class ",
+			"struct ",
+			"enum ",
+			"union ",
+		};
+
+		for (auto prefix : Prefixes)
+		{
+			if (name.starts_with(prefix))
+			{
+				name = name.substr(prefix.size());
+				return;
+			}
+		}
+	}
+
+	static void StripAnonymousNamespaceQualifier(std::string& name)
+	{
+		static constexpr std::string_view Qualifiers[] = {
+			"(anonymous namespace)::",
+			"`anonymous namespace'::",
+			"{anonymous}::",
+		};
+
+		for (auto qualifier : Qualifiers)
+		{
+			size_t pos = 0;
+			while ((pos = name.find(qualifier, pos)) != std::string::npos)
+			{
+				name.erase(pos, qualifier.size());
+			}
+		}
+	}
+
+	static std::string TryGetLastItaniumComponent(std::string_view name)
+	{
+		if (name.size() < 3 || name.front() != 'N' || name.back() != 'E')
+		{
+			return {};
+		}
+
+		std::string_view lastComponent;
+		size_t pos = 1;
+		const size_t end = name.size() - 1;
+		while (pos < end)
+		{
+			if (name[pos] < '0' || name[pos] > '9')
+			{
+				return {};
+			}
+
+			size_t length = 0;
+			while (pos < end && name[pos] >= '0' && name[pos] <= '9')
+			{
+				length = length * 10 + static_cast<size_t>(name[pos] - '0');
+				++pos;
+			}
+
+			if (length == 0 || pos + length > end)
+			{
+				return {};
+			}
+
+			lastComponent = name.substr(pos, length);
+			pos += length;
+		}
+
+		return std::string(lastComponent);
 	}
 
 	std::vector<std::unique_ptr<ILogSink>> OwnedSinks;

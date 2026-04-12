@@ -1,6 +1,6 @@
 #pragma once
 
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <service/IService.h>
 #include <window/WindowTypes.h>
 #include <vulkan/vulkan.h>
@@ -16,7 +16,7 @@ class VulkanSurfaceService;
 class VulkanSwapchainService : public IService
 {
 public:
-    VulkanSwapchainService(Logger& logger,
+    VulkanSwapchainService(LoggingProvider& logging,
                            VulkanDeviceService& device,
                            VulkanPhysicalDeviceService& physicalDevice,
                            VulkanSurfaceService& surface,

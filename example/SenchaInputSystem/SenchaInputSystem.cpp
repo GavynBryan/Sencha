@@ -175,13 +175,13 @@ int main()
 	windowInfo.Resizable = false;
 	windowInfo.Visible = true;
 
-	SdlVideoService video(logger);
+	SdlVideoService video(logging);
 	if (!video.IsValid())
 	{
 		return 1;
 	}
 
-	SdlWindowService windows(logger, video);
+	SdlWindowService windows(logging, video);
 	if (!windows.CreateWindow(windowInfo))
 	{
 		return 1;
@@ -199,11 +199,11 @@ int main()
 	SystemHost systems;
 	systems.AddSystem<SdlInputIngestSystem>(
 		0,
-		logger,
+		logging,
 		rawInput);
 	systems.AddSystem<InputMappingSystem>(
 		1,
-		logger,
+		logging,
 		rawInput,
 		bindings,
 		actionEvents,

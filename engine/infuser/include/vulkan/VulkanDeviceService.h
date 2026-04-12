@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -17,7 +17,7 @@ class VulkanPhysicalDeviceService;
 class VulkanDeviceService : public IService
 {
 public:
-    VulkanDeviceService(Logger& logger,
+    VulkanDeviceService(LoggingProvider& logging,
                         VulkanPhysicalDeviceService& physicalDevice,
                         const VulkanBootstrapPolicy& policy);
     ~VulkanDeviceService() override;

@@ -40,8 +40,8 @@ namespace
     }
 }
 
-SdlWindow::SdlWindow(Logger& logger, SdlVideoService& video, const WindowCreateInfo& createInfo)
-    : Log(logger)
+SdlWindow::SdlWindow(LoggingProvider& logging, SdlVideoService& video, const WindowCreateInfo& createInfo)
+    : Log(logging.GetLogger<SdlWindow>())
 {
     if (!video.IsValid())
     {

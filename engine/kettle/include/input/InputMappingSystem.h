@@ -2,7 +2,7 @@
 
 #include <system/ISystem.h>
 #include <input/InputTypes.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vector>
 
 class RawInputBufferService;
@@ -30,7 +30,7 @@ class InputMappingSystem : public ISystem
 {
 public:
 	InputMappingSystem(
-		Logger& logger,
+		LoggingProvider& logging,
 		RawInputBufferService& rawInput,
 		InputBindingService& bindings,
 		InputEventQueueService& actionQueue,

@@ -155,13 +155,13 @@ int main()
     windowInfo.Resizable = true;
     windowInfo.Visible = true;
 
-    SdlVideoService video(logger);
+    SdlVideoService video(logging);
     if (!video.IsValid())
     {
         return 1;
     }
 
-    SdlWindowService windows(logger, video);
+    SdlWindowService windows(logging, video);
     SdlWindow* window = windows.CreateWindow(windowInfo);
     if (!window)
     {
@@ -181,43 +181,43 @@ int main()
         platformExtensions.begin(),
         platformExtensions.end());
 
-    VulkanInstanceService instance(logger, vulkanPolicy);
+    VulkanInstanceService instance(logging, vulkanPolicy);
     if (!instance.IsValid())
     {
         return 1;
     }
 
-    VulkanSurfaceService surface(logger, instance, *window);
+    VulkanSurfaceService surface(logging, instance, *window);
     if (!surface.IsValid())
     {
         return 1;
     }
 
-    VulkanPhysicalDeviceService physicalDevice(logger, instance, vulkanPolicy, &surface);
+    VulkanPhysicalDeviceService physicalDevice(logging, instance, vulkanPolicy, &surface);
     if (!physicalDevice.IsValid())
     {
         return 1;
     }
 
-    VulkanDeviceService device(logger, physicalDevice, vulkanPolicy);
+    VulkanDeviceService device(logging, physicalDevice, vulkanPolicy);
     if (!device.IsValid())
     {
         return 1;
     }
 
-    VulkanQueueService queues(logger, device, physicalDevice, vulkanPolicy);
+    VulkanQueueService queues(logging, device, physicalDevice, vulkanPolicy);
     if (!queues.IsValid())
     {
         return 1;
     }
 
-    VulkanSwapchainService swapchain(logger, device, physicalDevice, surface, queues, window->GetExtent());
+    VulkanSwapchainService swapchain(logging, device, physicalDevice, surface, queues, window->GetExtent());
     if (!swapchain.IsValid())
     {
         return 1;
     }
 
-    VulkanFrameService frames(logger, device, queues, swapchain);
+    VulkanFrameService frames(logging, device, queues, swapchain);
     if (!frames.IsValid())
     {
         return 1;
