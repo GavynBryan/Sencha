@@ -1,15 +1,39 @@
 #include <vulkan/VulkanDeviceService.h>
 #include <vulkan/VulkanInstanceService.h>
-#include <vulkan/IVulkanSurfaceProvider.h>
+#include <sdl/SdlWindow.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <cstring>
 #include <set>
 #include <format>
 
+namespace
+{
+    VkSurfaceKHR CreateSdlWindowSurface(Logger& logger, const SdlWindow& window, VkInstance instance)
+    {
+        if (!window.IsValid())
+        {
+            logger.Error("Failed to create Vulkan surface: window is not valid");
+            return VK_NULL_HANDLE;
+        }
+
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        if (!SDL_Vulkan_CreateSurface(window.GetHandle(), instance, nullptr, &surface))
+        {
+            logger.Error("Failed to create Vulkan surface: {}", SDL_GetError());
+            return VK_NULL_HANDLE;
+        }
+
+        logger.Info("Vulkan surface created");
+        return surface;
+    }
+}
+
 VulkanDeviceService::VulkanDeviceService(Logger& logger,
                                          VulkanInstanceService& instance,
                                          const CreateInfo& info,
-                                         const IVulkanSurfaceProvider* surfaceProvider)
+                                         const SdlWindow* window)
     : Log(logger)
     , Instance(instance.GetInstance())
 {
@@ -19,16 +43,14 @@ VulkanDeviceService::VulkanDeviceService(Logger& logger,
         return;
     }
 
-    if (surfaceProvider)
+    if (window)
     {
-        auto result = surfaceProvider->CreateSurface(Instance);
-        if (!result.Succeeded())
+        Surface = CreateSdlWindowSurface(Log, *window, Instance);
+        if (Surface == VK_NULL_HANDLE)
         {
-            Log.Error("Surface creation failed: {}", result.Error);
+            Log.Error("Surface creation failed");
             return;
         }
-        Surface = result.Surface;
-        Log.Info("Surface created via provider");
     }
 
     if (!PickPhysicalDevice(info))

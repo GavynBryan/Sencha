@@ -1,11 +1,10 @@
 #include <logging/ConsoleLogSink.h>
-#include <sdl/SdlVulkanSurfaceProvider.h>
 #include <sdl/SdlWindow.h>
 #include <service/ServiceHost.h>
+#include <vulkan/VulkanDeviceService.h>
 #include <vulkan/VulkanInstanceService.h>
 
 #include <SDL3/SDL.h>
-#include <vulkan/vulkan.h>
 
 class SdlVulkanWindowExample
 {
@@ -23,6 +22,7 @@ int main()
     windowInfo.Title = "Sencha SDL3 Vulkan Window";
     windowInfo.Width = 1280;
     windowInfo.Height = 720;
+    windowInfo.GraphicsApi = WindowGraphicsApi::Vulkan;
     windowInfo.Resizable = true;
     windowInfo.Visible = true;
 
@@ -32,21 +32,19 @@ int main()
         return 1;
     }
 
-    SdlVulkanSurfaceProvider surfaceProvider(logger, window);
-
     VulkanInstanceService::CreateInfo instanceInfo;
     instanceInfo.AppName = "SdlVulkanWindow";
 
-    VulkanInstanceService instance(logger, instanceInfo, &surfaceProvider);
+    VulkanInstanceService instance(logger, instanceInfo, &window);
     if (!instance.IsValid())
     {
         return 1;
     }
 
-    auto surfaceResult = surfaceProvider.CreateSurface(instance.GetInstance());
-    if (!surfaceResult.Succeeded())
+    VulkanDeviceService::CreateInfo deviceInfo;
+    VulkanDeviceService device(logger, instance, deviceInfo, &window);
+    if (!device.IsValid())
     {
-        logger.Error("Failed to create Vulkan surface: {}", surfaceResult.Error);
         return 1;
     }
 
@@ -67,9 +65,6 @@ int main()
 
         SDL_Delay(16);
     }
-
-    vkDestroySurfaceKHR(instance.GetInstance(), surfaceResult.Surface, nullptr);
-    logger.Info("Vulkan surface destroyed");
 
     return 0;
 }

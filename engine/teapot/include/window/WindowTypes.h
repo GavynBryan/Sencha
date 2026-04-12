@@ -9,6 +9,12 @@ enum class WindowMode : uint8_t
     BorderlessFullscreen
 };
 
+enum class WindowGraphicsApi : uint8_t
+{
+    None,
+    Vulkan
+};
+
 struct WindowExtent
 {
     uint32_t Width  = 0;

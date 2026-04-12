@@ -7,7 +7,16 @@ namespace
 {
     SDL_WindowFlags TranslateFlags(const WindowCreateInfo& info)
     {
-        SDL_WindowFlags flags = SDL_WINDOW_VULKAN;
+        SDL_WindowFlags flags = 0;
+
+        switch (info.GraphicsApi)
+        {
+        case WindowGraphicsApi::Vulkan:
+            flags |= SDL_WINDOW_VULKAN;
+            break;
+        case WindowGraphicsApi::None:
+            break;
+        }
 
         if (info.Resizable)
             flags |= SDL_WINDOW_RESIZABLE;
@@ -159,4 +168,3 @@ void SdlWindow::Hide()
     if (Window)
         SDL_HideWindow(Window);
 }
-
