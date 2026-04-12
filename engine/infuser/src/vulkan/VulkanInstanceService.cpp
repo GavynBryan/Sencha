@@ -24,9 +24,9 @@ namespace
     }
 }
 
-VulkanInstanceService::VulkanInstanceService(Logger& logger,
+VulkanInstanceService::VulkanInstanceService(LoggingProvider& logging,
                                              const VulkanBootstrapPolicy& policy)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanInstanceService>())
 {
     if (policy.EnableValidation && !CheckValidationLayerSupport())
     {

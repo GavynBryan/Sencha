@@ -6,11 +6,11 @@
 #include <string>
 
 VulkanQueueService::VulkanQueueService(
-    Logger& logger,
+    LoggingProvider& logging,
     VulkanDeviceService& device,
     VulkanPhysicalDeviceService& physicalDevice,
     const VulkanBootstrapPolicy& policy)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanQueueService>())
     , QueueFamilies(physicalDevice.GetQueueFamilies())
 {
     if (!device.IsValid())

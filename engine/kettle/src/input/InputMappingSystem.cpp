@@ -6,12 +6,12 @@
 #include <input/InputBindingTable.h>
 
 InputMappingSystem::InputMappingSystem(
-	Logger& logger,
+	LoggingProvider& logging,
 	RawInputBufferService& rawInput,
 	InputBindingService& bindings,
 	InputEventQueueService& actionQueue,
 	InputStateService* stateService)
-	: Log(logger)
+	: Log(logging.GetLogger<InputMappingSystem>())
 	, RawInput(rawInput)
 	, Bindings(bindings)
 	, ActionQueue(actionQueue)

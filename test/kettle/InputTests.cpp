@@ -332,9 +332,8 @@ protected:
 		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
-		auto& logger = Logging.GetLogger<InputMappingSystem>();
 		Systems.AddSystem<InputMappingSystem>(0,
-			logger, RawBuffer, BindingService, ActionQueue, &StateService);
+			Logging, RawBuffer, BindingService, ActionQueue, &StateService);
 		Systems.Init();
 	}
 

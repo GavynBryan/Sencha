@@ -29,8 +29,8 @@ std::optional<uint16_t> ToMouseControlCode(uint8_t button)
 } // anonymous namespace
 
 SdlInputIngestSystem::SdlInputIngestSystem(
-	Logger& logger, RawInputBufferService& rawInput)
-	: Log(logger)
+	LoggingProvider& logging, RawInputBufferService& rawInput)
+	: Log(logging.GetLogger<SdlInputIngestSystem>())
 	, RawInput(rawInput)
 {
 }

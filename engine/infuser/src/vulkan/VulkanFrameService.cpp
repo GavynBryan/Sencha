@@ -8,12 +8,12 @@
 #include <limits>
 
 VulkanFrameService::VulkanFrameService(
-    Logger& logger,
+    LoggingProvider& logging,
     VulkanDeviceService& device,
     VulkanQueueService& queues,
     VulkanSwapchainService& swapchain,
     uint32_t framesInFlight)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanFrameService>())
     , Device(device.GetDevice())
     , Queues(queues)
     , Swapchain(swapchain)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <system/ISystem.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 
 class RawInputBufferService;
 
@@ -22,7 +22,7 @@ class RawInputBufferService;
 class SdlInputIngestSystem : public ISystem
 {
 public:
-	SdlInputIngestSystem(Logger& logger, RawInputBufferService& rawInput);
+	SdlInputIngestSystem(LoggingProvider& logging, RawInputBufferService& rawInput);
 
 private:
 	void Update() override;

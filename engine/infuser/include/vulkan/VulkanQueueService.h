@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/VulkanQueueFamilies.h>
 #include <vulkan/vulkan.h>
@@ -12,7 +12,7 @@ class VulkanPhysicalDeviceService;
 class VulkanQueueService : public IService
 {
 public:
-    VulkanQueueService(Logger& logger,
+    VulkanQueueService(LoggingProvider& logging,
                        VulkanDeviceService& device,
                        VulkanPhysicalDeviceService& physicalDevice,
                        const VulkanBootstrapPolicy& policy);

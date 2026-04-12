@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/VulkanQueueFamilies.h>
 #include <vulkan/vulkan.h>
@@ -14,7 +14,7 @@ class VulkanSurfaceService;
 class VulkanPhysicalDeviceService : public IService
 {
 public:
-    VulkanPhysicalDeviceService(Logger& logger,
+    VulkanPhysicalDeviceService(LoggingProvider& logging,
                                 VulkanInstanceService& instance,
                                 const VulkanBootstrapPolicy& policy,
                                 const VulkanSurfaceService* surface = nullptr);

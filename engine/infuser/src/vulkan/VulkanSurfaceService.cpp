@@ -6,10 +6,10 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
-VulkanSurfaceService::VulkanSurfaceService(Logger& logger,
+VulkanSurfaceService::VulkanSurfaceService(LoggingProvider& logging,
                                            VulkanInstanceService& instance,
                                            const SdlWindow& window)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanSurfaceService>())
     , Instance(instance.GetInstance())
 {
     if (!instance.IsValid())

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/vulkan.h>
 
@@ -12,14 +12,14 @@
 // engine lifetime and destroyed after all other Vulkan services.
 //
 // Construction:
-//   auto& inst = services.AddService<VulkanInstanceService>(logger, info, &window);
+//   auto& inst = services.AddService<VulkanInstanceService>(logging, policy);
 //   if (!inst.IsValid()) { /* handle failure */ }
 //
 //=============================================================================
 class VulkanInstanceService : public IService
 {
 public:
-    VulkanInstanceService(Logger& logger, const VulkanBootstrapPolicy& policy);
+    VulkanInstanceService(LoggingProvider& logging, const VulkanBootstrapPolicy& policy);
     ~VulkanInstanceService() override;
 
     VulkanInstanceService(const VulkanInstanceService&) = delete;

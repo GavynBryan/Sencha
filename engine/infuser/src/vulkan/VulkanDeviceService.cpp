@@ -5,10 +5,10 @@
 #include <set>
 
 VulkanDeviceService::VulkanDeviceService(
-    Logger& logger,
+    LoggingProvider& logging,
     VulkanPhysicalDeviceService& physicalDevice,
     const VulkanBootstrapPolicy& policy)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanDeviceService>())
     , PhysicalDevice(physicalDevice.GetPhysicalDevice())
     , EnabledDeviceExtensions(physicalDevice.GetEnabledDeviceExtensions())
 {

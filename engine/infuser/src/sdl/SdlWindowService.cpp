@@ -7,8 +7,9 @@
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 
-SdlWindowService::SdlWindowService(Logger& logger, SdlVideoService& video)
-    : Log(logger)
+SdlWindowService::SdlWindowService(LoggingProvider& logging, SdlVideoService& video)
+    : Log(logging.GetLogger<SdlWindowService>())
+    , Logging(logging)
     , Video(video)
 {
 }
@@ -17,7 +18,7 @@ SdlWindowService::~SdlWindowService() = default;
 
 SdlWindow* SdlWindowService::CreateWindow(const WindowCreateInfo& createInfo)
 {
-    auto window = std::make_unique<SdlWindow>(Log, Video, createInfo);
+    auto window = std::make_unique<SdlWindow>(Logging, Video, createInfo);
     if (!window->IsValid())
     {
         return nullptr;

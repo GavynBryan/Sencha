@@ -1,7 +1,7 @@
 #pragma once
 
 #include <service/IService.h>
-#include <logging/Logger.h>
+#include <logging/LoggingProvider.h>
 #include <vulkan/vulkan.h>
 
 class SdlWindow;
@@ -10,7 +10,7 @@ class VulkanInstanceService;
 class VulkanSurfaceService : public IService
 {
 public:
-    VulkanSurfaceService(Logger& logger,
+    VulkanSurfaceService(LoggingProvider& logging,
                          VulkanInstanceService& instance,
                          const SdlWindow& window);
     ~VulkanSurfaceService() override;

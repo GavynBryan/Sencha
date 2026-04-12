@@ -9,13 +9,13 @@
 #include <limits>
 
 VulkanSwapchainService::VulkanSwapchainService(
-    Logger& logger,
+    LoggingProvider& logging,
     VulkanDeviceService& device,
     VulkanPhysicalDeviceService& physicalDevice,
     VulkanSurfaceService& surface,
     VulkanQueueService& queues,
     WindowExtent desiredExtent)
-    : Log(logger)
+    : Log(logging.GetLogger<VulkanSwapchainService>())
     , PhysicalDevice(physicalDevice.GetPhysicalDevice())
     , Device(device.GetDevice())
     , Surface(surface.GetSurface())
