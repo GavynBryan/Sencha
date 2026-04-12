@@ -9,48 +9,20 @@ bool PopulateActionNames(
 	InputBindingTable& table,
 	InputCompileError* error)
 {
-	std::unordered_map<std::string_view, InputActionId> actionNames;
+	auto names = actionResolver.GetActionNames();
+	table.ActionCount = actionResolver.GetActionCount();
+	table.ActionNames.resize(table.ActionCount);
 
-	for (const auto& action : actionResolver.GetActions())
+	for (uint16_t i = 0; i < table.ActionCount; ++i)
 	{
-		if (action.Name.empty())
+		if (names[i].empty())
 		{
 			if (error) error->Message = "Action registry contains an empty action name";
 			return false;
 		}
-
-		if (!action.Id)
-		{
-			if (error) error->Message = "Action registry contains invalid action: "
-				+ std::string(action.Name);
-			return false;
-		}
-
-		bool inserted = actionNames.emplace(action.Name, action.Id).second;
-		if (!inserted)
-		{
-			if (error) error->Message = "Duplicate action name in registry: "
-				+ std::string(action.Name);
-			return false;
-		}
-
-		if (table.ActionNames.size() < action.Id.Value)
-		{
-			table.ActionNames.resize(action.Id.Value);
-		}
-
-		auto& name = table.ActionNames[action.Id.Value - 1];
-		if (!name.empty())
-		{
-			if (error) error->Message = "Duplicate action id in registry: "
-				+ std::to_string(action.Id.Value);
-			return false;
-		}
-
-		name = action.Name;
+		table.ActionNames[i] = names[i];
 	}
 
-	table.ActionCount = static_cast<uint8_t>(table.ActionNames.size());
 	return true;
 }
 
@@ -243,8 +215,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 
 		CompiledBinding compiled{
 			*action,
-			InputContextId{},   // default context for first pass
-			InputUserId{},      // default user for first pass
+			InputContextId{},
+			InputUserId{},
 			*trigger
 		};
 
@@ -269,10 +241,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 			static_cast<uint16_t>(table.KeyboardBindings.size());
 		table.KeyboardSlots[control].Count =
 			static_cast<uint16_t>(bindings.size());
-		for (auto& b : bindings)
-		{
-			table.KeyboardBindings.push_back(b);
-		}
+		table.KeyboardBindings.insert(
+			table.KeyboardBindings.end(), bindings.begin(), bindings.end());
 	}
 
 	// Flatten mouse bindings into packed array
@@ -283,10 +253,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 			static_cast<uint16_t>(table.MouseButtonBindings.size());
 		table.MouseButtonSlots[control].Count =
 			static_cast<uint16_t>(bindings.size());
-		for (auto& b : bindings)
-		{
-			table.MouseButtonBindings.push_back(b);
-		}
+		table.MouseButtonBindings.insert(
+			table.MouseButtonBindings.end(), bindings.begin(), bindings.end());
 	}
 
 	return table;

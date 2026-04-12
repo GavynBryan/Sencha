@@ -9,15 +9,10 @@
 // InputActionRegistry
 //
 // Cold-path mapping from authored action names to app-owned, stable
-// InputActionIds. Gameplay should compare InputActionIds directly; names are
-// only for loading, validation, and diagnostics.
+// InputActionIds. IDs are assigned by position in the names array (0-based).
+// Gameplay should compare InputActionIds directly; names are only for
+// loading, validation, and diagnostics.
 //=============================================================================
-
-struct InputActionEntry
-{
-	std::string_view Name;
-	InputActionId Id;
-};
 
 class IInputActionResolver
 {
@@ -27,33 +22,40 @@ public:
 	[[nodiscard]] virtual std::optional<InputActionId> ResolveAction(
 		std::string_view action) const = 0;
 
-	[[nodiscard]] virtual std::span<const InputActionEntry> GetActions() const = 0;
+	[[nodiscard]] virtual std::span<const std::string_view> GetActionNames() const = 0;
+
+	[[nodiscard]] virtual uint16_t GetActionCount() const = 0;
 };
 
 class InputActionRegistry final : public IInputActionResolver
 {
 public:
-	explicit InputActionRegistry(std::span<const InputActionEntry> actions)
-		: Actions(actions)
+	explicit InputActionRegistry(std::span<const std::string_view> names)
+		: Names(names)
 	{
 	}
 
 	[[nodiscard]] std::optional<InputActionId> ResolveAction(
 		std::string_view action) const override
 	{
-		for (const auto& entry : Actions)
+		for (uint16_t i = 0; i < Names.size(); ++i)
 		{
-			if (entry.Name == action) return entry.Id;
+			if (Names[i] == action) return InputActionId{i};
 		}
 
 		return std::nullopt;
 	}
 
-	[[nodiscard]] std::span<const InputActionEntry> GetActions() const override
+	[[nodiscard]] std::span<const std::string_view> GetActionNames() const override
 	{
-		return Actions;
+		return Names;
+	}
+
+	[[nodiscard]] uint16_t GetActionCount() const override
+	{
+		return static_cast<uint16_t>(Names.size());
 	}
 
 private:
-	std::span<const InputActionEntry> Actions;
+	std::span<const std::string_view> Names;
 };

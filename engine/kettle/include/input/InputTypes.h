@@ -7,28 +7,31 @@
 // Input runtime types
 //
 // Compact, numeric types for the input pipeline. No strings in hot paths.
-// IDs start at 1; zero means invalid/unset.
-// InputActionId is 8-bit, so one action registry can expose 255 actions.
+// IDs are 0-based indices into the action registry.
+// UINT16_MAX is the invalid/unset sentinel.
 //=============================================================================
 
 // --- Identity types ----------------------------------------------------------
 
-static constexpr uint16_t MaxInputActions = 255;
+static constexpr uint16_t InvalidActionId = UINT16_MAX;
 
 struct InputActionId
 {
-	uint8_t Value = 0;
+	uint16_t Value = InvalidActionId;
+
+	constexpr InputActionId() = default;
+	constexpr InputActionId(uint16_t v) : Value(v) {}
 
 	bool operator==(const InputActionId&) const = default;
 	auto operator<=>(const InputActionId&) const = default;
-	explicit operator bool() const { return Value != 0; }
+	explicit operator bool() const { return Value != InvalidActionId; }
 };
 
 template<> struct std::hash<InputActionId>
 {
 	std::size_t operator()(const InputActionId& id) const noexcept
 	{
-		return std::hash<uint8_t>{}(id.Value);
+		return std::hash<uint16_t>{}(id.Value);
 	}
 };
 

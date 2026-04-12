@@ -24,8 +24,8 @@ public:
 	// Debug helper: resolve action ID back to name (tooling only, not hot path)
 	[[nodiscard]] std::string_view GetActionName(InputActionId id) const
 	{
-		if (id.Value == 0 || id.Value > Bindings.ActionCount) return {};
-		return Bindings.ActionNames[id.Value - 1];
+		if (!id || id.Value >= Bindings.ActionCount) return {};
+		return Bindings.ActionNames[id.Value];
 	}
 
 private:

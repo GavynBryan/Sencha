@@ -69,17 +69,8 @@ class SenchaInputSystemExample
 
 namespace ExampleActions
 {
-	constexpr InputActionId Jump{1};
-	constexpr InputActionId MoveLeft{2};
-	constexpr InputActionId Shoot{3};
-	constexpr InputActionId Quit{4};
-
-	static constexpr InputActionEntry Entries[] = {
-		{"Jump", Jump},
-		{"MoveLeft", MoveLeft},
-		{"Shoot", Shoot},
-		{"Quit", Quit},
-	};
+	static constexpr std::string_view Names[] = {"Jump", "MoveLeft", "Shoot", "Quit"};
+	enum Action : uint16_t { Jump, MoveLeft, Shoot, Quit, Count };
 }
 
 class ConsoleInputOutputSystem final : public ISystem
@@ -102,7 +93,7 @@ private:
 		{
 			std::cout
 				<< "input "
-				<< static_cast<uint16_t>(event.Action.Value)
+				<< event.Action.Value
 				<< " "
 				<< ToString(event.Phase)
 				<< " value="
@@ -157,7 +148,7 @@ int main()
 	}
 
 	SdlInputControlResolver controlResolver;
-	InputActionRegistry actionRegistry{ExampleActions::Entries};
+	InputActionRegistry actionRegistry{ExampleActions::Names};
 	auto table = CompileInputBindings(
 		*config,
 		actionRegistry,
@@ -171,7 +162,7 @@ int main()
 
 	for (uint16_t i = 0; i < table->ActionNames.size(); ++i)
 	{
-		logger.Info("Action {} = {}", i + 1, table->ActionNames[i]);
+		logger.Info("Action {} = {}", i, table->ActionNames[i]);
 	}
 
 	WindowCreateInfo windowInfo;
@@ -191,7 +182,7 @@ int main()
 	RawInputBufferService rawInput;
 	InputBindingService bindings;
 	InputEventQueueService actionEvents;
-	InputStateService state;
+	InputStateService state{ExampleActions::Count};
 	bindings.SetBindings(std::move(*table));
 
 	bool running = true;

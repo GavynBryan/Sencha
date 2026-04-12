@@ -49,10 +49,10 @@ static constexpr uint16_t MaxMouseButtons = 8;
 
 struct InputBindingTable
 {
-	// Action names from the action registry, indexed by ActionId.Value - 1.
+	// Action names from the action registry, indexed directly by ActionId.Value.
 	// Debug/tooling only; runtime logic should compare InputActionIds.
 	std::vector<std::string> ActionNames;
-	uint8_t ActionCount = 0;
+	uint16_t ActionCount = 0;
 
 	// Keyboard: indexed by control code
 	std::array<BindingSlot, MaxKeyboardControls> KeyboardSlots{};

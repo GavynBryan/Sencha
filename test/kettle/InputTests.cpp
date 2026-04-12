@@ -17,29 +17,29 @@
 // Input type tests
 // =============================================================================
 
-TEST(InputTypes, ActionIdZeroIsInvalid)
+TEST(InputTypes, DefaultActionIdIsInvalid)
 {
 	InputActionId id{};
 	EXPECT_FALSE(static_cast<bool>(id));
-	EXPECT_EQ(id.Value, 0);
+	EXPECT_EQ(id.Value, InvalidActionId);
 }
 
-TEST(InputTypes, ActionIdNonZeroIsValid)
+TEST(InputTypes, ActionIdZeroIsValid)
 {
-	InputActionId id{1};
+	InputActionId id{0};
 	EXPECT_TRUE(static_cast<bool>(id));
 }
 
 TEST(InputTypes, ActionIdEquality)
 {
-	InputActionId a{1}, b{1}, c{2};
+	InputActionId a{0}, b{0}, c{1};
 	EXPECT_EQ(a, b);
 	EXPECT_NE(a, c);
 }
 
 TEST(InputTypes, ActionIdOrdering)
 {
-	InputActionId a{1}, b{2};
+	InputActionId a{0}, b{1};
 	EXPECT_LT(a, b);
 }
 
@@ -99,29 +99,15 @@ public:
 
 namespace TestActions
 {
-	constexpr InputActionId Jump{1};
-	constexpr InputActionId Pause{2};
-	constexpr InputActionId MoveLeft{3};
-	constexpr InputActionId MoveRight{4};
-	constexpr InputActionId Shoot{5};
-	constexpr InputActionId Aim{6};
-	constexpr InputActionId Fire{7};
-	constexpr InputActionId Reload{8};
-
-	static constexpr InputActionEntry Entries[] = {
-		{"Jump", Jump},
-		{"Pause", Pause},
-		{"MoveLeft", MoveLeft},
-		{"MoveRight", MoveRight},
-		{"Shoot", Shoot},
-		{"Aim", Aim},
-		{"Fire", Fire},
-		{"Reload", Reload},
+	static constexpr std::string_view Names[] = {
+		"Jump", "Pause", "MoveLeft", "MoveRight",
+		"Shoot", "Aim", "Fire", "Reload",
 	};
+	enum Action : uint16_t { Jump, Pause, MoveLeft, MoveRight, Shoot, Aim, Fire, Reload, Count };
 }
 
 static const TestInputControlResolver TestControlResolver;
-static const InputActionRegistry TestActionRegistry{TestActions::Entries};
+static const InputActionRegistry TestActionRegistry{TestActions::Names};
 
 TEST(InputConfig, DeserializeValidConfig)
 {
@@ -379,7 +365,7 @@ protected:
 	RawInputBufferService RawBuffer;
 	InputBindingService BindingService;
 	InputEventQueueService ActionQueue;
-	InputStateService StateService;
+	InputStateService StateService{TestActions::Count};
 	LoggingProvider Logging;
 	SystemHost Systems;
 };
@@ -504,8 +490,8 @@ TEST_F(InputMappingTest, StateServiceUpdatedOnPress)
 	PressKey(44); // Space -> Jump
 	RunMapping();
 
-	EXPECT_TRUE(StateService.IsActive(InputActionId{1}));
-	EXPECT_FLOAT_EQ(StateService.GetValue(InputActionId{1}), 1.0f);
+	EXPECT_TRUE(StateService.IsActive(TestActions::Jump));
+	EXPECT_FLOAT_EQ(StateService.GetValue(TestActions::Jump), 1.0f);
 }
 
 TEST_F(InputMappingTest, StateServiceUpdatedOnHeldRelease)
@@ -513,14 +499,14 @@ TEST_F(InputMappingTest, StateServiceUpdatedOnHeldRelease)
 	// Press A -> MoveLeft (Held)
 	PressKey(4);
 	RunMapping();
-	EXPECT_TRUE(StateService.IsActive(InputActionId{3}));
+	EXPECT_TRUE(StateService.IsActive(TestActions::MoveLeft));
 
 	RawBuffer.GetBuffer().Clear();
 
 	// Release A
 	ReleaseKey(4);
 	RunMapping();
-	EXPECT_FALSE(StateService.IsActive(InputActionId{3}));
+	EXPECT_FALSE(StateService.IsActive(TestActions::MoveLeft));
 }
 
 TEST_F(InputMappingTest, ActionQueueClearedEachFrame)
@@ -542,31 +528,32 @@ TEST_F(InputMappingTest, ActionQueueClearedEachFrame)
 
 TEST(InputStateService, DefaultStateIsInactive)
 {
-	InputStateService service;
-	auto state = service.GetActionState(InputActionId{1});
+	InputStateService service{8};
+	auto state = service.GetActionState(InputActionId{0});
 	EXPECT_FALSE(state.Active);
 	EXPECT_FLOAT_EQ(state.Value, 0.0f);
 }
 
 TEST(InputStateService, SetAndGetState)
 {
-	InputStateService service;
-	service.SetActionState(InputActionId{1}, true, 0.75f);
+	InputStateService service{8};
+	service.SetActionState(InputActionId{0}, true, 0.75f);
 
-	EXPECT_TRUE(service.IsActive(InputActionId{1}));
-	EXPECT_FLOAT_EQ(service.GetValue(InputActionId{1}), 0.75f);
+	EXPECT_TRUE(service.IsActive(InputActionId{0}));
+	EXPECT_FLOAT_EQ(service.GetValue(InputActionId{0}), 0.75f);
 }
 
-TEST(InputStateService, ZeroActionIdIgnored)
+TEST(InputStateService, InvalidActionIdIgnored)
 {
-	InputStateService service;
-	service.SetActionState(InputActionId{0}, true, 1.0f);
-	EXPECT_FALSE(service.IsActive(InputActionId{0}));
+	InputStateService service{8};
+	InputActionId invalid{};
+	service.SetActionState(invalid, true, 1.0f);
+	EXPECT_FALSE(service.IsActive(invalid));
 }
 
 TEST(InputStateService, MaxActionIdSupported)
 {
-	InputStateService service;
+	InputStateService service{256};
 	InputActionId max{255};
 	service.SetActionState(max, true, 1.0f);
 	EXPECT_TRUE(service.IsActive(max));
@@ -621,5 +608,5 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 	// Verify debug name lookup
 	EXPECT_EQ(bindingService.GetActionName(TestActions::Fire), "Fire");
 	EXPECT_EQ(bindingService.GetActionName(TestActions::Reload), "Reload");
-	EXPECT_TRUE(bindingService.GetActionName(InputActionId{0}).empty());
+	EXPECT_TRUE(bindingService.GetActionName(InputActionId{}).empty());
 }
