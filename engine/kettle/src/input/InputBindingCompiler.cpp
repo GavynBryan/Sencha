@@ -1,83 +1,8 @@
 #include <input/InputBindingCompiler.h>
 #include <unordered_map>
 
-// --- Control name registry ---------------------------------------------------
-// Maps authored control names to numeric codes at load time only.
-// Keyboard codes correspond to SDL3 scancode values — the SdlInputIngestSystem
-// writes SDL scancodes directly as control codes, so the numeric values match.
-
 namespace
 {
-
-struct ControlEntry
-{
-	const char* Name;
-	uint16_t Code;
-};
-
-static constexpr ControlEntry KeyboardControls[] = {
-	// Letters (SDL_SCANCODE_A = 4 through SDL_SCANCODE_Z = 29)
-	{"A", 4}, {"B", 5}, {"C", 6}, {"D", 7}, {"E", 8}, {"F", 9},
-	{"G", 10}, {"H", 11}, {"I", 12}, {"J", 13}, {"K", 14}, {"L", 15},
-	{"M", 16}, {"N", 17}, {"O", 18}, {"P", 19}, {"Q", 20}, {"R", 21},
-	{"S", 22}, {"T", 23}, {"U", 24}, {"V", 25}, {"W", 26}, {"X", 27},
-	{"Y", 28}, {"Z", 29},
-
-	// Digits (SDL_SCANCODE_1 = 30 through SDL_SCANCODE_0 = 39)
-	{"1", 30}, {"2", 31}, {"3", 32}, {"4", 33}, {"5", 34},
-	{"6", 35}, {"7", 36}, {"8", 37}, {"9", 38}, {"0", 39},
-
-	// Common keys
-	{"Return", 40}, {"Enter", 40},
-	{"Escape", 41},
-	{"Backspace", 42},
-	{"Tab", 43},
-	{"Space", 44},
-	{"Minus", 45},
-	{"Equals", 46},
-	{"LeftBracket", 47},
-	{"RightBracket", 48},
-	{"Backslash", 49},
-	{"Semicolon", 51},
-	{"Apostrophe", 52},
-	{"Grave", 53},
-	{"Comma", 54},
-	{"Period", 55},
-	{"Slash", 56},
-	{"CapsLock", 57},
-
-	// Function keys (SDL_SCANCODE_F1 = 58 through SDL_SCANCODE_F12 = 69)
-	{"F1", 58}, {"F2", 59}, {"F3", 60}, {"F4", 61},
-	{"F5", 62}, {"F6", 63}, {"F7", 64}, {"F8", 65},
-	{"F9", 66}, {"F10", 67}, {"F11", 68}, {"F12", 69},
-
-	// Navigation
-	{"Insert", 73}, {"Home", 74}, {"PageUp", 75},
-	{"Delete", 76}, {"End", 77}, {"PageDown", 78},
-
-	// Arrows
-	{"Right", 79}, {"Left", 80}, {"Down", 81}, {"Up", 82},
-
-	// Modifiers
-	{"LCtrl", 224}, {"LShift", 225}, {"LAlt", 226},
-	{"RCtrl", 228}, {"RShift", 229}, {"RAlt", 230},
-};
-
-static constexpr ControlEntry MouseControls[] = {
-	{"Left", 1}, {"Middle", 2}, {"Right", 3},
-	{"X1", 4}, {"X2", 5},
-	{"WheelUp", 6}, {"WheelDown", 7},
-};
-
-std::optional<uint16_t> FindControlCode(
-	const ControlEntry* entries, std::size_t count, std::string_view name)
-{
-	for (std::size_t i = 0; i < count; ++i)
-	{
-		if (name == entries[i].Name) return entries[i].Code;
-	}
-	return std::nullopt;
-}
 
 std::optional<InputDeviceType> ParseDeviceType(std::string_view name)
 {
@@ -198,7 +123,9 @@ std::optional<InputConfigData> DeserializeInputConfig(
 // --- Compilation -------------------------------------------------------------
 
 std::optional<InputBindingTable> CompileInputBindings(
-	const InputConfigData& config, InputCompileError* error)
+	const InputConfigData& config,
+	const IInputControlResolver& controlResolver,
+	InputCompileError* error)
 {
 	InputBindingTable table;
 
@@ -239,22 +166,17 @@ std::optional<InputBindingTable> CompileInputBindings(
 			return std::nullopt;
 		}
 
-		std::optional<uint16_t> controlCode;
 		switch (*device)
 		{
 		case InputDeviceType::Keyboard:
-			controlCode = FindControlCode(
-				KeyboardControls, std::size(KeyboardControls), bc.Control);
-			break;
 		case InputDeviceType::Mouse:
-			controlCode = FindControlCode(
-				MouseControls, std::size(MouseControls), bc.Control);
 			break;
 		default:
-			if (error) error->Message = "Unsupported device for first pass: " + bc.Device;
+			if (error) error->Message = "Unsupported device for binding table: " + bc.Device;
 			return std::nullopt;
 		}
 
+		auto controlCode = controlResolver.ResolveControl(*device, bc.Control);
 		if (!controlCode)
 		{
 			if (error) error->Message = "Unknown control '" + bc.Control

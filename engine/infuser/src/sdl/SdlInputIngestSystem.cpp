@@ -2,6 +2,31 @@
 #include <input/RawInputBufferService.h>
 #include <input/InputTypes.h>
 #include <SDL3/SDL.h>
+#include <optional>
+
+namespace
+{
+
+std::optional<uint16_t> ToMouseControlCode(uint8_t button)
+{
+	switch (button)
+	{
+	case SDL_BUTTON_LEFT:
+		return MouseControl::Left;
+	case SDL_BUTTON_MIDDLE:
+		return MouseControl::Middle;
+	case SDL_BUTTON_RIGHT:
+		return MouseControl::Right;
+	case SDL_BUTTON_X1:
+		return MouseControl::X1;
+	case SDL_BUTTON_X2:
+		return MouseControl::X2;
+	default:
+		return std::nullopt;
+	}
+}
+
+} // anonymous namespace
 
 SdlInputIngestSystem::SdlInputIngestSystem(
 	Logger& logger, RawInputBufferService& rawInput)
@@ -44,23 +69,29 @@ void SdlInputIngestSystem::Update()
 			break;
 
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
-			buffer.Emplace(
-				InputDeviceType::Mouse,
-				true,
-				static_cast<uint16_t>(event.button.button),
-				1.0f,
-				InputUserId{}
-			);
+			if (auto control = ToMouseControlCode(event.button.button))
+			{
+				buffer.Emplace(
+					InputDeviceType::Mouse,
+					true,
+					*control,
+					1.0f,
+					InputUserId{}
+				);
+			}
 			break;
 
 		case SDL_EVENT_MOUSE_BUTTON_UP:
-			buffer.Emplace(
-				InputDeviceType::Mouse,
-				false,
-				static_cast<uint16_t>(event.button.button),
-				0.0f,
-				InputUserId{}
-			);
+			if (auto control = ToMouseControlCode(event.button.button))
+			{
+				buffer.Emplace(
+					InputDeviceType::Mouse,
+					false,
+					*control,
+					0.0f,
+					InputUserId{}
+				);
+			}
 			break;
 
 		case SDL_EVENT_MOUSE_WHEEL:

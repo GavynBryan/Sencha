@@ -8,10 +8,10 @@
 // RawInputBufferService
 //
 // Owns raw backend/platform input events for the current frame.
-// Written by SdlInputIngestSystem, consumed by InputMappingSystem.
+// Written by a backend input ingest system, consumed by InputMappingSystem.
 //
 // Lifecycle per frame:
-//   1. SdlInputIngestSystem clears and fills the buffer
+//   1. Backend input ingest clears and fills the buffer
 //   2. InputMappingSystem reads the buffer
 //   3. Buffer persists until next frame's clear
 //=============================================================================

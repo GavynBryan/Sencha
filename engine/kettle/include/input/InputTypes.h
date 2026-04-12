@@ -72,7 +72,7 @@ enum class InputTriggerType : uint8_t
 };
 
 // --- Mouse control constants -------------------------------------------------
-// Button values match SDL3. Wheel codes are engine-defined.
+// Engine-owned mouse button and wheel codes.
 
 namespace MouseControl
 {
@@ -86,14 +86,14 @@ namespace MouseControl
 }
 
 // --- Raw input event ---------------------------------------------------------
-// Produced by backend ingest (SDL), consumed by InputMappingSystem.
+// Produced by backend ingest, consumed by InputMappingSystem.
 // Compact, no strings, no heap allocation.
 
 struct RawInputEvent
 {
 	InputDeviceType Device = InputDeviceType::Keyboard;
 	bool Pressed = false;
-	uint16_t Control = 0;   // Scancode for keyboard, button index for mouse
+	uint16_t Control = 0;   // Backend-resolved keyboard/mouse control code
 	float Value = 0.0f;     // 1.0 for digital press, analog value for axes/wheel
 	InputUserId User;
 };

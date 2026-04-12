@@ -5,6 +5,7 @@
 #include <json/JsonValue.h>
 #include <optional>
 #include <string>
+#include <string_view>
 
 //=============================================================================
 // Input binding compiler
@@ -13,14 +14,24 @@
 //   1. DeserializeInputConfig: JSON DOM -> typed config structs
 //   2. CompileInputBindings:   config structs -> runtime binding table
 //
-// All string resolution (action names, key names, device names, trigger
-// names) happens here at load time. The resulting InputBindingTable
-// contains only numeric IDs and flat lookup arrays.
+// Generic string resolution (action names, device names, trigger names)
+// happens here at load time. Backend-specific control name resolution is
+// supplied by the platform layer through IInputControlResolver.
 //=============================================================================
 
 struct InputCompileError
 {
 	std::string Message;
+};
+
+class IInputControlResolver
+{
+public:
+	virtual ~IInputControlResolver() = default;
+
+	[[nodiscard]] virtual std::optional<uint16_t> ResolveControl(
+		InputDeviceType device,
+		std::string_view control) const = 0;
 };
 
 // Parse a JsonValue tree into typed config structs.
@@ -31,4 +42,5 @@ std::optional<InputConfigData> DeserializeInputConfig(
 // Compile config structs into a runtime binding table.
 std::optional<InputBindingTable> CompileInputBindings(
 	const InputConfigData& config,
+	const IInputControlResolver& controlResolver,
 	InputCompileError* error = nullptr);

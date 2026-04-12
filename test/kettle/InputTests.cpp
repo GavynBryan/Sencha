@@ -69,6 +69,35 @@ static const char* TestConfigJson = R"({
 	]
 })";
 
+class TestInputControlResolver final : public IInputControlResolver
+{
+public:
+	[[nodiscard]] std::optional<uint16_t> ResolveControl(
+		InputDeviceType device,
+		std::string_view control) const override
+	{
+		switch (device)
+		{
+		case InputDeviceType::Keyboard:
+			if (control == "A") return 4;
+			if (control == "D") return 7;
+			if (control == "R") return 21;
+			if (control == "W") return 26;
+			if (control == "Escape") return 41;
+			if (control == "Space") return 44;
+			return std::nullopt;
+		case InputDeviceType::Mouse:
+			if (control == "Left") return MouseControl::Left;
+			if (control == "Right") return MouseControl::Right;
+			return std::nullopt;
+		default:
+			return std::nullopt;
+		}
+	}
+};
+
+static const TestInputControlResolver TestControlResolver;
+
 TEST(InputConfig, DeserializeValidConfig)
 {
 	auto json = JsonParse(TestConfigJson);
@@ -123,7 +152,7 @@ TEST(InputBindingCompiler, CompileProducesActionIds)
 	ASSERT_TRUE(config.has_value());
 
 	InputCompileError error;
-	auto table = CompileInputBindings(*config, &error);
+	auto table = CompileInputBindings(*config, TestControlResolver, &error);
 	ASSERT_TRUE(table.has_value()) << error.Message;
 
 	EXPECT_EQ(table->ActionCount, 4);
@@ -135,22 +164,22 @@ TEST(InputBindingCompiler, CompileProducesKeyboardBindings)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	// Space = scancode 44
+	// Space = test control code 44
 	auto spaceBindings = table->GetKeyboardBindings(44);
 	ASSERT_EQ(spaceBindings.size(), 1u);
 	EXPECT_EQ(spaceBindings[0].Action.Value, 1); // Jump = action 1
 	EXPECT_EQ(spaceBindings[0].Trigger, InputTriggerType::Pressed);
 
-	// Escape = scancode 41
+	// Escape = test control code 41
 	auto escBindings = table->GetKeyboardBindings(41);
 	ASSERT_EQ(escBindings.size(), 1u);
 	EXPECT_EQ(escBindings[0].Action.Value, 2); // Pause = action 2
 	EXPECT_EQ(escBindings[0].Trigger, InputTriggerType::Pressed);
 
-	// A = scancode 4
+	// A = test control code 4
 	auto aBindings = table->GetKeyboardBindings(4);
 	ASSERT_EQ(aBindings.size(), 1u);
 	EXPECT_EQ(aBindings[0].Action.Value, 3); // MoveLeft = action 3
@@ -161,10 +190,10 @@ TEST(InputBindingCompiler, UnboundKeyReturnsEmpty)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	// W = scancode 26, not bound
+	// W = test control code 26, not bound
 	auto wBindings = table->GetKeyboardBindings(26);
 	EXPECT_TRUE(wBindings.empty());
 }
@@ -173,7 +202,7 @@ TEST(InputBindingCompiler, OutOfRangeControlReturnsEmpty)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	EXPECT_TRUE(table->GetKeyboardBindings(999).empty());
@@ -192,7 +221,7 @@ TEST(InputBindingCompiler, RejectsUnknownAction)
 	ASSERT_TRUE(config.has_value());
 
 	InputCompileError error;
-	auto table = CompileInputBindings(*config, &error);
+	auto table = CompileInputBindings(*config, TestControlResolver, &error);
 	EXPECT_FALSE(table.has_value());
 	EXPECT_NE(error.Message.find("NonExistent"), std::string::npos);
 }
@@ -206,7 +235,7 @@ TEST(InputBindingCompiler, RejectsUnknownControl)
 		]
 	})");
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	EXPECT_FALSE(table.has_value());
 }
 
@@ -220,7 +249,7 @@ TEST(InputBindingCompiler, MouseBindings)
 		]
 	})");
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	auto leftBindings = table->GetMouseButtonBindings(1); // Left = 1
@@ -245,7 +274,7 @@ protected:
 	{
 		auto json = JsonParse(TestConfigJson);
 		auto config = DeserializeInputConfig(json.value());
-		auto table = CompileInputBindings(config.value());
+		auto table = CompileInputBindings(config.value(), TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
 		auto& logger = Logging.GetLogger<InputMappingSystem>();
@@ -259,16 +288,16 @@ protected:
 		Systems.Shutdown();
 	}
 
-	void PressKey(uint16_t scancode)
+	void PressKey(uint16_t control)
 	{
 		RawBuffer.GetBuffer().Emplace(
-			InputDeviceType::Keyboard, true, scancode, 1.0f, InputUserId{});
+			InputDeviceType::Keyboard, true, control, 1.0f, InputUserId{});
 	}
 
-	void ReleaseKey(uint16_t scancode)
+	void ReleaseKey(uint16_t control)
 	{
 		RawBuffer.GetBuffer().Emplace(
-			InputDeviceType::Keyboard, false, scancode, 0.0f, InputUserId{});
+			InputDeviceType::Keyboard, false, control, 0.0f, InputUserId{});
 	}
 
 	void RunMapping()
@@ -500,7 +529,7 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 	ASSERT_TRUE(config.has_value());
 
 	// Compile bindings
-	auto table = CompileInputBindings(*config);
+	auto table = CompileInputBindings(*config, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	// Set up services
@@ -509,7 +538,7 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 	bindingService.SetBindings(std::move(*table));
 	InputEventQueueService actionQueue;
 
-	// Verify: R key (scancode 21) should map to Reload (action 2)
+	// Verify: R key (test control code 21) should map to Reload (action 2)
 	auto rBindings = bindingService.GetBindings().GetKeyboardBindings(21);
 	ASSERT_EQ(rBindings.size(), 1u);
 	EXPECT_EQ(rBindings[0].Action.Value, 2);

@@ -24,7 +24,7 @@ struct CompiledBinding;
 //   4. Tracks held bindings and emits Performed each frame
 //   5. Optionally updates InputStateService
 //
-// Execution order: must run after SdlInputIngestSystem, before gameplay.
+// Execution order: must run after backend input ingest, before gameplay.
 //=============================================================================
 class InputMappingSystem : public ISystem
 {

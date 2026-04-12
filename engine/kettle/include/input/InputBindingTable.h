@@ -11,10 +11,10 @@
 // InputBindingTable
 //
 // Compiled, runtime-native binding data. All string resolution happens at
-// compile time — runtime lookup is by numeric device type + control code
-// into flat arrays with O(1) slot access.
+// compile time. Runtime lookup is by numeric device type + backend control
+// code into flat arrays with O(1) slot access.
 //
-// Keyboard bindings: flat array of 512 slots indexed by scancode.
+// Keyboard bindings: flat array of 512 slots indexed by control code.
 // Mouse button bindings: flat array of 8 slots indexed by button code.
 //
 // Each slot points into a packed CompiledBinding array (start + count).
@@ -53,7 +53,7 @@ struct InputBindingTable
 	std::vector<std::string> ActionNames;
 	uint16_t ActionCount = 0;
 
-	// Keyboard: indexed by control code (scancode)
+	// Keyboard: indexed by control code
 	std::array<BindingSlot, MaxKeyboardControls> KeyboardSlots{};
 	std::vector<CompiledBinding> KeyboardBindings;
 
