@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <geometry/Aabb2.h>
-#include <geometry/Aabb3.h>
+#include <geometry/2d/Aabb2.h>
+#include <geometry/3d/Aabb3.h>
 #include <sstream>
 
 // --- Construction ---
@@ -159,27 +159,27 @@ TEST(Aabb, FromCenterHalfExtentFactory)
 	EXPECT_EQ(box.Max, Vec3(11.0f, 22.0f, 33.0f));
 }
 
-// --- Aliases and Component Types ---
+// --- Aliases ---
 
-TEST(Aabb, DoubleAndIntegerAliases)
+TEST(Aabb, FloatAliases)
 {
-	Aabb2d doubleBox(Vec2d(-1.0, -2.0), Vec2d(1.0, 2.0));
-	EXPECT_TRUE(doubleBox.Contains(Vec2d(0.5, -1.5)));
+	Aabb2f box2(Vec2(-1.0f, -2.0f), Vec2(1.0f, 2.0f));
+	EXPECT_TRUE(box2.Contains(Vec2(0.5f, -1.5f)));
 
-	Aabb3i intBox(Vec3i(0, 0, 0), Vec3i(10, 20, 30));
-	EXPECT_EQ(intBox.Center(), Vec3i(5, 10, 15));
-	EXPECT_TRUE(intBox.Contains(Vec3i(10, 20, 30)));
+	Aabb3f box3(Vec3(0.0f, 0.0f, 0.0f), Vec3(10.0f, 20.0f, 30.0f));
+	EXPECT_EQ(box3.Center(), Vec3(5.0f, 10.0f, 15.0f));
+	EXPECT_TRUE(box3.Contains(Vec3(10.0f, 20.0f, 30.0f)));
 }
 
-// --- Constexpr Validation ---
+// --- Runtime Validation ---
 
-TEST(Aabb, ConstexprOperations)
+TEST(Aabb, RuntimeOperations)
 {
-	constexpr Aabb3f box(Vec3(-2.0f, 1.0f, 4.0f), Vec3(6.0f, 5.0f, 10.0f));
-	constexpr Vec3 center = box.Center();
-	constexpr Vec3 size = box.Size();
-	constexpr bool contains = box.Contains(Vec3(0.0f, 3.0f, 7.0f));
-	constexpr Aabb3f expanded = box.ExpandedToInclude(Vec3(8.0f, 0.0f, 12.0f));
+	const Aabb3f box(Vec3(-2.0f, 1.0f, 4.0f), Vec3(6.0f, 5.0f, 10.0f));
+	const Vec3 center = box.Center();
+	const Vec3 size = box.Size();
+	const bool contains = box.Contains(Vec3(0.0f, 3.0f, 7.0f));
+	const Aabb3f expanded = box.ExpandedToInclude(Vec3(8.0f, 0.0f, 12.0f));
 
 	EXPECT_EQ(center, Vec3(2.0f, 3.0f, 7.0f));
 	EXPECT_EQ(size, Vec3(8.0f, 4.0f, 6.0f));
@@ -191,7 +191,7 @@ TEST(Aabb, ConstexprOperations)
 
 TEST(Aabb, StreamOutput)
 {
-	Aabb2i box(Vec2i(-1, -2), Vec2i(3, 4));
+	Aabb2f box(Vec2(-1.0f, -2.0f), Vec2(3.0f, 4.0f));
 	std::ostringstream oss;
 	oss << box;
 	EXPECT_EQ(oss.str(), "{Min: (-1, -2), Max: (3, 4)}");

@@ -1,0 +1,56 @@
+#include <geometry/3d/Plane.h>
+
+#include <cassert>
+#include <cmath>
+#include <ostream>
+
+Plane::Plane(const Vec3& normal, float d)
+	: Normal(normal), D(d)
+{
+}
+
+Plane Plane::FromNormalAndDistance(const Vec3& normal, float d)
+{
+	return Plane(normal, d);
+}
+
+Plane Plane::FromNormalAndPoint(const Vec3& normal, const Vec3& point)
+{
+	return Plane(normal, -normal.Dot(point));
+}
+
+float Plane::SignedDistanceTo(const Vec3& point) const
+{
+	return Normal.Dot(point) + D;
+}
+
+Plane Plane::Normalized() const
+{
+	const float mag = Normal.Magnitude();
+	assert(mag > 0.0f && "Cannot normalize a plane with zero-length normal.");
+	return Plane(Normal / mag, D / mag);
+}
+
+Vec3 Plane::ClosestPoint(const Vec3& point) const
+{
+	return point - Normal * SignedDistanceTo(point);
+}
+
+bool Plane::operator==(const Plane& other) const
+{
+	return Normal == other.Normal && D == other.D;
+}
+
+bool Plane::NearlyEquals(const Plane& other, float epsilon) const
+{
+	return std::abs(Normal.Data[0] - other.Normal.Data[0]) <= epsilon
+		&& std::abs(Normal.Data[1] - other.Normal.Data[1]) <= epsilon
+		&& std::abs(Normal.Data[2] - other.Normal.Data[2]) <= epsilon
+		&& std::abs(D - other.D) <= epsilon;
+}
+
+std::ostream& operator<<(std::ostream& os, const Plane& plane)
+{
+	os << "{Normal: " << plane.Normal << ", D: " << plane.D << "}";
+	return os;
+}

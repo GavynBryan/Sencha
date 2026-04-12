@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <geometry/Rect2.h>
+#include <geometry/2d/Rect2.h>
 #include <sstream>
 
 // --- Construction ---
@@ -116,23 +116,23 @@ TEST(Rect2, FromCenterSize)
 	EXPECT_EQ(rect.Size, Vec2(10.0f, 6.0f));
 }
 
-// --- Integer Alias ---
+// --- Float Alias ---
 
-TEST(Rect2, IntegerAlias)
+TEST(Rect2, FloatAlias)
 {
-	Rect2i rect(Vec2i(0, 0), Vec2i(100, 50));
-	EXPECT_TRUE(rect.Contains(Vec2i(50, 25)));
-	EXPECT_EQ(rect.Area(), 5000);
+	Rect2f rect(Vec2(0.0f, 0.0f), Vec2(100.0f, 50.0f));
+	EXPECT_TRUE(rect.Contains(Vec2(50.0f, 25.0f)));
+	EXPECT_FLOAT_EQ(rect.Area(), 5000.0f);
 }
 
-// --- Constexpr ---
+// --- Runtime ---
 
-TEST(Rect2, ConstexprOperations)
+TEST(Rect2, RuntimeOperations)
 {
-	constexpr Rect2f rect(Vec2(1.0f, 2.0f), Vec2(10.0f, 20.0f));
-	constexpr Vec2 center = rect.Center();
-	constexpr bool valid = rect.IsValid();
-	constexpr bool contains = rect.Contains(Vec2(5.0f, 10.0f));
+	const Rect2f rect(Vec2(1.0f, 2.0f), Vec2(10.0f, 20.0f));
+	const Vec2 center = rect.Center();
+	const bool valid = rect.IsValid();
+	const bool contains = rect.Contains(Vec2(5.0f, 10.0f));
 
 	EXPECT_EQ(center, Vec2(6.0f, 12.0f));
 	EXPECT_TRUE(valid);
@@ -155,7 +155,7 @@ TEST(Rect2, Equality)
 
 TEST(Rect2, StreamOutput)
 {
-	Rect2i rect(Vec2i(1, 2), Vec2i(10, 20));
+	Rect2f rect(Vec2(1.0f, 2.0f), Vec2(10.0f, 20.0f));
 	std::ostringstream oss;
 	oss << rect;
 	EXPECT_EQ(oss.str(), "{Position: (1, 2), Size: (10, 20)}");

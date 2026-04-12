@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <geometry/Rect3.h>
+#include <geometry/3d/Rect3.h>
 #include <sstream>
 
 // --- Construction ---
@@ -118,23 +118,23 @@ TEST(Rect3, FromCenterSize)
 	EXPECT_EQ(rect.Size, Vec3(10.0f, 6.0f, 8.0f));
 }
 
-// --- Integer Alias ---
+// --- Float Alias ---
 
-TEST(Rect3, IntegerAlias)
+TEST(Rect3, FloatAlias)
 {
-	Rect3i rect(Vec3i(0, 0, 0), Vec3i(10, 20, 30));
-	EXPECT_TRUE(rect.Contains(Vec3i(5, 10, 15)));
-	EXPECT_EQ(rect.Volume(), 6000);
+	Rect3f rect(Vec3(0.0f, 0.0f, 0.0f), Vec3(10.0f, 20.0f, 30.0f));
+	EXPECT_TRUE(rect.Contains(Vec3(5.0f, 10.0f, 15.0f)));
+	EXPECT_FLOAT_EQ(rect.Volume(), 6000.0f);
 }
 
-// --- Constexpr ---
+// --- Runtime ---
 
-TEST(Rect3, ConstexprOperations)
+TEST(Rect3, RuntimeOperations)
 {
-	constexpr Rect3f rect(Vec3(1.0f, 2.0f, 3.0f), Vec3(10.0f, 20.0f, 30.0f));
-	constexpr Vec3 center = rect.Center();
-	constexpr bool valid = rect.IsValid();
-	constexpr bool contains = rect.Contains(Vec3(5.0f, 10.0f, 15.0f));
+	const Rect3f rect(Vec3(1.0f, 2.0f, 3.0f), Vec3(10.0f, 20.0f, 30.0f));
+	const Vec3 center = rect.Center();
+	const bool valid = rect.IsValid();
+	const bool contains = rect.Contains(Vec3(5.0f, 10.0f, 15.0f));
 
 	EXPECT_EQ(center, Vec3(6.0f, 12.0f, 18.0f));
 	EXPECT_TRUE(valid);
@@ -157,7 +157,7 @@ TEST(Rect3, Equality)
 
 TEST(Rect3, StreamOutput)
 {
-	Rect3i rect(Vec3i(1, 2, 3), Vec3i(10, 20, 30));
+	Rect3f rect(Vec3(1.0f, 2.0f, 3.0f), Vec3(10.0f, 20.0f, 30.0f));
 	std::ostringstream oss;
 	oss << rect;
 	EXPECT_EQ(oss.str(), "{Position: (1, 2, 3), Size: (10, 20, 30)}");

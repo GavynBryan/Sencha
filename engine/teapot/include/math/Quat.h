@@ -252,3 +252,5 @@ std::ostream& operator<<(std::ostream& os, const Quat<T>& q)
 
 using Quatf = Quat<float>;
 using Quatd = Quat<double>;
+
+using QuatDefault = Quatf;
