@@ -1,13 +1,30 @@
 #include <vulkan/VulkanInstanceService.h>
-#include <vulkan/IVulkanSurfaceProvider.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <cstring>
 
 static constexpr const char* ValidationLayerName = "VK_LAYER_KHRONOS_validation";
 
+namespace
+{
+    std::vector<const char*> GetRequiredSdlInstanceExtensions(Logger& logger)
+    {
+        Uint32 count = 0;
+        const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+        if (!names || count == 0)
+        {
+            logger.Error("Failed to query SDL Vulkan extensions: {}", SDL_GetError());
+            return {};
+        }
+
+        return { names, names + count };
+    }
+}
+
 VulkanInstanceService::VulkanInstanceService(Logger& logger,
                                              const CreateInfo& info,
-                                             const IVulkanSurfaceProvider* surfaceProvider)
+                                             const SdlWindow* window)
     : Log(logger)
 {
     if (info.EnableValidation && !CheckValidationLayerSupport())
@@ -27,7 +44,7 @@ VulkanInstanceService::VulkanInstanceService(Logger& logger,
     appInfo.engineVersion      = VK_MAKE_API_VERSION(0, 1, 0, 0);
     appInfo.apiVersion         = info.ApiVersion;
 
-    auto extensions = BuildExtensionList(info, surfaceProvider);
+    auto extensions = BuildExtensionList(info, window);
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -94,13 +111,13 @@ bool VulkanInstanceService::CheckValidationLayerSupport() const
 
 std::vector<const char*> VulkanInstanceService::BuildExtensionList(
     const CreateInfo& info,
-    const IVulkanSurfaceProvider* surfaceProvider) const
+    const SdlWindow* window) const
 {
     std::vector<const char*> extensions;
 
-    if (surfaceProvider)
+    if (window)
     {
-        auto surfaceExts = surfaceProvider->GetRequiredInstanceExtensions();
+        auto surfaceExts = GetRequiredSdlInstanceExtensions(Log);
         extensions.insert(extensions.end(), surfaceExts.begin(), surfaceExts.end());
     }
 

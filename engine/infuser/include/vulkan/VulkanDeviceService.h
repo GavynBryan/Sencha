@@ -8,17 +8,17 @@
 #include <string>
 
 class VulkanInstanceService;
-class IVulkanSurfaceProvider;
+class SdlWindow;
 
 //=============================================================================
 // VulkanDeviceService
 //
 // Owns VkDevice and the selected VkPhysicalDevice. Optionally creates a
-// VkSurfaceKHR if an IVulkanSurfaceProvider is given.
+// VkSurfaceKHR for an SDL window.
 //
 // Construction:
 //   auto& dev = services.AddService<VulkanDeviceService>(
-//       logger, instanceService, surfaceProvider);
+//       logger, instanceService, info, &window);
 //   if (!dev.IsValid()) { /* handle failure */ }
 //
 // Queue retrieval:
@@ -36,7 +36,7 @@ public:
     VulkanDeviceService(Logger& logger,
                         VulkanInstanceService& instance,
                         const CreateInfo& info,
-                        const IVulkanSurfaceProvider* surfaceProvider = nullptr);
+                        const SdlWindow* window = nullptr);
     ~VulkanDeviceService() override;
 
     VulkanDeviceService(const VulkanDeviceService&) = delete;

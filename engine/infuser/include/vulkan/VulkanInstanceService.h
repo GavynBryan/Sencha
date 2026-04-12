@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 
-class IVulkanSurfaceProvider;
+class SdlWindow;
 
 //=============================================================================
 // VulkanInstanceService
@@ -15,12 +15,12 @@ class IVulkanSurfaceProvider;
 // engine lifetime and destroyed after all other Vulkan services.
 //
 // Construction:
-//   auto& inst = services.AddService<VulkanInstanceService>(logger, provider);
+//   auto& inst = services.AddService<VulkanInstanceService>(logger, info, &window);
 //   if (!inst.IsValid()) { /* handle failure */ }
 //
-// The optional IVulkanSurfaceProvider* is used ONLY to query additional
-// required instance extensions. It does not create a surface — that
-// responsibility belongs to VulkanDeviceService.
+// The optional SdlWindow* is used ONLY to query SDL's required instance
+// extensions. It does not create a surface; that responsibility belongs to
+// VulkanDeviceService or the caller.
 //=============================================================================
 class VulkanInstanceService : public IService
 {
@@ -36,7 +36,7 @@ public:
 
     VulkanInstanceService(Logger& logger,
                           const CreateInfo& info,
-                          const IVulkanSurfaceProvider* surfaceProvider = nullptr);
+                          const SdlWindow* window = nullptr);
     ~VulkanInstanceService() override;
 
     VulkanInstanceService(const VulkanInstanceService&) = delete;
@@ -57,7 +57,7 @@ private:
 
     bool CheckValidationLayerSupport() const;
     std::vector<const char*> BuildExtensionList(const CreateInfo& info,
-                                                const IVulkanSurfaceProvider* surfaceProvider) const;
+                                                const SdlWindow* window) const;
     void SetupDebugMessenger();
     void DestroyDebugMessenger();
 
