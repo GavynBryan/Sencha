@@ -1,7 +1,6 @@
 #include <sdl/SdlWindow.h>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <stdexcept>
 
 namespace
@@ -161,27 +160,3 @@ void SdlWindow::Hide()
         SDL_HideWindow(Window);
 }
 
-std::vector<const char*> SdlWindow::GetRequiredInstanceExtensions() const
-{
-    Uint32 count = 0;
-    const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
-    if (!names || count == 0)
-    {
-        Log.Error("Failed to query SDL Vulkan extensions: {}", SDL_GetError());
-        return {};
-    }
-    return { names, names + count };
-}
-
-VkSurfaceKHR SdlWindow::CreateSurface(VkInstance instance) const
-{
-    if (!Window)
-        throw std::runtime_error("Cannot create Vulkan surface: window is not valid");
-
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (!SDL_Vulkan_CreateSurface(Window, instance, nullptr, &surface))
-        throw std::runtime_error(std::string("SDL Vulkan surface creation failed: ") + SDL_GetError());
-
-    Log.Info("Vulkan surface created");
-    return surface;
-}

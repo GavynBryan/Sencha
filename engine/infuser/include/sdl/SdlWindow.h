@@ -4,11 +4,10 @@
 #include <logging/Logger.h>
 #include <window/IWindow.h>
 #include <window/WindowCreateInfo.h>
-#include <vulkan/IVulkanSurfaceProvider.h>
 
 struct SDL_Window;
 
-class SdlWindow : public IWindow, public IVulkanSurfaceProvider, public IService
+class SdlWindow : public IWindow, public IService
 {
 public:
     SdlWindow(Logger& logger, const WindowCreateInfo& createInfo);
@@ -37,8 +36,7 @@ public:
     void Show() override;
     void Hide() override;
 
-    [[nodiscard]] std::vector<const char*> GetRequiredInstanceExtensions() const override;
-    [[nodiscard]] VkSurfaceKHR CreateSurface(VkInstance instance) const override;
+    [[nodiscard]] SDL_Window* GetHandle() const { return Window; }
 
 private:
     Logger& Log;
