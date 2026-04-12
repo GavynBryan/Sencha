@@ -17,6 +17,10 @@
 //
 // Cross() is restricted to 3-dimensional vectors at compile time.
 //
+// Direction conventions:
+//   - Right is +X and Up is +Y for 2D and 3D.
+//   - 3D Forward is -Z, matching Sencha's view/look-at convention.
+//
 // Extensibility:
 //   - Any positive dimension count is supported.
 //   - Any arithmetic component type (float, double, int, etc.).
@@ -207,6 +211,48 @@ struct Vec
 		Vec result;
 		for (int i = 0; i < N; ++i)
 			result.Data[i] = T{1};
+		return result;
+	}
+
+	static constexpr Vec Right() requires (N == 2 || N == 3)
+	{
+		Vec result;
+		result.Data[0] = T{1};
+		return result;
+	}
+
+	static constexpr Vec Left() requires (N == 2 || N == 3)
+	{
+		Vec result;
+		result.Data[0] = T{-1};
+		return result;
+	}
+
+	static constexpr Vec Up() requires (N == 2 || N == 3)
+	{
+		Vec result;
+		result.Data[1] = T{1};
+		return result;
+	}
+
+	static constexpr Vec Down() requires (N == 2 || N == 3)
+	{
+		Vec result;
+		result.Data[1] = T{-1};
+		return result;
+	}
+
+	static constexpr Vec Forward() requires (N == 3)
+	{
+		Vec result;
+		result.Data[2] = T{-1};
+		return result;
+	}
+
+	static constexpr Vec Backward() requires (N == 3)
+	{
+		Vec result;
+		result.Data[2] = T{1};
 		return result;
 	}
 

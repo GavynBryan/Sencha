@@ -13,7 +13,7 @@ FetchContent_MakeAvailable(googletest)
 
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/kettle/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/teapot/*.cpp
 )
 
 add_executable(engine_tests ${TEST_SOURCES})
