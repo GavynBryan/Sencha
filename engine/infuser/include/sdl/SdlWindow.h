@@ -6,11 +6,12 @@
 #include <window/WindowCreateInfo.h>
 
 struct SDL_Window;
+class SdlVideoService;
 
 class SdlWindow : public IWindow, public IService
 {
 public:
-    SdlWindow(Logger& logger, const WindowCreateInfo& createInfo);
+    SdlWindow(Logger& logger, SdlVideoService& video, const WindowCreateInfo& createInfo);
     ~SdlWindow() override;
 
     SdlWindow(const SdlWindow&) = delete;
@@ -37,6 +38,7 @@ public:
     void Hide() override;
 
     [[nodiscard]] SDL_Window* GetHandle() const { return Window; }
+    [[nodiscard]] uint32_t GetId() const;
 
 private:
     Logger& Log;

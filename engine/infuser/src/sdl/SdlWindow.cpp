@@ -1,7 +1,7 @@
 #include <sdl/SdlWindow.h>
+#include <sdl/SdlVideoService.h>
 
 #include <SDL3/SDL.h>
-#include <stdexcept>
 
 namespace
 {
@@ -40,12 +40,12 @@ namespace
     }
 }
 
-SdlWindow::SdlWindow(Logger& logger, const WindowCreateInfo& createInfo)
+SdlWindow::SdlWindow(Logger& logger, SdlVideoService& video, const WindowCreateInfo& createInfo)
     : Log(logger)
 {
-    if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
+    if (!video.IsValid())
     {
-        Log.Error("SDL video init failed: {}", SDL_GetError());
+        Log.Error("SDL window creation failed: video subsystem is not initialized");
         return;
     }
 
@@ -67,7 +67,6 @@ SdlWindow::SdlWindow(Logger& logger, const WindowCreateInfo& createInfo)
 SdlWindow::~SdlWindow()
 {
     Close();
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
 bool SdlWindow::IsValid() const
@@ -167,4 +166,10 @@ void SdlWindow::Hide()
 {
     if (Window)
         SDL_HideWindow(Window);
+}
+
+uint32_t SdlWindow::GetId() const
+{
+    if (!Window) return 0;
+    return SDL_GetWindowID(Window);
 }

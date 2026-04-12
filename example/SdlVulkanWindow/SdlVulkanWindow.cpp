@@ -1,8 +1,15 @@
 #include <logging/ConsoleLogSink.h>
+#include <sdl/SdlVideoService.h>
 #include <sdl/SdlWindow.h>
+#include <sdl/SdlWindowService.h>
 #include <service/ServiceHost.h>
+#include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/VulkanDeviceService.h>
 #include <vulkan/VulkanInstanceService.h>
+#include <vulkan/VulkanPhysicalDeviceService.h>
+#include <vulkan/VulkanQueueService.h>
+#include <vulkan/VulkanSurfaceService.h>
+#include <window/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>
 
@@ -26,41 +33,69 @@ int main()
     windowInfo.Resizable = true;
     windowInfo.Visible = true;
 
-    SdlWindow window(logger, windowInfo);
-    if (!window.IsValid())
+    SdlVideoService video(logger);
+    if (!video.IsValid())
     {
         return 1;
     }
 
-    VulkanInstanceService::CreateInfo instanceInfo;
-    instanceInfo.AppName = "SdlVulkanWindow";
+    SdlWindowService windows(logger, video);
+    SdlWindow* window = windows.CreateWindow(windowInfo);
+    if (!window)
+    {
+        return 1;
+    }
 
-    VulkanInstanceService instance(logger, instanceInfo, &window);
+    auto windowId = window->GetId();
+
+    VulkanBootstrapPolicy vulkanPolicy;
+    vulkanPolicy.AppName = "SdlVulkanWindow";
+    vulkanPolicy.RequiredQueues.Present = true;
+
+    auto platformExtensions = windows.GetRequiredVulkanInstanceExtensions();
+    vulkanPolicy.RequiredInstanceExtensions.insert(
+        vulkanPolicy.RequiredInstanceExtensions.end(),
+        platformExtensions.begin(),
+        platformExtensions.end());
+
+    VulkanInstanceService instance(logger, vulkanPolicy);
     if (!instance.IsValid())
     {
         return 1;
     }
 
-    VulkanDeviceService::CreateInfo deviceInfo;
-    VulkanDeviceService device(logger, instance, deviceInfo, &window);
+    VulkanSurfaceService surface(logger, instance, *window);
+    if (!surface.IsValid())
+    {
+        return 1;
+    }
+
+    VulkanPhysicalDeviceService physicalDevice(logger, instance, vulkanPolicy, &surface);
+    if (!physicalDevice.IsValid())
+    {
+        return 1;
+    }
+
+    VulkanDeviceService device(logger, physicalDevice, vulkanPolicy);
     if (!device.IsValid())
+    {
+        return 1;
+    }
+
+    VulkanQueueService queues(logger, device, physicalDevice, vulkanPolicy);
+    if (!queues.IsValid())
     {
         return 1;
     }
 
     logger.Info("SDL3 Vulkan window is running. Close the window to exit.");
 
-    bool running = true;
-    while (running)
+    while (windows.IsAlive(windowId))
     {
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            if (event.type == SDL_EVENT_QUIT ||
-                event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
-            {
-                running = false;
-            }
+            windows.HandleEvent(event);
         }
 
         SDL_Delay(16);
