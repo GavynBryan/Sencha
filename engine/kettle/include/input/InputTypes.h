@@ -8,13 +8,16 @@
 //
 // Compact, numeric types for the input pipeline. No strings in hot paths.
 // IDs start at 1; zero means invalid/unset.
+// InputActionId is 8-bit, so one action registry can expose 255 actions.
 //=============================================================================
 
 // --- Identity types ----------------------------------------------------------
 
+static constexpr uint16_t MaxInputActions = 255;
+
 struct InputActionId
 {
-	uint16_t Value = 0;
+	uint8_t Value = 0;
 
 	bool operator==(const InputActionId&) const = default;
 	auto operator<=>(const InputActionId&) const = default;
@@ -25,7 +28,7 @@ template<> struct std::hash<InputActionId>
 {
 	std::size_t operator()(const InputActionId& id) const noexcept
 	{
-		return std::hash<uint16_t>{}(id.Value);
+		return std::hash<uint8_t>{}(id.Value);
 	}
 };
 

@@ -12,7 +12,8 @@
 // config reload), then read each frame by InputMappingSystem.
 //
 // Contains only numeric IDs and flat lookup tables — no strings in the
-// runtime mapping path.
+// runtime mapping path. Action names are retained only for debug/tooling
+// helpers, not runtime mapping decisions.
 //=============================================================================
 class InputBindingService : public IService
 {

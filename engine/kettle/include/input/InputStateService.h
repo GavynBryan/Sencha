@@ -19,7 +19,7 @@
 class InputStateService : public IService
 {
 public:
-	static constexpr uint16_t MaxActions = 512;
+	static constexpr uint16_t MaxActions = MaxInputActions;
 
 	struct ActionState
 	{

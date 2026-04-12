@@ -1,3 +1,4 @@
+#include <input/InputActionRegistry.h>
 #include <input/InputBindingCompiler.h>
 #include <input/InputBindingService.h>
 #include <input/InputEventQueueService.h>
@@ -66,15 +67,30 @@ class SenchaInputSystemExample
 {
 };
 
+namespace ExampleActions
+{
+	constexpr InputActionId Jump{1};
+	constexpr InputActionId MoveLeft{2};
+	constexpr InputActionId Shoot{3};
+	constexpr InputActionId Quit{4};
+
+	static constexpr InputActionEntry Entries[] = {
+		{"Jump", Jump},
+		{"MoveLeft", MoveLeft},
+		{"Shoot", Shoot},
+		{"Quit", Quit},
+	};
+}
+
 class ConsoleInputOutputSystem final : public ISystem
 {
 public:
 	ConsoleInputOutputSystem(
 		InputEventQueueService& events,
-		InputBindingService& bindings,
+		InputActionId quitAction,
 		bool& running)
 		: Events(events)
-		, Bindings(bindings)
+		, QuitAction(quitAction)
 		, Running(running)
 	{
 	}
@@ -84,17 +100,16 @@ private:
 	{
 		for (const auto& event : Events.GetBuffer().Items())
 		{
-			auto action = Bindings.GetActionName(event.Action);
 			std::cout
 				<< "input "
-				<< action
+				<< static_cast<uint16_t>(event.Action.Value)
 				<< " "
 				<< ToString(event.Phase)
 				<< " value="
 				<< event.Value
 				<< "\n";
 
-			if (action == "Quit" && event.Phase == InputPhase::Started)
+			if (event.Action == QuitAction && event.Phase == InputPhase::Started)
 			{
 				Running = false;
 			}
@@ -102,7 +117,7 @@ private:
 	}
 
 	InputEventQueueService& Events;
-	InputBindingService& Bindings;
+	InputActionId QuitAction;
 	bool& Running;
 };
 
@@ -142,11 +157,21 @@ int main()
 	}
 
 	SdlInputControlResolver controlResolver;
-	auto table = CompileInputBindings(*config, controlResolver, &compileError);
+	InputActionRegistry actionRegistry{ExampleActions::Entries};
+	auto table = CompileInputBindings(
+		*config,
+		actionRegistry,
+		controlResolver,
+		&compileError);
 	if (!table)
 	{
 		logger.Error("Failed to compile input bindings: {}", compileError.Message);
 		return 1;
+	}
+
+	for (uint16_t i = 0; i < table->ActionNames.size(); ++i)
+	{
+		logger.Info("Action {} = {}", i + 1, table->ActionNames[i]);
 	}
 
 	WindowCreateInfo windowInfo;
@@ -187,7 +212,7 @@ int main()
 	systems.AddSystem<ConsoleInputOutputSystem>(
 		2,
 		actionEvents,
-		bindings,
+		ExampleActions::Quit,
 		running);
 
 	systems.Init();
