@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <input/InputTypes.h>
+#include <input/InputActionRegistry.h>
 #include <input/InputConfig.h>
 #include <input/InputBindingTable.h>
 #include <input/InputBindingCompiler.h>
@@ -16,29 +17,29 @@
 // Input type tests
 // =============================================================================
 
-TEST(InputTypes, ActionIdZeroIsInvalid)
+TEST(InputTypes, DefaultActionIdIsInvalid)
 {
 	InputActionId id{};
 	EXPECT_FALSE(static_cast<bool>(id));
-	EXPECT_EQ(id.Value, 0);
+	EXPECT_EQ(id.Value, InvalidActionId);
 }
 
-TEST(InputTypes, ActionIdNonZeroIsValid)
+TEST(InputTypes, ActionIdZeroIsValid)
 {
-	InputActionId id{1};
+	InputActionId id{0};
 	EXPECT_TRUE(static_cast<bool>(id));
 }
 
 TEST(InputTypes, ActionIdEquality)
 {
-	InputActionId a{1}, b{1}, c{2};
+	InputActionId a{0}, b{0}, c{1};
 	EXPECT_EQ(a, b);
 	EXPECT_NE(a, c);
 }
 
 TEST(InputTypes, ActionIdOrdering)
 {
-	InputActionId a{1}, b{2};
+	InputActionId a{0}, b{1};
 	EXPECT_LT(a, b);
 }
 
@@ -96,7 +97,17 @@ public:
 	}
 };
 
+namespace TestActions
+{
+	static constexpr std::string_view Names[] = {
+		"Jump", "Pause", "MoveLeft", "MoveRight",
+		"Shoot", "Aim", "Fire", "Reload",
+	};
+	enum Action : uint16_t { Jump, Pause, MoveLeft, MoveRight, Shoot, Aim, Fire, Reload, Count };
+}
+
 static const TestInputControlResolver TestControlResolver;
+static const InputActionRegistry TestActionRegistry{TestActions::Names};
 
 TEST(InputConfig, DeserializeValidConfig)
 {
@@ -118,15 +129,15 @@ TEST(InputConfig, DeserializeValidConfig)
 	EXPECT_EQ(config->Bindings[0].Trigger, "Pressed");
 }
 
-TEST(InputConfig, DeserializeRejectsMissingActions)
+TEST(InputConfig, DeserializeAcceptsMissingActions)
 {
 	auto json = JsonParse(R"({"bindings": []})");
 	ASSERT_TRUE(json.has_value());
 
 	InputCompileError error;
 	auto config = DeserializeInputConfig(*json, &error);
-	EXPECT_FALSE(config.has_value());
-	EXPECT_FALSE(error.Message.empty());
+	ASSERT_TRUE(config.has_value()) << error.Message;
+	EXPECT_TRUE(config->Actions.empty());
 }
 
 TEST(InputConfig, DeserializeRejectsMissingBindings)
@@ -152,37 +163,81 @@ TEST(InputBindingCompiler, CompileProducesActionIds)
 	ASSERT_TRUE(config.has_value());
 
 	InputCompileError error;
-	auto table = CompileInputBindings(*config, TestControlResolver, &error);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver, &error);
 	ASSERT_TRUE(table.has_value()) << error.Message;
 
-	EXPECT_EQ(table->ActionCount, 4);
+	EXPECT_EQ(table->ActionCount, 8);
 	EXPECT_EQ(table->ActionNames[0], "Jump");
 	EXPECT_EQ(table->ActionNames[3], "MoveRight");
+	EXPECT_EQ(table->ActionNames[4], "Shoot");
+	EXPECT_EQ(table->ActionNames[7], "Reload");
+}
+
+TEST(InputBindingCompiler, CompileDoesNotRequireActionsArray)
+{
+	auto json = JsonParse(R"({
+		"bindings": [
+			{"action": "Jump", "device": "Keyboard", "control": "Space", "trigger": "Pressed"}
+		]
+	})");
+	auto config = DeserializeInputConfig(*json);
+	ASSERT_TRUE(config.has_value());
+
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
+	ASSERT_TRUE(table.has_value());
+
+	auto spaceBindings = table->GetKeyboardBindings(44);
+	ASSERT_EQ(spaceBindings.size(), 1u);
+	EXPECT_EQ(spaceBindings[0].Action, TestActions::Jump);
+}
+
+TEST(InputBindingCompiler, CompileUsesRegistryIdsInsteadOfConfigOrder)
+{
+	auto json = JsonParse(R"({
+		"actions": [
+			{"name": "MoveRight"},
+			{"name": "MoveLeft"},
+			{"name": "Pause"},
+			{"name": "Jump"}
+		],
+		"bindings": [
+			{"action": "Jump", "device": "Keyboard", "control": "Space", "trigger": "Pressed"}
+		]
+	})");
+	auto config = DeserializeInputConfig(*json);
+	ASSERT_TRUE(config.has_value());
+
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
+	ASSERT_TRUE(table.has_value());
+
+	auto spaceBindings = table->GetKeyboardBindings(44);
+	ASSERT_EQ(spaceBindings.size(), 1u);
+	EXPECT_EQ(spaceBindings[0].Action, TestActions::Jump);
 }
 
 TEST(InputBindingCompiler, CompileProducesKeyboardBindings)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	// Space = test control code 44
 	auto spaceBindings = table->GetKeyboardBindings(44);
 	ASSERT_EQ(spaceBindings.size(), 1u);
-	EXPECT_EQ(spaceBindings[0].Action.Value, 1); // Jump = action 1
+	EXPECT_EQ(spaceBindings[0].Action, TestActions::Jump);
 	EXPECT_EQ(spaceBindings[0].Trigger, InputTriggerType::Pressed);
 
 	// Escape = test control code 41
 	auto escBindings = table->GetKeyboardBindings(41);
 	ASSERT_EQ(escBindings.size(), 1u);
-	EXPECT_EQ(escBindings[0].Action.Value, 2); // Pause = action 2
+	EXPECT_EQ(escBindings[0].Action, TestActions::Pause);
 	EXPECT_EQ(escBindings[0].Trigger, InputTriggerType::Pressed);
 
 	// A = test control code 4
 	auto aBindings = table->GetKeyboardBindings(4);
 	ASSERT_EQ(aBindings.size(), 1u);
-	EXPECT_EQ(aBindings[0].Action.Value, 3); // MoveLeft = action 3
+	EXPECT_EQ(aBindings[0].Action, TestActions::MoveLeft);
 	EXPECT_EQ(aBindings[0].Trigger, InputTriggerType::Held);
 }
 
@@ -190,7 +245,7 @@ TEST(InputBindingCompiler, UnboundKeyReturnsEmpty)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	// W = test control code 26, not bound
@@ -202,7 +257,7 @@ TEST(InputBindingCompiler, OutOfRangeControlReturnsEmpty)
 {
 	auto json = JsonParse(TestConfigJson);
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	EXPECT_TRUE(table->GetKeyboardBindings(999).empty());
@@ -221,7 +276,7 @@ TEST(InputBindingCompiler, RejectsUnknownAction)
 	ASSERT_TRUE(config.has_value());
 
 	InputCompileError error;
-	auto table = CompileInputBindings(*config, TestControlResolver, &error);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver, &error);
 	EXPECT_FALSE(table.has_value());
 	EXPECT_NE(error.Message.find("NonExistent"), std::string::npos);
 }
@@ -235,7 +290,7 @@ TEST(InputBindingCompiler, RejectsUnknownControl)
 		]
 	})");
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	EXPECT_FALSE(table.has_value());
 }
 
@@ -249,17 +304,17 @@ TEST(InputBindingCompiler, MouseBindings)
 		]
 	})");
 	auto config = DeserializeInputConfig(*json);
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	auto leftBindings = table->GetMouseButtonBindings(1); // Left = 1
 	ASSERT_EQ(leftBindings.size(), 1u);
-	EXPECT_EQ(leftBindings[0].Action.Value, 1); // Shoot
+	EXPECT_EQ(leftBindings[0].Action, TestActions::Shoot);
 	EXPECT_EQ(leftBindings[0].Trigger, InputTriggerType::Pressed);
 
 	auto rightBindings = table->GetMouseButtonBindings(3); // Right = 3
 	ASSERT_EQ(rightBindings.size(), 1u);
-	EXPECT_EQ(rightBindings[0].Action.Value, 2); // Aim
+	EXPECT_EQ(rightBindings[0].Action, TestActions::Aim);
 	EXPECT_EQ(rightBindings[0].Trigger, InputTriggerType::Held);
 }
 
@@ -274,7 +329,7 @@ protected:
 	{
 		auto json = JsonParse(TestConfigJson);
 		auto config = DeserializeInputConfig(json.value());
-		auto table = CompileInputBindings(config.value(), TestControlResolver);
+		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
 		auto& logger = Logging.GetLogger<InputMappingSystem>();
@@ -310,7 +365,7 @@ protected:
 	RawInputBufferService RawBuffer;
 	InputBindingService BindingService;
 	InputEventQueueService ActionQueue;
-	InputStateService StateService;
+	InputStateService StateService{TestActions::Count};
 	LoggingProvider Logging;
 	SystemHost Systems;
 };
@@ -322,7 +377,7 @@ TEST_F(InputMappingTest, PressedTriggerEmitsStarted)
 
 	auto actions = GetActions();
 	ASSERT_EQ(actions.size(), 1u);
-	EXPECT_EQ(actions[0].Action.Value, 1); // Jump
+	EXPECT_EQ(actions[0].Action, TestActions::Jump);
 	EXPECT_EQ(actions[0].Phase, InputPhase::Started);
 	EXPECT_FLOAT_EQ(actions[0].Value, 1.0f);
 }
@@ -343,7 +398,7 @@ TEST_F(InputMappingTest, HeldTriggerEmitsStartedOnPress)
 
 	auto actions = GetActions();
 	ASSERT_GE(actions.size(), 1u);
-	EXPECT_EQ(actions[0].Action.Value, 3); // MoveLeft
+	EXPECT_EQ(actions[0].Action, TestActions::MoveLeft);
 	EXPECT_EQ(actions[0].Phase, InputPhase::Started);
 }
 
@@ -359,7 +414,7 @@ TEST_F(InputMappingTest, HeldTriggerEmitsPerformedEachFrame)
 
 	auto actions = GetActions();
 	ASSERT_EQ(actions.size(), 1u);
-	EXPECT_EQ(actions[0].Action.Value, 3); // MoveLeft
+	EXPECT_EQ(actions[0].Action, TestActions::MoveLeft);
 	EXPECT_EQ(actions[0].Phase, InputPhase::Performed);
 }
 
@@ -381,7 +436,7 @@ TEST_F(InputMappingTest, HeldTriggerEmitsCanceledOnRelease)
 	bool foundCanceled = false;
 	for (const auto& a : actions)
 	{
-		if (a.Action.Value == 3 && a.Phase == InputPhase::Canceled)
+		if (a.Action == TestActions::MoveLeft && a.Phase == InputPhase::Canceled)
 		{
 			foundCanceled = true;
 			break;
@@ -435,8 +490,8 @@ TEST_F(InputMappingTest, StateServiceUpdatedOnPress)
 	PressKey(44); // Space -> Jump
 	RunMapping();
 
-	EXPECT_TRUE(StateService.IsActive(InputActionId{1}));
-	EXPECT_FLOAT_EQ(StateService.GetValue(InputActionId{1}), 1.0f);
+	EXPECT_TRUE(StateService.IsActive(TestActions::Jump));
+	EXPECT_FLOAT_EQ(StateService.GetValue(TestActions::Jump), 1.0f);
 }
 
 TEST_F(InputMappingTest, StateServiceUpdatedOnHeldRelease)
@@ -444,14 +499,14 @@ TEST_F(InputMappingTest, StateServiceUpdatedOnHeldRelease)
 	// Press A -> MoveLeft (Held)
 	PressKey(4);
 	RunMapping();
-	EXPECT_TRUE(StateService.IsActive(InputActionId{3}));
+	EXPECT_TRUE(StateService.IsActive(TestActions::MoveLeft));
 
 	RawBuffer.GetBuffer().Clear();
 
 	// Release A
 	ReleaseKey(4);
 	RunMapping();
-	EXPECT_FALSE(StateService.IsActive(InputActionId{3}));
+	EXPECT_FALSE(StateService.IsActive(TestActions::MoveLeft));
 }
 
 TEST_F(InputMappingTest, ActionQueueClearedEachFrame)
@@ -473,34 +528,36 @@ TEST_F(InputMappingTest, ActionQueueClearedEachFrame)
 
 TEST(InputStateService, DefaultStateIsInactive)
 {
-	InputStateService service;
-	auto state = service.GetActionState(InputActionId{1});
+	InputStateService service{8};
+	auto state = service.GetActionState(InputActionId{0});
 	EXPECT_FALSE(state.Active);
 	EXPECT_FLOAT_EQ(state.Value, 0.0f);
 }
 
 TEST(InputStateService, SetAndGetState)
 {
-	InputStateService service;
-	service.SetActionState(InputActionId{1}, true, 0.75f);
+	InputStateService service{8};
+	service.SetActionState(InputActionId{0}, true, 0.75f);
 
-	EXPECT_TRUE(service.IsActive(InputActionId{1}));
-	EXPECT_FLOAT_EQ(service.GetValue(InputActionId{1}), 0.75f);
+	EXPECT_TRUE(service.IsActive(InputActionId{0}));
+	EXPECT_FLOAT_EQ(service.GetValue(InputActionId{0}), 0.75f);
 }
 
-TEST(InputStateService, ZeroActionIdIgnored)
+TEST(InputStateService, InvalidActionIdIgnored)
 {
-	InputStateService service;
-	service.SetActionState(InputActionId{0}, true, 1.0f);
-	EXPECT_FALSE(service.IsActive(InputActionId{0}));
+	InputStateService service{8};
+	InputActionId invalid{};
+	service.SetActionState(invalid, true, 1.0f);
+	EXPECT_FALSE(service.IsActive(invalid));
 }
 
-TEST(InputStateService, OutOfRangeActionIdIgnored)
+TEST(InputStateService, MaxActionIdSupported)
 {
-	InputStateService service;
-	InputActionId huge{60000};
-	service.SetActionState(huge, true, 1.0f);
-	EXPECT_FALSE(service.IsActive(huge));
+	InputStateService service{256};
+	InputActionId max{255};
+	service.SetActionState(max, true, 1.0f);
+	EXPECT_TRUE(service.IsActive(max));
+	EXPECT_FLOAT_EQ(service.GetValue(max), 1.0f);
 }
 
 // =============================================================================
@@ -529,7 +586,7 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 	ASSERT_TRUE(config.has_value());
 
 	// Compile bindings
-	auto table = CompileInputBindings(*config, TestControlResolver);
+	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
 	// Set up services
@@ -538,18 +595,18 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 	bindingService.SetBindings(std::move(*table));
 	InputEventQueueService actionQueue;
 
-	// Verify: R key (test control code 21) should map to Reload (action 2)
+	// Verify: R key (test control code 21) should map to Reload
 	auto rBindings = bindingService.GetBindings().GetKeyboardBindings(21);
 	ASSERT_EQ(rBindings.size(), 1u);
-	EXPECT_EQ(rBindings[0].Action.Value, 2);
+	EXPECT_EQ(rBindings[0].Action, TestActions::Reload);
 
-	// Verify: Mouse Left (button 1) should map to Fire (action 1)
+	// Verify: Mouse Left (button 1) should map to Fire
 	auto leftBindings = bindingService.GetBindings().GetMouseButtonBindings(1);
 	ASSERT_EQ(leftBindings.size(), 1u);
-	EXPECT_EQ(leftBindings[0].Action.Value, 1);
+	EXPECT_EQ(leftBindings[0].Action, TestActions::Fire);
 
 	// Verify debug name lookup
-	EXPECT_EQ(bindingService.GetActionName(InputActionId{1}), "Fire");
-	EXPECT_EQ(bindingService.GetActionName(InputActionId{2}), "Reload");
-	EXPECT_TRUE(bindingService.GetActionName(InputActionId{0}).empty());
+	EXPECT_EQ(bindingService.GetActionName(TestActions::Fire), "Fire");
+	EXPECT_EQ(bindingService.GetActionName(TestActions::Reload), "Reload");
+	EXPECT_TRUE(bindingService.GetActionName(InputActionId{}).empty());
 }

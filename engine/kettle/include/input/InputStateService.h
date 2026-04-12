@@ -2,7 +2,7 @@
 
 #include <service/IService.h>
 #include <input/InputTypes.h>
-#include <array>
+#include <vector>
 
 //=============================================================================
 // InputStateService (optional)
@@ -19,7 +19,8 @@
 class InputStateService : public IService
 {
 public:
-	static constexpr uint16_t MaxActions = 512;
+	explicit InputStateService(uint16_t actionCount)
+		: States(actionCount) {}
 
 	struct ActionState
 	{
@@ -29,16 +30,16 @@ public:
 
 	void SetActionState(InputActionId action, bool active, float value = 0.0f)
 	{
-		if (action.Value == 0 || action.Value > MaxActions) return;
-		auto& state = States[action.Value - 1];
+		if (!action || action.Value >= States.size()) return;
+		auto& state = States[action.Value];
 		state.Active = active;
 		state.Value = value;
 	}
 
 	[[nodiscard]] ActionState GetActionState(InputActionId action) const
 	{
-		if (action.Value == 0 || action.Value > MaxActions) return {};
-		return States[action.Value - 1];
+		if (!action || action.Value >= States.size()) return {};
+		return States[action.Value];
 	}
 
 	[[nodiscard]] bool IsActive(InputActionId action) const
@@ -51,6 +52,11 @@ public:
 		return GetActionState(action).Value;
 	}
 
+	[[nodiscard]] uint16_t GetActionCount() const
+	{
+		return static_cast<uint16_t>(States.size());
+	}
+
 private:
-	std::array<ActionState, MaxActions> States{};
+	std::vector<ActionState> States;
 };

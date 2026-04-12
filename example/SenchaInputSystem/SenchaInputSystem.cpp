@@ -1,3 +1,4 @@
+#include <input/InputActionRegistry.h>
 #include <input/InputBindingCompiler.h>
 #include <input/InputBindingService.h>
 #include <input/InputEventQueueService.h>
@@ -66,15 +67,21 @@ class SenchaInputSystemExample
 {
 };
 
+namespace ExampleActions
+{
+	static constexpr std::string_view Names[] = {"Jump", "MoveLeft", "Shoot", "Quit"};
+	enum Action : uint16_t { Jump, MoveLeft, Shoot, Quit, Count };
+}
+
 class ConsoleInputOutputSystem final : public ISystem
 {
 public:
 	ConsoleInputOutputSystem(
 		InputEventQueueService& events,
-		InputBindingService& bindings,
+		InputActionId quitAction,
 		bool& running)
 		: Events(events)
-		, Bindings(bindings)
+		, QuitAction(quitAction)
 		, Running(running)
 	{
 	}
@@ -84,17 +91,16 @@ private:
 	{
 		for (const auto& event : Events.GetBuffer().Items())
 		{
-			auto action = Bindings.GetActionName(event.Action);
 			std::cout
 				<< "input "
-				<< action
+				<< event.Action.Value
 				<< " "
 				<< ToString(event.Phase)
 				<< " value="
 				<< event.Value
 				<< "\n";
 
-			if (action == "Quit" && event.Phase == InputPhase::Started)
+			if (event.Action == QuitAction && event.Phase == InputPhase::Started)
 			{
 				Running = false;
 			}
@@ -102,7 +108,7 @@ private:
 	}
 
 	InputEventQueueService& Events;
-	InputBindingService& Bindings;
+	InputActionId QuitAction;
 	bool& Running;
 };
 
@@ -142,11 +148,21 @@ int main()
 	}
 
 	SdlInputControlResolver controlResolver;
-	auto table = CompileInputBindings(*config, controlResolver, &compileError);
+	InputActionRegistry actionRegistry{ExampleActions::Names};
+	auto table = CompileInputBindings(
+		*config,
+		actionRegistry,
+		controlResolver,
+		&compileError);
 	if (!table)
 	{
 		logger.Error("Failed to compile input bindings: {}", compileError.Message);
 		return 1;
+	}
+
+	for (uint16_t i = 0; i < table->ActionNames.size(); ++i)
+	{
+		logger.Info("Action {} = {}", i, table->ActionNames[i]);
 	}
 
 	WindowCreateInfo windowInfo;
@@ -166,7 +182,7 @@ int main()
 	RawInputBufferService rawInput;
 	InputBindingService bindings;
 	InputEventQueueService actionEvents;
-	InputStateService state;
+	InputStateService state{ExampleActions::Count};
 	bindings.SetBindings(std::move(*table));
 
 	bool running = true;
@@ -187,7 +203,7 @@ int main()
 	systems.AddSystem<ConsoleInputOutputSystem>(
 		2,
 		actionEvents,
-		bindings,
+		ExampleActions::Quit,
 		running);
 
 	systems.Init();

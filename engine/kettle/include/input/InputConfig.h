@@ -7,9 +7,10 @@
 // Input config types
 //
 // Authored config structs — deserialized from JSON at load time, then
-// compiled into runtime binding tables. These types exist only during
-// loading. The runtime input pipeline uses InputBindingTable with
-// numeric IDs and flat lookup arrays.
+// compiled into runtime binding tables. Actions are optional diagnostics;
+// stable action IDs come from the app-owned InputActionRegistry.
+// These types exist only during loading. The runtime input pipeline uses
+// InputBindingTable with numeric IDs and flat lookup arrays.
 //=============================================================================
 
 struct InputActionConfig

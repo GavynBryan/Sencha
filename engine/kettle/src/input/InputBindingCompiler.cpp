@@ -4,6 +4,28 @@
 namespace
 {
 
+bool PopulateActionNames(
+	const IInputActionResolver& actionResolver,
+	InputBindingTable& table,
+	InputCompileError* error)
+{
+	auto names = actionResolver.GetActionNames();
+	table.ActionCount = actionResolver.GetActionCount();
+	table.ActionNames.resize(table.ActionCount);
+
+	for (uint16_t i = 0; i < table.ActionCount; ++i)
+	{
+		if (names[i].empty())
+		{
+			if (error) error->Message = "Action registry contains an empty action name";
+			return false;
+		}
+		table.ActionNames[i] = names[i];
+	}
+
+	return true;
+}
+
 std::optional<InputDeviceType> ParseDeviceType(std::string_view name)
 {
 	if (name == "Keyboard")   return InputDeviceType::Keyboard;
@@ -35,28 +57,30 @@ std::optional<InputConfigData> DeserializeInputConfig(
 
 	InputConfigData config;
 
-	// Actions
 	const auto* actions = root.Find("actions");
-	if (!actions || !actions->IsArray())
+	if (actions)
 	{
-		if (error) error->Message = "Missing or invalid 'actions' array";
-		return std::nullopt;
-	}
+		if (!actions->IsArray())
+		{
+			if (error) error->Message = "Invalid 'actions' array";
+			return std::nullopt;
+		}
 
-	for (const auto& item : actions->AsArray())
-	{
-		if (!item.IsObject())
+		for (const auto& item : actions->AsArray())
 		{
-			if (error) error->Message = "Action entry must be an object";
-			return std::nullopt;
+			if (!item.IsObject())
+			{
+				if (error) error->Message = "Action entry must be an object";
+				return std::nullopt;
+			}
+			const auto* name = item.Find("name");
+			if (!name || !name->IsString())
+			{
+				if (error) error->Message = "Action missing 'name' string";
+				return std::nullopt;
+			}
+			config.Actions.push_back({name->AsString()});
 		}
-		const auto* name = item.Find("name");
-		if (!name || !name->IsString())
-		{
-			if (error) error->Message = "Action missing 'name' string";
-			return std::nullopt;
-		}
-		config.Actions.push_back({name->AsString()});
 	}
 
 	// Bindings
@@ -124,20 +148,25 @@ std::optional<InputConfigData> DeserializeInputConfig(
 
 std::optional<InputBindingTable> CompileInputBindings(
 	const InputConfigData& config,
+	const IInputActionResolver& actionResolver,
 	const IInputControlResolver& controlResolver,
 	InputCompileError* error)
 {
 	InputBindingTable table;
 
-	// Build action name -> ID mapping (IDs start at 1)
-	std::unordered_map<std::string, InputActionId> actionMap;
+	if (!PopulateActionNames(actionResolver, table, error))
+	{
+		return std::nullopt;
+	}
+
 	for (const auto& action : config.Actions)
 	{
-		InputActionId id{static_cast<uint16_t>(table.ActionNames.size() + 1)};
-		actionMap[action.Name] = id;
-		table.ActionNames.push_back(action.Name);
+		if (!actionResolver.ResolveAction(action.Name))
+		{
+			if (error) error->Message = "Unknown action in diagnostics: " + action.Name;
+			return std::nullopt;
+		}
 	}
-	table.ActionCount = static_cast<uint16_t>(table.ActionNames.size());
 
 	// Temporary per-control binding lists (built then flattened)
 	std::unordered_map<uint16_t, std::vector<CompiledBinding>> keyboardTemp;
@@ -145,8 +174,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 
 	for (const auto& bc : config.Bindings)
 	{
-		auto actionIt = actionMap.find(bc.Action);
-		if (actionIt == actionMap.end())
+		auto action = actionResolver.ResolveAction(bc.Action);
+		if (!action)
 		{
 			if (error) error->Message = "Unknown action: " + bc.Action;
 			return std::nullopt;
@@ -185,9 +214,9 @@ std::optional<InputBindingTable> CompileInputBindings(
 		}
 
 		CompiledBinding compiled{
-			actionIt->second,
-			InputContextId{},   // default context for first pass
-			InputUserId{},      // default user for first pass
+			*action,
+			InputContextId{},
+			InputUserId{},
 			*trigger
 		};
 
@@ -212,10 +241,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 			static_cast<uint16_t>(table.KeyboardBindings.size());
 		table.KeyboardSlots[control].Count =
 			static_cast<uint16_t>(bindings.size());
-		for (auto& b : bindings)
-		{
-			table.KeyboardBindings.push_back(b);
-		}
+		table.KeyboardBindings.insert(
+			table.KeyboardBindings.end(), bindings.begin(), bindings.end());
 	}
 
 	// Flatten mouse bindings into packed array
@@ -226,10 +253,8 @@ std::optional<InputBindingTable> CompileInputBindings(
 			static_cast<uint16_t>(table.MouseButtonBindings.size());
 		table.MouseButtonSlots[control].Count =
 			static_cast<uint16_t>(bindings.size());
-		for (auto& b : bindings)
-		{
-			table.MouseButtonBindings.push_back(b);
-		}
+		table.MouseButtonBindings.insert(
+			table.MouseButtonBindings.end(), bindings.begin(), bindings.end());
 	}
 
 	return table;
