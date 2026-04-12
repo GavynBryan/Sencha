@@ -10,9 +10,11 @@
 #include <logging/LoggingProvider.h>
 #include <sdl/SdlInputControlResolver.h>
 #include <sdl/SdlInputIngestSystem.h>
-#include <sdl/SdlWindow.h>
+#include <sdl/SdlVideoService.h>
+#include <sdl/SdlWindowService.h>
 #include <system/ISystem.h>
 #include <system/SystemHost.h>
+#include <window/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>
 #include <fstream>
@@ -173,8 +175,14 @@ int main()
 	windowInfo.Resizable = false;
 	windowInfo.Visible = true;
 
-	SdlWindow window(logger, windowInfo);
-	if (!window.IsValid())
+	SdlVideoService video(logger);
+	if (!video.IsValid())
+	{
+		return 1;
+	}
+
+	SdlWindowService windows(logger, video);
+	if (!windows.CreateWindow(windowInfo))
 	{
 		return 1;
 	}

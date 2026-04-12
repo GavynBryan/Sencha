@@ -1,6 +1,4 @@
 #include <vulkan/VulkanInstanceService.h>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <cstring>
 
@@ -8,43 +6,46 @@ static constexpr const char* ValidationLayerName = "VK_LAYER_KHRONOS_validation"
 
 namespace
 {
-    std::vector<const char*> GetRequiredSdlInstanceExtensions(Logger& logger)
+    bool ContainsExtension(const std::vector<const char*>& extensions, const char* extension)
     {
-        Uint32 count = 0;
-        const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
-        if (!names || count == 0)
-        {
-            logger.Error("Failed to query SDL Vulkan extensions: {}", SDL_GetError());
-            return {};
-        }
+        return std::any_of(extensions.begin(), extensions.end(),
+            [extension](const char* existing)
+            {
+                return std::strcmp(existing, extension) == 0;
+            });
+    }
 
-        return { names, names + count };
+    void AddUniqueExtension(std::vector<const char*>& extensions, const char* extension)
+    {
+        if (!ContainsExtension(extensions, extension))
+        {
+            extensions.push_back(extension);
+        }
     }
 }
 
 VulkanInstanceService::VulkanInstanceService(Logger& logger,
-                                             const CreateInfo& info,
-                                             const SdlWindow* window)
+                                             const VulkanBootstrapPolicy& policy)
     : Log(logger)
 {
-    if (info.EnableValidation && !CheckValidationLayerSupport())
+    if (policy.EnableValidation && !CheckValidationLayerSupport())
     {
         Log.Warn("Validation layers requested but not available. Continuing without them.");
     }
     else
     {
-        ValidationEnabled = info.EnableValidation;
+        ValidationEnabled = policy.EnableValidation;
     }
 
     VkApplicationInfo appInfo{};
     appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName   = info.AppName.c_str();
-    appInfo.applicationVersion = info.AppVersion;
+    appInfo.pApplicationName   = policy.AppName.c_str();
+    appInfo.applicationVersion = policy.AppVersion;
     appInfo.pEngineName        = "Sencha";
     appInfo.engineVersion      = VK_MAKE_API_VERSION(0, 1, 0, 0);
-    appInfo.apiVersion         = info.ApiVersion;
+    appInfo.apiVersion         = policy.ApiVersion;
 
-    auto extensions = BuildExtensionList(info, window);
+    auto extensions = BuildExtensionList(policy);
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -109,24 +110,58 @@ bool VulkanInstanceService::CheckValidationLayerSupport() const
     return false;
 }
 
+bool VulkanInstanceService::CheckInstanceExtensionSupport(const char* extension) const
+{
+    uint32_t extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> available(extensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, available.data());
+
+    for (const auto& availableExtension : available)
+    {
+        if (std::strcmp(availableExtension.extensionName, extension) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 std::vector<const char*> VulkanInstanceService::BuildExtensionList(
-    const CreateInfo& info,
-    const SdlWindow* window) const
+    const VulkanBootstrapPolicy& policy) const
 {
     std::vector<const char*> extensions;
 
-    if (window)
+    for (const auto* extension : policy.RequiredInstanceExtensions)
     {
-        auto surfaceExts = GetRequiredSdlInstanceExtensions(Log);
-        extensions.insert(extensions.end(), surfaceExts.begin(), surfaceExts.end());
+        AddUniqueExtension(extensions, extension);
     }
 
     if (ValidationEnabled)
     {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        if (CheckInstanceExtensionSupport(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+        {
+            AddUniqueExtension(extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+        else
+        {
+            Log.Warn("Validation enabled but {} is not available", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
     }
 
-    extensions.insert(extensions.end(), info.ExtraExtensions.begin(), info.ExtraExtensions.end());
+    for (const auto* extension : policy.OptionalInstanceExtensions)
+    {
+        if (CheckInstanceExtensionSupport(extension))
+        {
+            AddUniqueExtension(extensions, extension);
+        }
+        else
+        {
+            Log.Info("Optional instance extension unavailable: {}", extension);
+        }
+    }
 
     Log.Info("Requesting {} instance extension(s):", extensions.size());
     for (const auto* ext : extensions)

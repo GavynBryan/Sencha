@@ -2,11 +2,8 @@
 
 #include <service/IService.h>
 #include <logging/Logger.h>
+#include <vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/vulkan.h>
-#include <vector>
-#include <string>
-
-class SdlWindow;
 
 //=============================================================================
 // VulkanInstanceService
@@ -18,25 +15,11 @@ class SdlWindow;
 //   auto& inst = services.AddService<VulkanInstanceService>(logger, info, &window);
 //   if (!inst.IsValid()) { /* handle failure */ }
 //
-// The optional SdlWindow* is used ONLY to query SDL's required instance
-// extensions. It does not create a surface; that responsibility belongs to
-// VulkanDeviceService or the caller.
 //=============================================================================
 class VulkanInstanceService : public IService
 {
 public:
-    struct CreateInfo
-    {
-        std::string AppName       = "Sencha";
-        uint32_t    AppVersion    = VK_MAKE_API_VERSION(0, 1, 0, 0);
-        uint32_t    ApiVersion    = VK_API_VERSION_1_3;
-        bool        EnableValidation = true;
-        std::vector<const char*> ExtraExtensions;
-    };
-
-    VulkanInstanceService(Logger& logger,
-                          const CreateInfo& info,
-                          const SdlWindow* window = nullptr);
+    VulkanInstanceService(Logger& logger, const VulkanBootstrapPolicy& policy);
     ~VulkanInstanceService() override;
 
     VulkanInstanceService(const VulkanInstanceService&) = delete;
@@ -56,8 +39,8 @@ private:
     bool                     ValidationEnabled = false;
 
     bool CheckValidationLayerSupport() const;
-    std::vector<const char*> BuildExtensionList(const CreateInfo& info,
-                                                const SdlWindow* window) const;
+    bool CheckInstanceExtensionSupport(const char* extension) const;
+    std::vector<const char*> BuildExtensionList(const VulkanBootstrapPolicy& policy) const;
     void SetupDebugMessenger();
     void DestroyDebugMessenger();
 

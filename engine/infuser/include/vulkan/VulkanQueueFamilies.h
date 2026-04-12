@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vulkan/VulkanBootstrapPolicy.h>
 
 //=============================================================================
 // VulkanQueueFamilies
@@ -21,10 +22,12 @@ struct VulkanQueueFamilies
     bool HasCompute() const { return Compute.has_value(); }
     bool HasTransfer() const { return Transfer.has_value(); }
 
-    bool IsComplete(bool requirePresent) const
+    bool Satisfies(const VulkanQueueRequirements& requirements) const
     {
-        if (!HasGraphics()) return false;
-        if (requirePresent && !HasPresent()) return false;
+        if (requirements.Graphics && !HasGraphics()) return false;
+        if (requirements.Present && !HasPresent()) return false;
+        if (requirements.Compute && !HasCompute()) return false;
+        if (requirements.Transfer && !HasTransfer()) return false;
         return true;
     }
 };
