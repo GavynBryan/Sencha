@@ -21,12 +21,13 @@ VulkanDeviceService::VulkanDeviceService(Logger& logger,
 
     if (surfaceProvider)
     {
-        Surface = surfaceProvider->CreateSurface(Instance);
-        if (Surface == VK_NULL_HANDLE)
+        auto result = surfaceProvider->CreateSurface(Instance);
+        if (!result.Succeeded())
         {
-            Log.Error("Surface provider returned a null surface");
+            Log.Error("Surface creation failed: {}", result.Error);
             return;
         }
+        Surface = result.Surface;
         Log.Info("Surface created via provider");
     }
 

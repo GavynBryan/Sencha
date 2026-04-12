@@ -19,4 +19,5 @@ target_include_directories(engine PUBLIC
 )
 
 find_package(Vulkan REQUIRED)
-target_link_libraries(engine PUBLIC Vulkan::Vulkan)
+find_package(SDL3 REQUIRED CONFIG)
+target_link_libraries(engine PUBLIC Vulkan::Vulkan SDL3::SDL3)
