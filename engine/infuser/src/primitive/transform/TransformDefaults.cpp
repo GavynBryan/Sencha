@@ -3,6 +3,7 @@
 #include <math/Transform3.h>
 #include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
+#include <primitive/transform/hierarchy/TransformPropagationOrderService.h>
 #include <primitive/transform/hierarchy/TransformPropagationSystem.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
@@ -25,6 +26,7 @@ namespace TransformDefaults {
     void SetupTransformPropagationStack2D(ServiceHost& serviceHost, SystemHost& systemHost)
     {
         serviceHost.AddService<TransformHierarchyService<Tags::Transform2DTag>>();
+        serviceHost.AddService<TransformPropagationOrderService<Tags::Transform2DTag>>();
         ServiceProvider provider(serviceHost);
         systemHost.AddSystem<TransformPropagationSystem<
             Transform2f,
@@ -34,6 +36,7 @@ namespace TransformDefaults {
 	void SetupTransformPropagationStack3D(ServiceHost& serviceHost, SystemHost& systemHost)
     {
         serviceHost.AddService<TransformHierarchyService<Tags::Transform3DTag>>();
+        serviceHost.AddService<TransformPropagationOrderService<Tags::Transform3DTag>>();
         ServiceProvider provider(serviceHost);
         systemHost.AddSystem<TransformPropagationSystem<
             Transform3f,

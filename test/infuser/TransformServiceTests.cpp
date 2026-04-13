@@ -4,6 +4,7 @@
 #include <math/Transform3.h>
 #include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
+#include <primitive/transform/hierarchy/TransformPropagationOrderService.h>
 #include <primitive/transform/hierarchy/TransformPropagationSystem.h>
 #include <raii/DataBatchHandle.h>
 #include <service/ServiceHost.h>
@@ -14,10 +15,12 @@
 namespace
 {
 	using Transform2Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform2DTag>;
+	using Transform2PropagationOrder = TransformPropagationOrderService<TransformDefaults::Tags::Transform2DTag>;
 	using Transform2Propagation = TransformPropagationSystem<
 		Transform2f,
 		TransformDefaults::Tags::Transform2DTag>;
 	using Transform3Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform3DTag>;
+	using Transform3PropagationOrder = TransformPropagationOrderService<TransformDefaults::Tags::Transform3DTag>;
 	using Transform3Propagation = TransformPropagationSystem<
 		Transform3f,
 		TransformDefaults::Tags::Transform3DTag>;
@@ -250,6 +253,7 @@ struct TransformPropagationFixture
 	DataBatch<Transform2f>& Locals;
 	DataBatch<Transform2f>& Worlds;
 	Transform2Hierarchy& Hierarchy;
+	Transform2PropagationOrder& PropagationOrder;
 	ServiceProvider Provider;
 	Transform2Propagation Propagation;
 
@@ -261,6 +265,7 @@ struct TransformPropagationFixture
 			DataBatch<Transform2f>,
 			TransformDefaults::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform2Hierarchy>())
+		, PropagationOrder(Host.AddService<Transform2PropagationOrder>())
 		, Provider(Host)
 		, Propagation(Provider)
 	{
@@ -273,6 +278,7 @@ struct TransformPropagation3Fixture
 	DataBatch<Transform3f>& Locals;
 	DataBatch<Transform3f>& Worlds;
 	Transform3Hierarchy& Hierarchy;
+	Transform3PropagationOrder& PropagationOrder;
 	ServiceProvider Provider;
 	Transform3Propagation Propagation;
 
@@ -284,6 +290,7 @@ struct TransformPropagation3Fixture
 			DataBatch<Transform3f>,
 			TransformDefaults::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform3Hierarchy>())
+		, PropagationOrder(Host.AddService<Transform3PropagationOrder>())
 		, Provider(Host)
 		, Propagation(Provider)
 	{
@@ -316,6 +323,57 @@ TEST(TransformPropagation, RootWorldEqualsLocal2D)
 	const auto* world = worlds.TryGet(key);
 	ASSERT_NE(world, nullptr);
 	EXPECT_TRUE(world->NearlyEquals(localTransform));
+}
+
+TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
+{
+	ServiceHost host;
+	auto& locals = host.AddTaggedService<
+		DataBatch<Transform2f>,
+		TransformDefaults::Tags::LocalTransformTag>();
+	auto& worlds = host.AddTaggedService<
+		DataBatch<Transform2f>,
+		TransformDefaults::Tags::WorldTransformTag>();
+	auto& hierarchy = host.AddService<Transform2Hierarchy>();
+	auto& cache = host.AddService<Transform2PropagationOrder>();
+	ServiceProvider provider(host);
+
+	Transform2f parentLocal({ 5.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
+	auto parentLocalH = locals.Emplace(parentLocal);
+	auto parentWorldH = worlds.Emplace(Transform2f::Identity());
+	DataBatchKey parentKey = parentLocalH.GetToken();
+
+	Transform2f childLocal({ 3.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
+	auto childLocalH = locals.Emplace(childLocal);
+	auto childWorldH = worlds.Emplace(Transform2f::Identity());
+	DataBatchKey childKey = childLocalH.GetToken();
+
+	hierarchy.Register(parentKey);
+	hierarchy.Register(childKey);
+	hierarchy.SetParent(childKey, parentKey);
+
+	{
+		Transform2Propagation propagation(provider);
+		propagation.Propagate();
+	}
+
+	auto cachedOrder = cache.GetOrder();
+	ASSERT_EQ(cachedOrder.size(), 2u);
+	const auto* cachedOrderStorage = cachedOrder.data();
+
+	{
+		Transform2Propagation recreatedPropagation(provider);
+		recreatedPropagation.Propagate();
+	}
+
+	auto reusedOrder = cache.GetOrder();
+	EXPECT_EQ(reusedOrder.size(), 2u);
+	EXPECT_EQ(reusedOrder.data(), cachedOrderStorage);
+
+	const auto* childWorld = worlds.TryGet(childKey);
+	ASSERT_NE(childWorld, nullptr);
+	Transform2f expectedChildWorld({ 8.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
+	EXPECT_TRUE(childWorld->NearlyEquals(expectedChildWorld));
 }
 
 TEST(TransformPropagation, ChildInheritsParentTransform2D)

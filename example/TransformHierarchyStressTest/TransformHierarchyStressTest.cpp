@@ -2,6 +2,7 @@
 #include <math/Transform3.h>
 #include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
+#include <primitive/transform/hierarchy/TransformPropagationOrderService.h>
 #include <primitive/transform/hierarchy/TransformPropagationSystem.h>
 #include <raii/DataBatchHandle.h>
 #include <service/ServiceHost.h>
@@ -400,6 +401,7 @@ namespace
 	struct ProductionPropagationFixture
 	{
 		using Hierarchy3f = TransformHierarchyService<TransformDefaults::Tags::Transform3DTag>;
+		using PropagationOrder3f = TransformPropagationOrderService<TransformDefaults::Tags::Transform3DTag>;
 		using Propagation3f = TransformPropagationSystem<
 			Transform3f,
 			TransformDefaults::Tags::Transform3DTag>;
@@ -408,6 +410,7 @@ namespace
 		DataBatch<Transform3f>& Locals;
 		DataBatch<Transform3f>& Worlds;
 		Hierarchy3f& Hierarchy;
+		PropagationOrder3f& PropagationOrder;
 		ServiceProvider Provider;
 		Propagation3f Propagation;
 
@@ -432,6 +435,7 @@ namespace
 				DataBatch<Transform3f>,
 				TransformDefaults::Tags::WorldTransformTag>())
 			, Hierarchy(Host.AddService<Hierarchy3f>())
+			, PropagationOrder(Host.AddService<PropagationOrder3f>())
 			, Provider(Host)
 			, Propagation(Provider)
 			, BatchMode(batchMode)
