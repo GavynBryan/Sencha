@@ -4,9 +4,9 @@
 #include <concepts>
 #include <type_traits>
 
-#include "Mat.h"
-#include "Quat.h"
-#include "Vec.h"
+#include <math/Mat.h>
+#include <math/Quat.h>
+#include <math/Vec.h>
 
 //=============================================================================
 // Transform3d<T>

@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <math/Mat.h>
 #include <math/Quat.h>
-#include <math/Transform2d.h>
-#include <math/Transform3d.h>
+#include <geometry/2d/Transform2d.h>
+#include <geometry/3d/Transform3d.h>
 #include <math/Vec.h>
 #include <cmath>
 

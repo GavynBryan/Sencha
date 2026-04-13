@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <core/batch/DataBatch.h>
-#include <math/Transform2d.h>
-#include <math/Transform3d.h>
+#include <geometry/2d/Transform2d.h>
+#include <geometry/3d/Transform3d.h>
 #include <leaves/transform/core/TransformDefaults.h>
 #include <leaves/transform/hierarchy/TransformHierarchyService.h>
 #include <leaves/transform/hierarchy/TransformPropagationOrderService.h>

@@ -4,8 +4,8 @@
 #include <concepts>
 #include <type_traits>
 
-#include "Mat.h"
-#include "Vec.h"
+#include <math/Mat.h>
+#include <math/Vec.h>
 
 //=============================================================================
 // Transform2d<T>
