@@ -68,6 +68,7 @@ namespace
 		size_t ChildPointerStorageBytes = 0;
 		size_t ParentIndexStorageBytes = 0;
 		SampleStats Propagation;
+		SampleStats RebuildAndPropagate;  // Propagate() when cache is dirty each iteration.
 	};
 
 	enum class ProductionBatchMode
@@ -585,6 +586,57 @@ namespace
 		}
 	}
 
+	// Measures the cost of Propagate() when the propagation cache is forced dirty
+	// on every iteration. Registers a sentinel key that has no entry in any
+	// DataBatch: this bumps the hierarchy version (triggering a full rebuild on the
+	// next Propagate) but is silently skipped by the BFS, so results stay valid.
+	// The sentinel key uses a value well above any real batch key.
+	SampleStats MeasureRebuildCost(
+		const RunConfig& config,
+		ProductionPropagationFixture& fixture)
+	{
+		constexpr DataBatchKey SentinelKey{ 0xFFFF0000u };
+
+		// Warmup: ensure the cache is hot before measuring.
+		for (size_t i = 0; i < config.WarmupIterations; ++i)
+		{
+			fixture.Hierarchy.Register(SentinelKey);
+			fixture.Hierarchy.Unregister(SentinelKey);
+			fixture.PropagateTick();
+		}
+
+		std::vector<double> samplesUs;
+		samplesUs.reserve(config.MeasuredIterations);
+
+		for (size_t i = 0; i < config.MeasuredIterations; ++i)
+		{
+			// Dirty the hierarchy version so the next Propagate must rebuild.
+			fixture.Hierarchy.Register(SentinelKey);
+			fixture.Hierarchy.Unregister(SentinelKey);
+
+			std::atomic_signal_fence(std::memory_order_seq_cst);
+			const auto start = Clock::now();
+			fixture.PropagateTick();
+			std::atomic_signal_fence(std::memory_order_seq_cst);
+			const auto end = Clock::now();
+
+			samplesUs.push_back(ElapsedMicroseconds(start, end));
+		}
+
+		return CalculateStats(samplesUs, fixture.Keys.size());
+	}
+
+	void PrintStats(const char* prefix, const SampleStats& stats)
+	{
+		std::cout << "  " << prefix << "_mean_us: " << stats.MeanUs << "\n";
+		std::cout << "  " << prefix << "_median_us: " << stats.MedianUs << "\n";
+		std::cout << "  " << prefix << "_p95_us: " << stats.P95Us << "\n";
+		std::cout << "  " << prefix << "_min_us: " << stats.MinUs << "\n";
+		std::cout << "  " << prefix << "_max_us: " << stats.MaxUs << "\n";
+		std::cout << "  " << prefix << "_stddev_us: " << stats.StdDevUs << "\n";
+		std::cout << "  " << prefix << "_ns_per_transform: " << stats.NsPerTransform << "\n";
+	}
+
 	void PrintResult(const BenchmarkResult& result)
 	{
 		std::cout << "\n" << result.Name << "\n";
@@ -601,17 +653,12 @@ namespace
 				  << result.ChildPointerStorageBytes << "\n";
 		std::cout << "  parent_index_storage_bytes: "
 				  << result.ParentIndexStorageBytes << "\n";
-		std::cout << "  propagation_total_us: " << result.Propagation.TotalUs << "\n";
-		std::cout << "  propagation_min_us: " << result.Propagation.MinUs << "\n";
-		std::cout << "  propagation_mean_us: " << result.Propagation.MeanUs << "\n";
-		std::cout << "  propagation_median_us: " << result.Propagation.MedianUs << "\n";
-		std::cout << "  propagation_p95_us: " << result.Propagation.P95Us << "\n";
-		std::cout << "  propagation_max_us: " << result.Propagation.MaxUs << "\n";
-		std::cout << "  propagation_stddev_us: " << result.Propagation.StdDevUs << "\n";
-		std::cout << "  propagation_ns_per_transform: "
-				  << result.Propagation.NsPerTransform << "\n";
-		std::cout << "  propagation_transforms_per_second: "
-				  << result.Propagation.TransformsPerSecond << "\n";
+		PrintStats("propagation", result.Propagation);
+		PrintStats("rebuild_and_propagate", result.RebuildAndPropagate);
+		const double rebuildCostUs = result.RebuildAndPropagate.MeanUs - result.Propagation.MeanUs;
+		std::cout << "  rebuild_only_mean_us: " << rebuildCostUs << "\n";
+		std::cout << "  rebuild_only_ns_per_transform: "
+				  << (rebuildCostUs * 1000.0) / static_cast<double>(result.TransformCount) << "\n";
 	}
 
 	void PrintCsvRow(const BenchmarkResult& result)
@@ -747,6 +794,7 @@ int main(int argc, char** argv)
 			config,
 			[&](size_t frame) { productionScalar.Advance(frame); },
 			[&]() { productionScalar.PropagateTick(); });
+		productionScalarResult.RebuildAndPropagate = MeasureRebuildCost(config, productionScalar);
 		productionScalarResult.Checksum = productionScalar.Checksum();
 
 		productionScalar.RemoveAll();
@@ -767,6 +815,7 @@ int main(int argc, char** argv)
 			config,
 			[&](size_t frame) { productionBulk.Advance(frame); },
 			[&]() { productionBulk.PropagateTick(); });
+		productionBulkResult.RebuildAndPropagate = MeasureRebuildCost(config, productionBulk);
 		productionBulkResult.Checksum = productionBulk.Checksum();
 
 		productionBulk.RemoveAll();

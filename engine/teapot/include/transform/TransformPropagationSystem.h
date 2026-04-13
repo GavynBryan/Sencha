@@ -100,6 +100,16 @@ private:
 		uint32_t ParentWorldIndex;  // NullIndex for roots.
 	};
 
+	// Carries the resolved parent world-index alongside the key, so
+	// RebuildPropagationOrder never has to call Hierarchy.GetParent or
+	// Worlds.IndexOf(parentKey): the parent's world-index is already known
+	// when the child is enqueued during the BFS.
+	struct QueueEntry
+	{
+		DataBatchKey Key;
+		uint32_t ParentWorldIndex;  // NullIndex for roots.
+	};
+
 	void MaybeRebuildPropagationOrder()
 	{
 		const uint64_t hierarchyVersion = Hierarchy.GetVersion();
@@ -128,14 +138,18 @@ private:
 		// Iterative BFS from roots so parents always precede children in the
 		// emitted order. VisitQueue is reused between rebuilds to avoid
 		// re-allocating on every hierarchy change.
+		//
+		// Each entry carries the resolved parent world-index so we never need
+		// to call Hierarchy.GetParent or Worlds.IndexOf(parentKey) inside the
+		// loop — the parent's world-index is already known at push time.
 		VisitQueue.clear();
 		auto roots = Hierarchy.GetRoots();
 		for (DataBatchKey root : roots)
-			VisitQueue.push_back(root);
+			VisitQueue.push_back({ root, NullIndex });
 
 		for (size_t head = 0; head < VisitQueue.size(); ++head)
 		{
-			const DataBatchKey key = VisitQueue[head];
+			const auto [key, parentWorldIdx] = VisitQueue[head];
 
 			const uint32_t localIdx = Locals.IndexOf(key);
 			const uint32_t worldIdx = Worlds.IndexOf(key);
@@ -147,16 +161,11 @@ private:
 			if (localIdx == NullIndex || worldIdx == NullIndex)
 				continue;
 
-			uint32_t parentWorldIdx = NullIndex;
-			const DataBatchKey parentKey = Hierarchy.GetParent(key);
-			if (parentKey.Value != 0)
-				parentWorldIdx = Worlds.IndexOf(parentKey);
-
 			PropagationOrder.push_back({ localIdx, worldIdx, parentWorldIdx });
 
 			const std::vector<uint32_t>& children = Hierarchy.GetChildren(key);
 			for (uint32_t childKey : children)
-				VisitQueue.push_back(DataBatchKey{ childKey });
+				VisitQueue.push_back({ DataBatchKey{ childKey }, worldIdx });
 		}
 	}
 
@@ -165,7 +174,7 @@ private:
 	HierarchyType& Hierarchy;
 
 	std::vector<PropagationEntry> PropagationOrder;
-	std::vector<DataBatchKey> VisitQueue;
+	std::vector<QueueEntry> VisitQueue;
 
 	uint64_t CachedHierarchyVersion = UINT64_MAX;
 	uint64_t CachedLocalsVersion = UINT64_MAX;
