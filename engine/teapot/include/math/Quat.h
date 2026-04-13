@@ -164,7 +164,7 @@ struct Quat
 	Vec<3, T> RotateVector(const Vec<3, T>& v) const
 		requires std::floating_point<T>
 	{
-		Quat p(v.Data[0], v.Data[1], v.Data[2], T{0});
+		Quat p(v.X, v.Y, v.Z, T{0});
 		Quat rotated = *this * p * Inverse();
 		return Vec<3, T>(rotated.X, rotated.Y, rotated.Z);
 	}
@@ -223,9 +223,9 @@ struct Quat
 		T s = std::sin(halfAngle);
 		T c = std::cos(halfAngle);
 		return Quat{
-			normalizedAxis.Data[0] * s,
-			normalizedAxis.Data[1] * s,
-			normalizedAxis.Data[2] * s,
+			normalizedAxis.X * s,
+			normalizedAxis.Y * s,
+			normalizedAxis.Z * s,
 			c
 		};
 	}

@@ -60,9 +60,9 @@ bool Frustum::IntersectsAabb(const Aabb3& box) const
 		Vec3 pVertex;
 		for (int axis = 0; axis < 3; ++axis)
 		{
-			pVertex.Data[axis] = (Planes[i].Normal.Data[axis] >= 0.0f)
-				? box.Max.Data[axis]
-				: box.Min.Data[axis];
+			pVertex[axis] = (Planes[i].Normal[axis] >= 0.0f)
+				? box.Max[axis]
+				: box.Min[axis];
 		}
 
 		if (Planes[i].SignedDistanceTo(pVertex) < 0.0f)

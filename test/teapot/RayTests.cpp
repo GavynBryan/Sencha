@@ -32,18 +32,18 @@ TEST(Ray, PointAtPositiveDistance)
 {
 	Ray3f ray(Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f));
 	Vec3 p = ray.PointAt(5.0f);
-	EXPECT_FLOAT_EQ(p.Data[0], 5.0f);
-	EXPECT_FLOAT_EQ(p.Data[1], 0.0f);
-	EXPECT_FLOAT_EQ(p.Data[2], 0.0f);
+	EXPECT_FLOAT_EQ(p.X, 5.0f);
+	EXPECT_FLOAT_EQ(p.Y, 0.0f);
+	EXPECT_FLOAT_EQ(p.Z, 0.0f);
 }
 
 TEST(Ray, PointAtNegativeDistance)
 {
 	Ray3f ray(Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 0.0f, -1.0f));
 	Vec3 p = ray.PointAt(-3.0f);
-	EXPECT_FLOAT_EQ(p.Data[0], 0.0f);
-	EXPECT_FLOAT_EQ(p.Data[1], 0.0f);
-	EXPECT_FLOAT_EQ(p.Data[2], 3.0f);
+	EXPECT_FLOAT_EQ(p.X, 0.0f);
+	EXPECT_FLOAT_EQ(p.Y, 0.0f);
+	EXPECT_FLOAT_EQ(p.Z, 3.0f);
 }
 
 TEST(Ray, PointAtWithDiagonalDirection)
@@ -52,9 +52,9 @@ TEST(Ray, PointAtWithDiagonalDirection)
 	Ray3f ray(Vec3(0.0f, 0.0f, 0.0f), dir);
 	Vec3 p = ray.PointAt(std::sqrt(2.0f));
 
-	EXPECT_NEAR(p.Data[0], 1.0f, 1e-5f);
-	EXPECT_NEAR(p.Data[1], 1.0f, 1e-5f);
-	EXPECT_NEAR(p.Data[2], 0.0f, 1e-5f);
+	EXPECT_NEAR(p.X, 1.0f, 1e-5f);
+	EXPECT_NEAR(p.Y, 1.0f, 1e-5f);
+	EXPECT_NEAR(p.Z, 0.0f, 1e-5f);
 }
 
 // --- Normalization ---

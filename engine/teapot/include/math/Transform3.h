@@ -57,13 +57,13 @@ struct Transform3
 	bool NearlyEquals(const Transform3& other, T epsilon = T{1e-6}) const
 		requires std::floating_point<T>
 	{
-		return std::abs(Position.Data[0] - other.Position.Data[0]) <= epsilon
-			&& std::abs(Position.Data[1] - other.Position.Data[1]) <= epsilon
-			&& std::abs(Position.Data[2] - other.Position.Data[2]) <= epsilon
+		return std::abs(Position.X - other.Position.X) <= epsilon
+			&& std::abs(Position.Y - other.Position.Y) <= epsilon
+			&& std::abs(Position.Z - other.Position.Z) <= epsilon
 			&& Rotation.NearlyEquals(other.Rotation, epsilon)
-			&& std::abs(Scale.Data[0] - other.Scale.Data[0]) <= epsilon
-			&& std::abs(Scale.Data[1] - other.Scale.Data[1]) <= epsilon
-			&& std::abs(Scale.Data[2] - other.Scale.Data[2]) <= epsilon;
+			&& std::abs(Scale.X - other.Scale.X) <= epsilon
+			&& std::abs(Scale.Y - other.Scale.Y) <= epsilon
+			&& std::abs(Scale.Z - other.Scale.Z) <= epsilon;
 	}
 
 	// -- Transform operations ----------------------------------------------
@@ -104,7 +104,7 @@ struct Transform3
 		Mat<3, 3, T> rotation = Rotation.ToMat3();
 		for (int r = 0; r < 3; ++r)
 			for (int c = 0; c < 3; ++c)
-				rotation.Data[r][c] *= Scale.Data[c];
+				rotation.Data[r][c] *= Scale[c];
 		return rotation;
 	}
 
@@ -117,9 +117,9 @@ struct Transform3
 			for (int c = 0; c < 3; ++c)
 				result.Data[r][c] = linear.Data[r][c];
 
-		result.Data[0][3] = Position.Data[0];
-		result.Data[1][3] = Position.Data[1];
-		result.Data[2][3] = Position.Data[2];
+		result.Data[0][3] = Position.X;
+		result.Data[1][3] = Position.Y;
+		result.Data[2][3] = Position.Z;
 		return result;
 	}
 
@@ -151,9 +151,9 @@ private:
 	static constexpr Vec<3, T> ComponentScale(const Vec<3, T>& a, const Vec<3, T>& b)
 	{
 		return Vec<3, T>(
-			a.Data[0] * b.Data[0],
-			a.Data[1] * b.Data[1],
-			a.Data[2] * b.Data[2]
+			a.X * b.X,
+			a.Y * b.Y,
+			a.Z * b.Z
 		);
 	}
 };

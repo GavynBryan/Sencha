@@ -57,11 +57,11 @@ struct Transform2
 	bool NearlyEquals(const Transform2& other, T epsilon = T{1e-6}) const
 		requires std::floating_point<T>
 	{
-		return std::abs(Position.Data[0] - other.Position.Data[0]) <= epsilon
-			&& std::abs(Position.Data[1] - other.Position.Data[1]) <= epsilon
+		return std::abs(Position.X - other.Position.X) <= epsilon
+			&& std::abs(Position.Y - other.Position.Y) <= epsilon
 			&& std::abs(Rotation - other.Rotation) <= epsilon
-			&& std::abs(Scale.Data[0] - other.Scale.Data[0]) <= epsilon
-			&& std::abs(Scale.Data[1] - other.Scale.Data[1]) <= epsilon;
+			&& std::abs(Scale.X - other.Scale.X) <= epsilon
+			&& std::abs(Scale.Y - other.Scale.Y) <= epsilon;
 	}
 
 	// -- Transform operations ----------------------------------------------
@@ -77,8 +77,8 @@ struct Transform2
 	{
 		T c = std::cos(Rotation);
 		T s = std::sin(Rotation);
-		T x = vector.Data[0] * Scale.Data[0];
-		T y = vector.Data[1] * Scale.Data[1];
+		T x = vector.X * Scale.X;
+		T y = vector.Y * Scale.Y;
 
 		return Vec<2, T>(
 			c * x - s * y,
@@ -105,12 +105,12 @@ struct Transform2
 		T s = std::sin(Rotation);
 
 		Mat<3, 3, T> result = Mat<3, 3, T>::Identity();
-		result.Data[0][0] = c * Scale.Data[0];
-		result.Data[0][1] = -s * Scale.Data[1];
-		result.Data[0][2] = Position.Data[0];
-		result.Data[1][0] = s * Scale.Data[0];
-		result.Data[1][1] = c * Scale.Data[1];
-		result.Data[1][2] = Position.Data[1];
+		result.Data[0][0] = c * Scale.X;
+		result.Data[0][1] = -s * Scale.Y;
+		result.Data[0][2] = Position.X;
+		result.Data[1][0] = s * Scale.X;
+		result.Data[1][1] = c * Scale.Y;
+		result.Data[1][2] = Position.Y;
 		return result;
 	}
 
@@ -145,14 +145,14 @@ private:
 		T c = std::cos(Rotation);
 		T s = std::sin(Rotation);
 		return Vec<2, T>(
-			c * direction.Data[0] - s * direction.Data[1],
-			s * direction.Data[0] + c * direction.Data[1]
+			c * direction.X - s * direction.Y,
+			s * direction.X + c * direction.Y
 		);
 	}
 
 	static constexpr Vec<2, T> ComponentScale(const Vec<2, T>& a, const Vec<2, T>& b)
 	{
-		return Vec<2, T>(a.Data[0] * b.Data[0], a.Data[1] * b.Data[1]);
+		return Vec<2, T>(a.X * b.X, a.Y * b.Y);
 	}
 };
 

@@ -7,17 +7,17 @@
 TEST(Vec, DefaultConstructionIsZero)
 {
 	Vec3 v;
-	EXPECT_FLOAT_EQ(v.X(), 0.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 0.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 0.0f);
+	EXPECT_FLOAT_EQ(v.X, 0.0f);
+	EXPECT_FLOAT_EQ(v.Y, 0.0f);
+	EXPECT_FLOAT_EQ(v.Z, 0.0f);
 }
 
 TEST(Vec, ValueConstruction)
 {
 	Vec3 v(1.0f, 2.0f, 3.0f);
-	EXPECT_FLOAT_EQ(v.X(), 1.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(v.X, 1.0f);
+	EXPECT_FLOAT_EQ(v.Y, 2.0f);
+	EXPECT_FLOAT_EQ(v.Z, 3.0f);
 }
 
 TEST(Vec, ZeroFactory)
@@ -60,33 +60,42 @@ TEST(Vec, DirectionConventionIsRightHanded)
 	EXPECT_EQ(Vec3::Up().Cross(Vec3::Forward()), Vec3::Left());
 }
 
-// --- Named Accessors ---
+// --- Named Fields ---
 
-TEST(Vec, NamedAccessors2D)
+TEST(Vec, NamedFields2D)
 {
 	Vec2 v(3.0f, 4.0f);
-	EXPECT_FLOAT_EQ(v.X(), 3.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 4.0f);
+	EXPECT_FLOAT_EQ(v.X, 3.0f);
+	EXPECT_FLOAT_EQ(v.Y, 4.0f);
 }
 
-TEST(Vec, NamedAccessors4D)
+TEST(Vec, NamedFields4D)
 {
 	Vec4 v(1.0f, 2.0f, 3.0f, 4.0f);
-	EXPECT_FLOAT_EQ(v.X(), 1.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 3.0f);
-	EXPECT_FLOAT_EQ(v.W(), 4.0f);
+	EXPECT_FLOAT_EQ(v.X, 1.0f);
+	EXPECT_FLOAT_EQ(v.Y, 2.0f);
+	EXPECT_FLOAT_EQ(v.Z, 3.0f);
+	EXPECT_FLOAT_EQ(v.W, 4.0f);
 }
 
-TEST(Vec, NamedAccessorsMutate)
+TEST(Vec, NamedFieldsMutate)
 {
 	Vec3 v;
-	v.X() = 10.0f;
-	v.Y() = 20.0f;
-	v.Z() = 30.0f;
+	v.X = 10.0f;
+	v.Y = 20.0f;
+	v.Z = 30.0f;
 	EXPECT_FLOAT_EQ(v[0], 10.0f);
 	EXPECT_FLOAT_EQ(v[1], 20.0f);
 	EXPECT_FLOAT_EQ(v[2], 30.0f);
+}
+
+TEST(Vec, CommonVectorSizesHaveTightFieldStorage)
+{
+	static_assert(sizeof(Vec2) == sizeof(float) * 2);
+	static_assert(sizeof(Vec3) == sizeof(float) * 3);
+	static_assert(sizeof(Vec4) == sizeof(float) * 4);
+	static_assert(sizeof(Vec3d) == sizeof(double) * 3);
+	static_assert(sizeof(Vec3i) == sizeof(int) * 3);
 }
 
 // --- Element Access ---
@@ -105,9 +114,9 @@ TEST(Vec, IndexOperatorMutate)
 	v[0] = 1.0f;
 	v[1] = 2.0f;
 	v[2] = 3.0f;
-	EXPECT_FLOAT_EQ(v.X(), 1.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(v.X, 1.0f);
+	EXPECT_FLOAT_EQ(v.Y, 2.0f);
+	EXPECT_FLOAT_EQ(v.Z, 3.0f);
 }
 
 // --- Arithmetic ---
@@ -117,9 +126,9 @@ TEST(Vec, Addition)
 	Vec3 a(1.0f, 2.0f, 3.0f);
 	Vec3 b(4.0f, 5.0f, 6.0f);
 	Vec3 c = a + b;
-	EXPECT_FLOAT_EQ(c.X(), 5.0f);
-	EXPECT_FLOAT_EQ(c.Y(), 7.0f);
-	EXPECT_FLOAT_EQ(c.Z(), 9.0f);
+	EXPECT_FLOAT_EQ(c.X, 5.0f);
+	EXPECT_FLOAT_EQ(c.Y, 7.0f);
+	EXPECT_FLOAT_EQ(c.Z, 9.0f);
 }
 
 TEST(Vec, Subtraction)
@@ -127,81 +136,81 @@ TEST(Vec, Subtraction)
 	Vec3 a(4.0f, 5.0f, 6.0f);
 	Vec3 b(1.0f, 2.0f, 3.0f);
 	Vec3 c = a - b;
-	EXPECT_FLOAT_EQ(c.X(), 3.0f);
-	EXPECT_FLOAT_EQ(c.Y(), 3.0f);
-	EXPECT_FLOAT_EQ(c.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(c.X, 3.0f);
+	EXPECT_FLOAT_EQ(c.Y, 3.0f);
+	EXPECT_FLOAT_EQ(c.Z, 3.0f);
 }
 
 TEST(Vec, ScalarMultiplication)
 {
 	Vec3 v(1.0f, 2.0f, 3.0f);
 	Vec3 r = v * 2.0f;
-	EXPECT_FLOAT_EQ(r.X(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 4.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 6.0f);
+	EXPECT_FLOAT_EQ(r.X, 2.0f);
+	EXPECT_FLOAT_EQ(r.Y, 4.0f);
+	EXPECT_FLOAT_EQ(r.Z, 6.0f);
 }
 
 TEST(Vec, ScalarMultiplicationLeftHand)
 {
 	Vec3 v(1.0f, 2.0f, 3.0f);
 	Vec3 r = 2.0f * v;
-	EXPECT_FLOAT_EQ(r.X(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 4.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 6.0f);
+	EXPECT_FLOAT_EQ(r.X, 2.0f);
+	EXPECT_FLOAT_EQ(r.Y, 4.0f);
+	EXPECT_FLOAT_EQ(r.Z, 6.0f);
 }
 
 TEST(Vec, ScalarDivision)
 {
 	Vec3 v(2.0f, 4.0f, 6.0f);
 	Vec3 r = v / 2.0f;
-	EXPECT_FLOAT_EQ(r.X(), 1.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(r.X, 1.0f);
+	EXPECT_FLOAT_EQ(r.Y, 2.0f);
+	EXPECT_FLOAT_EQ(r.Z, 3.0f);
 }
 
 TEST(Vec, CompoundAddition)
 {
 	Vec3 a(1.0f, 2.0f, 3.0f);
 	a += Vec3(4.0f, 5.0f, 6.0f);
-	EXPECT_FLOAT_EQ(a.X(), 5.0f);
-	EXPECT_FLOAT_EQ(a.Y(), 7.0f);
-	EXPECT_FLOAT_EQ(a.Z(), 9.0f);
+	EXPECT_FLOAT_EQ(a.X, 5.0f);
+	EXPECT_FLOAT_EQ(a.Y, 7.0f);
+	EXPECT_FLOAT_EQ(a.Z, 9.0f);
 }
 
 TEST(Vec, CompoundSubtraction)
 {
 	Vec3 a(4.0f, 5.0f, 6.0f);
 	a -= Vec3(1.0f, 2.0f, 3.0f);
-	EXPECT_FLOAT_EQ(a.X(), 3.0f);
-	EXPECT_FLOAT_EQ(a.Y(), 3.0f);
-	EXPECT_FLOAT_EQ(a.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(a.X, 3.0f);
+	EXPECT_FLOAT_EQ(a.Y, 3.0f);
+	EXPECT_FLOAT_EQ(a.Z, 3.0f);
 }
 
 TEST(Vec, CompoundScalarMultiplication)
 {
 	Vec3 v(1.0f, 2.0f, 3.0f);
 	v *= 3.0f;
-	EXPECT_FLOAT_EQ(v.X(), 3.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 6.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 9.0f);
+	EXPECT_FLOAT_EQ(v.X, 3.0f);
+	EXPECT_FLOAT_EQ(v.Y, 6.0f);
+	EXPECT_FLOAT_EQ(v.Z, 9.0f);
 }
 
 TEST(Vec, CompoundScalarDivision)
 {
 	Vec3 v(4.0f, 8.0f, 12.0f);
 	v /= 4.0f;
-	EXPECT_FLOAT_EQ(v.X(), 1.0f);
-	EXPECT_FLOAT_EQ(v.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(v.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(v.X, 1.0f);
+	EXPECT_FLOAT_EQ(v.Y, 2.0f);
+	EXPECT_FLOAT_EQ(v.Z, 3.0f);
 }
 
 TEST(Vec, UnaryNegation)
 {
 	Vec3 v(1.0f, -2.0f, 3.0f);
 	Vec3 r = -v;
-	EXPECT_FLOAT_EQ(r.X(), -1.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Z(), -3.0f);
+	EXPECT_FLOAT_EQ(r.X, -1.0f);
+	EXPECT_FLOAT_EQ(r.Y, 2.0f);
+	EXPECT_FLOAT_EQ(r.Z, -3.0f);
 }
 
 // --- Comparison ---
@@ -246,8 +255,8 @@ TEST(Vec, Normalized)
 	Vec3 v(0.0f, 3.0f, 4.0f);
 	Vec3 n = v.Normalized();
 	EXPECT_NEAR(n.Magnitude(), 1.0f, 1e-6f);
-	EXPECT_NEAR(n.Y(), 0.6f, 1e-6f);
-	EXPECT_NEAR(n.Z(), 0.8f, 1e-6f);
+	EXPECT_NEAR(n.Y, 0.6f, 1e-6f);
+	EXPECT_NEAR(n.Z, 0.8f, 1e-6f);
 }
 
 // --- 3D Cross Product ---
@@ -257,9 +266,9 @@ TEST(Vec, CrossProduct)
 	Vec3 x(1.0f, 0.0f, 0.0f);
 	Vec3 y(0.0f, 1.0f, 0.0f);
 	Vec3 z = x.Cross(y);
-	EXPECT_FLOAT_EQ(z.X(), 0.0f);
-	EXPECT_FLOAT_EQ(z.Y(), 0.0f);
-	EXPECT_FLOAT_EQ(z.Z(), 1.0f);
+	EXPECT_FLOAT_EQ(z.X, 0.0f);
+	EXPECT_FLOAT_EQ(z.Y, 0.0f);
+	EXPECT_FLOAT_EQ(z.Z, 1.0f);
 }
 
 TEST(Vec, CrossProductAntiCommutative)
@@ -268,9 +277,9 @@ TEST(Vec, CrossProductAntiCommutative)
 	Vec3 b(4.0f, 5.0f, 6.0f);
 	Vec3 ab = a.Cross(b);
 	Vec3 ba = b.Cross(a);
-	EXPECT_FLOAT_EQ(ab.X(), -ba.X());
-	EXPECT_FLOAT_EQ(ab.Y(), -ba.Y());
-	EXPECT_FLOAT_EQ(ab.Z(), -ba.Z());
+	EXPECT_FLOAT_EQ(ab.X, -ba.X);
+	EXPECT_FLOAT_EQ(ab.Y, -ba.Y);
+	EXPECT_FLOAT_EQ(ab.Z, -ba.Z);
 }
 
 // --- Static Utilities ---
@@ -280,9 +289,9 @@ TEST(Vec, Lerp)
 	Vec3 a(0.0f, 0.0f, 0.0f);
 	Vec3 b(10.0f, 20.0f, 30.0f);
 	Vec3 mid = Vec3::Lerp(a, b, 0.5f);
-	EXPECT_FLOAT_EQ(mid.X(), 5.0f);
-	EXPECT_FLOAT_EQ(mid.Y(), 10.0f);
-	EXPECT_FLOAT_EQ(mid.Z(), 15.0f);
+	EXPECT_FLOAT_EQ(mid.X, 5.0f);
+	EXPECT_FLOAT_EQ(mid.Y, 10.0f);
+	EXPECT_FLOAT_EQ(mid.Z, 15.0f);
 }
 
 TEST(Vec, LerpEndpoints)
@@ -331,9 +340,9 @@ TEST(Vec, IntegerVec)
 	Vec3i v(1, 2, 3);
 	Vec3i w(4, 5, 6);
 	Vec3i sum = v + w;
-	EXPECT_EQ(sum.X(), 5);
-	EXPECT_EQ(sum.Y(), 7);
-	EXPECT_EQ(sum.Z(), 9);
+	EXPECT_EQ(sum.X, 5);
+	EXPECT_EQ(sum.Y, 7);
+	EXPECT_EQ(sum.Z, 9);
 }
 
 TEST(Vec, DoubleVec)
@@ -355,12 +364,12 @@ TEST(Vec, ConstexprOperations)
 	constexpr Vec3 forward = Vec3::Forward();
 	constexpr Vec2 right = Vec2::Right();
 
-	EXPECT_FLOAT_EQ(sum.X(), 5.0f);
+	EXPECT_FLOAT_EQ(sum.X, 5.0f);
 	EXPECT_FLOAT_EQ(dot, 32.0f);
-	EXPECT_FLOAT_EQ(zero.X(), 0.0f);
-	EXPECT_FLOAT_EQ(one.X(), 1.0f);
-	EXPECT_FLOAT_EQ(forward.Z(), -1.0f);
-	EXPECT_FLOAT_EQ(right.X(), 1.0f);
+	EXPECT_FLOAT_EQ(zero.X, 0.0f);
+	EXPECT_FLOAT_EQ(one.X, 1.0f);
+	EXPECT_FLOAT_EQ(forward.Z, -1.0f);
+	EXPECT_FLOAT_EQ(right.X, 1.0f);
 }
 
 // --- Stream Output ---

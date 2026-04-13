@@ -388,8 +388,8 @@ TEST(TransformPropagation, RotatedParentAffectsChildPosition2D)
 
 	// After 90-degree rotation, (10, 0) becomes approximately (-0, 10)
 	// due to cos(pi/2)~0, sin(pi/2)~1
-	EXPECT_NEAR(childWorld->Position.Data[0], 0.0f, 1e-5f);
-	EXPECT_NEAR(childWorld->Position.Data[1], 10.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.X, 0.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Y, 10.0f, 1e-5f);
 	EXPECT_NEAR(childWorld->Rotation, halfPi, 1e-5f);
 }
 
@@ -460,11 +460,11 @@ TEST(TransformPropagation, ScaleComposes2D)
 	ASSERT_NE(childWorld, nullptr);
 
 	// Child position in world: parent transforms (10, 0) by scale 2 → (20, 0)
-	EXPECT_NEAR(childWorld->Position.Data[0], 20.0f, 1e-5f);
-	EXPECT_NEAR(childWorld->Position.Data[1], 0.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.X, 20.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Y, 0.0f, 1e-5f);
 	// Scale composes: 2 * 0.5 = 1
-	EXPECT_NEAR(childWorld->Scale.Data[0], 1.0f, 1e-5f);
-	EXPECT_NEAR(childWorld->Scale.Data[1], 1.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Scale.X, 1.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Scale.Y, 1.0f, 1e-5f);
 }
 
 TEST(TransformPropagation, ChildInheritsParentTransform3D)
@@ -501,9 +501,9 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
 	const auto* childWorld = worlds.TryGet(childKey);
 	ASSERT_NE(childWorld, nullptr);
 
-	EXPECT_NEAR(childWorld->Position.Data[0], 0.0f, 1e-5f);
-	EXPECT_NEAR(childWorld->Position.Data[1], 10.0f, 1e-5f);
-	EXPECT_NEAR(childWorld->Position.Data[2], 0.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.X, 0.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Y, 10.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Z, 0.0f, 1e-5f);
 	EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
@@ -611,12 +611,12 @@ TEST(TransformArchitecture, SceneNodeAndTilemapCoexist)
 	ASSERT_NE(tilemapWorld, nullptr);
 
 	// Player: root (0,0) + player (50,30) = (50, 30)
-	EXPECT_NEAR(playerWorld->Position.Data[0], 50.0f, 1e-5f);
-	EXPECT_NEAR(playerWorld->Position.Data[1], 30.0f, 1e-5f);
+	EXPECT_NEAR(playerWorld->Position.X, 50.0f, 1e-5f);
+	EXPECT_NEAR(playerWorld->Position.Y, 30.0f, 1e-5f);
 
 	// Tilemap: root (0,0) + tilemap (-100,-100) = (-100, -100)
-	EXPECT_NEAR(tilemapWorld->Position.Data[0], -100.0f, 1e-5f);
-	EXPECT_NEAR(tilemapWorld->Position.Data[1], -100.0f, 1e-5f);
+	EXPECT_NEAR(tilemapWorld->Position.X, -100.0f, 1e-5f);
+	EXPECT_NEAR(tilemapWorld->Position.Y, -100.0f, 1e-5f);
 }
 
 TEST(TransformArchitecture, TilemapParentedUnderNode)
@@ -643,8 +643,8 @@ TEST(TransformArchitecture, TilemapParentedUnderNode)
 	ASSERT_NE(tilemapWorld, nullptr);
 
 	// Tilemap inherits camera's position
-	EXPECT_NEAR(tilemapWorld->Position.Data[0], 200.0f, 1e-5f);
-	EXPECT_NEAR(tilemapWorld->Position.Data[1], 100.0f, 1e-5f);
+	EXPECT_NEAR(tilemapWorld->Position.X, 200.0f, 1e-5f);
+	EXPECT_NEAR(tilemapWorld->Position.Y, 100.0f, 1e-5f);
 }
 
 TEST(TransformArchitecture, HandleDestructionCleansUpTransformSlot)

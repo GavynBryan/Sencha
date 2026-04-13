@@ -43,8 +43,8 @@ bool Line::operator==(const Line& other) const
 
 bool Line::NearlyEquals(const Line& other, float epsilon) const
 {
-	return std::abs(Normal.Data[0] - other.Normal.Data[0]) <= epsilon
-		&& std::abs(Normal.Data[1] - other.Normal.Data[1]) <= epsilon
+	return std::abs(Normal.X - other.Normal.X) <= epsilon
+		&& std::abs(Normal.Y - other.Normal.Y) <= epsilon
 		&& std::abs(D - other.D) <= epsilon;
 }
 

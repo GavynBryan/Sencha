@@ -11,9 +11,9 @@ namespace
 
 	void ExpectVecNear(const Vec3& actual, const Vec3& expected, float epsilon = 1e-5f)
 	{
-		EXPECT_NEAR(actual.X(), expected.X(), epsilon);
-		EXPECT_NEAR(actual.Y(), expected.Y(), epsilon);
-		EXPECT_NEAR(actual.Z(), expected.Z(), epsilon);
+		EXPECT_NEAR(actual.X, expected.X, epsilon);
+		EXPECT_NEAR(actual.Y, expected.Y, epsilon);
+		EXPECT_NEAR(actual.Z, expected.Z, epsilon);
 	}
 }
 
@@ -305,9 +305,9 @@ TEST(Quat, DoubleAlias)
 	Quatd q = Quatd::FromAxisAngle(Vec3d(0.0, 0.0, 1.0), 3.14159265358979323846 / 2.0);
 	Vec3d result = q.RotateVector(Vec3d(1.0, 0.0, 0.0));
 
-	EXPECT_NEAR(result.X(), 0.0, 1e-12);
-	EXPECT_NEAR(result.Y(), 1.0, 1e-12);
-	EXPECT_NEAR(result.Z(), 0.0, 1e-12);
+	EXPECT_NEAR(result.X, 0.0, 1e-12);
+	EXPECT_NEAR(result.Y, 1.0, 1e-12);
+	EXPECT_NEAR(result.Z, 0.0, 1e-12);
 }
 
 // --- Constexpr Validation ---

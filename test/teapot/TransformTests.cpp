@@ -12,29 +12,29 @@ namespace
 
 	void ExpectVecNear(const Vec2& actual, const Vec2& expected, float epsilon = 1e-5f)
 	{
-		EXPECT_NEAR(actual.X(), expected.X(), epsilon);
-		EXPECT_NEAR(actual.Y(), expected.Y(), epsilon);
+		EXPECT_NEAR(actual.X, expected.X, epsilon);
+		EXPECT_NEAR(actual.Y, expected.Y, epsilon);
 	}
 
 	void ExpectVecNear(const Vec3& actual, const Vec3& expected, float epsilon = 1e-5f)
 	{
-		EXPECT_NEAR(actual.X(), expected.X(), epsilon);
-		EXPECT_NEAR(actual.Y(), expected.Y(), epsilon);
-		EXPECT_NEAR(actual.Z(), expected.Z(), epsilon);
+		EXPECT_NEAR(actual.X, expected.X, epsilon);
+		EXPECT_NEAR(actual.Y, expected.Y, epsilon);
+		EXPECT_NEAR(actual.Z, expected.Z, epsilon);
 	}
 
 	Vec2 TransformPoint(const Mat3& m, const Vec2& point)
 	{
-		Vec3 h(point.X(), point.Y(), 1.0f);
+		Vec3 h(point.X, point.Y, 1.0f);
 		Vec3 r = m * h;
-		return Vec2(r.X(), r.Y());
+		return Vec2(r.X, r.Y);
 	}
 
 	Vec2 TransformVector(const Mat3& m, const Vec2& vector)
 	{
-		Vec3 h(vector.X(), vector.Y(), 0.0f);
+		Vec3 h(vector.X, vector.Y, 0.0f);
 		Vec3 r = m * h;
-		return Vec2(r.X(), r.Y());
+		return Vec2(r.X, r.Y);
 	}
 }
 

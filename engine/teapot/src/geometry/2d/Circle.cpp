@@ -42,8 +42,8 @@ bool Circle::operator==(const Circle& other) const
 
 bool Circle::NearlyEquals(const Circle& other, float epsilon) const
 {
-	return std::abs(Center.Data[0] - other.Center.Data[0]) <= epsilon
-		&& std::abs(Center.Data[1] - other.Center.Data[1]) <= epsilon
+	return std::abs(Center.X - other.Center.X) <= epsilon
+		&& std::abs(Center.Y - other.Center.Y) <= epsilon
 		&& std::abs(Radius - other.Radius) <= epsilon;
 }
 

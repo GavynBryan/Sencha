@@ -211,10 +211,10 @@ TEST(Mat, MatVecMultiplyTranslation)
 	auto t = Mat4::MakeTranslation(10.0f, 20.0f, 30.0f);
 	Vec4 v(1.0f, 2.0f, 3.0f, 1.0f);
 	Vec4 r = t * v;
-	EXPECT_FLOAT_EQ(r.X(), 11.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 22.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 33.0f);
-	EXPECT_FLOAT_EQ(r.W(), 1.0f);
+	EXPECT_FLOAT_EQ(r.X, 11.0f);
+	EXPECT_FLOAT_EQ(r.Y, 22.0f);
+	EXPECT_FLOAT_EQ(r.Z, 33.0f);
+	EXPECT_FLOAT_EQ(r.W, 1.0f);
 }
 
 TEST(Mat, MatVecMultiplyScale)
@@ -222,10 +222,10 @@ TEST(Mat, MatVecMultiplyScale)
 	auto s = Mat4::MakeScale(2.0f, 3.0f, 4.0f);
 	Vec4 v(1.0f, 1.0f, 1.0f, 1.0f);
 	Vec4 r = s * v;
-	EXPECT_FLOAT_EQ(r.X(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 3.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 4.0f);
-	EXPECT_FLOAT_EQ(r.W(), 1.0f);
+	EXPECT_FLOAT_EQ(r.X, 2.0f);
+	EXPECT_FLOAT_EQ(r.Y, 3.0f);
+	EXPECT_FLOAT_EQ(r.Z, 4.0f);
+	EXPECT_FLOAT_EQ(r.W, 1.0f);
 }
 
 // --- Comparison ---
@@ -436,10 +436,10 @@ TEST(Mat, MakeRotationZ_90Degrees)
 	// Rotating (1, 0, 0, 1) by 90 degrees -> (0, 1, 0, 1)
 	Vec4 v(1.0f, 0.0f, 0.0f, 1.0f);
 	Vec4 r = m * v;
-	EXPECT_NEAR(r.X(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.Y(), 1.0f, 1e-6f);
-	EXPECT_NEAR(r.Z(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.W(), 1.0f, 1e-6f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.Y, 1.0f, 1e-6f);
+	EXPECT_NEAR(r.Z, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.W, 1.0f, 1e-6f);
 }
 
 TEST(Mat, MakeRotationZ_180Degrees)
@@ -449,8 +449,8 @@ TEST(Mat, MakeRotationZ_180Degrees)
 
 	Vec3 v(1.0f, 0.0f, 0.0f);
 	Vec3 r = m * v;
-	EXPECT_NEAR(r.X(), -1.0f, 1e-5f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-5f);
+	EXPECT_NEAR(r.X, -1.0f, 1e-5f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-5f);
 }
 
 // --- MakeRotationX ---
@@ -463,10 +463,10 @@ TEST(Mat, MakeRotationX_90Degrees)
 	// Rotating (0, 1, 0, 1) by 90 degrees around X -> (0, 0, 1, 1)
 	Vec4 v(0.0f, 1.0f, 0.0f, 1.0f);
 	Vec4 r = m * v;
-	EXPECT_NEAR(r.X(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.Z(), 1.0f, 1e-6f);
-	EXPECT_NEAR(r.W(), 1.0f, 1e-6f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.Z, 1.0f, 1e-6f);
+	EXPECT_NEAR(r.W, 1.0f, 1e-6f);
 }
 
 // --- MakeRotationY ---
@@ -479,10 +479,10 @@ TEST(Mat, MakeRotationY_90Degrees)
 	// Rotating (0, 0, 1, 1) by 90 degrees around Y -> (1, 0, 0, 1)
 	Vec4 v(0.0f, 0.0f, 1.0f, 1.0f);
 	Vec4 r = m * v;
-	EXPECT_NEAR(r.X(), 1.0f, 1e-6f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.Z(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.W(), 1.0f, 1e-6f);
+	EXPECT_NEAR(r.X, 1.0f, 1e-6f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.Z, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.W, 1.0f, 1e-6f);
 }
 
 // --- MakePerspective ---
@@ -540,8 +540,8 @@ TEST(Mat, MakeOrthographicAsymmetric)
 	// Verify that a point at the center maps correctly
 	Vec4 center(400.0f, 300.0f, 0.0f, 1.0f);
 	Vec4 r = m * center;
-	EXPECT_NEAR(r.X(), 0.0f, 1e-5f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-5f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-5f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-5f);
 }
 
 // --- MakeLookAt ---
@@ -557,9 +557,9 @@ TEST(Mat, MakeLookAtForward)
 	// The origin (0,0,0) should be at (0,0,-5) in view space
 	Vec4 origin(0.0f, 0.0f, 0.0f, 1.0f);
 	Vec4 r = m * origin;
-	EXPECT_NEAR(r.X(), 0.0f, 1e-5f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-5f);
-	EXPECT_NEAR(r.Z(), -5.0f, 1e-5f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-5f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-5f);
+	EXPECT_NEAR(r.Z, -5.0f, 1e-5f);
 }
 
 TEST(Mat, MakeLookAtEyeAtOrigin)
@@ -573,9 +573,9 @@ TEST(Mat, MakeLookAtEyeAtOrigin)
 	// Eye is at origin, looking down -Z. The eye position in view space is origin
 	Vec4 eyePos(0.0f, 0.0f, 0.0f, 1.0f);
 	Vec4 r = m * eyePos;
-	EXPECT_NEAR(r.X(), 0.0f, 1e-5f);
-	EXPECT_NEAR(r.Y(), 0.0f, 1e-5f);
-	EXPECT_NEAR(r.Z(), 0.0f, 1e-5f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-5f);
+	EXPECT_NEAR(r.Y, 0.0f, 1e-5f);
+	EXPECT_NEAR(r.Z, 0.0f, 1e-5f);
 }
 
 // --- Different Component Types ---
@@ -704,9 +704,9 @@ TEST(Mat, TransformPointIdentity)
 	auto m = Mat4::Identity();
 	Vec3 p(1.0f, 2.0f, 3.0f);
 	Vec3 r = m.TransformPoint(p);
-	EXPECT_FLOAT_EQ(r.X(), 1.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 3.0f);
+	EXPECT_FLOAT_EQ(r.X, 1.0f);
+	EXPECT_FLOAT_EQ(r.Y, 2.0f);
+	EXPECT_FLOAT_EQ(r.Z, 3.0f);
 }
 
 TEST(Mat, TransformPointTranslation)
@@ -714,9 +714,9 @@ TEST(Mat, TransformPointTranslation)
 	auto m = Mat4::MakeTranslation(10.0f, 20.0f, 30.0f);
 	Vec3 p(1.0f, 2.0f, 3.0f);
 	Vec3 r = m.TransformPoint(p);
-	EXPECT_FLOAT_EQ(r.X(), 11.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 22.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 33.0f);
+	EXPECT_FLOAT_EQ(r.X, 11.0f);
+	EXPECT_FLOAT_EQ(r.Y, 22.0f);
+	EXPECT_FLOAT_EQ(r.Z, 33.0f);
 }
 
 TEST(Mat, TransformPointScale)
@@ -724,9 +724,9 @@ TEST(Mat, TransformPointScale)
 	auto m = Mat4::MakeScale(2.0f, 3.0f, 4.0f);
 	Vec3 p(1.0f, 1.0f, 1.0f);
 	Vec3 r = m.TransformPoint(p);
-	EXPECT_FLOAT_EQ(r.X(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 3.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 4.0f);
+	EXPECT_FLOAT_EQ(r.X, 2.0f);
+	EXPECT_FLOAT_EQ(r.Y, 3.0f);
+	EXPECT_FLOAT_EQ(r.Z, 4.0f);
 }
 
 // --- TransformVector ---
@@ -736,9 +736,9 @@ TEST(Mat, TransformVectorIgnoresTranslation)
 	auto m = Mat4::MakeTranslation(100.0f, 200.0f, 300.0f);
 	Vec3 v(1.0f, 0.0f, 0.0f);
 	Vec3 r = m.TransformVector(v);
-	EXPECT_FLOAT_EQ(r.X(), 1.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 0.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 0.0f);
+	EXPECT_FLOAT_EQ(r.X, 1.0f);
+	EXPECT_FLOAT_EQ(r.Y, 0.0f);
+	EXPECT_FLOAT_EQ(r.Z, 0.0f);
 }
 
 TEST(Mat, TransformVectorAppliesScale)
@@ -746,9 +746,9 @@ TEST(Mat, TransformVectorAppliesScale)
 	auto m = Mat4::MakeScale(2.0f, 3.0f, 4.0f);
 	Vec3 v(1.0f, 1.0f, 1.0f);
 	Vec3 r = m.TransformVector(v);
-	EXPECT_FLOAT_EQ(r.X(), 2.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 3.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 4.0f);
+	EXPECT_FLOAT_EQ(r.X, 2.0f);
+	EXPECT_FLOAT_EQ(r.Y, 3.0f);
+	EXPECT_FLOAT_EQ(r.Z, 4.0f);
 }
 
 TEST(Mat, TransformVectorAppliesRotation)
@@ -757,9 +757,9 @@ TEST(Mat, TransformVectorAppliesRotation)
 	auto m = Mat4::MakeRotationZ(pi / 2.0f);
 	Vec3 v(1.0f, 0.0f, 0.0f);
 	Vec3 r = m.TransformVector(v);
-	EXPECT_NEAR(r.X(), 0.0f, 1e-6f);
-	EXPECT_NEAR(r.Y(), 1.0f, 1e-6f);
-	EXPECT_NEAR(r.Z(), 0.0f, 1e-6f);
+	EXPECT_NEAR(r.X, 0.0f, 1e-6f);
+	EXPECT_NEAR(r.Y, 1.0f, 1e-6f);
+	EXPECT_NEAR(r.Z, 0.0f, 1e-6f);
 }
 
 // --- MakeTRS ---
@@ -803,9 +803,9 @@ TEST(Mat, MakeTRSCombined)
 	// Transform a point: should scale then translate
 	Vec3 p(1.0f, 0.0f, 0.0f);
 	Vec3 result = m.TransformPoint(p);
-	EXPECT_NEAR(result.X(), 3.0f, 1e-5f);  // 1*2 + 1
-	EXPECT_NEAR(result.Y(), 2.0f, 1e-5f);  // 0*2 + 2
-	EXPECT_NEAR(result.Z(), 3.0f, 1e-5f);  // 0*2 + 3
+	EXPECT_NEAR(result.X, 3.0f, 1e-5f);  // 1*2 + 1
+	EXPECT_NEAR(result.Y, 2.0f, 1e-5f);  // 0*2 + 2
+	EXPECT_NEAR(result.Z, 3.0f, 1e-5f);  // 0*2 + 3
 }
 
 // --- AffineInverse ---
@@ -862,8 +862,8 @@ TEST(Mat, TranslationIgnoresDirections)
 	auto t = Mat4::MakeTranslation(100.0f, 200.0f, 300.0f);
 	Vec4 dir(1.0f, 0.0f, 0.0f, 0.0f); // direction, w=0
 	Vec4 r = t * dir;
-	EXPECT_FLOAT_EQ(r.X(), 1.0f);
-	EXPECT_FLOAT_EQ(r.Y(), 0.0f);
-	EXPECT_FLOAT_EQ(r.Z(), 0.0f);
-	EXPECT_FLOAT_EQ(r.W(), 0.0f);
+	EXPECT_FLOAT_EQ(r.X, 1.0f);
+	EXPECT_FLOAT_EQ(r.Y, 0.0f);
+	EXPECT_FLOAT_EQ(r.Z, 0.0f);
+	EXPECT_FLOAT_EQ(r.W, 0.0f);
 }

@@ -43,9 +43,9 @@ bool Plane::operator==(const Plane& other) const
 
 bool Plane::NearlyEquals(const Plane& other, float epsilon) const
 {
-	return std::abs(Normal.Data[0] - other.Normal.Data[0]) <= epsilon
-		&& std::abs(Normal.Data[1] - other.Normal.Data[1]) <= epsilon
-		&& std::abs(Normal.Data[2] - other.Normal.Data[2]) <= epsilon
+	return std::abs(Normal.X - other.Normal.X) <= epsilon
+		&& std::abs(Normal.Y - other.Normal.Y) <= epsilon
+		&& std::abs(Normal.Z - other.Normal.Z) <= epsilon
 		&& std::abs(D - other.D) <= epsilon;
 }
 
