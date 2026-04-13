@@ -36,6 +36,13 @@ public:
 		return Host->Get<T>();
 	}
 
+	template<typename T, typename TTag>
+	T& GetTagged() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->GetTagged<T, TTag>();
+	}
+
 	template<typename T>
 	T* TryGet() const
 	{
@@ -43,12 +50,40 @@ public:
 		return Host->TryGet<T>();
 	}
 
-    template <typename T>
-    std::vector<T*> GetAll() const
-    {
-        assert(Host && "ServiceProvider used after construction phase");
-        return Host->GetAll<T>();
-    }
+	template<typename T, typename TTag>
+	T* TryGetTagged() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->TryGetTagged<T, TTag>();
+	}
+
+	template<typename T>
+	bool Has() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->Has<T>();
+	}
+
+	template<typename T, typename TTag>
+	bool HasTagged() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->HasTagged<T, TTag>();
+	}
+
+	template <typename T>
+	std::vector<T*> GetAll() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->GetAll<T>();
+	}
+
+	template <typename T, typename TTag>
+	std::vector<T*> GetAllTagged() const
+	{
+		assert(Host && "ServiceProvider used after construction phase");
+		return Host->GetAllTagged<T, TTag>();
+	}
 
 	template <typename T>
 	Logger& GetLogger() const

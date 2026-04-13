@@ -1,10 +1,26 @@
 #include <gtest/gtest.h>
 #include <batch/DataBatch.h>
-#include <transform/TransformHierarchy2Service.h>
-#include <transform/TransformPropagation2System.h>
+#include <service/ServiceHost.h>
+#include <service/ServiceProvider.h>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformPropagationSystem.h>
+#include <transform/TransformServiceTags.h>
 #include <math/Transform2.h>
+#include <math/Transform3.h>
 #include <cmath>
 #include <numbers>
+
+namespace
+{
+	using Transform2Hierarchy = TransformHierarchyService<TransformServiceTags::Transform2DTag>;
+	using Transform2Propagation = TransformPropagationSystem<
+		Transform2f,
+		TransformServiceTags::Transform2DTag>;
+	using Transform3Hierarchy = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+	using Transform3Propagation = TransformPropagationSystem<
+		Transform3f,
+		TransformServiceTags::Transform3DTag>;
+}
 
 // ============================================================================
 // DataBatch key-based access
@@ -82,12 +98,12 @@ TEST(DataBatch, ReserveDoesNotChangeCount)
 }
 
 // ============================================================================
-// TransformHierarchy2Service
+// TransformHierarchyService
 // ============================================================================
 
-TEST(TransformHierarchy2, RegisterAndQueryRoots)
+TEST(TransformHierarchy, RegisterAndQueryRoots)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey a{ 1 };
 	DataBatchKey b{ 2 };
@@ -101,9 +117,9 @@ TEST(TransformHierarchy2, RegisterAndQueryRoots)
 	EXPECT_TRUE(hierarchy.IsRegistered(b));
 }
 
-TEST(TransformHierarchy2, SetParentCreatesRelationship)
+TEST(TransformHierarchy, SetParentCreatesRelationship)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey parent{ 1 };
 	DataBatchKey child{ 2 };
@@ -121,9 +137,9 @@ TEST(TransformHierarchy2, SetParentCreatesRelationship)
 	EXPECT_EQ(children[0], child.Value);
 }
 
-TEST(TransformHierarchy2, SetParentAutoRegisters)
+TEST(TransformHierarchy, SetParentAutoRegisters)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey parent{ 1 };
 	DataBatchKey child{ 2 };
@@ -136,9 +152,9 @@ TEST(TransformHierarchy2, SetParentAutoRegisters)
 	EXPECT_TRUE(hierarchy.IsRegistered(child));
 }
 
-TEST(TransformHierarchy2, ClearParentOrphansChild)
+TEST(TransformHierarchy, ClearParentOrphansChild)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey parent{ 1 };
 	DataBatchKey child{ 2 };
@@ -156,9 +172,9 @@ TEST(TransformHierarchy2, ClearParentOrphansChild)
 	EXPECT_EQ(roots.size(), 2u);
 }
 
-TEST(TransformHierarchy2, ReparentMovesChild)
+TEST(TransformHierarchy, ReparentMovesChild)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey parentA{ 1 };
 	DataBatchKey parentB{ 2 };
@@ -177,9 +193,9 @@ TEST(TransformHierarchy2, ReparentMovesChild)
 	EXPECT_TRUE(hierarchy.HasChildren(parentB));
 }
 
-TEST(TransformHierarchy2, UnregisterOrphansChildren)
+TEST(TransformHierarchy, UnregisterOrphansChildren)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey parent{ 1 };
 	DataBatchKey childA{ 2 };
@@ -203,9 +219,9 @@ TEST(TransformHierarchy2, UnregisterOrphansChildren)
 	EXPECT_EQ(roots.size(), 2u);
 }
 
-TEST(TransformHierarchy2, RootsExcludesParentedKeys)
+TEST(TransformHierarchy, RootsExcludesParentedKeys)
 {
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey root{ 1 };
 	DataBatchKey child{ 2 };
@@ -224,15 +240,62 @@ TEST(TransformHierarchy2, RootsExcludesParentedKeys)
 }
 
 // ============================================================================
-// TransformPropagation2System
+// TransformPropagationSystem
 // ============================================================================
 
-TEST(TransformPropagation2, RootWorldEqualsLocal)
+struct TransformPropagationFixture
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	ServiceHost Host;
+	DataBatch<Transform2f>& Locals;
+	DataBatch<Transform2f>& Worlds;
+	Transform2Hierarchy& Hierarchy;
+	ServiceProvider Provider;
+	Transform2Propagation Propagation;
+
+	TransformPropagationFixture()
+		: Locals(Host.AddTaggedService<
+			DataBatch<Transform2f>,
+			TransformServiceTags::LocalTransformTag>())
+		, Worlds(Host.AddTaggedService<
+			DataBatch<Transform2f>,
+			TransformServiceTags::WorldTransformTag>())
+		, Hierarchy(Host.AddService<Transform2Hierarchy>())
+		, Provider(Host)
+		, Propagation(Provider)
+	{
+	}
+};
+
+struct TransformPropagation3Fixture
+{
+	ServiceHost Host;
+	DataBatch<Transform3f>& Locals;
+	DataBatch<Transform3f>& Worlds;
+	Transform3Hierarchy& Hierarchy;
+	ServiceProvider Provider;
+	Transform3Propagation Propagation;
+
+	TransformPropagation3Fixture()
+		: Locals(Host.AddTaggedService<
+			DataBatch<Transform3f>,
+			TransformServiceTags::LocalTransformTag>())
+		, Worlds(Host.AddTaggedService<
+			DataBatch<Transform3f>,
+			TransformServiceTags::WorldTransformTag>())
+		, Hierarchy(Host.AddService<Transform3Hierarchy>())
+		, Provider(Host)
+		, Propagation(Provider)
+	{
+	}
+};
+
+TEST(TransformPropagation, RootWorldEqualsLocal2D)
+{
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	Transform2f localTransform({ 10.0f, 20.0f }, 0.0f, { 1.0f, 1.0f });
 	auto localHandle = locals.Emplace(localTransform);
@@ -254,12 +317,13 @@ TEST(TransformPropagation2, RootWorldEqualsLocal)
 	EXPECT_TRUE(world->NearlyEquals(localTransform));
 }
 
-TEST(TransformPropagation2, ChildInheritsParentTransform)
+TEST(TransformPropagation, ChildInheritsParentTransform2D)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Parent at (100, 0), no rotation
 	Transform2f parentLocal({ 100.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
@@ -292,12 +356,13 @@ TEST(TransformPropagation2, ChildInheritsParentTransform)
 	EXPECT_TRUE(childWorld->NearlyEquals(expectedChild));
 }
 
-TEST(TransformPropagation2, RotatedParentAffectsChildPosition)
+TEST(TransformPropagation, RotatedParentAffectsChildPosition2D)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Parent at origin, rotated 90 degrees (pi/2)
 	float halfPi = std::numbers::pi_v<float> / 2.0f;
@@ -328,12 +393,13 @@ TEST(TransformPropagation2, RotatedParentAffectsChildPosition)
 	EXPECT_NEAR(childWorld->Rotation, halfPi, 1e-5f);
 }
 
-TEST(TransformPropagation2, ThreeLevelHierarchy)
+TEST(TransformPropagation, ThreeLevelHierarchy2D)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Root at (100, 0)
 	auto rootLocalH = locals.Emplace(Transform2f({ 100.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
@@ -366,12 +432,13 @@ TEST(TransformPropagation2, ThreeLevelHierarchy)
 	EXPECT_TRUE(leafWorld->NearlyEquals(expected));
 }
 
-TEST(TransformPropagation2, ScaleComposes)
+TEST(TransformPropagation, ScaleComposes2D)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Parent with 2x scale
 	auto parentLocalH = locals.Emplace(Transform2f({ 0.0f, 0.0f }, 0.0f, { 2.0f, 2.0f }));
@@ -400,6 +467,46 @@ TEST(TransformPropagation2, ScaleComposes)
 	EXPECT_NEAR(childWorld->Scale.Data[1], 1.0f, 1e-5f);
 }
 
+TEST(TransformPropagation, ChildInheritsParentTransform3D)
+{
+	TransformPropagation3Fixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
+
+	float halfPi = std::numbers::pi_v<float> / 2.0f;
+	Transform3f parentLocal(
+		Vec3::Zero(),
+		Quatf::FromAxisAngle(Vec3(0.0f, 0.0f, 1.0f), halfPi),
+		Vec3::One());
+	auto parentLocalH = locals.Emplace(parentLocal);
+	auto parentWorldH = worlds.Emplace(Transform3f::Identity());
+	DataBatchKey parentKey = parentLocalH.GetToken();
+
+	Transform3f childLocal(
+		Vec3(10.0f, 0.0f, 0.0f),
+		Quatf::Identity(),
+		Vec3::One());
+	auto childLocalH = locals.Emplace(childLocal);
+	auto childWorldH = worlds.Emplace(Transform3f::Identity());
+	DataBatchKey childKey = childLocalH.GetToken();
+
+	hierarchy.Register(parentKey);
+	hierarchy.Register(childKey);
+	hierarchy.SetParent(childKey, parentKey);
+
+	propagation.Propagate();
+
+	const auto* childWorld = worlds.TryGet(childKey);
+	ASSERT_NE(childWorld, nullptr);
+
+	EXPECT_NEAR(childWorld->Position.Data[0], 0.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Data[1], 10.0f, 1e-5f);
+	EXPECT_NEAR(childWorld->Position.Data[2], 0.0f, 1e-5f);
+	EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
+}
+
 // ============================================================================
 // Proof: non-node participation
 //
@@ -424,7 +531,7 @@ struct SceneNode2DSketch
 	SceneNode2DSketch(
 		DataBatch<Transform2f>& locals,
 		DataBatch<Transform2f>& worlds,
-		TransformHierarchy2Service& hierarchy,
+		Transform2Hierarchy& hierarchy,
 		const Transform2f& localTransform)
 	{
 		LocalTransformHandle = locals.Emplace(localTransform);
@@ -432,7 +539,7 @@ struct SceneNode2DSketch
 		hierarchy.Register(TransformKey());
 	}
 
-	void SetTransformParent(TransformHierarchy2Service& hierarchy, SceneNode2DSketch& parent)
+	void SetTransformParent(Transform2Hierarchy& hierarchy, SceneNode2DSketch& parent)
 	{
 		hierarchy.SetParent(TransformKey(), parent.TransformKey());
 	}
@@ -455,7 +562,7 @@ struct TilemapSketch
 	TilemapSketch(
 		DataBatch<Transform2f>& locals,
 		DataBatch<Transform2f>& worlds,
-		TransformHierarchy2Service& hierarchy,
+		Transform2Hierarchy& hierarchy,
 		const Transform2f& origin,
 		int gridW, int gridH)
 		: GridWidth(gridW), GridHeight(gridH)
@@ -465,7 +572,7 @@ struct TilemapSketch
 		hierarchy.Register(TransformKey());
 	}
 
-	void SetTransformParent(TransformHierarchy2Service& hierarchy, DataBatchKey parentKey)
+	void SetTransformParent(Transform2Hierarchy& hierarchy, DataBatchKey parentKey)
 	{
 		hierarchy.SetParent(TransformKey(), parentKey);
 	}
@@ -473,10 +580,11 @@ struct TilemapSketch
 
 TEST(TransformArchitecture, SceneNodeAndTilemapCoexist)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Create a scene node as the level root
 	SceneNode2DSketch levelRoot(locals, worlds, hierarchy,
@@ -513,10 +621,11 @@ TEST(TransformArchitecture, SceneNodeAndTilemapCoexist)
 
 TEST(TransformArchitecture, TilemapParentedUnderNode)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
-	TransformPropagation2System propagation(locals, worlds, hierarchy);
+	TransformPropagationFixture transformServices;
+	auto& locals = transformServices.Locals;
+	auto& worlds = transformServices.Worlds;
+	auto& hierarchy = transformServices.Hierarchy;
+	auto& propagation = transformServices.Propagation;
 
 	// Node at (200, 100)
 	SceneNode2DSketch camera(locals, worlds, hierarchy,
@@ -542,7 +651,7 @@ TEST(TransformArchitecture, HandleDestructionCleansUpTransformSlot)
 {
 	DataBatch<Transform2f> locals;
 	DataBatch<Transform2f> worlds;
-	TransformHierarchy2Service hierarchy;
+	Transform2Hierarchy hierarchy;
 
 	DataBatchKey key;
 	{
