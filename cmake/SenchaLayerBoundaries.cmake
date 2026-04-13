@@ -1,17 +1,13 @@
 function(sencha_collect_include_prefixes out_var include_dir)
-    file(GLOB children CONFIGURE_DEPENDS
-        LIST_DIRECTORIES true
-        "${include_dir}/*"
+    file(GLOB_RECURSE headers CONFIGURE_DEPENDS
+        "${include_dir}/*.h"
     )
 
     set(prefixes)
-    foreach(child IN LISTS children)
-        get_filename_component(name "${child}" NAME)
-        if(IS_DIRECTORY "${child}")
-            list(APPEND prefixes "${name}/")
-        else()
-            list(APPEND prefixes "${name}")
-        endif()
+    foreach(header IN LISTS headers)
+        file(RELATIVE_PATH relative_header "${include_dir}" "${header}")
+        string(REPLACE "\\" "/" normalized_relative_header "${relative_header}")
+        list(APPEND prefixes "${normalized_relative_header}")
     endforeach()
 
     set(${out_var} ${prefixes} PARENT_SCOPE)
@@ -41,7 +37,16 @@ function(sencha_assert_layer_boundary layer_name)
             string(REPLACE "\\" "/" normalized_include_path "${include_path}")
 
             foreach(prefix IN LISTS SENCHA_LAYER_FORBIDDEN_INCLUDE_PREFIXES)
-                if(normalized_include_path MATCHES "^${prefix}")
+                if(prefix MATCHES "/$")
+                    string(FIND "${normalized_include_path}" "${prefix}" prefix_position)
+                    set(include_is_forbidden ${prefix_position})
+                elseif(normalized_include_path STREQUAL prefix)
+                    set(include_is_forbidden 0)
+                else()
+                    set(include_is_forbidden -1)
+                endif()
+
+                if(include_is_forbidden EQUAL 0)
                     string(APPEND violations
                         "\n  ${relative_path}: #include <${include_path}> uses forbidden public prefix '${prefix}'"
                     )

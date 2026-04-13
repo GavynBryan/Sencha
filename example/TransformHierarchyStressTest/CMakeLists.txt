@@ -2,8 +2,6 @@ add_executable(TransformHierarchyStressTest
 	TransformHierarchyStressTest.cpp
 )
 
-target_include_directories(TransformHierarchyStressTest PRIVATE
-	$<TARGET_PROPERTY:sencha_teapot,INTERFACE_INCLUDE_DIRECTORIES>
-)
+target_link_libraries(TransformHierarchyStressTest PRIVATE sencha_infuser)
 
 target_compile_features(TransformHierarchyStressTest PRIVATE cxx_std_20)

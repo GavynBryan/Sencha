@@ -1,15 +1,12 @@
 #include <input/InputActionRegistry.h>
 #include <input/InputBindingCompiler.h>
 #include <input/InputBindingService.h>
-#include <input/InputEventQueueService.h>
-#include <input/InputMappingSystem.h>
-#include <input/InputStateService.h>
-#include <input/RawInputBufferService.h>
+#include <input/InputTypes.h>
+#include <input/SdlInputSystem.h>
 #include <json/JsonParser.h>
 #include <logging/ConsoleLogSink.h>
 #include <logging/LoggingProvider.h>
 #include <sdl/SdlInputControlResolver.h>
-#include <sdl/SdlInputIngestSystem.h>
 #include <sdl/SdlVideoService.h>
 #include <sdl/SdlWindowService.h>
 #include <system/ISystem.h>
@@ -42,14 +39,10 @@ std::string_view ToString(InputPhase phase)
 {
 	switch (phase)
 	{
-	case InputPhase::Started:
-		return "Started";
-	case InputPhase::Performed:
-		return "Performed";
-	case InputPhase::Canceled:
-		return "Canceled";
-	default:
-		return "Unknown";
+	case InputPhase::Started:   return "Started";
+	case InputPhase::Performed: return "Performed";
+	case InputPhase::Canceled:  return "Canceled";
+	default:                    return "Unknown";
 	}
 }
 
@@ -79,7 +72,7 @@ class ConsoleInputOutputSystem final : public ISystem
 {
 public:
 	ConsoleInputOutputSystem(
-		InputEventQueueService& events,
+		const EventBuffer<InputActionEvent>& events,
 		InputActionId quitAction,
 		bool& running)
 		: Events(events)
@@ -91,7 +84,7 @@ public:
 private:
 	void Update() override
 	{
-		for (const auto& event : Events.GetBuffer().Items())
+		for (const auto& event : Events.Items())
 		{
 			std::cout
 				<< "input "
@@ -109,7 +102,7 @@ private:
 		}
 	}
 
-	InputEventQueueService& Events;
+	const EventBuffer<InputActionEvent>& Events;
 	InputActionId QuitAction;
 	bool& Running;
 };
@@ -151,11 +144,7 @@ int main()
 
 	SdlInputControlResolver controlResolver;
 	InputActionRegistry actionRegistry{ExampleActions::Names};
-	auto table = CompileInputBindings(
-		*config,
-		actionRegistry,
-		controlResolver,
-		&compileError);
+	auto table = CompileInputBindings(*config, actionRegistry, controlResolver, &compileError);
 	if (!table)
 	{
 		logger.Error("Failed to compile input bindings: {}", compileError.Message);
@@ -187,31 +176,18 @@ int main()
 		return 1;
 	}
 
-	RawInputBufferService rawInput;
 	InputBindingService bindings;
-	InputEventQueueService actionEvents;
-	InputStateService state{ExampleActions::Count};
 	bindings.SetBindings(std::move(*table));
 
 	bool running = true;
 	SDL_AddEventWatch(WatchQuitEvents, &running);
 
 	SystemHost systems;
-	systems.AddSystem<SdlInputIngestSystem>(
-		SystemPhase::Input,
-		logging,
-		rawInput);
-	systems.AddSystem<InputMappingSystem>(
-		SystemPhase::PreUpdate,
-		logging,
-		rawInput,
-		bindings,
-		actionEvents,
-		&state);
+	auto& input = systems.AddSystem<SdlInputSystem>(SystemPhase::Input, logging, bindings);
 	systems.AddSystem<ConsoleInputOutputSystem>(
 		SystemPhase::Update,
-		actionEvents,
-		ExampleActions::Quit,
+		input.GetEvents(),
+		InputActionId{ExampleActions::Quit},
 		running);
 
 	systems.Init();

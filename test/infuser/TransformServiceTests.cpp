@@ -1,25 +1,25 @@
 #include <gtest/gtest.h>
 #include <batch/DataBatch.h>
-#include <service/ServiceHost.h>
-#include <service/ServiceProvider.h>
-#include <dod/transform/TransformHierarchyService.h>
-#include <dod/transform/TransformPropagationSystem.h>
-#include <dod/transform/TransformService.h>
 #include <math/Transform2.h>
 #include <math/Transform3.h>
+#include <primitive/transform/TransformDefaults.h>
+#include <primitive/transform/hierarchy/TransformHierarchyService.h>
+#include <primitive/transform/hierarchy/TransformPropagationSystem.h>
+#include <service/ServiceHost.h>
+#include <service/ServiceProvider.h>
 #include <cmath>
 #include <numbers>
 
 namespace
 {
-	using Transform2Hierarchy = TransformHierarchyService<TransformService::Tags::Transform2DTag>;
+	using Transform2Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform2DTag>;
 	using Transform2Propagation = TransformPropagationSystem<
 		Transform2f,
-		TransformService::Tags::Transform2DTag>;
-	using Transform3Hierarchy = TransformHierarchyService<TransformService::Tags::Transform3DTag>;
+		TransformDefaults::Tags::Transform2DTag>;
+	using Transform3Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform3DTag>;
 	using Transform3Propagation = TransformPropagationSystem<
 		Transform3f,
-		TransformService::Tags::Transform3DTag>;
+		TransformDefaults::Tags::Transform3DTag>;
 }
 
 // ============================================================================
@@ -255,10 +255,10 @@ struct TransformPropagationFixture
 	TransformPropagationFixture()
 		: Locals(Host.AddTaggedService<
 			DataBatch<Transform2f>,
-			TransformService::Tags::LocalTransformTag>())
+			TransformDefaults::Tags::LocalTransformTag>())
 		, Worlds(Host.AddTaggedService<
 			DataBatch<Transform2f>,
-			TransformService::Tags::WorldTransformTag>())
+			TransformDefaults::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform2Hierarchy>())
 		, Provider(Host)
 		, Propagation(Provider)
@@ -278,10 +278,10 @@ struct TransformPropagation3Fixture
 	TransformPropagation3Fixture()
 		: Locals(Host.AddTaggedService<
 			DataBatch<Transform3f>,
-			TransformService::Tags::LocalTransformTag>())
+			TransformDefaults::Tags::LocalTransformTag>())
 		, Worlds(Host.AddTaggedService<
 			DataBatch<Transform3f>,
-			TransformService::Tags::WorldTransformTag>())
+			TransformDefaults::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform3Hierarchy>())
 		, Provider(Host)
 		, Propagation(Provider)

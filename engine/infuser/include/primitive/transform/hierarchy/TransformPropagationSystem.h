@@ -1,10 +1,10 @@
 #pragma once
 
 #include <batch/DataBatch.h>
+#include <primitive/transform/TransformDefaults.h>
+#include <primitive/transform/hierarchy/TransformHierarchyService.h>
 #include <service/ServiceProvider.h>
 #include <system/ISystem.h>
-#include <dod/transform/TransformHierarchyService.h>
-#include <dod/transform/TransformService.h>
 #include <cstdint>
 #include <vector>
 
@@ -40,8 +40,8 @@
 template <
 	typename TTransform,
 	typename TDomainTag,
-	typename TLocalTag = TransformService::Tags::LocalTransformTag,
-	typename TWorldTag = TransformService::Tags::WorldTransformTag>
+	typename TLocalTag = TransformDefaults::Tags::LocalTransformTag,
+	typename TWorldTag = TransformDefaults::Tags::WorldTransformTag>
 class TransformPropagationSystem : public ISystem
 {
 public:

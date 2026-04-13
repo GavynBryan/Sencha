@@ -4,11 +4,11 @@ class ServiceHost;
 class SystemHost;
 
 //=============================================================================
-// TransformServiceTags
+// TransformDefaults
 //
 // Empty structs used as ServiceHost tags for transform roles and domains.
 //=============================================================================
-namespace TransformService {
+namespace TransformDefaults {
 
 	namespace Tags {
 		struct Transform2DTag {};

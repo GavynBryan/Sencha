@@ -1,6 +1,5 @@
-add_subdirectory(TransformHierarchyStressTest)
-
 if(SENCHA_BUILD_INFUSER)
+    add_subdirectory(TransformHierarchyStressTest)
     add_subdirectory(SenchaInputSystem)
 endif()
 

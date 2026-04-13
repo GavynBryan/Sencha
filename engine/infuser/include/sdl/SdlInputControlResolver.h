@@ -1,17 +1,19 @@
 #pragma once
 
-#include <input/InputBindingCompiler.h>
+#include <input/InputTypes.h>
+#include <optional>
+#include <string_view>
 
 //=============================================================================
 // SdlInputControlResolver
 //
 // Resolves authored input control names to the same engine control codes that
-// SdlInputIngestSystem writes into RawInputEvent.
+// SdlInputSystem writes into RawInputEvent.
 //=============================================================================
-class SdlInputControlResolver final : public IInputControlResolver
+class SdlInputControlResolver
 {
 public:
 	[[nodiscard]] std::optional<uint16_t> ResolveControl(
 		InputDeviceType device,
-		std::string_view control) const override;
+		std::string_view control) const;
 };

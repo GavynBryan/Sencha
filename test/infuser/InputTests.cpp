@@ -4,11 +4,9 @@
 #include <input/InputConfig.h>
 #include <input/InputBindingTable.h>
 #include <input/InputBindingCompiler.h>
-#include <input/RawInputBufferService.h>
 #include <input/InputBindingService.h>
-#include <input/InputEventQueueService.h>
-#include <input/InputStateService.h>
-#include <input/InputMappingSystem.h>
+#include <input/SdlInputSystem.h>
+#include <sdl/SdlInputControlResolver.h>
 #include <json/JsonParser.h>
 #include <logging/LoggingProvider.h>
 #include <system/SystemHost.h>
@@ -70,33 +68,6 @@ static const char* TestConfigJson = R"({
 	]
 })";
 
-class TestInputControlResolver final : public IInputControlResolver
-{
-public:
-	[[nodiscard]] std::optional<uint16_t> ResolveControl(
-		InputDeviceType device,
-		std::string_view control) const override
-	{
-		switch (device)
-		{
-		case InputDeviceType::Keyboard:
-			if (control == "A") return 4;
-			if (control == "D") return 7;
-			if (control == "R") return 21;
-			if (control == "W") return 26;
-			if (control == "Escape") return 41;
-			if (control == "Space") return 44;
-			return std::nullopt;
-		case InputDeviceType::Mouse:
-			if (control == "Left") return MouseControl::Left;
-			if (control == "Right") return MouseControl::Right;
-			return std::nullopt;
-		default:
-			return std::nullopt;
-		}
-	}
-};
-
 namespace TestActions
 {
 	static constexpr std::string_view Names[] = {
@@ -106,7 +77,7 @@ namespace TestActions
 	enum Action : uint16_t { Jump, Pause, MoveLeft, MoveRight, Shoot, Aim, Fire, Reload, Count };
 }
 
-static const TestInputControlResolver TestControlResolver;
+static const SdlInputControlResolver TestControlResolver;
 static const InputActionRegistry TestActionRegistry{TestActions::Names};
 
 TEST(InputConfig, DeserializeValidConfig)
@@ -153,6 +124,14 @@ TEST(InputConfig, DeserializeRejectsMissingBindings)
 // =============================================================================
 // Binding compilation tests
 // =============================================================================
+
+// SDL scancodes used in tests (match SdlInputControlResolver output):
+//   Space  = SDL_SCANCODE_SPACE  = 44
+//   Escape = SDL_SCANCODE_ESCAPE = 41
+//   A      = SDL_SCANCODE_A      = 4
+//   D      = SDL_SCANCODE_D      = 7
+//   R      = SDL_SCANCODE_R      = 21
+//   W      = SDL_SCANCODE_W      = 26
 
 TEST(InputBindingCompiler, CompileProducesActionIds)
 {
@@ -222,19 +201,16 @@ TEST(InputBindingCompiler, CompileProducesKeyboardBindings)
 	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	// Space = test control code 44
 	auto spaceBindings = table->GetKeyboardBindings(44);
 	ASSERT_EQ(spaceBindings.size(), 1u);
 	EXPECT_EQ(spaceBindings[0].Action, TestActions::Jump);
 	EXPECT_EQ(spaceBindings[0].Trigger, InputTriggerType::Pressed);
 
-	// Escape = test control code 41
 	auto escBindings = table->GetKeyboardBindings(41);
 	ASSERT_EQ(escBindings.size(), 1u);
 	EXPECT_EQ(escBindings[0].Action, TestActions::Pause);
 	EXPECT_EQ(escBindings[0].Trigger, InputTriggerType::Pressed);
 
-	// A = test control code 4
 	auto aBindings = table->GetKeyboardBindings(4);
 	ASSERT_EQ(aBindings.size(), 1u);
 	EXPECT_EQ(aBindings[0].Action, TestActions::MoveLeft);
@@ -248,8 +224,7 @@ TEST(InputBindingCompiler, UnboundKeyReturnsEmpty)
 	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	// W = test control code 26, not bound
-	auto wBindings = table->GetKeyboardBindings(26);
+	auto wBindings = table->GetKeyboardBindings(26); // W, not bound
 	EXPECT_TRUE(wBindings.empty());
 }
 
@@ -307,22 +282,22 @@ TEST(InputBindingCompiler, MouseBindings)
 	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	auto leftBindings = table->GetMouseButtonBindings(1); // Left = 1
+	auto leftBindings = table->GetMouseButtonBindings(1);
 	ASSERT_EQ(leftBindings.size(), 1u);
 	EXPECT_EQ(leftBindings[0].Action, TestActions::Shoot);
 	EXPECT_EQ(leftBindings[0].Trigger, InputTriggerType::Pressed);
 
-	auto rightBindings = table->GetMouseButtonBindings(3); // Right = 3
+	auto rightBindings = table->GetMouseButtonBindings(3);
 	ASSERT_EQ(rightBindings.size(), 1u);
 	EXPECT_EQ(rightBindings[0].Action, TestActions::Aim);
 	EXPECT_EQ(rightBindings[0].Trigger, InputTriggerType::Held);
 }
 
 // =============================================================================
-// InputMappingSystem tests
+// SdlInputSystem mapping tests
 // =============================================================================
 
-class InputMappingTest : public ::testing::Test
+class SdlInputTest : public ::testing::Test
 {
 protected:
 	void SetUp() override
@@ -332,47 +307,39 @@ protected:
 		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
-		Systems.AddSystem<InputMappingSystem>(SystemPhase::PreUpdate,
-			Logging, RawBuffer, BindingService, ActionQueue, &StateService);
+		auto& sys = Systems.AddSystem<SdlInputSystem>(SystemPhase::Input, Logging, BindingService);
+		InputSys = &sys;
 		Systems.Init();
 	}
 
-	void TearDown() override
-	{
-		Systems.Shutdown();
-	}
+	void TearDown() override { Systems.Shutdown(); }
 
 	void PressKey(uint16_t control)
 	{
-		RawBuffer.GetBuffer().Emplace(
+		InputSys->GetRawInput().Emplace(
 			InputDeviceType::Keyboard, true, control, 1.0f, InputUserId{});
 	}
 
 	void ReleaseKey(uint16_t control)
 	{
-		RawBuffer.GetBuffer().Emplace(
+		InputSys->GetRawInput().Emplace(
 			InputDeviceType::Keyboard, false, control, 0.0f, InputUserId{});
 	}
 
-	void RunMapping()
-	{
-		Systems.Update();
-	}
+	void RunFrame() { Systems.Update(); }
 
-	auto GetActions() { return ActionQueue.GetBuffer().Items(); }
+	auto GetActions() { return InputSys->GetEvents().Items(); }
 
-	RawInputBufferService RawBuffer;
 	InputBindingService BindingService;
-	InputEventQueueService ActionQueue;
-	InputStateService StateService{TestActions::Count};
 	LoggingProvider Logging;
 	SystemHost Systems;
+	SdlInputSystem* InputSys = nullptr;
 };
 
-TEST_F(InputMappingTest, PressedTriggerEmitsStarted)
+TEST_F(SdlInputTest, PressedTriggerEmitsStarted)
 {
 	PressKey(44); // Space -> Jump (Pressed trigger)
-	RunMapping();
+	RunFrame();
 
 	auto actions = GetActions();
 	ASSERT_EQ(actions.size(), 1u);
@@ -381,19 +348,18 @@ TEST_F(InputMappingTest, PressedTriggerEmitsStarted)
 	EXPECT_FLOAT_EQ(actions[0].Value, 1.0f);
 }
 
-TEST_F(InputMappingTest, PressedTriggerIgnoresRelease)
+TEST_F(SdlInputTest, PressedTriggerIgnoresRelease)
 {
 	ReleaseKey(44); // Space release with Pressed trigger
-	RunMapping();
+	RunFrame();
 
-	auto actions = GetActions();
-	EXPECT_TRUE(actions.empty());
+	EXPECT_TRUE(GetActions().empty());
 }
 
-TEST_F(InputMappingTest, HeldTriggerEmitsStartedOnPress)
+TEST_F(SdlInputTest, HeldTriggerEmitsStartedOnPress)
 {
 	PressKey(4); // A -> MoveLeft (Held trigger)
-	RunMapping();
+	RunFrame();
 
 	auto actions = GetActions();
 	ASSERT_GE(actions.size(), 1u);
@@ -401,15 +367,13 @@ TEST_F(InputMappingTest, HeldTriggerEmitsStartedOnPress)
 	EXPECT_EQ(actions[0].Phase, InputPhase::Started);
 }
 
-TEST_F(InputMappingTest, HeldTriggerEmitsPerformedEachFrame)
+TEST_F(SdlInputTest, HeldTriggerEmitsPerformedEachFrame)
 {
-	// Frame 1: press
 	PressKey(4); // A -> MoveLeft
-	RunMapping();
-	RawBuffer.GetBuffer().Clear();
+	RunFrame();
 
-	// Frame 2: no new raw events, but held should emit Performed
-	RunMapping();
+	// Frame 2: raw buffer auto-cleared; held should emit Performed
+	RunFrame();
 
 	auto actions = GetActions();
 	ASSERT_EQ(actions.size(), 1u);
@@ -417,21 +381,17 @@ TEST_F(InputMappingTest, HeldTriggerEmitsPerformedEachFrame)
 	EXPECT_EQ(actions[0].Phase, InputPhase::Performed);
 }
 
-TEST_F(InputMappingTest, HeldTriggerEmitsCanceledOnRelease)
+TEST_F(SdlInputTest, HeldTriggerEmitsCanceledOnRelease)
 {
-	// Frame 1: press
 	PressKey(4); // A -> MoveLeft
-	RunMapping();
-	RawBuffer.GetBuffer().Clear();
+	RunFrame();
 
-	// Frame 2: release
 	ReleaseKey(4);
-	RunMapping();
+	RunFrame();
 
 	auto actions = GetActions();
 	ASSERT_GE(actions.size(), 1u);
 
-	// Find the Canceled event
 	bool foundCanceled = false;
 	for (const auto& a : actions)
 	{
@@ -444,123 +404,53 @@ TEST_F(InputMappingTest, HeldTriggerEmitsCanceledOnRelease)
 	EXPECT_TRUE(foundCanceled);
 }
 
-TEST_F(InputMappingTest, HeldStopsPerformedAfterRelease)
+TEST_F(SdlInputTest, HeldStopsPerformedAfterRelease)
 {
-	// Frame 1: press A
 	PressKey(4);
-	RunMapping();
-	RawBuffer.GetBuffer().Clear();
+	RunFrame();
 
-	// Frame 2: release A
 	ReleaseKey(4);
-	RunMapping();
-	RawBuffer.GetBuffer().Clear();
+	RunFrame();
 
-	// Frame 3: should be empty (held was released)
-	RunMapping();
+	// Frame 3: should be empty
+	RunFrame();
 
-	auto actions = GetActions();
-	EXPECT_TRUE(actions.empty());
+	EXPECT_TRUE(GetActions().empty());
 }
 
-TEST_F(InputMappingTest, MultipleBindingsInSameFrame)
+TEST_F(SdlInputTest, MultipleBindingsInSameFrame)
 {
 	PressKey(44); // Space -> Jump
 	PressKey(41); // Escape -> Pause
-	RunMapping();
+	RunFrame();
 
 	auto actions = GetActions();
 	ASSERT_EQ(actions.size(), 2u);
-	// Both should be Started
 	EXPECT_EQ(actions[0].Phase, InputPhase::Started);
 	EXPECT_EQ(actions[1].Phase, InputPhase::Started);
 }
 
-TEST_F(InputMappingTest, UnboundKeyProducesNoEvents)
+TEST_F(SdlInputTest, UnboundKeyProducesNoEvents)
 {
 	PressKey(26); // W, not bound
-	RunMapping();
+	RunFrame();
 
 	EXPECT_TRUE(GetActions().empty());
 }
 
-TEST_F(InputMappingTest, StateServiceUpdatedOnPress)
+TEST_F(SdlInputTest, ActionQueueClearedEachFrame)
 {
 	PressKey(44); // Space -> Jump
-	RunMapping();
-
-	EXPECT_TRUE(StateService.IsActive(TestActions::Jump));
-	EXPECT_FLOAT_EQ(StateService.GetValue(TestActions::Jump), 1.0f);
-}
-
-TEST_F(InputMappingTest, StateServiceUpdatedOnHeldRelease)
-{
-	// Press A -> MoveLeft (Held)
-	PressKey(4);
-	RunMapping();
-	EXPECT_TRUE(StateService.IsActive(TestActions::MoveLeft));
-
-	RawBuffer.GetBuffer().Clear();
-
-	// Release A
-	ReleaseKey(4);
-	RunMapping();
-	EXPECT_FALSE(StateService.IsActive(TestActions::MoveLeft));
-}
-
-TEST_F(InputMappingTest, ActionQueueClearedEachFrame)
-{
-	PressKey(44); // Space -> Jump
-	RunMapping();
+	RunFrame();
 	ASSERT_EQ(GetActions().size(), 1u);
 
-	RawBuffer.GetBuffer().Clear();
-
 	// Next frame: no input, queue should be cleared
-	RunMapping();
+	RunFrame();
 	EXPECT_TRUE(GetActions().empty());
 }
 
 // =============================================================================
-// InputStateService tests
-// =============================================================================
-
-TEST(InputStateService, DefaultStateIsInactive)
-{
-	InputStateService service{8};
-	auto state = service.GetActionState(InputActionId{0});
-	EXPECT_FALSE(state.Active);
-	EXPECT_FLOAT_EQ(state.Value, 0.0f);
-}
-
-TEST(InputStateService, SetAndGetState)
-{
-	InputStateService service{8};
-	service.SetActionState(InputActionId{0}, true, 0.75f);
-
-	EXPECT_TRUE(service.IsActive(InputActionId{0}));
-	EXPECT_FLOAT_EQ(service.GetValue(InputActionId{0}), 0.75f);
-}
-
-TEST(InputStateService, InvalidActionIdIgnored)
-{
-	InputStateService service{8};
-	InputActionId invalid{};
-	service.SetActionState(invalid, true, 1.0f);
-	EXPECT_FALSE(service.IsActive(invalid));
-}
-
-TEST(InputStateService, MaxActionIdSupported)
-{
-	InputStateService service{256};
-	InputActionId max{255};
-	service.SetActionState(max, true, 1.0f);
-	EXPECT_TRUE(service.IsActive(max));
-	EXPECT_FLOAT_EQ(service.GetValue(max), 1.0f);
-}
-
-// =============================================================================
-// End-to-end: JSON -> compiled bindings -> mapping
+// End-to-end: JSON -> compiled bindings -> binding service lookup
 // =============================================================================
 
 TEST(InputEndToEnd, FullPipelineFromJson)
@@ -571,40 +461,34 @@ TEST(InputEndToEnd, FullPipelineFromJson)
 			{"name": "Reload"}
 		],
 		"bindings": [
-			{"action": "Fire",   "device": "Mouse", "control": "Left",  "trigger": "Pressed"},
-			{"action": "Reload", "device": "Keyboard", "control": "R",  "trigger": "Pressed"}
+			{"action": "Fire",   "device": "Mouse",    "control": "Left", "trigger": "Pressed"},
+			{"action": "Reload", "device": "Keyboard", "control": "R",    "trigger": "Pressed"}
 		]
 	})";
 
-	// Parse JSON
 	auto parsed = JsonParse(json);
 	ASSERT_TRUE(parsed.has_value());
 
-	// Deserialize config
 	auto config = DeserializeInputConfig(*parsed);
 	ASSERT_TRUE(config.has_value());
 
-	// Compile bindings
 	auto table = CompileInputBindings(*config, TestActionRegistry, TestControlResolver);
 	ASSERT_TRUE(table.has_value());
 
-	// Set up services
-	RawInputBufferService rawBuffer;
 	InputBindingService bindingService;
 	bindingService.SetBindings(std::move(*table));
-	InputEventQueueService actionQueue;
 
-	// Verify: R key (test control code 21) should map to Reload
+	// R key (SDL_SCANCODE_R = 21) should map to Reload
 	auto rBindings = bindingService.GetBindings().GetKeyboardBindings(21);
 	ASSERT_EQ(rBindings.size(), 1u);
 	EXPECT_EQ(rBindings[0].Action, TestActions::Reload);
 
-	// Verify: Mouse Left (button 1) should map to Fire
+	// Mouse Left (button 1) should map to Fire
 	auto leftBindings = bindingService.GetBindings().GetMouseButtonBindings(1);
 	ASSERT_EQ(leftBindings.size(), 1u);
 	EXPECT_EQ(leftBindings[0].Action, TestActions::Fire);
 
-	// Verify debug name lookup
+	// Debug name lookup
 	EXPECT_EQ(bindingService.GetActionName(TestActions::Fire), "Fire");
 	EXPECT_EQ(bindingService.GetActionName(TestActions::Reload), "Reload");
 	EXPECT_TRUE(bindingService.GetActionName(InputActionId{}).empty());
