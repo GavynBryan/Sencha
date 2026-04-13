@@ -10,7 +10,6 @@
 #include <numeric>
 #include <span>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -98,11 +97,26 @@ public:
 	template<typename... Args>
 	LifetimeHandle<DataBatchKey> Emplace(Args&&... args)
 	{
-		DataBatchKey key{ NextKey++ };
+		if (NextKey == std::numeric_limits<uint32_t>::max())
+			throw std::length_error("DataBatch key range exhausted.");
 
-		Items.emplace_back(std::forward<Args>(args)...);
-		IndexToKey.push_back(key.Value);
-		KeyToIndex[key.Value] = Items.size() - 1;
+		DataBatchKey key{ NextKey };
+		EnsureKeyIndexCapacity(key.Value);
+
+		const size_t oldSize = Items.size();
+		try
+		{
+			Items.emplace_back(std::forward<Args>(args)...);
+			IndexToKey.push_back(key.Value);
+			SetKeyIndex(key.Value, Items.size() - 1);
+		}
+		catch (...)
+		{
+			RollbackEmplace(oldSize, NextKey);
+			throw;
+		}
+
+		++NextKey;
 
 		bIsDirty = true;
 		++VersionCounter;
@@ -124,7 +138,9 @@ public:
 		const size_t oldSize = Items.size();
 		const uint32_t oldNextKey = NextKey;
 		const uint32_t firstKey = NextKey;
+		const uint32_t lastKey = firstKey + static_cast<uint32_t>(count - 1);
 		Reserve(Items.size() + count);
+		EnsureKeyIndexCapacity(lastKey);
 
 		try
 		{
@@ -141,7 +157,7 @@ public:
 
 			for (size_t i = 0; i < count; ++i)
 			{
-				KeyToIndex.emplace(
+				SetKeyIndex(
 					firstKey + static_cast<uint32_t>(i),
 					oldSize + i);
 			}
@@ -194,14 +210,14 @@ public:
 					break;
 				}
 
-				auto it = KeyToIndex.find(handle.Token.Value);
-				if (it == KeyToIndex.end())
+				const uint32_t index = FindIndex(handle.Token);
+				if (index == InvalidIndex)
 				{
 					coversWholeBatch = false;
 					break;
 				}
 
-				uint8_t& isCovered = covered[it->second];
+				uint8_t& isCovered = covered[index];
 				if (isCovered == 0)
 				{
 					isCovered = 1;
@@ -262,21 +278,21 @@ public:
 
 	T* TryGet(DataBatchKey key)
 	{
-		auto it = KeyToIndex.find(key.Value);
-		if (it == KeyToIndex.end()) return nullptr;
-		return &Items[it->second];
+		const uint32_t index = FindIndex(key);
+		if (index == InvalidIndex) return nullptr;
+		return &Items[index];
 	}
 
 	const T* TryGet(DataBatchKey key) const
 	{
-		auto it = KeyToIndex.find(key.Value);
-		if (it == KeyToIndex.end()) return nullptr;
-		return &Items[it->second];
+		const uint32_t index = FindIndex(key);
+		if (index == InvalidIndex) return nullptr;
+		return &Items[index];
 	}
 
 	bool Contains(DataBatchKey key) const
 	{
-		return key.Value != 0 && KeyToIndex.contains(key.Value);
+		return FindIndex(key) != InvalidIndex;
 	}
 
 	// Returns the dense index for `key`, or UINT32_MAX if the key is not present.
@@ -284,9 +300,7 @@ public:
 	// paying a hash lookup on every read.
 	uint32_t IndexOf(DataBatchKey key) const
 	{
-		auto it = KeyToIndex.find(key.Value);
-		if (it == KeyToIndex.end()) return UINT32_MAX;
-		return static_cast<uint32_t>(it->second);
+		return FindIndex(key);
 	}
 
 	// Monotonically-increasing version counter. Incremented on any structural
@@ -299,7 +313,15 @@ public:
 	{
 		Items.reserve(capacity);
 		IndexToKey.reserve(capacity);
-		KeyToIndex.reserve(capacity);
+
+		const size_t additionalKeyCapacity = capacity > Items.size()
+			? capacity - Items.size()
+			: 0;
+		if (additionalKeyCapacity > 0)
+		{
+			KeyToIndex.reserve(
+				static_cast<size_t>(NextKey) + additionalKeyCapacity);
+		}
 	}
 
 	// -- Contiguous iteration (the whole point of DOD) ----------------------
@@ -326,8 +348,7 @@ public:
 	{
 		if (!bIsDirty) return;
 
-		// Build a permutation index so we can sort Items, IndexToKey, and
-		// KeyToIndex in lockstep.
+		// Build a permutation index so we can sort Items and IndexToKey in lockstep.
 		std::vector<size_t> perm(Items.size());
 		std::iota(perm.begin(), perm.end(), size_t{0});
 
@@ -351,10 +372,10 @@ public:
 		Items = std::move(sortedItems);
 		IndexToKey = std::move(sortedKeys);
 
-		// Rebuild KeyToIndex
+		// Rebuild KeyToIndex for the new dense order.
 		for (size_t i = 0; i < Items.size(); ++i)
 		{
-			KeyToIndex[IndexToKey[i]] = i;
+			SetKeyIndex(IndexToKey[i], i);
 		}
 
 		bIsDirty = false;
@@ -389,11 +410,10 @@ protected:
 	{
 		// For value-type tokens, LifetimeHandle passes &Token.
 		uint32_t key = static_cast<DataBatchKey*>(token)->Value;
-		auto it = KeyToIndex.find(key);
-		if (it == KeyToIndex.end()) return;
+		const uint32_t indexToRemove = FindIndex(DataBatchKey{ key });
+		if (indexToRemove == InvalidIndex) return;
 
-		size_t indexToRemove = it->second;
-		size_t lastIndex = Items.size() - 1;
+		const size_t lastIndex = Items.size() - 1;
 
 		if (indexToRemove != lastIndex)
 		{
@@ -401,17 +421,52 @@ protected:
 			Items[indexToRemove] = std::move(Items[lastIndex]);
 			uint32_t lastKey = IndexToKey[lastIndex];
 			IndexToKey[indexToRemove] = lastKey;
-			KeyToIndex[lastKey] = indexToRemove;
+			SetKeyIndex(lastKey, indexToRemove);
 		}
 
 		Items.pop_back();
 		IndexToKey.pop_back();
-		KeyToIndex.erase(it);
+		ClearKeyIndex(key);
 		bIsDirty = true;
 		++VersionCounter;
 	}
 
 private:
+	static constexpr uint32_t InvalidIndex = UINT32_MAX;
+
+	void EnsureKeyIndexCapacity(uint32_t key)
+	{
+		const size_t requiredSize = static_cast<size_t>(key) + 1;
+		if (KeyToIndex.size() < requiredSize)
+			KeyToIndex.resize(requiredSize, InvalidIndex);
+	}
+
+	uint32_t FindIndex(DataBatchKey key) const
+	{
+		if (key.Value == 0 || key.Value >= KeyToIndex.size())
+			return InvalidIndex;
+
+		const uint32_t index = KeyToIndex[key.Value];
+		if (index == InvalidIndex || static_cast<size_t>(index) >= Items.size())
+			return InvalidIndex;
+
+		return index;
+	}
+
+	void SetKeyIndex(uint32_t key, size_t index)
+	{
+		assert(index < static_cast<size_t>(InvalidIndex)
+			&& "DataBatch dense index exceeds uint32_t storage.");
+		EnsureKeyIndexCapacity(key);
+		KeyToIndex[key] = static_cast<uint32_t>(index);
+	}
+
+	void ClearKeyIndex(uint32_t key)
+	{
+		if (key < KeyToIndex.size())
+			KeyToIndex[key] = InvalidIndex;
+	}
+
 	void ClearItemsForRemoval()
 	{
 		Items.clear();
@@ -425,7 +480,7 @@ private:
 	{
 		for (size_t i = oldSize; i < IndexToKey.size(); ++i)
 		{
-			KeyToIndex.erase(IndexToKey[i]);
+			ClearKeyIndex(IndexToKey[i]);
 		}
 
 		Items.erase(Items.begin() + oldSize, Items.end());
@@ -456,9 +511,9 @@ private:
 			if (key.Value == 0)
 				continue;
 
-			auto it = KeyToIndex.find(key.Value);
-			if (it != KeyToIndex.end())
-				indicesToRemove.push_back(it->second);
+			const uint32_t index = FindIndex(key);
+			if (index != InvalidIndex)
+				indicesToRemove.push_back(index);
 		}
 
 		return RemoveIndices(std::move(indicesToRemove));
@@ -472,9 +527,9 @@ private:
 		for (size_t i = 0; i < count; ++i)
 		{
 			const uint32_t key = firstKey + static_cast<uint32_t>(i);
-			auto it = KeyToIndex.find(key);
-			if (it != KeyToIndex.end())
-				indicesToRemove.push_back(it->second);
+			const uint32_t index = FindIndex(DataBatchKey{ key });
+			if (index != InvalidIndex)
+				indicesToRemove.push_back(index);
 		}
 
 		return RemoveIndices(std::move(indicesToRemove));
@@ -500,7 +555,10 @@ private:
 		for (size_t index : indicesToRemove)
 		{
 			if (index < shouldRemove.size())
+			{
 				shouldRemove[index] = uint8_t{ 1 };
+				ClearKeyIndex(IndexToKey[index]);
+			}
 		}
 
 		size_t writeIndex = 0;
@@ -515,18 +573,12 @@ private:
 				IndexToKey[writeIndex] = IndexToKey[readIndex];
 			}
 
+			SetKeyIndex(IndexToKey[writeIndex], writeIndex);
 			++writeIndex;
 		}
 
 		Items.erase(Items.begin() + writeIndex, Items.end());
 		IndexToKey.erase(IndexToKey.begin() + writeIndex, IndexToKey.end());
-
-		KeyToIndex.clear();
-		KeyToIndex.reserve(Items.size());
-		for (size_t i = 0; i < IndexToKey.size(); ++i)
-		{
-			KeyToIndex[IndexToKey[i]] = i;
-		}
 
 		bIsDirty = true;
 		++VersionCounter;
@@ -535,7 +587,7 @@ private:
 
 	std::vector<T> Items;                          // Dense, contiguous data
 	std::vector<uint32_t> IndexToKey;              // Dense index → stable key
-	std::unordered_map<uint32_t, size_t> KeyToIndex; // Stable key → dense index
+	std::vector<uint32_t> KeyToIndex;              // Stable key → dense index, or InvalidIndex
 	uint32_t NextKey = 1;                          // Start at 1: key 0 == DataBatchKey{} == "invalid"
 	bool bIsDirty = false;
 	uint64_t VersionCounter = 0;
