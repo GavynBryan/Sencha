@@ -149,7 +149,7 @@ std::optional<InputConfigData> DeserializeInputConfig(
 std::optional<InputBindingTable> CompileInputBindings(
 	const InputConfigData& config,
 	const IInputActionResolver& actionResolver,
-	const IInputControlResolver& controlResolver,
+	const SdlInputControlResolver& controlResolver,
 	InputCompileError* error)
 {
 	InputBindingTable table;

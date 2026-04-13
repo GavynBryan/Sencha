@@ -42,9 +42,9 @@ bool Sphere::operator==(const Sphere& other) const
 
 bool Sphere::NearlyEquals(const Sphere& other, float epsilon) const
 {
-	return std::abs(Center.Data[0] - other.Center.Data[0]) <= epsilon
-		&& std::abs(Center.Data[1] - other.Center.Data[1]) <= epsilon
-		&& std::abs(Center.Data[2] - other.Center.Data[2]) <= epsilon
+	return std::abs(Center.X - other.Center.X) <= epsilon
+		&& std::abs(Center.Y - other.Center.Y) <= epsilon
+		&& std::abs(Center.Z - other.Center.Z) <= epsilon
 		&& std::abs(Radius - other.Radius) <= epsilon;
 }
 

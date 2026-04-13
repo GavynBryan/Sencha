@@ -3,6 +3,7 @@
 #include <service/IService.h>
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -41,14 +42,14 @@ class RefBatch : public ILifetimeOwner, public IService
 public:
 	// -- ILifetimeOwner -----------------------------------------------------
 
-	void Attach(void* token) override
+	void Attach(uint64_t token) override
 	{
-		Add(static_cast<T*>(token));
+		Add(reinterpret_cast<T*>(token));
 	}
 
-	void Detach(void* token) override
+	void Detach(uint64_t token) override
 	{
-		Remove(static_cast<T*>(token));
+		Remove(reinterpret_cast<T*>(token));
 	}
 
 	// -- Direct typed API ---------------------------------------------------

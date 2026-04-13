@@ -43,9 +43,9 @@ TEST(Plane, NormalizationScalesNormalAndD)
 	Planef plane(Vec3(0.0f, 3.0f, 0.0f), -15.0f);
 	Planef normalized = plane.Normalized();
 
-	EXPECT_NEAR(normalized.Normal.Data[0], 0.0f, 1e-6f);
-	EXPECT_NEAR(normalized.Normal.Data[1], 1.0f, 1e-6f);
-	EXPECT_NEAR(normalized.Normal.Data[2], 0.0f, 1e-6f);
+	EXPECT_NEAR(normalized.Normal.X, 0.0f, 1e-6f);
+	EXPECT_NEAR(normalized.Normal.Y, 1.0f, 1e-6f);
+	EXPECT_NEAR(normalized.Normal.Z, 0.0f, 1e-6f);
 	EXPECT_NEAR(normalized.D, -5.0f, 1e-6f);
 }
 
@@ -101,9 +101,9 @@ TEST(Plane, ClosestPointProjectsOntoPlane)
 	Vec3 point(3.0f, 7.0f, -2.0f);
 	Vec3 closest = plane.ClosestPoint(point);
 
-	EXPECT_NEAR(closest.Data[0], 3.0f, 1e-6f);
-	EXPECT_NEAR(closest.Data[1], 0.0f, 1e-6f);
-	EXPECT_NEAR(closest.Data[2], -2.0f, 1e-6f);
+	EXPECT_NEAR(closest.X, 3.0f, 1e-6f);
+	EXPECT_NEAR(closest.Y, 0.0f, 1e-6f);
+	EXPECT_NEAR(closest.Z, -2.0f, 1e-6f);
 }
 
 // --- Comparison ---
@@ -139,6 +139,6 @@ TEST(Line, SignedDistanceAndClosestPoint)
 	EXPECT_FLOAT_EQ(line.SignedDistanceTo(Vec2(1.0f, 2.0f)), -2.0f);
 
 	Vec2 closest = line.ClosestPoint(Vec2(5.0f, 2.0f));
-	EXPECT_NEAR(closest.Data[0], 3.0f, 1e-6f);
-	EXPECT_NEAR(closest.Data[1], 2.0f, 1e-6f);
+	EXPECT_NEAR(closest.X, 3.0f, 1e-6f);
+	EXPECT_NEAR(closest.Y, 2.0f, 1e-6f);
 }

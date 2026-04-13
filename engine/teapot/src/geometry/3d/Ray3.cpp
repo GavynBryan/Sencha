@@ -25,12 +25,12 @@ bool Ray3::operator==(const Ray3& other) const
 
 bool Ray3::NearlyEquals(const Ray3& other, float epsilon) const
 {
-	return std::abs(Origin.Data[0] - other.Origin.Data[0]) <= epsilon
-		&& std::abs(Origin.Data[1] - other.Origin.Data[1]) <= epsilon
-		&& std::abs(Origin.Data[2] - other.Origin.Data[2]) <= epsilon
-		&& std::abs(Direction.Data[0] - other.Direction.Data[0]) <= epsilon
-		&& std::abs(Direction.Data[1] - other.Direction.Data[1]) <= epsilon
-		&& std::abs(Direction.Data[2] - other.Direction.Data[2]) <= epsilon;
+	return std::abs(Origin.X - other.Origin.X) <= epsilon
+		&& std::abs(Origin.Y - other.Origin.Y) <= epsilon
+		&& std::abs(Origin.Z - other.Origin.Z) <= epsilon
+		&& std::abs(Direction.X - other.Direction.X) <= epsilon
+		&& std::abs(Direction.Y - other.Direction.Y) <= epsilon
+		&& std::abs(Direction.Z - other.Direction.Z) <= epsilon;
 }
 
 std::ostream& operator<<(std::ostream& os, const Ray3& ray)

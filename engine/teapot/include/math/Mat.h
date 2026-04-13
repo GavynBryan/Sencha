@@ -174,7 +174,7 @@ struct Mat
 		Vec<Rows, T> result;
 		for (int r = 0; r < Rows; ++r)
 			for (int c = 0; c < Cols; ++c)
-				result.Data[r] += Data[r][c] * v.Data[c];
+				result[r] += Data[r][c] * v[c];
 		return result;
 	}
 
@@ -318,16 +318,16 @@ struct Mat
 
 	Vec<3, T> TransformPoint(const Vec<3, T>& p) const requires (Rows == 4 && Cols == 4)
 	{
-		Vec<4, T> h(p.Data[0], p.Data[1], p.Data[2], T{1});
+		Vec<4, T> h(p.X, p.Y, p.Z, T{1});
 		Vec<4, T> r = *this * h;
-		return Vec<3, T>(r.Data[0], r.Data[1], r.Data[2]);
+		return Vec<3, T>(r.X, r.Y, r.Z);
 	}
 
 	Vec<3, T> TransformVector(const Vec<3, T>& v) const requires (Rows == 4 && Cols == 4)
 	{
-		Vec<4, T> h(v.Data[0], v.Data[1], v.Data[2], T{0});
+		Vec<4, T> h(v.X, v.Y, v.Z, T{0});
 		Vec<4, T> r = *this * h;
-		return Vec<3, T>(r.Data[0], r.Data[1], r.Data[2]);
+		return Vec<3, T>(r.X, r.Y, r.Z);
 	}
 
 	// -- Affine inverse (Mat4, floating-point) ------------------------------
@@ -352,16 +352,16 @@ struct Mat
 		Vec<3, T> invT;
 		for (int r = 0; r < 3; ++r)
 			for (int c = 0; c < 3; ++c)
-				invT.Data[r] -= invUpper.Data[r][c] * t.Data[c];
+				invT[r] -= invUpper.Data[r][c] * t[c];
 
 		Mat result;
 		for (int r = 0; r < 3; ++r)
 			for (int c = 0; c < 3; ++c)
 				result.Data[r][c] = invUpper.Data[r][c];
 
-		result.Data[0][3] = invT.Data[0];
-		result.Data[1][3] = invT.Data[1];
-		result.Data[2][3] = invT.Data[2];
+		result.Data[0][3] = invT.X;
+		result.Data[1][3] = invT.Y;
+		result.Data[2][3] = invT.Z;
 		result.Data[3][3] = T{1};
 		return result;
 	}
@@ -394,7 +394,7 @@ struct Mat
 
 	static constexpr Mat MakeTranslation(const Vec<3, T>& v) requires (Rows == 4 && Cols == 4)
 	{
-		return MakeTranslation(v.Data[0], v.Data[1], v.Data[2]);
+		return MakeTranslation(v.X, v.Y, v.Z);
 	}
 
 	// -- Scale --------------------------------------------------------------
@@ -418,7 +418,7 @@ struct Mat
 
 	static constexpr Mat MakeScale(const Vec<3, T>& v) requires (Rows == Cols && (Rows == 3 || Rows == 4))
 	{
-		return MakeScale(v.Data[0], v.Data[1], v.Data[2]);
+		return MakeScale(v.X, v.Y, v.Z);
 	}
 
 	// -- TRS (Translation * Rotation * Scale) -------------------------------
@@ -427,9 +427,9 @@ struct Mat
 		requires (Rows == 4 && Cols == 4 && std::floating_point<T>)
 	{
 		Mat t = MakeTranslation(translation);
-		Mat rx = MakeRotationX(eulerRadians.Data[0]);
-		Mat ry = MakeRotationY(eulerRadians.Data[1]);
-		Mat rz = MakeRotationZ(eulerRadians.Data[2]);
+		Mat rx = MakeRotationX(eulerRadians.X);
+		Mat ry = MakeRotationY(eulerRadians.Y);
+		Mat rz = MakeRotationZ(eulerRadians.Z);
 		Mat s = MakeScale(scale);
 		return t * rz * ry * rx * s;
 	}
@@ -525,17 +525,17 @@ struct Mat
 		Vec<3, T> u = r.Cross(f);
 
 		Mat result = Identity();
-		result.Data[0][0] =  r.Data[0];
-		result.Data[0][1] =  r.Data[1];
-		result.Data[0][2] =  r.Data[2];
+		result.Data[0][0] =  r.X;
+		result.Data[0][1] =  r.Y;
+		result.Data[0][2] =  r.Z;
 		result.Data[0][3] = -r.Dot(eye);
-		result.Data[1][0] =  u.Data[0];
-		result.Data[1][1] =  u.Data[1];
-		result.Data[1][2] =  u.Data[2];
+		result.Data[1][0] =  u.X;
+		result.Data[1][1] =  u.Y;
+		result.Data[1][2] =  u.Z;
 		result.Data[1][3] = -u.Dot(eye);
-		result.Data[2][0] = -f.Data[0];
-		result.Data[2][1] = -f.Data[1];
-		result.Data[2][2] = -f.Data[2];
+		result.Data[2][0] = -f.X;
+		result.Data[2][1] = -f.Y;
+		result.Data[2][2] = -f.Z;
 		result.Data[2][3] =  f.Dot(eye);
 		result.Data[3][3] = T{1};
 		return result;

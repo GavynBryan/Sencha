@@ -5,29 +5,61 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <string>
 #include <typeindex>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <memory>
 #include <utility>
 
+namespace ServiceHostDetail
+{
+	template <typename TService, typename TTag>
+	struct TaggedServiceKey {};
+
+	template <typename TService, typename TTag>
+	std::type_index GetTaggedServiceKey()
+	{
+		return std::type_index(typeid(TaggedServiceKey<TService, TTag>));
+	}
+}
+
 class ServiceHost
 {
 public:
+	ServiceHost* operator&() = delete;
+	const ServiceHost* operator&() const = delete;
+
 	template <typename T, typename TInterface = T, typename... Args>
 	T& AddService(Args&&... args);
+
+	template <typename T, typename TTag, typename... Args>
+	T& AddTaggedService(Args&&... args);
 
 	template <typename T>
 	T& Get() const;
 
+	template <typename T, typename TTag>
+	T& GetTagged() const;
+
 	template <typename T>
 	T* TryGet() const;
+
+	template <typename T, typename TTag>
+	T* TryGetTagged() const;
 
 	template <typename T>
 	bool Has() const;
 
+	template <typename T, typename TTag>
+	bool HasTagged() const;
+
 	template <typename T>
 	std::vector<T*> GetAll() const;
+
+	template <typename T, typename TTag>
+	std::vector<T*> GetAllTagged() const;
 
 	template <typename T>
 	void RemoveService(T& service);
@@ -67,6 +99,23 @@ T& ServiceHost::AddService(Args&&... args)
 	return *rawService;
 }
 
+template <typename T, typename TTag, typename... Args>
+T& ServiceHost::AddTaggedService(Args&&... args)
+{
+	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
+
+	auto service = std::make_unique<T>(std::forward<Args>(args)...);
+	auto* rawService = service.get();
+
+	Services.emplace_back(std::move(service));
+
+	// Tagged services are registered only under their explicit typed role key.
+	// This keeps Get<T>() unambiguous when the same T exists in multiple roles.
+	Registry[ServiceHostDetail::GetTaggedServiceKey<T, TTag>()].emplace_back(rawService);
+
+	return *rawService;
+}
+
 template <typename T>
 T& ServiceHost::Get() const
 {
@@ -74,6 +123,18 @@ T& ServiceHost::Get() const
 	auto iter = Registry.find(std::type_index(typeid(T)));
 	if (iter == Registry.end() || iter->second.empty()) {
 		throw std::runtime_error("Service not registered: " + std::string(typeid(T).name()));
+	}
+	return *static_cast<T*>(iter->second.front());
+}
+
+template <typename T, typename TTag>
+T& ServiceHost::GetTagged() const
+{
+	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
+	auto iter = Registry.find(ServiceHostDetail::GetTaggedServiceKey<T, TTag>());
+	if (iter == Registry.end() || iter->second.empty()) {
+		throw std::runtime_error("Tagged service not registered: " +
+			std::string(typeid(T).name()) + " / " + std::string(typeid(TTag).name()));
 	}
 	return *static_cast<T*>(iter->second.front());
 }
@@ -89,6 +150,17 @@ T* ServiceHost::TryGet() const
 	return static_cast<T*>(iter->second.front());
 }
 
+template <typename T, typename TTag>
+T* ServiceHost::TryGetTagged() const
+{
+	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
+	auto iter = Registry.find(ServiceHostDetail::GetTaggedServiceKey<T, TTag>());
+	if (iter == Registry.end() || iter->second.empty()) {
+		return nullptr;
+	}
+	return static_cast<T*>(iter->second.front());
+}
+
 template <typename T>
 bool ServiceHost::Has() const
 {
@@ -97,11 +169,36 @@ bool ServiceHost::Has() const
 	return iter != Registry.end() && !iter->second.empty();
 }
 
+template <typename T, typename TTag>
+bool ServiceHost::HasTagged() const
+{
+	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
+	auto iter = Registry.find(ServiceHostDetail::GetTaggedServiceKey<T, TTag>());
+	return iter != Registry.end() && !iter->second.empty();
+}
+
 template <typename T>
 std::vector<T*> ServiceHost::GetAll() const
 {
 	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
 	auto iter = Registry.find(std::type_index(typeid(T)));
+	if (iter == Registry.end()) {
+		return {};
+	}
+
+	std::vector<T*> result;
+	result.reserve(iter->second.size());
+	for (auto* service : iter->second) {
+		result.emplace_back(static_cast<T*>(service));
+	}
+	return result;
+}
+
+template <typename T, typename TTag>
+std::vector<T*> ServiceHost::GetAllTagged() const
+{
+	static_assert(std::is_base_of<IService, T>::value, "T must derive from IService");
+	auto iter = Registry.find(ServiceHostDetail::GetTaggedServiceKey<T, TTag>());
 	if (iter == Registry.end()) {
 		return {};
 	}

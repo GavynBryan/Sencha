@@ -3,10 +3,10 @@
 #include <input/InputActionRegistry.h>
 #include <input/InputConfig.h>
 #include <input/InputBindingTable.h>
+#include <sdl/SdlInputControlResolver.h>
 #include <json/JsonValue.h>
 #include <optional>
 #include <string>
-#include <string_view>
 
 //=============================================================================
 // Input binding compiler
@@ -16,23 +16,13 @@
 //   2. CompileInputBindings:   config structs -> runtime binding table
 //
 // Generic string resolution (device names, trigger names) happens here at
-// load time. App-specific action resolution and backend-specific control
-// resolution are supplied through cold-path resolver interfaces.
+// load time. Action resolution is supplied through IInputActionResolver;
+// control resolution uses SdlInputControlResolver directly.
 //=============================================================================
 
 struct InputCompileError
 {
 	std::string Message;
-};
-
-class IInputControlResolver
-{
-public:
-	virtual ~IInputControlResolver() = default;
-
-	[[nodiscard]] virtual std::optional<uint16_t> ResolveControl(
-		InputDeviceType device,
-		std::string_view control) const = 0;
 };
 
 // Parse a JsonValue tree into typed config structs.
@@ -44,5 +34,5 @@ std::optional<InputConfigData> DeserializeInputConfig(
 std::optional<InputBindingTable> CompileInputBindings(
 	const InputConfigData& config,
 	const IInputActionResolver& actionResolver,
-	const IInputControlResolver& controlResolver,
+	const SdlInputControlResolver& controlResolver,
 	InputCompileError* error = nullptr);

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <system/SystemHost.h>
+#include <system/SystemPhase.h>
 
 // --- Test helpers ---
 
@@ -54,7 +55,7 @@ protected:
 TEST_F(SystemHostTest, AddAndGet)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
+    host.AddSystem<SystemA>(SystemPhase::Update);
     auto* system = host.Get<SystemA>();
     EXPECT_NE(system, nullptr);
 }
@@ -68,7 +69,7 @@ TEST_F(SystemHostTest, GetReturnsNullptrWhenMissing)
 TEST_F(SystemHostTest, HasReturnsTrueWhenAdded)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
+    host.AddSystem<SystemA>(SystemPhase::Update);
     EXPECT_TRUE(host.Has<SystemA>());
 }
 
@@ -81,8 +82,8 @@ TEST_F(SystemHostTest, HasReturnsFalseWhenMissing)
 TEST_F(SystemHostTest, InitCallsInitOnAllSystems)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
-    host.AddSystem<SystemB>(1);
+    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
 
     host.Init();
 
@@ -94,8 +95,8 @@ TEST_F(SystemHostTest, InitCallsInitOnAllSystems)
 TEST_F(SystemHostTest, UpdateCallsUpdateOnAllSystems)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
-    host.AddSystem<SystemB>(1);
+    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
 
     host.Init();
     CallLog.clear();
@@ -109,8 +110,8 @@ TEST_F(SystemHostTest, UpdateCallsUpdateOnAllSystems)
 TEST_F(SystemHostTest, ShutdownCallsInReverseOrder)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
-    host.AddSystem<SystemB>(1);
+    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
 
     host.Init();
     CallLog.clear();
@@ -124,10 +125,10 @@ TEST_F(SystemHostTest, ShutdownCallsInReverseOrder)
 TEST_F(SystemHostTest, SystemsRunInOrder)
 {
     SystemHost host;
-    // Add in reverse order — should still execute by order value
-    host.AddSystem<SystemC>(2);
-    host.AddSystem<SystemA>(0);
-    host.AddSystem<SystemB>(1);
+    // Add in reverse order — should still execute by phase
+    host.AddSystem<SystemC>(SystemPhase::PreRender);
+    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
 
     host.Init();
     CallLog.clear();
@@ -142,7 +143,7 @@ TEST_F(SystemHostTest, SystemsRunInOrder)
 TEST_F(SystemHostTest, MultipleUpdates)
 {
     SystemHost host;
-    host.AddSystem<CountingSystem>(0);
+    host.AddSystem<CountingSystem>(SystemPhase::Update);
 
     host.Init();
     host.Update();
@@ -157,11 +158,11 @@ TEST_F(SystemHostTest, MultipleUpdates)
 TEST_F(SystemHostTest, AddSystemAfterInitCallsInitImmediately)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(0);
+    host.AddSystem<SystemA>(SystemPhase::Update);
     host.Init();
     CallLog.clear();
 
-    host.AddSystem<SystemB>(1);
+    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
 
     ASSERT_EQ(CallLog.size(), 1u);
     EXPECT_EQ(CallLog[0], "B::Init");

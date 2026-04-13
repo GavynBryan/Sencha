@@ -14,32 +14,32 @@ Rect3::Rect3(float x, float y, float z, float width, float height, float depth)
 
 bool Rect3::IsValid() const
 {
-	return Size.Data[0] >= 0.0f && Size.Data[1] >= 0.0f && Size.Data[2] >= 0.0f;
+	return Size.X >= 0.0f && Size.Y >= 0.0f && Size.Z >= 0.0f;
 }
 
 Vec3 Rect3::Min() const { return Position; }
 Vec3 Rect3::Max() const { return Position + Size; }
 Vec3 Rect3::Center() const { return Position + Size / 2.0f; }
-float Rect3::Width() const { return Size.Data[0]; }
-float Rect3::Height() const { return Size.Data[1]; }
-float Rect3::Depth() const { return Size.Data[2]; }
-float Rect3::Volume() const { return Size.Data[0] * Size.Data[1] * Size.Data[2]; }
+float Rect3::Width() const { return Size.X; }
+float Rect3::Height() const { return Size.Y; }
+float Rect3::Depth() const { return Size.Z; }
+float Rect3::Volume() const { return Size.X * Size.Y * Size.Z; }
 
 bool Rect3::Contains(const Vec3& point) const
 {
 	const Vec3 max = Max();
-	return point.Data[0] >= Position.Data[0] && point.Data[0] <= max.Data[0]
-		&& point.Data[1] >= Position.Data[1] && point.Data[1] <= max.Data[1]
-		&& point.Data[2] >= Position.Data[2] && point.Data[2] <= max.Data[2];
+	return point.X >= Position.X && point.X <= max.X
+		&& point.Y >= Position.Y && point.Y <= max.Y
+		&& point.Z >= Position.Z && point.Z <= max.Z;
 }
 
 bool Rect3::Intersects(const Rect3& other) const
 {
 	const Vec3 maxA = Max();
 	const Vec3 maxB = other.Max();
-	return Position.Data[0] <= maxB.Data[0] && maxA.Data[0] >= other.Position.Data[0]
-		&& Position.Data[1] <= maxB.Data[1] && maxA.Data[1] >= other.Position.Data[1]
-		&& Position.Data[2] <= maxB.Data[2] && maxA.Data[2] >= other.Position.Data[2];
+	return Position.X <= maxB.X && maxA.X >= other.Position.X
+		&& Position.Y <= maxB.Y && maxA.Y >= other.Position.Y
+		&& Position.Z <= maxB.Z && maxA.Z >= other.Position.Z;
 }
 
 bool Rect3::operator==(const Rect3& other) const

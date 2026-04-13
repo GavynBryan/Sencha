@@ -6,43 +6,246 @@
 #include <ostream>
 #include <type_traits>
 
+template <int N, typename T = float>
+struct Vec;
+
+//=============================================================================
+// VecOps<TDerived, N, T>
+//
+// Shared vector behavior for both generic N-dimensional vectors and the common
+// field-backed Vec2/Vec3/Vec4 specializations.
+//=============================================================================
+template <typename TDerived, int N, typename T>
+struct VecOps
+{
+	static_assert(N > 0, "Vec dimension must be at least 1.");
+	static_assert(std::is_arithmetic_v<T>, "Vec component type must be arithmetic.");
+
+	constexpr T& operator[](int index)
+	{
+		assert(index >= 0 && index < N && "Vec index out of range.");
+		return Self().AtUnchecked(index);
+	}
+
+	constexpr const T& operator[](int index) const
+	{
+		assert(index >= 0 && index < N && "Vec index out of range.");
+		return Self().AtUnchecked(index);
+	}
+
+	constexpr TDerived operator+(const TDerived& other) const
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = (*this)[i] + other[i];
+		return result;
+	}
+
+	constexpr TDerived operator-(const TDerived& other) const
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = (*this)[i] - other[i];
+		return result;
+	}
+
+	constexpr TDerived operator*(T scalar) const
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = (*this)[i] * scalar;
+		return result;
+	}
+
+	constexpr TDerived operator/(T scalar) const
+	{
+		assert(scalar != T{0} && "Vec division by zero.");
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = (*this)[i] / scalar;
+		return result;
+	}
+
+	constexpr TDerived& operator+=(const TDerived& other)
+	{
+		for (int i = 0; i < N; ++i)
+			(*this)[i] += other[i];
+		return Self();
+	}
+
+	constexpr TDerived& operator-=(const TDerived& other)
+	{
+		for (int i = 0; i < N; ++i)
+			(*this)[i] -= other[i];
+		return Self();
+	}
+
+	constexpr TDerived& operator*=(T scalar)
+	{
+		for (int i = 0; i < N; ++i)
+			(*this)[i] *= scalar;
+		return Self();
+	}
+
+	constexpr TDerived& operator/=(T scalar)
+	{
+		assert(scalar != T{0} && "Vec division by zero.");
+		for (int i = 0; i < N; ++i)
+			(*this)[i] /= scalar;
+		return Self();
+	}
+
+	constexpr TDerived operator-() const
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = -(*this)[i];
+		return result;
+	}
+
+	constexpr T Dot(const TDerived& other) const
+	{
+		T sum = T{0};
+		for (int i = 0; i < N; ++i)
+			sum += (*this)[i] * other[i];
+		return sum;
+	}
+
+	constexpr T SqrMagnitude() const
+	{
+		return Dot(Self());
+	}
+
+	T Magnitude() const requires std::floating_point<T>
+	{
+		return std::sqrt(SqrMagnitude());
+	}
+
+	TDerived Normalized() const requires std::floating_point<T>
+	{
+		T mag = Magnitude();
+		assert(mag > T{0} && "Cannot normalize a zero-length Vec.");
+		return Self() / mag;
+	}
+
+	constexpr TDerived Cross(const TDerived& other) const requires (N == 3)
+	{
+		return TDerived{
+			(*this)[1] * other[2] - (*this)[2] * other[1],
+			(*this)[2] * other[0] - (*this)[0] * other[2],
+			(*this)[0] * other[1] - (*this)[1] * other[0]
+		};
+	}
+
+	static constexpr TDerived Zero()
+	{
+		return TDerived{};
+	}
+
+	static constexpr TDerived One()
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = T{1};
+		return result;
+	}
+
+	static constexpr TDerived Right() requires (N == 2 || N == 3)
+	{
+		TDerived result;
+		result[0] = T{1};
+		return result;
+	}
+
+	static constexpr TDerived Left() requires (N == 2 || N == 3)
+	{
+		TDerived result;
+		result[0] = T{-1};
+		return result;
+	}
+
+	static constexpr TDerived Up() requires (N == 2 || N == 3)
+	{
+		TDerived result;
+		result[1] = T{1};
+		return result;
+	}
+
+	static constexpr TDerived Down() requires (N == 2 || N == 3)
+	{
+		TDerived result;
+		result[1] = T{-1};
+		return result;
+	}
+
+	static constexpr TDerived Forward() requires (N == 3)
+	{
+		TDerived result;
+		result[2] = T{-1};
+		return result;
+	}
+
+	static constexpr TDerived Backward() requires (N == 3)
+	{
+		TDerived result;
+		result[2] = T{1};
+		return result;
+	}
+
+	static constexpr TDerived Lerp(const TDerived& a, const TDerived& b, T t)
+	{
+		TDerived result;
+		for (int i = 0; i < N; ++i)
+			result[i] = a[i] + t * (b[i] - a[i]);
+		return result;
+	}
+
+	static T Distance(const TDerived& a, const TDerived& b) requires std::floating_point<T>
+	{
+		return (a - b).Magnitude();
+	}
+
+	static constexpr T SqrDistance(const TDerived& a, const TDerived& b)
+	{
+		return (a - b).SqrMagnitude();
+	}
+
+private:
+	constexpr TDerived& Self()
+	{
+		return static_cast<TDerived&>(*this);
+	}
+
+	constexpr const TDerived& Self() const
+	{
+		return static_cast<const TDerived&>(*this);
+	}
+};
+
 //=============================================================================
 // Vec<N, T>
 //
 // N-dimensional vector with arithmetic component type T (default: float).
-// Dimension-agnostic — works for 2D, 3D, 4D, or any positive dimension.
-//
-// Named accessors X(), Y(), Z(), W() are available when the dimension
-// count supports them (enforced at compile time via requires clauses).
-//
-// Cross() is restricted to 3-dimensional vectors at compile time.
+// Generic dimensions use indexed storage. Vec2, Vec3, and Vec4 are specialized
+// below with first-class X/Y/Z/W fields.
 //
 // Direction conventions:
 //   - Right is +X and Up is +Y for 2D and 3D.
 //   - 3D Forward is -Z, matching Sencha's view/look-at convention.
-//
-// Extensibility:
-//   - Any positive dimension count is supported.
-//   - Any arithmetic component type (float, double, int, etc.).
-//   - Add new dimension-gated operations with requires (N == K).
 //
 // Common aliases:
 //   Vec2, Vec3, Vec4           (float)
 //   Vec2d, Vec3d, Vec4d        (double)
 //   Vec2i, Vec3i, Vec4i        (int)
 //=============================================================================
-template <int N, typename T = float>
-struct Vec
+template <int N, typename T>
+struct Vec : VecOps<Vec<N, T>, N, T>
 {
 	static_assert(N > 0, "Vec dimension must be at least 1.");
 	static_assert(std::is_arithmetic_v<T>, "Vec component type must be arithmetic.");
 
-	// -- Data ---------------------------------------------------------------
-
 	static constexpr int Dimensions = N;
 	T Data[N] = {};
-
-	// -- Construction -------------------------------------------------------
 
 	constexpr Vec() = default;
 
@@ -50,107 +253,8 @@ struct Vec
 		requires (sizeof...(Args) == N && (std::convertible_to<Args, T> && ...))
 	constexpr Vec(Args... args) : Data{ static_cast<T>(args)... } {}
 
-	// -- Named accessors (dimension-gated) ----------------------------------
-
-	constexpr T& X() { return Data[0]; }
-	constexpr const T& X() const { return Data[0]; }
-
-	constexpr T& Y() requires (N >= 2) { return Data[1]; }
-	constexpr const T& Y() const requires (N >= 2) { return Data[1]; }
-
-	constexpr T& Z() requires (N >= 3) { return Data[2]; }
-	constexpr const T& Z() const requires (N >= 3) { return Data[2]; }
-
-	constexpr T& W() requires (N >= 4) { return Data[3]; }
-	constexpr const T& W() const requires (N >= 4) { return Data[3]; }
-
-	// -- Element access -----------------------------------------------------
-
-	constexpr T& operator[](int index)
-	{
-		assert(index >= 0 && index < N && "Vec index out of range.");
-		return Data[index];
-	}
-
-	constexpr const T& operator[](int index) const
-	{
-		assert(index >= 0 && index < N && "Vec index out of range.");
-		return Data[index];
-	}
-
-	// -- Arithmetic operators -----------------------------------------------
-
-	constexpr Vec operator+(const Vec& other) const
-	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = Data[i] + other.Data[i];
-		return result;
-	}
-
-	constexpr Vec operator-(const Vec& other) const
-	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = Data[i] - other.Data[i];
-		return result;
-	}
-
-	constexpr Vec operator*(T scalar) const
-	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = Data[i] * scalar;
-		return result;
-	}
-
-	constexpr Vec operator/(T scalar) const
-	{
-		assert(scalar != T{0} && "Vec division by zero.");
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = Data[i] / scalar;
-		return result;
-	}
-
-	constexpr Vec& operator+=(const Vec& other)
-	{
-		for (int i = 0; i < N; ++i)
-			Data[i] += other.Data[i];
-		return *this;
-	}
-
-	constexpr Vec& operator-=(const Vec& other)
-	{
-		for (int i = 0; i < N; ++i)
-			Data[i] -= other.Data[i];
-		return *this;
-	}
-
-	constexpr Vec& operator*=(T scalar)
-	{
-		for (int i = 0; i < N; ++i)
-			Data[i] *= scalar;
-		return *this;
-	}
-
-	constexpr Vec& operator/=(T scalar)
-	{
-		assert(scalar != T{0} && "Vec division by zero.");
-		for (int i = 0; i < N; ++i)
-			Data[i] /= scalar;
-		return *this;
-	}
-
-	constexpr Vec operator-() const
-	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = -Data[i];
-		return result;
-	}
-
-	// -- Comparison ---------------------------------------------------------
+	constexpr T& AtUnchecked(int index) { return Data[index]; }
+	constexpr const T& AtUnchecked(int index) const { return Data[index]; }
 
 	constexpr bool operator==(const Vec& other) const
 	{
@@ -160,120 +264,92 @@ struct Vec
 		}
 		return true;
 	}
+};
 
-	// -- Vector operations --------------------------------------------------
+template <typename T>
+struct Vec<2, T> : VecOps<Vec<2, T>, 2, T>
+{
+	static_assert(std::is_arithmetic_v<T>, "Vec component type must be arithmetic.");
 
-	constexpr T Dot(const Vec& other) const
+	static constexpr int Dimensions = 2;
+	T X = T{};
+	T Y = T{};
+
+	constexpr Vec() = default;
+	constexpr Vec(T x, T y) : X(x), Y(y) {}
+
+	constexpr T& AtUnchecked(int index)
 	{
-		T sum = T{0};
-		for (int i = 0; i < N; ++i)
-			sum += Data[i] * other.Data[i];
-		return sum;
+		return index == 0 ? X : Y;
 	}
 
-	constexpr T SqrMagnitude() const
+	constexpr const T& AtUnchecked(int index) const
 	{
-		return Dot(*this);
+		return index == 0 ? X : Y;
 	}
 
-	T Magnitude() const requires std::floating_point<T>
+	constexpr bool operator==(const Vec& other) const
 	{
-		return std::sqrt(SqrMagnitude());
+		return X == other.X && Y == other.Y;
+	}
+};
+
+template <typename T>
+struct Vec<3, T> : VecOps<Vec<3, T>, 3, T>
+{
+	static_assert(std::is_arithmetic_v<T>, "Vec component type must be arithmetic.");
+
+	static constexpr int Dimensions = 3;
+	T X = T{};
+	T Y = T{};
+	T Z = T{};
+
+	constexpr Vec() = default;
+	constexpr Vec(T x, T y, T z) : X(x), Y(y), Z(z) {}
+
+	constexpr T& AtUnchecked(int index)
+	{
+		return index == 0 ? X : (index == 1 ? Y : Z);
 	}
 
-	Vec Normalized() const requires std::floating_point<T>
+	constexpr const T& AtUnchecked(int index) const
 	{
-		T mag = Magnitude();
-		assert(mag > T{0} && "Cannot normalize a zero-length Vec.");
-		return *this / mag;
+		return index == 0 ? X : (index == 1 ? Y : Z);
 	}
 
-	// -- 3D-only operations -------------------------------------------------
-
-	constexpr Vec Cross(const Vec& other) const requires (N == 3)
+	constexpr bool operator==(const Vec& other) const
 	{
-		return Vec{
-			Data[1] * other.Data[2] - Data[2] * other.Data[1],
-			Data[2] * other.Data[0] - Data[0] * other.Data[2],
-			Data[0] * other.Data[1] - Data[1] * other.Data[0]
-		};
+		return X == other.X && Y == other.Y && Z == other.Z;
+	}
+};
+
+template <typename T>
+struct Vec<4, T> : VecOps<Vec<4, T>, 4, T>
+{
+	static_assert(std::is_arithmetic_v<T>, "Vec component type must be arithmetic.");
+
+	static constexpr int Dimensions = 4;
+	T X = T{};
+	T Y = T{};
+	T Z = T{};
+	T W = T{};
+
+	constexpr Vec() = default;
+	constexpr Vec(T x, T y, T z, T w) : X(x), Y(y), Z(z), W(w) {}
+
+	constexpr T& AtUnchecked(int index)
+	{
+		return index == 0 ? X : (index == 1 ? Y : (index == 2 ? Z : W));
 	}
 
-	// -- Static factories ---------------------------------------------------
-
-	static constexpr Vec Zero()
+	constexpr const T& AtUnchecked(int index) const
 	{
-		return Vec{};
+		return index == 0 ? X : (index == 1 ? Y : (index == 2 ? Z : W));
 	}
 
-	static constexpr Vec One()
+	constexpr bool operator==(const Vec& other) const
 	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = T{1};
-		return result;
-	}
-
-	static constexpr Vec Right() requires (N == 2 || N == 3)
-	{
-		Vec result;
-		result.Data[0] = T{1};
-		return result;
-	}
-
-	static constexpr Vec Left() requires (N == 2 || N == 3)
-	{
-		Vec result;
-		result.Data[0] = T{-1};
-		return result;
-	}
-
-	static constexpr Vec Up() requires (N == 2 || N == 3)
-	{
-		Vec result;
-		result.Data[1] = T{1};
-		return result;
-	}
-
-	static constexpr Vec Down() requires (N == 2 || N == 3)
-	{
-		Vec result;
-		result.Data[1] = T{-1};
-		return result;
-	}
-
-	static constexpr Vec Forward() requires (N == 3)
-	{
-		Vec result;
-		result.Data[2] = T{-1};
-		return result;
-	}
-
-	static constexpr Vec Backward() requires (N == 3)
-	{
-		Vec result;
-		result.Data[2] = T{1};
-		return result;
-	}
-
-	// -- Static utilities ---------------------------------------------------
-
-	static constexpr Vec Lerp(const Vec& a, const Vec& b, T t)
-	{
-		Vec result;
-		for (int i = 0; i < N; ++i)
-			result.Data[i] = a.Data[i] + t * (b.Data[i] - a.Data[i]);
-		return result;
-	}
-
-	static T Distance(const Vec& a, const Vec& b) requires std::floating_point<T>
-	{
-		return (a - b).Magnitude();
-	}
-
-	static constexpr T SqrDistance(const Vec& a, const Vec& b)
-	{
-		return (a - b).SqrMagnitude();
+		return X == other.X && Y == other.Y && Z == other.Z && W == other.W;
 	}
 };
 
@@ -294,7 +370,7 @@ std::ostream& operator<<(std::ostream& os, const Vec<N, T>& v)
 	for (int i = 0; i < N; ++i)
 	{
 		if (i > 0) os << ", ";
-		os << v.Data[i];
+		os << v[i];
 	}
 	os << ")";
 	return os;
