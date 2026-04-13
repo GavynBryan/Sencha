@@ -2,9 +2,9 @@
 
 #include <iosfwd>
 
-#include <geometry/3d/Aabb3d.h>
-#include <geometry/3d/Plane.h>
-#include <geometry/3d/Sphere.h>
+#include <math/geometry/3d/Aabb3d.h>
+#include <math/geometry/3d/Plane.h>
+#include <math/geometry/3d/Sphere.h>
 #include <math/Mat.h>
 
 // Six-plane float frustum for culling and containment tests.

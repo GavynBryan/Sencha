@@ -1,4 +1,4 @@
-#include <geometry/3d/Ray3d.h>
+#include <math/geometry/3d/Ray3d.h>
 
 #include <cmath>
 #include <ostream>

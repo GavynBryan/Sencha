@@ -1,4 +1,4 @@
-#include <geometry/3d/Plane.h>
+#include <math/geometry/3d/Plane.h>
 
 #include <cassert>
 #include <cmath>

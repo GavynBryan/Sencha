@@ -1,4 +1,4 @@
-#include <geometry/3d/Rect3d.h>
+#include <math/geometry/3d/Rect3d.h>
 
 #include <ostream>
 

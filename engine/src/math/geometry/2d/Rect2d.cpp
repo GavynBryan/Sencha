@@ -1,4 +1,4 @@
-#include <geometry/2d/Rect2d.h>
+#include <math/geometry/2d/Rect2d.h>
 
 #include <ostream>
 

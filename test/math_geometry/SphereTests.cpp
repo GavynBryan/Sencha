@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <geometry/2d/Circle.h>
-#include <geometry/3d/Sphere.h>
+#include <math/geometry/2d/Circle.h>
+#include <math/geometry/3d/Sphere.h>
 #include <sstream>
 
 // --- Construction ---

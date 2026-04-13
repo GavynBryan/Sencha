@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <geometry/2d/Rect2d.h>
+#include <math/geometry/2d/Rect2d.h>
 #include <sstream>
 
 // --- Construction ---

@@ -1,4 +1,4 @@
-#include <geometry/2d/Line.h>
+#include <math/geometry/2d/Line.h>
 
 #include <cassert>
 #include <cmath>

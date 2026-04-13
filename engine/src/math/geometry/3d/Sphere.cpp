@@ -1,4 +1,4 @@
-#include <geometry/3d/Sphere.h>
+#include <math/geometry/3d/Sphere.h>
 
 #include <cmath>
 #include <ostream>

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <geometry/3d/Frustum.h>
+#include <math/geometry/3d/Frustum.h>
 #include <cmath>
 
 // Helper: build a simple symmetric perspective VP matrix using Mat4 factories.

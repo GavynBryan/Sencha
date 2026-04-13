@@ -1,4 +1,4 @@
-#include <geometry/3d/Aabb3d.h>
+#include <math/geometry/3d/Aabb3d.h>
 
 #include <algorithm>
 #include <limits>

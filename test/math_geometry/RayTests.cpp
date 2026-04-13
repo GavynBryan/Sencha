@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <geometry/2d/Ray2d.h>
-#include <geometry/3d/Ray3d.h>
+#include <math/geometry/2d/Ray2d.h>
+#include <math/geometry/3d/Ray3d.h>
 #include <cmath>
 #include <sstream>
 

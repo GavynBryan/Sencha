@@ -1,4 +1,4 @@
-#include <geometry/2d/Ray2d.h>
+#include <math/geometry/2d/Ray2d.h>
 
 #include <cmath>
 #include <ostream>

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <geometry/2d/Line.h>
-#include <geometry/3d/Plane.h>
+#include <math/geometry/2d/Line.h>
+#include <math/geometry/3d/Plane.h>
 #include <cmath>
 #include <sstream>
 

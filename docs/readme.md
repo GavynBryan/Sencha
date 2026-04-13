@@ -34,22 +34,23 @@ Sencha is organized under one public include root and one source root:
 engine/
   include/
     core/
-    geometry/
     input/
     leaves/transform/
     math/
+      geometry/
     render/backend/
     window/
   src/
     core/
-    geometry/
     input/
     leaves/transform/
+    math/
+      geometry/
     render/backend/
     window/
 ```
 
-The old layer names are gone. Core contains the bootstrap infrastructure, math and geometry carry reusable value types, input and window own their public API plus SDL-backed implementations, render/backend contains backend-specific rendering services, and leaves/transform contains transform defaults and hierarchy propagation.
+The old layer names are gone. Core contains the bootstrap infrastructure, math carries reusable value types and geometry, input and window own their public API plus SDL-backed implementations, render/backend contains backend-specific rendering services, and leaves/transform contains transform defaults and hierarchy propagation.
 
 ### Core
 
