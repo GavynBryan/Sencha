@@ -4,9 +4,12 @@
 #include <service/IService.h>
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <span>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -22,6 +25,37 @@ struct DataBatchKey
 {
 	uint32_t Value = 0;
 	bool operator==(const DataBatchKey&) const = default;
+};
+
+//=============================================================================
+// DataBatchBlock
+//
+// Lightweight metadata describing a contiguous key range allocated by one
+// DataBatch::EmplaceBlock call. It does not own handles or keep items alive.
+//=============================================================================
+struct DataBatchBlock
+{
+	// First key in a contiguous key range returned by DataBatch::EmplaceBlock.
+	uint32_t FirstKey = 0;
+
+	// Number of keys in the block. A zero-count block is empty/invalid.
+	size_t Count = 0;
+
+	bool IsEmpty() const { return Count == 0; }
+
+	// Convert a block-local index to its DataBatchKey.
+	DataBatchKey KeyAt(size_t index) const
+	{
+		assert(index < Count && "DataBatchBlock key index out of range.");
+		return DataBatchKey{ FirstKey + static_cast<uint32_t>(index) };
+	}
+
+	// Check whether a key falls inside this block's contiguous key range.
+	bool Contains(DataBatchKey key) const
+	{
+		return key.Value >= FirstKey
+			&& static_cast<size_t>(key.Value - FirstKey) < Count;
+	}
 };
 
 //=============================================================================
@@ -78,48 +112,38 @@ public:
 			this, key, LifetimeHandle<DataBatchKey>::NoAttach);
 	}
 
-	std::vector<LifetimeHandle<DataBatchKey>> EmplaceRange(std::span<const T> values)
-	{
-		return EmplaceMany(values.size(), [&](size_t index) -> const T&
-		{
-			return values[index];
-		});
-	}
-
-	std::vector<LifetimeHandle<DataBatchKey>> EmplaceMoveRange(std::span<T> values)
-	{
-		return EmplaceMany(values.size(), [&](size_t index) -> T&&
-		{
-			return std::move(values[index]);
-		});
-	}
-
 	template<typename Factory>
-	std::vector<LifetimeHandle<DataBatchKey>> EmplaceMany(size_t count, Factory&& factory)
+	DataBatchBlock EmplaceBlock(size_t count, Factory&& factory)
 	{
-		std::vector<LifetimeHandle<DataBatchKey>> handles;
-		handles.reserve(count);
-
 		if (count == 0)
-			return handles;
+			return DataBatchBlock{};
+
+		if (count > static_cast<size_t>(std::numeric_limits<uint32_t>::max() - NextKey))
+			throw std::length_error("DataBatch key range exhausted.");
 
 		const size_t oldSize = Items.size();
 		const uint32_t oldNextKey = NextKey;
+		const uint32_t firstKey = NextKey;
 		Reserve(Items.size() + count);
 
 		try
 		{
 			for (size_t i = 0; i < count; ++i)
 			{
-				DataBatchKey key{ NextKey++ };
-				const size_t itemIndex = Items.size();
-
 				decltype(auto) item = factory(i);
 				Items.emplace_back(std::forward<decltype(item)>(item));
-				IndexToKey.push_back(key.Value);
-				KeyToIndex[key.Value] = itemIndex;
-				handles.push_back(LifetimeHandle<DataBatchKey>(
-					this, key, LifetimeHandle<DataBatchKey>::NoAttach));
+			}
+
+			for (size_t i = 0; i < count; ++i)
+			{
+				IndexToKey.push_back(firstKey + static_cast<uint32_t>(i));
+			}
+
+			for (size_t i = 0; i < count; ++i)
+			{
+				KeyToIndex.emplace(
+					firstKey + static_cast<uint32_t>(i),
+					oldSize + i);
 			}
 		}
 		catch (...)
@@ -128,19 +152,76 @@ public:
 			throw;
 		}
 
+		NextKey = firstKey + static_cast<uint32_t>(count);
 		bIsDirty = true;
 		++VersionCounter;
 
-		return handles;
+		return DataBatchBlock{ firstKey, count };
 	}
 
-	void RemoveRange(std::span<const DataBatchKey> keys)
+	void RemoveBlock(DataBatchBlock block)
 	{
-		RemoveKeys(keys);
+		if (block.IsEmpty() || Items.empty())
+			return;
+
+		if (block.Count == Items.size() && BlockCoversAllItems(block))
+		{
+			ClearItemsForRemoval();
+			return;
+		}
+
+		RemoveKeyRange(block.FirstKey, block.Count);
 	}
 
-	void RemoveRange(std::span<LifetimeHandle<DataBatchKey>> handles)
+	void RemoveKeys(std::span<const DataBatchKey> keys)
 	{
+		RemoveKeySpan(keys);
+	}
+
+	void RemoveHandles(std::span<LifetimeHandle<DataBatchKey>> handles)
+	{
+		if (!Items.empty() && handles.size() == Items.size())
+		{
+			std::vector<uint8_t> covered(Items.size(), uint8_t{ 0 });
+			size_t coveredCount = 0;
+			bool coversWholeBatch = true;
+
+			for (const auto& handle : handles)
+			{
+				if (handle.Owner != this || handle.Token == DataBatchKey{})
+				{
+					coversWholeBatch = false;
+					break;
+				}
+
+				auto it = KeyToIndex.find(handle.Token.Value);
+				if (it == KeyToIndex.end())
+				{
+					coversWholeBatch = false;
+					break;
+				}
+
+				uint8_t& isCovered = covered[it->second];
+				if (isCovered == 0)
+				{
+					isCovered = 1;
+					++coveredCount;
+				}
+			}
+
+			if (coversWholeBatch && coveredCount == Items.size())
+			{
+				ClearItemsForRemoval();
+
+				for (auto& handle : handles)
+				{
+					handle.Owner = nullptr;
+					handle.Token = DataBatchKey{};
+				}
+				return;
+			}
+		}
+
 		std::vector<DataBatchKey> keys;
 		keys.reserve(handles.size());
 
@@ -150,7 +231,7 @@ public:
 				keys.push_back(handle.Token);
 		}
 
-		RemoveKeys(keys);
+		RemoveKeySpan(keys);
 
 		for (auto& handle : handles)
 		{
@@ -331,6 +412,15 @@ protected:
 	}
 
 private:
+	void ClearItemsForRemoval()
+	{
+		Items.clear();
+		IndexToKey.clear();
+		KeyToIndex.clear();
+		bIsDirty = true;
+		++VersionCounter;
+	}
+
 	void RollbackEmplace(size_t oldSize, uint32_t oldNextKey)
 	{
 		for (size_t i = oldSize; i < IndexToKey.size(); ++i)
@@ -343,7 +433,17 @@ private:
 		NextKey = oldNextKey;
 	}
 
-	bool RemoveKeys(std::span<const DataBatchKey> keys)
+	bool BlockCoversAllItems(DataBatchBlock block) const
+	{
+		for (uint32_t key : IndexToKey)
+		{
+			if (!block.Contains(DataBatchKey{ key }))
+				return false;
+		}
+		return true;
+	}
+
+	bool RemoveKeySpan(std::span<const DataBatchKey> keys)
 	{
 		if (keys.empty() || Items.empty())
 			return false;
@@ -364,6 +464,22 @@ private:
 		return RemoveIndices(std::move(indicesToRemove));
 	}
 
+	bool RemoveKeyRange(uint32_t firstKey, size_t count)
+	{
+		std::vector<size_t> indicesToRemove;
+		indicesToRemove.reserve(count);
+
+		for (size_t i = 0; i < count; ++i)
+		{
+			const uint32_t key = firstKey + static_cast<uint32_t>(i);
+			auto it = KeyToIndex.find(key);
+			if (it != KeyToIndex.end())
+				indicesToRemove.push_back(it->second);
+		}
+
+		return RemoveIndices(std::move(indicesToRemove));
+	}
+
 	bool RemoveIndices(std::vector<size_t> indicesToRemove)
 	{
 		if (indicesToRemove.empty())
@@ -373,6 +489,12 @@ private:
 		indicesToRemove.erase(
 			std::unique(indicesToRemove.begin(), indicesToRemove.end()),
 			indicesToRemove.end());
+
+		if (indicesToRemove.size() == Items.size())
+		{
+			ClearItemsForRemoval();
+			return true;
+		}
 
 		std::vector<uint8_t> shouldRemove(Items.size(), uint8_t{ 0 });
 		for (size_t index : indicesToRemove)

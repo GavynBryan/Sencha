@@ -17,7 +17,6 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -59,8 +58,8 @@ namespace
 	{
 		std::string Name;
 		double SetupUs = 0.0;
-		double BulkEmplaceUs = 0.0;
-		double BulkRemoveUs = 0.0;
+		double BatchEmplaceUs = 0.0;
+		double BatchRemoveUs = 0.0;
 		double HierarchyUnregisterUs = 0.0;
 		double Checksum = 0.0;
 		size_t TransformCount = 0;
@@ -69,6 +68,12 @@ namespace
 		size_t ChildPointerStorageBytes = 0;
 		size_t ParentIndexStorageBytes = 0;
 		SampleStats Propagation;
+	};
+
+	enum class ProductionBatchMode
+	{
+		Scalar,
+		Bulk
 	};
 
 	size_t ParseSizeArgument(const char* value, const char* label)
@@ -404,14 +409,20 @@ namespace
 		ServiceProvider Provider;
 		Propagation3f Propagation;
 
+		DataBatchBlock LocalBlock;
+		DataBatchBlock WorldBlock;
 		std::vector<LifetimeHandle<DataBatchKey>> LocalHandles;
 		std::vector<LifetimeHandle<DataBatchKey>> WorldHandles;
 		std::vector<DataBatchKey> Keys;
-		double BulkEmplaceUs = 0.0;
-		double BulkRemoveUs = 0.0;
+		double BatchEmplaceUs = 0.0;
+		double BatchRemoveUs = 0.0;
 		double HierarchyUnregisterUs = 0.0;
+		ProductionBatchMode BatchMode = ProductionBatchMode::Bulk;
 
-		ProductionPropagationFixture(size_t count, size_t branchingFactor)
+		ProductionPropagationFixture(
+			size_t count,
+			size_t branchingFactor,
+			ProductionBatchMode batchMode)
 			: Locals(Host.AddTaggedService<
 				DataBatch<Transform3f>,
 				TransformServiceTags::LocalTransformTag>())
@@ -421,34 +432,57 @@ namespace
 			, Hierarchy(Host.AddService<Hierarchy3f>())
 			, Provider(Host)
 			, Propagation(Provider)
+			, BatchMode(batchMode)
 		{
 			Locals.Reserve(count);
 			Worlds.Reserve(count);
-			LocalHandles.reserve(count);
-			WorldHandles.reserve(count);
 			Keys.reserve(count);
 
-			const auto localEmplaceStart = Clock::now();
-			LocalHandles = Locals.EmplaceMany(count, [](size_t index)
+			if (BatchMode == ProductionBatchMode::Bulk)
 			{
-				return MakeLocalTransform(index);
-			});
-			const auto localEmplaceEnd = Clock::now();
+				const auto localEmplaceStart = Clock::now();
+				LocalBlock = Locals.EmplaceBlock(count, [](size_t index)
+				{
+					return MakeLocalTransform(index);
+				});
+				const auto localEmplaceEnd = Clock::now();
 
-			const auto worldEmplaceStart = Clock::now();
-			WorldHandles = Worlds.EmplaceMany(count, [](size_t)
+				const auto worldEmplaceStart = Clock::now();
+				WorldBlock = Worlds.EmplaceBlock(count, [](size_t)
+				{
+					return Transform3f::Identity();
+				});
+				const auto worldEmplaceEnd = Clock::now();
+
+				BatchEmplaceUs =
+					ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
+					+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
+			}
+			else
 			{
-				return Transform3f::Identity();
-			});
-			const auto worldEmplaceEnd = Clock::now();
+				LocalHandles.reserve(count);
+				WorldHandles.reserve(count);
 
-			BulkEmplaceUs =
-				ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
-				+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
+				const auto localEmplaceStart = Clock::now();
+				for (size_t i = 0; i < count; ++i)
+					LocalHandles.push_back(Locals.Emplace(MakeLocalTransform(i)));
+				const auto localEmplaceEnd = Clock::now();
+
+				const auto worldEmplaceStart = Clock::now();
+				for (size_t i = 0; i < count; ++i)
+					WorldHandles.push_back(Worlds.Emplace(Transform3f::Identity()));
+				const auto worldEmplaceEnd = Clock::now();
+
+				BatchEmplaceUs =
+					ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
+					+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
+			}
 
 			for (size_t i = 0; i < count; ++i)
 			{
-				const DataBatchKey key = LocalHandles[i].GetToken();
+				const DataBatchKey key = BatchMode == ProductionBatchMode::Bulk
+					? LocalBlock.KeyAt(i)
+					: LocalHandles[i].GetToken();
 				Keys.push_back(key);
 				Hierarchy.Register(key);
 			}
@@ -484,7 +518,7 @@ namespace
 			return (Locals.Count() + Worlds.Count()) * sizeof(Transform3f);
 		}
 
-		void BulkRemoveAll()
+		void RemoveAll()
 		{
 			const auto hierarchyStart = Clock::now();
 			for (DataBatchKey key : Keys)
@@ -492,15 +526,25 @@ namespace
 			const auto hierarchyEnd = Clock::now();
 
 			const auto removeStart = Clock::now();
-			Locals.RemoveRange(std::span<LifetimeHandle<DataBatchKey>>(LocalHandles));
-			Worlds.RemoveRange(std::span<LifetimeHandle<DataBatchKey>>(WorldHandles));
+			if (BatchMode == ProductionBatchMode::Bulk)
+			{
+				Locals.RemoveBlock(LocalBlock);
+				Worlds.RemoveBlock(WorldBlock);
+			}
+			else
+			{
+				for (auto& handle : LocalHandles)
+					handle.Reset();
+				for (auto& handle : WorldHandles)
+					handle.Reset();
+			}
 			const auto removeEnd = Clock::now();
 
 			HierarchyUnregisterUs = ElapsedMicroseconds(hierarchyStart, hierarchyEnd);
-			BulkRemoveUs = ElapsedMicroseconds(removeStart, removeEnd);
+			BatchRemoveUs = ElapsedMicroseconds(removeStart, removeEnd);
 
 			if (Locals.Count() != 0 || Worlds.Count() != 0 || Hierarchy.Count() != 0)
-				throw std::runtime_error("Production bulk removal did not empty the fixture.");
+				throw std::runtime_error("Production removal did not empty the fixture.");
 		}
 	};
 
@@ -545,8 +589,8 @@ namespace
 	{
 		std::cout << "\n" << result.Name << "\n";
 		std::cout << "  setup_us: " << result.SetupUs << "\n";
-		std::cout << "  bulk_emplace_us: " << result.BulkEmplaceUs << "\n";
-		std::cout << "  bulk_remove_us: " << result.BulkRemoveUs << "\n";
+		std::cout << "  batch_emplace_us: " << result.BatchEmplaceUs << "\n";
+		std::cout << "  batch_remove_us: " << result.BatchRemoveUs << "\n";
 		std::cout << "  hierarchy_unregister_us: " << result.HierarchyUnregisterUs << "\n";
 		std::cout << "  transforms: " << result.TransformCount << "\n";
 		std::cout << "  checksum: " << result.Checksum << "\n";
@@ -577,8 +621,8 @@ namespace
 			<< result.Name << ","
 			<< result.TransformCount << ","
 			<< result.SetupUs << ","
-			<< result.BulkEmplaceUs << ","
-			<< result.BulkRemoveUs << ","
+			<< result.BatchEmplaceUs << ","
+			<< result.BatchRemoveUs << ","
 			<< result.HierarchyUnregisterUs << ","
 			<< result.Propagation.TotalUs << ","
 			<< result.Propagation.MinUs << ","
@@ -621,18 +665,31 @@ int main(int argc, char** argv)
 		DataOrientedFixture dataOriented(config.TransformCount, config.BranchingFactor);
 		const auto dataSetupEnd = Clock::now();
 
-		const auto productionSetupStart = Clock::now();
-		ProductionPropagationFixture production(config.TransformCount, config.BranchingFactor);
-		const auto productionSetupEnd = Clock::now();
+		const auto productionScalarSetupStart = Clock::now();
+		ProductionPropagationFixture productionScalar(
+			config.TransformCount,
+			config.BranchingFactor,
+			ProductionBatchMode::Scalar);
+		const auto productionScalarSetupEnd = Clock::now();
+
+		const auto productionBulkSetupStart = Clock::now();
+		ProductionPropagationFixture productionBulk(
+			config.TransformCount,
+			config.BranchingFactor,
+			ProductionBatchMode::Bulk);
+		const auto productionBulkSetupEnd = Clock::now();
 
 		traditional.Advance(0);
 		dataOriented.Advance(0);
-		production.Advance(0);
+		productionScalar.Advance(0);
+		productionBulk.Advance(0);
 		traditional.PropagateRecursive();
 		dataOriented.Propagate();
-		production.PropagateTick();
+		productionScalar.PropagateTick();
+		productionBulk.PropagateTick();
 		ValidateEquivalentWorlds(traditional, dataOriented);
-		ValidateProductionMatchesTraditional(traditional, production);
+		ValidateProductionMatchesTraditional(traditional, productionScalar);
+		ValidateProductionMatchesTraditional(traditional, productionBulk);
 		std::cout << "validation: equivalent world transforms\n";
 
 		const size_t childPointerBytes = traditional.Root->ChildPointerStorageBytesRecursive();
@@ -676,31 +733,55 @@ int main(int argc, char** argv)
 			[&]() { dataOriented.Propagate(); });
 		dataResult.Checksum = dataOriented.Checksum();
 
-		BenchmarkResult productionResult;
-		productionResult.Name = "production_transform_propagation_system";
-		productionResult.TransformCount = config.TransformCount;
-		productionResult.SetupUs = ElapsedMicroseconds(productionSetupStart, productionSetupEnd);
-		productionResult.BulkEmplaceUs = production.BulkEmplaceUs;
-		productionResult.ContiguousTransformPayloadBytes = production.TransformPayloadBytes();
-		productionResult.ParentIndexStorageBytes = 0;
-		productionResult.Propagation = MeasurePropagation(
+		BenchmarkResult productionScalarResult;
+		productionScalarResult.Name = "production_transform_propagation_system_scalar";
+		productionScalarResult.TransformCount = config.TransformCount;
+		productionScalarResult.SetupUs = ElapsedMicroseconds(
+			productionScalarSetupStart,
+			productionScalarSetupEnd);
+		productionScalarResult.BatchEmplaceUs = productionScalar.BatchEmplaceUs;
+		productionScalarResult.ContiguousTransformPayloadBytes =
+			productionScalar.TransformPayloadBytes();
+		productionScalarResult.ParentIndexStorageBytes = 0;
+		productionScalarResult.Propagation = MeasurePropagation(
 			config,
-			[&](size_t frame) { production.Advance(frame); },
-			[&]() { production.PropagateTick(); });
-		productionResult.Checksum = production.Checksum();
+			[&](size_t frame) { productionScalar.Advance(frame); },
+			[&]() { productionScalar.PropagateTick(); });
+		productionScalarResult.Checksum = productionScalar.Checksum();
 
-		production.BulkRemoveAll();
-		productionResult.BulkRemoveUs = production.BulkRemoveUs;
-		productionResult.HierarchyUnregisterUs = production.HierarchyUnregisterUs;
+		productionScalar.RemoveAll();
+		productionScalarResult.BatchRemoveUs = productionScalar.BatchRemoveUs;
+		productionScalarResult.HierarchyUnregisterUs = productionScalar.HierarchyUnregisterUs;
+
+		BenchmarkResult productionBulkResult;
+		productionBulkResult.Name = "production_transform_propagation_system_bulk";
+		productionBulkResult.TransformCount = config.TransformCount;
+		productionBulkResult.SetupUs = ElapsedMicroseconds(
+			productionBulkSetupStart,
+			productionBulkSetupEnd);
+		productionBulkResult.BatchEmplaceUs = productionBulk.BatchEmplaceUs;
+		productionBulkResult.ContiguousTransformPayloadBytes =
+			productionBulk.TransformPayloadBytes();
+		productionBulkResult.ParentIndexStorageBytes = 0;
+		productionBulkResult.Propagation = MeasurePropagation(
+			config,
+			[&](size_t frame) { productionBulk.Advance(frame); },
+			[&]() { productionBulk.PropagateTick(); });
+		productionBulkResult.Checksum = productionBulk.Checksum();
+
+		productionBulk.RemoveAll();
+		productionBulkResult.BatchRemoveUs = productionBulk.BatchRemoveUs;
+		productionBulkResult.HierarchyUnregisterUs = productionBulk.HierarchyUnregisterUs;
 
 		PrintResult(traditionalRecursive);
 		PrintResult(traditionalIterative);
 		PrintResult(dataResult);
-		PrintResult(productionResult);
+		PrintResult(productionScalarResult);
+		PrintResult(productionBulkResult);
 
 		std::cout << "\nCSV\n";
 		std::cout
-			<< "csv,name,transforms,setup_us,bulk_emplace_us,bulk_remove_us,"
+			<< "csv,name,transforms,setup_us,batch_emplace_us,batch_remove_us,"
 			<< "hierarchy_unregister_us,total_us,min_us,mean_us,median_us,"
 			<< "p95_us,max_us,stddev_us,ns_per_transform,transforms_per_second,"
 			<< "checksum,node_allocations,contiguous_transform_payload_bytes,"
@@ -708,7 +789,8 @@ int main(int argc, char** argv)
 		PrintCsvRow(traditionalRecursive);
 		PrintCsvRow(traditionalIterative);
 		PrintCsvRow(dataResult);
-		PrintCsvRow(productionResult);
+		PrintCsvRow(productionScalarResult);
+		PrintCsvRow(productionBulkResult);
 		return 0;
 	}
 	catch (const std::exception& ex)
