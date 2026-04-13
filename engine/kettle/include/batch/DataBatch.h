@@ -70,6 +70,7 @@ public:
 		KeyToIndex[key.Value] = Items.size() - 1;
 
 		bIsDirty = true;
+		++VersionCounter;
 
 		// Use NoAttach — the item is already in the batch.
 		return LifetimeHandle<DataBatchKey>(
@@ -111,6 +112,22 @@ public:
 	{
 		return key.Value != 0 && KeyToIndex.contains(key.Value);
 	}
+
+	// Returns the dense index for `key`, or UINT32_MAX if the key is not present.
+	// Use this when you need to cache direct index access into GetItems() without
+	// paying a hash lookup on every read.
+	uint32_t IndexOf(DataBatchKey key) const
+	{
+		auto it = KeyToIndex.find(key.Value);
+		if (it == KeyToIndex.end()) return UINT32_MAX;
+		return static_cast<uint32_t>(it->second);
+	}
+
+	// Monotonically-increasing version counter. Incremented on any structural
+	// change (Emplace, Detach, SortIfDirty, Clear). Non-destructive — callers
+	// cache the last-seen value and compare to detect staleness. Unlike
+	// CheckAndClearDirty, reading this does not affect any other observer.
+	uint64_t GetVersion() const { return VersionCounter; }
 
 	void Reserve(size_t capacity)
 	{
@@ -175,6 +192,7 @@ public:
 		}
 
 		bIsDirty = false;
+		++VersionCounter;
 	}
 
 	// -- Housekeeping -------------------------------------------------------
@@ -185,6 +203,7 @@ public:
 		IndexToKey.clear();
 		KeyToIndex.clear();
 		bIsDirty = false;
+		++VersionCounter;
 	}
 
 	// Range-based for loop support (iterates over T values)
@@ -223,6 +242,7 @@ protected:
 		IndexToKey.pop_back();
 		KeyToIndex.erase(it);
 		bIsDirty = true;
+		++VersionCounter;
 	}
 
 private:
@@ -231,4 +251,5 @@ private:
 	std::unordered_map<uint32_t, size_t> KeyToIndex; // Stable key → dense index
 	uint32_t NextKey = 1;                          // Start at 1: key 0 == DataBatchKey{} == "invalid"
 	bool bIsDirty = false;
+	uint64_t VersionCounter = 0;
 };

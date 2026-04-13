@@ -63,6 +63,12 @@ public:
 
 	size_t Count() const;
 
+	// Monotonically-increasing version counter. Incremented on any structural
+	// change (SetParent, ClearParent, Register, Unregister). Consumers that
+	// cache a derived propagation order use this to detect when their cache
+	// is stale without paying a hash lookup per item.
+	uint64_t GetVersion() const { return VersionCounter; }
+
 private:
 	void EnsureRegistered(DataBatchKey key);
 
@@ -70,6 +76,7 @@ private:
 	std::unordered_map<uint32_t, uint32_t> ChildToParent;
 	std::unordered_map<uint32_t, std::vector<uint32_t>> ParentToChildren;
 	std::unordered_set<uint32_t> Registered;
+	uint64_t VersionCounter = 0;
 };
 
 template <typename TDomainTag>
@@ -85,6 +92,7 @@ void TransformHierarchyService<TDomainTag>::SetParent(DataBatchKey child, DataBa
 	ParentToChildren[parent.Value].push_back(child.Value);
 	EnsureRegistered(child);
 	EnsureRegistered(parent);
+	++VersionCounter;
 }
 
 template <typename TDomainTag>
@@ -106,6 +114,7 @@ void TransformHierarchyService<TDomainTag>::ClearParent(DataBatchKey child)
 		if (children.empty())
 			ParentToChildren.erase(pit);
 	}
+	++VersionCounter;
 }
 
 template <typename TDomainTag>
@@ -131,6 +140,7 @@ void TransformHierarchyService<TDomainTag>::Unregister(DataBatchKey key)
 	}
 
 	Registered.erase(key.Value);
+	++VersionCounter;
 }
 
 template <typename TDomainTag>
@@ -190,5 +200,7 @@ size_t TransformHierarchyService<TDomainTag>::Count() const
 template <typename TDomainTag>
 void TransformHierarchyService<TDomainTag>::EnsureRegistered(DataBatchKey key)
 {
-	Registered.insert(key.Value);
+	auto result = Registered.insert(key.Value);
+	if (result.second)
+		++VersionCounter;
 }

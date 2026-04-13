@@ -1,4 +1,10 @@
+#include <batch/DataBatch.h>
 #include <math/Transform3.h>
+#include <service/ServiceHost.h>
+#include <service/ServiceProvider.h>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformPropagationSystem.h>
+#include <transform/TransformServiceTags.h>
 
 #include <algorithm>
 #include <atomic>
@@ -116,13 +122,6 @@ namespace
 		const float offset = static_cast<float>((frame % 997) + 1) * 0.0001f;
 		transform.Position.X = -0.4f + offset;
 		transform.Position.Y = 0.2f - offset * 0.5f;
-	}
-
-	void SetRootFrameLocal(Vec3& position, Quatf& /*rotation*/, Vec3& /*scale*/, size_t frame)
-	{
-		const float offset = static_cast<float>((frame % 997) + 1) * 0.0001f;
-		position.X = -0.4f + offset;
-		position.Y = 0.2f - offset * 0.5f;
 	}
 
 	double ElapsedMicroseconds(Clock::time_point start, Clock::time_point end)
@@ -320,29 +319,26 @@ namespace
 		std::vector<TraditionalSceneNode*> Nodes;
 	};
 
-	struct DataOrientedSoAFixture
+	// Contiguous AoS layout: locals and worlds are each a single std::vector<Transform3f>,
+	// and nodes are laid out parent-before-child, so propagation is a single forward sweep
+	// with no allocations, no pointer chasing, and no child-list bookkeeping.
+	//
+	// A split SoA layout (separate arrays for position/rotation/scale) would be a poor fit
+	// here: transform composition reads every component of each element together, and the
+	// dependency on the parent's just-written world blocks cross-element vectorisation, so
+	// splitting would just multiply stream count and defeat the prefetcher.
+	struct DataOrientedFixture
 	{
-		DataOrientedSoAFixture(size_t count, size_t branchingFactor)
+		DataOrientedFixture(size_t count, size_t branchingFactor)
 		{
-			LocalPositions.reserve(count);
-			LocalRotations.reserve(count);
-			LocalScales.reserve(count);
-			WorldPositions.reserve(count);
-			WorldRotations.reserve(count);
-			WorldScales.reserve(count);
+			Locals.reserve(count);
+			Worlds.reserve(count);
 			ParentIndices.reserve(count);
 
 			for (size_t i = 0; i < count; ++i)
 			{
-				Transform3f local = MakeLocalTransform(i);
-				LocalPositions.push_back(local.Position);
-				LocalRotations.push_back(local.Rotation);
-				LocalScales.push_back(local.Scale);
-
-				WorldPositions.emplace_back(0.0f, 0.0f, 0.0f);
-				WorldRotations.push_back(Quatf::Identity());
-				WorldScales.emplace_back(1.0f, 1.0f, 1.0f);
-
+				Locals.push_back(MakeLocalTransform(i));
+				Worlds.push_back(Transform3f::Identity());
 				ParentIndices.push_back(i == 0
 					? NullParent
 					: static_cast<uint32_t>(ParentIndexFor(i, branchingFactor)));
@@ -351,79 +347,156 @@ namespace
 
 		void Advance(size_t frame)
 		{
-			SetRootFrameLocal(LocalPositions[0], LocalRotations[0], LocalScales[0], frame);
+			SetRootFrame(Locals[0], frame);
 		}
 
-		void PropagateLinear()
+		void Propagate()
 		{
-			if (LocalPositions.empty())
+			if (Locals.empty())
 				return;
 
-			WorldPositions[0] = LocalPositions[0];
-			WorldRotations[0] = LocalRotations[0];
-			WorldScales[0] = LocalScales[0];
-
-			for (size_t i = 1; i < LocalPositions.size(); ++i)
+			Worlds[0] = Locals[0];
+			for (size_t i = 1; i < Locals.size(); ++i)
 			{
-				const uint32_t parentIndex = ParentIndices[i];
-				const Transform3f parentWorld(
-					WorldPositions[parentIndex],
-					WorldRotations[parentIndex],
-					WorldScales[parentIndex]);
-				const Transform3f local(LocalPositions[i], LocalRotations[i], LocalScales[i]);
-				const Transform3f world = parentWorld * local;
-
-				WorldPositions[i] = world.Position;
-				WorldRotations[i] = world.Rotation;
-				WorldScales[i] = world.Scale;
+				Worlds[i] = Worlds[ParentIndices[i]] * Locals[i];
 			}
-		}
-
-		Transform3f GetWorldTransform(size_t index) const
-		{
-			return Transform3f(WorldPositions[index], WorldRotations[index], WorldScales[index]);
 		}
 
 		double Checksum() const
 		{
 			double checksum = 0.0;
-			for (size_t i = 0; i < WorldPositions.size(); ++i)
-			{
-				checksum += TransformChecksum(GetWorldTransform(i));
-			}
+			for (const Transform3f& world : Worlds)
+				checksum += TransformChecksum(world);
 			return checksum;
 		}
 
 		size_t TransformPayloadBytes() const
 		{
-			return (LocalPositions.capacity() + LocalScales.capacity()
-				+ WorldPositions.capacity() + WorldScales.capacity()) * sizeof(Vec3)
-				+ (LocalRotations.capacity() + WorldRotations.capacity()) * sizeof(Quatf);
+			return (Locals.capacity() + Worlds.capacity()) * sizeof(Transform3f);
 		}
 
-		std::vector<Vec3> LocalPositions;
-		std::vector<Quatf> LocalRotations;
-		std::vector<Vec3> LocalScales;
-		std::vector<Vec3> WorldPositions;
-		std::vector<Quatf> WorldRotations;
-		std::vector<Vec3> WorldScales;
+		std::vector<Transform3f> Locals;
+		std::vector<Transform3f> Worlds;
 		std::vector<uint32_t> ParentIndices;
+	};
+
+	// Production-path fixture: drives the real TransformPropagationSystem against
+	// the real DataBatch<Transform3f> + TransformHierarchyService services, wired
+	// up through ServiceHost/ServiceProvider exactly as a game would.
+	//
+	// Used to confirm that the production path matches the hand-written
+	// contiguous fixture in both correctness and performance.
+	struct ProductionPropagationFixture
+	{
+		using Hierarchy3f = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+		using Propagation3f = TransformPropagationSystem<
+			Transform3f,
+			TransformServiceTags::Transform3DTag>;
+
+		ServiceHost Host;
+		DataBatch<Transform3f>& Locals;
+		DataBatch<Transform3f>& Worlds;
+		Hierarchy3f& Hierarchy;
+		ServiceProvider Provider;
+		Propagation3f Propagation;
+
+		std::vector<LifetimeHandle<DataBatchKey>> LocalHandles;
+		std::vector<LifetimeHandle<DataBatchKey>> WorldHandles;
+		std::vector<DataBatchKey> Keys;
+
+		ProductionPropagationFixture(size_t count, size_t branchingFactor)
+			: Locals(Host.AddTaggedService<
+				DataBatch<Transform3f>,
+				TransformServiceTags::LocalTransformTag>())
+			, Worlds(Host.AddTaggedService<
+				DataBatch<Transform3f>,
+				TransformServiceTags::WorldTransformTag>())
+			, Hierarchy(Host.AddService<Hierarchy3f>())
+			, Provider(Host)
+			, Propagation(Provider)
+		{
+			Locals.Reserve(count);
+			Worlds.Reserve(count);
+			LocalHandles.reserve(count);
+			WorldHandles.reserve(count);
+			Keys.reserve(count);
+
+			for (size_t i = 0; i < count; ++i)
+			{
+				auto localHandle = Locals.Emplace(MakeLocalTransform(i));
+				auto worldHandle = Worlds.Emplace(Transform3f::Identity());
+				const DataBatchKey key = localHandle.GetToken();
+				Keys.push_back(key);
+				Hierarchy.Register(key);
+				LocalHandles.push_back(std::move(localHandle));
+				WorldHandles.push_back(std::move(worldHandle));
+			}
+
+			for (size_t i = 1; i < count; ++i)
+			{
+				Hierarchy.SetParent(Keys[i], Keys[ParentIndexFor(i, branchingFactor)]);
+			}
+		}
+
+		void Advance(size_t frame)
+		{
+			Transform3f* root = Locals.TryGet(Keys[0]);
+			if (root)
+				SetRootFrame(*root, frame);
+		}
+
+		void PropagateTick()
+		{
+			Propagation.Propagate();
+		}
+
+		double Checksum() const
+		{
+			double checksum = 0.0;
+			for (const Transform3f& world : Worlds.GetItems())
+				checksum += TransformChecksum(world);
+			return checksum;
+		}
+
+		size_t TransformPayloadBytes() const
+		{
+			return (Locals.Count() + Worlds.Count()) * sizeof(Transform3f);
+		}
 	};
 
 	void ValidateEquivalentWorlds(
 		const TraditionalFixture& traditional,
-		const DataOrientedSoAFixture& dataOriented)
+		const DataOrientedFixture& dataOriented)
 	{
-		if (traditional.Nodes.size() != dataOriented.WorldPositions.size())
+		if (traditional.Nodes.size() != dataOriented.Worlds.size())
 			throw std::runtime_error("Fixture transform counts do not match.");
 
 		for (size_t i = 0; i < traditional.Nodes.size(); ++i)
 		{
 			const Transform3f& traditionalWorld = traditional.Nodes[i]->WorldTransform;
-			const Transform3f dataWorld = dataOriented.GetWorldTransform(i);
+			const Transform3f& dataWorld = dataOriented.Worlds[i];
 			if (!traditionalWorld.NearlyEquals(dataWorld, static_cast<float>(ValidationEpsilon)))
 			{
 				throw std::runtime_error("Traditional and data-oriented world transforms diverged.");
+			}
+		}
+	}
+
+	void ValidateProductionMatchesTraditional(
+		const TraditionalFixture& traditional,
+		const ProductionPropagationFixture& production)
+	{
+		if (traditional.Nodes.size() != production.Keys.size())
+			throw std::runtime_error("Fixture transform counts do not match.");
+
+		for (size_t i = 0; i < traditional.Nodes.size(); ++i)
+		{
+			const Transform3f& traditionalWorld = traditional.Nodes[i]->WorldTransform;
+			const Transform3f* productionWorld = production.Worlds.TryGet(production.Keys[i]);
+			if (!productionWorld
+				|| !traditionalWorld.NearlyEquals(*productionWorld, static_cast<float>(ValidationEpsilon)))
+			{
+				throw std::runtime_error("Traditional and production-system world transforms diverged.");
 			}
 		}
 	}
@@ -499,14 +572,21 @@ int main(int argc, char** argv)
 		const auto traditionalSetupEnd = Clock::now();
 
 		const auto dataSetupStart = Clock::now();
-		DataOrientedSoAFixture dataSoA(config.TransformCount, config.BranchingFactor);
+		DataOrientedFixture dataOriented(config.TransformCount, config.BranchingFactor);
 		const auto dataSetupEnd = Clock::now();
 
+		const auto productionSetupStart = Clock::now();
+		ProductionPropagationFixture production(config.TransformCount, config.BranchingFactor);
+		const auto productionSetupEnd = Clock::now();
+
 		traditional.Advance(0);
-		dataSoA.Advance(0);
+		dataOriented.Advance(0);
+		production.Advance(0);
 		traditional.PropagateRecursive();
-		dataSoA.PropagateLinear();
-		ValidateEquivalentWorlds(traditional, dataSoA);
+		dataOriented.Propagate();
+		production.PropagateTick();
+		ValidateEquivalentWorlds(traditional, dataOriented);
+		ValidateProductionMatchesTraditional(traditional, production);
 		std::cout << "validation: equivalent world transforms\n";
 
 		const size_t childPointerBytes = traditional.Root->ChildPointerStorageBytesRecursive();
@@ -538,21 +618,34 @@ int main(int argc, char** argv)
 		traditionalIterative.Checksum = traditional.Checksum();
 
 		BenchmarkResult dataResult;
-		dataResult.Name = "data_oriented_soa_linear";
+		dataResult.Name = "data_oriented_contiguous";
 		dataResult.TransformCount = config.TransformCount;
 		dataResult.SetupUs = ElapsedMicroseconds(dataSetupStart, dataSetupEnd);
-		dataResult.ContiguousTransformPayloadBytes = dataSoA.TransformPayloadBytes();
+		dataResult.ContiguousTransformPayloadBytes = dataOriented.TransformPayloadBytes();
 		dataResult.ParentIndexStorageBytes =
-			dataSoA.ParentIndices.capacity() * sizeof(uint32_t);
+			dataOriented.ParentIndices.capacity() * sizeof(uint32_t);
 		dataResult.Propagation = MeasurePropagation(
 			config,
-			[&](size_t frame) { dataSoA.Advance(frame); },
-			[&]() { dataSoA.PropagateLinear(); });
-		dataResult.Checksum = dataSoA.Checksum();
+			[&](size_t frame) { dataOriented.Advance(frame); },
+			[&]() { dataOriented.Propagate(); });
+		dataResult.Checksum = dataOriented.Checksum();
+
+		BenchmarkResult productionResult;
+		productionResult.Name = "production_transform_propagation_system";
+		productionResult.TransformCount = config.TransformCount;
+		productionResult.SetupUs = ElapsedMicroseconds(productionSetupStart, productionSetupEnd);
+		productionResult.ContiguousTransformPayloadBytes = production.TransformPayloadBytes();
+		productionResult.ParentIndexStorageBytes = 0;
+		productionResult.Propagation = MeasurePropagation(
+			config,
+			[&](size_t frame) { production.Advance(frame); },
+			[&]() { production.PropagateTick(); });
+		productionResult.Checksum = production.Checksum();
 
 		PrintResult(traditionalRecursive);
 		PrintResult(traditionalIterative);
 		PrintResult(dataResult);
+		PrintResult(productionResult);
 
 		std::cout << "\nCSV\n";
 		std::cout
@@ -563,6 +656,7 @@ int main(int argc, char** argv)
 		PrintCsvRow(traditionalRecursive);
 		PrintCsvRow(traditionalIterative);
 		PrintCsvRow(dataResult);
+		PrintCsvRow(productionResult);
 		return 0;
 	}
 	catch (const std::exception& ex)
