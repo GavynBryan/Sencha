@@ -1,7 +1,7 @@
-#include <service/ServiceHost.h>
-#include <system/SystemHost.h>
+#include <core/service/ServiceHost.h>
+#include <core/system/SystemHost.h>
 
-#include <primitive/transform/core/TransformDefaults.h>
+#include <leaves/transform/core/TransformDefaults.h>
 
 
 int main()

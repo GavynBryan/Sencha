@@ -2,6 +2,6 @@ add_executable(TransformHierarchyStressTest
 	TransformHierarchyStressTest.cpp
 )
 
-target_link_libraries(TransformHierarchyStressTest PRIVATE sencha_infuser)
+target_link_libraries(TransformHierarchyStressTest PRIVATE engine)
 
 target_compile_features(TransformHierarchyStressTest PRIVATE cxx_std_20)

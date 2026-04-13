@@ -3,14 +3,14 @@
 #include <input/InputBindingService.h>
 #include <input/InputTypes.h>
 #include <input/SdlInputSystem.h>
-#include <json/JsonParser.h>
-#include <logging/ConsoleLogSink.h>
-#include <logging/LoggingProvider.h>
-#include <sdl/SdlInputControlResolver.h>
-#include <sdl/SdlVideoService.h>
-#include <sdl/SdlWindowService.h>
-#include <system/ISystem.h>
-#include <system/SystemHost.h>
+#include <core/json/JsonParser.h>
+#include <core/logging/ConsoleLogSink.h>
+#include <core/logging/LoggingProvider.h>
+#include <input/SdlInputControlResolver.h>
+#include <window/SdlVideoService.h>
+#include <window/SdlWindowService.h>
+#include <core/system/ISystem.h>
+#include <core/system/SystemHost.h>
 #include <window/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>

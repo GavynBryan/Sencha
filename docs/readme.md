@@ -1,6 +1,6 @@
 # Sencha
 
-Sencha is a C++20 game engine project built around explicit systems, explicit services, and a small set of engine layers that can be used independently.
+Sencha is a C++20 game engine project built around explicit systems, explicit services, and a flat engine tree organized by domain.
 
 It is not trying to hide the machinery. Services are registered by hand, systems receive what they need through visible construction paths, and backend implementation code stays behind opt-in interfaces. If a piece of code depends on something, the goal is that you can trace the relationship directly.
 
@@ -21,32 +21,39 @@ Sencha is early and actively changing. The repository currently contains:
 - Basic math, identity, and window abstraction types.
 - SDL3-backed window, video, and input ingestion services.
 - Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frame flow.
-- GoogleTest coverage for the core Kettle features.
+- GoogleTest coverage for core, math/geometry, and engine feature code.
 - Small examples for input mapping and SDL/Vulkan window startup.
 
 The engine is still more framework than finished product. APIs may move while the foundation settles.
 
 ## Architecture
 
-Sencha is organized into three engine layers:
+Sencha is organized under one public include root and one source root:
 
 ```text
-Infuser  - Concrete backend implementations, currently SDL3 and Vulkan pieces.
-Teapot   - Mid-level engine abstractions such as math, identity, and window types.
-Kettle   - Bootstrap infrastructure: services, systems, logging, input, data, and utilities.
+engine/
+  include/
+    core/
+    geometry/
+    input/
+    leaves/transform/
+    math/
+    render/backend/
+    window/
+  src/
+    core/
+    geometry/
+    input/
+    leaves/transform/
+    render/backend/
+    window/
 ```
 
-Dependencies flow downward only:
+The old layer names are gone. Core contains the bootstrap infrastructure, math and geometry carry reusable value types, input and window own their public API plus SDL-backed implementations, render/backend contains backend-specific rendering services, and leaves/transform contains transform defaults and hierarchy propagation.
 
-```text
-Infuser -> Teapot -> Kettle
-```
+### Core
 
-Higher layers may use lower layers. Lower layers should not know that higher layers exist.
-
-### Kettle
-
-Kettle is the foundation layer. It contains:
+Core contains:
 
 - `ServiceHost`, `ServiceProvider`, and `IService` for explicit service registration and lookup.
 - `SystemHost` and `ISystem` for ordered system execution.
@@ -57,30 +64,30 @@ Kettle is the foundation layer. It contains:
 - `EventBuffer<T>` for frame-local event accumulation.
 - `JsonParser` and `JsonValue` for load-time configuration.
 - `BinaryReader`, `BinaryWriter`, and serialization helper functions.
-- The input action, binding, queue, state, raw buffer, and mapping types.
 
-Kettle is intentionally structural. It gives applications a small set of primitives, then gets out of the way.
+Core is intentionally structural. It gives applications a small set of primitives, then gets out of the way.
 
-### Teapot
+### Math And Geometry
 
-Teapot contains backend-agnostic game-facing abstractions. At the moment, that includes math vectors, identity helpers, and window interface types. It answers "what shape does this concept have?" without choosing SDL, Vulkan, or any other implementation.
+Math and geometry contain backend-agnostic game-facing value types such as vectors, transforms, matrices, quaternions, rays, bounds, and frustums.
 
-### Infuser
+### Input, Window, Render
 
-Infuser contains concrete integrations. Current implementations include:
+Current integrations include:
 
 - SDL3 video and window services.
 - SDL3 input ingestion and control resolution.
 - Vulkan instance, physical device, logical device, queue, surface, swapchain, and frame services.
 
-Infuser is opt-in in spirit: applications can build against the lower layers directly when they want their own backends.
+### Leaves
+
+Leaves are engine features that sit on top of the smaller domains. Transform hierarchy defaults and propagation live under `leaves/transform`.
 
 ## Repository Layout
-
 ```text
 app/       Minimal application target.
 docs/      Project notes and secondary documentation.
-engine/    Engine source split into kettle, teapot, and infuser.
+engine/    Flat include/src engine tree.
 example/   Small executable examples.
 test/      GoogleTest-based engine tests.
 ```
