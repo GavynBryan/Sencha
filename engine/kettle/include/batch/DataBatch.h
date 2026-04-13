@@ -8,6 +8,7 @@
 #include <numeric>
 #include <span>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 //=============================================================================
@@ -75,6 +76,90 @@ public:
 		// Use NoAttach — the item is already in the batch.
 		return LifetimeHandle<DataBatchKey>(
 			this, key, LifetimeHandle<DataBatchKey>::NoAttach);
+	}
+
+	std::vector<LifetimeHandle<DataBatchKey>> EmplaceRange(std::span<const T> values)
+	{
+		return EmplaceMany(values.size(), [&](size_t index) -> const T&
+		{
+			return values[index];
+		});
+	}
+
+	std::vector<LifetimeHandle<DataBatchKey>> EmplaceMoveRange(std::span<T> values)
+	{
+		return EmplaceMany(values.size(), [&](size_t index) -> T&&
+		{
+			return std::move(values[index]);
+		});
+	}
+
+	template<typename Factory>
+	std::vector<LifetimeHandle<DataBatchKey>> EmplaceMany(size_t count, Factory&& factory)
+	{
+		std::vector<LifetimeHandle<DataBatchKey>> handles;
+		handles.reserve(count);
+
+		if (count == 0)
+			return handles;
+
+		const size_t oldSize = Items.size();
+		const uint32_t oldNextKey = NextKey;
+		Reserve(Items.size() + count);
+
+		try
+		{
+			for (size_t i = 0; i < count; ++i)
+			{
+				DataBatchKey key{ NextKey++ };
+				const size_t itemIndex = Items.size();
+
+				decltype(auto) item = factory(i);
+				Items.emplace_back(std::forward<decltype(item)>(item));
+				IndexToKey.push_back(key.Value);
+				KeyToIndex[key.Value] = itemIndex;
+				handles.push_back(LifetimeHandle<DataBatchKey>(
+					this, key, LifetimeHandle<DataBatchKey>::NoAttach));
+			}
+		}
+		catch (...)
+		{
+			RollbackEmplace(oldSize, oldNextKey);
+			throw;
+		}
+
+		bIsDirty = true;
+		++VersionCounter;
+
+		return handles;
+	}
+
+	void RemoveRange(std::span<const DataBatchKey> keys)
+	{
+		RemoveKeys(keys);
+	}
+
+	void RemoveRange(std::span<LifetimeHandle<DataBatchKey>> handles)
+	{
+		std::vector<DataBatchKey> keys;
+		keys.reserve(handles.size());
+
+		for (const auto& handle : handles)
+		{
+			if (handle.Owner == this && !(handle.Token == DataBatchKey{}))
+				keys.push_back(handle.Token);
+		}
+
+		RemoveKeys(keys);
+
+		for (auto& handle : handles)
+		{
+			if (handle.Owner == this)
+			{
+				handle.Owner = nullptr;
+				handle.Token = DataBatchKey{};
+			}
+		}
 	}
 
 	// -- Random access by handle --------------------------------------------
@@ -246,6 +331,86 @@ protected:
 	}
 
 private:
+	void RollbackEmplace(size_t oldSize, uint32_t oldNextKey)
+	{
+		for (size_t i = oldSize; i < IndexToKey.size(); ++i)
+		{
+			KeyToIndex.erase(IndexToKey[i]);
+		}
+
+		Items.erase(Items.begin() + oldSize, Items.end());
+		IndexToKey.erase(IndexToKey.begin() + oldSize, IndexToKey.end());
+		NextKey = oldNextKey;
+	}
+
+	bool RemoveKeys(std::span<const DataBatchKey> keys)
+	{
+		if (keys.empty() || Items.empty())
+			return false;
+
+		std::vector<size_t> indicesToRemove;
+		indicesToRemove.reserve(keys.size());
+
+		for (DataBatchKey key : keys)
+		{
+			if (key.Value == 0)
+				continue;
+
+			auto it = KeyToIndex.find(key.Value);
+			if (it != KeyToIndex.end())
+				indicesToRemove.push_back(it->second);
+		}
+
+		return RemoveIndices(std::move(indicesToRemove));
+	}
+
+	bool RemoveIndices(std::vector<size_t> indicesToRemove)
+	{
+		if (indicesToRemove.empty())
+			return false;
+
+		std::sort(indicesToRemove.begin(), indicesToRemove.end());
+		indicesToRemove.erase(
+			std::unique(indicesToRemove.begin(), indicesToRemove.end()),
+			indicesToRemove.end());
+
+		std::vector<uint8_t> shouldRemove(Items.size(), uint8_t{ 0 });
+		for (size_t index : indicesToRemove)
+		{
+			if (index < shouldRemove.size())
+				shouldRemove[index] = uint8_t{ 1 };
+		}
+
+		size_t writeIndex = 0;
+		for (size_t readIndex = 0; readIndex < Items.size(); ++readIndex)
+		{
+			if (shouldRemove[readIndex])
+				continue;
+
+			if (writeIndex != readIndex)
+			{
+				Items[writeIndex] = std::move(Items[readIndex]);
+				IndexToKey[writeIndex] = IndexToKey[readIndex];
+			}
+
+			++writeIndex;
+		}
+
+		Items.erase(Items.begin() + writeIndex, Items.end());
+		IndexToKey.erase(IndexToKey.begin() + writeIndex, IndexToKey.end());
+
+		KeyToIndex.clear();
+		KeyToIndex.reserve(Items.size());
+		for (size_t i = 0; i < IndexToKey.size(); ++i)
+		{
+			KeyToIndex[IndexToKey[i]] = i;
+		}
+
+		bIsDirty = true;
+		++VersionCounter;
+		return true;
+	}
+
 	std::vector<T> Items;                          // Dense, contiguous data
 	std::vector<uint32_t> IndexToKey;              // Dense index → stable key
 	std::unordered_map<uint32_t, size_t> KeyToIndex; // Stable key → dense index

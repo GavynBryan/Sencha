@@ -17,6 +17,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -58,6 +59,9 @@ namespace
 	{
 		std::string Name;
 		double SetupUs = 0.0;
+		double BulkEmplaceUs = 0.0;
+		double BulkRemoveUs = 0.0;
+		double HierarchyUnregisterUs = 0.0;
 		double Checksum = 0.0;
 		size_t TransformCount = 0;
 		size_t NodeAllocations = 0;
@@ -403,6 +407,9 @@ namespace
 		std::vector<LifetimeHandle<DataBatchKey>> LocalHandles;
 		std::vector<LifetimeHandle<DataBatchKey>> WorldHandles;
 		std::vector<DataBatchKey> Keys;
+		double BulkEmplaceUs = 0.0;
+		double BulkRemoveUs = 0.0;
+		double HierarchyUnregisterUs = 0.0;
 
 		ProductionPropagationFixture(size_t count, size_t branchingFactor)
 			: Locals(Host.AddTaggedService<
@@ -421,15 +428,29 @@ namespace
 			WorldHandles.reserve(count);
 			Keys.reserve(count);
 
+			const auto localEmplaceStart = Clock::now();
+			LocalHandles = Locals.EmplaceMany(count, [](size_t index)
+			{
+				return MakeLocalTransform(index);
+			});
+			const auto localEmplaceEnd = Clock::now();
+
+			const auto worldEmplaceStart = Clock::now();
+			WorldHandles = Worlds.EmplaceMany(count, [](size_t)
+			{
+				return Transform3f::Identity();
+			});
+			const auto worldEmplaceEnd = Clock::now();
+
+			BulkEmplaceUs =
+				ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
+				+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
+
 			for (size_t i = 0; i < count; ++i)
 			{
-				auto localHandle = Locals.Emplace(MakeLocalTransform(i));
-				auto worldHandle = Worlds.Emplace(Transform3f::Identity());
-				const DataBatchKey key = localHandle.GetToken();
+				const DataBatchKey key = LocalHandles[i].GetToken();
 				Keys.push_back(key);
 				Hierarchy.Register(key);
-				LocalHandles.push_back(std::move(localHandle));
-				WorldHandles.push_back(std::move(worldHandle));
 			}
 
 			for (size_t i = 1; i < count; ++i)
@@ -461,6 +482,25 @@ namespace
 		size_t TransformPayloadBytes() const
 		{
 			return (Locals.Count() + Worlds.Count()) * sizeof(Transform3f);
+		}
+
+		void BulkRemoveAll()
+		{
+			const auto hierarchyStart = Clock::now();
+			for (DataBatchKey key : Keys)
+				Hierarchy.Unregister(key);
+			const auto hierarchyEnd = Clock::now();
+
+			const auto removeStart = Clock::now();
+			Locals.RemoveRange(std::span<LifetimeHandle<DataBatchKey>>(LocalHandles));
+			Worlds.RemoveRange(std::span<LifetimeHandle<DataBatchKey>>(WorldHandles));
+			const auto removeEnd = Clock::now();
+
+			HierarchyUnregisterUs = ElapsedMicroseconds(hierarchyStart, hierarchyEnd);
+			BulkRemoveUs = ElapsedMicroseconds(removeStart, removeEnd);
+
+			if (Locals.Count() != 0 || Worlds.Count() != 0 || Hierarchy.Count() != 0)
+				throw std::runtime_error("Production bulk removal did not empty the fixture.");
 		}
 	};
 
@@ -505,6 +545,9 @@ namespace
 	{
 		std::cout << "\n" << result.Name << "\n";
 		std::cout << "  setup_us: " << result.SetupUs << "\n";
+		std::cout << "  bulk_emplace_us: " << result.BulkEmplaceUs << "\n";
+		std::cout << "  bulk_remove_us: " << result.BulkRemoveUs << "\n";
+		std::cout << "  hierarchy_unregister_us: " << result.HierarchyUnregisterUs << "\n";
 		std::cout << "  transforms: " << result.TransformCount << "\n";
 		std::cout << "  checksum: " << result.Checksum << "\n";
 		std::cout << "  node_allocations: " << result.NodeAllocations << "\n";
@@ -534,6 +577,9 @@ namespace
 			<< result.Name << ","
 			<< result.TransformCount << ","
 			<< result.SetupUs << ","
+			<< result.BulkEmplaceUs << ","
+			<< result.BulkRemoveUs << ","
+			<< result.HierarchyUnregisterUs << ","
 			<< result.Propagation.TotalUs << ","
 			<< result.Propagation.MinUs << ","
 			<< result.Propagation.MeanUs << ","
@@ -634,6 +680,7 @@ int main(int argc, char** argv)
 		productionResult.Name = "production_transform_propagation_system";
 		productionResult.TransformCount = config.TransformCount;
 		productionResult.SetupUs = ElapsedMicroseconds(productionSetupStart, productionSetupEnd);
+		productionResult.BulkEmplaceUs = production.BulkEmplaceUs;
 		productionResult.ContiguousTransformPayloadBytes = production.TransformPayloadBytes();
 		productionResult.ParentIndexStorageBytes = 0;
 		productionResult.Propagation = MeasurePropagation(
@@ -642,6 +689,10 @@ int main(int argc, char** argv)
 			[&]() { production.PropagateTick(); });
 		productionResult.Checksum = production.Checksum();
 
+		production.BulkRemoveAll();
+		productionResult.BulkRemoveUs = production.BulkRemoveUs;
+		productionResult.HierarchyUnregisterUs = production.HierarchyUnregisterUs;
+
 		PrintResult(traditionalRecursive);
 		PrintResult(traditionalIterative);
 		PrintResult(dataResult);
@@ -649,7 +700,8 @@ int main(int argc, char** argv)
 
 		std::cout << "\nCSV\n";
 		std::cout
-			<< "csv,name,transforms,setup_us,total_us,min_us,mean_us,median_us,"
+			<< "csv,name,transforms,setup_us,bulk_emplace_us,bulk_remove_us,"
+			<< "hierarchy_unregister_us,total_us,min_us,mean_us,median_us,"
 			<< "p95_us,max_us,stddev_us,ns_per_transform,transforms_per_second,"
 			<< "checksum,node_allocations,contiguous_transform_payload_bytes,"
 			<< "child_pointer_storage_bytes,parent_index_storage_bytes\n";

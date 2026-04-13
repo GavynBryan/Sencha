@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 #include <batch/DataBatch.h>
+#include <array>
+#include <memory>
+#include <span>
+#include <vector>
 
 // --- Test helpers ---
 
@@ -12,6 +16,20 @@ struct Particle {
     Particle(float x, float y, float life) : X(x), Y(y), Life(life) {}
 };
 
+struct MoveOnlyParticle {
+    std::unique_ptr<int> Value;
+
+    explicit MoveOnlyParticle(int value)
+        : Value(std::make_unique<int>(value))
+    {
+    }
+
+    MoveOnlyParticle(MoveOnlyParticle&&) noexcept = default;
+    MoveOnlyParticle& operator=(MoveOnlyParticle&&) noexcept = default;
+    MoveOnlyParticle(const MoveOnlyParticle&) = delete;
+    MoveOnlyParticle& operator=(const MoveOnlyParticle&) = delete;
+};
+
 // --- DataBatch Tests ---
 
 TEST(DataBatch, EmplaceAddsItem)
@@ -22,6 +40,68 @@ TEST(DataBatch, EmplaceAddsItem)
     EXPECT_EQ(batch.Count(), 1u);
     EXPECT_FALSE(batch.IsEmpty());
     EXPECT_TRUE(handle.IsValid());
+}
+
+TEST(DataBatch, EmplaceRangeAddsItemsAndReturnsHandles)
+{
+    DataBatch<Particle> batch;
+    std::array<Particle, 3> particles{
+        Particle{1.0f, 2.0f, 3.0f},
+        Particle{4.0f, 5.0f, 6.0f},
+        Particle{7.0f, 8.0f, 9.0f}
+    };
+
+    auto handles = batch.EmplaceRange(std::span<const Particle>(particles));
+
+    ASSERT_EQ(handles.size(), 3u);
+    EXPECT_EQ(batch.Count(), 3u);
+    EXPECT_EQ(batch.GetVersion(), 1u);
+
+    auto items = batch.GetItems();
+    ASSERT_EQ(items.size(), 3u);
+    EXPECT_FLOAT_EQ(items[0].X, 1.0f);
+    EXPECT_FLOAT_EQ(items[1].X, 4.0f);
+    EXPECT_FLOAT_EQ(items[2].X, 7.0f);
+
+    for (auto& handle : handles) {
+        EXPECT_TRUE(handle.IsValid());
+        EXPECT_NE(batch.TryGet(handle), nullptr);
+    }
+}
+
+TEST(DataBatch, EmplaceMoveRangeSupportsMoveOnlyItems)
+{
+    DataBatch<MoveOnlyParticle> batch;
+    std::vector<MoveOnlyParticle> particles;
+    particles.emplace_back(10);
+    particles.emplace_back(20);
+
+    auto handles = batch.EmplaceMoveRange(std::span<MoveOnlyParticle>(particles));
+
+    ASSERT_EQ(handles.size(), 2u);
+    EXPECT_EQ(batch.Count(), 2u);
+    ASSERT_EQ(batch.GetItems().size(), 2u);
+    ASSERT_NE(batch.GetItems()[0].Value, nullptr);
+    ASSERT_NE(batch.GetItems()[1].Value, nullptr);
+    EXPECT_EQ(*batch.GetItems()[0].Value, 10);
+    EXPECT_EQ(*batch.GetItems()[1].Value, 20);
+}
+
+TEST(DataBatch, EmplaceManyBuildsItemsAndBumpsVersionOnce)
+{
+    DataBatch<Particle> batch;
+
+    auto handles = batch.EmplaceMany(4, [](size_t index) {
+        const float value = static_cast<float>(index + 1);
+        return Particle{value, value * 2.0f, value * 3.0f};
+    });
+
+    ASSERT_EQ(handles.size(), 4u);
+    EXPECT_EQ(batch.Count(), 4u);
+    EXPECT_EQ(batch.GetVersion(), 1u);
+    EXPECT_FLOAT_EQ(batch.GetItems()[3].X, 4.0f);
+    EXPECT_FLOAT_EQ(batch.GetItems()[3].Y, 8.0f);
+    EXPECT_FLOAT_EQ(batch.GetItems()[3].Life, 12.0f);
 }
 
 TEST(DataBatch, TryGetReturnsEmplacedItem)
@@ -59,6 +139,82 @@ TEST(DataBatch, HandleResetRemovesItem)
     handle.Reset();
     EXPECT_EQ(batch.Count(), 0u);
     EXPECT_FALSE(handle.IsValid());
+}
+
+TEST(DataBatch, RemoveRangeByKeysCompactsSurvivors)
+{
+    DataBatch<Particle> batch;
+    auto h1 = batch.Emplace(1.0f, 0.0f, 0.0f);
+    auto h2 = batch.Emplace(2.0f, 0.0f, 0.0f);
+    auto h3 = batch.Emplace(3.0f, 0.0f, 0.0f);
+    auto h4 = batch.Emplace(4.0f, 0.0f, 0.0f);
+
+    std::array<DataBatchKey, 2> keys{ h2.GetToken(), h4.GetToken() };
+    const uint64_t versionBeforeRemove = batch.GetVersion();
+
+    batch.RemoveRange(std::span<const DataBatchKey>(keys));
+
+    EXPECT_EQ(batch.Count(), 2u);
+    EXPECT_EQ(batch.GetVersion(), versionBeforeRemove + 1);
+    EXPECT_NE(batch.TryGet(h1), nullptr);
+    EXPECT_EQ(batch.TryGet(h2), nullptr);
+    EXPECT_NE(batch.TryGet(h3), nullptr);
+    EXPECT_EQ(batch.TryGet(h4), nullptr);
+
+    auto items = batch.GetItems();
+    ASSERT_EQ(items.size(), 2u);
+    EXPECT_FLOAT_EQ(items[0].X, 1.0f);
+    EXPECT_FLOAT_EQ(items[1].X, 3.0f);
+}
+
+TEST(DataBatch, RemoveRangeByKeysIgnoresInvalidMissingAndDuplicateKeys)
+{
+    DataBatch<Particle> batch;
+    auto h1 = batch.Emplace(1.0f, 0.0f, 0.0f);
+    auto h2 = batch.Emplace(2.0f, 0.0f, 0.0f);
+    auto h3 = batch.Emplace(3.0f, 0.0f, 0.0f);
+
+    std::array<DataBatchKey, 4> keys{
+        h2.GetToken(),
+        h2.GetToken(),
+        DataBatchKey{9999},
+        DataBatchKey{}
+    };
+    const uint64_t versionBeforeRemove = batch.GetVersion();
+
+    batch.RemoveRange(std::span<const DataBatchKey>(keys));
+
+    EXPECT_EQ(batch.Count(), 2u);
+    EXPECT_EQ(batch.GetVersion(), versionBeforeRemove + 1);
+    EXPECT_NE(batch.TryGet(h1), nullptr);
+    EXPECT_EQ(batch.TryGet(h2), nullptr);
+    EXPECT_NE(batch.TryGet(h3), nullptr);
+}
+
+TEST(DataBatch, RemoveRangeByHandlesInvalidatesRemovedHandles)
+{
+    DataBatch<Particle> batch;
+    std::array<Particle, 4> particles{
+        Particle{1.0f, 0.0f, 0.0f},
+        Particle{2.0f, 0.0f, 0.0f},
+        Particle{3.0f, 0.0f, 0.0f},
+        Particle{4.0f, 0.0f, 0.0f}
+    };
+    auto handles = batch.EmplaceRange(std::span<const Particle>(particles));
+    const DataBatchKey removedA = handles[1].GetToken();
+    const DataBatchKey removedB = handles[2].GetToken();
+
+    batch.RemoveRange(std::span<LifetimeHandle<DataBatchKey>>(handles).subspan(1, 2));
+
+    EXPECT_EQ(batch.Count(), 2u);
+    EXPECT_TRUE(handles[0].IsValid());
+    EXPECT_FALSE(handles[1].IsValid());
+    EXPECT_FALSE(handles[2].IsValid());
+    EXPECT_TRUE(handles[3].IsValid());
+    EXPECT_EQ(batch.TryGet(removedA), nullptr);
+    EXPECT_EQ(batch.TryGet(removedB), nullptr);
+    EXPECT_NE(batch.TryGet(handles[0]), nullptr);
+    EXPECT_NE(batch.TryGet(handles[3]), nullptr);
 }
 
 TEST(DataBatch, TryGetAfterRemoveReturnsNull)
