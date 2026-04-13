@@ -9,7 +9,6 @@
 #include <serialization/BinaryWriter.h>
 #include <serialization/Serialize.h>
 #include <serialization/BinaryFormat.h>
-#include <identity/Id.h>
 
 // Helper: create a binary read/write stringstream.
 static std::stringstream MakeBinaryStream()
@@ -102,6 +101,39 @@ static bool Deserialize(BinaryReader& reader, PlayerRecord& r)
         && Deserialize(reader, r.X)
         && Deserialize(reader, r.Y);
 }
+
+struct AssetId
+{
+    std::uint32_t Value = 0;
+
+    bool operator==(const AssetId&) const = default;
+    explicit operator bool() const { return Value != 0; }
+};
+
+struct TypeId
+{
+    std::uint32_t Value = 0;
+
+    bool operator==(const TypeId&) const = default;
+    explicit operator bool() const { return Value != 0; }
+};
+
+struct EntityId
+{
+    std::uint32_t Value = 0;
+
+    bool operator==(const EntityId&) const = default;
+    explicit operator bool() const { return Value != 0; }
+};
+
+static bool Serialize(BinaryWriter& writer, const AssetId& id) { return writer.Write(id.Value); }
+static bool Deserialize(BinaryReader& reader, AssetId& id) { return reader.Read(id.Value); }
+
+static bool Serialize(BinaryWriter& writer, const TypeId& id) { return writer.Write(id.Value); }
+static bool Deserialize(BinaryReader& reader, TypeId& id) { return reader.Read(id.Value); }
+
+static bool Serialize(BinaryWriter& writer, const EntityId& id) { return writer.Write(id.Value); }
+static bool Deserialize(BinaryReader& reader, EntityId& id) { return reader.Read(id.Value); }
 
 TEST(SerializationTests, RoundTripsPlayerRecord)
 {

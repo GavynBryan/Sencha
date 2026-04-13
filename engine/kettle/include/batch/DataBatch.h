@@ -80,18 +80,43 @@ public:
 
 	T* TryGet(const LifetimeHandle<DataBatchKey>& handle)
 	{
-		uint32_t key = handle.GetToken().Value;
-		auto it = KeyToIndex.find(key);
-		if (it == KeyToIndex.end()) return nullptr;
-		return &Items[it->second];
+		return TryGet(handle.GetToken());
 	}
 
 	const T* TryGet(const LifetimeHandle<DataBatchKey>& handle) const
 	{
-		uint32_t key = handle.GetToken().Value;
-		auto it = KeyToIndex.find(key);
+		return TryGet(handle.GetToken());
+	}
+
+	// -- Random access by raw key -------------------------------------------
+	//
+	// For non-owning lookups — e.g., the transform hierarchy stores
+	// DataBatchKey values without owning the transform lifetime.
+
+	T* TryGet(DataBatchKey key)
+	{
+		auto it = KeyToIndex.find(key.Value);
 		if (it == KeyToIndex.end()) return nullptr;
 		return &Items[it->second];
+	}
+
+	const T* TryGet(DataBatchKey key) const
+	{
+		auto it = KeyToIndex.find(key.Value);
+		if (it == KeyToIndex.end()) return nullptr;
+		return &Items[it->second];
+	}
+
+	bool Contains(DataBatchKey key) const
+	{
+		return key.Value != 0 && KeyToIndex.contains(key.Value);
+	}
+
+	void Reserve(size_t capacity)
+	{
+		Items.reserve(capacity);
+		IndexToKey.reserve(capacity);
+		KeyToIndex.reserve(capacity);
 	}
 
 	// -- Contiguous iteration (the whole point of DOD) ----------------------
