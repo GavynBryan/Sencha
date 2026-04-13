@@ -332,7 +332,7 @@ protected:
 		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
-		Systems.AddSystem<InputMappingSystem>(0,
+		Systems.AddSystem<InputMappingSystem>(SystemPhase::PreUpdate,
 			Logging, RawBuffer, BindingService, ActionQueue, &StateService);
 		Systems.Init();
 	}

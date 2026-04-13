@@ -198,18 +198,18 @@ int main()
 
 	SystemHost systems;
 	systems.AddSystem<SdlInputIngestSystem>(
-		0,
+		SystemPhase::Input,
 		logging,
 		rawInput);
 	systems.AddSystem<InputMappingSystem>(
-		1,
+		SystemPhase::PreUpdate,
 		logging,
 		rawInput,
 		bindings,
 		actionEvents,
 		&state);
 	systems.AddSystem<ConsoleInputOutputSystem>(
-		2,
+		SystemPhase::Update,
 		actionEvents,
 		ExampleActions::Quit,
 		running);

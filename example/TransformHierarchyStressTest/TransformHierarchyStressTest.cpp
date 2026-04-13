@@ -2,9 +2,9 @@
 #include <math/Transform3.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformPropagationSystem.h>
-#include <transform/TransformServiceTags.h>
+#include <dod/transform/TransformHierarchyService.h>
+#include <dod/transform/TransformPropagationSystem.h>
+#include <dod/transform/TransformService.h>
 
 #include <algorithm>
 #include <atomic>
@@ -398,10 +398,10 @@ namespace
 	// contiguous fixture in both correctness and performance.
 	struct ProductionPropagationFixture
 	{
-		using Hierarchy3f = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+		using Hierarchy3f = TransformHierarchyService<TransformService::Tags::Transform3DTag>;
 		using Propagation3f = TransformPropagationSystem<
 			Transform3f,
-			TransformServiceTags::Transform3DTag>;
+			TransformService::Tags::Transform3DTag>;
 
 		ServiceHost Host;
 		DataBatch<Transform3f>& Locals;
@@ -426,10 +426,10 @@ namespace
 			ProductionBatchMode batchMode)
 			: Locals(Host.AddTaggedService<
 				DataBatch<Transform3f>,
-				TransformServiceTags::LocalTransformTag>())
+				TransformService::Tags::LocalTransformTag>())
 			, Worlds(Host.AddTaggedService<
 				DataBatch<Transform3f>,
-				TransformServiceTags::WorldTransformTag>())
+				TransformService::Tags::WorldTransformTag>())
 			, Hierarchy(Host.AddService<Hierarchy3f>())
 			, Provider(Host)
 			, Propagation(Provider)

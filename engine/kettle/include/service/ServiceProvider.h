@@ -19,8 +19,8 @@
 //   // ... add services ...
 //   {
 //       ServiceProvider provider(services);
-//       systems.AddSystem<RenderSystem>(0, provider);
-//       systems.AddSystem<PhysicsSystem>(1, provider);
+//       systems.AddSystem<RenderSystem>(SystemPhase::Render, provider);
+//       systems.AddSystem<PhysicsSystem>(SystemPhase::Update, provider);
 //   }
 //   // provider is gone — systems hold only their cached service references
 //=============================================================================

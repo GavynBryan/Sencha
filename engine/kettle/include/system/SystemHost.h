@@ -1,6 +1,7 @@
 #pragma once
 
 #include <system/ISystem.h>
+#include <system/SystemPhase.h>
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -13,7 +14,7 @@ class SystemHost
 {
 public:
 	template <typename T, typename... Args>
-	T& AddSystem(int order, Args&&... args);
+	T& AddSystem(SystemPhase phase, Args&&... args);
 
 	template <typename T>
 	T* Get() const;
@@ -28,7 +29,7 @@ public:
 private:
 	struct SystemEntry
 	{
-		int Order = 0;
+		SystemPhase Phase = SystemPhase::Update;
 		std::unique_ptr<ISystem> System;
 	};
 
@@ -40,7 +41,7 @@ private:
 };
 
 template <typename T, typename... Args>
-T& SystemHost::AddSystem(int order, Args&&... args)
+T& SystemHost::AddSystem(SystemPhase phase, Args&&... args)
 {
 	static_assert(std::is_base_of<ISystem, T>::value, "T must derive from ISystem");
 
@@ -50,7 +51,7 @@ T& SystemHost::AddSystem(int order, Args&&... args)
 	auto typeIndex = std::type_index(typeid(T));
 	assert(Registry.find(typeIndex) == Registry.end());
 	Registry.emplace(typeIndex, rawSystem);
-	Systems.push_back({order, std::move(system)});
+	Systems.push_back({phase, std::move(system)});
 
 	if (Initialized) {
 		SortSystems();
@@ -110,6 +111,6 @@ inline void SystemHost::SortSystems()
 	std::sort(Systems.begin(), Systems.end(),
 		[](const SystemEntry& a, const SystemEntry& b)
 		{
-			return a.Order < b.Order;
+			return a.Phase < b.Phase;
 		});
 }

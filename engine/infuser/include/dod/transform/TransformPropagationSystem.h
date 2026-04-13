@@ -3,8 +3,8 @@
 #include <batch/DataBatch.h>
 #include <service/ServiceProvider.h>
 #include <system/ISystem.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformServiceTags.h>
+#include <dod/transform/TransformHierarchyService.h>
+#include <dod/transform/TransformService.h>
 #include <cstdint>
 #include <vector>
 
@@ -40,8 +40,8 @@
 template <
 	typename TTransform,
 	typename TDomainTag,
-	typename TLocalTag = TransformServiceTags::LocalTransformTag,
-	typename TWorldTag = TransformServiceTags::WorldTransformTag>
+	typename TLocalTag = TransformService::Tags::LocalTransformTag,
+	typename TWorldTag = TransformService::Tags::WorldTransformTag>
 class TransformPropagationSystem : public ISystem
 {
 public:

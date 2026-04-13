@@ -2,9 +2,9 @@
 #include <batch/DataBatch.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformPropagationSystem.h>
-#include <transform/TransformServiceTags.h>
+#include <dod/transform/TransformHierarchyService.h>
+#include <dod/transform/TransformPropagationSystem.h>
+#include <dod/transform/TransformService.h>
 #include <math/Transform2.h>
 #include <math/Transform3.h>
 #include <cmath>
@@ -12,14 +12,14 @@
 
 namespace
 {
-	using Transform2Hierarchy = TransformHierarchyService<TransformServiceTags::Transform2DTag>;
+	using Transform2Hierarchy = TransformHierarchyService<TransformService::Tags::Transform2DTag>;
 	using Transform2Propagation = TransformPropagationSystem<
 		Transform2f,
-		TransformServiceTags::Transform2DTag>;
-	using Transform3Hierarchy = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+		TransformService::Tags::Transform2DTag>;
+	using Transform3Hierarchy = TransformHierarchyService<TransformService::Tags::Transform3DTag>;
 	using Transform3Propagation = TransformPropagationSystem<
 		Transform3f,
-		TransformServiceTags::Transform3DTag>;
+		TransformService::Tags::Transform3DTag>;
 }
 
 // ============================================================================
@@ -255,10 +255,10 @@ struct TransformPropagationFixture
 	TransformPropagationFixture()
 		: Locals(Host.AddTaggedService<
 			DataBatch<Transform2f>,
-			TransformServiceTags::LocalTransformTag>())
+			TransformService::Tags::LocalTransformTag>())
 		, Worlds(Host.AddTaggedService<
 			DataBatch<Transform2f>,
-			TransformServiceTags::WorldTransformTag>())
+			TransformService::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform2Hierarchy>())
 		, Provider(Host)
 		, Propagation(Provider)
@@ -278,10 +278,10 @@ struct TransformPropagation3Fixture
 	TransformPropagation3Fixture()
 		: Locals(Host.AddTaggedService<
 			DataBatch<Transform3f>,
-			TransformServiceTags::LocalTransformTag>())
+			TransformService::Tags::LocalTransformTag>())
 		, Worlds(Host.AddTaggedService<
 			DataBatch<Transform3f>,
-			TransformServiceTags::WorldTransformTag>())
+			TransformService::Tags::WorldTransformTag>())
 		, Hierarchy(Host.AddService<Transform3Hierarchy>())
 		, Provider(Host)
 		, Propagation(Provider)
