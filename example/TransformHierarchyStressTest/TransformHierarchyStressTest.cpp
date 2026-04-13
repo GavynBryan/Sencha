@@ -1,12 +1,12 @@
-#include <batch/DataBatch.h>
-#include <math/Transform3.h>
-#include <primitive/transform/core/TransformDefaults.h>
-#include <primitive/transform/hierarchy/TransformHierarchyService.h>
-#include <primitive/transform/hierarchy/TransformPropagationOrderService.h>
-#include <primitive/transform/hierarchy/TransformPropagationSystem.h>
-#include <raii/DataBatchHandle.h>
-#include <service/ServiceHost.h>
-#include <service/ServiceProvider.h>
+#include <core/batch/DataBatch.h>
+#include <math/geometry/3d/Transform3d.h>
+#include <leaves/transform/core/TransformDefaults.h>
+#include <leaves/transform/hierarchy/TransformHierarchyService.h>
+#include <leaves/transform/hierarchy/TransformPropagationOrderService.h>
+#include <leaves/transform/hierarchy/TransformPropagationSystem.h>
+#include <core/raii/DataBatchHandle.h>
+#include <core/service/ServiceHost.h>
+#include <core/service/ServiceProvider.h>
 
 #include <algorithm>
 #include <atomic>
@@ -124,9 +124,9 @@ namespace
 		const float scaleJitter = static_cast<float>(index % 5) * 0.0005f;
 
 		return Transform3f(
-			Vec3(x, y, z),
-			Quatf::FromAxisAngle(Vec3(0.25f, 1.0f, 0.5f), angle),
-			Vec3(1.0f + scaleJitter, 1.0f + scaleJitter * 0.5f, 1.0f + scaleJitter * 0.25f));
+			Vec3d(x, y, z),
+			Quatf::FromAxisAngle(Vec3d(0.25f, 1.0f, 0.5f), angle),
+			Vec3d(1.0f + scaleJitter, 1.0f + scaleJitter * 0.5f, 1.0f + scaleJitter * 0.25f));
 	}
 
 	void SetRootFrame(Transform3f& transform, size_t frame)

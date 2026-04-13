@@ -1,0 +1,162 @@
+#pragma once
+
+#include <cmath>
+#include <concepts>
+#include <type_traits>
+
+#include <math/Mat.h>
+#include <math/Vec.h>
+
+//=============================================================================
+// Transform2d<T>
+//
+// 2D translation, rotation, and scale for Sencha's column-vector math.
+//
+// Conventions:
+//   - Rotation is radians around the positive Z axis.
+//   - Local Forward is +Y in the XY plane; local Right is +X.
+//   - Points and vectors are transformed as Translation * Rotation * Scale.
+//   - A * B means "apply B first, then A", matching Mat and Quat composition.
+//   - ToMat3() emits a row-major Mat compatible with Mat * Vec.
+//
+// Note:
+//   TRS values cannot exactly represent every composition of rotated
+//   non-uniform scales because that can introduce shear. Transform composition
+//   keeps explicit TRS components; use matrix multiplication for exact arbitrary
+//   affine composition when shear matters.
+//=============================================================================
+template <typename T = float>
+struct Transform2d
+{
+	static_assert(std::is_arithmetic_v<T>, "Transform2d component type must be arithmetic.");
+
+	// -- Data ---------------------------------------------------------------
+
+	Vec<2, T> Position = Vec<2, T>::Zero();
+	T Rotation = T{0};
+	Vec<2, T> Scale = Vec<2, T>::One();
+
+	// -- Construction -------------------------------------------------------
+
+	constexpr Transform2d() = default;
+
+	constexpr Transform2d(const Vec<2, T>& position, T rotation, const Vec<2, T>& scale)
+		: Position(position), Rotation(rotation), Scale(scale)
+	{
+	}
+
+	// -- Comparison ---------------------------------------------------------
+
+	constexpr bool operator==(const Transform2d& other) const
+	{
+		return Position == other.Position
+			&& Rotation == other.Rotation
+			&& Scale == other.Scale;
+	}
+
+	bool NearlyEquals(const Transform2d& other, T epsilon = T{1e-6}) const
+		requires std::floating_point<T>
+	{
+		return std::abs(Position.X - other.Position.X) <= epsilon
+			&& std::abs(Position.Y - other.Position.Y) <= epsilon
+			&& std::abs(Rotation - other.Rotation) <= epsilon
+			&& std::abs(Scale.X - other.Scale.X) <= epsilon
+			&& std::abs(Scale.Y - other.Scale.Y) <= epsilon;
+	}
+
+	// -- Transform operations ----------------------------------------------
+
+	Vec<2, T> TransformPoint(const Vec<2, T>& point) const
+		requires std::floating_point<T>
+	{
+		return Position + TransformVector(point);
+	}
+
+	Vec<2, T> TransformVector(const Vec<2, T>& vector) const
+		requires std::floating_point<T>
+	{
+		T c = std::cos(Rotation);
+		T s = std::sin(Rotation);
+		T x = vector.X * Scale.X;
+		T y = vector.Y * Scale.Y;
+
+		return Vec<2, T>(
+			c * x - s * y,
+			s * x + c * y
+		);
+	}
+
+	Vec<2, T> Forward() const
+		requires std::floating_point<T>
+	{
+		return RotateDirection(Vec<2, T>::Up());
+	}
+
+	Vec<2, T> Right() const
+		requires std::floating_point<T>
+	{
+		return RotateDirection(Vec<2, T>::Right());
+	}
+
+	Mat<3, 3, T> ToMat3() const
+		requires std::floating_point<T>
+	{
+		T c = std::cos(Rotation);
+		T s = std::sin(Rotation);
+
+		Mat<3, 3, T> result = Mat<3, 3, T>::Identity();
+		result.Data[0][0] = c * Scale.X;
+		result.Data[0][1] = -s * Scale.Y;
+		result.Data[0][2] = Position.X;
+		result.Data[1][0] = s * Scale.X;
+		result.Data[1][1] = c * Scale.Y;
+		result.Data[1][2] = Position.Y;
+		return result;
+	}
+
+	Transform2d operator*(const Transform2d& other) const
+		requires std::floating_point<T>
+	{
+		return Transform2d{
+			TransformPoint(other.Position),
+			Rotation + other.Rotation,
+			ComponentScale(Scale, other.Scale)
+		};
+	}
+
+	Transform2d& operator*=(const Transform2d& other)
+		requires std::floating_point<T>
+	{
+		*this = *this * other;
+		return *this;
+	}
+
+	// -- Static factories ---------------------------------------------------
+
+	static constexpr Transform2d Identity()
+	{
+		return Transform2d{};
+	}
+
+private:
+	Vec<2, T> RotateDirection(const Vec<2, T>& direction) const
+		requires std::floating_point<T>
+	{
+		T c = std::cos(Rotation);
+		T s = std::sin(Rotation);
+		return Vec<2, T>(
+			c * direction.X - s * direction.Y,
+			s * direction.X + c * direction.Y
+		);
+	}
+
+	static constexpr Vec<2, T> ComponentScale(const Vec<2, T>& a, const Vec<2, T>& b)
+	{
+		return Vec<2, T>(a.X * b.X, a.Y * b.Y);
+	}
+};
+
+// -- Common aliases ---------------------------------------------------------
+
+using Transform2f = Transform2d<float>;
+using Transform2dd = Transform2d<double>;
