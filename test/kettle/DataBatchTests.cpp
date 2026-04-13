@@ -4,6 +4,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 // --- Test helpers ---
@@ -30,6 +31,11 @@ struct MoveOnlyParticle {
     MoveOnlyParticle(const MoveOnlyParticle&) = delete;
     MoveOnlyParticle& operator=(const MoveOnlyParticle&) = delete;
 };
+
+static_assert(!std::is_assignable_v<
+    DataBatchHandle<Particle>&,
+    DataBatchHandle<MoveOnlyParticle>&&>,
+    "DataBatch handles for different value types must not be assignable.");
 
 // --- DataBatch Tests ---
 
@@ -192,7 +198,7 @@ TEST(DataBatch, RemoveKeysIgnoresInvalidMissingAndDuplicateKeys)
 TEST(DataBatch, RemoveHandlesInvalidatesRemovedHandles)
 {
     DataBatch<Particle> batch;
-    std::vector<LifetimeHandle<DataBatchKey>> handles;
+    std::vector<DataBatchHandle<Particle>> handles;
     handles.push_back(batch.Emplace(1.0f, 0.0f, 0.0f));
     handles.push_back(batch.Emplace(2.0f, 0.0f, 0.0f));
     handles.push_back(batch.Emplace(3.0f, 0.0f, 0.0f));
@@ -200,7 +206,7 @@ TEST(DataBatch, RemoveHandlesInvalidatesRemovedHandles)
     const DataBatchKey removedA = handles[1].GetToken();
     const DataBatchKey removedB = handles[2].GetToken();
 
-    batch.RemoveHandles(std::span<LifetimeHandle<DataBatchKey>>(handles).subspan(1, 2));
+    batch.RemoveHandles(std::span<DataBatchHandle<Particle>>(handles).subspan(1, 2));
 
     EXPECT_EQ(batch.Count(), 2u);
     EXPECT_TRUE(handles[0].IsValid());
@@ -216,13 +222,13 @@ TEST(DataBatch, RemoveHandlesInvalidatesRemovedHandles)
 TEST(DataBatch, RemoveHandlesCanRemoveWholeBatch)
 {
     DataBatch<Particle> batch;
-    std::vector<LifetimeHandle<DataBatchKey>> handles;
+    std::vector<DataBatchHandle<Particle>> handles;
     handles.push_back(batch.Emplace(1.0f, 0.0f, 0.0f));
     handles.push_back(batch.Emplace(2.0f, 0.0f, 0.0f));
     handles.push_back(batch.Emplace(3.0f, 0.0f, 0.0f));
     const uint64_t versionBeforeRemove = batch.GetVersion();
 
-    batch.RemoveHandles(std::span<LifetimeHandle<DataBatchKey>>(handles));
+    batch.RemoveHandles(std::span<DataBatchHandle<Particle>>(handles));
 
     EXPECT_EQ(batch.Count(), 0u);
     EXPECT_TRUE(batch.IsEmpty());
@@ -238,12 +244,12 @@ TEST(DataBatch, RemoveHandlesDoesNotClearWholeBatchForDuplicateHandles)
     auto h1 = batch.Emplace(1.0f, 0.0f, 0.0f);
     auto h2 = batch.Emplace(2.0f, 0.0f, 0.0f);
     auto h3 = batch.Emplace(3.0f, 0.0f, 0.0f);
-    std::vector<LifetimeHandle<DataBatchKey>> handles;
+    std::vector<DataBatchHandle<Particle>> handles;
     handles.emplace_back(&batch, h1.GetToken());
     handles.emplace_back(&batch, h1.GetToken());
     handles.emplace_back(&batch, h2.GetToken());
 
-    batch.RemoveHandles(std::span<LifetimeHandle<DataBatchKey>>(handles));
+    batch.RemoveHandles(std::span<DataBatchHandle<Particle>>(handles));
 
     EXPECT_EQ(batch.Count(), 1u);
     EXPECT_EQ(batch.TryGet(h1), nullptr);

@@ -1,8 +1,9 @@
 #include <batch/DataBatch.h>
 #include <math/Transform3.h>
-#include <primitive/transform/TransformDefaults.h>
+#include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
 #include <primitive/transform/hierarchy/TransformPropagationSystem.h>
+#include <raii/DataBatchHandle.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
 
@@ -412,8 +413,8 @@ namespace
 
 		DataBatchBlock LocalBlock;
 		DataBatchBlock WorldBlock;
-		std::vector<LifetimeHandle<DataBatchKey>> LocalHandles;
-		std::vector<LifetimeHandle<DataBatchKey>> WorldHandles;
+		std::vector<DataBatchHandle<Transform3f>> LocalHandles;
+		std::vector<DataBatchHandle<Transform3f>> WorldHandles;
 		std::vector<DataBatchKey> Keys;
 		double BatchEmplaceUs = 0.0;
 		double BatchRemoveUs = 0.0;

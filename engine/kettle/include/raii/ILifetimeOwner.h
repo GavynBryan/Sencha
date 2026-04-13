@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 //=============================================================================
 // ILifetimeOwner
@@ -8,11 +9,8 @@
 // and Detach on destruction, enabling RAII ownership across unrelated
 // subsystems (batches, pools, registries, etc.).
 //
-// The void* parameter is the type-erasure boundary — callers never see
-// it because LifetimeHandle<TokenT> performs the cast internally:
-//   - For pointer tokens (T*), the pointer itself is passed.
-//   - For value tokens (e.g., DataBatchKey), a pointer to the stored
-//     token is passed.
+// The uint64_t token is an owner-interpreted opaque slot. RefBatch decodes it
+// as a pointer; DataBatch decodes it as a compact key value.
 //=============================================================================
 class ILifetimeOwner
 {
@@ -20,8 +18,8 @@ public:
 	virtual ~ILifetimeOwner() = default;
 
 	// Called by LifetimeHandle on construction.
-	virtual void Attach(void* token) = 0;
+	virtual void Attach(uint64_t token) = 0;
 
 	// Called by LifetimeHandle on destruction / reset.
-	virtual void Detach(void* token) = 0;
+	virtual void Detach(uint64_t token) = 0;
 };

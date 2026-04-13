@@ -3,8 +3,9 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-#include <raii/LifetimeHandle.h>
+#include <math/Transform2.h>
 #include <batch/DataBatch.h>
+#include <raii/DataBatchHandle.h>
 
 struct SceneNodeCore
 {
@@ -14,6 +15,6 @@ struct SceneNodeCore
     uint32_t ParentId = 0;
     std::vector<uint32_t> ChildIds;
 
-    LifetimeHandle<DataBatchKey> LocalTransform;
-    LifetimeHandle<DataBatchKey> WorldTransform;
+    DataBatchHandle<Transform2f> LocalTransform;
+    DataBatchHandle<Transform2f> WorldTransform;
 };

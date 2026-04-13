@@ -5,4 +5,5 @@ endif()
 
 if(SENCHA_BUILD_INFUSER AND SENCHA_ENABLE_VULKAN)
     add_subdirectory(SdlVulkanWindow)
+    add_subdirectory(JasmineGreen)
 endif()

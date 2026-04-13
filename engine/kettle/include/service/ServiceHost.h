@@ -28,6 +28,9 @@ namespace ServiceHostDetail
 class ServiceHost
 {
 public:
+	ServiceHost* operator&() = delete;
+	const ServiceHost* operator&() const = delete;
+
 	template <typename T, typename TInterface = T, typename... Args>
 	T& AddService(Args&&... args);
 

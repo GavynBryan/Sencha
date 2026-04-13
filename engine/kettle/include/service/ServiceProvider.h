@@ -3,6 +3,7 @@
 #include <service/ServiceHost.h>
 #include <logging/LoggingProvider.h>
 #include <cassert>
+#include <memory>
 
 //=============================================================================
 // ServiceProvider
@@ -27,7 +28,7 @@
 class ServiceProvider
 {
 public:
-	explicit ServiceProvider(ServiceHost& host) : Host(&host) {}
+	explicit ServiceProvider(ServiceHost& host) : Host(std::addressof(host)) {}
 
 	template<typename T>
 	T& Get() const

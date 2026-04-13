@@ -1,6 +1,6 @@
 #pragma once
 
-#include <batch/DataBatch.h>
+#include <batch/DataBatchKey.h>
 #include <service/IService.h>
 #include <algorithm>
 #include <cassert>
@@ -19,7 +19,7 @@
 // Any spatial participant (scene node, tilemap, camera anchor, etc.) can
 // register here as long as it has a DataBatchKey from the matching local
 // transform service. The hierarchy stores non-owning keys only; transform
-// lifetime is managed by whoever owns the LifetimeHandle.
+// lifetime is managed by whoever owns the DataBatchHandle.
 //
 // TDomainTag keeps independent transform key spaces apart. For example, 2D and
 // 3D transforms can both have DataBatchKey{1}, but their hierarchy service

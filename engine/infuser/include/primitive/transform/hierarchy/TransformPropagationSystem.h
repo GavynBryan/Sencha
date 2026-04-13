@@ -1,7 +1,7 @@
 #pragma once
 
 #include <batch/DataBatch.h>
-#include <primitive/transform/TransformDefaults.h>
+#include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
 #include <service/ServiceProvider.h>
 #include <system/ISystem.h>

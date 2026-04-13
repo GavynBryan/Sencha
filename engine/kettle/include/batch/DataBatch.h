@@ -1,61 +1,17 @@
 #pragma once
-#include <raii/ILifetimeOwner.h>
-#include <raii/LifetimeHandle.h>
+#include <batch/DataBatchKey.h>
+#include <raii/DataBatchHandle.h>
 #include <service/IService.h>
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-
-//=============================================================================
-// DataBatchKey
-//
-// Strongly-typed key that identifies an item inside a DataBatch.
-// Default-constructed keys have Value == 0, which LifetimeHandle treats
-// as the null sentinel (TokenT{} is "invalid").
-//=============================================================================
-struct DataBatchKey
-{
-	uint32_t Value = 0;
-	bool operator==(const DataBatchKey&) const = default;
-};
-
-//=============================================================================
-// DataBatchBlock
-//
-// Lightweight metadata describing a contiguous key range allocated by one
-// DataBatch::EmplaceBlock call. It does not own handles or keep items alive.
-//=============================================================================
-struct DataBatchBlock
-{
-	// First key in a contiguous key range returned by DataBatch::EmplaceBlock.
-	uint32_t FirstKey = 0;
-
-	// Number of keys in the block. A zero-count block is empty/invalid.
-	size_t Count = 0;
-
-	bool IsEmpty() const { return Count == 0; }
-
-	// Convert a block-local index to its DataBatchKey.
-	DataBatchKey KeyAt(size_t index) const
-	{
-		assert(index < Count && "DataBatchBlock key index out of range.");
-		return DataBatchKey{ FirstKey + static_cast<uint32_t>(index) };
-	}
-
-	// Check whether a key falls inside this block's contiguous key range.
-	bool Contains(DataBatchKey key) const
-	{
-		return key.Value >= FirstKey
-			&& static_cast<size_t>(key.Value - FirstKey) < Count;
-	}
-};
 
 //=============================================================================
 // DataBatch<T>
@@ -65,20 +21,20 @@ struct DataBatchBlock
 // pointers to externally-owned objects, DataBatch stores the objects
 // themselves in a cache-friendly, tightly packed vector<T>.
 //
-// Items are created via Emplace(), which returns a
-// LifetimeHandle<DataBatchKey>. When the handle is destroyed (or reset),
+// Items are created via Emplace(), which returns a DataBatchHandle<T>.
+// When the handle is destroyed (or reset),
 // the corresponding item is removed from the batch using swap-and-pop to
 // maintain contiguity.
 //
 // Internally, each item is assigned a stable DataBatchKey so that
-// swap-and-pop doesn't invalidate handles. The key is carried by the
-// typed LifetimeHandle — no void* visible in the public API.
+// swap-and-pop doesn't invalidate handles. The key is carried by the typed
+// DataBatchHandle<T>.
 //
 // Usage:
 //   DataBatch<Particle> particles;
 //
 //   auto h = particles.Emplace(position, velocity, lifetime);
-//   // h is a LifetimeHandle<DataBatchKey>; destruction removes the particle.
+//   // h is a DataBatchHandle<Particle>; destruction removes the particle.
 //
 //   for (auto& p : particles)        // cache-friendly value iteration
 //       p.lifetime -= dt;
@@ -95,7 +51,7 @@ public:
 	// -- Emplacement (the primary way to add data) --------------------------
 
 	template<typename... Args>
-	LifetimeHandle<DataBatchKey> Emplace(Args&&... args)
+	DataBatchHandle<T> Emplace(Args&&... args)
 	{
 		if (NextKey == std::numeric_limits<uint32_t>::max())
 			throw std::length_error("DataBatch key range exhausted.");
@@ -122,8 +78,8 @@ public:
 		++VersionCounter;
 
 		// Use NoAttach — the item is already in the batch.
-		return LifetimeHandle<DataBatchKey>(
-			this, key, LifetimeHandle<DataBatchKey>::NoAttach);
+		return DataBatchHandle<T>(
+			this, key, DataBatchHandle<T>::NoAttach);
 	}
 
 	template<typename Factory>
@@ -194,7 +150,7 @@ public:
 		RemoveKeySpan(keys);
 	}
 
-	void RemoveHandles(std::span<LifetimeHandle<DataBatchKey>> handles)
+	void RemoveHandles(std::span<DataBatchHandle<T>> handles)
 	{
 		if (!Items.empty() && handles.size() == Items.size())
 		{
@@ -261,12 +217,12 @@ public:
 
 	// -- Random access by handle --------------------------------------------
 
-	T* TryGet(const LifetimeHandle<DataBatchKey>& handle)
+	T* TryGet(const DataBatchHandle<T>& handle)
 	{
 		return TryGet(handle.GetToken());
 	}
 
-	const T* TryGet(const LifetimeHandle<DataBatchKey>& handle) const
+	const T* TryGet(const DataBatchHandle<T>& handle) const
 	{
 		return TryGet(handle.GetToken());
 	}
@@ -403,14 +359,14 @@ protected:
 	// -- ILifetimeOwner -----------------------------------------------------
 
 	// Attach is a no-op for DataBatch — items are added by Emplace().
-	void Attach(void* /*token*/) override {}
+	void Attach(uint64_t /*token*/) override {}
 
 	// Detach removes the item identified by the encoded key.
-	void Detach(void* token) override
+	void Detach(uint64_t token) override
 	{
-		// For value-type tokens, LifetimeHandle passes &Token.
-		uint32_t key = static_cast<DataBatchKey*>(token)->Value;
-		const uint32_t indexToRemove = FindIndex(DataBatchKey{ key });
+		DataBatchKey key{};
+		std::memcpy(&key, &token, sizeof(key));
+		const uint32_t indexToRemove = FindIndex(key);
 		if (indexToRemove == InvalidIndex) return;
 
 		const size_t lastIndex = Items.size() - 1;
@@ -426,7 +382,7 @@ protected:
 
 		Items.pop_back();
 		IndexToKey.pop_back();
-		ClearKeyIndex(key);
+		ClearKeyIndex(key.Value);
 		bIsDirty = true;
 		++VersionCounter;
 	}

@@ -2,9 +2,10 @@
 #include <batch/DataBatch.h>
 #include <math/Transform2.h>
 #include <math/Transform3.h>
-#include <primitive/transform/TransformDefaults.h>
+#include <primitive/transform/core/TransformDefaults.h>
 #include <primitive/transform/hierarchy/TransformHierarchyService.h>
 #include <primitive/transform/hierarchy/TransformPropagationSystem.h>
+#include <raii/DataBatchHandle.h>
 #include <service/ServiceHost.h>
 #include <service/ServiceProvider.h>
 #include <cmath>
@@ -518,8 +519,8 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
 struct SceneNode2DSketch
 {
 	// Transform handles — RAII ownership of the hot data slots
-	LifetimeHandle<DataBatchKey> LocalTransformHandle;
-	LifetimeHandle<DataBatchKey> WorldTransformHandle;
+	DataBatchHandle<Transform2f> LocalTransformHandle;
+	DataBatchHandle<Transform2f> WorldTransformHandle;
 
 	// The stable key shared between local/world batches and the hierarchy
 	DataBatchKey TransformKey() const { return LocalTransformHandle.GetToken(); }
@@ -550,8 +551,8 @@ struct SceneNode2DSketch
 // Minimal tilemap sketch — NOT a node. Just owns a transform.
 struct TilemapSketch
 {
-	LifetimeHandle<DataBatchKey> LocalTransformHandle;
-	LifetimeHandle<DataBatchKey> WorldTransformHandle;
+	DataBatchHandle<Transform2f> LocalTransformHandle;
+	DataBatchHandle<Transform2f> WorldTransformHandle;
 
 	DataBatchKey TransformKey() const { return LocalTransformHandle.GetToken(); }
 
