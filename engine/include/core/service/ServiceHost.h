@@ -31,6 +31,25 @@ public:
 	ServiceHost* operator&() = delete;
 	const ServiceHost* operator&() const = delete;
 
+	ServiceHost() = default;
+	~ServiceHost()
+	{
+		// Tear down in reverse insertion order (LIFO) so later-added services,
+		// which may depend on earlier ones, are destroyed first. The registry
+		// only holds raw pointers, so clearing it first avoids dangling lookups
+		// if a service's destructor touches sibling state during teardown.
+		Registry.clear();
+		while (!Services.empty())
+		{
+			Services.pop_back();
+		}
+	}
+
+	ServiceHost(const ServiceHost&) = delete;
+	ServiceHost& operator=(const ServiceHost&) = delete;
+	ServiceHost(ServiceHost&&) = delete;
+	ServiceHost& operator=(ServiceHost&&) = delete;
+
 	template <typename T, typename TInterface = T, typename... Args>
 	T& AddService(Args&&... args);
 
