@@ -74,11 +74,14 @@ public:
 
     // -- Ingestion ----------------------------------------------------------
 
-    [[nodiscard]] ShaderHandle LoadFromFile(const std::filesystem::path& path, ShaderStage stage);
+    [[nodiscard]] ShaderHandle LoadFromFile(const std::filesystem::path& path,
+                                            ShaderStage stage,
+                                            bool optimize = false);
 
     [[nodiscard]] ShaderHandle CompileFromSource(std::string_view source,
                                                  ShaderStage stage,
-                                                 const char* debugName = nullptr);
+                                                 const char* debugName = nullptr,
+                                                 bool optimize = false);
 
     void Destroy(ShaderHandle handle);
 
@@ -111,7 +114,8 @@ private:
     [[nodiscard]] bool CompileGlsl(std::string_view source,
                                    ShaderStage stage,
                                    const char* debugLabel,
-                                   std::vector<uint32_t>& outSpirv);
+                                   std::vector<uint32_t>& outSpirv,
+                                   bool optimize);
 
     [[nodiscard]] ShaderHandle CreateModuleFromSpirv(const std::vector<uint32_t>& spirv,
                                                      ShaderStage stage,

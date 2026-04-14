@@ -144,19 +144,15 @@ const VulkanShaderCache::ShaderEntry* VulkanShaderCache::Resolve(ShaderHandle ha
     return &entry;
 }
 
-ShaderHandle VulkanShaderCache::LoadFromFile(const std::filesystem::path& path, ShaderStage stage)
 ShaderHandle VulkanShaderCache::LoadFromFile(const std::filesystem::path& path, ShaderStage stage, bool optimize)
 {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec))
     {
-        Log.Error("LoadFromFile: source does not exist: {}", path.string());
         Log.Error("LoadFromFile: source does not exist: {}", path.generic_string());
         return {};
     }
 
-    const std::filesystem::path cachePath = path.string() + ".spv";
-    const std::string label = path.string();
     std::filesystem::path cachePath = path;
     cachePath += ".spv";
     const std::string label = path.filename().string();
@@ -175,7 +171,6 @@ ShaderHandle VulkanShaderCache::LoadFromFile(const std::filesystem::path& path, 
         return {};
     }
 
-    if (!CompileGlsl(source, stage, label.c_str(), spirv))
     if (!CompileGlsl(source, stage, label.c_str(), spirv, optimize))
     {
         return {};
@@ -191,13 +186,11 @@ ShaderHandle VulkanShaderCache::LoadFromFile(const std::filesystem::path& path, 
 
 ShaderHandle VulkanShaderCache::CompileFromSource(std::string_view source,
                                                    ShaderStage stage,
-                                                   const char* debugName)
                                                    const char* debugName,
                                                    bool optimize)
 {
     const char* label = debugName != nullptr ? debugName : "<inline>";
     std::vector<uint32_t> spirv;
-    if (!CompileGlsl(source, stage, label, spirv))
     if (!CompileGlsl(source, stage, label, spirv, optimize))
     {
         return {};
@@ -208,7 +201,6 @@ ShaderHandle VulkanShaderCache::CompileFromSource(std::string_view source,
 bool VulkanShaderCache::CompileGlsl(std::string_view source,
                                     ShaderStage stage,
                                     const char* debugLabel,
-                                    std::vector<uint32_t>& outSpirv)
                                     std::vector<uint32_t>& outSpirv,
                                     bool optimize)
 {
@@ -242,7 +234,6 @@ bool VulkanShaderCache::CompileGlsl(std::string_view source,
     }
 
     glslang::SpvOptions spvOptions;
-    spvOptions.disableOptimizer = true;
     spvOptions.disableOptimizer = !optimize;
     spvOptions.generateDebugInfo = !optimize;
     glslang::GlslangToSpv(*program.getIntermediate(lang), outSpirv, &spvOptions);
