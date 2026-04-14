@@ -10,7 +10,7 @@
 
 class VulkanAllocatorService;
 class VulkanDeviceService;
-class VulkanQueueService;
+class VulkanUploadContextService;
 
 //=============================================================================
 // VulkanBufferService
@@ -66,8 +66,8 @@ class VulkanBufferService : public IService
 public:
     VulkanBufferService(LoggingProvider& logging,
                         VulkanDeviceService& device,
-                        VulkanQueueService& queues,
-                        VulkanAllocatorService& allocator);
+                        VulkanAllocatorService& allocator,
+                        VulkanUploadContextService& upload);
     ~VulkanBufferService() override;
 
     VulkanBufferService(const VulkanBufferService&) = delete;
@@ -75,7 +75,7 @@ public:
     VulkanBufferService(VulkanBufferService&&) = delete;
     VulkanBufferService& operator=(VulkanBufferService&&) = delete;
 
-    [[nodiscard]] bool IsValid() const { return UploadPool != VK_NULL_HANDLE; }
+    [[nodiscard]] bool IsValid() const { return Valid; }
 
     // -- Resource lifetime --------------------------------------------------
 
@@ -112,12 +112,9 @@ private:
 
     Logger& Log;
     VkDevice Device = VK_NULL_HANDLE;
-    VkQueue UploadQueue = VK_NULL_HANDLE;
-    uint32_t UploadQueueFamily = 0;
     VmaAllocator Allocator = VK_NULL_HANDLE;
-
-    VkCommandPool UploadPool = VK_NULL_HANDLE;
-    VkFence UploadFence = VK_NULL_HANDLE;
+    VulkanUploadContextService* UploadCtx = nullptr;
+    bool Valid = false;
 
     std::vector<BufferEntry> Entries; // slot 0 reserved
     std::vector<uint32_t> FreeSlots;
@@ -125,9 +122,6 @@ private:
     [[nodiscard]] BufferEntry* Resolve(BufferHandle handle);
     [[nodiscard]] const BufferEntry* Resolve(BufferHandle handle) const;
     [[nodiscard]] BufferHandle MakeHandle(uint32_t index, uint32_t generation) const;
-
-    [[nodiscard]] bool CreateUploadResources();
-    void DestroyUploadResources();
 
     [[nodiscard]] bool StagedUpload(BufferEntry& entry,
                                     const void* data,

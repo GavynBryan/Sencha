@@ -2,7 +2,7 @@
 
 #include <render/backend/vulkan/VulkanAllocatorService.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
-#include <render/backend/vulkan/VulkanQueueService.h>
+#include <render/backend/vulkan/VulkanUploadContextService.h>
 
 #include <cstring>
 
@@ -21,35 +21,22 @@ namespace
 VulkanBufferService::VulkanBufferService(
     LoggingProvider& logging,
     VulkanDeviceService& device,
-    VulkanQueueService& queues,
-    VulkanAllocatorService& allocator)
+    VulkanAllocatorService& allocator,
+    VulkanUploadContextService& upload)
     : Log(logging.GetLogger<VulkanBufferService>())
     , Device(device.GetDevice())
-    , UploadQueue(queues.GetGraphicsQueue())
     , Allocator(allocator.GetAllocator())
+    , UploadCtx(&upload)
 {
-    if (!device.IsValid() || !allocator.IsValid() || UploadQueue == VK_NULL_HANDLE)
+    if (!device.IsValid() || !allocator.IsValid() || !upload.IsValid())
     {
         Log.Error("Cannot create VulkanBufferService: upstream Vulkan services not valid");
         return;
     }
 
-    const auto& families = queues.GetQueueFamilies();
-    if (!families.HasGraphics())
-    {
-        Log.Error("VulkanBufferService requires a graphics queue family");
-        return;
-    }
-    UploadQueueFamily = *families.Graphics;
-
     // Reserve slot 0 so the zero-initialized BufferHandle is always invalid.
     Entries.emplace_back();
-
-    if (!CreateUploadResources())
-    {
-        Log.Error("Failed to create upload command pool / fence");
-        DestroyUploadResources();
-    }
+    Valid = true;
 }
 
 VulkanBufferService::~VulkanBufferService()
@@ -62,49 +49,6 @@ VulkanBufferService::~VulkanBufferService()
             vmaDestroyBuffer(Allocator, entry.Buffer, entry.Allocation);
             entry = {};
         }
-    }
-
-    DestroyUploadResources();
-}
-
-bool VulkanBufferService::CreateUploadResources()
-{
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
-                   | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = UploadQueueFamily;
-
-    VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &UploadPool);
-    if (result != VK_SUCCESS)
-    {
-        Log.Error("vkCreateCommandPool (upload) failed ({})", static_cast<int>(result));
-        return false;
-    }
-
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    result = vkCreateFence(Device, &fenceInfo, nullptr, &UploadFence);
-    if (result != VK_SUCCESS)
-    {
-        Log.Error("vkCreateFence (upload) failed ({})", static_cast<int>(result));
-        return false;
-    }
-
-    return true;
-}
-
-void VulkanBufferService::DestroyUploadResources()
-{
-    if (UploadFence != VK_NULL_HANDLE)
-    {
-        vkDestroyFence(Device, UploadFence, nullptr);
-        UploadFence = VK_NULL_HANDLE;
-    }
-    if (UploadPool != VK_NULL_HANDLE)
-    {
-        vkDestroyCommandPool(Device, UploadPool, nullptr);
-        UploadPool = VK_NULL_HANDLE;
     }
 }
 
@@ -347,26 +291,12 @@ bool VulkanBufferService::StagedUpload(BufferEntry& entry,
     std::memcpy(stagingResult.pMappedData, data, static_cast<size_t>(size));
     vmaFlushAllocation(Allocator, stagingAllocation, 0, size);
 
-    // One-shot command buffer.
-    VkCommandBufferAllocateInfo cmdInfo{};
-    cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdInfo.commandPool = UploadPool;
-    cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    result = vkAllocateCommandBuffers(Device, &cmdInfo, &cmd);
-    if (result != VK_SUCCESS)
+    VkCommandBuffer cmd = UploadCtx->Begin();
+    if (cmd == VK_NULL_HANDLE)
     {
-        Log.Error("StagedUpload: vkAllocateCommandBuffers failed ({})", static_cast<int>(result));
         vmaDestroyBuffer(Allocator, staging, stagingAllocation);
         return false;
     }
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
 
     VkBufferCopy copy{};
     copy.srcOffset = 0;
@@ -374,26 +304,8 @@ bool VulkanBufferService::StagedUpload(BufferEntry& entry,
     copy.size = size;
     vkCmdCopyBuffer(cmd, staging, entry.Buffer, 1, &copy);
 
-    vkEndCommandBuffer(cmd);
+    const bool ok = UploadCtx->Submit(cmd);
 
-    VkSubmitInfo submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &cmd;
-
-    vkResetFences(Device, 1, &UploadFence);
-    result = vkQueueSubmit(UploadQueue, 1, &submit, UploadFence);
-    if (result != VK_SUCCESS)
-    {
-        Log.Error("StagedUpload: vkQueueSubmit failed ({})", static_cast<int>(result));
-        vkFreeCommandBuffers(Device, UploadPool, 1, &cmd);
-        vmaDestroyBuffer(Allocator, staging, stagingAllocation);
-        return false;
-    }
-
-    vkWaitForFences(Device, 1, &UploadFence, VK_TRUE, UINT64_MAX);
-
-    vkFreeCommandBuffers(Device, UploadPool, 1, &cmd);
     vmaDestroyBuffer(Allocator, staging, stagingAllocation);
-    return true;
+    return ok;
 }
