@@ -2,28 +2,31 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <leaves/transform/core/TransformDefaults.h>
-#include <leaves/transform/hierarchy/TransformHierarchyService.h>
-#include <leaves/transform/hierarchy/TransformPropagationOrderService.h>
-#include <leaves/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/transform/core/TransformServiceTags.h>
+#include <world/transform/core/TransformStore2D.h>
+#include <world/transform/core/TransformStore3D.h>
+#include <world/transform/hierarchy/TransformHierarchyService.h>
+#include <world/transform/hierarchy/TransformPropagationOrderService.h>
+#include <world/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/World2d.h>
+#include <world/World3d.h>
 #include <core/raii/DataBatchHandle.h>
 #include <core/service/ServiceHost.h>
-#include <core/service/ServiceProvider.h>
 #include <cmath>
 #include <numbers>
 
 namespace
 {
-	using Transform2Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform2DTag>;
-	using Transform2PropagationOrder = TransformPropagationOrderService<TransformDefaults::Tags::Transform2DTag>;
+	using Transform2Hierarchy = TransformHierarchyService<TransformServiceTags::Transform2DTag>;
+	using Transform2PropagationOrder = TransformPropagationOrderService<TransformServiceTags::Transform2DTag>;
 	using Transform2Propagation = TransformPropagationSystem<
 		Transform2f,
-		TransformDefaults::Tags::Transform2DTag>;
-	using Transform3Hierarchy = TransformHierarchyService<TransformDefaults::Tags::Transform3DTag>;
-	using Transform3PropagationOrder = TransformPropagationOrderService<TransformDefaults::Tags::Transform3DTag>;
+		TransformServiceTags::Transform2DTag>;
+	using Transform3Hierarchy = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+	using Transform3PropagationOrder = TransformPropagationOrderService<TransformServiceTags::Transform3DTag>;
 	using Transform3Propagation = TransformPropagationSystem<
 		Transform3f,
-		TransformDefaults::Tags::Transform3DTag>;
+		TransformServiceTags::Transform3DTag>;
 }
 
 // ============================================================================
@@ -250,24 +253,22 @@ TEST(TransformHierarchy, RootsExcludesParentedKeys)
 struct TransformPropagationFixture
 {
 	ServiceHost Host;
+	World2d& GameWorld;
 	DataBatch<Transform2f>& Locals;
 	DataBatch<Transform2f>& Worlds;
+	TransformStore2D& Store;
 	Transform2Hierarchy& Hierarchy;
 	Transform2PropagationOrder& PropagationOrder;
-	ServiceProvider Provider;
 	Transform2Propagation Propagation;
 
 	TransformPropagationFixture()
-		: Locals(Host.AddTaggedService<
-			DataBatch<Transform2f>,
-			TransformDefaults::Tags::LocalTransformTag>())
-		, Worlds(Host.AddTaggedService<
-			DataBatch<Transform2f>,
-			TransformDefaults::Tags::WorldTransformTag>())
-		, Hierarchy(Host.AddService<Transform2Hierarchy>())
-		, PropagationOrder(Host.AddService<Transform2PropagationOrder>())
-		, Provider(Host)
-		, Propagation(Provider)
+		: GameWorld(Host.AddService<World2d>())
+		, Locals(GameWorld.GetLocalTransformsForSystems())
+		, Worlds(GameWorld.GetWorldTransformsForSystems())
+		, Store(GameWorld.Transforms)
+		, Hierarchy(GameWorld.TransformHierarchy)
+		, PropagationOrder(GameWorld.GetTransformPropagationOrderForSystems())
+		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
 	{
 	}
 };
@@ -275,24 +276,22 @@ struct TransformPropagationFixture
 struct TransformPropagation3Fixture
 {
 	ServiceHost Host;
+	World3d& GameWorld;
 	DataBatch<Transform3f>& Locals;
 	DataBatch<Transform3f>& Worlds;
+	TransformStore3D& Store;
 	Transform3Hierarchy& Hierarchy;
 	Transform3PropagationOrder& PropagationOrder;
-	ServiceProvider Provider;
 	Transform3Propagation Propagation;
 
 	TransformPropagation3Fixture()
-		: Locals(Host.AddTaggedService<
-			DataBatch<Transform3f>,
-			TransformDefaults::Tags::LocalTransformTag>())
-		, Worlds(Host.AddTaggedService<
-			DataBatch<Transform3f>,
-			TransformDefaults::Tags::WorldTransformTag>())
-		, Hierarchy(Host.AddService<Transform3Hierarchy>())
-		, PropagationOrder(Host.AddService<Transform3PropagationOrder>())
-		, Provider(Host)
-		, Propagation(Provider)
+		: GameWorld(Host.AddService<World3d>())
+		, Locals(GameWorld.GetLocalTransformsForSystems())
+		, Worlds(GameWorld.GetWorldTransformsForSystems())
+		, Store(GameWorld.Transforms)
+		, Hierarchy(GameWorld.TransformHierarchy)
+		, PropagationOrder(GameWorld.GetTransformPropagationOrderForSystems())
+		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
 	{
 	}
 };
@@ -300,29 +299,59 @@ struct TransformPropagation3Fixture
 TEST(TransformPropagation, RootWorldEqualsLocal2D)
 {
 	TransformPropagationFixture transformServices;
-	auto& locals = transformServices.Locals;
-	auto& worlds = transformServices.Worlds;
+	auto& transforms = transformServices.Store;
 	auto& hierarchy = transformServices.Hierarchy;
 	auto& propagation = transformServices.Propagation;
 
 	Transform2f localTransform({ 10.0f, 20.0f }, 0.0f, { 1.0f, 1.0f });
-	auto localHandle = locals.Emplace(localTransform);
-	auto worldHandle = worlds.Emplace(Transform2f::Identity());
+	auto transformHandle = transforms.Emplace(localTransform);
 
-	DataBatchKey key = localHandle.GetToken();
-
-	// World handle must use the same key â€” emplace into worlds with same key.
-	// Since DataBatch assigns keys sequentially and both batches start at 1,
-	// the first emplace in each yields the same key. This is the expected
-	// allocation pattern for paired local/world transforms.
-	ASSERT_EQ(worldHandle.GetToken().Value, key.Value);
+	DataBatchKey key = transformHandle.GetToken();
 
 	hierarchy.Register(key);
 	propagation.Propagate();
 
-	const auto* world = worlds.TryGet(key);
+	const auto* world = transforms.TryGetWorld(key);
 	ASSERT_NE(world, nullptr);
 	EXPECT_TRUE(world->NearlyEquals(localTransform));
+}
+
+TEST(TransformStore2D, EmplaceProvisionsLocalAndWorldAtSharedKey)
+{
+	TransformPropagationFixture transformServices;
+	auto& transforms = transformServices.Store;
+
+	auto handle = transforms.Emplace(
+		Transform2f({ 3.0f, 4.0f }, 0.5f, { 2.0f, 2.0f }));
+	const DataBatchKey key = handle.GetToken();
+
+	const Transform2f* local = transforms.TryGetLocal(key);
+	const Transform2f* world = transforms.TryGetWorld(key);
+
+	ASSERT_NE(local, nullptr);
+	ASSERT_NE(world, nullptr);
+	EXPECT_TRUE(world->NearlyEquals(Transform2f::Identity()));
+
+	handle.Reset();
+
+	EXPECT_EQ(transforms.TryGetLocal(key), nullptr);
+	EXPECT_EQ(transforms.TryGetWorld(key), nullptr);
+}
+
+TEST(World2d, ResolvesGameplayFacingTransformServices)
+{
+	TransformPropagationFixture transformServices;
+	World2d& world = transformServices.GameWorld;
+
+	auto handle = world.Transforms.Emplace(
+		Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f }));
+	const DataBatchKey key = handle.GetToken();
+
+	world.TransformHierarchy.Register(key);
+
+	EXPECT_TRUE(world.TransformHierarchy.IsRegistered(key));
+	EXPECT_NE(world.Transforms.TryGetLocal(key), nullptr);
+	EXPECT_NE(world.Transforms.TryGetWorld(key), nullptr);
 }
 
 TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
@@ -330,13 +359,12 @@ TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
 	ServiceHost host;
 	auto& locals = host.AddTaggedService<
 		DataBatch<Transform2f>,
-		TransformDefaults::Tags::LocalTransformTag>();
+		TransformServiceTags::LocalTransformTag>();
 	auto& worlds = host.AddTaggedService<
 		DataBatch<Transform2f>,
-		TransformDefaults::Tags::WorldTransformTag>();
+		TransformServiceTags::WorldTransformTag>();
 	auto& hierarchy = host.AddService<Transform2Hierarchy>();
 	auto& cache = host.AddService<Transform2PropagationOrder>();
-	ServiceProvider provider(host);
 
 	Transform2f parentLocal({ 5.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
 	auto parentLocalH = locals.Emplace(parentLocal);
@@ -353,7 +381,7 @@ TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
 	hierarchy.SetParent(childKey, parentKey);
 
 	{
-		Transform2Propagation propagation(provider);
+		Transform2Propagation propagation(locals, worlds, hierarchy, cache);
 		propagation.Propagate();
 	}
 
@@ -362,7 +390,7 @@ TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
 	const auto* cachedOrderStorage = cachedOrder.data();
 
 	{
-		Transform2Propagation recreatedPropagation(provider);
+		Transform2Propagation recreatedPropagation(locals, worlds, hierarchy, cache);
 		recreatedPropagation.Propagate();
 	}
 
@@ -577,30 +605,26 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
 struct SceneNode2DSketch
 {
 	// Transform handles â€” RAII ownership of the hot data slots
-	DataBatchHandle<Transform2f> LocalTransformHandle;
-	DataBatchHandle<Transform2f> WorldTransformHandle;
+	DataBatchHandle<Transform2f> TransformHandle;
 
 	// The stable key shared between local/world batches and the hierarchy
-	DataBatchKey TransformKey() const { return LocalTransformHandle.GetToken(); }
+	DataBatchKey TransformKey() const { return TransformHandle.GetToken(); }
 
 	// Node-graph parent/child (separate from transform hierarchy)
 	SceneNode2DSketch* NodeParent = nullptr;
 	std::vector<SceneNode2DSketch*> NodeChildren;
 
 	SceneNode2DSketch(
-		DataBatch<Transform2f>& locals,
-		DataBatch<Transform2f>& worlds,
-		Transform2Hierarchy& hierarchy,
+		World2d& world,
 		const Transform2f& localTransform)
 	{
-		LocalTransformHandle = locals.Emplace(localTransform);
-		WorldTransformHandle = worlds.Emplace(Transform2f::Identity());
-		hierarchy.Register(TransformKey());
+		TransformHandle = world.Transforms.Emplace(localTransform);
+		world.TransformHierarchy.Register(TransformKey());
 	}
 
-	void SetTransformParent(Transform2Hierarchy& hierarchy, SceneNode2DSketch& parent)
+	void SetTransformParent(World2d& world, SceneNode2DSketch& parent)
 	{
-		hierarchy.SetParent(TransformKey(), parent.TransformKey());
+		world.TransformHierarchy.SetParent(TransformKey(), parent.TransformKey());
 	}
 
 	~SceneNode2DSketch() = default;
@@ -609,62 +633,56 @@ struct SceneNode2DSketch
 // Minimal tilemap sketch â€” NOT a node. Just owns a transform.
 struct TilemapSketch
 {
-	DataBatchHandle<Transform2f> LocalTransformHandle;
-	DataBatchHandle<Transform2f> WorldTransformHandle;
+	DataBatchHandle<Transform2f> TransformHandle;
 
-	DataBatchKey TransformKey() const { return LocalTransformHandle.GetToken(); }
+	DataBatchKey TransformKey() const { return TransformHandle.GetToken(); }
 
 	// Tilemap-specific data (grid dimensions, tile data, etc.)
 	int GridWidth = 0;
 	int GridHeight = 0;
 
 	TilemapSketch(
-		DataBatch<Transform2f>& locals,
-		DataBatch<Transform2f>& worlds,
-		Transform2Hierarchy& hierarchy,
+		World2d& world,
 		const Transform2f& origin,
 		int gridW, int gridH)
 		: GridWidth(gridW), GridHeight(gridH)
 	{
-		LocalTransformHandle = locals.Emplace(origin);
-		WorldTransformHandle = worlds.Emplace(Transform2f::Identity());
-		hierarchy.Register(TransformKey());
+		TransformHandle = world.Transforms.Emplace(origin);
+		world.TransformHierarchy.Register(TransformKey());
 	}
 
-	void SetTransformParent(Transform2Hierarchy& hierarchy, DataBatchKey parentKey)
+	void SetTransformParent(World2d& world, DataBatchKey parentKey)
 	{
-		hierarchy.SetParent(TransformKey(), parentKey);
+		world.TransformHierarchy.SetParent(TransformKey(), parentKey);
 	}
 };
 
 TEST(TransformArchitecture, SceneNodeAndTilemapCoexist)
 {
 	TransformPropagationFixture transformServices;
-	auto& locals = transformServices.Locals;
-	auto& worlds = transformServices.Worlds;
-	auto& hierarchy = transformServices.Hierarchy;
+	auto& world = transformServices.GameWorld;
 	auto& propagation = transformServices.Propagation;
 
 	// Create a scene node as the level root
-	SceneNode2DSketch levelRoot(locals, worlds, hierarchy,
+	SceneNode2DSketch levelRoot(world,
 		Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
 
 	// Create a child scene node
-	SceneNode2DSketch player(locals, worlds, hierarchy,
+	SceneNode2DSketch player(world,
 		Transform2f({ 50.0f, 30.0f }, 0.0f, { 1.0f, 1.0f }));
-	player.SetTransformParent(hierarchy, levelRoot);
+	player.SetTransformParent(world, levelRoot);
 
 	// Create a tilemap (NOT a node) parented under the same level root
-	TilemapSketch tilemap(locals, worlds, hierarchy,
+	TilemapSketch tilemap(world,
 		Transform2f({ -100.0f, -100.0f }, 0.0f, { 1.0f, 1.0f }),
 		64, 64);
-	tilemap.SetTransformParent(hierarchy, levelRoot.TransformKey());
+	tilemap.SetTransformParent(world, levelRoot.TransformKey());
 
 	// Propagate â€” both node and non-node participate equally
 	propagation.Propagate();
 
-	const auto* playerWorld = worlds.TryGet(player.TransformKey());
-	const auto* tilemapWorld = worlds.TryGet(tilemap.TransformKey());
+	const auto* playerWorld = world.Transforms.TryGetWorld(player.TransformKey());
+	const auto* tilemapWorld = world.Transforms.TryGetWorld(tilemap.TransformKey());
 
 	ASSERT_NE(playerWorld, nullptr);
 	ASSERT_NE(tilemapWorld, nullptr);
@@ -681,24 +699,22 @@ TEST(TransformArchitecture, SceneNodeAndTilemapCoexist)
 TEST(TransformArchitecture, TilemapParentedUnderNode)
 {
 	TransformPropagationFixture transformServices;
-	auto& locals = transformServices.Locals;
-	auto& worlds = transformServices.Worlds;
-	auto& hierarchy = transformServices.Hierarchy;
+	auto& world = transformServices.GameWorld;
 	auto& propagation = transformServices.Propagation;
 
 	// Node at (200, 100)
-	SceneNode2DSketch camera(locals, worlds, hierarchy,
+	SceneNode2DSketch camera(world,
 		Transform2f({ 200.0f, 100.0f }, 0.0f, { 1.0f, 1.0f }));
 
 	// Tilemap parented under the node
-	TilemapSketch tilemap(locals, worlds, hierarchy,
+	TilemapSketch tilemap(world,
 		Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }),
 		32, 32);
-	tilemap.SetTransformParent(hierarchy, camera.TransformKey());
+	tilemap.SetTransformParent(world, camera.TransformKey());
 
 	propagation.Propagate();
 
-	const auto* tilemapWorld = worlds.TryGet(tilemap.TransformKey());
+	const auto* tilemapWorld = world.Transforms.TryGetWorld(tilemap.TransformKey());
 	ASSERT_NE(tilemapWorld, nullptr);
 
 	// Tilemap inherits camera's position
@@ -708,39 +724,21 @@ TEST(TransformArchitecture, TilemapParentedUnderNode)
 
 TEST(TransformArchitecture, HandleDestructionCleansUpTransformSlot)
 {
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-	Transform2Hierarchy hierarchy;
+	TransformPropagationFixture transformServices;
+	auto& world = transformServices.GameWorld;
 
 	DataBatchKey key;
 	{
-		TilemapSketch tilemap(locals, worlds, hierarchy,
+		TilemapSketch tilemap(world,
 			Transform2f({ 5.0f, 5.0f }, 0.0f, { 1.0f, 1.0f }),
 			16, 16);
 		key = tilemap.TransformKey();
 
-		EXPECT_TRUE(locals.Contains(key));
-		EXPECT_TRUE(worlds.Contains(key));
+		EXPECT_NE(world.Transforms.TryGetLocal(key), nullptr);
+		EXPECT_NE(world.Transforms.TryGetWorld(key), nullptr);
 		// Tilemap goes out of scope â€” handles destroy, slots freed
 	}
 
-	EXPECT_FALSE(locals.Contains(key));
-	EXPECT_FALSE(worlds.Contains(key));
-}
-
-TEST(TransformArchitecture, PairedKeysMatchWhenAllocatedTogether)
-{
-	// This test verifies the expected allocation pattern:
-	// when you emplace into locals and worlds in lockstep from a fresh
-	// state, the keys match because both batches use sequential counters.
-	DataBatch<Transform2f> locals;
-	DataBatch<Transform2f> worlds;
-
-	auto lh1 = locals.Emplace(Transform2f::Identity());
-	auto wh1 = worlds.Emplace(Transform2f::Identity());
-	EXPECT_EQ(lh1.GetToken().Value, wh1.GetToken().Value);
-
-	auto lh2 = locals.Emplace(Transform2f::Identity());
-	auto wh2 = worlds.Emplace(Transform2f::Identity());
-	EXPECT_EQ(lh2.GetToken().Value, wh2.GetToken().Value);
+	EXPECT_EQ(world.Transforms.TryGetLocal(key), nullptr);
+	EXPECT_EQ(world.Transforms.TryGetWorld(key), nullptr);
 }

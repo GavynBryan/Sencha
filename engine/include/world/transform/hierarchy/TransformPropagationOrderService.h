@@ -2,8 +2,8 @@
 
 #include <core/batch/DataBatch.h>
 #include <core/batch/DataBatchKey.h>
-#include <leaves/transform/core/TransformDefaults.h>
-#include <leaves/transform/hierarchy/TransformHierarchyService.h>
+#include <world/transform/core/TransformServiceTags.h>
+#include <world/transform/hierarchy/TransformHierarchyService.h>
 #include <core/service/IService.h>
 #include <cstdint>
 #include <span>
@@ -21,8 +21,8 @@
 //=============================================================================
 template <
 	typename TDomainTag,
-	typename TLocalTag = TransformDefaults::Tags::LocalTransformTag,
-	typename TWorldTag = TransformDefaults::Tags::WorldTransformTag>
+	typename TLocalTag = TransformServiceTags::LocalTransformTag,
+	typename TWorldTag = TransformServiceTags::WorldTransformTag>
 class TransformPropagationOrderService : public IService
 {
 public:

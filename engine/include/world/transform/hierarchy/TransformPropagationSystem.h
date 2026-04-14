@@ -1,9 +1,9 @@
 #pragma once
 
 #include <core/batch/DataBatch.h>
-#include <leaves/transform/core/TransformDefaults.h>
-#include <leaves/transform/hierarchy/TransformHierarchyService.h>
-#include <leaves/transform/hierarchy/TransformPropagationOrderService.h>
+#include <world/transform/core/TransformServiceTags.h>
+#include <world/transform/hierarchy/TransformHierarchyService.h>
+#include <world/transform/hierarchy/TransformPropagationOrderService.h>
 #include <core/service/ServiceProvider.h>
 #include <core/system/ISystem.h>
 #include <cstdint>
@@ -41,8 +41,8 @@
 template <
 	typename TTransform,
 	typename TDomainTag,
-	typename TLocalTag = TransformDefaults::Tags::LocalTransformTag,
-	typename TWorldTag = TransformDefaults::Tags::WorldTransformTag>
+	typename TLocalTag = TransformServiceTags::LocalTransformTag,
+	typename TWorldTag = TransformServiceTags::WorldTransformTag>
 class TransformPropagationSystem : public ISystem
 {
 public:
@@ -59,11 +59,24 @@ public:
 
 	static constexpr uint32_t NullIndex = CacheType::NullIndex;
 
+	TransformPropagationSystem(
+		DataBatch<TTransform>& locals,
+		DataBatch<TTransform>& worlds,
+		HierarchyType& hierarchy,
+		CacheType& cache)
+		: Locals(locals)
+		, Worlds(worlds)
+		, Hierarchy(hierarchy)
+		, Cache(cache)
+	{
+	}
+
 	explicit TransformPropagationSystem(const ServiceProvider& services)
-		: Locals(services.GetTagged<DataBatch<TTransform>, TLocalTag>())
-		, Worlds(services.GetTagged<DataBatch<TTransform>, TWorldTag>())
-		, Hierarchy(services.Get<HierarchyType>())
-		, Cache(services.Get<CacheType>())
+		: TransformPropagationSystem(
+			services.GetTagged<DataBatch<TTransform>, TLocalTag>(),
+			services.GetTagged<DataBatch<TTransform>, TWorldTag>(),
+			services.Get<HierarchyType>(),
+			services.Get<CacheType>())
 	{
 	}
 

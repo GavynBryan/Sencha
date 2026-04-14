@@ -1,9 +1,9 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <leaves/transform/core/TransformDefaults.h>
-#include <leaves/transform/hierarchy/TransformHierarchyService.h>
-#include <leaves/transform/hierarchy/TransformPropagationOrderService.h>
-#include <leaves/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/transform/core/TransformServiceTags.h>
+#include <world/transform/hierarchy/TransformHierarchyService.h>
+#include <world/transform/hierarchy/TransformPropagationOrderService.h>
+#include <world/transform/hierarchy/TransformPropagationSystem.h>
 #include <core/raii/DataBatchHandle.h>
 #include <core/service/ServiceHost.h>
 #include <core/service/ServiceProvider.h>
@@ -400,11 +400,11 @@ namespace
 	// contiguous fixture in both correctness and performance.
 	struct ProductionPropagationFixture
 	{
-		using Hierarchy3f = TransformHierarchyService<TransformDefaults::Tags::Transform3DTag>;
-		using PropagationOrder3f = TransformPropagationOrderService<TransformDefaults::Tags::Transform3DTag>;
+		using Hierarchy3f = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
+		using PropagationOrder3f = TransformPropagationOrderService<TransformServiceTags::Transform3DTag>;
 		using Propagation3f = TransformPropagationSystem<
 			Transform3f,
-			TransformDefaults::Tags::Transform3DTag>;
+			TransformServiceTags::Transform3DTag>;
 
 		ServiceHost Host;
 		DataBatch<Transform3f>& Locals;
@@ -430,10 +430,10 @@ namespace
 			ProductionBatchMode batchMode)
 			: Locals(Host.AddTaggedService<
 				DataBatch<Transform3f>,
-				TransformDefaults::Tags::LocalTransformTag>())
+				TransformServiceTags::LocalTransformTag>())
 			, Worlds(Host.AddTaggedService<
 				DataBatch<Transform3f>,
-				TransformDefaults::Tags::WorldTransformTag>())
+				TransformServiceTags::WorldTransformTag>())
 			, Hierarchy(Host.AddService<Hierarchy3f>())
 			, PropagationOrder(Host.AddService<PropagationOrder3f>())
 			, Provider(Host)

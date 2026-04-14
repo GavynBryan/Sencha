@@ -416,13 +416,12 @@ TEST(DataBatch, ClearRemovesEverything)
     EXPECT_TRUE(batch.IsEmpty());
 }
 
-TEST(DataBatch, ClearInvalidatesOldKeysAndKeepsFutureKeysMonotonic)
+TEST(DataBatch, ClearInvalidatesOldKeysAndRecyclesSlotsWithNewGeneration)
 {
     DataBatch<Particle> batch;
     auto h1 = batch.Emplace(1.0f, 0.0f, 0.0f);
     auto h2 = batch.Emplace(2.0f, 0.0f, 0.0f);
     const DataBatchKey oldKey = h1.GetToken();
-    const uint32_t previousKeyValue = h2.GetToken().Value;
 
     batch.Clear();
     auto h3 = batch.Emplace(3.0f, 0.0f, 0.0f);
@@ -430,8 +429,27 @@ TEST(DataBatch, ClearInvalidatesOldKeysAndKeepsFutureKeysMonotonic)
     EXPECT_EQ(batch.TryGet(oldKey), nullptr);
     EXPECT_FALSE(batch.Contains(oldKey));
     EXPECT_EQ(batch.IndexOf(oldKey), UINT32_MAX);
-    EXPECT_GT(h3.GetToken().Value, previousKeyValue);
+    EXPECT_EQ(h3.GetToken().Index(), h2.GetToken().Index());
+    EXPECT_GT(h3.GetToken().Generation(), h2.GetToken().Generation());
     EXPECT_NE(batch.TryGet(h3), nullptr);
+}
+
+TEST(DataBatch, ReusedSlotRejectsStaleKeyGeneration)
+{
+    DataBatch<Particle> batch;
+    auto h1 = batch.Emplace(1.0f, 0.0f, 0.0f);
+    const DataBatchKey staleKey = h1.GetToken();
+    const uint32_t reusedIndex = staleKey.Index();
+
+    h1.Reset();
+    auto h2 = batch.Emplace(2.0f, 0.0f, 0.0f);
+
+    EXPECT_EQ(h2.GetToken().Index(), reusedIndex);
+    EXPECT_GT(h2.GetToken().Generation(), staleKey.Generation());
+    EXPECT_EQ(batch.TryGet(staleKey), nullptr);
+    EXPECT_EQ(batch.IndexOf(staleKey), UINT32_MAX);
+    ASSERT_NE(batch.TryGet(h2), nullptr);
+    EXPECT_FLOAT_EQ(batch.TryGet(h2)->X, 2.0f);
 }
 
 TEST(DataBatch, DirtyFlag)
