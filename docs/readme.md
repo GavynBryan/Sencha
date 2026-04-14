@@ -23,7 +23,7 @@ Sencha is early and actively changing. The repository currently contains:
 - Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frames.
 - Vulkan resource caches and helpers: allocator, buffer, image, sampler, shader, pipeline, descriptor, upload context, per-frame scratch, and barrier utilities.
 - A `Renderer` host with pluggable render features, starting with an immediate-mode `SpriteFeature` for batched sprite draws.
-- A `World` domain covering transform hierarchy propagation, scene nodes, and a 2D tilemap.
+- A `World` domain covering transform hierarchy propagation, reusable transform nodes, and a 2D tilemap.
 - GoogleTest coverage across core, math/geometry, world, and render code.
 - Examples for input mapping, SDL/Vulkan window startup, transform hierarchy stress testing, and a `JasmineGreen` sprite sample.
 
@@ -45,14 +45,13 @@ engine/
       features/
     window/
     world/
-      scene/
       tilemap/
       transform/
   src/
     (mirrors include/)
 ```
 
-Core contains bootstrap infrastructure. Math carries reusable value types and geometry. Input and window own their public API plus SDL-backed implementations. Render is split into `backend/` for backend-specific services (currently Vulkan) and `features/` for pluggable draw features driven by the `Renderer`. World holds engine-facing gameplay-adjacent systems: transform hierarchy propagation, scene nodes, and tilemaps.
+Core contains bootstrap infrastructure. Math carries reusable value types and geometry. Input and window own their public API plus SDL-backed implementations. Render is split into `backend/` for backend-specific services (currently Vulkan) and `features/` for pluggable draw features driven by the `Renderer`. World holds engine-facing gameplay-adjacent systems: transform domains, hierarchy propagation, reusable transform nodes, and tilemaps.
 
 ### Core
 
@@ -90,6 +89,27 @@ World groups engine features that sit on top of the smaller domains:
 
 - `world/transform` — `TransformDomain` (a self-contained transform space), `TransformStore`, `TransformHierarchyService`, propagation order/system, and `TransformNode` for rule-of-zero hierarchy participation.
 - `world/tilemap` — `Tilemap2d` for 2D tile grids.
+
+### ECS Stance
+
+Sencha is a **hybrid, data-oriented engine, not a purist ECS**. There is no god-world, no `EntityId`, no `IComponent` base class, no virtual `Update()`, and no central registry that owns all gameplay state. Contributors should not add any of those.
+
+The primitives are:
+
+- **`DataBatch<T>`** — a dense, cache-friendly store for one component type. Anyone can own one.
+- **`DataBatchKey`** — a stable key that cross-references slots between batches.
+- **`DataBatchHandle<T>`** — RAII ownership of a single batch slot. When it drops, the slot frees.
+- **`TransformDomain<T>`** — a self-contained transform space (batches + hierarchy + propagation cache). `World` owns one; UI, editor, or any other subsystem can own its own.
+- **`ISystem`** — a function that sweeps one or more batches in a defined `SystemPhase`.
+
+Gameplay authoring happens in two modes, both built on the same primitives:
+
+1. **Programmer-authored:** plain C++ structs compose `TransformNode` and other handles by value, hold their own state, and expose their own non-virtual `Update(dt)` called by whoever owns the container. No registry, no framework.
+2. **Data-authored (editor/prefab):** a component-type registry maps serialized blobs into batch slots. A spawned prefab is a RAII handle bundle that owns one slot per component. The same batches and systems back both paths.
+
+Ticking happens in systems that sweep batches — never through virtual dispatch on individual game objects. Cold components (e.g. a `PlayerCharacterController` with one instance) are just small batches with their own small system; the engine does not distinguish "hot" and "cold" components structurally.
+
+When in doubt: **compose, don't inherit. Own by value, not by pointer. Sweep batches, don't dispatch virtuals.** If a change would require adding a virtual method to an engine primitive, it's solving the wrong problem.
 
 ## Repository Layout
 ```text
