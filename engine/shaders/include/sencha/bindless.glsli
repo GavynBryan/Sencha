@@ -1,0 +1,19 @@
+// sencha/bindless.glsli
+//
+// Bindless sampled-image array declaration shared by all built-in Sencha
+// fragment shaders that sample textures via per-instance integer indices.
+//
+// The array lives at set 1, binding 0 (UPDATE_AFTER_BIND + PARTIALLY_BOUND),
+// matching VulkanDescriptorCache::kBindlessImageCapacity entries.
+//
+// Usage:
+//   #extension GL_EXT_nonuniform_qualifier : require
+//   #include "sencha/bindless.glsli"
+//   ... texture(uImages[nonuniformEXT(idx)], uv) ...
+
+#ifndef SENCHA_BINDLESS_GLSLI
+#define SENCHA_BINDLESS_GLSLI
+
+layout(set = 1, binding = 0) uniform sampler2D uImages[];
+
+#endif // SENCHA_BINDLESS_GLSLI

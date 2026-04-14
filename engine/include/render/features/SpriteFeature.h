@@ -2,6 +2,7 @@
 
 #include <render/Renderer.h>
 #include <render/backend/vulkan/VulkanDescriptorCache.h>
+#include <render/backend/vulkan/VulkanPipelineCache.h>
 #include <render/backend/vulkan/VulkanShaderCache.h>
 #include <vulkan/vulkan.h>
 
@@ -149,6 +150,11 @@ private:
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline CachedPipeline = VK_NULL_HANDLE;
     VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
+
+    // Pipeline state loaded from sprite.shader at Setup() time.
+    // VertexShader, FragmentShader, Layout, VertexAttributes, and ColorFormats
+    // are NOT included here -- BuildPipeline() fills them in per call.
+    GraphicsPipelineDesc MetaDesc;
 
     std::vector<Sprite> Pending;
     bool Valid = false;
