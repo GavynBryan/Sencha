@@ -27,6 +27,15 @@ add_library(sencha::engine ALIAS sencha_engine)
 target_include_directories(sencha_engine PUBLIC ${SENCHA_ENGINE_INCLUDE_DIR})
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 
+include(FetchContent)
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        ae721c50eaf761660b4f90cc590453cdb0c2acd0 # stb_image 2.30
+)
+FetchContent_MakeAvailable(stb)
+target_include_directories(sencha_engine PRIVATE ${stb_SOURCE_DIR})
+
 if(SENCHA_ENABLE_VULKAN)
     find_package(Vulkan REQUIRED)
     target_link_libraries(sencha_engine PUBLIC Vulkan::Vulkan)
