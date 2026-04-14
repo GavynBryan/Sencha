@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 class VulkanDeviceService;
@@ -157,7 +158,19 @@ public:
     // Take ownership of a feature and run its Setup() immediately. The
     // feature is inserted into its phase bucket in insertion order. Safe
     // to call any time before DrawFrame, typically at game boot.
-    void AddFeature(std::unique_ptr<IRenderFeature> feature);
+    //
+    // Returns the raw pointer so game code can keep a handle for things
+    // like calling Submit() on a sprite feature. Lifetime is tied to the
+    // Renderer itself -- safe to dereference until ~Renderer runs.
+    template <typename T>
+    T* AddFeature(std::unique_ptr<T> feature)
+    {
+        static_assert(std::is_base_of_v<IRenderFeature, T>,
+                      "T must derive from IRenderFeature");
+        T* raw = feature.get();
+        AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()));
+        return raw;
+    }
 
     // One-call frame driver: acquire -> scratch rotate -> phase iterate ->
     // transition -> present. Returns SwapchainOutOfDate if the caller
@@ -178,5 +191,6 @@ private:
     std::vector<IRenderFeature*> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
     std::vector<VkImageLayout> ImageLayouts;
 
+    void AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
     void RecordMainColorPhase(const VulkanFrame& frame);
 };

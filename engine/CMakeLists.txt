@@ -55,7 +55,12 @@ if(SENCHA_ENABLE_VULKAN)
         GIT_TAG        14.3.0
     )
     FetchContent_MakeAvailable(glslang)
-    target_link_libraries(sencha_engine PUBLIC glslang::glslang glslang::SPIRV)
+    target_link_libraries(sencha_engine
+        PUBLIC
+            glslang::glslang
+            glslang::SPIRV
+            glslang-default-resource-limits
+    )
 endif()
 
 # Compatibility target for apps/examples that already link `engine`.

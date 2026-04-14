@@ -78,7 +78,7 @@ Renderer::~Renderer()
     }
 }
 
-void Renderer::AddFeature(std::unique_ptr<IRenderFeature> feature)
+void Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
 {
     if (!Valid || feature == nullptr) return;
 
