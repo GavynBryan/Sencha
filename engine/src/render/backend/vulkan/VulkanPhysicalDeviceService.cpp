@@ -127,11 +127,17 @@ int VulkanPhysicalDeviceService::RateDevice(
         return -1;
     }
 
-    // Sencha floor: Vulkan 1.3 core with synchronization2 + dynamicRendering.
-    // Every renderer service downstream assumes both are on.
+    // Sencha floor: Vulkan 1.3 core with synchronization2 + dynamicRendering,
+    // plus the Vulkan 1.2 descriptor-indexing feature set that the bindless
+    // descriptor cache relies on. Every renderer service downstream assumes
+    // all of these are on.
     {
+        VkPhysicalDeviceVulkan12Features v12{};
+        v12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+
         VkPhysicalDeviceVulkan13Features v13{};
         v13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        v13.pNext = &v12;
 
         VkPhysicalDeviceFeatures2 features2{};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -140,6 +146,16 @@ int VulkanPhysicalDeviceService::RateDevice(
         vkGetPhysicalDeviceFeatures2(device, &features2);
 
         if (!v13.synchronization2 || !v13.dynamicRendering)
+        {
+            return -1;
+        }
+
+        if (!v12.descriptorIndexing
+            || !v12.runtimeDescriptorArray
+            || !v12.descriptorBindingPartiallyBound
+            || !v12.descriptorBindingVariableDescriptorCount
+            || !v12.descriptorBindingSampledImageUpdateAfterBind
+            || !v12.shaderSampledImageArrayNonUniformIndexing)
         {
             return -1;
         }

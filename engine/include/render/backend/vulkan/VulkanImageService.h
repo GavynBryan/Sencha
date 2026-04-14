@@ -21,13 +21,18 @@ class VulkanUploadContextService;
 //
 // The service deliberately handles only the 90% path: 2D color images,
 // single array layer, optional mip chain, default whole-image view.
-// Cubemaps, 3D textures, and non-default views are out of scope until a
-// feature actually needs them.
+// Cubemap, volumetric, and non-default-view images are out of scope until
+// a feature actually needs them.
+//
+// This service deals in Vulkan images, not "textures". A higher layer
+// (resource cache / asset system) composes ImageHandles with sampler
+// state into whatever Sencha-level Texture type the engine exposes to
+// gameplay code.
 //
 // Upload() is synchronous, blocking on a fence, and transitions the image
-// to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL when it returns. The bindless
-// texture array in the descriptor cache (step 7) expects every bound image
-// to sit in that layout.
+// to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL when it returns. The
+// bindless sampled-image array in VulkanDescriptorCache expects every
+// bound image to sit in that layout.
 //
 // Upload runs on the graphics queue to avoid queue-family ownership
 // transfers. Same rationale as VulkanBufferService.
