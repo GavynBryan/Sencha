@@ -9,8 +9,8 @@
 // and Detach on destruction, enabling RAII ownership across unrelated
 // subsystems (batches, pools, registries, etc.).
 //
-// The uint64_t token is an owner-interpreted opaque slot. RefBatch decodes it
-// as a pointer; DataBatch decodes it as a compact key value.
+// The uint64_t token is an owner-interpreted opaque slot. InstanceRegistry
+// decodes it as a pointer; DataBatch decodes it as a compact key value.
 //=============================================================================
 class ILifetimeOwner
 {

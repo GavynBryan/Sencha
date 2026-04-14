@@ -33,25 +33,23 @@ namespace WorldSetup {
 	{
 		World2d& world = GetOrAddWorld2d(serviceHost);
 
-		systemHost.AddSystem<TransformPropagationSystem<
-			Transform2f>>(
-				SystemPhase::PostUpdate,
-				world.GetLocalTransformsForSystems(),
-				world.GetWorldTransformsForSystems(),
-				world.TransformHierarchy,
-				world.GetTransformPropagationOrderForSystems());
+		systemHost.AddSystem<TransformPropagationSystem<Transform2f>>(
+			SystemPhase::PostUpdate,
+			world.LocalTransforms,
+			world.WorldTransforms,
+			world.TransformHierarchyStorage,
+			world.PropagationOrder);
 	}
 
 	void Setup3D(ServiceHost& serviceHost, SystemHost& systemHost)
 	{
 		World3d& world = GetOrAddWorld3d(serviceHost);
 
-		systemHost.AddSystem<TransformPropagationSystem<
-			Transform3f>>(
-				SystemPhase::PostUpdate,
-				world.GetLocalTransformsForSystems(),
-				world.GetWorldTransformsForSystems(),
-				world.TransformHierarchy,
-				world.GetTransformPropagationOrderForSystems());
+		systemHost.AddSystem<TransformPropagationSystem<Transform3f>>(
+			SystemPhase::PostUpdate,
+			world.LocalTransforms,
+			world.WorldTransforms,
+			world.TransformHierarchyStorage,
+			world.PropagationOrder);
 	}
 }

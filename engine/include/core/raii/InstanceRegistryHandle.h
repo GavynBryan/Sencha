@@ -2,16 +2,16 @@
 #include <core/raii/LifetimeHandle.h>
 
 //=============================================================================
-// RefBatchHandle<T>
+// InstanceRegistryHandle<T>
 //
-// Typed alias for LifetimeHandle<T, T*>, used with RefBatch<T>.
+// Typed alias for LifetimeHandle<T, T*>, used with InstanceRegistry<T>.
 //
-// Construction registers a pointer into a RefBatch; destruction removes it.
+// Construction registers a pointer into the registry; destruction removes it.
 // GetToken() returns T*.
 //
 // Usage:
-//   RefBatchHandle<IRenderable> handle(&renderableBatch, &myRenderable);
+//   InstanceRegistryHandle<IRenderable> handle(&renderableRegistry, &myRenderable);
 //   IRenderable* ptr = handle.GetToken();   // typed access
 //=============================================================================
 template<typename T>
-using RefBatchHandle = LifetimeHandle<T, T*>;
+using InstanceRegistryHandle = LifetimeHandle<T, T*>;
