@@ -9,35 +9,37 @@
 #include <vector>
 
 //=============================================================================
-// RefBatch<T>
+// InstanceRegistry<T>
 //
-// Templated service that maintains a contiguous array of pointers to all
-// active instances of a specific type. Does NOT own the pointed-to objects.
-// Enables ECS-style iteration patterns where systems iterate directly over
-// typed arrays rather than all entities.
+// Non-owning pointer registry for externally-lived instances of T. Maintains
+// a contiguous array of active pointers so systems can sweep every instance
+// of a type without walking the owning gameplay objects. The registry does
+// NOT own the pointed-to objects — their lifetime is the caller's problem,
+// and InstanceRegistryHandle only guarantees that Detach runs before the
+// pointed-to object goes away.
 //
-// Implements ILifetimeOwner so that LifetimeHandle (or RefBatchHandle)
-// can manage registration via RAII.
+// Use this when you want:
+//   - O(1) registration / deregistration via Attach/Detach (ILifetimeOwner)
+//   - Flat iteration over every live instance of T for a system pass
+//   - Optional dirty flag for lazy resorting / filtering
 //
-// Features:
-//   - O(1) add and duplicate checking
-//   - O(1) removal via swap-and-pop
-//   - Automatic cleanup via RefBatchHandle RAII
-//   - Optional dirty flag for lazy operations (sorting, filtering)
+// Do NOT use this when hot data (transforms, meshes, rigidbodies) should
+// live in SoA form — that's what DataBatch<T> is for. InstanceRegistry<T>
+// stores T* and is appropriate for objects whose storage already exists
+// elsewhere (components on gameplay objects, subsystems, etc.).
 //
 // Usage:
-//   // In game setup:
-//   services.AddService<RefBatch<RigidBody2DComponent>>();
+//   services.AddService<InstanceRegistry<IRenderable>>();
 //
-//   // In component constructor:
-//   handles.emplace_back(&services.Get<RefBatch<RigidBody2DComponent>>(), this);
+//   // in the owning object:
+//   InstanceRegistryHandle<IRenderable> handle(&registry, this);
 //
-//   // In system:
-//   for (auto* rb : services.Get<RefBatch<RigidBody2DComponent>>().GetItems())
-//       ApplyGravity(rb);
+//   // in a system:
+//   for (auto* r : registry.GetItems())
+//       r->Draw();
 //=============================================================================
 template<typename T>
-class RefBatch : public ILifetimeOwner, public IService
+class InstanceRegistry : public ILifetimeOwner, public IService
 {
 public:
 	// -- ILifetimeOwner -----------------------------------------------------
@@ -75,7 +77,7 @@ public:
 		auto it = IndexMap.find(item);
 		if (it == IndexMap.end())
 		{
-			return; // Not in batch
+			return; // Not registered
 		}
 
 		size_t indexToRemove = it->second;

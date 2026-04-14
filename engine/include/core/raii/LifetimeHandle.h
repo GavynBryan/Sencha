@@ -21,8 +21,8 @@
 // implements ILifetimeOwner (batches, pools, registries, etc.).
 //
 // Common aliases:
-//   RefBatchHandle<T>  = LifetimeHandle<T, T*>
-//   DataBatchHandle<T> = LifetimeHandle<T, DataBatchKey>
+//   InstanceRegistryHandle<T> = LifetimeHandle<T, T*>
+//   DataBatchHandle<T>        = LifetimeHandle<T, DataBatchKey>
 //=============================================================================
 template<typename T, typename KeyT>
 class LifetimeHandle

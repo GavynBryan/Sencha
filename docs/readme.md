@@ -59,8 +59,8 @@ Core contains:
 - `ServiceHost`, `ServiceProvider`, and `IService` for explicit service registration and lookup.
 - `SystemHost` and `ISystem` for ordered system execution.
 - `LoggingProvider`, `Logger`, `ConsoleLogSink`, `FileLogSink`, and `LogLevel`.
-- `LifetimeHandle<T, KeyT>`, `DataBatchHandle<T>`, `RefBatchHandle<T>`, and `ILifetimeOwner` for typed RAII attach/detach lifetimes.
-- `RefBatch<T>` for tracking externally-owned objects with O(1) swap-and-pop removal.
+- `LifetimeHandle<T, KeyT>`, `DataBatchHandle<T>`, `InstanceRegistryHandle<T>`, and `ILifetimeOwner` for typed RAII attach/detach lifetimes.
+- `InstanceRegistry<T>` for tracking externally-owned instances of a type with O(1) swap-and-pop removal.
 - `DataBatch<T>` for owning dense, cache-friendly vectors of data.
 - `EventBuffer<T>` for frame-local event accumulation.
 - `JsonParser` and `JsonValue` for load-time configuration.
