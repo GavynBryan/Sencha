@@ -20,9 +20,12 @@ Sencha is early and actively changing. The repository currently contains:
 - An input mapping pipeline that compiles JSON config into runtime binding tables.
 - Basic math, identity, and window abstraction types.
 - SDL3-backed window, video, and input ingestion services.
-- Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frame flow.
-- GoogleTest coverage for core, math/geometry, and engine feature code.
-- Small examples for input mapping and SDL/Vulkan window startup.
+- Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frames.
+- Vulkan resource caches and helpers: allocator, buffer, image, sampler, shader, pipeline, descriptor, upload context, per-frame scratch, and barrier utilities.
+- A `Renderer` host with pluggable render features, starting with an immediate-mode `SpriteFeature` for batched sprite draws.
+- A `World` domain covering transform hierarchy propagation, scene nodes, and a 2D tilemap.
+- GoogleTest coverage across core, math/geometry, world, and render code.
+- Examples for input mapping, SDL/Vulkan window startup, transform hierarchy stress testing, and a `JasmineGreen` sprite sample.
 
 The engine is still more framework than finished product. APIs may move while the foundation settles.
 
@@ -35,22 +38,21 @@ engine/
   include/
     core/
     input/
-    leaves/transform/
     math/
       geometry/
-    render/backend/
+    render/
+      backend/vulkan/
+      features/
     window/
+    world/
+      scene/
+      tilemap/
+      transform/
   src/
-    core/
-    input/
-    leaves/transform/
-    math/
-      geometry/
-    render/backend/
-    window/
+    (mirrors include/)
 ```
 
-The old layer names are gone. Core contains the bootstrap infrastructure, math carries reusable value types and geometry, input and window own their public API plus SDL-backed implementations, render/backend contains backend-specific rendering services, and leaves/transform contains transform defaults and hierarchy propagation.
+Core contains bootstrap infrastructure. Math carries reusable value types and geometry. Input and window own their public API plus SDL-backed implementations. Render is split into `backend/` for backend-specific services (currently Vulkan) and `features/` for pluggable draw features driven by the `Renderer`. World holds engine-facing gameplay-adjacent systems: transform hierarchy propagation, scene nodes, and tilemaps.
 
 ### Core
 
@@ -78,11 +80,17 @@ Current integrations include:
 
 - SDL3 video and window services.
 - SDL3 input ingestion and control resolution.
-- Vulkan instance, physical device, logical device, queue, surface, swapchain, and frame services.
+- Vulkan bootstrap: instance, physical device, logical device, queues, surface, swapchain, and frame services.
+- Vulkan resource layer: allocator, buffer, image, sampler cache, shader cache, pipeline cache, descriptor cache, upload context, per-frame scratch ring, and barrier helpers.
+- A `Renderer` that owns render features and drives per-frame work. `SpriteFeature` provides immediate-mode batched sprite rendering on top of the Vulkan backend.
 
-### Leaves
+### World
 
-Leaves are engine features that sit on top of the smaller domains. Transform hierarchy defaults and propagation live under `leaves/transform`.
+World groups engine features that sit on top of the smaller domains:
+
+- `world/transform` — `TransformStore`, `TransformHierarchyService`, propagation order and system for hierarchical transform updates.
+- `world/scene` — `SceneNode` and `SceneNodeCore` for scene-graph composition.
+- `world/tilemap` — `Tilemap2d` for 2D tile grids.
 
 ## Repository Layout
 ```text
@@ -135,10 +143,22 @@ Input mapping example:
 .\build\example\SenchaInputSystem\SenchaInputSystem.exe
 ```
 
+Transform hierarchy propagation stress test:
+
+```powershell
+.\build\example\TransformHierarchyStressTest\TransformHierarchyStressTest.exe
+```
+
 SDL/Vulkan window example, when Vulkan is enabled:
 
 ```powershell
 .\build\example\SdlVulkanWindow\SdlVulkanWindow.exe
+```
+
+JasmineGreen sprite example, when Vulkan is enabled:
+
+```powershell
+.\build\example\JasmineGreen\JasmineGreen.exe
 ```
 
 ## Design Notes
