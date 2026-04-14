@@ -6,8 +6,7 @@
 #include <world/transform/TransformPropagationSystem.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/World2d.h>
-#include <world/World3d.h>
+#include <world/World.h>
 
 namespace WorldSetup {
 

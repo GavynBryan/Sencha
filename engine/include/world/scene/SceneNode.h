@@ -8,8 +8,7 @@
 #include <world/transform/TransformHierarchyRegistration.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformStore.h>
-#include <world/World2d.h>
-#include <world/World3d.h>
+#include <world/World.h>
 
 //=============================================================================
 // SceneNodeWorldTraits<TTransform>

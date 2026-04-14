@@ -8,8 +8,7 @@
 #include <world/transform/TransformPropagationSystem.h>
 #include <world/scene/SceneNode.h>
 #include <world/tilemap/Tilemap2d.h>
-#include <world/World2d.h>
-#include <world/World3d.h>
+#include <world/World.h>
 #include <core/raii/DataBatchHandle.h>
 #include <core/service/ServiceHost.h>
 #include <cmath>

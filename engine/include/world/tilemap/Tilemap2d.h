@@ -4,7 +4,7 @@
 #include <core/raii/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <world/transform/TransformHierarchyRegistration.h>
-#include <world/World2d.h>
+#include <world/World.h>
 #include <cstdint>
 #include <vector>
 
