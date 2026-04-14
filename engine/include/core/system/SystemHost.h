@@ -97,12 +97,17 @@ inline void SystemHost::Update()
 
 inline void SystemHost::Shutdown()
 {
-	// Shutdown in reverse order
+	// Shutdown and destroy in reverse order (LIFO). Registry cleared first
+	// so any lookups from within a system's destructor can't land on a
+	// sibling whose unique_ptr is about to be reset.
 	for (auto it = Systems.rbegin(); it != Systems.rend(); ++it) {
 		it->System->Shutdown();
 	}
-	Systems.clear();
 	Registry.clear();
+	while (!Systems.empty())
+	{
+		Systems.pop_back();
+	}
 	Initialized = false;
 }
 
