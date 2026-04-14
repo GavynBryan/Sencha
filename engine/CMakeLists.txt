@@ -30,6 +30,17 @@ target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 if(SENCHA_ENABLE_VULKAN)
     find_package(Vulkan REQUIRED)
     target_link_libraries(sencha_engine PUBLIC Vulkan::Vulkan)
+
+    include(FetchContent)
+    set(VMA_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+    set(VMA_BUILD_SAMPLES       OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        VulkanMemoryAllocator
+        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+        GIT_TAG v3.2.1
+    )
+    FetchContent_MakeAvailable(VulkanMemoryAllocator)
+    target_link_libraries(sencha_engine PUBLIC GPUOpen::VulkanMemoryAllocator)
 endif()
 
 # Compatibility target for apps/examples that already link `engine`.

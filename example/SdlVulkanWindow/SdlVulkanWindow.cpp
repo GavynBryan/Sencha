@@ -3,6 +3,7 @@
 #include <window/SdlWindow.h>
 #include <window/SdlWindowService.h>
 #include <core/service/ServiceHost.h>
+#include <render/backend/vulkan/VulkanAllocatorService.h>
 #include <render/backend/vulkan/VulkanBarriers.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
@@ -158,6 +159,12 @@ int main()
 
     VulkanQueueService queues(logging, device, physicalDevice, vulkanPolicy);
     if (!queues.IsValid())
+    {
+        return 1;
+    }
+
+    VulkanAllocatorService allocator(logging, instance, physicalDevice, device);
+    if (!allocator.IsValid())
     {
         return 1;
     }
