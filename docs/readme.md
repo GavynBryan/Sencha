@@ -88,8 +88,7 @@ Current integrations include:
 
 World groups engine features that sit on top of the smaller domains:
 
-- `world/transform` — `TransformStore`, `TransformHierarchyService`, propagation order and system for hierarchical transform updates.
-- `world/scene` — `SceneNode` and `SceneNodeCore` for scene-graph composition.
+- `world/transform` — `TransformDomain` (a self-contained transform space), `TransformStore`, `TransformHierarchyService`, propagation order/system, and `TransformNode` for rule-of-zero hierarchy participation.
 - `world/tilemap` — `Tilemap2d` for 2D tile grids.
 
 ## Repository Layout

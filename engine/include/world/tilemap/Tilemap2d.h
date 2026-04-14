@@ -3,19 +3,19 @@
 #include <core/batch/DataBatchKey.h>
 #include <core/raii/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
+#include <world/transform/TransformDomain.h>
 #include <world/transform/TransformHierarchyRegistration.h>
-#include <world/World.h>
 #include <cstdint>
 #include <vector>
 
 //=============================================================================
 // Tilemap2d
 //
-// A gameplay object that owns a transform in World2d and participates in the
-// transform hierarchy WITHOUT being a SceneNode. Proof that the transform
-// system is a flat service any gameplay type can opt into by holding a
-// DataBatchHandle + TransformHierarchyRegistration — inheritance from
-// SceneNode is not required.
+// A gameplay object that owns a transform in a 2D TransformDomain and
+// participates in the transform hierarchy WITHOUT going through TransformNode.
+// Proof that hierarchy participation is a flat capability any type can opt
+// into by holding a DataBatchHandle + TransformHierarchyRegistration against
+// the domain — composing TransformNode is convenient, not required.
 //
 // The tilemap owns exactly one transform (the grid origin). Individual tiles
 // are not transforms; they are cells in the grid addressed by (col, row) and
@@ -27,13 +27,13 @@ class Tilemap2d
 {
 public:
 	Tilemap2d(
-		World2d& world,
+		TransformDomain<Transform2f>& domain,
 		const Transform2f& origin,
 		uint32_t gridWidth,
 		uint32_t gridHeight,
 		float tileSize)
-		: Handle(world.Transforms.Emplace(origin))
-		, Registration(world.TransformHierarchy, Handle.GetToken())
+		: Handle(domain.Transforms.Emplace(origin))
+		, Registration(domain.Hierarchy, Handle.GetToken())
 		, GridWidth(gridWidth)
 		, GridHeight(gridHeight)
 		, TileSize(tileSize)

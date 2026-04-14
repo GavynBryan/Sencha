@@ -3,10 +3,10 @@
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
 #include <core/system/SystemPhase.h>
-#include <world/transform/TransformPropagationSystem.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/World.h>
+#include <world/transform/TransformPropagationSystem.h>
 
 namespace WorldSetup {
 
@@ -34,10 +34,10 @@ namespace WorldSetup {
 
 		systemHost.AddSystem<TransformPropagationSystem<Transform2f>>(
 			SystemPhase::PostUpdate,
-			world.LocalTransforms,
-			world.WorldTransforms,
-			world.TransformHierarchyStorage,
-			world.PropagationOrder);
+			world.Domain.LocalTransforms,
+			world.Domain.WorldTransforms,
+			world.Domain.Hierarchy,
+			world.Domain.PropagationOrder);
 	}
 
 	void Setup3D(ServiceHost& serviceHost, SystemHost& systemHost)
@@ -46,9 +46,9 @@ namespace WorldSetup {
 
 		systemHost.AddSystem<TransformPropagationSystem<Transform3f>>(
 			SystemPhase::PostUpdate,
-			world.LocalTransforms,
-			world.WorldTransforms,
-			world.TransformHierarchyStorage,
-			world.PropagationOrder);
+			world.Domain.LocalTransforms,
+			world.Domain.WorldTransforms,
+			world.Domain.Hierarchy,
+			world.Domain.PropagationOrder);
 	}
 }
