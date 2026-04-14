@@ -127,6 +127,24 @@ int VulkanPhysicalDeviceService::RateDevice(
         return -1;
     }
 
+    // Sencha floor: Vulkan 1.3 core with synchronization2 + dynamicRendering.
+    // Every renderer service downstream assumes both are on.
+    {
+        VkPhysicalDeviceVulkan13Features v13{};
+        v13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &v13;
+
+        vkGetPhysicalDeviceFeatures2(device, &features2);
+
+        if (!v13.synchronization2 || !v13.dynamicRendering)
+        {
+            return -1;
+        }
+    }
+
     auto families = FindQueueFamilies(device);
     if (!families.Satisfies(policy.RequiredQueues))
     {

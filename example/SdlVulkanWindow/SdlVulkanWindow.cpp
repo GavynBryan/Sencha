@@ -3,6 +3,7 @@
 #include <window/SdlWindow.h>
 #include <window/SdlWindowService.h>
 #include <core/service/ServiceHost.h>
+#include <render/backend/vulkan/VulkanBarriers.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
 #include <render/backend/vulkan/VulkanFrameService.h>
@@ -23,43 +24,6 @@ class SdlVulkanWindowExample
 
 namespace
 {
-    void TransitionImage(VkCommandBuffer commandBuffer,
-                         VkImage image,
-                         VkImageLayout oldLayout,
-                         VkImageLayout newLayout,
-                         VkAccessFlags srcAccess,
-                         VkAccessFlags dstAccess,
-                         VkPipelineStageFlags srcStage,
-                         VkPipelineStageFlags dstStage)
-    {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcAccessMask = srcAccess;
-        barrier.dstAccessMask = dstAccess;
-        barrier.oldLayout = oldLayout;
-        barrier.newLayout = newLayout;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-
-        vkCmdPipelineBarrier(
-            commandBuffer,
-            srcStage,
-            dstStage,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr,
-            1,
-            &barrier);
-    }
-
     void RecordClearFrame(const VulkanFrame& frame,
                           std::vector<VkImageLayout>& imageLayouts)
     {
@@ -69,15 +33,7 @@ namespace
             oldLayout = imageLayouts[frame.ImageIndex];
         }
 
-        TransitionImage(
-            frame.CommandBuffer,
-            frame.SwapchainImage,
-            oldLayout,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            0,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VulkanBarriers::TransitionForClear(frame.CommandBuffer, frame.SwapchainImage, oldLayout);
 
         VkClearColorValue clearColor{ { 0.05f, 0.09f, 0.12f, 1.0f } };
         VkImageSubresourceRange range{};
@@ -95,15 +51,10 @@ namespace
             1,
             &range);
 
-        TransitionImage(
+        VulkanBarriers::TransitionForPresent(
             frame.CommandBuffer,
             frame.SwapchainImage,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            0,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
         if (frame.ImageIndex < imageLayouts.size())
         {
