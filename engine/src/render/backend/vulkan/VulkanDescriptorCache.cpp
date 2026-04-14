@@ -5,7 +5,7 @@
 namespace
 {
     constexpr uint32_t kFrameUboBinding = 0;
-    constexpr uint32_t kBindlessImageBinding = 1;
+    constexpr uint32_t kBindlessImageBinding = 0;
 
     bool PushConstantsEqual(const std::vector<VkPushConstantRange>& a,
                             const std::vector<VkPushConstantRange>& b)
@@ -36,8 +36,8 @@ VulkanDescriptorCache::VulkanDescriptorCache(LoggingProvider& logging,
         return;
     }
 
-    if (!CreatePoolAndLayout()) return;
-    if (!AllocateSet()) return;
+    if (!CreatePoolAndLayouts()) return;
+    if (!AllocateSets()) return;
 
     Valid = true;
 }
@@ -53,10 +53,16 @@ VulkanDescriptorCache::~VulkanDescriptorCache()
     }
     PipelineLayouts.clear();
 
-    if (SetLayout != VK_NULL_HANDLE)
+    if (BindlessSetLayout != VK_NULL_HANDLE)
     {
-        vkDestroyDescriptorSetLayout(Device, SetLayout, nullptr);
-        SetLayout = VK_NULL_HANDLE;
+        vkDestroyDescriptorSetLayout(Device, BindlessSetLayout, nullptr);
+        BindlessSetLayout = VK_NULL_HANDLE;
+    }
+
+    if (FrameSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(Device, FrameSetLayout, nullptr);
+        FrameSetLayout = VK_NULL_HANDLE;
     }
 
     if (Pool != VK_NULL_HANDLE)
@@ -67,7 +73,7 @@ VulkanDescriptorCache::~VulkanDescriptorCache()
     }
 }
 
-bool VulkanDescriptorCache::CreatePoolAndLayout()
+bool VulkanDescriptorCache::CreatePoolAndLayouts()
 {
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -78,7 +84,7 @@ bool VulkanDescriptorCache::CreatePoolAndLayout()
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-    poolInfo.maxSets = 1;
+    poolInfo.maxSets = 2;
     poolInfo.poolSizeCount = 2;
     poolInfo.pPoolSizes = poolSizes;
 
@@ -88,66 +94,103 @@ bool VulkanDescriptorCache::CreatePoolAndLayout()
         return false;
     }
 
-    VkDescriptorSetLayoutBinding bindings[2]{};
-    bindings[0].binding = kFrameUboBinding;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    bindings[1].binding = kBindlessImageBinding;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = kBindlessImageCapacity;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorBindingFlags bindingFlags[2]{};
-    bindingFlags[0] = 0;
-    bindingFlags[1] =
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-        VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
-
-    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
-    flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flagsInfo.bindingCount = 2;
-    flagsInfo.pBindingFlags = bindingFlags;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.pNext = &flagsInfo;
-    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layoutInfo.bindingCount = 2;
-    layoutInfo.pBindings = bindings;
-
-    if (vkCreateDescriptorSetLayout(Device, &layoutInfo, nullptr, &SetLayout) != VK_SUCCESS)
+    // Set 0: frame UBO (dynamic). Kept in its own layout so it can stay a
+    // dynamic UBO without tripping VUID-03001, which forbids dynamic UBO or
+    // SSBO bindings from living alongside UPDATE_AFTER_BIND bindings.
     {
-        Log.Error("vkCreateDescriptorSetLayout failed");
-        return false;
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = kFrameUboBinding;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &binding;
+
+        if (vkCreateDescriptorSetLayout(Device, &layoutInfo, nullptr, &FrameSetLayout) != VK_SUCCESS)
+        {
+            Log.Error("vkCreateDescriptorSetLayout(frame) failed");
+            return false;
+        }
+    }
+
+    // Set 1: bindless sampled-image array. Partially-bound + update-after-bind
+    // + variable-count so the set never needs rebuilding while game code
+    // streams images in.
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = kBindlessImageBinding;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = kBindlessImageCapacity;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorBindingFlags bindingFlag =
+            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+            VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
+        flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        flagsInfo.bindingCount = 1;
+        flagsInfo.pBindingFlags = &bindingFlag;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pNext = &flagsInfo;
+        layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &binding;
+
+        if (vkCreateDescriptorSetLayout(Device, &layoutInfo, nullptr, &BindlessSetLayout) != VK_SUCCESS)
+        {
+            Log.Error("vkCreateDescriptorSetLayout(bindless) failed");
+            return false;
+        }
     }
 
     return true;
 }
 
-bool VulkanDescriptorCache::AllocateSet()
+bool VulkanDescriptorCache::AllocateSets()
 {
-    // Variable-count tail: we allocate the full capacity up front so every
-    // slot is addressable even though partially-bound leaves them empty.
-    const uint32_t variableCount = kBindlessImageCapacity;
-    VkDescriptorSetVariableDescriptorCountAllocateInfo variableInfo{};
-    variableInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-    variableInfo.descriptorSetCount = 1;
-    variableInfo.pDescriptorCounts = &variableCount;
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.pNext = &variableInfo;
-    allocInfo.descriptorPool = Pool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &SetLayout;
-
-    if (vkAllocateDescriptorSets(Device, &allocInfo, &Set) != VK_SUCCESS)
+    // Frame set: plain single-descriptor allocation.
     {
-        Log.Error("vkAllocateDescriptorSets failed");
-        return false;
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = Pool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &FrameSetLayout;
+
+        if (vkAllocateDescriptorSets(Device, &allocInfo, &FrameSet) != VK_SUCCESS)
+        {
+            Log.Error("vkAllocateDescriptorSets(frame) failed");
+            return false;
+        }
+    }
+
+    // Bindless set: variable-count tail allocated at full capacity so every
+    // slot is addressable even though partially-bound leaves them empty.
+    {
+        const uint32_t variableCount = kBindlessImageCapacity;
+        VkDescriptorSetVariableDescriptorCountAllocateInfo variableInfo{};
+        variableInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+        variableInfo.descriptorSetCount = 1;
+        variableInfo.pDescriptorCounts = &variableCount;
+
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.pNext = &variableInfo;
+        allocInfo.descriptorPool = Pool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &BindlessSetLayout;
+
+        if (vkAllocateDescriptorSets(Device, &allocInfo, &BindlessSet) != VK_SUCCESS)
+        {
+            Log.Error("vkAllocateDescriptorSets(bindless) failed");
+            return false;
+        }
     }
 
     return true;
@@ -166,10 +209,12 @@ VkPipelineLayout VulkanDescriptorCache::GetPipelineLayout(
         }
     }
 
+    const VkDescriptorSetLayout setLayouts[2] = { FrameSetLayout, BindlessSetLayout };
+
     VkPipelineLayoutCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    info.setLayoutCount = 1;
-    info.pSetLayouts = &SetLayout;
+    info.setLayoutCount = 2;
+    info.pSetLayouts = setLayouts;
     info.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size());
     info.pPushConstantRanges = pushConstants.data();
 
@@ -208,7 +253,7 @@ void VulkanDescriptorCache::SetFrameUniformBuffer(BufferHandle buffer, VkDeviceS
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = Set;
+    write.dstSet = FrameSet;
     write.dstBinding = kFrameUboBinding;
     write.dstArrayElement = 0;
     write.descriptorCount = 1;
@@ -286,7 +331,7 @@ void VulkanDescriptorCache::WriteBindlessSlot(uint32_t slot, ImageHandle image, 
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = Set;
+    write.dstSet = BindlessSet;
     write.dstBinding = kBindlessImageBinding;
     write.dstArrayElement = slot;
     write.descriptorCount = 1;

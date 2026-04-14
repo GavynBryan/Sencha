@@ -15,16 +15,18 @@ class VulkanDeviceService;
 //=============================================================================
 // VulkanDescriptorCache
 //
-// Owns the one global descriptor set every Sencha pipeline binds to, plus
-// the pipeline layouts built on top of it. The set is composed of:
+// Owns the two global descriptor sets every Sencha pipeline binds to, plus
+// the pipeline layouts built on top of them. The sets are:
 //
-//   Binding 0: Uniform buffer (dynamic offset)
+//   Set 0, binding 0: Uniform buffer (dynamic offset)
 //       Per-frame view/camera/etc. data. Point this at a buffer once via
 //       SetFrameUniformBuffer(); each draw supplies its own dynamic offset
 //       into that buffer. The buffer can be the frame scratch allocator
-//       (step 8) or any UBO the caller manages.
+//       (step 8) or any UBO the caller manages. Lives in its own set
+//       because dynamic UBOs can't coexist with UPDATE_AFTER_BIND bindings
+//       in the same layout (Vulkan spec VUID-03001).
 //
-//   Binding 1: Bindless combined-image-sampler array
+//   Set 1, binding 0: Bindless combined-image-sampler array
 //       A large descriptor array where each ImageHandle gets a stable
 //       slot. Shaders sample via integer index rather than rebinding per
 //       draw. Update-after-bind + partially-bound so the set never needs
@@ -70,10 +72,13 @@ public:
 
     // -- Set layout / pipeline layout ---------------------------------------
 
-    [[nodiscard]] VkDescriptorSetLayout GetSetLayout() const { return SetLayout; }
+    [[nodiscard]] VkDescriptorSetLayout GetFrameSetLayout() const { return FrameSetLayout; }
+    [[nodiscard]] VkDescriptorSetLayout GetBindlessSetLayout() const { return BindlessSetLayout; }
 
-    // Returns the one descriptor set that every pipeline binds to set index 0.
-    [[nodiscard]] VkDescriptorSet GetSet() const { return Set; }
+    // The two descriptor sets every pipeline binds. FrameSet is set index 0
+    // (dynamic UBO), BindlessSet is set index 1 (sampled image array).
+    [[nodiscard]] VkDescriptorSet GetFrameSet() const { return FrameSet; }
+    [[nodiscard]] VkDescriptorSet GetBindlessSet() const { return BindlessSet; }
 
     // Returns a pipeline layout backed by GetSetLayout() with the supplied
     // push-constant ranges. Identical push-constant signatures return the
@@ -138,8 +143,10 @@ private:
     bool Valid = false;
 
     VkDescriptorPool Pool = VK_NULL_HANDLE;
-    VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
-    VkDescriptorSet Set = VK_NULL_HANDLE;
+    VkDescriptorSetLayout FrameSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout BindlessSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet FrameSet = VK_NULL_HANDLE;
+    VkDescriptorSet BindlessSet = VK_NULL_HANDLE;
 
     std::vector<PipelineLayoutEntry> PipelineLayouts;
 
@@ -147,8 +154,8 @@ private:
     std::vector<uint32_t> BindlessFreeSlots;
     uint32_t BindlessNextSlot = 0;
 
-    [[nodiscard]] bool CreatePoolAndLayout();
-    [[nodiscard]] bool AllocateSet();
+    [[nodiscard]] bool CreatePoolAndLayouts();
+    [[nodiscard]] bool AllocateSets();
 
     void WriteBindlessSlot(uint32_t slot, ImageHandle image, VkSampler sampler);
 };

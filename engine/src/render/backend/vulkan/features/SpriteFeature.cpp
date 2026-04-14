@@ -69,7 +69,7 @@ void main() {
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
 
-layout(set = 0, binding = 1) uniform sampler2D uImages[];
+layout(set = 1, binding = 0) uniform sampler2D uImages[];
 
 layout(location = 0) in vec2 vUv;
 layout(location = 1) in vec4 vColor;
@@ -317,10 +317,13 @@ void SpriteFeature::OnDraw(const FrameContext& frame)
     scissor.extent = frame.TargetExtent;
     vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
 
-    VkDescriptorSet set = Descriptors->GetSet();
+    const VkDescriptorSet sets[2] = {
+        Descriptors->GetFrameSet(),
+        Descriptors->GetBindlessSet(),
+    };
     const uint32_t dynamicOffset = static_cast<uint32_t>(uboAlloc.Offset);
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            PipelineLayout, 0, 1, &set, 1, &dynamicOffset);
+                            PipelineLayout, 0, 2, sets, 1, &dynamicOffset);
 
     const VkDeviceSize vboOffset = vboAlloc.Offset;
     vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &ringBuffer, &vboOffset);
