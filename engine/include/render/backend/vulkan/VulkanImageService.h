@@ -9,6 +9,7 @@
 #include <vector>
 
 class VulkanAllocatorService;
+class VulkanDeletionQueueService;
 class VulkanDeviceService;
 class VulkanUploadContextService;
 
@@ -61,7 +62,8 @@ public:
     VulkanImageService(LoggingProvider& logging,
                        VulkanDeviceService& device,
                        VulkanAllocatorService& allocator,
-                       VulkanUploadContextService& upload);
+                       VulkanUploadContextService& upload,
+                       VulkanDeletionQueueService& deletionQueue);
     ~VulkanImageService() override;
 
     VulkanImageService(const VulkanImageService&) = delete;
@@ -108,6 +110,7 @@ private:
     VkDevice Device = VK_NULL_HANDLE;
     VmaAllocator Allocator = VK_NULL_HANDLE;
     VulkanUploadContextService* UploadCtx = nullptr;
+    VulkanDeletionQueueService* DeletionQueue = nullptr;
     bool Valid = false;
 
     std::vector<ImageEntry> Entries;

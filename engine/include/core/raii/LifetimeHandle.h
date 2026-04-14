@@ -95,9 +95,10 @@ public:
 	// Owner access (for advanced use)
 	ILifetimeOwner* GetOwner() const { return Owner; }
 
-protected:
-	// For friends that need to create handles without triggering Attach
-	// (e.g., DataBatch::Emplace already added the item).
+	// Take ownership of a resource without calling Attach. Use this when the
+	// caller has already incremented the refcount (e.g. just created the item)
+	// and wants to wrap it in a RAII handle without double-counting. The tag
+	// type makes the intent explicit at every call site.
 	struct NoAttachTag {};
 	static constexpr NoAttachTag NoAttach{};
 
@@ -107,6 +108,7 @@ protected:
 	{
 	}
 
+protected:
 	template<typename U> friend class DataBatch;
 
 private:

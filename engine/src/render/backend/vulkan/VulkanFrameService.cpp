@@ -1,5 +1,6 @@
 #include <render/backend/vulkan/VulkanFrameService.h>
 
+#include <render/backend/vulkan/VulkanDeletionQueueService.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
 #include <render/backend/vulkan/VulkanQueueService.h>
 #include <render/backend/vulkan/VulkanSwapchainService.h>
@@ -12,11 +13,13 @@ VulkanFrameService::VulkanFrameService(
     VulkanDeviceService& device,
     VulkanQueueService& queues,
     VulkanSwapchainService& swapchain,
+    VulkanDeletionQueueService& deletionQueue,
     uint32_t framesInFlight)
     : Log(logging.GetLogger<VulkanFrameService>())
     , Device(device.GetDevice())
     , Queues(queues)
     , Swapchain(swapchain)
+    , DeletionQueue(&deletionQueue)
 {
     if (!device.IsValid())
     {
@@ -87,6 +90,7 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
         }
 
         current.Submitted = false;
+        DeletionQueue->AdvanceFrame();
     }
 
     uint32_t imageIndex = 0;

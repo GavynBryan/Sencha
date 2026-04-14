@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <vector>
 
+class VulkanDeletionQueueService;
 class VulkanDeviceService;
 class VulkanQueueService;
 class VulkanSwapchainService;
@@ -38,6 +39,7 @@ public:
                        VulkanDeviceService& device,
                        VulkanQueueService& queues,
                        VulkanSwapchainService& swapchain,
+                       VulkanDeletionQueueService& deletionQueue,
                        uint32_t framesInFlight = 2);
     ~VulkanFrameService() override;
 
@@ -71,6 +73,7 @@ private:
     VkDevice Device = VK_NULL_HANDLE;
     const VulkanQueueService& Queues;
     VulkanSwapchainService& Swapchain;
+    VulkanDeletionQueueService* DeletionQueue = nullptr;
     std::vector<FrameData> Frames;
     std::vector<VkFence> ImageInFlightFences;
     std::vector<VkSemaphore> ImageRenderFinishedSemaphores;

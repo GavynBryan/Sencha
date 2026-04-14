@@ -2,6 +2,7 @@
 
 #include <render/backend/vulkan/VulkanAllocatorService.h>
 #include <render/backend/vulkan/VulkanBarriers.h>
+#include <render/backend/vulkan/VulkanDeletionQueueService.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
 #include <render/backend/vulkan/VulkanUploadContextService.h>
 
@@ -35,11 +36,13 @@ VulkanImageService::VulkanImageService(
     LoggingProvider& logging,
     VulkanDeviceService& device,
     VulkanAllocatorService& allocator,
-    VulkanUploadContextService& upload)
+    VulkanUploadContextService& upload,
+    VulkanDeletionQueueService& deletionQueue)
     : Log(logging.GetLogger<VulkanImageService>())
     , Device(device.GetDevice())
     , Allocator(allocator.GetAllocator())
     , UploadCtx(&upload)
+    , DeletionQueue(&deletionQueue)
 {
     if (!device.IsValid() || !allocator.IsValid() || !upload.IsValid())
     {
@@ -223,20 +226,23 @@ void VulkanImageService::Destroy(ImageHandle handle)
     auto* entry = Resolve(handle);
     if (entry == nullptr) return;
 
-    if (entry->View != VK_NULL_HANDLE)
-    {
-        vkDestroyImageView(Device, entry->View, nullptr);
-        entry->View = VK_NULL_HANDLE;
-    }
-    if (entry->Image != VK_NULL_HANDLE)
-    {
-        vmaDestroyImage(Allocator, entry->Image, entry->Allocation);
-        entry->Image = VK_NULL_HANDLE;
-        entry->Allocation = VK_NULL_HANDLE;
-    }
+    // Snapshot VK handles before nulling the entry so the slot can be
+    // reused immediately (Create bumps the generation on next alloc, making
+    // any surviving ImageHandle copies fail Resolve).
+    const VkImageView   view  = entry->View;
+    const VkImage       image = entry->Image;
+    const VmaAllocation alloc = entry->Allocation;
+
+    entry->View       = VK_NULL_HANDLE;
+    entry->Image      = VK_NULL_HANDLE;
+    entry->Allocation = VK_NULL_HANDLE;
 
     const uint32_t index = DecodeIndex(handle.Id);
     FreeSlots.push_back(index);
+
+    // Defer the physical destroy until the GPU has retired all command buffers
+    // that could reference these handles.
+    DeletionQueue->EnqueueImageDestroy({ Device, Allocator, view, image, alloc });
 }
 
 VkImage VulkanImageService::GetImage(ImageHandle handle) const
