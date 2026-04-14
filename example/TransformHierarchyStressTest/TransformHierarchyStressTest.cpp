@@ -1,12 +1,9 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/core/TransformServiceTags.h>
-#include <world/transform/hierarchy/TransformHierarchyService.h>
-#include <world/transform/hierarchy/TransformPropagationOrderService.h>
-#include <world/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformPropagationSystem.h>
 #include <core/raii/DataBatchHandle.h>
-#include <core/service/ServiceHost.h>
-#include <core/service/ServiceProvider.h>
 
 #include <algorithm>
 #include <atomic>
@@ -393,25 +390,20 @@ namespace
 	};
 
 	// Production-path fixture: drives the real TransformPropagationSystem against
-	// the real DataBatch<Transform3f> + TransformHierarchyService services, wired
-	// up through ServiceHost/ServiceProvider exactly as a game would.
+	// the real DataBatch<Transform3f> + TransformHierarchyService services.
 	//
 	// Used to confirm that the production path matches the hand-written
 	// contiguous fixture in both correctness and performance.
 	struct ProductionPropagationFixture
 	{
-		using Hierarchy3f = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
-		using PropagationOrder3f = TransformPropagationOrderService<TransformServiceTags::Transform3DTag>;
-		using Propagation3f = TransformPropagationSystem<
-			Transform3f,
-			TransformServiceTags::Transform3DTag>;
+		using Hierarchy3f = TransformHierarchyService;
+		using PropagationOrder3f = TransformPropagationOrderService;
+		using Propagation3f = TransformPropagationSystem<Transform3f>;
 
-		ServiceHost Host;
-		DataBatch<Transform3f>& Locals;
-		DataBatch<Transform3f>& Worlds;
-		Hierarchy3f& Hierarchy;
-		PropagationOrder3f& PropagationOrder;
-		ServiceProvider Provider;
+		DataBatch<Transform3f> Locals;
+		DataBatch<Transform3f> Worlds;
+		Hierarchy3f Hierarchy;
+		PropagationOrder3f PropagationOrder;
 		Propagation3f Propagation;
 
 		DataBatchBlock LocalBlock;
@@ -428,16 +420,7 @@ namespace
 			size_t count,
 			size_t branchingFactor,
 			ProductionBatchMode batchMode)
-			: Locals(Host.AddTaggedService<
-				DataBatch<Transform3f>,
-				TransformServiceTags::LocalTransformTag>())
-			, Worlds(Host.AddTaggedService<
-				DataBatch<Transform3f>,
-				TransformServiceTags::WorldTransformTag>())
-			, Hierarchy(Host.AddService<Hierarchy3f>())
-			, PropagationOrder(Host.AddService<PropagationOrder3f>())
-			, Provider(Host)
-			, Propagation(Provider)
+			: Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
 			, BatchMode(batchMode)
 		{
 			Locals.Reserve(count);

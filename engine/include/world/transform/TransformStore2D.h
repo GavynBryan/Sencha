@@ -3,8 +3,6 @@
 #include <core/batch/DataBatch.h>
 #include <core/raii/DataBatchHandle.h>
 #include <core/raii/ILifetimeOwner.h>
-#include <core/service/IService.h>
-#include <world/transform/core/TransformServiceTags.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <cstdint>
 #include <cstring>
@@ -16,7 +14,7 @@
 // Gameplay-facing allocation service for paired local/world 2D transforms.
 // The returned handle is owned by the store, so destruction removes both slots.
 //=============================================================================
-class TransformStore2D : public IService, public ILifetimeOwner
+class TransformStore2D : public ILifetimeOwner
 {
 public:
 	TransformStore2D(

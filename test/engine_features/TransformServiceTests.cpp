@@ -2,12 +2,11 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/core/TransformServiceTags.h>
-#include <world/transform/core/TransformStore2D.h>
-#include <world/transform/core/TransformStore3D.h>
-#include <world/transform/hierarchy/TransformHierarchyService.h>
-#include <world/transform/hierarchy/TransformPropagationOrderService.h>
-#include <world/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/transform/TransformStore2D.h>
+#include <world/transform/TransformStore3D.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformPropagationSystem.h>
 #include <world/World2d.h>
 #include <world/World3d.h>
 #include <core/raii/DataBatchHandle.h>
@@ -17,16 +16,12 @@
 
 namespace
 {
-	using Transform2Hierarchy = TransformHierarchyService<TransformServiceTags::Transform2DTag>;
-	using Transform2PropagationOrder = TransformPropagationOrderService<TransformServiceTags::Transform2DTag>;
-	using Transform2Propagation = TransformPropagationSystem<
-		Transform2f,
-		TransformServiceTags::Transform2DTag>;
-	using Transform3Hierarchy = TransformHierarchyService<TransformServiceTags::Transform3DTag>;
-	using Transform3PropagationOrder = TransformPropagationOrderService<TransformServiceTags::Transform3DTag>;
-	using Transform3Propagation = TransformPropagationSystem<
-		Transform3f,
-		TransformServiceTags::Transform3DTag>;
+	using Transform2Hierarchy = TransformHierarchyService;
+	using Transform2PropagationOrder = TransformPropagationOrderService;
+	using Transform2Propagation = TransformPropagationSystem<Transform2f>;
+	using Transform3Hierarchy = TransformHierarchyService;
+	using Transform3PropagationOrder = TransformPropagationOrderService;
+	using Transform3Propagation = TransformPropagationSystem<Transform3f>;
 }
 
 // ============================================================================
@@ -356,15 +351,10 @@ TEST(World2d, ResolvesGameplayFacingTransformServices)
 
 TEST(TransformPropagation, OrderCacheSurvivesSystemRecreation)
 {
-	ServiceHost host;
-	auto& locals = host.AddTaggedService<
-		DataBatch<Transform2f>,
-		TransformServiceTags::LocalTransformTag>();
-	auto& worlds = host.AddTaggedService<
-		DataBatch<Transform2f>,
-		TransformServiceTags::WorldTransformTag>();
-	auto& hierarchy = host.AddService<Transform2Hierarchy>();
-	auto& cache = host.AddService<Transform2PropagationOrder>();
+	DataBatch<Transform2f> locals;
+	DataBatch<Transform2f> worlds;
+	Transform2Hierarchy hierarchy;
+	Transform2PropagationOrder cache;
 
 	Transform2f parentLocal({ 5.0f, 0.0f }, 0.0f, { 1.0f, 1.0f });
 	auto parentLocalH = locals.Emplace(parentLocal);

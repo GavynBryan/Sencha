@@ -2,9 +2,7 @@
 
 #include <core/batch/DataBatch.h>
 #include <core/batch/DataBatchKey.h>
-#include <world/transform/core/TransformServiceTags.h>
-#include <world/transform/hierarchy/TransformHierarchyService.h>
-#include <core/service/IService.h>
+#include <world/transform/TransformHierarchyService.h>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -16,20 +14,11 @@
 // matching local/world transform batches. Systems can be destroyed and recreated
 // without losing the derived order or the scratch queue used to rebuild it.
 //
-// TDomainTag selects the hierarchy service. TLocalTag and TWorldTag select the
-// local/world DataBatch roles that this cache was built against.
 //=============================================================================
-template <
-	typename TDomainTag,
-	typename TLocalTag = TransformServiceTags::LocalTransformTag,
-	typename TWorldTag = TransformServiceTags::WorldTransformTag>
-class TransformPropagationOrderService : public IService
+class TransformPropagationOrderService
 {
 public:
-	using DomainTag = TDomainTag;
-	using LocalTag = TLocalTag;
-	using WorldTag = TWorldTag;
-	using HierarchyType = TransformHierarchyService<TDomainTag>;
+	using HierarchyType = TransformHierarchyService;
 
 	static constexpr uint32_t NullIndex = UINT32_MAX;
 

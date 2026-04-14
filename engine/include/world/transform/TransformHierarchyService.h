@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/batch/DataBatchKey.h>
-#include <core/service/IService.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -21,16 +20,10 @@
 // transform service. The hierarchy stores non-owning keys only; transform
 // lifetime is managed by whoever owns the DataBatchHandle.
 //
-// TDomainTag keeps independent transform key spaces apart. For example, 2D and
-// 3D transforms can both have DataBatchKey{1}, but their hierarchy service
-// types remain distinct.
 //=============================================================================
-template <typename TDomainTag>
-class TransformHierarchyService : public IService
+class TransformHierarchyService
 {
 public:
-	using DomainTag = TDomainTag;
-
 	// -- Relationship mutation -----------------------------------------------
 
 	// Set `child` as a spatial child of `parent`. Removes any prior parent.
@@ -79,8 +72,7 @@ private:
 	uint64_t VersionCounter = 0;
 };
 
-template <typename TDomainTag>
-void TransformHierarchyService<TDomainTag>::SetParent(DataBatchKey child, DataBatchKey parent)
+inline void TransformHierarchyService::SetParent(DataBatchKey child, DataBatchKey parent)
 {
 	assert(child.Value != 0 && "Cannot parent a null key.");
 	assert(parent.Value != 0 && "Cannot parent under a null key.");
@@ -95,8 +87,7 @@ void TransformHierarchyService<TDomainTag>::SetParent(DataBatchKey child, DataBa
 	++VersionCounter;
 }
 
-template <typename TDomainTag>
-void TransformHierarchyService<TDomainTag>::ClearParent(DataBatchKey child)
+inline void TransformHierarchyService::ClearParent(DataBatchKey child)
 {
 	auto it = ChildToParent.find(child.Value);
 	if (it == ChildToParent.end()) return;
@@ -117,15 +108,13 @@ void TransformHierarchyService<TDomainTag>::ClearParent(DataBatchKey child)
 	++VersionCounter;
 }
 
-template <typename TDomainTag>
-void TransformHierarchyService<TDomainTag>::Register(DataBatchKey key)
+inline void TransformHierarchyService::Register(DataBatchKey key)
 {
 	assert(key.Value != 0 && "Cannot register a null key.");
 	EnsureRegistered(key);
 }
 
-template <typename TDomainTag>
-void TransformHierarchyService<TDomainTag>::Unregister(DataBatchKey key)
+inline void TransformHierarchyService::Unregister(DataBatchKey key)
 {
 	ClearParent(key);
 
@@ -143,22 +132,19 @@ void TransformHierarchyService<TDomainTag>::Unregister(DataBatchKey key)
 	++VersionCounter;
 }
 
-template <typename TDomainTag>
-DataBatchKey TransformHierarchyService<TDomainTag>::GetParent(DataBatchKey child) const
+inline DataBatchKey TransformHierarchyService::GetParent(DataBatchKey child) const
 {
 	auto it = ChildToParent.find(child.Value);
 	if (it == ChildToParent.end()) return DataBatchKey{};
 	return DataBatchKey{ it->second };
 }
 
-template <typename TDomainTag>
-bool TransformHierarchyService<TDomainTag>::HasParent(DataBatchKey child) const
+inline bool TransformHierarchyService::HasParent(DataBatchKey child) const
 {
 	return ChildToParent.contains(child.Value);
 }
 
-template <typename TDomainTag>
-const std::vector<uint32_t>& TransformHierarchyService<TDomainTag>::GetChildren(DataBatchKey parent) const
+inline const std::vector<uint32_t>& TransformHierarchyService::GetChildren(DataBatchKey parent) const
 {
 	static const std::vector<uint32_t> Empty;
 	auto it = ParentToChildren.find(parent.Value);
@@ -166,15 +152,13 @@ const std::vector<uint32_t>& TransformHierarchyService<TDomainTag>::GetChildren(
 	return it->second;
 }
 
-template <typename TDomainTag>
-bool TransformHierarchyService<TDomainTag>::HasChildren(DataBatchKey parent) const
+inline bool TransformHierarchyService::HasChildren(DataBatchKey parent) const
 {
 	auto it = ParentToChildren.find(parent.Value);
 	return it != ParentToChildren.end() && !it->second.empty();
 }
 
-template <typename TDomainTag>
-std::vector<DataBatchKey> TransformHierarchyService<TDomainTag>::GetRoots() const
+inline std::vector<DataBatchKey> TransformHierarchyService::GetRoots() const
 {
 	std::vector<DataBatchKey> roots;
 	for (uint32_t key : Registered)
@@ -185,20 +169,17 @@ std::vector<DataBatchKey> TransformHierarchyService<TDomainTag>::GetRoots() cons
 	return roots;
 }
 
-template <typename TDomainTag>
-bool TransformHierarchyService<TDomainTag>::IsRegistered(DataBatchKey key) const
+inline bool TransformHierarchyService::IsRegistered(DataBatchKey key) const
 {
 	return Registered.contains(key.Value);
 }
 
-template <typename TDomainTag>
-size_t TransformHierarchyService<TDomainTag>::Count() const
+inline size_t TransformHierarchyService::Count() const
 {
 	return Registered.size();
 }
 
-template <typename TDomainTag>
-void TransformHierarchyService<TDomainTag>::EnsureRegistered(DataBatchKey key)
+inline void TransformHierarchyService::EnsureRegistered(DataBatchKey key)
 {
 	auto result = Registered.insert(key.Value);
 	if (result.second)

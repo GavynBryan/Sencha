@@ -1,10 +1,8 @@
 #pragma once
 
 #include <core/batch/DataBatch.h>
-#include <world/transform/core/TransformServiceTags.h>
-#include <world/transform/hierarchy/TransformHierarchyService.h>
-#include <world/transform/hierarchy/TransformPropagationOrderService.h>
-#include <core/service/ServiceProvider.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationOrderService.h>
 #include <core/system/ISystem.h>
 #include <cstdint>
 #include <span>
@@ -22,9 +20,6 @@
 //   - static TTransform Identity()
 //   - TTransform operator*(const TTransform&) const
 //
-// TDomainTag selects the hierarchy service. TLocalTag and TWorldTag select the
-// local/world DataBatch roles inside ServiceHost.
-//
 // Implementation notes
 // --------------------
 // Propagate() is a single linear sweep over a service-owned cached flat order.
@@ -38,23 +33,13 @@
 // the sweep a single forward pass. The BFS is iterative, so deep hierarchies
 // cannot blow the stack.
 //=============================================================================
-template <
-	typename TTransform,
-	typename TDomainTag,
-	typename TLocalTag = TransformServiceTags::LocalTransformTag,
-	typename TWorldTag = TransformServiceTags::WorldTransformTag>
+template <typename TTransform>
 class TransformPropagationSystem : public ISystem
 {
 public:
 	using TransformType = TTransform;
-	using DomainTag = TDomainTag;
-	using LocalTag = TLocalTag;
-	using WorldTag = TWorldTag;
-	using HierarchyType = TransformHierarchyService<TDomainTag>;
-	using CacheType = TransformPropagationOrderService<
-		TDomainTag,
-		TLocalTag,
-		TWorldTag>;
+	using HierarchyType = TransformHierarchyService;
+	using CacheType = TransformPropagationOrderService;
 	using PropagationEntry = typename CacheType::PropagationEntry;
 
 	static constexpr uint32_t NullIndex = CacheType::NullIndex;
@@ -68,15 +53,6 @@ public:
 		, Worlds(worlds)
 		, Hierarchy(hierarchy)
 		, Cache(cache)
-	{
-	}
-
-	explicit TransformPropagationSystem(const ServiceProvider& services)
-		: TransformPropagationSystem(
-			services.GetTagged<DataBatch<TTransform>, TLocalTag>(),
-			services.GetTagged<DataBatch<TTransform>, TWorldTag>(),
-			services.Get<HierarchyType>(),
-			services.Get<CacheType>())
 	{
 	}
 

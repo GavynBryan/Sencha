@@ -3,16 +3,13 @@
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
 #include <core/system/SystemPhase.h>
-#include <world/transform/core/TransformServiceTags.h>
-#include <world/transform/hierarchy/TransformPropagationSystem.h>
+#include <world/transform/TransformPropagationSystem.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/World2d.h>
 #include <world/World3d.h>
 
 namespace WorldSetup {
-
-	namespace Tags = TransformServiceTags;
 
 	namespace {
 		World2d& GetOrAddWorld2d(ServiceHost& serviceHost)
@@ -37,8 +34,7 @@ namespace WorldSetup {
 		World2d& world = GetOrAddWorld2d(serviceHost);
 
 		systemHost.AddSystem<TransformPropagationSystem<
-			Transform2f,
-			Tags::Transform2DTag>>(
+			Transform2f>>(
 				SystemPhase::PostUpdate,
 				world.GetLocalTransformsForSystems(),
 				world.GetWorldTransformsForSystems(),
@@ -51,8 +47,7 @@ namespace WorldSetup {
 		World3d& world = GetOrAddWorld3d(serviceHost);
 
 		systemHost.AddSystem<TransformPropagationSystem<
-			Transform3f,
-			Tags::Transform3DTag>>(
+			Transform3f>>(
 				SystemPhase::PostUpdate,
 				world.GetLocalTransformsForSystems(),
 				world.GetWorldTransformsForSystems(),
