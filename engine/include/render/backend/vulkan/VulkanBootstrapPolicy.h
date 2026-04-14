@@ -16,6 +16,13 @@ struct VulkanQueueRequirements
 
 struct VulkanBootstrapPolicy
 {
+    VulkanBootstrapPolicy()
+    {
+        // Sencha always requires anisotropic sampling so VulkanSamplerCache
+        // callers can opt into it without a feature-enable dance.
+        DeviceFeatures.samplerAnisotropy = VK_TRUE;
+    }
+
     std::string AppName = "Sencha";
     uint32_t AppVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
     uint32_t ApiVersion = VK_API_VERSION_1_3;

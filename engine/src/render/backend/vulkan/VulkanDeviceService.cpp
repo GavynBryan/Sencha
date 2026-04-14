@@ -60,11 +60,35 @@ bool VulkanDeviceService::CreateLogicalDevice(
         queueCreateInfos.push_back(queueInfo);
     }
 
+    // Sencha floor: Vulkan 1.3 with synchronization2 + dynamicRendering, plus
+    // the Vulkan 1.2 descriptor-indexing set the bindless descriptor cache
+    // relies on. Physical-device selection has already verified support.
+    VkPhysicalDeviceVulkan12Features v12{};
+    v12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    v12.descriptorIndexing = VK_TRUE;
+    v12.runtimeDescriptorArray = VK_TRUE;
+    v12.descriptorBindingPartiallyBound = VK_TRUE;
+    v12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    v12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    v12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+
+    VkPhysicalDeviceVulkan13Features v13{};
+    v13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    v13.pNext = &v12;
+    v13.synchronization2 = VK_TRUE;
+    v13.dynamicRendering = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 features2{};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &v13;
+    features2.features = policy.DeviceFeatures;
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pNext = &features2;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.pEnabledFeatures = &policy.DeviceFeatures;
+    createInfo.pEnabledFeatures = nullptr;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(EnabledDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = EnabledDeviceExtensions.data();
 
