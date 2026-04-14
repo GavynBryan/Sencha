@@ -1,0 +1,16 @@
+{
+	"actions": [
+		{ "name": "MoveLeft" },
+		{ "name": "MoveRight" },
+		{ "name": "MoveUp" },
+		{ "name": "MoveDown" },
+		{ "name": "Quit" }
+	],
+	"bindings": [
+		{ "action": "MoveLeft",  "device": "Keyboard", "control": "Left",   "trigger": "Held" },
+		{ "action": "MoveRight", "device": "Keyboard", "control": "Right",  "trigger": "Held" },
+		{ "action": "MoveUp",    "device": "Keyboard", "control": "Up",     "trigger": "Held" },
+		{ "action": "MoveDown",  "device": "Keyboard", "control": "Down",   "trigger": "Held" },
+		{ "action": "Quit",      "device": "Keyboard", "control": "Escape", "trigger": "Pressed" }
+	]
+}
