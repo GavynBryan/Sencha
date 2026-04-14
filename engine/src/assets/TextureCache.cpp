@@ -6,6 +6,7 @@
 #include <render/backend/vulkan/VulkanSamplerCache.h>
 
 #include <cassert>
+#include <cstring>
 
 namespace
 {
@@ -67,7 +68,12 @@ TextureHandle TextureCache::Acquire(std::string_view path, const SamplerDesc& sa
     const std::string key(path);
 
     if (auto it = PathLookup.find(key); it != PathLookup.end())
-        return it->second;
+    {
+        TextureHandle handle = it->second;
+        if (auto* entry = Resolve(handle))
+            ++entry->RefCount;
+        return handle;
+    }
 
     auto loadedImage = LoadImageFromFile(path);
     if (!loadedImage)
@@ -78,9 +84,25 @@ TextureHandle TextureCache::Acquire(std::string_view path, const SamplerDesc& sa
 
     TextureHandle handle = UploadAndRegister(*loadedImage, sampler, key.c_str());
     if (handle.IsValid())
+    {
+        auto* entry = Resolve(handle);
+        assert(entry);
+        entry->PathKey = key;
         PathLookup.emplace(key, handle);
+    }
 
     return handle;
+}
+
+TextureCacheHandle TextureCache::AcquireOwned(std::string_view path, const SamplerDesc& sampler)
+{
+    TextureHandle handle = Acquire(path, sampler);
+    if (!handle.IsValid())
+        return {};
+
+    // TextureCacheHandle calls Attach on construction, which would double-count.
+    // Use NoAttach: Acquire() already incremented the refcount above.
+    return TextureCacheHandle(this, handle, TextureCacheHandle::NoAttach);
 }
 
 TextureHandle TextureCache::CreateFromImage(const Image& image,
@@ -109,6 +131,38 @@ VkExtent2D TextureCache::GetExtent(TextureHandle handle) const
     if (!entry)
         return {};
     return entry->Extent;
+}
+
+void TextureCache::Release(TextureHandle handle)
+{
+    auto* entry = Resolve(handle);
+    if (!entry) return;
+
+    assert(entry->RefCount > 0 && "TextureCache: Release called on entry with zero refcount");
+    if (entry->RefCount == 0) return;
+
+    --entry->RefCount;
+    if (entry->RefCount > 0) return;
+
+    const uint32_t index = DecodeIndex(handle.Id);
+    FreeEntry(index, *entry);
+}
+
+// ILifetimeOwner — called by TextureCacheHandle construction and destruction.
+
+void TextureCache::Attach(uint64_t token)
+{
+    TextureHandle handle{};
+    std::memcpy(&handle, &token, sizeof(handle));
+    if (auto* entry = Resolve(handle))
+        ++entry->RefCount;
+}
+
+void TextureCache::Detach(uint64_t token)
+{
+    TextureHandle handle{};
+    std::memcpy(&handle, &token, sizeof(handle));
+    Release(handle);
 }
 
 // -- Private helpers --------------------------------------------------------
@@ -160,6 +214,7 @@ TextureHandle TextureCache::UploadAndRegister(const Image& image,
 TextureHandle TextureCache::AllocHandle(TextureEntry entry)
 {
     uint32_t index = 0;
+    entry.RefCount = 1;
 
     if (!FreeSlots.empty())
     {
@@ -179,6 +234,31 @@ TextureHandle TextureCache::AllocHandle(TextureEntry entry)
     }
 
     return MakeHandle(index, Entries[index].Generation);
+}
+
+void TextureCache::FreeEntry(uint32_t index, TextureEntry& entry)
+{
+    if (!entry.PathKey.empty())
+    {
+        PathLookup.erase(entry.PathKey);
+        entry.PathKey.clear();
+    }
+
+    if (entry.Bindless.IsValid())
+    {
+        Descriptors->UnregisterSampledImage(entry.Bindless);
+        entry.Bindless = {};
+    }
+
+    if (entry.GpuImage.IsValid())
+    {
+        Images->Destroy(entry.GpuImage);
+        entry.GpuImage = {};
+    }
+
+    entry.Extent = {};
+    // Generation stays — bumped on reuse by AllocHandle.
+    FreeSlots.push_back(index);
 }
 
 TextureCache::TextureEntry* TextureCache::Resolve(TextureHandle handle)

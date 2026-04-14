@@ -4,6 +4,7 @@
 #include <render/backend/vulkan/VulkanAllocatorService.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanBufferService.h>
+#include <render/backend/vulkan/VulkanDeletionQueueService.h>
 #include <render/backend/vulkan/VulkanDescriptorCache.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
 #include <render/backend/vulkan/VulkanFrameScratch.h>
@@ -124,10 +125,12 @@ int main()
     VulkanUploadContextService upload(logging, device, queues);
     if (!upload.IsValid()) return 1;
 
+    VulkanDeletionQueueService deletionQueue(logging, 2);
+
     VulkanBufferService buffers(logging, device, allocator, upload);
     if (!buffers.IsValid()) return 1;
 
-    VulkanImageService imageService(logging, device, allocator, upload);
+    VulkanImageService imageService(logging, device, allocator, upload, deletionQueue);
     if (!imageService.IsValid()) return 1;
 
     VulkanSamplerCache samplers(logging, device);
@@ -151,7 +154,7 @@ int main()
         logging, device, physicalDevice, surface, queues, window->GetExtent());
     if (!swapchain.IsValid()) return 1;
 
-    VulkanFrameService frames(logging, device, queues, swapchain);
+    VulkanFrameService frames(logging, device, queues, swapchain, deletionQueue);
     if (!frames.IsValid()) return 1;
 
     Renderer renderer(

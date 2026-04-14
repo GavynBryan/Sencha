@@ -4,6 +4,7 @@
 #include <render/backend/vulkan/VulkanAllocatorService.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanBufferService.h>
+#include <render/backend/vulkan/VulkanDeletionQueueService.h>
 #include <render/backend/vulkan/VulkanDeviceService.h>
 #include <render/backend/vulkan/VulkanFrameScratch.h>
 #include <render/backend/vulkan/VulkanFrameService.h>
@@ -78,10 +79,12 @@ QuadTreeDemoRenderBootstrap::QuadTreeDemoRenderBootstrap(LoggingProvider& loggin
 	Upload = std::make_unique<VulkanUploadContextService>(Logging, *Device, *Queues);
 	if (!Upload->IsValid()) return;
 
+	DeletionQueue = std::make_unique<VulkanDeletionQueueService>(Logging, 2);
+
 	Buffers = std::make_unique<VulkanBufferService>(Logging, *Device, *Allocator, *Upload);
 	if (!Buffers->IsValid()) return;
 
-	Images = std::make_unique<VulkanImageService>(Logging, *Device, *Allocator, *Upload);
+	Images = std::make_unique<VulkanImageService>(Logging, *Device, *Allocator, *Upload, *DeletionQueue);
 	if (!Images->IsValid()) return;
 
 	Samplers = std::make_unique<VulkanSamplerCache>(Logging, *Device);
@@ -106,7 +109,7 @@ QuadTreeDemoRenderBootstrap::QuadTreeDemoRenderBootstrap(LoggingProvider& loggin
 		Logging, *Device, *PhysicalDevice, *Surface, *Queues, WindowPtr->GetExtent());
 	if (!Swapchain->IsValid()) return;
 
-	Frames = std::make_unique<VulkanFrameService>(Logging, *Device, *Queues, *Swapchain);
+	Frames = std::make_unique<VulkanFrameService>(Logging, *Device, *Queues, *Swapchain, *DeletionQueue);
 	if (!Frames->IsValid()) return;
 
 	RendererPtr = std::make_unique<Renderer>(

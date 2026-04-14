@@ -14,6 +14,7 @@ class SdlVideoService;
 class SdlWindow;
 class VulkanAllocatorService;
 class VulkanBufferService;
+class VulkanDeletionQueueService;
 class VulkanDeviceService;
 class VulkanFrameScratch;
 class VulkanFrameService;
@@ -64,6 +65,7 @@ private:
 	std::unique_ptr<VulkanQueueService> Queues;
 	std::unique_ptr<VulkanAllocatorService> Allocator;
 	std::unique_ptr<VulkanUploadContextService> Upload;
+	std::unique_ptr<VulkanDeletionQueueService> DeletionQueue;
 	std::unique_ptr<VulkanBufferService> Buffers;
 	std::unique_ptr<VulkanImageService> Images;
 	std::unique_ptr<VulkanSamplerCache> Samplers;
