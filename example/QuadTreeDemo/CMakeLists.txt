@@ -1,5 +1,8 @@
 add_executable(QuadTreeDemo
     QuadTreeDemo.cpp
+    QuadTreeDemoGame.cpp
+    QuadTreeDemoInput.cpp
+    QuadTreeDemoRender.cpp
 )
 
 target_link_libraries(QuadTreeDemo PRIVATE engine)
