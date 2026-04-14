@@ -6,7 +6,7 @@
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformPropagationSystem.h>
-#include <world/scene/SceneNode.h>
+#include <world/transform/TransformNode.h>
 #include <world/tilemap/Tilemap2d.h>
 #include <world/World.h>
 #include <core/raii/DataBatchHandle.h>
@@ -258,11 +258,11 @@ struct TransformPropagationFixture
 
 	TransformPropagationFixture()
 		: GameWorld(Host.AddService<World2d>())
-		, Locals(GameWorld.GetLocalTransformsForEngineWiring())
-		, Worlds(GameWorld.GetWorldTransformsForEngineWiring())
-		, Store(GameWorld.Transforms)
-		, Hierarchy(GameWorld.TransformHierarchy)
-		, PropagationOrder(GameWorld.GetPropagationOrderForEngineWiring())
+		, Locals(GameWorld.Domain.LocalTransforms)
+		, Worlds(GameWorld.Domain.WorldTransforms)
+		, Store(GameWorld.Domain.Transforms)
+		, Hierarchy(GameWorld.Domain.Hierarchy)
+		, PropagationOrder(GameWorld.Domain.PropagationOrder)
 		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
 	{
 	}
@@ -281,11 +281,11 @@ struct TransformPropagation3Fixture
 
 	TransformPropagation3Fixture()
 		: GameWorld(Host.AddService<World3d>())
-		, Locals(GameWorld.GetLocalTransformsForEngineWiring())
-		, Worlds(GameWorld.GetWorldTransformsForEngineWiring())
-		, Store(GameWorld.Transforms)
-		, Hierarchy(GameWorld.TransformHierarchy)
-		, PropagationOrder(GameWorld.GetPropagationOrderForEngineWiring())
+		, Locals(GameWorld.Domain.LocalTransforms)
+		, Worlds(GameWorld.Domain.WorldTransforms)
+		, Store(GameWorld.Domain.Transforms)
+		, Hierarchy(GameWorld.Domain.Hierarchy)
+		, PropagationOrder(GameWorld.Domain.PropagationOrder)
 		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
 	{
 	}
@@ -585,20 +585,20 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
 }
 
 // ============================================================================
-// Tilemap2d — proof of non-SceneNode participation in the transform system
+// Tilemap2d — proof of non-TransformNode participation in the transform system
 // ============================================================================
 
-TEST(Tilemap2d, ParticipatesInHierarchyAlongsideSceneNode)
+TEST(Tilemap2d, ParticipatesInHierarchyAlongsideTransformNode)
 {
 	TransformPropagationFixture transformServices;
 	auto& world = transformServices.GameWorld;
 	auto& propagation = transformServices.Propagation;
 
-	SceneNode2D levelRoot(world, Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
-	SceneNode2D player(world, Transform2f({ 50.0f, 30.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d levelRoot(world.Domain, Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d player(world.Domain, Transform2f({ 50.0f, 30.0f }, 0.0f, { 1.0f, 1.0f }));
 	player.SetParent(levelRoot);
 
-	Tilemap2d tilemap(world,
+	Tilemap2d tilemap(world.Domain,
 		Transform2f({ -100.0f, -100.0f }, 0.0f, { 1.0f, 1.0f }),
 		64, 64, 16.0f);
 	tilemap.SetTransformParent(levelRoot.TransformKey());
@@ -622,8 +622,8 @@ TEST(Tilemap2d, InheritsParentTransform)
 	auto& world = transformServices.GameWorld;
 	auto& propagation = transformServices.Propagation;
 
-	SceneNode2D camera(world, Transform2f({ 200.0f, 100.0f }, 0.0f, { 1.0f, 1.0f }));
-	Tilemap2d tilemap(world,
+	TransformNode2d camera(world.Domain, Transform2f({ 200.0f, 100.0f }, 0.0f, { 1.0f, 1.0f }));
+	Tilemap2d tilemap(world.Domain,
 		Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }),
 		32, 32, 8.0f);
 	tilemap.SetTransformParent(camera.TransformKey());
@@ -643,7 +643,7 @@ TEST(Tilemap2d, DestructionFreesTransformSlot)
 
 	DataBatchKey key;
 	{
-		Tilemap2d tilemap(world,
+		Tilemap2d tilemap(world.Domain,
 			Transform2f({ 5.0f, 5.0f }, 0.0f, { 1.0f, 1.0f }),
 			16, 16, 32.0f);
 		key = tilemap.TransformKey();
@@ -661,7 +661,7 @@ TEST(Tilemap2d, GridStorageRoundtrip)
 	TransformPropagationFixture transformServices;
 	auto& world = transformServices.GameWorld;
 
-	Tilemap2d tilemap(world,
+	Tilemap2d tilemap(world.Domain,
 		Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }),
 		4, 3, 16.0f);
 
@@ -675,15 +675,15 @@ TEST(Tilemap2d, GridStorageRoundtrip)
 }
 
 // ============================================================================
-// SceneNode<TTransform>
+// TransformNode<TTransform>
 // ============================================================================
 
-TEST(SceneNode2D, ConstructionAllocatesTransformSlot)
+TEST(TransformNode2d, ConstructionAllocatesTransformSlot)
 {
 	TransformPropagationFixture fixture;
 	auto& world = fixture.GameWorld;
 
-	SceneNode2D node(world, Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d node(world.Domain, Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f }));
 
 	const auto* local = world.Transforms.TryGetLocal(node.TransformKey());
 	ASSERT_NE(local, nullptr);
@@ -693,14 +693,14 @@ TEST(SceneNode2D, ConstructionAllocatesTransformSlot)
 	EXPECT_FALSE(node.HasParent());
 }
 
-TEST(SceneNode2D, DestructionFreesTransformSlot)
+TEST(TransformNode2d, DestructionFreesTransformSlot)
 {
 	TransformPropagationFixture fixture;
 	auto& world = fixture.GameWorld;
 
 	DataBatchKey key;
 	{
-		SceneNode2D node(world, Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
+		TransformNode2d node(world.Domain, Transform2f({ 0.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
 		key = node.TransformKey();
 		EXPECT_NE(world.Transforms.TryGetLocal(key), nullptr);
 	}
@@ -709,13 +709,13 @@ TEST(SceneNode2D, DestructionFreesTransformSlot)
 	EXPECT_EQ(world.Transforms.TryGetWorld(key), nullptr);
 }
 
-TEST(SceneNode2D, SetParentRoutesThroughHierarchy)
+TEST(TransformNode2d, SetParentRoutesThroughHierarchy)
 {
 	TransformPropagationFixture fixture;
 	auto& world = fixture.GameWorld;
 
-	SceneNode2D parent(world, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
-	SceneNode2D child(world, Transform2f({ 3.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d parent(world.Domain, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d child(world.Domain, Transform2f({ 3.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
 
 	child.SetParent(parent);
 
@@ -726,14 +726,14 @@ TEST(SceneNode2D, SetParentRoutesThroughHierarchy)
 	EXPECT_FALSE(child.HasParent());
 }
 
-TEST(SceneNode2D, ParentingObservableViaPropagation)
+TEST(TransformNode2d, ParentingObservableViaPropagation)
 {
 	TransformPropagationFixture fixture;
 	auto& world = fixture.GameWorld;
 	auto& propagation = fixture.Propagation;
 
-	SceneNode2D parent(world, Transform2f({ 10.0f, 20.0f }, 0.0f, { 1.0f, 1.0f }));
-	SceneNode2D child(world, Transform2f({ 3.0f, 4.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d parent(world.Domain, Transform2f({ 10.0f, 20.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d child(world.Domain, Transform2f({ 3.0f, 4.0f }, 0.0f, { 1.0f, 1.0f }));
 	child.SetParent(parent);
 
 	propagation.Propagate();
@@ -744,26 +744,26 @@ TEST(SceneNode2D, ParentingObservableViaPropagation)
 	EXPECT_NEAR(childWorld->Position.Y, 24.0f, 1e-5f);
 }
 
-TEST(SceneNode2D, MoveTransfersOwnership)
+TEST(TransformNode2d, MoveTransfersOwnership)
 {
 	TransformPropagationFixture fixture;
 	auto& world = fixture.GameWorld;
 
-	SceneNode2D original(world, Transform2f({ 7.0f, 8.0f }, 0.0f, { 1.0f, 1.0f }));
+	TransformNode2d original(world.Domain, Transform2f({ 7.0f, 8.0f }, 0.0f, { 1.0f, 1.0f }));
 	DataBatchKey key = original.TransformKey();
 
-	SceneNode2D moved(std::move(original));
+	TransformNode2d moved(std::move(original));
 
 	EXPECT_EQ(moved.TransformKey().Value, key.Value);
 	EXPECT_NE(world.Transforms.TryGetLocal(key), nullptr);
 }
 
-TEST(SceneNode3D, ConstructionAllocatesTransformSlot)
+TEST(TransformNode3d, ConstructionAllocatesTransformSlot)
 {
 	TransformPropagation3Fixture fixture;
 	auto& world = fixture.GameWorld;
 
-	SceneNode3D node(world, Transform3f(
+	TransformNode3d node(world.Domain, Transform3f(
 		Vec3d(1.0f, 2.0f, 3.0f),
 		Quatf::Identity(),
 		Vec3d::One()));
@@ -774,17 +774,17 @@ TEST(SceneNode3D, ConstructionAllocatesTransformSlot)
 	EXPECT_NEAR(local->Position.Z, 3.0f, 1e-5f);
 }
 
-TEST(SceneNode3D, ParentingObservableViaPropagation)
+TEST(TransformNode3d, ParentingObservableViaPropagation)
 {
 	TransformPropagation3Fixture fixture;
 	auto& world = fixture.GameWorld;
 	auto& propagation = fixture.Propagation;
 
-	SceneNode3D parent(world, Transform3f(
+	TransformNode3d parent(world.Domain, Transform3f(
 		Vec3d(10.0f, 20.0f, 30.0f),
 		Quatf::Identity(),
 		Vec3d::One()));
-	SceneNode3D child(world, Transform3f(
+	TransformNode3d child(world.Domain, Transform3f(
 		Vec3d(1.0f, 2.0f, 3.0f),
 		Quatf::Identity(),
 		Vec3d::One()));
