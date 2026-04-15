@@ -107,7 +107,7 @@ int main()
 			continue;
 		}
 
-		systems.Update();
+		systems.Update(FrameTime{});
 
 		const auto status = render.DrawFrame();
 		if (status == Renderer::DrawStatus::SwapchainOutOfDate)

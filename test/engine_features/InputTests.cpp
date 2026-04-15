@@ -326,7 +326,7 @@ protected:
 			InputDeviceType::Keyboard, false, control, 0.0f, InputUserId{});
 	}
 
-	void RunFrame() { Systems.Update(); }
+	void RunFrame() { Systems.Update(FrameTime{}); }
 
 	auto GetActions() { return InputSys->GetEvents().Items(); }
 

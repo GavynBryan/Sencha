@@ -85,7 +85,7 @@ public:
 	}
 
 private:
-	void Update() override
+	void Update(const FrameTime& /*time*/) override
 	{
 		Propagate();
 	}

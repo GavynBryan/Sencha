@@ -14,7 +14,7 @@ public:
 
 private:
     void Init() override    { CallLog.push_back(Name + "::Init"); }
-    void Update() override  { CallLog.push_back(Name + "::Update"); }
+    void Update(const FrameTime& /*time*/) override  { CallLog.push_back(Name + "::Update"); }
     void Shutdown() override { CallLog.push_back(Name + "::Shutdown"); }
 
     std::string Name;
@@ -42,7 +42,7 @@ public:
     int UpdateCount = 0;
 
 private:
-    void Update() override { UpdateCount++; }
+    void Update(const FrameTime& /*time*/) override { UpdateCount++; }
 };
 
 class SystemHostTest : public ::testing::Test {
@@ -100,7 +100,7 @@ TEST_F(SystemHostTest, UpdateCallsUpdateOnAllSystems)
 
     host.Init();
     CallLog.clear();
-    host.Update();
+    host.Update(FrameTime{});
 
     ASSERT_EQ(CallLog.size(), 2u);
     EXPECT_EQ(CallLog[0], "A::Update");
@@ -132,7 +132,7 @@ TEST_F(SystemHostTest, SystemsRunInOrder)
 
     host.Init();
     CallLog.clear();
-    host.Update();
+    host.Update(FrameTime{});
 
     ASSERT_EQ(CallLog.size(), 3u);
     EXPECT_EQ(CallLog[0], "A::Update");
@@ -146,9 +146,9 @@ TEST_F(SystemHostTest, MultipleUpdates)
     host.AddSystem<CountingSystem>(SystemPhase::Update);
 
     host.Init();
-    host.Update();
-    host.Update();
-    host.Update();
+    host.Update(FrameTime{});
+    host.Update(FrameTime{});
+    host.Update(FrameTime{});
 
     auto* system = host.Get<CountingSystem>();
     ASSERT_NE(system, nullptr);

@@ -134,6 +134,8 @@ test/      GoogleTest-based engine tests.
 | [docs/audio.md](audio.md) | Audio system design, integration, and usage examples |
 | [docs/entity.md](entity.md) | `EntityBatch<T>`, `EntityRegistry`, `EntityKey`, subtree destruction, and the `IsEntity` concept. |
 
+| [docs/time.md](time.md) | `TimeService` timing model, per-frame timing, timescale, delta clamping, and constraints. |
+
 ## Requirements
 
 - CMake 3.20 or newer.
