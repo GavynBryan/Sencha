@@ -303,7 +303,7 @@ DataBatch<T>                implements ILifetimeOwner
 Systems (ECS-style loops)
        │  for (auto& item : batch.GetItems()) { … }
        │
-TilemapRenderFeature / TransformStore / AssetCache
+TransformStore / AssetCache
        │  store non-owning DataBatch* pointers
        │  read Items[] directly; never remove
        │

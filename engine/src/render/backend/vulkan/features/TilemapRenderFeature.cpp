@@ -14,20 +14,7 @@
 #include <render/backend/vulkan/VulkanShaderCache.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
-
-// ── Construction ─────────────────────────────────────────────────────────────
-
-TilemapRenderFeature::TilemapRenderFeature(
-    DataBatch<Tilemap2d>&          maps,
-    DataBatch<TilemapRenderState>& renderStates,
-    TransformStore<Transform2f>&   transforms)
-    : Maps(&maps)
-    , RenderStates(&renderStates)
-    , Transforms(&transforms)
-{
-}
 
 // ── IRenderFeature: Setup ─────────────────────────────────────────────────────
 
@@ -88,9 +75,25 @@ void TilemapRenderFeature::Teardown()
     CachedPipeline     = VK_NULL_HANDLE;
     CachedColorFormat  = VK_FORMAT_UNDEFINED;
     PipelineLayout     = VK_NULL_HANDLE;
-    Pending.clear();
-    Pending.shrink_to_fit();
+    ClearPending();
     Valid = false;
+}
+
+// ── Public submission API ─────────────────────────────────────────────────────
+
+void TilemapRenderFeature::Submit(std::span<const GpuTile> tiles, int32_t sortKey)
+{
+    if (!Valid || tiles.empty()) return;
+
+    const auto offset = static_cast<uint32_t>(TileData.size());
+    TileData.insert(TileData.end(), tiles.begin(), tiles.end());
+    Batches.push_back({ sortKey, offset, static_cast<uint32_t>(tiles.size()) });
+}
+
+void TilemapRenderFeature::ClearPending()
+{
+    TileData.clear();
+    Batches.clear();
 }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -167,106 +170,17 @@ bool TilemapRenderFeature::BuildPipeline(VkFormat colorFormat)
 
 void TilemapRenderFeature::OnDraw(const FrameContext& frame)
 {
-    if (!Valid) return;
-
-    // ── Sweep render states ───────────────────────────────────────────────────
-    //
-    // Build a sorted view of active render states (ascending LayerZIndex).
-    // We sort indices rather than the batch itself so the DataBatch is not
-    // mutated and its generational keys stay stable.
-
-    std::span<const TilemapRenderState> states = RenderStates->GetItems();
-    if (states.empty()) return;
-
-    // Collect indices sorted by LayerZIndex.
-    SortedIndices.clear();
-    SortedIndices.resize(states.size());
-    for (size_t i = 0; i < states.size(); ++i)
-        SortedIndices[i] = static_cast<uint32_t>(i);
-
-    std::stable_sort(SortedIndices.begin(), SortedIndices.end(),
-        [&](uint32_t a, uint32_t b)
-        {
-            return states[a].LayerZIndex < states[b].LayerZIndex;
-        });
-
-    // ── Generate tile instances ───────────────────────────────────────────────
-
-    Pending.clear();
-
-    for (uint32_t stateIdx : SortedIndices)
-    {
-        const TilemapRenderState& rs = states[stateIdx];
-        if (!rs.TilesetTexture.IsValid()) continue;
-
-        const Tilemap2d* map = Maps->TryGet(rs.MapKey);
-        if (!map) continue;
-
-        const Transform2f* worldXf = Transforms->TryGetWorld(rs.TransformKey);
-        if (!worldXf) continue;
-
-        const uint32_t cols     = map->Width();
-        const uint32_t rows     = map->Height();
-        const float    tileSize = map->GetTileSize();
-        const float    half     = tileSize * 0.5f;
-
-        // Derive per-tile scale from the world transform's Scale.
-        // If scale is non-uniform, tiles are stretched; this is intentional.
-        const float halfW = half * worldXf->Scale.X;
-        const float halfH = half * worldXf->Scale.Y;
-
-        const float sinRot = std::sin(worldXf->Rotation);
-        const float cosRot = std::cos(worldXf->Rotation);
-
-        const float invCols = rs.TilesetColumns > 0
-            ? 1.0f / static_cast<float>(rs.TilesetColumns) : 1.0f;
-        const float invRows = rs.TilesetRows > 0
-            ? 1.0f / static_cast<float>(rs.TilesetRows) : 1.0f;
-
-        for (uint32_t row = 0; row < rows; ++row)
-        {
-            for (uint32_t col = 0; col < cols; ++col)
-            {
-                const uint32_t tileId = map->GetTile(col, row);
-                if (tileId == 0) continue; // 0 == empty cell
-
-                // Tile IDs are 1-based; tileset index = tileId - 1.
-                const uint32_t tsIndex = tileId - 1u;
-                const uint32_t tsCol   = tsIndex % rs.TilesetColumns;
-                const uint32_t tsRow   = tsIndex / rs.TilesetColumns;
-
-                // Local centre of this tile in the tilemap's local space.
-                const float localX = (static_cast<float>(col) + 0.5f) * tileSize;
-                const float localY = (static_cast<float>(row) + 0.5f) * tileSize;
-
-                // World centre via full TRS (TransformPoint applies scale then rotate then translate).
-                const Vec<2, float> worldCentre =
-                    worldXf->TransformPoint(Vec<2, float>(localX, localY));
-
-                GpuTile& t        = Pending.emplace_back();
-                t.Center[0]       = worldCentre.X;
-                t.Center[1]       = worldCentre.Y;
-                t.HalfExtents[0]  = halfW;
-                t.HalfExtents[1]  = halfH;
-                t.UvMin[0]        = static_cast<float>(tsCol)     * invCols;
-                t.UvMin[1]        = static_cast<float>(tsRow)     * invRows;
-                t.UvMax[0]        = static_cast<float>(tsCol + 1) * invCols;
-                t.UvMax[1]        = static_cast<float>(tsRow + 1) * invRows;
-                t.Color           = 0xFFFFFFFFu; // opaque white
-                t.TextureIndex    = rs.TilesetTexture.Value;
-                t.SinRot          = sinRot;
-                t.CosRot          = cosRot;
-            }
-        }
-    }
-
-    if (Pending.empty()) return;
+    if (!Valid || Batches.empty()) return;
 
     if (!BuildPipeline(frame.TargetFormat))
     {
-        Pending.clear();
+        ClearPending();
         return;
     }
+
+    // Sort batches ascending by SortKey so lower layers draw first (behind).
+    std::stable_sort(Batches.begin(), Batches.end(),
+        [](const Batch& a, const Batch& b) { return a.SortKey < b.SortKey; });
 
     // ── Upload frame UBO ──────────────────────────────────────────────────────
 
@@ -274,7 +188,7 @@ void TilemapRenderFeature::OnDraw(const FrameContext& frame)
         Scratch->AllocateUniform(sizeof(FrameUbo));
     if (!uboAlloc.IsValid())
     {
-        Pending.clear();
+        ClearPending();
         return;
     }
 
@@ -288,21 +202,21 @@ void TilemapRenderFeature::OnDraw(const FrameContext& frame)
     // ── Upload tile instance buffer ───────────────────────────────────────────
 
     const VkDeviceSize instanceBytes =
-        sizeof(GpuTile) * static_cast<VkDeviceSize>(Pending.size());
+        sizeof(GpuTile) * static_cast<VkDeviceSize>(TileData.size());
     const VulkanFrameScratch::Allocation vboAlloc =
         Scratch->AllocateVertex(instanceBytes);
     if (!vboAlloc.IsValid())
     {
-        Pending.clear();
+        ClearPending();
         return;
     }
 
-    std::memcpy(vboAlloc.Mapped, Pending.data(), instanceBytes);
+    std::memcpy(vboAlloc.Mapped, TileData.data(), instanceBytes);
 
     const VkBuffer ringBuffer = Buffers->GetBuffer(vboAlloc.Buffer);
     if (ringBuffer == VK_NULL_HANDLE)
     {
-        Pending.clear();
+        ClearPending();
         return;
     }
 
@@ -335,8 +249,11 @@ void TilemapRenderFeature::OnDraw(const FrameContext& frame)
     const VkDeviceSize vboOffset = vboAlloc.Offset;
     vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &ringBuffer, &vboOffset);
 
-    // 6 vertices per tile (two triangles, no index buffer), N instances.
-    vkCmdDraw(frame.Cmd, 6, static_cast<uint32_t>(Pending.size()), 0, 0);
+    // One draw call per batch, in sorted order.
+    // firstInstance offsets into the flat tile VBO so batches are drawn
+    // in z-order without any re-copy or reorder of the tile data.
+    for (const Batch& batch : Batches)
+        vkCmdDraw(frame.Cmd, 6, batch.Count, 0, batch.Offset);
 
-    Pending.clear();
+    ClearPending();
 }
