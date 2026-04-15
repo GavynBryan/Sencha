@@ -64,10 +64,10 @@ Renderer::Renderer(LoggingProvider& logging,
 
 Renderer::~Renderer()
 {
-    // Signal all outstanding FeatureRefs that this Renderer is gone.
-    // Must be first so any assertion in a FeatureRef fires before the
-    // features themselves are torn down.
-    *Alive = false;
+    // Vacate all slots and bump their generations before any Teardown() runs.
+    // After this point every outstanding FeatureRef::Get() returns nullptr,
+    // so callers can't reach features that are mid-destruction.
+    UnregisterAllFeatures();
 
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
@@ -83,22 +83,49 @@ Renderer::~Renderer()
     }
 }
 
-void Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
+void Renderer::UnregisterAllFeatures()
 {
-    if (!Valid || feature == nullptr) return;
+    for (FeatureSlot& slot : FeatureSlots)
+    {
+        slot.Feature = nullptr;
+        ++slot.Generation;
+    }
+}
+
+uint32_t Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
+{
+    if (!Valid || feature == nullptr) return ~0u;
 
     const RenderPhase phase = feature->GetPhase();
-    const size_t idx = static_cast<size_t>(phase);
-    if (idx >= static_cast<size_t>(RenderPhase::Count))
+    const size_t phaseIdx = static_cast<size_t>(phase);
+    if (phaseIdx >= static_cast<size_t>(RenderPhase::Count))
     {
         Log.Error("Renderer::AddFeature: feature reports invalid phase ({})",
                   static_cast<int>(phase));
-        return;
+        return ~0u;
     }
 
     feature->Setup(Services);
-    PhaseBuckets[idx].push_back(feature.get());
+
+    IRenderFeature* raw = feature.get();
+    PhaseBuckets[phaseIdx].push_back(raw);
     OwnedFeatures.push_back(std::move(feature));
+
+    // Prefer reusing a vacated slot so indices stay compact. A reused slot's
+    // Generation has already been incremented on vacate, making any handles
+    // from the previous occupant permanently stale.
+    for (uint32_t i = 0; i < static_cast<uint32_t>(FeatureSlots.size()); ++i)
+    {
+        if (FeatureSlots[i].Feature == nullptr)
+        {
+            FeatureSlots[i].Feature = raw;
+            return i;
+        }
+    }
+
+    const uint32_t index = static_cast<uint32_t>(FeatureSlots.size());
+    FeatureSlots.push_back({raw, 0u});
+    return index;
 }
 
 Renderer::DrawStatus Renderer::DrawFrame()
