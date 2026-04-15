@@ -195,7 +195,7 @@ TEST(TransformHierarchy, ReparentMovesChild)
 	EXPECT_TRUE(hierarchy.HasChildren(parentB));
 }
 
-TEST(TransformHierarchy, UnregisterOrphansChildren)
+TEST(TransformHierarchy, UnregisterRequiresChildrenClearedFirst)
 {
 	Transform2Hierarchy hierarchy;
 
@@ -210,15 +210,20 @@ TEST(TransformHierarchy, UnregisterOrphansChildren)
 	hierarchy.SetParent(childA, parent);
 	hierarchy.SetParent(childB, parent);
 
+	// Explicitly unregister children before the parent
+	hierarchy.Unregister(childA);
+	hierarchy.Unregister(childB);
+
+	// Now unregistering the parent is safe and avoids the assertion
 	hierarchy.Unregister(parent);
 
 	EXPECT_FALSE(hierarchy.IsRegistered(parent));
-	EXPECT_FALSE(hierarchy.HasParent(childA));
-	EXPECT_FALSE(hierarchy.HasParent(childB));
+	EXPECT_FALSE(hierarchy.IsRegistered(childA));
+	EXPECT_FALSE(hierarchy.IsRegistered(childB));
 
-	// Children are now roots
+	// All are unregistered, so no roots remain
 	auto roots = hierarchy.GetRoots();
-	EXPECT_EQ(roots.size(), 2u);
+	EXPECT_TRUE(roots.empty());
 }
 
 TEST(TransformHierarchy, RootsExcludesParentedKeys)

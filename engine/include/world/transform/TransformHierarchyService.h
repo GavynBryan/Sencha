@@ -36,8 +36,9 @@ public:
 	// it has no parent.
 	void Register(DataBatchKey key);
 
-	// Remove a key from the hierarchy entirely. Orphans its children
-	// (they become roots). Call this when a participant is destroyed.
+	// Remove a key from the hierarchy entirely.
+	// You MUST clear or unregister all children before unregistering a parent.
+	// Call this when a participant is destroyed.
 	void Unregister(DataBatchKey key);
 
 	// -- Queries ------------------------------------------------------------
@@ -116,6 +117,7 @@ inline void TransformHierarchyService::Register(DataBatchKey key)
 
 inline void TransformHierarchyService::Unregister(DataBatchKey key)
 {
+	assert(!HasChildren(key) && "Cannot unregister a parent with active children. Tear down children first.");
 	ClearParent(key);
 
 	auto cit = ParentToChildren.find(key.Value);
