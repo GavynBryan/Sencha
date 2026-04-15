@@ -36,7 +36,7 @@ public:
 	EventBuffer<RawInputEvent>& GetRawInput() { return RawBuffer; }
 
 private:
-	void Update() override;
+	void Update(const FrameTime& time) override;
 	void IngestFromSdl();
 	void MapRawToActions();
 	void ProcessRawEvent(const RawInputEvent& raw);

@@ -2,6 +2,7 @@
 
 #include <core/system/ISystem.h>
 #include <core/system/SystemPhase.h>
+#include <time/FrameTime.h>
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -23,7 +24,7 @@ public:
 	bool Has() const;
 
 	void Init();
-	void Update();
+	void Update(const FrameTime& time);
 	void Shutdown();
 
 private:
@@ -88,10 +89,10 @@ inline void SystemHost::Init()
 	Initialized = true;
 }
 
-inline void SystemHost::Update()
+inline void SystemHost::Update(const FrameTime& time)
 {
 	for (auto& entry : Systems) {
-		entry.System->Update();
+		entry.System->Update(time);
 	}
 }
 

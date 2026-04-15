@@ -28,7 +28,7 @@ SdlInputSystem::SdlInputSystem(LoggingProvider& logging, InputBindingService& bi
 {
 }
 
-void SdlInputSystem::Update()
+void SdlInputSystem::Update(const FrameTime& /*time*/)
 {
 	ActionEvents.Clear();
 	IngestFromSdl();

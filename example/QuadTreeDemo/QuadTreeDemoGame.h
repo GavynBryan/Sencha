@@ -65,7 +65,7 @@ public:
 		const EventBuffer<InputActionEvent>& inputEvents);
 
 private:
-	void Update() override;
+	void Update(const FrameTime& time) override;
 
 	QuadTreeDemoState& State;
 	World2d& World;
@@ -83,7 +83,7 @@ public:
 		BindlessImageIndex whiteTexture);
 
 private:
-	void Update() override;
+	void Update(const FrameTime& time) override;
 
 	QuadTreeDemoState& State;
 	World2d& World;

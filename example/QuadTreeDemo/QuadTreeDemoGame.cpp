@@ -86,7 +86,7 @@ QuadTreePlayerMovementSystem::QuadTreePlayerMovementSystem(
 {
 }
 
-void QuadTreePlayerMovementSystem::Update()
+void QuadTreePlayerMovementSystem::Update(const FrameTime& /*time*/)
 {
 	Vec2d direction = Vec2d::Zero();
 	for (const auto& event : InputEvents.Items())
@@ -150,7 +150,7 @@ QuadTreeRenderSystem::QuadTreeRenderSystem(
 {
 }
 
-void QuadTreeRenderSystem::Update()
+void QuadTreeRenderSystem::Update(const FrameTime& /*time*/)
 {
 	const auto* playerWorld = World.Transforms.TryGetWorld(State.Player.Transform.TransformKey());
 	if (playerWorld == nullptr)

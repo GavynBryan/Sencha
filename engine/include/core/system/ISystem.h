@@ -1,5 +1,7 @@
 #pragma once
 
+#include <time/FrameTime.h>
+
 class ISystem
 {
 	friend class SystemHost;
@@ -9,6 +11,6 @@ public:
 
 private:
 	virtual void Init() {}
-	virtual void Update() {}
+	virtual void Update(const FrameTime& time) {}
 	virtual void Shutdown() {}
 };
