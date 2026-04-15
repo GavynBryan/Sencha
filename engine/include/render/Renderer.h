@@ -4,9 +4,9 @@
 #include <core/service/IService.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanFrameService.h>
+#include <render/GenHandle.h>
 #include <vulkan/vulkan.h>
 
-#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <type_traits>
@@ -25,28 +25,6 @@ class VulkanPipelineCache;
 class VulkanDescriptorCache;
 class VulkanFrameScratch;
 class VulkanUploadContextService;
-
-//=============================================================================
-// FeatureHandle<T>
-//
-// Lightweight typed handle to a registered render feature. Two uint32_ts,
-// trivially copyable, no heap allocation. The Index addresses a slot in the
-// Renderer's stable slot array; Generation is the value that slot held when
-// the feature was registered. Any mismatch on resolve → stale handle.
-//=============================================================================
-template <typename T>
-struct FeatureHandle
-{
-    uint32_t Index      = ~0u;
-    uint32_t Generation = 0;
-
-    [[nodiscard]] bool IsNull() const { return Index == ~0u; }
-};
-
-// Forward declaration so Renderer::AddFeature can name FeatureRef<T> as its
-// return type before the full class definition appears below.
-template <typename T>
-class FeatureRef;
 
 //=============================================================================
 // Renderer
@@ -178,29 +156,20 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
 
-    // Take ownership of a feature, run its Setup(), and return a typed
-    // FeatureRef<T>. The ref remains valid for the lifetime of this Renderer
-    // or until the feature is explicitly unregistered. Returns an empty ref
-    // on failure (invalid renderer, null feature, or bad phase).
-    //
-    // Defined after FeatureRef<T> below so that class is complete.
+    // Take ownership of a feature, run its Setup(), and return a GenRef<T>
+    // (aliased as FeatureRef<T> below) backed by the Renderer's SlotRegistry.
+    // The ref stays valid until ~Renderer calls RemoveAll(), which happens
+    // before any Teardown().
     template <typename T>
-    FeatureRef<T> AddFeature(std::unique_ptr<T> feature);
-
-    // O(1) handle resolver: bounds check, null check, generation match, cast.
-    // Returns nullptr if the handle is stale. Safe to call from any context.
-    //
-    // The static_cast is well-defined: slots are only written by AddFeature<T>
-    // which ensures the IRenderFeature* is actually a T*.
-    template <typename T>
-    [[nodiscard]] T* ResolveFeature(FeatureHandle<T> handle) const
+    GenRef<T> AddFeature(std::unique_ptr<T> feature)
     {
-        if (handle.Index >= static_cast<uint32_t>(FeatureSlots.size()))
-            return nullptr;
-        const FeatureSlot& slot = FeatureSlots[handle.Index];
-        if (slot.Feature == nullptr || slot.Generation != handle.Generation)
-            return nullptr;
-        return static_cast<T*>(slot.Feature);
+        static_assert(std::is_base_of_v<IRenderFeature, T>,
+                      "T must derive from IRenderFeature");
+        if (!Valid || !feature) return {};
+        T* raw = static_cast<T*>(
+            AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release())));
+        if (!raw) return {};
+        return GenRef<T>(FeatureRegistry, FeatureRegistry->Insert(raw));
     }
 
     // One-call frame driver: acquire -> scratch rotate -> phase iterate ->
@@ -212,103 +181,27 @@ public:
     void NotifySwapchainRecreated();
 
 private:
-    // Stable slot storage. Slots are appended or vacated, never removed or
-    // reordered, so the Index embedded in a FeatureHandle stays valid for the
-    // Renderer's entire lifetime. On vacate, Generation is incremented so any
-    // handle carrying the old generation becomes stale on the next Resolve.
-    struct FeatureSlot
-    {
-        IRenderFeature* Feature   = nullptr;
-        uint32_t        Generation = 0;
-    };
-
     Logger& Log;
     VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
     RendererServices Services;
+    std::shared_ptr<SlotRegistry> FeatureRegistry = std::make_shared<SlotRegistry>();
     bool Valid = false;
 
-    std::vector<FeatureSlot>               FeatureSlots;
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;
-    std::vector<IRenderFeature*>           PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
-    std::vector<VkImageLayout>             ImageLayouts;
+    std::vector<IRenderFeature*> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
+    std::vector<VkImageLayout> ImageLayouts;
 
-    // Returns the slot index on success, ~0u on failure.
-    uint32_t AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
-
-    // Vacates all slots and bumps their generations, atomically invalidating
-    // every outstanding FeatureRef. Called at the top of ~Renderer before
-    // any Teardown() runs.
-    void UnregisterAllFeatures();
+    // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
+    // Returns the raw pointer on success, nullptr on failure.
+    // Does not touch FeatureRegistry -- AddFeature<T> owns that step so the
+    // returned pointer can be inserted with the correct template type.
+    IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
 
     void RecordMainColorPhase(const VulkanFrame& frame);
 };
 
-//=============================================================================
-// FeatureRef<T>
-//
-// Non-owning resolver handle. Stores a Renderer* and a FeatureHandle<T>.
-// Every dereference pays one bounds check + one generation compare -- no
-// atomics, no heap, no shared ownership. IsValid() / Get() are safe to call
-// after the Renderer is destroyed (Owner still points at dead memory, so
-// don't keep FeatureRefs past that lifetime -- but handle.Index will fail the
-// bounds/generation check immediately against the cleared slots).
-//
-// In the normal case (Renderer outlives FeatureRef), stale detection fires
-// when a feature is explicitly unregistered or when ~Renderer calls
-// UnregisterAllFeatures() before running any Teardown().
-//=============================================================================
+// Domain alias. GenRef<T> is the generic handle resolver; FeatureRef<T> is
+// what Renderer call sites use. Keeping the name avoids churn at usage points.
 template <typename T>
-class FeatureRef
-{
-public:
-    FeatureRef() = default;
-
-    FeatureRef(Renderer* owner, FeatureHandle<T> handle)
-        : Owner(owner), Handle(handle) {}
-
-    // Resolves the handle. Returns nullptr if stale. O(1).
-    [[nodiscard]] T* Get() const
-    {
-        return Owner ? Owner->ResolveFeature(Handle) : nullptr;
-    }
-
-    [[nodiscard]] bool IsValid() const { return Get() != nullptr; }
-    explicit operator bool() const { return IsValid(); }
-
-    T* operator->() const
-    {
-        T* ptr = Get();
-        assert(ptr != nullptr && "FeatureRef: accessed stale handle (feature unregistered or Renderer destroyed)");
-        return ptr;
-    }
-
-    T& operator*() const
-    {
-        T* ptr = Get();
-        assert(ptr != nullptr && "FeatureRef: accessed stale handle (feature unregistered or Renderer destroyed)");
-        return *ptr;
-    }
-
-private:
-    Renderer*        Owner  = nullptr;
-    FeatureHandle<T> Handle = {};
-};
-
-//=============================================================================
-// Renderer::AddFeature -- defined here so FeatureRef<T> is complete.
-//=============================================================================
-template <typename T>
-inline FeatureRef<T> Renderer::AddFeature(std::unique_ptr<T> feature)
-{
-    static_assert(std::is_base_of_v<IRenderFeature, T>,
-                  "T must derive from IRenderFeature");
-    if (!Valid || !feature) return {};
-
-    const uint32_t index = AddFeatureImpl(
-        std::unique_ptr<IRenderFeature>(feature.release()));
-
-    if (index == ~0u) return {};
-
-    return FeatureRef<T>(this, FeatureHandle<T>{index, FeatureSlots[index].Generation});
-}
+using FeatureRef = GenRef<T>;

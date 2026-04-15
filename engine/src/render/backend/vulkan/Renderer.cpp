@@ -64,10 +64,11 @@ Renderer::Renderer(LoggingProvider& logging,
 
 Renderer::~Renderer()
 {
-    // Vacate all slots and bump their generations before any Teardown() runs.
-    // After this point every outstanding FeatureRef::Get() returns nullptr,
-    // so callers can't reach features that are mid-destruction.
-    UnregisterAllFeatures();
+    // Vacate all registry slots before any Teardown() runs. This provides
+    // two-stage protection: Get() returns nullptr while the registry is still
+    // alive (slots cleared), and after ~Renderer returns the shared_ptr drops,
+    // so weak_ptr::lock() also fails for any refs that outlive the Renderer.
+    FeatureRegistry->RemoveAll();
 
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
@@ -83,18 +84,9 @@ Renderer::~Renderer()
     }
 }
 
-void Renderer::UnregisterAllFeatures()
+IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
 {
-    for (FeatureSlot& slot : FeatureSlots)
-    {
-        slot.Feature = nullptr;
-        ++slot.Generation;
-    }
-}
-
-uint32_t Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
-{
-    if (!Valid || feature == nullptr) return ~0u;
+    if (!Valid || feature == nullptr) return nullptr;
 
     const RenderPhase phase = feature->GetPhase();
     const size_t phaseIdx = static_cast<size_t>(phase);
@@ -102,7 +94,7 @@ uint32_t Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
     {
         Log.Error("Renderer::AddFeature: feature reports invalid phase ({})",
                   static_cast<int>(phase));
-        return ~0u;
+        return nullptr;
     }
 
     feature->Setup(Services);
@@ -110,22 +102,7 @@ uint32_t Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
     IRenderFeature* raw = feature.get();
     PhaseBuckets[phaseIdx].push_back(raw);
     OwnedFeatures.push_back(std::move(feature));
-
-    // Prefer reusing a vacated slot so indices stay compact. A reused slot's
-    // Generation has already been incremented on vacate, making any handles
-    // from the previous occupant permanently stale.
-    for (uint32_t i = 0; i < static_cast<uint32_t>(FeatureSlots.size()); ++i)
-    {
-        if (FeatureSlots[i].Feature == nullptr)
-        {
-            FeatureSlots[i].Feature = raw;
-            return i;
-        }
-    }
-
-    const uint32_t index = static_cast<uint32_t>(FeatureSlots.size());
-    FeatureSlots.push_back({raw, 0u});
-    return index;
+    return raw;
 }
 
 Renderer::DrawStatus Renderer::DrawFrame()
