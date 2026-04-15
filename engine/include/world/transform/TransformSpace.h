@@ -18,9 +18,9 @@
 // layer, a minimap, a particle sub-scene. They are peers, not a hierarchy of
 // "the world and the rest" — each domain is complete on its own.
 //
-// Members are public because a domain is a bundle, not an abstraction. Systems
+// Members are public because a space is a bundle, not an abstraction. Systems
 // and engine wiring read the batches and services directly; gameplay code uses
-// `Transforms` (the store) and `Hierarchy` for keyed access.
+// `Transforms` (the view) and `Hierarchy` for keyed access.
 //=============================================================================
 template <typename TTransform>
 class TransformSpace
