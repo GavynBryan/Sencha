@@ -6,6 +6,7 @@
 #include <render/backend/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <type_traits>
@@ -92,6 +93,42 @@ struct FrameContext
     RenderPhase Phase = RenderPhase::MainColor;
 };
 
+//=============================================================================
+// FeatureRef<T>
+//
+// Non-owning handle to a feature registered with a Renderer. The wrapped
+// pointer is valid until the owning Renderer is destroyed; after that,
+// IsValid() returns false and operator-> / operator* assert in debug builds.
+//=============================================================================
+template <typename T>
+class FeatureRef
+{
+public:
+    FeatureRef() = default;
+
+    FeatureRef(T* ptr, std::shared_ptr<bool> alive)
+        : Ptr(ptr), Alive(std::move(alive)) {}
+
+    [[nodiscard]] bool IsValid() const { return Ptr != nullptr && Alive && *Alive; }
+    explicit operator bool() const { return IsValid(); }
+
+    T* operator->() const
+    {
+        assert(IsValid() && "FeatureRef used after ~Renderer");
+        return Ptr;
+    }
+
+    T& operator*() const
+    {
+        assert(IsValid() && "FeatureRef used after ~Renderer");
+        return *Ptr;
+    }
+
+private:
+    T* Ptr = nullptr;
+    std::shared_ptr<bool> Alive;
+};
+
 class IRenderFeature
 {
 public:
@@ -159,17 +196,17 @@ public:
     // feature is inserted into its phase bucket in insertion order. Safe
     // to call any time before DrawFrame, typically at game boot.
     //
-    // Returns the raw pointer so game code can keep a handle for things
-    // like calling Submit() on a sprite feature. Lifetime is tied to the
-    // Renderer itself -- safe to dereference until ~Renderer runs.
+    // Returns a FeatureRef<T> whose IsValid() tracks the Renderer's lifetime.
+    // operator-> and operator* assert in debug builds if used after ~Renderer.
     template <typename T>
-    T* AddFeature(std::unique_ptr<T> feature)
+    FeatureRef<T> AddFeature(std::unique_ptr<T> feature)
     {
         static_assert(std::is_base_of_v<IRenderFeature, T>,
                       "T must derive from IRenderFeature");
+        if (!Valid || !feature) return {};
         T* raw = feature.get();
         AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()));
-        return raw;
+        return FeatureRef<T>(raw, Alive);
     }
 
     // One-call frame driver: acquire -> scratch rotate -> phase iterate ->
@@ -185,6 +222,7 @@ private:
     VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
     RendererServices Services;
+    std::shared_ptr<bool> Alive = std::make_shared<bool>(true);
     bool Valid = false;
 
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;

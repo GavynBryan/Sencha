@@ -22,7 +22,7 @@ class VulkanDescriptorCache;
 //
 // Usage model:
 //
-//   SpriteFeature* sprites =
+//   FeatureRef<SpriteFeature> sprites =
 //       renderer.AddFeature(std::make_unique<SpriteFeature>());
 //
 //   // Each frame, before renderer.DrawFrame():

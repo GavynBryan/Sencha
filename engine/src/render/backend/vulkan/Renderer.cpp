@@ -64,6 +64,11 @@ Renderer::Renderer(LoggingProvider& logging,
 
 Renderer::~Renderer()
 {
+    // Signal all outstanding FeatureRefs that this Renderer is gone.
+    // Must be first so any assertion in a FeatureRef fires before the
+    // features themselves are torn down.
+    *Alive = false;
+
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
     // the caches own the VkDevice objects, and the device service outlives us.

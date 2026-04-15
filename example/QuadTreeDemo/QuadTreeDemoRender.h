@@ -77,7 +77,7 @@ private:
 	std::unique_ptr<VulkanFrameService> Frames;
 	std::unique_ptr<Renderer> RendererPtr;
 
-	SpriteFeature* SpritesPtr = nullptr;
+	FeatureRef<SpriteFeature> SpritesPtr;
 	ImageHandle WhiteImage;
 	BindlessImageIndex WhiteSlot;
 };
