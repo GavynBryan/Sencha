@@ -1,6 +1,6 @@
 #pragma once
 #include <core/batch/DataBatchKey.h>
-#include <core/raii/DataBatchHandle.h>
+#include <core/handle/DataBatchHandle.h>
 #include <core/service/IService.h>
 #include <algorithm>
 #include <cassert>

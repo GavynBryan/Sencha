@@ -80,9 +80,9 @@ public:
 
 // ---- Renderer -----------------------------------------------------------
 
-// Add a feature and run its Setup() immediately. Returns a raw pointer
-// whose lifetime is tied to the Renderer.
-T* raw = renderer.AddFeature(std::make_unique<MyFeature>());
+// Add a feature and run its Setup() immediately. Returns a FeatureRef<T>
+// whose IsValid() becomes false once the Renderer is destroyed.
+FeatureRef<MyFeature> ref = renderer.AddFeature(std::make_unique<MyFeature>());
 
 // Drive one frame: acquire → scratch rotate → phase iterate → present.
 Renderer::DrawStatus status = renderer.DrawFrame();
@@ -133,7 +133,7 @@ auto renderer = std::make_unique<Renderer>(
     *allocator, *buffers, *images, *samplers, *shaders, *pipelines,
     *descriptors, *scratch, *upload);
 
-SpriteFeature* sprites =
+FeatureRef<SpriteFeature> sprites =
     renderer->AddFeature(std::make_unique<SpriteFeature>());
 ```
 
@@ -167,7 +167,7 @@ baked; a `TilemapRenderSystem` that dirty-tracks maps and transforms is the
 expected driver.
 
 ```cpp
-auto* tilemap =
+FeatureRef<TilemapRenderFeature> tilemap =
     renderer->AddFeature(std::make_unique<TilemapRenderFeature>());
 
 // Each frame, before renderer.DrawFrame():
@@ -212,21 +212,14 @@ to a future `CameraFeature` or a view-matrix push constant.
 
 ## Constraints
 
-**Do not call `ServiceHost` inside `OnDraw()`.**  `OnDraw()` is the hot path.
-Every service the feature needs must be cached into member pointers during
-`Setup()`.  The `RendererServices` bundle is provided specifically for this.
-
 **Do not submit sprites after `DrawFrame()` for the same frame.**  The
 accumulator is cleared by `OnDraw()`.  Submissions must happen between the
 previous `DrawFrame()` returning and the next one being called.
 
-**Do not hold raw `IRenderFeature*` pointers across `~Renderer`.**  `AddFeature`
-returns a raw pointer whose lifetime is tied to the `Renderer` instance.  Once
-the `Renderer` is destroyed, all feature pointers are dangling.
-
-**Do not implement multi-phase features.**  Each `IRenderFeature` reports
-exactly one `RenderPhase`.  A feature that needs to draw in two phases must be
-split into two separate feature objects.
+**Do not dereference a `FeatureRef<T>` after `~Renderer`.**  `AddFeature`
+returns a `FeatureRef<T>` whose `IsValid()` returns false once the `Renderer`
+is destroyed.  `operator->` and `operator*` assert in debug builds if called on
+an invalid ref.
 
 **`Contribute()` must be called before the device is created.**  The `Renderer`
 never calls `Contribute()` itself — that is a pre-device hook for game boot

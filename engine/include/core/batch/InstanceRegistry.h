@@ -1,5 +1,5 @@
 #pragma once
-#include <core/raii/ILifetimeOwner.h>
+#include <core/handle/ILifetimeOwner.h>
 #include <core/service/IService.h>
 #include <algorithm>
 #include <cassert>

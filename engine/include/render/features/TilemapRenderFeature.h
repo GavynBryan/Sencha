@@ -20,7 +20,7 @@ class VulkanFrameScratch;
 //
 // Usage model (mirrors SpriteFeature):
 //
-//   TilemapRenderFeature* tiles =
+//   FeatureRef<TilemapRenderFeature> tiles =
 //       renderer.AddFeature(std::make_unique<TilemapRenderFeature>());
 //
 //   // Each frame, before renderer.DrawFrame():

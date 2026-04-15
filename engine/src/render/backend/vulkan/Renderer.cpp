@@ -64,6 +64,12 @@ Renderer::Renderer(LoggingProvider& logging,
 
 Renderer::~Renderer()
 {
+    // Vacate all registry slots before any Teardown() runs. This provides
+    // two-stage protection: Get() returns nullptr while the registry is still
+    // alive (slots cleared), and after ~Renderer returns the shared_ptr drops,
+    // so weak_ptr::lock() also fails for any refs that outlive the Renderer.
+    FeatureRegistry->RemoveAll();
+
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
     // the caches own the VkDevice objects, and the device service outlives us.
@@ -78,22 +84,25 @@ Renderer::~Renderer()
     }
 }
 
-void Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
+IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature)
 {
-    if (!Valid || feature == nullptr) return;
+    if (!Valid || feature == nullptr) return nullptr;
 
     const RenderPhase phase = feature->GetPhase();
-    const size_t idx = static_cast<size_t>(phase);
-    if (idx >= static_cast<size_t>(RenderPhase::Count))
+    const size_t phaseIdx = static_cast<size_t>(phase);
+    if (phaseIdx >= static_cast<size_t>(RenderPhase::Count))
     {
         Log.Error("Renderer::AddFeature: feature reports invalid phase ({})",
                   static_cast<int>(phase));
-        return;
+        return nullptr;
     }
 
     feature->Setup(Services);
-    PhaseBuckets[idx].push_back(feature.get());
+
+    IRenderFeature* raw = feature.get();
+    PhaseBuckets[phaseIdx].push_back(raw);
     OwnedFeatures.push_back(std::move(feature));
+    return raw;
 }
 
 Renderer::DrawStatus Renderer::DrawFrame()

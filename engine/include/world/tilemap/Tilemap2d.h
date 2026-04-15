@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/batch/DataBatchKey.h>
-#include <core/raii/DataBatchHandle.h>
+#include <core/handle/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/spatial/Grid2d.h>
 #include <world/transform/TransformDomain.h>

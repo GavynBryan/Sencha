@@ -3,7 +3,7 @@
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformPropagationSystem.h>
-#include <core/raii/DataBatchHandle.h>
+#include <core/handle/DataBatchHandle.h>
 
 #include <algorithm>
 #include <atomic>

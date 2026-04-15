@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/raii/ILifetimeOwner.h>
-#include <core/raii/LifetimeHandle.h>
+#include <core/handle/ILifetimeOwner.h>
+#include <core/handle/LifetimeHandle.h>
 #include <core/service/IService.h>
 
 #include <cassert>

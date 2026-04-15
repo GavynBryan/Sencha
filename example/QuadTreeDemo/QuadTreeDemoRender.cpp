@@ -119,7 +119,7 @@ QuadTreeDemoRenderBootstrap::QuadTreeDemoRenderBootstrap(LoggingProvider& loggin
 	if (!RendererPtr->IsValid()) return;
 
 	SpritesPtr = RendererPtr->AddFeature(std::make_unique<SpriteFeature>());
-	if (SpritesPtr == nullptr || !SpritesPtr->IsValid())
+	if (!SpritesPtr || !SpritesPtr->IsValid())
 	{
 		logger.Error("Failed to initialize SpriteFeature");
 		return;

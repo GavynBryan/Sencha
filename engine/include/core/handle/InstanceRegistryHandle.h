@@ -1,5 +1,5 @@
 #pragma once
-#include <core/raii/LifetimeHandle.h>
+#include <core/handle/LifetimeHandle.h>
 
 //=============================================================================
 // InstanceRegistryHandle<T>
