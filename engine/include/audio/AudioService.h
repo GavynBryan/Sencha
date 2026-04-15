@@ -1,6 +1,7 @@
 #pragma once
 
 #include <audio/AudioBus.h>
+#include <audio/AudioConfig.h>
 #include <audio/AudioVoice.h>
 #include <assets/audio/AudioClip.h>
 #include <core/identity/Id.h>
@@ -15,33 +16,6 @@
 // Private implementation struct defined in src/audio/AudioVoice.h.
 // Never exposed through the public API; callers hold VoiceIds only.
 struct AudioVoiceSlot;
-
-//=============================================================================
-// EngineAudioBusConfig
-//
-// Load-time description of one bus. Deserialized from JSON at startup and
-// compiled into a live AudioBus. The built-in Engine bus is hardcoded by
-// AudioService and must not appear in this list.
-//=============================================================================
-struct EngineAudioBusConfig
-{
-    std::string      Name;
-    uint8_t          MaxVoices   = 1;
-    float            Volume      = 1.0f;
-    bool             Muted       = false;
-    VoiceStealPolicy StealPolicy = VoiceStealPolicy::Reject;
-};
-
-//=============================================================================
-// EngineAudioConfig
-//
-// Top-level config passed to AudioService at construction time. Buses defined
-// here are created after (and in addition to) the built-in Engine bus.
-//=============================================================================
-struct EngineAudioConfig
-{
-    std::vector<EngineAudioBusConfig> Buses;
-};
 
 //=============================================================================
 // PlayParams
