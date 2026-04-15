@@ -23,7 +23,7 @@ Sencha is early and actively changing. The repository currently contains:
 - Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frames.
 - Vulkan resource caches and helpers: allocator, buffer, image, sampler, shader, pipeline, descriptor, upload context, per-frame scratch, and barrier utilities.
 - A `Renderer` host with pluggable render features, starting with an immediate-mode `SpriteFeature` for batched sprite draws.
-- A `World` domain covering transform hierarchy propagation, reusable transform nodes, and a 2D tilemap.
+- A `World` domain covering transform hierarchy propagation, reusable transform nodes, a 2D tilemap, and an entity registry with typed `EntityBatch<T>` containers and subtree destruction.
 - GoogleTest coverage across core, math/geometry, world, and render code.
 - Examples for input mapping, SDL/Vulkan window startup, transform hierarchy stress testing, and a `JasmineGreen` sprite sample.
 
@@ -45,6 +45,7 @@ engine/
       features/
     window/
     world/
+      entity/
       tilemap/
       transform/
   src/
@@ -88,6 +89,7 @@ Current integrations include:
 World groups engine features that sit on top of the smaller domains:
 
 - `world/transform` — `TransformDomain` (a self-contained transform space), `TransformStore`, `TransformHierarchyService`, propagation order/system, and `TransformNode` for rule-of-zero hierarchy participation.
+- `world/entity` — `EntityRegistry`, `EntityBatch<T>`, `EntityKey`, and `EntityRecord` for stable entity identity, cross-type destroy routing, and subtree destruction.
 - `world/tilemap` — `Tilemap2d` for 2D tile grids.
 
 ### ECS Stance
@@ -126,6 +128,11 @@ test/      GoogleTest-based engine tests.
 |---|---|
 | [docs/shaders.md](shaders.md) | Shader authoring, build pipeline, metadata format, hot-reload, and planned tiers. |
 | [docs/grid.md](grid.md) | `Grid2d<T>` setup, storage model, idiomatic usage, constraints, and its role in the tilemap pipeline. |
+| [docs/transform.md](transform.md) | Transform value types (`Transform2d`, `Transform3d`), hierarchy propagation, transform systems, and domain structure |
+| [docs/render.md](render.md) | `Renderer` architecture, render feature system, Vulkan backend integration, and rendering pipeline overview |
+| [docs/data.md](data.md) | Data containers, batch storage, serialization, and memory management |
+| [docs/audio.md](audio.md) | Audio system design, integration, and usage examples |
+| [docs/entity.md](entity.md) | `EntityBatch<T>`, `EntityRegistry`, `EntityKey`, subtree destruction, and the `IsEntity` concept. |
 
 ## Requirements
 

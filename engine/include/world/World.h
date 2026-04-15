@@ -3,6 +3,8 @@
 #include <core/service/IService.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <world/entity/EntityKey.h>
+#include <world/entity/EntityRegistry.h>
 #include <world/transform/TransformDomain.h>
 
 //=============================================================================
@@ -10,9 +12,8 @@
 //
 // Gameplay-facing service bundle for transform-dimensioned game-world state.
 // World owns a TransformDomain (the self-contained transform space used by
-// the game simulation) and registers with ServiceHost so gameplay code can
-// resolve it and reach transform state through `Transforms` and
-// `TransformHierarchy`.
+// the game simulation) and an EntityRegistry, and registers with ServiceHost
+// so gameplay code can resolve it by dimension.
 //
 // World is NOT the only TransformDomain in the engine. UI, editor gizmos, or
 // any other subsystem that wants an isolated coordinate space creates its own
@@ -33,11 +34,23 @@ public:
 	{
 	}
 
-	// -- The transform space owned by this world --------------------------
+	// -- The transform space owned by this world ---------------------------
 
 	TransformDomain<TTransform> Domain;
 
-	// -- Gameplay-facing shortcuts (forward into Domain) ------------------
+	// -- Entity registry ---------------------------------------------------
+
+	EntityRegistry Entities;
+
+	// Destroy an entity and all of its transform-hierarchy descendants,
+	// leaves first. Convenience wrapper — passes Domain.Hierarchy so callers
+	// don't have to.
+	void DestroySubtree(EntityKey root)
+	{
+		Entities.DestroySubtree(root, Domain.Hierarchy);
+	}
+
+	// -- Gameplay-facing shortcuts (forward into Domain) -------------------
 
 	TransformStore<TTransform>& Transforms;
 	TransformHierarchyService& TransformHierarchy;
