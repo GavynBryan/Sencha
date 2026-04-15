@@ -9,7 +9,7 @@
 #include <world/transform/TransformNode.h>
 #include <world/tilemap/Tilemap2d.h>
 #include <world/World.h>
-#include <core/raii/DataBatchHandle.h>
+#include <core/handle/DataBatchHandle.h>
 #include <core/service/ServiceHost.h>
 #include <cmath>
 #include <numbers>

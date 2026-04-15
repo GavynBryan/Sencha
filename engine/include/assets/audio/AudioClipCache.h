@@ -3,7 +3,7 @@
 #include <assets/audio/AudioClip.h>
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/raii/LifetimeHandle.h>
+#include <core/handle/LifetimeHandle.h>
 
 #include <cstdint>
 #include <string>

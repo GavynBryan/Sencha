@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <core/batch/InstanceRegistry.h>
-#include <core/raii/InstanceRegistryHandle.h>
+#include <core/handle/InstanceRegistryHandle.h>
 
 // --- Test helpers ---
 

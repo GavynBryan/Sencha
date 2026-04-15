@@ -1,8 +1,8 @@
 #pragma once
 
 #include <core/batch/DataBatch.h>
-#include <core/raii/DataBatchHandle.h>
-#include <core/raii/ILifetimeOwner.h>
+#include <core/handle/DataBatchHandle.h>
+#include <core/handle/ILifetimeOwner.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <cstdint>

@@ -4,7 +4,7 @@
 #include <core/service/IService.h>
 #include <render/backend/vulkan/VulkanBootstrapPolicy.h>
 #include <render/backend/vulkan/VulkanFrameService.h>
-#include <render/GenHandle.h>
+#include <core/handle/GenHandle.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>

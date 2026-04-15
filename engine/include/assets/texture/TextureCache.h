@@ -3,7 +3,7 @@
 #include <assets/texture/Image.h>
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/raii/LifetimeHandle.h>
+#include <core/handle/LifetimeHandle.h>
 #include <render/backend/vulkan/VulkanDescriptorCache.h>
 #include <render/backend/vulkan/VulkanImageService.h>
 #include <render/backend/vulkan/VulkanSamplerCache.h>
