@@ -20,7 +20,7 @@ engine/include/world/transform/
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformNode.h>
-#include <world/transform/TransformDomain.h>
+#include <world/transform/TransformSpace.h>
 ```
 
 Common aliases are `Transform2f = Transform2d<float>` and
@@ -138,36 +138,36 @@ transform.
 
 ---
 
-## TransformDomain
+## TransformSpace
 
-`TransformDomain<TTransform>` is a self-contained bundle of all transform
+`TransformSpace<TTransform>` is a self-contained bundle of all transform
 services.  Any subsystem that needs its own isolated transform space creates one.
 
 ```
-engine/include/world/transform/TransformDomain.h
+engine/include/world/transform/TransformSpace.h
 ```
 
 ```cpp
-TransformDomain<Transform2f> domain;
+TransformSpace<Transform2f> domain;
 
 // Contained services (all accessible as members):
-domain.Transforms   // TransformStore — allocates and owns local/world pairs
+domain.Transforms   // TransformView — allocates and owns local/world pairs
 domain.Hierarchy    // TransformHierarchyService — parent-child graph
 domain.Propagation  // TransformPropagationSystem — derives world transforms
 ```
 
-`World<TTransform>` owns one `TransformDomain` and one `EntityRegistry` for
+`World<TTransform>` owns one `TransformSpace` and one `EntityRegistry` for
 game-world objects.  UI, editor gizmos, and particle systems can own
-independent `TransformDomain` instances with no coupling between them.
+independent `TransformSpace` instances with no coupling between them.
 
 ---
 
 ## API
 
-### TransformStore
+### TransformView
 
 ```
-engine/include/world/transform/TransformStore.h
+engine/include/world/transform/TransformView.h
 ```
 
 ```cpp
@@ -265,7 +265,7 @@ a key for parenting.
 ```cpp
 struct Actor
 {
-    Actor(TransformDomain<Transform2f>& domain, const Transform2f& local)
+    Actor(TransformSpace<Transform2f>& domain, const Transform2f& local)
         : Node(domain, local)
     {}
 
@@ -299,7 +299,7 @@ Reading a world transform before `Propagate()` has run for the current frame
 yields the value from the previous frame.  Systems that consume world transforms
 must be ordered after the propagation step.
 
-**Do not skip registration.**  A key that is added to a `TransformStore` but
+**Do not skip registration.**  A key that is added to a `TransformView` but
 never registered with the hierarchy is treated as orphaned and will be absent
 from the propagation order.  Use `TransformNode` (which registers automatically)
 or call `hierarchy.Register(key)` manually.
@@ -334,7 +334,7 @@ layers compose without any reaching downward past their direct dependency:
 ```
 Transform2d / Transform3d     pure TRS value; no ownership, no allocation
         │
-TransformStore                allocates paired local/world slots per key
+TransformView                allocates paired local/world slots per key
         │
 TransformHierarchyService     records parent-child relationships; version-tracked
         │

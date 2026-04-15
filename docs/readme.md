@@ -88,7 +88,7 @@ Current integrations include:
 
 World groups engine features that sit on top of the smaller domains:
 
-- `world/transform` — `TransformDomain` (a self-contained transform space), `TransformStore`, `TransformHierarchyService`, propagation order/system, and `TransformNode` for rule-of-zero hierarchy participation.
+- `world/transform` — `TransformSpace` (a self-contained transform space), `TransformView`, `TransformHierarchyService`, propagation order/system, and `TransformNode` for rule-of-zero hierarchy participation.
 - `world/entity` — `EntityRegistry`, `EntityBatch<T>`, `EntityKey`, and `EntityRecord` for stable entity identity, cross-type destroy routing, and subtree destruction.
 - `world/tilemap` — `Tilemap2d` for 2D tile grids.
 
@@ -101,7 +101,7 @@ The primitives are:
 - **`DataBatch<T>`** — a dense, cache-friendly store for one component type. Anyone can own one.
 - **`DataBatchKey`** — a stable key that cross-references slots between batches.
 - **`DataBatchHandle<T>`** — RAII ownership of a single batch slot. When it drops, the slot frees.
-- **`TransformDomain<T>`** — a self-contained transform space (batches + hierarchy + propagation cache). `World` owns one; UI, editor, or any other subsystem can own its own.
+- **`TransformSpace<T>`** — a self-contained transform space (batches + hierarchy + propagation cache). `World` owns one; UI, editor, or any other subsystem can own its own.
 - **`ISystem`** — a function that sweeps one or more batches in a defined `SystemPhase`.
 
 Gameplay authoring happens in two modes, both built on the same primitives:

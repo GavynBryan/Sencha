@@ -141,7 +141,7 @@ struct Goblin
     TransformNode2d Node;
     int             Health = 100;
 
-    Goblin(TransformDomain<Transform2f>& domain, const Transform2f& local)
+    Goblin(TransformSpace<Transform2f>& domain, const Transform2f& local)
         : Node(domain, local) {}
 
     DataBatchKey TransformKey() const { return Node.TransformKey(); }
@@ -228,7 +228,7 @@ skipped.
 
 **Every entity requires a non-null transform key.**  `EntityRegistry::Register`
 asserts that `record.TransformKey.Value != 0`.  Registering an entity whose
-`TransformNode` was not yet emplaced into a `TransformStore` will fire that
+`TransformNode` was not yet emplaced into a `TransformView` will fire that
 assertion.
 
 **Do not use `EntityRegistry` as a general-purpose object store.**  It is
@@ -252,5 +252,5 @@ TransformHierarchyService parent-child graph; read by DestroySubtree to collect 
        │
 DataBatch<T>              dense storage for the entity struct; slot freed by OnDestroy
        │
-World<TTransform>         owns EntityRegistry + TransformDomain; exposes DestroySubtree
+World<TTransform>         owns EntityRegistry + TransformSpace; exposes DestroySubtree
 ```
