@@ -156,9 +156,9 @@ domain.Hierarchy    // TransformHierarchyService — parent-child graph
 domain.Propagation  // TransformPropagationSystem — derives world transforms
 ```
 
-`World<TTransform>` owns one `TransformDomain` for game-world objects.  UI,
-editor gizmos, and particle systems can own independent `TransformDomain`
-instances with no coupling between them.
+`World<TTransform>` owns one `TransformDomain` and one `EntityRegistry` for
+game-world objects.  UI, editor gizmos, and particle systems can own
+independent `TransformDomain` instances with no coupling between them.
 
 ---
 
@@ -344,9 +344,11 @@ TransformPropagationSystem    executes forward pass: worlds[i] = worlds[parent] 
         │
 TransformNode / Tilemap2d     per-object wrappers; own a slot + RAII registration
         │
-World<TTransform>             owns the domain; exposes it to gameplay systems
+EntityBatch<T> / EntityRegistry   typed entity containers + cross-type destroy routing
+        │
+World<TTransform>             owns the domain + EntityRegistry; exposes it to gameplay
 ```
 
-Objects (actors, tilemaps, UI elements, particles) sit at the `TransformNode`
-layer.  They author local transforms and read world transforms.  Everything below
-that line is infrastructure.
+Objects (actors, tilemaps, UI elements, particles) sit at the `TransformNode` /
+`EntityBatch` layer.  They author local transforms and read world transforms.
+Everything below that line is infrastructure.
