@@ -2,7 +2,7 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformStore.h>
+#include <world/transform/TransformView.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformPropagationSystem.h>
@@ -256,7 +256,7 @@ struct TransformPropagationFixture
 	World2d& GameWorld;
 	DataBatch<Transform2f>& Locals;
 	DataBatch<Transform2f>& Worlds;
-	TransformStore2D& Store;
+	TransformView2D& View;
 	Transform2Hierarchy& Hierarchy;
 	Transform2PropagationOrder& PropagationOrder;
 	Transform2Propagation Propagation;
@@ -265,7 +265,7 @@ struct TransformPropagationFixture
 		: GameWorld(Host.AddService<World2d>())
 		, Locals(GameWorld.Domain.LocalTransforms)
 		, Worlds(GameWorld.Domain.WorldTransforms)
-		, Store(GameWorld.Domain.Transforms)
+		, View(GameWorld.Domain.Transforms)
 		, Hierarchy(GameWorld.Domain.Hierarchy)
 		, PropagationOrder(GameWorld.Domain.PropagationOrder)
 		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
@@ -279,7 +279,7 @@ struct TransformPropagation3Fixture
 	World3d& GameWorld;
 	DataBatch<Transform3f>& Locals;
 	DataBatch<Transform3f>& Worlds;
-	TransformStore3D& Store;
+	TransformView3D& View;
 	Transform3Hierarchy& Hierarchy;
 	Transform3PropagationOrder& PropagationOrder;
 	Transform3Propagation Propagation;
@@ -288,7 +288,7 @@ struct TransformPropagation3Fixture
 		: GameWorld(Host.AddService<World3d>())
 		, Locals(GameWorld.Domain.LocalTransforms)
 		, Worlds(GameWorld.Domain.WorldTransforms)
-		, Store(GameWorld.Domain.Transforms)
+		, View(GameWorld.Domain.Transforms)
 		, Hierarchy(GameWorld.Domain.Hierarchy)
 		, PropagationOrder(GameWorld.Domain.PropagationOrder)
 		, Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
@@ -299,7 +299,7 @@ struct TransformPropagation3Fixture
 TEST(TransformPropagation, RootWorldEqualsLocal2D)
 {
 	TransformPropagationFixture transformServices;
-	auto& transforms = transformServices.Store;
+	auto& transforms = transformServices.View;
 	auto& hierarchy = transformServices.Hierarchy;
 	auto& propagation = transformServices.Propagation;
 
@@ -316,10 +316,10 @@ TEST(TransformPropagation, RootWorldEqualsLocal2D)
 	EXPECT_TRUE(world->NearlyEquals(localTransform));
 }
 
-TEST(TransformStore2D, EmplaceProvisionsLocalAndWorldAtSharedKey)
+TEST(TransformView2D, EmplaceProvisionsLocalAndWorldAtSharedKey)
 {
 	TransformPropagationFixture transformServices;
-	auto& transforms = transformServices.Store;
+	auto& transforms = transformServices.View;
 
 	auto handle = transforms.Emplace(
 		Transform2f({ 3.0f, 4.0f }, 0.5f, { 2.0f, 2.0f }));

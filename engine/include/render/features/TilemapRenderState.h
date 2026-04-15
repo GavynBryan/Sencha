@@ -14,7 +14,7 @@
 //
 // MapKey       — key into DataBatch<Tilemap2d>; provides grid dimensions,
 //                tile size, and per-cell tile IDs.
-// TransformKey — key into the world Transform batch (from TransformStore);
+// TransformKey — key into the world Transform batch (from TransformView);
 //                TilemapRenderFeature reads the world matrix from here each
 //                frame without reaching into the Tilemap2d.
 // TilesetTexture  — bindless slot registered with VulkanDescriptorCache.

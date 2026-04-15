@@ -10,7 +10,7 @@
 #include <span>
 
 //=============================================================================
-// TransformStore<TTransform>
+// TransformView<TTransform>
 //
 // Gameplay-facing allocation service for paired local/world transforms.
 // Emplace() puts an entry in both the local and world batches under a shared
@@ -26,12 +26,12 @@
 //     them.
 //=============================================================================
 template <typename TTransform>
-class TransformStore : public ILifetimeOwner
+class TransformView : public ILifetimeOwner
 {
 public:
 	using TransformType = TTransform;
 
-	TransformStore(
+	TransformView(
 		DataBatch<TTransform>& locals,
 		DataBatch<TTransform>& worlds)
 		: Locals(locals)
@@ -97,5 +97,5 @@ private:
 
 // -- Common aliases --------------------------------------------------------
 
-using TransformStore2D = TransformStore<Transform2f>;
-using TransformStore3D = TransformStore<Transform3f>;
+using TransformView2D = TransformView<Transform2f>;
+using TransformView3D = TransformView<Transform3f>;

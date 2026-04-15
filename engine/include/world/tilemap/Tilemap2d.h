@@ -4,14 +4,14 @@
 #include <core/handle/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/spatial/Grid2d.h>
-#include <world/transform/TransformDomain.h>
+#include <world/transform/TransformSpace.h>
 #include <world/transform/TransformHierarchyRegistration.h>
 #include <cstdint>
 
 //=============================================================================
 // Tilemap2d
 //
-// Thin struct that owns a transform slot in a 2D TransformDomain and wraps
+// Thin struct that owns a transform slot in a 2D TransformSpace and wraps
 // a Grid2d<uint32_t> for tile data. No render or visibility state lives here;
 // rendering decisions belong to TilemapRenderState (a separate DataBatch).
 //
@@ -24,7 +24,7 @@
 struct Tilemap2d
 {
     Tilemap2d(
-        TransformDomain<Transform2f>& domain,
+        TransformSpace<Transform2f>& domain,
         const Transform2f& origin,
         uint32_t gridWidth,
         uint32_t gridHeight,

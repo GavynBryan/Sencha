@@ -5,19 +5,19 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRegistry.h>
-#include <world/transform/TransformDomain.h>
+#include <world/transform/TransformSpace.h>
 
 //=============================================================================
 // World<TTransform>
 //
 // Gameplay-facing service bundle for transform-dimensioned game-world state.
-// World owns a TransformDomain (the self-contained transform space used by
+// World owns a TransformSpace (the self-contained transform space used by
 // the game simulation) and an EntityRegistry, and registers with ServiceHost
 // so gameplay code can resolve it by dimension.
 //
-// World is NOT the only TransformDomain in the engine. UI, editor gizmos, or
+// World is NOT the only TransformSpace in the engine. UI, editor gizmos, or
 // any other subsystem that wants an isolated coordinate space creates its own
-// TransformDomain directly — no World involvement, no service registration,
+// TransformSpace directly — no World involvement, no service registration,
 // no hierarchy conflicts with gameplay. World is simply "the domain that
 // belongs to the game simulation."
 //
@@ -36,7 +36,7 @@ public:
 
 	// -- The transform space owned by this world ---------------------------
 
-	TransformDomain<TTransform> Domain;
+	TransformSpace<TTransform> Domain;
 
 	// -- Entity registry ---------------------------------------------------
 
@@ -52,7 +52,7 @@ public:
 
 	// -- Gameplay-facing shortcuts (forward into Domain) -------------------
 
-	TransformStore<TTransform>& Transforms;
+	TransformView<TTransform>& Transforms;
 	TransformHierarchyService& TransformHierarchy;
 };
 
