@@ -304,10 +304,12 @@ never registered with the hierarchy is treated as orphaned and will be absent
 from the propagation order.  Use `TransformNode` (which registers automatically)
 or call `hierarchy.Register(key)` manually.
 
-**`Unregister` orphans children.**  Removing a parent key from the hierarchy
-does not cascade-unregister its children.  Each child is promoted to a root and
-will propagate independently from its next `Propagate()` call.  If the children
-should also be removed, unregister them explicitly before or after the parent.
+**`Unregister` strictly enforces explicit teardown.**  Removing a parent key from the hierarchy
+will trigger an assertion failure if that parent still has active children.
+Because entities are composites without inheritance, the engine does not know how to
+recursively destroy them safely. If a parent should be removed, the application must
+query `GetChildren()` and explicitly unregister or tear down the children first,
+preventing accidental orphaning and memory leaks.
 
 **Do not store world position inside the transform's owning struct.**  Caching
 the world transform in a member variable creates a shadow copy that diverges
