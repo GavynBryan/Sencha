@@ -120,6 +120,13 @@ example/   Small executable examples.
 test/      GoogleTest-based engine tests.
 ```
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/shaders.md](shaders.md) | Shader authoring, build pipeline, metadata format, hot-reload, and planned tiers. |
+| [docs/grid.md](grid.md) | `Grid2d<T>` setup, storage model, idiomatic usage, constraints, and its role in the tilemap pipeline. |
+
 ## Requirements
 
 - CMake 3.20 or newer.
