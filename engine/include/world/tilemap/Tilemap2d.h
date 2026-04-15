@@ -3,89 +3,71 @@
 #include <core/batch/DataBatchKey.h>
 #include <core/raii/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
+#include <math/spatial/Grid2d.h>
 #include <world/transform/TransformDomain.h>
 #include <world/transform/TransformHierarchyRegistration.h>
 #include <cstdint>
-#include <vector>
 
 //=============================================================================
 // Tilemap2d
 //
-// A gameplay object that owns a transform in a 2D TransformDomain and
-// participates in the transform hierarchy WITHOUT going through TransformNode.
-// Proof that hierarchy participation is a flat capability any type can opt
-// into by holding a DataBatchHandle + TransformHierarchyRegistration against
-// the domain — composing TransformNode is convenient, not required.
+// Thin struct that owns a transform slot in a 2D TransformDomain and wraps
+// a Grid2d<uint32_t> for tile data. No render or visibility state lives here;
+// rendering decisions belong to TilemapRenderState (a separate DataBatch).
 //
-// The tilemap owns exactly one transform (the grid origin). Individual tiles
-// are not transforms; they are cells in the grid addressed by (col, row) and
-// resolved against the tilemap's world transform at draw/query time. Putting
-// a transform per tile would blow up the propagation set for no benefit — all
-// tiles move rigidly with the tilemap.
+// Transform participation is opt-in composition: holding a DataBatchHandle
+// and a TransformHierarchyRegistration is sufficient — no base class required.
+//
+// Individual tiles are NOT transforms. All cells move rigidly with the map's
+// single world transform, resolved at draw time via TransformKey().
 //=============================================================================
-class Tilemap2d
+struct Tilemap2d
 {
-public:
-	Tilemap2d(
-		TransformDomain<Transform2f>& domain,
-		const Transform2f& origin,
-		uint32_t gridWidth,
-		uint32_t gridHeight,
-		float tileSize)
-		: Handle(domain.Transforms.Emplace(origin))
-		, Registration(domain.Hierarchy, Handle.GetToken())
-		, GridWidth(gridWidth)
-		, GridHeight(gridHeight)
-		, TileSize(tileSize)
-		, Tiles(static_cast<size_t>(gridWidth) * gridHeight, 0)
-	{
-	}
+    Tilemap2d(
+        TransformDomain<Transform2f>& domain,
+        const Transform2f& origin,
+        uint32_t gridWidth,
+        uint32_t gridHeight,
+        float tileSize)
+        : Handle(domain.Transforms.Emplace(origin))
+        , Registration(domain.Hierarchy, Handle.GetToken())
+        , TileSize(tileSize)
+        , Grid(gridWidth, gridHeight, 0u)
+    {
+    }
 
-	Tilemap2d(Tilemap2d&&) noexcept = default;
-	Tilemap2d& operator=(Tilemap2d&&) noexcept = default;
-	Tilemap2d(const Tilemap2d&) = delete;
-	Tilemap2d& operator=(const Tilemap2d&) = delete;
+    Tilemap2d(Tilemap2d&&) noexcept = default;
+    Tilemap2d& operator=(Tilemap2d&&) noexcept = default;
+    Tilemap2d(const Tilemap2d&) = delete;
+    Tilemap2d& operator=(const Tilemap2d&) = delete;
 
-	// -- Transform participation -------------------------------------------
+    // -- Transform participation ----------------------------------------------
 
-	DataBatchKey TransformKey() const { return Handle.GetToken(); }
+    DataBatchKey TransformKey() const { return Handle.GetToken(); }
 
-	void SetTransformParent(DataBatchKey parentKey)
-	{
-		Registration.GetService()->SetParent(Handle.GetToken(), parentKey);
-	}
+    void SetTransformParent(DataBatchKey parentKey)
+    {
+        Registration.GetService()->SetParent(Handle.GetToken(), parentKey);
+    }
 
-	void ClearTransformParent()
-	{
-		Registration.GetService()->ClearParent(Handle.GetToken());
-	}
+    void ClearTransformParent()
+    {
+        Registration.GetService()->ClearParent(Handle.GetToken());
+    }
 
-	// -- Grid data ---------------------------------------------------------
+    // -- Grid access ----------------------------------------------------------
 
-	uint32_t Width() const { return GridWidth; }
-	uint32_t Height() const { return GridHeight; }
-	float GetTileSize() const { return TileSize; }
+    uint32_t Width()        const { return Grid.GetWidth(); }
+    uint32_t Height()       const { return Grid.GetHeight(); }
+    float    GetTileSize()  const { return TileSize; }
 
-	uint32_t GetTile(uint32_t col, uint32_t row) const
-	{
-		return Tiles[Index(col, row)];
-	}
+    uint32_t GetTile(uint32_t col, uint32_t row) const { return Grid.Get(col, row); }
+    void     SetTile(uint32_t col, uint32_t row, uint32_t tileId) { Grid.Set(col, row, tileId); }
 
-	void SetTile(uint32_t col, uint32_t row, uint32_t tileId)
-	{
-		Tiles[Index(col, row)] = tileId;
-	}
+    // -- Data members (public for DataBatch move-construction) ----------------
 
-private:
-	size_t Index(uint32_t col, uint32_t row) const
-	{
-		return static_cast<size_t>(row) * GridWidth + col;
-	}
-
-	DataBatchHandle<Transform2f> Handle;
-	TransformHierarchyRegistration Registration;
-	uint32_t GridWidth = 0;
-	uint32_t GridHeight = 0;
-	float TileSize = 0.0f;
-	std::vector<uint32_t> Tiles;
+    DataBatchHandle<Transform2f>   Handle;
+    TransformHierarchyRegistration Registration;
+    float                          TileSize = 1.0f;
+    Grid2d<uint32_t>               Grid;
 };
