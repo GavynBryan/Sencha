@@ -160,29 +160,20 @@ a single instanced draw.  The accumulator is cleared automatically after
 
 ### Tilemap rendering
 
-`TilemapRenderFeature` takes non-owning references to the game's
-`DataBatch<Tilemap2d>`, `DataBatch<TilemapRenderState>`, and
-`TransformStore<Transform2f>` at construction time.  These batches must outlive
-the `Renderer`.
+`TilemapRenderFeature` is a dumb batcher, mirroring `SpriteFeature`.  Game or
+system code is responsible for baking tile data into `GpuTile` arrays and
+calling `Submit()` each frame.  The feature has no opinion on *how* tiles are
+baked; a `TilemapRenderSystem` that dirty-tracks maps and transforms is the
+expected driver.
 
 ```cpp
-DataBatch<Tilemap2d>          maps;
-DataBatch<TilemapRenderState> renderStates;
-// ... populate maps and transforms ...
-
 auto* tilemap =
-    renderer->AddFeature(std::make_unique<TilemapRenderFeature>(
-        maps, renderStates, world.Transforms));
+    renderer->AddFeature(std::make_unique<TilemapRenderFeature>());
 
-// Add a render state to make a map visible.
-TilemapRenderState state;
-state.MapKey        = mapHandle.GetToken();
-state.TransformKey  = mapHandle.GetTransformKey();
-state.TilesetTexture = tilesetSlot;  // BindlessImageIndex
-state.TilesetColumns = 8;
-state.TilesetRows    = 8;
-state.LayerZIndex    = 0;            // drawn before higher z-indices
-renderStates.Emplace(state);
+// Each frame, before renderer.DrawFrame():
+// Build the GpuTile array for one layer (world-space centres, UVs, sin/cos).
+std::vector<TilemapRenderFeature::GpuTile> tiles = BakeTiles(map, transform, state);
+tilemap->Submit(tiles, state.LayerZIndex);
 ```
 
 ### Texture registration
@@ -242,10 +233,10 @@ never calls `Contribute()` itself — that is a pre-device hook for game boot
 code.  If a feature folds extensions into the bootstrap policy, the game must
 call `Contribute()` on the feature before constructing `VulkanDeviceService`.
 
-**`TilemapRenderFeature` data batches must outlive the `Renderer`.**  The
-feature stores non-owning pointers to the game's `DataBatch<Tilemap2d>` and
-`DataBatch<TilemapRenderState>`.  Destroying either batch while the renderer is
-alive is undefined behaviour.
+**`TilemapRenderFeature` does not own or retain game data.**  The feature copies
+submitted `GpuTile` spans into a per-frame scratch buffer and clears them after
+`OnDraw`.  Callers are free to destroy or mutate their tile arrays immediately
+after `Submit()` returns.
 
 ---
 
@@ -258,7 +249,7 @@ arrays or calling `Submit()`:
 ```
 Game logic / systems
        │  calls Submit() on SpriteFeature
-       │  populates DataBatch<TilemapRenderState>
+       │  calls Submit(tiles, sortKey) on TilemapRenderFeature
        │
 Renderer::DrawFrame()
        │  iterates PhaseBuckets[MainColor]
@@ -268,10 +259,9 @@ IRenderFeature::OnDraw(FrameContext)
 SpriteFeature            reads Pending[], stable-sorts by SortKey,
        │                 uploads via VulkanFrameScratch, one instanced draw
        │
-TilemapRenderFeature     sweeps DataBatch<TilemapRenderState> by LayerZIndex,
-                         resolves MapKey → Tilemap2d, reads world transform,
-                         emits GpuTile instances into VulkanFrameScratch,
-                         one instanced draw per tilemap layer
+TilemapRenderFeature     stable-sorts Batches[] by SortKey,
+                         uploads flat GpuTile array via VulkanFrameScratch,
+                         one instanced draw per batch (firstInstance offset)
 ```
 
 `SpriteFeature` and `TilemapRenderFeature` share the same SPIR-V (sprite

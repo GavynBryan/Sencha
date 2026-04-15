@@ -195,8 +195,8 @@ Tilemap2d                 adds: transform slot, hierarchy registration, tile siz
 TilemapRenderState        adds: tileset texture, tileset layout, layer order
        │                  lives in: DataBatch<TilemapRenderState> (separate array)
        │
-TilemapRenderFeature      sweeps DataBatch<TilemapRenderState>, resolves MapKey
-                          → Tilemap2d, reads world transform, emits GpuTile instances
+TilemapRenderFeature      receives pre-baked GpuTile spans via Submit();
+                          sorts by sortKey, uploads, one draw per batch
 ```
 
 Maps and render states are intentionally in separate batches.  A map can exist
