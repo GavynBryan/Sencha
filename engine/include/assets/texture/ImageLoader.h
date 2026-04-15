@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/Image.h>
+#include <assets/texture/Image.h>
 
 #include <optional>
 #include <string_view>
