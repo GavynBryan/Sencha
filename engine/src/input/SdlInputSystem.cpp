@@ -76,6 +76,10 @@ void SdlInputSystem::IngestFromSdl()
 				RawBuffer.Emplace(InputDeviceType::Mouse, true,
 					MouseControl::WheelDown, -event.wheel.y, InputUserId{});
 			break;
+
+		case SDL_EVENT_QUIT:
+			QuitReceived = true;
+			break;
 		}
 	}
 }

@@ -34,6 +34,10 @@ public:
 	const EventBuffer<InputActionEvent>& GetEvents() const { return ActionEvents; }
 	EventBuffer<RawInputEvent>& GetRawInput() { return RawBuffer; }
 
+	// True once SDL_EVENT_QUIT has been received (window close, platform
+	// termination request, etc.).
+	bool IsQuitRequested() const { return QuitReceived; }
+
 	void Update(float dt);
 
 private:
@@ -58,4 +62,5 @@ private:
 	EventBuffer<RawInputEvent> RawBuffer;
 	EventBuffer<InputActionEvent> ActionEvents;
 	std::vector<ActiveHeld> ActiveHelds;
+	bool QuitReceived = false;
 };
