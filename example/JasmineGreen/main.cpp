@@ -153,10 +153,10 @@ int main()
     auto& swapchain      = services.AddService<VulkanSwapchainService>(
                                logging, device, physicalDevice, surface, queues,
                                windows.GetExtent(windows.GetPrimaryWindowId()));
-    auto& deletionQueue  = services.AddService<VulkanDeletionQueueService>(logging, 2);
     auto& upload         = services.AddService<VulkanUploadContextService>(logging, device, queues);
     auto& allocator      = services.AddService<VulkanAllocatorService>(logging, instance, physicalDevice, device);
     auto& buffers        = services.AddService<VulkanBufferService>(logging, device, allocator, upload);
+    auto& deletionQueue  = services.AddService<VulkanDeletionQueueService>(logging, 2);
     auto& images         = services.AddService<VulkanImageService>(logging, device, allocator, upload, deletionQueue);
     auto& samplers       = services.AddService<VulkanSamplerCache>(logging, device);
     auto& shaders        = services.AddService<VulkanShaderCache>(logging, device);
