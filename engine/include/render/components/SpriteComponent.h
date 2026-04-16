@@ -20,12 +20,12 @@
 //=============================================================================
 struct SpriteComponent
 {
-    TransformNode2d  Transform;
-    TextureHandle    Texture;
-    float            Width   = 16.0f;
-    float            Height  = 16.0f;
-    uint32_t         Color   = 0xFFFFFFFFu;
-    int32_t          SortKey = 0;
+    TransformNode2d Transform;
+    TextureHandle   Texture;
+    float           Width   = 16.0f;
+    float           Height  = 16.0f;
+    uint32_t        Color   = 0xFFFFFFFFu;
+    int32_t         SortKey = 0;
 
     SpriteComponent(TransformSpace2d& space,
                     const Transform2f& localOffset = Transform2f::Identity())

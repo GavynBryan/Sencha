@@ -27,7 +27,10 @@
 #include <render/backend/vulkan/VulkanSurfaceService.h>
 #include <render/backend/vulkan/VulkanSwapchainService.h>
 #include <render/backend/vulkan/VulkanUploadContextService.h>
+#include <assets/texture/TextureCache.h>
 #include <render/features/SpriteFeature.h>
+#include <render/SpriteRenderSystem.h>
+#include <render/components/SpriteComponent.h>
 #include <time/TimeService.h>
 #include <window/SdlVideoService.h>
 #include <window/SdlWindow.h>
@@ -159,6 +162,7 @@ int main()
     auto& shaders        = services.AddService<VulkanShaderCache>(logging, device);
     auto& pipelines      = services.AddService<VulkanPipelineCache>(logging, device, shaders);
     auto& descriptors    = services.AddService<VulkanDescriptorCache>(logging, device, buffers, images);
+    auto& textures       = services.AddService<TextureCache>(logging, images, descriptors, samplers);
     auto& scratch        = services.AddService<VulkanFrameScratch>(
                                logging, device, physicalDevice, buffers,
                                VulkanFrameScratch::Config{.FramesInFlight = 2});
@@ -178,21 +182,13 @@ int main()
     // =========================================================================
     // White pixel texture
     //
-    // SpriteFeature tints sprites by multiplying a sampled texel by the Color
-    // field. A 1x1 white RGBA texture is the simplest base: tinting it with
-    // 0xFFFFFFFF gives white, 0x000000FF gives black — no art assets needed.
+    // A 1x1 white RGBA texture is the simplest sprite base: SpriteFeature
+    // multiplies the sampled texel by Color, so tinting white gives any flat
+    // color without art assets.
     // =========================================================================
-    const ImageHandle whitePixelImage = images.Create({
-        .Format    = VK_FORMAT_R8G8B8A8_SRGB,
-        .Extent    = {1, 1},
-        .Usage     = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .DebugName = "WhitePixel",
-    });
-    const uint32_t whitePixelData = 0xFFFFFFFFu;
-    images.Upload(whitePixelImage, &whitePixelData, sizeof(whitePixelData));
-
-    const BindlessImageIndex whitePixel =
-        descriptors.RegisterSampledImage(whitePixelImage, samplers.GetNearestClamp());
+    const TextureHandle whitePixel = textures.CreateFromImage(
+        Image{.Pixels = {0xFF, 0xFF, 0xFF, 0xFF}, .Width = 1, .Height = 1},
+        SamplerDesc{}, "WhitePixel");
 
     // =========================================================================
     // World — transforms, hierarchy, and physics
@@ -217,9 +213,39 @@ int main()
     // =========================================================================
     EntityBatch<Player> players(world.Entities);
 
-    players.Emplace(world.Domain, Transform2f{
+    const EntityKey playerKey = players.Emplace(world.Domain, Transform2f{
         Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f}
     });
+
+    // =========================================================================
+    // Sprite components
+    //
+    // Sprites live in a dedicated batch, separate from Player, and are parented
+    // to the player's body transform so they follow movement automatically.
+    // SpriteRenderSystem reads this batch each frame and submits to SpriteFeature.
+    // =========================================================================
+    DataBatch<SpriteComponent> spriteComponents;
+
+    {
+        const DataBatchKey key = spriteComponents.EmplaceUnowned(world.Domain);
+        SpriteComponent& s = *spriteComponents.TryGet(key);
+        s.Transform.SetParentByKey(players.TryGet(playerKey)->TransformKey());
+        s.Texture  = whitePixel;
+        s.Width    = 48.0f;
+        s.Height   = 48.0f;
+        s.Color    = 0xFFFFFFFFu;
+        s.SortKey  = 0;
+    }
+    {
+        const DataBatchKey key = spriteComponents.EmplaceUnowned(world.Domain);
+        SpriteComponent& s = *spriteComponents.TryGet(key);
+        s.Transform.SetParentByKey(players.TryGet(playerKey)->TransformKey());
+        s.Texture  = whitePixel;
+        s.Width    = 12.0f;
+        s.Height   = 12.0f;
+        s.Color    = 0x000000FFu;
+        s.SortKey  = 1;
+    }
 
     // =========================================================================
     // Systems
@@ -242,7 +268,9 @@ int main()
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(
-        inputSystem, players, world.Physics, *sprites, whitePixel, playerActions);
+        inputSystem, players, world.Physics, playerActions);
+
+    systems.Register<SpriteRenderSystem>(spriteComponents, *sprites, textures);
 
     systems.After<PlayerSystem, SdlInputSystem>();
     systems.Init();
