@@ -1,48 +1,29 @@
 #include <gtest/gtest.h>
 #include <core/system/SystemHost.h>
-#include <core/system/SystemPhase.h>
 
 // --- Test helpers ---
 
 static std::vector<std::string> CallLog;
 
-class LoggingSystem : public ISystem {
-    friend class SystemHost;
+struct LoggingSystem
+{
+    explicit LoggingSystem(std::string name) : Name(std::move(name)) {}
 
-public:
-    LoggingSystem(std::string name) : Name(std::move(name)) {}
-
-private:
-    void Init() override    { CallLog.push_back(Name + "::Init"); }
-    void Update(const FrameTime& /*time*/) override  { CallLog.push_back(Name + "::Update"); }
-    void Shutdown() override { CallLog.push_back(Name + "::Shutdown"); }
+    void Init()              { CallLog.push_back(Name + "::Init"); }
+    void Update(float)       { CallLog.push_back(Name + "::Update"); }
+    void Shutdown()          { CallLog.push_back(Name + "::Shutdown"); }
 
     std::string Name;
 };
 
-class SystemA : public LoggingSystem {
-public:
-    SystemA() : LoggingSystem("A") {}
-};
+struct SystemA : LoggingSystem { SystemA() : LoggingSystem("A") {} };
+struct SystemB : LoggingSystem { SystemB() : LoggingSystem("B") {} };
+struct SystemC : LoggingSystem { SystemC() : LoggingSystem("C") {} };
 
-class SystemB : public LoggingSystem {
-public:
-    SystemB() : LoggingSystem("B") {}
-};
-
-class SystemC : public LoggingSystem {
-public:
-    SystemC() : LoggingSystem("C") {}
-};
-
-class CountingSystem : public ISystem {
-    friend class SystemHost;
-
-public:
+struct CountingSystem
+{
     int UpdateCount = 0;
-
-private:
-    void Update(const FrameTime& /*time*/) override { UpdateCount++; }
+    void Update(float) { UpdateCount++; }
 };
 
 class SystemHostTest : public ::testing::Test {
@@ -52,10 +33,10 @@ protected:
 
 // --- Tests ---
 
-TEST_F(SystemHostTest, AddAndGet)
+TEST_F(SystemHostTest, RegisterAndGet)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.Register<SystemA>();
     auto* system = host.Get<SystemA>();
     EXPECT_NE(system, nullptr);
 }
@@ -66,10 +47,10 @@ TEST_F(SystemHostTest, GetReturnsNullptrWhenMissing)
     EXPECT_EQ(host.Get<SystemA>(), nullptr);
 }
 
-TEST_F(SystemHostTest, HasReturnsTrueWhenAdded)
+TEST_F(SystemHostTest, HasReturnsTrueWhenRegistered)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.Register<SystemA>();
     EXPECT_TRUE(host.Has<SystemA>());
 }
 
@@ -82,8 +63,8 @@ TEST_F(SystemHostTest, HasReturnsFalseWhenMissing)
 TEST_F(SystemHostTest, InitCallsInitOnAllSystems)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
-    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
+    host.Register<SystemA>();
+    host.Register<SystemB>();
 
     host.Init();
 
@@ -92,15 +73,15 @@ TEST_F(SystemHostTest, InitCallsInitOnAllSystems)
     EXPECT_EQ(CallLog[1], "B::Init");
 }
 
-TEST_F(SystemHostTest, UpdateCallsUpdateOnAllSystems)
+TEST_F(SystemHostTest, RunFrameCallsUpdateOnAllSystems)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
-    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
+    host.Register<SystemA>();
+    host.Register<SystemB>();
 
     host.Init();
     CallLog.clear();
-    host.Update(FrameTime{});
+    host.RunFrame(0.0f);
 
     ASSERT_EQ(CallLog.size(), 2u);
     EXPECT_EQ(CallLog[0], "A::Update");
@@ -110,8 +91,8 @@ TEST_F(SystemHostTest, UpdateCallsUpdateOnAllSystems)
 TEST_F(SystemHostTest, ShutdownCallsInReverseOrder)
 {
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
-    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
+    host.Register<SystemA>();
+    host.Register<SystemB>();
 
     host.Init();
     CallLog.clear();
@@ -122,17 +103,20 @@ TEST_F(SystemHostTest, ShutdownCallsInReverseOrder)
     EXPECT_EQ(CallLog[1], "A::Shutdown");
 }
 
-TEST_F(SystemHostTest, SystemsRunInOrder)
+TEST_F(SystemHostTest, AfterDeclarationOrdersWithinLane)
 {
     SystemHost host;
-    // Add in reverse order â€” should still execute by phase
-    host.AddSystem<SystemC>(SystemPhase::PreRender);
-    host.AddSystem<SystemA>(SystemPhase::Update);
-    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
+    // Register in reverse desired order — After<> should fix it.
+    host.Register<SystemC>();
+    host.Register<SystemB>();
+    host.Register<SystemA>();
+
+    host.After<SystemB, SystemA>();
+    host.After<SystemC, SystemB>();
 
     host.Init();
     CallLog.clear();
-    host.Update(FrameTime{});
+    host.RunFrame(0.0f);
 
     ASSERT_EQ(CallLog.size(), 3u);
     EXPECT_EQ(CallLog[0], "A::Update");
@@ -140,30 +124,50 @@ TEST_F(SystemHostTest, SystemsRunInOrder)
     EXPECT_EQ(CallLog[2], "C::Update");
 }
 
-TEST_F(SystemHostTest, MultipleUpdates)
+TEST_F(SystemHostTest, MultipleRunFrameCalls)
 {
     SystemHost host;
-    host.AddSystem<CountingSystem>(SystemPhase::Update);
+    host.Register<CountingSystem>();
 
     host.Init();
-    host.Update(FrameTime{});
-    host.Update(FrameTime{});
-    host.Update(FrameTime{});
+    host.RunFrame(0.0f);
+    host.RunFrame(0.0f);
+    host.RunFrame(0.0f);
 
     auto* system = host.Get<CountingSystem>();
     ASSERT_NE(system, nullptr);
     EXPECT_EQ(system->UpdateCount, 3);
 }
 
-TEST_F(SystemHostTest, AddSystemAfterInitCallsInitImmediately)
+TEST_F(SystemHostTest, FixedLaneSystemDispatchedByRunFixed)
 {
+    struct TickSystem {
+        int TickCount = 0;
+        void Tick(float) { TickCount++; }
+    };
+
     SystemHost host;
-    host.AddSystem<SystemA>(SystemPhase::Update);
+    host.Register<TickSystem>();
     host.Init();
-    CallLog.clear();
 
-    host.AddSystem<SystemB>(SystemPhase::PostUpdate);
+    host.RunFixed(1.0f / 60.0f);
+    host.RunFixed(1.0f / 60.0f);
 
-    ASSERT_EQ(CallLog.size(), 1u);
-    EXPECT_EQ(CallLog[0], "B::Init");
+    EXPECT_EQ(host.Get<TickSystem>()->TickCount, 2);
+}
+
+TEST_F(SystemHostTest, RenderLaneSystemDispatchedByRunRender)
+{
+    struct RenderSystem {
+        float LastAlpha = -1.0f;
+        void Render(float alpha) { LastAlpha = alpha; }
+    };
+
+    SystemHost host;
+    host.Register<RenderSystem>();
+    host.Init();
+
+    host.RunRender(0.75f);
+
+    EXPECT_FLOAT_EQ(host.Get<RenderSystem>()->LastAlpha, 0.75f);
 }

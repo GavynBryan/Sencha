@@ -3,7 +3,6 @@
 #include <core/batch/DataBatch.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
-#include <core/system/ISystem.h>
 #include <cstdint>
 #include <span>
 
@@ -34,7 +33,7 @@
 // cannot blow the stack.
 //=============================================================================
 template <typename TTransform>
-class TransformPropagationSystem : public ISystem
+class TransformPropagationSystem
 {
 public:
 	using TransformType = TTransform;
@@ -84,12 +83,12 @@ public:
 		}
 	}
 
-private:
-	void Update(const FrameTime& /*time*/) override
+	void Tick(float /*fixedDt*/)
 	{
 		Propagate();
 	}
 
+private:
 	DataBatch<TTransform>& Locals;
 	DataBatch<TTransform>& Worlds;
 	HierarchyType& Hierarchy;

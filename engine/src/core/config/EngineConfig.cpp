@@ -1,5 +1,6 @@
 #include <core/config/EngineConfig.h>
 #include <core/json/JsonParser.h>
+#include <physics/2d/PhysicsDomain2D.h>
 
 #include <cstdio>
 #include <string>
@@ -18,6 +19,9 @@
 //   {
 //     "audio": {
 //       "buses": [ ... ]
+//     },
+//     "physics2d": {
+//       "grid_cell_size": 4.0
 //     }
 //   }
 // ---------------------------------------------------------------------------
@@ -82,6 +86,38 @@ std::optional<EngineConfig> LoadEngineConfig(
             return std::nullopt;
         }
         config.Audio = std::move(*audio);
+    }
+
+    // -- Physics2d section ----------------------------------------------------
+
+    const JsonValue* physicsSection = root->Find("physics2d");
+    if (physicsSection && physicsSection->IsObject())
+    {
+        const JsonValue* maxDepth = physicsSection->Find("tree_max_depth");
+        if (maxDepth && maxDepth->IsNumber())
+            config.Physics2d.TreeMaxDepth = static_cast<int>(maxDepth->AsNumber());
+
+        const JsonValue* maxEntries = physicsSection->Find("tree_max_entries_per_leaf");
+        if (maxEntries && maxEntries->IsNumber())
+            config.Physics2d.TreeMaxEntriesPerLeaf = static_cast<int>(maxEntries->AsNumber());
+
+        const JsonValue* bounds = physicsSection->Find("tree_bounds");
+        if (bounds && bounds->IsObject())
+        {
+            const JsonValue* minX = bounds->Find("min_x");
+            const JsonValue* minY = bounds->Find("min_y");
+            const JsonValue* maxX = bounds->Find("max_x");
+            const JsonValue* maxY = bounds->Find("max_y");
+            if (minX && minX->IsNumber() && minY && minY->IsNumber()
+                && maxX && maxX->IsNumber() && maxY && maxY->IsNumber())
+            {
+                config.Physics2d.TreeBounds = Aabb2d(
+                    Vec2d(static_cast<float>(minX->AsNumber()),
+                          static_cast<float>(minY->AsNumber())),
+                    Vec2d(static_cast<float>(maxX->AsNumber()),
+                          static_cast<float>(maxY->AsNumber())));
+            }
+        }
     }
 
     return config;

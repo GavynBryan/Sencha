@@ -28,7 +28,7 @@ SdlInputSystem::SdlInputSystem(LoggingProvider& logging, InputBindingService& bi
 {
 }
 
-void SdlInputSystem::Update(const FrameTime& /*time*/)
+void SdlInputSystem::Update(float /*dt*/)
 {
 	ActionEvents.Clear();
 	IngestFromSdl();
@@ -75,6 +75,10 @@ void SdlInputSystem::IngestFromSdl()
 			else if (event.wheel.y < 0)
 				RawBuffer.Emplace(InputDeviceType::Mouse, true,
 					MouseControl::WheelDown, -event.wheel.y, InputUserId{});
+			break;
+
+		case SDL_EVENT_QUIT:
+			QuitReceived = true;
 			break;
 		}
 	}

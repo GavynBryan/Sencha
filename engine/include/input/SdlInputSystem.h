@@ -3,7 +3,6 @@
 #include <core/event/EventBuffer.h>
 #include <input/InputTypes.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/system/ISystem.h>
 #include <vector>
 
 class InputBindingService;
@@ -27,7 +26,7 @@ struct CompiledBinding;
 // SDL_PollEvent will find nothing in a test environment, so injected
 // events are the only ones that reach the mapping step.
 //=============================================================================
-class SdlInputSystem : public ISystem
+class SdlInputSystem
 {
 public:
 	SdlInputSystem(LoggingProvider& logging, InputBindingService& bindings);
@@ -35,8 +34,13 @@ public:
 	const EventBuffer<InputActionEvent>& GetEvents() const { return ActionEvents; }
 	EventBuffer<RawInputEvent>& GetRawInput() { return RawBuffer; }
 
+	// True once SDL_EVENT_QUIT has been received (window close, platform
+	// termination request, etc.).
+	bool IsQuitRequested() const { return QuitReceived; }
+
+	void Update(float dt);
+
 private:
-	void Update(const FrameTime& time) override;
 	void IngestFromSdl();
 	void MapRawToActions();
 	void ProcessRawEvent(const RawInputEvent& raw);
@@ -58,4 +62,5 @@ private:
 	EventBuffer<RawInputEvent> RawBuffer;
 	EventBuffer<InputActionEvent> ActionEvents;
 	std::vector<ActiveHeld> ActiveHelds;
+	bool QuitReceived = false;
 };

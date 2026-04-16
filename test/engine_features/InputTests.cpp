@@ -307,7 +307,7 @@ protected:
 		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
-		auto& sys = Systems.AddSystem<SdlInputSystem>(SystemPhase::Input, Logging, BindingService);
+		auto& sys = Systems.Register<SdlInputSystem>(Logging, BindingService);
 		InputSys = &sys;
 		Systems.Init();
 	}
@@ -326,7 +326,7 @@ protected:
 			InputDeviceType::Keyboard, false, control, 0.0f, InputUserId{});
 	}
 
-	void RunFrame() { Systems.Update(FrameTime{}); }
+	void RunFrame() { Systems.RunFrame(0.0f); }
 
 	auto GetActions() { return InputSys->GetEvents().Items(); }
 

@@ -6,7 +6,7 @@ TimeService::TimeService()
 {
 }
 
-FrameTime TimeService::Advance()
+FrameClock TimeService::Advance()
 {
 	TimePoint now = Clock::now();
 
@@ -24,12 +24,14 @@ FrameTime TimeService::Advance()
 	float scaledDelta = unscaledDelta * Timescale;
 	UnscaledElapsedTime += unscaledDelta;
 	ElapsedTime += scaledDelta;
+	++FrameIndex;
 
-	return FrameTime{
-		.DeltaTime           = scaledDelta,
-		.UnscaledDeltaTime   = unscaledDelta,
-		.ElapsedTime         = ElapsedTime,
-		.UnscaledElapsedTime = UnscaledElapsedTime,
-		.Timescale           = Timescale,
+	return FrameClock{
+		.Dt              = scaledDelta,
+		.UnscaledDt      = unscaledDelta,
+		.Elapsed         = ElapsedTime,
+		.UnscaledElapsed = UnscaledElapsedTime,
+		.Timescale       = Timescale,
+		.FrameIndex      = FrameIndex,
 	};
 }

@@ -122,6 +122,12 @@ int VulkanPhysicalDeviceService::RateDevice(
         return -1;
     }
 
+    if (policy.RequiredQueues.Present
+        && !SupportsDeviceExtension(device, VK_KHR_SWAPCHAIN_EXTENSION_NAME))
+    {
+        return -1;
+    }
+
     if (!CheckRequiredFeatures(device, policy.DeviceFeatures))
     {
         return -1;
@@ -365,6 +371,11 @@ VulkanQueueFamilies VulkanPhysicalDeviceService::FindQueueFamilies(VkPhysicalDev
 void VulkanPhysicalDeviceService::BuildEnabledDeviceExtensions(
     const VulkanBootstrapPolicy& policy)
 {
+    if (policy.RequiredQueues.Present)
+    {
+        AddUniqueExtension(EnabledDeviceExtensions, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    }
+
     for (const auto* extension : policy.RequiredDeviceExtensions)
     {
         AddUniqueExtension(EnabledDeviceExtensions, extension);

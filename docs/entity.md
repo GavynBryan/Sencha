@@ -182,15 +182,54 @@ world.DestroySubtree(horseKey);
 // Both EntityKeys are now stale.
 ```
 
+### Entity with physics
+
+Entities that participate in collision hold a `PhysicsToken` from
+`ColliderSyncSystem2D`.  The token is RAII -- when the entity is destroyed, the
+token destructs and the collider is automatically unregistered.
+
+```cpp
+struct Goblin
+{
+    TransformNode2d Node;
+    ColliderSyncSystem2D::PhysicsToken Collider;
+    int Health = 100;
+
+    Goblin(TransformSpace<Transform2f>& domain, const Transform2f& local,
+           ColliderSyncSystem2D& sync)
+        : Node(domain, local)
+    {
+        Collider2D shape;
+        shape.HalfExtent = { 0.4f, 0.8f };
+        shape.IsStatic = false;
+        Collider = sync.AddCollider(Node.TransformKey(), shape);
+    }
+
+    DataBatchKey TransformKey() const { return Node.TransformKey(); }
+};
+
+EntityBatch<Goblin> Goblins{ world.Entities };
+EntityKey ek = Goblins.Emplace(world.Domain, Transform2f({ 100.0f, 50.0f }), sync);
+
+// Destroy the goblin -- PhysicsToken destructs, collider is removed.
+world.Entities.Destroy(ek);
+```
+
 ### Hot-path iteration
 
 `EntityBatch<T>::GetItems()` returns a contiguous span of T with no registry
 involvement.  Use it for every per-frame sweep.
 
 ```cpp
-// Physics update — no EntityKey needed.
+// Read collider shape for movement queries.
 for (Goblin& g : Goblins.GetItems())
-    ApplyGravity(g);
+{
+    Collider2D* col = sync.TryGetCollider(g.Collider);
+    if (!col) continue;
+    MoveResult2D result = world.Physics.MoveBox(
+        col->WorldBounds, Vec2d{ 0.0f, -9.8f * dt });
+    // apply result.ResolvedDelta ...
+}
 
 // Read world transforms for rendering.
 for (const Goblin& g : Goblins.GetItems())

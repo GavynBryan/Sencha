@@ -1,13 +1,298 @@
+#include <core/json/JsonParser.h>
+#include <core/logging/ConsoleLogSink.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
+#include <input/InputActionRegistry.h>
+#include <input/InputBindingCompiler.h>
+#include <input/InputBindingService.h>
+#include <input/SdlInputControlResolver.h>
+#include <input/SdlInputSystem.h>
+#include <render/Renderer.h>
+#include <render/backend/vulkan/VulkanAllocatorService.h>
+#include <render/backend/vulkan/VulkanBootstrapPolicy.h>
+#include <render/backend/vulkan/VulkanBufferService.h>
+#include <render/backend/vulkan/VulkanDeletionQueueService.h>
+#include <render/backend/vulkan/VulkanDescriptorCache.h>
+#include <render/backend/vulkan/VulkanDeviceService.h>
+#include <render/backend/vulkan/VulkanFrameScratch.h>
+#include <render/backend/vulkan/VulkanFrameService.h>
+#include <render/backend/vulkan/VulkanImageService.h>
+#include <render/backend/vulkan/VulkanInstanceService.h>
+#include <render/backend/vulkan/VulkanPhysicalDeviceService.h>
+#include <render/backend/vulkan/VulkanPipelineCache.h>
+#include <render/backend/vulkan/VulkanQueueService.h>
+#include <render/backend/vulkan/VulkanSamplerCache.h>
+#include <render/backend/vulkan/VulkanShaderCache.h>
+#include <render/backend/vulkan/VulkanSurfaceService.h>
+#include <render/backend/vulkan/VulkanSwapchainService.h>
+#include <render/backend/vulkan/VulkanUploadContextService.h>
+#include <render/features/SpriteFeature.h>
+#include <time/TimeService.h>
+#include <window/SdlVideoService.h>
+#include <window/SdlWindow.h>
+#include <window/SdlWindowService.h>
+#include <window/WindowCreateInfo.h>
+#include <window/WindowTypes.h>
+#include <world/World.h>
 #include <world/WorldSetup.h>
+#include <world/entity/EntityBatch.h>
+#include <vulkan/vulkan.h>
+
+#include "Player.h"
+#include "PlayerSystem.h"
+
+#include <fstream>
+#include <span>
+#include <sstream>
+
+// Action names for this game. Order doesn't matter — IDs are assigned by
+// position and resolved by name via InputActionRegistry::ResolveAction.
+static constexpr std::string_view kActionNames[] = {
+    "MoveUp", "MoveDown", "MoveLeft", "MoveRight", "Quit"
+};
+
+static std::string ReadTextFile(const char* path)
+{
+    std::ifstream file(path);
+    if (!file) return {};
+    std::ostringstream buf;
+    buf << file.rdbuf();
+    return buf.str();
+}
 
 int main()
 {
+    // =========================================================================
+    // Logging
+    //
+    // LoggingProvider is built into ServiceHost. Add a ConsoleLogSink so
+    // engine warnings and errors are visible during development.
+    // =========================================================================
     ServiceHost services;
+    LoggingProvider& logging = services.GetLoggingProvider();
+    logging.AddSink<ConsoleLogSink>();
+
+    // =========================================================================
+    // Window
+    //
+    // SdlVideoService initializes the SDL video subsystem. SdlWindowService
+    // manages the window collection. We create one 1280x720 window and tell
+    // it we will use Vulkan for rendering.
+    // =========================================================================
+    auto& video   = services.AddService<SdlVideoService>(logging);
+    auto& windows = services.AddService<SdlWindowService>(logging, video);
+
+    SdlWindow* primaryWindow = windows.CreateWindow({
+        .Title       = "Jasmine Green",
+        .Width       = 1280,
+        .Height      = 720,
+        .GraphicsApi = WindowGraphicsApi::Vulkan,
+    });
+
+    // =========================================================================
+    // Input
+    //
+    // InputActionRegistry assigns a numeric ID to each named action. The IDs
+    // are used at runtime — strings only exist for authoring and debug.
+    //
+    // InputBindingService holds the compiled binding table: a flat array that
+    // maps each SDL scancode to its actions in O(1).
+    //
+    // The JSON config is compiled into that table here at startup. Any key
+    // rebinding in a shipped game would re-run this step and call SetBindings.
+    // =========================================================================
+    InputActionRegistry actionRegistry{std::span<const std::string_view>(kActionNames)};
+    auto& bindingService = services.AddService<InputBindingService>();
+
+    const std::string configJson = ReadTextFile("input_config.json");
+    if (!configJson.empty())
+    {
+        if (auto jsonRoot = JsonParse(configJson))
+        {
+            if (auto configData = DeserializeInputConfig(*jsonRoot))
+            {
+                SdlInputControlResolver controlResolver;
+                if (auto table = CompileInputBindings(*configData, actionRegistry, controlResolver))
+                    bindingService.SetBindings(std::move(*table));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Vulkan bootstrap
+    //
+    // Render features can request device extensions before the Vulkan device
+    // is created via Contribute(). We construct SpriteFeature first, let it
+    // contribute its requirements to VulkanBootstrapPolicy, then build the
+    // entire Vulkan stack with those requirements baked in.
+    //
+    // Service registration order matters: ServiceHost destroys services in
+    // reverse registration order (LIFO). The Renderer must be registered last
+    // so it is destroyed first — before the Vulkan services it references are
+    // torn down.
+    // =========================================================================
+    auto spriteFeatureOwned = std::make_unique<SpriteFeature>();
+
+    VulkanBootstrapPolicy policy;
+    policy.AppName                = "JasmineGreen";
+    policy.RequiredQueues.Present = true;
+    spriteFeatureOwned->Contribute(policy);
+
+    for (const char* ext : windows.GetRequiredVulkanInstanceExtensions())
+        policy.RequiredInstanceExtensions.push_back(ext);
+
+    auto& instance       = services.AddService<VulkanInstanceService>(logging, policy);
+    auto& surface        = services.AddService<VulkanSurfaceService>(logging, instance, *primaryWindow);
+    auto& physicalDevice = services.AddService<VulkanPhysicalDeviceService>(logging, instance, policy, &surface);
+    auto& device         = services.AddService<VulkanDeviceService>(logging, physicalDevice, policy);
+    auto& queues         = services.AddService<VulkanQueueService>(logging, device, physicalDevice, policy);
+    auto& swapchain      = services.AddService<VulkanSwapchainService>(
+                               logging, device, physicalDevice, surface, queues,
+                               windows.GetExtent(windows.GetPrimaryWindowId()));
+    auto& deletionQueue  = services.AddService<VulkanDeletionQueueService>(logging, 2);
+    auto& upload         = services.AddService<VulkanUploadContextService>(logging, device, queues);
+    auto& allocator      = services.AddService<VulkanAllocatorService>(logging, instance, physicalDevice, device);
+    auto& buffers        = services.AddService<VulkanBufferService>(logging, device, allocator, upload);
+    auto& images         = services.AddService<VulkanImageService>(logging, device, allocator, upload, deletionQueue);
+    auto& samplers       = services.AddService<VulkanSamplerCache>(logging, device);
+    auto& shaders        = services.AddService<VulkanShaderCache>(logging, device);
+    auto& pipelines      = services.AddService<VulkanPipelineCache>(logging, device, shaders);
+    auto& descriptors    = services.AddService<VulkanDescriptorCache>(logging, device, buffers, images);
+    auto& scratch        = services.AddService<VulkanFrameScratch>(
+                               logging, device, physicalDevice, buffers,
+                               VulkanFrameScratch::Config{.FramesInFlight = 2});
+    auto& frames         = services.AddService<VulkanFrameService>(
+                               logging, device, queues, swapchain, deletionQueue, 2);
+
+    // Renderer is registered last so it is destroyed before everything above.
+    auto& renderer = services.AddService<Renderer>(
+        logging, device, physicalDevice, queues, swapchain, frames,
+        allocator, buffers, images, samplers, shaders, pipelines, descriptors,
+        scratch, upload);
+
+    // Hand the feature to the renderer. AddFeature calls Setup() immediately,
+    // caching service pointers and building the sprite pipeline.
+    FeatureRef<SpriteFeature> sprites = renderer.AddFeature(std::move(spriteFeatureOwned));
+
+    // =========================================================================
+    // White pixel texture
+    //
+    // SpriteFeature tints sprites by multiplying a sampled texel by the Color
+    // field. A 1x1 white RGBA texture is the simplest base: tinting it with
+    // 0xFFFFFFFF gives white, 0x000000FF gives black — no art assets needed.
+    // =========================================================================
+    const ImageHandle whitePixelImage = images.Create({
+        .Format    = VK_FORMAT_R8G8B8A8_SRGB,
+        .Extent    = {1, 1},
+        .Usage     = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .DebugName = "WhitePixel",
+    });
+    const uint32_t whitePixelData = 0xFFFFFFFFu;
+    images.Upload(whitePixelImage, &whitePixelData, sizeof(whitePixelData));
+
+    const BindlessImageIndex whitePixel =
+        descriptors.RegisterSampledImage(whitePixelImage, samplers.GetNearestClamp());
+
+    // =========================================================================
+    // World — transforms, hierarchy, and physics
+    //
+    // WorldSetup::Setup2D registers World2d as a service and installs
+    // TransformPropagationSystem in the Fixed lane. That system walks the
+    // transform hierarchy each fixed step and writes world-space positions
+    // into the WorldTransforms batch, which is what Render reads.
+    // =========================================================================
     SystemHost systems;
-
     WorldSetup::Setup2D(services, systems);
+    auto& world = services.Get<World2d>();
 
+    // =========================================================================
+    // Player entity
+    //
+    // EntityBatch<Player> is the contiguous storage for all Player instances.
+    // Emplace constructs the Player in-place, registers it with the
+    // EntityRegistry, and returns an EntityKey for future lookup or destruction.
+    //
+    // The player spawns at the center of the window.
+    // =========================================================================
+    EntityBatch<Player> players(world.Entities);
+
+    players.Emplace(world.Domain, Transform2f{
+        Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f}
+    });
+
+    // =========================================================================
+    // Systems
+    //
+    // SdlInputSystem polls SDL events and maps them to InputActionEvents each
+    // frame. PlayerSystem reads those events and moves the player.
+    //
+    // After<PlayerSystem, SdlInputSystem> ensures input is ready before the
+    // player tries to read it. Declarations like this are how you express
+    // system ordering in Sencha — no per-system priority numbers, just edges.
+    // =========================================================================
+    auto& inputSystem = systems.Register<SdlInputSystem>(logging, bindingService);
+
+    const PlayerSystem::Actions playerActions{
+        .MoveUp    = *actionRegistry.ResolveAction("MoveUp"),
+        .MoveDown  = *actionRegistry.ResolveAction("MoveDown"),
+        .MoveLeft  = *actionRegistry.ResolveAction("MoveLeft"),
+        .MoveRight = *actionRegistry.ResolveAction("MoveRight"),
+        .Quit      = *actionRegistry.ResolveAction("Quit"),
+    };
+
+    auto& playerSystem = systems.Register<PlayerSystem>(
+        inputSystem, players, world.Physics, *sprites, whitePixel, playerActions);
+
+    systems.After<PlayerSystem, SdlInputSystem>();
+    systems.Init();
+
+    // =========================================================================
+    // Time
+    // =========================================================================
+    auto& time = services.AddService<TimeService>();
+
+    // =========================================================================
+    // Game loop
+    //
+    // Each iteration of the loop:
+    //   1. RunFrame  — input + gameplay (variable dt)
+    //   2. RunFixed  — physics + transform propagation (same dt here for
+    //                  simplicity; a production game uses a fixed accumulator)
+    //   3. RunRender — submit draw calls for this frame
+    //   4. DrawFrame — GPU acquire → record → present
+    //
+    // Press Escape to quit. Window close events are not yet forwarded through
+    // the input pipeline — that will be addressed in a future engine update.
+    // =========================================================================
+    while (!playerSystem.WantsQuit() && !inputSystem.IsQuitRequested())
+    {
+        const FrameClock clock = time.Advance();
+
+        // Process SDL events and drive gameplay.
+        systems.RunFrame(clock.Dt);
+
+        // Propagate world transforms: Body.World() and Eye.World() are now
+        // up to date for this frame's movement.
+        systems.RunFixed(clock.Dt);
+
+        // Submit sprite draw calls, then present.
+        scratch.BeginFrame();
+        systems.RunRender(1.0f);
+
+        const auto drawStatus = renderer.DrawFrame();
+        if (drawStatus == Renderer::DrawStatus::SwapchainOutOfDate)
+        {
+            swapchain.Recreate(windows.GetExtent(windows.GetPrimaryWindowId()));
+            renderer.NotifySwapchainRecreated();
+        }
+    }
+
+    // Wait for the GPU to finish all in-flight work before tearing down
+    // Vulkan resources. Without this wait, the destructor chain could free
+    // buffers that the GPU is still reading.
+    vkDeviceWaitIdle(device.GetDevice());
+
+    systems.Shutdown();
     return 0;
 }
