@@ -211,41 +211,21 @@ int main()
     //
     // The player spawns at the center of the window.
     // =========================================================================
-    EntityBatch<Player> players(world.Entities);
-
-    const EntityKey playerKey = players.Emplace(world.Domain, Transform2f{
-        Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f}
-    });
-
     // =========================================================================
-    // Sprite components
-    //
-    // Sprites live in a dedicated batch, separate from Player, and are parented
-    // to the player's body transform so they follow movement automatically.
-    // SpriteRenderSystem reads this batch each frame and submits to SpriteFeature.
+    // Sprite batch — contiguous storage for all SpriteComponents.
+    // SpriteRenderSystem reads this each frame and submits to SpriteFeature.
+    // Individual sprites are owned by their entities via DataBatchHandle.
     // =========================================================================
     DataBatch<SpriteComponent> spriteComponents;
 
-    {
-        const DataBatchKey key = spriteComponents.EmplaceUnowned(world.Domain);
-        SpriteComponent& s = *spriteComponents.TryGet(key);
-        s.Transform.SetParentByKey(players.TryGet(playerKey)->TransformKey());
-        s.Texture  = whitePixel;
-        s.Width    = 48.0f;
-        s.Height   = 48.0f;
-        s.Color    = 0xFFFFFFFFu;
-        s.SortKey  = 0;
-    }
-    {
-        const DataBatchKey key = spriteComponents.EmplaceUnowned(world.Domain);
-        SpriteComponent& s = *spriteComponents.TryGet(key);
-        s.Transform.SetParentByKey(players.TryGet(playerKey)->TransformKey());
-        s.Texture  = whitePixel;
-        s.Width    = 12.0f;
-        s.Height   = 12.0f;
-        s.Color    = 0x000000FFu;
-        s.SortKey  = 1;
-    }
+    EntityBatch<Player> players(world.Entities);
+
+    const EntityKey playerKey = players.Emplace(
+        world.Domain,
+        Transform2f{ Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+        spriteComponents,
+        whitePixel
+    );
 
     // =========================================================================
     // Systems
