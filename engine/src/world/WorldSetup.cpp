@@ -1,6 +1,7 @@
 #include <world/WorldSetup.h>
 
 #include <core/service/ServiceHost.h>
+#include <physics/2d/PhysicsDomain2D.h>
 #include <core/system/SystemHost.h>
 #include <core/system/SystemPhase.h>
 #include <math/geometry/2d/Transform2d.h>
@@ -11,12 +12,13 @@
 namespace WorldSetup {
 
 	namespace {
-		World2d& GetOrAddWorld2d(ServiceHost& serviceHost)
+		World2d& GetOrAddWorld2d(ServiceHost& serviceHost,
+		                         const PhysicsConfig2D& physicsConfig)
 		{
 			if (auto* world = serviceHost.TryGet<World2d>())
 				return *world;
 
-			return serviceHost.AddService<World2d>();
+			return serviceHost.AddService<World2d>(physicsConfig);
 		}
 
 		World3d& GetOrAddWorld3d(ServiceHost& serviceHost)
@@ -28,9 +30,10 @@ namespace WorldSetup {
 		}
 	}
 
-	void Setup2D(ServiceHost& serviceHost, SystemHost& systemHost)
+	void Setup2D(ServiceHost& serviceHost, SystemHost& systemHost,
+	             const PhysicsConfig2D& physicsConfig)
 	{
-		World2d& world = GetOrAddWorld2d(serviceHost);
+		World2d& world = GetOrAddWorld2d(serviceHost, physicsConfig);
 
 		systemHost.AddSystem<TransformPropagationSystem<Transform2f>>(
 			SystemPhase::PostUpdate,

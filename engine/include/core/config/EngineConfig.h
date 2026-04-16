@@ -1,6 +1,7 @@
 #pragma once
 
 #include <audio/AudioConfig.h>
+#include <physics/2d/PhysicsDomain2D.h>
 
 #include <optional>
 #include <string>
@@ -24,6 +25,7 @@
 struct EngineConfig
 {
     EngineAudioConfig Audio;
+    PhysicsConfig2D   Physics2d;
 };
 
 //=============================================================================

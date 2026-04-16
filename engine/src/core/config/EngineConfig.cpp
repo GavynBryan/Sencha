@@ -1,5 +1,6 @@
 #include <core/config/EngineConfig.h>
 #include <core/json/JsonParser.h>
+#include <physics/2d/PhysicsDomain2D.h>
 
 #include <cstdio>
 #include <string>
@@ -18,6 +19,9 @@
 //   {
 //     "audio": {
 //       "buses": [ ... ]
+//     },
+//     "physics2d": {
+//       "grid_cell_size": 4.0
 //     }
 //   }
 // ---------------------------------------------------------------------------
@@ -82,6 +86,16 @@ std::optional<EngineConfig> LoadEngineConfig(
             return std::nullopt;
         }
         config.Audio = std::move(*audio);
+    }
+
+    // -- Physics2d section ----------------------------------------------------
+
+    const JsonValue* physicsSection = root->Find("physics2d");
+    if (physicsSection && physicsSection->IsObject())
+    {
+        const JsonValue* cellSize = physicsSection->Find("grid_cell_size");
+        if (cellSize && cellSize->IsNumber())
+            config.Physics2d.GridCellSize = static_cast<float>(cellSize->AsNumber());
     }
 
     return config;

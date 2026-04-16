@@ -3,6 +3,7 @@
 #include <core/service/IService.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <physics/2d/PhysicsDomain2D.h>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRegistry.h>
 #include <world/transform/TransformSpace.h>
@@ -56,7 +57,22 @@ public:
 	TransformHierarchyService& TransformHierarchy;
 };
 
-// -- Common aliases --------------------------------------------------------
+//=============================================================================
+// World2d
+//
+// Extends the base World with a PhysicsDomain2D. Physics is a separate concern
+// from the transform/entity world, but it is scoped and owned by the 2D world —
+// the same way TransformSpace is. PhysicsSetup2D wires systems against this
+// member rather than registering a standalone service.
+//=============================================================================
+class World2d : public World<Transform2f>
+{
+public:
+	explicit World2d(const PhysicsConfig2D& physicsConfig = {})
+		: Physics(physicsConfig)
+	{}
 
-using World2d = World<Transform2f>;
+	PhysicsDomain2D Physics;
+};
+
 using World3d = World<Transform3f>;
