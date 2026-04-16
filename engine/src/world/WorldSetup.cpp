@@ -1,9 +1,7 @@
 #include <world/WorldSetup.h>
 
 #include <core/service/ServiceHost.h>
-#include <physics/2d/PhysicsDomain2D.h>
 #include <core/system/SystemHost.h>
-#include <core/system/SystemPhase.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/World.h>
@@ -35,8 +33,10 @@ namespace WorldSetup {
 	{
 		World2d& world = GetOrAddWorld2d(serviceHost, physicsConfig);
 
-		systemHost.AddSystem<TransformPropagationSystem<Transform2f>>(
-			SystemPhase::PostUpdate,
+		// Fixed lane: TransformPropagationSystem has no dependencies.
+		// ColliderSyncSystem2D and KinematicMoveSystem2D declare their ordering
+		// in PhysicsSetup2D::Setup(), after they are registered there.
+		systemHost.Register<TransformPropagationSystem<Transform2f>>(
 			world.Domain.LocalTransforms,
 			world.Domain.WorldTransforms,
 			world.Domain.Hierarchy,
@@ -47,8 +47,7 @@ namespace WorldSetup {
 	{
 		World3d& world = GetOrAddWorld3d(serviceHost);
 
-		systemHost.AddSystem<TransformPropagationSystem<Transform3f>>(
-			SystemPhase::PostUpdate,
+		systemHost.Register<TransformPropagationSystem<Transform3f>>(
 			world.Domain.LocalTransforms,
 			world.Domain.WorldTransforms,
 			world.Domain.Hierarchy,

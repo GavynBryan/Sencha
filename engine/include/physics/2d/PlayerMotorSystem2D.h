@@ -3,7 +3,6 @@
 #include <core/batch/DataBatch.h>
 #include <core/batch/DataBatchKey.h>
 #include <core/event/EventBuffer.h>
-#include <core/system/ISystem.h>
 #include <input/InputTypes.h>
 #include <physics/2d/CharacterMotor2D.h>
 
@@ -14,7 +13,7 @@
 // Produces DesiredMoveX and sets JumpRequested each frame, ready for
 // KinematicMoveSystem2D to consume.
 //
-// Runs at SystemPhase::PreUpdate (after input, before the move phase).
+// Runs in the frame lane after SdlInputSystem (declared via After<> in game setup).
 //
 // Action IDs are resolved by name outside this system (at setup time via
 // InputBindingService::GetActionName lookups or the action registry) and
@@ -25,7 +24,7 @@
 // DataBatch<CharacterMotor2D>. For multi-player, instantiate one system
 // per player or extend with InputUserId filtering.
 //=============================================================================
-class PlayerMotorSystem2D : public ISystem
+class PlayerMotorSystem2D
 {
 public:
     // actionMoveLeft  : InputActionId for "move left"  (Held trigger)
@@ -41,9 +40,9 @@ public:
                         DataBatchKey motorKey,
                         const EventBuffer<InputActionEvent>& inputEvents);
 
-private:
-    void Update(const FrameTime& time) override;
+    void Update(float dt);
 
+private:
     InputActionId ActionMoveLeft;
     InputActionId ActionMoveRight;
     InputActionId ActionJump;

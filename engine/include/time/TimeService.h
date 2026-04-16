@@ -1,14 +1,15 @@
 #pragma once
 
 #include <core/service/IService.h>
-#include <time/FrameTime.h>
+#include <time/FrameClock.h>
 #include <chrono>
+#include <cstdint>
 
 //=============================================================================
 // TimeService
 //
 // Source of truth for all engine timing. Owns a steady_clock and produces a
-// FrameTime snapshot each frame via Advance(). Call Advance() exactly once per
+// FrameClock snapshot each frame via Advance(). Call Advance() exactly once per
 // frame, before SystemHost::Update(), then pass the returned snapshot through.
 //
 // Timescale
@@ -28,9 +29,9 @@ class TimeService : public IService
 public:
 	TimeService();
 
-	// Advance the clock by one frame. Returns the FrameTime snapshot for
+	// Advance the clock by one frame. Returns the FrameClock snapshot for
 	// this frame. Must be called exactly once per frame, before any systems run.
-	FrameTime Advance();
+	FrameClock Advance();
 
 	void SetTimescale(float scale) { Timescale = scale; }
 	float GetTimescale() const { return Timescale; }
@@ -43,8 +44,9 @@ private:
 	static constexpr float MaxDeltaSeconds = 1.0f / 15.0f;
 
 	TimePoint LastTime;
-	float Timescale = 1.0f;
-	float ElapsedTime = 0.0f;
-	float UnscaledElapsedTime = 0.0f;
-	bool FirstFrame = true;
+	float    Timescale          = 1.0f;
+	float    ElapsedTime        = 0.0f;
+	float    UnscaledElapsedTime = 0.0f;
+	uint64_t FrameIndex         = 0;
+	bool     FirstFrame         = true;
 };

@@ -75,7 +75,7 @@ const Collider2D* ColliderSyncSystem2D::TryGetCollider(const PhysicsToken& token
 // Update: sync world transforms -> AABB bounds -> PhysicsDomain2D
 // ---------------------------------------------------------------------------
 
-void ColliderSyncSystem2D::Update(const FrameTime& /*time*/)
+void ColliderSyncSystem2D::Tick(float /*fixedDt*/)
 {
     for (SyncSlot& slot : Slots)
     {

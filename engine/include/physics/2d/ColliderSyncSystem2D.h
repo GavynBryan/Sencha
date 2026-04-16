@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/batch/DataBatchKey.h>
-#include <core/system/ISystem.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/2d/Collider2D.h>
 #include <physics/2d/PhysicsDomain2D.h>
@@ -16,8 +15,7 @@
 // AABB from the Collider2D shape, pushes updated bounds into PhysicsDomain2D,
 // and calls RebuildGrid once all bounds are current.
 //
-// Frame position in the pipeline (SystemPhase::PostUpdate, before
-// KinematicMoveSystem2D):
+// Fixed-lane ordering (declared in PhysicsSetup2D::Setup via After<>):
 //   TransformPropagationSystem (PostUpdate, low order)
 //     -> ColliderSyncSystem2D  (PostUpdate, higher order)
 //       -> KinematicMoveSystem2D (PostUpdate, highest order)
@@ -34,7 +32,7 @@
 // PhysicsToken is a lightweight RAII wrapper. When it destructs it calls
 // RemoveCollider automatically, so entities do not need explicit teardown.
 //=============================================================================
-class ColliderSyncSystem2D : public ISystem
+class ColliderSyncSystem2D
 {
 public:
     //=========================================================================
@@ -112,9 +110,9 @@ public:
     Collider2D*       TryGetCollider(const PhysicsToken& token);
     const Collider2D* TryGetCollider(const PhysicsToken& token) const;
 
-private:
-    void Update(const FrameTime& time) override;
+    void Tick(float fixedDt);
 
+private:
     struct SyncSlot
     {
         DataBatchKey    TransformKey;

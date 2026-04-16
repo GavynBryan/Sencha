@@ -1,17 +1,17 @@
 #pragma once
 
-#include <core/system/ISystem.h>
+#include <core/batch/DataBatch.h>
+#include <math/geometry/2d/Transform2d.h>
+#include <world/transform/TransformView.h>
 
-class TransformView;
-
-class VelocityUpdateSystem2d : public ISystem
+// Stub — not yet implemented.
+class VelocityUpdateSystem2d
 {
 public:
-    VelocityUpdateSystem2d(TransformView transformView);
+    explicit VelocityUpdateSystem2d(TransformView<Transform2f>& transforms);
 
-    void Update(const FrameTime& time) override;
+    void Tick(float fixedDt);
 
 private:
-    DataBatch<Velocity2d>& Velocities;
     TransformView<Transform2f>& Transforms;
 };

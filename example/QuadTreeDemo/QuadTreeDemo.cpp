@@ -5,10 +5,10 @@
 #include <core/logging/ConsoleLogSink.h>
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
-#include <core/system/SystemPhase.h>
 #include <input/InputBindingService.h>
 #include <input/SdlInputSystem.h>
 #include <render/Renderer.h>
+#include <time/TimeService.h>
 #include <window/SdlWindowService.h>
 #include <world/World.h>
 #include <world/WorldSetup.h>
@@ -46,24 +46,20 @@ int main()
 	InputBindingService bindings;
 	bindings.SetBindings(std::move(*inputTable));
 
+	auto& timeService = services.AddService<TimeService>();
+
 	SystemHost systems;
 	WorldSetup::Setup2D(services, systems);
 
 	World2d& world = services.Get<World2d>();
 	auto& state = services.AddService<QuadTreeDemoState>(world);
 
-	auto& input = systems.AddSystem<SdlInputSystem>(SystemPhase::Input, logging, bindings);
-	systems.AddSystem<QuadTreePlayerMovementSystem>(
-		SystemPhase::Update,
-		state,
-		world,
-		input.GetEvents());
-	systems.AddSystem<QuadTreeRenderSystem>(
-		SystemPhase::PreRender,
-		state,
-		world,
-		render.Sprites(),
-		render.WhiteTexture());
+	auto& input = systems.Register<SdlInputSystem>(logging, bindings);
+	systems.Register<QuadTreePlayerMovementSystem>(state, world, input.GetEvents());
+	systems.Register<QuadTreeRenderSystem>(state, world, render.Sprites(), render.WhiteTexture());
+
+	systems.After<QuadTreePlayerMovementSystem, SdlInputSystem>();
+	systems.After<QuadTreeRenderSystem, QuadTreePlayerMovementSystem>();
 
 	systems.Init();
 
@@ -107,7 +103,8 @@ int main()
 			continue;
 		}
 
-		systems.Update(FrameTime{});
+		const FrameClock frame = timeService.Advance();
+		systems.RunFrame(frame.Dt);
 
 		const auto status = render.DrawFrame();
 		if (status == Renderer::DrawStatus::SwapchainOutOfDate)

@@ -15,7 +15,7 @@ PlayerMotorSystem2D::PlayerMotorSystem2D(
     , InputEvents(inputEvents)
 {}
 
-void PlayerMotorSystem2D::Update(const FrameTime& /*time*/)
+void PlayerMotorSystem2D::Update(float /*dt*/)
 {
     CharacterMotor2D* motor = Motors.TryGet(MotorKey);
     if (!motor) return;

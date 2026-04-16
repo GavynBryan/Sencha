@@ -82,11 +82,10 @@ QuadTreePlayerMovementSystem::QuadTreePlayerMovementSystem(
 	: State(state)
 	, World(world)
 	, InputEvents(inputEvents)
-	, PreviousTime(std::chrono::steady_clock::now())
 {
 }
 
-void QuadTreePlayerMovementSystem::Update(const FrameTime& /*time*/)
+void QuadTreePlayerMovementSystem::Update(float dt)
 {
 	Vec2d direction = Vec2d::Zero();
 	for (const auto& event : InputEvents.Items())
@@ -107,11 +106,6 @@ void QuadTreePlayerMovementSystem::Update(const FrameTime& /*time*/)
 		if (event.Action == InputActionId{QuadTreeDemoActions::MoveUp}) direction.Y += 1.0f;
 		if (event.Action == InputActionId{QuadTreeDemoActions::MoveDown}) direction.Y -= 1.0f;
 	}
-
-	const auto now = std::chrono::steady_clock::now();
-	const std::chrono::duration<float> elapsed = now - PreviousTime;
-	PreviousTime = now;
-	const float dt = std::min(elapsed.count(), 1.0f / 15.0f);
 
 	auto* local = World.Transforms.TryGetLocalMutable(State.Player.Transform.TransformKey());
 	if (local == nullptr)
@@ -150,7 +144,7 @@ QuadTreeRenderSystem::QuadTreeRenderSystem(
 {
 }
 
-void QuadTreeRenderSystem::Update(const FrameTime& /*time*/)
+void QuadTreeRenderSystem::Update(float /*dt*/)
 {
 	const auto* playerWorld = World.Transforms.TryGetWorld(State.Player.Transform.TransformKey());
 	if (playerWorld == nullptr)

@@ -4,12 +4,18 @@
 #include <chrono>
 
 // =============================================================================
-// FrameTime layout
+// FrameClock layout
 // =============================================================================
 
-TEST(FrameTime, SizeIs20Bytes)
+TEST(FrameClock, HasExpectedFields)
 {
-    EXPECT_EQ(sizeof(FrameTime), 20u);
+    FrameClock fc{};
+    EXPECT_FLOAT_EQ(fc.Dt, 0.0f);
+    EXPECT_FLOAT_EQ(fc.UnscaledDt, 0.0f);
+    EXPECT_FLOAT_EQ(fc.Elapsed, 0.0f);
+    EXPECT_FLOAT_EQ(fc.UnscaledElapsed, 0.0f);
+    EXPECT_FLOAT_EQ(fc.Timescale, 1.0f);
+    EXPECT_EQ(fc.FrameIndex, 0u);
 }
 
 // =============================================================================
@@ -19,27 +25,35 @@ TEST(FrameTime, SizeIs20Bytes)
 TEST(TimeService, FirstAdvanceReturnsZeroDelta)
 {
     TimeService ts;
-    FrameTime ft = ts.Advance();
+    FrameClock ft = ts.Advance();
 
-    EXPECT_FLOAT_EQ(ft.DeltaTime, 0.0f);
-    EXPECT_FLOAT_EQ(ft.UnscaledDeltaTime, 0.0f);
+    EXPECT_FLOAT_EQ(ft.Dt, 0.0f);
+    EXPECT_FLOAT_EQ(ft.UnscaledDt, 0.0f);
 }
 
 TEST(TimeService, FirstAdvanceReturnsZeroElapsed)
 {
     TimeService ts;
-    FrameTime ft = ts.Advance();
+    FrameClock ft = ts.Advance();
 
-    EXPECT_FLOAT_EQ(ft.ElapsedTime, 0.0f);
-    EXPECT_FLOAT_EQ(ft.UnscaledElapsedTime, 0.0f);
+    EXPECT_FLOAT_EQ(ft.Elapsed, 0.0f);
+    EXPECT_FLOAT_EQ(ft.UnscaledElapsed, 0.0f);
 }
 
 TEST(TimeService, FirstAdvanceTimescaleIsOne)
 {
     TimeService ts;
-    FrameTime ft = ts.Advance();
+    FrameClock ft = ts.Advance();
 
     EXPECT_FLOAT_EQ(ft.Timescale, 1.0f);
+}
+
+TEST(TimeService, FirstAdvanceFrameIndexIsOne)
+{
+    TimeService ts;
+    FrameClock ft = ts.Advance();
+
+    EXPECT_EQ(ft.FrameIndex, 1u);
 }
 
 // =============================================================================
@@ -52,8 +66,8 @@ TEST(TimeService, DeltaEqualsUnscaledDeltaAtDefaultTimescale)
     ts.Advance(); // burn first frame
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime ft = ts.Advance();
-    EXPECT_FLOAT_EQ(ft.DeltaTime, ft.UnscaledDeltaTime * ft.Timescale);
+    FrameClock ft = ts.Advance();
+    EXPECT_FLOAT_EQ(ft.Dt, ft.UnscaledDt * ft.Timescale);
 }
 
 TEST(TimeService, SecondAdvanceHasPositiveDelta)
@@ -62,9 +76,9 @@ TEST(TimeService, SecondAdvanceHasPositiveDelta)
     ts.Advance(); // burn first frame
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime ft = ts.Advance();
-    EXPECT_GT(ft.UnscaledDeltaTime, 0.0f);
-    EXPECT_GT(ft.DeltaTime, 0.0f);
+    FrameClock ft = ts.Advance();
+    EXPECT_GT(ft.UnscaledDt, 0.0f);
+    EXPECT_GT(ft.Dt, 0.0f);
 }
 
 // =============================================================================
@@ -77,13 +91,13 @@ TEST(TimeService, ElapsedAccumulatesAcrossFrames)
     ts.Advance(); // first frame — zero delta, zero elapsed
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime f1 = ts.Advance();
+    FrameClock f1 = ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime f2 = ts.Advance();
+    FrameClock f2 = ts.Advance();
 
-    EXPECT_GT(f2.UnscaledElapsedTime, f1.UnscaledElapsedTime);
-    EXPECT_GT(f2.ElapsedTime, f1.ElapsedTime);
+    EXPECT_GT(f2.UnscaledElapsed, f1.UnscaledElapsed);
+    EXPECT_GT(f2.Elapsed, f1.Elapsed);
 }
 
 TEST(TimeService, UnscaledElapsedEqualsUnscaledDeltaSum)
@@ -92,13 +106,25 @@ TEST(TimeService, UnscaledElapsedEqualsUnscaledDeltaSum)
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime f1 = ts.Advance();
+    FrameClock f1 = ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime f2 = ts.Advance();
+    FrameClock f2 = ts.Advance();
 
-    float expectedUnscaled = f1.UnscaledDeltaTime + f2.UnscaledDeltaTime;
-    EXPECT_NEAR(f2.UnscaledElapsedTime, expectedUnscaled, 1e-6f);
+    float expectedUnscaled = f1.UnscaledDt + f2.UnscaledDt;
+    EXPECT_NEAR(f2.UnscaledElapsed, expectedUnscaled, 1e-6f);
+}
+
+TEST(TimeService, FrameIndexIncrementsEachAdvance)
+{
+    TimeService ts;
+    FrameClock f1 = ts.Advance();
+    FrameClock f2 = ts.Advance();
+    FrameClock f3 = ts.Advance();
+
+    EXPECT_EQ(f1.FrameIndex, 1u);
+    EXPECT_EQ(f2.FrameIndex, 2u);
+    EXPECT_EQ(f3.FrameIndex, 3u);
 }
 
 // =============================================================================
@@ -112,14 +138,14 @@ TEST(TimeService, GetSetTimescaleRoundTrips)
     EXPECT_FLOAT_EQ(ts.GetTimescale(), 2.5f);
 }
 
-TEST(TimeService, TimescaleReflectedInFrameTime)
+TEST(TimeService, TimescaleReflectedInFrameClock)
 {
     TimeService ts;
     ts.SetTimescale(3.0f);
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime ft = ts.Advance();
+    FrameClock ft = ts.Advance();
     EXPECT_FLOAT_EQ(ft.Timescale, 3.0f);
 }
 
@@ -130,8 +156,8 @@ TEST(TimeService, ScaledDeltaEqualsUnscaledTimesTimescale)
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime ft = ts.Advance();
-    EXPECT_NEAR(ft.DeltaTime, ft.UnscaledDeltaTime * 2.0f, 1e-6f);
+    FrameClock ft = ts.Advance();
+    EXPECT_NEAR(ft.Dt, ft.UnscaledDt * 2.0f, 1e-6f);
 }
 
 TEST(TimeService, ZeroTimescalePausesScaledTime)
@@ -141,19 +167,19 @@ TEST(TimeService, ZeroTimescalePausesScaledTime)
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
-    FrameTime f1 = ts.Advance();
+    FrameClock f1 = ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
-    FrameTime f2 = ts.Advance();
+    FrameClock f2 = ts.Advance();
 
     // Scaled delta and elapsed must stay zero.
-    EXPECT_FLOAT_EQ(f1.DeltaTime, 0.0f);
-    EXPECT_FLOAT_EQ(f2.DeltaTime, 0.0f);
-    EXPECT_FLOAT_EQ(f2.ElapsedTime, 0.0f);
+    EXPECT_FLOAT_EQ(f1.Dt, 0.0f);
+    EXPECT_FLOAT_EQ(f2.Dt, 0.0f);
+    EXPECT_FLOAT_EQ(f2.Elapsed, 0.0f);
 
     // Unscaled time must still advance.
-    EXPECT_GT(f1.UnscaledDeltaTime, 0.0f);
-    EXPECT_GT(f2.UnscaledElapsedTime, f1.UnscaledElapsedTime);
+    EXPECT_GT(f1.UnscaledDt, 0.0f);
+    EXPECT_GT(f2.UnscaledElapsed, f1.UnscaledElapsed);
 }
 
 TEST(TimeService, TimescaleChangeAffectsNextFrameOnly)
@@ -162,18 +188,18 @@ TEST(TimeService, TimescaleChangeAffectsNextFrameOnly)
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime before = ts.Advance();
+    FrameClock before = ts.Advance();
     ts.SetTimescale(0.0f);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    FrameTime after = ts.Advance();
+    FrameClock after = ts.Advance();
 
     // Frame before change used timescale 1.
     EXPECT_FLOAT_EQ(before.Timescale, 1.0f);
-    EXPECT_NEAR(before.DeltaTime, before.UnscaledDeltaTime, 1e-6f);
+    EXPECT_NEAR(before.Dt, before.UnscaledDt, 1e-6f);
 
     // Frame after change uses timescale 0.
-    EXPECT_FLOAT_EQ(after.DeltaTime, 0.0f);
+    EXPECT_FLOAT_EQ(after.Dt, 0.0f);
 }
 
 // =============================================================================
@@ -191,6 +217,6 @@ TEST(TimeService, UnscaledDeltaNeverExceedsMaxDeltaSeconds)
     ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    FrameTime ft = ts.Advance();
-    EXPECT_LE(ft.UnscaledDeltaTime, MaxDelta);
+    FrameClock ft = ts.Advance();
+    EXPECT_LE(ft.UnscaledDt, MaxDelta);
 }

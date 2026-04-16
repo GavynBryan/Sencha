@@ -2,7 +2,6 @@
 
 #include <core/event/EventBuffer.h>
 #include <core/service/IService.h>
-#include <core/system/ISystem.h>
 #include <input/InputTypes.h>
 #include <math/spatial/QuadTree.h>
 #include <render/backend/vulkan/VulkanDescriptorCache.h>
@@ -10,7 +9,6 @@
 #include <world/World.h>
 #include <world/transform/TransformNode.h>
 
-#include <chrono>
 #include <cstdint>
 #include <string_view>
 
@@ -56,7 +54,7 @@ public:
 	QuadTreeDemoPlayer Player;
 };
 
-class QuadTreePlayerMovementSystem final : public ISystem
+class QuadTreePlayerMovementSystem
 {
 public:
 	QuadTreePlayerMovementSystem(
@@ -64,16 +62,15 @@ public:
 		World2d& world,
 		const EventBuffer<InputActionEvent>& inputEvents);
 
-private:
-	void Update(const FrameTime& time) override;
+	void Update(float dt);
 
+private:
 	QuadTreeDemoState& State;
 	World2d& World;
 	const EventBuffer<InputActionEvent>& InputEvents;
-	std::chrono::steady_clock::time_point PreviousTime;
 };
 
-class QuadTreeRenderSystem final : public ISystem
+class QuadTreeRenderSystem
 {
 public:
 	QuadTreeRenderSystem(
@@ -82,9 +79,9 @@ public:
 		SpriteFeature& sprites,
 		BindlessImageIndex whiteTexture);
 
-private:
-	void Update(const FrameTime& time) override;
+	void Update(float dt);
 
+private:
 	QuadTreeDemoState& State;
 	World2d& World;
 	SpriteFeature& Sprites;

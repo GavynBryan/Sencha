@@ -2,7 +2,6 @@
 
 #include <core/batch/DataBatch.h>
 #include <core/batch/DataBatchKey.h>
-#include <core/system/ISystem.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/2d/CharacterMotor2D.h>
 #include <physics/2d/ColliderSyncSystem2D.h>
@@ -22,18 +21,16 @@
 //   6. Update Grounded flag from HitFloor
 //   7. Zero VerticalSpeed if HitFloor or HitCeiling
 //
-// Runs at SystemPhase::PostUpdate, after ColliderSyncSystem2D has rebuilt
-// the physics grid. The transform write here will be propagated in the
-// next frame's TransformPropagationSystem pass. If same-frame propagation
-// is required, call TransformPropagationSystem::Propagate() manually after
-// this system runs.
+// Runs in the fixed lane after ColliderSyncSystem2D (declared via After<>
+// in game setup code). The transform write here is propagated at the start
+// of the next fixed tick by TransformPropagationSystem.
 //
 // The collider for the moving entity must be registered in
 // ColliderSyncSystem2D before this system runs. KinematicMoveSystem2D reads
 // the collider's current WorldBounds (already synced this frame) as the
 // starting AABB for the move query.
 //=============================================================================
-class KinematicMoveSystem2D : public ISystem
+class KinematicMoveSystem2D
 {
 public:
     // motors        : batch owning CharacterMotor2D components
@@ -51,9 +48,9 @@ public:
                           const ColliderSyncSystem2D::PhysicsToken& colliderToken,
                           ColliderSyncSystem2D& syncSystem);
 
-private:
-    void Update(const FrameTime& time) override;
+    void Tick(float fixedDt);
 
+private:
     DataBatch<CharacterMotor2D>& Motors;
     DataBatchKey                  MotorKey;
     TransformView<Transform2f>&  Transforms;

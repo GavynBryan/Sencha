@@ -20,10 +20,10 @@
 //   // ... add services ...
 //   {
 //       ServiceProvider provider(services);
-//       systems.AddSystem<RenderSystem>(SystemPhase::Render, provider);
-//       systems.AddSystem<PhysicsSystem>(SystemPhase::Update, provider);
+//       systems.Register<RenderSystem>(provider);
+//       systems.Register<PhysicsSystem>(provider);
 //   }
-//   // provider is gone â€” systems hold only their cached service references
+//   // provider is gone — systems hold only their cached service references
 //=============================================================================
 class ServiceProvider
 {

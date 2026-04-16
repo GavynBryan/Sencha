@@ -19,7 +19,7 @@ KinematicMoveSystem2D::KinematicMoveSystem2D(
     , SyncSystem(syncSystem)
 {}
 
-void KinematicMoveSystem2D::Update(const FrameTime& time)
+void KinematicMoveSystem2D::Tick(float fixedDt)
 {
     CharacterMotor2D* motor = Motors.TryGet(MotorKey);
     if (!motor) return;
@@ -30,7 +30,7 @@ void KinematicMoveSystem2D::Update(const FrameTime& time)
     const Collider2D* collider = SyncSystem.TryGetCollider(ColliderToken);
     if (!collider) return;
 
-    const float dt = time.DeltaTime;
+    const float dt = fixedDt;
 
     // -- 1. Jump ---------------------------------------------------------------
     if (motor->JumpRequested && motor->Grounded)
