@@ -18,6 +18,7 @@ Sencha is early and actively changing. The repository currently contains:
 - A lightweight JSON DOM and parser for load-time config.
 - Binary serialization helpers.
 - An input mapping pipeline that compiles JSON config into runtime binding tables.
+- 2D physics: AABB collider registry, quadtree broadphase, overlap/sweep/move-and-slide queries, and a transform-to-physics sync system.
 - Basic math, identity, and window abstraction types.
 - SDL3-backed window, video, and input ingestion services.
 - Vulkan bootstrap services for instance, device, queues, surface, swapchain, and frames.
@@ -40,6 +41,9 @@ engine/
     input/
     math/
       geometry/
+      spatial/
+    physics/
+      2d/
     render/
       backend/vulkan/
       features/
@@ -52,14 +56,14 @@ engine/
     (mirrors include/)
 ```
 
-Core contains bootstrap infrastructure. Math carries reusable value types and geometry. Input and window own their public API plus SDL-backed implementations. Render is split into `backend/` for backend-specific services (currently Vulkan) and `features/` for pluggable draw features driven by the `Renderer`. World holds engine-facing gameplay-adjacent systems: transform domains, hierarchy propagation, reusable transform nodes, and tilemaps.
+Core contains bootstrap infrastructure. Math carries reusable value types, geometry, and spatial data structures (`QuadTree`). Physics provides 2D collision detection and spatial queries. Input and window own their public API plus SDL-backed implementations. Render is split into `backend/` for backend-specific services (currently Vulkan) and `features/` for pluggable draw features driven by the `Renderer`. World holds engine-facing gameplay-adjacent systems: transform domains, hierarchy propagation, reusable transform nodes, and tilemaps.
 
 ### Core
 
 Core contains:
 
 - `ServiceHost`, `ServiceProvider`, and `IService` for explicit service registration and lookup.
-- `SystemHost` and `ISystem` for ordered system execution.
+- `SystemHost` for concept-based ordered system execution across Frame, Fixed, and Render lanes.
 - `LoggingProvider`, `Logger`, `ConsoleLogSink`, `FileLogSink`, and `LogLevel`.
 - `LifetimeHandle<T, KeyT>`, `DataBatchHandle<T>`, `InstanceRegistryHandle<T>`, and `ILifetimeOwner` for typed RAII attach/detach lifetimes.
 - `InstanceRegistry<T>` for tracking externally-owned instances of a type with O(1) swap-and-pop removal.
@@ -72,7 +76,7 @@ Core is intentionally structural. It gives applications a small set of primitive
 
 ### Math And Geometry
 
-Math and geometry contain backend-agnostic game-facing value types such as vectors, transforms, matrices, quaternions, rays, bounds, and frustums.
+Math and geometry contain backend-agnostic game-facing value types such as vectors, transforms, matrices, quaternions, rays, bounds, and frustums. `math/spatial` provides spatial data structures — currently `QuadTree<T>`, a header-only 2D broadphase index used by the physics layer.
 
 ### Input, Window, Render
 
@@ -92,6 +96,8 @@ World groups engine features that sit on top of the smaller domains:
 - `world/entity` — `EntityRegistry`, `EntityBatch<T>`, `EntityKey`, and `EntityRecord` for stable entity identity, cross-type destroy routing, and subtree destruction.
 - `world/tilemap` — `Tilemap2d` for 2D tile grids.
 
+`World2d` extends the base `World` with `PhysicsDomain2D` as the `Physics` member. Physics is scoped and owned by the 2D world, not a standalone service. `PhysicsSetup2D::Setup` wires the sync system.
+
 ### ECS Stance
 
 Sencha is a **hybrid, data-oriented engine, not a purist ECS**. There is no god-world, no `EntityId`, no `IComponent` base class, no virtual `Update()`, and no central registry that owns all gameplay state. Contributors should not add any of those.
@@ -102,7 +108,7 @@ The primitives are:
 - **`DataBatchKey`** — a stable key that cross-references slots between batches.
 - **`DataBatchHandle<T>`** — RAII ownership of a single batch slot. When it drops, the slot frees.
 - **`TransformSpace<T>`** — a self-contained transform space (batches + hierarchy + propagation cache). `World` owns one; UI, editor, or any other subsystem can own its own.
-- **`ISystem`** — a function that sweeps one or more batches in a defined `SystemPhase`.
+- **Systems** — plain types that implement `Update(float)`, `Tick(float)`, and/or `Render(float)`. `SystemHost` detects capabilities via concepts and dispatches without a base class or vtable.
 
 Gameplay authoring happens in two modes, both built on the same primitives:
 
@@ -133,7 +139,7 @@ test/      GoogleTest-based engine tests.
 | [docs/data.md](data.md) | Data containers, batch storage, serialization, and memory management |
 | [docs/audio.md](audio.md) | Audio system design, integration, and usage examples |
 | [docs/entity.md](entity.md) | `EntityBatch<T>`, `EntityRegistry`, `EntityKey`, subtree destruction, and the `IsEntity` concept. |
-
+| [docs/physics.md](physics.md) | 2D physics: `PhysicsDomain2D`, `ColliderSyncSystem2D`, quadtree broadphase, spatial queries, and move-and-slide. |
 | [docs/time.md](time.md) | `TimeService` timing model, per-frame timing, timescale, delta clamping, and constraints. |
 
 ## Requirements

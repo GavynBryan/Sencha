@@ -106,5 +106,5 @@ void ColliderSyncSystem2D::Tick(float /*fixedDt*/)
         Physics.UpdateBounds(slot.PhysHandle, worldBounds);
     }
 
-    Physics.RebuildGrid();
+    Physics.RebuildTree();
 }

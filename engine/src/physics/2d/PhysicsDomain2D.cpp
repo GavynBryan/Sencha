@@ -1,8 +1,8 @@
 #include <physics/2d/PhysicsDomain2D.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
+#include <iterator>
 #include <limits>
 
 // ---------------------------------------------------------------------------
@@ -10,9 +10,11 @@
 // ---------------------------------------------------------------------------
 
 PhysicsDomain2D::PhysicsDomain2D(const PhysicsConfig2D& config)
-    : CellSize(config.GridCellSize)
+    : Tree(QuadTree<uint32_t>::Config{
+          config.TreeBounds,
+          config.TreeMaxDepth,
+          config.TreeMaxEntriesPerLeaf })
 {
-    assert(config.GridCellSize > 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,57 +69,18 @@ void PhysicsDomain2D::UpdateBounds(PhysicsHandle2D handle, const Aabb2d& worldBo
 }
 
 // ---------------------------------------------------------------------------
-// Grid rebuild
+// Broadphase rebuild
 // ---------------------------------------------------------------------------
 
-void PhysicsDomain2D::RebuildGrid()
+void PhysicsDomain2D::RebuildTree()
 {
-    Grid.clear();
+    Tree.Clear();
 
-    // Compute world AABB covering all live colliders
-    float minX =  std::numeric_limits<float>::max();
-    float minY =  std::numeric_limits<float>::max();
-    float maxX = -std::numeric_limits<float>::max();
-    float maxY = -std::numeric_limits<float>::max();
-
-    for (const ColliderEntry& entry : Entries)
-    {
-        if (!entry.Live || !entry.Shape.WorldBounds.IsValid()) continue;
-        const Aabb2d& b = entry.Shape.WorldBounds;
-        minX = std::min(minX, static_cast<float>(b.Min.X));
-        minY = std::min(minY, static_cast<float>(b.Min.Y));
-        maxX = std::max(maxX, static_cast<float>(b.Max.X));
-        maxY = std::max(maxY, static_cast<float>(b.Max.Y));
-    }
-
-    if (minX > maxX)
-    {
-        GridWidth = GridHeight = 0;
-        return;
-    }
-
-    GridOriginX = minX;
-    GridOriginY = minY;
-    GridWidth   = static_cast<int>(std::ceil((maxX - minX) / CellSize)) + 1;
-    GridHeight  = static_cast<int>(std::ceil((maxY - minY) / CellSize)) + 1;
-    Grid.resize(static_cast<size_t>(GridWidth * GridHeight));
-
-    // Insert each live collider into every cell it overlaps
     for (uint32_t i = 0; i < static_cast<uint32_t>(Entries.size()); ++i)
     {
         const ColliderEntry& entry = Entries[i];
         if (!entry.Live || !entry.Shape.WorldBounds.IsValid()) continue;
-
-        int minCX, maxCX, minCY, maxCY;
-        GetCellRange(entry.Shape.WorldBounds, minCX, maxCX, minCY, maxCY);
-
-        for (int cy = minCY; cy <= maxCY; ++cy)
-        {
-            for (int cx = minCX; cx <= maxCX; ++cx)
-            {
-                Grid[static_cast<size_t>(cy * GridWidth + cx)].SlotIndices.push_back(i);
-            }
-        }
+        Tree.Insert(i, entry.Shape.WorldBounds);
     }
 }
 
@@ -252,36 +215,10 @@ MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) con
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-void PhysicsDomain2D::GetCellRange(const Aabb2d& box,
-                                   int& minCX, int& maxCX,
-                                   int& minCY, int& maxCY) const
-{
-    auto clampX = [&](int v) { return std::clamp(v, 0, GridWidth  - 1); };
-    auto clampY = [&](int v) { return std::clamp(v, 0, GridHeight - 1); };
-
-    minCX = clampX(static_cast<int>(std::floor((static_cast<float>(box.Min.X) - GridOriginX) / CellSize)));
-    maxCX = clampX(static_cast<int>(std::floor((static_cast<float>(box.Max.X) - GridOriginX) / CellSize)));
-    minCY = clampY(static_cast<int>(std::floor((static_cast<float>(box.Min.Y) - GridOriginY) / CellSize)));
-    maxCY = clampY(static_cast<int>(std::floor((static_cast<float>(box.Max.Y) - GridOriginY) / CellSize)));
-}
-
 void PhysicsDomain2D::GatherCandidates(const Aabb2d& box,
                                        std::vector<uint32_t>& out) const
 {
-    if (Grid.empty() || GridWidth == 0 || GridHeight == 0) return;
-
-    int minCX, maxCX, minCY, maxCY;
-    GetCellRange(box, minCX, maxCX, minCY, maxCY);
-
-    for (int cy = minCY; cy <= maxCY; ++cy)
-    {
-        for (int cx = minCX; cx <= maxCX; ++cx)
-        {
-            const GridCell& cell = Grid[static_cast<size_t>(cy * GridWidth + cx)];
-            for (uint32_t idx : cell.SlotIndices)
-                out.push_back(idx);
-        }
-    }
+    Tree.Query(box, std::back_inserter(out));
 }
 
 float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,

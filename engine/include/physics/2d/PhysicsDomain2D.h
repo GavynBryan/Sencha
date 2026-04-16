@@ -1,10 +1,10 @@
 #pragma once
 
 #include <math/geometry/2d/Aabb2d.h>
+#include <math/spatial/QuadTree.h>
 #include <math/Vec.h>
 #include <physics/2d/Collider2D.h>
 #include <cstdint>
-#include <span>
 #include <vector>
 
 //=============================================================================
@@ -16,9 +16,17 @@
 //=============================================================================
 struct PhysicsConfig2D
 {
-    // World-unit size of each spatial grid cell. Should be >= the largest
-    // expected collider for best broadphase performance.
-    float GridCellSize = 4.0f;
+    // Bounds of the quadtree root node. Should encompass the entire playable
+    // area. Colliders outside these bounds are still handled (they land at the
+    // root) but broadphase quality degrades.
+    Aabb2d TreeBounds = Aabb2d(Vec2d(-1024.0f, -1024.0f), Vec2d(1024.0f, 1024.0f));
+
+    // Maximum quadtree subdivision depth. Higher = tighter cells but more
+    // nodes to traverse. 6-8 is typical for 2D platformers.
+    int TreeMaxDepth = 6;
+
+    // Maximum entries in a leaf before it subdivides.
+    int TreeMaxEntriesPerLeaf = 8;
 };
 
 //=============================================================================
@@ -65,12 +73,10 @@ struct PhysicsHandle2D
 // Not a full rigidbody simulator — forces, torque, impulses, moving platforms,
 // slopes, and friction are explicitly out of scope for v0.
 //
-// Spatial partitioning uses a simple uniform grid. Colliders are inserted into
-// all cells their AABB overlaps. Queries gather candidates from relevant cells
-// then perform exact AABB tests.
-//
-// Grid parameters are fixed per RebuildGrid call. The grid is rebuilt each
-// frame (or after level geometry changes) by ColliderSyncSystem2D.
+// Spatial partitioning uses a QuadTree broadphase. The tree is rebuilt from
+// scratch each frame (or after level geometry changes) by
+// ColliderSyncSystem2D. Queries gather candidates from the tree then perform
+// exact AABB tests.
 //=============================================================================
 class PhysicsDomain2D
 {
@@ -89,10 +95,10 @@ public:
     void            Unregister(PhysicsHandle2D handle);
     void            UpdateBounds(PhysicsHandle2D handle, const Aabb2d& worldBounds);
 
-    // Rebuild the spatial grid from the current collider state.
+    // Rebuild the broadphase tree from the current collider state.
     // Call once per frame after all UpdateBounds calls are complete
     // (ColliderSyncSystem2D does this at the end of its Update).
-    void RebuildGrid();
+    void RebuildTree();
 
     // -- Spatial queries ------------------------------------------------------
 
@@ -125,16 +131,7 @@ private:
         bool            Live = false; // false = slot is free
     };
 
-    // -- Grid -----------------------------------------------------------------
-
-    struct GridCell
-    {
-        std::vector<uint32_t> SlotIndices; // indices into Entries
-    };
-
-    void GetCellRange(const Aabb2d& box,
-                      int& minCX, int& maxCX,
-                      int& minCY, int& maxCY) const;
+    // -- Broadphase ------------------------------------------------------------
 
     void GatherCandidates(const Aabb2d& box,
                           std::vector<uint32_t>& out) const;
@@ -146,15 +143,9 @@ private:
 
     // -- Data -----------------------------------------------------------------
 
-    float CellSize;
-    int   GridWidth   = 0;
-    int   GridHeight  = 0;
-    float GridOriginX = 0.0f;
-    float GridOriginY = 0.0f;
-
     std::vector<ColliderEntry> Entries;
     std::vector<uint32_t>      FreeSlots;
     uint32_t                   NextHandle = 1; // 0 is null
 
-    std::vector<GridCell> Grid;
+    QuadTree<uint32_t> Tree;
 };

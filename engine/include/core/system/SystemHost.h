@@ -21,7 +21,7 @@
 // no vtable, dispatch is via erased function pointers.
 //
 // Ordering within a lane is declared with After<T, TDep>():
-//   host.After<KinematicMoveSystem2D, ColliderSyncSystem2D>();
+//   host.After<MySystem, SdlInputSystem>();
 // means T runs after TDep in any lane they share. Dependencies referencing a
 // type not present in a given lane are silently ignored.
 //
@@ -31,8 +31,8 @@
 // Usage:
 //   SystemHost host;
 //   host.Register<SdlInputSystem>(logging, bindings);
-//   host.Register<PlayerMotorSystem2D>(...);
-//   host.After<PlayerMotorSystem2D, SdlInputSystem>();
+//   host.Register<MySystem>(...);
+//   host.After<MySystem, SdlInputSystem>();
 //   host.Init();
 //
 //   // per-frame main loop:

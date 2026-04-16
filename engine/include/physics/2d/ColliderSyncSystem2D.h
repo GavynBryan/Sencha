@@ -13,12 +13,12 @@
 // Bridges the transform domain and the physics domain each frame. For every
 // registered collider, it reads the entity's world Transform2D, computes the
 // AABB from the Collider2D shape, pushes updated bounds into PhysicsDomain2D,
-// and calls RebuildGrid once all bounds are current.
+// and calls RebuildTree once all bounds are current.
 //
 // Fixed-lane ordering (declared in PhysicsSetup2D::Setup via After<>):
 //   TransformPropagationSystem (PostUpdate, low order)
 //     -> ColliderSyncSystem2D  (PostUpdate, higher order)
-//       -> KinematicMoveSystem2D (PostUpdate, highest order)
+//       -> [game movement systems run after ColliderSyncSystem2D]
 //
 // Collider lifecycle:
 //   PhysicsToken AddCollider(transformKey, Collider2D)

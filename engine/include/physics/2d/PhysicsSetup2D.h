@@ -17,8 +17,8 @@ class SystemHost;
 // PhysicsDomain2D is owned by World2d::Physics — not a standalone service.
 // Resolve it via serviceHost.Get<World2d>().Physics.
 //
-// PlayerMotorSystem2D (PreUpdate=200) and KinematicMoveSystem2D (phase 402)
-// are game-specific. Add them from game code after calling Setup, using
+// Game-specific movement systems (motors, kinematic controllers, etc.) are not
+// provided by the engine. Add them from game code after calling Setup, using
 // World2d::Physics and SystemHost::Get<ColliderSyncSystem2D>().
 //=============================================================================
 namespace PhysicsSetup2D {
