@@ -63,6 +63,11 @@ public:
 		Registration.GetService()->SetParent(TransformKey(), parent.TransformKey());
 	}
 
+	void SetParentByKey(DataBatchKey parentKey)
+	{
+		Registration.GetService()->SetParent(TransformKey(), parentKey);
+	}
+
 	void ClearParent()
 	{
 		Registration.GetService()->ClearParent(TransformKey());

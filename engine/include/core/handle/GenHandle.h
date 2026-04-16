@@ -19,6 +19,7 @@ struct GenHandle
     uint32_t Generation = 0;
 
     [[nodiscard]] bool IsNull() const { return Index == ~0u; }
+    [[nodiscard]] bool IsValid() const { return Index != ~0u; }
 };
 
 //=============================================================================
