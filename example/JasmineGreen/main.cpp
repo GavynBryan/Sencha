@@ -46,7 +46,14 @@
 #include "Player.h"
 #include "PlayerSystem.h"
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/ConsolePanel.h>
+#include <debug/DebugService.h>
+#include <debug/ImGuiDebugOverlay.h>
+#endif
+
 #include <fstream>
+#include <memory>
 #include <span>
 #include <sstream>
 #include <vector>
@@ -74,6 +81,12 @@ int main()
     ServiceHost services;
     LoggingProvider& logging = services.GetLoggingProvider();
     logging.AddSink<ConsoleLogSink>();
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // Register the debug sink immediately so it captures all startup log output.
+    auto& debugLogSink = logging.AddSink<DebugLogSink>();
+    debugLogSink.SetMinLevel(LogLevel::Debug);
+    auto& debug = services.AddService<DebugService>(logging, debugLogSink);
+#endif
 
     // =========================================================================
     // Window
@@ -185,6 +198,14 @@ int main()
     // caching service pointers and building the sprite pipeline.
     FeatureRef<SpriteFeature> sprites = renderer.AddFeature(std::move(spriteFeatureOwned));
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    auto debugOverlayOwned = std::make_unique<ImGuiDebugOverlay>(
+        debug, *primaryWindow, instance, frames);
+    debugOverlayOwned->AddPanel<ConsolePanel>(debug.GetLogSink());
+    FeatureRef<ImGuiDebugOverlay> debugOverlay =
+        renderer.AddFeature(std::move(debugOverlayOwned));
+#endif
+
     // =========================================================================
     // White pixel texture
     //
@@ -245,6 +266,14 @@ int main()
     // system ordering in Sencha — no per-system priority numbers, just edges.
     // =========================================================================
     auto& inputSystem = systems.Register<SdlInputSystem>(logging, bindingService);
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    inputSystem.AddSdlEventFilter([debugOverlay](const SDL_Event& event)
+    {
+        if (auto* overlay = debugOverlay.Get())
+            return overlay->ProcessSdlEvent(event);
+        return false;
+    });
+#endif
 
     const PlayerSystem::Actions playerActions{
         .MoveUp         = *actionRegistry.ResolveAction("MoveUp"),

@@ -3,6 +3,7 @@
 #include <input/InputBindingTable.h>
 #include <SDL3/SDL.h>
 #include <optional>
+#include <utility>
 
 namespace
 {
@@ -36,11 +37,26 @@ void SdlInputSystem::Update(float /*dt*/)
 	RawBuffer.Clear();
 }
 
+void SdlInputSystem::AddSdlEventFilter(std::function<bool(const SDL_Event&)> filter)
+{
+	if (filter)
+		SdlEventFilters.push_back(std::move(filter));
+}
+
 void SdlInputSystem::IngestFromSdl()
 {
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{
+		bool consumed = false;
+		for (const auto& filter : SdlEventFilters)
+			consumed = filter(event) || consumed;
+		if (consumed)
+		{
+			CancelActiveHelds();
+			continue;
+		}
+
 		switch (event.type)
 		{
 		case SDL_EVENT_KEY_DOWN:
@@ -162,4 +178,14 @@ void SdlInputSystem::EmitHeldPerformed()
 		ActionEvents.Emplace(
 			held.Action, InputPhase::Performed, 1.0f, held.User, held.Context);
 	}
+}
+
+void SdlInputSystem::CancelActiveHelds()
+{
+	for (const auto& held : ActiveHelds)
+	{
+		ActionEvents.Emplace(
+			held.Action, InputPhase::Canceled, 0.0f, held.User, held.Context);
+	}
+	ActiveHelds.clear();
 }

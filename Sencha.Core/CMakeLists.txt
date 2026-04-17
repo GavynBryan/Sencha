@@ -6,6 +6,14 @@ option(SENCHA_ENABLE_HOT_RELOAD
     "Link glslang into the engine for runtime GLSL compilation and live shader reload. Always OFF in release builds -- shipping binaries must not contain a GLSL compiler."
     OFF)
 
+option(SENCHA_ENABLE_DEBUG_UI
+    "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
+    OFF)
+
+if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
+    message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
+endif()
+
 set(SENCHA_CORE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SENCHA_CORE_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
@@ -20,6 +28,8 @@ if(NOT SENCHA_ENABLE_VULKAN)
     foreach(_pattern
         "[/\\\\]src[/\\\\]graphics[/\\\\]"
         "[/\\\\]src[/\\\\]assets[/\\\\]texture[/\\\\]TextureCache\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
     )
         list(FILTER SENCHA_CORE_SOURCES EXCLUDE REGEX "${_pattern}")
     endforeach()
@@ -27,6 +37,27 @@ if(NOT SENCHA_ENABLE_VULKAN)
     foreach(_pattern
         "[/\\\\]include[/\\\\]graphics[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]texture[/\\\\]TextureCache\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+    )
+        list(FILTER SENCHA_CORE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
+# Debug files that require Vulkan are also excluded when debug UI is disabled.
+if(NOT SENCHA_ENABLE_DEBUG_UI)
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+    )
+        list(FILTER SENCHA_CORE_SOURCES EXCLUDE REGEX "${_pattern}")
+    endforeach()
+
+    foreach(_pattern
+        "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
     )
         list(FILTER SENCHA_CORE_HEADERS EXCLUDE REGEX "${_pattern}")
     endforeach()
@@ -89,6 +120,38 @@ if(SENCHA_ENABLE_VULKAN)
                 glslang::glslang
                 glslang::SPIRV
                 glslang-default-resource-limits
+        )
+    endif()
+
+    if(SENCHA_ENABLE_DEBUG_UI)
+        target_compile_definitions(sencha_core PUBLIC SENCHA_ENABLE_DEBUG_UI)
+
+        # ImGui — set IMGUI_DIR to a local path to skip the network fetch.
+        # Example: cmake -DIMGUI_DIR=C:/CLibs/imgui-1.91.9 -DSENCHA_ENABLE_DEBUG_UI=ON ..
+        if(NOT IMGUI_DIR)
+            FetchContent_Declare(
+                imgui
+                GIT_REPOSITORY https://github.com/ocornut/imgui.git
+                GIT_TAG        v1.91.9
+            )
+            FetchContent_MakeAvailable(imgui)
+            set(IMGUI_DIR "${imgui_SOURCE_DIR}")
+        endif()
+
+        # Compile only the files Sencha needs — core + SDL3 + Vulkan backends.
+        target_sources(sencha_core PRIVATE
+            "${IMGUI_DIR}/imgui.cpp"
+            "${IMGUI_DIR}/imgui_draw.cpp"
+            "${IMGUI_DIR}/imgui_tables.cpp"
+            "${IMGUI_DIR}/imgui_widgets.cpp"
+            "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
+            "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
+        )
+
+        target_include_directories(sencha_core
+            PUBLIC
+                "${IMGUI_DIR}"
+                "${IMGUI_DIR}/backends"
         )
     endif()
 endif()

@@ -21,7 +21,8 @@ FrameClock TimeService::Advance()
 	FirstFrame = false;
 	LastTime = now;
 
-	float scaledDelta = unscaledDelta * Timescale;
+	const float activeScale = GetTimescale();
+	float scaledDelta = unscaledDelta * activeScale;
 	UnscaledElapsedTime += unscaledDelta;
 	ElapsedTime += scaledDelta;
 	++FrameIndex;
@@ -31,7 +32,36 @@ FrameClock TimeService::Advance()
 		.UnscaledDt      = unscaledDelta,
 		.Elapsed         = ElapsedTime,
 		.UnscaledElapsed = UnscaledElapsedTime,
-		.Timescale       = Timescale,
+		.Timescale       = activeScale,
 		.FrameIndex      = FrameIndex,
 	};
+}
+
+TimescaleHandle TimeService::PushTimescale(float scale)
+{
+	TimescaleHandle handle{ NextHandleId++ };
+	TimescaleStack.push_back({ handle.Id, scale });
+	return handle;
+}
+
+void TimeService::PopTimescale(TimescaleHandle handle)
+{
+	if (!handle.IsValid())
+		return;
+
+	for (auto it = TimescaleStack.begin(); it != TimescaleStack.end(); ++it)
+	{
+		if (it->Id == handle.Id)
+		{
+			TimescaleStack.erase(it);
+			return;
+		}
+	}
+}
+
+float TimeService::GetTimescale() const
+{
+	if (!TimescaleStack.empty())
+		return TimescaleStack.back().Scale;
+	return FlatTimescale;
 }
