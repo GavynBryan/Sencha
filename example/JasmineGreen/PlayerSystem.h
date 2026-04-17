@@ -29,6 +29,8 @@ public:
         InputActionId MoveDown;
         InputActionId MoveLeft;
         InputActionId MoveRight;
+        InputActionId ShiftEyeLeft;
+        InputActionId ShiftEyeRight;
         InputActionId Quit;
     };
 

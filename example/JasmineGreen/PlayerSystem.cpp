@@ -21,6 +21,7 @@ PlayerSystem::PlayerSystem(SdlInputSystem& input,
 void PlayerSystem::Update(float dt)
 {
     Vec2d direction = {};
+    Vec2d eyeDirection = {};
 
     for (const auto& event : Input.GetEvents().Items())
     {
@@ -29,10 +30,12 @@ void PlayerSystem::Update(float dt)
 
         if (active)
         {
-            if (event.Action == ActionIds.MoveUp)    direction.Y -= 1.0f;
-            if (event.Action == ActionIds.MoveDown)  direction.Y += 1.0f;
+            if (event.Action == ActionIds.MoveUp)    direction.Y += 1.0f;
+            if (event.Action == ActionIds.MoveDown)  direction.Y -= 1.0f;
             if (event.Action == ActionIds.MoveLeft)  direction.X -= 1.0f;
             if (event.Action == ActionIds.MoveRight) direction.X += 1.0f;
+            if (event.Action == ActionIds.ShiftEyeLeft)  eyeDirection.X -= 1.0f;
+            if (event.Action == ActionIds.ShiftEyeRight) eyeDirection.X += 1.0f;
         }
 
         if (event.Phase == InputPhase::Started && event.Action == ActionIds.Quit)
@@ -47,6 +50,7 @@ void PlayerSystem::Update(float dt)
     for (auto& player : Players.GetItems())
     {
         auto& pos = player.Body.Local().Position;
+        auto& eye = player.Eye.Local().Position;
 
         const Aabb2d bounds = Aabb2d::FromCenterHalfExtent(
             Vec2d{pos.X, pos.Y},
@@ -56,5 +60,7 @@ void PlayerSystem::Update(float dt)
 
         pos.X += result.ResolvedDelta.X;
         pos.Y += result.ResolvedDelta.Y;
+
+        eye.X += eyeDirection.X * (50.0f * dt);
     }
 }

@@ -23,6 +23,7 @@ struct Player
     static constexpr float CollisionHalfExtent = 24.0f; // Half of the 48px body
 
     TransformNode2d Body;
+    TransformNode2d Eye;
     DataBatchHandle<SpriteComponent> BodySprite;
     DataBatchHandle<SpriteComponent> EyeSprite;
 
@@ -31,9 +32,11 @@ struct Player
            DataBatch<SpriteComponent>& sprites,
            TextureHandle texture)
         : Body(domain, spawnTransform)
+        , Eye(domain, Transform2f::Identity())
         , BodySprite(sprites.Emplace(domain))
         , EyeSprite(sprites.Emplace(domain))
     {
+        Eye.SetParentByKey(Body.TransformKey());
         // Body sprite — 48x48 white quad
         if (SpriteComponent* s = sprites.TryGet(BodySprite))
         {
@@ -48,7 +51,7 @@ struct Player
         // Eye sprite — 12x12 black quad, drawn on top
         if (SpriteComponent* s = sprites.TryGet(EyeSprite))
         {
-            s->Transform.SetParentByKey(Body.TransformKey());
+            s->Transform.SetParentByKey(Eye.TransformKey());
             s->Texture  = texture;
             s->Width    = 12.0f;
             s->Height   = 12.0f;

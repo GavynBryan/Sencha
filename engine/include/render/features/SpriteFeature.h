@@ -107,6 +107,10 @@ public:
     // automatically -- but useful if game code wants to abort a frame.
     void ClearPending();
 
+    // Pre-allocate the pending buffer so Submit() doesn't reallocate
+    // during the frame. Call once after setup with an upper-bound estimate.
+    void ReservePending(size_t count);
+
     [[nodiscard]] bool IsValid() const { return Valid; }
 
 private:

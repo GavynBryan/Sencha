@@ -49,11 +49,6 @@
 #include <span>
 #include <sstream>
 
-// Action names for this game. Order doesn't matter — IDs are assigned by
-// position and resolved by name via InputActionRegistry::ResolveAction.
-static constexpr std::string_view kActionNames[] = {
-    "MoveUp", "MoveDown", "MoveLeft", "MoveRight", "Quit"
-};
 
 static std::string ReadTextFile(const char* path)
 {
@@ -105,8 +100,9 @@ int main()
     // The JSON config is compiled into that table here at startup. Any key
     // rebinding in a shipped game would re-run this step and call SetBindings.
     // =========================================================================
-    InputActionRegistry actionRegistry{std::span<const std::string_view>(kActionNames)};
     auto& bindingService = services.AddService<InputBindingService>();
+    std::vector<std::string> actionNames;
+    InputActionRegistry actionRegistry{std::move(actionNames)}; // Will be populated below
 
     const std::string configJson = ReadTextFile("input_config.json");
     if (!configJson.empty())
@@ -115,6 +111,12 @@ int main()
         {
             if (auto configData = DeserializeInputConfig(*jsonRoot))
             {
+                // Extract action names from config and create the registry
+                actionNames.clear();
+                for (const auto& action : configData->Actions)
+                    actionNames.push_back(action.Name);
+                actionRegistry = InputActionRegistry{std::move(actionNames)};
+
                 SdlInputControlResolver controlResolver;
                 if (auto table = CompileInputBindings(*configData, actionRegistry, controlResolver))
                     bindingService.SetBindings(std::move(*table));
@@ -165,7 +167,7 @@ int main()
     auto& textures       = services.AddService<TextureCache>(logging, images, descriptors, samplers);
     auto& scratch        = services.AddService<VulkanFrameScratch>(
                                logging, device, physicalDevice, buffers,
-                               VulkanFrameScratch::Config{.FramesInFlight = 2});
+                               VulkanFrameScratch::Config{.FramesInFlight = 2, .BytesPerFrame = 64 * 1024 * 1024});
     auto& frames         = services.AddService<VulkanFrameService>(
                                logging, device, queues, swapchain, deletionQueue, 2);
 
@@ -220,12 +222,17 @@ int main()
 
     EntityBatch<Player> players(world.Entities);
 
-    const EntityKey playerKey = players.Emplace(
-        world.Domain,
-        Transform2f{ Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
-        spriteComponents,
-        whitePixel
-    );
+    sprites->ReservePending(100000);
+
+    for (int i = 0; i < 50000; ++i)
+    {
+        const EntityKey playerKey = players.Emplace(
+            world.Domain,
+            Transform2f{ Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+            spriteComponents,
+            whitePixel
+        );
+    }
 
     // =========================================================================
     // Systems
@@ -240,11 +247,13 @@ int main()
     auto& inputSystem = systems.Register<SdlInputSystem>(logging, bindingService);
 
     const PlayerSystem::Actions playerActions{
-        .MoveUp    = *actionRegistry.ResolveAction("MoveUp"),
-        .MoveDown  = *actionRegistry.ResolveAction("MoveDown"),
-        .MoveLeft  = *actionRegistry.ResolveAction("MoveLeft"),
-        .MoveRight = *actionRegistry.ResolveAction("MoveRight"),
-        .Quit      = *actionRegistry.ResolveAction("Quit"),
+        .MoveUp         = *actionRegistry.ResolveAction("MoveUp"),
+        .MoveDown       = *actionRegistry.ResolveAction("MoveDown"),
+        .MoveLeft       = *actionRegistry.ResolveAction("MoveLeft"),
+        .MoveRight      = *actionRegistry.ResolveAction("MoveRight"),
+        .ShiftEyeLeft   = *actionRegistry.ResolveAction("ShiftEyeLeft"),
+        .ShiftEyeRight  = *actionRegistry.ResolveAction("ShiftEyeRight"),
+        .Quit           = *actionRegistry.ResolveAction("Quit"),
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(

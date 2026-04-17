@@ -148,4 +148,10 @@ private:
     uint32_t                   NextHandle = 1; // 0 is null
 
     QuadTree<uint32_t> Tree;
+
+    // Reusable scratch vectors for broadphase queries. Declared mutable so
+    // const query methods (MoveBox, SweepBox, OverlapBox) can reuse them
+    // without per-call heap allocation. Safe because the physics domain is
+    // single-threaded — queries never overlap.
+    mutable std::vector<uint32_t> ScratchCandidates;
 };

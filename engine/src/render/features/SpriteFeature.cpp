@@ -107,6 +107,11 @@ void SpriteFeature::Submit(const Sprite& sprite)
     Pending.push_back(sprite);
 }
 
+void SpriteFeature::ReservePending(size_t count)
+{
+    Pending.reserve(count);
+}
+
 void SpriteFeature::ClearPending()
 {
     Pending.clear();
