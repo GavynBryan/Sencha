@@ -4,7 +4,7 @@
 #include <core/system/SystemHost.h>
 #include <physics/2d/RigidBodyResolutionSystem2D.h>
 #include <physics/2d/RigidBodySyncSystem2D.h>
-#include <world/World.h>
+#include <world/World2d.h>
 #include <transform/TransformPropagationSystem.h>
 
 namespace PhysicsSetup2D {

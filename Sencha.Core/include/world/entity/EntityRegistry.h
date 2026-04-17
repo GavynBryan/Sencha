@@ -16,7 +16,7 @@
 //
 // Responsibilities:
 //   - Issue stable EntityKeys backed by DataBatch generation tracking
-//   - Maintain the single transform-key -> entity-key reverse map
+//   - Maintain the single entity-handle -> entity-key reverse map
 //   - Invoke type-erased OnDestroy callbacks for Destroy() and DestroySubtree()
 //
 // The registry does NOT own entity structs. Those are owned by the
@@ -41,7 +41,7 @@ public:
 	// -- Registration ----------------------------------------------------------
 
 	// Register an entity and return its stable key.
-	// record.TransformKey must be non-null — all entities require a transform.
+	// record.Entity must be non-null — all registered entities require identity.
 	EntityKey Register(const EntityRecord& record);
 
 	// Remove an entity's record without invoking its destroy callback.
@@ -65,16 +65,16 @@ public:
 	// -- Queries ---------------------------------------------------------------
 
 	const EntityRecord* Find(EntityKey key) const;
-	EntityKey           FindByTransform(DataBatchKey transformKey) const;
+	EntityKey           FindByEntity(EntityHandle entity) const;
 	bool                IsRegistered(EntityKey key) const;
 	size_t              Count() const;
 
 private:
 	static void CollectPostOrder(
 		const TransformHierarchyService& hierarchy,
-		DataBatchKey key,
-		std::vector<DataBatchKey>& out);
+		EntityHandle entity,
+		std::vector<EntityHandle>& out);
 
 	DataBatch<EntityRecord>                Records;
-	std::unordered_map<uint32_t, uint32_t> TransformToEntity;
+	std::unordered_map<EntityId, uint32_t> EntityToRecord;
 };

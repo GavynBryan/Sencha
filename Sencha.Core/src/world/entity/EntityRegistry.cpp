@@ -2,12 +2,12 @@
 
 EntityKey EntityRegistry::Register(const EntityRecord& record)
 {
-	assert(record.TransformKey.Value != 0 && "Entities must have a transform.");
+	assert(record.Entity.IsValid()   && "Entities must have a valid handle.");
 	assert(record.Owner != nullptr     && "EntityRecord Owner must not be null.");
 	assert(record.OnDestroy != nullptr && "EntityRecord OnDestroy must not be null.");
 
 	DataBatchKey batchKey = Records.EmplaceUnowned(record);
-	TransformToEntity[record.TransformKey.Value] = batchKey.Value;
+	EntityToRecord[record.Entity.Id] = batchKey.Value;
 	return EntityKey{ batchKey };
 }
 
@@ -16,7 +16,7 @@ void EntityRegistry::Unregister(EntityKey key)
 	const EntityRecord* record = Records.TryGet(key.Value);
 	if (!record) return;
 
-	TransformToEntity.erase(record->TransformKey.Value);
+	EntityToRecord.erase(record->Entity.Id);
 	Records.RemoveKey(key.Value);
 }
 
@@ -29,9 +29,9 @@ void EntityRegistry::Destroy(EntityKey key)
 	auto onDestroy    = record->OnDestroy;
 	auto owner        = record->Owner;
 	auto ownerSlot    = record->OwnerSlot;
-	auto transformKey = record->TransformKey;
+	auto entity       = record->Entity;
 
-	TransformToEntity.erase(transformKey.Value);
+	EntityToRecord.erase(entity.Id);
 	Records.RemoveKey(key.Value);
 
 	if (onDestroy)
@@ -43,12 +43,12 @@ void EntityRegistry::DestroySubtree(EntityKey root, const TransformHierarchyServ
 	const EntityRecord* rootRecord = Records.TryGet(root.Value);
 	if (!rootRecord) return;
 
-	std::vector<DataBatchKey> postOrder;
-	CollectPostOrder(hierarchy, rootRecord->TransformKey, postOrder);
+	std::vector<EntityHandle> postOrder;
+	CollectPostOrder(hierarchy, rootRecord->Entity, postOrder);
 
-	for (DataBatchKey tkey : postOrder)
+	for (EntityHandle entity : postOrder)
 	{
-		EntityKey ek = FindByTransform(tkey);
+		EntityKey ek = FindByEntity(entity);
 		if (ek)
 			Destroy(ek);
 	}
@@ -59,10 +59,10 @@ const EntityRecord* EntityRegistry::Find(EntityKey key) const
 	return Records.TryGet(key.Value);
 }
 
-EntityKey EntityRegistry::FindByTransform(DataBatchKey transformKey) const
+EntityKey EntityRegistry::FindByEntity(EntityHandle entity) const
 {
-	auto it = TransformToEntity.find(transformKey.Value);
-	if (it == TransformToEntity.end()) return EntityKey{};
+	auto it = EntityToRecord.find(entity.Id);
+	if (it == EntityToRecord.end()) return EntityKey{};
 	return EntityKey{ DataBatchKey{ it->second } };
 }
 
@@ -78,10 +78,10 @@ size_t EntityRegistry::Count() const
 
 void EntityRegistry::CollectPostOrder(
 	const TransformHierarchyService& hierarchy,
-	DataBatchKey key,
-	std::vector<DataBatchKey>& out)
+	EntityHandle entity,
+	std::vector<EntityHandle>& out)
 {
-	for (uint32_t childVal : hierarchy.GetChildren(key))
-		CollectPostOrder(hierarchy, DataBatchKey{ childVal }, out);
-	out.push_back(key);
+	for (EntityHandle child : hierarchy.GetChildren(entity))
+		CollectPostOrder(hierarchy, child, out);
+	out.push_back(entity);
 }

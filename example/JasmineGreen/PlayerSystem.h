@@ -3,6 +3,7 @@
 #include <core/batch/DataBatch.h>
 #include <input/InputTypes.h>
 #include <physics/2d/RigidBody2D.h>
+#include <transform/TransformStore.h>
 #include <world/entity/EntityBatch.h>
 #include "Player.h"
 
@@ -34,6 +35,7 @@ public:
     PlayerSystem(SdlInputSystem&         input,
                  EntityBatch<Player>&    players,
                  DataBatch<RigidBody2D>& bodies,
+                 TransformStore<Transform2f>& transforms,
                  const Actions&          actions);
 
     void Update(float dt);
@@ -44,6 +46,7 @@ private:
     SdlInputSystem&         Input;
     EntityBatch<Player>&    Players;
     DataBatch<RigidBody2D>& Bodies;
+    TransformStore<Transform2f>& Transforms;
     Actions                 ActionIds;
     bool                    QuitRequested = false;
 };

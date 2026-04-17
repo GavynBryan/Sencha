@@ -1,9 +1,9 @@
-#include <core/batch/DataBatch.h>
+#include <entity/EntityHandle.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <transform/TransformPropagationSystem.h>
-#include <core/handle/DataBatchHandle.h>
+#include <transform/TransformStore.h>
 
 #include <algorithm>
 #include <atomic>
@@ -390,7 +390,7 @@ namespace
 	};
 
 	// Production-path fixture: drives the real TransformPropagationSystem against
-	// the real DataBatch<Transform3f> + TransformHierarchyService services.
+	// the real entity-indexed TransformStore<Transform3f> + hierarchy services.
 	//
 	// Used to confirm that the production path matches the hand-written
 	// contiguous fixture in both correctness and performance.
@@ -400,17 +400,12 @@ namespace
 		using PropagationOrder3f = TransformPropagationOrderService;
 		using Propagation3f = TransformPropagationSystem<Transform3f>;
 
-		DataBatch<Transform3f> Locals;
-		DataBatch<Transform3f> Worlds;
 		Hierarchy3f Hierarchy;
 		PropagationOrder3f PropagationOrder;
+		TransformStore<Transform3f> Transforms;
 		Propagation3f Propagation;
 
-		DataBatchBlock LocalBlock;
-		DataBatchBlock WorldBlock;
-		std::vector<DataBatchHandle<Transform3f>> LocalHandles;
-		std::vector<DataBatchHandle<Transform3f>> WorldHandles;
-		std::vector<DataBatchKey> Keys;
+		std::vector<EntityHandle> Keys;
 		double BatchEmplaceUs = 0.0;
 		double BatchRemoveUs = 0.0;
 		double HierarchyUnregisterUs = 0.0;
@@ -420,61 +415,23 @@ namespace
 			size_t count,
 			size_t branchingFactor,
 			ProductionBatchMode batchMode)
-			: Propagation(Locals, Worlds, Hierarchy, PropagationOrder)
+			: Transforms(PropagationOrder)
+			, Propagation(Transforms, Hierarchy, PropagationOrder)
 			, BatchMode(batchMode)
 		{
-			Locals.Reserve(count);
-			Worlds.Reserve(count);
+			Transforms.GetItems();
 			Keys.reserve(count);
 
-			if (BatchMode == ProductionBatchMode::Bulk)
-			{
-				const auto localEmplaceStart = Clock::now();
-				LocalBlock = Locals.EmplaceBlock(count, [](size_t index)
-				{
-					return MakeLocalTransform(index);
-				});
-				const auto localEmplaceEnd = Clock::now();
-
-				const auto worldEmplaceStart = Clock::now();
-				WorldBlock = Worlds.EmplaceBlock(count, [](size_t)
-				{
-					return Transform3f::Identity();
-				});
-				const auto worldEmplaceEnd = Clock::now();
-
-				BatchEmplaceUs =
-					ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
-					+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
-			}
-			else
-			{
-				LocalHandles.reserve(count);
-				WorldHandles.reserve(count);
-
-				const auto localEmplaceStart = Clock::now();
-				for (size_t i = 0; i < count; ++i)
-					LocalHandles.push_back(Locals.Emplace(MakeLocalTransform(i)));
-				const auto localEmplaceEnd = Clock::now();
-
-				const auto worldEmplaceStart = Clock::now();
-				for (size_t i = 0; i < count; ++i)
-					WorldHandles.push_back(Worlds.Emplace(Transform3f::Identity()));
-				const auto worldEmplaceEnd = Clock::now();
-
-				BatchEmplaceUs =
-					ElapsedMicroseconds(localEmplaceStart, localEmplaceEnd)
-					+ ElapsedMicroseconds(worldEmplaceStart, worldEmplaceEnd);
-			}
-
+			const auto emplaceStart = Clock::now();
 			for (size_t i = 0; i < count; ++i)
 			{
-				const DataBatchKey key = BatchMode == ProductionBatchMode::Bulk
-					? LocalBlock.KeyAt(i)
-					: LocalHandles[i].GetToken();
-				Keys.push_back(key);
-				Hierarchy.Register(key);
+				EntityHandle entity{ static_cast<EntityId>(i + 1), 1 };
+				Keys.push_back(entity);
+				Transforms.Add(entity, MakeLocalTransform(i));
+				Hierarchy.Register(entity);
 			}
+			const auto emplaceEnd = Clock::now();
+			BatchEmplaceUs = ElapsedMicroseconds(emplaceStart, emplaceEnd);
 
 			for (size_t i = 1; i < count; ++i)
 			{
@@ -484,7 +441,7 @@ namespace
 
 		void Advance(size_t frame)
 		{
-			Transform3f* root = Locals.TryGet(Keys[0]);
+			Transform3f* root = Transforms.TryGetLocalMutable(Keys[0]);
 			if (root)
 				SetRootFrame(*root, frame);
 		}
@@ -497,42 +454,32 @@ namespace
 		double Checksum() const
 		{
 			double checksum = 0.0;
-			for (const Transform3f& world : Worlds.GetItems())
-				checksum += TransformChecksum(world);
+			for (const TransformComponent<Transform3f>& component : Transforms.GetItems())
+				checksum += TransformChecksum(component.World);
 			return checksum;
 		}
 
 		size_t TransformPayloadBytes() const
 		{
-			return (Locals.Count() + Worlds.Count()) * sizeof(Transform3f);
+			return Transforms.Count() * sizeof(TransformComponent<Transform3f>);
 		}
 
 		void RemoveAll()
 		{
 			const auto hierarchyStart = Clock::now();
-			for (DataBatchKey key : Keys)
+			for (EntityHandle key : Keys)
 				Hierarchy.Unregister(key);
 			const auto hierarchyEnd = Clock::now();
 
 			const auto removeStart = Clock::now();
-			if (BatchMode == ProductionBatchMode::Bulk)
-			{
-				Locals.RemoveBlock(LocalBlock);
-				Worlds.RemoveBlock(WorldBlock);
-			}
-			else
-			{
-				for (auto& handle : LocalHandles)
-					handle.Reset();
-				for (auto& handle : WorldHandles)
-					handle.Reset();
-			}
+			for (EntityHandle key : Keys)
+				Transforms.Remove(key);
 			const auto removeEnd = Clock::now();
 
 			HierarchyUnregisterUs = ElapsedMicroseconds(hierarchyStart, hierarchyEnd);
 			BatchRemoveUs = ElapsedMicroseconds(removeStart, removeEnd);
 
-			if (Locals.Count() != 0 || Worlds.Count() != 0 || Hierarchy.Count() != 0)
+			if (Transforms.Count() != 0 || Hierarchy.Count() != 0)
 				throw std::runtime_error("Production removal did not empty the fixture.");
 		}
 	};
@@ -565,7 +512,7 @@ namespace
 		for (size_t i = 0; i < traditional.Nodes.size(); ++i)
 		{
 			const Transform3f& traditionalWorld = traditional.Nodes[i]->WorldTransform;
-			const Transform3f* productionWorld = production.Worlds.TryGet(production.Keys[i]);
+			const Transform3f* productionWorld = production.Transforms.TryGetWorld(production.Keys[i]);
 			if (!productionWorld
 				|| !traditionalWorld.NearlyEquals(*productionWorld, static_cast<float>(ValidationEpsilon)))
 			{
@@ -576,14 +523,14 @@ namespace
 
 	// Measures the cost of Propagate() when the propagation cache is forced dirty
 	// on every iteration. Registers a sentinel key that has no entry in any
-	// DataBatch: this bumps the hierarchy version (triggering a full rebuild on the
+	// TransformStore: this bumps the hierarchy version (triggering a full rebuild on the
 	// next Propagate) but is silently skipped by the BFS, so results stay valid.
-	// The sentinel key uses a value well above any real batch key.
+	// The sentinel entity uses an id well above any real benchmark entity.
 	SampleStats MeasureRebuildCost(
 		const RunConfig& config,
 		ProductionPropagationFixture& fixture)
 	{
-		constexpr DataBatchKey SentinelKey{ 0xFFFF0000u };
+		constexpr EntityHandle SentinelKey{ 0xFFFFu, 1 };
 
 		// Warmup: ensure the cache is hot before measuring.
 		for (size_t i = 0; i < config.WarmupIterations; ++i)

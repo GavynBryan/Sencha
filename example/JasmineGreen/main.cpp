@@ -28,9 +28,9 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
 #include <assets/texture/TextureCache.h>
-#include <render/features/SpriteFeature.h>
-#include <render/SpriteRenderSystem.h>
-#include <render/components/SpriteComponent.h>
+#include <graphics/features/SpriteFeature.h>
+#include <sprite/SpriteRenderSystem.h>
+#include <sprite/SpriteComponent.h>
 #include <time/TimeService.h>
 #include <window/SdlVideoService.h>
 #include <window/SdlWindow.h>
@@ -40,6 +40,7 @@
 #include <physics/2d/PhysicsSetup2D.h>
 #include <world/World.h>
 #include <world/World2DSetup.h>
+#include <world/World2d.h>
 #include <world/entity/EntityBatch.h>
 #include <vulkan/vulkan.h>
 
@@ -218,20 +219,16 @@ int main()
     // The player spawns at the center of the window.
     // =========================================================================
     // =========================================================================
-    // Sprite batch — contiguous storage for all SpriteComponents.
-    // SpriteRenderSystem reads this each frame and submits to SpriteFeature.
-    // Individual sprites are owned by their entities via DataBatchHandle.
-    // =========================================================================
-    DataBatch<SpriteComponent> spriteComponents;
-
     EntityBatch<Player> players(world.Entities);
 
     const EntityKey playerKey = players.Emplace(
+        EntityHandle{ 1, 1 },
+        EntityHandle{ 2, 1 },
         world.Domain,
         Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
         world.Physics,
         world.Bodies,
-        spriteComponents,
+        world.Sprites,
         whitePixel
     );
 
@@ -258,9 +255,9 @@ int main()
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(
-        inputSystem, players, world.Bodies, playerActions);
+        inputSystem, players, world.Bodies, world.Transforms, playerActions);
 
-    systems.Register<SpriteRenderSystem>(spriteComponents, *sprites, textures);
+    systems.Register<SpriteRenderSystem>(world.Sprites, world.Transforms, *sprites, textures);
 
     systems.After<PlayerSystem, SdlInputSystem>();
     systems.Init();

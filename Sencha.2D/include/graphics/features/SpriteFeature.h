@@ -78,8 +78,8 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
 
-    // Tightly-packed GPU instance layout -- must match the vertex shader.
-    // 48 bytes: two instances per 128-byte chunk, plenty dense.
+    // Tightly-packed instance layout. The first 48 bytes must match the vertex
+    // shader; SortKey is CPU-only metadata stripped before upload.
     //
     // Exposed publicly so bulk submission paths (e.g. SpriteRenderSystem)
     // can write instances directly and skip the Sprite intermediate.

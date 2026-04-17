@@ -1,12 +1,12 @@
 #pragma once
 
-#include <core/batch/DataBatchKey.h>
+#include <entity/EntityHandle.h>
 
 //=============================================================================
 // EntityRecord
 //
-// Per-entity metadata stored inside EntityRegistry. Holds the entity's
-// transform key (for hierarchy lookup) and a type-erased destroy callback
+// Per-entity metadata stored inside EntityRegistry. Holds the entity handle
+// (for hierarchy lookup) and a type-erased destroy callback
 // so the registry can tear down any entity type without knowing its concrete
 // type.
 //
@@ -19,7 +19,7 @@
 //=============================================================================
 struct EntityRecord
 {
-	DataBatchKey TransformKey;
+	EntityHandle Entity;
 	void*        Owner     = nullptr;
 	uint32_t     OwnerSlot = 0;
 	void (*OnDestroy)(void* owner, uint32_t slot) = nullptr;

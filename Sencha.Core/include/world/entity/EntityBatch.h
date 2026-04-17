@@ -13,14 +13,13 @@
 //
 // Typed entity container. Wraps DataBatch<T> and auto-wires registration with
 // EntityRegistry on emplace. T must satisfy IsEntity — it must expose a
-// TransformKey() const -> DataBatchKey method. The minimal conforming struct
-// just forwards from its embedded TransformNode:
+// Handle() const -> EntityHandle method.
 //
 //   struct Goblin
 //   {
-//       TransformNode2d Node;
+//       EntityHandle Entity;
 //       // ... state
-//       DataBatchKey TransformKey() const { return Node.TransformKey(); }
+//       EntityHandle Handle() const { return Entity; }
 //   };
 //
 //   EntityBatch<Goblin> Goblins{ world.Entities };
@@ -57,7 +56,7 @@ public:
 		T* item = Batch.TryGet(batchKey);
 
 		return Registry.Register({
-			.TransformKey = item->TransformKey(),
+			.Entity      = item->Handle(),
 			.Owner        = this,
 			.OwnerSlot    = batchKey.Value,
 			.OnDestroy    = &EntityBatch::OnDestroyItem,
