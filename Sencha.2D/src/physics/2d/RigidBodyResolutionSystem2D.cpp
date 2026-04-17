@@ -38,7 +38,7 @@ void RigidBodyResolutionSystem2D::Tick(float fixedDt)
         if (result.ResolvedDelta.X == 0.0f && result.ResolvedDelta.Y == 0.0f)
             continue;
 
-        Transform2f* local = Transforms.TryGetLocalMutable(body.TransformKey);
+        Transform2f* local = Transforms.TryGetLocalMutable(body.Entity);
         if (!local) continue;
 
         local->Position.X += result.ResolvedDelta.X;

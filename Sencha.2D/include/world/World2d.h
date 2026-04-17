@@ -4,6 +4,7 @@
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/2d/PhysicsDomain2D.h>
 #include <physics/2d/RigidBody2D.h>
+#include <sprite/SpriteComponent.h>
 #include <world/World.h>
 
 //=============================================================================
@@ -21,4 +22,5 @@ public:
 
 	PhysicsDomain2D        Physics;
 	DataBatch<RigidBody2D> Bodies;
+	SpriteStore            Sprites;
 };

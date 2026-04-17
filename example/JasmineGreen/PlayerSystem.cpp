@@ -6,10 +6,12 @@
 PlayerSystem::PlayerSystem(SdlInputSystem&         input,
                            EntityBatch<Player>&    players,
                            DataBatch<RigidBody2D>& bodies,
+                           TransformStore<Transform2f>& transforms,
                            const Actions&          actions)
     : Input(input)
     , Players(players)
     , Bodies(bodies)
+    , Transforms(transforms)
     , ActionIds(actions)
 {
 }
@@ -56,6 +58,9 @@ void PlayerSystem::Update(float /*dt*/)
         }
 
         if (hasEyeMovement)
-            player.Eye.Local().Position.X += eyeDirection.X * 50.0f;
+        {
+            if (Transform2f* eye = Transforms.TryGetLocalMutable(player.Eye))
+                eye->Position.X += eyeDirection.X * 50.0f;
+        }
     }
 }

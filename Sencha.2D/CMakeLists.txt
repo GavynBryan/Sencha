@@ -10,13 +10,15 @@ file(GLOB_RECURSE SENCHA_2D_HEADERS CONFIGURE_DEPENDS
 
 if(NOT SENCHA_ENABLE_VULKAN)
     foreach(_pattern
-        "[/\\\\]src[/\\\\]render[/\\\\]"
+        "[/\\\\]src[/\\\\]graphics[/\\\\]"
+        "[/\\\\]src[/\\\\]sprite[/\\\\]SpriteRenderSystem\\.cpp$"
     )
         list(FILTER SENCHA_2D_SOURCES EXCLUDE REGEX "${_pattern}")
     endforeach()
 
     foreach(_pattern
-        "[/\\\\]include[/\\\\]render[/\\\\]"
+        "[/\\\\]include[/\\\\]graphics[/\\\\]"
+        "[/\\\\]include[/\\\\]sprite[/\\\\]SpriteRenderSystem\\.h$"
     )
         list(FILTER SENCHA_2D_HEADERS EXCLUDE REGEX "${_pattern}")
     endforeach()

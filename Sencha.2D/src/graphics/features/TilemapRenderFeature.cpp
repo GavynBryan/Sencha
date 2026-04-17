@@ -1,4 +1,4 @@
-#include <render/features/TilemapRenderFeature.h>
+#include <graphics/features/TilemapRenderFeature.h>
 
 // Reuse the sprite SPIR-V blobs: tiles are instanced quads with bindless
 // texture sampling — the same GPU program as SpriteFeature. GpuTile is

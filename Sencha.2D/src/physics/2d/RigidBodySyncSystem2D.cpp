@@ -15,7 +15,7 @@ void RigidBodySyncSystem2D::Tick(float /*fixedDt*/)
 {
     for (RigidBody2D& body : Bodies.GetItems())
     {
-        const Transform2f* world = Transforms.TryGetWorld(body.TransformKey);
+        const Transform2f* world = Transforms.TryGetWorld(body.Entity);
         if (!world) continue;
 
         const Vec2d scaledHalf = {

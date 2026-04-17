@@ -13,16 +13,16 @@ sprite batching) and `TilemapRenderFeature` (tilemap layer rendering).
 
 ```
 Sencha.Core/include/graphics/Renderer.h
-Sencha.2D/include/render/features/SpriteFeature.h
-Sencha.2D/include/render/features/TilemapRenderFeature.h
-Sencha.2D/include/render/features/TilemapRenderState.h
+Sencha.2D/include/graphics/features/SpriteFeature.h
+Sencha.2D/include/graphics/features/TilemapRenderFeature.h
+Sencha.2D/include/graphics/features/TilemapRenderState.h
 ```
 
 ```cpp
 #include <graphics/Renderer.h>
-#include <render/features/SpriteFeature.h>
-#include <render/features/TilemapRenderFeature.h>
-#include <render/features/TilemapRenderState.h>
+#include <graphics/features/SpriteFeature.h>
+#include <graphics/features/TilemapRenderFeature.h>
+#include <graphics/features/TilemapRenderState.h>
 ```
 
 ---
