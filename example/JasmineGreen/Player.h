@@ -1,12 +1,10 @@
 #pragma once
 
 #include <assets/texture/TextureHandle.h>
-#include <core/batch/DataBatch.h>
-#include <core/handle/DataBatchHandle.h>
 #include <entity/EntityHandle.h>
 #include <math/geometry/2d/Transform2d.h>
-#include <physics/2d/Collider2D.h>
-#include <physics/2d/RigidBody2D.h>
+#include <physics/Collider2D.h>
+#include <physics/RigidBody2D.h>
 #include <sprite/SpriteComponent.h>
 #include <transform/TransformSpace.h>
 
@@ -14,10 +12,8 @@
 // Player
 //
 // The playable character. Body is the entity handle that drives movement and
-// participates in the EntityRegistry. Physics is a DataBatchHandle to a
-// RigidBody2D — when the Player is destroyed the handle removes the body
-// from the batch, which destructs the RigidBody2D and unregisters it from
-// PhysicsDomain2D automatically.
+// participates in the EntityRegistry. Physics is the same entity key used to
+// look up the player's RigidBody2D in RigidBodyStore.
 //=============================================================================
 struct Player
 {
@@ -25,22 +21,22 @@ struct Player
     static constexpr float CollisionHalfExtent = 24.0f;  // Half of the 48px body
 
     EntityHandle                     Body;
-    DataBatchHandle<RigidBody2D>     Physics;
+    EntityHandle                     Physics;
     EntityHandle                     Eye;
 
     Player(EntityHandle body,
            EntityHandle eye,
            TransformSpace2d& domain,
            Transform2f spawnTransform,
-           PhysicsDomain2D& physics,
-           DataBatch<RigidBody2D>& bodies,
+           RigidBodyStore& bodies,
            SpriteStore& sprites,
            TextureHandle texture)
         : Body(body)
-        , Physics(bodies.Emplace(physics, Body,
-              Collider2D{ .HalfExtent = { CollisionHalfExtent, CollisionHalfExtent } }))
+        , Physics(Body)
         , Eye(eye)
     {
+        bodies.Add(Body, Collider2D{ .HalfExtent = { CollisionHalfExtent, CollisionHalfExtent } });
+
         domain.Transforms.Add(Body, spawnTransform);
         domain.Transforms.Add(Eye, Transform2f::Identity());
         domain.Hierarchy.SetParent(Eye, Body);

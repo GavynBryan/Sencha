@@ -1,15 +1,16 @@
 #pragma once
 
-#include <entity/EntityHandle.h>
+#include <core/batch/DataBatchKey.h>
 #include <math/Vec.h>
-#include <physics/2d/Collider2D.h>
-#include <physics/2d/PhysicsDomain2D.h>
+#include <physics/Collider2D.h>
+#include <physics/PhysicsDomain2D.h>
 
 //=============================================================================
 // RigidBody2D
 //
-// Kinematic physics component stored in DataBatch<RigidBody2D>. The body is
-// keyed back to transform storage by EntityHandle.
+// Kinematic physics component stored in DataBatch<RigidBody2D>. Entities hold
+// a DataBatchHandle<RigidBody2D>; when it destructs the item is removed from
+// the batch, the destructor fires, and the domain registration is cleaned up.
 //
 // Constructing with the three-argument form registers with PhysicsDomain2D
 // immediately. The domain pointer is stored solely for cleanup on destruction —
@@ -25,7 +26,7 @@
 //=============================================================================
 struct RigidBody2D
 {
-    EntityHandle    Entity;
+    DataBatchKey    TransformKey;
     Collider2D      Shape;
     Vec2d           Velocity  = { 0.0f, 0.0f };
     HitFlags2D      LastHits  = HitFlags2D::None;
@@ -33,8 +34,8 @@ struct RigidBody2D
 
     RigidBody2D() = default;
 
-    RigidBody2D(PhysicsDomain2D& domain, EntityHandle entity, const Collider2D& collider)
-        : Entity(entity)
+    RigidBody2D(PhysicsDomain2D& domain, DataBatchKey transformKey, const Collider2D& collider)
+        : TransformKey(transformKey)
         , Shape(collider)
         , DomainHandle(domain.Register(collider))
         , Domain(&domain)
@@ -47,7 +48,7 @@ struct RigidBody2D
     }
 
     RigidBody2D(RigidBody2D&& o) noexcept
-        : Entity(o.Entity)
+        : TransformKey(o.TransformKey)
         , Shape(o.Shape)
         , Velocity(o.Velocity)
         , LastHits(o.LastHits)
@@ -63,7 +64,7 @@ struct RigidBody2D
         {
             if (Domain && DomainHandle.IsValid())
                 Domain->Unregister(DomainHandle);
-            Entity       = o.Entity;
+            TransformKey = o.TransformKey;
             Shape        = o.Shape;
             Velocity     = o.Velocity;
             LastHits     = o.LastHits;

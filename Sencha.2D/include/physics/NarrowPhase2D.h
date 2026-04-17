@@ -2,7 +2,7 @@
 
 #include <math/geometry/2d/Aabb2d.h>
 #include <math/Vec.h>
-#include <physics/2d/CollisionGrid2D.h>
+#include <physics/CollisionGrid2D.h>
 
 //=============================================================================
 // NarrowPhase2D — pure geometric collision primitives

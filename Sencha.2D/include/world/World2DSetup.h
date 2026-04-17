@@ -1,6 +1,6 @@
 #pragma once
 
-#include <physics/2d/PhysicsDomain2D.h>
+#include <physics/PhysicsDomain2D.h>
 
 class ServiceHost;
 class SystemHost;

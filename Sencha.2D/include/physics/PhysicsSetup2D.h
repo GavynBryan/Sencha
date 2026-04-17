@@ -14,7 +14,7 @@ class SystemHost;
 //     -> RigidBodySyncSystem2D  (reads world transforms, updates domain bounds)
 //       -> RigidBodyResolutionSystem2D (applies movement, writes local transforms)
 //
-// PhysicsDomain2D and RigidBodyBatch2D are owned by World2d::Physics and
+// PhysicsDomain2D and RigidBodyStore are owned by World2d::Physics and
 // World2d::Bodies respectively. Resolve the world via serviceHost.Get<World2d>().
 //=============================================================================
 namespace PhysicsSetup2D {

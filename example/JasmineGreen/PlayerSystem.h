@@ -1,10 +1,9 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
 #include <input/InputTypes.h>
-#include <physics/2d/RigidBody2D.h>
+#include <physics/RigidBody2D.h>
 #include <transform/TransformStore.h>
-#include <world/entity/EntityBatch.h>
+#include <vector>
 #include "Player.h"
 
 class SdlInputSystem;
@@ -33,8 +32,8 @@ public:
     };
 
     PlayerSystem(SdlInputSystem&         input,
-                 EntityBatch<Player>&    players,
-                 DataBatch<RigidBody2D>& bodies,
+                 std::vector<Player>&    players,
+                 RigidBodyStore&         bodies,
                  TransformStore<Transform2f>& transforms,
                  const Actions&          actions);
 
@@ -44,8 +43,8 @@ public:
 
 private:
     SdlInputSystem&         Input;
-    EntityBatch<Player>&    Players;
-    DataBatch<RigidBody2D>& Bodies;
+    std::vector<Player>&    Players;
+    RigidBodyStore&         Bodies;
     TransformStore<Transform2f>& Transforms;
     Actions                 ActionIds;
     bool                    QuitRequested = false;

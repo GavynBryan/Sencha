@@ -1,11 +1,13 @@
 #pragma once
 
+#include <core/batch/SparseSet.h>
+#include <entity/EntityHandle.h>
 #include <math/geometry/2d/Aabb2d.h>
 #include <math/spatial/QuadTree.h>
 #include <math/Vec.h>
-#include <physics/2d/Collider2D.h>
-#include <physics/2d/CollisionGrid2D.h>
-#include <physics/2d/NarrowPhase2D.h>
+#include <physics/Collider2D.h>
+#include <physics/CollisionGrid2D.h>
+#include <physics/NarrowPhase2D.h>
 #include <cstdint>
 #include <vector>
 
@@ -66,20 +68,6 @@ struct MoveResult2D
 };
 
 //=============================================================================
-// PhysicsHandle2D
-//
-// Opaque registration token returned by PhysicsDomain2D::Register.
-// Callers must pass this back to UpdateBounds and Unregister.
-// Value of 0 is the null/invalid handle.
-//=============================================================================
-struct PhysicsHandle2D
-{
-    uint32_t Value = 0;
-    bool IsValid() const { return Value != 0; }
-    bool operator==(const PhysicsHandle2D&) const = default;
-};
-
-//=============================================================================
 // PhysicsDomain2D
 //
 // Authoritative spatial query layer for 2D physics in v0. Owns the collider
@@ -105,15 +93,14 @@ public:
 
     // -- Collider registration ------------------------------------------------
     //
-    // Register: add a collider to the domain. WorldBounds must be valid on
-    // first call. Returns a PhysicsHandle2D that the caller owns.
-    //
-    // Unregister: remove a collider. The handle becomes invalid immediately.
-    // UpdateBounds: update the cached WorldBounds for an existing registration.
+    // Register: add or replace a collider for an entity.
+    // Unregister: remove the entity collider from the domain.
+    // UpdateBounds: update the cached WorldBounds for an existing collider.
 
-    PhysicsHandle2D Register(const Collider2D& collider);
-    void            Unregister(PhysicsHandle2D handle);
-    void            UpdateBounds(PhysicsHandle2D handle, const Aabb2d& worldBounds);
+    bool Register(EntityHandle entity, const Collider2D& collider);
+    bool Unregister(EntityHandle entity);
+    void UpdateBounds(EntityHandle entity, const Aabb2d& worldBounds);
+    bool Contains(EntityHandle entity) const;
 
     // Rebuild the broadphase tree from the current collider state.
     // Call once per step after all UpdateBounds calls are complete
@@ -122,26 +109,26 @@ public:
 
     // -- Spatial queries ------------------------------------------------------
 
-    // OverlapBox: fill 'out' with handles of all colliders whose WorldBounds
+    // OverlapBox: fill 'out' with entities of all colliders whose WorldBounds
     // overlap 'box'. Clears 'out' before writing.
-    void OverlapBox(const Aabb2d& box, std::vector<PhysicsHandle2D>& out) const;
+    void OverlapBox(const Aabb2d& box, std::vector<EntityHandle>& out) const;
 
     // SweepBox: sweep 'box' by 'delta', return first blocking hit.
     // Time is in [0,1] normalized along delta. DidHit=false if no blocker found.
     struct SweepHit
     {
-        float           Time   = 1.0f;
-        PhysicsHandle2D Handle;
-        bool            DidHit = false;
+        float        Time   = 1.0f;
+        EntityHandle Entity;
+        bool         DidHit = false;
     };
     SweepHit SweepBox(const Aabb2d& box, Vec2d delta) const;
 
     // MoveBox: move-and-slide. Resolves collisions axis-by-axis (X then Y)
     // against all registered colliders. Returns safe resolved delta and
-    // contact surface flags. Pass the mover's own handle as 'exclude' to
+    // contact surface flags. Pass the mover's entity as 'exclude' to
     // prevent self-collision.
     MoveResult2D MoveBox(const Aabb2d& box, Vec2d desiredDelta,
-                         PhysicsHandle2D exclude = {}) const;
+                         EntityHandle exclude = {}) const;
 
     // MoveProjected: iterative velocity-projection resolver for circle movers.
     // Intended for player characters that need smooth wall-sliding and corner
@@ -152,12 +139,12 @@ public:
     // center       — current world-space center of the circle
     // radius       — circle radius
     // delta        — desired movement this frame
-    // exclude      — optional handle to skip (pass the mover's own handle if
+    // exclude      — optional entity to skip (pass the mover's own entity if
     //                it is registered in the domain)
     //
     // Returns ResolvedDelta = actual movement; Hits = surfaces contacted.
     MoveResult2D MoveProjected(Vec2d center, float radius, Vec2d delta,
-                               PhysicsHandle2D exclude = {}) const;
+                               EntityHandle exclude = {}) const;
 
     // SetCollisionGrid: attach a static-geometry grid for MoveProjected to
     // query. Passing nullptr detaches any existing grid. The domain does NOT
@@ -165,15 +152,6 @@ public:
     void SetCollisionGrid(const CollisionGrid2D* grid);
 
 private:
-    // -- Internal collider slot -----------------------------------------------
-
-    struct ColliderEntry
-    {
-        Collider2D      Shape;
-        PhysicsHandle2D Handle;
-        bool            Live = false; // false = slot is free
-    };
-
     // -- Broadphase (AABB path) -----------------------------------------------
 
     void GatherCandidates(const Aabb2d& box,
@@ -181,7 +159,7 @@ private:
 
     float ResolveAxis(const Aabb2d& box, float delta, bool isVertical,
                       bool& hitPositive, bool& hitNegative,
-                      PhysicsHandle2D exclude = {}) const;
+                      EntityHandle exclude = {}) const;
 
     // -- Circle narrow-phase (projected path) ---------------------------------
 
@@ -199,16 +177,14 @@ private:
                             std::vector<DomainContact>& out) const;
 
     // Gather contacts from the dynamic collider registry into 'out'.
-    // Entries matching 'exclude' are skipped.
+    // Colliders owned by 'exclude' are skipped.
     void GatherDomainContacts(Vec2d center, float radius, Vec2d velocity,
-                              PhysicsHandle2D exclude,
+                              EntityHandle exclude,
                               std::vector<DomainContact>& out) const;
 
     // -- Data -----------------------------------------------------------------
 
-    std::vector<ColliderEntry> Entries;
-    std::vector<uint32_t>      FreeSlots;
-    uint32_t                   NextHandle = 1; // 0 is null
+    SparseSet<Collider2D> Colliders;
 
     QuadTree<uint32_t> Tree;
 

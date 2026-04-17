@@ -1,4 +1,4 @@
-#include <physics/2d/CollisionGrid2D.h>
+#include <physics/CollisionGrid2D.h>
 
 #include <algorithm>
 #include <cmath>

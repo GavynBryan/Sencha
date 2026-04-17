@@ -1,4 +1,4 @@
-#include <physics/2d/NarrowPhase2D.h>
+#include <physics/NarrowPhase2D.h>
 
 #include <cmath>
 

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
-#include <physics/2d/RigidBody2D.h>
+#include <physics/RigidBody2D.h>
 #include <transform/TransformStore.h>
 
 class PhysicsDomain2D;
@@ -16,11 +15,11 @@ class PhysicsDomain2D;
 // For every live body it reads the current world Transform2f and computes the
 // AABB from the body's local-space shape, storing it in Shape.WorldBounds.
 //
-// Static bodies (Shape.IsStatic) are also registered in PhysicsDomain2D so
-// they participate as blockers in MoveBox / SweepBox queries. Registration is
-// deferred to the first tick — bodies emplaced mid-session are picked up
-// automatically. Dynamic bodies are never registered in the domain; they are
-// movers that query it, not obstacles inside it.
+// Static bodies (Shape.IsStatic) are mirrored into PhysicsDomain2D so they
+// participate as blockers in MoveBox / SweepBox queries. Registration is
+// maintained by RigidBodyStore; this system keeps world bounds current and
+// catches runtime static/dynamic flips. Dynamic bodies are never registered in
+// the domain; they are movers that query it, not obstacles inside it.
 //
 // Calls RebuildTree once after all bounds are current.
 //
@@ -34,12 +33,12 @@ class RigidBodySyncSystem2D
 public:
     RigidBodySyncSystem2D(TransformStore<Transform2f>& transforms,
                           PhysicsDomain2D&            physics,
-                          DataBatch<RigidBody2D>&     bodies);
+                          RigidBodyStore&             bodies);
 
     void Tick(float fixedDt);
 
 private:
     TransformStore<Transform2f>& Transforms;
     PhysicsDomain2D&            Physics;
-    DataBatch<RigidBody2D>&     Bodies;
+    RigidBodyStore&             Bodies;
 };
