@@ -224,18 +224,12 @@ int main()
 
     EntityBatch<Player> players(world.Entities);
 
-    sprites->ReservePending(100000);
-
-    for (int i = 0; i < 40000; ++i)
-    {
-        const float spacing = static_cast<float>(i) * 64.0f;
-        const EntityKey playerKey = players.Emplace(
-            world.Domain,
-            Transform2f{ Vec2d{spacing, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
-            spriteComponents,
-            whitePixel
-        );
-    }
+    const EntityKey playerKey = players.Emplace(
+        world.Domain,
+        Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+        spriteComponents,
+        whitePixel
+    );
 
     // =========================================================================
     // Systems
