@@ -226,7 +226,8 @@ int main()
     players.emplace_back(
         playerBody,
         playerEye,
-        world.Domain,
+        world.Transforms,
+        world.Hierarchy,
         Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
         world.Bodies,
         world.Sprites,

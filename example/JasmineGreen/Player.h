@@ -6,7 +6,8 @@
 #include <physics/Collider2D.h>
 #include <physics/RigidBody2D.h>
 #include <sprite/SpriteComponent.h>
-#include <transform/TransformSpace.h>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformStore.h>
 
 //=============================================================================
 // Player
@@ -26,7 +27,8 @@ struct Player
 
     Player(EntityHandle body,
            EntityHandle eye,
-           TransformSpace2d& domain,
+           TransformStore<Transform2f>& transforms,
+           TransformHierarchyService& hierarchy,
            Transform2f spawnTransform,
            RigidBodyStore& bodies,
            SpriteStore& sprites,
@@ -37,9 +39,9 @@ struct Player
     {
         bodies.Add(Body, Collider2D{ .HalfExtent = { CollisionHalfExtent, CollisionHalfExtent } });
 
-        domain.Transforms.Add(Body, spawnTransform);
-        domain.Transforms.Add(Eye, Transform2f::Identity());
-        domain.Hierarchy.SetParent(Eye, Body);
+        transforms.Add(Body, spawnTransform);
+        transforms.Add(Eye, Transform2f::Identity());
+        hierarchy.SetParent(Eye, Body);
 
         // Body sprite — 48x48 white quad
         sprites.Add(Body);
