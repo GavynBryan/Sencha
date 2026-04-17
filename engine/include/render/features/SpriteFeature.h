@@ -56,37 +56,6 @@ class VulkanDescriptorCache;
 class SpriteFeature : public IRenderFeature
 {
 public:
-    struct Sprite
-    {
-        // Center position in screen pixels (origin top-left, +X right, +Y down).
-        float CenterX = 0.0f;
-        float CenterY = 0.0f;
-
-        // Full width / height in pixels. The shader halves these internally.
-        float Width = 0.0f;
-        float Height = 0.0f;
-
-        // UV rect on the source image. Defaults to the whole image.
-        float UvMinX = 0.0f;
-        float UvMinY = 0.0f;
-        float UvMaxX = 1.0f;
-        float UvMaxY = 1.0f;
-
-        // Packed rgba8. 0xFFFFFFFF is opaque white -- shader multiplies
-        // this into the sampled texel so tint / alpha fades cost nothing.
-        uint32_t Color = 0xFFFFFFFFu;
-
-        // Bindless slot from VulkanDescriptorCache::RegisterSampledImage.
-        BindlessImageIndex Texture;
-
-        // Rotation around Center in radians.
-        float Rotation = 0.0f;
-
-        // Ascending stable-sort key. Smaller draws first. Games pack
-        // layer / y-order / whatever into this as they see fit.
-        int32_t SortKey = 0;
-    };
-
     SpriteFeature() = default;
     ~SpriteFeature() override = default;
 
@@ -99,19 +68,21 @@ public:
 
     // -- Public submission API ---------------------------------------------
 
-    // Append a sprite to this frame's batch. Safe to call any time between
-    // frames; the accumulator is cleared after the next DrawFrame consumes it.
-    void Submit(const Sprite& sprite);
-
     // Drop everything pending without drawing. Rarely needed -- OnDraw clears
     // automatically -- but useful if game code wants to abort a frame.
     void ClearPending();
 
+    // Pre-allocate the pending buffer so Submit() doesn't reallocate
+    // during the frame. Call once after setup with an upper-bound estimate.
+    void ReservePending(size_t count);
+
     [[nodiscard]] bool IsValid() const { return Valid; }
 
-private:
     // Tightly-packed GPU instance layout -- must match the vertex shader.
     // 48 bytes: two instances per 128-byte chunk, plenty dense.
+    //
+    // Exposed publicly so bulk submission paths (e.g. SpriteRenderSystem)
+    // can write instances directly and skip the Sprite intermediate.
     struct GpuInstance
     {
         float Center[2];
@@ -122,8 +93,19 @@ private:
         uint32_t TextureIndex;
         float SinRot;
         float CosRot;
+
+        // Sort key carried alongside the GPU data for the counting-sort pass.
+        // Not uploaded to the GPU -- the sort strips it before the memcpy.
+        int32_t SortKey;
     };
-    static_assert(sizeof(GpuInstance) == 48, "GpuInstance must stay 48 bytes");
+    static_assert(sizeof(GpuInstance) == 52, "GpuInstance must stay 52 bytes");
+
+    // Append a pre-built GpuInstance. Callers that fill GpuInstance directly
+    // skip the Sprite→GpuInstance conversion in OnDraw and avoid storing the
+    // larger Sprite struct in the pending buffer.
+    void SubmitInstance(const GpuInstance& instance);
+
+private:
 
     // Per-frame UBO. `vec2 InvViewport` lets the vertex shader go from
     // screen pixels to NDC without a matrix. Padded to 16 bytes to match
@@ -156,6 +138,6 @@ private:
     // are NOT included here -- BuildPipeline() fills them in per call.
     GraphicsPipelineDesc MetaDesc;
 
-    std::vector<Sprite> Pending;
+    std::vector<GpuInstance> Pending;
     bool Valid = false;
 };

@@ -27,7 +27,10 @@
 #include <render/backend/vulkan/VulkanSurfaceService.h>
 #include <render/backend/vulkan/VulkanSwapchainService.h>
 #include <render/backend/vulkan/VulkanUploadContextService.h>
+#include <assets/texture/TextureCache.h>
 #include <render/features/SpriteFeature.h>
+#include <render/SpriteRenderSystem.h>
+#include <render/components/SpriteComponent.h>
 #include <time/TimeService.h>
 #include <window/SdlVideoService.h>
 #include <window/SdlWindow.h>
@@ -45,12 +48,9 @@
 #include <fstream>
 #include <span>
 #include <sstream>
+#include <chrono>
+#include <cstdio>
 
-// Action names for this game. Order doesn't matter — IDs are assigned by
-// position and resolved by name via InputActionRegistry::ResolveAction.
-static constexpr std::string_view kActionNames[] = {
-    "MoveUp", "MoveDown", "MoveLeft", "MoveRight", "Quit"
-};
 
 static std::string ReadTextFile(const char* path)
 {
@@ -102,8 +102,9 @@ int main()
     // The JSON config is compiled into that table here at startup. Any key
     // rebinding in a shipped game would re-run this step and call SetBindings.
     // =========================================================================
-    InputActionRegistry actionRegistry{std::span<const std::string_view>(kActionNames)};
     auto& bindingService = services.AddService<InputBindingService>();
+    std::vector<std::string> actionNames;
+    InputActionRegistry actionRegistry{std::move(actionNames)}; // Will be populated below
 
     const std::string configJson = ReadTextFile("input_config.json");
     if (!configJson.empty())
@@ -112,6 +113,12 @@ int main()
         {
             if (auto configData = DeserializeInputConfig(*jsonRoot))
             {
+                // Extract action names from config and create the registry
+                actionNames.clear();
+                for (const auto& action : configData->Actions)
+                    actionNames.push_back(action.Name);
+                actionRegistry = InputActionRegistry{std::move(actionNames)};
+
                 SdlInputControlResolver controlResolver;
                 if (auto table = CompileInputBindings(*configData, actionRegistry, controlResolver))
                     bindingService.SetBindings(std::move(*table));
@@ -150,18 +157,19 @@ int main()
     auto& swapchain      = services.AddService<VulkanSwapchainService>(
                                logging, device, physicalDevice, surface, queues,
                                windows.GetExtent(windows.GetPrimaryWindowId()));
-    auto& deletionQueue  = services.AddService<VulkanDeletionQueueService>(logging, 2);
     auto& upload         = services.AddService<VulkanUploadContextService>(logging, device, queues);
     auto& allocator      = services.AddService<VulkanAllocatorService>(logging, instance, physicalDevice, device);
     auto& buffers        = services.AddService<VulkanBufferService>(logging, device, allocator, upload);
+    auto& deletionQueue  = services.AddService<VulkanDeletionQueueService>(logging, 2);
     auto& images         = services.AddService<VulkanImageService>(logging, device, allocator, upload, deletionQueue);
     auto& samplers       = services.AddService<VulkanSamplerCache>(logging, device);
     auto& shaders        = services.AddService<VulkanShaderCache>(logging, device);
     auto& pipelines      = services.AddService<VulkanPipelineCache>(logging, device, shaders);
     auto& descriptors    = services.AddService<VulkanDescriptorCache>(logging, device, buffers, images);
+    auto& textures       = services.AddService<TextureCache>(logging, images, descriptors, samplers);
     auto& scratch        = services.AddService<VulkanFrameScratch>(
                                logging, device, physicalDevice, buffers,
-                               VulkanFrameScratch::Config{.FramesInFlight = 2});
+                               VulkanFrameScratch::Config{.FramesInFlight = 2, .BytesPerFrame = 64 * 1024 * 1024});
     auto& frames         = services.AddService<VulkanFrameService>(
                                logging, device, queues, swapchain, deletionQueue, 2);
 
@@ -178,21 +186,13 @@ int main()
     // =========================================================================
     // White pixel texture
     //
-    // SpriteFeature tints sprites by multiplying a sampled texel by the Color
-    // field. A 1x1 white RGBA texture is the simplest base: tinting it with
-    // 0xFFFFFFFF gives white, 0x000000FF gives black — no art assets needed.
+    // A 1x1 white RGBA texture is the simplest sprite base: SpriteFeature
+    // multiplies the sampled texel by Color, so tinting white gives any flat
+    // color without art assets.
     // =========================================================================
-    const ImageHandle whitePixelImage = images.Create({
-        .Format    = VK_FORMAT_R8G8B8A8_SRGB,
-        .Extent    = {1, 1},
-        .Usage     = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .DebugName = "WhitePixel",
-    });
-    const uint32_t whitePixelData = 0xFFFFFFFFu;
-    images.Upload(whitePixelImage, &whitePixelData, sizeof(whitePixelData));
-
-    const BindlessImageIndex whitePixel =
-        descriptors.RegisterSampledImage(whitePixelImage, samplers.GetNearestClamp());
+    const TextureHandle whitePixel = textures.CreateFromImage(
+        Image{.Pixels = {0xFF, 0xFF, 0xFF, 0xFF}, .Width = 1, .Height = 1},
+        SamplerDesc{}, "WhitePixel");
 
     // =========================================================================
     // World — transforms, hierarchy, and physics
@@ -215,11 +215,21 @@ int main()
     //
     // The player spawns at the center of the window.
     // =========================================================================
+    // =========================================================================
+    // Sprite batch — contiguous storage for all SpriteComponents.
+    // SpriteRenderSystem reads this each frame and submits to SpriteFeature.
+    // Individual sprites are owned by their entities via DataBatchHandle.
+    // =========================================================================
+    DataBatch<SpriteComponent> spriteComponents;
+
     EntityBatch<Player> players(world.Entities);
 
-    players.Emplace(world.Domain, Transform2f{
-        Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f}
-    });
+    const EntityKey playerKey = players.Emplace(
+        world.Domain,
+        Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+        spriteComponents,
+        whitePixel
+    );
 
     // =========================================================================
     // Systems
@@ -234,15 +244,19 @@ int main()
     auto& inputSystem = systems.Register<SdlInputSystem>(logging, bindingService);
 
     const PlayerSystem::Actions playerActions{
-        .MoveUp    = *actionRegistry.ResolveAction("MoveUp"),
-        .MoveDown  = *actionRegistry.ResolveAction("MoveDown"),
-        .MoveLeft  = *actionRegistry.ResolveAction("MoveLeft"),
-        .MoveRight = *actionRegistry.ResolveAction("MoveRight"),
-        .Quit      = *actionRegistry.ResolveAction("Quit"),
+        .MoveUp         = *actionRegistry.ResolveAction("MoveUp"),
+        .MoveDown       = *actionRegistry.ResolveAction("MoveDown"),
+        .MoveLeft       = *actionRegistry.ResolveAction("MoveLeft"),
+        .MoveRight      = *actionRegistry.ResolveAction("MoveRight"),
+        .ShiftEyeLeft   = *actionRegistry.ResolveAction("ShiftEyeLeft"),
+        .ShiftEyeRight  = *actionRegistry.ResolveAction("ShiftEyeRight"),
+        .Quit           = *actionRegistry.ResolveAction("Quit"),
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(
-        inputSystem, players, world.Physics, *sprites, whitePixel, playerActions);
+        inputSystem, players, world.Physics, playerActions);
+
+    systems.Register<SpriteRenderSystem>(spriteComponents, *sprites, textures);
 
     systems.After<PlayerSystem, SdlInputSystem>();
     systems.Init();
@@ -265,22 +279,42 @@ int main()
     // Press Escape to quit. Window close events are not yet forwarded through
     // the input pipeline — that will be addressed in a future engine update.
     // =========================================================================
+    using Clock = std::chrono::steady_clock;
+    using Ms = std::chrono::duration<double, std::milli>;
+    int frameCount = 0;
+    double tFrame = 0, tFixed = 0, tRender = 0, tDraw = 0;
+
     while (!playerSystem.WantsQuit() && !inputSystem.IsQuitRequested())
     {
         const FrameClock clock = time.Advance();
 
-        // Process SDL events and drive gameplay.
+        auto t0 = Clock::now();
         systems.RunFrame(clock.Dt);
-
-        // Propagate world transforms: Body.World() and Eye.World() are now
-        // up to date for this frame's movement.
+        auto t1 = Clock::now();
         systems.RunFixed(clock.Dt);
+        auto t2 = Clock::now();
 
-        // Submit sprite draw calls, then present.
-        scratch.BeginFrame();
+        const WindowExtent extent = windows.GetExtent(windows.GetPrimaryWindowId());
+        if (extent.Width == 0 || extent.Height == 0)
+            continue;
+
         systems.RunRender(1.0f);
+        auto t3 = Clock::now();
 
         const auto drawStatus = renderer.DrawFrame();
+        auto t4 = Clock::now();
+
+        tFrame  += Ms(t1 - t0).count();
+        tFixed  += Ms(t2 - t1).count();
+        tRender += Ms(t3 - t2).count();
+        tDraw   += Ms(t4 - t3).count();
+        if (++frameCount == 120)
+        {
+            std::printf("avg over 120 frames  frame=%.2fms  fixed=%.2fms  render=%.2fms  draw=%.2fms\n",
+                tFrame/120, tFixed/120, tRender/120, tDraw/120);
+            tFrame = tFixed = tRender = tDraw = 0;
+            frameCount = 0;
+        }
         if (drawStatus == Renderer::DrawStatus::SwapchainOutOfDate)
         {
             swapchain.Recreate(windows.GetExtent(windows.GetPrimaryWindowId()));

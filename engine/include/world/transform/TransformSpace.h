@@ -27,7 +27,7 @@ class TransformSpace
 {
 public:
 	TransformSpace()
-		: Transforms(LocalTransforms, WorldTransforms)
+		: Transforms(LocalTransforms, WorldTransforms, PropagationOrder)
 	{
 	}
 

@@ -5,6 +5,7 @@
 #include <world/transform/TransformPropagationOrderService.h>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 //=============================================================================
 // TransformPropagationSystem
@@ -65,11 +66,32 @@ public:
 		if (order.empty())
 			return;
 
+		// Fast-exit: if no locals were dirtied since last propagation,
+		// no world transforms need updating.
+		if (Cache.IsAllClean())
+			return;
+
 		std::span<const TTransform> localsSpan = Locals.GetItems();
 		std::span<TTransform> worldsSpan = Worlds.GetItems();
 
+		DenseBitset& localDirty   = Cache.GetLocalDirty();
+		DenseBitset& worldChanged = Cache.GetWorldChanged();
+
+		// Clear WorldChanged at the start of this frame's sweep — children need
+		// to know which parents changed THIS frame, not last frame.
+		worldChanged.ClearAll();
+
 		for (const PropagationEntry& entry : order)
 		{
+			const bool localDirtyFlag =
+				localDirty.Test(entry.LocalIndex);
+			const bool parentChanged =
+				entry.ParentWorldIndex != NullIndex &&
+				worldChanged.Test(entry.ParentWorldIndex);
+
+			if (!localDirtyFlag && !parentChanged)
+				continue;
+
 			const TTransform& local = localsSpan[entry.LocalIndex];
 			if (entry.ParentWorldIndex == NullIndex)
 			{
@@ -80,7 +102,11 @@ public:
 				worldsSpan[entry.WorldIndex] =
 					worldsSpan[entry.ParentWorldIndex] * local;
 			}
+			worldChanged.Set(entry.WorldIndex);
 		}
+
+		// Locals have been consumed — clear for next frame.
+		localDirty.ClearAll();
 	}
 
 	void Tick(float /*fixedDt*/)

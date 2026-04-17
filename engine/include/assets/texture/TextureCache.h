@@ -7,25 +7,12 @@
 #include <render/backend/vulkan/VulkanDescriptorCache.h>
 #include <render/backend/vulkan/VulkanImageService.h>
 #include <render/backend/vulkan/VulkanSamplerCache.h>
+#include <assets/texture/TextureHandle.h>
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
-
-//=============================================================================
-// TextureHandle
-//
-// Opaque generational handle returned by TextureCache. Encodes a slot index
-// and generation counter in a single uint32_t, mirroring ImageHandle.
-//=============================================================================
-struct TextureHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const TextureHandle&) const = default;
-};
 
 //=============================================================================
 // TextureEntry

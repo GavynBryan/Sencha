@@ -34,7 +34,7 @@ engine/src/physics/2d/PhysicsSetup2D.cpp
 
 **`PhysicsConfig2D`** holds construction-time parameters for `PhysicsDomain2D`. It controls the broadphase quadtree bounds, maximum depth, and entries-per-leaf threshold. Loaded from the `physics2d` section of `engine.json`.
 
-**`MoveResult2D`** is the output of `MoveBox`. It carries the resolved movement delta and contact surface flags (`HitFloor`, `HitCeiling`, `HitWall`).
+**`MoveResult2D`** is the output of `MoveBox`. It carries the resolved movement delta and a `HitFlags2D` bitmask (`Hits`) with `HitFloor()`, `HitCeiling()`, `HitWall()` accessors.
 
 ---
 
@@ -84,7 +84,7 @@ if (hit.DidHit) { /* hit.Time, hit.Handle */ }
 // Move-and-slide: resolve collisions axis-by-axis (X then Y).
 MoveResult2D result = physics.MoveBox(box, desiredDelta);
 // result.ResolvedDelta -- safe movement
-// result.HitFloor, result.HitCeiling, result.HitWall
+// result.HitFloor(), result.HitCeiling(), result.HitWall()
 ```
 
 `SweepBox` uses Minkowski expansion and the slab method for swept AABB-vs-AABB tests. `MoveBox` resolves X first, shifts the box, then resolves Y -- standard axis-sequential depenetration.

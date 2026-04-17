@@ -1,7 +1,5 @@
 #pragma once
 
-#include <core/system/ISystem.h>
-
 class TransformView;
 
 class VelocityUpdateSystem2d : public ISystem

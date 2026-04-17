@@ -4,6 +4,8 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
+#include <string>
 
 //=============================================================================
 // InputActionRegistry
@@ -31,7 +33,16 @@ class InputActionRegistry final : public IInputActionResolver
 {
 public:
 	explicit InputActionRegistry(std::span<const std::string_view> names)
-		: Names(names)
+		: OwnedNames{}
+		, Names(names)
+	{
+	}
+
+	// Create a registry that owns its action name strings (from config or dynamic sources)
+	explicit InputActionRegistry(std::vector<std::string> names)
+		: OwnedNames(std::move(names))
+		, NameViews(OwnedNames.begin(), OwnedNames.end())
+		, Names(NameViews)
 	{
 	}
 
@@ -57,5 +68,7 @@ public:
 	}
 
 private:
+	std::vector<std::string> OwnedNames;
+	std::vector<std::string_view> NameViews;
 	std::span<const std::string_view> Names;
 };

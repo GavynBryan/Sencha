@@ -93,8 +93,9 @@ void PhysicsDomain2D::OverlapBox(const Aabb2d& box,
 {
     out.clear();
 
-    std::vector<uint32_t> candidates;
-    GatherCandidates(box, candidates);
+    ScratchCandidates.clear();
+    GatherCandidates(box, ScratchCandidates);
+    const auto& candidates = ScratchCandidates;
 
     for (uint32_t idx : candidates)
     {
@@ -132,8 +133,9 @@ PhysicsDomain2D::SweepHit PhysicsDomain2D::SweepBox(const Aabb2d& box,
         Vec2d{ std::max(box.Max.X, box.Max.X + delta.X),
                std::max(box.Max.Y, box.Max.Y + delta.Y) });
 
-    std::vector<uint32_t> candidates;
-    GatherCandidates(sweptBounds, candidates);
+    ScratchCandidates.clear();
+    GatherCandidates(sweptBounds, ScratchCandidates);
+    const auto& candidates = ScratchCandidates;
 
     Vec2d halfExt = box.HalfExtent();
 
@@ -204,9 +206,9 @@ MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) con
                               /*isVertical=*/true, hitUp, hitDown);
 
     result.ResolvedDelta = { safeX, safeY };
-    result.HitFloor      = hitDown;
-    result.HitCeiling    = hitUp;
-    result.HitWall       = hitLeft || hitRight;
+    if (hitDown)              result.Hits |= HitFlags2D::Floor;
+    if (hitUp)                result.Hits |= HitFlags2D::Ceiling;
+    if (hitLeft || hitRight)  result.Hits |= HitFlags2D::Wall;
 
     return result;
 }
@@ -242,8 +244,9 @@ float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
             Vec2d{ std::max(box.Max.X, box.Max.X + delta), box.Max.Y });
     }
 
-    std::vector<uint32_t> candidates;
-    GatherCandidates(sweptBox, candidates);
+    ScratchCandidates.clear();
+    GatherCandidates(sweptBox, ScratchCandidates);
+    const auto& candidates = ScratchCandidates;
 
     float safe = delta;
 
