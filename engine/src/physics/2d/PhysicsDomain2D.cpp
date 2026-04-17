@@ -1,4 +1,5 @@
 #include <physics/2d/PhysicsDomain2D.h>
+#include <physics/2d/NarrowPhase2D.h>
 
 #include <algorithm>
 #include <cmath>
@@ -186,14 +187,161 @@ PhysicsDomain2D::SweepHit PhysicsDomain2D::SweepBox(const Aabb2d& box,
     return best;
 }
 
-MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) const
+void PhysicsDomain2D::SetCollisionGrid(const CollisionGrid2D* grid)
+{
+    CollGrid = grid;
+}
+
+// ---------------------------------------------------------------------------
+// MoveProjected — iterative velocity-projection resolver for circles
+// ---------------------------------------------------------------------------
+
+MoveResult2D PhysicsDomain2D::MoveProjected(Vec2d center, float radius,
+                                             Vec2d delta,
+                                             PhysicsHandle2D exclude) const
+{
+    constexpr int   MaxIterations = 4;
+    constexpr float kEpsSq        = 1e-8f;  // stop when remaining speed² < this
+    constexpr float kTOIEpsilon   = 1e-4f;  // simultaneous-contact window
+    constexpr float kPullback     = 1e-4f;  // back off from surface to avoid sticking
+
+    Vec2d      pos      = center;
+    Vec2d      velocity = delta;
+    HitFlags2D hits     = HitFlags2D::None;
+
+    std::vector<DomainContact> contacts;
+    contacts.reserve(16);
+
+    for (int iter = 0; iter < MaxIterations; ++iter)
+    {
+        if (velocity.SqrMagnitude() < kEpsSq) break;
+
+        contacts.clear();
+        if (CollGrid) GatherGridContacts(pos, radius, velocity, contacts);
+        GatherDomainContacts(pos, radius, velocity, exclude, contacts);
+
+        // Find earliest TOI
+        float bestTOI = 2.0f;
+        for (const auto& c : contacts)
+            if (c.Base.TOI < bestTOI) bestTOI = c.Base.TOI;
+
+        if (bestTOI > 1.0f)
+        {
+            // Free move — consume remaining velocity and stop iterating
+            pos.X += velocity.X;
+            pos.Y += velocity.Y;
+            break;
+        }
+
+        // Advance to the contact, pulling back slightly to stay off the surface
+        float safeT = std::max(0.0f, bestTOI - kPullback);
+        pos.X += velocity.X * safeT;
+        pos.Y += velocity.Y * safeT;
+
+        // Remaining velocity after the safe advance
+        float remainScale = 1.0f - safeT;
+        Vec2d remaining   = { velocity.X * remainScale, velocity.Y * remainScale };
+
+        // Project remaining velocity against every contact simultaneous with
+        // the earliest. Multiple simultaneous contacts handle wedge corners.
+        for (const auto& c : contacts)
+        {
+            if (c.Base.TOI > bestTOI + kTOIEpsilon) continue;
+
+            float d = remaining.X * c.Base.Normal.X + remaining.Y * c.Base.Normal.Y;
+            if (d < 0.0f)
+            {
+                // Remove the component pushing into this surface
+                remaining.X -= d * c.Base.Normal.X;
+                remaining.Y -= d * c.Base.Normal.Y;
+            }
+
+            // Accumulate hit flags based on surface orientation
+            if      (c.Base.Normal.Y >  0.5f) hits |= HitFlags2D::Floor;
+            else if (c.Base.Normal.Y < -0.5f) hits |= HitFlags2D::Ceiling;
+            else                               hits |= HitFlags2D::Wall;
+        }
+
+        // Crease detection: if projection reversed the velocity (acute corner),
+        // the circle is wedged — stop rather than jitter
+        float creaseCheck = remaining.X * velocity.X + remaining.Y * velocity.Y;
+        if (creaseCheck < 0.0f) break;
+
+        velocity = remaining;
+    }
+
+    MoveResult2D result;
+    result.ResolvedDelta = { pos.X - center.X, pos.Y - center.Y };
+    result.Hits          = hits;
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// GatherGridContacts
+// ---------------------------------------------------------------------------
+
+void PhysicsDomain2D::GatherGridContacts(Vec2d center, float radius,
+                                          Vec2d velocity,
+                                          std::vector<DomainContact>& out) const
+{
+    Aabb2d swept = Aabb2d::FromMinMax(
+        Vec2d{ std::min(center.X, center.X + velocity.X) - radius,
+               std::min(center.Y, center.Y + velocity.Y) - radius },
+        Vec2d{ std::max(center.X, center.X + velocity.X) + radius,
+               std::max(center.Y, center.Y + velocity.Y) + radius });
+
+    CollGrid->ForEachSolidInRegion(swept, [&](int col, int row, const Aabb2d& bounds)
+    {
+        CircleContact base = SweepCircleVsAabb(center, radius, velocity, bounds);
+        if (base.TOI > 1.0f) return;
+        if (IsGhostEdge(base.Normal, *CollGrid, col, row)) return;
+
+        out.push_back({ base, col, row });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// GatherDomainContacts
+// ---------------------------------------------------------------------------
+
+void PhysicsDomain2D::GatherDomainContacts(Vec2d center, float radius,
+                                            Vec2d velocity,
+                                            PhysicsHandle2D exclude,
+                                            std::vector<DomainContact>& out) const
+{
+    Aabb2d swept = Aabb2d::FromMinMax(
+        Vec2d{ std::min(center.X, center.X + velocity.X) - radius,
+               std::min(center.Y, center.Y + velocity.Y) - radius },
+        Vec2d{ std::max(center.X, center.X + velocity.X) + radius,
+               std::max(center.Y, center.Y + velocity.Y) + radius });
+
+    ScratchCandidates.clear();
+    GatherCandidates(swept, ScratchCandidates);
+
+    for (uint32_t idx : ScratchCandidates)
+    {
+        const ColliderEntry& entry = Entries[idx];
+        if (!entry.Live || !entry.Shape.WorldBounds.IsValid()) continue;
+        if (exclude.IsValid() && entry.Handle == exclude) continue;
+
+        CircleContact base = SweepCircleVsAabb(
+            center, radius, velocity, entry.Shape.WorldBounds);
+        if (base.TOI > 1.0f) continue;
+
+        // GridCol/GridRow = -1: no ghost-edge suppression for dynamic objects
+        out.push_back({ base, -1, -1 });
+    }
+}
+
+MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta,
+                                       PhysicsHandle2D exclude) const
 {
     MoveResult2D result;
 
     // Resolve X first
     bool hitRight = false, hitLeft = false;
     float safeX = ResolveAxis(box, static_cast<float>(desiredDelta.X),
-                              /*isVertical=*/false, hitRight, hitLeft);
+                              /*isVertical=*/false, hitRight, hitLeft, exclude);
 
     // Shift box by safe X before resolving Y
     Aabb2d boxAfterX = Aabb2d::FromCenterHalfExtent(
@@ -203,7 +351,7 @@ MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) con
     // Resolve Y
     bool hitUp = false, hitDown = false;
     float safeY = ResolveAxis(boxAfterX, static_cast<float>(desiredDelta.Y),
-                              /*isVertical=*/true, hitUp, hitDown);
+                              /*isVertical=*/true, hitUp, hitDown, exclude);
 
     result.ResolvedDelta = { safeX, safeY };
     if (hitDown)              result.Hits |= HitFlags2D::Floor;
@@ -225,7 +373,8 @@ void PhysicsDomain2D::GatherCandidates(const Aabb2d& box,
 
 float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
                                    bool isVertical,
-                                   bool& hitPositive, bool& hitNegative) const
+                                   bool& hitPositive, bool& hitNegative,
+                                   PhysicsHandle2D exclude) const
 {
     if (std::abs(delta) < 1e-6f) return 0.0f;
 
@@ -254,6 +403,7 @@ float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
     {
         const ColliderEntry& entry = Entries[idx];
         if (!entry.Live || !entry.Shape.WorldBounds.IsValid()) continue;
+        if (exclude.IsValid() && entry.Handle == exclude) continue;
 
         const Aabb2d& s = entry.Shape.WorldBounds;
 

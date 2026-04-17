@@ -2,7 +2,8 @@
 
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
-#include <physics/2d/ColliderSyncSystem2D.h>
+#include <physics/2d/RigidBodyResolutionSystem2D.h>
+#include <physics/2d/RigidBodySyncSystem2D.h>
 #include <world/World.h>
 #include <world/transform/TransformPropagationSystem.h>
 
@@ -12,13 +13,18 @@ namespace PhysicsSetup2D {
     {
         World2d& world = serviceHost.Get<World2d>();
 
-        // Fixed lane: ColliderSyncSystem2D must run after TransformPropagation
-        // so world transforms are current before AABBs are computed.
-        systemHost.Register<ColliderSyncSystem2D>(
+        systemHost.Register<RigidBodySyncSystem2D>(
             world.Transforms,
-            world.Physics);
+            world.Physics,
+            world.Bodies);
 
-        systemHost.After<ColliderSyncSystem2D, TransformPropagationSystem<Transform2f>>();
+        systemHost.Register<RigidBodyResolutionSystem2D>(
+            world.Transforms,
+            world.Physics,
+            world.Bodies);
+
+        systemHost.After<RigidBodySyncSystem2D, TransformPropagationSystem<Transform2f>>();
+        systemHost.After<RigidBodyResolutionSystem2D, RigidBodySyncSystem2D>();
     }
 
 }

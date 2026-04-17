@@ -1,24 +1,21 @@
 #pragma once
 
+#include <core/batch/DataBatch.h>
 #include <input/InputTypes.h>
+#include <physics/2d/RigidBody2D.h>
 #include <world/entity/EntityBatch.h>
 #include "Player.h"
 
 class SdlInputSystem;
-class PhysicsDomain2D;
 
 //=============================================================================
 // PlayerSystem
 //
-// Owns all player behaviour for one frame: reads input and moves the player
-// through the physics domain. Visual representation is handled externally by
-// SpriteRenderSystem.
+// Reads input and expresses player intent as velocity on the player's
+// RigidBody2D each frame. Actual movement and collision resolution are
+// handled by RigidBodyResolutionSystem2D in the Fixed lane.
 //
-// SystemHost lanes used:
-//   Update(float dt) — reads input events and applies movement
-//
-// PlayerSystem must run after SdlInputSystem in the Frame lane so that
-// input events are already populated when Update fires.
+// Must run after SdlInputSystem in the Frame lane.
 //=============================================================================
 class PlayerSystem
 {
@@ -34,19 +31,19 @@ public:
         InputActionId Quit;
     };
 
-    PlayerSystem(SdlInputSystem& input,
-                 EntityBatch<Player>& players,
-                 PhysicsDomain2D& physics,
-                 const Actions& actions);
+    PlayerSystem(SdlInputSystem&         input,
+                 EntityBatch<Player>&    players,
+                 DataBatch<RigidBody2D>& bodies,
+                 const Actions&          actions);
 
     void Update(float dt);
 
     bool WantsQuit() const { return QuitRequested; }
 
 private:
-    SdlInputSystem&      Input;
-    EntityBatch<Player>& Players;
-    PhysicsDomain2D&     Physics;
-    Actions              ActionIds;
-    bool                 QuitRequested = false;
+    SdlInputSystem&         Input;
+    EntityBatch<Player>&    Players;
+    DataBatch<RigidBody2D>& Bodies;
+    Actions                 ActionIds;
+    bool                    QuitRequested = false;
 };

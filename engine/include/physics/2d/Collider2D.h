@@ -12,8 +12,8 @@
 // Offset allows the collider to be shifted relative to the transform origin
 // (e.g. a character whose pivot is at the feet rather than the center).
 //
-// WorldBounds is computed each frame by ColliderSyncSystem2D from the entity's
-// world Transform2D position + this shape description. Systems should treat
+// WorldBounds is computed each step by RigidBodySyncSystem2D from the entity's
+// world Transform2f position + this shape description. Systems should treat
 // WorldBounds as a read-only cache — write only through the shape fields or
 // via the sync system.
 //=============================================================================
@@ -24,7 +24,7 @@ struct Collider2D
     Vec2d HalfExtent = { 0.5f, 0.5f };
     Vec2d Offset     = { 0.0f, 0.0f };  // Center offset from transform position
 
-    // -- Runtime cache (written by ColliderSyncSystem2D each frame) -----------
+    // -- Runtime cache (written by RigidBodySyncSystem2D each step) -----------
 
     Aabb2d WorldBounds = Aabb2d::Empty();
 

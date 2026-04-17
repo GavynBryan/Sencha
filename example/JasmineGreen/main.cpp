@@ -37,6 +37,7 @@
 #include <window/SdlWindowService.h>
 #include <window/WindowCreateInfo.h>
 #include <window/WindowTypes.h>
+#include <physics/2d/PhysicsSetup2D.h>
 #include <world/World.h>
 #include <world/WorldSetup.h>
 #include <world/entity/EntityBatch.h>
@@ -204,6 +205,7 @@ int main()
     // =========================================================================
     SystemHost systems;
     WorldSetup::Setup2D(services, systems);
+    PhysicsSetup2D::Setup(services, systems);
     auto& world = services.Get<World2d>();
 
     // =========================================================================
@@ -227,6 +229,8 @@ int main()
     const EntityKey playerKey = players.Emplace(
         world.Domain,
         Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+        world.Physics,
+        world.Bodies,
         spriteComponents,
         whitePixel
     );
@@ -254,7 +258,7 @@ int main()
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(
-        inputSystem, players, world.Physics, playerActions);
+        inputSystem, players, world.Bodies, playerActions);
 
     systems.Register<SpriteRenderSystem>(spriteComponents, *sprites, textures);
 
