@@ -8,7 +8,7 @@
 #include <physics/2d/RigidBody2D.h>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRegistry.h>
-#include <world/transform/TransformSpace.h>
+#include <transform/TransformSpace.h>
 
 //=============================================================================
 // World<TTransform>
@@ -55,7 +55,7 @@ public:
 
 	// -- Gameplay-facing shortcuts (forward into Domain) -------------------
 
-	TransformView<TTransform>& Transforms;
+	TransformStore<TTransform>& Transforms;
 	TransformHierarchyService& TransformHierarchy;
 };
 

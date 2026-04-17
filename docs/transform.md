@@ -13,14 +13,14 @@ recursion.
 ```
 engine/include/math/geometry/2d/Transform2d.h
 engine/include/math/geometry/3d/Transform3d.h
-engine/include/world/transform/
+engine/include/transform/
 ```
 
 ```cpp
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformNode.h>
-#include <world/transform/TransformSpace.h>
+#include <transform/TransformNode.h>
+#include <transform/TransformSpace.h>
 ```
 
 Common aliases are `Transform2f = Transform2d<float>` and
@@ -79,7 +79,7 @@ parent's position.
 structure — it records relationships but does not update transforms itself.
 
 ```
-engine/include/world/transform/TransformHierarchyService.h
+engine/include/transform/TransformHierarchyService.h
 ```
 
 ```cpp
@@ -111,7 +111,7 @@ rebuild.  No callers need to manage the counter directly.
 transforms in a single forward pass.
 
 ```
-engine/include/world/transform/TransformPropagationSystem.h
+engine/include/transform/TransformPropagationSystem.h
 ```
 
 ```cpp
@@ -144,14 +144,14 @@ transform.
 services.  Any subsystem that needs its own isolated transform space creates one.
 
 ```
-engine/include/world/transform/TransformSpace.h
+engine/include/transform/TransformSpace.h
 ```
 
 ```cpp
 TransformSpace<Transform2f> domain;
 
 // Contained services (all accessible as members):
-domain.Transforms   // TransformView — allocates and owns local/world pairs
+domain.Transforms   // TransformStore — allocates and owns local/world pairs
 domain.Hierarchy    // TransformHierarchyService — parent-child graph
 domain.Propagation  // TransformPropagationSystem — derives world transforms
 ```
@@ -164,10 +164,10 @@ independent `TransformSpace` instances with no coupling between them.
 
 ## API
 
-### TransformView
+### TransformStore
 
 ```
-engine/include/world/transform/TransformView.h
+engine/include/transform/TransformStore.h
 ```
 
 ```cpp
@@ -191,7 +191,7 @@ std::span<const TTransform> worlds = domain.Transforms.GetWorldsSpan();
 that participates in the hierarchy.
 
 ```
-engine/include/world/transform/TransformNode.h
+engine/include/transform/TransformNode.h
 ```
 
 ```cpp
@@ -299,7 +299,7 @@ Reading a world transform before `Propagate()` has run for the current frame
 yields the value from the previous frame.  Systems that consume world transforms
 must be ordered after the propagation step.
 
-**Do not skip registration.**  A key that is added to a `TransformView` but
+**Do not skip registration.**  A key that is added to a `TransformStore` but
 never registered with the hierarchy is treated as orphaned and will be absent
 from the propagation order.  Use `TransformNode` (which registers automatically)
 or call `hierarchy.Register(key)` manually.
@@ -334,7 +334,7 @@ layers compose without any reaching downward past their direct dependency:
 ```
 Transform2d / Transform3d     pure TRS value; no ownership, no allocation
         │
-TransformView                allocates paired local/world slots per key
+TransformStore                allocates paired local/world slots per key
         │
 TransformHierarchyService     records parent-child relationships; version-tracked
         │

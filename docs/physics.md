@@ -190,7 +190,7 @@ TransformPropagationSystem  (PostUpdate, low order)
 
 ```
 ColliderSyncSystem2D        transform -> AABB bridge; owns PhysicsTokens
-       |  reads TransformView<Transform2f> for world positions
+       |  reads TransformStore<Transform2f> for world positions
        |  pushes UpdateBounds + RebuildTree into PhysicsDomain2D
        |
 PhysicsDomain2D             collider registry + spatial queries

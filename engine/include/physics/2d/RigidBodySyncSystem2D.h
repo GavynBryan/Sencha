@@ -3,7 +3,7 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/2d/RigidBody2D.h>
-#include <world/transform/TransformView.h>
+#include <transform/TransformStore.h>
 
 class PhysicsDomain2D;
 
@@ -32,14 +32,14 @@ class PhysicsDomain2D;
 class RigidBodySyncSystem2D
 {
 public:
-    RigidBodySyncSystem2D(TransformView<Transform2f>& transforms,
+    RigidBodySyncSystem2D(TransformStore<Transform2f>& transforms,
                           PhysicsDomain2D&            physics,
                           DataBatch<RigidBody2D>&     bodies);
 
     void Tick(float fixedDt);
 
 private:
-    TransformView<Transform2f>& Transforms;
+    TransformStore<Transform2f>& Transforms;
     PhysicsDomain2D&            Physics;
     DataBatch<RigidBody2D>&     Bodies;
 };
