@@ -9,13 +9,13 @@ The 2D physics layer provides AABB collision detection, spatial queries, and mov
 ## Location
 
 ```
-engine/include/physics/2d/Collider2D.h
-engine/include/physics/2d/PhysicsDomain2D.h
-engine/include/physics/2d/ColliderSyncSystem2D.h
-engine/include/physics/2d/PhysicsSetup2D.h
-engine/src/physics/2d/PhysicsDomain2D.cpp
-engine/src/physics/2d/ColliderSyncSystem2D.cpp
-engine/src/physics/2d/PhysicsSetup2D.cpp
+Sencha.2D/include/physics/2d/Collider2D.h
+Sencha.2D/include/physics/2d/PhysicsDomain2D.h
+Sencha.2D/include/physics/2d/ColliderSyncSystem2D.h
+Sencha.2D/include/physics/2d/PhysicsSetup2D.h
+Sencha.2D/src/physics/2d/PhysicsDomain2D.cpp
+Sencha.2D/src/physics/2d/ColliderSyncSystem2D.cpp
+Sencha.2D/src/physics/2d/PhysicsSetup2D.cpp
 ```
 
 ```cpp
@@ -133,7 +133,7 @@ Collider2D* col = sync.TryGetCollider(token);
 PhysicsSetup2D::Setup(serviceHost, systemHost);
 ```
 
-Call once during engine initialization, after `WorldSetup::Setup2D`. Game-specific movement systems (motors, kinematic controllers) are added from game code after this call, using `World2d::Physics` for spatial queries.
+Call once during engine initialization, after `World2DSetup::Setup2D`. Game-specific movement systems (motors, kinematic controllers) are added from game code after this call, using `World2d::Physics` for spatial queries.
 
 ---
 

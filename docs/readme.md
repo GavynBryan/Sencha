@@ -31,7 +31,9 @@ When in doubt: **compose, don't inherit. Own by value, not by pointer. Sweep bat
 ```text
 app/       Minimal application target.
 docs/      Project notes and secondary documentation.
-engine/    Flat include/src engine tree.
+Sencha.Core/ Shared engine library: core services, math, transform, assets, window/input, graphics.
+Sencha.2D/   2D engine library: 2D physics, sprite/tilemap rendering, tilemap data.
+Sencha.3D/   3D engine library scaffold.
 example/   Small executable examples.
 test/      GoogleTest-based engine tests.
 ```
@@ -43,7 +45,7 @@ test/      GoogleTest-based engine tests.
 | [docs/shaders.md](shaders.md) | Shader authoring, build pipeline, metadata format, hot-reload, and planned tiers. |
 | [docs/grid.md](grid.md) | `Grid2d<T>` setup, storage model, idiomatic usage, constraints, and its role in the tilemap pipeline. |
 | [docs/transform.md](transform.md) | Transform value types (`Transform2d`, `Transform3d`), hierarchy propagation, transform systems, and domain structure |
-| [docs/render.md](render.md) | `Renderer` architecture, render feature system, Vulkan backend integration, and rendering pipeline overview |
+| [docs/render.md](render.md) | `Renderer` architecture, render feature system, Vulkan graphics integration, and rendering pipeline overview |
 | [docs/data.md](data.md) | Data containers, batch storage, serialization, and memory management |
 | [docs/audio.md](audio.md) | Audio system design, integration, and usage examples |
 | [docs/entity.md](entity.md) | `EntityBatch<T>`, `EntityRegistry`, `EntityKey`, subtree destruction, and the `IsEntity` concept. |

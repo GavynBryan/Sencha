@@ -11,9 +11,9 @@ recursion.
 ## Location
 
 ```
-engine/include/math/geometry/2d/Transform2d.h
-engine/include/math/geometry/3d/Transform3d.h
-engine/include/transform/
+Sencha.Core/include/math/geometry/2d/Transform2d.h
+Sencha.Core/include/math/geometry/3d/Transform3d.h
+Sencha.Core/include/transform/
 ```
 
 ```cpp
@@ -79,7 +79,7 @@ parent's position.
 structure — it records relationships but does not update transforms itself.
 
 ```
-engine/include/transform/TransformHierarchyService.h
+Sencha.Core/include/transform/TransformHierarchyService.h
 ```
 
 ```cpp
@@ -111,7 +111,7 @@ rebuild.  No callers need to manage the counter directly.
 transforms in a single forward pass.
 
 ```
-engine/include/transform/TransformPropagationSystem.h
+Sencha.Core/include/transform/TransformPropagationSystem.h
 ```
 
 ```cpp
@@ -144,7 +144,7 @@ transform.
 services.  Any subsystem that needs its own isolated transform space creates one.
 
 ```
-engine/include/transform/TransformSpace.h
+Sencha.Core/include/transform/TransformSpace.h
 ```
 
 ```cpp
@@ -167,7 +167,7 @@ independent `TransformSpace` instances with no coupling between them.
 ### TransformStore
 
 ```
-engine/include/transform/TransformStore.h
+Sencha.Core/include/transform/TransformStore.h
 ```
 
 ```cpp
@@ -191,7 +191,7 @@ std::span<const TTransform> worlds = domain.Transforms.GetWorldsSpan();
 that participates in the hierarchy.
 
 ```
-engine/include/transform/TransformNode.h
+Sencha.Core/include/transform/TransformNode.h
 ```
 
 ```cpp

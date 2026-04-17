@@ -20,16 +20,16 @@ GLSL source and no GLSL compiler.
 
 Built-in rendering features (SpriteFeature, debug rendering, fullscreen passes).
 
-- **Source**: `engine/shaders/internal/*.glsl`
+- **Source**: `Sencha.2D/shaders/internal/*.glsl`
 - **Compiled**: at build time by `glslc` via `sencha_compile_shader()`
 - **Embedded**: SPIR-V words baked into `uint32_t[]` arrays in generated headers
   by `sencha_embed_spirv()`, which invokes `cmake/EmbedSpirv.cmake`
-- **Pipeline metadata**: `engine/shaders/internal/*.shader` (JSON), embedded as
+- **Pipeline metadata**: `Sencha.2D/shaders/internal/*.shader` (JSON), embedded as
   a `constexpr const char*` by `sencha_embed_text()`
 - **Loaded by**: `VulkanShaderCache::CreateModuleFromSpirv(array, wordCount)`
   called directly from the feature's `Setup()`.  Zero file I/O.
 
-Generated headers are in `${build}/engine/generated/shaders/` and included as
+Generated headers are in `${build}/Sencha.2D/generated/shaders/` and included as
 `#include <shaders/kFooSpv.h>`.  They are never committed to source control.
 
 ### Tier 2 — Engine non-bootstrap shaders (future)
@@ -51,9 +51,9 @@ implemented (waiting on the asset system and packer).
 
 | Path | Checked in? |
 |---|---|
-| `engine/shaders/internal/*.glsl` | **Yes** |
-| `engine/shaders/internal/*.shader` | **Yes** |
-| `engine/shaders/include/sencha/*.glsli` | **Yes** |
+| `Sencha.2D/shaders/internal/*.glsl` | **Yes** |
+| `Sencha.2D/shaders/internal/*.shader` | **Yes** |
+| `Sencha.2D/shaders/include/sencha/*.glsli` | **Yes** |
 | `build/*/shaders/*.spv` | No (build artifact) |
 | `build/*/generated/shaders/*.h` | No (build artifact) |
 | `*.vkpc` (VkPipelineCache blobs) | No (user-local, machine-specific) |
@@ -107,7 +107,7 @@ consumes this, so editing any included file only recompiles the affected shaders
 
 ## Adding a new engine shader
 
-1. Add `foo.vert.glsl` and/or `foo.frag.glsl` to `engine/shaders/internal/`.
+1. Add `foo.vert.glsl` and/or `foo.frag.glsl` to `Sencha.2D/shaders/internal/`.
    Use `#include "sencha/frame_ubo.glsli"` etc. for shared declarations.
 
 2. Add `foo.shader` with the pipeline state (see **Metadata format** below).
@@ -142,7 +142,7 @@ consumes this, so editing any included file only recompiles the affected shaders
    ```cpp
    #include <shaders/kFooVertSpv.h>
    #include <shaders/kFooShaderMetadata.h>
-   #include <render/backend/vulkan/ShaderMetadata.h>
+   #include <graphics/vulkan/ShaderMetadata.h>
 
    // In Setup():
    VertexShader = Shaders->CreateModuleFromSpirv(
@@ -270,7 +270,7 @@ Set `SENCHA_ENABLE_HOT_RELOAD=OFF` (the default).
 - `VulkanShaderCache::CompileFromSource`, `LoadFromFile`, `CompileGlsl` are
   compiled out (`#ifdef SENCHA_ENABLE_HOT_RELOAD`).
 - Bootstrap shaders load from embedded arrays.  No external files required for
-  the render backend to initialise.
+  the graphics foundation to initialise.
 - Game shaders (future): packaged into `game.pak` at release build time and
   loaded via `LoadSpirv()` through the asset system.
 

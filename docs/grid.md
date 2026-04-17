@@ -9,7 +9,7 @@ never reimplement it.  The type carries zero game logic and zero render logic.
 ## Location
 
 ```
-engine/include/math/spatial/Grid2d.h
+Sencha.Core/include/math/spatial/Grid2d.h
 ```
 
 ```cpp

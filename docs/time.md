@@ -7,7 +7,7 @@
 ## Location
 
 ```
-engine/include/time/TimeService.h
+Sencha.Core/include/time/TimeService.h
 ```
 
 ```cpp
