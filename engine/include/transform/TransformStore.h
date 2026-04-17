@@ -2,9 +2,7 @@
 
 #include <core/batch/SparseSet.h>
 #include <entity/EntityHandle.h>
-#include <math/geometry/2d/Transform2d.h>
-#include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformPropagationOrderService.h>
+#include <transform/TransformPropagationOrderService.h>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -28,9 +26,6 @@ template <typename TTransform>
 class TransformStore
 {
 public:
-    using TransformType = TTransform;
-    using ComponentType = TransformComponent<TTransform>;
-
     explicit TransformStore(TransformPropagationOrderService& propagationOrder)
         : PropagationOrder(&propagationOrder)
     {
@@ -41,7 +36,7 @@ public:
         if (!entity.IsValid())
             return false;
 
-        Components.Emplace(entity.Id, ComponentType{ local, TTransform::Identity() });
+        Components.Emplace(entity.Id, TransformComponent<TTransform>{ local, TTransform::Identity() });
 
         const Id index = Components.IndexOf(entity.Id);
         if (index != InvalidId)
@@ -63,19 +58,19 @@ public:
 
     const TTransform* TryGetLocal(EntityHandle entity) const
     {
-        const ComponentType* component = TryGetComponent(entity);
+        const TransformComponent<TTransform>* component = TryGetComponent(entity);
         return component ? &component->Local : nullptr;
     }
 
     const TTransform* TryGetWorld(EntityHandle entity) const
     {
-        const ComponentType* component = TryGetComponent(entity);
+        const TransformComponent<TTransform>* component = TryGetComponent(entity);
         return component ? &component->World : nullptr;
     }
 
     TTransform* TryGetLocalMutable(EntityHandle entity)
     {
-        ComponentType* component = TryGetComponentMutable(entity);
+        TransformComponent<TTransform>* component = TryGetComponentMutable(entity);
         if (!component)
             return nullptr;
 
@@ -91,14 +86,14 @@ public:
             *current = local;
     }
 
-    ComponentType* TryGetComponentMutable(EntityHandle entity)
+    TransformComponent<TTransform>* TryGetComponentMutable(EntityHandle entity)
     {
         if (!entity.IsValid())
             return nullptr;
         return Components.TryGet(entity.Id);
     }
 
-    const ComponentType* TryGetComponent(EntityHandle entity) const
+    const TransformComponent<TTransform>* TryGetComponent(EntityHandle entity) const
     {
         if (!entity.IsValid())
             return nullptr;
@@ -110,16 +105,16 @@ public:
         return entity.IsValid() ? Components.IndexOf(entity.Id) : InvalidId;
     }
 
-    std::span<ComponentType> GetItems()
+    std::span<TransformComponent<TTransform>> GetItems()
     {
         auto& items = Components.GetItems();
-        return std::span<ComponentType>(items.data(), items.size());
+        return std::span<TransformComponent<TTransform>>(items.data(), items.size());
     }
 
-    std::span<const ComponentType> GetItems() const
+    std::span<const TransformComponent<TTransform>> GetItems() const
     {
         const auto& items = Components.GetItems();
-        return std::span<const ComponentType>(items.data(), items.size());
+        return std::span<const TransformComponent<TTransform>>(items.data(), items.size());
     }
 
     const std::vector<Id>& GetOwners() const { return Components.GetOwners(); }
@@ -129,9 +124,6 @@ public:
     uint64_t GetVersion() const { return Components.GetVersion(); }
 
 private:
-    SparseSet<ComponentType> Components;
+    SparseSet<TransformComponent<TTransform>> Components;
     TransformPropagationOrderService* PropagationOrder = nullptr;
 };
-
-using TransformStore2D = TransformStore<Transform2f>;
-using TransformStore3D = TransformStore<Transform3f>;

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <assets/texture/TextureHandle.h>
-#include <world/transform/TransformNode.h>
-#include <world/transform/TransformSpace.h>
+#include <transform/TransformNode.h>
+#include <transform/TransformSpace.h>
 #include <cstdint>
 
 //=============================================================================

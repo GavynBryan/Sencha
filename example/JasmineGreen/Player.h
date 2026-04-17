@@ -8,8 +8,8 @@
 #include <physics/2d/Collider2D.h>
 #include <physics/2d/RigidBody2D.h>
 #include <render/components/SpriteComponent.h>
-#include <world/transform/TransformNode.h>
-#include <world/transform/TransformSpace.h>
+#include <transform/TransformNode.h>
+#include <transform/TransformSpace.h>
 
 //=============================================================================
 // Player

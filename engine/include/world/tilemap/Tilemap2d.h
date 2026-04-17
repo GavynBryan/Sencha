@@ -4,8 +4,8 @@
 #include <core/handle/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/spatial/Grid2d.h>
-#include <world/transform/TransformSpace.h>
-#include <world/transform/TransformHierarchyRegistration.h>
+#include <transform/TransformSpace.h>
+#include <transform/TransformHierarchyRegistration.h>
 #include <cstdint>
 
 //=============================================================================

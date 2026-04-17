@@ -1,9 +1,8 @@
 #pragma once
 
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformStore.h>
-#include <cstdint>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformPropagationOrderService.h>
+#include <transform/TransformStore.h>
 #include <span>
 
 //=============================================================================
@@ -16,11 +15,6 @@ template <typename TTransform>
 class TransformPropagationSystem
 {
 public:
-    using ComponentType = TransformComponent<TTransform>;
-    using PropagationEntry = TransformPropagationOrderService::PropagationEntry;
-
-    static constexpr uint32_t NullIndex = TransformPropagationOrderService::NullIndex;
-
     TransformPropagationSystem(
         TransformStore<TTransform>& transforms,
         TransformHierarchyService& hierarchy,
@@ -35,31 +29,31 @@ public:
     {
         Cache.MaybeRebuild(Hierarchy, Transforms);
 
-        std::span<const PropagationEntry> order = Cache.GetOrder();
+        std::span<const TransformPropagationOrderService::PropagationEntry> order = Cache.GetOrder();
         if (order.empty())
             return;
 
         if (Cache.IsAllClean())
             return;
 
-        std::span<ComponentType> components = Transforms.GetItems();
+        std::span<TransformComponent<TTransform>> components = Transforms.GetItems();
         DenseBitset& localDirty = Cache.GetLocalDirty();
         DenseBitset& worldChanged = Cache.GetWorldChanged();
 
         worldChanged.ClearAll();
 
-        for (const PropagationEntry& entry : order)
+        for (const TransformPropagationOrderService::PropagationEntry& entry : order)
         {
             const bool localDirtyFlag = localDirty.Test(entry.TransformIndex);
             const bool parentChanged =
-                entry.ParentTransformIndex != NullIndex
+                entry.ParentTransformIndex != TransformPropagationOrderService::NullIndex
                 && worldChanged.Test(entry.ParentTransformIndex);
 
             if (!localDirtyFlag && !parentChanged)
                 continue;
 
-            ComponentType& component = components[entry.TransformIndex];
-            if (entry.ParentTransformIndex == NullIndex)
+            TransformComponent<TTransform>& component = components[entry.TransformIndex];
+            if (entry.ParentTransformIndex == TransformPropagationOrderService::NullIndex)
             {
                 component.World = component.Local;
             }

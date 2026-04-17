@@ -8,7 +8,7 @@
 #include <physics/2d/RigidBody2D.h>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRegistry.h>
-#include <world/transform/TransformSpace.h>
+#include <transform/TransformSpace.h>
 
 //=============================================================================
 // World<TTransform>

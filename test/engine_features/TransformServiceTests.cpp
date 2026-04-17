@@ -4,11 +4,11 @@
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/World.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformPropagationSystem.h>
-#include <world/transform/TransformSpace.h>
-#include <world/transform/TransformStore.h>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformPropagationOrderService.h>
+#include <transform/TransformPropagationSystem.h>
+#include <transform/TransformSpace.h>
+#include <transform/TransformStore.h>
 #include <cmath>
 #include <numbers>
 

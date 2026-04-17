@@ -6,7 +6,7 @@
 #include <vector>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRecord.h>
-#include <world/transform/TransformHierarchyService.h>
+#include <transform/TransformHierarchyService.h>
 
 //=============================================================================
 // EntityRegistry

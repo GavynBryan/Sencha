@@ -1,7 +1,7 @@
 #pragma once
 
 #include <entity/EntityHandle.h>
-#include <world/transform/TransformHierarchyService.h>
+#include <transform/TransformHierarchyService.h>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -15,12 +15,6 @@ struct DenseBitset
         Words.assign(words, ~uint64_t{0});
     }
 
-    void SetAll()
-    {
-        for (auto& word : Words)
-            word = ~uint64_t{0};
-    }
-
     void ClearAll()
     {
         for (auto& word : Words)
@@ -30,11 +24,6 @@ struct DenseBitset
     void Set(size_t index)
     {
         Words[index >> 6] |= uint64_t{1} << (index & 63);
-    }
-
-    void Clear(size_t index)
-    {
-        Words[index >> 6] &= ~(uint64_t{1} << (index & 63));
     }
 
     bool Test(size_t index) const
@@ -65,8 +54,6 @@ struct DenseBitset
 class TransformPropagationOrderService
 {
 public:
-    using HierarchyType = TransformHierarchyService;
-
     static constexpr uint32_t NullIndex = UINT32_MAX;
 
     struct PropagationEntry
@@ -76,7 +63,7 @@ public:
     };
 
     template <typename TTransformStore>
-    void MaybeRebuild(const HierarchyType& hierarchy, const TTransformStore& transforms)
+    void MaybeRebuild(const TransformHierarchyService& hierarchy, const TTransformStore& transforms)
     {
         const uint64_t hierarchyVersion = hierarchy.GetVersion();
         const uint64_t transformVersion = transforms.GetVersion();
@@ -119,7 +106,7 @@ private:
     };
 
     template <typename TTransformStore>
-    void Rebuild(const HierarchyType& hierarchy, const TTransformStore& transforms)
+    void Rebuild(const TransformHierarchyService& hierarchy, const TTransformStore& transforms)
     {
         Order.clear();
         Order.reserve(transforms.Count());

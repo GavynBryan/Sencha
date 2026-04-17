@@ -3,7 +3,7 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/2d/RigidBody2D.h>
-#include <world/transform/TransformStore.h>
+#include <transform/TransformStore.h>
 
 class PhysicsDomain2D;
 

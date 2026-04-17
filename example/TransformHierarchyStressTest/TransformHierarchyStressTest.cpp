@@ -1,8 +1,8 @@
 #include <core/batch/DataBatch.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformPropagationSystem.h>
+#include <transform/TransformHierarchyService.h>
+#include <transform/TransformPropagationOrderService.h>
+#include <transform/TransformPropagationSystem.h>
 #include <core/handle/DataBatchHandle.h>
 
 #include <algorithm>
