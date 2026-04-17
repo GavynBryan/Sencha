@@ -8,25 +8,25 @@
 #include <input/InputBindingService.h>
 #include <input/SdlInputControlResolver.h>
 #include <input/SdlInputSystem.h>
-#include <render/Renderer.h>
-#include <render/backend/vulkan/VulkanAllocatorService.h>
-#include <render/backend/vulkan/VulkanBootstrapPolicy.h>
-#include <render/backend/vulkan/VulkanBufferService.h>
-#include <render/backend/vulkan/VulkanDeletionQueueService.h>
-#include <render/backend/vulkan/VulkanDescriptorCache.h>
-#include <render/backend/vulkan/VulkanDeviceService.h>
-#include <render/backend/vulkan/VulkanFrameScratch.h>
-#include <render/backend/vulkan/VulkanFrameService.h>
-#include <render/backend/vulkan/VulkanImageService.h>
-#include <render/backend/vulkan/VulkanInstanceService.h>
-#include <render/backend/vulkan/VulkanPhysicalDeviceService.h>
-#include <render/backend/vulkan/VulkanPipelineCache.h>
-#include <render/backend/vulkan/VulkanQueueService.h>
-#include <render/backend/vulkan/VulkanSamplerCache.h>
-#include <render/backend/vulkan/VulkanShaderCache.h>
-#include <render/backend/vulkan/VulkanSurfaceService.h>
-#include <render/backend/vulkan/VulkanSwapchainService.h>
-#include <render/backend/vulkan/VulkanUploadContextService.h>
+#include <graphics/Renderer.h>
+#include <graphics/vulkan/VulkanAllocatorService.h>
+#include <graphics/vulkan/VulkanBootstrapPolicy.h>
+#include <graphics/vulkan/VulkanBufferService.h>
+#include <graphics/vulkan/VulkanDeletionQueueService.h>
+#include <graphics/vulkan/VulkanDescriptorCache.h>
+#include <graphics/vulkan/VulkanDeviceService.h>
+#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/vulkan/VulkanFrameService.h>
+#include <graphics/vulkan/VulkanImageService.h>
+#include <graphics/vulkan/VulkanInstanceService.h>
+#include <graphics/vulkan/VulkanPhysicalDeviceService.h>
+#include <graphics/vulkan/VulkanPipelineCache.h>
+#include <graphics/vulkan/VulkanQueueService.h>
+#include <graphics/vulkan/VulkanSamplerCache.h>
+#include <graphics/vulkan/VulkanShaderCache.h>
+#include <graphics/vulkan/VulkanSurfaceService.h>
+#include <graphics/vulkan/VulkanSwapchainService.h>
+#include <graphics/vulkan/VulkanUploadContextService.h>
 #include <assets/texture/TextureCache.h>
 #include <render/features/SpriteFeature.h>
 #include <render/SpriteRenderSystem.h>
@@ -39,7 +39,7 @@
 #include <window/WindowTypes.h>
 #include <physics/2d/PhysicsSetup2D.h>
 #include <world/World.h>
-#include <world/WorldSetup.h>
+#include <world/World2DSetup.h>
 #include <world/entity/EntityBatch.h>
 #include <vulkan/vulkan.h>
 
@@ -198,13 +198,13 @@ int main()
     // =========================================================================
     // World — transforms, hierarchy, and physics
     //
-    // WorldSetup::Setup2D registers World2d as a service and installs
+    // World2DSetup::Setup2D registers World2d as a service and installs
     // TransformPropagationSystem in the Fixed lane. That system walks the
     // transform hierarchy each fixed step and writes world-space positions
     // into the WorldTransforms batch, which is what Render reads.
     // =========================================================================
     SystemHost systems;
-    WorldSetup::Setup2D(services, systems);
+    World2DSetup::Setup2D(services, systems);
     PhysicsSetup2D::Setup(services, systems);
     auto& world = services.Get<World2d>();
 

@@ -12,14 +12,14 @@ sprite batching) and `TilemapRenderFeature` (tilemap layer rendering).
 ## Location
 
 ```
-engine/include/render/Renderer.h
-engine/include/render/features/SpriteFeature.h
-engine/include/render/features/TilemapRenderFeature.h
-engine/include/render/features/TilemapRenderState.h
+Sencha.Core/include/graphics/Renderer.h
+Sencha.2D/include/render/features/SpriteFeature.h
+Sencha.2D/include/render/features/TilemapRenderFeature.h
+Sencha.2D/include/render/features/TilemapRenderState.h
 ```
 
 ```cpp
-#include <render/Renderer.h>
+#include <graphics/Renderer.h>
 #include <render/features/SpriteFeature.h>
 #include <render/features/TilemapRenderFeature.h>
 #include <render/features/TilemapRenderState.h>

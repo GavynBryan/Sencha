@@ -4,6 +4,7 @@
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/World.h>
+#include <world/World2d.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <transform/TransformPropagationSystem.h>

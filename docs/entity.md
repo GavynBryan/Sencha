@@ -12,12 +12,12 @@ hierarchy leaves-first.
 ## Location
 
 ```
-engine/include/world/entity/EntityKey.h
-engine/include/world/entity/EntityRecord.h
-engine/include/world/entity/EntityRegistry.h
-engine/include/world/entity/IsEntity.h
-engine/include/world/entity/EntityBatch.h
-engine/src/world/entity/EntityRegistry.cpp
+Sencha.Core/include/world/entity/EntityKey.h
+Sencha.Core/include/world/entity/EntityRecord.h
+Sencha.Core/include/world/entity/EntityRegistry.h
+Sencha.Core/include/world/entity/IsEntity.h
+Sencha.Core/include/world/entity/EntityBatch.h
+Sencha.Core/src/world/entity/EntityRegistry.cpp
 ```
 
 ```cpp
