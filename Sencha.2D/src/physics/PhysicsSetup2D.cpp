@@ -1,9 +1,9 @@
-#include <physics/2d/PhysicsSetup2D.h>
+#include <physics/PhysicsSetup2D.h>
 
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
-#include <physics/2d/RigidBodyResolutionSystem2D.h>
-#include <physics/2d/RigidBodySyncSystem2D.h>
+#include <physics/RigidBodyResolutionSystem2D.h>
+#include <physics/RigidBodySyncSystem2D.h>
 #include <world/World2d.h>
 #include <transform/TransformPropagationSystem.h>
 

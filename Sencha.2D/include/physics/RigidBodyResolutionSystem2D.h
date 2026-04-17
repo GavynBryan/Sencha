@@ -1,8 +1,7 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
-#include <physics/2d/RigidBody2D.h>
+#include <physics/RigidBody2D.h>
 #include <transform/TransformStore.h>
 
 class PhysicsDomain2D;
@@ -29,12 +28,12 @@ class RigidBodyResolutionSystem2D
 public:
     RigidBodyResolutionSystem2D(TransformStore<Transform2f>& transforms,
                                 PhysicsDomain2D&            physics,
-                                DataBatch<RigidBody2D>&     bodies);
+                                RigidBodyStore&             bodies);
 
     void Tick(float fixedDt);
 
 private:
     TransformStore<Transform2f>& Transforms;
     PhysicsDomain2D&            Physics;
-    DataBatch<RigidBody2D>&     Bodies;
+    RigidBodyStore&             Bodies;
 };

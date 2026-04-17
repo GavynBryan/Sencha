@@ -1,9 +1,8 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
 #include <math/geometry/2d/Transform2d.h>
-#include <physics/2d/PhysicsDomain2D.h>
-#include <physics/2d/RigidBody2D.h>
+#include <physics/PhysicsDomain2D.h>
+#include <physics/RigidBody2D.h>
 #include <sprite/SpriteComponent.h>
 #include <world/World.h>
 
@@ -18,9 +17,10 @@ class World2d : public World<Transform2f>
 public:
 	explicit World2d(const PhysicsConfig2D& physicsConfig = {})
 		: Physics(physicsConfig)
+		, Bodies(Physics)
 	{}
 
 	PhysicsDomain2D        Physics;
-	DataBatch<RigidBody2D> Bodies;
+	RigidBodyStore         Bodies;
 	SpriteStore            Sprites;
 };

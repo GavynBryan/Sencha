@@ -4,8 +4,8 @@
 #include <input/SdlInputSystem.h>
 
 PlayerSystem::PlayerSystem(SdlInputSystem&         input,
-                           EntityBatch<Player>&    players,
-                           DataBatch<RigidBody2D>& bodies,
+                           std::vector<Player>&    players,
+                           RigidBodyStore&         bodies,
                            TransformStore<Transform2f>& transforms,
                            const Actions&          actions)
     : Input(input)
@@ -49,7 +49,7 @@ void PlayerSystem::Update(float /*dt*/)
     if (!hasMovement && !hasEyeMovement)
         return;
 
-    for (auto& player : Players.GetItems())
+    for (auto& player : Players)
     {
         if (hasMovement)
         {

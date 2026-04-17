@@ -1,10 +1,9 @@
 #pragma once
 
 #include <core/service/IService.h>
+#include <entity/EntityRegistry.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/entity/EntityKey.h>
-#include <world/entity/EntityRegistry.h>
 #include <transform/TransformSpace.h>
 
 //=============================================================================
@@ -45,7 +44,7 @@ public:
 	// Destroy an entity and all of its transform-hierarchy descendants,
 	// leaves first. Convenience wrapper — passes Domain.Hierarchy so callers
 	// don't have to.
-	void DestroySubtree(EntityKey root)
+	void DestroySubtree(EntityHandle root)
 	{
 		Entities.DestroySubtree(root, Domain.Hierarchy);
 	}

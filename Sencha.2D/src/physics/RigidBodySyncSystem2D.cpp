@@ -1,11 +1,11 @@
-#include <physics/2d/RigidBodySyncSystem2D.h>
+#include <physics/RigidBodySyncSystem2D.h>
 
 #include <math/geometry/2d/Aabb2d.h>
-#include <physics/2d/PhysicsDomain2D.h>
+#include <physics/PhysicsDomain2D.h>
 
 RigidBodySyncSystem2D::RigidBodySyncSystem2D(TransformStore<Transform2f>& transforms,
                                              PhysicsDomain2D&            physics,
-                                             DataBatch<RigidBody2D>&     bodies)
+                                             RigidBodyStore&             bodies)
     : Transforms(transforms)
     , Physics(physics)
     , Bodies(bodies)
@@ -13,9 +13,14 @@ RigidBodySyncSystem2D::RigidBodySyncSystem2D(TransformStore<Transform2f>& transf
 
 void RigidBodySyncSystem2D::Tick(float /*fixedDt*/)
 {
-    for (RigidBody2D& body : Bodies.GetItems())
+    const std::vector<Id>& owners = Bodies.GetOwners();
+    std::span<RigidBody2D> bodies = Bodies.GetItems();
+
+    for (size_t i = 0; i < bodies.size(); ++i)
     {
-        const Transform2f* world = Transforms.TryGetWorld(body.Entity);
+        RigidBody2D& body = bodies[i];
+        const EntityHandle entity{ owners[i], 0 };
+        const Transform2f* world = Transforms.TryGetWorld(entity);
         if (!world) continue;
 
         const Vec2d scaledHalf = {
@@ -29,7 +34,8 @@ void RigidBodySyncSystem2D::Tick(float /*fixedDt*/)
 
         const Aabb2d worldBounds = Aabb2d::FromCenterHalfExtent(center, scaledHalf);
         body.Shape.WorldBounds = worldBounds;
-        Physics.UpdateBounds(body.DomainHandle, worldBounds);
+        Bodies.EnsureDomainRegistration(entity, body);
+        Physics.UpdateBounds(entity, worldBounds);
     }
 
     Physics.RebuildTree();

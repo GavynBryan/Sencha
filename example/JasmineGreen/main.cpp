@@ -37,11 +37,10 @@
 #include <window/SdlWindowService.h>
 #include <window/WindowCreateInfo.h>
 #include <window/WindowTypes.h>
-#include <physics/2d/PhysicsSetup2D.h>
+#include <physics/PhysicsSetup2D.h>
 #include <world/World.h>
 #include <world/World2DSetup.h>
 #include <world/World2d.h>
-#include <world/entity/EntityBatch.h>
 #include <vulkan/vulkan.h>
 
 #include "Player.h"
@@ -50,6 +49,7 @@
 #include <fstream>
 #include <span>
 #include <sstream>
+#include <vector>
 #include <chrono>
 #include <cstdio>
 
@@ -212,21 +212,22 @@ int main()
     // =========================================================================
     // Player entity
     //
-    // EntityBatch<Player> is the contiguous storage for all Player instances.
-    // Emplace constructs the Player in-place, registers it with the
-    // EntityRegistry, and returns an EntityKey for future lookup or destruction.
+    // Player storage is ordinary dense component storage. EntityRegistry owns
+    // handle liveness; component stores are SparseSet-backed and keyed by those
+    // handles.
     //
     // The player spawns at the center of the window.
     // =========================================================================
-    // =========================================================================
-    EntityBatch<Player> players(world.Entities);
+    std::vector<Player> players;
+    players.reserve(1);
 
-    const EntityKey playerKey = players.Emplace(
-        EntityHandle{ 1, 1 },
-        EntityHandle{ 2, 1 },
+    const EntityHandle playerBody = world.Entities.Create();
+    const EntityHandle playerEye = world.Entities.Create();
+    players.emplace_back(
+        playerBody,
+        playerEye,
         world.Domain,
         Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
-        world.Physics,
         world.Bodies,
         world.Sprites,
         whitePixel

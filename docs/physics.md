@@ -9,19 +9,19 @@ The 2D physics layer provides AABB collision detection, spatial queries, and mov
 ## Location
 
 ```
-Sencha.2D/include/physics/2d/Collider2D.h
-Sencha.2D/include/physics/2d/PhysicsDomain2D.h
-Sencha.2D/include/physics/2d/ColliderSyncSystem2D.h
-Sencha.2D/include/physics/2d/PhysicsSetup2D.h
-Sencha.2D/src/physics/2d/PhysicsDomain2D.cpp
-Sencha.2D/src/physics/2d/ColliderSyncSystem2D.cpp
-Sencha.2D/src/physics/2d/PhysicsSetup2D.cpp
+Sencha.2D/include/physics/Collider2D.h
+Sencha.2D/include/physics/PhysicsDomain2D.h
+Sencha.2D/include/physics/ColliderSyncSystem2D.h
+Sencha.2D/include/physics/PhysicsSetup2D.h
+Sencha.2D/src/physics/PhysicsDomain2D.cpp
+Sencha.2D/src/physics/ColliderSyncSystem2D.cpp
+Sencha.2D/src/physics/PhysicsSetup2D.cpp
 ```
 
 ```cpp
-#include <physics/2d/PhysicsDomain2D.h>
-#include <physics/2d/ColliderSyncSystem2D.h>
-#include <physics/2d/PhysicsSetup2D.h>
+#include <physics/PhysicsDomain2D.h>
+#include <physics/ColliderSyncSystem2D.h>
+#include <physics/PhysicsSetup2D.h>
 ```
 
 ---
