@@ -48,6 +48,8 @@
 #include <fstream>
 #include <span>
 #include <sstream>
+#include <chrono>
+#include <cstdio>
 
 
 static std::string ReadTextFile(const char* path)
@@ -224,11 +226,12 @@ int main()
 
     sprites->ReservePending(100000);
 
-    for (int i = 0; i < 50000; ++i)
+    for (int i = 0; i < 40000; ++i)
     {
+        const float spacing = static_cast<float>(i) * 64.0f;
         const EntityKey playerKey = players.Emplace(
             world.Domain,
-            Transform2f{ Vec2d{640.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
+            Transform2f{ Vec2d{spacing, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
             spriteComponents,
             whitePixel
         );
@@ -282,22 +285,42 @@ int main()
     // Press Escape to quit. Window close events are not yet forwarded through
     // the input pipeline — that will be addressed in a future engine update.
     // =========================================================================
+    using Clock = std::chrono::steady_clock;
+    using Ms = std::chrono::duration<double, std::milli>;
+    int frameCount = 0;
+    double tFrame = 0, tFixed = 0, tRender = 0, tDraw = 0;
+
     while (!playerSystem.WantsQuit() && !inputSystem.IsQuitRequested())
     {
         const FrameClock clock = time.Advance();
 
-        // Process SDL events and drive gameplay.
+        auto t0 = Clock::now();
         systems.RunFrame(clock.Dt);
-
-        // Propagate world transforms: Body.World() and Eye.World() are now
-        // up to date for this frame's movement.
+        auto t1 = Clock::now();
         systems.RunFixed(clock.Dt);
+        auto t2 = Clock::now();
 
-        // Submit sprite draw calls, then present.
-        scratch.BeginFrame();
+        const WindowExtent extent = windows.GetExtent(windows.GetPrimaryWindowId());
+        if (extent.Width == 0 || extent.Height == 0)
+            continue;
+
         systems.RunRender(1.0f);
+        auto t3 = Clock::now();
 
         const auto drawStatus = renderer.DrawFrame();
+        auto t4 = Clock::now();
+
+        tFrame  += Ms(t1 - t0).count();
+        tFixed  += Ms(t2 - t1).count();
+        tRender += Ms(t3 - t2).count();
+        tDraw   += Ms(t4 - t3).count();
+        if (++frameCount == 120)
+        {
+            std::printf("avg over 120 frames  frame=%.2fms  fixed=%.2fms  render=%.2fms  draw=%.2fms\n",
+                tFrame/120, tFixed/120, tRender/120, tDraw/120);
+            tFrame = tFixed = tRender = tDraw = 0;
+            frameCount = 0;
+        }
         if (drawStatus == Renderer::DrawStatus::SwapchainOutOfDate)
         {
             swapchain.Recreate(windows.GetExtent(windows.GetPrimaryWindowId()));

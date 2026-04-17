@@ -18,9 +18,8 @@
 #include <render/backend/vulkan/VulkanPipelineCache.h>
 #include <render/backend/vulkan/VulkanShaderCache.h>
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
+#include <vector>
 
 void SpriteFeature::Setup(const RendererServices& services)
 {
@@ -101,10 +100,10 @@ void SpriteFeature::Teardown()
     Valid = false;
 }
 
-void SpriteFeature::Submit(const Sprite& sprite)
+void SpriteFeature::SubmitInstance(const GpuInstance& instance)
 {
     if (!Valid) return;
-    Pending.push_back(sprite);
+    Pending.push_back(instance);
 }
 
 void SpriteFeature::ReservePending(size_t count)
@@ -171,10 +170,6 @@ void SpriteFeature::OnDraw(const FrameContext& frame)
         return;
     }
 
-    // Stable-sort by SortKey; equal keys preserve submission order.
-    std::stable_sort(Pending.begin(), Pending.end(),
-        [](const Sprite& a, const Sprite& b) { return a.SortKey < b.SortKey; });
-
     // Allocate a frame-UBO slot and write InvViewport.
     const VulkanFrameScratch::Allocation uboAlloc =
         Scratch->AllocateUniform(sizeof(FrameUbo));
@@ -192,8 +187,10 @@ void SpriteFeature::OnDraw(const FrameContext& frame)
     std::memcpy(uboAlloc.Mapped, &ubo, sizeof(ubo));
 
     // Allocate the instance vertex buffer.
+    // Everything before SortKey is the GPU-visible portion of GpuInstance.
+    static constexpr VkDeviceSize kGpuInstanceSize = offsetof(GpuInstance, SortKey);
     const VkDeviceSize instanceBytes =
-        sizeof(GpuInstance) * static_cast<VkDeviceSize>(Pending.size());
+        kGpuInstanceSize * static_cast<VkDeviceSize>(Pending.size());
     const VulkanFrameScratch::Allocation vboAlloc =
         Scratch->AllocateVertex(instanceBytes);
     if (!vboAlloc.IsValid())
@@ -202,23 +199,57 @@ void SpriteFeature::OnDraw(const FrameContext& frame)
         return;
     }
 
-    auto* gpu = static_cast<GpuInstance*>(vboAlloc.Mapped);
-    for (size_t i = 0; i < Pending.size(); ++i)
+    // Stable counting sort by SortKey -- O(n + range). Stack-allocated for
+    // small key ranges (<=256 distinct keys), heap-allocated otherwise.
     {
-        const Sprite& s = Pending[i];
-        GpuInstance&  g = gpu[i];
-        g.Center[0]      = s.CenterX;
-        g.Center[1]      = s.CenterY;
-        g.HalfExtents[0] = s.Width  * 0.5f;
-        g.HalfExtents[1] = s.Height * 0.5f;
-        g.UvMin[0]       = s.UvMinX;
-        g.UvMin[1]       = s.UvMinY;
-        g.UvMax[0]       = s.UvMaxX;
-        g.UvMax[1]       = s.UvMaxY;
-        g.Color          = s.Color;
-        g.TextureIndex   = s.Texture.IsValid() ? s.Texture.Value : 0u;
-        g.SinRot         = std::sin(s.Rotation);
-        g.CosRot         = std::cos(s.Rotation);
+        int32_t minKey = Pending[0].SortKey;
+        int32_t maxKey = Pending[0].SortKey;
+        for (size_t i = 1; i < Pending.size(); ++i)
+        {
+            const int32_t k = Pending[i].SortKey;
+            if (k < minKey) minKey = k;
+            if (k > maxKey) maxKey = k;
+        }
+
+        const auto range = static_cast<size_t>(
+            static_cast<int64_t>(maxKey) - static_cast<int64_t>(minKey) + 1);
+
+        uint32_t stackCounts[256] = {};
+        uint32_t stackOffsets[256];
+        std::vector<uint32_t> heapCounts;
+        std::vector<uint32_t> heapOffsets;
+
+        uint32_t* counts;
+        uint32_t* offsets;
+        if (range <= 256)
+        {
+            counts  = stackCounts;
+            offsets = stackOffsets;
+        }
+        else
+        {
+            heapCounts.resize(range, 0u);
+            heapOffsets.resize(range);
+            counts  = heapCounts.data();
+            offsets = heapOffsets.data();
+        }
+
+        for (const GpuInstance& g : Pending)
+            ++counts[static_cast<size_t>(g.SortKey - minKey)];
+
+        uint32_t running = 0;
+        for (size_t i = 0; i < range; ++i)
+        {
+            offsets[i] = running;
+            running += counts[i];
+        }
+
+        auto* dst = static_cast<uint8_t*>(vboAlloc.Mapped);
+        for (const GpuInstance& g : Pending)
+        {
+            const uint32_t slot = offsets[static_cast<size_t>(g.SortKey - minKey)]++;
+            std::memcpy(dst + slot * kGpuInstanceSize, &g, kGpuInstanceSize);
+        }
     }
 
     const VkBuffer ringBuffer = Buffers->GetBuffer(vboAlloc.Buffer);

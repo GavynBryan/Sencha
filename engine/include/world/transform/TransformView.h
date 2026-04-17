@@ -5,6 +5,7 @@
 #include <core/handle/ILifetimeOwner.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <world/transform/TransformPropagationOrderService.h>
 #include <cstdint>
 #include <cstring>
 #include <span>
@@ -33,9 +34,11 @@ public:
 
 	TransformView(
 		DataBatch<TTransform>& locals,
-		DataBatch<TTransform>& worlds)
+		DataBatch<TTransform>& worlds,
+		TransformPropagationOrderService& propagationOrder)
 		: Locals(locals)
 		, Worlds(worlds)
+		, PropagationOrder(&propagationOrder)
 	{
 	}
 
@@ -71,7 +74,14 @@ public:
 
 	TTransform* TryGetLocalMutable(DataBatchKey key)
 	{
-		return Locals.TryGet(key);
+		TTransform* ptr = Locals.TryGet(key);
+		if (ptr)
+		{
+			const uint32_t idx = Locals.IndexOf(key);
+			if (idx != UINT32_MAX)
+				PropagationOrder->MarkLocalDirty(idx);
+		}
+		return ptr;
 	}
 
 	// -- Bulk access (systems, renderers) ----------------------------------
@@ -93,6 +103,7 @@ protected:
 private:
 	DataBatch<TTransform>& Locals;
 	DataBatch<TTransform>& Worlds;
+	TransformPropagationOrderService* PropagationOrder = nullptr;
 };
 
 // -- Common aliases --------------------------------------------------------
