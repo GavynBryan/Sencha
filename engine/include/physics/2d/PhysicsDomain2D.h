@@ -4,6 +4,8 @@
 #include <math/spatial/QuadTree.h>
 #include <math/Vec.h>
 #include <physics/2d/Collider2D.h>
+#include <physics/2d/CollisionGrid2D.h>
+#include <physics/2d/NarrowPhase2D.h>
 #include <cstdint>
 #include <vector>
 
@@ -140,6 +142,27 @@ public:
     // contact surface flags.
     MoveResult2D MoveBox(const Aabb2d& box, Vec2d desiredDelta) const;
 
+    // MoveProjected: iterative velocity-projection resolver for circle movers.
+    // Intended for player characters that need smooth wall-sliding and corner
+    // gliding. Queries both the collision grid (if set) and the dynamic
+    // collider registry. Ghost edges on grid tile seams are suppressed
+    // automatically via neighbor solid checks.
+    //
+    // center       — current world-space center of the circle
+    // radius       — circle radius
+    // delta        — desired movement this frame
+    // exclude      — optional handle to skip (pass the mover's own handle if
+    //                it is registered in the domain)
+    //
+    // Returns ResolvedDelta = actual movement; Hits = surfaces contacted.
+    MoveResult2D MoveProjected(Vec2d center, float radius, Vec2d delta,
+                               PhysicsHandle2D exclude = {}) const;
+
+    // SetCollisionGrid: attach a static-geometry grid for MoveProjected to
+    // query. Passing nullptr detaches any existing grid. The domain does NOT
+    // take ownership — the caller must keep the grid alive.
+    void SetCollisionGrid(const CollisionGrid2D* grid);
+
 private:
     // -- Internal collider slot -----------------------------------------------
 
@@ -150,7 +173,7 @@ private:
         bool            Live = false; // false = slot is free
     };
 
-    // -- Broadphase ------------------------------------------------------------
+    // -- Broadphase (AABB path) -----------------------------------------------
 
     void GatherCandidates(const Aabb2d& box,
                           std::vector<uint32_t>& out) const;
@@ -160,6 +183,27 @@ private:
     float ResolveAxis(const Aabb2d& box, float delta, bool isVertical,
                       bool& hitPositive, bool& hitNegative) const;
 
+    // -- Circle narrow-phase (projected path) ---------------------------------
+
+    // Internal contact record: CircleContact from NarrowPhase2D plus the grid
+    // cell that produced it (both -1 for dynamic collider contacts).
+    struct DomainContact
+    {
+        CircleContact Base;
+        int GridCol = -1;
+        int GridRow = -1;
+    };
+
+    // Gather contacts from the collision grid into 'out'.
+    void GatherGridContacts(Vec2d center, float radius, Vec2d velocity,
+                            std::vector<DomainContact>& out) const;
+
+    // Gather contacts from the dynamic collider registry into 'out'.
+    // Entries matching 'exclude' are skipped.
+    void GatherDomainContacts(Vec2d center, float radius, Vec2d velocity,
+                              PhysicsHandle2D exclude,
+                              std::vector<DomainContact>& out) const;
+
     // -- Data -----------------------------------------------------------------
 
     std::vector<ColliderEntry> Entries;
@@ -167,6 +211,8 @@ private:
     uint32_t                   NextHandle = 1; // 0 is null
 
     QuadTree<uint32_t> Tree;
+
+    const CollisionGrid2D* CollGrid = nullptr;
 
     // Reusable scratch vectors for broadphase queries. Declared mutable so
     // const query methods (MoveBox, SweepBox, OverlapBox) can reuse them
