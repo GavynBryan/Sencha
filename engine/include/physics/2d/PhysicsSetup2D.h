@@ -9,17 +9,13 @@ class SystemHost;
 // Bootstrap helper for 2D physics systems. Call once during engine
 // initialisation, after WorldSetup::Setup2D.
 //
-// Wires:
-//   - ColliderSyncSystem2D as a system at phase 401
-//     (just after TransformPropagationSystem at PostUpdate=400, so world
-//      transforms are current before AABBs are computed)
+// Wires (all Fixed lane):
+//   TransformPropagationSystem  (registered by WorldSetup::Setup2D)
+//     -> RigidBodySyncSystem2D  (reads world transforms, updates domain bounds)
+//       -> RigidBodyResolutionSystem2D (applies movement, writes local transforms)
 //
-// PhysicsDomain2D is owned by World2d::Physics — not a standalone service.
-// Resolve it via serviceHost.Get<World2d>().Physics.
-//
-// Game-specific movement systems (motors, kinematic controllers, etc.) are not
-// provided by the engine. Add them from game code after calling Setup, using
-// World2d::Physics and SystemHost::Get<ColliderSyncSystem2D>().
+// PhysicsDomain2D and RigidBodyBatch2D are owned by World2d::Physics and
+// World2d::Bodies respectively. Resolve the world via serviceHost.Get<World2d>().
 //=============================================================================
 namespace PhysicsSetup2D {
 

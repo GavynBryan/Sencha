@@ -34,8 +34,8 @@ namespace WorldSetup {
 		World2d& world = GetOrAddWorld2d(serviceHost, physicsConfig);
 
 		// Fixed lane: TransformPropagationSystem has no dependencies.
-		// ColliderSyncSystem2D declares its ordering in PhysicsSetup2D::Setup(),
-		// after it is registered there.
+		// RigidBodySyncSystem2D and RigidBodyResolutionSystem2D declare their
+		// ordering in PhysicsSetup2D::Setup(), after they are registered there.
 		systemHost.Register<TransformPropagationSystem<Transform2f>>(
 			world.Domain.LocalTransforms,
 			world.Domain.WorldTransforms,

@@ -333,14 +333,15 @@ void PhysicsDomain2D::GatherDomainContacts(Vec2d center, float radius,
     }
 }
 
-MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) const
+MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta,
+                                       PhysicsHandle2D exclude) const
 {
     MoveResult2D result;
 
     // Resolve X first
     bool hitRight = false, hitLeft = false;
     float safeX = ResolveAxis(box, static_cast<float>(desiredDelta.X),
-                              /*isVertical=*/false, hitRight, hitLeft);
+                              /*isVertical=*/false, hitRight, hitLeft, exclude);
 
     // Shift box by safe X before resolving Y
     Aabb2d boxAfterX = Aabb2d::FromCenterHalfExtent(
@@ -350,7 +351,7 @@ MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) con
     // Resolve Y
     bool hitUp = false, hitDown = false;
     float safeY = ResolveAxis(boxAfterX, static_cast<float>(desiredDelta.Y),
-                              /*isVertical=*/true, hitUp, hitDown);
+                              /*isVertical=*/true, hitUp, hitDown, exclude);
 
     result.ResolvedDelta = { safeX, safeY };
     if (hitDown)              result.Hits |= HitFlags2D::Floor;
@@ -372,7 +373,8 @@ void PhysicsDomain2D::GatherCandidates(const Aabb2d& box,
 
 float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
                                    bool isVertical,
-                                   bool& hitPositive, bool& hitNegative) const
+                                   bool& hitPositive, bool& hitNegative,
+                                   PhysicsHandle2D exclude) const
 {
     if (std::abs(delta) < 1e-6f) return 0.0f;
 
@@ -401,6 +403,7 @@ float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
     {
         const ColliderEntry& entry = Entries[idx];
         if (!entry.Live || !entry.Shape.WorldBounds.IsValid()) continue;
+        if (exclude.IsValid() && entry.Handle == exclude) continue;
 
         const Aabb2d& s = entry.Shape.WorldBounds;
 

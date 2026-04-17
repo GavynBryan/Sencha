@@ -3,7 +3,9 @@
 #include <core/service/IService.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <core/batch/DataBatch.h>
 #include <physics/2d/PhysicsDomain2D.h>
+#include <physics/2d/RigidBody2D.h>
 #include <world/entity/EntityKey.h>
 #include <world/entity/EntityRegistry.h>
 #include <world/transform/TransformSpace.h>
@@ -72,7 +74,8 @@ public:
 		: Physics(physicsConfig)
 	{}
 
-	PhysicsDomain2D Physics;
+	PhysicsDomain2D        Physics;
+	DataBatch<RigidBody2D> Bodies;
 };
 
 using World3d = World<Transform3f>;

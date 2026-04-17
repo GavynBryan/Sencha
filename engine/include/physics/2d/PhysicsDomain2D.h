@@ -95,9 +95,8 @@ struct PhysicsHandle2D
 // slopes, and friction are explicitly out of scope for v0.
 //
 // Spatial partitioning uses a QuadTree broadphase. The tree is rebuilt from
-// scratch each frame (or after level geometry changes) by
-// ColliderSyncSystem2D. Queries gather candidates from the tree then perform
-// exact AABB tests.
+// scratch each fixed step by RigidBodySyncSystem2D. Queries gather candidates
+// from the tree then perform exact AABB tests.
 //=============================================================================
 class PhysicsDomain2D
 {
@@ -117,8 +116,8 @@ public:
     void            UpdateBounds(PhysicsHandle2D handle, const Aabb2d& worldBounds);
 
     // Rebuild the broadphase tree from the current collider state.
-    // Call once per frame after all UpdateBounds calls are complete
-    // (ColliderSyncSystem2D does this at the end of its Update).
+    // Call once per step after all UpdateBounds calls are complete
+    // (RigidBodySyncSystem2D does this at the end of its Tick).
     void RebuildTree();
 
     // -- Spatial queries ------------------------------------------------------
@@ -139,8 +138,10 @@ public:
 
     // MoveBox: move-and-slide. Resolves collisions axis-by-axis (X then Y)
     // against all registered colliders. Returns safe resolved delta and
-    // contact surface flags.
-    MoveResult2D MoveBox(const Aabb2d& box, Vec2d desiredDelta) const;
+    // contact surface flags. Pass the mover's own handle as 'exclude' to
+    // prevent self-collision.
+    MoveResult2D MoveBox(const Aabb2d& box, Vec2d desiredDelta,
+                         PhysicsHandle2D exclude = {}) const;
 
     // MoveProjected: iterative velocity-projection resolver for circle movers.
     // Intended for player characters that need smooth wall-sliding and corner
@@ -178,10 +179,9 @@ private:
     void GatherCandidates(const Aabb2d& box,
                           std::vector<uint32_t>& out) const;
 
-    // Single-axis depenetration. Returns safe travel distance along the axis.
-    // hitPositive / hitNegative: set true if stopped in that direction.
     float ResolveAxis(const Aabb2d& box, float delta, bool isVertical,
-                      bool& hitPositive, bool& hitNegative) const;
+                      bool& hitPositive, bool& hitNegative,
+                      PhysicsHandle2D exclude = {}) const;
 
     // -- Circle narrow-phase (projected path) ---------------------------------
 

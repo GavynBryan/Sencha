@@ -5,6 +5,8 @@
 #include <core/batch/DataBatchKey.h>
 #include <core/handle/DataBatchHandle.h>
 #include <math/geometry/2d/Transform2d.h>
+#include <physics/2d/Collider2D.h>
+#include <physics/2d/RigidBody2D.h>
 #include <render/components/SpriteComponent.h>
 #include <world/transform/TransformNode.h>
 #include <world/transform/TransformSpace.h>
@@ -12,31 +14,38 @@
 //=============================================================================
 // Player
 //
-// The playable character. Owns a Body transform that drives movement and
-// participates in the EntityRegistry. Also owns RAII handles to its sprites
-// in an external DataBatch<SpriteComponent> — when the Player is destroyed,
-// the handles auto-remove the sprites from the batch.
+// The playable character. Body is a TransformNode that drives movement and
+// participates in the EntityRegistry. Physics is a DataBatchHandle to a
+// RigidBody2D — when the Player is destroyed the handle removes the body
+// from the batch, which destructs the RigidBody2D and unregisters it from
+// PhysicsDomain2D automatically.
 //=============================================================================
 struct Player
 {
-    static constexpr float MoveSpeed          = 200.0f; // Pixels per second
-    static constexpr float CollisionHalfExtent = 24.0f; // Half of the 48px body
+    static constexpr float MoveSpeed           = 200.0f; // Pixels per second
+    static constexpr float CollisionHalfExtent = 24.0f;  // Half of the 48px body
 
-    TransformNode2d Body;
-    TransformNode2d Eye;
+    TransformNode2d                  Body;
+    DataBatchHandle<RigidBody2D>     Physics;
+    TransformNode2d                  Eye;
     DataBatchHandle<SpriteComponent> BodySprite;
     DataBatchHandle<SpriteComponent> EyeSprite;
 
     Player(TransformSpace2d& domain,
            Transform2f spawnTransform,
+           PhysicsDomain2D& physics,
+           DataBatch<RigidBody2D>& bodies,
            DataBatch<SpriteComponent>& sprites,
            TextureHandle texture)
         : Body(domain, spawnTransform)
+        , Physics(bodies.Emplace(physics, Body.TransformKey(),
+              Collider2D{ .HalfExtent = { CollisionHalfExtent, CollisionHalfExtent } }))
         , Eye(domain, Transform2f::Identity())
         , BodySprite(sprites.Emplace(domain))
         , EyeSprite(sprites.Emplace(domain))
     {
         Eye.SetParentByKey(Body.TransformKey());
+
         // Body sprite — 48x48 white quad
         if (SpriteComponent* s = sprites.TryGet(BodySprite))
         {
