@@ -1,122 +1,87 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformStore.h>
 #include <cstdint>
 #include <span>
-#include <vector>
 
 //=============================================================================
 // TransformPropagationSystem
 //
-// Derives world transforms from local transforms by walking a transform-domain
-// hierarchy. Operates on the TRANSFORM graph, not on any specific object model.
-//
-// Root entries: world = local.
-// Parented entries: world = parent_world * local.
-//
-// TTransform must provide:
-//   - static TTransform Identity()
-//   - TTransform operator*(const TTransform&) const
-//
-// Implementation notes
-// --------------------
-// Propagate() is a single linear sweep over a service-owned cached flat order.
-// Each entry carries resolved dense indices into the Locals and Worlds batches,
-// plus the parent's dense index in Worlds (or NullIndex for roots). The hot loop
-// does no hash lookups, no recursion, and no allocation.
-//
-// The service-owned cached order is rebuilt lazily when any of {hierarchy,
-// locals, worlds} report a changed version counter. Rebuild does a BFS from
-// hierarchy roots so that every child is emitted after its parent, which makes
-// the sweep a single forward pass. The BFS is iterative, so deep hierarchies
-// cannot blow the stack.
+// Derives world transforms from entity-owned local transforms by walking the
+// transform hierarchy in a cached parent-before-child order.
 //=============================================================================
 template <typename TTransform>
 class TransformPropagationSystem
 {
 public:
-	using TransformType = TTransform;
-	using HierarchyType = TransformHierarchyService;
-	using CacheType = TransformPropagationOrderService;
-	using PropagationEntry = typename CacheType::PropagationEntry;
+    using ComponentType = TransformComponent<TTransform>;
+    using PropagationEntry = TransformPropagationOrderService::PropagationEntry;
 
-	static constexpr uint32_t NullIndex = CacheType::NullIndex;
+    static constexpr uint32_t NullIndex = TransformPropagationOrderService::NullIndex;
 
-	TransformPropagationSystem(
-		DataBatch<TTransform>& locals,
-		DataBatch<TTransform>& worlds,
-		HierarchyType& hierarchy,
-		CacheType& cache)
-		: Locals(locals)
-		, Worlds(worlds)
-		, Hierarchy(hierarchy)
-		, Cache(cache)
-	{
-	}
+    TransformPropagationSystem(
+        TransformStore<TTransform>& transforms,
+        TransformHierarchyService& hierarchy,
+        TransformPropagationOrderService& cache)
+        : Transforms(transforms)
+        , Hierarchy(hierarchy)
+        , Cache(cache)
+    {
+    }
 
-	// Propagate can also be called manually (e.g., after spatial changes
-	// outside the normal update loop).
-	void Propagate()
-	{
-		Cache.MaybeRebuild(Hierarchy, Locals, Worlds);
+    void Propagate()
+    {
+        Cache.MaybeRebuild(Hierarchy, Transforms);
 
-		std::span<const PropagationEntry> order = Cache.GetOrder();
-		if (order.empty())
-			return;
+        std::span<const PropagationEntry> order = Cache.GetOrder();
+        if (order.empty())
+            return;
 
-		// Fast-exit: if no locals were dirtied since last propagation,
-		// no world transforms need updating.
-		if (Cache.IsAllClean())
-			return;
+        if (Cache.IsAllClean())
+            return;
 
-		std::span<const TTransform> localsSpan = Locals.GetItems();
-		std::span<TTransform> worldsSpan = Worlds.GetItems();
+        std::span<ComponentType> components = Transforms.GetItems();
+        DenseBitset& localDirty = Cache.GetLocalDirty();
+        DenseBitset& worldChanged = Cache.GetWorldChanged();
 
-		DenseBitset& localDirty   = Cache.GetLocalDirty();
-		DenseBitset& worldChanged = Cache.GetWorldChanged();
+        worldChanged.ClearAll();
 
-		// Clear WorldChanged at the start of this frame's sweep — children need
-		// to know which parents changed THIS frame, not last frame.
-		worldChanged.ClearAll();
+        for (const PropagationEntry& entry : order)
+        {
+            const bool localDirtyFlag = localDirty.Test(entry.TransformIndex);
+            const bool parentChanged =
+                entry.ParentTransformIndex != NullIndex
+                && worldChanged.Test(entry.ParentTransformIndex);
 
-		for (const PropagationEntry& entry : order)
-		{
-			const bool localDirtyFlag =
-				localDirty.Test(entry.LocalIndex);
-			const bool parentChanged =
-				entry.ParentWorldIndex != NullIndex &&
-				worldChanged.Test(entry.ParentWorldIndex);
+            if (!localDirtyFlag && !parentChanged)
+                continue;
 
-			if (!localDirtyFlag && !parentChanged)
-				continue;
+            ComponentType& component = components[entry.TransformIndex];
+            if (entry.ParentTransformIndex == NullIndex)
+            {
+                component.World = component.Local;
+            }
+            else
+            {
+                component.World =
+                    components[entry.ParentTransformIndex].World * component.Local;
+            }
 
-			const TTransform& local = localsSpan[entry.LocalIndex];
-			if (entry.ParentWorldIndex == NullIndex)
-			{
-				worldsSpan[entry.WorldIndex] = local;
-			}
-			else
-			{
-				worldsSpan[entry.WorldIndex] =
-					worldsSpan[entry.ParentWorldIndex] * local;
-			}
-			worldChanged.Set(entry.WorldIndex);
-		}
+            worldChanged.Set(entry.TransformIndex);
+        }
 
-		// Locals have been consumed — clear for next frame.
-		localDirty.ClearAll();
-	}
+        localDirty.ClearAll();
+    }
 
-	void Tick(float /*fixedDt*/)
-	{
-		Propagate();
-	}
+    void Tick(float /*fixedDt*/)
+    {
+        Propagate();
+    }
 
 private:
-	DataBatch<TTransform>& Locals;
-	DataBatch<TTransform>& Worlds;
-	HierarchyType& Hierarchy;
-	CacheType& Cache;
+    TransformStore<TTransform>& Transforms;
+    TransformHierarchyService& Hierarchy;
+    TransformPropagationOrderService& Cache;
 };

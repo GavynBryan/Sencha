@@ -5,7 +5,7 @@
 #include <physics/2d/PhysicsDomain2D.h>
 
 RigidBodyResolutionSystem2D::RigidBodyResolutionSystem2D(
-    TransformView<Transform2f>& transforms,
+    TransformStore<Transform2f>& transforms,
     PhysicsDomain2D&            physics,
     DataBatch<RigidBody2D>&     bodies)
     : Transforms(transforms)

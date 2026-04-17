@@ -1,189 +1,208 @@
 #pragma once
 
-#include <core/batch/DataBatchKey.h>
+#include <entity/EntityHandle.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 //=============================================================================
 // TransformHierarchyService
 //
-// Owns a transform-domain graph: spatial parent/child relationships keyed by
-// stable DataBatchKey. This is the TRANSFORM graph, not the node graph.
-//
-// Any spatial participant (scene node, tilemap, camera anchor, etc.) can
-// register here as long as it has a DataBatchKey from the matching local
-// transform service. The hierarchy stores non-owning keys only; transform
-// lifetime is managed by whoever owns the DataBatchHandle.
-//
+// Owns spatial parent/child relationships for entities with transform
+// components. The hierarchy is keyed by EntityHandle rather than transform-slot
+// keys; transform storage is now an implementation detail of TransformStore.
 //=============================================================================
 class TransformHierarchyService
 {
 public:
-	// -- Relationship mutation -----------------------------------------------
+    // -- Relationship mutation -----------------------------------------------
 
-	// Set `child` as a spatial child of `parent`. Removes any prior parent.
-	void SetParent(DataBatchKey child, DataBatchKey parent);
+    void SetParent(EntityHandle child, EntityHandle parent);
+    void ClearParent(EntityHandle child);
 
-	// Remove `child` from its current parent. No-op if unparented.
-	void ClearParent(DataBatchKey child);
+    void Register(EntityHandle entity);
+    void Unregister(EntityHandle entity);
 
-	// Register a key as a known participant. Appears in GetRoots() if
-	// it has no parent.
-	void Register(DataBatchKey key);
+    // -- Queries --------------------------------------------------------------
 
-	// Remove a key from the hierarchy entirely.
-	// You MUST clear or unregister all children before unregistering a parent.
-	// Call this when a participant is destroyed.
-	void Unregister(DataBatchKey key);
+    EntityHandle GetParent(EntityHandle child) const;
 
-	// -- Queries ------------------------------------------------------------
+    bool HasParent(EntityHandle child) const;
 
-	DataBatchKey GetParent(DataBatchKey child) const;
+    const std::vector<EntityHandle>& GetChildren(EntityHandle parent) const;
 
-	bool HasParent(DataBatchKey child) const;
+    bool HasChildren(EntityHandle parent) const;
 
-	const std::vector<uint32_t>& GetChildren(DataBatchKey parent) const;
+    std::vector<EntityHandle> GetRoots() const;
 
-	bool HasChildren(DataBatchKey parent) const;
+    bool IsRegistered(EntityHandle entity) const;
 
-	std::vector<DataBatchKey> GetRoots() const;
+    size_t Count() const;
 
-	bool IsRegistered(DataBatchKey key) const;
-
-	size_t Count() const;
-
-	// Monotonically-increasing version counter. Incremented on any structural
-	// change (SetParent, ClearParent, Register, Unregister). Consumers that
-	// cache a derived propagation order use this to detect when their cache
-	// is stale without paying a hash lookup per item.
-	uint64_t GetVersion() const { return VersionCounter; }
+    uint64_t GetVersion() const { return VersionCounter; }
 
 private:
-	void EnsureRegistered(DataBatchKey key);
+    static bool SameEntity(EntityHandle a, EntityHandle b)
+    {
+        return a.Id == b.Id && a.Generation == b.Generation;
+    }
 
-	// Non-owning: stores raw key values, not LifetimeHandles.
-	std::unordered_map<uint32_t, uint32_t> ChildToParent;
-	std::unordered_map<uint32_t, std::vector<uint32_t>> ParentToChildren;
-	std::unordered_set<uint32_t> Registered;
-	uint64_t VersionCounter = 0;
+    void EnsureRegistered(EntityHandle entity);
+    bool WouldCreateCycle(EntityHandle child, EntityHandle parent) const;
+
+    std::unordered_map<EntityId, EntityHandle> Registered;
+    std::unordered_map<EntityId, EntityHandle> ChildToParent;
+    std::unordered_map<EntityId, std::vector<EntityHandle>> ParentToChildren;
+    uint64_t VersionCounter = 0;
 };
 
-inline void TransformHierarchyService::SetParent(DataBatchKey child, DataBatchKey parent)
+inline void TransformHierarchyService::SetParent(EntityHandle child, EntityHandle parent)
 {
-	assert(child.Value != 0 && "Cannot parent a null key.");
-	assert(parent.Value != 0 && "Cannot parent under a null key.");
-	assert(child.Value != parent.Value && "Cannot parent to self.");
+    assert(child.IsValid() && "Cannot parent a null entity.");
+    assert(parent.IsValid() && "Cannot parent under a null entity.");
+    assert(child.Id != parent.Id && "Cannot parent to self.");
+    assert(!WouldCreateCycle(child, parent) && "Cannot create a transform hierarchy cycle.");
 
-	ClearParent(child);
+    ClearParent(child);
 
-	ChildToParent[child.Value] = parent.Value;
-	ParentToChildren[parent.Value].push_back(child.Value);
-	EnsureRegistered(child);
-	EnsureRegistered(parent);
-	++VersionCounter;
+    ChildToParent[child.Id] = parent;
+    ParentToChildren[parent.Id].push_back(child);
+    EnsureRegistered(child);
+    EnsureRegistered(parent);
+    ++VersionCounter;
 }
 
-inline void TransformHierarchyService::ClearParent(DataBatchKey child)
+inline void TransformHierarchyService::ClearParent(EntityHandle child)
 {
-	auto it = ChildToParent.find(child.Value);
-	if (it == ChildToParent.end()) return;
+    auto it = ChildToParent.find(child.Id);
+    if (it == ChildToParent.end())
+        return;
 
-	uint32_t parentKey = it->second;
-	ChildToParent.erase(it);
+    const EntityHandle parent = it->second;
+    ChildToParent.erase(it);
 
-	auto pit = ParentToChildren.find(parentKey);
-	if (pit != ParentToChildren.end())
-	{
-		auto& children = pit->second;
-		children.erase(
-			std::remove(children.begin(), children.end(), child.Value),
-			children.end());
-		if (children.empty())
-			ParentToChildren.erase(pit);
-	}
-	++VersionCounter;
+    auto pit = ParentToChildren.find(parent.Id);
+    if (pit != ParentToChildren.end())
+    {
+        auto& children = pit->second;
+        children.erase(
+            std::remove_if(children.begin(), children.end(), [&](EntityHandle candidate)
+            {
+                return candidate.Id == child.Id;
+            }),
+            children.end());
+
+        if (children.empty())
+            ParentToChildren.erase(pit);
+    }
+
+    ++VersionCounter;
 }
 
-inline void TransformHierarchyService::Register(DataBatchKey key)
+inline void TransformHierarchyService::Register(EntityHandle entity)
 {
-	assert(key.Value != 0 && "Cannot register a null key.");
-	EnsureRegistered(key);
+    assert(entity.IsValid() && "Cannot register a null entity.");
+    EnsureRegistered(entity);
 }
 
-inline void TransformHierarchyService::Unregister(DataBatchKey key)
+inline void TransformHierarchyService::Unregister(EntityHandle entity)
 {
-	assert(!HasChildren(key) && "Cannot unregister a parent with active children. Tear down children first.");
-	ClearParent(key);
+    if (!entity.IsValid())
+        return;
 
-	auto cit = ParentToChildren.find(key.Value);
-	if (cit != ParentToChildren.end())
-	{
-		for (uint32_t childKey : cit->second)
-		{
-			ChildToParent.erase(childKey);
-		}
-		ParentToChildren.erase(cit);
-	}
+    ClearParent(entity);
 
-	Registered.erase(key.Value);
-	++VersionCounter;
+    auto childrenIt = ParentToChildren.find(entity.Id);
+    if (childrenIt != ParentToChildren.end())
+    {
+        for (EntityHandle child : childrenIt->second)
+            ChildToParent.erase(child.Id);
+        ParentToChildren.erase(childrenIt);
+    }
+
+    if (Registered.erase(entity.Id) != 0)
+        ++VersionCounter;
 }
 
-inline DataBatchKey TransformHierarchyService::GetParent(DataBatchKey child) const
+inline EntityHandle TransformHierarchyService::GetParent(EntityHandle child) const
 {
-	auto it = ChildToParent.find(child.Value);
-	if (it == ChildToParent.end()) return DataBatchKey{};
-	return DataBatchKey{ it->second };
+    auto it = ChildToParent.find(child.Id);
+    return it == ChildToParent.end() ? EntityHandle{} : it->second;
 }
 
-inline bool TransformHierarchyService::HasParent(DataBatchKey child) const
+inline bool TransformHierarchyService::HasParent(EntityHandle child) const
 {
-	return ChildToParent.contains(child.Value);
+    return ChildToParent.contains(child.Id);
 }
 
-inline const std::vector<uint32_t>& TransformHierarchyService::GetChildren(DataBatchKey parent) const
+inline const std::vector<EntityHandle>& TransformHierarchyService::GetChildren(EntityHandle parent) const
 {
-	static const std::vector<uint32_t> Empty;
-	auto it = ParentToChildren.find(parent.Value);
-	if (it == ParentToChildren.end()) return Empty;
-	return it->second;
+    static const std::vector<EntityHandle> Empty;
+    auto it = ParentToChildren.find(parent.Id);
+    return it == ParentToChildren.end() ? Empty : it->second;
 }
 
-inline bool TransformHierarchyService::HasChildren(DataBatchKey parent) const
+inline bool TransformHierarchyService::HasChildren(EntityHandle parent) const
 {
-	auto it = ParentToChildren.find(parent.Value);
-	return it != ParentToChildren.end() && !it->second.empty();
+    auto it = ParentToChildren.find(parent.Id);
+    return it != ParentToChildren.end() && !it->second.empty();
 }
 
-inline std::vector<DataBatchKey> TransformHierarchyService::GetRoots() const
+inline std::vector<EntityHandle> TransformHierarchyService::GetRoots() const
 {
-	std::vector<DataBatchKey> roots;
-	for (uint32_t key : Registered)
-	{
-		if (!ChildToParent.contains(key))
-			roots.push_back(DataBatchKey{ key });
-	}
-	return roots;
+    std::vector<EntityHandle> roots;
+    roots.reserve(Registered.size());
+
+    for (const auto& [id, entity] : Registered)
+    {
+        if (!ChildToParent.contains(id))
+            roots.push_back(entity);
+    }
+
+    return roots;
 }
 
-inline bool TransformHierarchyService::IsRegistered(DataBatchKey key) const
+inline bool TransformHierarchyService::IsRegistered(EntityHandle entity) const
 {
-	return Registered.contains(key.Value);
+    auto it = Registered.find(entity.Id);
+    return it != Registered.end() && SameEntity(it->second, entity);
 }
 
 inline size_t TransformHierarchyService::Count() const
 {
-	return Registered.size();
+    return Registered.size();
 }
 
-inline void TransformHierarchyService::EnsureRegistered(DataBatchKey key)
+inline void TransformHierarchyService::EnsureRegistered(EntityHandle entity)
 {
-	auto result = Registered.insert(key.Value);
-	if (result.second)
-		++VersionCounter;
+    auto [it, inserted] = Registered.emplace(entity.Id, entity);
+    if (!inserted && !SameEntity(it->second, entity))
+    {
+        it->second = entity;
+        ++VersionCounter;
+    }
+
+    if (inserted)
+        ++VersionCounter;
+}
+
+inline bool TransformHierarchyService::WouldCreateCycle(EntityHandle child, EntityHandle parent) const
+{
+    EntityHandle cursor = parent;
+    while (cursor.IsValid())
+    {
+        if (cursor.Id == child.Id)
+            return true;
+
+        auto it = ChildToParent.find(cursor.Id);
+        if (it == ChildToParent.end())
+            return false;
+
+        cursor = it->second;
+    }
+
+    return false;
 }

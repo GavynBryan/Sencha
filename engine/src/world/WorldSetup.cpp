@@ -37,8 +37,7 @@ namespace WorldSetup {
 		// RigidBodySyncSystem2D and RigidBodyResolutionSystem2D declare their
 		// ordering in PhysicsSetup2D::Setup(), after they are registered there.
 		systemHost.Register<TransformPropagationSystem<Transform2f>>(
-			world.Domain.LocalTransforms,
-			world.Domain.WorldTransforms,
+			world.Domain.Transforms,
 			world.Domain.Hierarchy,
 			world.Domain.PropagationOrder);
 	}
@@ -48,8 +47,7 @@ namespace WorldSetup {
 		World3d& world = GetOrAddWorld3d(serviceHost);
 
 		systemHost.Register<TransformPropagationSystem<Transform3f>>(
-			world.Domain.LocalTransforms,
-			world.Domain.WorldTransforms,
+			world.Domain.Transforms,
 			world.Domain.Hierarchy,
 			world.Domain.PropagationOrder);
 	}

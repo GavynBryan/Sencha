@@ -55,7 +55,7 @@ public:
 
 	// -- Gameplay-facing shortcuts (forward into Domain) -------------------
 
-	TransformView<TTransform>& Transforms;
+	TransformStore<TTransform>& Transforms;
 	TransformHierarchyService& TransformHierarchy;
 };
 

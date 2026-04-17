@@ -7,7 +7,7 @@
 #include <world/transform/TransformSpace.h>
 #include <world/transform/TransformHierarchyRegistration.h>
 #include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformView.h>
+#include <world/transform/TransformStore.h>
 
 //=============================================================================
 // TransformNode<TTransform>
@@ -86,7 +86,7 @@ public:
 private:
 	DataBatchHandle<TTransform>  Handle;
 	TransformHierarchyRegistration Registration;
-	TransformView<TTransform>*  View;
+	TransformStore<TTransform>*  View;
 };
 
 // -- Common aliases --------------------------------------------------------

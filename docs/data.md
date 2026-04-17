@@ -71,7 +71,7 @@ DataBatch<Particle> particles;
 DataBatchHandle<Particle> handle = particles.Emplace(x, y, z);
 
 // EmplaceUnowned emplace without creating a handle. Caller is responsible
-// for removal. Useful inside TransformView or similar dual-batch wrappers.
+// for removal. Useful inside TransformStore or similar dual-batch wrappers.
 DataBatchKey key = particles.EmplaceUnowned(x, y, z);
 
 // ---- Block emplacement ---------------------------------------------------
@@ -230,7 +230,7 @@ public:
 
 `EmplaceUnowned` returns a raw key with no handle.  Use it inside owner
 objects that manage their own lifetime accounting (like `EntityStore` above or
-`TransformView`) and do not want an extra RAII level.
+`TransformStore`) and do not want an extra RAII level.
 
 ```cpp
 DataBatchKey key = particles.EmplaceUnowned(x, y, z);
@@ -274,7 +274,7 @@ by a handle).  Use `EmplaceUnowned` only inside types that implement
 
 **`EmplaceAtKey` requires the target slot to be free.**  It throws
 `std::invalid_argument` if the slot is occupied or the generation does not
-match.  It is intended for paired stores (like `TransformView`) that must
+match.  It is intended for paired stores (like `TransformStore`) that must
 place world and local transforms at the same key index.
 
 **Do not rely on dense-array indices surviving a removal.**  Swap-and-pop moves
@@ -303,7 +303,7 @@ DataBatch<T>                implements ILifetimeOwner
 Systems (ECS-style loops)
        │  for (auto& item : batch.GetItems()) { … }
        │
-TransformView / AssetCache
+TransformStore / AssetCache
        │  store non-owning DataBatch* pointers
        │  read Items[] directly; never remove
        │

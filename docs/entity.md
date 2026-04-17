@@ -267,7 +267,7 @@ skipped.
 
 **Every entity requires a non-null transform key.**  `EntityRegistry::Register`
 asserts that `record.TransformKey.Value != 0`.  Registering an entity whose
-`TransformNode` was not yet emplaced into a `TransformView` will fire that
+`TransformNode` was not yet emplaced into a `TransformStore` will fire that
 assertion.
 
 **Do not use `EntityRegistry` as a general-purpose object store.**  It is

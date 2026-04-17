@@ -3,7 +3,7 @@
 #include <math/geometry/2d/Aabb2d.h>
 #include <physics/2d/PhysicsDomain2D.h>
 
-RigidBodySyncSystem2D::RigidBodySyncSystem2D(TransformView<Transform2f>& transforms,
+RigidBodySyncSystem2D::RigidBodySyncSystem2D(TransformStore<Transform2f>& transforms,
                                              PhysicsDomain2D&            physics,
                                              DataBatch<RigidBody2D>&     bodies)
     : Transforms(transforms)
