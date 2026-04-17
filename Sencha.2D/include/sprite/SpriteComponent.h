@@ -3,6 +3,7 @@
 #include <assets/texture/TextureHandle.h>
 #include <core/batch/SparseSet.h>
 #include <entity/EntityHandle.h>
+#include <world/IComponentStore.h>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -23,7 +24,7 @@ struct SpriteComponent
     int32_t       SortKey = 0;
 };
 
-class SpriteStore
+class SpriteStore : public IComponentStore
 {
 public:
     bool Add(EntityHandle entity, const SpriteComponent& sprite = {})

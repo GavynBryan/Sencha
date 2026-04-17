@@ -28,8 +28,8 @@ namespace World2DSetup {
 		// RigidBodySyncSystem2D and RigidBodyResolutionSystem2D declare their
 		// ordering in PhysicsSetup2D::Setup(), after they are registered there.
 		systemHost.Register<TransformPropagationSystem<Transform2f>>(
-			world.Domain.Transforms,
-			world.Domain.Hierarchy,
-			world.Domain.PropagationOrder);
+			world.Transforms,
+			world.Hierarchy,
+			world.PropagationOrder);
 	}
 }

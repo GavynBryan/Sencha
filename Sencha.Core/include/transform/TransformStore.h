@@ -3,6 +3,7 @@
 #include <core/batch/SparseSet.h>
 #include <entity/EntityHandle.h>
 #include <transform/TransformPropagationOrderService.h>
+#include <world/IComponentStore.h>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -23,7 +24,7 @@ struct TransformComponent
 // component array and use the parallel owner list to join back to entities.
 //=============================================================================
 template <typename TTransform>
-class TransformStore
+class TransformStore : public IComponentStore
 {
 public:
     explicit TransformStore(TransformPropagationOrderService& propagationOrder)

@@ -5,6 +5,7 @@
 #include <math/Vec.h>
 #include <physics/Collider2D.h>
 #include <physics/PhysicsDomain2D.h>
+#include <world/IComponentStore.h>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -40,7 +41,7 @@ struct RigidBody2D
 // PhysicsDomain2D as broadphase blockers; dynamic bodies remain component data
 // and query the domain during resolution.
 //=============================================================================
-class RigidBodyStore
+class RigidBodyStore : public IComponentStore
 {
 public:
     explicit RigidBodyStore(PhysicsDomain2D& physics)
@@ -48,7 +49,7 @@ public:
     {
     }
 
-    ~RigidBodyStore()
+    ~RigidBodyStore() override
     {
         Clear();
     }

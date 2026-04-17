@@ -444,9 +444,9 @@ TEST(World2d, ResolvesGameplayFacingTransformServices)
     EXPECT_TRUE(world.Transforms.Add(
         entity,
         Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f })));
-    world.TransformHierarchy.Register(entity);
+    world.Hierarchy.Register(entity);
 
-    EXPECT_TRUE(world.TransformHierarchy.IsRegistered(entity));
+    EXPECT_TRUE(world.Hierarchy.IsRegistered(entity));
     EXPECT_NE(world.Transforms.TryGetLocal(entity), nullptr);
     EXPECT_NE(world.Transforms.TryGetWorld(entity), nullptr);
 }
