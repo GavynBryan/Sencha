@@ -206,9 +206,9 @@ MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta) con
                               /*isVertical=*/true, hitUp, hitDown);
 
     result.ResolvedDelta = { safeX, safeY };
-    result.HitFloor      = hitDown;
-    result.HitCeiling    = hitUp;
-    result.HitWall       = hitLeft || hitRight;
+    if (hitDown)              result.Hits |= HitFlags2D::Floor;
+    if (hitUp)                result.Hits |= HitFlags2D::Ceiling;
+    if (hitLeft || hitRight)  result.Hits |= HitFlags2D::Wall;
 
     return result;
 }

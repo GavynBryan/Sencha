@@ -35,13 +35,32 @@ struct PhysicsConfig2D
 // Output of PhysicsDomain2D::MoveBox. Carries the resolved movement delta and
 // which surfaces were contacted during resolution.
 //=============================================================================
+enum class HitFlags2D : uint8_t
+{
+    None    = 0,
+    Floor   = 1 << 0, // Contacted a surface below (down direction)
+    Ceiling = 1 << 1, // Contacted a surface above (up direction)
+    Wall    = 1 << 2, // Contacted a left or right surface
+};
+
+constexpr HitFlags2D operator|(HitFlags2D a, HitFlags2D b)
+{
+    return static_cast<HitFlags2D>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+constexpr HitFlags2D& operator|=(HitFlags2D& a, HitFlags2D b) { a = a | b; return a; }
+constexpr bool HasFlag(HitFlags2D mask, HitFlags2D flag)
+{
+    return (static_cast<uint8_t>(mask) & static_cast<uint8_t>(flag)) != 0;
+}
+
 struct MoveResult2D
 {
     Vec2d ResolvedDelta = { 0.0f, 0.0f }; // Actual movement after depenetration
+    HitFlags2D Hits = HitFlags2D::None;
 
-    bool HitFloor   = false; // Contacted a surface below (down direction)
-    bool HitCeiling = false; // Contacted a surface above (up direction)
-    bool HitWall    = false; // Contacted a left or right surface
+    bool HitFloor()   const { return HasFlag(Hits, HitFlags2D::Floor); }
+    bool HitCeiling() const { return HasFlag(Hits, HitFlags2D::Ceiling); }
+    bool HitWall()    const { return HasFlag(Hits, HitFlags2D::Wall); }
 };
 
 //=============================================================================
