@@ -1,10 +1,10 @@
-#include <assets/audio/AudioClipCache.h>
+#include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
-#include <window/SdlVideoService.h>
-#include <window/SdlWindowService.h>
-#include <window/WindowCreateInfo.h>
+#include <platform/SdlVideoService.h>
+#include <platform/SdlWindowService.h>
+#include <platform/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>
 

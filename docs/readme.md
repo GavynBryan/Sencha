@@ -31,9 +31,9 @@ When in doubt: **compose, don't inherit. Own by value, not by pointer. Sweep bat
 ```text
 app/       Minimal application target.
 docs/      Project notes and secondary documentation.
-Sencha.Core/ Shared engine library: core services, math, transform, assets, window/input, graphics.
+engine/ Shared engine library: core services, math, transform, assets, window/input, graphics.
 Sencha.2D/   2D engine library: 2D physics, sprite/tilemap rendering, tilemap data.
-Sencha.3D/   3D engine library scaffold.
+engine/   3D engine library scaffold.
 example/   Small executable examples.
 test/      GoogleTest-based engine tests.
 ```

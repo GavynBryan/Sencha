@@ -1,0 +1,39 @@
+#pragma once
+
+#include <render/Camera.h>
+#include <render/Material.h>
+#include <render/MeshRendererComponent.h>
+#include <render/MeshService.h>
+#include <render/RenderQueue.h>
+#include <world/transform/TransformStore.h>
+
+//=============================================================================
+// RenderExtractionSystem
+//
+// Stateless system that walks all visible MeshRendererComponents and emits
+// one RenderQueueItem per enabled submesh into the RenderQueue. World-space
+// bounds are computed here for use by the subsequent culling pass.
+//=============================================================================
+class RenderExtractionSystem
+{
+public:
+    static void Extract(const TransformStore<Transform3f>& transforms,
+                        const MeshRendererStore& renderers,
+                        const MeshService& meshes,
+                        const MaterialStore& materials,
+                        const CameraRenderData& camera,
+                        RenderQueue& queue);
+};
+
+//=============================================================================
+// FrustumCullingSystem
+//
+// Stateless system that removes items from a RenderQueue whose world-space
+// AABB does not intersect the camera frustum. Run after extraction and before
+// sort/draw.
+//=============================================================================
+class FrustumCullingSystem
+{
+public:
+    static void Cull(const CameraRenderData& camera, RenderQueue& queue);
+};

@@ -12,14 +12,14 @@ sprite batching) and `TilemapRenderFeature` (tilemap layer rendering).
 ## Location
 
 ```
-Sencha.Core/include/graphics/Renderer.h
+engine/include/graphics/vulkan/Renderer.h
 Sencha.2D/include/graphics/features/SpriteFeature.h
 Sencha.2D/include/graphics/features/TilemapRenderFeature.h
 Sencha.2D/include/graphics/features/TilemapRenderState.h
 ```
 
 ```cpp
-#include <graphics/Renderer.h>
+#include <graphics/vulkan/Renderer.h>
 #include <graphics/features/SpriteFeature.h>
 #include <graphics/features/TilemapRenderFeature.h>
 #include <graphics/features/TilemapRenderState.h>

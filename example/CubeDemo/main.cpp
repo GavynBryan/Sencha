@@ -2,8 +2,8 @@
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
-#include <entity/EntityRegistry.h>
-#include <graphics/Renderer.h>
+#include <world/entity/EntityRegistry.h>
+#include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanAllocatorService.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanBufferService.h>
@@ -30,15 +30,15 @@
 #include <render/MeshService.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderQueue.h>
-#include <registry/Registry.h>
+#include <world/registry/Registry.h>
 #include <time/TimeService.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformPropagationSystem.h>
-#include <transform/TransformStore.h>
-#include <window/SdlVideoService.h>
-#include <window/SdlWindow.h>
-#include <window/SdlWindowService.h>
-#include <window/WindowCreateInfo.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationSystem.h>
+#include <world/transform/TransformStore.h>
+#include <platform/SdlVideoService.h>
+#include <platform/SdlWindow.h>
+#include <platform/SdlWindowService.h>
+#include <platform/WindowCreateInfo.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>

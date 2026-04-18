@@ -13,11 +13,11 @@ of scope, automatically removing the item without any manual bookkeeping.
 ## Location
 
 ```
-Sencha.Core/include/core/batch/DataBatch.h
-Sencha.Core/include/core/batch/DataBatchKey.h
-Sencha.Core/include/core/raii/LifetimeHandle.h
-Sencha.Core/include/core/raii/ILifetimeOwner.h
-Sencha.Core/include/core/raii/DataBatchHandle.h
+engine/include/core/batch/DataBatch.h
+engine/include/core/batch/DataBatchKey.h
+engine/include/core/handle/LifetimeHandle.h
+engine/include/core/handle/ILifetimeOwner.h
+engine/include/core/handle/DataBatchHandle.h
 ```
 
 ```cpp

@@ -1,9 +1,9 @@
-#include <entity/EntityId.h>
+#include <world/entity/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformPropagationOrderService.h>
-#include <transform/TransformPropagationSystem.h>
-#include <transform/TransformStore.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformPropagationSystem.h>
+#include <world/transform/TransformStore.h>
 
 #include <algorithm>
 #include <atomic>
