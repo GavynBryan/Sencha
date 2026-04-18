@@ -13,7 +13,13 @@ if(MINGW)
 endif()
 
 add_subdirectory(Sencha.Core)
-add_subdirectory(Sencha.2D)
+add_subdirectory(Sencha.Runtime)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Sencha.2D/CMakeLists.txt")
+    add_subdirectory(Sencha.2D)
+else()
+    add_library(sencha_2d INTERFACE)
+    add_library(sencha::2d ALIAS sencha_2d)
+endif()
 add_subdirectory(Sencha.3D)
 
 add_library(sencha_engine INTERFACE)
@@ -21,6 +27,7 @@ add_library(sencha::engine ALIAS sencha_engine)
 target_link_libraries(sencha_engine
     INTERFACE
         sencha_core
+        sencha_runtime
         sencha_2d
         sencha_3d
 )
