@@ -3,6 +3,7 @@
 #include <core/logging/ConsoleLogSink.h>
 #include <core/service/ServiceHost.h>
 #include <core/service/ServiceProvider.h>
+#include <debug/DebugLogSink.h>
 
 // --- Test sink that captures messages ---
 
@@ -148,6 +149,30 @@ TEST(LoggingProvider, AllLogLevelsWork)
 	EXPECT_EQ(sink.Entries[2].Level, LogLevel::Warning);
 	EXPECT_EQ(sink.Entries[3].Level, LogLevel::Error);
 	EXPECT_EQ(sink.Entries[4].Level, LogLevel::Critical);
+}
+
+TEST(DebugLogSink, EntriesStayChronologicalAfterWrap)
+{
+	DebugLogSink sink(3);
+
+	sink.Write(LogLevel::Info, "Test", "one");
+	sink.Write(LogLevel::Info, "Test", "two");
+	sink.Write(LogLevel::Info, "Test", "three");
+	sink.Write(LogLevel::Info, "Test", "four");
+
+	ASSERT_EQ(sink.Count(), 3u);
+	EXPECT_EQ(sink.GetEntry(0).Message, "two");
+	EXPECT_EQ(sink.GetEntry(1).Message, "three");
+	EXPECT_EQ(sink.GetEntry(2).Message, "four");
+}
+
+TEST(DebugLogSink, ZeroCapacityDropsMessages)
+{
+	DebugLogSink sink(0);
+
+	sink.Write(LogLevel::Info, "Test", "drop");
+
+	EXPECT_EQ(sink.Count(), 0u);
 }
 
 // --- ServiceHost integration tests ---

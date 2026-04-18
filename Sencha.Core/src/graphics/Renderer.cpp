@@ -48,6 +48,7 @@ Renderer::Renderer(LoggingProvider& logging,
     Services.Device = &device;
     Services.PhysicalDevice = &physicalDevice;
     Services.Queues = &queues;
+    Services.Swapchain = &swapchain;
     Services.Allocator = &allocator;
     Services.Buffers = &buffers;
     Services.Images = &images;

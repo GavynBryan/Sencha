@@ -70,6 +70,7 @@ struct RendererServices
     VulkanDeviceService* Device = nullptr;
     VulkanPhysicalDeviceService* PhysicalDevice = nullptr;
     VulkanQueueService* Queues = nullptr;
+    VulkanSwapchainService* Swapchain = nullptr;
     VulkanAllocatorService* Allocator = nullptr;
     VulkanBufferService* Buffers = nullptr;
     VulkanImageService* Images = nullptr;

@@ -3,17 +3,19 @@
 #include <core/event/EventBuffer.h>
 #include <input/InputTypes.h>
 #include <core/logging/LoggingProvider.h>
+#include <functional>
 #include <vector>
 
 class InputBindingService;
 struct CompiledBinding;
+union SDL_Event;
 
 //=============================================================================
 // SdlInputSystem
 //
 // Unified input system: ingests SDL3 events and maps them to semantic
 // action events within a single Update(). Owns both the raw event buffer
-// and the action event buffer â€” no intermediate services required.
+// and the action event buffer — no intermediate services required.
 //
 // Per frame:
 //   1. Clears the action event buffer
@@ -34,6 +36,8 @@ public:
 	const EventBuffer<InputActionEvent>& GetEvents() const { return ActionEvents; }
 	EventBuffer<RawInputEvent>& GetRawInput() { return RawBuffer; }
 
+	void AddSdlEventFilter(std::function<bool(const SDL_Event&)> filter);
+
 	// True once SDL_EVENT_QUIT has been received (window close, platform
 	// termination request, etc.).
 	bool IsQuitRequested() const { return QuitReceived; }
@@ -47,6 +51,7 @@ private:
 	void EmitActionEvent(const CompiledBinding& binding, InputPhase phase,
 		float value, InputUserId user);
 	void EmitHeldPerformed();
+	void CancelActiveHelds();
 
 	struct ActiveHeld
 	{
@@ -61,6 +66,7 @@ private:
 	InputBindingService& Bindings;
 	EventBuffer<RawInputEvent> RawBuffer;
 	EventBuffer<InputActionEvent> ActionEvents;
+	std::vector<std::function<bool(const SDL_Event&)>> SdlEventFilters;
 	std::vector<ActiveHeld> ActiveHelds;
 	bool QuitReceived = false;
 };
