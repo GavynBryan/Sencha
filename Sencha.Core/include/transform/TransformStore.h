@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/batch/SparseSet.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <world/IComponentStore.h>
 #include <cstddef>
@@ -20,7 +20,7 @@ struct TransformComponent
 // TransformStore<TTransform>
 //
 // Entity-indexed transform component store. A single sparse set owns paired
-// local/world transforms, keyed by EntityHandle::Id. Systems sweep the dense
+// local/world transforms, keyed by EntityId::Index. Systems sweep the dense
 // component array and use the parallel owner list to join back to entities.
 //=============================================================================
 template <typename TTransform>
@@ -32,78 +32,78 @@ public:
     {
     }
 
-    bool Add(EntityHandle entity, const TTransform& local = TTransform::Identity())
+    bool Add(EntityId entity, const TTransform& local = TTransform::Identity())
     {
         if (!entity.IsValid())
             return false;
 
-        Components.Emplace(entity.Id, TransformComponent<TTransform>{ local, TTransform::Identity() });
+        Components.Emplace(entity.Index, TransformComponent<TTransform>{ local, TTransform::Identity() });
 
-        const Id index = Components.IndexOf(entity.Id);
+        const Id index = Components.IndexOf(entity.Index);
         if (index != InvalidId)
             PropagationOrder->MarkLocalDirty(index);
         return true;
     }
 
-    bool Remove(EntityHandle entity)
+    bool Remove(EntityId entity)
     {
         if (!entity.IsValid())
             return false;
-        return Components.Remove(entity.Id);
+        return Components.Remove(entity.Index);
     }
 
-    bool Contains(EntityHandle entity) const
+    bool Contains(EntityId entity) const
     {
-        return entity.IsValid() && Components.Contains(entity.Id);
+        return entity.IsValid() && Components.Contains(entity.Index);
     }
 
-    const TTransform* TryGetLocal(EntityHandle entity) const
+    const TTransform* TryGetLocal(EntityId entity) const
     {
         const TransformComponent<TTransform>* component = TryGetComponent(entity);
         return component ? &component->Local : nullptr;
     }
 
-    const TTransform* TryGetWorld(EntityHandle entity) const
+    const TTransform* TryGetWorld(EntityId entity) const
     {
         const TransformComponent<TTransform>* component = TryGetComponent(entity);
         return component ? &component->World : nullptr;
     }
 
-    TTransform* TryGetLocalMutable(EntityHandle entity)
+    TTransform* TryGetLocalMutable(EntityId entity)
     {
         TransformComponent<TTransform>* component = TryGetComponentMutable(entity);
         if (!component)
             return nullptr;
 
-        const Id index = Components.IndexOf(entity.Id);
+        const Id index = Components.IndexOf(entity.Index);
         if (index != InvalidId)
             PropagationOrder->MarkLocalDirty(index);
         return &component->Local;
     }
 
-    void SetLocal(EntityHandle entity, const TTransform& local)
+    void SetLocal(EntityId entity, const TTransform& local)
     {
         if (TTransform* current = TryGetLocalMutable(entity))
             *current = local;
     }
 
-    TransformComponent<TTransform>* TryGetComponentMutable(EntityHandle entity)
+    TransformComponent<TTransform>* TryGetComponentMutable(EntityId entity)
     {
         if (!entity.IsValid())
             return nullptr;
-        return Components.TryGet(entity.Id);
+        return Components.TryGet(entity.Index);
     }
 
-    const TransformComponent<TTransform>* TryGetComponent(EntityHandle entity) const
+    const TransformComponent<TTransform>* TryGetComponent(EntityId entity) const
     {
         if (!entity.IsValid())
             return nullptr;
-        return Components.TryGet(entity.Id);
+        return Components.TryGet(entity.Index);
     }
 
-    Id IndexOf(EntityHandle entity) const
+    Id IndexOf(EntityId entity) const
     {
-        return entity.IsValid() ? Components.IndexOf(entity.Id) : InvalidId;
+        return entity.IsValid() ? Components.IndexOf(entity.Index) : InvalidId;
     }
 
     std::span<TransformComponent<TTransform>> GetItems()

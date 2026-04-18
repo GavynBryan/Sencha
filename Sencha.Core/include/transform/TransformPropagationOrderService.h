@@ -1,6 +1,6 @@
 #pragma once
 
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <transform/TransformHierarchyService.h>
 #include <cstddef>
 #include <cstdint>
@@ -101,7 +101,7 @@ public:
 private:
     struct QueueEntry
     {
-        EntityHandle Entity;
+        EntityId Entity;
         uint32_t ParentTransformIndex;
     };
 
@@ -112,7 +112,7 @@ private:
         Order.reserve(transforms.Count());
 
         VisitQueue.clear();
-        for (EntityHandle root : hierarchy.GetRoots())
+        for (EntityId root : hierarchy.GetRoots())
             VisitQueue.push_back({ root, NullIndex });
 
         for (size_t head = 0; head < VisitQueue.size(); ++head)
@@ -125,7 +125,7 @@ private:
             Order.push_back({ transformIndex, current.ParentTransformIndex });
 
             const auto& children = hierarchy.GetChildren(current.Entity);
-            for (EntityHandle child : children)
+            for (EntityId child : children)
                 VisitQueue.push_back({ child, transformIndex });
         }
 

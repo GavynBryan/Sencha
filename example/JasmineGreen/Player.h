@@ -1,7 +1,7 @@
 #pragma once
 
 #include <assets/texture/TextureHandle.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/Collider2D.h>
 #include <physics/RigidBody2D.h>
@@ -22,12 +22,12 @@ struct Player
     static constexpr float MoveSpeed           = 200.0f; // Pixels per second
     static constexpr float CollisionHalfExtent = 24.0f;  // Half of the 48px body
 
-    EntityHandle                     Body;
-    EntityHandle                     Physics;
-    EntityHandle                     Eye;
+    EntityId                     Body;
+    EntityId                     Physics;
+    EntityId                     Eye;
 
-    Player(EntityHandle body,
-           EntityHandle eye,
+    Player(EntityId body,
+           EntityId eye,
            TransformStore<Transform2f>& transforms,
            TransformHierarchyService& hierarchy,
            Transform2f spawnTransform,
@@ -67,5 +67,5 @@ struct Player
         }
     }
 
-    EntityHandle Handle() const { return Body; }
+    EntityId Handle() const { return Body; }
 };

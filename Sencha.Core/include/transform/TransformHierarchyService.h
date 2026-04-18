@@ -1,6 +1,6 @@
 #pragma once
 
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -12,7 +12,7 @@
 // TransformHierarchyService
 //
 // Owns spatial parent/child relationships for entities with transform
-// components. The hierarchy is keyed by EntityHandle rather than transform-slot
+// components. The hierarchy is keyed by EntityId rather than transform-slot
 // keys; transform storage is now an implementation detail of TransformStore.
 //=============================================================================
 class TransformHierarchyService
@@ -20,78 +20,78 @@ class TransformHierarchyService
 public:
     // -- Relationship mutation -----------------------------------------------
 
-    void SetParent(EntityHandle child, EntityHandle parent);
-    void ClearParent(EntityHandle child);
+    void SetParent(EntityId child, EntityId parent);
+    void ClearParent(EntityId child);
 
-    void Register(EntityHandle entity);
-    void Unregister(EntityHandle entity);
+    void Register(EntityId entity);
+    void Unregister(EntityId entity);
 
     // -- Queries --------------------------------------------------------------
 
-    EntityHandle GetParent(EntityHandle child) const;
+    EntityId GetParent(EntityId child) const;
 
-    bool HasParent(EntityHandle child) const;
+    bool HasParent(EntityId child) const;
 
-    const std::vector<EntityHandle>& GetChildren(EntityHandle parent) const;
+    const std::vector<EntityId>& GetChildren(EntityId parent) const;
 
-    bool HasChildren(EntityHandle parent) const;
+    bool HasChildren(EntityId parent) const;
 
-    std::vector<EntityHandle> GetRoots() const;
+    std::vector<EntityId> GetRoots() const;
 
-    bool IsRegistered(EntityHandle entity) const;
+    bool IsRegistered(EntityId entity) const;
 
     size_t Count() const;
 
     uint64_t GetVersion() const { return VersionCounter; }
 
 private:
-    static bool SameEntity(EntityHandle a, EntityHandle b)
+    static bool SameEntity(EntityId a, EntityId b)
     {
-        return a.Id == b.Id && a.Generation == b.Generation;
+        return a.Index == b.Index && a.Generation == b.Generation;
     }
 
-    void EnsureRegistered(EntityHandle entity);
-    bool WouldCreateCycle(EntityHandle child, EntityHandle parent) const;
+    void EnsureRegistered(EntityId entity);
+    bool WouldCreateCycle(EntityId child, EntityId parent) const;
 
-    std::unordered_map<EntityId, EntityHandle> Registered;
-    std::unordered_map<EntityId, EntityHandle> ChildToParent;
-    std::unordered_map<EntityId, std::vector<EntityHandle>> ParentToChildren;
+    std::unordered_map<EntityIndex, EntityId> Registered;
+    std::unordered_map<EntityIndex, EntityId> ChildToParent;
+    std::unordered_map<EntityIndex, std::vector<EntityId>> ParentToChildren;
     uint64_t VersionCounter = 0;
 };
 
-inline void TransformHierarchyService::SetParent(EntityHandle child, EntityHandle parent)
+inline void TransformHierarchyService::SetParent(EntityId child, EntityId parent)
 {
     assert(child.IsValid() && "Cannot parent a null entity.");
     assert(parent.IsValid() && "Cannot parent under a null entity.");
-    assert(child.Id != parent.Id && "Cannot parent to self.");
+    assert(child.Index != parent.Index && "Cannot parent to self.");
     assert(!WouldCreateCycle(child, parent) && "Cannot create a transform hierarchy cycle.");
 
     ClearParent(child);
 
-    ChildToParent[child.Id] = parent;
-    ParentToChildren[parent.Id].push_back(child);
+    ChildToParent[child.Index] = parent;
+    ParentToChildren[parent.Index].push_back(child);
     EnsureRegistered(child);
     EnsureRegistered(parent);
     ++VersionCounter;
 }
 
-inline void TransformHierarchyService::ClearParent(EntityHandle child)
+inline void TransformHierarchyService::ClearParent(EntityId child)
 {
-    auto it = ChildToParent.find(child.Id);
+    auto it = ChildToParent.find(child.Index);
     if (it == ChildToParent.end())
         return;
 
-    const EntityHandle parent = it->second;
+    const EntityId parent = it->second;
     ChildToParent.erase(it);
 
-    auto pit = ParentToChildren.find(parent.Id);
+    auto pit = ParentToChildren.find(parent.Index);
     if (pit != ParentToChildren.end())
     {
         auto& children = pit->second;
         children.erase(
-            std::remove_if(children.begin(), children.end(), [&](EntityHandle candidate)
+            std::remove_if(children.begin(), children.end(), [&](EntityId candidate)
             {
-                return candidate.Id == child.Id;
+                return candidate.Index == child.Index;
             }),
             children.end());
 
@@ -102,58 +102,58 @@ inline void TransformHierarchyService::ClearParent(EntityHandle child)
     ++VersionCounter;
 }
 
-inline void TransformHierarchyService::Register(EntityHandle entity)
+inline void TransformHierarchyService::Register(EntityId entity)
 {
     assert(entity.IsValid() && "Cannot register a null entity.");
     EnsureRegistered(entity);
 }
 
-inline void TransformHierarchyService::Unregister(EntityHandle entity)
+inline void TransformHierarchyService::Unregister(EntityId entity)
 {
     if (!entity.IsValid())
         return;
 
     ClearParent(entity);
 
-    auto childrenIt = ParentToChildren.find(entity.Id);
+    auto childrenIt = ParentToChildren.find(entity.Index);
     if (childrenIt != ParentToChildren.end())
     {
-        for (EntityHandle child : childrenIt->second)
-            ChildToParent.erase(child.Id);
+        for (EntityId child : childrenIt->second)
+            ChildToParent.erase(child.Index);
         ParentToChildren.erase(childrenIt);
     }
 
-    if (Registered.erase(entity.Id) != 0)
+    if (Registered.erase(entity.Index) != 0)
         ++VersionCounter;
 }
 
-inline EntityHandle TransformHierarchyService::GetParent(EntityHandle child) const
+inline EntityId TransformHierarchyService::GetParent(EntityId child) const
 {
-    auto it = ChildToParent.find(child.Id);
-    return it == ChildToParent.end() ? EntityHandle{} : it->second;
+    auto it = ChildToParent.find(child.Index);
+    return it == ChildToParent.end() ? EntityId{} : it->second;
 }
 
-inline bool TransformHierarchyService::HasParent(EntityHandle child) const
+inline bool TransformHierarchyService::HasParent(EntityId child) const
 {
-    return ChildToParent.contains(child.Id);
+    return ChildToParent.contains(child.Index);
 }
 
-inline const std::vector<EntityHandle>& TransformHierarchyService::GetChildren(EntityHandle parent) const
+inline const std::vector<EntityId>& TransformHierarchyService::GetChildren(EntityId parent) const
 {
-    static const std::vector<EntityHandle> Empty;
-    auto it = ParentToChildren.find(parent.Id);
+    static const std::vector<EntityId> Empty;
+    auto it = ParentToChildren.find(parent.Index);
     return it == ParentToChildren.end() ? Empty : it->second;
 }
 
-inline bool TransformHierarchyService::HasChildren(EntityHandle parent) const
+inline bool TransformHierarchyService::HasChildren(EntityId parent) const
 {
-    auto it = ParentToChildren.find(parent.Id);
+    auto it = ParentToChildren.find(parent.Index);
     return it != ParentToChildren.end() && !it->second.empty();
 }
 
-inline std::vector<EntityHandle> TransformHierarchyService::GetRoots() const
+inline std::vector<EntityId> TransformHierarchyService::GetRoots() const
 {
-    std::vector<EntityHandle> roots;
+    std::vector<EntityId> roots;
     roots.reserve(Registered.size());
 
     for (const auto& [id, entity] : Registered)
@@ -165,9 +165,9 @@ inline std::vector<EntityHandle> TransformHierarchyService::GetRoots() const
     return roots;
 }
 
-inline bool TransformHierarchyService::IsRegistered(EntityHandle entity) const
+inline bool TransformHierarchyService::IsRegistered(EntityId entity) const
 {
-    auto it = Registered.find(entity.Id);
+    auto it = Registered.find(entity.Index);
     return it != Registered.end() && SameEntity(it->second, entity);
 }
 
@@ -176,9 +176,9 @@ inline size_t TransformHierarchyService::Count() const
     return Registered.size();
 }
 
-inline void TransformHierarchyService::EnsureRegistered(EntityHandle entity)
+inline void TransformHierarchyService::EnsureRegistered(EntityId entity)
 {
-    auto [it, inserted] = Registered.emplace(entity.Id, entity);
+    auto [it, inserted] = Registered.emplace(entity.Index, entity);
     if (!inserted && !SameEntity(it->second, entity))
     {
         it->second = entity;
@@ -189,15 +189,15 @@ inline void TransformHierarchyService::EnsureRegistered(EntityHandle entity)
         ++VersionCounter;
 }
 
-inline bool TransformHierarchyService::WouldCreateCycle(EntityHandle child, EntityHandle parent) const
+inline bool TransformHierarchyService::WouldCreateCycle(EntityId child, EntityId parent) const
 {
-    EntityHandle cursor = parent;
+    EntityId cursor = parent;
     while (cursor.IsValid())
     {
-        if (cursor.Id == child.Id)
+        if (cursor.Index == child.Index)
             return true;
 
-        auto it = ChildToParent.find(cursor.Id);
+        auto it = ChildToParent.find(cursor.Index);
         if (it == ChildToParent.end())
             return false;
 

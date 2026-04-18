@@ -1,56 +1,36 @@
 #pragma once
 
 #include <core/service/IService.h>
-#include <entity/EntityRegistry.h>
+#include <entity/EntityId.h>
+#include <registry/Registry.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <transform/TransformStore.h>
-#include <world/ComponentRegistry.h>
 
-//=============================================================================
-// World<TTransform>
-//
-// Gameplay-facing service bundle for transform-dimensioned game-world state.
-// Owns the transform triad (Hierarchy, PropagationOrder, Transforms), an
-// EntityRegistry, and a ComponentRegistry for extensible component stores.
-//
-// World is NOT the only transform domain in the engine. UI, editor gizmos, or
-// any other subsystem that wants an isolated coordinate space creates its own
-// TransformSpace directly — no World involvement, no service registration,
-// no hierarchy conflicts with gameplay. World is simply "the domain that
-// belongs to the game simulation."
-//
-// Dimension-specific libraries derive concrete world services from this
-// template without making Core depend on their physics or rendering systems.
-//=============================================================================
+// Deprecated compatibility shim. New code should use Registry plus explicit
+// transform services or a dimension-specific registry service.
 template <typename TTransform>
-class World : public IService
+class [[deprecated("Use Registry and explicit frame views instead.")]] World : public IService
 {
 public:
-	World()
-		: Transforms(PropagationOrder)
-	{}
+    World()
+        : Storage{ RegistryId::Global(), RegistryKind::Global }
+        , Entities(Storage.Entities)
+        , Components(Storage.Components)
+        , Transforms(PropagationOrder)
+    {
+    }
 
-	// -- Transform space ---------------------------------------------------
+    Registry Storage;
+    EntityRegistry& Entities;
+    ComponentRegistry& Components;
 
-	TransformHierarchyService        Hierarchy;
-	TransformPropagationOrderService PropagationOrder;
-	TransformStore<TTransform>       Transforms;
+    TransformHierarchyService Hierarchy;
+    TransformPropagationOrderService PropagationOrder;
+    TransformStore<TTransform> Transforms;
 
-	// -- Entity registry ---------------------------------------------------
-
-	EntityRegistry Entities;
-
-	// -- Component stores --------------------------------------------------
-	// Engine modules and game code register stores here. Systems resolve a
-	// typed pointer once at init and cache it — zero overhead in hot paths.
-
-	ComponentRegistry Components;
-
-	// Destroy an entity and all of its transform-hierarchy descendants,
-	// leaves first.
-	void DestroySubtree(EntityHandle root)
-	{
-		Entities.DestroySubtree(root, Hierarchy);
-	}
+    void DestroySubtree(EntityId root)
+    {
+        Entities.DestroySubtree(root, Hierarchy);
+    }
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/batch/SparseSet.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <math/Vec.h>
 #include <physics/Collider2D.h>
 #include <physics/PhysicsDomain2D.h>
@@ -59,30 +59,30 @@ public:
     RigidBodyStore(RigidBodyStore&&) = delete;
     RigidBodyStore& operator=(RigidBodyStore&&) = delete;
 
-    bool Add(EntityHandle entity, const Collider2D& collider = {})
+    bool Add(EntityId entity, const Collider2D& collider = {})
     {
         if (!entity.IsValid())
             return false;
 
-        if (RigidBody2D* existing = Components.TryGet(entity.Id))
+        if (RigidBody2D* existing = Components.TryGet(entity.Index))
             Unregister(entity);
 
-        RigidBody2D& body = Components.Emplace(entity.Id, collider);
+        RigidBody2D& body = Components.Emplace(entity.Index, collider);
         EnsureDomainRegistration(entity, body);
         return true;
     }
 
-    bool Remove(EntityHandle entity)
+    bool Remove(EntityId entity)
     {
         if (!entity.IsValid())
             return false;
 
-        RigidBody2D* body = Components.TryGet(entity.Id);
+        RigidBody2D* body = Components.TryGet(entity.Index);
         if (!body)
             return false;
 
         Unregister(entity);
-        return Components.Remove(entity.Id);
+        return Components.Remove(entity.Index);
     }
 
     void Clear()
@@ -90,26 +90,26 @@ public:
         const std::vector<Id>& owners = Components.GetOwners();
         std::vector<RigidBody2D>& bodies = Components.GetItems();
         for (size_t i = 0; i < bodies.size(); ++i)
-            Unregister(EntityHandle{ owners[i], 0 });
+            Unregister(EntityId{ owners[i], 0 });
         Components.Clear();
     }
 
-    bool Contains(EntityHandle entity) const
+    bool Contains(EntityId entity) const
     {
-        return entity.IsValid() && Components.Contains(entity.Id);
+        return entity.IsValid() && Components.Contains(entity.Index);
     }
 
-    RigidBody2D* TryGet(EntityHandle entity)
+    RigidBody2D* TryGet(EntityId entity)
     {
-        return entity.IsValid() ? Components.TryGet(entity.Id) : nullptr;
+        return entity.IsValid() ? Components.TryGet(entity.Index) : nullptr;
     }
 
-    const RigidBody2D* TryGet(EntityHandle entity) const
+    const RigidBody2D* TryGet(EntityId entity) const
     {
-        return entity.IsValid() ? Components.TryGet(entity.Id) : nullptr;
+        return entity.IsValid() ? Components.TryGet(entity.Index) : nullptr;
     }
 
-    void EnsureDomainRegistration(EntityHandle entity, RigidBody2D& body)
+    void EnsureDomainRegistration(EntityId entity, RigidBody2D& body)
     {
         if (!Physics)
             return;
@@ -144,7 +144,7 @@ public:
     uint64_t GetVersion() const { return Components.GetVersion(); }
 
 private:
-    void Unregister(EntityHandle entity)
+    void Unregister(EntityId entity)
     {
         if (Physics)
             Physics->Unregister(entity);

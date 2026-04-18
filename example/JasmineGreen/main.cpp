@@ -38,9 +38,8 @@
 #include <window/WindowCreateInfo.h>
 #include <window/WindowTypes.h>
 #include <physics/PhysicsSetup2D.h>
-#include <world/World.h>
-#include <world/World2DSetup.h>
-#include <world/World2d.h>
+#include <registry/Registry2DSetup.h>
+#include <registry/Registry2d.h>
 #include <vulkan/vulkan.h>
 
 #include "Player.h"
@@ -220,15 +219,15 @@ int main()
     // =========================================================================
     // World — transforms, hierarchy, and physics
     //
-    // World2DSetup::Setup2D registers World2d as a service and installs
+    // Registry2DSetup::Setup2D registers Registry2d as a service and installs
     // TransformPropagationSystem in the Fixed lane. That system walks the
     // transform hierarchy each fixed step and writes world-space positions
     // into the WorldTransforms batch, which is what Render reads.
     // =========================================================================
     SystemHost systems;
-    World2DSetup::Setup2D(services, systems);
+    Registry2DSetup::Setup2D(services, systems);
     PhysicsSetup2D::Setup(services, systems);
-    auto& world = services.Get<World2d>();
+    auto& registry = services.Get<Registry2d>();
 
     // =========================================================================
     // Player entity
@@ -242,16 +241,16 @@ int main()
     std::vector<Player> players;
     players.reserve(1);
 
-    const EntityHandle playerBody = world.Entities.Create();
-    const EntityHandle playerEye = world.Entities.Create();
+    const EntityId playerBody = registry.Entities.Create();
+    const EntityId playerEye = registry.Entities.Create();
     players.emplace_back(
         playerBody,
         playerEye,
-        world.Transforms,
-        world.Hierarchy,
+        registry.Transforms,
+        registry.Hierarchy,
         Transform2f{ Vec2d{600.0f, 360.0f}, 0.0f, Vec2d{1.0f, 1.0f} },
-        world.Bodies,
-        world.Sprites,
+        registry.Bodies,
+        registry.Sprites,
         whitePixel
     );
 
@@ -286,9 +285,9 @@ int main()
     };
 
     auto& playerSystem = systems.Register<PlayerSystem>(
-        inputSystem, players, world.Bodies, world.Transforms, playerActions);
+        inputSystem, players, registry.Bodies, registry.Transforms, playerActions);
 
-    systems.Register<SpriteRenderSystem>(world.Sprites, world.Transforms, *sprites, textures);
+    systems.Register<SpriteRenderSystem>(registry.Storage, *sprites, textures);
 
     systems.After<PlayerSystem, SdlInputSystem>();
     systems.Init();

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/batch/SparseSet.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <math/geometry/2d/Aabb2d.h>
 #include <math/spatial/QuadTree.h>
 #include <math/Vec.h>
@@ -72,7 +72,7 @@ struct MoveResult2D
 //
 // Authoritative spatial query layer for 2D physics in v0. Owns the collider
 // registry and performs overlap, sweep, and move-and-slide resolution. Scoped
-// and owned by World2d — not an IService.
+// and owned by Registry2d, not as an IService.
 //
 // v0 scope:
 //   - One moving (kinematic) actor, arbitrarily many static blockers
@@ -97,10 +97,10 @@ public:
     // Unregister: remove the entity collider from the domain.
     // UpdateBounds: update the cached WorldBounds for an existing collider.
 
-    bool Register(EntityHandle entity, const Collider2D& collider);
-    bool Unregister(EntityHandle entity);
-    void UpdateBounds(EntityHandle entity, const Aabb2d& worldBounds);
-    bool Contains(EntityHandle entity) const;
+    bool Register(EntityId entity, const Collider2D& collider);
+    bool Unregister(EntityId entity);
+    void UpdateBounds(EntityId entity, const Aabb2d& worldBounds);
+    bool Contains(EntityId entity) const;
 
     // Rebuild the broadphase tree from the current collider state.
     // Call once per step after all UpdateBounds calls are complete
@@ -111,14 +111,14 @@ public:
 
     // OverlapBox: fill 'out' with entities of all colliders whose WorldBounds
     // overlap 'box'. Clears 'out' before writing.
-    void OverlapBox(const Aabb2d& box, std::vector<EntityHandle>& out) const;
+    void OverlapBox(const Aabb2d& box, std::vector<EntityId>& out) const;
 
     // SweepBox: sweep 'box' by 'delta', return first blocking hit.
     // Time is in [0,1] normalized along delta. DidHit=false if no blocker found.
     struct SweepHit
     {
         float        Time   = 1.0f;
-        EntityHandle Entity;
+        EntityId Entity;
         bool         DidHit = false;
     };
     SweepHit SweepBox(const Aabb2d& box, Vec2d delta) const;
@@ -128,7 +128,7 @@ public:
     // contact surface flags. Pass the mover's entity as 'exclude' to
     // prevent self-collision.
     MoveResult2D MoveBox(const Aabb2d& box, Vec2d desiredDelta,
-                         EntityHandle exclude = {}) const;
+                         EntityId exclude = {}) const;
 
     // MoveProjected: iterative velocity-projection resolver for circle movers.
     // Intended for player characters that need smooth wall-sliding and corner
@@ -144,7 +144,7 @@ public:
     //
     // Returns ResolvedDelta = actual movement; Hits = surfaces contacted.
     MoveResult2D MoveProjected(Vec2d center, float radius, Vec2d delta,
-                               EntityHandle exclude = {}) const;
+                               EntityId exclude = {}) const;
 
     // SetCollisionGrid: attach a static-geometry grid for MoveProjected to
     // query. Passing nullptr detaches any existing grid. The domain does NOT
@@ -159,7 +159,7 @@ private:
 
     float ResolveAxis(const Aabb2d& box, float delta, bool isVertical,
                       bool& hitPositive, bool& hitNegative,
-                      EntityHandle exclude = {}) const;
+                      EntityId exclude = {}) const;
 
     // -- Circle narrow-phase (projected path) ---------------------------------
 
@@ -179,7 +179,7 @@ private:
     // Gather contacts from the dynamic collider registry into 'out'.
     // Colliders owned by 'exclude' are skipped.
     void GatherDomainContacts(Vec2d center, float radius, Vec2d velocity,
-                              EntityHandle exclude,
+                              EntityId exclude,
                               std::vector<DomainContact>& out) const;
 
     // -- Data -----------------------------------------------------------------

@@ -4,24 +4,24 @@
 #include <core/system/SystemHost.h>
 #include <physics/RigidBodyResolutionSystem2D.h>
 #include <physics/RigidBodySyncSystem2D.h>
-#include <world/World2d.h>
+#include <registry/Registry2d.h>
 #include <transform/TransformPropagationSystem.h>
 
 namespace PhysicsSetup2D {
 
     void Setup(ServiceHost& serviceHost, SystemHost& systemHost)
     {
-        World2d& world = serviceHost.Get<World2d>();
+        Registry2d& registry = serviceHost.Get<Registry2d>();
 
         systemHost.Register<RigidBodySyncSystem2D>(
-            world.Transforms,
-            world.Physics,
-            world.Bodies);
+            registry.Transforms,
+            registry.Physics,
+            registry.Bodies);
 
         systemHost.Register<RigidBodyResolutionSystem2D>(
-            world.Transforms,
-            world.Physics,
-            world.Bodies);
+            registry.Transforms,
+            registry.Physics,
+            registry.Bodies);
 
         systemHost.After<RigidBodySyncSystem2D, TransformPropagationSystem<Transform2f>>();
         systemHost.After<RigidBodyResolutionSystem2D, RigidBodySyncSystem2D>();

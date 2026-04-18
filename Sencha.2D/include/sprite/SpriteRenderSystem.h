@@ -3,21 +3,20 @@
 #include <assets/texture/TextureCache.h>
 #include <graphics/features/SpriteFeature.h>
 #include <math/geometry/2d/Transform2d.h>
+#include <registry/Registry.h>
 #include <sprite/SpriteStore.h>
 #include <transform/TransformStore.h>
 
 class SpriteRenderSystem
 {
 public:
-    SpriteRenderSystem(SpriteStore& sprites,
-                       TransformStore<Transform2f>& transforms,
+    SpriteRenderSystem(Registry& registry,
                        SpriteFeature& spriteFeature,
                        TextureCache& textures);
     void Render(float alpha);
 
 private:
-    SpriteStore&                Sprites;
-    TransformStore<Transform2f>& Transforms;
-    SpriteFeature&              GPUSprites;
-    TextureCache&               Textures;
+    Registry&      GlobalRegistry;
+    SpriteFeature& GPUSprites;
+    TextureCache&  Textures;
 };

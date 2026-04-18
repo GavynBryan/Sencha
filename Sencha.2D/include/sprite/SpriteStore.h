@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/batch/SparseSet.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <world/IComponentStore.h>
 #include <sprite/SpriteComponent.h>
 
@@ -10,7 +10,7 @@
 //=============================================================================
 // SpriteStore
 //
-// Dense storage of SpriteComponents, keyed by EntityHandle. The store is
+// Dense storage of SpriteComponents, keyed by EntityId. The store is
 // responsible for joining sprite data back to entities through SparseSet's
 // parallel owner list. SpriteRenderSystem reads from this store each frame to
 // submit draw calls.
@@ -18,33 +18,33 @@
 class SpriteStore : public IComponentStore
 {
 public:
-    bool Add(EntityHandle entity, const SpriteComponent& sprite = {})
+    bool Add(EntityId entity, const SpriteComponent& sprite = {})
     {
         if (!entity.IsValid())
             return false;
 
-        Components.Emplace(entity.Id, sprite);
+        Components.Emplace(entity.Index, sprite);
         return true;
     }
 
-    bool Remove(EntityHandle entity)
+    bool Remove(EntityId entity)
     {
-        return entity.IsValid() && Components.Remove(entity.Id);
+        return entity.IsValid() && Components.Remove(entity.Index);
     }
 
-    bool Contains(EntityHandle entity) const
+    bool Contains(EntityId entity) const
     {
-        return entity.IsValid() && Components.Contains(entity.Id);
+        return entity.IsValid() && Components.Contains(entity.Index);
     }
 
-    SpriteComponent* TryGet(EntityHandle entity)
+    SpriteComponent* TryGet(EntityId entity)
     {
-        return entity.IsValid() ? Components.TryGet(entity.Id) : nullptr;
+        return entity.IsValid() ? Components.TryGet(entity.Index) : nullptr;
     }
 
-    const SpriteComponent* TryGet(EntityHandle entity) const
+    const SpriteComponent* TryGet(EntityId entity) const
     {
-        return entity.IsValid() ? Components.TryGet(entity.Id) : nullptr;
+        return entity.IsValid() ? Components.TryGet(entity.Index) : nullptr;
     }
 
     std::span<SpriteComponent> GetItems()

@@ -8,7 +8,7 @@ class SystemHost;
 //=============================================================================
 // World2DSetup
 //
-// Public bootstrap helpers for 2D world-facing engine services.
+// Deprecated compatibility wrapper for Registry2DSetup.
 //=============================================================================
 namespace World2DSetup {
 

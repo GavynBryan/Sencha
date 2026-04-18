@@ -22,30 +22,30 @@ PhysicsDomain2D::PhysicsDomain2D(const PhysicsConfig2D& config)
 // Registration
 // ---------------------------------------------------------------------------
 
-bool PhysicsDomain2D::Register(EntityHandle entity, const Collider2D& collider)
+bool PhysicsDomain2D::Register(EntityId entity, const Collider2D& collider)
 {
     if (!entity.IsValid())
         return false;
 
-    Colliders.Emplace(entity.Id, collider);
+    Colliders.Emplace(entity.Index, collider);
     return true;
 }
 
-bool PhysicsDomain2D::Unregister(EntityHandle entity)
+bool PhysicsDomain2D::Unregister(EntityId entity)
 {
-    return entity.IsValid() && Colliders.Remove(entity.Id);
+    return entity.IsValid() && Colliders.Remove(entity.Index);
 }
 
-void PhysicsDomain2D::UpdateBounds(EntityHandle entity, const Aabb2d& worldBounds)
+void PhysicsDomain2D::UpdateBounds(EntityId entity, const Aabb2d& worldBounds)
 {
-    Collider2D* collider = entity.IsValid() ? Colliders.TryGet(entity.Id) : nullptr;
+    Collider2D* collider = entity.IsValid() ? Colliders.TryGet(entity.Index) : nullptr;
     if (collider)
         collider->WorldBounds = worldBounds;
 }
 
-bool PhysicsDomain2D::Contains(EntityHandle entity) const
+bool PhysicsDomain2D::Contains(EntityId entity) const
 {
-    return entity.IsValid() && Colliders.Contains(entity.Id);
+    return entity.IsValid() && Colliders.Contains(entity.Index);
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ void PhysicsDomain2D::RebuildTree()
 // ---------------------------------------------------------------------------
 
 void PhysicsDomain2D::OverlapBox(const Aabb2d& box,
-                                 std::vector<EntityHandle>& out) const
+                                 std::vector<EntityId>& out) const
 {
     out.clear();
 
@@ -87,9 +87,9 @@ void PhysicsDomain2D::OverlapBox(const Aabb2d& box,
         if (!collider.WorldBounds.Intersects(box)) continue;
 
         // Deduplicate (grid cells can reference the same entry multiple times)
-        const EntityHandle entity{ owners[idx], 0 };
+        const EntityId entity{ owners[idx], 0 };
         bool duplicate = false;
-        for (const EntityHandle& h : out)
+        for (const EntityId& h : out)
         {
             if (h == entity) { duplicate = true; break; }
         }
@@ -165,7 +165,7 @@ PhysicsDomain2D::SweepHit PhysicsDomain2D::SweepBox(const Aabb2d& box,
         if (t < best.Time)
         {
             best.Time   = t;
-            best.Entity = EntityHandle{ owners[idx], 0 };
+            best.Entity = EntityId{ owners[idx], 0 };
             best.DidHit = true;
         }
     }
@@ -184,7 +184,7 @@ void PhysicsDomain2D::SetCollisionGrid(const CollisionGrid2D* grid)
 
 MoveResult2D PhysicsDomain2D::MoveProjected(Vec2d center, float radius,
                                              Vec2d delta,
-                                             EntityHandle exclude) const
+                                             EntityId exclude) const
 {
     constexpr int   MaxIterations = 4;
     constexpr float kEpsSq        = 1e-8f;  // stop when remaining speed² < this
@@ -292,7 +292,7 @@ void PhysicsDomain2D::GatherGridContacts(Vec2d center, float radius,
 
 void PhysicsDomain2D::GatherDomainContacts(Vec2d center, float radius,
                                             Vec2d velocity,
-                                            EntityHandle exclude,
+                                            EntityId exclude,
                                             std::vector<DomainContact>& out) const
 {
     Aabb2d swept = Aabb2d::FromMinMax(
@@ -309,7 +309,7 @@ void PhysicsDomain2D::GatherDomainContacts(Vec2d center, float radius,
     for (uint32_t idx : ScratchCandidates)
     {
         if (idx >= colliders.size()) continue;
-        if (exclude.IsValid() && owners[idx] == exclude.Id) continue;
+        if (exclude.IsValid() && owners[idx] == exclude.Index) continue;
 
         const Collider2D& collider = colliders[idx];
         if (!collider.WorldBounds.IsValid()) continue;
@@ -324,7 +324,7 @@ void PhysicsDomain2D::GatherDomainContacts(Vec2d center, float radius,
 }
 
 MoveResult2D PhysicsDomain2D::MoveBox(const Aabb2d& box, Vec2d desiredDelta,
-                                       EntityHandle exclude) const
+                                       EntityId exclude) const
 {
     MoveResult2D result;
 
@@ -364,7 +364,7 @@ void PhysicsDomain2D::GatherCandidates(const Aabb2d& box,
 float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
                                    bool isVertical,
                                    bool& hitPositive, bool& hitNegative,
-                                   EntityHandle exclude) const
+                                   EntityId exclude) const
 {
     if (std::abs(delta) < 1e-6f) return 0.0f;
 
@@ -394,7 +394,7 @@ float PhysicsDomain2D::ResolveAxis(const Aabb2d& box, float delta,
     for (uint32_t idx : candidates)
     {
         if (idx >= colliders.size()) continue;
-        if (exclude.IsValid() && owners[idx] == exclude.Id) continue;
+        if (exclude.IsValid() && owners[idx] == exclude.Index) continue;
 
         const Collider2D& collider = colliders[idx];
         if (!collider.WorldBounds.IsValid()) continue;

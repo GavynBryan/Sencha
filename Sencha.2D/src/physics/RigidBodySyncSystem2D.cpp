@@ -19,7 +19,7 @@ void RigidBodySyncSystem2D::Tick(float /*fixedDt*/)
     for (size_t i = 0; i < bodies.size(); ++i)
     {
         RigidBody2D& body = bodies[i];
-        const EntityHandle entity{ owners[i], 0 };
+        const EntityId entity{ owners[i], 0 };
         const Transform2f* world = Transforms.TryGetWorld(entity);
         if (!world) continue;
 
