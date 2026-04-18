@@ -4,7 +4,9 @@
 #include <cassert>
 #include <memory>
 #include <typeindex>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 //=============================================================================
 // ComponentRegistry
@@ -14,11 +16,11 @@
 // it — no map lookup in hot paths.
 //
 // Usage:
-//   // Registration (once, at world/system setup):
-//   auto& health = world.Components.Register<HealthStore>();
+//   // Registration (once, at registry/system setup):
+//   auto& health = registry.Components.Register<HealthStore>();
 //
-//   // Resolution (once per system, at init):
-//   HealthStore* health = world.Components.Get<HealthStore>();
+//   // Optional/lazy resolution:
+//   HealthStore* health = registry.Components.TryGet<HealthStore>();
 //
 //   // Hot path (direct pointer dereference, zero overhead):
 //   health->TryGet(entity);
@@ -40,6 +42,26 @@ public:
 
         assert(inserted && "ComponentRegistry: duplicate store registration for this type");
         return static_cast<T&>(*it->second);
+    }
+
+    // Retrieve an existing store, or create it if absent.
+    template <typename T, typename... Args>
+    T& Ensure(Args&&... args)
+    {
+        static_assert(std::is_base_of_v<IComponentStore, T>,
+            "T must derive from IComponentStore to be stored in ComponentRegistry");
+
+        const auto type = std::type_index(typeid(T));
+        auto it = Stores.find(type);
+        if (it != Stores.end())
+            return static_cast<T&>(*it->second);
+
+        auto [insertedIt, inserted] = Stores.emplace(
+            type,
+            std::make_unique<T>(std::forward<Args>(args)...));
+
+        assert(inserted && "ComponentRegistry: failed to insert ensured store");
+        return static_cast<T&>(*insertedIt->second);
     }
 
     // Retrieve a previously registered store. Asserts if not found.

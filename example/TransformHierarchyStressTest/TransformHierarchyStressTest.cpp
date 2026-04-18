@@ -1,4 +1,4 @@
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
@@ -405,7 +405,7 @@ namespace
 		TransformStore<Transform3f> Transforms;
 		Propagation3f Propagation;
 
-		std::vector<EntityHandle> Keys;
+		std::vector<EntityId> Keys;
 		double BatchEmplaceUs = 0.0;
 		double BatchRemoveUs = 0.0;
 		double HierarchyUnregisterUs = 0.0;
@@ -425,7 +425,7 @@ namespace
 			const auto emplaceStart = Clock::now();
 			for (size_t i = 0; i < count; ++i)
 			{
-				EntityHandle entity{ static_cast<EntityId>(i + 1), 1 };
+				EntityId entity{ static_cast<EntityIndex>(i + 1), 1 };
 				Keys.push_back(entity);
 				Transforms.Add(entity, MakeLocalTransform(i));
 				Hierarchy.Register(entity);
@@ -467,12 +467,12 @@ namespace
 		void RemoveAll()
 		{
 			const auto hierarchyStart = Clock::now();
-			for (EntityHandle key : Keys)
+			for (EntityId key : Keys)
 				Hierarchy.Unregister(key);
 			const auto hierarchyEnd = Clock::now();
 
 			const auto removeStart = Clock::now();
-			for (EntityHandle key : Keys)
+			for (EntityId key : Keys)
 				Transforms.Remove(key);
 			const auto removeEnd = Clock::now();
 
@@ -530,7 +530,7 @@ namespace
 		const RunConfig& config,
 		ProductionPropagationFixture& fixture)
 	{
-		constexpr EntityHandle SentinelKey{ 0xFFFFu, 1 };
+		constexpr EntityId SentinelKey{ 0xFFFFu, 1 };
 
 		// Warmup: ensure the cache is hot before measuring.
 		for (size_t i = 0; i < config.WarmupIterations; ++i)

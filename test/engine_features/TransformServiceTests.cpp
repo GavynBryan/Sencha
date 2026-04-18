@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 #include <core/batch/SparseSet.h>
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/World.h>
-#include <world/World2d.h>
+#include <registry/Registry2d.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <transform/TransformPropagationSystem.h>
@@ -15,9 +14,9 @@
 
 namespace
 {
-    EntityHandle Entity(EntityId id, uint16_t generation = 1)
+    EntityId Entity(EntityIndex index, uint16_t generation = 1)
     {
-        return EntityHandle{ id, generation };
+        return EntityId{ index, generation };
     }
 
     struct TransformPropagationFixture
@@ -151,8 +150,8 @@ TEST(TransformHierarchy, RegisterAndQueryRoots)
 {
     TransformHierarchyService hierarchy;
 
-    EntityHandle a = Entity(1);
-    EntityHandle b = Entity(2);
+    EntityId a = Entity(1);
+    EntityId b = Entity(2);
 
     hierarchy.Register(a);
     hierarchy.Register(b);
@@ -167,8 +166,8 @@ TEST(TransformHierarchy, SetParentCreatesRelationship)
 {
     TransformHierarchyService hierarchy;
 
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     hierarchy.SetParent(child, parent);
 
@@ -185,8 +184,8 @@ TEST(TransformHierarchy, ClearParentOrphansChild)
 {
     TransformHierarchyService hierarchy;
 
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     hierarchy.SetParent(child, parent);
     hierarchy.ClearParent(child);
@@ -200,9 +199,9 @@ TEST(TransformHierarchy, ReparentMovesChild)
 {
     TransformHierarchyService hierarchy;
 
-    EntityHandle parentA = Entity(1);
-    EntityHandle parentB = Entity(2);
-    EntityHandle child = Entity(3);
+    EntityId parentA = Entity(1);
+    EntityId parentB = Entity(2);
+    EntityId child = Entity(3);
 
     hierarchy.SetParent(child, parentA);
     hierarchy.SetParent(child, parentB);
@@ -216,9 +215,9 @@ TEST(TransformHierarchy, UnregisterOrphansChildren)
 {
     TransformHierarchyService hierarchy;
 
-    EntityHandle parent = Entity(1);
-    EntityHandle childA = Entity(2);
-    EntityHandle childB = Entity(3);
+    EntityId parent = Entity(1);
+    EntityId childA = Entity(2);
+    EntityId childB = Entity(3);
 
     hierarchy.SetParent(childA, parent);
     hierarchy.SetParent(childB, parent);
@@ -238,7 +237,7 @@ TEST(TransformHierarchy, UnregisterOrphansChildren)
 TEST(TransformStore2D, AddProvisionsLocalAndWorldForEntity)
 {
     TransformPropagationFixture fixture;
-    EntityHandle entity = Entity(10);
+    EntityId entity = Entity(10);
 
     EXPECT_TRUE(fixture.Space.Transforms.Add(
         entity,
@@ -257,7 +256,7 @@ TEST(TransformStore2D, AddProvisionsLocalAndWorldForEntity)
 TEST(TransformStore2D, RemoveFreesEntityTransform)
 {
     TransformPropagationFixture fixture;
-    EntityHandle entity = Entity(10);
+    EntityId entity = Entity(10);
 
     fixture.Space.Transforms.Add(entity, Transform2f::Identity());
     EXPECT_TRUE(fixture.Space.Transforms.Remove(entity));
@@ -270,7 +269,7 @@ TEST(TransformStore2D, RemoveFreesEntityTransform)
 TEST(TransformStore2D, MutableLocalMarksTransformDirty)
 {
     TransformPropagationFixture fixture;
-    EntityHandle entity = Entity(10);
+    EntityId entity = Entity(10);
 
     fixture.Space.Transforms.Add(entity, Transform2f({ 1.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Hierarchy.Register(entity);
@@ -294,7 +293,7 @@ TEST(TransformStore2D, MutableLocalMarksTransformDirty)
 TEST(TransformPropagation, RootWorldEqualsLocal2D)
 {
     TransformPropagationFixture fixture;
-    EntityHandle entity = Entity(1);
+    EntityId entity = Entity(1);
 
     Transform2f local({ 10.0f, 20.0f }, 0.0f, { 1.0f, 1.0f });
     fixture.Space.Transforms.Add(entity, local);
@@ -310,8 +309,8 @@ TEST(TransformPropagation, RootWorldEqualsLocal2D)
 TEST(TransformPropagation, ChildInheritsParentTransform2D)
 {
     TransformPropagationFixture fixture;
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     fixture.Space.Transforms.Add(parent, Transform2f({ 100.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
@@ -331,8 +330,8 @@ TEST(TransformPropagation, ChildInheritsParentTransform2D)
 TEST(TransformPropagation, RotatedParentAffectsChildPosition2D)
 {
     TransformPropagationFixture fixture;
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     float halfPi = std::numbers::pi_v<float> / 2.0f;
     fixture.Space.Transforms.Add(parent, Transform2f({ 0.0f, 0.0f }, halfPi, { 1.0f, 1.0f }));
@@ -352,9 +351,9 @@ TEST(TransformPropagation, RotatedParentAffectsChildPosition2D)
 TEST(TransformPropagation, ThreeLevelHierarchy2D)
 {
     TransformPropagationFixture fixture;
-    EntityHandle root = Entity(1);
-    EntityHandle mid = Entity(2);
-    EntityHandle leaf = Entity(3);
+    EntityId root = Entity(1);
+    EntityId mid = Entity(2);
+    EntityId leaf = Entity(3);
 
     fixture.Space.Transforms.Add(root, Transform2f({ 100.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Transforms.Add(mid, Transform2f({ 50.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
@@ -372,8 +371,8 @@ TEST(TransformPropagation, ThreeLevelHierarchy2D)
 TEST(TransformPropagation, ScaleComposes2D)
 {
     TransformPropagationFixture fixture;
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     fixture.Space.Transforms.Add(parent, Transform2f({ 0.0f, 0.0f }, 0.0f, { 2.0f, 2.0f }));
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 0.5f, 0.5f }));
@@ -391,8 +390,8 @@ TEST(TransformPropagation, ScaleComposes2D)
 TEST(TransformPropagation, RemovedTransformIsSkippedOnRebuild)
 {
     TransformPropagationFixture fixture;
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     fixture.Space.Transforms.Add(parent, Transform2f({ 100.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
@@ -408,8 +407,8 @@ TEST(TransformPropagation, RemovedTransformIsSkippedOnRebuild)
 TEST(TransformPropagation, ChildInheritsParentTransform3D)
 {
     TransformPropagation3Fixture fixture;
-    EntityHandle parent = Entity(1);
-    EntityHandle child = Entity(2);
+    EntityId parent = Entity(1);
+    EntityId child = Entity(2);
 
     float halfPi = std::numbers::pi_v<float> / 2.0f;
     Transform3f parentLocal(
@@ -436,17 +435,17 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
     EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
-TEST(World2d, ResolvesGameplayFacingTransformServices)
+TEST(Registry2d, ResolvesGameplayFacingTransformServices)
 {
-    World2d world;
-    EntityHandle entity = Entity(99);
+    Registry2d registry;
+    EntityId entity = Entity(99);
 
-    EXPECT_TRUE(world.Transforms.Add(
+    EXPECT_TRUE(registry.Transforms.Add(
         entity,
         Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f })));
-    world.Hierarchy.Register(entity);
+    registry.Hierarchy.Register(entity);
 
-    EXPECT_TRUE(world.Hierarchy.IsRegistered(entity));
-    EXPECT_NE(world.Transforms.TryGetLocal(entity), nullptr);
-    EXPECT_NE(world.Transforms.TryGetWorld(entity), nullptr);
+    EXPECT_TRUE(registry.Hierarchy.IsRegistered(entity));
+    EXPECT_NE(registry.Transforms.TryGetLocal(entity), nullptr);
+    EXPECT_NE(registry.Transforms.TryGetWorld(entity), nullptr);
 }

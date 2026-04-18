@@ -1,6 +1,6 @@
 #pragma once
 
-#include <entity/EntityHandle.h>
+#include <entity/EntityId.h>
 #include <transform/TransformHierarchyService.h>
 #include <cstddef>
 #include <cstdint>
@@ -16,54 +16,54 @@
 class EntityRegistry
 {
 public:
-    EntityHandle Create()
+    EntityId Create()
     {
         if (!FreeIds.empty())
         {
-            const EntityId id = FreeIds.back();
+            const EntityIndex index = FreeIds.back();
             FreeIds.pop_back();
-            Entries[id].Alive = true;
+            Entries[index].Alive = true;
             ++LiveCount;
-            return EntityHandle{ id, Entries[id].Generation };
+            return EntityId{ index, Entries[index].Generation };
         }
 
-        const EntityId id = static_cast<EntityId>(Entries.size());
+        const EntityIndex index = static_cast<EntityIndex>(Entries.size());
         Entries.push_back(Entry{ .Generation = 1, .Alive = true });
         ++LiveCount;
-        return EntityHandle{ id, 1 };
+        return EntityId{ index, 1 };
     }
 
-    bool Destroy(EntityHandle entity)
+    bool Destroy(EntityId entity)
     {
         if (!IsAlive(entity))
             return false;
 
-        Entry& entry = Entries[entity.Id];
+        Entry& entry = Entries[entity.Index];
         entry.Alive = false;
         ++entry.Generation;
         if (entry.Generation == 0)
             ++entry.Generation;
 
-        FreeIds.push_back(entity.Id);
+        FreeIds.push_back(entity.Index);
         --LiveCount;
         return true;
     }
 
-    void DestroySubtree(EntityHandle root, const TransformHierarchyService& hierarchy)
+    void DestroySubtree(EntityId root, const TransformHierarchyService& hierarchy)
     {
-        std::vector<EntityHandle> postOrder;
+        std::vector<EntityId> postOrder;
         CollectPostOrder(hierarchy, root, postOrder);
 
-        for (EntityHandle entity : postOrder)
+        for (EntityId entity : postOrder)
             Destroy(entity);
     }
 
-    bool IsAlive(EntityHandle entity) const
+    bool IsAlive(EntityId entity) const
     {
         return entity.IsValid()
-            && entity.Id < Entries.size()
-            && Entries[entity.Id].Alive
-            && Entries[entity.Id].Generation == entity.Generation;
+            && entity.Index < Entries.size()
+            && Entries[entity.Index].Alive
+            && Entries[entity.Index].Generation == entity.Generation;
     }
 
     size_t Count() const { return LiveCount; }
@@ -77,15 +77,15 @@ private:
 
     static void CollectPostOrder(
         const TransformHierarchyService& hierarchy,
-        EntityHandle entity,
-        std::vector<EntityHandle>& out)
+        EntityId entity,
+        std::vector<EntityId>& out)
     {
-        for (EntityHandle child : hierarchy.GetChildren(entity))
+        for (EntityId child : hierarchy.GetChildren(entity))
             CollectPostOrder(hierarchy, child, out);
         out.push_back(entity);
     }
 
     std::vector<Entry> Entries;
-    std::vector<EntityId> FreeIds;
+    std::vector<EntityIndex> FreeIds;
     size_t LiveCount = 0;
 };
