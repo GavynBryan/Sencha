@@ -3,7 +3,6 @@
 #include <entity/EntityId.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <registry/Registry2d.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformPropagationOrderService.h>
 #include <transform/TransformPropagationSystem.h>
@@ -435,9 +434,9 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
     EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
-TEST(Registry2d, ResolvesGameplayFacingTransformServices)
+TEST(TransformSpace2d, ResolvesGameplayFacingTransformServices)
 {
-    Registry2d registry;
+    TransformSpace2d registry;
     EntityId entity = Entity(99);
 
     EXPECT_TRUE(registry.Transforms.Add(

@@ -6,7 +6,7 @@
 #include <span>
 
 ZoneRuntime::ZoneRuntime()
-    : Global(std::make_unique<Registry>(MakeGlobalRegistry(RegistryId::Global())))
+    : GlobalRegistry(std::make_unique<Registry>(MakeGlobalRegistry(RegistryId::Global())))
 {
 }
 
@@ -14,12 +14,12 @@ ZoneRuntime::~ZoneRuntime() = default;
 
 Registry& ZoneRuntime::Global()
 {
-    return *Global;
+    return *GlobalRegistry;
 }
 
 const Registry& ZoneRuntime::Global() const
 {
-    return *Global;
+    return *GlobalRegistry;
 }
 
 Registry& ZoneRuntime::CreateZone(ZoneId zone)
@@ -81,8 +81,8 @@ Registry* ZoneRuntime::FindRegistry(RegistryId id)
     if (!id.IsValid())
         return nullptr;
 
-    if (Global && Global->Id == id)
-        return Global.get();
+    if (GlobalRegistry && GlobalRegistry->Id == id)
+        return GlobalRegistry.get();
 
     for (const auto& loaded : Zones)
     {
@@ -99,8 +99,8 @@ const Registry* ZoneRuntime::FindRegistry(RegistryId id) const
     if (!id.IsValid())
         return nullptr;
 
-    if (Global && Global->Id == id)
-        return Global.get();
+    if (GlobalRegistry && GlobalRegistry->Id == id)
+        return GlobalRegistry.get();
 
     for (const auto& loaded : Zones)
     {
@@ -153,11 +153,11 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
     }
 
     return FrameRegistryView{
-        .Global = Global_.get(),
-        .Visible = std::span<Registry*>{ VisibleScratch_.data(), VisibleScratch_.size() },
-        .Physics = std::span<Registry*>{ PhysicsScratch_.data(), PhysicsScratch_.size() },
-        .Logic = std::span<Registry*>{ LogicScratch_.data(), LogicScratch_.size() },
-        .Audio = std::span<Registry*>{ AudioScratch_.data(), AudioScratch_.size() }
+        .Global = GlobalRegistry.get(),
+        .Visible = std::span<Registry*>{ VisibleScratch.data(), VisibleScratch.size() },
+        .Physics = std::span<Registry*>{ PhysicsScratch.data(), PhysicsScratch.size() },
+        .Logic = std::span<Registry*>{ LogicScratch.data(), LogicScratch.size() },
+        .Audio = std::span<Registry*>{ AudioScratch.data(), AudioScratch.size() }
     };
 }
 

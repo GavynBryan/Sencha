@@ -180,6 +180,7 @@ bool ImGuiDebugOverlay::InitImGui(const RendererServices& services)
 
 	ColorFormat = services.Swapchain->GetFormat();
 	vulkanInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats = &ColorFormat;
+	vulkanInfo.PipelineRenderingCreateInfo.depthAttachmentFormat = services.DepthFormat;
 
 	if (!ImGui_ImplVulkan_Init(&vulkanInfo))
 	{

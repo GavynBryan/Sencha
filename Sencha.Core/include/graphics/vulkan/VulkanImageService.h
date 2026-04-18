@@ -51,6 +51,7 @@ struct ImageCreateInfo
     VkFormat Format = VK_FORMAT_R8G8B8A8_SRGB;
     VkExtent2D Extent{};
     VkImageUsageFlags Usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageAspectFlags AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     uint32_t MipLevels = 1;          // 0 or 1 => single mip. >1 => explicit chain length.
     bool GenerateMips = false;       // auto-blit mip chain from base after upload
     const char* DebugName = nullptr;
@@ -101,6 +102,7 @@ private:
         VmaAllocation Allocation = VK_NULL_HANDLE;
         VkFormat Format = VK_FORMAT_UNDEFINED;
         VkExtent2D Extent{};
+        VkImageAspectFlags AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         uint32_t MipLevels = 1;
         bool GenerateMips = false;
         uint32_t Generation = 0;

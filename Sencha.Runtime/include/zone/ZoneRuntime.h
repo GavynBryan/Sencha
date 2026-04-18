@@ -68,7 +68,7 @@ private:
     RegistryId AllocateRegistryId();
     void InvalidateFrameScratch();
 
-    std::unique_ptr<Registry> Global;
+    std::unique_ptr<Registry> GlobalRegistry;
     std::vector<std::unique_ptr<LoadedZone>> Zones;
 
     // Reusable temporary storage for BuildFrameView().
