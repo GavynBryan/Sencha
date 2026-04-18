@@ -434,3 +434,17 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
     EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
+TEST(TransformSpace2d, ResolvesGameplayFacingTransformServices)
+{
+    TransformSpace2d registry;
+    EntityId entity = Entity(99);
+
+    EXPECT_TRUE(registry.Transforms.Add(
+        entity,
+        Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f })));
+    registry.Hierarchy.Register(entity);
+
+    EXPECT_TRUE(registry.Hierarchy.IsRegistered(entity));
+    EXPECT_NE(registry.Transforms.TryGetLocal(entity), nullptr);
+    EXPECT_NE(registry.Transforms.TryGetWorld(entity), nullptr);
+}

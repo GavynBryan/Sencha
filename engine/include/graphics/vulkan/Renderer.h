@@ -25,6 +25,7 @@ class VulkanPipelineCache;
 class VulkanDescriptorCache;
 class VulkanFrameScratch;
 class VulkanUploadContextService;
+class VulkanDepthTarget;
 
 //=============================================================================
 // Renderer
@@ -80,6 +81,7 @@ struct RendererServices
     VulkanDescriptorCache* Descriptors = nullptr;
     VulkanFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
+    VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to
@@ -91,6 +93,8 @@ struct FrameContext
     uint32_t FrameInFlightIndex = 0;
     VkExtent2D TargetExtent{};
     VkFormat TargetFormat = VK_FORMAT_UNDEFINED;
+    VkImageView DepthView = VK_NULL_HANDLE;
+    VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
 };
 
@@ -192,6 +196,8 @@ private:
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;
     std::vector<IRenderFeature*> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
     std::vector<VkImageLayout> ImageLayouts;
+    std::unique_ptr<VulkanDepthTarget> DepthTarget;
+    VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
     // Returns the raw pointer on success, nullptr on failure.

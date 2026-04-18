@@ -24,6 +24,8 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/*.h"
 )
 
+include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+
 if(NOT SENCHA_ENABLE_VULKAN)
     foreach(_pattern
         "[/\\\\]src[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
@@ -52,16 +54,47 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
     endforeach()
 endif()
 
+set(SENCHA_ENGINE_GENERATED_HEADERS)
+
+if(SENCHA_ENABLE_VULKAN)
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_forward.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _mesh_forward_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_mesh_forward_vert_spv}"
+        VAR_NAME kMeshForwardVertSpv
+        OUT_HEADER _mesh_forward_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_forward.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _mesh_forward_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_mesh_forward_frag_spv}"
+        VAR_NAME kMeshForwardFragSpv
+        OUT_HEADER _mesh_forward_frag_header
+    )
+    list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+        "${_mesh_forward_vert_header}"
+        "${_mesh_forward_frag_header}"
+    )
+endif()
+
 find_package(SDL3 REQUIRED CONFIG)
 
 add_library(sencha_engine STATIC
     ${SENCHA_ENGINE_SOURCES}
     ${SENCHA_ENGINE_HEADERS}
+    ${SENCHA_ENGINE_GENERATED_HEADERS}
 )
 add_library(sencha::engine ALIAS sencha_engine)
 
 target_include_directories(sencha_engine
     PUBLIC "${SENCHA_ENGINE_INCLUDE_DIR}"
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)

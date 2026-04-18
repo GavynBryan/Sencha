@@ -4,6 +4,7 @@
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
+#include <graphics/vulkan/VulkanDepthTarget.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <graphics/vulkan/VulkanImageService.h>
@@ -60,6 +61,9 @@ Renderer::Renderer(LoggingProvider& logging,
     Services.Upload = &upload;
 
     ImageLayouts.assign(swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
+    DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
+    DepthTarget->Create(swapchain.GetExtent());
+    Services.DepthFormat = DepthTarget->GetFormat();
     Valid = true;
 }
 
@@ -144,6 +148,7 @@ Renderer::DrawStatus Renderer::DrawFrame()
 void Renderer::NotifySwapchainRecreated()
 {
     ImageLayouts.assign(Swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
+    DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
@@ -157,6 +162,30 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     VulkanBarriers::TransitionForColorAttachment(
         frame.CommandBuffer, frame.SwapchainImage, oldLayout);
 
+    const VkExtent2D oldDepthExtent = DepthTarget->GetExtent();
+    DepthTarget->Recreate(frame.SwapchainExtent);
+    if (oldDepthExtent.width != frame.SwapchainExtent.width
+        || oldDepthExtent.height != frame.SwapchainExtent.height)
+    {
+        DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+    if (DepthTarget->GetImage() != VK_NULL_HANDLE)
+    {
+        VulkanBarriers::ImageTransition t{};
+        t.Image = DepthTarget->GetImage();
+        t.OldLayout = DepthLayout;
+        t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                   | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        t.SrcAccess = 0;
+        t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                    | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
+        DepthLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    }
+
     VkRenderingAttachmentInfo colorAttach{};
     colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttach.imageView = frame.SwapchainImageView;
@@ -165,6 +194,14 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttach.clearValue.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
 
+    VkRenderingAttachmentInfo depthAttach{};
+    depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttach.imageView = DepthTarget->GetView();
+    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttach.clearValue.depthStencil = { 1.0f, 0 };
+
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = { 0, 0 };
@@ -172,6 +209,7 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttach;
+    renderingInfo.pDepthAttachment = depthAttach.imageView != VK_NULL_HANDLE ? &depthAttach : nullptr;
 
     vkCmdBeginRendering(frame.CommandBuffer, &renderingInfo);
 
@@ -180,6 +218,8 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     ctx.FrameInFlightIndex = frame.FrameIndex;
     ctx.TargetExtent = frame.SwapchainExtent;
     ctx.TargetFormat = frame.SwapchainFormat;
+    ctx.DepthView = DepthTarget->GetView();
+    ctx.DepthFormat = DepthTarget->GetFormat();
     ctx.Phase = RenderPhase::MainColor;
 
     for (IRenderFeature* feat : PhaseBuckets[static_cast<size_t>(RenderPhase::MainColor)])

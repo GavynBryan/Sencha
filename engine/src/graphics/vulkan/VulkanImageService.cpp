@@ -179,6 +179,7 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     entry.Allocation = allocation;
     entry.Format = info.Format;
     entry.Extent = info.Extent;
+    entry.AspectMask = info.AspectMask;
     entry.MipLevels = mipLevels;
     entry.GenerateMips = info.GenerateMips;
     entry.Generation = entry.Generation + 1;
@@ -206,7 +207,7 @@ bool VulkanImageService::CreateDefaultView(ImageEntry& entry)
     viewInfo.image = entry.Image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = entry.Format;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.aspectMask = entry.AspectMask;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = entry.MipLevels;
     viewInfo.subresourceRange.baseArrayLayer = 0;
