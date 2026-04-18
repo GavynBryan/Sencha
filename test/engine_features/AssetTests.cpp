@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <assets/texture/Image.h>
-#include <assets/texture/ImageLoader.h>
+#include <render/Image.h>
+#include <render/ImageLoader.h>
 
 // ============================================================================
 // Image struct

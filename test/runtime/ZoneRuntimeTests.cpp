@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <registry/Registry.h>
+#include <world/registry/Registry.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneRuntime.h>
 

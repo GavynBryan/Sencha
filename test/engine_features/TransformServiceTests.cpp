@@ -1,14 +1,13 @@
 #include <gtest/gtest.h>
 #include <core/batch/SparseSet.h>
-#include <entity/EntityId.h>
+#include <world/entity/EntityId.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <registry/Registry2d.h>
-#include <transform/TransformHierarchyService.h>
-#include <transform/TransformPropagationOrderService.h>
-#include <transform/TransformPropagationSystem.h>
-#include <transform/TransformSpace.h>
-#include <transform/TransformStore.h>
+#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformPropagationSystem.h>
+#include <world/transform/TransformSpace.h>
+#include <world/transform/TransformStore.h>
 #include <cmath>
 #include <numbers>
 
@@ -435,17 +434,3 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
     EXPECT_TRUE(childWorld->Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
-TEST(Registry2d, ResolvesGameplayFacingTransformServices)
-{
-    Registry2d registry;
-    EntityId entity = Entity(99);
-
-    EXPECT_TRUE(registry.Transforms.Add(
-        entity,
-        Transform2f({ 1.0f, 2.0f }, 0.0f, { 1.0f, 1.0f })));
-    registry.Hierarchy.Register(entity);
-
-    EXPECT_TRUE(registry.Hierarchy.IsRegistered(entity));
-    EXPECT_NE(registry.Transforms.TryGetLocal(entity), nullptr);
-    EXPECT_NE(registry.Transforms.TryGetWorld(entity), nullptr);
-}
