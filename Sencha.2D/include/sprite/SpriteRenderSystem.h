@@ -3,7 +3,7 @@
 #include <assets/texture/TextureCache.h>
 #include <graphics/features/SpriteFeature.h>
 #include <math/geometry/2d/Transform2d.h>
-#include <sprite/SpriteComponent.h>
+#include <sprite/SpriteStore.h>
 #include <transform/TransformStore.h>
 
 class SpriteRenderSystem

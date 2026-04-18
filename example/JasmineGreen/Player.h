@@ -6,6 +6,7 @@
 #include <physics/Collider2D.h>
 #include <physics/RigidBody2D.h>
 #include <sprite/SpriteComponent.h>
+#include <sprite/SpriteStore.h>
 #include <transform/TransformHierarchyService.h>
 #include <transform/TransformStore.h>
 
