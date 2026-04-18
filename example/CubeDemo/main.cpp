@@ -30,15 +30,15 @@
 #include <render/MeshService.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderQueue.h>
-#include <registry/Registry.h>
+#include <world/registry/Registry.h>
 #include <time/TimeService.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationSystem.h>
 #include <world/transform/TransformStore.h>
-#include <window/SdlVideoService.h>
-#include <window/SdlWindow.h>
-#include <window/SdlWindowService.h>
-#include <window/WindowCreateInfo.h>
+#include <platform/SdlVideoService.h>
+#include <platform/SdlWindow.h>
+#include <platform/SdlWindowService.h>
+#include <platform/WindowCreateInfo.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
