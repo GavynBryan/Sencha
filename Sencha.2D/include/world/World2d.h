@@ -3,7 +3,7 @@
 #include <math/geometry/2d/Transform2d.h>
 #include <physics/PhysicsDomain2D.h>
 #include <physics/RigidBody2D.h>
-#include <sprite/SpriteComponent.h>
+#include <sprite/SpriteStore.h>
 #include <world/World.h>
 
 //=============================================================================
