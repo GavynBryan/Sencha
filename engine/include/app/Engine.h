@@ -1,15 +1,13 @@
 #pragma once
 
 #include <app/GameContexts.h>
+#include <app/DefaultSceneBinding.h>
 #include <core/config/EngineConfig.h>
 #include <core/service/ServiceHost.h>
 #include <core/system/SystemHost.h>
-#include <render/Camera.h>
 #include <render/DefaultRenderScene.h>
 #include <render/Material.h>
-#include <render/MeshRendererComponent.h>
 #include <render/MeshService.h>
-#include <render/RenderQueue.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <world/transform/TransformHierarchyService.h>
@@ -60,18 +58,19 @@ public:
     [[nodiscard]] TimingHistory& Timing() { return Timing_; }
     [[nodiscard]] const TimingHistory& Timing() const { return Timing_; }
 
-    [[nodiscard]] RenderQueue& GetRenderQueue() { return RenderQueue_; }
-    [[nodiscard]] const RenderQueue& GetRenderQueue() const { return RenderQueue_; }
+    [[nodiscard]] RenderQueue& GetRenderQueue();
+    [[nodiscard]] const RenderQueue& GetRenderQueue() const;
 
-    [[nodiscard]] CameraRenderData& GetCameraData() { return CameraData_; }
-    [[nodiscard]] const CameraRenderData& GetCameraData() const { return CameraData_; }
+    [[nodiscard]] CameraRenderData& GetCameraData();
+    [[nodiscard]] const CameraRenderData& GetCameraData() const;
 
     void RegisterDefaultRenderScene(DefaultRenderScene scene);
     bool AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials);
 
 private:
     void RegisterFramePhases(Game& game);
-    bool ExtractDefaultRenderScene(RenderExtractContext& ctx);
+    [[nodiscard]] DefaultSceneBinding& GetDefaultSceneBinding();
+    [[nodiscard]] const DefaultSceneBinding& GetDefaultSceneBinding() const;
 
     EngineConfig Config_;
     ServiceHost Services_;
@@ -80,9 +79,6 @@ private:
     RuntimeFrameLoop Runtime_;
     std::unique_ptr<FrameDriver> Driver_;
     TimingHistory Timing_;
-    RenderQueue RenderQueue_;
-    CameraRenderData CameraData_;
-    DefaultRenderScene DefaultRenderScene_;
     bool Initialized_ = false;
     bool Running_ = false;
     bool FramePhasesRegistered_ = false;
