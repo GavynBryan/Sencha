@@ -1,9 +1,12 @@
 #pragma once
 
-#include <audio/AudioConfig.h>
-#include <platform/WindowTypes.h>
+#include <core/config/AppConfig.h>
+#include <core/config/AudioConfig.h>
+#include <core/config/DebugConfig.h>
+#include <core/config/GraphicsConfig.h>
+#include <core/config/RuntimeConfig.h>
+#include <core/config/WindowConfig.h>
 
-#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -19,48 +22,11 @@
 //   AudioService audio(logging, cfg.Audio);
 //
 // Adding a new subsystem config:
-//   1. Define the config struct in the subsystem's own header (e.g.
-//      Sencha.2D/include/render/RenderConfig.h).
+//   1. Define the config struct and deserializer in the subsystem's config
+//      header (see AudioConfig.h).
 //   2. Add a field here.
-//   3. Deserialize it in EngineConfig.cpp next to the audio section.
+//   3. Dispatch to the deserializer from EngineConfig.cpp.
 //=============================================================================
-struct EngineAppConfig
-{
-    std::string Name = "Sencha Application";
-};
-
-struct EngineWindowConfig
-{
-    std::string Title = "Sencha";
-    uint32_t Width = 1280;
-    uint32_t Height = 720;
-    WindowMode Mode = WindowMode::Windowed;
-    WindowGraphicsApi GraphicsApi = WindowGraphicsApi::Vulkan;
-    bool Resizable = true;
-    bool Visible = true;
-};
-
-struct EngineRuntimeConfig
-{
-    double FixedTickRate = 60.0;
-    double TargetFps = 0.0;
-    double ResizeSettleSeconds = 0.10;
-    bool ExitOnEscape = false;
-    bool TogglePauseOnF1 = false;
-};
-
-struct EngineGraphicsConfig
-{
-    uint32_t FramesInFlight = 2;
-    bool EnableValidation = true;
-};
-
-struct EngineDebugConfig
-{
-    bool ConsoleLogging = true;
-    bool DebugUi = false;
-};
-
 struct EngineConfig
 {
     EngineAppConfig App;

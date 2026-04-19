@@ -1,4 +1,6 @@
-#include <audio/AudioConfig.h>
+#include <core/config/AudioConfig.h>
+
+#include <utility>
 
 // ---------------------------------------------------------------------------
 // DeserializeAudioConfig
