@@ -37,12 +37,11 @@ namespace
     }
 }
 
-template <typename TTransformView>
-bool BuildCameraRenderData(const ActiveCameraService& activeCamera,
-                           const CameraStore& cameras,
-                           const TTransformView& transforms,
-                           VkExtent2D targetExtent,
-                           CameraRenderData& out)
+bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
+                                   const CameraStore& cameras,
+                                   const TransformStore<Transform3f>& transforms,
+                                   VkExtent2D targetExtent,
+                                   CameraRenderData& out)
 {
     if (!activeCamera.HasActive() || targetExtent.width == 0 || targetExtent.height == 0)
     {
@@ -81,22 +80,4 @@ bool BuildCameraRenderData(const ActiveCameraService& activeCamera,
     out.Position = transform->Position;
     out.Frustum = Frustum::FromViewProjection(out.ViewProjection);
     return true;
-}
-
-bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
-                                   const CameraStore& cameras,
-                                   const TransformStore<Transform3f>& transforms,
-                                   VkExtent2D targetExtent,
-                                   CameraRenderData& out)
-{
-    return BuildCameraRenderData(activeCamera, cameras, transforms, targetExtent, out);
-}
-
-bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
-                                   const CameraStore& cameras,
-                                   const TransformPresentationStore<Transform3f>& transforms,
-                                   VkExtent2D targetExtent,
-                                   CameraRenderData& out)
-{
-    return BuildCameraRenderData(activeCamera, cameras, transforms, targetExtent, out);
 }

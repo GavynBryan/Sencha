@@ -307,7 +307,12 @@ VkExtent2D VulkanSwapchainService::ChooseExtent(
 uint32_t VulkanSwapchainService::ChooseImageCount(
     const VkSurfaceCapabilitiesKHR& capabilities) const
 {
-    uint32_t imageCount = capabilities.minImageCount + 1;
+    // With FIFO present mode we want the minimum image count (usually 2) so
+    // that vkAcquireNextImageKHR blocks on vsync and acts as our pacing anchor.
+    // Requesting minImageCount+1 creates a third image that lets the GPU queue
+    // an additional frame, which desynchronizes CPU submission from vsync and
+    // produces missed-vsync microstutter (32ms+1ms frame pairs).
+    uint32_t imageCount = capabilities.minImageCount;
     if (capabilities.maxImageCount > 0)
     {
         imageCount = std::min(imageCount, capabilities.maxImageCount);

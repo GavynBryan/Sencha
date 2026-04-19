@@ -29,9 +29,10 @@ enum class FramePhase : int
     RebuildGraphics = 2,      // Recreate swapchain / swap device resources
     ScheduleTicks = 3,        // Resolve presentation resets and fixed tick budget
     Simulate = 4,             // Fixed-step: gameplay + propagation (0..N calls)
-    ExtractRenderPacket = 5,  // Build RenderPacket for this frame
-    Render = 6,               // Submit + present
-    EndFrame = 7,             // Flip buffers, pace, stamp telemetry
+    Update = 5,               // Per-frame game update: camera, HUD, input reactions
+    ExtractRenderPacket = 6,  // Build RenderPacket for this frame
+    Render = 7,               // Submit + present
+    EndFrame = 8,             // Flip buffers, pace, stamp telemetry
     Count,
 };
 

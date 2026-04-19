@@ -5,7 +5,6 @@
 #include <render/Material.h>
 #include <render/MeshTypes.h>
 #include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPresentationStore.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformPropagationSystem.h>
 #include <world/transform/TransformStore.h>
@@ -35,7 +34,6 @@ public:
     [[nodiscard]] TransformHierarchyService& Hierarchy();
     [[nodiscard]] TransformPropagationOrderService& PropagationOrder();
     [[nodiscard]] TransformStore<Transform3f>& Transforms();
-    [[nodiscard]] TransformPresentationStore<Transform3f>& PresentationTransforms();
     [[nodiscard]] MeshRendererStore& MeshRenderers();
     [[nodiscard]] CameraStore& Cameras();
     [[nodiscard]] ActiveCameraService& ActiveCamera();
@@ -45,10 +43,7 @@ public:
     bool AddCamera(EntityId entity, const CameraComponent& camera, bool makeActive = true);
     void SetActiveCamera(EntityId entity);
 
-    void BeginSimulationTick();
     void PropagateTransforms();
-    void EndSimulationTick();
-    void ResetPresentationTransforms();
 
     [[nodiscard]] DefaultRenderScene BuildDefaultRenderScene(
         MeshService& meshes,
@@ -62,6 +57,5 @@ private:
     MeshRendererStore& Renderers_;
     CameraStore& Cameras_;
     ActiveCameraService ActiveCamera_;
-    TransformPresentationStore<Transform3f> PresentationTransforms_;
     TransformPropagationSystem<Transform3f> TransformPropagation_;
 };

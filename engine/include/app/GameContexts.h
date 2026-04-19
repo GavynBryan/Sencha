@@ -44,6 +44,29 @@ struct FixedUpdateContext
     FixedSimTime Time;
 };
 
+//=============================================================================
+// FrameUpdateContext
+//
+// Per-frame game update. Runs once per rendered frame between Simulate and
+// ExtractRenderPacket. Use for state that must update at render cadence:
+// camera orientation from mouse look, HUD animations, menu timers, debug
+// cameras, anything input-reactive that is not simulation state.
+//
+// WallDeltaSeconds is the raw wall-clock duration of the previous frame.
+// Use it for framerate-independent interpolation (e.g. exponential smoothing).
+// Do NOT use it to scale simulation-authoritative values — that belongs in
+// OnFixedUpdate with FixedSimTime.DeltaSeconds.
+//=============================================================================
+struct FrameUpdateContext
+{
+    Engine& EngineInstance;
+    EngineConfig& Config;
+    RuntimeFrameLoop& Runtime;
+    InputFrame& Input;
+    double WallDeltaSeconds = 0.0;
+    PresentationTime Presentation;
+};
+
 struct RenderExtractContext
 {
     Engine& EngineInstance;

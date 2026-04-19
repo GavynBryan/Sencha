@@ -138,6 +138,13 @@ bool Engine::Initialize()
     policy.RequiredInstanceExtensions = windows.GetRequiredVulkanInstanceExtensions();
     policy.RequiredDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
+    // present_id + present_wait let us block the CPU on a specific vsync —
+    // the only reliable way to anchor the frame clock to display refresh
+    // without spinning. Optional because macOS/MoltenVK and older drivers
+    // lack it; VulkanFrameService falls back to acquire-based pacing.
+    policy.OptionalDeviceExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+    policy.OptionalDeviceExtensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+
     auto& instance = Services_.AddService<VulkanInstanceService>(logging, policy);
     auto& surface = Services_.AddService<VulkanSurfaceService>(logging, instance, *window);
     auto& physicalDevice =
@@ -209,13 +216,6 @@ void Engine::Shutdown()
 void Engine::RegisterDefaultRenderScene(DefaultRenderScene scene)
 {
     DefaultRenderScene_ = scene;
-    if (DefaultRenderScene_.IsValid())
-    {
-        DefaultRenderScene_.PresentationTransforms->Reset(
-            *DefaultRenderScene_.Transforms,
-            *DefaultRenderScene_.Hierarchy,
-            *DefaultRenderScene_.PropagationOrder);
-    }
 }
 
 bool Engine::AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials)
@@ -242,16 +242,10 @@ bool Engine::ExtractDefaultRenderScene(RenderExtractContext& ctx)
 #ifdef SENCHA_ENABLE_VULKAN
     auto& swapchain = Services_.Get<VulkanSwapchainService>();
 
-    DefaultRenderScene_.PresentationTransforms->BuildRenderSnapshot(
-        *DefaultRenderScene_.Transforms,
-        *DefaultRenderScene_.Hierarchy,
-        *DefaultRenderScene_.PropagationOrder,
-        static_cast<float>(ctx.Presentation.Alpha));
-
     if (!CameraRenderDataSystem::Build(
             *DefaultRenderScene_.ActiveCamera,
             *DefaultRenderScene_.Cameras,
-            *DefaultRenderScene_.PresentationTransforms,
+            *DefaultRenderScene_.Transforms,
             swapchain.GetExtent(),
             CameraData_))
     {
@@ -264,7 +258,7 @@ bool Engine::ExtractDefaultRenderScene(RenderExtractContext& ctx)
 
     RenderQueue_.Reset();
     RenderExtractionSystem::Extract(
-        *DefaultRenderScene_.PresentationTransforms,
+        *DefaultRenderScene_.Transforms,
         *DefaultRenderScene_.Renderers,
         *DefaultRenderScene_.Meshes,
         *DefaultRenderScene_.Materials,
@@ -378,6 +372,19 @@ void Engine::RegisterFramePhases(Game& game)
             .Time = ctx.CurrentTick,
         };
         game.OnFixedUpdate(update);
+    });
+
+    Driver_->Register(FramePhase::Update, [this, &game](PhaseContext& ctx) {
+        const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+        FrameUpdateContext update{
+            .EngineInstance = *this,
+            .Config = Config_,
+            .Runtime = *ctx.Runtime,
+            .Input = *ctx.Input,
+            .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
+            .Presentation = rf.Presentation,
+        };
+        game.OnUpdate(update);
     });
 
     Driver_->Register(FramePhase::ExtractRenderPacket, [this, &game](PhaseContext& ctx) {

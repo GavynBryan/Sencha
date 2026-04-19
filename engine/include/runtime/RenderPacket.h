@@ -17,10 +17,6 @@
 // Lifetime: owned by the FrameDriver, double-buffered. Sim writes Active()
 // during the ExtractRenderPacket phase; renderer reads ActiveForRender()
 // during the Render phase. FrameDriver flips the pair at frame end.
-//
-// Transform data lives in a separate TransformPresentationStore that
-// already double-buffers previous/current — the packet references it by
-// pointer rather than copying per-entity state.
 //=============================================================================
 struct RenderPacket
 {

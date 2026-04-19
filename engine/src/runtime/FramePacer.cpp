@@ -2,6 +2,27 @@
 
 #include <thread>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <timeapi.h>
+
+namespace
+{
+    // Windows default timer resolution is ~15.6ms, which makes sleep_until
+    // wildly imprecise for frame pacing. Requesting 1ms resolution process-
+    // wide brings std::this_thread::sleep_until to <1ms jitter — the pacer
+    // can then land on vsync instead of overshooting by 14ms and colliding
+    // with the next swapchain acquire.
+    struct TimerResolutionScope
+    {
+        TimerResolutionScope() { timeBeginPeriod(1); }
+        ~TimerResolutionScope() { timeEndPeriod(1); }
+    };
+    static TimerResolutionScope g_TimerResolutionScope;
+}
+#endif
+
 void FramePacer::SetTargetFps(double fps)
 {
     if (fps <= 0.0)

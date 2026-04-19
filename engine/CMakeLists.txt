@@ -103,6 +103,12 @@ target_include_directories(sencha_engine
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
+if(WIN32)
+    # winmm for timeBeginPeriod/timeEndPeriod used by FramePacer to achieve
+    # 1ms sleep granularity on Windows.
+    target_link_libraries(sencha_engine PRIVATE winmm)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
     stb

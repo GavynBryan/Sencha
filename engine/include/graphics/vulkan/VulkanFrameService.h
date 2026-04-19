@@ -41,6 +41,7 @@ struct VulkanFrame
     VkFormat SwapchainFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D SwapchainExtent{};
     uint64_t SwapchainGeneration = 0;
+    uint64_t PresentId = 0;
 };
 
 struct VulkanFrameTiming
@@ -48,6 +49,7 @@ struct VulkanFrameTiming
     double AcquireSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
+    double PresentWaitSeconds = 0.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
 };
@@ -86,6 +88,8 @@ private:
         VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
         VkSemaphore ImageAvailable = VK_NULL_HANDLE;
         VkFence InFlightFence = VK_NULL_HANDLE;
+        uint64_t PresentId = 0;
+        uint64_t PresentIdSwapchainGeneration = 0;
         bool Submitted = false;
         bool AcquireSuboptimal = false;
     };
@@ -105,6 +109,9 @@ private:
     std::vector<SwapchainImageFrameState> ImageInFlightFences;
     std::vector<VkSemaphore> ImageRenderFinishedSemaphores;
     uint32_t CurrentFrame = 0;
+    uint64_t NextPresentId = 1;
+    PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
+    bool PresentWaitEnabled = false;
     bool Valid = false;
     VulkanFrameTiming LastTiming;
 

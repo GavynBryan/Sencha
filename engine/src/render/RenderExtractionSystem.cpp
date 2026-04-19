@@ -21,13 +21,12 @@ namespace
     }
 }
 
-template <typename TTransformView>
-void ExtractImpl(const TTransformView& transforms,
-                 const MeshRendererStore& renderers,
-                 const MeshService& meshes,
-                 const MaterialStore& materials,
-                 const CameraRenderData& camera,
-                 RenderQueue& queue)
+void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
+                                     const MeshRendererStore& renderers,
+                                     const MeshService& meshes,
+                                     const MaterialStore& materials,
+                                     const CameraRenderData& camera,
+                                     RenderQueue& queue)
 {
     const auto items = renderers.GetItems();
     const auto& owners = renderers.GetOwners();
@@ -67,26 +66,6 @@ void ExtractImpl(const TTransformView& transforms,
             queue.AddOpaque(item);
         }
     }
-}
-
-void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const MeshRendererStore& renderers,
-                                     const MeshService& meshes,
-                                     const MaterialStore& materials,
-                                     const CameraRenderData& camera,
-                                     RenderQueue& queue)
-{
-    ExtractImpl(transforms, renderers, meshes, materials, camera, queue);
-}
-
-void RenderExtractionSystem::Extract(const TransformPresentationStore<Transform3f>& transforms,
-                                     const MeshRendererStore& renderers,
-                                     const MeshService& meshes,
-                                     const MaterialStore& materials,
-                                     const CameraRenderData& camera,
-                                     RenderQueue& queue)
-{
-    ExtractImpl(transforms, renderers, meshes, materials, camera, queue);
 }
 
 void FrustumCullingSystem::Cull(const CameraRenderData& camera, RenderQueue& queue)

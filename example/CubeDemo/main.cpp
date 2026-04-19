@@ -34,6 +34,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <cstdio>
 #include <memory>
 
@@ -83,9 +84,7 @@ namespace
             if (input.IsKeyDown(SDL_SCANCODE_E)) move += Vec3d::Up();
             if (input.IsKeyDown(SDL_SCANCODE_Q)) move += Vec3d::Down();
 
-            transform->Rotation =
-                Quatf::FromAxisAngle(Vec3d::Up(), Yaw)
-                * Quatf::FromAxisAngle(Vec3d::Right(), Pitch);
+            ApplyRotation(transforms);
 
             if (move.SqrMagnitude() > 0.0f)
             {
@@ -94,6 +93,16 @@ namespace
                     * (input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FastMultiplier : 1.0f);
                 transform->Position += transform->Rotation.RotateVector(move) * (speed * fixedDt);
             }
+        }
+
+        void ApplyRotation(TransformStore<Transform3f>& transforms) const
+        {
+            Transform3f* transform = transforms.TryGetLocalMutable(Entity);
+            if (transform == nullptr) return;
+
+            transform->Rotation =
+                Quatf::FromAxisAngle(Vec3d::Up(), Yaw)
+                * Quatf::FromAxisAngle(Vec3d::Right(), Pitch);
         }
     };
 
@@ -234,12 +243,6 @@ namespace
             debug.Open();
 #endif
 
-            Zone->ResetPresentationTransforms();
-            DiscontinuityToken = engine.Runtime().GetDiscontinuityBus().Subscribe(
-                [&](const FrameDiscontinuityEvent&) {
-                    Zone->ResetPresentationTransforms();
-                });
-
             std::printf("Sencha Cube Demo\n");
             std::printf("  Right mouse + move: look\n");
             std::printf("  WASD: move, Q/E: down/up, Shift: fast\n");
@@ -256,48 +259,121 @@ namespace
 #else
             (void)ctx;
 #endif
+            if (ctx.Handled)
+                return;
+
+            if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                && ctx.Event.button.button == SDL_BUTTON_RIGHT)
+            {
+                SetRelativeMouseMode(ctx.EngineInstance, true);
+            }
+            else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
+                && ctx.Event.button.button == SDL_BUTTON_RIGHT)
+            {
+                SetRelativeMouseMode(ctx.EngineInstance, false);
+            }
+            else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+            {
+                SetRelativeMouseMode(ctx.EngineInstance, false);
+            }
         }
 
         void OnFixedUpdate(FixedUpdateContext& ctx) override
         {
-            Zone->BeginSimulationTick();
-
             const float fixedDt = static_cast<float>(ctx.Time.DeltaSeconds);
-            FreeCam.UpdateLook(ctx.Input);
             FreeCam.TickFixed(ctx.Input, Zone->Transforms(), fixedDt);
 
             if (Transform3f* cube = Zone->Transforms().TryGetLocalMutable(Demo.CenterCube))
                 cube->Rotation *= Quatf::FromAxisAngle(Vec3d::Up(), fixedDt);
 
             Zone->PropagateTransforms();
-            Zone->EndSimulationTick();
         }
 
-        void OnExtractRender(RenderExtractContext& ctx) override
+        void OnUpdate(FrameUpdateContext& ctx) override
         {
-            (void)ctx;
+            TraceHistory[TraceWrite] = TraceSample{
+                .Dt = ctx.WallDeltaSeconds,
+                .Mdx = ctx.Input.MouseDeltaX,
+                .Mdy = ctx.Input.MouseDeltaY,
+                .Yaw = FreeCam.Yaw,
+                .Pitch = FreeCam.Pitch,
+                .LookHeld = ctx.Input.IsMouseButtonDown(SDL_BUTTON_RIGHT),
+            };
+            TraceWrite = (TraceWrite + 1) % kTraceCapacity;
+            if (TraceCount < kTraceCapacity) ++TraceCount;
+
+            int numKeys = 0;
+            const bool* sdlKeys = SDL_GetKeyboardState(&numKeys);
+            const bool f2Down = sdlKeys != nullptr
+                && SDL_SCANCODE_F2 < numKeys
+                && sdlKeys[SDL_SCANCODE_F2];
+            if (f2Down && !F2WasDown)
+            {
+                DumpTrace();
+            }
+            F2WasDown = f2Down;
+
+            FreeCam.UpdateLook(ctx.Input);
+            FreeCam.ApplyRotation(Zone->Transforms());
+            Zone->PropagateTransforms();
+        }
+
+        void DumpTrace()
+        {
+            std::fprintf(stderr, "---- mouse trace (last %zu frames) ----\n", TraceCount);
+            const size_t start = (TraceWrite + kTraceCapacity - TraceCount) % kTraceCapacity;
+            for (size_t i = 0; i < TraceCount; ++i)
+            {
+                const TraceSample& s = TraceHistory[(start + i) % kTraceCapacity];
+                std::fprintf(stderr, "[%02zu] dt=%.4f mdx=%+7.2f mdy=%+7.2f yaw=%+.4f pitch=%+.4f look=%d\n",
+                    i, s.Dt, s.Mdx, s.Mdy, s.Yaw, s.Pitch, s.LookHeld ? 1 : 0);
+            }
+            std::fflush(stderr);
         }
 
         void OnShutdown(GameShutdownContext& ctx) override
         {
-            if (DiscontinuityToken != 0)
-            {
-                ctx.EngineInstance.Runtime().GetDiscontinuityBus().Unsubscribe(DiscontinuityToken);
-                DiscontinuityToken = 0;
-            }
             ctx.EngineInstance.RegisterDefaultRenderScene({});
 #ifdef SENCHA_ENABLE_DEBUG_UI
             DebugOverlay = nullptr;
 #endif
+            SetRelativeMouseMode(ctx.EngineInstance, false);
         }
 
     private:
+        void SetRelativeMouseMode(Engine& engine, bool enabled)
+        {
+            SdlWindow* window = engine.Services().Get<SdlWindowService>().GetPrimaryWindow();
+            if (window == nullptr || window->GetHandle() == nullptr)
+                return;
+
+            if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
+                return;
+
+            SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
+        }
+
+        struct TraceSample
+        {
+            double Dt = 0.0;
+            float Mdx = 0.0f;
+            float Mdy = 0.0f;
+            float Yaw = 0.0f;
+            float Pitch = 0.0f;
+            bool LookHeld = false;
+        };
+
+        static constexpr size_t kTraceCapacity = 120;
+        std::array<TraceSample, kTraceCapacity> TraceHistory{};
+        size_t TraceWrite = 0;
+        size_t TraceCount = 0;
+        bool F2WasDown = false;
+
         std::unique_ptr<ZoneScene> Zone;
         MaterialStore Materials;
         std::unique_ptr<MeshService> Meshes;
         FreeCamera FreeCam;
         DemoScene Demo;
-        FrameDiscontinuityToken DiscontinuityToken = 0;
 #ifdef SENCHA_ENABLE_DEBUG_UI
         ImGuiDebugOverlay* DebugOverlay = nullptr;
 #endif
@@ -313,7 +389,6 @@ int main(int argc, char** argv)
         config.Window.Width = 1280;
         config.Window.Height = 720;
         config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
-        config.Runtime.TargetFps = 0.0;
         config.Runtime.ExitOnEscape = true;
         config.Runtime.TogglePauseOnF1 = true;
 #ifdef SENCHA_ENABLE_DEBUG_UI

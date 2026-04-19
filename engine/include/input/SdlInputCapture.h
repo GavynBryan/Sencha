@@ -10,6 +10,10 @@ union SDL_Event;
 // Stateless translator from SDL_Event stream into InputFrame updates.
 // The caller owns the InputFrame and pumps events through Accept() for each
 // SDL_Event it already consumed. This keeps SDL out of simulation code.
+//
+// Mouse deltas are passed through as raw pixel displacement. Game code is
+// responsible for sensitivity scaling. Do NOT normalize by dt — SDL delivers
+// pixels per-event and per-frame accumulation is already frame-rate agnostic.
 //=============================================================================
 class SdlInputCapture
 {

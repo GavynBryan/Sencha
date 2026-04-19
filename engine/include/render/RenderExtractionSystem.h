@@ -5,7 +5,6 @@
 #include <render/MeshRendererComponent.h>
 #include <render/MeshService.h>
 #include <render/RenderQueue.h>
-#include <world/transform/TransformPresentationStore.h>
 #include <world/transform/TransformStore.h>
 
 //=============================================================================
@@ -19,13 +18,6 @@ class RenderExtractionSystem
 {
 public:
     static void Extract(const TransformStore<Transform3f>& transforms,
-                        const MeshRendererStore& renderers,
-                        const MeshService& meshes,
-                        const MaterialStore& materials,
-                        const CameraRenderData& camera,
-                        RenderQueue& queue);
-
-    static void Extract(const TransformPresentationStore<Transform3f>& transforms,
                         const MeshRendererStore& renderers,
                         const MeshService& meshes,
                         const MaterialStore& materials,

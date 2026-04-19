@@ -9,6 +9,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
     case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
+    case FramePhase::Update: return "Update";
     case FramePhase::ExtractRenderPacket: return "ExtractRenderPacket";
     case FramePhase::Render: return "Render";
     case FramePhase::EndFrame: return "EndFrame";
@@ -70,6 +71,7 @@ void FrameDriver::StepOnce()
     if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
     InvokePhase(FramePhase::PumpPlatform, ctx);
+
     if ((ShouldExitPredicate && ShouldExitPredicate()) || Input.QuitRequested)
     {
         InvokePhase(FramePhase::EndFrame, ctx);
@@ -105,6 +107,8 @@ void FrameDriver::StepOnce()
     if (Trace) Trace->EndPhase("Simulate");
 
     Runtime.BuildPresentationFrame();
+
+    InvokePhase(FramePhase::Update, ctx);
 
     // If no fixed tick ran this frame and edges are still pending, presentation
     // may still want them (mouse-look, etc.) but simulation did not consume

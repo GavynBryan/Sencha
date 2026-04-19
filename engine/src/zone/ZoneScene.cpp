@@ -41,11 +41,6 @@ TransformStore<Transform3f>& ZoneScene::Transforms()
     return Transforms_;
 }
 
-TransformPresentationStore<Transform3f>& ZoneScene::PresentationTransforms()
-{
-    return PresentationTransforms_;
-}
-
 MeshRendererStore& ZoneScene::MeshRenderers()
 {
     return Renderers_;
@@ -90,24 +85,9 @@ void ZoneScene::SetActiveCamera(EntityId entity)
     ActiveCamera_.SetActive(entity);
 }
 
-void ZoneScene::BeginSimulationTick()
-{
-    PresentationTransforms_.BeginSimulationTick(Transforms_);
-}
-
 void ZoneScene::PropagateTransforms()
 {
     TransformPropagation_.Propagate();
-}
-
-void ZoneScene::EndSimulationTick()
-{
-    PresentationTransforms_.EndSimulationTick(Transforms_);
-}
-
-void ZoneScene::ResetPresentationTransforms()
-{
-    PresentationTransforms_.Reset(Transforms_, Hierarchy_, PropagationOrder_);
 }
 
 DefaultRenderScene ZoneScene::BuildDefaultRenderScene(MeshService& meshes,
@@ -117,7 +97,6 @@ DefaultRenderScene ZoneScene::BuildDefaultRenderScene(MeshService& meshes,
         .Hierarchy = &Hierarchy_,
         .PropagationOrder = &PropagationOrder_,
         .Transforms = &Transforms_,
-        .PresentationTransforms = &PresentationTransforms_,
         .Renderers = &Renderers_,
         .Cameras = &Cameras_,
         .ActiveCamera = &ActiveCamera_,

@@ -13,7 +13,6 @@
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPresentationStore.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformStore.h>
 #include <zone/ZoneRuntime.h>
