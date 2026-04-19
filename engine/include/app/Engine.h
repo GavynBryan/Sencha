@@ -1,18 +1,13 @@
 #pragma once
 
-#include <app/GameContexts.h>
-#include <app/DefaultSceneBinding.h>
+#include <app/DefaultRenderPipeline.h>
+#include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
 #include <core/service/ServiceHost.h>
-#include <core/system/SystemHost.h>
-#include <render/DefaultRenderScene.h>
 #include <render/Material.h>
 #include <render/MeshService.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformStore.h>
 #include <zone/ZoneRuntime.h>
 
 #include <memory>
@@ -43,8 +38,8 @@ public:
     [[nodiscard]] ServiceHost& Services() { return Services_; }
     [[nodiscard]] const ServiceHost& Services() const { return Services_; }
 
-    [[nodiscard]] SystemHost& Systems() { return Systems_; }
-    [[nodiscard]] const SystemHost& Systems() const { return Systems_; }
+    [[nodiscard]] EngineSchedule& Schedule() { return Schedule_; }
+    [[nodiscard]] const EngineSchedule& Schedule() const { return Schedule_; }
 
     [[nodiscard]] ZoneRuntime& Zones() { return Zones_; }
     [[nodiscard]] const ZoneRuntime& Zones() const { return Zones_; }
@@ -64,17 +59,16 @@ public:
     [[nodiscard]] CameraRenderData& GetCameraData();
     [[nodiscard]] const CameraRenderData& GetCameraData() const;
 
-    void RegisterDefaultRenderScene(DefaultRenderScene scene);
     bool AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials);
 
 private:
     void RegisterFramePhases(Game& game);
-    [[nodiscard]] DefaultSceneBinding& GetDefaultSceneBinding();
-    [[nodiscard]] const DefaultSceneBinding& GetDefaultSceneBinding() const;
+    [[nodiscard]] DefaultRenderPipeline& GetDefaultRenderPipeline();
+    [[nodiscard]] const DefaultRenderPipeline& GetDefaultRenderPipeline() const;
 
     EngineConfig Config_;
     ServiceHost Services_;
-    SystemHost Systems_;
+    EngineSchedule Schedule_;
     ZoneRuntime Zones_;
     RuntimeFrameLoop Runtime_;
     std::unique_ptr<FrameDriver> Driver_;

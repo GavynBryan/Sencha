@@ -1,6 +1,7 @@
 #include <app/Engine.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
+#include <app/TransformPropagationPass.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -56,7 +57,17 @@ bool Engine::Initialize()
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     Services_.AddService<DebugService>(logging, debugLog);
-    Services_.AddService<DefaultSceneBinding>();
+    Schedule_.Register<TransformPropagationPass>();
+    Schedule_.Register<DefaultRenderPipeline>();
+    Schedule_.After<DefaultRenderPipeline, TransformPropagationPass>();
+    auto failInitialize = [this]() {
+        Schedule_.Shutdown();
+        Driver_.reset();
+        Services_.Clear();
+        FramePhasesRegistered_ = false;
+        Running_ = false;
+        return false;
+    };
 
     Runtime_.SetResizeSettleSeconds(Config_.Runtime.ResizeSettleSeconds);
     Runtime_.GetSimulationClock().SetFixedTickRate(Config_.Runtime.FixedTickRate);
@@ -74,23 +85,23 @@ bool Engine::Initialize()
     if (window == nullptr || !window->IsValid())
     {
         std::fprintf(stderr, "Failed to create Vulkan window.\n");
-        return false;
+        return failInitialize();
     }
 
 #ifndef SENCHA_ENABLE_VULKAN
     std::fprintf(stderr, "Vulkan graphics requested but Sencha was built without Vulkan.\n");
-    return false;
+    return failInitialize();
 #else
     if (Config_.Window.GraphicsApi != WindowGraphicsApi::Vulkan)
     {
         std::fprintf(stderr, "Unsupported graphics API in EngineConfig.\n");
-        return false;
+        return failInitialize();
     }
 
     if (!VulkanBootstrap::Install(Services_, Config_, *window, windows))
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
-        return false;
+        return failInitialize();
     }
 
     Runtime_.SetSurfaceExtent(window->GetExtent());
@@ -109,7 +120,7 @@ void Engine::Shutdown()
     if (!Initialized_)
         return;
 
-    Systems_.Shutdown();
+    Schedule_.Shutdown();
     Driver_.reset();
     Services_.Clear();
     FramePhasesRegistered_ = false;
@@ -117,44 +128,41 @@ void Engine::Shutdown()
     Running_ = false;
 }
 
-void Engine::RegisterDefaultRenderScene(DefaultRenderScene scene)
-{
-    GetDefaultSceneBinding().RegisterScene(scene);
-}
-
 bool Engine::AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials)
 {
-    return GetDefaultSceneBinding().AddMeshRenderFeature(Services_, meshes, materials);
+    DefaultRenderPipeline& pipeline = GetDefaultRenderPipeline();
+    pipeline.SetAssetStores(meshes, materials);
+    return pipeline.AddMeshRenderFeature(Services_);
 }
 
 RenderQueue& Engine::GetRenderQueue()
 {
-    return GetDefaultSceneBinding().GetRenderQueue();
+    return GetDefaultRenderPipeline().GetRenderQueue();
 }
 
 const RenderQueue& Engine::GetRenderQueue() const
 {
-    return GetDefaultSceneBinding().GetRenderQueue();
+    return GetDefaultRenderPipeline().GetRenderQueue();
 }
 
 CameraRenderData& Engine::GetCameraData()
 {
-    return GetDefaultSceneBinding().GetCameraData();
+    return GetDefaultRenderPipeline().GetCameraData();
 }
 
 const CameraRenderData& Engine::GetCameraData() const
 {
-    return GetDefaultSceneBinding().GetCameraData();
+    return GetDefaultRenderPipeline().GetCameraData();
 }
 
-DefaultSceneBinding& Engine::GetDefaultSceneBinding()
+DefaultRenderPipeline& Engine::GetDefaultRenderPipeline()
 {
-    return Services_.Get<DefaultSceneBinding>();
+    return *Schedule_.Get<DefaultRenderPipeline>();
 }
 
-const DefaultSceneBinding& Engine::GetDefaultSceneBinding() const
+const DefaultRenderPipeline& Engine::GetDefaultRenderPipeline() const
 {
-    return Services_.Get<DefaultSceneBinding>();
+    return *Schedule_.Get<DefaultRenderPipeline>();
 }
 
 void Engine::RegisterFramePhases(Game& game)
@@ -177,6 +185,14 @@ int Engine::Run(Game& game)
         .Config = Config_,
     };
     game.OnStart(startup);
+
+    SystemRegisterContext registerSystems{
+        .EngineInstance = *this,
+        .Config = Config_,
+        .Schedule = Schedule_,
+    };
+    game.OnRegisterSystems(registerSystems);
+    Schedule_.Init();
 
     if (Driver_ != nullptr)
     {

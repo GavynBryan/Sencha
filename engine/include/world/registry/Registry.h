@@ -5,6 +5,7 @@
 #include <world/entity/EntityRegistry.h>
 #include <world/registry/RegistryId.h>
 #include <world/ComponentRegistry.h>
+#include <world/ResourceRegistry.h>
 #include <zone/ZoneId.h>
 
 enum class RegistryKind : uint8_t
@@ -23,6 +24,7 @@ struct Registry
 
     EntityRegistry Entities;
     ComponentRegistry Components;
+    ResourceRegistry Resources;
 };
 
 inline Registry MakeGlobalRegistry(RegistryId id = RegistryId::Global())

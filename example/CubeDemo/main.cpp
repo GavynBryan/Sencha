@@ -22,7 +22,7 @@
 #include <world/entity/EntityRegistry.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformStore.h>
-#include <zone/ZoneScene.h>
+#include <zone/DefaultZoneBuilder.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
@@ -106,17 +106,22 @@ namespace
         }
     };
 
-    void AddCube(ZoneScene& zone,
+    TransformStore<Transform3f>& Transforms(Registry& registry)
+    {
+        return registry.Components.Get<TransformStore<Transform3f>>();
+    }
+
+    void AddCube(Registry& registry,
                  MeshHandle mesh,
                  MaterialHandle material,
                  const Vec3d& position,
                  const Vec3d& scale)
     {
-        EntityId entity = zone.CreateEntity(Transform3f(position, Quatf::Identity(), scale));
-        zone.AddMeshRenderer(entity, mesh, material);
+        EntityId entity = CreateDefaultEntity(registry, Transform3f(position, Quatf::Identity(), scale));
+        AddDefaultMeshRenderer(registry, entity, mesh, material);
     }
 
-    DemoScene CreateScene(ZoneScene& zone,
+    DemoScene CreateScene(Registry& registry,
                           MeshService& meshes,
                           MaterialStore& materials,
                           FreeCamera& freeCamera)
@@ -136,17 +141,17 @@ namespace
             .BaseColor = Vec4(0.2f, 0.45f, 1.0f, 1.0f),
         });
 
-        scene.CenterCube = zone.CreateEntity(Transform3f(
+        scene.CenterCube = CreateDefaultEntity(registry, Transform3f(
             Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
-        zone.AddMeshRenderer(scene.CenterCube, scene.CubeMesh, scene.Red);
+        AddDefaultMeshRenderer(registry, scene.CenterCube, scene.CubeMesh, scene.Red);
 
-        AddCube(zone, scene.CubeMesh, scene.Green, Vec3d(-2.2f, 0.0f, -1.0f), Vec3d::One());
-        AddCube(zone, scene.CubeMesh, scene.Blue, Vec3d(2.2f, 0.0f, -1.0f), Vec3d(0.75f, 1.5f, 0.75f));
-        AddCube(zone, scene.CubeMesh, scene.Green, Vec3d(0.0f, -1.4f, -3.0f), Vec3d(8.0f, 0.15f, 8.0f));
+        AddCube(registry, scene.CubeMesh, scene.Green, Vec3d(-2.2f, 0.0f, -1.0f), Vec3d::One());
+        AddCube(registry, scene.CubeMesh, scene.Blue, Vec3d(2.2f, 0.0f, -1.0f), Vec3d(0.75f, 1.5f, 0.75f));
+        AddCube(registry, scene.CubeMesh, scene.Green, Vec3d(0.0f, -1.4f, -3.0f), Vec3d(8.0f, 0.15f, 8.0f));
 
-        scene.Camera = zone.CreateEntity(Transform3f(
+        scene.Camera = CreateDefaultEntity(registry, Transform3f(
             Vec3d(0.0f, 1.0f, 5.0f), Quatf::Identity(), Vec3d::One()));
-        zone.AddCamera(scene.Camera, CameraComponent{
+        AddDefaultCamera(registry, scene.Camera, CameraComponent{
             .Projection = ProjectionKind::Perspective,
             .FovYRadians = 1.22173048f,
             .NearPlane = 0.1f,
@@ -164,12 +169,12 @@ namespace
         CubeDemoPanel(RenderQueue& queue,
                       CameraRenderData& camera,
                       FreeCamera& freeCamera,
-                      ZoneScene& zone,
+                      Registry& registry,
                       DemoScene& scene)
             : Queue(queue)
             , Camera(camera)
             , FreeCam(freeCamera)
-            , Zone(zone)
+            , RegistryInstance(registry)
             , Scene(scene)
         {
         }
@@ -185,7 +190,7 @@ namespace
             ImGui::DragFloat("Move speed", &FreeCam.MoveSpeed, 0.1f, 0.1f, 50.0f);
             ImGui::DragFloat("Mouse sensitivity", &FreeCam.MouseSensitivity, 0.0001f, 0.0001f, 0.02f);
 
-            if (Transform3f* cube = Zone.Transforms().TryGetLocalMutable(Scene.CenterCube))
+            if (Transform3f* cube = Transforms(RegistryInstance).TryGetLocalMutable(Scene.CenterCube))
                 ImGui::DragFloat3("Center cube position", &cube->Position.X, 0.05f);
 
             ImGui::End();
@@ -195,10 +200,132 @@ namespace
         RenderQueue& Queue;
         CameraRenderData& Camera;
         FreeCamera& FreeCam;
-        ZoneScene& Zone;
+        Registry& RegistryInstance;
         DemoScene& Scene;
     };
 #endif
+
+    struct FreeCameraMovementSystem
+    {
+        FreeCameraMovementSystem(Registry*& registry, FreeCamera& freeCamera)
+            : RegistryInstance(registry)
+            , FreeCam(freeCamera)
+        {
+        }
+
+        void FixedLogic(FixedLogicContext& ctx)
+        {
+            if (RegistryInstance == nullptr) return;
+            FreeCam.TickFixed(
+                ctx.Input,
+                Transforms(*RegistryInstance),
+                static_cast<float>(ctx.Time.DeltaSeconds));
+        }
+
+        Registry*& RegistryInstance;
+        FreeCamera& FreeCam;
+    };
+
+    struct CubeSpinSystem
+    {
+        CubeSpinSystem(Registry*& registry, DemoScene& scene)
+            : RegistryInstance(registry)
+            , Scene(scene)
+        {
+        }
+
+        void FixedLogic(FixedLogicContext& ctx)
+        {
+            if (RegistryInstance == nullptr) return;
+            if (Transform3f* cube = Transforms(*RegistryInstance).TryGetLocalMutable(Scene.CenterCube))
+                cube->Rotation *= Quatf::FromAxisAngle(
+                    Vec3d::Up(),
+                    static_cast<float>(ctx.Time.DeltaSeconds));
+        }
+
+        Registry*& RegistryInstance;
+        DemoScene& Scene;
+    };
+
+    struct FreeCameraLookSystem
+    {
+        FreeCameraLookSystem(Registry*& registry, FreeCamera& freeCamera)
+            : RegistryInstance(registry)
+            , FreeCam(freeCamera)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            if (RegistryInstance == nullptr) return;
+            FreeCam.UpdateLook(ctx.Input);
+            FreeCam.ApplyRotation(Transforms(*RegistryInstance));
+        }
+
+        Registry*& RegistryInstance;
+        FreeCamera& FreeCam;
+    };
+
+    struct MouseTraceSystem
+    {
+        explicit MouseTraceSystem(FreeCamera& freeCamera)
+            : FreeCam(freeCamera)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            TraceHistory[TraceWrite] = TraceSample{
+                .Dt = ctx.WallDeltaSeconds,
+                .Mdx = ctx.Input.MouseDeltaX,
+                .Mdy = ctx.Input.MouseDeltaY,
+                .Yaw = FreeCam.Yaw,
+                .Pitch = FreeCam.Pitch,
+                .LookHeld = ctx.Input.IsMouseButtonDown(SDL_BUTTON_RIGHT),
+            };
+            TraceWrite = (TraceWrite + 1) % kTraceCapacity;
+            if (TraceCount < kTraceCapacity) ++TraceCount;
+
+            int numKeys = 0;
+            const bool* sdlKeys = SDL_GetKeyboardState(&numKeys);
+            const bool f2Down = sdlKeys != nullptr
+                && SDL_SCANCODE_F2 < numKeys
+                && sdlKeys[SDL_SCANCODE_F2];
+            if (f2Down && !F2WasDown)
+                DumpTrace();
+            F2WasDown = f2Down;
+        }
+
+        void DumpTrace()
+        {
+            std::fprintf(stderr, "---- mouse trace (last %zu frames) ----\n", TraceCount);
+            const size_t start = (TraceWrite + kTraceCapacity - TraceCount) % kTraceCapacity;
+            for (size_t i = 0; i < TraceCount; ++i)
+            {
+                const TraceSample& s = TraceHistory[(start + i) % kTraceCapacity];
+                std::fprintf(stderr, "[%02zu] dt=%.4f mdx=%+7.2f mdy=%+7.2f yaw=%+.4f pitch=%+.4f look=%d\n",
+                    i, s.Dt, s.Mdx, s.Mdy, s.Yaw, s.Pitch, s.LookHeld ? 1 : 0);
+            }
+            std::fflush(stderr);
+        }
+
+        struct TraceSample
+        {
+            double Dt = 0.0;
+            float Mdx = 0.0f;
+            float Mdy = 0.0f;
+            float Yaw = 0.0f;
+            float Pitch = 0.0f;
+            bool LookHeld = false;
+        };
+
+        static constexpr size_t kTraceCapacity = 120;
+        std::array<TraceSample, kTraceCapacity> TraceHistory{};
+        size_t TraceWrite = 0;
+        size_t TraceCount = 0;
+        bool F2WasDown = false;
+        FreeCamera& FreeCam;
+    };
 
     class CubeDemoGame final : public Game
     {
@@ -213,14 +340,12 @@ namespace
             auto& buffers = services.Get<VulkanBufferService>();
 
             Meshes = std::make_unique<MeshService>(logging, buffers);
-            Zone = std::make_unique<ZoneScene>(
+            DemoRegistry = &CreateDefault3DZone(
                 engine.Zones(), ZoneId{ 1 },
                 ZoneParticipation{ .Visible = true, .Logic = true });
 
-            Demo = CreateScene(*Zone, *Meshes, Materials, FreeCam);
+            Demo = CreateScene(*DemoRegistry, *Meshes, Materials, FreeCam);
 
-            engine.RegisterDefaultRenderScene(
-                Zone->BuildDefaultRenderScene(*Meshes, Materials));
             engine.AddDefaultMeshRenderFeature(*Meshes, Materials);
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -234,7 +359,7 @@ namespace
             debugOverlay->AddPanel<ConsolePanel>(debugLog);
             debugOverlay->AddPanel<TimingPanel>(engine.Timing());
             debugOverlay->AddPanel<CubeDemoPanel>(
-                engine.GetRenderQueue(), engine.GetCameraData(), FreeCam, *Zone, Demo);
+                engine.GetRenderQueue(), engine.GetCameraData(), FreeCam, *DemoRegistry, Demo);
             DebugOverlay = debugOverlay.get();
             auto& renderer = services.Get<Renderer>();
             renderer.AddFeature(std::move(debugOverlay));
@@ -249,6 +374,14 @@ namespace
             std::printf("  F1: pause simulation (timescale 0)\n");
             std::printf("  `: debugger when built with SENCHA_ENABLE_DEBUG_UI=ON\n");
             std::printf("  Escape: quit\n");
+        }
+
+        void OnRegisterSystems(SystemRegisterContext& ctx) override
+        {
+            ctx.Schedule.Register<MouseTraceSystem>(FreeCam);
+            ctx.Schedule.Register<FreeCameraLookSystem>(DemoRegistry, FreeCam);
+            ctx.Schedule.Register<FreeCameraMovementSystem>(DemoRegistry, FreeCam);
+            ctx.Schedule.Register<CubeSpinSystem>(DemoRegistry, Demo);
         }
 
         void OnPlatformEvent(PlatformEventContext& ctx) override
@@ -278,62 +411,8 @@ namespace
             }
         }
 
-        void OnFixedUpdate(FixedUpdateContext& ctx) override
-        {
-            const float fixedDt = static_cast<float>(ctx.Time.DeltaSeconds);
-            FreeCam.TickFixed(ctx.Input, Zone->Transforms(), fixedDt);
-
-            if (Transform3f* cube = Zone->Transforms().TryGetLocalMutable(Demo.CenterCube))
-                cube->Rotation *= Quatf::FromAxisAngle(Vec3d::Up(), fixedDt);
-
-            Zone->PropagateTransforms();
-        }
-
-        void OnUpdate(FrameUpdateContext& ctx) override
-        {
-            TraceHistory[TraceWrite] = TraceSample{
-                .Dt = ctx.WallDeltaSeconds,
-                .Mdx = ctx.Input.MouseDeltaX,
-                .Mdy = ctx.Input.MouseDeltaY,
-                .Yaw = FreeCam.Yaw,
-                .Pitch = FreeCam.Pitch,
-                .LookHeld = ctx.Input.IsMouseButtonDown(SDL_BUTTON_RIGHT),
-            };
-            TraceWrite = (TraceWrite + 1) % kTraceCapacity;
-            if (TraceCount < kTraceCapacity) ++TraceCount;
-
-            int numKeys = 0;
-            const bool* sdlKeys = SDL_GetKeyboardState(&numKeys);
-            const bool f2Down = sdlKeys != nullptr
-                && SDL_SCANCODE_F2 < numKeys
-                && sdlKeys[SDL_SCANCODE_F2];
-            if (f2Down && !F2WasDown)
-            {
-                DumpTrace();
-            }
-            F2WasDown = f2Down;
-
-            FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(Zone->Transforms());
-            Zone->PropagateTransforms();
-        }
-
-        void DumpTrace()
-        {
-            std::fprintf(stderr, "---- mouse trace (last %zu frames) ----\n", TraceCount);
-            const size_t start = (TraceWrite + kTraceCapacity - TraceCount) % kTraceCapacity;
-            for (size_t i = 0; i < TraceCount; ++i)
-            {
-                const TraceSample& s = TraceHistory[(start + i) % kTraceCapacity];
-                std::fprintf(stderr, "[%02zu] dt=%.4f mdx=%+7.2f mdy=%+7.2f yaw=%+.4f pitch=%+.4f look=%d\n",
-                    i, s.Dt, s.Mdx, s.Mdy, s.Yaw, s.Pitch, s.LookHeld ? 1 : 0);
-            }
-            std::fflush(stderr);
-        }
-
         void OnShutdown(GameShutdownContext& ctx) override
         {
-            ctx.EngineInstance.RegisterDefaultRenderScene({});
 #ifdef SENCHA_ENABLE_DEBUG_UI
             DebugOverlay = nullptr;
 #endif
@@ -353,23 +432,7 @@ namespace
             SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
         }
 
-        struct TraceSample
-        {
-            double Dt = 0.0;
-            float Mdx = 0.0f;
-            float Mdy = 0.0f;
-            float Yaw = 0.0f;
-            float Pitch = 0.0f;
-            bool LookHeld = false;
-        };
-
-        static constexpr size_t kTraceCapacity = 120;
-        std::array<TraceSample, kTraceCapacity> TraceHistory{};
-        size_t TraceWrite = 0;
-        size_t TraceCount = 0;
-        bool F2WasDown = false;
-
-        std::unique_ptr<ZoneScene> Zone;
+        Registry* DemoRegistry = nullptr;
         MaterialStore Materials;
         std::unique_ptr<MeshService> Meshes;
         FreeCamera FreeCam;

@@ -14,7 +14,7 @@
 //
 //   TickBudget budget = scheduler.ConsumeTicks(runtimeState);
 //   for (uint32_t i = 0; i < budget.TicksToRunThisFrame; ++i)
-//       systemHost.RunFixed(sim.BeginFixedTick());
+//       schedule.RunFixedLogic(sim.BeginFixedTickContext());
 //   systemHost.RunRender(presentation.Alpha);
 //=============================================================================
 struct TickBudget

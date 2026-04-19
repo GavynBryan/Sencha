@@ -6,6 +6,7 @@
 #include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
+#include <world/registry/FrameRegistryView.h>
 
 #include <cstdint>
 #include <functional>
@@ -46,6 +47,7 @@ struct PhaseContext
     RenderPacket* PacketWrite = nullptr;
     RenderPacket* PacketRead = nullptr;
     FixedSimTime CurrentTick{};
+    FrameRegistryView Registries;
     FrameTrace* Trace = nullptr;
     bool IsFixedTick = false;
 };
