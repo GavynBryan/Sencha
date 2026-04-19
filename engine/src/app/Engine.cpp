@@ -35,8 +35,8 @@ namespace
 
 }
 
-Engine::Engine(EngineConfig config)
-    : Config_(std::move(config))
+Engine::Engine(EngineConfig engineConfig)
+    : Configuration(std::move(engineConfig))
 {
 }
 
@@ -47,38 +47,38 @@ Engine::~Engine()
 
 bool Engine::Initialize()
 {
-    if (Initialized_)
+    if (Initialized)
         return true;
 
-    LoggingProvider& logging = Services_.GetLoggingProvider();
-    if (Config_.Debug.ConsoleLogging)
+    LoggingProvider& logging = ServiceRegistry.GetLoggingProvider();
+    if (Configuration.Debug.ConsoleLogging)
         logging.AddSink<ConsoleLogSink>();
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
-    Services_.AddService<DebugService>(logging, debugLog);
-    Schedule_.Register<DefaultRenderPipeline>();
+    ServiceRegistry.AddService<DebugService>(logging, debugLog);
+    EngineSystems.Register<DefaultRenderPipeline>();
     auto failInitialize = [this]() {
-        Schedule_.Shutdown();
-        Driver_.reset();
-        Services_.Clear();
-        FramePhasesRegistered_ = false;
-        Running_ = false;
+        EngineSystems.Shutdown();
+        FrameDriverInstance.reset();
+        ServiceRegistry.Clear();
+        FramePhasesRegistered = false;
+        Running = false;
         return false;
     };
 
-    Runtime_.SetResizeSettleSeconds(Config_.Runtime.ResizeSettleSeconds);
-    Runtime_.GetSimulationClock().SetFixedTickRate(Config_.Runtime.FixedTickRate);
+    RuntimeLoop.SetResizeSettleSeconds(Configuration.Runtime.ResizeSettleSeconds);
+    RuntimeLoop.GetSimulationClock().SetFixedTickRate(Configuration.Runtime.FixedTickRate);
 
-    if (Config_.Window.GraphicsApi == WindowGraphicsApi::None)
+    if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
     {
-        Initialized_ = true;
+        Initialized = true;
         return true;
     }
 
-    auto& video = Services_.AddService<SdlVideoService>(logging);
-    auto& windows = Services_.AddService<SdlWindowService>(logging, video);
+    auto& video = ServiceRegistry.AddService<SdlVideoService>(logging);
+    auto& windows = ServiceRegistry.AddService<SdlWindowService>(logging, video);
 
-    SdlWindow* window = windows.CreateWindow(BuildWindowCreateInfo(Config_.Window));
+    SdlWindow* window = windows.CreateWindow(BuildWindowCreateInfo(Configuration.Window));
     if (window == nullptr || !window->IsValid())
     {
         std::fprintf(stderr, "Failed to create Vulkan window.\n");
@@ -89,47 +89,47 @@ bool Engine::Initialize()
     std::fprintf(stderr, "Vulkan graphics requested but Sencha was built without Vulkan.\n");
     return failInitialize();
 #else
-    if (Config_.Window.GraphicsApi != WindowGraphicsApi::Vulkan)
+    if (Configuration.Window.GraphicsApi != WindowGraphicsApi::Vulkan)
     {
         std::fprintf(stderr, "Unsupported graphics API in EngineConfig.\n");
         return failInitialize();
     }
 
-    if (!VulkanBootstrap::Install(Services_, Config_, *window, windows))
+    if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, *window, windows))
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
     }
 
-    Runtime_.SetSurfaceExtent(window->GetExtent());
-    Driver_ = std::make_unique<FrameDriver>(Runtime_);
-    Driver_->SetTimingHistory(&Timing_);
-    Driver_->SetTargetFps(Config_.Runtime.TargetFps);
-    Driver_->SetShouldExit([this] { return !Running_; });
+    RuntimeLoop.SetSurfaceExtent(window->GetExtent());
+    FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
+    FrameDriverInstance->SetTimingHistory(&TimingData);
+    FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
+    FrameDriverInstance->SetShouldExit([this] { return !Running; });
 
-    Initialized_ = true;
+    Initialized = true;
     return true;
 #endif
 }
 
 void Engine::Shutdown()
 {
-    if (!Initialized_)
+    if (!Initialized)
         return;
 
-    Schedule_.Shutdown();
-    Driver_.reset();
-    Services_.Clear();
-    FramePhasesRegistered_ = false;
-    Initialized_ = false;
-    Running_ = false;
+    EngineSystems.Shutdown();
+    FrameDriverInstance.reset();
+    ServiceRegistry.Clear();
+    FramePhasesRegistered = false;
+    Initialized = false;
+    Running = false;
 }
 
 bool Engine::AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials)
 {
     DefaultRenderPipeline& pipeline = GetDefaultRenderPipeline();
     pipeline.SetAssetStores(meshes, materials);
-    return pipeline.AddMeshRenderFeature(Services_);
+    return pipeline.AddMeshRenderFeature(ServiceRegistry);
 }
 
 RenderQueue& Engine::GetRenderQueue()
@@ -154,22 +154,22 @@ const CameraRenderData& Engine::GetCameraData() const
 
 DefaultRenderPipeline& Engine::GetDefaultRenderPipeline()
 {
-    return *Schedule_.Get<DefaultRenderPipeline>();
+    return *EngineSystems.Get<DefaultRenderPipeline>();
 }
 
 const DefaultRenderPipeline& Engine::GetDefaultRenderPipeline() const
 {
-    return *Schedule_.Get<DefaultRenderPipeline>();
+    return *EngineSystems.Get<DefaultRenderPipeline>();
 }
 
 void Engine::RegisterFramePhases(Game& game)
 {
-    if (FramePhasesRegistered_ || Driver_ == nullptr)
+    if (FramePhasesRegistered || FrameDriverInstance == nullptr)
         return;
 
-    RegisterDefaultEngineFramePhases(*this, game, *Driver_);
+    RegisterDefaultEngineFramePhases(*this, game, *FrameDriverInstance);
 
-    FramePhasesRegistered_ = true;
+    FramePhasesRegistered = true;
 }
 
 int Engine::Run(Game& game)
@@ -179,28 +179,28 @@ int Engine::Run(Game& game)
 
     GameStartupContext startup{
         .EngineInstance = *this,
-        .Config = Config_,
+        .Config = Configuration,
     };
     game.OnStart(startup);
 
     SystemRegisterContext registerSystems{
         .EngineInstance = *this,
-        .Config = Config_,
-        .Schedule = Schedule_,
+        .Config = Configuration,
+        .Schedule = EngineSystems,
     };
     game.OnRegisterSystems(registerSystems);
-    Schedule_.Init();
+    EngineSystems.Init();
 
-    if (Driver_ != nullptr)
+    if (FrameDriverInstance != nullptr)
     {
         RegisterFramePhases(game);
-        Running_ = true;
-        Driver_->Run();
+        Running = true;
+        FrameDriverInstance->Run();
     }
 
     GameShutdownContext shutdown{
         .EngineInstance = *this,
-        .Config = Config_,
+        .Config = Configuration,
     };
     game.OnShutdown(shutdown);
     return 0;

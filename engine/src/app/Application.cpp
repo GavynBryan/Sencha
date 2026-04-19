@@ -3,15 +3,15 @@
 #include <optional>
 #include <utility>
 
-Application::Application(int argc, char** argv)
-    : Argc_(argc)
-    , Argv_(argv)
+Application::Application(int argumentCount, char** argumentValues)
+    : ArgumentCount(argumentCount)
+    , ArgumentValues(argumentValues)
 {
 }
 
-Application& Application::WithEngineConfig(EngineConfig config)
+Application& Application::WithEngineConfig(EngineConfig engineConfig)
 {
-    Config_ = std::move(config);
+    Configuration = std::move(engineConfig);
     return *this;
 }
 
@@ -21,17 +21,17 @@ bool Application::LoadEngineConfigFile(const char* path, EngineConfigError* erro
     if (!loaded)
         return false;
 
-    Config_ = std::move(*loaded);
+    Configuration = std::move(*loaded);
     return true;
 }
 
 int Application::Run(Game& game)
 {
     GameConfigureContext configure{
-        .Config = Config_,
+        .Config = Configuration,
     };
     game.OnConfigure(configure);
 
-    Engine engine(Config_);
+    Engine engine(Configuration);
     return engine.Run(game);
 }

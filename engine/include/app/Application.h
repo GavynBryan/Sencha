@@ -17,21 +17,21 @@
 class Application
 {
 public:
-    Application(int argc, char** argv);
+    Application(int argumentCount, char** argumentValues);
 
-    [[nodiscard]] int Argc() const { return Argc_; }
-    [[nodiscard]] char** Argv() const { return Argv_; }
+    [[nodiscard]] int Argc() const { return ArgumentCount; }
+    [[nodiscard]] char** Argv() const { return ArgumentValues; }
 
-    Application& WithEngineConfig(EngineConfig config);
+    Application& WithEngineConfig(EngineConfig engineConfig);
     bool LoadEngineConfigFile(const char* path, EngineConfigError* error = nullptr);
 
-    EngineConfig& Config() { return Config_; }
-    const EngineConfig& Config() const { return Config_; }
+    EngineConfig& Config() { return Configuration; }
+    const EngineConfig& Config() const { return Configuration; }
 
     template<typename Fn>
     Application& Configure(Fn&& fn)
     {
-        std::forward<Fn>(fn)(Config_);
+        std::forward<Fn>(fn)(Configuration);
         return *this;
     }
 
@@ -44,11 +44,11 @@ public:
         auto game = std::make_unique<TGame>(std::forward<Args>(args)...);
 
         GameConfigureContext configure{
-            .Config = Config_,
+            .Config = Configuration,
         };
         game->OnConfigure(configure);
 
-        Engine engine(Config_);
+        Engine engine(Configuration);
         const int result = engine.Run(*game);
         game.reset();
         engine.Shutdown();
@@ -56,7 +56,7 @@ public:
     }
 
 private:
-    int Argc_ = 0;
-    char** Argv_ = nullptr;
-    EngineConfig Config_;
+    int ArgumentCount = 0;
+    char** ArgumentValues = nullptr;
+    EngineConfig Configuration;
 };
