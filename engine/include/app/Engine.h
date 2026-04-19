@@ -15,6 +15,12 @@
 class FrameDriver;
 class Game;
 
+//=============================================================================
+// Engine
+//
+// Owns the runtime services, frame loop, world zones, schedule, and timing state.
+// Initializes, runs, and shuts down the core engine around a Game instance.
+//=============================================================================
 class Engine
 {
 public:

@@ -8,6 +8,12 @@
 #include <type_traits>
 #include <utility>
 
+//=============================================================================
+// Application
+//
+// Owns process arguments and engine configuration before a game is launched.
+// Provides the top-level entry point for configuring and running a Game.
+//=============================================================================
 class Application
 {
 public:

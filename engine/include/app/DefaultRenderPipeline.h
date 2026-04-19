@@ -8,6 +8,12 @@
 
 class ServiceHost;
 
+//=============================================================================
+// DefaultRenderPipeline
+//
+// Collects the engine's built-in render state and extraction behavior.
+// Bridges scene data, asset stores, and render features into a RenderPacket.
+//=============================================================================
 class DefaultRenderPipeline
 {
 public:

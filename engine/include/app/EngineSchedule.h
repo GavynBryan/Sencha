@@ -43,6 +43,12 @@ concept IsScheduledSystem =
     HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T> || HasFrameUpdate<T>
     || HasExtractRender<T> || HasAudio<T> || HasEndFrame<T>;
 
+//=============================================================================
+// EngineSchedule
+//
+// Registers game systems and dispatches their frame phase callbacks in order.
+// Tracks lifecycle hooks, dependencies, and per-phase dispatch lists.
+//=============================================================================
 class EngineSchedule
 {
 public:
@@ -80,6 +86,12 @@ public:
     void RunEndFrame(EndFrameContext& ctx);
 
 private:
+    //=============================================================================
+    // DispatchEntry
+    //
+    // Stores one system callback for a specific frame phase context.
+    // Carries type identity and dependency data for phase-local ordering.
+    //=============================================================================
     template<typename TContext>
     struct DispatchEntry
     {
@@ -89,6 +101,12 @@ private:
         std::vector<std::type_index> DependsOn;
     };
 
+    //=============================================================================
+    // SystemRecord
+    //
+    // Owns an erased registered system and its optional lifecycle callbacks.
+    // Lets the schedule initialize, shut down, and delete systems uniformly.
+    //=============================================================================
     struct SystemRecord
     {
         std::type_index TypeId{ typeid(void) };

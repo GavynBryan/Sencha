@@ -7,6 +7,12 @@
 #include <world/transform/TransformPropagationSystem.h>
 #include <world/transform/TransformStore.h>
 
+//=============================================================================
+// TransformPropagationPass
+//
+// Runs transform hierarchy propagation during simulation and render extraction.
+// Keeps world-space transforms current across each active registry.
+//=============================================================================
 class TransformPropagationPass
 {
 public:
