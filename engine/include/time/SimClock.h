@@ -125,6 +125,11 @@ public:
     void SetMaxPresentationDt(double seconds) { MaxPresentationDt = seconds; }
     void SetMaxAccumulator(double seconds) { MaxAccumulator = seconds; }
     void SetMaxTicksPerFrame(uint32_t count) { MaxTicksPerFrame = count == 0 ? 1u : count; }
+    void SetFixedTickRate(double ticksPerSecond)
+    {
+        if (ticksPerSecond > 0.0)
+            FixedDt = 1.0 / ticksPerSecond;
+    }
 
 private:
     [[nodiscard]] double ClampPresentationDelta(double dt) const

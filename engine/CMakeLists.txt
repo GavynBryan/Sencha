@@ -113,6 +113,8 @@ FetchContent_MakeAvailable(stb)
 target_include_directories(sencha_engine PRIVATE "${stb_SOURCE_DIR}")
 
 if(SENCHA_ENABLE_VULKAN)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)
+
     find_package(Vulkan REQUIRED)
     target_link_libraries(sencha_engine PUBLIC Vulkan::Vulkan)
 
