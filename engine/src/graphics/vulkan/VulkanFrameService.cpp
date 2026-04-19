@@ -6,7 +6,19 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <limits>
+
+namespace
+{
+    using ProfileClock = std::chrono::steady_clock;
+
+    double SecondsSince(ProfileClock::time_point start)
+    {
+        return std::chrono::duration<double>(ProfileClock::now() - start).count();
+    }
+}
 
 VulkanFrameService::VulkanFrameService(
     LoggingProvider& logging,
@@ -43,9 +55,34 @@ VulkanFrameService::VulkanFrameService(
     Valid = CreateFrameData(std::max(framesInFlight, 1u));
     ResetAfterSwapchainRecreate();
 
+    // Resolve VK_KHR_present_wait if the device picked it up. This is the
+    // only reliable way to block the CPU on a specific vsync — without it
+    // we fall back to acquire-based pacing, which desynchronizes on drivers
+    // that queue up multiple images.
+    for (const auto* ext : device.GetEnabledDeviceExtensions())
+    {
+        if (ext && std::strcmp(ext, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
+        {
+            PresentWaitEnabled = true;
+            break;
+        }
+    }
+
+    if (PresentWaitEnabled)
+    {
+        WaitForPresentFn = reinterpret_cast<PFN_vkWaitForPresentKHR>(
+            vkGetDeviceProcAddr(Device, "vkWaitForPresentKHR"));
+        if (!WaitForPresentFn)
+        {
+            Log.Warn("VK_KHR_present_wait enabled but vkWaitForPresentKHR unresolved");
+            PresentWaitEnabled = false;
+        }
+    }
+
     if (Valid)
     {
-        Log.Info("Vulkan frame service created: frames in flight {}", Frames.size());
+        Log.Info("Vulkan frame service created: frames in flight {} present_wait {}",
+                 Frames.size(), PresentWaitEnabled ? "on" : "off");
     }
 }
 
@@ -57,6 +94,10 @@ VulkanFrameService::~VulkanFrameService()
 VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
 {
     frame = {};
+    LastTiming.AcquireSeconds = 0.0;
+    LastTiming.PresentWaitSeconds = 0.0;
+    LastTiming.ImageIndex = 0;
+    LastTiming.SwapchainGeneration = Swapchain.GetGeneration();
 
     if (!Valid)
     {
@@ -93,7 +134,32 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
         DeletionQueue->AdvanceFrame();
     }
 
+    // Block on the prior cycle's presentation of this frame slot. This is the
+    // true vsync anchor — without it the GPU can queue ahead, making frame
+    // cadence lumpy. Skip when the presentId belongs to a retired swapchain
+    // (vkWaitForPresentKHR on a dead swapchain is undefined).
+    if (PresentWaitEnabled && WaitForPresentFn && current.PresentId != 0
+        && current.PresentIdSwapchainGeneration == Swapchain.GetGeneration())
+    {
+        const auto waitStart = ProfileClock::now();
+        VkResult presentWaitResult = WaitForPresentFn(
+            Device,
+            Swapchain.GetSwapchain(),
+            current.PresentId,
+            std::numeric_limits<uint64_t>::max());
+        LastTiming.PresentWaitSeconds = SecondsSince(waitStart);
+        if (presentWaitResult == VK_ERROR_DEVICE_LOST)
+        {
+            Log.Error("vkWaitForPresentKHR failed: device lost");
+            return VulkanFrameStatus::DeviceLost;
+        }
+        // Other failure modes (OUT_OF_DATE, SUBOPTIMAL) are benign here —
+        // acquire below will surface them.
+        current.PresentId = 0;
+    }
+
     uint32_t imageIndex = 0;
+    const auto acquireStart = ProfileClock::now();
     VkResult acquireResult = vkAcquireNextImageKHR(
         Device,
         Swapchain.GetSwapchain(),
@@ -101,6 +167,8 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
         current.ImageAvailable,
         VK_NULL_HANDLE,
         &imageIndex);
+    LastTiming.AcquireSeconds = SecondsSince(acquireStart);
+    LastTiming.ImageIndex = imageIndex;
 
     if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -125,12 +193,13 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     }
 
     if (imageIndex < ImageInFlightFences.size()
-        && ImageInFlightFences[imageIndex] != VK_NULL_HANDLE)
+        && ImageInFlightFences[imageIndex].Generation == Swapchain.GetGeneration()
+        && ImageInFlightFences[imageIndex].InFlightFence != VK_NULL_HANDLE)
     {
         VkResult imageWaitResult = vkWaitForFences(
             Device,
             1,
-            &ImageInFlightFences[imageIndex],
+            &ImageInFlightFences[imageIndex].InFlightFence,
             VK_TRUE,
             std::numeric_limits<uint64_t>::max());
         if (imageWaitResult == VK_ERROR_DEVICE_LOST)
@@ -175,6 +244,8 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     frame.SwapchainImageView = Swapchain.GetImageView(imageIndex);
     frame.SwapchainFormat = Swapchain.GetFormat();
     frame.SwapchainExtent = Swapchain.GetExtent();
+    frame.SwapchainGeneration = Swapchain.GetGeneration();
+    LastTiming.SwapchainGeneration = frame.SwapchainGeneration;
 
     return VulkanFrameStatus::Ready;
 }
@@ -192,6 +263,8 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     }
 
     auto& current = Frames[frame.FrameIndex];
+    LastTiming.SubmitSeconds = 0.0;
+    LastTiming.PresentSeconds = 0.0;
     VkSemaphore renderFinished = ImageRenderFinishedSemaphores[frame.ImageIndex];
 
     VkResult endResult = vkEndCommandBuffer(current.CommandBuffer);
@@ -224,11 +297,13 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
             : VulkanFrameStatus::Error;
     }
 
+    const auto submitStart = ProfileClock::now();
     VkResult submitResult = vkQueueSubmit(
         Queues.GetGraphicsQueue(),
         1,
         &submitInfo,
         current.InFlightFence);
+    LastTiming.SubmitSeconds = SecondsSince(submitStart);
     if (submitResult != VK_SUCCESS)
     {
         current.Submitted = false;
@@ -241,7 +316,10 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     current.Submitted = true;
     if (frame.ImageIndex < ImageInFlightFences.size())
     {
-        ImageInFlightFences[frame.ImageIndex] = current.InFlightFence;
+        ImageInFlightFences[frame.ImageIndex] = SwapchainImageFrameState{
+            .Generation = frame.SwapchainGeneration,
+            .InFlightFence = current.InFlightFence,
+        };
     }
 
     VkPresentInfoKHR presentInfo{};
@@ -253,7 +331,34 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &frame.ImageIndex;
 
+    VkPresentIdKHR presentIdInfo{};
+    uint64_t thisPresentId = 0;
+    if (PresentWaitEnabled)
+    {
+        thisPresentId = NextPresentId++;
+        presentIdInfo.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+        presentIdInfo.swapchainCount = 1;
+        presentIdInfo.pPresentIds = &thisPresentId;
+        presentInfo.pNext = &presentIdInfo;
+    }
+
+    const auto presentStart = ProfileClock::now();
     VkResult presentResult = vkQueuePresentKHR(Queues.GetPresentQueue(), &presentInfo);
+    LastTiming.PresentSeconds = SecondsSince(presentStart);
+
+    // Record presentId only on successful presentation — OUT_OF_DATE means
+    // the swapchain is retiring and vkWaitForPresentKHR would be undefined.
+    if (PresentWaitEnabled
+        && (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR))
+    {
+        current.PresentId = thisPresentId;
+        current.PresentIdSwapchainGeneration = frame.SwapchainGeneration;
+    }
+    else
+    {
+        current.PresentId = 0;
+    }
+
     AdvanceFrame();
 
     const bool acquireSuboptimal = current.AcquireSuboptimal;
@@ -276,7 +381,9 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR
         || acquireSuboptimal)
     {
-        return VulkanFrameStatus::SwapchainOutOfDate;
+        return presentResult == VK_ERROR_OUT_OF_DATE_KHR
+            ? VulkanFrameStatus::SwapchainOutOfDate
+            : VulkanFrameStatus::SurfaceSuboptimal;
     }
 
     return VulkanFrameStatus::Ready;
@@ -290,13 +397,18 @@ void VulkanFrameService::ResetAfterSwapchainRecreate()
     }
 
     DestroyImageSyncObjects();
-    ImageInFlightFences.assign(Swapchain.GetImageCount(), VK_NULL_HANDLE);
+    ImageInFlightFences.assign(Swapchain.GetImageCount(), SwapchainImageFrameState{
+        .Generation = Swapchain.GetGeneration(),
+        .InFlightFence = VK_NULL_HANDLE,
+    });
     CurrentFrame = 0;
 
     for (auto& frame : Frames)
     {
         frame.Submitted = false;
         frame.AcquireSuboptimal = false;
+        frame.PresentId = 0;
+        frame.PresentIdSwapchainGeneration = 0;
     }
 
     if (Swapchain.GetImageCount() > 0 && !CreateImageSyncObjects())

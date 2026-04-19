@@ -16,9 +16,19 @@ enum class VulkanFrameStatus
 {
     Ready,
     SwapchainOutOfDate,
+    SurfaceSuboptimal,
     SurfaceUnavailable,
     DeviceLost,
     Error
+};
+
+enum class RenderFrameResult
+{
+    Presented,
+    SwapchainOutOfDate,
+    SurfaceSuboptimal,
+    SkippedMinimized,
+    Failed,
 };
 
 struct VulkanFrame
@@ -30,6 +40,18 @@ struct VulkanFrame
     VkImageView SwapchainImageView = VK_NULL_HANDLE;
     VkFormat SwapchainFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D SwapchainExtent{};
+    uint64_t SwapchainGeneration = 0;
+    uint64_t PresentId = 0;
+};
+
+struct VulkanFrameTiming
+{
+    double AcquireSeconds = 0.0;
+    double SubmitSeconds = 0.0;
+    double PresentSeconds = 0.0;
+    double PresentWaitSeconds = 0.0;
+    uint32_t ImageIndex = 0;
+    uint64_t SwapchainGeneration = 0;
 };
 
 class VulkanFrameService : public IService
@@ -57,6 +79,7 @@ public:
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     VulkanFrameStatus EndFrame(const VulkanFrame& frame);
     void ResetAfterSwapchainRecreate();
+    [[nodiscard]] const VulkanFrameTiming& GetLastTiming() const { return LastTiming; }
 
 private:
     struct FrameData
@@ -65,8 +88,16 @@ private:
         VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
         VkSemaphore ImageAvailable = VK_NULL_HANDLE;
         VkFence InFlightFence = VK_NULL_HANDLE;
+        uint64_t PresentId = 0;
+        uint64_t PresentIdSwapchainGeneration = 0;
         bool Submitted = false;
         bool AcquireSuboptimal = false;
+    };
+
+    struct SwapchainImageFrameState
+    {
+        uint64_t Generation = 0;
+        VkFence InFlightFence = VK_NULL_HANDLE;
     };
 
     Logger& Log;
@@ -75,10 +106,14 @@ private:
     VulkanSwapchainService& Swapchain;
     VulkanDeletionQueueService* DeletionQueue = nullptr;
     std::vector<FrameData> Frames;
-    std::vector<VkFence> ImageInFlightFences;
+    std::vector<SwapchainImageFrameState> ImageInFlightFences;
     std::vector<VkSemaphore> ImageRenderFinishedSemaphores;
     uint32_t CurrentFrame = 0;
+    uint64_t NextPresentId = 1;
+    PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
+    bool PresentWaitEnabled = false;
     bool Valid = false;
+    VulkanFrameTiming LastTiming;
 
     bool CreateFrameData(uint32_t framesInFlight);
     bool CreateImageSyncObjects();

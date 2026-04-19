@@ -9,7 +9,8 @@
 #include <platform/SdlInputControlResolver.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/system/SystemHost.h>
+
+#include <memory>
 
 // =============================================================================
 // Input type tests
@@ -307,12 +308,10 @@ protected:
 		auto table = CompileInputBindings(config.value(), TestActionRegistry, TestControlResolver);
 		BindingService.SetBindings(std::move(table.value()));
 
-		auto& sys = Systems.Register<SdlInputSystem>(Logging, BindingService);
-		InputSys = &sys;
-		Systems.Init();
+		InputSys = std::make_unique<SdlInputSystem>(Logging, BindingService);
 	}
 
-	void TearDown() override { Systems.Shutdown(); }
+	void TearDown() override { InputSys.reset(); }
 
 	void PressKey(uint16_t control)
 	{
@@ -326,14 +325,13 @@ protected:
 			InputDeviceType::Keyboard, false, control, 0.0f, InputUserId{});
 	}
 
-	void RunFrame() { Systems.RunFrame(0.0f); }
+	void RunFrame() { InputSys->Update(0.0f); }
 
 	auto GetActions() { return InputSys->GetEvents().Items(); }
 
 	InputBindingService BindingService;
 	LoggingProvider Logging;
-	SystemHost Systems;
-	SdlInputSystem* InputSys = nullptr;
+	std::unique_ptr<SdlInputSystem> InputSys;
 };
 
 TEST_F(SdlInputTest, PressedTriggerEmitsStarted)

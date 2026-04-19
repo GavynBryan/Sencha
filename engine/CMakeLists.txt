@@ -32,9 +32,11 @@ if(NOT SENCHA_ENABLE_VULKAN)
         "[/\\\\]include[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -45,9 +47,11 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
     foreach(_pattern
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -99,6 +103,12 @@ target_include_directories(sencha_engine
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
+if(WIN32)
+    # winmm for timeBeginPeriod/timeEndPeriod used by FramePacer to achieve
+    # 1ms sleep granularity on Windows.
+    target_link_libraries(sencha_engine PRIVATE winmm)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
     stb
@@ -109,6 +119,8 @@ FetchContent_MakeAvailable(stb)
 target_include_directories(sencha_engine PRIVATE "${stb_SOURCE_DIR}")
 
 if(SENCHA_ENABLE_VULKAN)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)
+
     find_package(Vulkan REQUIRED)
     target_link_libraries(sencha_engine PUBLIC Vulkan::Vulkan)
 

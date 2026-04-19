@@ -16,7 +16,7 @@ The primitives are:
 - **`DataBatchKey`** — a stable key that cross-references slots between batches.
 - **`DataBatchHandle<T>`** — RAII ownership of a single batch slot. When it drops, the slot frees.
 - **`TransformSpace<T>`** — a self-contained transform space (batches + hierarchy + propagation cache). `World` owns one; UI, editor, or any other subsystem can own its own.
-- **Systems** — plain types that implement `Update(float)`, `Tick(float)`, and/or `Render(float)`. `SystemHost` detects capabilities via concepts and dispatches without a base class or vtable.
+- **Systems** — plain types registered with `EngineSchedule`. Systems opt into engine phases with context-aware methods such as `FixedLogic(FixedLogicContext&)`, `FrameUpdate(FrameUpdateContext&)`, and `ExtractRender(RenderExtractContext&)`.
 
 Gameplay authoring happens in two modes, both built on the same primitives:
 

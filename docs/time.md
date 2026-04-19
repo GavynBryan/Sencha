@@ -1,6 +1,6 @@
 # TimeService
 
-`TimeService` is the source of truth for all engine timing. It owns a `steady_clock` and produces a `FrameTime` snapshot each frame via `Advance()`. Call `Advance()` exactly once per frame, before `SystemHost::Update()`, then pass the returned snapshot through.
+`TimeService` is the source of truth for all engine timing. It owns a `steady_clock` and produces a `FrameTime` snapshot each frame via `Advance()`. Call `Advance()` exactly once per frame before dispatching frame systems through `EngineSchedule`.
 
 ---
 

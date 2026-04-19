@@ -78,5 +78,5 @@ private:
     std::vector<Registry*> LogicScratch;
     std::vector<Registry*> AudioScratch;
 
-    std::uint16_t NextRegistryIndex_ = 2;
+    std::uint16_t NextRegistryIndex = 2;
 };

@@ -2,35 +2,48 @@
 #include <core/json/JsonParser.h>
 
 #include <cstdio>
+#include <optional>
 #include <string>
-#include <vector>
+#include <utility>
+
+namespace
+{
+    template <typename Config, typename Error, typename Deserialize>
+    bool ReadSection(const JsonValue& root,
+                     const char* sectionName,
+                     Config& out,
+                     std::string& error,
+                     Deserialize deserialize)
+    {
+        const JsonValue* section = root.Find(sectionName);
+        if (!section)
+            return true;
+
+        Error sectionError;
+        std::optional<Config> config = deserialize(*section, &sectionError);
+        if (!config)
+        {
+            error = std::string("engine config: ") + sectionError.Message;
+            return false;
+        }
+
+        out = std::move(*config);
+        return true;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // LoadEngineConfig
 //
-// Reads `path` into memory, runs JsonParse, then dispatches to each
-// subsystem deserializer. Missing subsystem sections are silently treated as
-// default-constructed configs -- engines without audio or other optional
-// subsystems will just get zero buses, etc.
-//
-// Expected top-level JSON shape:
-//
-//   {
-//     "audio": {
-//       "buses": [ ... ]
-//     },
-//     "physics2d": {
-//       "grid_cell_size": 4.0
-//     }
-//   }
+// Reads `path` into memory, runs JsonParse, then dispatches each present
+// top-level section to its config deserializer. Missing sections keep their
+// default-constructed config values.
 // ---------------------------------------------------------------------------
 
 std::optional<EngineConfig> LoadEngineConfig(
     const char* path,
     EngineConfigError* error)
 {
-    // -- Read file into string -------------------------------------------------
-
     std::FILE* f = std::fopen(path, "rb");
     if (!f)
     {
@@ -51,8 +64,6 @@ std::optional<EngineConfig> LoadEngineConfig(
     }
     std::fclose(f);
 
-    // -- Parse JSON -----------------------------------------------------------
-
     JsonParseError parseError;
     std::optional<JsonValue> root = JsonParse(text, &parseError);
     if (!root)
@@ -70,21 +81,22 @@ std::optional<EngineConfig> LoadEngineConfig(
     }
 
     EngineConfig config;
-
-    // -- Audio section --------------------------------------------------------
-
-    const JsonValue* audioSection = root->Find("audio");
-    if (audioSection)
+    std::string sectionError;
+    if (!ReadSection<EngineAppConfig, AppConfigError>(
+            *root, "app", config.App, sectionError, DeserializeAppConfig)
+        || !ReadSection<EngineWindowConfig, WindowConfigError>(
+            *root, "window", config.Window, sectionError, DeserializeWindowConfig)
+        || !ReadSection<EngineRuntimeConfig, RuntimeConfigError>(
+            *root, "runtime", config.Runtime, sectionError, DeserializeRuntimeConfig)
+        || !ReadSection<EngineGraphicsConfig, GraphicsConfigError>(
+            *root, "graphics", config.Graphics, sectionError, DeserializeGraphicsConfig)
+        || !ReadSection<EngineDebugConfig, DebugConfigError>(
+            *root, "debug", config.Debug, sectionError, DeserializeDebugConfig)
+        || !ReadSection<EngineAudioConfig, AudioConfigError>(
+            *root, "audio", config.Audio, sectionError, DeserializeAudioConfig))
     {
-        AudioConfigError audioError;
-        std::optional<EngineAudioConfig> audio = DeserializeAudioConfig(*audioSection, &audioError);
-        if (!audio)
-        {
-            if (error)
-                error->Message = std::string("engine config: ") + audioError.Message;
-            return std::nullopt;
-        }
-        config.Audio = std::move(*audio);
+        if (error) error->Message = sectionError;
+        return std::nullopt;
     }
 
     return config;

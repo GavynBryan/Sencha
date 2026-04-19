@@ -2,6 +2,7 @@
 
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 
+#include <cstring>
 #include <set>
 
 VulkanDeviceService::VulkanDeviceService(
@@ -78,9 +79,40 @@ bool VulkanDeviceService::CreateLogicalDevice(
     v13.synchronization2 = VK_TRUE;
     v13.dynamicRendering = VK_TRUE;
 
+    void* featuresChainHead = &v13;
+
+    auto hasEnabledExt = [&](const char* name) {
+        for (const auto* ext : EnabledDeviceExtensions)
+        {
+            if (ext && std::strcmp(ext, name) == 0) return true;
+        }
+        return false;
+    };
+
+    VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
+    VkPhysicalDevicePresentWaitFeaturesKHR presentWaitFeatures{};
+    const bool presentIdEnabled = hasEnabledExt(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+    const bool presentWaitEnabled = hasEnabledExt(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+
+    if (presentIdEnabled)
+    {
+        presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+        presentIdFeatures.presentId = VK_TRUE;
+        presentIdFeatures.pNext = featuresChainHead;
+        featuresChainHead = &presentIdFeatures;
+    }
+
+    if (presentWaitEnabled)
+    {
+        presentWaitFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
+        presentWaitFeatures.presentWait = VK_TRUE;
+        presentWaitFeatures.pNext = featuresChainHead;
+        featuresChainHead = &presentWaitFeatures;
+    }
+
     VkPhysicalDeviceFeatures2 features2{};
     features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    features2.pNext = &v13;
+    features2.pNext = featuresChainHead;
     features2.features = policy.DeviceFeatures;
 
     VkDeviceCreateInfo createInfo{};

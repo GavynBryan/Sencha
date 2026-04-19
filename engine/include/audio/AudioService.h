@@ -1,7 +1,7 @@
 #pragma once
 
 #include <audio/AudioBus.h>
-#include <audio/AudioConfig.h>
+#include <core/config/AudioConfig.h>
 #include <audio/AudioVoice.h>
 #include <audio/AudioClip.h>
 #include <core/identity/Id.h>

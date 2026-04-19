@@ -70,6 +70,13 @@ public:
 		}
 	}
 
+	void Clear()
+	{
+		Loggers.clear();
+		SinkPtrs.clear();
+		OwnedSinks.clear();
+	}
+
 	// -- Logger factory -----------------------------------------------------
 
 	// Returns a logger for the specified type T.

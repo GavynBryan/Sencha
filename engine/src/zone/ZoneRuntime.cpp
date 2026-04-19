@@ -187,10 +187,10 @@ const ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone) const
 
 RegistryId ZoneRuntime::AllocateRegistryId()
 {
-    assert(NextRegistryIndex_ != std::numeric_limits<std::uint16_t>::max()
+    assert(NextRegistryIndex != std::numeric_limits<std::uint16_t>::max()
         && "ZoneRuntime::AllocateRegistryId: registry id index overflow");
 
-    return RegistryId{ NextRegistryIndex_++, 1 };
+    return RegistryId{ NextRegistryIndex++, 1 };
 }
 
 void ZoneRuntime::InvalidateFrameScratch()
