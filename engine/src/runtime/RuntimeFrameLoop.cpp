@@ -2,13 +2,10 @@
 
 RuntimeFrameSnapshot RuntimeFrameLoop::BeginFrame()
 {
-    const FrameClock frameClock = PlatformClock.Advance();
+    const FrameClock frameClock = WallClock.Advance();
     Current = {};
-    Current.PlatformTime = PlatformFrameTime{
-        .RawDeltaSeconds = frameClock.UnscaledDt,
-        .FrameStartSeconds = frameClock.UnscaledElapsed,
-        .FrameIndex = frameClock.FrameIndex,
-    };
+    Current.WallTime = frameClock;
+    Current.TickDtSeconds = SimulationClock.GetFixedDt();
     Current.State = State;
     Current.DiscontinuityReason = PendingDiscontinuityReason;
     return Current;
@@ -126,34 +123,19 @@ void RuntimeFrameLoop::FailSwapchainRebuild()
     Current.Events |= RuntimeFrameEventFlags::LifecycleOnly;
 }
 
-EngineFrameTime RuntimeFrameLoop::AdvanceEngineTime()
+TickBudget RuntimeFrameLoop::ScheduleFixedTicks()
 {
     if (DiscontinuityPending)
         ApplyDiscontinuity();
 
-    Current.EngineTime = SafeEngineClock.Consume(
-        Current.PlatformTime,
-        Current.DiscontinuityReason != TemporalDiscontinuityReason::None,
-        Current.LifecycleOnly);
-    return Current.EngineTime;
-}
-
-void RuntimeFrameLoop::AccumulateSimulationTime()
-{
-    Current.AccumulatorBeforeTicks = SimulationClock.GetAccumulator();
-    if (Current.LifecycleOnly)
-        return;
-
-    EngineFrameTime scaled = Current.EngineTime;
-    scaled.SanitizedDeltaSeconds *= static_cast<double>(SimulationTimescale);
-    SimulationClock.Accumulate(scaled);
+    Current.Budget.TicksToRunThisFrame =
+        (!Current.LifecycleOnly && SimulationTimescale > 0.0f) ? 1u : 0u;
+    return Current.Budget;
 }
 
 bool RuntimeFrameLoop::CanRunFixedTickThisFrame() const
 {
-    return !Current.LifecycleOnly
-        && Current.FixedTicks < SimulationClock.GetMaxTicksPerFrame()
-        && SimulationClock.HasFixedTick();
+    return Current.FixedTicks < Current.Budget.TicksToRunThisFrame;
 }
 
 FixedSimTime RuntimeFrameLoop::BeginFixedTick()
@@ -169,27 +151,16 @@ void RuntimeFrameLoop::EndFixedTick()
 
 PresentationTime RuntimeFrameLoop::BuildPresentationFrame()
 {
-    Current.AccumulatorAfterTicks = SimulationClock.GetAccumulator();
-    const bool discontinuity =
-        Current.DiscontinuityReason != TemporalDiscontinuityReason::None;
-    Current.Presentation = SimulationClock.BuildPresentationTime(
-        Current.EngineTime.SanitizedDeltaSeconds);
-    Current.Presentation.FrameIndex = Current.PlatformTime.FrameIndex;
-    if (discontinuity)
-        Current.Presentation.Alpha = 0.0;
+    // Locked scheduling renders the latest completed simulation state. A future
+    // paced scheduler can provide a fractional phase here without changing
+    // FixedSimTime.
+    Current.Presentation = SimulationClock.BuildPresentationTime(1.0);
+    Current.Presentation.FrameIndex = Current.WallTime.FrameIndex;
     return Current.Presentation;
 }
 
 void RuntimeFrameLoop::EndFrame()
 {
-    // A lifecycle-only frame observes wall-clock time but does not simulate.
-    // Resetting the platform clock here ensures the next *rendered* frame does
-    // not pay for time spent stalled in resize drags, swapchain rebuilds, or
-    // minimized states — the accumulated stall would otherwise clamp to
-    // MaxFrameDt, fire multiple fixed ticks, and jitter the camera.
-    if (Current.LifecycleOnly)
-        PlatformClock.ResetToNow();
-
     if (State == RuntimeFrameState::RecoveringPresentation)
         State = RuntimeFrameState::Running;
     Current.State = State;
@@ -216,14 +187,12 @@ bool RuntimeFrameLoop::IsResizeSettling() const
 
 void RuntimeFrameLoop::ApplyDiscontinuity()
 {
-    PlatformClock.ResetToNow();
-    SimulationClock.ResetAfterDiscontinuity();
     PresentationHistoryResetPending = true;
     Current.Events |= RuntimeFrameEventFlags::TemporalDiscontinuity;
     DiscontinuityPending = false;
 
     DiscontinuityBus.Publish(FrameDiscontinuityEvent{
         .Reason = Current.DiscontinuityReason,
-        .FrameIndex = Current.PlatformTime.FrameIndex,
+        .FrameIndex = Current.WallTime.FrameIndex,
     });
 }

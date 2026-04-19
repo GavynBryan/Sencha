@@ -54,7 +54,6 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
             "fixed_tick_rate": 120,
             "target_fps": 240,
             "resize_settle_seconds": 0.25,
-            "max_ticks_per_frame": 8,
             "exit_on_escape": true,
             "toggle_pause_on_f1": true
         },
@@ -88,7 +87,6 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
     EXPECT_DOUBLE_EQ(loaded->Runtime.FixedTickRate, 120.0);
     EXPECT_DOUBLE_EQ(loaded->Runtime.TargetFps, 240.0);
     EXPECT_DOUBLE_EQ(loaded->Runtime.ResizeSettleSeconds, 0.25);
-    EXPECT_EQ(loaded->Runtime.MaxTicksPerFrame, 8u);
     EXPECT_TRUE(loaded->Runtime.ExitOnEscape);
     EXPECT_TRUE(loaded->Runtime.TogglePauseOnF1);
     EXPECT_EQ(loaded->Graphics.FramesInFlight, 3u);

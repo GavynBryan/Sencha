@@ -122,10 +122,9 @@ void TimingPanel::Draw()
                 Ms(oneSecond.Avg), Ms(oneSecond.Min), Ms(oneSecond.Max), Ms(oneSecond.StdDev));
     ImGui::Text("Raw DT 5s avg/min/max/std %.3f / %.3f / %.3f / %.3f",
                 Ms(fiveSecond.Avg), Ms(fiveSecond.Min), Ms(fiveSecond.Max), Ms(fiveSecond.StdDev));
-    ImGui::Text("Engine DT: %.3f ms  Presentation DT: %.3f ms  Accumulator: %.3f ms  Alpha: %.3f",
-                Ms(latest->EngineDtSeconds),
+    ImGui::Text("Tick DT: %.3f ms  Presentation DT: %.3f ms  Alpha: %.3f",
+                Ms(latest->TickDtSeconds),
                 Ms(latest->PresentationDtSeconds),
-                Ms(latest->FixedAccumulatorSeconds),
                 latest->InterpolationAlpha);
     ImGui::Text("Fixed ticks: %u  FPS: %.1f  Present mode: %d  Images: %u",
                 latest->FixedTicks,
@@ -150,19 +149,18 @@ void TimingPanel::Draw()
 
     if (latest->SwapchainRecreated)
         ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "Swapchain recreated this frame");
-    if (latest->PresentationDtSuppressed)
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.25f, 1.0f), "Presentation DT suppression active");
+    if (latest->PresentationReset)
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.25f, 1.0f), "Presentation reset this frame");
 
     ImGui::Separator();
     const int count = static_cast<int>(std::min<std::size_t>(History.Size(), RawDt.size()));
     ImGui::PlotLines("Raw DT", RawDt.data(), count, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 72));
-    ImGui::PlotLines("Engine DT", EngineDt.data(), count, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 72));
+    ImGui::PlotLines("Tick DT", TickDt.data(), count, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 72));
     ImGui::PlotLines("Presentation DT", PresentationDt.data(), count, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 72));
-    ImGui::PlotLines("Accumulator", Accumulator.data(), count, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 72));
     ImGui::PlotLines("Alpha", Alpha.data(), count, 0, nullptr, 0.0f, 1.0f, ImVec2(0, 72));
     ImGui::PlotHistogram("Fixed Ticks", FixedTicks.data(), count, 0, nullptr, 0.0f, 5.0f, ImVec2(0, 64));
     ImGui::PlotHistogram("Swapchain Events", SwapchainEvents.data(), count, 0, nullptr, 0.0f, 1.0f, ImVec2(0, 28));
-    ImGui::PlotHistogram("Suppressed Frames", SuppressionEvents.data(), count, 0, nullptr, 0.0f, 1.0f, ImVec2(0, 28));
+    ImGui::PlotHistogram("Presentation Resets", PresentationResetEvents.data(), count, 0, nullptr, 0.0f, 1.0f, ImVec2(0, 28));
     ImGui::PlotHistogram("Lifecycle-only Frames", LifecycleEvents.data(), count, 0, nullptr, 0.0f, 1.0f, ImVec2(0, 28));
     ImGui::PlotLines("Acquire", Acquire.data(), count, 0, nullptr, 0.0f, 20.0f, ImVec2(0, 56));
     ImGui::PlotLines("Present", Present.data(), count, 0, nullptr, 0.0f, 20.0f, ImVec2(0, 56));
@@ -173,15 +171,14 @@ void TimingPanel::Draw()
 void TimingPanel::FillSeries()
 {
     RawDt.fill(0.0f);
-    EngineDt.fill(0.0f);
+    TickDt.fill(0.0f);
     PresentationDt.fill(0.0f);
-    Accumulator.fill(0.0f);
     Alpha.fill(0.0f);
     FixedTicks.fill(0.0f);
     Acquire.fill(0.0f);
     Present.fill(0.0f);
     SwapchainEvents.fill(0.0f);
-    SuppressionEvents.fill(0.0f);
+    PresentationResetEvents.fill(0.0f);
     LifecycleEvents.fill(0.0f);
 
     const std::size_t count = std::min<std::size_t>(History.Size(), RawDt.size());
@@ -189,15 +186,14 @@ void TimingPanel::FillSeries()
     {
         const auto& sample = History.GetChronological(History.Size() - count + i);
         RawDt[i] = Ms(sample.RawDtSeconds);
-        EngineDt[i] = Ms(sample.EngineDtSeconds);
+        TickDt[i] = Ms(sample.TickDtSeconds);
         PresentationDt[i] = Ms(sample.PresentationDtSeconds);
-        Accumulator[i] = Ms(sample.FixedAccumulatorSeconds);
         Alpha[i] = static_cast<float>(sample.InterpolationAlpha);
         FixedTicks[i] = static_cast<float>(sample.FixedTicks);
         Acquire[i] = Ms(sample.AcquireSeconds);
         Present[i] = Ms(sample.PresentSeconds);
         SwapchainEvents[i] = sample.SwapchainRecreated ? 1.0f : 0.0f;
-        SuppressionEvents[i] = sample.PresentationDtSuppressed ? 1.0f : 0.0f;
+        PresentationResetEvents[i] = sample.PresentationReset ? 1.0f : 0.0f;
         LifecycleEvents[i] = sample.LifecycleOnly ? 1.0f : 0.0f;
     }
 }

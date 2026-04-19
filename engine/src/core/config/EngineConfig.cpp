@@ -238,8 +238,6 @@ namespace
                 config.Runtime.TargetFps, error, "runtime")
             && ReadDoubleEither(*section, "resizeSettleSeconds", "resize_settle_seconds",
                 config.Runtime.ResizeSettleSeconds, error, "runtime")
-            && ReadU32Either(*section, "maxTicksPerFrame", "max_ticks_per_frame",
-                config.Runtime.MaxTicksPerFrame, error, "runtime", 1)
             && ReadBoolEither(*section, "exitOnEscape", "exit_on_escape",
                 config.Runtime.ExitOnEscape, error, "runtime")
             && ReadBoolEither(*section, "togglePauseOnF1", "toggle_pause_on_f1",

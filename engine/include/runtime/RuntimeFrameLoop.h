@@ -64,47 +64,12 @@ inline bool HasRuntimeFrameEvent(RuntimeFrameEventFlags flags, RuntimeFrameEvent
     return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(flag)) != 0;
 }
 
-//=============================================================================
-// EngineClock
-//
-// Converts a raw wall-clock delta into a sanitized engine delta by clamping
-// and zeroing across discontinuities. The sanitized delta is the only time
-// value that should reach simulation, animation, or any accumulator.
-//=============================================================================
-class EngineClock
-{
-public:
-    [[nodiscard]] EngineFrameTime Consume(const PlatformFrameTime& platformTime,
-                                          bool temporalDiscontinuity,
-                                          bool lifecycleOnly) const
-    {
-        double dt = platformTime.RawDeltaSeconds;
-        if (dt < 0.0) dt = 0.0;
-        if (dt > MaxDeltaSeconds) dt = MaxDeltaSeconds;
-        if (temporalDiscontinuity || lifecycleOnly)
-            dt = 0.0;
-
-        return EngineFrameTime{
-            .SanitizedDeltaSeconds = dt,
-            .IsTemporalDiscontinuity = temporalDiscontinuity,
-            .FrameIndex = platformTime.FrameIndex,
-        };
-    }
-
-    void SetMaxDeltaSeconds(double seconds) { MaxDeltaSeconds = seconds; }
-    [[nodiscard]] double GetMaxDeltaSeconds() const { return MaxDeltaSeconds; }
-
-private:
-    double MaxDeltaSeconds = 1.0 / 15.0;
-};
-
 struct RuntimeFrameSnapshot
 {
-    PlatformFrameTime PlatformTime;
-    EngineFrameTime EngineTime;
+    FrameClock WallTime;
     PresentationTime Presentation;
-    double AccumulatorBeforeTicks = 0.0;
-    double AccumulatorAfterTicks = 0.0;
+    TickBudget Budget;
+    double TickDtSeconds = FixedSimulationLoop::DefaultFixedDt;
     uint32_t FixedTicks = 0;
     RuntimeFrameState State = RuntimeFrameState::Running;
     TemporalDiscontinuityReason DiscontinuityReason = TemporalDiscontinuityReason::None;
@@ -130,8 +95,7 @@ public:
     void CompleteSwapchainRebuild(WindowExtent rebuiltExtent);
     void FailSwapchainRebuild();
 
-    EngineFrameTime AdvanceEngineTime();
-    void AccumulateSimulationTime();
+    TickBudget ScheduleFixedTicks();
     [[nodiscard]] bool CanRunFixedTickThisFrame() const;
     [[nodiscard]] FixedSimTime BeginFixedTick();
     void EndFixedTick();
@@ -142,8 +106,8 @@ public:
     [[nodiscard]] RuntimeFrameState GetState() const { return State; }
     [[nodiscard]] FixedSimulationLoop& GetSimulationClock() { return SimulationClock; }
     [[nodiscard]] const FixedSimulationLoop& GetSimulationClock() const { return SimulationClock; }
-    [[nodiscard]] TimeService& GetPlatformClock() { return PlatformClock; }
-    [[nodiscard]] const TimeService& GetPlatformClock() const { return PlatformClock; }
+    [[nodiscard]] TimeService& GetWallClock() { return WallClock; }
+    [[nodiscard]] const TimeService& GetWallClock() const { return WallClock; }
     [[nodiscard]] FrameDiscontinuityBus& GetDiscontinuityBus() { return DiscontinuityBus; }
     [[nodiscard]] const FrameDiscontinuityBus& GetDiscontinuityBus() const { return DiscontinuityBus; }
 
@@ -152,15 +116,14 @@ public:
     // query in the same frame the discontinuity was applied.
     [[nodiscard]] bool ConsumePresentationHistoryReset();
 
-    // Scale engine delta before it is accumulated into the fixed loop.
-    // 0.0 fully pauses simulation; 1.0 is realtime. Presentation clock is
-    // unaffected so UI continues to update while paused.
+    // 0.0 pauses simulation tick emission; positive values emit the configured
+    // locked tick budget. FixedSimTime::DeltaSeconds never changes.
     void SetSimulationTimescale(float scale) { SimulationTimescale = scale < 0.0f ? 0.0f : scale; }
     [[nodiscard]] float GetSimulationTimescale() const { return SimulationTimescale; }
 
     // Resize events can arrive sparsely while the OS is in a live-resize drag.
     // Hold lifecycle mode for a short real-time quiet window so swapchain
-    // rebuild/render/re-invalidated cycles do not leak sawtooth engine dt.
+    // rebuild/render/re-invalidated cycles do not churn graphics resources.
     void SetResizeSettleSeconds(double seconds);
     [[nodiscard]] double GetResizeSettleSeconds() const { return ResizeSettleSeconds; }
 
@@ -181,8 +144,7 @@ private:
 
     void ApplyDiscontinuity();
 
-    TimeService PlatformClock;
-    EngineClock SafeEngineClock;
+    TimeService WallClock;
     FixedSimulationLoop SimulationClock;
     FrameDiscontinuityBus DiscontinuityBus;
     RuntimeFrameSnapshot Current;

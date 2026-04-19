@@ -19,7 +19,7 @@ class FrameDriver;
 //
 // Named points in the frame pipeline where systems register callbacks. The
 // driver invokes each phase's callbacks in registration order. Ordering
-// between phases is fixed — this is the engine's contract for how a frame
+// between phases is fixed - this is the engine's contract for how a frame
 // is constructed.
 //=============================================================================
 enum class FramePhase : int
@@ -27,7 +27,7 @@ enum class FramePhase : int
     PumpPlatform = 0,         // Poll OS events, populate InputFrame
     ResolveLifecycle = 1,     // Apply window events to RuntimeFrameLoop
     RebuildGraphics = 2,      // Recreate swapchain / swap device resources
-    AdvanceEngineTime = 3,    // Sanitize dt, fire discontinuity bus
+    ScheduleTicks = 3,        // Resolve presentation resets and fixed tick budget
     Simulate = 4,             // Fixed-step: gameplay + propagation (0..N calls)
     ExtractRenderPacket = 5,  // Build RenderPacket for this frame
     Render = 6,               // Submit + present
@@ -56,17 +56,16 @@ using FramePhaseCallback = std::function<void(PhaseContext&)>;
 //
 // Owns the outer loop and drives each registered system through the phase
 // pipeline once per wall-clock frame. Simulation phase callbacks run zero
-// or more times per frame inside the fixed accumulator loop — they receive
-// a FrameContext with IsFixedTick = true and a valid CurrentTick.
+// or more times per frame according to RuntimeFrameLoop's tick budget; they
+// receive a FrameContext with IsFixedTick = true and a valid CurrentTick.
 //
 // Design goals:
 //   - Application code never writes while(running). It registers callbacks
 //     into phases and calls Run().
 //   - Phase ordering is an engine-wide invariant, not per-app code.
 //   - Lifecycle-only frames (resize, minimize, swapchain rebuild) skip
-//     Simulate/Extract/Render but still pump platform + telemetry.
-//   - All timing decisions (pace, suspend, discontinuity) live here; the
-//     application never sees a raw delta.
+//     Extract/Render but still pump platform + telemetry.
+//   - Simulation consumes FixedSimTime only; wall time is diagnostic telemetry.
 //
 // Usage:
 //   FrameDriver driver(runtime);

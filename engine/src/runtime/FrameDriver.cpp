@@ -7,7 +7,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::PumpPlatform: return "PumpPlatform";
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
-    case FramePhase::AdvanceEngineTime: return "AdvanceEngineTime";
+    case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
     case FramePhase::ExtractRenderPacket: return "ExtractRenderPacket";
     case FramePhase::Render: return "Render";
@@ -67,13 +67,13 @@ void FrameDriver::StepOnce()
     ctx.PacketRead = &Packets.ReadSlot();
     ctx.Trace = Trace;
 
-    if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().PlatformTime.FrameIndex);
+    if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
     InvokePhase(FramePhase::PumpPlatform, ctx);
     if ((ShouldExitPredicate && ShouldExitPredicate()) || Input.QuitRequested)
     {
         InvokePhase(FramePhase::EndFrame, ctx);
-        if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().PlatformTime.FrameIndex);
+        if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
         Runtime.EndFrame();
         Packets.Flip();
         Pacer.WaitForLifecycleIdle();
@@ -82,7 +82,7 @@ void FrameDriver::StepOnce()
 
     InvokePhase(FramePhase::ResolveLifecycle, ctx);
     InvokePhase(FramePhase::RebuildGraphics, ctx);
-    InvokePhase(FramePhase::AdvanceEngineTime, ctx);
+    InvokePhase(FramePhase::ScheduleTicks, ctx);
 
     // Fixed-step simulation loop. Each fixed tick is its own mini-phase so
     // registered simulation callbacks can observe tick count cleanly.
@@ -111,7 +111,7 @@ void FrameDriver::StepOnce()
     // them — keep edges alive for the next frame by NOT draining.
 
     ctx.PacketWrite->Reset();
-    ctx.PacketWrite->FrameIndex = Runtime.GetCurrentFrame().PlatformTime.FrameIndex;
+    ctx.PacketWrite->FrameIndex = Runtime.GetCurrentFrame().WallTime.FrameIndex;
     ctx.PacketWrite->Presentation = Runtime.GetCurrentFrame().Presentation;
 
     const bool lifecycleOnly = Runtime.GetCurrentFrame().LifecycleOnly;
@@ -123,7 +123,7 @@ void FrameDriver::StepOnce()
 
     InvokePhase(FramePhase::EndFrame, ctx);
 
-    if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().PlatformTime.FrameIndex);
+    if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
     Runtime.EndFrame();
     Packets.Flip();

@@ -104,7 +104,6 @@ bool Engine::Initialize()
 
     Runtime_.SetResizeSettleSeconds(Config_.Runtime.ResizeSettleSeconds);
     Runtime_.GetSimulationClock().SetFixedTickRate(Config_.Runtime.FixedTickRate);
-    Runtime_.GetSimulationClock().SetMaxTicksPerFrame(Config_.Runtime.MaxTicksPerFrame);
 
     if (Config_.Window.GraphicsApi == WindowGraphicsApi::None)
     {
@@ -366,9 +365,8 @@ void Engine::RegisterFramePhases(Game& game)
         }
     });
 
-    Driver_->Register(FramePhase::AdvanceEngineTime, [](PhaseContext& ctx) {
-        ctx.Runtime->AdvanceEngineTime();
-        ctx.Runtime->AccumulateSimulationTime();
+    Driver_->Register(FramePhase::ScheduleTicks, [](PhaseContext& ctx) {
+        ctx.Runtime->ScheduleFixedTicks();
     });
 
     Driver_->Register(FramePhase::Simulate, [this, &game](PhaseContext& ctx) {
@@ -418,11 +416,9 @@ void Engine::RegisterFramePhases(Game& game)
         const RendererFrameTiming& rt = renderer.GetLastTiming();
         const SwapchainState swap = swapchain.GetState();
         Timing_.Push(TimingFrameSample{
-            .RawDtSeconds = rf.PlatformTime.RawDeltaSeconds,
-            .EngineDtSeconds = rf.EngineTime.SanitizedDeltaSeconds,
+            .RawDtSeconds = rf.WallTime.UnscaledDt,
+            .TickDtSeconds = rf.TickDtSeconds,
             .PresentationDtSeconds = rf.Presentation.DeltaSeconds,
-            .FixedAccumulatorBeforeSeconds = rf.AccumulatorBeforeTicks,
-            .FixedAccumulatorSeconds = rf.AccumulatorAfterTicks,
             .InterpolationAlpha = rf.Presentation.Alpha,
             .RenderRecordSeconds = rt.RecordSeconds,
             .AcquireSeconds = vk.AcquireSeconds,
@@ -443,7 +439,7 @@ void Engine::RegisterFramePhases(Game& game)
             .PresentMode = static_cast<int>(swap.PresentMode),
             .SwapchainRecreated = HasRuntimeFrameEvent(
                 rf.Events, RuntimeFrameEventFlags::SwapchainRecreated),
-            .PresentationDtSuppressed =
+            .PresentationReset =
                 rf.DiscontinuityReason != TemporalDiscontinuityReason::None,
         });
     });
@@ -455,11 +451,9 @@ void Engine::RegisterFramePhases(Game& game)
 
         const SwapchainState swap = swapchain.GetState();
         Timing_.Push(TimingFrameSample{
-            .RawDtSeconds = rf.PlatformTime.RawDeltaSeconds,
-            .EngineDtSeconds = rf.EngineTime.SanitizedDeltaSeconds,
+            .RawDtSeconds = rf.WallTime.UnscaledDt,
+            .TickDtSeconds = rf.TickDtSeconds,
             .PresentationDtSeconds = rf.Presentation.DeltaSeconds,
-            .FixedAccumulatorBeforeSeconds = rf.AccumulatorBeforeTicks,
-            .FixedAccumulatorSeconds = rf.AccumulatorAfterTicks,
             .InterpolationAlpha = rf.Presentation.Alpha,
             .FixedTicks = rf.FixedTicks,
             .LifecycleState = static_cast<int>(rf.State),
@@ -474,7 +468,7 @@ void Engine::RegisterFramePhases(Game& game)
             .PresentMode = static_cast<int>(swap.PresentMode),
             .SwapchainRecreated = HasRuntimeFrameEvent(
                 rf.Events, RuntimeFrameEventFlags::SwapchainRecreated),
-            .PresentationDtSuppressed =
+            .PresentationReset =
                 rf.DiscontinuityReason != TemporalDiscontinuityReason::None,
         });
     });

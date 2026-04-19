@@ -37,7 +37,7 @@
 //
 //   // per-frame main loop:
 //   host.RunFrame(frameClock.Dt);
-//   // fixed accumulator loop (0..N):
+//   // scheduled fixed ticks:
 //   host.RunFixed(sim.FixedDt);
 //   // render:
 //   host.RunRender(alpha);

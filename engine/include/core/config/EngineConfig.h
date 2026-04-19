@@ -45,7 +45,6 @@ struct EngineRuntimeConfig
     double FixedTickRate = 60.0;
     double TargetFps = 0.0;
     double ResizeSettleSeconds = 0.10;
-    uint32_t MaxTicksPerFrame = 5;
     bool ExitOnEscape = false;
     bool TogglePauseOnF1 = false;
 };

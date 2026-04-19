@@ -21,27 +21,6 @@ static constexpr uint32_t kTestScancode = 26;
 // Helpers
 // ---------------------------------------------------------------------------
 
-namespace
-{
-    // Deterministic stepper: advances runtime by one frame of known dt.
-    // Avoids relying on wall clock for tick count assertions.
-    void StepFrameWithDelta(RuntimeFrameLoop& runtime, double rawDt)
-    {
-        runtime.BeginFrame();
-        runtime.ResolveLifecycleTransitions();
-        // Inject raw dt directly into the sim accumulator to bypass wall clock.
-        runtime.GetSimulationClock().AddFrameDelta(rawDt);
-        runtime.AdvanceEngineTime();
-        while (runtime.CanRunFixedTickThisFrame())
-        {
-            (void)runtime.BeginFixedTick();
-            runtime.EndFixedTick();
-        }
-        runtime.BuildPresentationFrame();
-        runtime.EndFrame();
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Discontinuity bus
 // ---------------------------------------------------------------------------
@@ -98,7 +77,7 @@ TEST(RuntimeFrameLoop, SwapchainRecreatePublishesOnBus)
 // Scenario: burst resize
 // ---------------------------------------------------------------------------
 
-TEST(RuntimeFrameLoopScenario, BurstResizeKeepsAccumulatorClean)
+TEST(RuntimeFrameLoopScenario, BurstResizeEmitsZeroTicksDuringLifecycleFrames)
 {
     RuntimeFrameLoop runtime;
     runtime.SetResizeSettleSeconds(0.0);
@@ -108,11 +87,9 @@ TEST(RuntimeFrameLoopScenario, BurstResizeKeepsAccumulatorClean)
         if (i % 3 == 0)
             runtime.NotifyResize(WindowExtent{ 1280u + uint32_t(i), 720u });
         runtime.ResolveLifecycleTransitions();
-        runtime.AdvanceEngineTime();
-        runtime.AccumulateSimulationTime();
-        // Accumulator must never go negative or explode beyond max.
-        EXPECT_GE(runtime.GetSimulationClock().GetAccumulator(), 0.0);
-        EXPECT_LE(runtime.GetSimulationClock().GetAccumulator(), 0.5);
+        TickBudget budget = runtime.ScheduleFixedTicks();
+        if (runtime.GetCurrentFrame().LifecycleOnly)
+            EXPECT_EQ(budget.TicksToRunThisFrame, 0u);
         runtime.BuildPresentationFrame();
         runtime.EndFrame();
     }
@@ -143,17 +120,16 @@ TEST(RuntimeFrameLoopScenario, ResizeQuietWindowPreventsImmediateRebuild)
 }
 
 // ---------------------------------------------------------------------------
-// Scenario: minimized-for-long-time does not explode accumulator
+// Scenario: minimized-for-long-time does not emit simulation ticks
 // ---------------------------------------------------------------------------
 
-TEST(RuntimeFrameLoopScenario, LongMinimizeDoesNotAccumulateSimulationTime)
+TEST(RuntimeFrameLoopScenario, LongMinimizeEmitsZeroTicks)
 {
     RuntimeFrameLoop runtime;
     runtime.BeginFrame();
     runtime.NotifyMinimized();
     runtime.ResolveLifecycleTransitions();
-    runtime.AdvanceEngineTime();
-    runtime.AccumulateSimulationTime();
+    EXPECT_EQ(runtime.ScheduleFixedTicks().TicksToRunThisFrame, 0u);
     runtime.EndFrame();
 
     // Sleep a realistic-ish stall (5ms — enough to exceed fixed dt of ~16.7ms? no,
@@ -162,11 +138,9 @@ TEST(RuntimeFrameLoopScenario, LongMinimizeDoesNotAccumulateSimulationTime)
     {
         runtime.BeginFrame();
         runtime.ResolveLifecycleTransitions();
-        runtime.AdvanceEngineTime();
-        runtime.AccumulateSimulationTime();
+        EXPECT_EQ(runtime.ScheduleFixedTicks().TicksToRunThisFrame, 0u);
         runtime.BuildPresentationFrame();
         runtime.EndFrame();
-        EXPECT_DOUBLE_EQ(runtime.GetSimulationClock().GetAccumulator(), 0.0);
     }
 }
 
@@ -245,20 +219,10 @@ TEST(RuntimeFrameLoopScenario, TimescaleZeroPausesSimulationTicks)
     RuntimeFrameLoop runtime;
     runtime.SetSimulationTimescale(0.0f);
 
-    // Burn first frame so subsequent delta is nonzero.
-    runtime.BeginFrame();
-    runtime.ResolveLifecycleTransitions();
-    runtime.AdvanceEngineTime();
-    runtime.AccumulateSimulationTime();
-    runtime.EndFrame();
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
     uint32_t fixedTicks = 0;
     runtime.BeginFrame();
     runtime.ResolveLifecycleTransitions();
-    runtime.AdvanceEngineTime();
-    runtime.AccumulateSimulationTime();
+    runtime.ScheduleFixedTicks();
     while (runtime.CanRunFixedTickThisFrame())
     {
         (void)runtime.BeginFixedTick();
@@ -275,13 +239,10 @@ TEST(RuntimeFrameLoopScenario, TimescaleRealtimeProducesTicks)
 {
     RuntimeFrameLoop runtime;
 
-    // Directly inject deltas to avoid wall-clock flake in CI.
     uint32_t ticksAt1x = 0;
     runtime.BeginFrame();
     runtime.ResolveLifecycleTransitions();
-    runtime.AdvanceEngineTime();
-    // Inject 50ms worth of engine time (more than 3 fixed ticks at 60hz).
-    runtime.GetSimulationClock().AddFrameDelta(0.05);
+    runtime.ScheduleFixedTicks();
     while (runtime.CanRunFixedTickThisFrame())
     {
         (void)runtime.BeginFixedTick();
@@ -290,7 +251,7 @@ TEST(RuntimeFrameLoopScenario, TimescaleRealtimeProducesTicks)
     }
     runtime.BuildPresentationFrame();
     runtime.EndFrame();
-    EXPECT_GE(ticksAt1x, 3u);
+    EXPECT_EQ(ticksAt1x, 1u);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +267,7 @@ TEST(RuntimeFrameLoopScenario, DiscontinuityFiresBusAndLegacyFlagOnce)
 
     runtime.BeginFrame();
     runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::Teleport);
-    runtime.AdvanceEngineTime();
+    runtime.ScheduleFixedTicks();
 
     EXPECT_EQ(busCalls, 1);
     EXPECT_TRUE(runtime.ConsumePresentationHistoryReset());
@@ -337,35 +298,31 @@ TEST(InputFrame, HeldStateSurvivesEdgeClear)
     EXPECT_TRUE(frame.IsKeyDown(kTestScancode));
 }
 
-TEST(FrameDriver, FirstFixedTickSeesInputEdgesAndLaterTicksDoNot)
+TEST(FrameDriver, LockedTickSeesInputEdges)
 {
     RuntimeFrameLoop runtime;
     FrameDriver driver(runtime);
 
     int tickCount = 0;
     std::size_t firstTickPressed = 0;
-    std::size_t secondTickPressed = 0;
 
     driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
         ctx.Input->SetKeyHeld(kTestScancode, true);
         ctx.Input->KeysPressed.push_back(kTestScancode);
     });
-    driver.Register(FramePhase::AdvanceEngineTime, [&](PhaseContext& ctx) {
-        ctx.Runtime->GetSimulationClock().AddFrameDelta(0.05);
+    driver.Register(FramePhase::ScheduleTicks, [&](PhaseContext& ctx) {
+        ctx.Runtime->ScheduleFixedTicks();
     });
     driver.Register(FramePhase::Simulate, [&](PhaseContext& ctx) {
         if (tickCount == 0)
             firstTickPressed = ctx.Input->KeysPressed.size();
-        else if (tickCount == 1)
-            secondTickPressed = ctx.Input->KeysPressed.size();
         ++tickCount;
     });
 
     driver.StepOnce();
 
-    EXPECT_GE(tickCount, 2);
+    EXPECT_EQ(tickCount, 1);
     EXPECT_EQ(firstTickPressed, 1u);
-    EXPECT_EQ(secondTickPressed, 0u);
     EXPECT_TRUE(driver.GetInputFrame().IsKeyDown(kTestScancode));
 }
 

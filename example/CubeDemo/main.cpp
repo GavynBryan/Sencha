@@ -263,6 +263,7 @@ namespace
             Zone->BeginSimulationTick();
 
             const float fixedDt = static_cast<float>(ctx.Time.DeltaSeconds);
+            FreeCam.UpdateLook(ctx.Input);
             FreeCam.TickFixed(ctx.Input, Zone->Transforms(), fixedDt);
 
             if (Transform3f* cube = Zone->Transforms().TryGetLocalMutable(Demo.CenterCube))
@@ -274,7 +275,7 @@ namespace
 
         void OnExtractRender(RenderExtractContext& ctx) override
         {
-            FreeCam.UpdateLook(ctx.Input);
+            (void)ctx;
         }
 
         void OnShutdown(GameShutdownContext& ctx) override

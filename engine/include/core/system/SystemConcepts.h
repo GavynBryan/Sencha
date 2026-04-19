@@ -6,13 +6,13 @@
 // A system type opts into one or more dispatch lanes by implementing the
 // corresponding method. No base class, no vtable.
 //
-//   HasUpdate  — frame lane. Update(float dt) called once per frame.
-//   HasTick    — fixed lane. Tick(float fixedDt) called 0..N times per frame
-//                at a constant step, driven by the physics accumulator.
-//   HasRender  — render lane. Render(float alpha) called once per frame with
-//                alpha = accumulator / fixedDt for interpolation.
-//   HasInit    — optional Init() called by SystemHost::Init().
-//   HasShutdown— optional Shutdown() called by SystemHost::Shutdown().
+//   HasUpdate  - frame lane. Update(float dt) called once per frame.
+//   HasTick    - fixed lane. Tick(float fixedDt) called for scheduled fixed
+//                simulation ticks at a constant step.
+//   HasRender  - render lane. Render(float alpha) called once per frame with
+//                presentation alpha for interpolation.
+//   HasInit    - optional Init() called by SystemHost::Init().
+//   HasShutdown- optional Shutdown() called by SystemHost::Shutdown().
 //
 // IsSystem: satisfied if T participates in at least one lane.
 //=============================================================================

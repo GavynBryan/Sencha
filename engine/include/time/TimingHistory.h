@@ -7,10 +7,8 @@
 struct TimingFrameSample
 {
     double RawDtSeconds = 0.0;
-    double EngineDtSeconds = 0.0;
+    double TickDtSeconds = 0.0;
     double PresentationDtSeconds = 0.0;
-    double FixedAccumulatorBeforeSeconds = 0.0;
-    double FixedAccumulatorSeconds = 0.0;
     double InterpolationAlpha = 0.0;
     double EventPollSeconds = 0.0;
     double RenderRecordSeconds = 0.0;
@@ -31,7 +29,7 @@ struct TimingFrameSample
     uint32_t SwapchainImageCount = 0;
     int PresentMode = 0;
     bool SwapchainRecreated = false;
-    bool PresentationDtSuppressed = false;
+    bool PresentationReset = false;
 };
 
 class TimingHistory

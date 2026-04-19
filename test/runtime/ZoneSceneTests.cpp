@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <render/Material.h>
+#include <render/MeshRendererComponent.h>
 #include <render/MeshService.h>
 #include <zone/ZoneScene.h>
 #include <zone/ZoneRuntime.h>
