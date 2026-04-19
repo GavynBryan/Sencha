@@ -12,6 +12,7 @@ struct DemoScene
 {
     EntityId Camera;
     EntityId CenterCube;
+    EntityId CenterCubeChild;
     MeshHandle CubeMesh;
     MaterialHandle Red;
     MaterialHandle Green;

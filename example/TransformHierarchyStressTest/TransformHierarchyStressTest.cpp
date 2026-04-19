@@ -1,8 +1,8 @@
 #include <world/entity/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagation.h>
 #include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformPropagationSystem.h>
 #include <world/transform/TransformStore.h>
 
 #include <algorithm>
@@ -389,7 +389,7 @@ namespace
 		std::vector<uint32_t> ParentIndices;
 	};
 
-	// Production-path fixture: drives the real TransformPropagationSystem against
+	// Production-path fixture: drives the real transform propagation path against
 	// the real entity-indexed TransformStore<Transform3f> + hierarchy services.
 	//
 	// Used to confirm that the production path matches the hand-written
@@ -398,12 +398,10 @@ namespace
 	{
 		using Hierarchy3f = TransformHierarchyService;
 		using PropagationOrder3f = TransformPropagationOrderService;
-		using Propagation3f = TransformPropagationSystem<Transform3f>;
 
 		Hierarchy3f Hierarchy;
 		PropagationOrder3f PropagationOrder;
 		TransformStore<Transform3f> Transforms;
-		Propagation3f Propagation;
 
 		std::vector<EntityId> Keys;
 		double BatchEmplaceUs = 0.0;
@@ -416,7 +414,6 @@ namespace
 			size_t branchingFactor,
 			ProductionBatchMode batchMode)
 			: Transforms(PropagationOrder)
-			, Propagation(Transforms, Hierarchy, PropagationOrder)
 			, BatchMode(batchMode)
 		{
 			Transforms.GetItems();
@@ -448,7 +445,7 @@ namespace
 
 		void PropagateTick()
 		{
-			Propagation.Propagate();
+			PropagateTransforms(Transforms, Hierarchy, PropagationOrder);
 		}
 
 		double Checksum() const
@@ -716,7 +713,7 @@ int main(int argc, char** argv)
 		dataResult.Checksum = dataOriented.Checksum();
 
 		BenchmarkResult productionScalarResult;
-		productionScalarResult.Name = "production_transform_propagation_system_scalar";
+		productionScalarResult.Name = "production_transform_propagation_scalar";
 		productionScalarResult.TransformCount = config.TransformCount;
 		productionScalarResult.SetupUs = ElapsedMicroseconds(
 			productionScalarSetupStart,
@@ -737,7 +734,7 @@ int main(int argc, char** argv)
 		productionScalarResult.HierarchyUnregisterUs = productionScalar.HierarchyUnregisterUs;
 
 		BenchmarkResult productionBulkResult;
-		productionBulkResult.Name = "production_transform_propagation_system_bulk";
+		productionBulkResult.Name = "production_transform_propagation_bulk";
 		productionBulkResult.TransformCount = config.TransformCount;
 		productionBulkResult.SetupUs = ElapsedMicroseconds(
 			productionBulkSetupStart,

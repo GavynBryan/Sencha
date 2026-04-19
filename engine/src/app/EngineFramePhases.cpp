@@ -4,6 +4,7 @@
 #include <app/Game.h>
 #include <input/SdlInputCapture.h>
 #include <runtime/FrameDriver.h>
+#include <world/transform/TransformPropagation.h>
 
 #include <SDL3/SDL.h>
 
@@ -127,6 +128,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         };
         engine.Schedule().RunPhysics(physics);
 
+        PropagateTransforms(ctx.Registries.Logic);
+
         PostFixedContext postFixed{
             .EngineInstance = engine,
             .Config = config,
@@ -177,6 +180,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .Registries = ctx.Registries,
             .ActiveRegistries = ctx.Registries.Visible,
         };
+        PropagateTransforms(ctx.Registries.Visible);
         engine.Schedule().RunExtractRender(extract);
     });
 

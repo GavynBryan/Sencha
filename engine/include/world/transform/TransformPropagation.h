@@ -3,7 +3,10 @@
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformStore.h>
+
 #include <span>
+
+class Registry;
 
 //=============================================================================
 // TransformPropagationSystem
@@ -79,3 +82,27 @@ private:
     TransformHierarchyService& Hierarchy;
     TransformPropagationOrderService& Cache;
 };
+
+//=============================================================================
+// PropagateTransforms
+//
+// Convenience entry point for one-shot propagation over explicit transform
+// services.
+//=============================================================================
+template <typename TTransform>
+void PropagateTransforms(
+    TransformStore<TTransform>& transforms,
+    TransformHierarchyService& hierarchy,
+    TransformPropagationOrderService& cache)
+{
+    TransformPropagationSystem<TTransform> propagation(transforms, hierarchy, cache);
+    propagation.Propagate();
+}
+
+//=============================================================================
+// PropagateTransforms
+//
+// Restores world-transform coherence for every unique registry in the span that
+// owns the default 3D transform resources.
+//=============================================================================
+void PropagateTransforms(std::span<Registry*> registries);

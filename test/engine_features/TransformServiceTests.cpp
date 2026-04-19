@@ -4,8 +4,8 @@
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformPropagation.h>
 #include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformPropagationSystem.h>
 #include <world/transform/TransformSpace.h>
 #include <world/transform/TransformStore.h>
 #include <cmath>
@@ -21,22 +21,20 @@ namespace
     struct TransformPropagationFixture
     {
         TransformSpace2d Space;
-        TransformPropagationSystem<Transform2f> Propagation;
 
-        TransformPropagationFixture()
-            : Propagation(Space.Transforms, Space.Hierarchy, Space.PropagationOrder)
+        void Propagate()
         {
+            PropagateTransforms(Space.Transforms, Space.Hierarchy, Space.PropagationOrder);
         }
     };
 
     struct TransformPropagation3Fixture
     {
         TransformSpace3d Space;
-        TransformPropagationSystem<Transform3f> Propagation;
 
-        TransformPropagation3Fixture()
-            : Propagation(Space.Transforms, Space.Hierarchy, Space.PropagationOrder)
+        void Propagate()
         {
+            PropagateTransforms(Space.Transforms, Space.Hierarchy, Space.PropagationOrder);
         }
     };
 }
@@ -272,13 +270,13 @@ TEST(TransformStore2D, MutableLocalMarksTransformDirty)
 
     fixture.Space.Transforms.Add(entity, Transform2f({ 1.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Hierarchy.Register(entity);
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     Transform2f* local = fixture.Space.Transforms.TryGetLocalMutable(entity);
     ASSERT_NE(local, nullptr);
     local->Position.X = 5.0f;
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* world = fixture.Space.Transforms.TryGetWorld(entity);
     ASSERT_NE(world, nullptr);
@@ -286,7 +284,7 @@ TEST(TransformStore2D, MutableLocalMarksTransformDirty)
 }
 
 // ============================================================================
-// TransformPropagationSystem
+// Transform Propagation
 // ============================================================================
 
 TEST(TransformPropagation, RootWorldEqualsLocal2D)
@@ -298,7 +296,7 @@ TEST(TransformPropagation, RootWorldEqualsLocal2D)
     fixture.Space.Transforms.Add(entity, local);
     fixture.Space.Hierarchy.Register(entity);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* world = fixture.Space.Transforms.TryGetWorld(entity);
     ASSERT_NE(world, nullptr);
@@ -315,7 +313,7 @@ TEST(TransformPropagation, ChildInheritsParentTransform2D)
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Hierarchy.SetParent(child, parent);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* parentWorld = fixture.Space.Transforms.TryGetWorld(parent);
     const Transform2f* childWorld = fixture.Space.Transforms.TryGetWorld(child);
@@ -337,7 +335,7 @@ TEST(TransformPropagation, RotatedParentAffectsChildPosition2D)
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 1.0f, 1.0f }));
     fixture.Space.Hierarchy.SetParent(child, parent);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* childWorld = fixture.Space.Transforms.TryGetWorld(child);
     ASSERT_NE(childWorld, nullptr);
@@ -360,7 +358,7 @@ TEST(TransformPropagation, ThreeLevelHierarchy2D)
     fixture.Space.Hierarchy.SetParent(mid, root);
     fixture.Space.Hierarchy.SetParent(leaf, mid);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* leafWorld = fixture.Space.Transforms.TryGetWorld(leaf);
     ASSERT_NE(leafWorld, nullptr);
@@ -377,7 +375,7 @@ TEST(TransformPropagation, ScaleComposes2D)
     fixture.Space.Transforms.Add(child, Transform2f({ 10.0f, 0.0f }, 0.0f, { 0.5f, 0.5f }));
     fixture.Space.Hierarchy.SetParent(child, parent);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform2f* childWorld = fixture.Space.Transforms.TryGetWorld(child);
     ASSERT_NE(childWorld, nullptr);
@@ -397,7 +395,7 @@ TEST(TransformPropagation, RemovedTransformIsSkippedOnRebuild)
     fixture.Space.Hierarchy.SetParent(child, parent);
     fixture.Space.Transforms.Remove(child);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     EXPECT_EQ(fixture.Space.Transforms.TryGetWorld(child), nullptr);
     ASSERT_EQ(fixture.Space.PropagationOrder.GetOrder().size(), 1u);
@@ -423,7 +421,7 @@ TEST(TransformPropagation, ChildInheritsParentTransform3D)
     fixture.Space.Transforms.Add(child, childLocal);
     fixture.Space.Hierarchy.SetParent(child, parent);
 
-    fixture.Propagation.Propagate();
+    fixture.Propagate();
 
     const Transform3f* childWorld = fixture.Space.Transforms.TryGetWorld(child);
     ASSERT_NE(childWorld, nullptr);

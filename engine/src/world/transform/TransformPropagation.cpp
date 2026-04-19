@@ -1,20 +1,11 @@
-#include <app/TransformPropagationPass.h>
+#include <world/transform/TransformPropagation.h>
 
+#include <math/geometry/3d/Transform3d.h>
 #include <world/registry/Registry.h>
 
 #include <unordered_set>
 
-void TransformPropagationPass::PostFixed(PostFixedContext& ctx)
-{
-    Propagate(ctx.ActiveRegistries);
-}
-
-void TransformPropagationPass::ExtractRender(RenderExtractContext& ctx)
-{
-    Propagate(ctx.ActiveRegistries);
-}
-
-void TransformPropagationPass::Propagate(std::span<Registry*> registries)
+void PropagateTransforms(std::span<Registry*> registries)
 {
     std::unordered_set<Registry*> seen;
     for (Registry* registry : registries)
@@ -29,7 +20,6 @@ void TransformPropagationPass::Propagate(std::span<Registry*> registries)
         if (transforms == nullptr || hierarchy == nullptr || order == nullptr)
             continue;
 
-        TransformPropagationSystem<Transform3f> propagation(*transforms, *hierarchy, *order);
-        propagation.Propagate();
+        PropagateTransforms(*transforms, *hierarchy, *order);
     }
 }

@@ -1,7 +1,6 @@
 #include <app/Engine.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
-#include <app/TransformPropagationPass.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -57,9 +56,7 @@ bool Engine::Initialize()
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     Services_.AddService<DebugService>(logging, debugLog);
-    Schedule_.Register<TransformPropagationPass>();
     Schedule_.Register<DefaultRenderPipeline>();
-    Schedule_.After<DefaultRenderPipeline, TransformPropagationPass>();
     auto failInitialize = [this]() {
         Schedule_.Shutdown();
         Driver_.reset();

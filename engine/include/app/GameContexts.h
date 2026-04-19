@@ -113,8 +113,8 @@ struct PhysicsContext
 //=============================================================================
 // PostFixedContext
 //
-// Provides fixed-tick simulation state after physics has completed.
-// Used for transform propagation and follow-up logic that depends on physics.
+// Provides fixed-tick simulation state after physics has completed and the
+// engine has restored world-transform coherence for logic registries.
 //=============================================================================
 struct PostFixedContext
 {
@@ -157,6 +157,7 @@ struct FrameUpdateContext
 //
 // Provides presentation-time state and double-buffered render packets.
 // Used to extract renderable data from simulation state for the renderer.
+// World transforms are coherent for visible registries at phase entry.
 //=============================================================================
 struct RenderExtractContext
 {
