@@ -55,6 +55,11 @@ public:
 	// this frame. Must be called exactly once per frame, before any systems run.
 	FrameClock Advance();
 
+	// Reset the wall-clock baseline without accumulating elapsed time. Use after
+	// swapchain/window lifecycle stalls so resize or present blocking does not
+	// become simulation time on the next frame.
+	void ResetToNow();
+
 	// -- Timescale stack ------------------------------------------------------
 
 	// Push a timescale override. Returns a handle used to remove this entry.

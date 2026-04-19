@@ -6,7 +6,24 @@
 #include <graphics/vulkan/VulkanSurfaceService.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
+#include <string_view>
+
+namespace
+{
+    const char* PresentModeName(VkPresentModeKHR mode)
+    {
+        switch (mode)
+        {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
+        case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
+        case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
+        default: return "UNKNOWN";
+        }
+    }
+}
 
 VulkanSwapchainService::VulkanSwapchainService(
     LoggingProvider& logging,
@@ -64,6 +81,20 @@ VkImageView VulkanSwapchainService::GetImageView(uint32_t index) const
     return index < ImageViews.size() ? ImageViews[index] : VK_NULL_HANDLE;
 }
 
+SwapchainState VulkanSwapchainService::GetState() const
+{
+    return SwapchainState{
+        .Generation = Generation,
+        .Extent = Extent,
+        .PresentMode = PresentMode,
+        .ImageCount = static_cast<uint32_t>(Images.size()),
+        .MinImageCount = LastMinImageCount,
+        .MaxImageCount = LastMaxImageCount,
+        .Format = Format,
+        .ColorSpace = ColorSpace,
+    };
+}
+
 bool VulkanSwapchainService::Recreate(WindowExtent desiredExtent)
 {
     if (Device == VK_NULL_HANDLE)
@@ -73,7 +104,10 @@ bool VulkanSwapchainService::Recreate(WindowExtent desiredExtent)
 
     vkDeviceWaitIdle(Device);
     DestroySwapchain();
-    return CreateSwapchain(desiredExtent);
+    const bool created = CreateSwapchain(desiredExtent);
+    if (created)
+        ++RecreateCount;
+    return created;
 }
 
 VulkanSwapchainService::SwapchainSupport VulkanSwapchainService::QuerySupport() const
@@ -183,6 +217,38 @@ VkSurfaceFormatKHR VulkanSwapchainService::ChooseSurfaceFormat(
 VkPresentModeKHR VulkanSwapchainService::ChoosePresentMode(
     const std::vector<VkPresentModeKHR>& presentModes) const
 {
+    if (const char* requested = std::getenv("SENCHA_PRESENT_MODE"))
+    {
+        struct PresentModeOverride
+        {
+            std::string_view Name;
+            VkPresentModeKHR Mode;
+        };
+
+        constexpr PresentModeOverride overrides[] = {
+            { "IMMEDIATE", VK_PRESENT_MODE_IMMEDIATE_KHR },
+            { "MAILBOX", VK_PRESENT_MODE_MAILBOX_KHR },
+            { "FIFO", VK_PRESENT_MODE_FIFO_KHR },
+            { "FIFO_RELAXED", VK_PRESENT_MODE_FIFO_RELAXED_KHR },
+        };
+
+        for (const auto& overrideMode : overrides)
+        {
+            if (overrideMode.Name == requested)
+            {
+                auto found = std::find(presentModes.begin(), presentModes.end(), overrideMode.Mode);
+                if (found != presentModes.end())
+                {
+                    Log.Info("Using requested Vulkan present mode {}", overrideMode.Name);
+                    return overrideMode.Mode;
+                }
+
+                Log.Warn("Requested Vulkan present mode {} is not available", overrideMode.Name);
+                break;
+            }
+        }
+    }
+
     auto iter = std::find(
         presentModes.begin(),
         presentModes.end(),
@@ -339,6 +405,9 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent)
     ColorSpace = surfaceFormat.colorSpace;
     PresentMode = presentMode;
     Extent = extent;
+    LastMinImageCount = support.Capabilities.minImageCount;
+    LastMaxImageCount = support.Capabilities.maxImageCount;
+    ++Generation;
 
     if (!CreateImageViews())
     {
@@ -346,11 +415,15 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent)
         return false;
     }
 
-    Log.Info("Vulkan swapchain created: {}x{} images:{} format:{}",
+    Log.Info("Vulkan swapchain created: {}x{} images:{} present:{} format:{} colorSpace:{} minImages:{} maxImages:{}",
              Extent.width,
              Extent.height,
              Images.size(),
-             static_cast<int>(Format));
+             PresentModeName(PresentMode),
+             static_cast<int>(Format),
+             static_cast<int>(ColorSpace),
+             LastMinImageCount,
+             LastMaxImageCount);
     return true;
 }
 

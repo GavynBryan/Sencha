@@ -8,6 +8,7 @@
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformStore.h>
+#include <world/transform/TransformPresentationStore.h>
 #include <world/IComponentStore.h>
 #include <vulkan/vulkan.h>
 
@@ -119,6 +120,12 @@ public:
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
                                     const CameraStore& cameras,
                                     const TransformStore<Transform3f>& transforms,
+                                    VkExtent2D targetExtent,
+                                    CameraRenderData& out);
+
+    [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
+                                    const CameraStore& cameras,
+                                    const TransformPresentationStore<Transform3f>& transforms,
                                     VkExtent2D targetExtent,
                                     CameraRenderData& out);
 };

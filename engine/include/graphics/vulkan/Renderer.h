@@ -98,6 +98,12 @@ struct FrameContext
     RenderPhase Phase = RenderPhase::MainColor;
 };
 
+struct RendererFrameTiming
+{
+    double RecordSeconds = 0.0;
+    double TotalSeconds = 0.0;
+};
+
 class IRenderFeature
 {
 public:
@@ -177,10 +183,14 @@ public:
         return GenRef<T>(FeatureRegistry, FeatureRegistry->Insert(raw));
     }
 
-    // One-call frame driver: acquire -> scratch rotate -> phase iterate ->
-    // transition -> present. Returns SwapchainOutOfDate if the caller
-    // needs to recreate the swapchain and then invoke NotifySwapchainRecreated.
+    // Render frame scheduler entry point: acquire -> scratch rotate -> phase
+    // iterate -> transition -> submit/present. Returns structured lifecycle
+    // results so RuntimeFrameLoop can keep render instability out of game time.
+    RenderFrameResult DrawFrameScheduled();
+
+    // Legacy one-call frame driver kept as a narrow compatibility wrapper.
     DrawStatus DrawFrame();
+    [[nodiscard]] const RendererFrameTiming& GetLastTiming() const { return LastTiming; }
 
     // Reset per-swapchain-image tracking after VulkanSwapchainService::Recreate.
     void NotifySwapchainRecreated();
@@ -198,6 +208,7 @@ private:
     std::vector<VkImageLayout> ImageLayouts;
     std::unique_ptr<VulkanDepthTarget> DepthTarget;
     VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    RendererFrameTiming LastTiming;
 
     // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
     // Returns the raw pointer on success, nullptr on failure.

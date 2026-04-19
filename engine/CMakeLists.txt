@@ -32,9 +32,11 @@ if(NOT SENCHA_ENABLE_VULKAN)
         "[/\\\\]include[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -45,9 +47,11 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
     foreach(_pattern
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")

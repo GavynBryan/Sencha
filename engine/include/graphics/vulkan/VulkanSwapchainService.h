@@ -13,6 +13,18 @@ class VulkanPhysicalDeviceService;
 class VulkanQueueService;
 class VulkanSurfaceService;
 
+struct SwapchainState
+{
+    uint64_t Generation = 0;
+    VkExtent2D Extent{};
+    VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    uint32_t ImageCount = 0;
+    uint32_t MinImageCount = 0;
+    uint32_t MaxImageCount = 0;
+    VkFormat Format = VK_FORMAT_UNDEFINED;
+    VkColorSpaceKHR ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+};
+
 class VulkanSwapchainService : public IService
 {
 public:
@@ -36,8 +48,13 @@ public:
     [[nodiscard]] VkPresentModeKHR GetPresentMode() const { return PresentMode; }
     [[nodiscard]] VkExtent2D GetExtent() const { return Extent; }
     [[nodiscard]] uint32_t GetImageCount() const { return static_cast<uint32_t>(Images.size()); }
+    [[nodiscard]] uint64_t GetGeneration() const { return Generation; }
+    [[nodiscard]] uint64_t GetRecreateCount() const { return RecreateCount; }
+    [[nodiscard]] SwapchainState GetState() const;
     [[nodiscard]] VkImage GetImage(uint32_t index) const;
     [[nodiscard]] VkImageView GetImageView(uint32_t index) const;
+    [[nodiscard]] uint32_t GetMinImageCount() const { return LastMinImageCount; }
+    [[nodiscard]] uint32_t GetMaxImageCount() const { return LastMaxImageCount; }
 
     bool Recreate(WindowExtent desiredExtent);
 
@@ -63,6 +80,10 @@ private:
     VkColorSpaceKHR ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D Extent{};
+    uint32_t LastMinImageCount = 0;
+    uint32_t LastMaxImageCount = 0;
+    uint64_t Generation = 0;
+    uint64_t RecreateCount = 0;
 
     [[nodiscard]] SwapchainSupport QuerySupport() const;
     [[nodiscard]] bool HasUsableSupport(const SwapchainSupport& support) const;

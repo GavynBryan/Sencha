@@ -37,6 +37,12 @@ FrameClock TimeService::Advance()
 	};
 }
 
+void TimeService::ResetToNow()
+{
+	LastTime = Clock::now();
+	FirstFrame = true;
+}
+
 TimescaleHandle TimeService::PushTimescale(float scale)
 {
 	TimescaleHandle handle{ NextHandleId++ };

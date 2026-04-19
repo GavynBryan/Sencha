@@ -16,6 +16,18 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
 
+#include <chrono>
+
+namespace
+{
+    using RendererClock = std::chrono::steady_clock;
+
+    double SecondsSince(RendererClock::time_point start)
+    {
+        return std::chrono::duration<double>(RendererClock::now() - start).count();
+    }
+}
+
 Renderer::Renderer(LoggingProvider& logging,
                    VulkanDeviceService& device,
                    VulkanPhysicalDeviceService& physicalDevice,
@@ -110,39 +122,71 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
     return raw;
 }
 
-Renderer::DrawStatus Renderer::DrawFrame()
+RenderFrameResult Renderer::DrawFrameScheduled()
 {
-    if (!Valid) return DrawStatus::Error;
+    if (!Valid) return RenderFrameResult::Failed;
 
+    LastTiming = {};
+    const auto totalStart = RendererClock::now();
     VulkanFrame frame;
     const VulkanFrameStatus begin = Frames.BeginFrame(frame);
     if (begin == VulkanFrameStatus::SwapchainOutOfDate
+        || begin == VulkanFrameStatus::SurfaceSuboptimal
         || begin == VulkanFrameStatus::SurfaceUnavailable)
     {
-        return DrawStatus::SwapchainOutOfDate;
+        if (begin == VulkanFrameStatus::SurfaceUnavailable)
+            return RenderFrameResult::SkippedMinimized;
+        return begin == VulkanFrameStatus::SurfaceSuboptimal
+            ? RenderFrameResult::SurfaceSuboptimal
+            : RenderFrameResult::SwapchainOutOfDate;
     }
     if (begin != VulkanFrameStatus::Ready)
     {
-        return DrawStatus::Error;
+        return RenderFrameResult::Failed;
     }
 
     // Rotate the per-frame scratch allocator into this frame's slice before
     // any feature draws -- feature code allocates transient UBOs from it.
     Services.Scratch->BeginFrame();
 
+    const auto recordStart = RendererClock::now();
     RecordMainColorPhase(frame);
+    LastTiming.RecordSeconds = SecondsSince(recordStart);
 
     const VulkanFrameStatus end = Frames.EndFrame(frame);
+    LastTiming.TotalSeconds = SecondsSince(totalStart);
     if (end == VulkanFrameStatus::SwapchainOutOfDate
+        || end == VulkanFrameStatus::SurfaceSuboptimal
         || end == VulkanFrameStatus::SurfaceUnavailable)
     {
-        return DrawStatus::SwapchainOutOfDate;
+        if (end == VulkanFrameStatus::SurfaceUnavailable)
+            return RenderFrameResult::SkippedMinimized;
+        return end == VulkanFrameStatus::SurfaceSuboptimal
+            ? RenderFrameResult::SurfaceSuboptimal
+            : RenderFrameResult::SwapchainOutOfDate;
     }
     if (end != VulkanFrameStatus::Ready)
     {
+        return RenderFrameResult::Failed;
+    }
+    return RenderFrameResult::Presented;
+}
+
+Renderer::DrawStatus Renderer::DrawFrame()
+{
+    switch (DrawFrameScheduled())
+    {
+    case RenderFrameResult::Presented:
+        return DrawStatus::Ok;
+    case RenderFrameResult::SwapchainOutOfDate:
+    case RenderFrameResult::SurfaceSuboptimal:
+        return DrawStatus::SwapchainOutOfDate;
+    case RenderFrameResult::SkippedMinimized:
+        return DrawStatus::Skipped;
+    case RenderFrameResult::Failed:
+    default:
         return DrawStatus::Error;
     }
-    return DrawStatus::Ok;
 }
 
 void Renderer::NotifySwapchainRecreated()

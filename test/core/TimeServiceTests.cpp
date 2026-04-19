@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
+#include <runtime/RuntimeFrameLoop.h>
 #include <time/TimeService.h>
+#include <time/SimClock.h>
+#include <time/TimingHistory.h>
 #include <thread>
 #include <chrono>
 
@@ -219,4 +222,100 @@ TEST(TimeService, UnscaledDeltaNeverExceedsMaxDeltaSeconds)
 
     FrameClock ft = ts.Advance();
     EXPECT_LE(ft.UnscaledDt, MaxDelta);
+}
+
+TEST(FixedSimulationLoop, AccumulatesFixedTicksAndAlpha)
+{
+    FixedSimulationLoop loop;
+    loop.AddFrameDelta(1.0 / 60.0 + 1.0 / 120.0);
+
+    ASSERT_TRUE(loop.HasFixedTick());
+    FixedSimTime tick = loop.BeginFixedTick();
+    EXPECT_DOUBLE_EQ(tick.DeltaSeconds, 1.0 / 60.0);
+    EXPECT_EQ(tick.TickIndex, 0u);
+
+    loop.EndFixedTick();
+    EXPECT_FALSE(loop.HasFixedTick());
+
+    PresentationTime presentation = loop.BuildPresentationTime(1.0 / 120.0);
+    EXPECT_NEAR(presentation.Alpha, 0.5, 1e-9);
+}
+
+TEST(FixedSimulationLoop, ResetSuppressesPresentationDelta)
+{
+    FixedSimulationLoop loop;
+    loop.AddFrameDelta(1.0);
+    loop.ResetAfterDiscontinuity(2);
+
+    EXPECT_DOUBLE_EQ(loop.GetAccumulator(), 0.0);
+    PresentationTime first = loop.BuildPresentationTime(0.25);
+    PresentationTime second = loop.BuildPresentationTime(0.25);
+    PresentationTime third = loop.BuildPresentationTime(0.25);
+
+    EXPECT_DOUBLE_EQ(first.DeltaSeconds, loop.GetFixedDt());
+    EXPECT_DOUBLE_EQ(second.DeltaSeconds, loop.GetFixedDt());
+    EXPECT_LE(third.DeltaSeconds, FixedSimulationLoop::DefaultMaxPresentationDt);
+}
+
+TEST(TimingHistory, MaintainsBoundedChronologicalSamples)
+{
+    TimingHistory history(2);
+    TimingFrameSample a{};
+    a.FixedTicks = 1;
+    TimingFrameSample b{};
+    b.FixedTicks = 2;
+    TimingFrameSample c{};
+    c.FixedTicks = 3;
+
+    history.Push(a);
+    history.Push(b);
+    history.Push(c);
+
+    ASSERT_EQ(history.Size(), 2u);
+    EXPECT_EQ(history.GetChronological(0).FixedTicks, 2u);
+    EXPECT_EQ(history.GetChronological(1).FixedTicks, 3u);
+    ASSERT_NE(history.Latest(), nullptr);
+    EXPECT_EQ(history.Latest()->FixedTicks, 3u);
+}
+
+TEST(RuntimeFrameLoop, DiscontinuityProducesZeroEngineDeltaAndHistoryReset)
+{
+    RuntimeFrameLoop runtime;
+    runtime.BeginFrame();
+    runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::SwapchainRecreated);
+    EngineFrameTime engineTime = runtime.AdvanceEngineTime();
+
+    EXPECT_TRUE(engineTime.IsTemporalDiscontinuity);
+    EXPECT_DOUBLE_EQ(engineTime.SanitizedDeltaSeconds, 0.0);
+    EXPECT_TRUE(runtime.ConsumePresentationHistoryReset());
+}
+
+TEST(RuntimeFrameLoop, ResizeSettlesBeforeSwapchainRebuild)
+{
+    RuntimeFrameLoop runtime;
+    runtime.SetResizeSettleSeconds(0.0);
+    runtime.BeginFrame();
+    runtime.NotifyResize(WindowExtent{ 1280, 720 });
+    runtime.ResolveLifecycleTransitions();
+    EXPECT_FALSE(runtime.ShouldRebuildSwapchain());
+
+    runtime.EndFrame();
+    runtime.BeginFrame();
+    runtime.ResolveLifecycleTransitions();
+    EXPECT_TRUE(runtime.ShouldRebuildSwapchain());
+}
+
+TEST(RuntimeFrameLoop, LifecycleOnlyFrameDoesNotAccumulateSimulationTime)
+{
+    RuntimeFrameLoop runtime;
+    runtime.BeginFrame();
+    runtime.NotifyMinimized();
+    runtime.ResolveLifecycleTransitions();
+    runtime.AdvanceEngineTime();
+    runtime.AccumulateSimulationTime();
+
+    const RuntimeFrameSnapshot& frame = runtime.GetCurrentFrame();
+    EXPECT_TRUE(frame.LifecycleOnly);
+    EXPECT_DOUBLE_EQ(frame.EngineTime.SanitizedDeltaSeconds, 0.0);
+    EXPECT_DOUBLE_EQ(runtime.GetSimulationClock().GetAccumulator(), 0.0);
 }

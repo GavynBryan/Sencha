@@ -22,6 +22,8 @@
 #include <graphics/vulkan/VulkanSurfaceService.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
+#include <input/InputFrame.h>
+#include <input/SdlInputCapture.h>
 #include <math/Quat.h>
 #include <render/Camera.h>
 #include <render/Material.h>
@@ -30,10 +32,15 @@
 #include <render/MeshService.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderQueue.h>
+#include <runtime/FrameDriver.h>
+#include <runtime/FrameTrace.h>
+#include <runtime/RenderPacket.h>
+#include <runtime/RuntimeFrameLoop.h>
 #include <world/registry/Registry.h>
-#include <time/TimeService.h>
+#include <time/TimingHistory.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationSystem.h>
+#include <world/transform/TransformPresentationStore.h>
 #include <world/transform/TransformStore.h>
 #include <platform/SdlVideoService.h>
 #include <platform/SdlWindow.h>
@@ -44,11 +51,13 @@
 #include <debug/ConsolePanel.h>
 #include <debug/IDebugPanel.h>
 #include <debug/ImGuiDebugOverlay.h>
+#include <debug/TimingPanel.h>
 #include <imgui.h>
 #endif
 
 #include <SDL3/SDL.h>
 
+#include <chrono>
 #include <cstdio>
 #include <memory>
 
@@ -64,6 +73,10 @@ namespace
         MaterialHandle Blue;
     };
 
+    // Free-look camera. Input is delivered via the InputFrame snapshot — SDL
+    // state queries never reach this struct. Mouse look consumes deltas on
+    // every presentation frame (visual feel); movement integrates on fixed
+    // ticks (deterministic).
     struct FreeCamera
     {
         EntityId Entity;
@@ -74,39 +87,29 @@ namespace
         float MouseSensitivity = 0.0025f;
         bool LookHeld = false;
 
-        void HandleEvent(const SDL_Event& event)
+        void UpdateLook(const InputFrame& input)
         {
-            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-                && event.button.button == SDL_BUTTON_RIGHT)
-            {
-                LookHeld = true;
-            }
-            else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP
-                     && event.button.button == SDL_BUTTON_RIGHT)
-            {
-                LookHeld = false;
-            }
-            else if (LookHeld && event.type == SDL_EVENT_MOUSE_MOTION)
-            {
-                Yaw -= static_cast<float>(event.motion.xrel) * MouseSensitivity;
-                Pitch -= static_cast<float>(event.motion.yrel) * MouseSensitivity;
-                Pitch = SDL_clamp(Pitch, -1.5f, 1.5f);
-            }
+            LookHeld = input.IsMouseButtonDown(SDL_BUTTON_RIGHT);
+            if (!LookHeld) return;
+            Yaw -= input.MouseDeltaX * MouseSensitivity;
+            Pitch -= input.MouseDeltaY * MouseSensitivity;
+            Pitch = SDL_clamp(Pitch, -1.5f, 1.5f);
         }
 
-        void Update(TransformStore<Transform3f>& transforms, float dt)
+        void TickFixed(const InputFrame& input,
+                       TransformStore<Transform3f>& transforms,
+                       float fixedDt)
         {
             Transform3f* transform = transforms.TryGetLocalMutable(Entity);
             if (transform == nullptr) return;
 
-            const bool* keys = SDL_GetKeyboardState(nullptr);
             Vec3d move = Vec3d::Zero();
-            if (keys[SDL_SCANCODE_W]) move += Vec3d::Forward();
-            if (keys[SDL_SCANCODE_S]) move += Vec3d::Backward();
-            if (keys[SDL_SCANCODE_D]) move += Vec3d::Right();
-            if (keys[SDL_SCANCODE_A]) move += Vec3d::Left();
-            if (keys[SDL_SCANCODE_E]) move += Vec3d::Up();
-            if (keys[SDL_SCANCODE_Q]) move += Vec3d::Down();
+            if (input.IsKeyDown(SDL_SCANCODE_W)) move += Vec3d::Forward();
+            if (input.IsKeyDown(SDL_SCANCODE_S)) move += Vec3d::Backward();
+            if (input.IsKeyDown(SDL_SCANCODE_D)) move += Vec3d::Right();
+            if (input.IsKeyDown(SDL_SCANCODE_A)) move += Vec3d::Left();
+            if (input.IsKeyDown(SDL_SCANCODE_E)) move += Vec3d::Up();
+            if (input.IsKeyDown(SDL_SCANCODE_Q)) move += Vec3d::Down();
 
             transform->Rotation =
                 Quatf::FromAxisAngle(Vec3d::Up(), Yaw)
@@ -116,8 +119,8 @@ namespace
             {
                 move = move.Normalized();
                 const float speed = MoveSpeed
-                    * (keys[SDL_SCANCODE_LSHIFT] ? FastMultiplier : 1.0f);
-                transform->Position += transform->Rotation.RotateVector(move) * (speed * dt);
+                    * (input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FastMultiplier : 1.0f);
+                transform->Position += transform->Rotation.RotateVector(move) * (speed * fixedDt);
             }
         }
     };
@@ -241,26 +244,11 @@ namespace
     };
 #endif
 
-    bool RecreateSwapchain(SdlWindowService& windows,
-                           SdlWindowService::WindowId windowId,
-                           VulkanSwapchainService& swapchain,
-                           VulkanFrameService& frames,
-                           Renderer& renderer)
+    using DemoClock = std::chrono::steady_clock;
+
+    double SecondsSince(DemoClock::time_point start)
     {
-        WindowExtent extent = windows.GetExtent(windowId);
-        if (extent.Width == 0 || extent.Height == 0)
-        {
-            return false;
-        }
-
-        if (!swapchain.Recreate(extent))
-        {
-            return false;
-        }
-
-        frames.ResetAfterSwapchainRecreate();
-        renderer.NotifySwapchainRecreated();
-        return true;
+        return std::chrono::duration<double>(DemoClock::now() - start).count();
     }
 }
 
@@ -333,6 +321,7 @@ int main()
     RenderQueue renderQueue;
     CameraRenderData cameraData;
     FreeCamera freeCamera;
+    TransformPresentationStore<Transform3f> presentationTransforms;
     DemoScene demoScene = CreateScene(scene, hierarchy, transforms, renderers, cameras,
                                       activeCamera, meshes, materials, freeCamera);
 
@@ -345,9 +334,11 @@ int main()
     renderer.AddFeature(std::make_unique<MeshRenderFeature>(
         renderQueue, meshes, materials, cameraData));
 
+    TimingHistory timingHistory(512);
 #ifdef SENCHA_ENABLE_DEBUG_UI
     auto debugOverlay = std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
     debugOverlay->AddPanel<ConsolePanel>(debugLog);
+    debugOverlay->AddPanel<TimingPanel>(timingHistory);
     debugOverlay->AddPanel<CubeDemoPanel>(
         renderQueue, cameraData, freeCamera, transforms, demoScene);
     ImGuiDebugOverlay* debugOverlayPtr = debugOverlay.get();
@@ -358,82 +349,235 @@ int main()
 #endif
 
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
-    TimeService time;
+    RuntimeFrameLoop runtime;
+    runtime.SetSurfaceExtent(window->GetExtent());
+    presentationTransforms.Reset(transforms, hierarchy, propagationOrder);
+
+    // Subscribe presentation transforms to the discontinuity bus. Every
+    // swapchain recreate, minimize/restore, or teleport will snap the
+    // interpolation history so the next render frame does not smear.
+    runtime.GetDiscontinuityBus().Subscribe(
+        [&](const FrameDiscontinuityEvent&) {
+            presentationTransforms.Reset(transforms, hierarchy, propagationOrder);
+        });
+
+    FrameDriver driver(runtime);
+    driver.SetTimingHistory(&timingHistory);
+    // Target 0.0 = uncapped when in FIFO (VSync caps us). Bump to cap IMMEDIATE.
+    driver.SetTargetFps(0.0);
+
     bool running = true;
 
-    std::printf("Sencha Cube Demo\n");
-    std::printf("  Right mouse + move: look\n");
-    std::printf("  WASD: move, Q/E: down/up, Shift: fast\n");
-    std::printf("  `: debugger when built with SENCHA_ENABLE_DEBUG_UI=ON\n");
-    std::printf("  Escape: quit\n");
-
-    while (running)
-    {
-        const float dt = time.Advance().Dt;
-
+    // -- Phase registrations ----------------------------------------------
+    // PumpPlatform: drain SDL events, build InputFrame, route lifecycle.
+    driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
+        SdlInputCapture::BeginFrame(*ctx.Input);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             windows.HandleEvent(event);
-
 #ifdef SENCHA_ENABLE_DEBUG_UI
             if (debugOverlayPtr != nullptr && debugOverlayPtr->ProcessSdlEvent(event))
-            {
                 continue;
-            }
 #endif
+            SdlInputCapture::Accept(*ctx.Input, event);
 
-            freeCamera.HandleEvent(event);
-
-            if (event.type == SDL_EVENT_QUIT
-                || (event.type == SDL_EVENT_KEY_DOWN
-                    && !event.key.repeat
-                    && event.key.scancode == SDL_SCANCODE_ESCAPE))
-            {
-                running = false;
-            }
+            if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
+                ctx.Runtime->NotifyMinimized();
+            else if (event.type == SDL_EVENT_WINDOW_RESTORED)
+                ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
         }
 
         if (windows.IsCloseRequested(windowId))
-        {
-            running = false;
-        }
+            ctx.Input->QuitRequested = true;
+        if (ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
+            ctx.Input->QuitRequested = true;
 
+        // Debug pause: F1 toggles timescale 0 vs 1.
+        static bool paused = false;
+        for (uint32_t sc : ctx.Input->KeysPressed)
+        {
+            if (sc == SDL_SCANCODE_F1)
+            {
+                paused = !paused;
+                ctx.Runtime->SetSimulationTimescale(paused ? 0.0f : 1.0f);
+            }
+        }
+    });
+
+    // ResolveLifecycle: window resize → swapchain dirty flag.
+    driver.Register(FramePhase::ResolveLifecycle, [&](PhaseContext& ctx) {
         WindowExtent resizedExtent;
         if (windows.ConsumeResize(windowId, &resizedExtent))
-        {
-            RecreateSwapchain(windows, windowId, swapchain, frames, renderer);
-        }
+            ctx.Runtime->NotifyResize(resizedExtent);
 
-        freeCamera.Update(transforms, dt);
+        const SdlWindowService::WindowState* windowState = windows.GetState(windowId);
+        if (windowState != nullptr && windowState->Minimized)
+            ctx.Runtime->NotifyMinimized();
+
+        ctx.Runtime->ResolveLifecycleTransitions();
+    });
+
+    // RebuildGraphics: recreate swapchain on the graphics owner thread.
+    driver.Register(FramePhase::RebuildGraphics, [&](PhaseContext& ctx) {
+        if (ctx.Runtime->ShouldRebuildSwapchain())
+        {
+            const WindowExtent rebuildExtent = ctx.Runtime->GetDesiredSwapchainExtent();
+            ctx.Runtime->BeginSwapchainRebuild();
+            if (swapchain.Recreate(rebuildExtent))
+            {
+                frames.ResetAfterSwapchainRecreate();
+                renderer.NotifySwapchainRecreated();
+                ctx.Runtime->CompleteSwapchainRebuild(rebuildExtent);
+            }
+            else
+            {
+                ctx.Runtime->FailSwapchainRebuild();
+            }
+        }
+    });
+
+    // AdvanceEngineTime: sanitize dt + publish discontinuity events.
+    driver.Register(FramePhase::AdvanceEngineTime, [&](PhaseContext& ctx) {
+        ctx.Runtime->AdvanceEngineTime();
+        ctx.Runtime->AccumulateSimulationTime();
+    });
+
+    // Simulate: called 0..N times per frame, inside the fixed loop.
+    driver.Register(FramePhase::Simulate, [&](PhaseContext& ctx) {
+        presentationTransforms.BeginSimulationTick(transforms);
+
+        const float fixedDt = static_cast<float>(ctx.CurrentTick.DeltaSeconds);
+        freeCamera.TickFixed(*ctx.Input, transforms, fixedDt);
+
         if (Transform3f* cube = transforms.TryGetLocalMutable(demoScene.CenterCube))
         {
-            cube->Rotation *= Quatf::FromAxisAngle(Vec3d::Up(), dt);
+            cube->Rotation *= Quatf::FromAxisAngle(Vec3d::Up(), fixedDt);
         }
 
         transformPropagation.Propagate();
+        presentationTransforms.EndSimulationTick(transforms);
+    });
+
+    // ExtractRenderPacket: interpolate transforms + build draw list.
+    driver.Register(FramePhase::ExtractRenderPacket, [&](PhaseContext& ctx) {
+        freeCamera.UpdateLook(*ctx.Input);
+
+        const float alpha = static_cast<float>(ctx.PacketWrite->Presentation.Alpha);
+        presentationTransforms.BuildRenderSnapshot(
+            transforms, hierarchy, propagationOrder, alpha);
+
         if (!CameraRenderDataSystem::Build(
-                activeCamera, cameras, transforms, swapchain.GetExtent(), cameraData))
+                activeCamera, cameras, presentationTransforms,
+                swapchain.GetExtent(), cameraData))
         {
-            continue;
+            ctx.PacketWrite->Renderable = false;
+            return;
         }
+        ctx.PacketWrite->Camera = cameraData;
+        ctx.PacketWrite->HasCamera = true;
 
         renderQueue.Reset();
         RenderExtractionSystem::Extract(
-            transforms, renderers, meshes, materials, cameraData, renderQueue);
+            presentationTransforms, renderers, meshes, materials, cameraData, renderQueue);
         FrustumCullingSystem::Cull(cameraData, renderQueue);
         renderQueue.SortOpaque();
+        ctx.PacketWrite->Renderable = true;
+    });
 
-        const Renderer::DrawStatus status = renderer.DrawFrame();
-        if (status == Renderer::DrawStatus::SwapchainOutOfDate)
+    // Render: submit + present.
+    driver.Register(FramePhase::Render, [&](PhaseContext& ctx) {
+        if (!ctx.PacketWrite->Renderable)
+            return;
+
+        const RenderFrameResult renderResult = renderer.DrawFrameScheduled();
+        if (renderResult == RenderFrameResult::SwapchainOutOfDate
+            || renderResult == RenderFrameResult::SurfaceSuboptimal)
         {
-            RecreateSwapchain(windows, windowId, swapchain, frames, renderer);
+            ctx.Runtime->SetSurfaceExtent(windows.GetExtent(windowId));
+            ctx.Runtime->NotifySwapchainInvalidated();
         }
-        else if (status == Renderer::DrawStatus::Error)
+        else if (renderResult == RenderFrameResult::Failed)
         {
-            running = false;
+            ctx.Input->QuitRequested = true;
         }
-    }
+
+        // Stamp telemetry for the HUD.
+        const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+        const VulkanFrameTiming& vk = frames.GetLastTiming();
+        const RendererFrameTiming& rt = renderer.GetLastTiming();
+        const SwapchainState swap = swapchain.GetState();
+        timingHistory.Push(TimingFrameSample{
+            .RawDtSeconds = rf.PlatformTime.RawDeltaSeconds,
+            .EngineDtSeconds = rf.EngineTime.SanitizedDeltaSeconds,
+            .PresentationDtSeconds = rf.Presentation.DeltaSeconds,
+            .FixedAccumulatorBeforeSeconds = rf.AccumulatorBeforeTicks,
+            .FixedAccumulatorSeconds = rf.AccumulatorAfterTicks,
+            .InterpolationAlpha = rf.Presentation.Alpha,
+            .RenderRecordSeconds = rt.RecordSeconds,
+            .AcquireSeconds = vk.AcquireSeconds,
+            .SubmitSeconds = vk.SubmitSeconds,
+            .PresentSeconds = vk.PresentSeconds,
+            .TotalFrameSeconds = rt.TotalSeconds,
+            .FixedTicks = rf.FixedTicks,
+            .LifecycleState = static_cast<int>(rf.State),
+            .TemporalDiscontinuityReason = static_cast<int>(rf.DiscontinuityReason),
+            .RuntimeEvents = static_cast<uint32_t>(rf.Events),
+            .RenderResult = static_cast<int>(renderResult),
+            .Presented = renderResult == RenderFrameResult::Presented,
+            .LifecycleOnly = rf.LifecycleOnly,
+            .SwapchainGeneration = swap.Generation,
+            .SwapchainRecreateCount = swapchain.GetRecreateCount(),
+            .SwapchainImageIndex = vk.ImageIndex,
+            .SwapchainImageCount = swap.ImageCount,
+            .PresentMode = static_cast<int>(swap.PresentMode),
+            .SwapchainRecreated = HasRuntimeFrameEvent(
+                rf.Events, RuntimeFrameEventFlags::SwapchainRecreated),
+            .PresentationDtSuppressed =
+                rf.DiscontinuityReason != TemporalDiscontinuityReason::None,
+        });
+    });
+
+    // EndFrame: for lifecycle-only frames, stamp a minimal telemetry row.
+    driver.Register(FramePhase::EndFrame, [&](PhaseContext& ctx) {
+        const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+        if (!rf.LifecycleOnly) return;
+        const SwapchainState swap = swapchain.GetState();
+        timingHistory.Push(TimingFrameSample{
+            .RawDtSeconds = rf.PlatformTime.RawDeltaSeconds,
+            .EngineDtSeconds = rf.EngineTime.SanitizedDeltaSeconds,
+            .PresentationDtSeconds = rf.Presentation.DeltaSeconds,
+            .FixedAccumulatorBeforeSeconds = rf.AccumulatorBeforeTicks,
+            .FixedAccumulatorSeconds = rf.AccumulatorAfterTicks,
+            .InterpolationAlpha = rf.Presentation.Alpha,
+            .FixedTicks = rf.FixedTicks,
+            .LifecycleState = static_cast<int>(rf.State),
+            .TemporalDiscontinuityReason = static_cast<int>(rf.DiscontinuityReason),
+            .RuntimeEvents = static_cast<uint32_t>(rf.Events),
+            .RenderResult = static_cast<int>(RenderFrameResult::SkippedMinimized),
+            .Presented = false,
+            .LifecycleOnly = true,
+            .SwapchainGeneration = swap.Generation,
+            .SwapchainRecreateCount = swapchain.GetRecreateCount(),
+            .SwapchainImageCount = swap.ImageCount,
+            .PresentMode = static_cast<int>(swap.PresentMode),
+            .SwapchainRecreated = HasRuntimeFrameEvent(
+                rf.Events, RuntimeFrameEventFlags::SwapchainRecreated),
+            .PresentationDtSuppressed =
+                rf.DiscontinuityReason != TemporalDiscontinuityReason::None,
+        });
+    });
+
+    driver.SetShouldExit([&] { return !running; });
+
+    std::printf("Sencha Cube Demo\n");
+    std::printf("  Right mouse + move: look\n");
+    std::printf("  WASD: move, Q/E: down/up, Shift: fast\n");
+    std::printf("  F1: pause simulation (timescale 0)\n");
+    std::printf("  `: debugger when built with SENCHA_ENABLE_DEBUG_UI=ON\n");
+    std::printf("  Escape: quit\n");
+
+    driver.Run();
 
     return 0;
 }

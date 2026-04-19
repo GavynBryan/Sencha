@@ -21,12 +21,13 @@ namespace
     }
 }
 
-void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const MeshRendererStore& renderers,
-                                     const MeshService& meshes,
-                                     const MaterialStore& materials,
-                                     const CameraRenderData& camera,
-                                     RenderQueue& queue)
+template <typename TTransformView>
+void ExtractImpl(const TTransformView& transforms,
+                 const MeshRendererStore& renderers,
+                 const MeshService& meshes,
+                 const MaterialStore& materials,
+                 const CameraRenderData& camera,
+                 RenderQueue& queue)
 {
     const auto items = renderers.GetItems();
     const auto& owners = renderers.GetOwners();
@@ -66,6 +67,26 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
             queue.AddOpaque(item);
         }
     }
+}
+
+void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
+                                     const MeshRendererStore& renderers,
+                                     const MeshService& meshes,
+                                     const MaterialStore& materials,
+                                     const CameraRenderData& camera,
+                                     RenderQueue& queue)
+{
+    ExtractImpl(transforms, renderers, meshes, materials, camera, queue);
+}
+
+void RenderExtractionSystem::Extract(const TransformPresentationStore<Transform3f>& transforms,
+                                     const MeshRendererStore& renderers,
+                                     const MeshService& meshes,
+                                     const MaterialStore& materials,
+                                     const CameraRenderData& camera,
+                                     RenderQueue& queue)
+{
+    ExtractImpl(transforms, renderers, meshes, materials, camera, queue);
 }
 
 void FrustumCullingSystem::Cull(const CameraRenderData& camera, RenderQueue& queue)

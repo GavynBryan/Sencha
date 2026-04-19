@@ -6,7 +6,18 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
+
+namespace
+{
+    using ProfileClock = std::chrono::steady_clock;
+
+    double SecondsSince(ProfileClock::time_point start)
+    {
+        return std::chrono::duration<double>(ProfileClock::now() - start).count();
+    }
+}
 
 VulkanFrameService::VulkanFrameService(
     LoggingProvider& logging,
@@ -57,6 +68,9 @@ VulkanFrameService::~VulkanFrameService()
 VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
 {
     frame = {};
+    LastTiming.AcquireSeconds = 0.0;
+    LastTiming.ImageIndex = 0;
+    LastTiming.SwapchainGeneration = Swapchain.GetGeneration();
 
     if (!Valid)
     {
@@ -94,6 +108,7 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     }
 
     uint32_t imageIndex = 0;
+    const auto acquireStart = ProfileClock::now();
     VkResult acquireResult = vkAcquireNextImageKHR(
         Device,
         Swapchain.GetSwapchain(),
@@ -101,6 +116,8 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
         current.ImageAvailable,
         VK_NULL_HANDLE,
         &imageIndex);
+    LastTiming.AcquireSeconds = SecondsSince(acquireStart);
+    LastTiming.ImageIndex = imageIndex;
 
     if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -125,12 +142,13 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     }
 
     if (imageIndex < ImageInFlightFences.size()
-        && ImageInFlightFences[imageIndex] != VK_NULL_HANDLE)
+        && ImageInFlightFences[imageIndex].Generation == Swapchain.GetGeneration()
+        && ImageInFlightFences[imageIndex].InFlightFence != VK_NULL_HANDLE)
     {
         VkResult imageWaitResult = vkWaitForFences(
             Device,
             1,
-            &ImageInFlightFences[imageIndex],
+            &ImageInFlightFences[imageIndex].InFlightFence,
             VK_TRUE,
             std::numeric_limits<uint64_t>::max());
         if (imageWaitResult == VK_ERROR_DEVICE_LOST)
@@ -175,6 +193,8 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     frame.SwapchainImageView = Swapchain.GetImageView(imageIndex);
     frame.SwapchainFormat = Swapchain.GetFormat();
     frame.SwapchainExtent = Swapchain.GetExtent();
+    frame.SwapchainGeneration = Swapchain.GetGeneration();
+    LastTiming.SwapchainGeneration = frame.SwapchainGeneration;
 
     return VulkanFrameStatus::Ready;
 }
@@ -192,6 +212,8 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     }
 
     auto& current = Frames[frame.FrameIndex];
+    LastTiming.SubmitSeconds = 0.0;
+    LastTiming.PresentSeconds = 0.0;
     VkSemaphore renderFinished = ImageRenderFinishedSemaphores[frame.ImageIndex];
 
     VkResult endResult = vkEndCommandBuffer(current.CommandBuffer);
@@ -224,11 +246,13 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
             : VulkanFrameStatus::Error;
     }
 
+    const auto submitStart = ProfileClock::now();
     VkResult submitResult = vkQueueSubmit(
         Queues.GetGraphicsQueue(),
         1,
         &submitInfo,
         current.InFlightFence);
+    LastTiming.SubmitSeconds = SecondsSince(submitStart);
     if (submitResult != VK_SUCCESS)
     {
         current.Submitted = false;
@@ -241,7 +265,10 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     current.Submitted = true;
     if (frame.ImageIndex < ImageInFlightFences.size())
     {
-        ImageInFlightFences[frame.ImageIndex] = current.InFlightFence;
+        ImageInFlightFences[frame.ImageIndex] = SwapchainImageFrameState{
+            .Generation = frame.SwapchainGeneration,
+            .InFlightFence = current.InFlightFence,
+        };
     }
 
     VkPresentInfoKHR presentInfo{};
@@ -253,7 +280,9 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &frame.ImageIndex;
 
+    const auto presentStart = ProfileClock::now();
     VkResult presentResult = vkQueuePresentKHR(Queues.GetPresentQueue(), &presentInfo);
+    LastTiming.PresentSeconds = SecondsSince(presentStart);
     AdvanceFrame();
 
     const bool acquireSuboptimal = current.AcquireSuboptimal;
@@ -276,7 +305,9 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR
         || acquireSuboptimal)
     {
-        return VulkanFrameStatus::SwapchainOutOfDate;
+        return presentResult == VK_ERROR_OUT_OF_DATE_KHR
+            ? VulkanFrameStatus::SwapchainOutOfDate
+            : VulkanFrameStatus::SurfaceSuboptimal;
     }
 
     return VulkanFrameStatus::Ready;
@@ -290,7 +321,10 @@ void VulkanFrameService::ResetAfterSwapchainRecreate()
     }
 
     DestroyImageSyncObjects();
-    ImageInFlightFences.assign(Swapchain.GetImageCount(), VK_NULL_HANDLE);
+    ImageInFlightFences.assign(Swapchain.GetImageCount(), SwapchainImageFrameState{
+        .Generation = Swapchain.GetGeneration(),
+        .InFlightFence = VK_NULL_HANDLE,
+    });
     CurrentFrame = 0;
 
     for (auto& frame : Frames)
