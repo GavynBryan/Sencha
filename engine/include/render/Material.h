@@ -1,9 +1,13 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <core/service/IService.h>
 #include <math/Vec.h>
 
 #include <cstdint>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 // Versioned handle to a material owned by MaterialStore. Generation 0 is null.
@@ -14,6 +18,20 @@ struct MaterialHandle
 
     [[nodiscard]] bool IsValid() const { return Index != UINT32_MAX && Generation != 0; }
     bool operator==(const MaterialHandle&) const = default;
+};
+
+template <>
+struct TypeSchema<MaterialHandle>
+{
+    static constexpr std::string_view Name = "MaterialHandle";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("index", &MaterialHandle::Index),
+            MakeField("generation", &MaterialHandle::Generation),
+        };
+    }
 };
 
 // Identifies the render pass a material belongs to. Used as the high bits of the sort key.

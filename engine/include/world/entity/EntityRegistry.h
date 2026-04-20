@@ -68,6 +68,21 @@ public:
 
     size_t Count() const { return LiveCount; }
 
+    std::vector<EntityId> GetAliveEntities() const
+    {
+        std::vector<EntityId> entities;
+        entities.reserve(LiveCount);
+
+        for (EntityIndex index = 0; index < Entries.size(); ++index)
+        {
+            const Entry& entry = Entries[index];
+            if (entry.Alive)
+                entities.push_back(EntityId{ index, entry.Generation });
+        }
+
+        return entities;
+    }
+
 private:
     struct Entry
     {

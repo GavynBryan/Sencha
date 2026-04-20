@@ -1,11 +1,15 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <world/entity/EntityId.h>
 #include <render/Material.h>
 #include <render/MeshTypes.h>
 #include <world/SparseSetStore.h>
 
 #include <cstdint>
+#include <string_view>
+#include <tuple>
 
 //=============================================================================
 // MeshRendererComponent
@@ -24,3 +28,20 @@ struct MeshRendererComponent
 };
 
 using MeshRendererStore = SparseSetStore<MeshRendererComponent>;
+
+template <>
+struct TypeSchema<MeshRendererComponent>
+{
+    static constexpr std::string_view Name = "MeshRenderer";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("mesh", &MeshRendererComponent::Mesh),
+            MakeField("material", &MeshRendererComponent::Material),
+            MakeField("visible", &MeshRendererComponent::Visible),
+            MakeField("layer_mask", &MeshRendererComponent::LayerMask),
+            MakeField("submesh_mask", &MeshRendererComponent::SubmeshMask),
+        };
+    }
+};

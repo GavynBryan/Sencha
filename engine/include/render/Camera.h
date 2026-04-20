@@ -1,5 +1,9 @@
 #pragma once
 
+#include <array>
+#include <core/metadata/EnumSchema.h>
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <core/service/IService.h>
 #include <world/entity/EntityId.h>
 #include <math/Mat.h>
@@ -10,11 +14,23 @@
 #include <world/SparseSetStore.h>
 #include <vulkan/vulkan.h>
 
+#include <string_view>
+#include <tuple>
+
 // Which projection formula a CameraComponent uses.
 enum class ProjectionKind
 {
     Perspective,
     Orthographic
+};
+
+template <>
+struct EnumSchema<ProjectionKind>
+{
+    static constexpr std::array Values = {
+        EnumValue{ ProjectionKind::Perspective, "perspective" },
+        EnumValue{ ProjectionKind::Orthographic, "orthographic" },
+    };
 };
 
 //=============================================================================
@@ -36,6 +52,24 @@ struct CameraComponent
 };
 
 using CameraStore = SparseSetStore<CameraComponent>;
+
+template <>
+struct TypeSchema<CameraComponent>
+{
+    static constexpr std::string_view Name = "Camera";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("projection", &CameraComponent::Projection),
+            MakeField("fov_y_radians", &CameraComponent::FovYRadians),
+            MakeField("near_plane", &CameraComponent::NearPlane),
+            MakeField("far_plane", &CameraComponent::FarPlane),
+            MakeField("orthographic_height", &CameraComponent::OrthographicHeight)
+                .Default(CameraComponent{}.OrthographicHeight),
+        };
+    }
+};
 
 //=============================================================================
 // ActiveCameraService
