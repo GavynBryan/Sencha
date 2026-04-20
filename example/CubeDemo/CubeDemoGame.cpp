@@ -2,6 +2,7 @@
 
 #include "CubeDemoSystems.h"
 
+#include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
@@ -94,7 +95,12 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     InitSceneSerializer();
     Demo = LoadDemoScene(*DemoRegistry, runtimeAssets.Assets, FreeCam, "cube_demo_scene.json");
 
-    engine.AddDefaultMeshRenderFeature(runtimeAssets.Meshes, runtimeAssets.Materials);
+    DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
+    if (pipeline != nullptr)
+    {
+        pipeline->SetAssetStores(runtimeAssets.Meshes, runtimeAssets.Materials);
+        pipeline->AddMeshRenderFeature(services);
+    }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
     auto& windows = services.Get<SdlWindowService>();
@@ -106,8 +112,11 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
         std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
     debugOverlay->AddPanel<ConsolePanel>(debugLog);
     debugOverlay->AddPanel<TimingPanel>(engine.Timing());
-    debugOverlay->AddPanel<CubeDemoPanel>(
-        engine.GetRenderQueue(), engine.GetCameraData(), FreeCam, *DemoRegistry, Demo);
+    if (pipeline != nullptr)
+    {
+        debugOverlay->AddPanel<CubeDemoPanel>(
+            pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, *DemoRegistry, Demo);
+    }
     DebugOverlay = debugOverlay.get();
     auto& renderer = services.Get<Renderer>();
     renderer.AddFeature(std::move(debugOverlay));

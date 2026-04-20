@@ -4,9 +4,6 @@
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
 #include <core/service/ServiceHost.h>
-#include <render/Material.h>
-#include <render/MaterialCache.h>
-#include <render/MeshCache.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -60,18 +57,11 @@ public:
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
     [[nodiscard]] const TimingHistory& Timing() const { return TimingData; }
 
-    [[nodiscard]] RenderQueue& GetRenderQueue();
-    [[nodiscard]] const RenderQueue& GetRenderQueue() const;
-
-    [[nodiscard]] CameraRenderData& GetCameraData();
-    [[nodiscard]] const CameraRenderData& GetCameraData() const;
-
-    bool AddDefaultMeshRenderFeature(MeshCache& meshes, MaterialCache& materials);
+    [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
+    [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
 private:
     void RegisterFramePhases(Game& game);
-    [[nodiscard]] DefaultRenderPipeline& GetDefaultRenderPipeline();
-    [[nodiscard]] const DefaultRenderPipeline& GetDefaultRenderPipeline() const;
 
     EngineConfig Configuration;
     ServiceHost ServiceRegistry;

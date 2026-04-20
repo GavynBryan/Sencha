@@ -10,30 +10,12 @@
 #include <graphics/vulkan/VulkanBootstrap.h>
 #endif
 
-#include <platform/SdlVideoService.h>
+#include <platform/SdlBootstrap.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
-#include <platform/WindowCreateInfo.h>
 
 #include <cstdio>
 #include <utility>
-
-namespace
-{
-    WindowCreateInfo BuildWindowCreateInfo(const EngineWindowConfig& config)
-    {
-        WindowCreateInfo info;
-        info.Title = config.Title;
-        info.Width = config.Width;
-        info.Height = config.Height;
-        info.Mode = config.Mode;
-        info.GraphicsApi = config.GraphicsApi;
-        info.Resizable = config.Resizable;
-        info.Visible = config.Visible;
-        return info;
-    }
-
-}
 
 Engine::Engine(EngineConfig engineConfig)
     : Configuration(std::move(engineConfig))
@@ -75,10 +57,7 @@ bool Engine::Initialize()
         return true;
     }
 
-    auto& video = ServiceRegistry.AddService<SdlVideoService>(logging);
-    auto& windows = ServiceRegistry.AddService<SdlWindowService>(logging, video);
-
-    SdlWindow* window = windows.CreateWindow(BuildWindowCreateInfo(Configuration.Window));
+    SdlWindow* window = SdlBootstrap::Install(ServiceRegistry, Configuration, logging);
     if (window == nullptr || !window->IsValid())
     {
         std::fprintf(stderr, "Failed to create Vulkan window.\n");
@@ -95,6 +74,7 @@ bool Engine::Initialize()
         return failInitialize();
     }
 
+    auto& windows = ServiceRegistry.Get<SdlWindowService>();
     if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, *window, windows))
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
@@ -125,41 +105,14 @@ void Engine::Shutdown()
     Running = false;
 }
 
-bool Engine::AddDefaultMeshRenderFeature(MeshCache& meshes, MaterialCache& materials)
+DefaultRenderPipeline* Engine::GetRenderPipeline()
 {
-    DefaultRenderPipeline& pipeline = GetDefaultRenderPipeline();
-    pipeline.SetAssetStores(meshes, materials);
-    return pipeline.AddMeshRenderFeature(ServiceRegistry);
+    return EngineSystems.Get<DefaultRenderPipeline>();
 }
 
-RenderQueue& Engine::GetRenderQueue()
+const DefaultRenderPipeline* Engine::GetRenderPipeline() const
 {
-    return GetDefaultRenderPipeline().GetRenderQueue();
-}
-
-const RenderQueue& Engine::GetRenderQueue() const
-{
-    return GetDefaultRenderPipeline().GetRenderQueue();
-}
-
-CameraRenderData& Engine::GetCameraData()
-{
-    return GetDefaultRenderPipeline().GetCameraData();
-}
-
-const CameraRenderData& Engine::GetCameraData() const
-{
-    return GetDefaultRenderPipeline().GetCameraData();
-}
-
-DefaultRenderPipeline& Engine::GetDefaultRenderPipeline()
-{
-    return *EngineSystems.Get<DefaultRenderPipeline>();
-}
-
-const DefaultRenderPipeline& Engine::GetDefaultRenderPipeline() const
-{
-    return *EngineSystems.Get<DefaultRenderPipeline>();
+    return EngineSystems.Get<DefaultRenderPipeline>();
 }
 
 void Engine::RegisterFramePhases(Game& game)
