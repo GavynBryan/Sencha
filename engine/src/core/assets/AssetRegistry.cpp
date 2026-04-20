@@ -4,6 +4,8 @@
 
 namespace
 {
+    constexpr std::string_view AssetPathPrefix = "asset://";
+
     AssetType AssetTypeFromExtension(std::string_view extension)
     {
         if (extension == ".smesh") return AssetType::Mesh;
@@ -19,6 +21,16 @@ namespace
         std::filesystem::path relative = std::filesystem::relative(file, root);
         return std::string("asset://") + relative.generic_string();
     }
+
+    bool AreEquivalentRecords(const AssetRecord& a, const AssetRecord& b)
+    {
+        return a.Type == b.Type
+            && a.SourceKind == b.SourceKind
+            && a.Path == b.Path
+            && a.FilePath == b.FilePath
+            && a.ContentHash == b.ContentHash
+            && a.Version == b.Version;
+    }
 }
 
 AssetRegistry::AssetRegistry(LoggingProvider& logging)
@@ -26,11 +38,24 @@ AssetRegistry::AssetRegistry(LoggingProvider& logging)
 {
 }
 
-bool AssetRegistry::Register(AssetRecord record)
+bool IsValidAssetPath(std::string_view path)
+{
+    return path.starts_with(AssetPathPrefix)
+        && path.size() > AssetPathPrefix.size()
+        && path.find('\\') == std::string_view::npos;
+}
+
+bool AssetRegistry::Register(const AssetRecord& record)
 {
     if (record.Path.empty())
     {
         Log.Warn("AssetRegistry: rejected asset record with empty path");
+        return false;
+    }
+
+    if (!IsValidAssetPath(record.Path))
+    {
+        Log.Warn("AssetRegistry: rejected invalid asset path '{}'", record.Path);
         return false;
     }
 
@@ -40,17 +65,71 @@ bool AssetRegistry::Register(AssetRecord record)
         return false;
     }
 
+    if (record.SourceKind == AssetSourceKind::Unknown)
+    {
+        Log.Warn("AssetRegistry: rejected '{}' with unknown asset source kind", record.Path);
+        return false;
+    }
+
     const std::string path = record.Path;
     const std::string type = std::string(AssetTypeToString(record.Type));
-    auto [_, inserted] = RecordsByPath.emplace(record.Path, std::move(record));
+    auto [it, inserted] = RecordsByPath.emplace(record.Path, record);
     if (!inserted)
     {
-        Log.Warn("AssetRegistry: duplicate asset path '{}' ignored", path);
+        if (AreEquivalentRecords(it->second, record))
+            Log.Warn("AssetRegistry: duplicate asset path '{}' rejected", path);
+        else
+            Log.Warn("AssetRegistry: conflicting asset path '{}' rejected", path);
+
         return false;
     }
 
     Log.Debug("AssetRegistry: registered {} '{}'", type, path);
     return inserted;
+}
+
+bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
+{
+    if (record.Path.empty())
+    {
+        Log.Warn("AssetRegistry: rejected asset record with empty path");
+        return false;
+    }
+
+    if (!IsValidAssetPath(record.Path))
+    {
+        Log.Warn("AssetRegistry: rejected invalid asset path '{}'", record.Path);
+        return false;
+    }
+
+    if (record.Type == AssetType::Unknown)
+    {
+        Log.Warn("AssetRegistry: rejected '{}' with unknown asset type", record.Path);
+        return false;
+    }
+
+    if (record.SourceKind == AssetSourceKind::Unknown)
+    {
+        Log.Warn("AssetRegistry: rejected '{}' with unknown asset source kind", record.Path);
+        return false;
+    }
+
+    auto it = RecordsByPath.find(record.Path);
+    if (it == RecordsByPath.end())
+    {
+        RecordsByPath.emplace(record.Path, record);
+        Log.Debug("AssetRegistry: registered {} '{}'",
+            std::string(AssetTypeToString(record.Type)), record.Path);
+        return true;
+    }
+
+    if (!AreEquivalentRecords(it->second, record))
+    {
+        Log.Warn("AssetRegistry: conflicting asset path '{}' rejected", record.Path);
+        return false;
+    }
+
+    return true;
 }
 
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const
@@ -102,9 +181,10 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
 
         AssetRecord record;
         record.Type = type;
+        record.SourceKind = AssetSourceKind::File;
         record.Path = MakeVirtualAssetPath(root, it->path());
         record.FilePath = it->path().generic_string();
-        const bool inserted = registry.Register(std::move(record));
+        const bool inserted = registry.Register(record);
         if (inserted)
             ++registered;
         ok = inserted && ok;

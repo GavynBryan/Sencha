@@ -1,8 +1,6 @@
 #include <world/serialization/SceneFieldCodec.h>
 
 #include <core/assets/AssetSystem.h>
-#include <render/MaterialCache.h>
-#include <render/MeshCache.h>
 
 namespace
 {
@@ -133,15 +131,15 @@ bool SceneFieldCodec<MeshHandle>::Save(IWriteArchive& archive,
     if (!archive.IsText())
         return RejectBinaryWrite(archive, key);
 
-    if (!context.Meshes)
+    if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MeshHandle>: missing MeshCache for field \"%.*s\"\n",
+        std::fprintf(stderr, "SceneFieldCodec<MeshHandle>: missing AssetSystem for field \"%.*s\"\n",
             static_cast<int>(key.size()), key.data());
         archive.MarkInvalidField(key);
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Meshes->GetName(value));
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMesh(value));
 }
 
 bool SceneFieldCodec<MeshHandle>::Load(IReadArchive& archive,
@@ -185,15 +183,15 @@ bool SceneFieldCodec<MaterialHandle>::Save(IWriteArchive& archive,
     if (!archive.IsText())
         return RejectBinaryWrite(archive, key);
 
-    if (!context.Materials)
+    if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MaterialHandle>: missing MaterialCache for field \"%.*s\"\n",
+        std::fprintf(stderr, "SceneFieldCodec<MaterialHandle>: missing AssetSystem for field \"%.*s\"\n",
             static_cast<int>(key.size()), key.data());
         archive.MarkInvalidField(key);
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Materials->GetName(value));
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(value));
 }
 
 bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,

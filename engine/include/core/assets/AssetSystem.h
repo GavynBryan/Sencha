@@ -22,6 +22,12 @@ public:
     [[nodiscard]] MeshHandle LoadMesh(std::string_view path);
     [[nodiscard]] MaterialHandle LoadMaterial(std::string_view path);
 
+    [[nodiscard]] MeshHandle RegisterProceduralMesh(std::string_view path, MeshData mesh);
+    [[nodiscard]] MaterialHandle RegisterProceduralMaterial(std::string_view path, Material material);
+
+    [[nodiscard]] std::string_view GetPathForMesh(MeshHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForMaterial(MaterialHandle handle) const;
+
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
 private:

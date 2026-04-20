@@ -1,8 +1,6 @@
 #pragma once
 
 class AssetSystem;
-class MaterialCache;
-class MeshCache;
 
 //=============================================================================
 // SceneSerializationContext
@@ -13,7 +11,4 @@ class MeshCache;
 struct SceneSerializationContext
 {
     AssetSystem* Assets = nullptr;
-
-    MeshCache* Meshes = nullptr;
-    MaterialCache* Materials = nullptr;
 };

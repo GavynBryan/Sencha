@@ -22,6 +22,15 @@ enum class AssetType : uint16_t
     Script   = 7,
 };
 
+enum class AssetSourceKind : uint16_t
+{
+    Unknown = 0,
+    File,
+    Procedural,
+    Generated,
+    Embedded,
+};
+
 inline std::string_view AssetTypeToString(AssetType type)
 {
     switch (type)
@@ -47,6 +56,18 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "Audio")    { out = AssetType::Audio;    return true; }
     if (name == "Script")   { out = AssetType::Script;   return true; }
     return false;
+}
+
+inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
+{
+    switch (kind)
+    {
+    case AssetSourceKind::File:       return "File";
+    case AssetSourceKind::Procedural: return "Procedural";
+    case AssetSourceKind::Generated:  return "Generated";
+    case AssetSourceKind::Embedded:   return "Embedded";
+    default:                          return "Unknown";
+    }
 }
 
 //=============================================================================

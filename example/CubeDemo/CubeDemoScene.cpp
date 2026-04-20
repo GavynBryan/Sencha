@@ -28,33 +28,18 @@ DemoScene LoadDemoScene(Registry& registry,
     DemoScene scene;
 
     AssetRegistry assetRegistry(logging);
-    assetRegistry.Register(AssetRecord{
-        .Type = AssetType::Mesh,
-        .Path = "asset://meshes/dev/cube.smesh",
-    });
-    assetRegistry.Register(AssetRecord{
-        .Type = AssetType::Material,
-        .Path = "asset://materials/dev/red.smat",
-    });
-    assetRegistry.Register(AssetRecord{
-        .Type = AssetType::Material,
-        .Path = "asset://materials/dev/green.smat",
-    });
-    assetRegistry.Register(AssetRecord{
-        .Type = AssetType::Material,
-        .Path = "asset://materials/dev/blue.smat",
-    });
+    AssetSystem assets(assetRegistry, meshes, materials);
 
-    // Register matching procedural runtime resources under the same paths.
-    scene.CubeMesh = meshes.CreateFromData(
-        "asset://meshes/dev/cube.smesh", MeshPrimitives::BuildCube(1.0f));
-    scene.Red   = materials.Register(
+    scene.CubeMesh = assets.RegisterProceduralMesh(
+        "asset://meshes/dev/cube.smesh",
+        MeshPrimitives::BuildCube(1.0f));
+    scene.Red = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
-    scene.Green = materials.Register(
+    scene.Green = assets.RegisterProceduralMaterial(
         "asset://materials/dev/green.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f) });
-    scene.Blue  = materials.Register(
+    scene.Blue = assets.RegisterProceduralMaterial(
         "asset://materials/dev/blue.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
 
@@ -81,11 +66,8 @@ DemoScene LoadDemoScene(Registry& registry,
     }
 
     SceneLoadError loadError;
-    AssetSystem assets(assetRegistry, meshes, materials);
     SceneSerializationContext sceneContext{
         .Assets = &assets,
-        .Meshes = &meshes,
-        .Materials = &materials,
     };
     if (!LoadSceneJson(*json, registry, sceneContext, &loadError))
     {

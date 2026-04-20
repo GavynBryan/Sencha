@@ -82,6 +82,7 @@ namespace
     {
         registry.Register(AssetRecord{
             .Type = AssetType::Material,
+            .SourceKind = AssetSourceKind::Procedural,
             .Path = std::string(path),
         });
     }
@@ -274,8 +275,11 @@ TEST(SceneSerializer, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     ClearComponentSerializers();
     RegisterComponent<SceneCodecMaterialComponent>();
 
+    LoggingProvider logging;
+    AssetRegistry assetRegistry(logging);
     MaterialCache materials;
-    MaterialHandle material = materials.Register(
+    AssetSystem assets(assetRegistry, nullptr, &materials);
+    MaterialHandle material = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
@@ -284,7 +288,7 @@ TEST(SceneSerializer, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     registry.Components.Ensure<SparseSetStore<SceneCodecMaterialComponent>>()
         .Add(entity, SceneCodecMaterialComponent{ .Material = material });
 
-    SceneSerializationContext context{ .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
     JsonValue json = SaveSceneJson(registry, context);
 
     const JsonValue* entities = json.Find("entities");
@@ -304,12 +308,15 @@ TEST(SceneSerializer, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
 
 TEST(SceneSerializer, MaterialHandleSceneCodecWritesPathString)
 {
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
     MaterialCache materials;
-    MaterialHandle handle = materials.Register(
+    AssetSystem assets(registry, nullptr, &materials);
+    MaterialHandle handle = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
-    SceneSerializationContext context{ .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
     JsonWriteArchive archive;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Save(archive, "material", handle, context));
 
@@ -332,7 +339,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsPathString)
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
@@ -353,7 +360,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsLegacyAssetRefObject)
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
@@ -366,7 +373,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsWrongTypeEmptyPathAndMissin
     AssetRegistry registry(logging);
     MaterialCache materials;
     AssetSystem assets(registry, nullptr, &materials);
-    SceneSerializationContext context{ .Assets = &assets, .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
 
     auto wrongType = JsonParse(R"({ "type": "Mesh", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(wrongType.has_value());
@@ -394,6 +401,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsRegistryTypeMismatch)
     AssetRegistry registry(logging);
     registry.Register(AssetRecord{
         .Type = AssetType::Mesh,
+        .SourceKind = AssetSourceKind::Procedural,
         .Path = "asset://materials/dev/red.smat",
     });
 
@@ -406,7 +414,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsRegistryTypeMismatch)
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Materials = &materials };
+    SceneSerializationContext context{ .Assets = &assets };
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
