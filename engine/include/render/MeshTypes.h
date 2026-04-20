@@ -1,10 +1,14 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Aabb3d.h>
 
 #include <cstdint>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 // Interleaved vertex layout expected by the mesh forward shader (position, normal, uv0).
@@ -40,16 +44,30 @@ struct MeshData
     std::vector<SubmeshRange> Submeshes;
 };
 
-// Packed versioned handle to a mesh owned by MeshCache. Id 0 is null.
+// Versioned handle to a mesh owned by MeshCache. Slot 0 is null.
 struct MeshHandle
 {
-    uint32_t Id = 0;
+    uint32_t Index = 0;
+    uint32_t Generation = 0;
 
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    [[nodiscard]] bool IsNull() const { return Id == 0; }
-    [[nodiscard]] uint32_t SlotIndex() const { return Id & ((1u << 20u) - 1u); }
-    [[nodiscard]] uint32_t Generation() const { return Id >> 20u; }
+    [[nodiscard]] bool IsValid() const { return Index != 0 && Generation != 0; }
+    [[nodiscard]] bool IsNull() const { return !IsValid(); }
+    [[nodiscard]] uint32_t SlotIndex() const { return Index; }
     bool operator==(const MeshHandle&) const = default;
+};
+
+template <>
+struct TypeSchema<MeshHandle>
+{
+    static constexpr std::string_view Name = "MeshHandle";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("index", &MeshHandle::Index),
+            MakeField("generation", &MeshHandle::Generation),
+        };
+    }
 };
 
 //=============================================================================

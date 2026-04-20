@@ -37,8 +37,8 @@
 //   bool IsEntryLive(const TEntry& entry) const;
 //
 // THandle requirements:
-//   - uint32_t Id field
 //   - bool IsValid() const
+//   - either uint32_t Id field, or uint32_t Index / Generation fields
 //
 // TEntry requirements:
 //   - uint32_t  Generation = 0
@@ -119,7 +119,7 @@ public:
         --entry->RefCount;
         if (entry->RefCount > 0) return;
 
-        FreeEntry(DecodeIndex(handle.Id), *entry);
+        FreeEntry(HandleIndex(handle), *entry);
     }
 
 protected:
@@ -217,8 +217,8 @@ protected:
     [[nodiscard]] TEntry* Resolve(THandle handle)
     {
         if (!handle.IsValid()) return nullptr;
-        const uint32_t index = DecodeIndex(handle.Id);
-        const uint32_t gen   = DecodeGeneration(handle.Id);
+        const uint32_t index = HandleIndex(handle);
+        const uint32_t gen   = HandleGeneration(handle);
         if (index == 0 || index >= Entries.size()) return nullptr;
         TEntry& entry = Entries[index];
         if (entry.Generation != gen || !Derived().IsEntryLive(entry)) return nullptr;
@@ -228,8 +228,8 @@ protected:
     [[nodiscard]] const TEntry* Resolve(THandle handle) const
     {
         if (!handle.IsValid()) return nullptr;
-        const uint32_t index = DecodeIndex(handle.Id);
-        const uint32_t gen   = DecodeGeneration(handle.Id);
+        const uint32_t index = HandleIndex(handle);
+        const uint32_t gen   = HandleGeneration(handle);
         if (index == 0 || index >= Entries.size()) return nullptr;
         const TEntry& entry = Entries[index];
         if (entry.Generation != gen || !Derived().IsEntryLive(entry)) return nullptr;
@@ -279,8 +279,32 @@ private:
     [[nodiscard]] static THandle MakeHandle(uint32_t index, uint32_t generation)
     {
         THandle h{};
-        h.Id = (generation << kAssetCacheIndexBits) | (index & kAssetCacheIndexMask);
+        if constexpr (requires { h.Id; })
+        {
+            h.Id = (generation << kAssetCacheIndexBits) | (index & kAssetCacheIndexMask);
+        }
+        else
+        {
+            h.Index = index;
+            h.Generation = generation;
+        }
         return h;
+    }
+
+    [[nodiscard]] static uint32_t HandleIndex(THandle handle)
+    {
+        if constexpr (requires { handle.Id; })
+            return DecodeIndex(handle.Id);
+        else
+            return handle.Index;
+    }
+
+    [[nodiscard]] static uint32_t HandleGeneration(THandle handle)
+    {
+        if constexpr (requires { handle.Id; })
+            return DecodeGeneration(handle.Id);
+        else
+            return handle.Generation;
     }
 
     [[nodiscard]] static uint32_t DecodeIndex(uint32_t id)      { return id & kAssetCacheIndexMask; }

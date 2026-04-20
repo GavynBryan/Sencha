@@ -52,7 +52,9 @@ public:
 	[[nodiscard]] bool                AsBool()   const { return std::get<bool>(Data); }
 	[[nodiscard]] double              AsNumber() const { return std::get<double>(Data); }
 	[[nodiscard]] const std::string&  AsString() const { return std::get<std::string>(Data); }
+	[[nodiscard]] Array&              AsArray()        { return std::get<Array>(Data); }
 	[[nodiscard]] const Array&        AsArray()  const { return std::get<Array>(Data); }
+	[[nodiscard]] Object&             AsObject()       { return std::get<Object>(Data); }
 	[[nodiscard]] const Object&       AsObject() const { return std::get<Object>(Data); }
 
 	// -- Object field lookup (linear scan) ------------------------------------

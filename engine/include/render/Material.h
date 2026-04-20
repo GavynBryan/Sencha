@@ -1,19 +1,37 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <math/Vec.h>
 
 #include <cstdint>
+#include <string_view>
+#include <tuple>
 
-// Packed versioned handle to a material owned by MaterialCache. Id 0 is null.
+// Versioned handle to a material owned by MaterialCache. Slot 0 is null.
 struct MaterialHandle
 {
-    uint32_t Id = 0;
+    uint32_t Index = 0;
+    uint32_t Generation = 0;
 
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    [[nodiscard]] bool IsNull() const { return Id == 0; }
-    [[nodiscard]] uint32_t SlotIndex() const { return Id & ((1u << 20u) - 1u); }
-    [[nodiscard]] uint32_t Generation() const { return Id >> 20u; }
+    [[nodiscard]] bool IsValid() const { return Index != 0 && Generation != 0; }
+    [[nodiscard]] bool IsNull() const { return !IsValid(); }
+    [[nodiscard]] uint32_t SlotIndex() const { return Index; }
     bool operator==(const MaterialHandle&) const = default;
+};
+
+template <>
+struct TypeSchema<MaterialHandle>
+{
+    static constexpr std::string_view Name = "MaterialHandle";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("index", &MaterialHandle::Index),
+            MakeField("generation", &MaterialHandle::Generation),
+        };
+    }
 };
 
 // Identifies the render pass a material belongs to. Used as the high bits of the sort key.
