@@ -18,7 +18,7 @@ TEST(IdentitySerializationTests, RoundTripsIdTypes)
 
     const AssetId expectedAsset{ 42 };
     const TypeId expectedType{ 7 };
-    const EntityId expectedEntity{ 1001 };
+    const SerializedEntityId expectedEntity{ 1001 };
 
     ASSERT_TRUE(Serialize(writer, expectedAsset));
     ASSERT_TRUE(Serialize(writer, expectedType));
@@ -29,7 +29,7 @@ TEST(IdentitySerializationTests, RoundTripsIdTypes)
 
     AssetId actualAsset{};
     TypeId actualType{};
-    EntityId actualEntity{};
+    SerializedEntityId actualEntity{};
 
     ASSERT_TRUE(Deserialize(reader, actualAsset));
     ASSERT_TRUE(Deserialize(reader, actualType));

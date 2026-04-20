@@ -1,37 +1,49 @@
 #include <core/config/EngineConfig.h>
 #include <core/json/JsonParser.h>
-#include <physics/2d/PhysicsDomain2D.h>
 
 #include <cstdio>
+#include <optional>
 #include <string>
-#include <vector>
+#include <utility>
+
+namespace
+{
+    template <typename Config, typename Error, typename Deserialize>
+    bool ReadSection(const JsonValue& root,
+                     const char* sectionName,
+                     Config& out,
+                     std::string& error,
+                     Deserialize deserialize)
+    {
+        const JsonValue* section = root.Find(sectionName);
+        if (!section)
+            return true;
+
+        Error sectionError;
+        std::optional<Config> config = deserialize(*section, &sectionError);
+        if (!config)
+        {
+            error = std::string("engine config: ") + sectionError.Message;
+            return false;
+        }
+
+        out = std::move(*config);
+        return true;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // LoadEngineConfig
 //
-// Reads `path` into memory, runs JsonParse, then dispatches to each
-// subsystem deserializer. Missing subsystem sections are silently treated as
-// default-constructed configs -- engines without audio or other optional
-// subsystems will just get zero buses, etc.
-//
-// Expected top-level JSON shape:
-//
-//   {
-//     "audio": {
-//       "buses": [ ... ]
-//     },
-//     "physics2d": {
-//       "grid_cell_size": 4.0
-//     }
-//   }
+// Reads `path` into memory, runs JsonParse, then dispatches each present
+// top-level section to its config deserializer. Missing sections keep their
+// default-constructed config values.
 // ---------------------------------------------------------------------------
 
 std::optional<EngineConfig> LoadEngineConfig(
     const char* path,
     EngineConfigError* error)
 {
-    // -- Read file into string -------------------------------------------------
-
     std::FILE* f = std::fopen(path, "rb");
     if (!f)
     {
@@ -52,8 +64,6 @@ std::optional<EngineConfig> LoadEngineConfig(
     }
     std::fclose(f);
 
-    // -- Parse JSON -----------------------------------------------------------
-
     JsonParseError parseError;
     std::optional<JsonValue> root = JsonParse(text, &parseError);
     if (!root)
@@ -71,53 +81,22 @@ std::optional<EngineConfig> LoadEngineConfig(
     }
 
     EngineConfig config;
-
-    // -- Audio section --------------------------------------------------------
-
-    const JsonValue* audioSection = root->Find("audio");
-    if (audioSection)
+    std::string sectionError;
+    if (!ReadSection<EngineAppConfig, AppConfigError>(
+            *root, "app", config.App, sectionError, DeserializeAppConfig)
+        || !ReadSection<EngineWindowConfig, WindowConfigError>(
+            *root, "window", config.Window, sectionError, DeserializeWindowConfig)
+        || !ReadSection<EngineRuntimeConfig, RuntimeConfigError>(
+            *root, "runtime", config.Runtime, sectionError, DeserializeRuntimeConfig)
+        || !ReadSection<EngineGraphicsConfig, GraphicsConfigError>(
+            *root, "graphics", config.Graphics, sectionError, DeserializeGraphicsConfig)
+        || !ReadSection<EngineDebugConfig, DebugConfigError>(
+            *root, "debug", config.Debug, sectionError, DeserializeDebugConfig)
+        || !ReadSection<EngineAudioConfig, AudioConfigError>(
+            *root, "audio", config.Audio, sectionError, DeserializeAudioConfig))
     {
-        AudioConfigError audioError;
-        std::optional<EngineAudioConfig> audio = DeserializeAudioConfig(*audioSection, &audioError);
-        if (!audio)
-        {
-            if (error)
-                error->Message = std::string("engine config: ") + audioError.Message;
-            return std::nullopt;
-        }
-        config.Audio = std::move(*audio);
-    }
-
-    // -- Physics2d section ----------------------------------------------------
-
-    const JsonValue* physicsSection = root->Find("physics2d");
-    if (physicsSection && physicsSection->IsObject())
-    {
-        const JsonValue* maxDepth = physicsSection->Find("tree_max_depth");
-        if (maxDepth && maxDepth->IsNumber())
-            config.Physics2d.TreeMaxDepth = static_cast<int>(maxDepth->AsNumber());
-
-        const JsonValue* maxEntries = physicsSection->Find("tree_max_entries_per_leaf");
-        if (maxEntries && maxEntries->IsNumber())
-            config.Physics2d.TreeMaxEntriesPerLeaf = static_cast<int>(maxEntries->AsNumber());
-
-        const JsonValue* bounds = physicsSection->Find("tree_bounds");
-        if (bounds && bounds->IsObject())
-        {
-            const JsonValue* minX = bounds->Find("min_x");
-            const JsonValue* minY = bounds->Find("min_y");
-            const JsonValue* maxX = bounds->Find("max_x");
-            const JsonValue* maxY = bounds->Find("max_y");
-            if (minX && minX->IsNumber() && minY && minY->IsNumber()
-                && maxX && maxX->IsNumber() && maxY && maxY->IsNumber())
-            {
-                config.Physics2d.TreeBounds = Aabb2d(
-                    Vec2d(static_cast<float>(minX->AsNumber()),
-                          static_cast<float>(minY->AsNumber())),
-                    Vec2d(static_cast<float>(maxX->AsNumber()),
-                          static_cast<float>(maxY->AsNumber())));
-            }
-        }
+        if (error) error->Message = sectionError;
+        return std::nullopt;
     }
 
     return config;

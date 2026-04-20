@@ -2,51 +2,33 @@
 
 #include <core/service/IService.h>
 #include <time/FrameClock.h>
+
 #include <chrono>
 #include <cstdint>
 
 //=============================================================================
 // TimeService
 //
-// Source of truth for all engine timing. Owns a steady_clock and produces a
-// FrameClock snapshot each frame via Advance(). Call Advance() exactly once per
-// frame, before SystemHost::Update(), then pass the returned snapshot through.
+// Platform wall-clock source. It owns a steady_clock baseline and produces one
+// raw FrameClock sample per Advance(). The first Advance() after construction
+// returns dt = 0 by contract.
 //
-// Timescale
-// ---------
-// SetTimescale() scales DeltaTime and ElapsedTime without affecting their
-// unscaled counterparts. Timescale of 0 pauses simulation while unscaled time
-// continues, useful for pause menus or cinematic freeze-frames.
-//
-// Delta clamping
-// --------------
-// UnscaledDeltaTime is clamped to MaxDeltaSeconds before scaling. This
-// prevents a single long stall (alt-tab, debugger break, first frame) from
-// producing a physics or gameplay spike.
+// This service does not clamp, scale, reset, or accumulate gameplay time.
 //=============================================================================
 class TimeService : public IService
 {
 public:
-	TimeService();
+    TimeService();
 
-	// Advance the clock by one frame. Returns the FrameClock snapshot for
-	// this frame. Must be called exactly once per frame, before any systems run.
-	FrameClock Advance();
-
-	void SetTimescale(float scale) { Timescale = scale; }
-	float GetTimescale() const { return Timescale; }
+    // Advance the platform clock by one frame. Call exactly once per frame.
+    FrameClock Advance();
 
 private:
-	using Clock = std::chrono::steady_clock;
-	using TimePoint = Clock::time_point;
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = Clock::time_point;
 
-	// Cap a single-frame delta to ~15 fps equivalent to absorb stalls.
-	static constexpr float MaxDeltaSeconds = 1.0f / 15.0f;
-
-	TimePoint LastTime;
-	float    Timescale          = 1.0f;
-	float    ElapsedTime        = 0.0f;
-	float    UnscaledElapsedTime = 0.0f;
-	uint64_t FrameIndex         = 0;
-	bool     FirstFrame         = true;
+    TimePoint LastTime;
+    float    ElapsedTime = 0.0f;
+    uint64_t FrameIndex = 0;
+    bool     FirstFrame = true;
 };

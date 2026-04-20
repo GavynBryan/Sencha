@@ -9,9 +9,9 @@
 //=============================================================================
 // Identity types
 //
-// Lightweight, distinct value types for tagging assets, types, and entities.
+// Lightweight, distinct value types for tagging assets, types, and serialized entities.
 // Each wraps a uint32_t but is its own type to prevent accidental mixing
-// (e.g. passing an AssetId where an EntityId is expected).
+// (e.g. passing an AssetId where a SerializedEntityId is expected).
 //
 // A zero Value means "invalid / unset". The explicit operator bool() lets
 // you write: if (id) { ... }
@@ -64,23 +64,23 @@ template<> struct std::hash<TypeId>
     }
 };
 
-// --- EntityId ---------------------------------------------------------------
+// --- SerializedEntityId -----------------------------------------------------
 
-struct EntityId
+struct SerializedEntityId
 {
     std::uint32_t Value = 0;
 
-    bool operator==(const EntityId&) const = default;
-    auto operator<=>(const EntityId&) const = default;
+    bool operator==(const SerializedEntityId&) const = default;
+    auto operator<=>(const SerializedEntityId&) const = default;
     explicit operator bool() const { return Value != 0; }
 };
 
-inline bool Serialize(BinaryWriter& writer, const EntityId& id)   { return writer.Write(id.Value); }
-inline bool Deserialize(BinaryReader& reader, EntityId& id)       { return reader.Read(id.Value); }
+inline bool Serialize(BinaryWriter& writer, const SerializedEntityId& id) { return writer.Write(id.Value); }
+inline bool Deserialize(BinaryReader& reader, SerializedEntityId& id) { return reader.Read(id.Value); }
 
-template<> struct std::hash<EntityId>
+template<> struct std::hash<SerializedEntityId>
 {
-    std::size_t operator()(const EntityId& id) const noexcept
+    std::size_t operator()(const SerializedEntityId& id) const noexcept
     {
         return std::hash<std::uint32_t>{}(id.Value);
     }

@@ -1,14 +1,18 @@
 option(SENCHA_ENABLE_VULKAN
-    "Build Sencha Vulkan rendering backend"
+    "Build Sencha Vulkan graphics foundation"
     ON)
 
 option(SENCHA_ENABLE_HOT_RELOAD
-    "Link glslang into the engine for runtime GLSL compilation and live shader \
-reload.  Always OFF in release builds -- shipping binaries must not contain a \
-GLSL compiler."
+    "Link glslang into the engine for runtime GLSL compilation and live shader reload. Always OFF in release builds -- shipping binaries must not contain a GLSL compiler."
     OFF)
 
-# ── Source discovery ──────────────────────────────────────────────────────────
+option(SENCHA_ENABLE_DEBUG_UI
+    "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
+    OFF)
+
+if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
+    message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
+endif()
 
 set(SENCHA_ENGINE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SENCHA_ENGINE_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -20,115 +24,105 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/*.h"
 )
 
+include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+
 if(NOT SENCHA_ENABLE_VULKAN)
-    list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE
-        REGEX "[/\\\\]src[/\\\\]render[/\\\\]backend[/\\\\]vulkan[/\\\\]")
-    list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE
-        REGEX "[/\\\\]include[/\\\\]render[/\\\\]backend[/\\\\]vulkan[/\\\\]")
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
+        "[/\\\\]include[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
 endif()
 
-# ── Library target ────────────────────────────────────────────────────────────
+if(NOT SENCHA_ENABLE_DEBUG_UI)
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
+set(SENCHA_ENGINE_GENERATED_HEADERS)
+
+if(SENCHA_ENABLE_VULKAN)
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_forward.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _mesh_forward_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_mesh_forward_vert_spv}"
+        VAR_NAME kMeshForwardVertSpv
+        OUT_HEADER _mesh_forward_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_forward.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _mesh_forward_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_mesh_forward_frag_spv}"
+        VAR_NAME kMeshForwardFragSpv
+        OUT_HEADER _mesh_forward_frag_header
+    )
+    list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+        "${_mesh_forward_vert_header}"
+        "${_mesh_forward_frag_header}"
+    )
+endif()
 
 find_package(SDL3 REQUIRED CONFIG)
 
 add_library(sencha_engine STATIC
     ${SENCHA_ENGINE_SOURCES}
     ${SENCHA_ENGINE_HEADERS}
+    ${SENCHA_ENGINE_GENERATED_HEADERS}
 )
 add_library(sencha::engine ALIAS sencha_engine)
 
 target_include_directories(sencha_engine
-    PUBLIC  "${SENCHA_ENGINE_INCLUDE_DIR}"
-    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"   # <shaders/kFoo.h>
+    PUBLIC "${SENCHA_ENGINE_INCLUDE_DIR}"
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
+target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
-# ── stb_image ─────────────────────────────────────────────────────────────────
+if(WIN32)
+    # winmm for timeBeginPeriod/timeEndPeriod used by FramePacer to achieve
+    # 1ms sleep granularity on Windows.
+    target_link_libraries(sencha_engine PRIVATE winmm)
+endif()
 
 include(FetchContent)
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        ae721c50eaf761660b4f90cc590453cdb0c2acd0 # stb_image 2.30
+    GIT_TAG        ae721c50eaf761660b4f90cc590453cdb0c2acd0
 )
 FetchContent_MakeAvailable(stb)
 target_include_directories(sencha_engine PRIVATE "${stb_SOURCE_DIR}")
 
-# ── Vulkan backend ────────────────────────────────────────────────────────────
-
 if(SENCHA_ENABLE_VULKAN)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)
 
     find_package(Vulkan REQUIRED)
     target_link_libraries(sencha_engine PUBLIC Vulkan::Vulkan)
-
-    # ── Offline shader build pipeline ─────────────────────────────────────
-    #
-    # All engine-internal (tier-1 bootstrap) shaders are compiled to SPIR-V by
-    # glslc at *build* time and then embedded as uint32_t[] arrays in generated
-    # headers.  SpriteFeature::Setup() calls CreateModuleFromSpirv() on those
-    # arrays directly -- no file I/O, no runtime compiler.
-    #
-    # Generated headers land in:
-    #   ${CMAKE_CURRENT_BINARY_DIR}/generated/shaders/
-    # and are included as:
-    #   #include <shaders/kFoo.h>
-    # because ${CMAKE_CURRENT_BINARY_DIR}/generated is on the private include path.
-    #
-    # Adding a new engine shader:
-    #   1. Drop source in engine/shaders/internal/
-    #   2. Add a sprite.shader-style .shader metadata file
-    #   3. Call sencha_compile_shader + sencha_embed_spirv + sencha_embed_text
-    #      below and add the outputs to sencha_embedded_shaders DEPENDS.
-    #   4. Include <shaders/kMyShaderSpv.h> in the feature .cpp.
-
-    include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
-
-    set(_shader_inc "${CMAKE_CURRENT_SOURCE_DIR}/shaders/include")
-
-    # sprite.vert ─────────────────────────────────────────────────────────
-    sencha_compile_shader(
-        SOURCE       "${CMAKE_CURRENT_SOURCE_DIR}/shaders/internal/sprite.vert.glsl"
-        STAGE        vert
-        INCLUDE_DIRS "${_shader_inc}"
-        OUTPUT_SPV   _sprite_vert_spv
-    )
-    sencha_embed_spirv(
-        SOURCE_SPV  "${_sprite_vert_spv}"
-        VAR_NAME    kSpriteVertSpv
-        OUT_HEADER  _sprite_vert_h
-    )
-
-    # sprite.frag ─────────────────────────────────────────────────────────
-    sencha_compile_shader(
-        SOURCE       "${CMAKE_CURRENT_SOURCE_DIR}/shaders/internal/sprite.frag.glsl"
-        STAGE        frag
-        INCLUDE_DIRS "${_shader_inc}"
-        OUTPUT_SPV   _sprite_frag_spv
-    )
-    sencha_embed_spirv(
-        SOURCE_SPV  "${_sprite_frag_spv}"
-        VAR_NAME    kSpriteFragSpv
-        OUT_HEADER  _sprite_frag_h
-    )
-
-    # sprite.shader (pipeline metadata) ───────────────────────────────────
-    sencha_embed_text(
-        SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/internal/sprite.shader"
-        VAR_NAME   kSpriteShaderMetadata
-        OUT_HEADER _sprite_meta_h
-    )
-
-    # All generated shader headers must exist before any .cpp that includes
-    # them is compiled.  The custom target creates that ordering relationship.
-    add_custom_target(sencha_embedded_shaders
-        DEPENDS
-            "${_sprite_vert_h}"
-            "${_sprite_frag_h}"
-            "${_sprite_meta_h}"
-    )
-    add_dependencies(sencha_engine sencha_embedded_shaders)
-
-    # ── VulkanMemoryAllocator ─────────────────────────────────────────────
 
     set(VMA_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
     set(VMA_BUILD_SAMPLES       OFF CACHE BOOL "" FORCE)
@@ -139,14 +133,6 @@ if(SENCHA_ENABLE_VULKAN)
     )
     FetchContent_MakeAvailable(VulkanMemoryAllocator)
     target_link_libraries(sencha_engine PUBLIC GPUOpen::VulkanMemoryAllocator)
-
-    # ── glslang (hot-reload builds only) ──────────────────────────────────
-    #
-    # In production (SENCHA_ENABLE_HOT_RELOAD=OFF) glslang is never fetched,
-    # never linked, and the GLSL compilation code paths in VulkanShaderCache
-    # are compiled out via #ifdef SENCHA_ENABLE_HOT_RELOAD.
-    #
-    # Enable only for developer machines that need live shader editing.
 
     if(SENCHA_ENABLE_HOT_RELOAD)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_HOT_RELOAD)
@@ -172,9 +158,34 @@ if(SENCHA_ENABLE_VULKAN)
         )
     endif()
 
-endif() # SENCHA_ENABLE_VULKAN
+    if(SENCHA_ENABLE_DEBUG_UI)
+        target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
 
-# ── Compatibility alias ───────────────────────────────────────────────────────
-# Apps and examples that already link the bare `engine` target continue to work.
-add_library(engine INTERFACE)
-target_link_libraries(engine INTERFACE sencha_engine)
+        if(NOT IMGUI_DIR)
+            FetchContent_Declare(
+                imgui
+                GIT_REPOSITORY https://github.com/ocornut/imgui.git
+                GIT_TAG        v1.91.9
+            )
+            FetchContent_MakeAvailable(imgui)
+            set(IMGUI_DIR "${imgui_SOURCE_DIR}")
+        endif()
+
+        target_sources(sencha_engine PRIVATE
+            "${IMGUI_DIR}/imgui.cpp"
+            "${IMGUI_DIR}/imgui_draw.cpp"
+            "${IMGUI_DIR}/imgui_tables.cpp"
+            "${IMGUI_DIR}/imgui_widgets.cpp"
+            "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
+            "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
+        )
+
+        target_include_directories(sencha_engine
+            PUBLIC
+                "${IMGUI_DIR}"
+                "${IMGUI_DIR}/backends"
+        )
+    endif()
+endif()
+
+add_library(engine ALIAS sencha_engine)

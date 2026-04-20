@@ -1,34 +1,71 @@
 #pragma once
 
+#include <time/FrameClock.h>
+
 #include <cstdint>
 
 //=============================================================================
-// SimClock
+// FixedSimulationLoop
 //
-// Tick-based simulation clock. Advanced by the main loop's fixed accumulator,
-// never by wall time. SimTime() is therefore deterministic and replay-safe.
+// Fixed-step simulation clock. RuntimeFrameLoop decides how many fixed ticks a
+// frame should run; this type only owns the fixed delta and monotonic tick index.
 //
 // The main loop drives it:
 //
-//   accumulator += frameClock.UnscaledDt;
-//   accumulator  = std::min(accumulator, maxAccumulator);  // spiral-of-death guard
-//   int steps = 0;
-//   while (accumulator >= sim.FixedDt && steps < maxSubsteps) {
-//       systemHost.RunFixed(sim.FixedDt);
-//       sim.Tick++;
-//       accumulator -= sim.FixedDt;
-//       ++steps;
-//   }
-//   float alpha = accumulator / sim.FixedDt;
-//   systemHost.RunRender(alpha);
+//   TickBudget budget = scheduler.ConsumeTicks(runtimeState);
+//   for (uint32_t i = 0; i < budget.TicksToRunThisFrame; ++i)
+//       schedule.RunFixedLogic(sim.BeginFixedTickContext());
+//   systemHost.RunRender(presentation.Alpha);
 //=============================================================================
-struct SimClock
+struct TickBudget
 {
-    uint64_t Tick    = 0;
-    float    FixedDt = 1.0f / 60.0f;
+    uint32_t TicksToRunThisFrame = 0;
+};
 
-    double SimTime() const
+class FixedSimulationLoop
+{
+public:
+    static constexpr double DefaultFixedDt = 1.0 / 60.0;
+
+    explicit FixedSimulationLoop(double fixedDt = DefaultFixedDt)
+        : FixedDt(fixedDt)
     {
-        return static_cast<double>(Tick) * static_cast<double>(FixedDt);
     }
+
+    [[nodiscard]] double GetFixedDt() const { return FixedDt; }
+    [[nodiscard]] uint64_t GetTickIndex() const { return TickIndex; }
+
+    FixedSimTime BeginFixedTick()
+    {
+        return FixedSimTime{
+            .DeltaSeconds = FixedDt,
+            .TickIndex = TickIndex,
+        };
+    }
+
+    void EndFixedTick()
+    {
+        ++TickIndex;
+    }
+
+    [[nodiscard]] PresentationTime BuildPresentationTime(double alpha) const
+    {
+        if (alpha < 0.0) alpha = 0.0;
+        if (alpha > 1.0) alpha = 1.0;
+
+        return PresentationTime{
+            .DeltaSeconds = FixedDt,
+            .Alpha = alpha,
+        };
+    }
+
+    void SetFixedTickRate(double ticksPerSecond)
+    {
+        if (ticksPerSecond > 0.0)
+            FixedDt = 1.0 / ticksPerSecond;
+    }
+
+private:
+    double FixedDt = DefaultFixedDt;
+    uint64_t TickIndex = 0;
 };

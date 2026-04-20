@@ -23,6 +23,10 @@ file(GLOB_RECURSE ENGINE_FEATURE_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/engine_features/*.cpp
 )
 
+file(GLOB_RECURSE RUNTIME_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -30,6 +34,12 @@ add_executable(math_geometry_tests ${MATH_GEOMETRY_TEST_SOURCES})
 target_link_libraries(math_geometry_tests PRIVATE sencha_engine GTest::gtest_main)
 
 set(SENCHA_TEST_TARGETS core_tests math_geometry_tests)
+
+if(RUNTIME_TEST_SOURCES)
+    add_executable(runtime_tests ${RUNTIME_TEST_SOURCES})
+    target_link_libraries(runtime_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS runtime_tests)
+endif()
 
 if(ENGINE_FEATURE_TEST_SOURCES)
     add_executable(engine_feature_tests ${ENGINE_FEATURE_TEST_SOURCES})
@@ -50,6 +60,12 @@ gtest_discover_tests(math_geometry_tests
 
 if(TARGET engine_feature_tests)
     gtest_discover_tests(engine_feature_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET runtime_tests)
+    gtest_discover_tests(runtime_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

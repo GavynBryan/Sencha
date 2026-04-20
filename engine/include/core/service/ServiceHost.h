@@ -34,15 +34,7 @@ public:
 	ServiceHost() = default;
 	~ServiceHost()
 	{
-		// Tear down in reverse insertion order (LIFO) so later-added services,
-		// which may depend on earlier ones, are destroyed first. The registry
-		// only holds raw pointers, so clearing it first avoids dangling lookups
-		// if a service's destructor touches sibling state during teardown.
-		Registry.clear();
-		while (!Services.empty())
-		{
-			Services.pop_back();
-		}
+		Clear();
 	}
 
 	ServiceHost(const ServiceHost&) = delete;
@@ -86,11 +78,14 @@ public:
 	template <typename T>
 	void RemoveAll();
 
+	void Clear();
+
 	LoggingProvider& GetLoggingProvider() { return Logging; }
 	const LoggingProvider& GetLoggingProvider() const { return Logging; }
 
 private:
 	void RemoveFromOwnership(IService* service);
+	void ClearServices();
 	std::vector<std::unique_ptr<IService>> Services;
 	std::unordered_map<std::type_index, std::vector<IService*>> Registry;
 	LoggingProvider Logging;
@@ -277,4 +272,23 @@ inline void ServiceHost::RemoveFromOwnership(IService* service)
 	Services.erase(std::remove_if(Services.begin(), Services.end(),
 		[service](const std::unique_ptr<IService>& s) { return s.get() == service; }),
 		Services.end());
+}
+
+inline void ServiceHost::ClearServices()
+{
+	// Tear down in reverse insertion order (LIFO) so later-added services,
+	// which may depend on earlier ones, are destroyed first. The registry
+	// only holds raw pointers, so clearing it first avoids dangling lookups
+	// if a service's destructor touches sibling state during teardown.
+	Registry.clear();
+	while (!Services.empty())
+	{
+		Services.pop_back();
+	}
+}
+
+inline void ServiceHost::Clear()
+{
+	ClearServices();
+	Logging.Clear();
 }

@@ -1,80 +1,91 @@
 #pragma once
 
-#include <core/batch/DataBatch.h>
-#include <core/batch/DataBatchKey.h>
-#include <unordered_map>
-#include <vector>
-#include <world/entity/EntityKey.h>
-#include <world/entity/EntityRecord.h>
+#include <world/entity/EntityId.h>
 #include <world/transform/TransformHierarchyService.h>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 //=============================================================================
 // EntityRegistry
 //
-// Central registry mapping EntityKey -> EntityRecord. Lives inside
-// World<TTransform> — one registry per world dimension (2D or 3D).
-//
-// Responsibilities:
-//   - Issue stable EntityKeys backed by DataBatch generation tracking
-//   - Maintain the single transform-key -> entity-key reverse map
-//   - Invoke type-erased OnDestroy callbacks for Destroy() and DestroySubtree()
-//
-// The registry does NOT own entity structs. Those are owned by the
-// application's EntityBatch<T>. The registry only owns the EntityRecord
-// metadata and the reverse lookup.
-//
-// Destroy ordering: the registry removes the EntityRecord and reverse-map
-// entry BEFORE invoking OnDestroy. This ensures a clean registry state
-// during any RAII teardown (TransformHierarchyRegistration, etc.) triggered
-// by the callback.
+// Lightweight handle allocator for the hybrid ECS path. Component lifetime is
+// explicit in SparseSet-backed stores; the registry only owns id/generation
+// liveness and provides hierarchy-aware destruction ordering.
 //=============================================================================
 class EntityRegistry
 {
 public:
-	EntityRegistry() = default;
+    EntityId Create()
+    {
+        if (!FreeIds.empty())
+        {
+            const EntityIndex index = FreeIds.back();
+            FreeIds.pop_back();
+            Entries[index].Alive = true;
+            ++LiveCount;
+            return EntityId{ index, Entries[index].Generation };
+        }
 
-	EntityRegistry(const EntityRegistry&) = delete;
-	EntityRegistry& operator=(const EntityRegistry&) = delete;
-	EntityRegistry(EntityRegistry&&) = delete;
-	EntityRegistry& operator=(EntityRegistry&&) = delete;
+        const EntityIndex index = static_cast<EntityIndex>(Entries.size());
+        Entries.push_back(Entry{ .Generation = 1, .Alive = true });
+        ++LiveCount;
+        return EntityId{ index, 1 };
+    }
 
-	// -- Registration ----------------------------------------------------------
+    bool Destroy(EntityId entity)
+    {
+        if (!IsAlive(entity))
+            return false;
 
-	// Register an entity and return its stable key.
-	// record.TransformKey must be non-null — all entities require a transform.
-	EntityKey Register(const EntityRecord& record);
+        Entry& entry = Entries[entity.Index];
+        entry.Alive = false;
+        ++entry.Generation;
+        if (entry.Generation == 0)
+            ++entry.Generation;
 
-	// Remove an entity's record without invoking its destroy callback.
-	// Prefer Destroy() for normal teardown.
-	void Unregister(EntityKey key);
+        FreeIds.push_back(entity.Index);
+        --LiveCount;
+        return true;
+    }
 
-	// -- Destruction -----------------------------------------------------------
+    void DestroySubtree(EntityId root, const TransformHierarchyService& hierarchy)
+    {
+        std::vector<EntityId> postOrder;
+        CollectPostOrder(hierarchy, root, postOrder);
 
-	// Remove the entity's record and invoke its OnDestroy callback.
-	// The record is removed from the registry before OnDestroy fires so that
-	// RAII teardown inside the callback (e.g. TransformHierarchyRegistration)
-	// observes a clean registry state.
-	void Destroy(EntityKey key);
+        for (EntityId entity : postOrder)
+            Destroy(entity);
+    }
 
-	// Destroy an entity and all of its transform-hierarchy descendants,
-	// leaves first. The full subtree is collected before any destruction
-	// begins so that hierarchy modifications during teardown do not affect
-	// the traversal order.
-	void DestroySubtree(EntityKey root, const TransformHierarchyService& hierarchy);
+    bool IsAlive(EntityId entity) const
+    {
+        return entity.IsValid()
+            && entity.Index < Entries.size()
+            && Entries[entity.Index].Alive
+            && Entries[entity.Index].Generation == entity.Generation;
+    }
 
-	// -- Queries ---------------------------------------------------------------
-
-	const EntityRecord* Find(EntityKey key) const;
-	EntityKey           FindByTransform(DataBatchKey transformKey) const;
-	bool                IsRegistered(EntityKey key) const;
-	size_t              Count() const;
+    size_t Count() const { return LiveCount; }
 
 private:
-	static void CollectPostOrder(
-		const TransformHierarchyService& hierarchy,
-		DataBatchKey key,
-		std::vector<DataBatchKey>& out);
+    struct Entry
+    {
+        uint16_t Generation = 1;
+        bool Alive = false;
+    };
 
-	DataBatch<EntityRecord>                Records;
-	std::unordered_map<uint32_t, uint32_t> TransformToEntity;
+    static void CollectPostOrder(
+        const TransformHierarchyService& hierarchy,
+        EntityId entity,
+        std::vector<EntityId>& out)
+    {
+        for (EntityId child : hierarchy.GetChildren(entity))
+            CollectPostOrder(hierarchy, child, out);
+        out.push_back(entity);
+    }
+
+    std::vector<Entry> Entries;
+    std::vector<EntityIndex> FreeIds;
+    size_t LiveCount = 0;
 };

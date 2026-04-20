@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
+#include <runtime/RuntimeFrameLoop.h>
 #include <time/TimeService.h>
-#include <thread>
+#include <time/SimClock.h>
+#include <time/TimingHistory.h>
+
 #include <chrono>
+#include <thread>
 
 // =============================================================================
 // FrameClock layout
@@ -57,23 +61,25 @@ TEST(TimeService, FirstAdvanceFrameIndexIsOne)
 }
 
 // =============================================================================
-// Delta invariants (no sleep needed — verify relationships, not absolute values)
+// Platform clock contract
 // =============================================================================
 
-TEST(TimeService, DeltaEqualsUnscaledDeltaAtDefaultTimescale)
+TEST(TimeService, DeltaAndUnscaledDeltaAreRawPlatformAliases)
 {
     TimeService ts;
-    ts.Advance(); // burn first frame
+    ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     FrameClock ft = ts.Advance();
-    EXPECT_FLOAT_EQ(ft.Dt, ft.UnscaledDt * ft.Timescale);
+    EXPECT_FLOAT_EQ(ft.Dt, ft.UnscaledDt);
+    EXPECT_FLOAT_EQ(ft.Elapsed, ft.UnscaledElapsed);
+    EXPECT_FLOAT_EQ(ft.Timescale, 1.0f);
 }
 
 TEST(TimeService, SecondAdvanceHasPositiveDelta)
 {
     TimeService ts;
-    ts.Advance(); // burn first frame
+    ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     FrameClock ft = ts.Advance();
@@ -81,14 +87,10 @@ TEST(TimeService, SecondAdvanceHasPositiveDelta)
     EXPECT_GT(ft.Dt, 0.0f);
 }
 
-// =============================================================================
-// Elapsed accumulation
-// =============================================================================
-
 TEST(TimeService, ElapsedAccumulatesAcrossFrames)
 {
     TimeService ts;
-    ts.Advance(); // first frame — zero delta, zero elapsed
+    ts.Advance();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     FrameClock f1 = ts.Advance();
@@ -128,95 +130,112 @@ TEST(TimeService, FrameIndexIncrementsEachAdvance)
 }
 
 // =============================================================================
-// Timescale
+// Fixed simulation loop
 // =============================================================================
 
-TEST(TimeService, GetSetTimescaleRoundTrips)
+TEST(FixedSimulationLoop, BeginsFixedTicksWithConstantDelta)
 {
-    TimeService ts;
-    ts.SetTimescale(2.5f);
-    EXPECT_FLOAT_EQ(ts.GetTimescale(), 2.5f);
+    FixedSimulationLoop loop;
+
+    FixedSimTime tick = loop.BeginFixedTick();
+    EXPECT_DOUBLE_EQ(tick.DeltaSeconds, 1.0 / 60.0);
+    EXPECT_EQ(tick.TickIndex, 0u);
+
+    loop.EndFixedTick();
+    tick = loop.BeginFixedTick();
+    EXPECT_DOUBLE_EQ(tick.DeltaSeconds, 1.0 / 60.0);
+    EXPECT_EQ(tick.TickIndex, 1u);
 }
 
-TEST(TimeService, TimescaleReflectedInFrameClock)
+TEST(FixedSimulationLoop, BuildsClampedPresentationAlpha)
 {
-    TimeService ts;
-    ts.SetTimescale(3.0f);
-    ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    FixedSimulationLoop loop;
+    PresentationTime low = loop.BuildPresentationTime(-1.0);
+    PresentationTime high = loop.BuildPresentationTime(2.0);
 
-    FrameClock ft = ts.Advance();
-    EXPECT_FLOAT_EQ(ft.Timescale, 3.0f);
-}
-
-TEST(TimeService, ScaledDeltaEqualsUnscaledTimesTimescale)
-{
-    TimeService ts;
-    ts.SetTimescale(2.0f);
-    ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-    FrameClock ft = ts.Advance();
-    EXPECT_NEAR(ft.Dt, ft.UnscaledDt * 2.0f, 1e-6f);
-}
-
-TEST(TimeService, ZeroTimescalePausesScaledTime)
-{
-    TimeService ts;
-    ts.SetTimescale(0.0f);
-    ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-
-    FrameClock f1 = ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-
-    FrameClock f2 = ts.Advance();
-
-    // Scaled delta and elapsed must stay zero.
-    EXPECT_FLOAT_EQ(f1.Dt, 0.0f);
-    EXPECT_FLOAT_EQ(f2.Dt, 0.0f);
-    EXPECT_FLOAT_EQ(f2.Elapsed, 0.0f);
-
-    // Unscaled time must still advance.
-    EXPECT_GT(f1.UnscaledDt, 0.0f);
-    EXPECT_GT(f2.UnscaledElapsed, f1.UnscaledElapsed);
-}
-
-TEST(TimeService, TimescaleChangeAffectsNextFrameOnly)
-{
-    TimeService ts;
-    ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-    FrameClock before = ts.Advance();
-    ts.SetTimescale(0.0f);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-    FrameClock after = ts.Advance();
-
-    // Frame before change used timescale 1.
-    EXPECT_FLOAT_EQ(before.Timescale, 1.0f);
-    EXPECT_NEAR(before.Dt, before.UnscaledDt, 1e-6f);
-
-    // Frame after change uses timescale 0.
-    EXPECT_FLOAT_EQ(after.Dt, 0.0f);
+    EXPECT_DOUBLE_EQ(low.DeltaSeconds, loop.GetFixedDt());
+    EXPECT_DOUBLE_EQ(low.Alpha, 0.0);
+    EXPECT_DOUBLE_EQ(high.Alpha, 1.0);
 }
 
 // =============================================================================
-// Delta clamping
+// Timing history
 // =============================================================================
 
-TEST(TimeService, UnscaledDeltaNeverExceedsMaxDeltaSeconds)
+TEST(TimingHistory, MaintainsBoundedChronologicalSamples)
 {
-    // Max is 1/15 ≈ 0.0667s. We can't inject a stall, but we can verify
-    // that normal frames are already below the cap and that the cap value
-    // itself is sane.
-    constexpr float MaxDelta = 1.0f / 15.0f;
+    TimingHistory history(2);
+    TimingFrameSample a{};
+    a.FixedTicks = 1;
+    TimingFrameSample b{};
+    b.FixedTicks = 2;
+    TimingFrameSample c{};
+    c.FixedTicks = 3;
 
-    TimeService ts;
-    ts.Advance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    history.Push(a);
+    history.Push(b);
+    history.Push(c);
 
-    FrameClock ft = ts.Advance();
-    EXPECT_LE(ft.UnscaledDt, MaxDelta);
+    ASSERT_EQ(history.Size(), 2u);
+    EXPECT_EQ(history.GetChronological(0).FixedTicks, 2u);
+    EXPECT_EQ(history.GetChronological(1).FixedTicks, 3u);
+    ASSERT_NE(history.Latest(), nullptr);
+    EXPECT_EQ(history.Latest()->FixedTicks, 3u);
+}
+
+// =============================================================================
+// Runtime frame loop
+// =============================================================================
+
+TEST(RuntimeFrameLoop, DiscontinuityProducesHistoryResetWithoutChangingTickTime)
+{
+    RuntimeFrameLoop runtime;
+    runtime.BeginFrame();
+    runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::SwapchainRecreated);
+    TickBudget budget = runtime.ScheduleFixedTicks();
+
+    EXPECT_EQ(budget.TicksToRunThisFrame, 1u);
+    EXPECT_DOUBLE_EQ(runtime.GetCurrentFrame().TickDtSeconds, runtime.GetSimulationClock().GetFixedDt());
+    EXPECT_TRUE(runtime.ConsumePresentationHistoryReset());
+}
+
+TEST(RuntimeFrameLoop, ResizeSettlesBeforeSwapchainRebuild)
+{
+    RuntimeFrameLoop runtime;
+    runtime.SetResizeSettleSeconds(0.0);
+    runtime.BeginFrame();
+    runtime.NotifyResize(WindowExtent{ 1280, 720 });
+    runtime.ResolveLifecycleTransitions();
+    EXPECT_FALSE(runtime.ShouldRebuildSwapchain());
+
+    runtime.EndFrame();
+    runtime.BeginFrame();
+    runtime.ResolveLifecycleTransitions();
+    EXPECT_TRUE(runtime.ShouldRebuildSwapchain());
+}
+
+TEST(RuntimeFrameLoop, LifecycleOnlyFrameEmitsZeroTicks)
+{
+    RuntimeFrameLoop runtime;
+    runtime.BeginFrame();
+    runtime.NotifyMinimized();
+    runtime.ResolveLifecycleTransitions();
+    TickBudget budget = runtime.ScheduleFixedTicks();
+
+    const RuntimeFrameSnapshot& frame = runtime.GetCurrentFrame();
+    EXPECT_TRUE(frame.LifecycleOnly);
+    EXPECT_EQ(budget.TicksToRunThisFrame, 0u);
+}
+
+TEST(RuntimeFrameLoop, TimescaleDoesNotScaleFixedTickDelta)
+{
+    RuntimeFrameLoop runtime;
+    runtime.SetSimulationTimescale(10.0f);
+
+    runtime.BeginFrame();
+    runtime.ResolveLifecycleTransitions();
+    runtime.ScheduleFixedTicks();
+    FixedSimTime tick = runtime.BeginFixedTick();
+
+    EXPECT_DOUBLE_EQ(tick.DeltaSeconds, runtime.GetSimulationClock().GetFixedDt());
 }

@@ -1,7 +1,11 @@
 #pragma once
 
-#include <audio/AudioConfig.h>
-#include <physics/2d/PhysicsDomain2D.h>
+#include <core/config/AppConfig.h>
+#include <core/config/AudioConfig.h>
+#include <core/config/DebugConfig.h>
+#include <core/config/GraphicsConfig.h>
+#include <core/config/RuntimeConfig.h>
+#include <core/config/WindowConfig.h>
 
 #include <optional>
 #include <string>
@@ -9,23 +13,28 @@
 //=============================================================================
 // EngineConfig
 //
-// Aggregates all subsystem configs that are loaded from engine.json at
-// startup. Not an IService -- callers hold an EngineConfig value directly
-// and pass the relevant sub-config to each service at construction time:
+// Aggregates all launch/runtime subsystem configs that are loaded from
+// engine.json at startup. Not an IService -- callers hold an EngineConfig
+// value directly and pass the relevant sub-config to each service at
+// construction time:
 //
 //   EngineConfig cfg = LoadEngineConfig("engine.json").value_or({});
 //   AudioService audio(logging, cfg.Audio);
 //
 // Adding a new subsystem config:
-//   1. Define the config struct in the subsystem's own header (e.g.
-//      engine/include/render/RenderConfig.h).
+//   1. Define the config struct and deserializer in the subsystem's config
+//      header (see AudioConfig.h).
 //   2. Add a field here.
-//   3. Deserialize it in EngineConfig.cpp next to the audio section.
+//   3. Dispatch to the deserializer from EngineConfig.cpp.
 //=============================================================================
 struct EngineConfig
 {
+    EngineAppConfig App;
+    EngineWindowConfig Window;
+    EngineRuntimeConfig Runtime;
+    EngineGraphicsConfig Graphics;
+    EngineDebugConfig Debug;
     EngineAudioConfig Audio;
-    PhysicsConfig2D   Physics2d;
 };
 
 //=============================================================================

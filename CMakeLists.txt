@@ -13,6 +13,7 @@ if(MINGW)
 endif()
 
 add_subdirectory(engine)
+
 add_subdirectory(app)
 add_subdirectory(example)
 add_subdirectory(test)
