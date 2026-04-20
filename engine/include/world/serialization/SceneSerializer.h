@@ -5,6 +5,7 @@
 #include <core/serialization/BinaryWriter.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/SceneSerializationContext.h>
 
 #include <cstdint>
 #include <memory>
@@ -41,9 +42,23 @@ void RegisterComponent()
 
 [[nodiscard]] bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer,
     SceneSaveError* error = nullptr);
+[[nodiscard]] bool SaveSceneBinary(const Registry& registry,
+    BinaryWriter& writer,
+    SceneSerializationContext& context,
+    SceneSaveError* error = nullptr);
 [[nodiscard]] bool LoadSceneBinary(BinaryReader& reader, Registry& registry,
+    SceneLoadError* error = nullptr);
+[[nodiscard]] bool LoadSceneBinary(BinaryReader& reader,
+    Registry& registry,
+    SceneSerializationContext& context,
     SceneLoadError* error = nullptr);
 
 [[nodiscard]] JsonValue SaveSceneJson(const Registry& registry);
+[[nodiscard]] JsonValue SaveSceneJson(const Registry& registry,
+    SceneSerializationContext& context);
 [[nodiscard]] bool LoadSceneJson(const JsonValue& root, Registry& registry,
+    SceneLoadError* error = nullptr);
+[[nodiscard]] bool LoadSceneJson(const JsonValue& root,
+    Registry& registry,
+    SceneSerializationContext& context,
     SceneLoadError* error = nullptr);

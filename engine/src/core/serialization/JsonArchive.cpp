@@ -68,6 +68,11 @@ IWriteArchive& JsonWriteArchive::End()
     return *this;
 }
 
+void JsonWriteArchive::MarkInvalidField(std::string_view)
+{
+    IsOk = false;
+}
+
 JsonValue JsonWriteArchive::TakeValue()
 {
     if (!Stack.empty())
@@ -210,6 +215,18 @@ IReadArchive& JsonReadArchive::End()
 bool JsonReadArchive::HasField(std::string_view key) const
 {
     return PeekValue(key) != nullptr;
+}
+
+bool JsonReadArchive::IsString(std::string_view key) const
+{
+    const JsonValue* value = PeekValue(key);
+    return value && value->IsString();
+}
+
+bool JsonReadArchive::IsObject(std::string_view key) const
+{
+    const JsonValue* value = PeekValue(key);
+    return value && value->IsObject();
 }
 
 void JsonReadArchive::MarkMissingField(std::string_view)

@@ -190,7 +190,8 @@ namespace
     bool SaveComponentChunkBinary(const IComponentSerializer& serializer,
                                   const std::vector<EntityId>& entities,
                                   const Registry& registry,
-                                  BinaryWriter& writer)
+                                  BinaryWriter& writer,
+                                  SceneSerializationContext& context)
     {
         // Buffer component data first so the entity count (unknown upfront) can be
         // written before the payload, as required by the chunk format.
@@ -207,7 +208,7 @@ namespace
                 return false;
 
             BinaryWriteArchive archive(payloadWriter);
-            if (!serializer.Save(archive, entity, registry) || !archive.Ok())
+            if (!serializer.Save(archive, entity, registry, context) || !archive.Ok())
                 return false;
 
             ++count;
@@ -230,7 +231,8 @@ namespace
                                   BinaryReader& reader,
                                   std::uint32_t count,
                                   Registry& registry,
-                                  const std::unordered_map<EntityIndex, EntityId>& remap)
+                                  const std::unordered_map<EntityIndex, EntityId>& remap,
+                                  SceneSerializationContext& context)
     {
         for (std::uint32_t i = 0; i < count; ++i)
         {
@@ -243,7 +245,7 @@ namespace
                 return false;
 
             BinaryReadArchive archive(reader);
-            if (!serializer.Load(archive, owner, registry) || !archive.Ok())
+            if (!serializer.Load(archive, owner, registry, context) || !archive.Ok())
                 return false;
         }
         return true;
@@ -290,8 +292,8 @@ void ClearComponentSerializers()
 void InitSceneSerializer()
 {
     RegisterComponent<TransformComponent<Transform3f>>();
-    RegisterComponent<MeshRendererComponent>();
     RegisterComponent<CameraComponent>();
+    RegisterComponent<MeshRendererComponent>();
 }
 
 const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializerEntries()
@@ -300,6 +302,15 @@ const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializer
 }
 
 bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer, SceneSaveError* error)
+{
+    SceneSerializationContext context;
+    return SaveSceneBinary(registry, writer, context, error);
+}
+
+bool SaveSceneBinary(const Registry& registry,
+                     BinaryWriter& writer,
+                     SceneSerializationContext& context,
+                     SceneSaveError* error)
 {
     const auto entities = registry.Entities.GetAliveEntities();
 
@@ -325,7 +336,7 @@ bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer, SceneSaveEr
     {
         ChunkWriter chunk;
         if (!chunk.Begin(writer, entry->BinaryChunkId(), SceneVersion)
-            || !SaveComponentChunkBinary(*entry, entities, registry, writer)
+            || !SaveComponentChunkBinary(*entry, entities, registry, writer, context)
             || !chunk.End(writer))
         {
             SetError(error, "Failed to write component chunk.");
@@ -337,6 +348,15 @@ bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer, SceneSaveEr
 }
 
 bool LoadSceneBinary(BinaryReader& reader, Registry& registry, SceneLoadError* error)
+{
+    SceneSerializationContext context;
+    return LoadSceneBinary(reader, registry, context, error);
+}
+
+bool LoadSceneBinary(BinaryReader& reader,
+                     Registry& registry,
+                     SceneSerializationContext& context,
+                     SceneLoadError* error)
 {
     BinaryHeader header;
     if (!ReadBinaryHeader(reader, header)
@@ -374,7 +394,7 @@ bool LoadSceneBinary(BinaryReader& reader, Registry& registry, SceneLoadError* e
         {
             std::uint32_t count = 0;
             ok = Deserialize(reader, count)
-                && LoadComponentChunkBinary(*entry, reader, count, registry, remap);
+                && LoadComponentChunkBinary(*entry, reader, count, registry, remap, context);
         }
 
         if (!ok)
@@ -404,6 +424,12 @@ bool LoadSceneBinary(BinaryReader& reader, Registry& registry, SceneLoadError* e
 
 JsonValue SaveSceneJson(const Registry& registry)
 {
+    SceneSerializationContext context;
+    return SaveSceneJson(registry, context);
+}
+
+JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& context)
+{
     JsonValue::Array entitiesJson;
     JsonValue::Array hierarchyJson;
     const auto entities = registry.Entities.GetAliveEntities();
@@ -419,8 +445,8 @@ JsonValue SaveSceneJson(const Registry& registry)
         for (const auto& entry : SerializerEntries())
         {
             JsonWriteArchive archive;
-            if (!entry->Save(archive, entity, registry) || !archive.Ok())
-                continue;
+            if (!entry->Save(archive, entity, registry, context) || !archive.Ok())
+                return {};
 
             JsonValue component = archive.TakeValue();
             if (!component.IsNull())
@@ -460,6 +486,15 @@ JsonValue SaveSceneJson(const Registry& registry)
 }
 
 bool LoadSceneJson(const JsonValue& root, Registry& registry, SceneLoadError* error)
+{
+    SceneSerializationContext context;
+    return LoadSceneJson(root, registry, context, error);
+}
+
+bool LoadSceneJson(const JsonValue& root,
+                   Registry& registry,
+                   SceneSerializationContext& context,
+                   SceneLoadError* error)
 {
     if (!root.IsObject())
     {
@@ -510,7 +545,7 @@ bool LoadSceneJson(const JsonValue& root, Registry& registry, SceneLoadError* er
                 continue;
 
             JsonReadArchive archive(componentData);
-            if (!entry->Load(archive, entity, registry) || !archive.Ok())
+            if (!entry->Load(archive, entity, registry, context) || !archive.Ok())
             {
                 RollbackLoadedEntities(registry, entities);
                 SetError(error, "Failed to load JSON component.");

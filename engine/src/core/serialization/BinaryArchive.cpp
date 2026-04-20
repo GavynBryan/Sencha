@@ -57,6 +57,11 @@ IWriteArchive& BinaryWriteArchive::End()
     return *this;
 }
 
+void BinaryWriteArchive::MarkInvalidField(std::string_view)
+{
+    IsOk = false;
+}
+
 IReadArchive& BinaryReadArchive::Field(std::string_view, bool& value)
 {
     IsOk = IsOk && Reader.Read(value);
@@ -115,6 +120,16 @@ IReadArchive& BinaryReadArchive::End()
 bool BinaryReadArchive::HasField(std::string_view) const
 {
     return true;
+}
+
+bool BinaryReadArchive::IsString(std::string_view) const
+{
+    return false;
+}
+
+bool BinaryReadArchive::IsObject(std::string_view) const
+{
+    return false;
 }
 
 void BinaryReadArchive::MarkMissingField(std::string_view)

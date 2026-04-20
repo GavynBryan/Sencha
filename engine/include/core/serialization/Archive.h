@@ -40,6 +40,7 @@ struct IWriteArchive
     virtual IWriteArchive& End() = 0;
     virtual bool Ok() const = 0;
     virtual bool IsText() const = 0;
+    virtual void MarkInvalidField(std::string_view key) = 0;
     virtual ~IWriteArchive() = default;
 
     template <typename FieldT, typename T>
@@ -68,6 +69,8 @@ struct IReadArchive
     virtual IReadArchive& BeginArray(std::string_view key, std::size_t& count) = 0;
     virtual IReadArchive& End() = 0;
     virtual bool HasField(std::string_view key) const = 0;
+    virtual bool IsString(std::string_view key) const = 0;
+    virtual bool IsObject(std::string_view key) const = 0;
     virtual bool Ok() const = 0;
     virtual bool IsText() const = 0;
     virtual void MarkMissingField(std::string_view key) = 0;

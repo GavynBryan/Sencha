@@ -4,6 +4,66 @@
 #include <core/metadata/TypeSchema.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/SceneFieldCodec.h>
+
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+
+namespace SceneComponentSerialization
+{
+    template<typename Component>
+    bool SaveFields(IWriteArchive& archive,
+                    const Component& component,
+                    SceneSerializationContext& context)
+    {
+        archive.BeginObject(std::string_view{});
+
+        bool ok = true;
+        auto fields = TypeSchema<Component>::Fields();
+        std::apply([&](auto&... field)
+        {
+            ((ok = SceneFieldCodec<std::remove_cvref_t<decltype(component.*field.Ptr)>>::Save(
+                archive, field.Name, component.*field.Ptr, context) && ok), ...);
+        }, fields);
+
+        archive.End();
+        return ok && archive.Ok();
+    }
+
+    template<typename Component>
+    bool LoadFields(IReadArchive& archive,
+                    Component& component,
+                    SceneSerializationContext& context)
+    {
+        archive.BeginObject(std::string_view{});
+
+        bool ok = true;
+        auto fields = TypeSchema<Component>::Fields();
+        std::apply([&](auto&... field)
+        {
+            (([&]
+            {
+                if (!archive.HasField(field.Name))
+                {
+                    if (field.DefaultValue)
+                        component.*field.Ptr = *field.DefaultValue;
+                    else if (!field.IsOptional)
+                        archive.MarkMissingField(field.Name);
+                    ok = archive.Ok() && ok;
+                    return;
+                }
+
+                using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
+                ok = SceneFieldCodec<FieldType>::Load(
+                    archive, field.Name, component.*field.Ptr, context) && ok;
+            }()), ...);
+        }, fields);
+
+        archive.End();
+        return ok && archive.Ok();
+    }
+}
 
 //=============================================================================
 // ComponentSerializer
@@ -27,22 +87,26 @@ public:
         return store && store->TryGet(entity);
     }
 
-    bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry) const override
+    bool Save(IWriteArchive& archive,
+              EntityId entity,
+              const Registry& registry,
+              SceneSerializationContext& context) const override
     {
         const auto* store = registry.Components.TryGet<typename Traits::Store>();
         const Component* component = store ? store->TryGet(entity) : nullptr;
         if (!component)
             return true;
 
-        WriteArchiveValue(archive, {}, *component);
-        return archive.Ok();
+        return SceneComponentSerialization::SaveFields(archive, *component, context);
     }
 
-    bool Load(IReadArchive& archive, EntityId entity, Registry& registry) override
+    bool Load(IReadArchive& archive,
+              EntityId entity,
+              Registry& registry,
+              SceneSerializationContext& context) override
     {
         Component component{};
-        ReadArchiveValue(archive, {}, component);
-        if (!archive.Ok())
+        if (!SceneComponentSerialization::LoadFields(archive, component, context))
             return false;
 
         return Traits::Add(registry, entity, component);
@@ -77,7 +141,10 @@ public:
         return store && store->TryGet(entity);
     }
 
-    bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry) const override
+    bool Save(IWriteArchive& archive,
+              EntityId entity,
+              const Registry& registry,
+              SceneSerializationContext&) const override
     {
         const auto* store = registry.Components.TryGet<typename Traits::Store>();
         const Component* component = store ? store->TryGet(entity) : nullptr;
@@ -88,7 +155,10 @@ public:
         return archive.Ok();
     }
 
-    bool Load(IReadArchive& archive, EntityId entity, Registry& registry) override
+    bool Load(IReadArchive& archive,
+              EntityId entity,
+              Registry& registry,
+              SceneSerializationContext&) override
     {
         Component component{};
         ReadArchiveValue(archive, {}, component.Local);
