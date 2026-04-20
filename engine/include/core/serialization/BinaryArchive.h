@@ -25,6 +25,7 @@ public:
     IWriteArchive& End() override;
     bool Ok() const override { return IsOk; }
     bool IsText() const override { return false; }
+    void MarkInvalidField(std::string_view key) override;
 
 private:
     BinaryWriter& Writer;
@@ -52,6 +53,8 @@ public:
     IReadArchive& BeginArray(std::string_view key, std::size_t& count) override;
     IReadArchive& End() override;
     bool HasField(std::string_view key) const override;
+    bool IsString(std::string_view key) const override;
+    bool IsObject(std::string_view key) const override;
     bool Ok() const override { return IsOk; }
     bool IsText() const override { return false; }
     void MarkMissingField(std::string_view key) override;

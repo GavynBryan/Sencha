@@ -3,6 +3,7 @@
 #include <core/serialization/Archive.h>
 #include <world/entity/EntityId.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/SceneSerializationContext.h>
 
 #include <cstdint>
 #include <string_view>
@@ -20,8 +21,14 @@ struct IComponentSerializer
     virtual std::uint32_t BinaryChunkId() const = 0;
 
     virtual bool HasComponent(EntityId entity, const Registry& registry) const = 0;
-    virtual bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry) const = 0;
-    virtual bool Load(IReadArchive& archive, EntityId entity, Registry& registry) = 0;
+    virtual bool Save(IWriteArchive& archive,
+                      EntityId entity,
+                      const Registry& registry,
+                      SceneSerializationContext& context) const = 0;
+    virtual bool Load(IReadArchive& archive,
+                      EntityId entity,
+                      Registry& registry,
+                      SceneSerializationContext& context) = 0;
     virtual bool Remove(EntityId entity, Registry& registry) const = 0;
 
     virtual ~IComponentSerializer() = default;

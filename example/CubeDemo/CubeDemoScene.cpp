@@ -1,5 +1,6 @@
 #include "CubeDemoScene.h"
 
+#include <core/assets/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <render/Camera.h>
 #include <render/MeshRendererComponent.h>
@@ -25,12 +26,36 @@ DemoScene LoadDemoScene(Registry& registry,
 {
     DemoScene scene;
 
-    // Register assets in a fixed order so their handles match the JSON.
-    // Mesh index 1 / Material indices 1-3 are baked into cube_demo_scene.json.
-    scene.CubeMesh  = meshes.CreateFromData("cube_1m", MeshPrimitives::BuildCube(1.0f));
-    scene.Red   = materials.Register("red",   Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
-    scene.Green = materials.Register("green", Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f) });
-    scene.Blue  = materials.Register("blue",  Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
+    AssetRegistry assetRegistry;
+    assetRegistry.Register(AssetRecord{
+        .Type = AssetType::Mesh,
+        .Path = "asset://meshes/dev/cube.smesh",
+    });
+    assetRegistry.Register(AssetRecord{
+        .Type = AssetType::Material,
+        .Path = "asset://materials/dev/red.smat",
+    });
+    assetRegistry.Register(AssetRecord{
+        .Type = AssetType::Material,
+        .Path = "asset://materials/dev/green.smat",
+    });
+    assetRegistry.Register(AssetRecord{
+        .Type = AssetType::Material,
+        .Path = "asset://materials/dev/blue.smat",
+    });
+
+    // Register matching procedural runtime resources under the same paths.
+    scene.CubeMesh = meshes.CreateFromData(
+        "asset://meshes/dev/cube.smesh", MeshPrimitives::BuildCube(1.0f));
+    scene.Red   = materials.Register(
+        "asset://materials/dev/red.smat",
+        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
+    scene.Green = materials.Register(
+        "asset://materials/dev/green.smat",
+        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f) });
+    scene.Blue  = materials.Register(
+        "asset://materials/dev/blue.smat",
+        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
 
     std::ifstream file{std::string(scenePath)};
     if (!file.is_open())
@@ -55,7 +80,13 @@ DemoScene LoadDemoScene(Registry& registry,
     }
 
     SceneLoadError loadError;
-    if (!LoadSceneJson(*json, registry, &loadError))
+    AssetSystem assets(assetRegistry, meshes, materials);
+    SceneSerializationContext sceneContext{
+        .Assets = &assets,
+        .Meshes = &meshes,
+        .Materials = &materials,
+    };
+    if (!LoadSceneJson(*json, registry, sceneContext, &loadError))
     {
         std::fprintf(stderr, "CubeDemo: scene load error: %s\n", loadError.Message.c_str());
         assert(false && "Failed to load demo scene");
