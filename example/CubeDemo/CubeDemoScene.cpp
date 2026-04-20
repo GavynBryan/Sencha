@@ -1,81 +1,76 @@
 #include "CubeDemoScene.h"
 
-#include <math/Quat.h>
+#include <core/json/JsonParser.h>
 #include <render/Camera.h>
 #include <render/MeshRendererComponent.h>
+#include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <zone/DefaultZoneBuilder.h>
 
-namespace
-{
-    EntityId AddCube(Registry& registry,
-                     MeshHandle mesh,
-                     MaterialHandle material,
-                     const Vec3d& position,
-                     const Vec3d& scale)
-    {
-        EntityId entity = CreateDefaultEntity(
-            registry,
-            Transform3f(position, Quatf::Identity(), scale));
-        AddDefaultMeshRenderer(registry, entity, mesh, material);
-        return entity;
-    }
-}
+#include <cassert>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
 
 TransformStore<Transform3f>& DemoTransforms(Registry& registry)
 {
     return registry.Components.Get<TransformStore<Transform3f>>();
 }
 
-DemoScene CreateDemoScene(Registry& registry,
-                          MeshCache& meshes,
-                          MaterialCache& materials,
-                          FreeCamera& freeCamera)
+DemoScene LoadDemoScene(Registry& registry,
+                        MeshCache& meshes,
+                        MaterialCache& materials,
+                        FreeCamera& freeCamera,
+                        std::string_view scenePath)
 {
     DemoScene scene;
-    scene.CubeMesh = meshes.CreateFromData("cube_1m", MeshPrimitives::BuildCube(1.0f));
-    scene.Red = materials.Register("red", Material{
-        .Pass = ShaderPassId::ForwardOpaque,
-        .BaseColor = Vec4(1.0f, 0.15f, 0.1f, 1.0f),
-    });
-    scene.Green = materials.Register("green", Material{
-        .Pass = ShaderPassId::ForwardOpaque,
-        .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f),
-    });
-    scene.Blue = materials.Register("blue", Material{
-        .Pass = ShaderPassId::ForwardOpaque,
-        .BaseColor = Vec4(0.2f, 0.45f, 1.0f, 1.0f),
-    });
 
-    scene.CenterCube = CreateDefaultEntity(
-        registry,
-        Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
-    AddDefaultMeshRenderer(registry, scene.CenterCube, scene.CubeMesh, scene.Red);
+    // Register assets in a fixed order so their handles match the JSON.
+    // Mesh index 1 / Material indices 1-3 are baked into cube_demo_scene.json.
+    scene.CubeMesh  = meshes.CreateFromData("cube_1m", MeshPrimitives::BuildCube(1.0f));
+    scene.Red   = materials.Register("red",   Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
+    scene.Green = materials.Register("green", Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f) });
+    scene.Blue  = materials.Register("blue",  Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
 
-    scene.CenterCubeChild = AddCube(
-        registry,
-        scene.CubeMesh,
-        scene.Blue,
-        Vec3d(1.15f, 0.0f, 0.0f),
-        Vec3d(0.35f, 0.35f, 0.35f));
-    registry.Resources.Get<TransformHierarchyService>().SetParent(
-        scene.CenterCubeChild,
-        scene.CenterCube);
+    std::ifstream file{std::string(scenePath)};
+    if (!file.is_open())
+    {
+        std::fprintf(stderr, "CubeDemo: could not open scene file '%.*s'\n",
+            static_cast<int>(scenePath.size()), scenePath.data());
+        assert(false && "Failed to open demo scene file");
+        return scene;
+    }
 
-    AddCube(registry, scene.CubeMesh, scene.Green, Vec3d(-2.2f, 0.0f, -1.0f), Vec3d::One());
-    AddCube(registry, scene.CubeMesh, scene.Blue, Vec3d(2.2f, 0.0f, -1.0f), Vec3d(0.75f, 1.5f, 0.75f));
-    AddCube(registry, scene.CubeMesh, scene.Green, Vec3d(0.0f, -1.4f, -3.0f), Vec3d(8.0f, 0.15f, 8.0f));
+    std::ostringstream buf;
+    buf << file.rdbuf();
 
-    scene.Camera = CreateDefaultEntity(
-        registry,
-        Transform3f(Vec3d(0.0f, 1.0f, 5.0f), Quatf::Identity(), Vec3d::One()));
-    AddDefaultCamera(registry, scene.Camera, CameraComponent{
-        .Projection = ProjectionKind::Perspective,
-        .FovYRadians = 1.22173048f,
-        .NearPlane = 0.1f,
-        .FarPlane = 1000.0f,
-    });
+    JsonParseError parseError;
+    auto json = JsonParse(buf.str(), &parseError);
+    if (!json)
+    {
+        std::fprintf(stderr, "CubeDemo: scene JSON parse error at %zu: %s\n",
+            parseError.Position, parseError.Message.c_str());
+        assert(false && "Failed to parse demo scene JSON");
+        return scene;
+    }
 
+    SceneLoadError loadError;
+    if (!LoadSceneJson(*json, registry, &loadError))
+    {
+        std::fprintf(stderr, "CubeDemo: scene load error: %s\n", loadError.Message.c_str());
+        assert(false && "Failed to load demo scene");
+        return scene;
+    }
+
+    // Entities are loaded in JSON array order: 0=camera, 1=center cube, 2=center cube child.
+    const auto entities = registry.Entities.GetAliveEntities();
+    assert(entities.size() >= 3 && "Demo scene must have at least 3 entities");
+
+    scene.Camera          = entities[0];
+    scene.CenterCube      = entities[1];
+    scene.CenterCubeChild = entities[2];
+
+    registry.Resources.Get<ActiveCameraService>().SetActive(scene.Camera);
     freeCamera.Entity = scene.Camera;
     return scene;
 }

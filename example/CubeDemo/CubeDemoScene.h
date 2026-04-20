@@ -8,6 +8,8 @@
 #include <world/registry/Registry.h>
 #include <world/transform/TransformStore.h>
 
+#include <string_view>
+
 struct DemoScene
 {
     EntityId Camera;
@@ -21,7 +23,8 @@ struct DemoScene
 
 TransformStore<Transform3f>& DemoTransforms(Registry& registry);
 
-DemoScene CreateDemoScene(Registry& registry,
-                          MeshCache& meshes,
-                          MaterialCache& materials,
-                          FreeCamera& freeCamera);
+DemoScene LoadDemoScene(Registry& registry,
+                        MeshCache& meshes,
+                        MaterialCache& materials,
+                        FreeCamera& freeCamera,
+                        std::string_view scenePath);

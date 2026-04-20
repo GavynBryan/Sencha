@@ -3,6 +3,7 @@
 #include "CubeDemoSystems.h"
 
 #include <app/Engine.h>
+#include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -87,7 +88,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
         ZoneParticipation{ .Visible = true, .Logic = true },
         Meshes.get(), &Materials);
 
-    Demo = CreateDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam);
+    InitSceneSerializer();
+    Demo = LoadDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam, "cube_demo_scene.json");
 
     engine.AddDefaultMeshRenderFeature(*Meshes, Materials);
 
