@@ -19,16 +19,11 @@ TransformStore<Transform3f>& DemoTransforms(Registry& registry)
 }
 
 DemoScene LoadDemoScene(Registry& registry,
-                        MeshCache& meshes,
-                        MaterialCache& materials,
+                        AssetSystem& assets,
                         FreeCamera& freeCamera,
-                        LoggingProvider& logging,
                         std::string_view scenePath)
 {
     DemoScene scene;
-
-    AssetRegistry assetRegistry(logging);
-    AssetSystem assets(assetRegistry, meshes, materials);
 
     scene.CubeMesh = assets.RegisterProceduralMesh(
         "asset://meshes/dev/cube.smesh",

@@ -2,15 +2,15 @@
 
 #include "FreeCamera.h"
 
-#include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <render/Material.h>
+#include <render/MeshTypes.h>
 #include <world/entity/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformStore.h>
 
 #include <string_view>
 
-class LoggingProvider;
+class AssetSystem;
 
 struct DemoScene
 {
@@ -26,8 +26,6 @@ struct DemoScene
 TransformStore<Transform3f>& DemoTransforms(Registry& registry);
 
 DemoScene LoadDemoScene(Registry& registry,
-                        MeshCache& meshes,
-                        MaterialCache& materials,
+                        AssetSystem& assets,
                         FreeCamera& freeCamera,
-                        LoggingProvider& logging,
                         std::string_view scenePath);

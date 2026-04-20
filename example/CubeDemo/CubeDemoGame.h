@@ -4,10 +4,9 @@
 #include "FreeCamera.h"
 
 #include <app/Game.h>
-#include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <core/assets/RuntimeAssets.h>
 
-#include <memory>
+#include <optional>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 class ImGuiDebugOverlay;
@@ -23,10 +22,11 @@ public:
 
 private:
     void SetRelativeMouseMode(Engine& engine, bool enabled);
+    RuntimeAssets& RuntimeAssetState();
+    const RuntimeAssets& RuntimeAssetState() const;
 
     Registry* DemoRegistry = nullptr;
-    MaterialCache Materials;
-    std::unique_ptr<MeshCache> Meshes;
+    std::optional<RuntimeAssets> Assets;
     FreeCamera FreeCam;
     DemoScene Demo;
 

@@ -25,6 +25,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cassert>
 #include <cstdio>
 
 namespace
@@ -82,16 +83,18 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();
 
-    Meshes = std::make_unique<MeshCache>(logging, buffers);
+    Assets.emplace(logging, buffers);
+    RuntimeAssets& runtimeAssets = RuntimeAssetState();
+
     DemoRegistry = &CreateDefault3DZone(
         engine.Zones(), ZoneId{ 1 },
         ZoneParticipation{ .Visible = true, .Logic = true },
-        Meshes.get(), &Materials);
+        &runtimeAssets.Meshes, &runtimeAssets.Materials);
 
     InitSceneSerializer();
-    Demo = LoadDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam, logging, "cube_demo_scene.json");
+    Demo = LoadDemoScene(*DemoRegistry, runtimeAssets.Assets, FreeCam, "cube_demo_scene.json");
 
-    engine.AddDefaultMeshRenderFeature(*Meshes, Materials);
+    engine.AddDefaultMeshRenderFeature(runtimeAssets.Meshes, runtimeAssets.Materials);
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
     auto& windows = services.Get<SdlWindowService>();
@@ -161,6 +164,18 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
     SetRelativeMouseMode(ctx.EngineInstance, false);
     ctx.EngineInstance.Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
+}
+
+RuntimeAssets& CubeDemoGame::RuntimeAssetState()
+{
+    assert(Assets.has_value() && "RuntimeAssets must be constructed before use");
+    return *Assets;
+}
+
+const RuntimeAssets& CubeDemoGame::RuntimeAssetState() const
+{
+    assert(Assets.has_value() && "RuntimeAssets must be constructed before use");
+    return *Assets;
 }
 
 void CubeDemoGame::SetRelativeMouseMode(Engine& engine, bool enabled)
