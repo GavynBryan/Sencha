@@ -5,7 +5,8 @@
 #include <core/config/EngineConfig.h>
 #include <core/service/ServiceHost.h>
 #include <render/Material.h>
-#include <render/MeshService.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -65,7 +66,7 @@ public:
     [[nodiscard]] CameraRenderData& GetCameraData();
     [[nodiscard]] const CameraRenderData& GetCameraData() const;
 
-    bool AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials);
+    bool AddDefaultMeshRenderFeature(MeshCache& meshes, MaterialCache& materials);
 
 private:
     void RegisterFramePhases(Game& game);

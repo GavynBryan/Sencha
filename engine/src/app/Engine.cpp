@@ -125,7 +125,7 @@ void Engine::Shutdown()
     Running = false;
 }
 
-bool Engine::AddDefaultMeshRenderFeature(MeshService& meshes, MaterialStore& materials)
+bool Engine::AddDefaultMeshRenderFeature(MeshCache& meshes, MaterialCache& materials)
 {
     DefaultRenderPipeline& pipeline = GetDefaultRenderPipeline();
     pipeline.SetAssetStores(meshes, materials);

@@ -81,10 +81,11 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();
 
-    Meshes = std::make_unique<MeshService>(logging, buffers);
+    Meshes = std::make_unique<MeshCache>(logging, buffers);
     DemoRegistry = &CreateDefault3DZone(
         engine.Zones(), ZoneId{ 1 },
-        ZoneParticipation{ .Visible = true, .Logic = true });
+        ZoneParticipation{ .Visible = true, .Logic = true },
+        Meshes.get(), &Materials);
 
     Demo = CreateDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam);
 
@@ -156,6 +157,8 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
     DebugOverlay = nullptr;
 #endif
     SetRelativeMouseMode(ctx.EngineInstance, false);
+    ctx.EngineInstance.Zones().DestroyZone(ZoneId{ 1 });
+    DemoRegistry = nullptr;
 }
 
 void CubeDemoGame::SetRelativeMouseMode(Engine& engine, bool enabled)

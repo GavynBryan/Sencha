@@ -100,6 +100,12 @@ public:
             LifetimeHandle<TDerived, THandle>::NoAttach);
     }
 
+    void Retain(THandle handle)
+    {
+        if (TEntry* entry = Resolve(handle))
+            ++entry->RefCount;
+    }
+
     // Decrement the refcount. Frees resources and returns the slot to the pool
     // when the count reaches zero. Calling Release on an invalid handle is a no-op.
     void Release(THandle handle)
@@ -117,6 +123,59 @@ public:
     }
 
 protected:
+    [[nodiscard]] THandle FindRegisteredHandle(std::string_view path, bool addRef = false)
+    {
+        const std::string key(path);
+        auto it = PathLookup.find(key);
+        if (it == PathLookup.end())
+            return {};
+
+        THandle handle = it->second;
+        if (TEntry* entry = Resolve(handle))
+        {
+            if (addRef)
+                ++entry->RefCount;
+            return handle;
+        }
+
+        PathLookup.erase(it);
+        return {};
+    }
+
+    [[nodiscard]] THandle FindRegisteredHandle(std::string_view path) const
+    {
+        const std::string key(path);
+        auto it = PathLookup.find(key);
+        if (it == PathLookup.end())
+            return {};
+
+        return Resolve(it->second) ? it->second : THandle{};
+    }
+
+    [[nodiscard]] std::string_view GetRegisteredPath(THandle handle) const
+    {
+        const TEntry* entry = Resolve(handle);
+        return entry ? std::string_view(entry->PathKey) : std::string_view{};
+    }
+
+    [[nodiscard]] THandle AllocNamedHandle(std::string_view path, TEntry entry)
+    {
+        if (path.empty())
+            return AllocHandle(std::move(entry));
+
+        if (THandle existing = FindRegisteredHandle(path, true); existing.IsValid())
+            return existing;
+
+        const std::string key(path);
+        THandle handle = AllocHandle(std::move(entry));
+        if (handle.IsValid())
+        {
+            Resolve(handle)->PathKey = key;
+            PathLookup.emplace(key, handle);
+        }
+        return handle;
+    }
+
     // Called by the derived destructor to free all live entries.
     void FreeAllEntries()
     {

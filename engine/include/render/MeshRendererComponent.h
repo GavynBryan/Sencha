@@ -3,7 +3,6 @@
 #include <world/entity/EntityId.h>
 #include <render/Material.h>
 #include <render/MeshTypes.h>
-#include <world/SparseSetStore.h>
 
 #include <cstdint>
 
@@ -22,5 +21,3 @@ struct MeshRendererComponent
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SubmeshMask = 0xFFFFFFFFu;
 };
-
-using MeshRendererStore = SparseSetStore<MeshRendererComponent>;

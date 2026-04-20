@@ -2,8 +2,9 @@
 
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
-#include <render/Material.h>
-#include <render/MeshRendererComponent.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
+#include <render/MeshRendererStore.h>
 #include <render/MeshTypes.h>
 #include <world/entity/EntityId.h>
 #include <zone/ZoneId.h>
@@ -14,7 +15,9 @@ class ZoneRuntime;
 
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
-                              ZoneParticipation participation = {});
+                              ZoneParticipation participation = {},
+                              MeshCache* meshes = nullptr,
+                              MaterialCache* materials = nullptr);
 
 EntityId CreateDefaultEntity(Registry& registry,
                              const Transform3f& local = Transform3f::Identity());

@@ -26,7 +26,7 @@ struct SubmeshRange
 //=============================================================================
 // MeshData
 //
-// CPU-side mesh description passed to MeshService::Create(). After upload
+// CPU-side mesh description passed to MeshCache::Create(). After upload
 // this data is no longer needed; the GPU representation lives in GpuMesh.
 //
 // All submeshes share the same vertex buffer; each SubmeshRange indexes into
@@ -40,13 +40,15 @@ struct MeshData
     std::vector<SubmeshRange> Submeshes;
 };
 
-// Versioned handle to a mesh owned by MeshService. Generation 0 is null.
+// Packed versioned handle to a mesh owned by MeshCache. Id 0 is null.
 struct MeshHandle
 {
-    uint32_t Index = UINT32_MAX;
-    uint32_t Generation = 0;
+    uint32_t Id = 0;
 
-    [[nodiscard]] bool IsValid() const { return Index != UINT32_MAX && Generation != 0; }
+    [[nodiscard]] bool IsValid() const { return Id != 0; }
+    [[nodiscard]] bool IsNull() const { return Id == 0; }
+    [[nodiscard]] uint32_t SlotIndex() const { return Id & ((1u << 20u) - 1u); }
+    [[nodiscard]] uint32_t Generation() const { return Id >> 20u; }
     bool operator==(const MeshHandle&) const = default;
 };
 

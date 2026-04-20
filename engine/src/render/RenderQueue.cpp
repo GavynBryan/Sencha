@@ -10,7 +10,7 @@ uint64_t BuildOpaqueSortKey(const RenderQueueItem& item)
     uint32_t depthBits = 0;
     std::memcpy(&depthBits, &item.CameraDepth, sizeof(depthBits));
     return (static_cast<uint64_t>(item.Pass) << 56)
-         | (static_cast<uint64_t>(item.Material.Index & 0xFFFFu) << 32)
+         | (static_cast<uint64_t>(item.Material.SlotIndex() & 0xFFFFu) << 32)
          | depthBits;
 }
 
