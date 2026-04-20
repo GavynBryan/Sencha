@@ -58,7 +58,8 @@ bool VulkanBootstrap::Install(ServiceHost& services,
         ? 1u
         : config.Graphics.FramesInFlight;
     auto& deletionQueue = services.AddService<VulkanDeletionQueueService>(logging, framesInFlight);
-    auto& buffers = services.AddService<VulkanBufferService>(logging, device, allocator, upload);
+    auto& buffers =
+        services.AddService<VulkanBufferService>(logging, device, allocator, upload, deletionQueue);
     auto& images =
         services.AddService<VulkanImageService>(logging, device, allocator, upload, deletionQueue);
     auto& samplers = services.AddService<VulkanSamplerCache>(logging, device);

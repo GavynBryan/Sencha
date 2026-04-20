@@ -29,6 +29,11 @@ void VulkanDeletionQueueService::EnqueueImageDestroy(DeferredImageDestroy entry)
     Buckets[CurrentBucket].Images.push_back(entry);
 }
 
+void VulkanDeletionQueueService::EnqueueBufferDestroy(DeferredBufferDestroy entry)
+{
+    Buckets[CurrentBucket].Buffers.push_back(entry);
+}
+
 void VulkanDeletionQueueService::AdvanceFrame()
 {
     CurrentBucket = (CurrentBucket + 1u) % static_cast<uint32_t>(Buckets.size());
@@ -43,4 +48,11 @@ void VulkanDeletionQueueService::FlushBucket(Bucket& bucket)
         if (e.Image != VK_NULL_HANDLE) vmaDestroyImage(e.Allocator, e.Image, e.Allocation);
     }
     bucket.Images.clear();
+
+    for (const auto& e : bucket.Buffers)
+    {
+        if (e.Buffer != VK_NULL_HANDLE)
+            vmaDestroyBuffer(e.Allocator, e.Buffer, e.Allocation);
+    }
+    bucket.Buffers.clear();
 }
