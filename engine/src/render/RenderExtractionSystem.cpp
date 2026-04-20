@@ -29,7 +29,7 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
                                      RenderQueue& queue)
 {
     const auto items = renderers.GetItems();
-    const auto& owners = renderers.GetOwners();
+    const auto owners = renderers.GetOwnerIds();
 
     for (size_t i = 0; i < items.size(); ++i)
     {

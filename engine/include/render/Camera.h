@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/batch/SparseSet.h>
 #include <core/service/IService.h>
 #include <world/entity/EntityId.h>
 #include <math/Mat.h>
@@ -8,11 +7,8 @@
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformStore.h>
-#include <world/IComponentStore.h>
+#include <world/SparseSetStore.h>
 #include <vulkan/vulkan.h>
-
-#include <span>
-#include <vector>
 
 // Which projection formula a CameraComponent uses.
 enum class ProjectionKind
@@ -39,35 +35,7 @@ struct CameraComponent
     float OrthographicHeight = 10.0f;
 };
 
-//=============================================================================
-// CameraStore
-//
-// IComponentStore that maps EntityId -> CameraComponent. Backed by a
-// SparseSet so iteration and lookup are O(1).
-//=============================================================================
-class CameraStore : public IComponentStore
-{
-public:
-    bool Add(EntityId entity, const CameraComponent& component)
-    {
-        if (!entity.IsValid()) return false;
-        Components.Emplace(entity.Index, component);
-        return true;
-    }
-
-    bool Remove(EntityId entity)
-    {
-        return entity.IsValid() && Components.Remove(entity.Index);
-    }
-
-    [[nodiscard]] const CameraComponent* TryGet(EntityId entity) const
-    {
-        return entity.IsValid() ? Components.TryGet(entity.Index) : nullptr;
-    }
-
-private:
-    SparseSet<CameraComponent> Components;
-};
+using CameraStore = SparseSetStore<CameraComponent>;
 
 //=============================================================================
 // ActiveCameraService

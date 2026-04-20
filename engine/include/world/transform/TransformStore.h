@@ -3,7 +3,7 @@
 #include <core/batch/SparseSet.h>
 #include <world/entity/EntityId.h>
 #include <world/transform/TransformPropagationOrderService.h>
-#include <world/IComponentStore.h>
+#include <world/ITypedComponentStore.h>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -24,7 +24,7 @@ struct TransformComponent
 // component array and use the parallel owner list to join back to entities.
 //=============================================================================
 template <typename TTransform>
-class TransformStore : public IComponentStore
+class TransformStore : public ITypedComponentStore<TransformComponent<TTransform>>
 {
 public:
     explicit TransformStore(TransformPropagationOrderService& propagationOrder)
@@ -34,10 +34,15 @@ public:
 
     bool Add(EntityId entity, const TTransform& local = TTransform::Identity())
     {
+        return Add(entity, TransformComponent<TTransform>{ local, TTransform::Identity() });
+    }
+
+    bool Add(EntityId entity, const TransformComponent<TTransform>& component) override
+    {
         if (!entity.IsValid())
             return false;
 
-        Components.Emplace(entity.Index, TransformComponent<TTransform>{ local, TTransform::Identity() });
+        Components.Emplace(entity.Index, component);
 
         const Id index = Components.IndexOf(entity.Index);
         if (index != InvalidId)
@@ -45,7 +50,7 @@ public:
         return true;
     }
 
-    bool Remove(EntityId entity)
+    bool Remove(EntityId entity) override
     {
         if (!entity.IsValid())
             return false;
@@ -106,23 +111,37 @@ public:
         return entity.IsValid() ? Components.IndexOf(entity.Index) : InvalidId;
     }
 
-    std::span<TransformComponent<TTransform>> GetItems()
+    TransformComponent<TTransform>* TryGet(EntityId entity) override
+    {
+        return TryGetComponentMutable(entity);
+    }
+
+    const TransformComponent<TTransform>* TryGet(EntityId entity) const override
+    {
+        return TryGetComponent(entity);
+    }
+
+    std::span<TransformComponent<TTransform>> GetItems() override
     {
         auto& items = Components.GetItems();
         return std::span<TransformComponent<TTransform>>(items.data(), items.size());
     }
 
-    std::span<const TransformComponent<TTransform>> GetItems() const
+    std::span<const TransformComponent<TTransform>> GetItems() const override
     {
         const auto& items = Components.GetItems();
         return std::span<const TransformComponent<TTransform>>(items.data(), items.size());
     }
 
-    const std::vector<Id>& GetOwners() const { return Components.GetOwners(); }
+    [[nodiscard]] std::span<const EntityIndex> GetOwnerIds() const override
+    {
+        const auto& owners = Components.GetOwners();
+        return { owners.data(), owners.size() };
+    }
 
-    size_t Count() const { return Components.Count(); }
-    bool IsEmpty() const { return Components.IsEmpty(); }
-    uint64_t GetVersion() const { return Components.GetVersion(); }
+    [[nodiscard]] size_t Count() const override { return Components.Count(); }
+    [[nodiscard]] bool IsEmpty() const override { return Components.IsEmpty(); }
+    [[nodiscard]] uint64_t GetVersion() const override { return Components.GetVersion(); }
 
 private:
     SparseSet<TransformComponent<TTransform>> Components;
