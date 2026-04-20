@@ -78,6 +78,6 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     out.Projection = projection;
     out.ViewProjection = projection * out.View;
     out.Position = transform->Position;
-    out.Frustum = Frustum::FromViewProjection(out.ViewProjection);
+    out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
     return true;
 }

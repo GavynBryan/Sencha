@@ -45,7 +45,7 @@ public:
     {
         for (const auto& loaded : Zones)
         {
-            fn(loaded->Zone, *loaded->Registry, loaded->Participation);
+            fn(loaded->Zone, *loaded->ZoneRegistry, loaded->Participation);
         }
     }
 
@@ -58,7 +58,7 @@ private:
     struct LoadedZone
     {
         ZoneId Zone;
-        std::unique_ptr<Registry> Registry;
+        std::unique_ptr<Registry> ZoneRegistry;
         ZoneParticipation Participation;
     };
 

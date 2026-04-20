@@ -34,12 +34,12 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
 
     auto loaded = std::make_unique<LoadedZone>();
     loaded->Zone = zone;
-    loaded->Registry = std::move(registry);
+    loaded->ZoneRegistry = std::move(registry);
     loaded->Participation = {};
 
-    assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
+    assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
 
-    Registry* registryPtr = loaded->Registry.get();
+    Registry* registryPtr = loaded->ZoneRegistry.get();
     Zones.push_back(std::move(loaded));
     return *registryPtr;
 }
@@ -67,13 +67,13 @@ bool ZoneRuntime::IsZoneLoaded(ZoneId zone) const
 Registry* ZoneRuntime::FindZone(ZoneId zone)
 {
     LoadedZone* loaded = FindLoadedZone(zone);
-    return loaded ? loaded->Registry.get() : nullptr;
+    return loaded ? loaded->ZoneRegistry.get() : nullptr;
 }
 
 const Registry* ZoneRuntime::FindZone(ZoneId zone) const
 {
     const LoadedZone* loaded = FindLoadedZone(zone);
-    return loaded ? loaded->Registry.get() : nullptr;
+    return loaded ? loaded->ZoneRegistry.get() : nullptr;
 }
 
 Registry* ZoneRuntime::FindRegistry(RegistryId id)
@@ -86,9 +86,9 @@ Registry* ZoneRuntime::FindRegistry(RegistryId id)
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->Registry->Id == id)
-            return loaded->Registry.get();
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        if (loaded->ZoneRegistry->Id == id)
+            return loaded->ZoneRegistry.get();
     }
 
     return nullptr;
@@ -104,9 +104,9 @@ const Registry* ZoneRuntime::FindRegistry(RegistryId id) const
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->Registry->Id == id)
-            return loaded->Registry.get();
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        if (loaded->ZoneRegistry->Id == id)
+            return loaded->ZoneRegistry.get();
     }
 
     return nullptr;
@@ -137,9 +137,9 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
 
-        Registry* registry = loaded->Registry.get();
+        Registry* registry = loaded->ZoneRegistry.get();
         const ZoneParticipation& participation = loaded->Participation;
 
         if (participation.Visible)
@@ -165,7 +165,7 @@ ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone)
 {
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
         if (loaded->Zone == zone)
             return loaded.get();
     }
@@ -177,7 +177,7 @@ const ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone) const
 {
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->Registry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
         if (loaded->Zone == zone)
             return loaded.get();
     }

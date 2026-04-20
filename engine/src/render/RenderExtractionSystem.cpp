@@ -73,7 +73,7 @@ void FrustumCullingSystem::Cull(const CameraRenderData& camera, RenderQueue& que
     auto& opaque = queue.Opaque();
     opaque.erase(std::remove_if(opaque.begin(), opaque.end(),
                                 [&camera](const RenderQueueItem& item) {
-                                    return !camera.Frustum.IntersectsAabb(item.WorldBounds);
+                                    return !camera.ViewFrustum.IntersectsAabb(item.WorldBounds);
                                 }),
                  opaque.end());
 }

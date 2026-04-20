@@ -103,7 +103,7 @@ struct CameraRenderData
     Mat4 Projection = Mat4::Identity();
     Mat4 ViewProjection = Mat4::Identity();
     Vec3d Position;
-    Frustum Frustum;
+    Frustum ViewFrustum;
 };
 
 //=============================================================================
