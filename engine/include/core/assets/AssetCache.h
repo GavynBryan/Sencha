@@ -37,8 +37,8 @@
 //   bool IsEntryLive(const TEntry& entry) const;
 //
 // THandle requirements:
-//   - uint32_t Id field
 //   - bool IsValid() const
+//   - either uint32_t Id field, or uint32_t Index / Generation fields
 //
 // TEntry requirements:
 //   - uint32_t  Generation = 0
@@ -100,6 +100,12 @@ public:
             LifetimeHandle<TDerived, THandle>::NoAttach);
     }
 
+    void Retain(THandle handle)
+    {
+        if (TEntry* entry = Resolve(handle))
+            ++entry->RefCount;
+    }
+
     // Decrement the refcount. Frees resources and returns the slot to the pool
     // when the count reaches zero. Calling Release on an invalid handle is a no-op.
     void Release(THandle handle)
@@ -113,10 +119,63 @@ public:
         --entry->RefCount;
         if (entry->RefCount > 0) return;
 
-        FreeEntry(DecodeIndex(handle.Id), *entry);
+        FreeEntry(HandleIndex(handle), *entry);
     }
 
 protected:
+    [[nodiscard]] THandle FindRegisteredHandle(std::string_view path, bool addRef = false)
+    {
+        const std::string key(path);
+        auto it = PathLookup.find(key);
+        if (it == PathLookup.end())
+            return {};
+
+        THandle handle = it->second;
+        if (TEntry* entry = Resolve(handle))
+        {
+            if (addRef)
+                ++entry->RefCount;
+            return handle;
+        }
+
+        PathLookup.erase(it);
+        return {};
+    }
+
+    [[nodiscard]] THandle FindRegisteredHandle(std::string_view path) const
+    {
+        const std::string key(path);
+        auto it = PathLookup.find(key);
+        if (it == PathLookup.end())
+            return {};
+
+        return Resolve(it->second) ? it->second : THandle{};
+    }
+
+    [[nodiscard]] std::string_view GetRegisteredPath(THandle handle) const
+    {
+        const TEntry* entry = Resolve(handle);
+        return entry ? std::string_view(entry->PathKey) : std::string_view{};
+    }
+
+    [[nodiscard]] THandle AllocNamedHandle(std::string_view path, TEntry entry)
+    {
+        if (path.empty())
+            return AllocHandle(std::move(entry));
+
+        if (THandle existing = FindRegisteredHandle(path, true); existing.IsValid())
+            return existing;
+
+        const std::string key(path);
+        THandle handle = AllocHandle(std::move(entry));
+        if (handle.IsValid())
+        {
+            Resolve(handle)->PathKey = key;
+            PathLookup.emplace(key, handle);
+        }
+        return handle;
+    }
+
     // Called by the derived destructor to free all live entries.
     void FreeAllEntries()
     {
@@ -158,8 +217,8 @@ protected:
     [[nodiscard]] TEntry* Resolve(THandle handle)
     {
         if (!handle.IsValid()) return nullptr;
-        const uint32_t index = DecodeIndex(handle.Id);
-        const uint32_t gen   = DecodeGeneration(handle.Id);
+        const uint32_t index = HandleIndex(handle);
+        const uint32_t gen   = HandleGeneration(handle);
         if (index == 0 || index >= Entries.size()) return nullptr;
         TEntry& entry = Entries[index];
         if (entry.Generation != gen || !Derived().IsEntryLive(entry)) return nullptr;
@@ -169,8 +228,8 @@ protected:
     [[nodiscard]] const TEntry* Resolve(THandle handle) const
     {
         if (!handle.IsValid()) return nullptr;
-        const uint32_t index = DecodeIndex(handle.Id);
-        const uint32_t gen   = DecodeGeneration(handle.Id);
+        const uint32_t index = HandleIndex(handle);
+        const uint32_t gen   = HandleGeneration(handle);
         if (index == 0 || index >= Entries.size()) return nullptr;
         const TEntry& entry = Entries[index];
         if (entry.Generation != gen || !Derived().IsEntryLive(entry)) return nullptr;
@@ -220,8 +279,32 @@ private:
     [[nodiscard]] static THandle MakeHandle(uint32_t index, uint32_t generation)
     {
         THandle h{};
-        h.Id = (generation << kAssetCacheIndexBits) | (index & kAssetCacheIndexMask);
+        if constexpr (requires { h.Id; })
+        {
+            h.Id = (generation << kAssetCacheIndexBits) | (index & kAssetCacheIndexMask);
+        }
+        else
+        {
+            h.Index = index;
+            h.Generation = generation;
+        }
         return h;
+    }
+
+    [[nodiscard]] static uint32_t HandleIndex(THandle handle)
+    {
+        if constexpr (requires { handle.Id; })
+            return DecodeIndex(handle.Id);
+        else
+            return handle.Index;
+    }
+
+    [[nodiscard]] static uint32_t HandleGeneration(THandle handle)
+    {
+        if constexpr (requires { handle.Id; })
+            return DecodeGeneration(handle.Id);
+        else
+            return handle.Generation;
     }
 
     [[nodiscard]] static uint32_t DecodeIndex(uint32_t id)      { return id & kAssetCacheIndexMask; }

@@ -3,8 +3,8 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
-#include <render/Material.h>
-#include <render/MeshService.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
 #include <render/RenderQueue.h>
 
 // Per-frame uniform data uploaded to set 0, binding 0 each draw call.
@@ -34,8 +34,8 @@ class MeshRenderFeature : public IRenderFeature
 {
 public:
     MeshRenderFeature(RenderQueue& queue,
-                      MeshService& meshes,
-                      MaterialStore& materials,
+                      MeshCache& meshes,
+                      MaterialCache& materials,
                       const CameraRenderData& camera);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
@@ -45,8 +45,8 @@ public:
 
 private:
     RenderQueue* Queue = nullptr;
-    MeshService* Meshes = nullptr;
-    MaterialStore* Materials = nullptr;
+    MeshCache* Meshes = nullptr;
+    MaterialCache* Materials = nullptr;
     const CameraRenderData* Camera = nullptr;
 
     VulkanBufferService* Buffers = nullptr;

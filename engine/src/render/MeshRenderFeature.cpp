@@ -13,8 +13,8 @@
 #include <cstring>
 
 MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
-                                     MeshService& meshes,
-                                     MaterialStore& materials,
+                                     MeshCache& meshes,
+                                     MaterialCache& materials,
                                      const CameraRenderData& camera)
     : Queue(&queue)
     , Meshes(&meshes)

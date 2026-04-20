@@ -1,9 +1,9 @@
 #pragma once
 
 #include <render/Camera.h>
-#include <render/Material.h>
-#include <render/MeshRendererComponent.h>
-#include <render/MeshService.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
+#include <render/MeshRendererStore.h>
 #include <render/RenderQueue.h>
 #include <world/transform/TransformStore.h>
 
@@ -19,8 +19,8 @@ class RenderExtractionSystem
 public:
     static void Extract(const TransformStore<Transform3f>& transforms,
                         const MeshRendererStore& renderers,
-                        const MeshService& meshes,
-                        const MaterialStore& materials,
+                        const MeshCache& meshes,
+                        const MaterialCache& materials,
                         const CameraRenderData& camera,
                         RenderQueue& queue);
 };

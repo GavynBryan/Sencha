@@ -2,8 +2,8 @@
 
 #include "FreeCamera.h"
 
-#include <render/Material.h>
-#include <render/MeshService.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
 #include <world/entity/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformStore.h>
@@ -22,6 +22,6 @@ struct DemoScene
 TransformStore<Transform3f>& DemoTransforms(Registry& registry);
 
 DemoScene CreateDemoScene(Registry& registry,
-                          MeshService& meshes,
-                          MaterialStore& materials,
+                          MeshCache& meshes,
+                          MaterialCache& materials,
                           FreeCamera& freeCamera);

@@ -28,21 +28,21 @@ TransformStore<Transform3f>& DemoTransforms(Registry& registry)
 }
 
 DemoScene CreateDemoScene(Registry& registry,
-                          MeshService& meshes,
-                          MaterialStore& materials,
+                          MeshCache& meshes,
+                          MaterialCache& materials,
                           FreeCamera& freeCamera)
 {
     DemoScene scene;
-    scene.CubeMesh = meshes.Create(MeshPrimitives::BuildCube(1.0f));
-    scene.Red = materials.Create(Material{
+    scene.CubeMesh = meshes.CreateFromData("cube_1m", MeshPrimitives::BuildCube(1.0f));
+    scene.Red = materials.Register("red", Material{
         .Pass = ShaderPassId::ForwardOpaque,
         .BaseColor = Vec4(1.0f, 0.15f, 0.1f, 1.0f),
     });
-    scene.Green = materials.Create(Material{
+    scene.Green = materials.Register("green", Material{
         .Pass = ShaderPassId::ForwardOpaque,
         .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f),
     });
-    scene.Blue = materials.Create(Material{
+    scene.Blue = materials.Register("blue", Material{
         .Pass = ShaderPassId::ForwardOpaque,
         .BaseColor = Vec4(0.2f, 0.45f, 1.0f, 1.0f),
     });

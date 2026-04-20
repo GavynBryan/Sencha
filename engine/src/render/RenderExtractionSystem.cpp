@@ -23,8 +23,8 @@ namespace
 
 void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
                                      const MeshRendererStore& renderers,
-                                     const MeshService& meshes,
-                                     const MaterialStore& materials,
+                                     const MeshCache& meshes,
+                                     const MaterialCache& materials,
                                      const CameraRenderData& camera,
                                      RenderQueue& queue)
 {

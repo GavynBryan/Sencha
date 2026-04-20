@@ -2,6 +2,7 @@
 
 #include <render/Camera.h>
 #include <render/MeshRendererComponent.h>
+#include <render/MeshRendererStore.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/transform/TransformHierarchyService.h>

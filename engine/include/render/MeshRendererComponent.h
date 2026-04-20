@@ -2,10 +2,9 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
-#include <world/entity/EntityId.h>
 #include <render/Material.h>
 #include <render/MeshTypes.h>
-#include <world/SparseSetStore.h>
+#include <world/entity/EntityId.h>
 
 #include <cstdint>
 #include <string_view>
@@ -26,8 +25,6 @@ struct MeshRendererComponent
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SubmeshMask = 0xFFFFFFFFu;
 };
-
-using MeshRendererStore = SparseSetStore<MeshRendererComponent>;
 
 template <>
 struct TypeSchema<MeshRendererComponent>

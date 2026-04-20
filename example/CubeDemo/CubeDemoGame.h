@@ -4,8 +4,8 @@
 #include "FreeCamera.h"
 
 #include <app/Game.h>
-#include <render/Material.h>
-#include <render/MeshService.h>
+#include <render/MaterialCache.h>
+#include <render/MeshCache.h>
 
 #include <memory>
 
@@ -25,8 +25,8 @@ private:
     void SetRelativeMouseMode(Engine& engine, bool enabled);
 
     Registry* DemoRegistry = nullptr;
-    MaterialStore Materials;
-    std::unique_ptr<MeshService> Meshes;
+    MaterialCache Materials;
+    std::unique_ptr<MeshCache> Meshes;
     FreeCamera FreeCam;
     DemoScene Demo;
 

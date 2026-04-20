@@ -8,14 +8,19 @@
 
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
-                              ZoneParticipation participation)
+                              ZoneParticipation participation,
+                              MeshCache* meshes,
+                              MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
     auto& order = registry.Resources.Register<TransformPropagationOrderService>();
     registry.Resources.Register<TransformHierarchyService>();
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.Register<TransformStore<Transform3f>>(order);
-    registry.Components.Register<MeshRendererStore>();
+    if (meshes != nullptr && materials != nullptr)
+        registry.Components.Register<MeshRendererStore>(*meshes, *materials);
+    else
+        registry.Components.Register<MeshRendererStore>();
     registry.Components.Register<CameraStore>();
     zones.SetParticipation(zone, participation);
     return registry;
