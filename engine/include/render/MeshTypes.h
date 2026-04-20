@@ -1,10 +1,14 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Aabb3d.h>
 
 #include <cstdint>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 // Interleaved vertex layout expected by the mesh forward shader (position, normal, uv0).
@@ -48,6 +52,20 @@ struct MeshHandle
 
     [[nodiscard]] bool IsValid() const { return Index != UINT32_MAX && Generation != 0; }
     bool operator==(const MeshHandle&) const = default;
+};
+
+template <>
+struct TypeSchema<MeshHandle>
+{
+    static constexpr std::string_view Name = "MeshHandle";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("index", &MeshHandle::Index),
+            MakeField("generation", &MeshHandle::Generation),
+        };
+    }
 };
 
 //=============================================================================

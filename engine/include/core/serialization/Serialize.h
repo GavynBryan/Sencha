@@ -5,8 +5,12 @@
 #include <type_traits>
 #include <vector>
 
+#include <core/metadata/SchemaVisit.h>
+#include <core/metadata/TypeSchema.h>
+#include <core/serialization/BinaryArchive.h>
 #include <core/serialization/BinaryReader.h>
 #include <core/serialization/BinaryWriter.h>
+#include <core/serialization/JsonArchive.h>
 
 //=============================================================================
 // Serialize / Deserialize
@@ -47,6 +51,44 @@ bool Serialize(BinaryWriter& writer, const std::string& value);
 [[nodiscard]]
 bool Deserialize(BinaryReader& reader, std::string& value,
                  std::uint32_t maxLength = UINT32_MAX);
+
+// --- Schema-driven records --------------------------------------------------
+
+template<typename T>
+requires HasTypeSchema<T>
+bool Serialize(BinaryWriter& writer, const T& value)
+{
+    BinaryWriteArchive archive(writer);
+    WriteArchiveValue(archive, {}, value);
+    return archive.Ok();
+}
+
+template<typename T>
+requires HasTypeSchema<T>
+bool Deserialize(BinaryReader& reader, T& value)
+{
+    BinaryReadArchive archive(reader);
+    ReadArchiveValue(archive, {}, value);
+    return archive.Ok();
+}
+
+template<typename T>
+requires HasTypeSchema<T>
+JsonValue ToJson(const T& value)
+{
+    JsonWriteArchive archive;
+    WriteArchiveValue(archive, {}, value);
+    return archive.TakeValue();
+}
+
+template<typename T>
+requires HasTypeSchema<T>
+bool FromJson(const JsonValue& json, T& value)
+{
+    JsonReadArchive archive(json);
+    ReadArchiveValue(archive, {}, value);
+    return archive.Ok();
+}
 
 // --- Trivial array (bulk memcpy for trivially-copyable element types) -------
 

@@ -1,19 +1,219 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
+#include <core/metadata/EnumSchema.h>
+#include <core/metadata/Field.h>
+#include <core/metadata/SchemaVisit.h>
+#include <core/metadata/TypeSchema.h>
+#include <core/json/JsonValue.h>
 #include <core/serialization/BinaryReader.h>
 #include <core/serialization/BinaryWriter.h>
 #include <core/serialization/Serialize.h>
 #include <core/serialization/BinaryFormat.h>
+#include <math/MathSchemas.h>
 
 // Helper: create a binary read/write stringstream.
 static std::stringstream MakeBinaryStream()
 {
     return std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
+}
+
+enum class SchemaTestKind
+{
+    First,
+    Second
+};
+
+template <>
+struct EnumSchema<SchemaTestKind>
+{
+    static constexpr std::array Values = {
+        EnumValue{ SchemaTestKind::First, "first" },
+        EnumValue{ SchemaTestKind::Second, "second" },
+    };
+};
+
+struct SchemaTestRecord
+{
+    std::uint32_t Id = 0;
+    float Weight = 0.0f;
+    bool Enabled = false;
+    SchemaTestKind Kind = SchemaTestKind::First;
+    std::uint32_t OptionalCount = 0;
+
+    bool operator==(const SchemaTestRecord&) const = default;
+};
+
+template <>
+struct TypeSchema<SchemaTestRecord>
+{
+    static constexpr std::string_view Name = "SchemaTestRecord";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("id", &SchemaTestRecord::Id),
+            MakeField("weight", &SchemaTestRecord::Weight),
+            MakeField("enabled", &SchemaTestRecord::Enabled),
+            MakeField("kind", &SchemaTestRecord::Kind),
+            MakeField("optional_count", &SchemaTestRecord::OptionalCount).Default(std::uint32_t{ 77 }),
+        };
+    }
+};
+
+struct EnumOnlyRecord
+{
+    SchemaTestKind Kind = SchemaTestKind::First;
+};
+
+template <>
+struct TypeSchema<EnumOnlyRecord>
+{
+    static constexpr std::string_view Name = "EnumOnlyRecord";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("kind", &EnumOnlyRecord::Kind),
+        };
+    }
+};
+
+struct FieldNameCollector
+{
+    std::vector<std::string_view>& Names;
+
+    template <typename FieldT, typename T>
+    void Field(const FieldT& field, const T&)
+    {
+        Names.push_back(field.Name);
+    }
+};
+
+TEST(SerializationTests, SchemaTraversalVisitsFieldsInDeclaredOrder)
+{
+    SchemaTestRecord record{};
+    std::vector<std::string_view> names;
+    FieldNameCollector visitor{ names };
+
+    VisitSchema<TypeSchema<SchemaTestRecord>>(record, visitor);
+
+    ASSERT_EQ(names.size(), 5u);
+    EXPECT_EQ(names[0], "id");
+    EXPECT_EQ(names[1], "weight");
+    EXPECT_EQ(names[2], "enabled");
+    EXPECT_EQ(names[3], "kind");
+    EXPECT_EQ(names[4], "optional_count");
+}
+
+TEST(SerializationTests, SchemaBinaryRoundTripsStandaloneRecord)
+{
+    auto stream = MakeBinaryStream();
+    BinaryWriter writer(stream);
+
+    const SchemaTestRecord expected{
+        .Id = 42,
+        .Weight = 3.5f,
+        .Enabled = true,
+        .Kind = SchemaTestKind::Second,
+        .OptionalCount = 9,
+    };
+    ASSERT_TRUE(Serialize(writer, expected));
+
+    stream.seekg(0);
+    BinaryReader reader(stream);
+
+    SchemaTestRecord actual{};
+    ASSERT_TRUE(Deserialize(reader, actual));
+    EXPECT_EQ(actual, expected);
+}
+
+TEST(SerializationTests, SchemaJsonRoundTripsStandaloneRecordAndIgnoresUnknownFields)
+{
+    const JsonValue json(JsonValue::Object{
+        { "id", JsonValue(42) },
+        { "weight", JsonValue(3.5) },
+        { "enabled", JsonValue(true) },
+        { "kind", JsonValue("second") },
+        { "optional_count", JsonValue(9) },
+        { "unknown", JsonValue("ignored") },
+    });
+
+    SchemaTestRecord actual{};
+    ASSERT_TRUE(FromJson(json, actual));
+
+    EXPECT_EQ(actual.Id, 42u);
+    EXPECT_FLOAT_EQ(actual.Weight, 3.5f);
+    EXPECT_TRUE(actual.Enabled);
+    EXPECT_EQ(actual.Kind, SchemaTestKind::Second);
+    EXPECT_EQ(actual.OptionalCount, 9u);
+
+    JsonValue roundTrip = ToJson(actual);
+    ASSERT_TRUE(roundTrip.IsObject());
+    EXPECT_NE(roundTrip.Find("id"), nullptr);
+    EXPECT_EQ(roundTrip.Find("unknown"), nullptr);
+}
+
+TEST(SerializationTests, OptionalJsonFieldMissingAssignsDeclaredDefault)
+{
+    const JsonValue json(JsonValue::Object{
+        { "id", JsonValue(12) },
+        { "weight", JsonValue(1.25) },
+        { "enabled", JsonValue(false) },
+        { "kind", JsonValue("first") },
+    });
+
+    SchemaTestRecord actual{};
+    ASSERT_TRUE(FromJson(json, actual));
+    EXPECT_EQ(actual.OptionalCount, 77u);
+}
+
+TEST(SerializationTests, EnumWritesAsStringInJsonAndIntegerInBinary)
+{
+    const EnumOnlyRecord expected{ .Kind = SchemaTestKind::Second };
+
+    JsonValue json = ToJson(expected);
+    ASSERT_TRUE(json.IsObject());
+    const JsonValue* kind = json.Find("kind");
+    ASSERT_NE(kind, nullptr);
+    ASSERT_TRUE(kind->IsString());
+    EXPECT_EQ(kind->AsString(), "second");
+
+    auto stream = MakeBinaryStream();
+    BinaryWriter writer(stream);
+    ASSERT_TRUE(Serialize(writer, expected));
+
+    stream.seekg(0);
+    BinaryReader reader(stream);
+    std::uint32_t rawKind = 0;
+    ASSERT_TRUE(Deserialize(reader, rawKind));
+    EXPECT_EQ(rawKind, static_cast<std::uint32_t>(SchemaTestKind::Second));
+}
+
+TEST(SerializationTests, MathSchemasPreserveJsonShapes)
+{
+    JsonValue vec = ToJson(Vec3d(1.0f, 2.0f, 3.0f));
+    ASSERT_TRUE(vec.IsArray());
+    ASSERT_EQ(vec.AsArray().size(), 3u);
+    EXPECT_DOUBLE_EQ(vec.AsArray()[0].AsNumber(), 1.0);
+    EXPECT_DOUBLE_EQ(vec.AsArray()[1].AsNumber(), 2.0);
+    EXPECT_DOUBLE_EQ(vec.AsArray()[2].AsNumber(), 3.0);
+
+    JsonValue transform = ToJson(Transform3f(
+        Vec3d(1.0f, 2.0f, 3.0f),
+        Quatf::Identity(),
+        Vec3d(4.0f, 5.0f, 6.0f)));
+    ASSERT_TRUE(transform.IsObject());
+    EXPECT_NE(transform.Find("position"), nullptr);
+    EXPECT_NE(transform.Find("rotation"), nullptr);
+    EXPECT_NE(transform.Find("scale"), nullptr);
 }
 
 //=============================================================================
