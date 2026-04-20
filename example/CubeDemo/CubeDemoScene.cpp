@@ -22,11 +22,12 @@ DemoScene LoadDemoScene(Registry& registry,
                         MeshCache& meshes,
                         MaterialCache& materials,
                         FreeCamera& freeCamera,
+                        LoggingProvider& logging,
                         std::string_view scenePath)
 {
     DemoScene scene;
 
-    AssetRegistry assetRegistry;
+    AssetRegistry assetRegistry(logging);
     assetRegistry.Register(AssetRecord{
         .Type = AssetType::Mesh,
         .Path = "asset://meshes/dev/cube.smesh",

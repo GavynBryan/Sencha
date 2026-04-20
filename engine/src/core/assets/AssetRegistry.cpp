@@ -21,12 +21,35 @@ namespace
     }
 }
 
+AssetRegistry::AssetRegistry(LoggingProvider& logging)
+    : Log(logging.GetLogger<AssetRegistry>())
+{
+}
+
 bool AssetRegistry::Register(AssetRecord record)
 {
-    if (record.Path.empty() || record.Type == AssetType::Unknown)
+    if (record.Path.empty())
+    {
+        Log.Warn("AssetRegistry: rejected asset record with empty path");
         return false;
+    }
 
+    if (record.Type == AssetType::Unknown)
+    {
+        Log.Warn("AssetRegistry: rejected '{}' with unknown asset type", record.Path);
+        return false;
+    }
+
+    const std::string path = record.Path;
+    const std::string type = std::string(AssetTypeToString(record.Type));
     auto [_, inserted] = RecordsByPath.emplace(record.Path, std::move(record));
+    if (!inserted)
+    {
+        Log.Warn("AssetRegistry: duplicate asset path '{}' ignored", path);
+        return false;
+    }
+
+    Log.Debug("AssetRegistry: registered {} '{}'", type, path);
     return inserted;
 }
 
@@ -44,18 +67,27 @@ bool AssetRegistry::Contains(std::string_view path) const
 bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry)
 {
     if (rootDirectory.empty())
+    {
+        registry.Log.Warn("AssetRegistry: cannot scan empty asset root");
         return false;
+    }
 
     const std::filesystem::path root{std::string(rootDirectory)};
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec))
+    {
+        registry.Log.Warn("AssetRegistry: asset root '{}' is not a directory", root.generic_string());
         return false;
+    }
 
     bool ok = true;
+    std::size_t registered = 0;
     for (std::filesystem::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec))
     {
         if (ec)
         {
+            registry.Log.Warn("AssetRegistry: asset scan skipped entry under '{}': {}",
+                root.generic_string(), ec.message());
             ok = false;
             ec.clear();
             continue;
@@ -72,8 +104,15 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         record.Type = type;
         record.Path = MakeVirtualAssetPath(root, it->path());
         record.FilePath = it->path().generic_string();
-        ok = registry.Register(std::move(record)) && ok;
+        const bool inserted = registry.Register(std::move(record));
+        if (inserted)
+            ++registered;
+        ok = inserted && ok;
     }
 
+    registry.Log.Info("AssetRegistry: scanned '{}' ({} asset records{})",
+        root.generic_string(),
+        registered,
+        ok ? "" : ", with errors");
     return ok;
 }

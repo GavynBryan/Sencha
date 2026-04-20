@@ -89,7 +89,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
         Meshes.get(), &Materials);
 
     InitSceneSerializer();
-    Demo = LoadDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam, "cube_demo_scene.json");
+    Demo = LoadDemoScene(*DemoRegistry, *Meshes, Materials, FreeCam, logging, "cube_demo_scene.json");
 
     engine.AddDefaultMeshRenderFeature(*Meshes, Materials);
 

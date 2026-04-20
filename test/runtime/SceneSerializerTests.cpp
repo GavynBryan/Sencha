@@ -320,7 +320,8 @@ TEST(SceneSerializer, MaterialHandleSceneCodecWritesPathString)
 
 TEST(SceneSerializer, MaterialHandleSceneCodecLoadsPathString)
 {
-    AssetRegistry registry;
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
     RegisterMaterialAsset(registry, "asset://materials/dev/red.smat");
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
@@ -340,7 +341,8 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsPathString)
 
 TEST(SceneSerializer, MaterialHandleSceneCodecLoadsLegacyAssetRefObject)
 {
-    AssetRegistry registry;
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
     RegisterMaterialAsset(registry, "asset://materials/dev/red.smat");
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
@@ -360,7 +362,8 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsLegacyAssetRefObject)
 
 TEST(SceneSerializer, MaterialHandleSceneCodecRejectsWrongTypeEmptyPathAndMissingPath)
 {
-    AssetRegistry registry;
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
     MaterialCache materials;
     AssetSystem assets(registry, nullptr, &materials);
     SceneSerializationContext context{ .Assets = &assets, .Materials = &materials };
@@ -387,7 +390,8 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsWrongTypeEmptyPathAndMissin
 
 TEST(SceneSerializer, MaterialHandleSceneCodecRejectsRegistryTypeMismatch)
 {
-    AssetRegistry registry;
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
     registry.Register(AssetRecord{
         .Type = AssetType::Mesh,
         .Path = "asset://materials/dev/red.smat",

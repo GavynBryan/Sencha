@@ -10,6 +10,8 @@
 
 #include <string_view>
 
+class LoggingProvider;
+
 struct DemoScene
 {
     EntityId Camera;
@@ -27,4 +29,5 @@ DemoScene LoadDemoScene(Registry& registry,
                         MeshCache& meshes,
                         MaterialCache& materials,
                         FreeCamera& freeCamera,
+                        LoggingProvider& logging,
                         std::string_view scenePath);
