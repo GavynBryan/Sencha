@@ -9,6 +9,7 @@
 #include <vector>
 
 class VulkanAllocatorService;
+class VulkanDeletionQueueService;
 class VulkanDeviceService;
 class VulkanUploadContextService;
 
@@ -67,7 +68,8 @@ public:
     VulkanBufferService(LoggingProvider& logging,
                         VulkanDeviceService& device,
                         VulkanAllocatorService& allocator,
-                        VulkanUploadContextService& upload);
+                        VulkanUploadContextService& upload,
+                        VulkanDeletionQueueService& deletionQueue);
     ~VulkanBufferService() override;
 
     VulkanBufferService(const VulkanBufferService&) = delete;
@@ -114,6 +116,7 @@ private:
     VkDevice Device = VK_NULL_HANDLE;
     VmaAllocator Allocator = VK_NULL_HANDLE;
     VulkanUploadContextService* UploadCtx = nullptr;
+    VulkanDeletionQueueService* DeletionQueue = nullptr;
     bool Valid = false;
 
     std::vector<BufferEntry> Entries; // slot 0 reserved

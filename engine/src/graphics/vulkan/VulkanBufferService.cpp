@@ -1,6 +1,7 @@
 #include <graphics/vulkan/VulkanBufferService.h>
 
 #include <graphics/vulkan/VulkanAllocatorService.h>
+#include <graphics/vulkan/VulkanDeletionQueueService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
 
@@ -22,11 +23,13 @@ VulkanBufferService::VulkanBufferService(
     LoggingProvider& logging,
     VulkanDeviceService& device,
     VulkanAllocatorService& allocator,
-    VulkanUploadContextService& upload)
+    VulkanUploadContextService& upload,
+    VulkanDeletionQueueService& deletionQueue)
     : Log(logging.GetLogger<VulkanBufferService>())
     , Device(device.GetDevice())
     , Allocator(allocator.GetAllocator())
     , UploadCtx(&upload)
+    , DeletionQueue(&deletionQueue)
 {
     if (!device.IsValid() || !allocator.IsValid() || !upload.IsValid())
     {
@@ -178,7 +181,9 @@ void VulkanBufferService::Destroy(BufferHandle handle)
     auto* entry = Resolve(handle);
     if (entry == nullptr) return;
 
-    vmaDestroyBuffer(Allocator, entry->Buffer, entry->Allocation);
+    const VkBuffer buffer = entry->Buffer;
+    const VmaAllocation allocation = entry->Allocation;
+
     entry->Buffer = VK_NULL_HANDLE;
     entry->Allocation = VK_NULL_HANDLE;
     entry->Size = 0;
@@ -186,6 +191,8 @@ void VulkanBufferService::Destroy(BufferHandle handle)
 
     const uint32_t index = DecodeIndex(handle.Id);
     FreeSlots.push_back(index);
+
+    DeletionQueue->EnqueueBufferDestroy({ Allocator, buffer, allocation });
 }
 
 VkBuffer VulkanBufferService::GetBuffer(BufferHandle handle) const

@@ -51,6 +51,13 @@ struct DeferredImageDestroy
     VmaAllocation Allocation = VK_NULL_HANDLE;
 };
 
+struct DeferredBufferDestroy
+{
+    VmaAllocator  Allocator  = VK_NULL_HANDLE;
+    VkBuffer      Buffer     = VK_NULL_HANDLE;
+    VmaAllocation Allocation = VK_NULL_HANDLE;
+};
+
 // -- VulkanDeletionQueueService ----------------------------------------------
 
 class VulkanDeletionQueueService : public IService
@@ -68,6 +75,7 @@ public:
 
     // Enqueue a deferred image+view destroy to run after framesInFlight frames.
     void EnqueueImageDestroy(DeferredImageDestroy entry);
+    void EnqueueBufferDestroy(DeferredBufferDestroy entry);
 
     // Advance the ring and flush the bucket that is now safe to release.
     // Called by VulkanFrameService::BeginFrame after the in-flight fence wait.
@@ -77,7 +85,8 @@ private:
     struct Bucket
     {
         std::vector<DeferredImageDestroy> Images;
-        // Add DeferredBufferDestroy, DeferredPipelineDestroy, etc. here as needed.
+        std::vector<DeferredBufferDestroy> Buffers;
+        // Add DeferredPipelineDestroy, etc. here as needed.
     };
 
     void FlushBucket(Bucket& bucket);
