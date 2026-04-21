@@ -35,6 +35,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         while (SDL_PollEvent(&event))
         {
             windows.HandleEvent(event);
+            SdlInputCapture::Accept(*ctx.Input, event);
 
             PlatformEventContext eventCtx{
                 .Config = config,
@@ -43,8 +44,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             game.OnPlatformEvent(eventCtx);
             if (eventCtx.Handled)
                 continue;
-
-            SdlInputCapture::Accept(*ctx.Input, event);
 
             if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
                 ctx.Runtime->NotifyMinimized();
@@ -202,9 +201,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     });
 
     driver.Register(FramePhase::Render, [&engine, &windows, windowId, &renderer, &frames, &swapchain](PhaseContext& ctx) {
-        if (!ctx.PacketWrite->Renderable)
-            return;
-
         const RenderFrameResult renderResult = renderer.DrawFrameScheduled();
         if (renderResult == RenderFrameResult::SwapchainOutOfDate
             || renderResult == RenderFrameResult::SurfaceSuboptimal)
