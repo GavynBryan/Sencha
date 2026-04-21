@@ -11,10 +11,17 @@
 
 namespace
 {
+constexpr double kMaxPickDistance = 1.0e6;
+constexpr double kParallelEpsilon = 1.0e-8;
+constexpr float kVulkanNdcNear = 0.0f;
+constexpr float kVulkanNdcFar = 1.0f;
+constexpr float kNdcRangeScale = 2.0f;
+constexpr float kNdcRangeOffset = 1.0f;
+
 bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance)
 {
     double minDistance = 0.0;
-    double maxDistance = 1000000.0;
+    double maxDistance = kMaxPickDistance;
 
     for (int axis = 0; axis < 3; ++axis)
     {
@@ -23,7 +30,7 @@ bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance
         const double minBound = bounds.Min[axis];
         const double maxBound = bounds.Max[axis];
 
-        if (std::abs(direction) < 1e-8)
+        if (std::abs(direction) < kParallelEpsilon)
         {
             if (origin < minBound || origin > maxBound)
                 return false;
@@ -53,7 +60,7 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
 {
     const Ray3d ray = BuildRay(viewport, point);
 
-    float bestDistance = 1000000.0f;
+    float bestDistance = static_cast<float>(kMaxPickDistance);
     EntityId bestEntity = {};
     for (EntityId entity : scene.GetAllEntities())
     {
@@ -87,7 +94,7 @@ std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& vi
     const Ray3d ray = BuildRay(viewport, point);
     const Vec3d normal = viewport.ActiveGrid.AxisU.Cross(viewport.ActiveGrid.AxisV).Normalized();
     const double denominator = normal.Dot(ray.Direction);
-    if (std::abs(denominator) < 1e-8)
+    if (std::abs(denominator) < kParallelEpsilon)
         return std::nullopt;
 
     const double distance = normal.Dot(viewport.ActiveGrid.Origin - ray.Origin) / denominator;
@@ -106,14 +113,14 @@ Ray3d PickingService::BuildRay(const EditorViewport& viewport, ImVec2 point) con
 
     const float localX = (point.x - viewport.RegionMin.x) / width;
     const float localY = (point.y - viewport.RegionMin.y) / height;
-    const float clipX = localX * 2.0f - 1.0f;
-    const float clipY = localY * 2.0f - 1.0f;
+    const float clipX = localX * kNdcRangeScale - kNdcRangeOffset;
+    const float clipY = localY * kNdcRangeScale - kNdcRangeOffset;
 
     const CameraRenderData renderData = viewport.BuildRenderData();
     const Mat4 inverseViewProjection = renderData.ViewProjection.Inverse();
 
-    const Vec4 nearClip(clipX, clipY, 0.0f, 1.0f);
-    const Vec4 farClip(clipX, clipY, 1.0f, 1.0f);
+    const Vec4 nearClip(clipX, clipY, kVulkanNdcNear, 1.0f);
+    const Vec4 farClip(clipX, clipY, kVulkanNdcFar, 1.0f);
 
     Vec4 nearWorld = inverseViewProjection * nearClip;
     Vec4 farWorld = inverseViewProjection * farClip;
