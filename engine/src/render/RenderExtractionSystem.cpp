@@ -22,8 +22,8 @@ namespace
 }
 
 void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const MeshRendererStore& renderers,
-                                     const MeshCache& meshes,
+                                     const StaticMeshComponentStore& renderers,
+                                     const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
                                      const CameraRenderData& camera,
                                      RenderQueue& queue)
@@ -33,13 +33,13 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
 
     for (size_t i = 0; i < items.size(); ++i)
     {
-        const MeshRendererComponent& renderer = items[i];
+        const StaticMeshComponent& renderer = items[i];
         if (!renderer.Visible) continue;
 
         // SparseSet stores raw indices; generation 1 is the minimum valid value.
         EntityId entity{ static_cast<EntityIndex>(owners[i]), 1 };
         const Transform3f* transform = transforms.TryGetWorld(entity);
-        const GpuMesh* mesh = meshes.Get(renderer.Mesh);
+        const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
         const Material* material = materials.Get(renderer.Material);
         if (transform == nullptr || mesh == nullptr || material == nullptr) continue;
 
@@ -49,16 +49,16 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
             camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y, worldBounds.Center().Z, 1.0f);
         const float cameraDepth = -cameraSpaceCenter.Z;
 
-        for (uint32_t submeshIndex = 0;
-             submeshIndex < static_cast<uint32_t>(mesh->Submeshes.size());
-             ++submeshIndex)
+        for (uint32_t sectionIndex = 0;
+             sectionIndex < static_cast<uint32_t>(mesh->Sections.size());
+             ++sectionIndex)
         {
-            if ((renderer.SubmeshMask & (1u << submeshIndex)) == 0) continue;
+            if ((renderer.SectionMask & (1u << sectionIndex)) == 0) continue;
 
             RenderQueueItem item{};
             item.Mesh = renderer.Mesh;
             item.Material = renderer.Material;
-            item.SubmeshIndex = submeshIndex;
+            item.SectionIndex = sectionIndex;
             item.WorldMatrix = world;
             item.WorldBounds = worldBounds;
             item.CameraDepth = cameraDepth;

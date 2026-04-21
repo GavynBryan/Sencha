@@ -12,14 +12,14 @@
 //=============================================================================
 enum class AssetType : uint16_t
 {
-    Unknown  = 0,
-    Mesh     = 1,
+    Unknown = 0,
+    StaticMesh = 1,
     Material = 2,
-    Texture  = 3,
-    Scene    = 4,
+    Texture = 3,
+    Scene = 4,
     Geometry = 5,
-    Audio    = 6,
-    Script   = 7,
+    Audio = 6,
+    Script = 7,
 };
 
 enum class AssetSourceKind : uint16_t
@@ -35,7 +35,7 @@ inline std::string_view AssetTypeToString(AssetType type)
 {
     switch (type)
     {
-    case AssetType::Mesh:     return "Mesh";
+    case AssetType::StaticMesh: return "StaticMesh";
     case AssetType::Material: return "Material";
     case AssetType::Texture:  return "Texture";
     case AssetType::Scene:    return "Scene";
@@ -48,7 +48,7 @@ inline std::string_view AssetTypeToString(AssetType type)
 
 inline bool AssetTypeFromString(std::string_view name, AssetType& out)
 {
-    if (name == "Mesh")     { out = AssetType::Mesh;     return true; }
+    if (name == "StaticMesh") { out = AssetType::StaticMesh; return true; }
     if (name == "Material") { out = AssetType::Material; return true; }
     if (name == "Texture")  { out = AssetType::Texture;  return true; }
     if (name == "Scene")    { out = AssetType::Scene;    return true; }

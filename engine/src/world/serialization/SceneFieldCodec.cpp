@@ -1,15 +1,22 @@
 #include <world/serialization/SceneFieldCodec.h>
 
 #include <core/assets/AssetSystem.h>
+#include <core/logging/LoggingProvider.h>
+
+namespace
+{
+    Logger& GetSceneLogger(SceneSerializationContext& context)
+    {
+        assert(context.Logging != nullptr);
+        return context.Logging->GetLogger<SceneSerializationContext>();
+    }
+}
 
 namespace
 {
     bool RejectBinaryWrite(IWriteArchive& archive, std::string_view key)
     {
         assert(false && "Binary scene serialization for AssetRef-backed handles is not implemented yet");
-        std::fprintf(stderr,
-            "SceneFieldCodec: binary scene serialization for field \"%.*s\" is not implemented yet\n",
-            static_cast<int>(key.size()), key.data());
         archive.MarkInvalidField(key);
         return false;
     }
@@ -17,9 +24,6 @@ namespace
     bool RejectBinaryRead(IReadArchive& archive, std::string_view key)
     {
         assert(false && "Binary scene serialization for AssetRef-backed handles is not implemented yet");
-        std::fprintf(stderr,
-            "SceneFieldCodec: binary scene deserialization for field \"%.*s\" is not implemented yet\n",
-            static_cast<int>(key.size()), key.data());
         archive.MarkInvalidField(key);
         return false;
     }
@@ -27,7 +31,8 @@ namespace
     bool ReadLegacyAssetRef(IReadArchive& archive,
                             std::string_view key,
                             AssetType expected,
-                            std::string& outPath)
+                            std::string& outPath,
+                            SceneSerializationContext& context)
     {
         std::string typeText;
         std::string path;
@@ -43,29 +48,22 @@ namespace
         AssetType type = AssetType::Unknown;
         if (!AssetTypeFromString(typeText, type))
         {
-            std::fprintf(stderr,
-                "SceneFieldCodec: field \"%.*s\" has unknown asset type \"%s\"\n",
-                static_cast<int>(key.size()), key.data(), typeText.c_str());
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has unknown asset type '{}'", key, typeText);
             archive.MarkInvalidField(key);
             return false;
         }
 
         if (type != expected)
         {
-            std::fprintf(stderr,
-                "SceneFieldCodec: field \"%.*s\" expected asset type \"%.*s\", got \"%s\"\n",
-                static_cast<int>(key.size()), key.data(),
-                static_cast<int>(AssetTypeToString(expected).size()), AssetTypeToString(expected).data(),
-                typeText.c_str());
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' expected asset type '{}', got '{}'",
+                                          key, AssetTypeToString(expected), typeText);
             archive.MarkInvalidField(key);
             return false;
         }
 
         if (path.empty())
         {
-            std::fprintf(stderr,
-                "SceneFieldCodec: field \"%.*s\" has an empty asset path\n",
-                static_cast<int>(key.size()), key.data());
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
             archive.MarkMissingField(key);
             return false;
         }
@@ -77,7 +75,8 @@ namespace
     bool ReadTypedAssetPath(IReadArchive& archive,
                             std::string_view key,
                             AssetType expected,
-                            std::string& outPath)
+                            std::string& outPath,
+                            SceneSerializationContext& context)
     {
         if (archive.IsString(key))
         {
@@ -88,32 +87,28 @@ namespace
             if (!outPath.empty())
                 return true;
 
-            std::fprintf(stderr,
-                "SceneFieldCodec: field \"%.*s\" has an empty asset path\n",
-                static_cast<int>(key.size()), key.data());
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
             archive.MarkMissingField(key);
             return false;
         }
 
         if (archive.IsObject(key))
-            return ReadLegacyAssetRef(archive, key, expected, outPath);
+            return ReadLegacyAssetRef(archive, key, expected, outPath, context);
 
-        std::fprintf(stderr,
-            "SceneFieldCodec: field \"%.*s\" must be an asset path string or legacy AssetRef object\n",
-            static_cast<int>(key.size()), key.data());
+        GetSceneLogger(context).Error(
+            "SceneFieldCodec: field '{}' must be an asset path string or legacy AssetRef object", key);
         archive.MarkInvalidField(key);
         return false;
     }
 
     bool WriteTypedAssetPath(IWriteArchive& archive,
                              std::string_view key,
-                             std::string_view path)
+                             std::string_view path,
+                             SceneSerializationContext& context)
     {
         if (path.empty())
         {
-            std::fprintf(stderr,
-                "SceneFieldCodec: field \"%.*s\" has no registered asset path\n",
-                static_cast<int>(key.size()), key.data());
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has no registered asset path", key);
             archive.MarkInvalidField(key);
             return false;
         }
@@ -123,51 +118,48 @@ namespace
     }
 }
 
-bool SceneFieldCodec<MeshHandle>::Save(IWriteArchive& archive,
-                                       std::string_view key,
-                                       MeshHandle value,
-                                       SceneSerializationContext& context)
+bool SceneFieldCodec<StaticMeshHandle>::Save(IWriteArchive& archive,
+                                             std::string_view key,
+                                             StaticMeshHandle value,
+                                             SceneSerializationContext& context)
 {
     if (!archive.IsText())
         return RejectBinaryWrite(archive, key);
 
     if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MeshHandle>: missing AssetSystem for field \"%.*s\"\n",
-            static_cast<int>(key.size()), key.data());
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMesh(value));
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForStaticMesh(value), context);
 }
 
-bool SceneFieldCodec<MeshHandle>::Load(IReadArchive& archive,
-                                       std::string_view key,
-                                       MeshHandle& value,
-                                       SceneSerializationContext& context)
+bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
+                                             std::string_view key,
+                                             StaticMeshHandle& value,
+                                             SceneSerializationContext& context)
 {
     if (!archive.IsText())
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::Mesh, path))
+    if (!ReadTypedAssetPath(archive, key, AssetType::StaticMesh, path, context))
         return false;
 
     if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MeshHandle>: missing AssetSystem for field \"%.*s\"\n",
-            static_cast<int>(key.size()), key.data());
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
 
-    value = context.Assets->LoadMesh(path);
+    value = context.Assets->LoadStaticMesh(path);
     if (!value.IsValid())
     {
-        std::fprintf(stderr,
-            "SceneFieldCodec<MeshHandle>: failed to load mesh asset \"%s\"\n",
-            path.c_str());
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: failed to load static mesh asset '{}'",
+                                      path);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -185,13 +177,12 @@ bool SceneFieldCodec<MaterialHandle>::Save(IWriteArchive& archive,
 
     if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MaterialHandle>: missing AssetSystem for field \"%.*s\"\n",
-            static_cast<int>(key.size()), key.data());
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(value));
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(value), context);
 }
 
 bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
@@ -203,13 +194,12 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::Material, path))
+    if (!ReadTypedAssetPath(archive, key, AssetType::Material, path, context))
         return false;
 
     if (!context.Assets)
     {
-        std::fprintf(stderr, "SceneFieldCodec<MaterialHandle>: missing AssetSystem for field \"%.*s\"\n",
-            static_cast<int>(key.size()), key.data());
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -217,9 +207,7 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
     value = context.Assets->LoadMaterial(path);
     if (!value.IsValid())
     {
-        std::fprintf(stderr,
-            "SceneFieldCodec<MaterialHandle>: failed to load material asset \"%s\"\n",
-            path.c_str());
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: failed to load material asset '{}'", path);
         archive.MarkInvalidField(key);
         return false;
     }

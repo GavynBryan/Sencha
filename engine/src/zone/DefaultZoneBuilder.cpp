@@ -9,7 +9,7 @@
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation,
-                              MeshCache* meshes,
+                              StaticMeshCache* meshes,
                               MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
@@ -18,9 +18,9 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.Register<TransformStore<Transform3f>>(order);
     if (meshes != nullptr && materials != nullptr)
-        registry.Components.Register<MeshRendererStore>(*meshes, *materials);
+        registry.Components.Register<StaticMeshComponentStore>(*meshes, *materials);
     else
-        registry.Components.Register<MeshRendererStore>();
+        registry.Components.Register<StaticMeshComponentStore>();
     registry.Components.Register<CameraStore>();
     zones.SetParticipation(zone, participation);
     return registry;
@@ -36,10 +36,10 @@ EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
 
 bool AddDefaultMeshRenderer(Registry& registry,
                             EntityId entity,
-                            MeshHandle mesh,
+                            StaticMeshHandle mesh,
                             MaterialHandle material)
 {
-    return registry.Components.Get<MeshRendererStore>().Add(entity, MeshRendererComponent{
+    return registry.Components.Get<StaticMeshComponentStore>().Add(entity, StaticMeshComponent{
         .Mesh = mesh,
         .Material = material,
     });

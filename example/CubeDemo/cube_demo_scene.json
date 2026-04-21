@@ -23,12 +23,12 @@
                     "rotation": [0.0, 0.0, 0.0, 1.0],
                     "scale": [1.0, 1.0, 1.0]
                 },
-                "MeshRenderer": {
+                "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/red.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
-                    "submesh_mask": 4294967295
+                    "section_mask": 4294967295
                 }
             }
         },
@@ -39,12 +39,12 @@
                     "rotation": [0.0, 0.0, 0.0, 1.0],
                     "scale": [0.35, 0.35, 0.35]
                 },
-                "MeshRenderer": {
+                "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/blue.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
-                    "submesh_mask": 4294967295
+                    "section_mask": 4294967295
                 }
             }
         },
@@ -55,12 +55,12 @@
                     "rotation": [0.0, 0.0, 0.0, 1.0],
                     "scale": [1.0, 1.0, 1.0]
                 },
-                "MeshRenderer": {
+                "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/green.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
-                    "submesh_mask": 4294967295
+                    "section_mask": 4294967295
                 }
             }
         },
@@ -71,12 +71,12 @@
                     "rotation": [0.0, 0.0, 0.0, 1.0],
                     "scale": [0.75, 1.5, 0.75]
                 },
-                "MeshRenderer": {
+                "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/blue.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
-                    "submesh_mask": 4294967295
+                    "section_mask": 4294967295
                 }
             }
         },
@@ -87,12 +87,12 @@
                     "rotation": [0.0, 0.0, 0.0, 1.0],
                     "scale": [8.0, 0.15, 8.0]
                 },
-                "MeshRenderer": {
+                "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/green.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
-                    "submesh_mask": 4294967295
+                    "section_mask": 4294967295
                 }
             }
         }

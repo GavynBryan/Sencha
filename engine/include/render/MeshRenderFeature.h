@@ -4,8 +4,8 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
 #include <render/RenderQueue.h>
+#include <render/static_mesh/StaticMeshCache.h>
 
 // Per-frame uniform data uploaded to set 0, binding 0 each draw call.
 struct MeshFrameUniforms
@@ -34,7 +34,7 @@ class MeshRenderFeature : public IRenderFeature
 {
 public:
     MeshRenderFeature(RenderQueue& queue,
-                      MeshCache& meshes,
+                      StaticMeshCache& meshes,
                       MaterialCache& materials,
                       const CameraRenderData& camera);
 
@@ -45,7 +45,7 @@ public:
 
 private:
     RenderQueue* Queue = nullptr;
-    MeshCache* Meshes = nullptr;
+    StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     const CameraRenderData* Camera = nullptr;
 

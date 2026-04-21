@@ -1,41 +1,47 @@
 #include <core/assets/AssetSystem.h>
 
+#include <core/logging/LoggingProvider.h>
+
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <render/static_mesh/StaticMeshCache.h>
 
 #include <cassert>
-#include <cstdio>
 
-AssetSystem::AssetSystem(AssetRegistry& registry,
-                         MeshCache& meshes,
+AssetSystem::AssetSystem(LoggingProvider& logging,
+                         AssetRegistry& registry,
+                         StaticMeshCache& meshes,
                          MaterialCache& materials)
-    : Registry(registry)
-    , Meshes(&meshes)
+    : Log(logging.GetLogger<AssetSystem>())
+    , Registry(registry)
+    , StaticMeshes(&meshes)
     , Materials(&materials)
+    , StaticMeshFileLoader(logging)
 {
 }
 
-AssetSystem::AssetSystem(AssetRegistry& registry,
-                         MeshCache* meshes,
+AssetSystem::AssetSystem(LoggingProvider& logging,
+                         AssetRegistry& registry,
+                         StaticMeshCache* meshes,
                          MaterialCache* materials)
-    : Registry(registry)
-    , Meshes(meshes)
+    : Log(logging.GetLogger<AssetSystem>())
+    , Registry(registry)
+    , StaticMeshes(meshes)
     , Materials(materials)
+    , StaticMeshFileLoader(logging)
 {
 }
 
-MeshHandle AssetSystem::RegisterProceduralMesh(std::string_view path, MeshData mesh)
+StaticMeshHandle AssetSystem::RegisterProceduralStaticMesh(std::string_view path, StaticMeshData mesh)
 {
     if (!IsValidAssetPath(path))
     {
-        std::fprintf(stderr, "AssetSystem: invalid procedural mesh asset path: %.*s\n",
-            static_cast<int>(path.size()), path.data());
-        assert(false && "Invalid procedural mesh asset path");
+        Log.Error("AssetSystem: invalid procedural static mesh asset path: {}", path);
+        assert(false && "Invalid procedural static mesh asset path");
         return {};
     }
 
     AssetRecord record{
-        .Type = AssetType::Mesh,
+        .Type = AssetType::StaticMesh,
         .SourceKind = AssetSourceKind::Procedural,
         .Path = std::string(path),
         .FilePath = "",
@@ -43,26 +49,23 @@ MeshHandle AssetSystem::RegisterProceduralMesh(std::string_view path, MeshData m
 
     if (!Registry.RegisterOrVerify(record))
     {
-        std::fprintf(stderr, "AssetSystem: failed to register procedural mesh asset: %s\n",
-            record.Path.c_str());
-        assert(false && "Failed to register procedural mesh asset");
+        Log.Error("AssetSystem: failed to register procedural static mesh asset: {}", record.Path);
+        assert(false && "Failed to register procedural static mesh asset");
         return {};
     }
 
-    if (!Meshes)
+    if (!StaticMeshes)
     {
-        std::fprintf(stderr, "AssetSystem: missing MeshCache for procedural mesh asset %s\n",
-            record.Path.c_str());
-        assert(false && "Missing MeshCache for procedural mesh asset");
+        Log.Error("AssetSystem: missing StaticMeshCache for procedural static mesh asset {}", record.Path);
+        assert(false && "Missing StaticMeshCache for procedural static mesh asset");
         return {};
     }
 
-    MeshHandle handle = Meshes->CreateFromData(record.Path, mesh);
+    StaticMeshHandle handle = StaticMeshes->CreateFromData(record.Path, mesh);
     if (!handle.IsValid())
     {
-        std::fprintf(stderr, "AssetSystem: failed to create procedural mesh runtime resource: %s\n",
-            record.Path.c_str());
-        assert(false && "Failed to create procedural mesh runtime resource");
+        Log.Error("AssetSystem: failed to create procedural static mesh runtime resource: {}", record.Path);
+        assert(false && "Failed to create procedural static mesh runtime resource");
         return {};
     }
 
@@ -73,8 +76,7 @@ MaterialHandle AssetSystem::RegisterProceduralMaterial(std::string_view path, Ma
 {
     if (!IsValidAssetPath(path))
     {
-        std::fprintf(stderr, "AssetSystem: invalid procedural material asset path: %.*s\n",
-            static_cast<int>(path.size()), path.data());
+        Log.Error("AssetSystem: invalid procedural material asset path: {}", path);
         assert(false && "Invalid procedural material asset path");
         return {};
     }
@@ -88,16 +90,14 @@ MaterialHandle AssetSystem::RegisterProceduralMaterial(std::string_view path, Ma
 
     if (!Registry.RegisterOrVerify(record))
     {
-        std::fprintf(stderr, "AssetSystem: failed to register procedural material asset: %s\n",
-            record.Path.c_str());
+        Log.Error("AssetSystem: failed to register procedural material asset: {}", record.Path);
         assert(false && "Failed to register procedural material asset");
         return {};
     }
 
     if (!Materials)
     {
-        std::fprintf(stderr, "AssetSystem: missing MaterialCache for procedural material asset %s\n",
-            record.Path.c_str());
+        Log.Error("AssetSystem: missing MaterialCache for procedural material asset {}", record.Path);
         assert(false && "Missing MaterialCache for procedural material asset");
         return {};
     }
@@ -105,8 +105,7 @@ MaterialHandle AssetSystem::RegisterProceduralMaterial(std::string_view path, Ma
     MaterialHandle handle = Materials->Register(record.Path, material);
     if (!handle.IsValid())
     {
-        std::fprintf(stderr, "AssetSystem: failed to create procedural material runtime resource: %s\n",
-            record.Path.c_str());
+        Log.Error("AssetSystem: failed to create procedural material runtime resource: {}", record.Path);
         assert(false && "Failed to create procedural material runtime resource");
         return {};
     }
@@ -114,9 +113,9 @@ MaterialHandle AssetSystem::RegisterProceduralMaterial(std::string_view path, Ma
     return handle;
 }
 
-std::string_view AssetSystem::GetPathForMesh(MeshHandle handle) const
+std::string_view AssetSystem::GetPathForStaticMesh(StaticMeshHandle handle) const
 {
-    return Meshes ? Meshes->GetName(handle) : std::string_view{};
+    return StaticMeshes ? StaticMeshes->GetName(handle) : std::string_view{};
 }
 
 std::string_view AssetSystem::GetPathForMaterial(MaterialHandle handle) const
@@ -128,35 +127,32 @@ const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expecte
 {
     if (path.empty())
     {
-        std::fprintf(stderr, "AssetSystem: empty asset path\n");
+        Log.Error("AssetSystem: empty asset path");
         return nullptr;
     }
 
     const AssetRecord* record = Registry.FindByPath(path);
     if (!record)
     {
-        std::fprintf(stderr, "AssetSystem: asset path not registered: %.*s\n",
-            static_cast<int>(path.size()), path.data());
+        Log.Error("AssetSystem: failed to resolve asset '{}'", path);
         return nullptr;
     }
 
     if (record->Type != expectedType)
     {
-        std::fprintf(stderr, "AssetSystem: expected %.*s asset, got %.*s for path %s\n",
-            static_cast<int>(AssetTypeToString(expectedType).size()),
-            AssetTypeToString(expectedType).data(),
-            static_cast<int>(AssetTypeToString(record->Type).size()),
-            AssetTypeToString(record->Type).data(),
-            record->Path.c_str());
+        Log.Error("AssetSystem: expected {} asset, got {} for path {}",
+                  AssetTypeToString(expectedType),
+                  AssetTypeToString(record->Type),
+                  record->Path);
         return nullptr;
     }
 
     return record;
 }
 
-MeshHandle AssetSystem::LoadMesh(std::string_view path)
+StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
 {
-    const AssetRecord* record = Resolve(path, AssetType::Mesh);
+    const AssetRecord* record = Resolve(path, AssetType::StaticMesh);
     if (!record)
         return {};
 
@@ -164,40 +160,55 @@ MeshHandle AssetSystem::LoadMesh(std::string_view path)
     {
     case AssetSourceKind::Procedural:
     {
-        if (!Meshes)
+        if (!StaticMeshes)
         {
-            std::fprintf(stderr, "AssetSystem: missing MeshCache for mesh asset %s\n",
-                record->Path.c_str());
+            Log.Error("AssetSystem: missing StaticMeshCache for static mesh asset {}", record->Path);
             return {};
         }
 
-        // Scene load currently acquires a runtime reference to this asset. Scene
-        // unload/reload code is responsible for releasing those handles later.
-        MeshHandle handle = Meshes->Acquire(record->Path);
+        StaticMeshHandle handle = StaticMeshes->Acquire(record->Path);
         if (!handle.IsValid())
         {
-            std::fprintf(stderr, "AssetSystem: mesh cache has no runtime resource for path %s\n",
-                record->Path.c_str());
+            Log.Error("AssetSystem: static mesh cache has no runtime resource for path {}", record->Path);
             return {};
         }
 
         return handle;
     }
     case AssetSourceKind::File:
-        std::fprintf(stderr, "AssetSystem: .smesh file loading not implemented: %s\n",
-            record->FilePath.empty() ? record->Path.c_str() : record->FilePath.c_str());
-        return {};
+    {
+        if (!StaticMeshes)
+        {
+            Log.Error("AssetSystem: missing StaticMeshCache for static mesh asset {}", record->Path);
+            return {};
+        }
+
+        if (StaticMeshHandle existing = StaticMeshes->Acquire(record->Path); existing.IsValid())
+            return existing;
+
+        StaticMeshData mesh;
+        const std::string_view filePath =
+            record->FilePath.empty() ? std::string_view(record->Path) : std::string_view(record->FilePath);
+        if (!StaticMeshFileLoader.LoadFromFile(filePath, mesh))
+            return {};
+
+        StaticMeshHandle handle = StaticMeshes->CreateFromData(record->Path, mesh);
+        if (!handle.IsValid())
+        {
+            Log.Error("AssetSystem: failed to upload static mesh '{}'", filePath);
+            return {};
+        }
+
+        return handle;
+    }
     case AssetSourceKind::Generated:
-        std::fprintf(stderr, "AssetSystem: generated mesh loading not implemented: %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: generated static mesh loading not implemented: {}", record->Path);
         return {};
     case AssetSourceKind::Embedded:
-        std::fprintf(stderr, "AssetSystem: embedded mesh loading not implemented: %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: embedded static mesh loading not implemented: {}", record->Path);
         return {};
     default:
-        std::fprintf(stderr, "AssetSystem: unknown mesh source kind for path %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: unknown static mesh source kind for path {}", record->Path);
         return {};
     }
 }
@@ -214,38 +225,31 @@ MaterialHandle AssetSystem::LoadMaterial(std::string_view path)
     {
         if (!Materials)
         {
-            std::fprintf(stderr, "AssetSystem: missing MaterialCache for material asset %s\n",
-                record->Path.c_str());
+            Log.Error("AssetSystem: missing MaterialCache for material asset {}", record->Path);
             return {};
         }
 
-        // Scene load currently acquires a runtime reference to this asset. Scene
-        // unload/reload code is responsible for releasing those handles later.
         MaterialHandle handle = Materials->Acquire(record->Path);
         if (!handle.IsValid())
         {
-            std::fprintf(stderr, "AssetSystem: material cache has no runtime resource for path %s\n",
-                record->Path.c_str());
+            Log.Error("AssetSystem: material cache has no runtime resource for path {}", record->Path);
             return {};
         }
 
         return handle;
     }
     case AssetSourceKind::File:
-        std::fprintf(stderr, "AssetSystem: .smat file loading not implemented: %s\n",
-            record->FilePath.empty() ? record->Path.c_str() : record->FilePath.c_str());
+        Log.Error("AssetSystem: .smat file loading not implemented: {}",
+                  record->FilePath.empty() ? record->Path : record->FilePath);
         return {};
     case AssetSourceKind::Generated:
-        std::fprintf(stderr, "AssetSystem: generated material loading not implemented: %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: generated material loading not implemented: {}", record->Path);
         return {};
     case AssetSourceKind::Embedded:
-        std::fprintf(stderr, "AssetSystem: embedded material loading not implemented: %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: embedded material loading not implemented: {}", record->Path);
         return {};
     default:
-        std::fprintf(stderr, "AssetSystem: unknown material source kind for path %s\n",
-            record->Path.c_str());
+        Log.Error("AssetSystem: unknown material source kind for path {}", record->Path);
         return {};
     }
 }

@@ -3,7 +3,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <render/static_mesh/StaticMeshCache.h>
 
 class LoggingProvider;
 class VulkanBufferService;
@@ -12,14 +12,14 @@ struct RuntimeAssets
 {
     AssetRegistry Registry;
     MaterialCache Materials;
-    MeshCache Meshes;
+    StaticMeshCache StaticMeshes;
     AssetSystem Assets;
 
     RuntimeAssets(LoggingProvider& logging, VulkanBufferService& buffers)
         : Registry(logging)
         , Materials()
-        , Meshes(logging, buffers)
-        , Assets(Registry, Meshes, Materials)
+        , StaticMeshes(logging, buffers)
+        , Assets(logging, Registry, StaticMeshes, Materials)
     {
     }
 

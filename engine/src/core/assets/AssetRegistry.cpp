@@ -8,7 +8,7 @@ namespace
 
     AssetType AssetTypeFromExtension(std::string_view extension)
     {
-        if (extension == ".smesh") return AssetType::Mesh;
+        if (extension == ".smesh") return AssetType::StaticMesh;
         if (extension == ".smat")  return AssetType::Material;
         if (extension == ".stex")  return AssetType::Texture;
         if (extension == ".smap")  return AssetType::Scene;

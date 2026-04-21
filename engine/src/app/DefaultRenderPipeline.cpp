@@ -14,7 +14,7 @@
 #include <memory>
 #include <unordered_set>
 
-void DefaultRenderPipeline::SetAssetStores(MeshCache& meshes, MaterialCache& materials)
+void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials)
 {
     Meshes = &meshes;
     Materials = &materials;
@@ -81,7 +81,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             continue;
 
         auto* transforms = registry->Components.TryGet<TransformStore<Transform3f>>();
-        auto* renderers = registry->Components.TryGet<MeshRendererStore>();
+        auto* renderers = registry->Components.TryGet<StaticMeshComponentStore>();
 
         if (transforms == nullptr || renderers == nullptr)
             continue;
