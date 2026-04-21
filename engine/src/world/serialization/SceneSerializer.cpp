@@ -1,11 +1,12 @@
 #include <world/serialization/SceneSerializer.h>
 
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryArchive.h>
 #include <core/serialization/BinaryFormat.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
 #include <render/Camera.h>
-#include <render/MeshRendererComponent.h>
+#include <render/StaticMeshComponent.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
@@ -293,7 +294,7 @@ void InitSceneSerializer()
 {
     RegisterComponent<TransformComponent<Transform3f>>();
     RegisterComponent<CameraComponent>();
-    RegisterComponent<MeshRendererComponent>();
+    RegisterComponent<StaticMeshComponent>();
 }
 
 const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializerEntries()
@@ -303,7 +304,8 @@ const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializer
 
 bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer, SceneSaveError* error)
 {
-    SceneSerializationContext context;
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
     return SaveSceneBinary(registry, writer, context, error);
 }
 
@@ -349,7 +351,8 @@ bool SaveSceneBinary(const Registry& registry,
 
 bool LoadSceneBinary(BinaryReader& reader, Registry& registry, SceneLoadError* error)
 {
-    SceneSerializationContext context;
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
     return LoadSceneBinary(reader, registry, context, error);
 }
 
@@ -424,7 +427,8 @@ bool LoadSceneBinary(BinaryReader& reader,
 
 JsonValue SaveSceneJson(const Registry& registry)
 {
-    SceneSerializationContext context;
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
     return SaveSceneJson(registry, context);
 }
 
@@ -487,7 +491,8 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
 
 bool LoadSceneJson(const JsonValue& root, Registry& registry, SceneLoadError* error)
 {
-    SceneSerializationContext context;
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
     return LoadSceneJson(root, registry, context, error);
 }
 

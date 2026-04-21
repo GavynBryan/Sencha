@@ -15,7 +15,7 @@ TEST(DefaultZoneBuilder, CreatesZoneAndRegistersDefaultStoresAndResources)
 
     EXPECT_EQ(&registry, runtime.FindZone(ZoneId{ 7 }));
     EXPECT_TRUE(registry.Components.Has<TransformStore<Transform3f>>());
-    EXPECT_TRUE(registry.Components.Has<MeshRendererStore>());
+    EXPECT_TRUE(registry.Components.Has<StaticMeshComponentStore>());
     EXPECT_TRUE(registry.Components.Has<CameraStore>());
     EXPECT_TRUE(registry.Resources.Has<TransformHierarchyService>());
     EXPECT_TRUE(registry.Resources.Has<TransformPropagationOrderService>());

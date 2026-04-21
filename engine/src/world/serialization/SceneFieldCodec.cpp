@@ -5,11 +5,10 @@
 
 namespace
 {
-    Logger* TryGetSceneLogger(SceneSerializationContext& context)
+    Logger& GetSceneLogger(SceneSerializationContext& context)
     {
-        return context.Logging != nullptr
-            ? &context.Logging->GetLogger<SceneSerializationContext>()
-            : nullptr;
+        assert(context.Logging != nullptr);
+        return context.Logging->GetLogger<SceneSerializationContext>();
     }
 }
 
@@ -49,25 +48,22 @@ namespace
         AssetType type = AssetType::Unknown;
         if (!AssetTypeFromString(typeText, type))
         {
-            if (Logger* log = TryGetSceneLogger(context))
-                log->Error("SceneFieldCodec: field '{}' has unknown asset type '{}'", key, typeText);
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has unknown asset type '{}'", key, typeText);
             archive.MarkInvalidField(key);
             return false;
         }
 
         if (type != expected)
         {
-            if (Logger* log = TryGetSceneLogger(context))
-                log->Error("SceneFieldCodec: field '{}' expected asset type '{}', got '{}'",
-                           key, AssetTypeToString(expected), typeText);
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' expected asset type '{}', got '{}'",
+                                          key, AssetTypeToString(expected), typeText);
             archive.MarkInvalidField(key);
             return false;
         }
 
         if (path.empty())
         {
-            if (Logger* log = TryGetSceneLogger(context))
-                log->Error("SceneFieldCodec: field '{}' has an empty asset path", key);
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
             archive.MarkMissingField(key);
             return false;
         }
@@ -91,8 +87,7 @@ namespace
             if (!outPath.empty())
                 return true;
 
-            if (Logger* log = TryGetSceneLogger(context))
-                log->Error("SceneFieldCodec: field '{}' has an empty asset path", key);
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
             archive.MarkMissingField(key);
             return false;
         }
@@ -100,8 +95,8 @@ namespace
         if (archive.IsObject(key))
             return ReadLegacyAssetRef(archive, key, expected, outPath, context);
 
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec: field '{}' must be an asset path string or legacy AssetRef object", key);
+        GetSceneLogger(context).Error(
+            "SceneFieldCodec: field '{}' must be an asset path string or legacy AssetRef object", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -113,8 +108,7 @@ namespace
     {
         if (path.empty())
         {
-            if (Logger* log = TryGetSceneLogger(context))
-                log->Error("SceneFieldCodec: field '{}' has no registered asset path", key);
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has no registered asset path", key);
             archive.MarkInvalidField(key);
             return false;
         }
@@ -134,8 +128,7 @@ bool SceneFieldCodec<StaticMeshHandle>::Save(IWriteArchive& archive,
 
     if (!context.Assets)
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -157,8 +150,7 @@ bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
 
     if (!context.Assets)
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -166,8 +158,8 @@ bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
     value = context.Assets->LoadStaticMesh(path);
     if (!value.IsValid())
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<StaticMeshHandle>: failed to load static mesh asset '{}'", path);
+        GetSceneLogger(context).Error("SceneFieldCodec<StaticMeshHandle>: failed to load static mesh asset '{}'",
+                                      path);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -185,8 +177,7 @@ bool SceneFieldCodec<MaterialHandle>::Save(IWriteArchive& archive,
 
     if (!context.Assets)
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -208,8 +199,7 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
 
     if (!context.Assets)
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: missing AssetSystem for field '{}'", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -217,8 +207,7 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
     value = context.Assets->LoadMaterial(path);
     if (!value.IsValid())
     {
-        if (Logger* log = TryGetSceneLogger(context))
-            log->Error("SceneFieldCodec<MaterialHandle>: failed to load material asset '{}'", path);
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialHandle>: failed to load material asset '{}'", path);
         archive.MarkInvalidField(key);
         return false;
     }

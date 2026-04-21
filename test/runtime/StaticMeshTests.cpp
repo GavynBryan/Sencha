@@ -51,14 +51,35 @@ TEST(StaticMeshValidation, ComputeStaticMeshSectionBoundsUsesSectionIndices)
     mesh.Sections.push_back({
         .IndexOffset = 0,
         .IndexCount = 3,
-        .VertexOffset = 1,
-        .VertexCount = 1,
+        .VertexOffset = 0,
+        .VertexCount = 3,
         .MaterialSlot = 0,
     });
 
     const Aabb3d bounds = ComputeStaticMeshSectionBounds(mesh, mesh.Sections[0]);
     EXPECT_EQ(bounds.Min, Vec3d(0.0, 0.0, 0.0));
     EXPECT_EQ(bounds.Max, Vec3d(1.0, 1.0, 0.0));
+}
+
+TEST(StaticMeshValidation, SectionVertexRangeMustContainSectionIndices)
+{
+    StaticMeshData mesh;
+    mesh.Vertices = {
+        { Vec3d(0.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 0.0) },
+        { Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(1.0, 0.0) },
+        { Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 1.0) },
+    };
+    mesh.Indices = { 0, 1, 2 };
+    mesh.Sections.push_back({
+        .IndexOffset = 0,
+        .IndexCount = 3,
+        .VertexOffset = 1,
+        .VertexCount = 1,
+        .MaterialSlot = 0,
+    });
+
+    const StaticMeshValidationResult result = ValidateStaticMeshData(mesh);
+    EXPECT_FALSE(result.IsValid());
 }
 
 TEST(StaticMeshValidation, RecomputeStaticMeshBoundsUpdatesMeshAndSections)

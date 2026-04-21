@@ -82,6 +82,21 @@ StaticMeshValidationResult ValidateStaticMeshData(const StaticMeshData& mesh)
             AddError(result, "section " + std::to_string(sectionIndex) + " vertex range exceeds vertex buffer");
         if (section.LocalBounds.IsValid() && !IsFinite(section.LocalBounds))
             AddError(result, "section " + std::to_string(sectionIndex) + " local bounds must be finite");
+
+        if (section.IndexCount > 0 && endIndex <= mesh.Indices.size() && section.VertexCount > 0 && endVertex <= mesh.Vertices.size())
+        {
+            for (uint64_t index = section.IndexOffset; index < endIndex; ++index)
+            {
+                const uint32_t vertexIndex = mesh.Indices[static_cast<size_t>(index)];
+                if (vertexIndex < section.VertexOffset || vertexIndex >= endVertex)
+                {
+                    AddError(result,
+                             "section " + std::to_string(sectionIndex)
+                             + " indices must fall within its vertex range");
+                    break;
+                }
+            }
+        }
     }
 
     return result;

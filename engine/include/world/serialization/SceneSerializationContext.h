@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 class AssetSystem;
 class LoggingProvider;
 
@@ -11,6 +13,13 @@ class LoggingProvider;
 //=============================================================================
 struct SceneSerializationContext
 {
+    SceneSerializationContext(LoggingProvider& logging, AssetSystem* assets = nullptr)
+        : Assets(assets)
+        , Logging(&logging)
+    {
+        assert(Logging != nullptr);
+    }
+
     AssetSystem* Assets = nullptr;
     LoggingProvider* Logging = nullptr;
 };

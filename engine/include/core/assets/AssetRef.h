@@ -49,7 +49,6 @@ inline std::string_view AssetTypeToString(AssetType type)
 inline bool AssetTypeFromString(std::string_view name, AssetType& out)
 {
     if (name == "StaticMesh") { out = AssetType::StaticMesh; return true; }
-    if (name == "Mesh")       { out = AssetType::StaticMesh; return true; }
     if (name == "Material") { out = AssetType::Material; return true; }
     if (name == "Texture")  { out = AssetType::Texture;  return true; }
     if (name == "Scene")    { out = AssetType::Scene;    return true; }

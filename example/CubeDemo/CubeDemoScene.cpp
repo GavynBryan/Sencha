@@ -4,7 +4,7 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/Camera.h>
-#include <render/MeshRendererComponent.h>
+#include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformHierarchyService.h>
@@ -64,10 +64,7 @@ DemoScene LoadDemoScene(Registry& registry,
     }
 
     SceneLoadError loadError;
-    SceneSerializationContext sceneContext{
-        .Assets = &assets,
-        .Logging = &logging,
-    };
+    SceneSerializationContext sceneContext(logging, &assets);
     if (!LoadSceneJson(*json, registry, sceneContext, &loadError))
     {
         logging.GetLogger<DemoScene>().Error("CubeDemo: scene load error: {}", loadError.Message);

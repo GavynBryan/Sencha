@@ -11,34 +11,34 @@
 #include <tuple>
 
 //=============================================================================
-// MeshRendererComponent
+// StaticMeshComponent
 //
 // ECS component that pairs an entity with a mesh and material. LayerMask and
-// SubmeshMask are bitmasks: a cleared bit skips the corresponding layer or
-// submesh during extraction.
+// SectionMask are bitmasks: a cleared bit skips the corresponding layer or
+// section during extraction.
 //=============================================================================
-struct MeshRendererComponent
+struct StaticMeshComponent
 {
     StaticMeshHandle Mesh;
     MaterialHandle Material;
     bool Visible = true;
     uint32_t LayerMask = 0xFFFFFFFFu;
-    uint32_t SubmeshMask = 0xFFFFFFFFu;
+    uint32_t SectionMask = 0xFFFFFFFFu;
 };
 
 template <>
-struct TypeSchema<MeshRendererComponent>
+struct TypeSchema<StaticMeshComponent>
 {
-    static constexpr std::string_view Name = "MeshRenderer";
+    static constexpr std::string_view Name = "StaticMesh";
 
     static auto Fields()
     {
         return std::tuple{
-            MakeField("mesh", &MeshRendererComponent::Mesh),
-            MakeField("material", &MeshRendererComponent::Material),
-            MakeField("visible", &MeshRendererComponent::Visible),
-            MakeField("layer_mask", &MeshRendererComponent::LayerMask),
-            MakeField("submesh_mask", &MeshRendererComponent::SubmeshMask),
+            MakeField("mesh", &StaticMeshComponent::Mesh),
+            MakeField("material", &StaticMeshComponent::Material),
+            MakeField("visible", &StaticMeshComponent::Visible),
+            MakeField("layer_mask", &StaticMeshComponent::LayerMask),
+            MakeField("section_mask", &StaticMeshComponent::SectionMask),
         };
     }
 };

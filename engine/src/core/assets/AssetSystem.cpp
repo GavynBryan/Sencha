@@ -190,10 +190,7 @@ StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
         const std::string_view filePath =
             record->FilePath.empty() ? std::string_view(record->Path) : std::string_view(record->FilePath);
         if (!StaticMeshFileLoader.LoadFromFile(filePath, mesh))
-        {
-            Log.Error("AssetSystem: failed to load static mesh file '{}'", filePath);
             return {};
-        }
 
         StaticMeshHandle handle = StaticMeshes->CreateFromData(record->Path, mesh);
         if (!handle.IsValid())

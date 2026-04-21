@@ -81,7 +81,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             continue;
 
         auto* transforms = registry->Components.TryGet<TransformStore<Transform3f>>();
-        auto* renderers = registry->Components.TryGet<MeshRendererStore>();
+        auto* renderers = registry->Components.TryGet<StaticMeshComponentStore>();
 
         if (transforms == nullptr || renderers == nullptr)
             continue;

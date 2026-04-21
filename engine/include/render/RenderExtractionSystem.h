@@ -2,23 +2,23 @@
 
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
+#include <render/StaticMeshComponentStore.h>
 #include <render/static_mesh/StaticMeshCache.h>
-#include <render/MeshRendererStore.h>
 #include <render/RenderQueue.h>
 #include <world/transform/TransformStore.h>
 
 //=============================================================================
 // RenderExtractionSystem
 //
-// Stateless system that walks all visible MeshRendererComponents and emits
-// one RenderQueueItem per enabled submesh into the RenderQueue. World-space
+// Stateless system that walks all visible StaticMeshComponents and emits
+// one RenderQueueItem per enabled section into the RenderQueue. World-space
 // bounds are computed here for use by the subsequent culling pass.
 //=============================================================================
 class RenderExtractionSystem
 {
 public:
     static void Extract(const TransformStore<Transform3f>& transforms,
-                        const MeshRendererStore& renderers,
+                        const StaticMeshComponentStore& renderers,
                         const StaticMeshCache& meshes,
                         const MaterialCache& materials,
                         const CameraRenderData& camera,

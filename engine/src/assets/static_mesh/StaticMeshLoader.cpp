@@ -5,13 +5,99 @@
 #include <core/serialization/BinaryReader.h>
 #include <render/static_mesh/StaticMeshValidation.h>
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
-#include <sstream>
+#include <istream>
 #include <vector>
 
 namespace
 {
+    class MemoryStreamBuffer final : public std::streambuf
+    {
+    public:
+        explicit MemoryStreamBuffer(std::span<const std::byte> bytes)
+        {
+            char* begin = &Empty;
+            char* end = begin;
+            if (!bytes.empty())
+            {
+                begin = reinterpret_cast<char*>(const_cast<std::byte*>(bytes.data()));
+                end = begin + bytes.size();
+            }
+
+            setg(begin, begin, end);
+        }
+
+    protected:
+        std::streambuf* setbuf(char_type*, std::streamsize) override
+        {
+            return this;
+        }
+
+        std::streamsize xsgetn(char_type* destination, std::streamsize count) override
+        {
+            const std::streamsize available = egptr() - gptr();
+            const std::streamsize toRead = std::min(count, available);
+            if (toRead > 0)
+            {
+                std::memcpy(destination, gptr(), static_cast<size_t>(toRead));
+                gbump(static_cast<int>(toRead));
+            }
+            return toRead;
+        }
+
+        pos_type seekoff(off_type offset,
+                         std::ios_base::seekdir direction,
+                         std::ios_base::openmode which) override
+        {
+            if ((which & std::ios_base::in) == 0)
+                return pos_type(off_type(-1));
+
+            const off_type size = egptr() - eback();
+            off_type next = 0;
+            switch (direction)
+            {
+            case std::ios_base::beg:
+                next = offset;
+                break;
+            case std::ios_base::cur:
+                next = (gptr() - eback()) + offset;
+                break;
+            case std::ios_base::end:
+                next = size + offset;
+                break;
+            default:
+                return pos_type(off_type(-1));
+            }
+
+            if (next < 0 || next > size)
+                return pos_type(off_type(-1));
+
+            setg(eback(), eback() + next, egptr());
+            return pos_type(next);
+        }
+
+        pos_type seekpos(pos_type position, std::ios_base::openmode which) override
+        {
+            return seekoff(off_type(position), std::ios_base::beg, which);
+        }
+
+    private:
+        char Empty = '\0';
+    };
+
+    struct ByteRegion
+    {
+        uint64_t Offset = 0;
+        uint64_t Size = 0;
+
+        [[nodiscard]] uint64_t End() const
+        {
+            return Offset + Size;
+        }
+    };
+
     Aabb3d ReadBounds(const float (&minValue)[3], const float (&maxValue)[3])
     {
         return Aabb3d::FromMinMax(
@@ -47,6 +133,16 @@ namespace
         return reader.ReadBytes(
             reinterpret_cast<char*>(out.data()),
             static_cast<std::streamsize>(sizeof(T) * count));
+    }
+
+    bool IsRegionWithinFile(const ByteRegion& region, size_t fileSize)
+    {
+        return region.End() >= region.Offset && region.End() <= fileSize;
+    }
+
+    bool RegionsOverlap(const ByteRegion& a, const ByteRegion& b)
+    {
+        return a.Offset < b.End() && b.Offset < a.End();
     }
 }
 
@@ -86,13 +182,8 @@ bool StaticMeshLoader::LoadFromBytes(std::span<const std::byte> bytes,
                                      StaticMeshData& out,
                                      std::string_view sourceName)
 {
-    std::string buffer(bytes.size(), '\0');
-    if (!bytes.empty())
-    {
-        std::memcpy(buffer.data(), bytes.data(), bytes.size());
-    }
-
-    std::istringstream stream(buffer, std::ios::binary);
+    MemoryStreamBuffer buffer(bytes);
+    std::istream stream(&buffer);
     BinaryReader reader(stream);
     return LoadFromReader(reader, bytes.size(), sourceName, out);
 }
@@ -162,16 +253,25 @@ bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
     const uint64_t vertexBytes = uint64_t(sizeof(StaticMeshVertex)) * header.VertexCount;
     const uint64_t indexBytes = uint64_t(sizeof(uint32_t)) * header.IndexCount;
 
-    const uint64_t sectionEnd = uint64_t(header.SectionTableOffset) + sectionBytes;
-    const uint64_t vertexEnd = uint64_t(header.VertexDataOffset) + vertexBytes;
-    const uint64_t indexEnd = uint64_t(header.IndexDataOffset) + indexBytes;
+    const ByteRegion sections{
+        .Offset = header.SectionTableOffset,
+        .Size = sectionBytes,
+    };
+    const ByteRegion vertices{
+        .Offset = header.VertexDataOffset,
+        .Size = vertexBytes,
+    };
+    const ByteRegion indices{
+        .Offset = header.IndexDataOffset,
+        .Size = indexBytes,
+    };
 
-    if (header.SectionTableOffset < sizeof(SmeshFileHeader)
-        || header.VertexDataOffset < sectionEnd
-        || header.IndexDataOffset < vertexEnd
-        || sectionEnd > fileSize
-        || vertexEnd > fileSize
-        || indexEnd > fileSize)
+    if (!IsRegionWithinFile(sections, fileSize)
+        || !IsRegionWithinFile(vertices, fileSize)
+        || !IsRegionWithinFile(indices, fileSize)
+        || RegionsOverlap(sections, vertices)
+        || RegionsOverlap(sections, indices)
+        || RegionsOverlap(vertices, indices))
     {
         Log.Error("StaticMeshLoader: failed to load '{}': invalid offsets", sourceName);
         return false;

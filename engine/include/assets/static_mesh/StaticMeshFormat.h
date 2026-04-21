@@ -56,4 +56,6 @@ struct SmeshSectionRecord
     float BoundsMax[3]{};
 };
 
-static_assert(sizeof(StaticMeshVertex) > 0);
+static_assert(sizeof(SmeshFileHeader) == 88);
+static_assert(sizeof(SmeshSectionRecord) == 48);
+static_assert(sizeof(StaticMeshVertex) == 32);

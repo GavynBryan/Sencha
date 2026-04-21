@@ -1,8 +1,8 @@
 #pragma once
 
 #include <render/Camera.h>
-#include <render/MeshRendererComponent.h>
-#include <render/MeshRendererStore.h>
+#include <render/StaticMeshComponent.h>
+#include <render/StaticMeshComponentStore.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/transform/TransformHierarchyService.h>
@@ -23,12 +23,12 @@ template <typename T>
 struct ComponentStorageTraits;
 
 template <>
-struct ComponentStorageTraits<MeshRendererComponent>
+struct ComponentStorageTraits<StaticMeshComponent>
 {
-    using Store = MeshRendererStore;
+    using Store = StaticMeshComponentStore;
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::MeshRenders;
 
-    static bool Add(Registry& registry, EntityId entity, MeshRendererComponent component)
+    static bool Add(Registry& registry, EntityId entity, StaticMeshComponent component)
     {
         return registry.Components.Ensure<Store>().Add(entity, component);
     }

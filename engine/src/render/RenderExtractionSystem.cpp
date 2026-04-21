@@ -22,7 +22,7 @@ namespace
 }
 
 void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const MeshRendererStore& renderers,
+                                     const StaticMeshComponentStore& renderers,
                                      const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
                                      const CameraRenderData& camera,
@@ -33,7 +33,7 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
 
     for (size_t i = 0; i < items.size(); ++i)
     {
-        const MeshRendererComponent& renderer = items[i];
+        const StaticMeshComponent& renderer = items[i];
         if (!renderer.Visible) continue;
 
         // SparseSet stores raw indices; generation 1 is the minimum valid value.
@@ -53,7 +53,7 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
              sectionIndex < static_cast<uint32_t>(mesh->Sections.size());
              ++sectionIndex)
         {
-            if ((renderer.SubmeshMask & (1u << sectionIndex)) == 0) continue;
+            if ((renderer.SectionMask & (1u << sectionIndex)) == 0) continue;
 
             RenderQueueItem item{};
             item.Mesh = renderer.Mesh;

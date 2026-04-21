@@ -12,7 +12,8 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
-#include <render/MeshRendererComponent.h>
+#include <render/StaticMeshComponent.h>
+#include <render/StaticMeshComponentStore.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
@@ -69,7 +70,7 @@ namespace
         auto& order = registry.Resources.Register<TransformPropagationOrderService>();
         registry.Resources.Register<TransformHierarchyService>();
         registry.Components.Register<TransformStore<Transform3f>>(order);
-        registry.Components.Register<MeshRendererStore>();
+        registry.Components.Register<StaticMeshComponentStore>();
         registry.Components.Register<CameraStore>();
         return registry;
     }
@@ -261,13 +262,13 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
     EXPECT_EQ(loaded.Resources.Get<TransformHierarchyService>().GetRoots().size(), 1u);
 }
 
-TEST(SceneSerializer, RegistersMeshRendererThroughGenericSerializer)
+TEST(SceneSerializer, RegistersStaticMeshThroughGenericSerializer)
 {
     ResetSceneSerializers();
 
     bool found = false;
     for (const auto& entry : GetComponentSerializerEntries())
-        found = found || entry->JsonKey() == "MeshRenderer";
+        found = found || entry->JsonKey() == "StaticMesh";
 
     EXPECT_TRUE(found);
 }
@@ -290,7 +291,7 @@ TEST(SceneSerializer, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     registry.Components.Ensure<SparseSetStore<SceneCodecMaterialComponent>>()
         .Add(entity, SceneCodecMaterialComponent{ .Material = material });
 
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
     JsonValue json = SaveSceneJson(registry, context);
 
     const JsonValue* entities = json.Find("entities");
@@ -318,7 +319,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecWritesPathString)
         "asset://materials/dev/red.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Save(archive, "material", handle, context));
 
@@ -341,7 +342,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsPathString)
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
@@ -362,7 +363,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsLegacyAssetRefObject)
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
@@ -375,9 +376,9 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsWrongTypeEmptyPathAndMissin
     AssetRegistry registry(logging);
     MaterialCache materials;
     AssetSystem assets(logging, registry, nullptr, &materials);
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
 
-    auto wrongType = JsonParse(R"({ "type": "Mesh", "path": "asset://materials/dev/red.smat" })");
+    auto wrongType = JsonParse(R"({ "type": "StaticMesh", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(wrongType.has_value());
     JsonReadArchive wrongTypeArchive(*wrongType);
     MaterialHandle loaded;
@@ -416,7 +417,7 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsRegistryTypeMismatch)
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
 
-    SceneSerializationContext context{ .Assets = &assets, .Logging = &logging };
+    SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
     EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
@@ -425,10 +426,11 @@ TEST(SceneSerializer, MaterialHandleSceneCodecRejectsRegistryTypeMismatch)
 
 TEST(SceneSerializer, StaticMeshHandleSceneCodecRejectsWrongLegacyObjectType)
 {
+    LoggingProvider logging;
     auto wrongType = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
     ASSERT_TRUE(wrongType.has_value());
 
-    SceneSerializationContext context;
+    SceneSerializationContext context(logging);
     JsonReadArchive archive(*wrongType);
     StaticMeshHandle loaded;
     EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
