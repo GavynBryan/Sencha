@@ -5,7 +5,6 @@
 #include "../ui/EditorUiFeature.h"
 #include "../ui/ToolPalettePanel.h"
 #include "../ui/ViewportPanel.h"
-#include "../viewport/FourWayViewportLayout.h"
 
 #include <SDL3/SDL.h>
 

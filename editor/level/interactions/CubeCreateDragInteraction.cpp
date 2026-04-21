@@ -38,9 +38,10 @@ void CubeCreateDragInteraction::UpdatePreview(ToolContext& ctx,
                                                Vec3d snapped,
                                                const EditorViewport& viewport)
 {
-    const int uIdx = AxisIndex(viewport.ActiveGrid.AxisU);
-    const int vIdx = AxisIndex(viewport.ActiveGrid.AxisV);
-    const float minHalf = viewport.ActiveGrid.Spacing * 0.5f;
+    const GridPlane grid = viewport.GetGrid();
+    const int uIdx = AxisIndex(grid.AxisU);
+    const int vIdx = AxisIndex(grid.AxisV);
+    const float minHalf = grid.Spacing * 0.5f;
 
     Vec3d halfExtents(0.5f, 0.5f, 0.5f);
     halfExtents[uIdx] = std::max(std::abs(snapped[uIdx] - AnchorGrid[uIdx]) * 0.5f, minHalf);
@@ -52,7 +53,7 @@ void CubeCreateDragInteraction::UpdatePreview(ToolContext& ctx,
 
     const float dragU = std::abs(snapped[uIdx] - AnchorGrid[uIdx]);
     const float dragV = std::abs(snapped[vIdx] - AnchorGrid[vIdx]);
-    HasValidSize = (dragU >= viewport.ActiveGrid.Spacing || dragV >= viewport.ActiveGrid.Spacing);
+    HasValidSize = (dragU >= grid.Spacing || dragV >= grid.Spacing);
 
     LastCenter = center;
     LastHalfExtents = halfExtents;

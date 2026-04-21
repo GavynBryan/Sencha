@@ -2,9 +2,9 @@
 
 #include "../viewport/EditorCamera.h"
 #include "../viewport/EditorViewport.h"
-#include "../viewport/FourWayViewportLayout.h"
+#include "../viewport/ViewportLayout.h"
 
-ViewportNavigation::ViewportNavigation(FourWayViewportLayout& layout,
+ViewportNavigation::ViewportNavigation(ViewportLayout& layout,
                                        std::function<void(bool)> onRelativeModeChange)
     : Layout(layout)
     , OnRelativeModeChange(std::move(onRelativeModeChange))
@@ -32,13 +32,11 @@ InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e)
         return InputConsumed::No;
 
     EditorViewport* hit = nullptr;
-    int hitIndex = -1;
-    for (int i = 0; i < 4; ++i)
+    for (const auto& viewport : Layout.All())
     {
-        if (Layout.Viewports[i].Contains(e.Position))
+        if (viewport != nullptr && viewport->Contains(e.Position))
         {
-            hit = &Layout.Viewports[i];
-            hitIndex = i;
+            hit = viewport.get();
             break;
         }
     }
@@ -46,10 +44,7 @@ InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e)
     if (hit == nullptr)
         return InputConsumed::No;
 
-    Layout.ActiveIndex = hitIndex;
-    for (int i = 0; i < 4; ++i)
-        Layout.Viewports[i].IsActive = i == hitIndex;
-
+    Layout.SetActive(hit->Id);
     ClearCapture();
 
     if (e.Button == MouseButton::Right
@@ -79,7 +74,7 @@ InputConsumed ViewportNavigation::HandlePointerUp(const PointerUpEvent& e)
 
 InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
 {
-    EditorViewport* active = Layout.GetActiveViewport();
+    EditorViewport* active = Layout.Active();
     if (active == nullptr)
         return InputConsumed::No;
 
@@ -98,13 +93,11 @@ InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
         return InputConsumed::Yes;
     }
 
-    for (int i = 0; i < 4; ++i)
+    for (const auto& viewport : Layout.All())
     {
-        if (Layout.Viewports[i].Contains(e.Position))
+        if (viewport != nullptr && viewport->Contains(e.Position))
         {
-            Layout.ActiveIndex = i;
-            for (int j = 0; j < 4; ++j)
-                Layout.Viewports[j].IsActive = j == i;
+            Layout.SetActive(viewport->Id);
             break;
         }
     }
@@ -114,7 +107,7 @@ InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
 
 InputConsumed ViewportNavigation::HandleWheel(const WheelEvent& e)
 {
-    EditorViewport* active = Layout.GetActiveViewport();
+    EditorViewport* active = Layout.Active();
     if (active == nullptr)
         return InputConsumed::No;
 
@@ -135,9 +128,11 @@ InputConsumed ViewportNavigation::HandleFocusLost(const FocusLostEvent&)
 
 void ViewportNavigation::ClearCapture()
 {
-    for (EditorViewport& viewport : Layout.Viewports)
+    for (const auto& viewport : Layout.All())
     {
-        viewport.WantsFlyCameraInput = false;
-        viewport.WantsOrthoPanInput = false;
+        if (viewport == nullptr)
+            continue;
+        viewport->WantsFlyCameraInput = false;
+        viewport->WantsOrthoPanInput = false;
     }
 }

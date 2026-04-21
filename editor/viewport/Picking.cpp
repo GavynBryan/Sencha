@@ -92,16 +92,17 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const
 {
     const Ray3d ray = BuildRay(viewport, point);
-    const Vec3d normal = viewport.ActiveGrid.AxisU.Cross(viewport.ActiveGrid.AxisV).Normalized();
+    const GridPlane grid = viewport.GetGrid();
+    const Vec3d normal = grid.AxisU.Cross(grid.AxisV).Normalized();
     const double denominator = normal.Dot(ray.Direction);
     if (std::abs(denominator) < kParallelEpsilon)
         return std::nullopt;
 
-    const double distance = normal.Dot(viewport.ActiveGrid.Origin - ray.Origin) / denominator;
+    const double distance = normal.Dot(grid.Origin - ray.Origin) / denominator;
     if (distance < 0.0)
         return std::nullopt;
 
-    return viewport.ActiveGrid.Snap(ray.PointAt(static_cast<float>(distance)));
+    return grid.Snap(ray.PointAt(static_cast<float>(distance)));
 }
 
 Ray3d PickingService::BuildRay(const EditorViewport& viewport, ImVec2 point) const

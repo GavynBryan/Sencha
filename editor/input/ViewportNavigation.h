@@ -4,13 +4,13 @@
 
 #include <functional>
 
-class FourWayViewportLayout;
+class ViewportLayout;
 struct EditorViewport;
 
 class ViewportNavigation
 {
 public:
-    ViewportNavigation(FourWayViewportLayout& layout,
+    ViewportNavigation(ViewportLayout& layout,
                        std::function<void(bool)> onRelativeModeChange);
 
     InputConsumed OnInput(const InputEvent& event);
@@ -24,6 +24,6 @@ private:
 
     void ClearCapture();
 
-    FourWayViewportLayout& Layout;
+    ViewportLayout& Layout;
     std::function<void(bool)> OnRelativeModeChange;
 };

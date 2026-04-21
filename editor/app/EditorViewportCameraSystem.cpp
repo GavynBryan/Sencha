@@ -1,18 +1,18 @@
 #include "EditorViewportCameraSystem.h"
 
 #include "../viewport/EditorViewport.h"
-#include "../viewport/FourWayViewportLayout.h"
+#include "../viewport/ViewportLayout.h"
 
 #include <SDL3/SDL_scancode.h>
 
-EditorViewportCameraSystem::EditorViewportCameraSystem(FourWayViewportLayout& layout)
+EditorViewportCameraSystem::EditorViewportCameraSystem(ViewportLayout& layout)
     : Layout(layout)
 {
 }
 
 void EditorViewportCameraSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
-    EditorViewport* viewport = Layout.GetActiveViewport();
+    EditorViewport* viewport = Layout.Active();
     if (viewport == nullptr || !viewport->WantsFlyCameraInput)
         return;
 

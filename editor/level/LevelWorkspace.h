@@ -9,8 +9,8 @@
 #include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
 #include "../tools/ToolRegistry.h"
-#include "../viewport/FourWayViewportLayout.h"
 #include "../viewport/Picking.h"
+#include "../viewport/ViewportLayout.h"
 
 #include "LevelDocument.h"
 
@@ -25,7 +25,7 @@ public:
     void Init(CommandStack& commands);
 
     LevelDocument Document;
-    FourWayViewportLayout Layout;
+    ViewportLayout Layout = ViewportLayout::MakeFourWay();
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
