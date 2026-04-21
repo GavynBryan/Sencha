@@ -89,6 +89,13 @@ HandleHit CubeFaceHandle::HitTest(const EditorViewport& viewport, ImVec2 screenP
 
     const int axis = FaceIndex / 2;
     const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
+    Vec3d faceNormal = {};
+    faceNormal[axis] = sign;
+
+    const Ray3d ray = BuildRay(viewport, screenPos);
+    if (std::abs(faceNormal.Dot(ray.Direction)) > 0.99f)
+        return {};
+
     const float facePos = t->Position[axis] + sign * cube->HalfExtents[axis];
 
     Aabb3d slab;
@@ -97,7 +104,6 @@ HandleHit CubeFaceHandle::HitTest(const EditorViewport& viewport, ImVec2 screenP
     slab.Min[axis] = facePos - kHandleThickness;
     slab.Max[axis] = facePos + kHandleThickness;
 
-    const Ray3d ray = BuildRay(viewport, screenPos);
     float dist = 0.0f;
     if (!RayIntersectsAabb(ray, slab, dist))
         return {};
