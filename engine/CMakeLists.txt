@@ -158,33 +158,42 @@ if(SENCHA_ENABLE_VULKAN)
         )
     endif()
 
+    if(NOT IMGUI_DIR)
+        FetchContent_Declare(
+            imgui
+            GIT_REPOSITORY https://github.com/ocornut/imgui.git
+            GIT_TAG        v1.91.9
+        )
+        FetchContent_MakeAvailable(imgui)
+        set(IMGUI_DIR "${imgui_SOURCE_DIR}")
+    endif()
+
+    add_library(sencha_imgui_support STATIC
+        "${IMGUI_DIR}/imgui.cpp"
+        "${IMGUI_DIR}/imgui_draw.cpp"
+        "${IMGUI_DIR}/imgui_tables.cpp"
+        "${IMGUI_DIR}/imgui_widgets.cpp"
+        "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
+        "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
+    )
+    add_library(sencha::imgui_support ALIAS sencha_imgui_support)
+
+    target_include_directories(sencha_imgui_support
+        PUBLIC
+            "${IMGUI_DIR}"
+            "${IMGUI_DIR}/backends"
+    )
+    target_link_libraries(sencha_imgui_support
+        PUBLIC
+            SDL3::SDL3
+            Vulkan::Vulkan
+    )
+    target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
+
+    target_link_libraries(sencha_engine PUBLIC sencha_imgui_support)
+
     if(SENCHA_ENABLE_DEBUG_UI)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
-
-        if(NOT IMGUI_DIR)
-            FetchContent_Declare(
-                imgui
-                GIT_REPOSITORY https://github.com/ocornut/imgui.git
-                GIT_TAG        v1.91.9
-            )
-            FetchContent_MakeAvailable(imgui)
-            set(IMGUI_DIR "${imgui_SOURCE_DIR}")
-        endif()
-
-        target_sources(sencha_engine PRIVATE
-            "${IMGUI_DIR}/imgui.cpp"
-            "${IMGUI_DIR}/imgui_draw.cpp"
-            "${IMGUI_DIR}/imgui_tables.cpp"
-            "${IMGUI_DIR}/imgui_widgets.cpp"
-            "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
-            "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
-        )
-
-        target_include_directories(sencha_engine
-            PUBLIC
-                "${IMGUI_DIR}"
-                "${IMGUI_DIR}/backends"
-        )
     endif()
 endif()
 
