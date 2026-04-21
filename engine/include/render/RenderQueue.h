@@ -3,7 +3,7 @@
 #include <math/Mat.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <render/Material.h>
-#include <render/MeshTypes.h>
+#include <render/static_mesh/StaticMeshHandle.h>
 
 #include <vector>
 
@@ -16,9 +16,9 @@
 //=============================================================================
 struct RenderQueueItem
 {
-    MeshHandle Mesh;
+    StaticMeshHandle Mesh;
     MaterialHandle Material;
-    uint32_t SubmeshIndex = 0;
+    uint32_t SectionIndex = 0;
     Mat4 WorldMatrix = Mat4::Identity();
     Aabb3d WorldBounds = Aabb3d::Empty();
     float CameraDepth = 0.0f;

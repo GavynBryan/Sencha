@@ -14,7 +14,7 @@
 #include <memory>
 #include <unordered_set>
 
-void DefaultRenderPipeline::SetAssetStores(MeshCache& meshes, MaterialCache& materials)
+void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials)
 {
     Meshes = &meshes;
     Materials = &materials;

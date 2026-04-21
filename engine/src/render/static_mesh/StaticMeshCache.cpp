@@ -1,84 +1,91 @@
-#include <render/MeshCache.h>
+#include <render/static_mesh/StaticMeshCache.h>
 
 #include <graphics/vulkan/VulkanBufferService.h>
+#include <render/static_mesh/StaticMeshValidation.h>
 
-MeshCache::MeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
-    : Log(logging.GetLogger<MeshCache>())
+StaticMeshCache::StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
+    : Log(logging.GetLogger<StaticMeshCache>())
     , Buffers(&buffers)
 {
     ReserveNullSlot();
 }
 
-MeshCache::~MeshCache()
+StaticMeshCache::~StaticMeshCache()
 {
     FreeAllEntries();
 }
 
-MeshHandle MeshCache::Create(const MeshData& data)
+StaticMeshHandle StaticMeshCache::Create(const StaticMeshData& data)
 {
-    MeshEntry entry;
+    StaticMeshEntry entry;
     if (!UploadMesh(data, entry))
         return {};
 
     return AllocHandle(std::move(entry));
 }
 
-MeshHandle MeshCache::CreateFromData(std::string_view name, const MeshData& data)
+StaticMeshHandle StaticMeshCache::CreateFromData(std::string_view name, const StaticMeshData& data)
 {
     if (name.empty())
         return Create(data);
 
-    if (MeshHandle existing = FindRegisteredHandle(name); existing.IsValid())
+    if (StaticMeshHandle existing = FindRegisteredHandle(name); existing.IsValid())
         return existing;
 
-    MeshEntry entry;
+    StaticMeshEntry entry;
     if (!UploadMesh(data, entry))
         return {};
 
     return AllocNamedHandle(name, std::move(entry));
 }
 
-MeshHandle MeshCache::Acquire(std::string_view name)
+StaticMeshHandle StaticMeshCache::Acquire(std::string_view name)
 {
     return FindRegisteredHandle(name, true);
 }
 
-MeshCacheHandle MeshCache::AcquireOwned(std::string_view name)
+StaticMeshCacheHandle StaticMeshCache::AcquireOwned(std::string_view name)
 {
-    MeshHandle handle = Acquire(name);
+    StaticMeshHandle handle = Acquire(name);
     if (!handle.IsValid())
         return {};
 
-    return MeshCacheHandle(this, handle, MeshCacheHandle::NoAttach);
+    return StaticMeshCacheHandle(this, handle, StaticMeshCacheHandle::NoAttach);
 }
 
-MeshHandle MeshCache::Find(std::string_view name) const
+StaticMeshHandle StaticMeshCache::Find(std::string_view name) const
 {
     return FindRegisteredHandle(name);
 }
 
-void MeshCache::Destroy(MeshHandle handle)
+void StaticMeshCache::Destroy(StaticMeshHandle handle)
 {
     Release(handle);
 }
 
-const GpuMesh* MeshCache::Get(MeshHandle handle) const
+const GpuStaticMesh* StaticMeshCache::Get(StaticMeshHandle handle) const
 {
-    const MeshEntry* entry = Resolve(handle);
+    const StaticMeshEntry* entry = Resolve(handle);
     return entry ? &entry->Mesh : nullptr;
 }
 
-std::string_view MeshCache::GetName(MeshHandle handle) const
+std::string_view StaticMeshCache::GetName(StaticMeshHandle handle) const
 {
     return GetRegisteredPath(handle);
 }
 
-bool MeshCache::OnLoad(std::string_view, MeshEntry&)
+bool StaticMeshCache::IsAlive(StaticMeshHandle handle) const
+{
+    const StaticMeshEntry* entry = Resolve(handle);
+    return entry != nullptr && entry->Alive;
+}
+
+bool StaticMeshCache::OnLoad(std::string_view, StaticMeshEntry&)
 {
     return false;
 }
 
-void MeshCache::OnFree(MeshEntry& entry)
+void StaticMeshCache::OnFree(StaticMeshEntry& entry)
 {
     if (entry.Mesh.VertexBuffer.IsValid())
     {
@@ -96,16 +103,18 @@ void MeshCache::OnFree(MeshEntry& entry)
     entry.Alive = false;
 }
 
-bool MeshCache::IsEntryLive(const MeshEntry& entry) const
+bool StaticMeshCache::IsEntryLive(const StaticMeshEntry& entry) const
 {
     return entry.Alive;
 }
 
-bool MeshCache::UploadMesh(const MeshData& data, MeshEntry& out)
+bool StaticMeshCache::UploadMesh(const StaticMeshData& data, StaticMeshEntry& out)
 {
-    if (data.Vertices.empty() || data.Indices.empty())
+    const StaticMeshValidationResult validation = ValidateStaticMeshData(data);
+    if (!validation.IsValid())
     {
-        Log.Error("MeshCache::Create requires vertices and indices");
+        for (const StaticMeshValidationError& error : validation.Errors)
+            Log.Error("StaticMeshCache rejected mesh: {}", error.Message);
         return false;
     }
 
@@ -138,13 +147,13 @@ bool MeshCache::UploadMesh(const MeshData& data, MeshEntry& out)
         return false;
     }
 
-    out.Mesh = GpuMesh{
+    out.Mesh = GpuStaticMesh{
         .VertexBuffer = vb,
         .IndexBuffer = ib,
         .VertexCount = static_cast<uint32_t>(data.Vertices.size()),
         .IndexCount = static_cast<uint32_t>(data.Indices.size()),
         .LocalBounds = data.LocalBounds,
-        .Submeshes = data.Submeshes,
+        .Sections = data.Sections,
     };
     out.Alive = true;
     return true;

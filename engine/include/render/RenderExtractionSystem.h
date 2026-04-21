@@ -2,7 +2,7 @@
 
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <render/static_mesh/StaticMeshCache.h>
 #include <render/MeshRendererStore.h>
 #include <render/RenderQueue.h>
 #include <world/transform/TransformStore.h>
@@ -19,7 +19,7 @@ class RenderExtractionSystem
 public:
     static void Extract(const TransformStore<Transform3f>& transforms,
                         const MeshRendererStore& renderers,
-                        const MeshCache& meshes,
+                        const StaticMeshCache& meshes,
                         const MaterialCache& materials,
                         const CameraRenderData& camera,
                         RenderQueue& queue);

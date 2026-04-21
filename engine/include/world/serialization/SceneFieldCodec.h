@@ -3,11 +3,10 @@
 #include <core/assets/AssetRef.h>
 #include <core/serialization/Archive.h>
 #include <render/Material.h>
-#include <render/MeshTypes.h>
+#include <render/static_mesh/StaticMeshHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cassert>
-#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -40,16 +39,16 @@ struct SceneFieldCodec
 };
 
 template<>
-struct SceneFieldCodec<MeshHandle>
+struct SceneFieldCodec<StaticMeshHandle>
 {
     static bool Save(IWriteArchive& archive,
                      std::string_view key,
-                     MeshHandle value,
+                     StaticMeshHandle value,
                      SceneSerializationContext& context);
 
     static bool Load(IReadArchive& archive,
                      std::string_view key,
-                     MeshHandle& value,
+                     StaticMeshHandle& value,
                      SceneSerializationContext& context);
 };
 
@@ -66,4 +65,3 @@ struct SceneFieldCodec<MaterialHandle>
                      MaterialHandle& value,
                      SceneSerializationContext& context);
 };
-

@@ -1,6 +1,7 @@
 #pragma once
 
 class AssetSystem;
+class LoggingProvider;
 
 //=============================================================================
 // SceneSerializationContext
@@ -11,4 +12,5 @@ class AssetSystem;
 struct SceneSerializationContext
 {
     AssetSystem* Assets = nullptr;
+    LoggingProvider* Logging = nullptr;
 };

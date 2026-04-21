@@ -13,7 +13,7 @@
 #include <cstring>
 
 MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
-                                     MeshCache& meshes,
+                                     StaticMeshCache& meshes,
                                      MaterialCache& materials,
                                      const CameraRenderData& camera)
     : Queue(&queue)
@@ -114,14 +114,14 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
 
     for (const RenderQueueItem& item : Queue->Opaque())
     {
-        const GpuMesh* mesh = Meshes->Get(item.Mesh);
+        const GpuStaticMesh* mesh = Meshes->Get(item.Mesh);
         const Material* material = Materials->Get(item.Material);
-        if (mesh == nullptr || material == nullptr || item.SubmeshIndex >= mesh->Submeshes.size())
+        if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
         {
             continue;
         }
 
-        const SubmeshRange& submesh = mesh->Submeshes[item.SubmeshIndex];
+        const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
         VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
         VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
         VkDeviceSize vertexOffset = 0;
@@ -135,7 +135,10 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        vkCmdDrawIndexed(frame.Cmd, submesh.IndexCount, 1, submesh.IndexOffset, 0, 0);
+        // StaticMeshData v1 uses global indices into the shared vertex buffer.
+        // section.VertexOffset is metadata only in this phase. Do not pass it as
+        // Vulkan vertexOffset unless sections are converted to local-index ranges.
+        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1, section.IndexOffset, 0, 0);
     }
 }
 

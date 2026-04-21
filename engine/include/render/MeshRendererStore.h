@@ -2,7 +2,7 @@
 
 #include <core/batch/SparseSet.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
+#include <render/static_mesh/StaticMeshCache.h>
 #include <render/MeshRendererComponent.h>
 #include <world/ITypedComponentStore.h>
 
@@ -20,7 +20,7 @@ class MeshRendererStore final : public ITypedComponentStore<MeshRendererComponen
 {
 public:
     MeshRendererStore() = default;
-    MeshRendererStore(MeshCache& meshes, MaterialCache& materials);
+    MeshRendererStore(StaticMeshCache& meshes, MaterialCache& materials);
     ~MeshRendererStore() override;
 
     MeshRendererStore(const MeshRendererStore&) = delete;
@@ -28,7 +28,7 @@ public:
     MeshRendererStore(MeshRendererStore&&) = delete;
     MeshRendererStore& operator=(MeshRendererStore&&) = delete;
 
-    void SetAssetCaches(MeshCache& meshes, MaterialCache& materials);
+    void SetAssetCaches(StaticMeshCache& meshes, MaterialCache& materials);
 
     bool Add(EntityId entity, const MeshRendererComponent& component) override;
     bool Remove(EntityId entity) override;
@@ -50,7 +50,7 @@ private:
     void Attach(const MeshRendererComponent& component);
     void Detach(const MeshRendererComponent& component);
 
-    MeshCache* Meshes = nullptr;
+    StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     SparseSet<MeshRendererComponent> Components;
 };

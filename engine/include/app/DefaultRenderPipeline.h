@@ -3,8 +3,8 @@
 #include <app/GameContexts.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
 #include <render/RenderQueue.h>
+#include <render/static_mesh/StaticMeshCache.h>
 
 class ServiceHost;
 
@@ -23,13 +23,13 @@ public:
     [[nodiscard]] CameraRenderData& GetCameraData() { return Camera; }
     [[nodiscard]] const CameraRenderData& GetCameraData() const { return Camera; }
 
-    void SetAssetStores(MeshCache& meshes, MaterialCache& materials);
+    void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials);
     bool AddMeshRenderFeature(ServiceHost& services);
     void ExtractRender(RenderExtractContext& ctx);
 
 private:
     RenderQueue Queue;
     CameraRenderData Camera;
-    MeshCache* Meshes = nullptr;
+    StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
 };

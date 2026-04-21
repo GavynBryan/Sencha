@@ -90,15 +90,15 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DemoRegistry = &CreateDefault3DZone(
         engine.Zones(), ZoneId{ 1 },
         ZoneParticipation{ .Visible = true, .Logic = true },
-        &runtimeAssets.Meshes, &runtimeAssets.Materials);
+        &runtimeAssets.StaticMeshes, &runtimeAssets.Materials);
 
     InitSceneSerializer();
-    Demo = LoadDemoScene(*DemoRegistry, runtimeAssets.Assets, FreeCam, "cube_demo_scene.json");
+    Demo = LoadDemoScene(*DemoRegistry, runtimeAssets.Assets, logging, FreeCam, "cube_demo_scene.json");
 
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
     {
-        pipeline->SetAssetStores(runtimeAssets.Meshes, runtimeAssets.Materials);
+        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials);
         pipeline->AddMeshRenderFeature(services);
     }
 

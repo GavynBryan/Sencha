@@ -2,14 +2,15 @@
 
 #include <core/assets/AssetSystem.h>
 #include <core/json/JsonParser.h>
+#include <core/logging/LoggingProvider.h>
 #include <render/Camera.h>
 #include <render/MeshRendererComponent.h>
+#include <render/static_mesh/StaticMeshPrimitives.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <zone/DefaultZoneBuilder.h>
 
 #include <cassert>
-#include <cstdio>
 #include <fstream>
 #include <sstream>
 
@@ -20,14 +21,15 @@ TransformStore<Transform3f>& DemoTransforms(Registry& registry)
 
 DemoScene LoadDemoScene(Registry& registry,
                         AssetSystem& assets,
+                        LoggingProvider& logging,
                         FreeCamera& freeCamera,
                         std::string_view scenePath)
 {
     DemoScene scene;
 
-    scene.CubeMesh = assets.RegisterProceduralMesh(
+    scene.CubeMesh = assets.RegisterProceduralStaticMesh(
         "asset://meshes/dev/cube.smesh",
-        MeshPrimitives::BuildCube(1.0f));
+        StaticMeshPrimitives::BuildCube(1.0f));
     scene.Red = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
@@ -41,8 +43,7 @@ DemoScene LoadDemoScene(Registry& registry,
     std::ifstream file{std::string(scenePath)};
     if (!file.is_open())
     {
-        std::fprintf(stderr, "CubeDemo: could not open scene file '%.*s'\n",
-            static_cast<int>(scenePath.size()), scenePath.data());
+        logging.GetLogger<DemoScene>().Error("CubeDemo: could not open scene file '{}'", scenePath);
         assert(false && "Failed to open demo scene file");
         return scene;
     }
@@ -54,8 +55,10 @@ DemoScene LoadDemoScene(Registry& registry,
     auto json = JsonParse(buf.str(), &parseError);
     if (!json)
     {
-        std::fprintf(stderr, "CubeDemo: scene JSON parse error at %zu: %s\n",
-            parseError.Position, parseError.Message.c_str());
+        logging.GetLogger<DemoScene>().Error(
+            "CubeDemo: scene JSON parse error at {}: {}",
+            parseError.Position,
+            parseError.Message);
         assert(false && "Failed to parse demo scene JSON");
         return scene;
     }
@@ -63,10 +66,11 @@ DemoScene LoadDemoScene(Registry& registry,
     SceneLoadError loadError;
     SceneSerializationContext sceneContext{
         .Assets = &assets,
+        .Logging = &logging,
     };
     if (!LoadSceneJson(*json, registry, sceneContext, &loadError))
     {
-        std::fprintf(stderr, "CubeDemo: scene load error: %s\n", loadError.Message.c_str());
+        logging.GetLogger<DemoScene>().Error("CubeDemo: scene load error: {}", loadError.Message);
         assert(false && "Failed to load demo scene");
         return scene;
     }

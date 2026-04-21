@@ -9,7 +9,7 @@
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation,
-                              MeshCache* meshes,
+                              StaticMeshCache* meshes,
                               MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
@@ -36,7 +36,7 @@ EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
 
 bool AddDefaultMeshRenderer(Registry& registry,
                             EntityId entity,
-                            MeshHandle mesh,
+                            StaticMeshHandle mesh,
                             MaterialHandle material)
 {
     return registry.Components.Get<MeshRendererStore>().Add(entity, MeshRendererComponent{

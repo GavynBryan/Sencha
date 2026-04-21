@@ -3,9 +3,9 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
-#include <render/MeshCache.h>
 #include <render/MeshRendererStore.h>
-#include <render/MeshTypes.h>
+#include <render/static_mesh/StaticMeshCache.h>
+#include <render/static_mesh/StaticMeshHandle.h>
 #include <world/entity/EntityId.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
@@ -16,7 +16,7 @@ class ZoneRuntime;
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation = {},
-                              MeshCache* meshes = nullptr,
+                              StaticMeshCache* meshes = nullptr,
                               MaterialCache* materials = nullptr);
 
 EntityId CreateDefaultEntity(Registry& registry,
@@ -24,7 +24,7 @@ EntityId CreateDefaultEntity(Registry& registry,
 
 bool AddDefaultMeshRenderer(Registry& registry,
                             EntityId entity,
-                            MeshHandle mesh,
+                            StaticMeshHandle mesh,
                             MaterialHandle material);
 
 bool AddDefaultCamera(Registry& registry,

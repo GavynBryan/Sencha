@@ -3,7 +3,7 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <render/Material.h>
-#include <render/MeshTypes.h>
+#include <render/static_mesh/StaticMeshHandle.h>
 #include <world/entity/EntityId.h>
 
 #include <cstdint>
@@ -19,7 +19,7 @@
 //=============================================================================
 struct MeshRendererComponent
 {
-    MeshHandle Mesh;
+    StaticMeshHandle Mesh;
     MaterialHandle Material;
     bool Visible = true;
     uint32_t LayerMask = 0xFFFFFFFFu;

@@ -1,6 +1,6 @@
 #include <render/MeshRendererStore.h>
 
-MeshRendererStore::MeshRendererStore(MeshCache& meshes, MaterialCache& materials)
+MeshRendererStore::MeshRendererStore(StaticMeshCache& meshes, MaterialCache& materials)
     : Meshes(&meshes)
     , Materials(&materials)
 {
@@ -12,7 +12,7 @@ MeshRendererStore::~MeshRendererStore()
         Detach(component);
 }
 
-void MeshRendererStore::SetAssetCaches(MeshCache& meshes, MaterialCache& materials)
+void MeshRendererStore::SetAssetCaches(StaticMeshCache& meshes, MaterialCache& materials)
 {
     if (Meshes == &meshes && Materials == &materials)
         return;
