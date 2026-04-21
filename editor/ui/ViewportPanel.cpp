@@ -4,9 +4,8 @@
 
 #include <array>
 
-ViewportPanel::ViewportPanel(FourWayViewportLayout& layout, ToolRegistry& tools)
+ViewportPanel::ViewportPanel(FourWayViewportLayout& layout)
     : Layout(layout)
-    , Tools(tools)
 {
 }
 
@@ -55,7 +54,7 @@ void ViewportPanel::OnDraw()
             ImGui::SameLine();
 
         ImGui::PushID(index);
-        DrawViewport(Layout.Viewports[index], "ViewportRegion", labels[index], index, cellSize);
+        DrawViewport(Layout.Viewports[index], "ViewportRegion", labels[index], cellSize);
         ImGui::PopID();
     }
 
@@ -65,23 +64,13 @@ void ViewportPanel::OnDraw()
 void ViewportPanel::DrawViewport(EditorViewport& viewport,
                                  const char* id,
                                  const char* label,
-                                 int index,
                                  ImVec2 size)
 {
     ImGui::BeginChild(id, size, ImGuiChildFlags_Borders, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
     viewport.RegionMin = ImGui::GetWindowPos();
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
-    viewport.IsActive = Layout.ActiveIndex == index;
-
-    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-    {
-        Layout.ActiveIndex = index;
-        for (int i = 0; i < 4; ++i)
-            Layout.Viewports[i].IsActive = i == index;
-        viewport.IsActive = true;
-        Tools.HandlePointerDown(viewport, ImGui::GetMousePos());
-    }
+    viewport.IsActive = Layout.ActiveIndex == (&viewport - Layout.Viewports);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRect(viewport.RegionMin, viewport.RegionMax, IM_COL32(70, 70, 70, 255));

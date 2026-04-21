@@ -1,7 +1,11 @@
 #include "CubeTool.h"
 
-#include "../LevelCommands.h"
+#include "../LevelScene.h"
+#include "../interactions/CubeCreateDragInteraction.h"
 #include "../../commands/CommandStack.h"
+#include "../../interaction/InteractionHost.h"
+#include "../../selection/SelectCommand.h"
+#include "../../selection/SelectionService.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/Picking.h"
 
@@ -19,14 +23,21 @@ std::string_view CubeTool::GetDisplayName() const
 
 InputConsumed CubeTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
 {
-    const std::optional<Vec3d> snappedPoint = ctx.Picking.ProjectPointToGrid(viewport, point);
-    if (!snappedPoint.has_value())
-        return InputConsumed::No;
+    const SelectableRef picked = ctx.Picking.Pick(viewport, point, ctx.Scene);
+    if (picked.IsValid() && ctx.Scene.TryGetCube(picked.Entity) != nullptr)
+    {
+        ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, picked));
+        return InputConsumed::Yes;
+    }
 
-    ctx.Commands.Execute(std::make_unique<CreateCubeCommand>(
-        *snappedPoint,
-        Vec3d(0.5, 0.5, 0.5),
-        ctx.Scene,
-        ctx.Document));
+    const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, point);
+    if (anchor.has_value())
+    {
+        ctx.Interactions.Begin(std::make_unique<CubeCreateDragInteraction>(
+            *anchor, ctx.Scene, ctx.Document));
+        return InputConsumed::Yes;
+    }
+
+    ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, SelectableRef{}));
     return InputConsumed::Yes;
 }

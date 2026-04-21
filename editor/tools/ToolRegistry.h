@@ -28,6 +28,8 @@ public:
     [[nodiscard]] const std::vector<std::unique_ptr<ITool>>& GetTools() const;
 
     InputConsumed HandlePointerDown(EditorViewport& viewport, ImVec2 point);
+    InputConsumed HandlePointerMove(EditorViewport& viewport, ImVec2 point, ImVec2 delta);
+    InputConsumed HandlePointerUp(EditorViewport& viewport, ImVec2 point);
     InputConsumed OnInput(const InputEvent& event);
 
 private:

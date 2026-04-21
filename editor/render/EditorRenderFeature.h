@@ -8,6 +8,7 @@
 
 class FourWayViewportLayout;
 class LevelScene;
+class PreviewBuffer;
 class SelectionService;
 
 class EditorRenderFeature : public IRenderFeature
@@ -15,7 +16,8 @@ class EditorRenderFeature : public IRenderFeature
 public:
     EditorRenderFeature(FourWayViewportLayout& viewportLayout,
                         LevelScene& scene,
-                        SelectionService& selection);
+                        SelectionService& selection,
+                        PreviewBuffer& preview);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     void Setup(const RendererServices& services) override;

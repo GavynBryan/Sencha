@@ -1,18 +1,20 @@
 #pragma once
 
 #include "../commands/ICommand.h"
-#include "ISelectionContext.h"
+#include "SelectableRef.h"
+
+class SelectionService;
 
 class SelectCommand : public ICommand
 {
 public:
-    SelectCommand(ISelectionContext& context, SelectableRef selection);
+    SelectCommand(SelectionService& service, SelectableRef selection);
 
     void Execute() override;
     void Undo() override;
 
 private:
-    ISelectionContext& Context;
+    SelectionService& Service;
     SelectableRef PreviousSelection = {};
     SelectableRef NextSelection = {};
     bool CapturedPreviousSelection = false;
