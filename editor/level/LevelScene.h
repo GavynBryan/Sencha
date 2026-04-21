@@ -43,6 +43,7 @@ public:
     EntityId CreateCamera(Vec3d position);
     void DestroyEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
+    void SetCubeHalfExtents(EntityId entity, Vec3d halfExtents);
 
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;

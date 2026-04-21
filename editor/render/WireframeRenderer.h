@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../level/LevelScene.h"
+#include "../render/PreviewBuffer.h"
 #include "../viewport/EditorViewport.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -18,6 +19,8 @@ class WireframeRenderer
 {
 public:
     explicit WireframeRenderer(LevelScene& scene);
+
+    void SetPreviewBuffer(PreviewBuffer* preview);
 
     void Setup(const RendererServices& services);
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
@@ -41,6 +44,7 @@ private:
                     const Vec4& color) const;
 
     LevelScene& Scene;
+    PreviewBuffer* Preview = nullptr;
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;

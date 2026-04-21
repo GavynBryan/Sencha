@@ -1,8 +1,11 @@
 #include "LevelWorkspace.h"
 
+#include "editmodes/BrushEditSession.h"
 #include "tools/CameraTool.h"
 #include "tools/CubeTool.h"
 #include "tools/SelectTool.h"
+
+#include <memory>
 
 LevelWorkspace::LevelWorkspace()
     : Selection(LevelSelection)
@@ -16,11 +19,28 @@ void LevelWorkspace::Init(CommandStack& commands)
         Selection,
         Picking,
         Document.GetScene(),
-        Document);
+        Document,
+        Interactions,
+        Preview);
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());
     Tools->Register(std::make_unique<CubeTool>());
     Tools->Register(std::make_unique<CameraTool>());
     Tools->Activate("select");
+
+    Dispatcher = std::make_unique<ViewportToolDispatcher>(
+        Layout,
+        *ActiveToolContext,
+        Interactions,
+        Sessions,
+        *Tools);
+
+    SelectionSubscription = Selection.Subscribe([this](SelectableRef ref)
+    {
+        if (ref.IsValid() && Document.GetScene().TryGetCube(ref.Entity) != nullptr)
+            Sessions.SetSession(std::make_unique<BrushEditSession>(ref, Document.GetScene(), Document));
+        else
+            Sessions.EndSession();
+    });
 }

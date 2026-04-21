@@ -61,13 +61,14 @@ void EditorApp::OnStart(GameStartupContext& ctx)
 
     Router = std::make_unique<InputRouter>();
     Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
-    Router->AddHandler([this](const InputEvent& e) { return Workspace->Tools->OnInput(e); });
+    Router->AddHandler([this](const InputEvent& e) { return Workspace->Dispatcher->OnInput(e); });
     Router->AddHandler([this](const InputEvent& e) { return Shortcuts->OnInput(e); });
 
     renderer.AddFeature(std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
         Workspace->Document.GetScene(),
-        Workspace->Selection));
+        Workspace->Selection,
+        Workspace->Preview));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
     UiFeature = uiFeature.get();
@@ -77,7 +78,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         [this]() { return Commands != nullptr && Commands->CanUndo(); },
         [this]() { return Commands != nullptr && Commands->CanRedo(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, *Workspace->Tools);
+    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
     UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));

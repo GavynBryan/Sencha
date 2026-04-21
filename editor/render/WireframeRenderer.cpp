@@ -18,6 +18,11 @@ WireframeRenderer::WireframeRenderer(LevelScene& scene)
 {
 }
 
+void WireframeRenderer::SetPreviewBuffer(PreviewBuffer* preview)
+{
+    Preview = preview;
+}
+
 void WireframeRenderer::Setup(const RendererServices& services)
 {
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
@@ -93,6 +98,17 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
             continue;
 
         AppendCube(vertices, *transform, *cube, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    }
+
+    if (Preview != nullptr)
+    {
+        if (const auto& box = Preview->GetBox())
+        {
+            Transform3f previewTransform = Transform3f::Identity();
+            previewTransform.Position = box->Center;
+            const CubePrimitive previewPrim{ box->HalfExtents };
+            AppendCube(vertices, previewTransform, previewPrim, Vec4(1.0f, 0.6f, 0.0f, 1.0f));
+        }
     }
 
     if (vertices.empty())

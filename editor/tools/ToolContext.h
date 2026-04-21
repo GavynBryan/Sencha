@@ -1,9 +1,12 @@
 #pragma once
 
 class CommandStack;
+class EditSessionHost;
+class InteractionHost;
 class LevelDocument;
 class LevelScene;
 class PickingService;
+class PreviewBuffer;
 class SelectionService;
 
 struct ToolContext
@@ -12,11 +15,15 @@ struct ToolContext
                 SelectionService& selectionService,
                 PickingService& pickingService,
                 LevelScene& levelScene,
-                LevelDocument& levelDocument);
+                LevelDocument& levelDocument,
+                InteractionHost& interactions,
+                PreviewBuffer& preview);
 
     CommandStack& Commands;
     SelectionService& Selection;
     PickingService& Picking;
     LevelScene& Scene;
     LevelDocument& Document;
+    InteractionHost& Interactions;
+    PreviewBuffer& Preview;
 };

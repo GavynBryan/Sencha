@@ -15,6 +15,8 @@ public:
     void Execute() override;
     void Undo() override;
 
+    [[nodiscard]] EntityId GetCreatedEntity() const { return CreatedEntity; }
+
 private:
     Vec3d Position;
     Vec3d HalfExtents;
@@ -36,6 +38,27 @@ private:
     LevelScene& Scene;
     LevelDocument& Document;
     EntityId CreatedEntity = {};
+};
+
+class EditCubeCommand : public ICommand
+{
+public:
+    EditCubeCommand(EntityId entity,
+                    Vec3d oldPosition, Vec3d newPosition,
+                    Vec3d oldHalfExtents, Vec3d newHalfExtents,
+                    LevelScene& scene, LevelDocument& document);
+
+    void Execute() override;
+    void Undo() override;
+
+private:
+    EntityId Entity;
+    Vec3d OldPosition;
+    Vec3d NewPosition;
+    Vec3d OldHalfExtents;
+    Vec3d NewHalfExtents;
+    LevelScene& Scene;
+    LevelDocument& Document;
 };
 
 class DeleteEntityCommand : public ICommand

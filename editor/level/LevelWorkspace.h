@@ -1,6 +1,10 @@
 #pragma once
 
 #include "../commands/CommandStack.h"
+#include "../editmodes/EditSessionHost.h"
+#include "../input/ViewportToolDispatcher.h"
+#include "../interaction/InteractionHost.h"
+#include "../render/PreviewBuffer.h"
 #include "../selection/SelectionContext.h"
 #include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
@@ -10,6 +14,7 @@
 
 #include "LevelDocument.h"
 
+#include <functional>
 #include <memory>
 
 class LevelWorkspace
@@ -24,6 +29,11 @@ public:
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
+    InteractionHost Interactions;
+    PreviewBuffer Preview;
+    EditSessionHost Sessions;
+    std::shared_ptr<SelectionService::ObserverFn> SelectionSubscription;
     std::unique_ptr<ToolContext> ActiveToolContext;
     std::unique_ptr<ToolRegistry> Tools;
+    std::unique_ptr<ViewportToolDispatcher> Dispatcher;
 };

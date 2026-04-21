@@ -1,14 +1,18 @@
 #include "EditorRenderFeature.h"
 
+#include "PreviewBuffer.h"
+
 #include "../viewport/FourWayViewportLayout.h"
 
 EditorRenderFeature::EditorRenderFeature(FourWayViewportLayout& viewportLayout,
                                          LevelScene& scene,
-                                         SelectionService& selection)
+                                         SelectionService& selection,
+                                         PreviewBuffer& preview)
     : ViewportLayout(viewportLayout)
     , Wireframe(scene)
     , Highlight(scene, selection)
 {
+    Wireframe.SetPreviewBuffer(&preview);
 }
 
 void EditorRenderFeature::Setup(const RendererServices& services)

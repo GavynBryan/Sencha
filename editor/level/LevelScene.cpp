@@ -61,6 +61,13 @@ void LevelScene::SetTransform(EntityId entity, const Transform3f& transform)
         transforms->SetLocal(entity, transform);
 }
 
+void LevelScene::SetCubeHalfExtents(EntityId entity, Vec3d halfExtents)
+{
+    if (auto* cubes = Registry_.Components.TryGet<CubePrimitiveStore>())
+        if (CubePrimitive* cube = cubes->TryGet(entity))
+            cube->HalfExtents = halfExtents;
+}
+
 bool LevelScene::HasEntity(EntityId entity) const
 {
     return Registry_.Entities.IsAlive(entity);

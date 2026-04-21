@@ -1,6 +1,7 @@
 #include "ToolRegistry.h"
 
 #include "ToolContext.h"
+#include "../interaction/InteractionHost.h"
 
 ToolRegistry::ToolRegistry(ToolContext& context)
     : Context(context)
@@ -39,6 +40,8 @@ bool ToolRegistry::Activate(std::size_t index)
         Tools[ActiveIndex]->OnDeactivate(Context);
     }
 
+    Context.Interactions.Cancel(Context);
+
     ActiveIndex = static_cast<int>(index);
     Tools[ActiveIndex]->OnActivate(Context);
     return true;
@@ -74,6 +77,24 @@ InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, ImVec2 p
         return InputConsumed::No;
 
     return active->OnPointerDown(Context, viewport, point);
+}
+
+InputConsumed ToolRegistry::HandlePointerMove(EditorViewport& viewport, ImVec2 point, ImVec2 delta)
+{
+    ITool* active = GetActiveTool();
+    if (active == nullptr)
+        return InputConsumed::No;
+
+    return active->OnPointerMove(Context, viewport, point, delta);
+}
+
+InputConsumed ToolRegistry::HandlePointerUp(EditorViewport& viewport, ImVec2 point)
+{
+    ITool* active = GetActiveTool();
+    if (active == nullptr)
+        return InputConsumed::No;
+
+    return active->OnPointerUp(Context, viewport, point);
 }
 
 InputConsumed ToolRegistry::OnInput(const InputEvent& event)

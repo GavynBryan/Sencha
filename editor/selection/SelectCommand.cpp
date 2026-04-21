@@ -1,7 +1,9 @@
 #include "SelectCommand.h"
 
-SelectCommand::SelectCommand(ISelectionContext& context, SelectableRef selection)
-    : Context(context)
+#include "SelectionService.h"
+
+SelectCommand::SelectCommand(SelectionService& service, SelectableRef selection)
+    : Service(service)
     , NextSelection(selection)
 {
 }
@@ -10,14 +12,14 @@ void SelectCommand::Execute()
 {
     if (!CapturedPreviousSelection)
     {
-        PreviousSelection = Context.GetPrimarySelection();
+        PreviousSelection = Service.GetPrimarySelection();
         CapturedPreviousSelection = true;
     }
 
-    Context.SetPrimarySelection(NextSelection);
+    Service.ApplySelection(NextSelection);
 }
 
 void SelectCommand::Undo()
 {
-    Context.SetPrimarySelection(PreviousSelection);
+    Service.ApplySelection(PreviousSelection);
 }
