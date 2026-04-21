@@ -43,8 +43,7 @@ public:
 private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
-    void DrawDockspace();
-    void DrawMenuBar();
+    void DrawMainMenuBar();
 
     Engine& EngineInstance;
     SdlWindow& Window;

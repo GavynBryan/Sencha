@@ -1,6 +1,5 @@
 #include "ViewportPanel.h"
 
-#include <SDL3/SDL.h>
 #include <imgui.h>
 
 #include <array>
@@ -24,13 +23,8 @@ bool ViewportPanel::IsVisible() const
 void ViewportPanel::OnDraw()
 {
     const ImGuiViewport* mainViewport = ImGui::GetMainViewport();
-    const float menuHeight = ImGui::GetFrameHeight();
-    ImGui::SetNextWindowPos(
-        ImVec2(mainViewport->Pos.x, mainViewport->Pos.y + menuHeight),
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(
-        ImVec2(mainViewport->Size.x, mainViewport->Size.y - menuHeight),
-        ImGuiCond_Always);
+    ImGui::SetNextWindowPos(mainViewport->WorkPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(mainViewport->WorkSize, ImGuiCond_Always);
 
     const ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoTitleBar
@@ -68,81 +62,6 @@ void ViewportPanel::OnDraw()
     ImGui::End();
 }
 
-bool ViewportPanel::ProcessSdlEvent(const SDL_Event& event)
-{
-    switch (event.type)
-    {
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    {
-        const ImVec2 point(event.button.x, event.button.y);
-        const bool captureFlyCamera = event.button.button == SDL_BUTTON_RIGHT;
-        const bool captureOrthoPan = event.button.button == SDL_BUTTON_MIDDLE;
-        const bool handledViewport = UpdateActiveViewport(point, captureFlyCamera, captureOrthoPan);
-        if (!handledViewport)
-            return false;
-
-        if (event.button.button == SDL_BUTTON_LEFT)
-        {
-            EditorViewport* activeViewport = Layout.GetActiveViewport();
-            return activeViewport != nullptr
-                ? (Tools.HandleViewportClick(*activeViewport, point) || handledViewport)
-                : handledViewport;
-        }
-
-        return handledViewport;
-    }
-
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-    {
-        if (event.button.button != SDL_BUTTON_RIGHT
-            && event.button.button != SDL_BUTTON_MIDDLE)
-            return false;
-
-        ClearViewportCapture();
-        return true;
-    }
-
-    case SDL_EVENT_MOUSE_MOTION:
-    {
-        EditorViewport* activeViewport = Layout.GetActiveViewport();
-        if (activeViewport != nullptr
-            && activeViewport->WantsFlyCameraInput
-            && activeViewport->Camera.ActiveMode == EditorCamera::Mode::Perspective)
-        {
-            activeViewport->Camera.ApplyPerspectiveLook(event.motion.xrel, event.motion.yrel);
-            return true;
-        }
-
-        if (activeViewport != nullptr
-            && activeViewport->WantsOrthoPanInput
-            && activeViewport->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
-        {
-            const float viewportHeight = activeViewport->RegionMax.y - activeViewport->RegionMin.y;
-            activeViewport->Camera.ApplyOrthoPan(event.motion.xrel, event.motion.yrel, viewportHeight);
-            return true;
-        }
-
-        return UpdateActiveViewport(ImVec2(event.motion.x, event.motion.y), false, false);
-    }
-
-    case SDL_EVENT_MOUSE_WHEEL:
-    {
-        EditorViewport* activeViewport = Layout.GetActiveViewport();
-        if (activeViewport == nullptr)
-            return false;
-
-        if (activeViewport->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
-            activeViewport->Camera.ApplyOrthoZoom(event.wheel.y);
-        else
-            activeViewport->Camera.ApplyPerspectiveDolly(event.wheel.y);
-        return true;
-    }
-
-    default:
-        return false;
-    }
-}
-
 void ViewportPanel::DrawViewport(EditorViewport& viewport,
                                  const char* id,
                                  const char* label,
@@ -155,44 +74,19 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
     viewport.IsActive = Layout.ActiveIndex == index;
 
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        Layout.ActiveIndex = index;
+        for (int i = 0; i < 4; ++i)
+            Layout.Viewports[i].IsActive = i == index;
+        viewport.IsActive = true;
+        Tools.HandlePointerDown(viewport, ImGui::GetMousePos());
+    }
+
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRect(viewport.RegionMin, viewport.RegionMax, IM_COL32(70, 70, 70, 255));
 
     ImGui::SetCursorScreenPos(ImVec2(viewport.RegionMin.x + 8.0f, viewport.RegionMin.y + 6.0f));
     ImGui::TextUnformatted(label);
     ImGui::EndChild();
-}
-
-void ViewportPanel::ClearViewportCapture()
-{
-    for (EditorViewport& viewport : Layout.Viewports)
-    {
-        viewport.WantsFlyCameraInput = false;
-        viewport.WantsOrthoPanInput = false;
-    }
-}
-
-bool ViewportPanel::UpdateActiveViewport(ImVec2 point, bool captureFlyCamera, bool captureOrthoPan)
-{
-    for (int index = 0; index < 4; ++index)
-    {
-        EditorViewport& viewport = Layout.Viewports[index];
-        if (!viewport.Contains(point))
-            continue;
-
-        Layout.ActiveIndex = index;
-        for (int viewportIndex = 0; viewportIndex < 4; ++viewportIndex)
-            Layout.Viewports[viewportIndex].IsActive = viewportIndex == index;
-        if (captureFlyCamera || captureOrthoPan)
-        {
-            ClearViewportCapture();
-            if (captureFlyCamera && viewport.Camera.ActiveMode == EditorCamera::Mode::Perspective)
-                viewport.WantsFlyCameraInput = true;
-            if (captureOrthoPan && viewport.Camera.ActiveMode == EditorCamera::Mode::Orthographic)
-                viewport.WantsOrthoPanInput = true;
-        }
-        return true;
-    }
-
-    return false;
 }

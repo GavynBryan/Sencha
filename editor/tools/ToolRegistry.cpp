@@ -33,7 +33,14 @@ bool ToolRegistry::Activate(std::size_t index)
     if (index >= Tools.size() || Tools[index] == nullptr)
         return false;
 
+    if (ActiveIndex >= 0 && ActiveIndex < static_cast<int>(Tools.size())
+        && Tools[ActiveIndex] != nullptr)
+    {
+        Tools[ActiveIndex]->OnDeactivate(Context);
+    }
+
     ActiveIndex = static_cast<int>(index);
+    Tools[ActiveIndex]->OnActivate(Context);
     return true;
 }
 
@@ -60,11 +67,23 @@ const std::vector<std::unique_ptr<ITool>>& ToolRegistry::GetTools() const
     return Tools;
 }
 
-bool ToolRegistry::HandleViewportClick(EditorViewport& viewport, ImVec2 point)
+InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, ImVec2 point)
 {
-    ITool* activeTool = GetActiveTool();
-    if (activeTool == nullptr)
-        return false;
+    ITool* active = GetActiveTool();
+    if (active == nullptr)
+        return InputConsumed::No;
 
-    return activeTool->OnViewportClick(Context, viewport, point);
+    return active->OnPointerDown(Context, viewport, point);
+}
+
+InputConsumed ToolRegistry::OnInput(const InputEvent& event)
+{
+    ITool* active = GetActiveTool();
+    if (active == nullptr)
+        return InputConsumed::No;
+
+    if (const auto* e = std::get_if<KeyDownEvent>(&event))
+        return active->OnKeyDown(Context, *e);
+
+    return InputConsumed::No;
 }

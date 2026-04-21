@@ -3,19 +3,19 @@
 #include <app/Game.h>
 
 #include "../commands/CommandStack.h"
-#include "../selection/SelectionContext.h"
-#include "../selection/SelectionService.h"
-#include "../tools/ToolContext.h"
-#include "../tools/ToolRegistry.h"
-#include "../viewport/Picking.h"
-#include "../viewport/FourWayViewportLayout.h"
+#include "../input/InputEvent.h"
+#include "../input/InputRouter.h"
+#include "../input/ShortcutRegistry.h"
+#include "../input/ViewportNavigation.h"
+#include "../level/LevelWorkspace.h"
 
 #include <memory>
+#include <optional>
 
 class EditorUiFeature;
 class ViewportPanel;
-class ToolPalettePanel;
 class EditorViewportCameraSystem;
+class Engine;
 
 class EditorApp : public Game
 {
@@ -30,15 +30,17 @@ public:
 
 private:
     void SetRelativeMouseMode(Engine& engine, bool enabled);
+    static ModifierFlags ReadModifiers(SDL_Keymod mod);
+    static std::optional<InputEvent> TranslateEvent(const SDL_Event& event);
 
-    std::unique_ptr<FourWayViewportLayout> ViewportLayout;
     ViewportPanel* Viewports = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;
+    Engine* EnginePtr = nullptr;
+
     std::unique_ptr<CommandStack> Commands;
-    std::unique_ptr<SelectionContext> Selection;
-    std::unique_ptr<SelectionService> SelectionState;
-    std::unique_ptr<PickingService> Picking;
-    std::unique_ptr<ToolContext> ToolState;
-    std::unique_ptr<ToolRegistry> Tools;
+    std::unique_ptr<LevelWorkspace> Workspace;
+    std::unique_ptr<InputRouter> Router;
+    std::unique_ptr<ViewportNavigation> Navigation;
+    std::unique_ptr<ShortcutRegistry> Shortcuts;
 };

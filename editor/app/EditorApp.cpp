@@ -1,12 +1,13 @@
 #include "EditorApp.h"
 
 #include "../app/EditorViewportCameraSystem.h"
-#include "../level/tools/SelectTool.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/ToolPalettePanel.h"
 #include "../ui/ViewportPanel.h"
 #include "../viewport/FourWayViewportLayout.h"
+
+#include <SDL3/SDL.h>
 
 #include <app/Engine.h>
 #include <core/service/ServiceHost.h>
@@ -17,6 +18,7 @@
 #include <platform/SdlWindowService.h>
 
 #include <memory>
+#include <optional>
 
 EditorApp::~EditorApp() = default;
 
@@ -27,6 +29,8 @@ void EditorApp::OnConfigure(GameConfigureContext& ctx)
 
 void EditorApp::OnStart(GameStartupContext& ctx)
 {
+    EnginePtr = &ctx.EngineInstance;
+
     ServiceHost& services = ctx.EngineInstance.Services();
     auto& windows = services.Get<SdlWindowService>();
     auto& instance = services.Get<VulkanInstanceService>();
@@ -37,142 +41,103 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     if (window == nullptr)
         return;
 
-    ViewportLayout = std::make_unique<FourWayViewportLayout>();
-    ViewportLayout->OnResize(window->GetExtent().Width, window->GetExtent().Height);
-
     Commands = std::make_unique<CommandStack>();
-    Selection = std::make_unique<SelectionContext>();
-    SelectionState = std::make_unique<SelectionService>(*Selection);
-    Picking = std::make_unique<PickingService>();
-    ToolState = std::make_unique<ToolContext>(*Commands, *SelectionState, *Picking);
-    Tools = std::make_unique<ToolRegistry>(*ToolState);
-    Tools->Register(std::make_unique<SelectTool>());
-    Tools->Activate("select");
+    Workspace = std::make_unique<LevelWorkspace>();
+    Workspace->Layout.OnResize(window->GetExtent().Width, window->GetExtent().Height);
+    Workspace->Init(*Commands);
 
-    renderer.AddFeature(std::make_unique<EditorRenderFeature>(*ViewportLayout));
+    Navigation = std::make_unique<ViewportNavigation>(
+        Workspace->Layout,
+        [this](bool enabled)
+        {
+            if (EnginePtr != nullptr)
+                SetRelativeMouseMode(*EnginePtr, enabled);
+        });
+
+    Shortcuts = std::make_unique<ShortcutRegistry>();
+    Shortcuts->Register(SDLK_Z, { .Ctrl = true }, [this] { Commands->Undo(); });
+    Shortcuts->Register(SDLK_Z, { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); });
+    Shortcuts->Register(SDLK_Y, { .Ctrl = true }, [this] { Commands->Redo(); });
+
+    Router = std::make_unique<InputRouter>();
+    Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
+    Router->AddHandler([this](const InputEvent& e) { return Workspace->Tools->OnInput(e); });
+    Router->AddHandler([this](const InputEvent& e) { return Shortcuts->OnInput(e); });
+
+    renderer.AddFeature(std::make_unique<EditorRenderFeature>(
+        Workspace->Layout,
+        Workspace->Document.GetScene(),
+        Workspace->Selection));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
-        [this]()
-        {
-            if (Commands != nullptr)
-                Commands->Undo();
-        },
-        [this]()
-        {
-            if (Commands != nullptr)
-                Commands->Redo();
-        },
-        [this]()
-        {
-            return Commands != nullptr && Commands->CanUndo();
-        },
-        [this]()
-        {
-            return Commands != nullptr && Commands->CanRedo();
-        });
+        [this]() { if (Commands) Commands->Undo(); },
+        [this]() { if (Commands) Commands->Redo(); },
+        [this]() { return Commands != nullptr && Commands->CanUndo(); },
+        [this]() { return Commands != nullptr && Commands->CanRedo(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(*ViewportLayout, *Tools);
+    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, *Workspace->Tools);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
-    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Tools));
+    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));
 
     renderer.AddFeature(std::move(uiFeature));
 }
 
 void EditorApp::OnRegisterSystems(SystemRegisterContext& ctx)
 {
-    if (ViewportLayout == nullptr)
+    if (Workspace == nullptr)
         return;
 
-    CameraSystem = &ctx.Schedule.Register<EditorViewportCameraSystem>(*ViewportLayout);
+    CameraSystem = &ctx.Schedule.Register<EditorViewportCameraSystem>(Workspace->Layout);
 }
 
 void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
 {
-    if (ViewportLayout != nullptr)
+    switch (ctx.Event.type)
     {
-        switch (ctx.Event.type)
-        {
-        case SDL_EVENT_WINDOW_RESIZED:
-        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-            ViewportLayout->OnResize(
+    case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        if (Workspace != nullptr)
+            Workspace->Layout.OnResize(
                 static_cast<uint32_t>(ctx.Event.window.data1),
                 static_cast<uint32_t>(ctx.Event.window.data2));
-            break;
-        default:
-            break;
-        }
-    }
-
-    const bool viewportHandled = Viewports != nullptr && Viewports->ProcessSdlEvent(ctx.Event);
-    if (viewportHandled)
-        ctx.Handled = true;
-
-    if (ViewportLayout != nullptr)
-    {
-        if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-            && ctx.Event.button.button == SDL_BUTTON_RIGHT)
-        {
-            EditorViewport* activeViewport = ViewportLayout->GetActiveViewport();
-            const bool enableRelativeMode = activeViewport != nullptr
-                && activeViewport->WantsFlyCameraInput
-                && activeViewport->Camera.ActiveMode == EditorCamera::Mode::Perspective;
-            SetRelativeMouseMode(ctx.EngineInstance, enableRelativeMode);
-        }
-        else if ((ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
-                  && ctx.Event.button.button == SDL_BUTTON_RIGHT)
-                 || ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
-        {
-            SetRelativeMouseMode(ctx.EngineInstance, false);
-        }
-    }
-
-    if (UiFeature != nullptr && UiFeature->ProcessSdlEvent(ctx.Event))
-        ctx.Handled = true;
-
-    if (ctx.Handled || Commands == nullptr || ctx.Event.type != SDL_EVENT_KEY_DOWN)
-        return;
-
-    const bool ctrl = (ctx.Event.key.mod & SDL_KMOD_CTRL) != 0;
-    const bool shift = (ctx.Event.key.mod & SDL_KMOD_SHIFT) != 0;
-    if (!ctrl)
-        return;
-
-    switch (ctx.Event.key.key)
-    {
-    case SDLK_Z:
-        if (shift)
-            Commands->Redo();
-        else
-            Commands->Undo();
-        ctx.Handled = true;
         break;
-
-    case SDLK_Y:
-        Commands->Redo();
-        ctx.Handled = true;
-        break;
-
     default:
         break;
+    }
+
+    if (UiFeature != nullptr)
+        UiFeature->ProcessSdlEvent(ctx.Event);
+
+    if (Router != nullptr)
+    {
+        const std::optional<InputEvent> event = TranslateEvent(ctx.Event);
+        if (event.has_value())
+        {
+            const bool isKeyboard = std::holds_alternative<KeyDownEvent>(*event);
+            const bool imguiBlocksKeyboard = isKeyboard && ImGui::GetIO().WantCaptureKeyboard;
+            if (!imguiBlocksKeyboard && Router->Route(*event) == InputConsumed::Yes)
+                ctx.Handled = true;
+        }
     }
 }
 
 void EditorApp::OnShutdown(GameShutdownContext& ctx)
 {
-    SetRelativeMouseMode(ctx.EngineInstance, false);
+    if (EnginePtr != nullptr)
+        SetRelativeMouseMode(*EnginePtr, false);
+
     CameraSystem = nullptr;
     Viewports = nullptr;
-    ViewportLayout.reset();
     UiFeature = nullptr;
-    Tools.reset();
-    ToolState.reset();
-    Picking.reset();
-    SelectionState.reset();
-    Selection.reset();
+    Workspace.reset();
     Commands.reset();
+    Router.reset();
+    Navigation.reset();
+    Shortcuts.reset();
+    EnginePtr = nullptr;
 }
 
 void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)
@@ -181,8 +146,7 @@ void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
 
-    const bool relativeMouseModeChanged = SDL_GetWindowRelativeMouseMode(window->GetHandle()) != enabled;
-    if (relativeMouseModeChanged)
+    if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) != enabled)
         SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
 
     SDL_CaptureMouse(enabled);
@@ -190,4 +154,85 @@ void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)
         SDL_HideCursor();
     else
         SDL_ShowCursor();
+}
+
+ModifierFlags EditorApp::ReadModifiers(SDL_Keymod mod)
+{
+    return {
+        .Ctrl = (mod & SDL_KMOD_CTRL) != 0,
+        .Shift = (mod & SDL_KMOD_SHIFT) != 0,
+        .Alt = (mod & SDL_KMOD_ALT) != 0,
+    };
+}
+
+std::optional<InputEvent> EditorApp::TranslateEvent(const SDL_Event& event)
+{
+    switch (event.type)
+    {
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    {
+        MouseButton button;
+        if (event.button.button == SDL_BUTTON_LEFT)
+            button = MouseButton::Left;
+        else if (event.button.button == SDL_BUTTON_RIGHT)
+            button = MouseButton::Right;
+        else if (event.button.button == SDL_BUTTON_MIDDLE)
+            button = MouseButton::Middle;
+        else
+            return std::nullopt;
+
+        return PointerDownEvent{
+            .Position = { event.button.x, event.button.y },
+            .Button = button,
+            .Modifiers = ReadModifiers(SDL_GetModState()),
+        };
+    }
+
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    {
+        MouseButton button;
+        if (event.button.button == SDL_BUTTON_LEFT)
+            button = MouseButton::Left;
+        else if (event.button.button == SDL_BUTTON_RIGHT)
+            button = MouseButton::Right;
+        else if (event.button.button == SDL_BUTTON_MIDDLE)
+            button = MouseButton::Middle;
+        else
+            return std::nullopt;
+
+        return PointerUpEvent{
+            .Position = { event.button.x, event.button.y },
+            .Button = button,
+            .Modifiers = ReadModifiers(SDL_GetModState()),
+        };
+    }
+
+    case SDL_EVENT_MOUSE_MOTION:
+        return PointerMoveEvent{
+            .Position = { event.motion.x, event.motion.y },
+            .Delta = { event.motion.xrel, event.motion.yrel },
+            .Modifiers = ReadModifiers(SDL_GetModState()),
+        };
+
+    case SDL_EVENT_MOUSE_WHEEL:
+        return WheelEvent{
+            .Position = {},
+            .Delta = event.wheel.y,
+            .Modifiers = ReadModifiers(SDL_GetModState()),
+        };
+
+    case SDL_EVENT_KEY_DOWN:
+        if (event.key.repeat)
+            return std::nullopt;
+        return KeyDownEvent{
+            .Key = event.key.key,
+            .Modifiers = ReadModifiers(event.key.mod),
+        };
+
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        return FocusLostEvent{};
+
+    default:
+        return std::nullopt;
+    }
 }

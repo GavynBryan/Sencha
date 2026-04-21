@@ -2,9 +2,13 @@
 
 ToolContext::ToolContext(CommandStack& commandStack,
                          SelectionService& selectionService,
-                         PickingService& pickingService)
+                         PickingService& pickingService,
+                         LevelScene& levelScene,
+                         LevelDocument& levelDocument)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
+    , Scene(levelScene)
+    , Document(levelDocument)
 {
 }

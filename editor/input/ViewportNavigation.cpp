@@ -1,0 +1,143 @@
+#include "ViewportNavigation.h"
+
+#include "../viewport/EditorCamera.h"
+#include "../viewport/EditorViewport.h"
+#include "../viewport/FourWayViewportLayout.h"
+
+ViewportNavigation::ViewportNavigation(FourWayViewportLayout& layout,
+                                       std::function<void(bool)> onRelativeModeChange)
+    : Layout(layout)
+    , OnRelativeModeChange(std::move(onRelativeModeChange))
+{
+}
+
+InputConsumed ViewportNavigation::OnInput(const InputEvent& event)
+{
+    if (const auto* e = std::get_if<PointerDownEvent>(&event))
+        return HandlePointerDown(*e);
+    if (const auto* e = std::get_if<PointerUpEvent>(&event))
+        return HandlePointerUp(*e);
+    if (const auto* e = std::get_if<PointerMoveEvent>(&event))
+        return HandlePointerMove(*e);
+    if (const auto* e = std::get_if<WheelEvent>(&event))
+        return HandleWheel(*e);
+    if (const auto* e = std::get_if<FocusLostEvent>(&event))
+        return HandleFocusLost(*e);
+    return InputConsumed::No;
+}
+
+InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e)
+{
+    if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
+        return InputConsumed::No;
+
+    EditorViewport* hit = nullptr;
+    int hitIndex = -1;
+    for (int i = 0; i < 4; ++i)
+    {
+        if (Layout.Viewports[i].Contains(e.Position))
+        {
+            hit = &Layout.Viewports[i];
+            hitIndex = i;
+            break;
+        }
+    }
+
+    if (hit == nullptr)
+        return InputConsumed::No;
+
+    Layout.ActiveIndex = hitIndex;
+    for (int i = 0; i < 4; ++i)
+        Layout.Viewports[i].IsActive = i == hitIndex;
+
+    ClearCapture();
+
+    if (e.Button == MouseButton::Right
+        && hit->Camera.ActiveMode == EditorCamera::Mode::Perspective)
+    {
+        hit->WantsFlyCameraInput = true;
+        OnRelativeModeChange(true);
+    }
+    else if (e.Button == MouseButton::Middle
+             && hit->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    {
+        hit->WantsOrthoPanInput = true;
+    }
+
+    return InputConsumed::Yes;
+}
+
+InputConsumed ViewportNavigation::HandlePointerUp(const PointerUpEvent& e)
+{
+    if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
+        return InputConsumed::No;
+
+    ClearCapture();
+    OnRelativeModeChange(false);
+    return InputConsumed::Yes;
+}
+
+InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
+{
+    EditorViewport* active = Layout.GetActiveViewport();
+    if (active == nullptr)
+        return InputConsumed::No;
+
+    if (active->WantsFlyCameraInput
+        && active->Camera.ActiveMode == EditorCamera::Mode::Perspective)
+    {
+        active->Camera.ApplyPerspectiveLook(e.Delta.x, e.Delta.y);
+        return InputConsumed::Yes;
+    }
+
+    if (active->WantsOrthoPanInput
+        && active->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    {
+        const float viewportHeight = active->RegionMax.y - active->RegionMin.y;
+        active->Camera.ApplyOrthoPan(e.Delta.x, e.Delta.y, viewportHeight);
+        return InputConsumed::Yes;
+    }
+
+    for (int i = 0; i < 4; ++i)
+    {
+        if (Layout.Viewports[i].Contains(e.Position))
+        {
+            Layout.ActiveIndex = i;
+            for (int j = 0; j < 4; ++j)
+                Layout.Viewports[j].IsActive = j == i;
+            break;
+        }
+    }
+
+    return InputConsumed::No;
+}
+
+InputConsumed ViewportNavigation::HandleWheel(const WheelEvent& e)
+{
+    EditorViewport* active = Layout.GetActiveViewport();
+    if (active == nullptr)
+        return InputConsumed::No;
+
+    if (active->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+        active->Camera.ApplyOrthoZoom(e.Delta);
+    else
+        active->Camera.ApplyPerspectiveDolly(e.Delta);
+
+    return InputConsumed::Yes;
+}
+
+InputConsumed ViewportNavigation::HandleFocusLost(const FocusLostEvent&)
+{
+    ClearCapture();
+    OnRelativeModeChange(false);
+    return InputConsumed::No;
+}
+
+void ViewportNavigation::ClearCapture()
+{
+    for (EditorViewport& viewport : Layout.Viewports)
+    {
+        viewport.WantsFlyCameraInput = false;
+        viewport.WantsOrthoPanInput = false;
+    }
+}

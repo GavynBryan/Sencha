@@ -18,9 +18,9 @@ std::string_view SelectTool::GetDisplayName() const
     return "Select";
 }
 
-bool SelectTool::OnViewportClick(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
+InputConsumed SelectTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
 {
-    const SelectableRef selection = ctx.Picking.Pick(viewport, point);
+    const SelectableRef selection = ctx.Picking.Pick(viewport, point, ctx.Scene);
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection.GetContext(), selection));
-    return true;
+    return InputConsumed::Yes;
 }

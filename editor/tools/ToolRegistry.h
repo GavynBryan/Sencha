@@ -2,6 +2,8 @@
 
 #include "ITool.h"
 
+#include "../input/InputEvent.h"
+
 #include <imgui.h>
 
 #include <memory>
@@ -25,7 +27,8 @@ public:
     [[nodiscard]] int GetActiveIndex() const;
     [[nodiscard]] const std::vector<std::unique_ptr<ITool>>& GetTools() const;
 
-    bool HandleViewportClick(EditorViewport& viewport, ImVec2 point);
+    InputConsumed HandlePointerDown(EditorViewport& viewport, ImVec2 point);
+    InputConsumed OnInput(const InputEvent& event);
 
 private:
     ToolContext& Context;
