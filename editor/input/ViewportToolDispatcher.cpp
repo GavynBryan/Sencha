@@ -5,11 +5,11 @@
 #include "../tools/ToolContext.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/EditorViewport.h"
-#include "../viewport/FourWayViewportLayout.h"
+#include "../viewport/ViewportLayout.h"
 
 #include <SDL3/SDL_keycode.h>
 
-ViewportToolDispatcher::ViewportToolDispatcher(FourWayViewportLayout& layout,
+ViewportToolDispatcher::ViewportToolDispatcher(ViewportLayout& layout,
                                                ToolContext& context,
                                                InteractionHost& interactions,
                                                EditSessionHost& sessions,
@@ -44,7 +44,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     if (vp == nullptr)
         return InputConsumed::No;
 
-    SetActiveViewport(static_cast<int>(vp - Layout.Viewports));
+    SetActiveViewport(vp->Id);
 
     if (Sessions.OnPointerDown(Context, *vp, e.Position) == InputConsumed::Yes)
         return InputConsumed::Yes;
@@ -54,7 +54,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
 
 InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e)
 {
-    EditorViewport* vp = Layout.GetActiveViewport();
+    EditorViewport* vp = Layout.Active();
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -69,7 +69,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = Layout.GetActiveViewport();
+    EditorViewport* vp = Layout.Active();
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -92,17 +92,15 @@ InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e)
 
 EditorViewport* ViewportToolDispatcher::FindViewport(ImVec2 pos)
 {
-    for (EditorViewport& vp : Layout.Viewports)
+    for (const auto& viewport : Layout.All())
     {
-        if (vp.Contains(pos))
-            return &vp;
+        if (viewport != nullptr && viewport->Contains(pos))
+            return viewport.get();
     }
     return nullptr;
 }
 
-void ViewportToolDispatcher::SetActiveViewport(int index)
+void ViewportToolDispatcher::SetActiveViewport(ViewportId id)
 {
-    Layout.ActiveIndex = index;
-    for (int i = 0; i < 4; ++i)
-        Layout.Viewports[i].IsActive = (i == index);
+    Layout.SetActive(id);
 }

@@ -2,13 +2,13 @@
 
 #include "PreviewBuffer.h"
 
-#include "../viewport/FourWayViewportLayout.h"
+#include "../viewport/ViewportLayout.h"
 
-EditorRenderFeature::EditorRenderFeature(FourWayViewportLayout& viewportLayout,
+EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LevelScene& scene,
                                          SelectionService& selection,
                                          PreviewBuffer& preview)
-    : ViewportLayout(viewportLayout)
+    : Layout(viewportLayout)
     , Wireframe(scene)
     , Highlight(scene, selection)
 {
@@ -33,14 +33,17 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         LoggedFirstDraw = true;
     }
 
-    for (EditorViewport& viewport : ViewportLayout.GetViewports())
+    for (const auto& viewport : Layout.All())
     {
-        Grid.DrawViewport(frame.Cmd, viewport,
+        if (viewport == nullptr)
+            continue;
+
+        Grid.DrawViewport(frame.Cmd, *viewport,
                           frame.TargetExtent,
                           frame.TargetFormat,
                           frame.DepthFormat);
-        Wireframe.DrawViewport(frame, viewport);
-        Highlight.DrawViewport(frame, viewport);
+        Wireframe.DrawViewport(frame, *viewport);
+        Highlight.DrawViewport(frame, *viewport);
     }
 }
 

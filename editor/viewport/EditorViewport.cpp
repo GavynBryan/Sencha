@@ -1,5 +1,34 @@
 #include "EditorViewport.h"
 
+void EditorViewport::ApplyOrientation(ViewportOrientation orientation)
+{
+    Orientation = orientation;
+
+    const OrientationTraits& traits = Traits(orientation);
+    Camera.ActiveMode = traits.Mode;
+
+    if (!traits.UsesCameraAxis)
+        Camera.OrthoAxis = traits.OrthoAxis;
+}
+
+const OrientationTraits& EditorViewport::GetOrientationTraits() const
+{
+    return Traits(Orientation);
+}
+
+GridPlane EditorViewport::GetGrid() const
+{
+    const OrientationTraits& traits = GetOrientationTraits();
+    if (traits.UsesCameraAxis)
+        return GridForAxis(Camera.OrthoAxis);
+    return traits.Grid;
+}
+
+const char* EditorViewport::GetDisplayLabel() const
+{
+    return GetOrientationTraits().Label;
+}
+
 float EditorViewport::AspectRatio() const
 {
     const float width = RegionMax.x - RegionMin.x;

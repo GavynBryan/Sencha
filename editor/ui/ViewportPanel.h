@@ -2,23 +2,22 @@
 
 #include "IEditorPanel.h"
 
-#include "../viewport/FourWayViewportLayout.h"
+#include "../viewport/ViewportLayout.h"
 
 class ViewportPanel : public IEditorPanel
 {
 public:
-    explicit ViewportPanel(FourWayViewportLayout& layout);
+    explicit ViewportPanel(ViewportLayout& layout);
 
     std::string_view GetTitle() const override;
     bool IsVisible() const override;
     void OnDraw() override;
 
 private:
-    void DrawViewport(EditorViewport& viewport,
-                      const char* id,
-                      const char* label,
-                      ImVec2 size);
+    void DrawNode(const LayoutNode& node, ImVec2 size);
+    void DrawViewport(EditorViewport& viewport, ImVec2 size);
+    void DrawOrientationSelector(EditorViewport& viewport);
 
-    FourWayViewportLayout& Layout;
+    ViewportLayout& Layout;
     bool Visible = true;
 };

@@ -2,9 +2,19 @@
 
 #include <imgui.h>
 
-#include <array>
+#include <algorithm>
+#include <cfloat>
 
-ViewportPanel::ViewportPanel(FourWayViewportLayout& layout)
+namespace
+{
+constexpr ImGuiWindowFlags kViewportChildFlags =
+    ImGuiWindowFlags_NoMove
+    | ImGuiWindowFlags_NoScrollbar
+    | ImGuiWindowFlags_NoScrollWithMouse
+    | ImGuiWindowFlags_NoBackground;
+}
+
+ViewportPanel::ViewportPanel(ViewportLayout& layout)
     : Layout(layout)
 {
 }
@@ -41,41 +51,90 @@ void ViewportPanel::OnDraw()
         return;
     }
 
-    const ImVec2 available = ImGui::GetContentRegionAvail();
-    const ImVec2 cellSize(
-        (available.x - ImGui::GetStyle().ItemSpacing.x) * 0.5f,
-        (available.y - ImGui::GetStyle().ItemSpacing.y) * 0.5f);
-
-    const std::array labels = { "Perspective", "Top", "Front", "Side" };
-
-    for (int index = 0; index < 4; ++index)
-    {
-        if ((index % 2) != 0)
-            ImGui::SameLine();
-
-        ImGui::PushID(index);
-        DrawViewport(Layout.Viewports[index], "ViewportRegion", labels[index], cellSize);
-        ImGui::PopID();
-    }
+    DrawNode(Layout.Tree(), ImGui::GetContentRegionAvail());
 
     ImGui::End();
 }
 
-void ViewportPanel::DrawViewport(EditorViewport& viewport,
-                                 const char* id,
-                                 const char* label,
-                                 ImVec2 size)
+void ViewportPanel::DrawNode(const LayoutNode& node, ImVec2 size)
 {
-    ImGui::BeginChild(id, size, ImGuiChildFlags_Borders, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
+    if (node.Kind == LayoutNode::NodeKind::Leaf)
+    {
+        EditorViewport* viewport = Layout.Find(node.Viewport);
+        if (viewport == nullptr)
+            return;
+
+        ImGui::PushID(static_cast<int>(viewport->Id.Value));
+        DrawViewport(*viewport, size);
+        ImGui::PopID();
+        return;
+    }
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    if (node.SplitAxis == LayoutNode::Axis::Horizontal)
+    {
+        const float width = std::max(0.0f, size.x - style.ItemSpacing.x);
+        const float firstWidth = width * node.Ratio;
+        const float secondWidth = width - firstWidth;
+        DrawNode(*node.First, ImVec2(firstWidth, size.y));
+        ImGui::SameLine(0.0f, style.ItemSpacing.x);
+        DrawNode(*node.Second, ImVec2(secondWidth, size.y));
+        return;
+    }
+
+    const float height = std::max(0.0f, size.y - style.ItemSpacing.y);
+    const float firstHeight = height * node.Ratio;
+    const float secondHeight = height - firstHeight;
+    DrawNode(*node.First, ImVec2(size.x, firstHeight));
+    DrawNode(*node.Second, ImVec2(size.x, secondHeight));
+}
+
+void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
+{
+    ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_Borders, kViewportChildFlags);
+
+    DrawOrientationSelector(viewport);
+
+    const ImVec2 renderSize(
+        std::max(0.0f, ImGui::GetContentRegionAvail().x),
+        std::max(0.0f, ImGui::GetContentRegionAvail().y));
+    ImGui::BeginChild("ViewportRegion", renderSize, ImGuiChildFlags_None, kViewportChildFlags);
+
     viewport.RegionMin = ImGui::GetWindowPos();
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
-    viewport.IsActive = Layout.ActiveIndex == (&viewport - Layout.Viewports);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    drawList->AddRect(viewport.RegionMin, viewport.RegionMax, IM_COL32(70, 70, 70, 255));
+    const ImU32 borderColor = viewport.IsActive
+        ? IM_COL32(110, 170, 255, 255)
+        : IM_COL32(70, 70, 70, 255);
+    drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
 
-    ImGui::SetCursorScreenPos(ImVec2(viewport.RegionMin.x + 8.0f, viewport.RegionMin.y + 6.0f));
-    ImGui::TextUnformatted(label);
     ImGui::EndChild();
+    ImGui::EndChild();
+}
+
+void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
+{
+    if (viewport.Orientation == ViewportOrientation::Perspective)
+    {
+        ImGui::TextUnformatted(viewport.GetDisplayLabel());
+        return;
+    }
+
+    const char* preview = viewport.GetDisplayLabel();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (!ImGui::BeginCombo("##Orientation", preview))
+        return;
+
+    for (ViewportOrientation orientation : AllViewportOrientations())
+    {
+        const bool selected = viewport.Orientation == orientation;
+        if (ImGui::Selectable(Traits(orientation).Label, selected))
+            viewport.ApplyOrientation(orientation);
+        if (selected)
+            ImGui::SetItemDefaultFocus();
+    }
+
+    ImGui::EndCombo();
 }

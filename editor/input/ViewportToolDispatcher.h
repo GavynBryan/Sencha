@@ -7,12 +7,13 @@ class InteractionHost;
 class ToolRegistry;
 struct EditorViewport;
 struct ToolContext;
-class FourWayViewportLayout;
+struct ViewportId;
+class ViewportLayout;
 
 class ViewportToolDispatcher
 {
 public:
-    ViewportToolDispatcher(FourWayViewportLayout& layout,
+    ViewportToolDispatcher(ViewportLayout& layout,
                            ToolContext& context,
                            InteractionHost& interactions,
                            EditSessionHost& sessions,
@@ -27,9 +28,9 @@ private:
     InputConsumed HandleKeyDown(const KeyDownEvent& e);
 
     EditorViewport* FindViewport(ImVec2 pos);
-    void SetActiveViewport(int index);
+    void SetActiveViewport(ViewportId id);
 
-    FourWayViewportLayout& Layout;
+    ViewportLayout& Layout;
     ToolContext& Context;
     InteractionHost& Interactions;
     EditSessionHost& Sessions;

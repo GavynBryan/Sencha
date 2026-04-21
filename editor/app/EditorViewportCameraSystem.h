@@ -2,15 +2,15 @@
 
 #include <app/GameContexts.h>
 
-class FourWayViewportLayout;
+class ViewportLayout;
 
 class EditorViewportCameraSystem
 {
 public:
-    explicit EditorViewportCameraSystem(FourWayViewportLayout& layout);
+    explicit EditorViewportCameraSystem(ViewportLayout& layout);
 
     void FrameUpdate(FrameUpdateContext& ctx);
 
 private:
-    FourWayViewportLayout& Layout;
+    ViewportLayout& Layout;
 };

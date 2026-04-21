@@ -6,15 +6,15 @@
 
 #include <graphics/vulkan/Renderer.h>
 
-class FourWayViewportLayout;
 class LevelScene;
 class PreviewBuffer;
 class SelectionService;
+class ViewportLayout;
 
 class EditorRenderFeature : public IRenderFeature
 {
 public:
-    EditorRenderFeature(FourWayViewportLayout& viewportLayout,
+    EditorRenderFeature(ViewportLayout& viewportLayout,
                         LevelScene& scene,
                         SelectionService& selection,
                         PreviewBuffer& preview);
@@ -25,7 +25,7 @@ public:
     void Teardown() override;
 
 private:
-    FourWayViewportLayout& ViewportLayout;
+    ViewportLayout& Layout;
     GpuGridRenderer        Grid;
     WireframeRenderer      Wireframe;
     SelectionRenderer      Highlight;

@@ -127,26 +127,28 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
 
     const CameraRenderData renderData = viewport.BuildRenderData();
 
+    const GridPlane grid = viewport.GetGrid();
+
     const Vec3d gridCenter =
         viewport.Camera.ActiveMode == EditorCamera::Mode::Perspective
-        ? viewport.ActiveGrid.Project(viewport.Camera.Position)
+        ? grid.Project(viewport.Camera.Position)
         : viewport.Camera.OrthoCenter;
 
-    const float subdivSpacing = viewport.ActiveGrid.Spacing
-        / static_cast<float>(std::max(viewport.ActiveGrid.Subdivisions, 1u));
+    const float subdivSpacing = grid.Spacing
+        / static_cast<float>(std::max(grid.Subdivisions, 1u));
 
     const float fadeEnd =
         viewport.Camera.ActiveMode == EditorCamera::Mode::Perspective
-        ? std::max(50.0f, viewport.ActiveGrid.Spacing * 200.0f)
+        ? std::max(50.0f, grid.Spacing * 200.0f)
         : viewport.Camera.Far;
 
     GridPushConstants push{};
     push.ViewProj      = renderData.ViewProjection.Transposed();
     push.GridCenter    = gridCenter;
     push.HalfExtent    = viewport.Camera.Far;
-    push.AxisU         = viewport.ActiveGrid.AxisU;
-    push.Spacing       = viewport.ActiveGrid.Spacing;
-    push.AxisV         = viewport.ActiveGrid.AxisV;
+    push.AxisU         = grid.AxisU;
+    push.Spacing       = grid.Spacing;
+    push.AxisV         = grid.AxisV;
     push.SubdivSpacing = subdivSpacing;
     push.CameraPos     = renderData.Position;
     push.FadeEnd       = fadeEnd;

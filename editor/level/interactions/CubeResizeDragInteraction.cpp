@@ -41,7 +41,7 @@ void CubeResizeDragInteraction::OnPointerMove(ToolContext& ctx,
     const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
     const float fixedFacePos = InitialTransform.Position[axis] - sign * InitialHalfExtents[axis];
     const float newFacePos = (*snapped)[axis];
-    const float minHalf = viewport.ActiveGrid.Spacing * 0.5f;
+    const float minHalf = viewport.GetGrid().Spacing * 0.5f;
     const float half = std::max(std::abs(newFacePos - fixedFacePos) * 0.5f, minHalf);
 
     Vec3d newPos = InitialTransform.Position;
