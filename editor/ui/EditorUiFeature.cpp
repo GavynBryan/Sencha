@@ -78,7 +78,7 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    DrawDockspace();
+    DrawMainMenuBar();
     for (const std::unique_ptr<IEditorPanel>& panel : Panels)
     {
         if (panel != nullptr && panel->IsVisible())
@@ -244,37 +244,9 @@ void EditorUiFeature::ShutdownImGui()
     VulkanBackendReady = false;
 }
 
-void EditorUiFeature::DrawDockspace()
+void EditorUiFeature::DrawMainMenuBar()
 {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
-
-    const ImGuiWindowFlags windowFlags =
-        ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        | ImGuiWindowFlags_NoNavFocus
-        | ImGuiWindowFlags_NoBackground
-        | ImGuiWindowFlags_MenuBar;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
-    ImGui::Begin("EditorDockspace", nullptr, windowFlags);
-    ImGui::PopStyleVar(3);
-
-    DrawMenuBar();
-    ImGui::InvisibleButton("EditorWorkspace", ImGui::GetContentRegionAvail());
-    ImGui::End();
-}
-
-void EditorUiFeature::DrawMenuBar()
-{
-    if (!ImGui::BeginMenuBar())
+    if (!ImGui::BeginMainMenuBar())
         return;
 
     if (ImGui::BeginMenu("File"))
@@ -301,5 +273,5 @@ void EditorUiFeature::DrawMenuBar()
         ImGui::EndMenu();
     }
 
-    ImGui::EndMenuBar();
+    ImGui::EndMainMenuBar();
 }

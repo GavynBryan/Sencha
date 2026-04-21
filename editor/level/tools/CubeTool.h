@@ -2,7 +2,7 @@
 
 #include "../../tools/ITool.h"
 
-class SelectTool : public ITool
+class CubeTool : public ITool
 {
 public:
     std::string_view GetId() const override;

@@ -2,8 +2,12 @@
 
 #include "../viewport/FourWayViewportLayout.h"
 
-EditorRenderFeature::EditorRenderFeature(FourWayViewportLayout& viewportLayout)
+EditorRenderFeature::EditorRenderFeature(FourWayViewportLayout& viewportLayout,
+                                         LevelScene& scene,
+                                         SelectionService& selection)
     : ViewportLayout(viewportLayout)
+    , Wireframe(scene)
+    , Highlight(scene, selection)
 {
 }
 
@@ -11,6 +15,8 @@ void EditorRenderFeature::Setup(const RendererServices& services)
 {
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Grid.Setup(services);
+    Wireframe.Setup(services);
+    Highlight.Setup(services);
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
 }
@@ -29,10 +35,14 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                           frame.TargetExtent,
                           frame.TargetFormat,
                           frame.DepthFormat);
+        Wireframe.DrawViewport(frame, viewport);
+        Highlight.DrawViewport(frame, viewport);
     }
 }
 
 void EditorRenderFeature::Teardown()
 {
     Grid.Teardown();
+    Wireframe.Teardown();
+    Highlight.Teardown();
 }
