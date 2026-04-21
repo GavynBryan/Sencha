@@ -38,6 +38,13 @@ void CubeResizeDragInteraction::OnPointerMove(ToolContext& ctx,
         return;
 
     const int axis = FaceIndex / 2;
+    const GridPlane grid = viewport.GetGrid();
+    const Vec3d gridNormal = grid.AxisU.Cross(grid.AxisV).Normalized();
+    Vec3d dragAxis = {};
+    dragAxis[axis] = 1.0f;
+    if (std::abs(gridNormal.Dot(dragAxis)) > 0.99f)
+        return;
+
     const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
     const float fixedFacePos = InitialTransform.Position[axis] - sign * InitialHalfExtents[axis];
     const float newFacePos = (*snapped)[axis];
