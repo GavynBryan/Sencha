@@ -1,5 +1,6 @@
 #include "BrushBodyHandle.h"
 
+#include "../../level/BrushGeometry.h"
 #include "../../level/interactions/BrushMoveDragInteraction.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/EditorViewport.h"
@@ -78,11 +79,11 @@ BrushBodyHandle::BrushBodyHandle(EntityId entity, LevelScene& scene, LevelDocume
 
 HandleHit BrushBodyHandle::HitTest(const EditorViewport& viewport, ImVec2 screenPos) const
 {
-    const Transform3f* t = Scene.TryGetTransform(Entity);
-    const BrushComponent* brush = Scene.TryGetBrush(Entity);
-    if (!t || !brush) return {};
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
+    if (!state.has_value())
+        return {};
 
-    const Aabb3d bounds = Aabb3d::FromCenterHalfExtent(t->Position, brush->HalfExtents);
+    const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
     const Ray3d ray = BuildRay(viewport, screenPos);
     float dist = 0.0f;
     if (!RayIntersectsAabb(ray, bounds, dist))
@@ -95,13 +96,13 @@ std::unique_ptr<IInteraction> BrushBodyHandle::BeginDrag(ToolContext& ctx,
                                                          const EditorViewport& viewport,
                                                          ImVec2 screenPos) const
 {
-    const Transform3f* t = Scene.TryGetTransform(Entity);
-    const BrushComponent* brush = Scene.TryGetBrush(Entity);
-    if (!t || !brush) return nullptr;
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
+    if (!state.has_value())
+        return nullptr;
 
     const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, screenPos);
     if (!anchor.has_value()) return nullptr;
 
     return std::make_unique<BrushMoveDragInteraction>(
-        Entity, *t, brush->HalfExtents, *anchor, Scene, Document);
+        Entity, *state, *anchor, Scene, Document);
 }

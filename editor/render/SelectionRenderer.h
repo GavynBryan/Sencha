@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
 #include "../selection/SelectionService.h"
 #include "../viewport/EditorViewport.h"
@@ -36,8 +37,7 @@ private:
     };
 
     void AppendBrush(std::vector<LineVertex>& vertices,
-                     const Transform3f& transform,
-                     const BrushComponent& brush,
+                     const BrushState& brush,
                      const Vec4& color) const;
 
     LevelScene& Scene;

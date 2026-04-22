@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../../interaction/IInteraction.h"
+#include "../../level/BrushGeometry.h"
 #include "../../level/LevelScene.h"
 
-#include <math/geometry/3d/Transform3d.h>
 #include <world/entity/EntityId.h>
 
 class LevelDocument;
@@ -14,8 +14,7 @@ public:
     // FaceIndex: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z
     BrushResizeDragInteraction(EntityId entity,
                                int faceIndex,
-                               const Transform3f& initialTransform,
-                               Vec3d initialHalfExtents,
+                               BrushState initialState,
                                LevelScene& scene,
                                LevelDocument& document);
 
@@ -24,14 +23,10 @@ public:
     void OnCancel(ToolContext& ctx) override;
 
 private:
-    void ApplyResize(LevelScene& scene, Vec3d newPosition, Vec3d newHalfExtents);
-
     EntityId Entity;
     int FaceIndex;
-    Transform3f InitialTransform;
-    Vec3d InitialHalfExtents;
-    Vec3d CurrentPosition;
-    Vec3d CurrentHalfExtents;
+    BrushState InitialState;
+    BrushState CurrentState;
     LevelScene& Scene;
     LevelDocument& Document;
 };

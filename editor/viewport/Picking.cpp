@@ -2,6 +2,7 @@
 
 #include "EditorViewport.h"
 
+#include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
 
 #include <math/geometry/3d/Aabb3d.h>
@@ -64,12 +65,11 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
     EntityId bestEntity = {};
     for (EntityId entity : scene.GetAllEntities())
     {
-        const Transform3f* transform = scene.TryGetTransform(entity);
-        const BrushComponent* brush = scene.TryGetBrush(entity);
-        if (transform == nullptr || brush == nullptr)
+        const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
+        if (!state.has_value())
             continue;
 
-        const Aabb3d bounds = Aabb3d::FromCenterHalfExtent(transform->Position, brush->HalfExtents);
+        const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
         float hitDistance = 0.0f;
         if (!IntersectRayAabb(ray, bounds, hitDistance))
             continue;

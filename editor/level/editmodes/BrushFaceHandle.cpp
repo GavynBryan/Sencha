@@ -1,5 +1,6 @@
 #include "BrushFaceHandle.h"
 
+#include "../../level/BrushGeometry.h"
 #include "../../level/interactions/BrushResizeDragInteraction.h"
 #include "../../viewport/EditorCamera.h"
 #include "../../viewport/EditorViewport.h"
@@ -83,29 +84,18 @@ HandleHit BrushFaceHandle::HitTest(const EditorViewport& viewport, ImVec2 screen
     if (viewport.Camera.ActiveMode != EditorCamera::Mode::Orthographic)
         return {};
 
-    const Transform3f* t = Scene.TryGetTransform(Entity);
-    const BrushComponent* brush = Scene.TryGetBrush(Entity);
-    if (!t || !brush) return {};
-
-    const int axis = FaceIndex / 2;
-    const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
-    Vec3d faceNormal = {};
-    faceNormal[axis] = sign;
-
-    const Ray3d ray = BuildRay(viewport, screenPos);
-    if (std::abs(faceNormal.Dot(ray.Direction)) > 0.99f)
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
+    if (!state.has_value())
         return {};
 
-    const float facePos = t->Position[axis] + sign * brush->HalfExtents[axis];
+    const BrushFaceGeometry face = BrushGeometry::ComputeFaceGeometry(*state, FaceIndex, kHandleThickness);
 
-    Aabb3d slab;
-    slab.Min = Aabb3d::FromCenterHalfExtent(t->Position, brush->HalfExtents).Min;
-    slab.Max = Aabb3d::FromCenterHalfExtent(t->Position, brush->HalfExtents).Max;
-    slab.Min[axis] = facePos - kHandleThickness;
-    slab.Max[axis] = facePos + kHandleThickness;
+    const Ray3d ray = BuildRay(viewport, screenPos);
+    if (std::abs(face.Normal.Dot(ray.Direction)) > 0.99f)
+        return {};
 
     float dist = 0.0f;
-    if (!RayIntersectsAabb(ray, slab, dist))
+    if (!RayIntersectsAabb(ray, face.Bounds, dist))
         return {};
 
     return HandleHit{ .Hit = true, .Distance = dist };
@@ -115,10 +105,10 @@ std::unique_ptr<IInteraction> BrushFaceHandle::BeginDrag(ToolContext& /*ctx*/,
                                                          const EditorViewport& /*viewport*/,
                                                          ImVec2 /*screenPos*/) const
 {
-    const Transform3f* t = Scene.TryGetTransform(Entity);
-    const BrushComponent* brush = Scene.TryGetBrush(Entity);
-    if (!t || !brush) return nullptr;
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
+    if (!state.has_value())
+        return nullptr;
 
     return std::make_unique<BrushResizeDragInteraction>(
-        Entity, FaceIndex, *t, brush->HalfExtents, Scene, Document);
+        Entity, FaceIndex, *state, Scene, Document);
 }

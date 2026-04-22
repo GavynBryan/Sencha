@@ -10,16 +10,14 @@
 #include <memory>
 
 BrushMoveDragInteraction::BrushMoveDragInteraction(EntityId entity,
-                                                   const Transform3f& initialTransform,
-                                                   Vec3d initialHalfExtents,
+                                                   BrushState initialState,
                                                    Vec3d gridAnchor,
                                                    LevelScene& scene,
                                                    LevelDocument& document)
     : Entity(entity)
-    , InitialTransform(initialTransform)
-    , InitialHalfExtents(initialHalfExtents)
+    , InitialState(initialState)
     , GridAnchor(gridAnchor)
-    , CurrentPosition(initialTransform.Position)
+    , CurrentState(initialState)
     , Scene(scene)
     , Document(document)
 {
@@ -35,14 +33,8 @@ void BrushMoveDragInteraction::OnPointerMove(ToolContext& ctx,
         return;
 
     const Vec3d moveDelta = *snapped - GridAnchor;
-    CurrentPosition = InitialTransform.Position + moveDelta;
-
-    if (const Transform3f* t = Scene.TryGetTransform(Entity))
-    {
-        Transform3f updated = *t;
-        updated.Position = CurrentPosition;
-        Scene.SetTransform(Entity, updated);
-    }
+    CurrentState = BrushGeometry::Translate(InitialState, moveDelta);
+    BrushGeometry::ApplyState(Scene, Entity, CurrentState);
 }
 
 void BrushMoveDragInteraction::OnPointerUp(ToolContext& ctx,
@@ -51,20 +43,15 @@ void BrushMoveDragInteraction::OnPointerUp(ToolContext& ctx,
 {
     ctx.Commands.Execute(std::make_unique<EditBrushCommand>(
         Entity,
-        InitialTransform.Position,
-        CurrentPosition,
-        InitialHalfExtents,
-        InitialHalfExtents,
+        InitialState.Transform.Position,
+        CurrentState.Transform.Position,
+        InitialState.HalfExtents,
+        CurrentState.HalfExtents,
         Scene,
         Document));
 }
 
 void BrushMoveDragInteraction::OnCancel(ToolContext& /*ctx*/)
 {
-    if (const Transform3f* t = Scene.TryGetTransform(Entity))
-    {
-        Transform3f restored = *t;
-        restored.Position = InitialTransform.Position;
-        Scene.SetTransform(Entity, restored);
-    }
+    BrushGeometry::ApplyState(Scene, Entity, InitialState);
 }
