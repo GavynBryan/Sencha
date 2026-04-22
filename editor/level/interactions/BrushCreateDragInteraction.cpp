@@ -11,8 +11,6 @@
 #include "../../viewport/EditorViewport.h"
 #include "../../viewport/Picking.h"
 
-#include <world/registry/EntityRef.h>
-
 #include <cmath>
 #include <memory>
 
@@ -94,10 +92,7 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     const EntityId created = rawCmd->GetCreatedEntity();
     if (created.IsValid())
     {
-        const SelectableRef ref{
-            .Registry = Scene.GetRegistry().Id,
-            .Entity = created,
-        };
+        const SelectableRef ref = SelectableRef::EntitySelection(Scene.GetRegistry().Id, created);
         ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, ref));
     }
 }

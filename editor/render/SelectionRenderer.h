@@ -39,6 +39,9 @@ private:
     void AppendBrush(std::vector<LineVertex>& vertices,
                      const BrushState& brush,
                      const Vec4& color) const;
+    void AppendFace(std::vector<LineVertex>& vertices,
+                    const BrushFaceGeometry& face,
+                    const Vec4& color) const;
 
     LevelScene& Scene;
     SelectionService& Selection;

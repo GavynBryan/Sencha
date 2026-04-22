@@ -89,8 +89,15 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         return;
 
     std::vector<LineVertex> vertices;
-    vertices.reserve(24);
+    vertices.reserve(32);
     AppendBrush(vertices, *state, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
+
+    if (selected.IsBrushFace())
+    {
+        const std::optional<BrushFaceDescriptor> face = BrushGeometry::TryGetFace(Scene, selected);
+        if (face.has_value())
+            AppendFace(vertices, face->Geometry, Vec4(1.0f, 0.4f, 0.1f, 1.0f));
+    }
 
     const VkDeviceSize byteCount = sizeof(LineVertex) * vertices.size();
     const auto allocation = Scratch->AllocateVertex(byteCount);
@@ -175,5 +182,18 @@ void SelectionRenderer::AppendBrush(std::vector<LineVertex>& vertices,
     {
         vertices.push_back(LineVertex{ .Position = corners[start], .Color = color });
         vertices.push_back(LineVertex{ .Position = corners[end], .Color = color });
+    }
+}
+
+void SelectionRenderer::AppendFace(std::vector<LineVertex>& vertices,
+                                   const BrushFaceGeometry& face,
+                                   const Vec4& color) const
+{
+    for (size_t i = 0; i < face.Corners.size(); ++i)
+    {
+        const Vec3d& start = face.Corners[i];
+        const Vec3d& end = face.Corners[(i + 1) % face.Corners.size()];
+        vertices.push_back(LineVertex{ .Position = start, .Color = color });
+        vertices.push_back(LineVertex{ .Position = end, .Color = color });
     }
 }
