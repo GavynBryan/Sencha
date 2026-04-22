@@ -1,5 +1,7 @@
 #include "WireframeRenderer.h"
 
+#include "../level/BrushGeometry.h"
+
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameScratch.h>
@@ -92,12 +94,11 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
     vertices.reserve(Scene.GetEntityCount() * 24);
     for (EntityId entity : Scene.GetAllEntities())
     {
-        const Transform3f* transform = Scene.TryGetTransform(entity);
-        const BrushComponent* brush = Scene.TryGetBrush(entity);
-        if (transform == nullptr || brush == nullptr)
+        const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, entity);
+        if (!state.has_value())
             continue;
 
-        AppendBrush(vertices, *transform, *brush, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        AppendBrush(vertices, *state, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
     }
 
     if (Preview != nullptr)
@@ -106,8 +107,10 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
         {
             Transform3f previewTransform = Transform3f::Identity();
             previewTransform.Position = box->Center;
-            const BrushComponent previewBrush{ box->HalfExtents };
-            AppendBrush(vertices, previewTransform, previewBrush, Vec4(1.0f, 0.6f, 0.0f, 1.0f));
+            AppendBrush(vertices, BrushState{
+                .Transform = previewTransform,
+                .HalfExtents = box->HalfExtents,
+            }, Vec4(1.0f, 0.6f, 0.0f, 1.0f));
         }
     }
 
@@ -186,20 +189,10 @@ void WireframeRenderer::Teardown()
 }
 
 void WireframeRenderer::AppendBrush(std::vector<LineVertex>& vertices,
-                                    const Transform3f& transform,
-                                    const BrushComponent& brush,
+                                    const BrushState& brush,
                                     const Vec4& color) const
 {
-    const std::array<Vec3d, 8> corners = {
-        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, -brush.HalfExtents.Y, -brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(brush.HalfExtents.X, -brush.HalfExtents.Y, -brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(brush.HalfExtents.X, brush.HalfExtents.Y, -brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, brush.HalfExtents.Y, -brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, -brush.HalfExtents.Y, brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(brush.HalfExtents.X, -brush.HalfExtents.Y, brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(brush.HalfExtents.X, brush.HalfExtents.Y, brush.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, brush.HalfExtents.Y, brush.HalfExtents.Z)),
-    };
+    const std::array<Vec3d, 8> corners = BrushGeometry::ComputeCorners(brush);
 
     constexpr std::array<std::pair<int, int>, 12> edges = {{
         { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },

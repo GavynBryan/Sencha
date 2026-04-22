@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../../interaction/IInteraction.h"
+#include "../../level/BrushGeometry.h"
 #include "../../level/LevelScene.h"
 
-#include <math/geometry/3d/Transform3d.h>
 #include <world/entity/EntityId.h>
 
 class LevelDocument;
@@ -12,8 +12,7 @@ class BrushMoveDragInteraction : public IInteraction
 {
 public:
     BrushMoveDragInteraction(EntityId entity,
-                             const Transform3f& initialTransform,
-                             Vec3d initialHalfExtents,
+                             BrushState initialState,
                              Vec3d gridAnchor,
                              LevelScene& scene,
                              LevelDocument& document);
@@ -24,10 +23,9 @@ public:
 
 private:
     EntityId Entity;
-    Transform3f InitialTransform;
-    Vec3d InitialHalfExtents;
+    BrushState InitialState;
     Vec3d GridAnchor;
-    Vec3d CurrentPosition;
+    BrushState CurrentState;
     LevelScene& Scene;
     LevelDocument& Document;
 };

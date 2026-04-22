@@ -13,16 +13,13 @@
 
 BrushResizeDragInteraction::BrushResizeDragInteraction(EntityId entity,
                                                        int faceIndex,
-                                                       const Transform3f& initialTransform,
-                                                       Vec3d initialHalfExtents,
+                                                       BrushState initialState,
                                                        LevelScene& scene,
                                                        LevelDocument& document)
     : Entity(entity)
     , FaceIndex(faceIndex)
-    , InitialTransform(initialTransform)
-    , InitialHalfExtents(initialHalfExtents)
-    , CurrentPosition(initialTransform.Position)
-    , CurrentHalfExtents(initialHalfExtents)
+    , InitialState(initialState)
+    , CurrentState(initialState)
     , Scene(scene)
     , Document(document)
 {
@@ -37,29 +34,18 @@ void BrushResizeDragInteraction::OnPointerMove(ToolContext& ctx,
     if (!snapped.has_value())
         return;
 
-    const int axis = FaceIndex / 2;
     const GridPlane grid = viewport.GetGrid();
     const Vec3d gridNormal = grid.AxisU.Cross(grid.AxisV).Normalized();
+    const int axis = FaceIndex / 2;
     Vec3d dragAxis = {};
     dragAxis[axis] = 1.0f;
     if (std::abs(gridNormal.Dot(dragAxis)) > 0.99f)
         return;
 
-    const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
-    const float fixedFacePos = InitialTransform.Position[axis] - sign * InitialHalfExtents[axis];
     const float newFacePos = (*snapped)[axis];
     const float minHalf = viewport.GetGrid().Spacing * 0.5f;
-    const float half = std::max(std::abs(newFacePos - fixedFacePos) * 0.5f, minHalf);
-
-    Vec3d newPos = InitialTransform.Position;
-    newPos[axis] = (newFacePos + fixedFacePos) * 0.5f;
-
-    Vec3d newHE = InitialHalfExtents;
-    newHE[axis] = half;
-
-    CurrentPosition = newPos;
-    CurrentHalfExtents = newHE;
-    ApplyResize(Scene, newPos, newHE);
+    CurrentState = BrushGeometry::ResizeFace(InitialState, FaceIndex, newFacePos, minHalf);
+    BrushGeometry::ApplyState(Scene, Entity, CurrentState);
 }
 
 void BrushResizeDragInteraction::OnPointerUp(ToolContext& ctx,
@@ -68,26 +54,15 @@ void BrushResizeDragInteraction::OnPointerUp(ToolContext& ctx,
 {
     ctx.Commands.Execute(std::make_unique<EditBrushCommand>(
         Entity,
-        InitialTransform.Position,
-        CurrentPosition,
-        InitialHalfExtents,
-        CurrentHalfExtents,
+        InitialState.Transform.Position,
+        CurrentState.Transform.Position,
+        InitialState.HalfExtents,
+        CurrentState.HalfExtents,
         Scene,
         Document));
 }
 
 void BrushResizeDragInteraction::OnCancel(ToolContext& /*ctx*/)
 {
-    ApplyResize(Scene, InitialTransform.Position, InitialHalfExtents);
-}
-
-void BrushResizeDragInteraction::ApplyResize(LevelScene& scene, Vec3d newPosition, Vec3d newHalfExtents)
-{
-    if (const Transform3f* t = scene.TryGetTransform(Entity))
-    {
-        Transform3f updated = *t;
-        updated.Position = newPosition;
-        scene.SetTransform(Entity, updated);
-    }
-    scene.SetBrushHalfExtents(Entity, newHalfExtents);
+    BrushGeometry::ApplyState(Scene, Entity, InitialState);
 }
