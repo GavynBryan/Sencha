@@ -1,7 +1,7 @@
-#include "CubeTool.h"
+#include "BrushTool.h"
 
 #include "../LevelScene.h"
-#include "../interactions/CubeCreateDragInteraction.h"
+#include "../interactions/BrushCreateDragInteraction.h"
 #include "../../commands/CommandStack.h"
 #include "../../interaction/InteractionHost.h"
 #include "../../selection/SelectCommand.h"
@@ -11,20 +11,20 @@
 
 #include <memory>
 
-std::string_view CubeTool::GetId() const
+std::string_view BrushTool::GetId() const
 {
-    return "cube";
+    return "brush";
 }
 
-std::string_view CubeTool::GetDisplayName() const
+std::string_view BrushTool::GetDisplayName() const
 {
-    return "Cube";
+    return "Brush";
 }
 
-InputConsumed CubeTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
+InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
 {
     const SelectableRef picked = ctx.Picking.Pick(viewport, point, ctx.Scene);
-    if (picked.IsValid() && ctx.Scene.TryGetCube(picked.Entity) != nullptr)
+    if (picked.IsValid() && ctx.Scene.TryGetBrush(picked.Entity) != nullptr)
     {
         ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, picked));
         return InputConsumed::Yes;
@@ -33,7 +33,7 @@ InputConsumed CubeTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport
     const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, point);
     if (anchor.has_value())
     {
-        ctx.Interactions.Begin(std::make_unique<CubeCreateDragInteraction>(
+        ctx.Interactions.Begin(std::make_unique<BrushCreateDragInteraction>(
             *anchor, ctx.Scene, ctx.Document));
         return InputConsumed::Yes;
     }

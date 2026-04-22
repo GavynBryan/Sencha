@@ -1,7 +1,7 @@
 #include "BrushEditSession.h"
 
-#include "CubeBodyHandle.h"
-#include "CubeFaceHandle.h"
+#include "BrushBodyHandle.h"
+#include "BrushFaceHandle.h"
 #include "../../interaction/IInteraction.h"
 #include "../../interaction/InteractionHost.h"
 #include "../../tools/ToolContext.h"
@@ -21,9 +21,9 @@ void BrushEditSession::BuildHandles()
 {
     FaceHandles.clear();
     for (int i = 0; i < 6; ++i)
-        FaceHandles.push_back(std::make_unique<CubeFaceHandle>(Selection.Entity, i, Scene, Document));
+        FaceHandles.push_back(std::make_unique<BrushFaceHandle>(Selection.Entity, i, Scene, Document));
 
-    BodyHandle = std::make_unique<CubeBodyHandle>(Selection.Entity, Scene, Document);
+    BodyHandle = std::make_unique<BrushBodyHandle>(Selection.Entity, Scene, Document);
 }
 
 InputConsumed BrushEditSession::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)

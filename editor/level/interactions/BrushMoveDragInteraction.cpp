@@ -1,4 +1,4 @@
-#include "CubeMoveDragInteraction.h"
+#include "BrushMoveDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
 #include "../../level/LevelCommands.h"
@@ -9,12 +9,12 @@
 
 #include <memory>
 
-CubeMoveDragInteraction::CubeMoveDragInteraction(EntityId entity,
-                                                  const Transform3f& initialTransform,
-                                                  Vec3d initialHalfExtents,
-                                                  Vec3d gridAnchor,
-                                                  LevelScene& scene,
-                                                  LevelDocument& document)
+BrushMoveDragInteraction::BrushMoveDragInteraction(EntityId entity,
+                                                   const Transform3f& initialTransform,
+                                                   Vec3d initialHalfExtents,
+                                                   Vec3d gridAnchor,
+                                                   LevelScene& scene,
+                                                   LevelDocument& document)
     : Entity(entity)
     , InitialTransform(initialTransform)
     , InitialHalfExtents(initialHalfExtents)
@@ -25,7 +25,7 @@ CubeMoveDragInteraction::CubeMoveDragInteraction(EntityId entity,
 {
 }
 
-void CubeMoveDragInteraction::OnPointerMove(ToolContext& ctx,
+void BrushMoveDragInteraction::OnPointerMove(ToolContext& ctx,
                                              EditorViewport& viewport,
                                              ImVec2 pos,
                                              ImVec2 /*delta*/)
@@ -45,11 +45,11 @@ void CubeMoveDragInteraction::OnPointerMove(ToolContext& ctx,
     }
 }
 
-void CubeMoveDragInteraction::OnPointerUp(ToolContext& ctx,
+void BrushMoveDragInteraction::OnPointerUp(ToolContext& ctx,
                                            EditorViewport& /*viewport*/,
                                            ImVec2 /*pos*/)
 {
-    ctx.Commands.Execute(std::make_unique<EditCubeCommand>(
+    ctx.Commands.Execute(std::make_unique<EditBrushCommand>(
         Entity,
         InitialTransform.Position,
         CurrentPosition,
@@ -59,7 +59,7 @@ void CubeMoveDragInteraction::OnPointerUp(ToolContext& ctx,
         Document));
 }
 
-void CubeMoveDragInteraction::OnCancel(ToolContext& /*ctx*/)
+void BrushMoveDragInteraction::OnCancel(ToolContext& /*ctx*/)
 {
     if (const Transform3f* t = Scene.TryGetTransform(Entity))
     {

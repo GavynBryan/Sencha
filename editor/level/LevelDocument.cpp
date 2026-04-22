@@ -16,7 +16,7 @@ LevelDocument::LevelDocument()
     Registry_.Resources.Register<TransformHierarchyService>();
     Registry_.Resources.Register<ActiveCameraService>();
     Registry_.Components.Register<TransformStore<Transform3f>>(order);
-    Registry_.Components.Register<CubePrimitiveStore>();
+    Registry_.Components.Register<BrushComponentStore>();
     Registry_.Components.Register<CameraStore>();
 }
 

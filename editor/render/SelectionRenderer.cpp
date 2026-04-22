@@ -83,13 +83,13 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         return;
 
     const Transform3f* transform = Scene.TryGetTransform(selected.Entity);
-    const CubePrimitive* cube = Scene.TryGetCube(selected.Entity);
-    if (transform == nullptr || cube == nullptr)
+    const BrushComponent* brush = Scene.TryGetBrush(selected.Entity);
+    if (transform == nullptr || brush == nullptr)
         return;
 
     std::vector<LineVertex> vertices;
     vertices.reserve(24);
-    AppendCube(vertices, *transform, *cube, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
+    AppendBrush(vertices, *transform, *brush, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
 
     const VkDeviceSize byteCount = sizeof(LineVertex) * vertices.size();
     const auto allocation = Scratch->AllocateVertex(byteCount);
@@ -158,20 +158,20 @@ void SelectionRenderer::Teardown()
     Device = VK_NULL_HANDLE;
 }
 
-void SelectionRenderer::AppendCube(std::vector<LineVertex>& vertices,
-                                   const Transform3f& transform,
-                                   const CubePrimitive& cube,
-                                   const Vec4& color) const
+void SelectionRenderer::AppendBrush(std::vector<LineVertex>& vertices,
+                                    const Transform3f& transform,
+                                    const BrushComponent& brush,
+                                    const Vec4& color) const
 {
     const std::array<Vec3d, 8> corners = {
-        transform.TransformPoint(Vec3d(-cube.HalfExtents.X, -cube.HalfExtents.Y, -cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(cube.HalfExtents.X, -cube.HalfExtents.Y, -cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(cube.HalfExtents.X, cube.HalfExtents.Y, -cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-cube.HalfExtents.X, cube.HalfExtents.Y, -cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-cube.HalfExtents.X, -cube.HalfExtents.Y, cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(cube.HalfExtents.X, -cube.HalfExtents.Y, cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(cube.HalfExtents.X, cube.HalfExtents.Y, cube.HalfExtents.Z)),
-        transform.TransformPoint(Vec3d(-cube.HalfExtents.X, cube.HalfExtents.Y, cube.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, -brush.HalfExtents.Y, -brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(brush.HalfExtents.X, -brush.HalfExtents.Y, -brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(brush.HalfExtents.X, brush.HalfExtents.Y, -brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, brush.HalfExtents.Y, -brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, -brush.HalfExtents.Y, brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(brush.HalfExtents.X, -brush.HalfExtents.Y, brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(brush.HalfExtents.X, brush.HalfExtents.Y, brush.HalfExtents.Z)),
+        transform.TransformPoint(Vec3d(-brush.HalfExtents.X, brush.HalfExtents.Y, brush.HalfExtents.Z)),
     };
 
     constexpr std::array<std::pair<int, int>, 12> edges = {{

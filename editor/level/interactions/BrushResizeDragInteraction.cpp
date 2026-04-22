@@ -1,4 +1,4 @@
-#include "CubeResizeDragInteraction.h"
+#include "BrushResizeDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
 #include "../../level/LevelCommands.h"
@@ -11,12 +11,12 @@
 #include <cmath>
 #include <memory>
 
-CubeResizeDragInteraction::CubeResizeDragInteraction(EntityId entity,
-                                                      int faceIndex,
-                                                      const Transform3f& initialTransform,
-                                                      Vec3d initialHalfExtents,
-                                                      LevelScene& scene,
-                                                      LevelDocument& document)
+BrushResizeDragInteraction::BrushResizeDragInteraction(EntityId entity,
+                                                       int faceIndex,
+                                                       const Transform3f& initialTransform,
+                                                       Vec3d initialHalfExtents,
+                                                       LevelScene& scene,
+                                                       LevelDocument& document)
     : Entity(entity)
     , FaceIndex(faceIndex)
     , InitialTransform(initialTransform)
@@ -28,7 +28,7 @@ CubeResizeDragInteraction::CubeResizeDragInteraction(EntityId entity,
 {
 }
 
-void CubeResizeDragInteraction::OnPointerMove(ToolContext& ctx,
+void BrushResizeDragInteraction::OnPointerMove(ToolContext& ctx,
                                                EditorViewport& viewport,
                                                ImVec2 pos,
                                                ImVec2 /*delta*/)
@@ -62,11 +62,11 @@ void CubeResizeDragInteraction::OnPointerMove(ToolContext& ctx,
     ApplyResize(Scene, newPos, newHE);
 }
 
-void CubeResizeDragInteraction::OnPointerUp(ToolContext& ctx,
+void BrushResizeDragInteraction::OnPointerUp(ToolContext& ctx,
                                              EditorViewport& /*viewport*/,
                                              ImVec2 /*pos*/)
 {
-    ctx.Commands.Execute(std::make_unique<EditCubeCommand>(
+    ctx.Commands.Execute(std::make_unique<EditBrushCommand>(
         Entity,
         InitialTransform.Position,
         CurrentPosition,
@@ -76,12 +76,12 @@ void CubeResizeDragInteraction::OnPointerUp(ToolContext& ctx,
         Document));
 }
 
-void CubeResizeDragInteraction::OnCancel(ToolContext& /*ctx*/)
+void BrushResizeDragInteraction::OnCancel(ToolContext& /*ctx*/)
 {
     ApplyResize(Scene, InitialTransform.Position, InitialHalfExtents);
 }
 
-void CubeResizeDragInteraction::ApplyResize(LevelScene& scene, Vec3d newPosition, Vec3d newHalfExtents)
+void BrushResizeDragInteraction::ApplyResize(LevelScene& scene, Vec3d newPosition, Vec3d newHalfExtents)
 {
     if (const Transform3f* t = scene.TryGetTransform(Entity))
     {
@@ -89,5 +89,5 @@ void CubeResizeDragInteraction::ApplyResize(LevelScene& scene, Vec3d newPosition
         updated.Position = newPosition;
         scene.SetTransform(Entity, updated);
     }
-    scene.SetCubeHalfExtents(Entity, newHalfExtents);
+    scene.SetBrushHalfExtents(Entity, newHalfExtents);
 }

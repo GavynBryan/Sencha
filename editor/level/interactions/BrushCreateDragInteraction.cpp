@@ -1,4 +1,4 @@
-#include "CubeCreateDragInteraction.h"
+#include "BrushCreateDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
 #include "../../level/LevelCommands.h"
@@ -16,9 +16,9 @@
 #include <cmath>
 #include <memory>
 
-CubeCreateDragInteraction::CubeCreateDragInteraction(Vec3d anchorGrid,
-                                                      LevelScene& scene,
-                                                      LevelDocument& document)
+BrushCreateDragInteraction::BrushCreateDragInteraction(Vec3d anchorGrid,
+                                                       LevelScene& scene,
+                                                       LevelDocument& document)
     : AnchorGrid(anchorGrid)
     , LastCenter(anchorGrid)
     , LastHalfExtents(Vec3d(0.5f, 0.5f, 0.5f))
@@ -27,14 +27,14 @@ CubeCreateDragInteraction::CubeCreateDragInteraction(Vec3d anchorGrid,
 {
 }
 
-int CubeCreateDragInteraction::AxisIndex(Vec3d axis)
+int BrushCreateDragInteraction::AxisIndex(Vec3d axis)
 {
     if (std::abs(axis.X) > 0.5f) return 0;
     if (std::abs(axis.Y) > 0.5f) return 1;
     return 2;
 }
 
-void CubeCreateDragInteraction::UpdatePreview(ToolContext& ctx,
+void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx,
                                                Vec3d snapped,
                                                const EditorViewport& viewport)
 {
@@ -60,7 +60,7 @@ void CubeCreateDragInteraction::UpdatePreview(ToolContext& ctx,
     ctx.Preview.SetBox(center, halfExtents);
 }
 
-void CubeCreateDragInteraction::OnPointerMove(ToolContext& ctx,
+void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
                                                EditorViewport& viewport,
                                                ImVec2 pos,
                                                ImVec2 /*delta*/)
@@ -72,7 +72,7 @@ void CubeCreateDragInteraction::OnPointerMove(ToolContext& ctx,
     UpdatePreview(ctx, *snapped, viewport);
 }
 
-void CubeCreateDragInteraction::OnPointerUp(ToolContext& ctx,
+void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
                                              EditorViewport& viewport,
                                              ImVec2 pos)
 {
@@ -87,8 +87,8 @@ void CubeCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     if (!HasValidSize)
         return;
 
-    auto cmd = std::make_unique<CreateCubeCommand>(LastCenter, LastHalfExtents, Scene, Document);
-    CreateCubeCommand* rawCmd = cmd.get();
+    auto cmd = std::make_unique<CreateBrushCommand>(LastCenter, LastHalfExtents, Scene, Document);
+    CreateBrushCommand* rawCmd = cmd.get();
     ctx.Commands.Execute(std::move(cmd));
 
     const EntityId created = rawCmd->GetCreatedEntity();
@@ -102,7 +102,7 @@ void CubeCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     }
 }
 
-void CubeCreateDragInteraction::OnCancel(ToolContext& ctx)
+void BrushCreateDragInteraction::OnCancel(ToolContext& ctx)
 {
     ctx.Preview.Clear();
     HasValidSize = false;

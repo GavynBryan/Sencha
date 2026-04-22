@@ -38,10 +38,10 @@ private:
         Mat4 ViewProjection;
     };
 
-    void AppendCube(std::vector<LineVertex>& vertices,
-                    const Transform3f& transform,
-                    const CubePrimitive& cube,
-                    const Vec4& color) const;
+    void AppendBrush(std::vector<LineVertex>& vertices,
+                     const Transform3f& transform,
+                     const BrushComponent& brush,
+                     const Vec4& color) const;
 
     LevelScene& Scene;
     PreviewBuffer* Preview = nullptr;
