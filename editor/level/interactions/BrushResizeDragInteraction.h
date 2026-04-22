@@ -3,6 +3,7 @@
 #include "../../interaction/IInteraction.h"
 #include "../../level/BrushGeometry.h"
 #include "../../level/LevelScene.h"
+#include "../../selection/SelectableRef.h"
 
 #include <world/entity/EntityId.h>
 
@@ -12,8 +13,7 @@ class BrushResizeDragInteraction : public IInteraction
 {
 public:
     // FaceIndex: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z
-    BrushResizeDragInteraction(EntityId entity,
-                               int faceIndex,
+    BrushResizeDragInteraction(SelectableRef face,
                                BrushState initialState,
                                LevelScene& scene,
                                LevelDocument& document);
@@ -23,8 +23,7 @@ public:
     void OnCancel(ToolContext& ctx) override;
 
 private:
-    EntityId Entity;
-    int FaceIndex;
+    SelectableRef Face;
     BrushState InitialState;
     BrushState CurrentState;
     LevelScene& Scene;

@@ -83,10 +83,7 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
     if (!bestEntity.IsValid())
         return {};
 
-    return SelectableRef{
-        .Registry = scene.GetRegistry().Id,
-        .Entity = bestEntity,
-    };
+    return SelectableRef::EntitySelection(scene.GetRegistry().Id, bestEntity);
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const

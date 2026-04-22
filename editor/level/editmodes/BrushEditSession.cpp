@@ -2,6 +2,7 @@
 
 #include "BrushBodyHandle.h"
 #include "BrushFaceHandle.h"
+#include "../../level/BrushGeometry.h"
 #include "../../interaction/IInteraction.h"
 #include "../../interaction/InteractionHost.h"
 #include "../../tools/ToolContext.h"
@@ -20,8 +21,11 @@ BrushEditSession::BrushEditSession(SelectableRef selection, LevelScene& scene, L
 void BrushEditSession::BuildHandles()
 {
     FaceHandles.clear();
-    for (int i = 0; i < 6; ++i)
-        FaceHandles.push_back(std::make_unique<BrushFaceHandle>(Selection.Entity, i, Scene, Document));
+    for (const BrushFaceDescriptor& face : BrushGeometry::EnumerateFaces(Scene, Selection.Entity))
+    {
+        if (face.Ref.IsValid())
+            FaceHandles.push_back(std::make_unique<BrushFaceHandle>(face.Ref, Scene, Document));
+    }
 
     BodyHandle = std::make_unique<BrushBodyHandle>(Selection.Entity, Scene, Document);
 }

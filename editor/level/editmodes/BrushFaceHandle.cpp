@@ -71,9 +71,8 @@ Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point)
 }
 }
 
-BrushFaceHandle::BrushFaceHandle(EntityId entity, int faceIndex, LevelScene& scene, LevelDocument& document)
-    : Entity(entity)
-    , FaceIndex(faceIndex)
+BrushFaceHandle::BrushFaceHandle(SelectableRef face, LevelScene& scene, LevelDocument& document)
+    : Face(face)
     , Scene(scene)
     , Document(document)
 {
@@ -84,18 +83,16 @@ HandleHit BrushFaceHandle::HitTest(const EditorViewport& viewport, ImVec2 screen
     if (viewport.Camera.ActiveMode != EditorCamera::Mode::Orthographic)
         return {};
 
-    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
-    if (!state.has_value())
+    const std::optional<BrushFaceDescriptor> face = BrushGeometry::TryGetFace(Scene, Face, kHandleThickness);
+    if (!face.has_value())
         return {};
 
-    const BrushFaceGeometry face = BrushGeometry::ComputeFaceGeometry(*state, FaceIndex, kHandleThickness);
-
     const Ray3d ray = BuildRay(viewport, screenPos);
-    if (std::abs(face.Normal.Dot(ray.Direction)) > 0.99f)
+    if (std::abs(face->Geometry.Normal.Dot(ray.Direction)) > 0.99f)
         return {};
 
     float dist = 0.0f;
-    if (!RayIntersectsAabb(ray, face.Bounds, dist))
+    if (!RayIntersectsAabb(ray, face->Geometry.Bounds, dist))
         return {};
 
     return HandleHit{ .Hit = true, .Distance = dist };
@@ -105,10 +102,10 @@ std::unique_ptr<IInteraction> BrushFaceHandle::BeginDrag(ToolContext& /*ctx*/,
                                                          const EditorViewport& /*viewport*/,
                                                          ImVec2 /*screenPos*/) const
 {
-    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Entity);
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, Face.Entity);
     if (!state.has_value())
         return nullptr;
 
     return std::make_unique<BrushResizeDragInteraction>(
-        Entity, FaceIndex, *state, Scene, Document);
+        Face, *state, Scene, Document);
 }
