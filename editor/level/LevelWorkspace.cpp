@@ -2,7 +2,7 @@
 
 #include "editmodes/BrushEditSession.h"
 #include "tools/CameraTool.h"
-#include "tools/CubeTool.h"
+#include "tools/BrushTool.h"
 #include "tools/SelectTool.h"
 
 #include <memory>
@@ -25,7 +25,7 @@ void LevelWorkspace::Init(CommandStack& commands)
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());
-    Tools->Register(std::make_unique<CubeTool>());
+    Tools->Register(std::make_unique<BrushTool>());
     Tools->Register(std::make_unique<CameraTool>());
     Tools->Activate("select");
 
@@ -38,7 +38,7 @@ void LevelWorkspace::Init(CommandStack& commands)
 
     SelectionSubscription = Selection.Subscribe([this](SelectableRef ref)
     {
-        if (ref.IsValid() && Document.GetScene().TryGetCube(ref.Entity) != nullptr)
+        if (ref.IsValid() && Document.GetScene().TryGetBrush(ref.Entity) != nullptr)
             Sessions.SetSession(std::make_unique<BrushEditSession>(ref, Document.GetScene(), Document));
         else
             Sessions.EndSession();

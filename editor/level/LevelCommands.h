@@ -7,10 +7,10 @@
 
 #include <optional>
 
-class CreateCubeCommand : public ICommand
+class CreateBrushCommand : public ICommand
 {
 public:
-    CreateCubeCommand(Vec3d position, Vec3d halfExtents, LevelScene& scene, LevelDocument& document);
+    CreateBrushCommand(Vec3d position, Vec3d halfExtents, LevelScene& scene, LevelDocument& document);
 
     void Execute() override;
     void Undo() override;
@@ -40,13 +40,13 @@ private:
     EntityId CreatedEntity = {};
 };
 
-class EditCubeCommand : public ICommand
+class EditBrushCommand : public ICommand
 {
 public:
-    EditCubeCommand(EntityId entity,
-                    Vec3d oldPosition, Vec3d newPosition,
-                    Vec3d oldHalfExtents, Vec3d newHalfExtents,
-                    LevelScene& scene, LevelDocument& document);
+    EditBrushCommand(EntityId entity,
+                     Vec3d oldPosition, Vec3d newPosition,
+                     Vec3d oldHalfExtents, Vec3d newHalfExtents,
+                     LevelScene& scene, LevelDocument& document);
 
     void Execute() override;
     void Undo() override;
@@ -74,7 +74,7 @@ private:
     LevelScene& Scene;
     LevelDocument& Document;
     std::optional<Transform3f> SavedTransform;
-    std::optional<CubePrimitive> SavedCube;
+    std::optional<BrushComponent> SavedBrush;
     std::optional<CameraComponent> SavedCamera;
     EntityId RestoredEntity = {};
     bool CapturedState = false;

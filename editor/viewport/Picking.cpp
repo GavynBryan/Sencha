@@ -65,11 +65,11 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
     for (EntityId entity : scene.GetAllEntities())
     {
         const Transform3f* transform = scene.TryGetTransform(entity);
-        const CubePrimitive* cube = scene.TryGetCube(entity);
-        if (transform == nullptr || cube == nullptr)
+        const BrushComponent* brush = scene.TryGetBrush(entity);
+        if (transform == nullptr || brush == nullptr)
             continue;
 
-        const Aabb3d bounds = Aabb3d::FromCenterHalfExtent(transform->Position, cube->HalfExtents);
+        const Aabb3d bounds = Aabb3d::FromCenterHalfExtent(transform->Position, brush->HalfExtents);
         float hitDistance = 0.0f;
         if (!IntersectRayAabb(ray, bounds, hitDistance))
             continue;

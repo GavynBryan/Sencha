@@ -1,9 +1,9 @@
 #include "LevelCommands.h"
 
-CreateCubeCommand::CreateCubeCommand(Vec3d position,
-                                     Vec3d halfExtents,
-                                     LevelScene& scene,
-                                     LevelDocument& document)
+CreateBrushCommand::CreateBrushCommand(Vec3d position,
+                                       Vec3d halfExtents,
+                                       LevelScene& scene,
+                                       LevelDocument& document)
     : Position(position)
     , HalfExtents(halfExtents)
     , Scene(scene)
@@ -11,13 +11,13 @@ CreateCubeCommand::CreateCubeCommand(Vec3d position,
 {
 }
 
-void CreateCubeCommand::Execute()
+void CreateBrushCommand::Execute()
 {
-    CreatedEntity = Scene.CreateCube(Position, HalfExtents);
+    CreatedEntity = Scene.CreateBrush(Position, HalfExtents);
     Document.MarkDirty();
 }
 
-void CreateCubeCommand::Undo()
+void CreateBrushCommand::Undo()
 {
     Scene.DestroyEntity(CreatedEntity);
     Document.MarkDirty();
@@ -44,10 +44,10 @@ void CreateCameraCommand::Undo()
     Document.MarkDirty();
 }
 
-EditCubeCommand::EditCubeCommand(EntityId entity,
-                                 Vec3d oldPosition, Vec3d newPosition,
-                                 Vec3d oldHalfExtents, Vec3d newHalfExtents,
-                                 LevelScene& scene, LevelDocument& document)
+EditBrushCommand::EditBrushCommand(EntityId entity,
+                                   Vec3d oldPosition, Vec3d newPosition,
+                                   Vec3d oldHalfExtents, Vec3d newHalfExtents,
+                                   LevelScene& scene, LevelDocument& document)
     : Entity(entity)
     , OldPosition(oldPosition)
     , NewPosition(newPosition)
@@ -58,7 +58,7 @@ EditCubeCommand::EditCubeCommand(EntityId entity,
 {
 }
 
-void EditCubeCommand::Execute()
+void EditBrushCommand::Execute()
 {
     if (const Transform3f* t = Scene.TryGetTransform(Entity))
     {
@@ -66,11 +66,11 @@ void EditCubeCommand::Execute()
         updated.Position = NewPosition;
         Scene.SetTransform(Entity, updated);
     }
-    Scene.SetCubeHalfExtents(Entity, NewHalfExtents);
+    Scene.SetBrushHalfExtents(Entity, NewHalfExtents);
     Document.MarkDirty();
 }
 
-void EditCubeCommand::Undo()
+void EditBrushCommand::Undo()
 {
     if (const Transform3f* t = Scene.TryGetTransform(Entity))
     {
@@ -78,7 +78,7 @@ void EditCubeCommand::Undo()
         updated.Position = OldPosition;
         Scene.SetTransform(Entity, updated);
     }
-    Scene.SetCubeHalfExtents(Entity, OldHalfExtents);
+    Scene.SetBrushHalfExtents(Entity, OldHalfExtents);
     Document.MarkDirty();
 }
 
@@ -97,8 +97,8 @@ void DeleteEntityCommand::Execute()
     {
         if (const Transform3f* transform = Scene.TryGetTransform(TargetEntity))
             SavedTransform = *transform;
-        if (const CubePrimitive* cube = Scene.TryGetCube(TargetEntity))
-            SavedCube = *cube;
+        if (const BrushComponent* brush = Scene.TryGetBrush(TargetEntity))
+            SavedBrush = *brush;
         if (const CameraComponent* camera = Scene.TryGetCamera(TargetEntity))
             SavedCamera = *camera;
         CapturedState = true;
@@ -113,8 +113,8 @@ void DeleteEntityCommand::Undo()
     if (!SavedTransform.has_value())
         return;
 
-    if (SavedCube.has_value())
-        RestoredEntity = Scene.CreateCube(SavedTransform->Position, SavedCube->HalfExtents);
+    if (SavedBrush.has_value())
+        RestoredEntity = Scene.CreateBrush(SavedTransform->Position, SavedBrush->HalfExtents);
     else if (SavedCamera.has_value())
         RestoredEntity = Scene.CreateCamera(SavedTransform->Position);
     else

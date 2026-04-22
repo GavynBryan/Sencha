@@ -14,22 +14,22 @@
 #include <string_view>
 #include <vector>
 
-struct CubePrimitive
+struct BrushComponent
 {
     Vec3d HalfExtents = { 0.5, 0.5, 0.5 };
 };
 
-using CubePrimitiveStore = SparseSetStore<CubePrimitive>;
+using BrushComponentStore = SparseSetStore<BrushComponent>;
 
 template <>
-struct TypeSchema<CubePrimitive>
+struct TypeSchema<BrushComponent>
 {
-    static constexpr std::string_view Name = "cube_primitive";
+    static constexpr std::string_view Name = "brush";
 
     static auto Fields()
     {
         return std::tuple{
-            MakeField("half_extents", &CubePrimitive::HalfExtents),
+            MakeField("half_extents", &BrushComponent::HalfExtents),
         };
     }
 };
@@ -39,17 +39,17 @@ class LevelScene
 public:
     explicit LevelScene(Registry& registry);
 
-    EntityId CreateCube(Vec3d position, Vec3d halfExtents = { 0.5, 0.5, 0.5 });
+    EntityId CreateBrush(Vec3d position, Vec3d halfExtents = { 0.5, 0.5, 0.5 });
     EntityId CreateCamera(Vec3d position);
     void DestroyEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
-    void SetCubeHalfExtents(EntityId entity, Vec3d halfExtents);
+    void SetBrushHalfExtents(EntityId entity, Vec3d halfExtents);
 
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;
     [[nodiscard]] std::span<const EntityId> GetAllEntities() const;
     [[nodiscard]] const Transform3f* TryGetTransform(EntityId entity) const;
-    [[nodiscard]] const CubePrimitive* TryGetCube(EntityId entity) const;
+    [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
     [[nodiscard]] const CameraComponent* TryGetCamera(EntityId entity) const;
     [[nodiscard]] Registry& GetRegistry();
     [[nodiscard]] const Registry& GetRegistry() const;

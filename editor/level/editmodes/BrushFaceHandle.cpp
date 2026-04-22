@@ -1,12 +1,12 @@
-#include "CubeBodyHandle.h"
+#include "BrushFaceHandle.h"
 
-#include "../../level/interactions/CubeMoveDragInteraction.h"
-#include "../../tools/ToolContext.h"
+#include "../../level/interactions/BrushResizeDragInteraction.h"
+#include "../../viewport/EditorCamera.h"
 #include "../../viewport/EditorViewport.h"
-#include "../../viewport/Picking.h"
 
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Ray3d.h>
+#include <math/Vec.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +16,7 @@ namespace
 {
 constexpr double kMaxDist = 1.0e6;
 constexpr double kParallelEps = 1.0e-8;
+constexpr float kHandleThickness = 0.12f;
 
 bool RayIntersectsAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDist)
 {
@@ -69,39 +70,55 @@ Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point)
 }
 }
 
-CubeBodyHandle::CubeBodyHandle(EntityId entity, LevelScene& scene, LevelDocument& document)
+BrushFaceHandle::BrushFaceHandle(EntityId entity, int faceIndex, LevelScene& scene, LevelDocument& document)
     : Entity(entity)
+    , FaceIndex(faceIndex)
     , Scene(scene)
     , Document(document)
 {
 }
 
-HandleHit CubeBodyHandle::HitTest(const EditorViewport& viewport, ImVec2 screenPos) const
+HandleHit BrushFaceHandle::HitTest(const EditorViewport& viewport, ImVec2 screenPos) const
 {
-    const Transform3f* t = Scene.TryGetTransform(Entity);
-    const CubePrimitive* cube = Scene.TryGetCube(Entity);
-    if (!t || !cube) return {};
+    if (viewport.Camera.ActiveMode != EditorCamera::Mode::Orthographic)
+        return {};
 
-    const Aabb3d bounds = Aabb3d::FromCenterHalfExtent(t->Position, cube->HalfExtents);
+    const Transform3f* t = Scene.TryGetTransform(Entity);
+    const BrushComponent* brush = Scene.TryGetBrush(Entity);
+    if (!t || !brush) return {};
+
+    const int axis = FaceIndex / 2;
+    const float sign = (FaceIndex % 2 == 0) ? 1.0f : -1.0f;
+    Vec3d faceNormal = {};
+    faceNormal[axis] = sign;
+
     const Ray3d ray = BuildRay(viewport, screenPos);
+    if (std::abs(faceNormal.Dot(ray.Direction)) > 0.99f)
+        return {};
+
+    const float facePos = t->Position[axis] + sign * brush->HalfExtents[axis];
+
+    Aabb3d slab;
+    slab.Min = Aabb3d::FromCenterHalfExtent(t->Position, brush->HalfExtents).Min;
+    slab.Max = Aabb3d::FromCenterHalfExtent(t->Position, brush->HalfExtents).Max;
+    slab.Min[axis] = facePos - kHandleThickness;
+    slab.Max[axis] = facePos + kHandleThickness;
+
     float dist = 0.0f;
-    if (!RayIntersectsAabb(ray, bounds, dist))
+    if (!RayIntersectsAabb(ray, slab, dist))
         return {};
 
     return HandleHit{ .Hit = true, .Distance = dist };
 }
 
-std::unique_ptr<IInteraction> CubeBodyHandle::BeginDrag(ToolContext& ctx,
-                                                         const EditorViewport& viewport,
-                                                         ImVec2 screenPos) const
+std::unique_ptr<IInteraction> BrushFaceHandle::BeginDrag(ToolContext& /*ctx*/,
+                                                         const EditorViewport& /*viewport*/,
+                                                         ImVec2 /*screenPos*/) const
 {
     const Transform3f* t = Scene.TryGetTransform(Entity);
-    const CubePrimitive* cube = Scene.TryGetCube(Entity);
-    if (!t || !cube) return nullptr;
+    const BrushComponent* brush = Scene.TryGetBrush(Entity);
+    if (!t || !brush) return nullptr;
 
-    const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, screenPos);
-    if (!anchor.has_value()) return nullptr;
-
-    return std::make_unique<CubeMoveDragInteraction>(
-        Entity, *t, cube->HalfExtents, *anchor, Scene, Document);
+    return std::make_unique<BrushResizeDragInteraction>(
+        Entity, FaceIndex, *t, brush->HalfExtents, Scene, Document);
 }

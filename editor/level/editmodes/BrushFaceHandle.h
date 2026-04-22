@@ -7,10 +7,11 @@
 
 class LevelDocument;
 
-class CubeBodyHandle : public IHandle
+class BrushFaceHandle : public IHandle
 {
 public:
-    CubeBodyHandle(EntityId entity, LevelScene& scene, LevelDocument& document);
+    // FaceIndex: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z
+    BrushFaceHandle(EntityId entity, int faceIndex, LevelScene& scene, LevelDocument& document);
 
     HandleHit HitTest(const EditorViewport& viewport, ImVec2 screenPos) const override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx,
@@ -19,6 +20,7 @@ public:
 
 private:
     EntityId Entity;
+    int FaceIndex;
     LevelScene& Scene;
     LevelDocument& Document;
 };

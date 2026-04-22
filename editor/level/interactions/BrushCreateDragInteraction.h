@@ -7,10 +7,10 @@
 class LevelDocument;
 class LevelScene;
 
-class CubeCreateDragInteraction : public IInteraction
+class BrushCreateDragInteraction : public IInteraction
 {
 public:
-    CubeCreateDragInteraction(Vec3d anchorGrid, LevelScene& scene, LevelDocument& document);
+    BrushCreateDragInteraction(Vec3d anchorGrid, LevelScene& scene, LevelDocument& document);
 
     void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, ImVec2 delta) override;
     void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
