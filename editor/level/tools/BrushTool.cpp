@@ -23,7 +23,11 @@ std::string_view BrushTool::GetDisplayName() const
 
 InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
 {
-    const SelectableRef picked = ctx.Picking.Pick(viewport, point, ctx.Scene);
+    const SelectableRef picked = ctx.Picking.Pick(
+        viewport,
+        point,
+        ctx.Scene,
+        BrushPickRequest{ .Mode = BrushPickMode::EntityOnly });
     if (picked.IsValid() && ctx.Scene.TryGetBrush(picked.Entity) != nullptr)
     {
         ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, picked));

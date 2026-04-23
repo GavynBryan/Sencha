@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace
 {
@@ -57,33 +58,131 @@ bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
                                    ImVec2 point,
-                                   const LevelScene& scene) const
+                                   const LevelScene& scene,
+                                   BrushPickRequest request) const
 {
     const Ray3d ray = BuildRay(viewport, point);
+    return PickBrushElement(ray, scene, request);
+}
 
-    float bestDistance = static_cast<float>(kMaxPickDistance);
-    EntityId bestEntity = {};
+SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
+                                               const LevelScene& scene,
+                                               BrushPickRequest request) const
+{
+    PickCandidate bestCandidate{};
+    bool hasBestCandidate = false;
+    std::vector<PickCandidate> candidates;
+    candidates.reserve(6);
+
     for (EntityId entity : scene.GetAllEntities())
     {
-        const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
-        if (!state.has_value())
-            continue;
+        candidates.clear();
 
-        const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
-        float hitDistance = 0.0f;
-        if (!IntersectRayAabb(ray, bounds, hitDistance))
-            continue;
-        if (hitDistance >= bestDistance)
-            continue;
+        if (AllowsFaces(request))
+            GatherBrushFaceCandidates(ray, scene, entity, candidates);
 
-        bestDistance = hitDistance;
-        bestEntity = entity;
+        if (AllowsEntities(request))
+        {
+            if (const auto body = MakeBrushBodyCandidate(ray, scene, entity))
+                candidates.push_back(*body);
+        }
+
+        for (const PickCandidate& candidate : candidates)
+        {
+            if (!candidate.Ref.IsValid())
+                continue;
+
+            PickCandidate rankedCandidate = candidate;
+            rankedCandidate.Priority = PriorityFor(request, rankedCandidate.Ref.Kind);
+
+            if (!IsBetterCandidate(rankedCandidate, bestCandidate, hasBestCandidate))
+                continue;
+
+            bestCandidate = rankedCandidate;
+            hasBestCandidate = true;
+        }
     }
 
-    if (!bestEntity.IsValid())
-        return {};
+    return hasBestCandidate ? bestCandidate.Ref : SelectableRef{};
+}
 
-    return SelectableRef::EntitySelection(scene.GetRegistry().Id, bestEntity);
+bool PickingService::AllowsEntities(BrushPickRequest request)
+{
+    return request.Mode == BrushPickMode::EntityOnly
+        || request.Mode == BrushPickMode::FacePreferred;
+}
+
+bool PickingService::AllowsFaces(BrushPickRequest request)
+{
+    return request.Mode == BrushPickMode::FacePreferred
+        || request.Mode == BrushPickMode::FaceOnly;
+}
+
+uint8_t PickingService::PriorityFor(BrushPickRequest request, SelectableKind kind)
+{
+    switch (request.Mode)
+    {
+    case BrushPickMode::FaceOnly:
+        return kind == SelectableKind::BrushFace ? 0u : 255u;
+    case BrushPickMode::FacePreferred:
+        return kind == SelectableKind::BrushFace ? 0u : 1u;
+    case BrushPickMode::EntityOnly:
+    default:
+        return 0u;
+    }
+}
+
+bool PickingService::IsBetterCandidate(const PickCandidate& candidate,
+                                       const PickCandidate& best,
+                                       bool hasBest)
+{
+    if (!hasBest)
+        return true;
+    if (candidate.Priority != best.Priority)
+        return candidate.Priority < best.Priority;
+    return candidate.Distance < best.Distance;
+}
+
+std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandidate(const Ray3d& ray,
+                                                                                    const LevelScene& scene,
+                                                                                    EntityId entity) const
+{
+    const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
+    if (!state.has_value())
+        return std::nullopt;
+
+    const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
+    float hitDistance = 0.0f;
+    if (!IntersectRayAabb(ray, bounds, hitDistance))
+        return std::nullopt;
+
+    return PickCandidate{
+        .Ref = SelectableRef::EntitySelection(scene.GetRegistry().Id, entity),
+        .Distance = hitDistance,
+        .Priority = 0u,
+    };
+}
+
+void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
+                                               const LevelScene& scene,
+                                               EntityId entity,
+                                               std::vector<PickCandidate>& outCandidates) const
+{
+    for (const BrushFaceDescriptor& face : BrushGeometry::EnumerateFaces(scene, entity))
+    {
+        if (!face.Ref.IsValid())
+            continue;
+
+        float hitDistance = 0.0f;
+        if (!IntersectRayAabb(ray, face.Geometry.Bounds, hitDistance))
+            continue;
+
+        outCandidates.push_back(PickCandidate{
+            .Ref = face.Ref,
+            .Distance = hitDistance,
+            .Priority = 0u,
+        });
+    }
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const

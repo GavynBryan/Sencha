@@ -20,7 +20,11 @@ std::string_view SelectTool::GetDisplayName() const
 
 InputConsumed SelectTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
 {
-    const SelectableRef selection = ctx.Picking.Pick(viewport, point, ctx.Scene);
+    const SelectableRef selection = ctx.Picking.Pick(
+        viewport,
+        point,
+        ctx.Scene,
+        BrushPickRequest{ .Mode = BrushPickMode::FacePreferred });
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, selection));
     return InputConsumed::Yes;
 }
