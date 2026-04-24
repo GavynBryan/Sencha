@@ -3,6 +3,7 @@
 #include "CubeDemoSystems.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
 #include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
@@ -59,8 +60,9 @@ namespace
             ImGui::DragFloat("Move speed", &FreeCam.MoveSpeed, 0.1f, 0.1f, 50.0f);
             ImGui::DragFloat("Mouse sensitivity", &FreeCam.MouseSensitivity, 0.0001f, 0.0001f, 0.02f);
 
-            if (Transform3f* cube = DemoTransforms(RegistryInstance).TryGetLocalMutable(Scene.CenterCube))
-                ImGui::DragFloat3("Center cube position", &cube->Position.X, 0.05f);
+            if (LocalTransform* cube =
+                    RegistryInstance.Components.TryGet<LocalTransform>(Scene.CenterCube))
+                ImGui::DragFloat3("Center cube position", &cube->Value.Position.X, 0.05f);
 
             ImGui::End();
         }

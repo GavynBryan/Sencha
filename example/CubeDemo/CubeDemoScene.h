@@ -2,11 +2,11 @@
 
 #include "FreeCamera.h"
 
+#include <ecs/World.h>
+#include <ecs/EntityId.h>
 #include <render/Material.h>
 #include <render/static_mesh/StaticMeshHandle.h>
-#include <ecs/EntityId.h>
 #include <world/registry/Registry.h>
-#include <world/transform/TransformStore.h>
 
 #include <string_view>
 
@@ -23,8 +23,6 @@ struct DemoScene
     MaterialHandle Green;
     MaterialHandle Blue;
 };
-
-TransformStore<Transform3f>& DemoTransforms(Registry& registry);
 
 DemoScene LoadDemoScene(Registry& registry,
                         AssetSystem& assets,

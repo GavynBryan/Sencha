@@ -1,9 +1,9 @@
 #pragma once
 
+#include <ecs/EntityId.h>
+#include <ecs/World.h>
 #include <input/InputFrame.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <ecs/EntityId.h>
-#include <world/transform/TransformStore.h>
 
 struct FreeCamera
 {
@@ -16,8 +16,6 @@ struct FreeCamera
     bool LookHeld = false;
 
     void UpdateLook(const InputFrame& input);
-    void TickFixed(const InputFrame& input,
-                   TransformStore<Transform3f>& transforms,
-                   float fixedDt);
-    void ApplyRotation(TransformStore<Transform3f>& transforms) const;
+    void TickFixed(const InputFrame& input, World& world, float fixedDt);
+    void ApplyRotation(World& world) const;
 };

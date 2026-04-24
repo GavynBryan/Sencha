@@ -14,11 +14,6 @@
 #include <fstream>
 #include <sstream>
 
-TransformStore<Transform3f>& DemoTransforms(Registry& registry)
-{
-    return registry.Components.Get<TransformStore<Transform3f>>();
-}
-
 DemoScene LoadDemoScene(Registry& registry,
                         AssetSystem& assets,
                         LoggingProvider& logging,

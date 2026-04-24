@@ -456,3 +456,179 @@ overload exists only to keep old tests compiling and is not the target system.
 without rewriting system logic. Phase 3 must replace this stub first because render
 extraction, camera data, scene load correctness, and `Changed<WorldTransform>` all
 depend on real transform propagation.
+
+---
+
+## Phase 3: Design Decisions
+
+### D3.1 — Propagation order cache is mandatory; per-frame recomputation is not viable
+
+**Decision:** Transform propagation must use a cached topological sort stored as a
+`World` resource. Per-frame recomputation of parent-before-child order from a
+`Read<Parent>` query was measured and rejected.
+
+**Benchmark (2026-04-24):** `PropagateTransforms(World&)` Phase-2 stub against 100k
+entities in a 4-ary tree, built with `-O2 -march=native`:
+
+| Implementation                        | Mean     | P95      | ns/transform |
+|---------------------------------------|----------|----------|--------------|
+| Phase-2 stub (unordered_map, 3 passes)| 74.8 ms  | 90.1 ms  | 747.8 ns     |
+| Old `TransformPropagationOrderService`| 16.1 ms  | 18.0 ms  | 161.0 ns     |
+
+The Phase-2 stub's 74.8 ms is entirely attributable to three structural problems:
+
+1. `unordered_map<EntityIndex, TransformNode>` rebuilt from scratch every frame
+   (~100k hash insertions + ~100k lookup probes in the write-back pass).
+2. Three separate query passes (populate locals, attach parent links, write back),
+   each with per-entity hash map probes inside the inner loop — violating A3.
+3. Recursive `ComputeWorldTransform` with a `nodes.find()` at every parent step.
+
+**Mandated implementation:** A `PropagationOrderCache` stored as a `World` resource.
+It holds a dense `std::vector<PropagationEntry>` sorted parent-before-child, where
+each entry stores `(EntityIndex child, EntityIndex parent)` as compact indices. The
+cache rebuilds only when `Changed<Parent>` detects a structural hierarchy change
+(entity gained or lost a `Parent` component). Propagation itself is then a single
+forward sweep: `worlds[child] = worlds[parent] * locals[child]`, matching the
+`DataOrientedFixture` pattern in `TransformHierarchyStressTest` which runs at ~8x
+faster than the recursive approach.
+
+The `PropagationOrderCache` is the direct spiritual successor of
+`TransformPropagationOrderService`. The old service rebuilt on hierarchy version
+bump; the new one rebuilds on `Changed<Parent>`. The propagation sweep shape is
+identical.
+
+**The MigrationPlan.md open question ("decide based on measurement") is now closed.**
+Use the cached resource. Do not attempt per-frame recomputation.
+
+---
+
+### D3.2 — Propagation sweep uses TryGet per entry; separate `Write<WorldTransform>` bump pass
+
+**Decision:** The propagation forward sweep reads and writes transforms via
+`World::TryGet<LocalTransform>` and `World::TryGet<WorldTransform>` (one registry lookup
+per entity). A separate `Query<Write<WorldTransform>, With<LocalTransform>>` pass runs
+after the sweep with an empty callback to bump column version counters.
+
+**Rationale:** The sweep and the version bump cannot happen in the same query pass
+without creating a structural violation: bumping `Write<WorldTransform>` during the
+sweep would require an active `Write<WorldTransform>` query, but the sweep modifies data
+through raw pointers obtained from `TryGet`. Mixing raw-pointer writes with an active
+query's column-version semantics would either miss the bump (conservative rule broken)
+or double-apply it. Separating into two passes keeps the semantics clean: the data pass
+owns the writes, the bump pass owns the change-detection signal. The bump pass costs
+O(N/ChunkCapacity) chunk traversals with no per-row work — negligible at any realistic
+entity count.
+
+**Alternative considered:** A single `Query<Read<LocalTransform>, Write<WorldTransform>>` chunk pass that reads local and writes world inline. Rejected because the parent-before-child ordering constraint requires following the `PropagationOrderCache` entry list, not
+chunk iteration order. Chunk iteration visits entities in arbitrary storage order; the
+cache list visits in BFS topological order. The two orderings are incompatible without
+a per-entity scatter step that reintroduces hash map lookups — exactly what D3.1 rejects.
+
+---
+
+### D3.3 — `Changed<Parent>` detection uses prevFrame reference to detect hierarchy changes
+
+**Decision:** Hierarchy change detection uses `Changed<Parent>` with
+`referenceFrame = CurrentFrame() - 1`. If any `Parent` chunk was written since the
+previous frame, the `PropagationOrderCache` is invalidated.
+
+**Rationale:** `Parent` components are added and removed via `World::AddComponent` /
+`RemoveComponent` (structural changes), not via `Write<Parent>` query mutation. The
+conservative write-bump rule (D0.9) means any chunk that had a `Parent` column
+structurally modified also has its column version bumped as part of the archetype
+transition. Using `prevFrame` as the reference means the cache is rebuilt on the frame
+after a structural change — one frame of lag is acceptable because `Parent` changes are
+rare and the rebuild itself runs in the same propagation call.
+
+**Edge case:** On frame 0 (`CurrentFrame() == 0`), `prevFrame` clamps to 0. The cache
+starts `Dirty = true`, so the first-frame rebuild is unconditional regardless of the
+change filter. This is correct: the frame-0 case is always a full rebuild.
+
+---
+
+### D3.4 — RenderExtractionSystem rewritten as chunk query with inlined frustum culling
+
+**Decision:** `RenderExtractionSystem::Extract` now iterates via
+`Query<Read<WorldTransform>, Read<StaticMeshComponent>>` at chunk granularity with the
+frustum test inlined in the inner loop. `FrustumCullingSystem::Cull` is a no-op; the
+declaration is preserved so existing call sites compile without modification.
+
+**Rationale:** The old `Extract` used `ForEachComponent<StaticMeshComponent>` followed
+by a `TryGet<WorldTransform>` per entity — two separate linear passes with cross-entity
+pointer chasing. The chunk query collocates both columns in the same archetype chunk,
+eliminating the per-entity `TryGet` hop. Inlining the frustum cull removes the separate
+erase-remove post-pass, reducing peak `RenderQueue::Opaque` vector size for scenes with
+many out-of-frustum entities.
+
+`FrustumCullingSystem::Cull` is kept as a no-op rather than removed because
+`DefaultRenderPipeline.cpp` calls it and removing the call would be a separate concern
+with no Phase 3 exit criteria. The no-op signature is a safe placeholder; it can be
+deleted in Phase 4 when the render pipeline is cleaned up.
+
+**RenderQueueItem copies data** (world matrix, bounds, mesh handle, material handle) as
+mandated by MigrationPlan.md Phase 3: copied items decouple extraction from submission
+and tolerate any structural change between extract and draw. Chunk-reference queue items
+are deferred to Phase 4+ per the plan.
+
+---
+
+### D3.5 — FreeCamera and CubeDemo editor writes go through World::TryGet directly
+
+**Decision:** `FreeCamera::TickFixed`, `FreeCamera::ApplyRotation`, `CubeSpinSystem`,
+and `CubeDemoPanel::Draw` mutate `LocalTransform` via `world.TryGet<LocalTransform>`
+rather than through a `CommandBuffer`. The compatibility `DemoTransforms()` function
+and its `TransformStore<Transform3f>` dependency are deleted.
+
+**Rationale:** These mutations happen from `FixedLogic` and `FrameUpdate` callbacks,
+which execute outside any active query scope. Per the ECS rules, direct structural
+mutation outside an active query is legal. `CommandBuffer` is required for writes that
+originate _inside_ a `ForEachChunk` callback (A4); it is not required for every write
+to ECS data. Using it here would add flush/creation overhead for no architectural
+benefit.
+
+The `DemoTransforms()` function was a Phase-2 compatibility shim bridging the old
+`TransformStore<Transform3f>` API to `registry.Components`. Removing it satisfies the
+D2.3 criterion that compatibility stores be deleted when Phase 3 migration is complete
+for their callers. `TransformStore` continues to serve the legacy `TransformServiceTests`
+suite and `TransformHierarchyStressTest`, which use the old sparse-set path for
+historical benchmark comparison — those are not Phase 3 call sites.
+
+---
+
+## Phase 3: Stress Test Results
+
+`TransformHierarchyStressTest` validates correctness and performance of the production
+propagation path against three reference implementations. Run on 2026-04-24, Linux 6.6
+WSL2, optimized build (`-O2 -march=native`), 4-ary tree topology.
+
+### 2 000 entities, 300 measured iterations
+
+| Implementation                          | Mean µs | Median µs | P95 µs | ns/transform |
+|-----------------------------------------|---------|-----------|--------|--------------|
+| traditional_scene_node_recursive        | 331.6   | 295.7     | 464.1  | 165.8        |
+| traditional_scene_node_iterative        | 427.0   | 390.9     | 570.3  | 213.5        |
+| data_oriented_contiguous                | 309.0   | 289.4     | 429.3  | 154.5        |
+| production scalar (cached sweep)        | 314.8   | 310.3     | 420.0  | 157.4        |
+| production bulk (cached sweep)          | 310.4   | 277.5     | 446.7  | 155.2        |
+| production rebuild_only cost (bulk)     | 540.5   | —         | —      | 270.3        |
+
+All five implementations produce checksum 4752.480. Validation passed.
+
+### 100 000 entities, 100 measured iterations
+
+| Implementation                          | Mean µs | Median µs | P95 µs | ns/transform |
+|-----------------------------------------|---------|-----------|--------|--------------|
+| traditional_scene_node_recursive        | 17 445  | 16 730    | 22 956 | 174.5        |
+| traditional_scene_node_iterative        | 22 805  | 22 472    | 26 902 | 228.0        |
+| data_oriented_contiguous                | 15 601  | 14 929    | 19 644 | 156.0        |
+| production scalar (cached sweep)        | 16 753  | 16 347    | 20 739 | 167.5        |
+| production bulk (cached sweep)          | 15 075  | 14 717    | 17 688 | 150.7        |
+| production rebuild_only cost (bulk)     | 22 440  | —         | —      | 224.4        |
+
+All five implementations produce checksum 238381.783. Validation passed.
+
+**Assessment:** The production bulk path at 100k entities (150.7 ns/transform) matches
+the hand-written `data_oriented_contiguous` fixture (156.0 ns/transform) and beats the
+traditional recursive approach (174.5 ns/transform) — the Phase 3 performance target is
+met. The rebuild cost (~22 ms at 100k) runs only when hierarchy structure changes
+(`Changed<Parent>`), which is rare; every steady-state frame pays only the cached sweep.

@@ -2,6 +2,7 @@
 
 #include <ecs/Query.h>
 #include <ecs/World.h>
+#include <world/transform/PropagationOrderCache.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
@@ -14,9 +15,14 @@ class Registry;
 //=============================================================================
 // TransformPropagationSystem
 //
-// Phase-2 placeholder for the archetype ECS transform propagation system.
-// Phase 3 ports the parent-before-child propagation logic to queries over
-// LocalTransform, WorldTransform, and Parent.
+// Propagates LocalTransform → WorldTransform for all entities that have both
+// components, respecting the spatial hierarchy expressed by the Parent component.
+//
+// Uses a PropagationOrderCache World resource: a parent-before-child dense
+// ordered list rebuilt only when Changed<Parent> signals a structural hierarchy
+// change. Each frame the sweep is a single forward pass with no hash lookups.
+//
+// See docs/ecs/decisions.md D3.1 for the mandate and benchmark rationale.
 //=============================================================================
 class TransformPropagationSystem
 {
@@ -35,6 +41,10 @@ public:
 
 private:
     World& Target;
+
+    // Rebuilds the PropagationOrderCache from the current Parent graph.
+    // Called when the cache is dirty (Changed<Parent> fired, or first frame).
+    void RebuildCache(PropagationOrderCache& cache);
 };
 
 inline void PropagateTransforms(World& world)
@@ -74,5 +84,4 @@ void PropagateTransforms(
 }
 
 // Restores world-transform coherence for every unique registry in the span.
-// Stubbed in Phase 2; full propagation logic is restored in Phase 3.
 void PropagateTransforms(std::span<Registry*> registries);
