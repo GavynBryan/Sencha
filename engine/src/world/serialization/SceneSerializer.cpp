@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -59,6 +60,23 @@ namespace
         return nullptr;
     }
 
+    void RegisterSerializedComponentStorage(Registry& registry)
+    {
+        for (const auto& entry : SerializerEntries())
+            entry->RegisterStorage(registry);
+    }
+
+    void SetParentComponent(Registry& registry, EntityId child, EntityId parent)
+    {
+        if (!registry.Components.IsRegistered<Parent>())
+            return;
+
+        if (Parent* existing = registry.Components.TryGet<Parent>(child))
+            existing->Entity = parent;
+        else
+            registry.Components.AddComponent(child, Parent{ parent });
+    }
+
     bool SaveRegistryChunk(const std::vector<EntityId>& entities, BinaryWriter& writer)
     {
         ChunkWriter chunk;
@@ -95,13 +113,21 @@ namespace
 
     bool SaveHierarchyChunk(const Registry& registry, BinaryWriter& writer)
     {
-        const auto* hierarchy = registry.Resources.TryGet<TransformHierarchyService>();
-        if (!hierarchy)
-            return true;
-
         std::vector<std::pair<EntityId, EntityId>> pairs;
-        for (EntityId root : hierarchy->GetRoots())
-            CollectHierarchyPairs(*hierarchy, root, pairs);
+        if (registry.Components.IsRegistered<Parent>())
+        {
+            registry.Components.ForEachComponent<Parent>(
+                [&](EntityId child, const Parent& parent)
+                {
+                    if (parent.Entity.IsValid())
+                        pairs.emplace_back(child, parent.Entity);
+                });
+        }
+        else if (const auto* hierarchy = registry.Resources.TryGet<TransformHierarchyService>())
+        {
+            for (EntityId root : hierarchy->GetRoots())
+                CollectHierarchyPairs(*hierarchy, root, pairs);
+        }
 
         ChunkWriter chunk;
         if (!chunk.Begin(writer, SceneChunk::Hierarchy, SceneVersion))
@@ -144,7 +170,7 @@ namespace
         for (std::uint32_t i = 0; i < count; ++i)
         {
             EntityIndex savedIndex = 0;
-            std::uint16_t savedGeneration = 0;
+            std::uint32_t savedGeneration = 0;
             if (!Deserialize(reader, savedIndex)
                 || !Deserialize(reader, savedGeneration))
             {
@@ -182,6 +208,7 @@ namespace
                 return false;
 
             hierarchy.SetParent(child, parent);
+            SetParentComponent(registry, child, parent);
         }
 
         return true;
@@ -372,6 +399,8 @@ bool LoadSceneBinary(BinaryReader& reader,
     std::vector<EntityId> loadedEntities;
     bool loadedRegistry = false;
 
+    RegisterSerializedComponentStorage(registry);
+
     while (true)
     {
         ChunkReader chunk;
@@ -402,7 +431,7 @@ bool LoadSceneBinary(BinaryReader& reader,
         if (!ok)
         {
             RollbackLoadedEntities(registry, loadedEntities);
-            SetError(error, "Failed to read scene chunk.");
+            SetError(error, "Failed to read scene chunk " + std::to_string(chunkHeader.Id) + ".");
             return false;
         }
 
@@ -519,6 +548,8 @@ bool LoadSceneJson(const JsonValue& root,
     std::vector<EntityId> entities;
     entities.reserve(entitiesValue->AsArray().size());
 
+    RegisterSerializedComponentStorage(registry);
+
     for (const JsonValue& entityValue : entitiesValue->AsArray())
     {
         if (!entityValue.IsObject())
@@ -597,6 +628,7 @@ bool LoadSceneJson(const JsonValue& root,
             }
 
             hierarchy.SetParent(entities[childIndex], entities[parentIndex]);
+            SetParentComponent(registry, entities[childIndex], entities[parentIndex]);
         }
     }
 

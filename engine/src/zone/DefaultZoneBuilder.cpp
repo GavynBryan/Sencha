@@ -1,11 +1,8 @@
 #include <zone/DefaultZoneBuilder.h>
 
-#include <render/StaticMeshComponentStore.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformComponents.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformStore.h>
 #include <zone/ZoneRuntime.h>
 
 Registry& CreateDefault3DZone(ZoneRuntime& zones,
@@ -15,7 +12,6 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
-    auto& order = registry.Resources.Register<TransformPropagationOrderService>();
     registry.Resources.Register<TransformHierarchyService>();
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.RegisterComponent<LocalTransform>();
@@ -24,9 +20,6 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
     registry.Components.RegisterComponent<StaticMeshComponent>();
     registry.Components.RegisterComponent<CameraComponent>();
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
-    registry.Components.Register<TransformStore<Transform3f>>(order);
-    registry.Components.Register<StaticMeshComponentStore>();
-    registry.Components.Register<CameraStore>();
     zones.SetParticipation(zone, participation);
     return registry;
 }
@@ -37,7 +30,6 @@ EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
     registry.Resources.Get<TransformHierarchyService>().Register(entity);
     registry.Components.AddComponent(entity, LocalTransform{ local });
     registry.Components.AddComponent(entity, WorldTransform{ local });
-    registry.Components.Get<TransformStore<Transform3f>>().Add(entity, local);
     return entity;
 }
 
@@ -56,9 +48,6 @@ bool AddDefaultMeshRenderer(Registry& registry,
         .Mesh = mesh,
         .Material = material,
     });
-    auto* legacy = registry.Components.TryGet<StaticMeshComponentStore>();
-    if (legacy != nullptr)
-        legacy->Add(entity, StaticMeshComponent{ .Mesh = mesh, .Material = material });
     return true;
 }
 
@@ -74,9 +63,6 @@ bool AddDefaultCamera(Registry& registry,
     }
 
     registry.Components.AddComponent(entity, camera);
-    auto* legacy = registry.Components.TryGet<CameraStore>();
-    if (legacy != nullptr)
-        legacy->Add(entity, camera);
     if (makeActive)
         registry.Resources.Get<ActiveCameraService>().SetActive(entity);
     return true;

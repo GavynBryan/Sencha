@@ -6,6 +6,7 @@
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <concepts>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -65,6 +66,12 @@ namespace SceneComponentSerialization
     }
 }
 
+template <typename Traits, typename Component>
+concept ComponentTraitsRegistersStorage = requires(Registry& registry)
+{
+    { Traits::Register(registry) } -> std::same_as<void>;
+};
+
 //=============================================================================
 // ComponentSerializer
 //
@@ -80,6 +87,17 @@ class ComponentSerializer final : public IComponentSerializer
 public:
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
     std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
+
+    void RegisterStorage(Registry& registry) const override
+    {
+        if constexpr (ComponentTraitsRegistersStorage<Traits, Component>)
+            Traits::Register(registry);
+        else
+        {
+            if (!registry.Components.IsRegistered<Component>())
+                registry.Components.RegisterComponent<Component>();
+        }
+    }
 
     bool HasComponent(EntityId entity, const Registry& registry) const override
     {

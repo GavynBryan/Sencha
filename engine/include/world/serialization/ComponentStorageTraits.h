@@ -21,6 +21,12 @@ struct ComponentStorageTraits<StaticMeshComponent>
 {
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::MeshRenders;
 
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<StaticMeshComponent>())
+            registry.Components.RegisterComponent<StaticMeshComponent>();
+    }
+
     static bool Add(Registry& registry, EntityId entity, StaticMeshComponent component)
     {
         if (registry.Components.HasComponent<StaticMeshComponent>(entity))
@@ -35,6 +41,12 @@ struct ComponentStorageTraits<CameraComponent>
 {
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::Cameras;
 
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<CameraComponent>())
+            registry.Components.RegisterComponent<CameraComponent>();
+    }
+
     static bool Add(Registry& registry, EntityId entity, CameraComponent component)
     {
         if (registry.Components.HasComponent<CameraComponent>(entity))
@@ -48,6 +60,16 @@ template <>
 struct ComponentStorageTraits<LocalTransform>
 {
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::Transforms;
+
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<LocalTransform>())
+            registry.Components.RegisterComponent<LocalTransform>();
+        if (!registry.Components.IsRegistered<WorldTransform>())
+            registry.Components.RegisterComponent<WorldTransform>();
+        if (!registry.Components.IsRegistered<Parent>())
+            registry.Components.RegisterComponent<Parent>();
+    }
 
     static bool Add(Registry& registry, EntityId entity, LocalTransform component)
     {

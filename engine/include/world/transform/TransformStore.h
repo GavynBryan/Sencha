@@ -29,7 +29,9 @@ public:
 
     bool Add(EntityId entity, const TTransform& local = TTransform::Identity())
     {
-        const bool added = Base::Add(entity, TransformComponent<TTransform>{ local, local });
+        const bool added = Base::Add(
+            entity,
+            TransformComponent<TTransform>{ local, TTransform::Identity() });
         if (added && Order != nullptr)
             Order->MarkLocalDirty(Base::IndexOf(entity));
         return added;

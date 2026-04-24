@@ -4,7 +4,6 @@
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/StaticMeshComponent.h>
-#include <render/StaticMeshComponentStore.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <ecs/EntityId.h>

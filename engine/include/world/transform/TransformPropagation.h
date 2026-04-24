@@ -1,6 +1,8 @@
 #pragma once
 
+#include <ecs/Query.h>
 #include <ecs/World.h>
+#include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagationOrderService.h>
 #include <world/transform/TransformStore.h>
@@ -24,10 +26,7 @@ public:
     {
     }
 
-    void Propagate()
-    {
-        (void)Target;
-    }
+    void Propagate();
 
     void Tick(float /*fixedDt*/)
     {
@@ -51,6 +50,27 @@ void PropagateTransforms(
     TransformPropagationOrderService& cache)
 {
     cache.MaybeRebuild(hierarchy, transforms);
+
+    auto items = transforms.GetItems();
+    for (const TransformPropagationOrderService::PropagationEntry& entry : cache.GetOrder())
+    {
+        if (entry.TransformIndex >= items.size())
+            continue;
+
+        auto& transform = items[entry.TransformIndex];
+        if (entry.ParentTransformIndex == TransformPropagationOrderService::NullIndex
+            || entry.ParentTransformIndex >= items.size())
+        {
+            transform.World = transform.Local;
+        }
+        else
+        {
+            transform.World = items[entry.ParentTransformIndex].World * transform.Local;
+        }
+    }
+
+    cache.GetLocalDirty().ClearAll();
+    cache.GetWorldChanged().ClearAll();
 }
 
 // Restores world-transform coherence for every unique registry in the span.
