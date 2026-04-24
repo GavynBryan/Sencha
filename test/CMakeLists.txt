@@ -27,6 +27,10 @@ file(GLOB_RECURSE RUNTIME_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.cpp
 )
 
+file(GLOB_RECURSE ECS_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/ecs/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -45,6 +49,12 @@ if(ENGINE_FEATURE_TEST_SOURCES)
     add_executable(engine_feature_tests ${ENGINE_FEATURE_TEST_SOURCES})
     target_link_libraries(engine_feature_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS engine_feature_tests)
+endif()
+
+if(ECS_TEST_SOURCES)
+    add_executable(ecs_tests ${ECS_TEST_SOURCES})
+    target_link_libraries(ecs_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS ecs_tests)
 endif()
 
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
@@ -66,6 +76,12 @@ endif()
 
 if(TARGET runtime_tests)
     gtest_discover_tests(runtime_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET ecs_tests)
+    gtest_discover_tests(ecs_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()
