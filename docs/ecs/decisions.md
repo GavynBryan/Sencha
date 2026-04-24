@@ -386,3 +386,73 @@ Known starting points:
   `Changed<WorldTransform>`, not transient tag components.
 - Port creation and structural mutation sites to `World`/`CommandBuffer` before
   rewriting higher-level system logic.
+
+---
+
+## Phase 2: Compile Restoration
+
+### D2.1 — Redirector headers are not part of the migration style
+
+**Decision:** Header-only redirectors introduced for compile momentum are deleted rather
+than kept as compatibility aliases. Includes should be updated to the real component or
+ECS header.
+
+**Rationale:** The migration should leave humans with an honest code map. Redirectors
+make the tree compile, but they also preserve old paths and hide where concepts now
+live. Direct includes make ownership explicit and keep refactors from becoming a layer
+of aliases.
+
+**Current state:** `world/entity/EntityId.h` and `world/transform/TransformSchemas.h`
+were removed. Callers now include `ecs/EntityId.h`, `math/MathSchemas.h`, and/or
+`world/transform/TransformComponents.h` directly.
+
+---
+
+### D2.2 — Lifecycle hook presence is detected with concepts
+
+**Decision:** `ComponentTraits<T>` no longer carries `HasOnAdd` / `HasOnRemove` boolean
+flags. The ECS uses C++20 concepts (`ComponentHasOnAdd<T>`,
+`ComponentHasOnRemove<T>`) to detect whether a trait specialization provides the hook
+method.
+
+**Rationale:** The boolean flags duplicated information already present in the trait
+type. That made each specialization responsible for keeping declarations and flags in
+sync. Concept detection keeps the opt-in hook API legible: define `OnAdd` if the
+component has add behavior, define `OnRemove` if it has remove behavior.
+
+---
+
+### D2.3 — Compatibility stores are temporary Phase-3 debt
+
+**Decision:** `world/SparseSetStore.h`, `world/transform/TransformStore.h`,
+`render/StaticMeshComponentStore.h`, and `world/transform/TransformSpace.h` are
+migration-only compatibility surfaces. They are not ECS architecture and must not be
+used by new system code.
+
+**Rationale:** Phase 2's exit criterion is compilation. A few older tests/examples still
+encode sparse-store-era API expectations, so small compatibility classes kept those
+targets building while the real engine call sites moved toward `World` component access.
+Keeping these classes beyond Phase 3 would violate the "one storage model" axiom and
+confuse maintainers about which ECS surface is canonical.
+
+**Removal criteria for Phase 3:**
+- Transform propagation is implemented over `LocalTransform`, `WorldTransform`, and
+  `Parent`.
+- Scene serialization loads/saves the split transform components through `World`.
+- Render extraction and camera data construction read from `World` only.
+- Tests and examples no longer include or instantiate the compatibility stores.
+
+When those criteria are met, delete the compatibility store headers and any legacy
+store bag APIs that were added to `World` solely to host them.
+
+---
+
+### D2.4 — Phase 3 starts with known stub behavior
+
+**Decision:** `PropagateTransforms(World&)` is intentionally a Phase-2 stub. The legacy
+overload exists only to keep old tests compiling and is not the target system.
+
+**Rationale:** The migration plan explicitly allows Phase 2 to restore compilation
+without rewriting system logic. Phase 3 must replace this stub first because render
+extraction, camera data, scene load correctness, and `Changed<WorldTransform>` all
+depend on real transform propagation.

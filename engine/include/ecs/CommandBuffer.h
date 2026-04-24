@@ -84,7 +84,7 @@ public:
             cmd.Payload.DataOffset = StorePayload(&value, sizeof(T), alignof(T));
         }
 
-        if constexpr (!std::is_empty_v<T> && ComponentTraits<T>::HasOnAdd)
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
             cmd.Payload.OnAddHook = [](void* ptr, World& w, EntityId e) {
                 ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), w, e);
@@ -103,7 +103,7 @@ public:
         cmd.Payload.Id   = W->template GetComponentId<T>();
         cmd.Payload.Size = std::is_empty_v<T> ? 0 : sizeof(T);
 
-        if constexpr (!std::is_empty_v<T> && ComponentTraits<T>::HasOnRemove)
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
             cmd.Payload.OnRemoveHook = [](const void* ptr, World& w, EntityId e) {
                 ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);

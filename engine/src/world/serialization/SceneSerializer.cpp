@@ -9,9 +9,8 @@
 #include <render/StaticMeshComponent.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformSchemas.h>
-#include <world/transform/TransformStore.h>
+#include <math/MathSchemas.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <memory>
@@ -152,7 +151,7 @@ namespace
                 return false;
             }
 
-            EntityId runtime = registry.Entities.Create();
+            EntityId runtime = registry.Components.CreateEntity();
             remap[savedIndex] = runtime;
             loadedEntities.push_back(runtime);
         }
@@ -264,7 +263,7 @@ namespace
         {
             for (const auto& serializer : SerializerEntries())
                 serializer->Remove(*it, registry);
-            registry.Entities.Destroy(*it);
+            registry.Components.DestroyEntity(*it);
         }
     }
 }
@@ -292,7 +291,7 @@ void ClearComponentSerializers()
 
 void InitSceneSerializer()
 {
-    RegisterComponent<TransformComponent<Transform3f>>();
+    RegisterComponent<LocalTransform>();
     RegisterComponent<CameraComponent>();
     RegisterComponent<StaticMeshComponent>();
 }
@@ -314,7 +313,7 @@ bool SaveSceneBinary(const Registry& registry,
                      SceneSerializationContext& context,
                      SceneSaveError* error)
 {
-    const auto entities = registry.Entities.GetAliveEntities();
+    const auto entities = registry.Components.GetAliveEntities();
 
     if (!WriteBinaryHeader(writer, SceneMagic, SceneVersion))
     {
@@ -436,7 +435,7 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
 {
     JsonValue::Array entitiesJson;
     JsonValue::Array hierarchyJson;
-    const auto entities = registry.Entities.GetAliveEntities();
+    const auto entities = registry.Components.GetAliveEntities();
     std::unordered_map<EntityIndex, std::uint32_t> entityToJsonIndex;
     entityToJsonIndex.reserve(entities.size());
 
@@ -529,7 +528,7 @@ bool LoadSceneJson(const JsonValue& root,
             return false;
         }
 
-        EntityId entity = registry.Entities.Create();
+        EntityId entity = registry.Components.CreateEntity();
         entities.push_back(entity);
 
         const JsonValue* components = entityValue.Find("components");

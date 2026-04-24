@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ecs/EntityId.h>
+
 // ComponentTraits<T>: opt-in specialization point for lifecycle hooks.
 // Default specialization is trivial — zero overhead for components without hooks.
 //
@@ -8,9 +10,6 @@
 //   template <>
 //   struct ComponentTraits<MyComponent>
 //   {
-//       static constexpr bool HasOnAdd    = true;
-//       static constexpr bool HasOnRemove = true;
-//
 //       static void OnAdd(MyComponent& component, World& world, EntityId entity) { ... }
 //       static void OnRemove(const MyComponent& component, World& world, EntityId entity) { ... }
 //   };
@@ -19,9 +18,23 @@
 // Hooks must not perform structural ECS mutations (AddComponent, RemoveComponent,
 // CreateEntity, DestroyEntity) — see docs/ecs/MigrationPlan.md §Lifecycle hooks.
 
+class World;
+
 template <typename T>
 struct ComponentTraits
 {
-    static constexpr bool HasOnAdd    = false;
-    static constexpr bool HasOnRemove = false;
 };
+
+template <typename T>
+concept ComponentHasOnAdd =
+    requires(T& component, World& world, EntityId entity)
+    {
+        ComponentTraits<T>::OnAdd(component, world, entity);
+    };
+
+template <typename T>
+concept ComponentHasOnRemove =
+    requires(const T& component, World& world, EntityId entity)
+    {
+        ComponentTraits<T>::OnRemove(component, world, entity);
+    };

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <core/batch/SparseSet.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <math/geometry/2d/Transform2d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformHierarchyService.h>

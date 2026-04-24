@@ -26,9 +26,6 @@ struct HookAddsMass { int Id = 0; };
 template <>
 struct ComponentTraits<Tracked>
 {
-    static constexpr bool HasOnAdd    = true;
-    static constexpr bool HasOnRemove = true;
-
     static void OnAdd(Tracked& /*c*/, World& /*w*/, EntityId /*e*/)
     {
         ++g_OnAddCount;
@@ -42,9 +39,6 @@ struct ComponentTraits<Tracked>
 template <>
 struct ComponentTraits<HookAddsMass>
 {
-    static constexpr bool HasOnAdd    = true;
-    static constexpr bool HasOnRemove = false;
-
     static void OnAdd(HookAddsMass& /*c*/, World& w, EntityId e)
     {
         w.AddComponent<Mass>(e, { 10.f });

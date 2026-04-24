@@ -9,9 +9,8 @@
 //=============================================================================
 // TransformSpace<TTransform>
 //
-// Self-contained transform domain: entity-indexed component storage, hierarchy,
-// and propagation cache. Transform lifetime is explicit Add/Remove on
-// `Transforms`; no transform RAII handles are involved.
+// Migration-only compatibility shell for older transform tests. Production ECS
+// storage is LocalTransform + WorldTransform + Parent in World.
 //=============================================================================
 template <typename TTransform>
 class TransformSpace

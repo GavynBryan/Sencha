@@ -1,5 +1,7 @@
 #include <render/RenderExtractionSystem.h>
 
+#include <world/transform/TransformComponents.h>
+
 #include <algorithm>
 
 namespace
@@ -21,32 +23,27 @@ namespace
     }
 }
 
-void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const StaticMeshComponentStore& renderers,
+void RenderExtractionSystem::Extract(const World& world,
                                      const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
                                      const CameraRenderData& camera,
                                      RenderQueue& queue)
 {
-    const auto items = renderers.GetItems();
-    const auto owners = renderers.GetOwnerIds();
-
-    for (size_t i = 0; i < items.size(); ++i)
+    world.ForEachComponent<StaticMeshComponent>(
+        [&](EntityId entity, const StaticMeshComponent& renderer)
     {
-        const StaticMeshComponent& renderer = items[i];
-        if (!renderer.Visible) continue;
+        if (!renderer.Visible) return;
 
-        // SparseSet stores raw indices; generation 1 is the minimum valid value.
-        EntityId entity{ static_cast<EntityIndex>(owners[i]), 1 };
-        const Transform3f* transform = transforms.TryGetWorld(entity);
+        const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
         const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
         const Material* material = materials.Get(renderer.Material);
-        if (transform == nullptr || mesh == nullptr || material == nullptr) continue;
+        if (transform == nullptr || mesh == nullptr || material == nullptr) return;
 
-        const Mat4 world = transform->ToMat4();
-        const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, world);
+        const Mat4 worldMatrix = transform->Value.ToMat4();
+        const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
         const Vec4 cameraSpaceCenter =
-            camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y, worldBounds.Center().Z, 1.0f);
+            camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y,
+                               worldBounds.Center().Z, 1.0f);
         const float cameraDepth = -cameraSpaceCenter.Z;
 
         for (uint32_t sectionIndex = 0;
@@ -59,13 +56,13 @@ void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transfor
             item.Mesh = renderer.Mesh;
             item.Material = renderer.Material;
             item.SectionIndex = sectionIndex;
-            item.WorldMatrix = world;
+            item.WorldMatrix = worldMatrix;
             item.WorldBounds = worldBounds;
             item.CameraDepth = cameraDepth;
             item.Pass = material->Pass;
             queue.AddOpaque(item);
         }
-    }
+    });
 }
 
 void FrustumCullingSystem::Cull(const CameraRenderData& camera, RenderQueue& queue)

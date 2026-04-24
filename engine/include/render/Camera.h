@@ -5,12 +5,12 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/service/IService.h>
-#include <world/entity/EntityId.h>
+#include <ecs/World.h>
+#include <ecs/EntityId.h>
 #include <math/Mat.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformStore.h>
 #include <world/SparseSetStore.h>
 #include <vulkan/vulkan.h>
 
@@ -119,8 +119,7 @@ class CameraRenderDataSystem
 {
 public:
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
-                                    const CameraStore& cameras,
-                                    const TransformStore<Transform3f>& transforms,
+                                    const World& world,
                                     VkExtent2D targetExtent,
                                     CameraRenderData& out);
 };

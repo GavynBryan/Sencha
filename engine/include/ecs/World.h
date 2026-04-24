@@ -56,6 +56,32 @@ class World
     };
 
 public:
+    World() = default;
+    ~World()
+    {
+        ClearOwnedTypeErased(Resources);
+        ClearOwnedTypeErased(LegacyStores);
+    }
+
+    World(const World&) = delete;
+    World& operator=(const World&) = delete;
+
+    World(World&& other) noexcept
+    {
+        MoveFrom(std::move(other));
+    }
+
+    World& operator=(World&& other) noexcept
+    {
+        if (this != &other)
+        {
+            ClearOwnedTypeErased(Resources);
+            ClearOwnedTypeErased(LegacyStores);
+            MoveFrom(std::move(other));
+        }
+        return *this;
+    }
+
     // ── Registration ────────────────────────────────────────────────────────
 
     // Must be called before any entity is created (asserted in debug).
@@ -177,7 +203,7 @@ public:
 
         Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
 
-        if constexpr (!std::is_empty_v<T> && ComponentTraits<T>::HasOnAdd)
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
             const Chunk* ch  = dst->Chunks[dci].get();
             const uint32_t c = ch->FindColumn(id);
@@ -200,7 +226,7 @@ public:
 
         assert(src.Signature.test(id) && "Entity does not have component T.");
 
-        if constexpr (!std::is_empty_v<T> && ComponentTraits<T>::HasOnRemove)
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
             const uint32_t c   = src.Chunks[loc.ChunkIndex]->FindColumn(id);
             const T*       ptr = reinterpret_cast<const T*>(
@@ -250,8 +276,63 @@ public:
     bool HasComponent(EntityId entity) const
     {
         if (!Entities.IsAlive(entity)) return false;
+        if (!IsRegistered<T>()) return false;
         const ComponentId id = GetComponentId<T>();
         return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
+    }
+
+    template <typename T, typename F>
+    void ForEachComponent(F&& fn)
+    {
+        const ComponentId id = GetComponentId<T>();
+        for (auto& archPtr : ArchetypeList)
+        {
+            Archetype& arch = *archPtr;
+            if (!arch.Signature.test(id))
+                continue;
+
+            for (auto& chunkPtr : arch.Chunks)
+            {
+                Chunk& chunk = *chunkPtr;
+                if (chunk.IsEmpty())
+                    continue;
+
+                const uint32_t col = chunk.FindColumn(id);
+                if (col == UINT32_MAX)
+                    continue;
+
+                auto values = chunk.ColumnSpan<T>(col);
+                const EntityIndex* entities = chunk.EntityIndices();
+                for (uint32_t row = 0; row < chunk.RowCount; ++row)
+                    fn(EntityId{ entities[row], GenerationForIndex(entities[row]) }, values[row]);
+            }
+        }
+    }
+
+    template <typename T, typename F>
+    void ForEachComponent(F&& fn) const
+    {
+        const_cast<World*>(this)->ForEachComponent<T>(std::forward<F>(fn));
+    }
+
+    template <typename T>
+    size_t CountComponents() const
+    {
+        if (!IsRegistered<T>())
+            return 0;
+
+        size_t count = 0;
+        const ComponentId id = GetComponentId<T>();
+        for (const auto& archPtr : ArchetypeList)
+        {
+            const Archetype& arch = *archPtr;
+            if (!arch.Signature.test(id))
+                continue;
+
+            for (const auto& chunkPtr : arch.Chunks)
+                count += chunkPtr->RowCount;
+        }
+        return count;
     }
 
     // ── Archetype access (for Query internals) ───────────────────────────────
@@ -306,10 +387,74 @@ public:
         return Resources.count(std::type_index(typeid(T))) > 0;
     }
 
+    // ── Migration-only legacy store bag ──────────────────────────────────────
+    //
+    // Phase 2 keeps older tests and examples compiling while production call
+    // sites move to archetype components. Do not use these methods for new ECS
+    // code; systems should use RegisterComponent/AddComponent/Query instead.
+
+    template <typename T, typename... Args>
+    T& Register(Args&&... args)
+    {
+        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
+        T* raw = ptr.get();
+        LegacyStores[std::type_index(typeid(T))] = {
+            raw,
+            [](void* p) { delete static_cast<T*>(p); }
+        };
+        ptr.release();
+        return *raw;
+    }
+
+    template <typename T, typename... Args>
+    T& Ensure(Args&&... args)
+    {
+        if (T* existing = TryGet<T>())
+            return *existing;
+        return Register<T>(std::forward<Args>(args)...);
+    }
+
+    template <typename T>
+    T& Get()
+    {
+        T* value = TryGet<T>();
+        assert(value != nullptr && "Legacy store not registered");
+        return *value;
+    }
+
+    template <typename T>
+    const T& Get() const
+    {
+        const T* value = TryGet<T>();
+        assert(value != nullptr && "Legacy store not registered");
+        return *value;
+    }
+
+    template <typename T>
+    T* TryGet()
+    {
+        auto it = LegacyStores.find(std::type_index(typeid(T)));
+        return it != LegacyStores.end() ? static_cast<T*>(it->second.first) : nullptr;
+    }
+
+    template <typename T>
+    const T* TryGet() const
+    {
+        auto it = LegacyStores.find(std::type_index(typeid(T)));
+        return it != LegacyStores.end() ? static_cast<const T*>(it->second.first) : nullptr;
+    }
+
+    template <typename T>
+    bool Has() const
+    {
+        return LegacyStores.count(std::type_index(typeid(T))) > 0;
+    }
+
     // ── Entity introspection ─────────────────────────────────────────────────
 
     bool   IsAlive(EntityId entity) const { return Entities.IsAlive(entity); }
     size_t EntityCount()            const { return Entities.Count(); }
+    std::vector<EntityId> GetAliveEntities() const { return Entities.GetAliveEntities(); }
 
     const ComponentMeta* GetMeta(ComponentId id) const
     {
@@ -549,11 +694,52 @@ private:
     std::unordered_map<
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> Resources;
+    std::unordered_map<
+        std::type_index,
+        std::pair<void*, std::function<void(void*)>>> LegacyStores;
 
     uint32_t QueryDepth   = 0;
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
     bool     EntityCreated = false;
+
+    static void ClearOwnedTypeErased(
+        std::unordered_map<std::type_index, std::pair<void*, std::function<void(void*)>>>& map)
+    {
+        for (auto& [_, value] : map)
+        {
+            if (value.first != nullptr && value.second)
+                value.second(value.first);
+        }
+        map.clear();
+    }
+
+    void MoveFrom(World&& other)
+    {
+        Entities = std::move(other.Entities);
+        ArchetypeList = std::move(other.ArchetypeList);
+        SignatureToArchetype = std::move(other.SignatureToArchetype);
+        ComponentMetas = std::move(other.ComponentMetas);
+        TypeToId = std::move(other.TypeToId);
+        NextComponentId = other.NextComponentId;
+        Resources = std::move(other.Resources);
+        LegacyStores = std::move(other.LegacyStores);
+        QueryDepth = other.QueryDepth;
+        LifecycleHookDepth = other.LifecycleHookDepth;
+        FrameCounter = other.FrameCounter;
+        EntityCreated = other.EntityCreated;
+
+        other.Resources.clear();
+        other.LegacyStores.clear();
+        other.QueryDepth = 0;
+        other.LifecycleHookDepth = 0;
+        other.EntityCreated = false;
+    }
+
+    uint32_t GenerationForIndex(EntityIndex index) const
+    {
+        return Entities.GenerationForIndex(index);
+    }
 
     template <typename Move>
     void RemoveSourceRowsInReverse(const std::vector<Move>& moves)

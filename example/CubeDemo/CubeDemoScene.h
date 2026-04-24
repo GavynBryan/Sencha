@@ -4,7 +4,7 @@
 
 #include <render/Material.h>
 #include <render/static_mesh/StaticMeshHandle.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformStore.h>
 

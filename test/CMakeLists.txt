@@ -14,6 +14,12 @@ FetchContent_MakeAvailable(googletest)
 file(GLOB_RECURSE CORE_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp
 )
+foreach(_removed_ecs_test
+    "/core/DataBatchTests.cpp$"
+    "/core/InstanceRegistryTests.cpp$"
+)
+    list(FILTER CORE_TEST_SOURCES EXCLUDE REGEX "${_removed_ecs_test}")
+endforeach()
 
 file(GLOB_RECURSE MATH_GEOMETRY_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/math_geometry/*.cpp

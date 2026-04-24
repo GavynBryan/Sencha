@@ -2,22 +2,16 @@
 
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
-#include <render/StaticMeshComponentStore.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformSchemas.h>
-#include <world/transform/TransformStore.h>
-
-#include <utility>
+#include <world/transform/TransformComponents.h>
 
 //=============================================================================
 // ComponentStorageTraits
 //
-// Maps a component type to its store type, binary chunk ID, and the Add
-// function that inserts a deserialized instance into the registry. Specialize
-// for each component type that participates in scene serialization.
+// Maps serializable component types to their binary chunk IDs and insertion
+// behavior. Storage is the registry's archetype World; there is no per-type
+// sparse-set store in the migration path.
 //=============================================================================
 template <typename T>
 struct ComponentStorageTraits;
@@ -25,40 +19,44 @@ struct ComponentStorageTraits;
 template <>
 struct ComponentStorageTraits<StaticMeshComponent>
 {
-    using Store = StaticMeshComponentStore;
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::MeshRenders;
 
     static bool Add(Registry& registry, EntityId entity, StaticMeshComponent component)
     {
-        return registry.Components.Ensure<Store>().Add(entity, component);
+        if (registry.Components.HasComponent<StaticMeshComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
+        return true;
     }
 };
 
 template <>
 struct ComponentStorageTraits<CameraComponent>
 {
-    using Store = CameraStore;
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::Cameras;
 
     static bool Add(Registry& registry, EntityId entity, CameraComponent component)
     {
-        return registry.Components.Ensure<Store>().Add(entity, component);
+        if (registry.Components.HasComponent<CameraComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
+        return true;
     }
 };
 
 template <>
-struct ComponentStorageTraits<TransformComponent<Transform3f>>
+struct ComponentStorageTraits<LocalTransform>
 {
-    using Store = TransformStore<Transform3f>;
     static constexpr std::uint32_t BinaryChunkId = SceneChunk::Transforms;
 
-    static bool Add(Registry& registry, EntityId entity, TransformComponent<Transform3f> component)
+    static bool Add(Registry& registry, EntityId entity, LocalTransform component)
     {
-        auto& order = registry.Resources.Ensure<TransformPropagationOrderService>();
-        auto& hierarchy = registry.Resources.Ensure<TransformHierarchyService>();
-        // Register in hierarchy before adding to the store so that propagation
-        // order is valid when the store observer runs.
-        hierarchy.Register(entity);
-        return registry.Components.Ensure<Store>(order).Add(entity, component);
+        if (registry.Components.HasComponent<LocalTransform>(entity))
+            return false;
+
+        registry.Components.AddComponent(entity, component);
+        if (!registry.Components.HasComponent<WorldTransform>(entity))
+            registry.Components.AddComponent(entity, WorldTransform{ component.Value });
+        return true;
     }
 };

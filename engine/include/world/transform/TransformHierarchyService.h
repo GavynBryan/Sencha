@@ -1,6 +1,6 @@
 #pragma once
 
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>

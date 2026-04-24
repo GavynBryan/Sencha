@@ -1,6 +1,6 @@
 #pragma once
 
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <cstddef>
 #include <cstdint>

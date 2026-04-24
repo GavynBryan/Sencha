@@ -4,6 +4,7 @@
 #include <core/service/ServiceHost.h>
 #include <render/RenderExtractionSystem.h>
 #include <world/registry/Registry.h>
+#include <world/transform/TransformComponents.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/Renderer.h>
@@ -56,15 +57,15 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         if (registry == nullptr)
             continue;
 
-        auto* transforms = registry->Components.TryGet<TransformStore<Transform3f>>();
-        auto* cameras = registry->Components.TryGet<CameraStore>();
         auto* activeCamera = registry->Resources.TryGet<ActiveCameraService>();
 
-        if (transforms == nullptr || cameras == nullptr || activeCamera == nullptr)
+        if (activeCamera == nullptr
+            || !registry->Components.IsRegistered<CameraComponent>()
+            || !registry->Components.IsRegistered<WorldTransform>())
             continue;
 
         hasCamera = CameraRenderDataSystem::Build(
-            *activeCamera, *cameras, *transforms, extent, Camera);
+            *activeCamera, registry->Components, extent, Camera);
         if (hasCamera)
             break;
     }
@@ -80,13 +81,11 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         if (registry == nullptr)
             continue;
 
-        auto* transforms = registry->Components.TryGet<TransformStore<Transform3f>>();
-        auto* renderers = registry->Components.TryGet<StaticMeshComponentStore>();
-
-        if (transforms == nullptr || renderers == nullptr)
+        if (!registry->Components.IsRegistered<WorldTransform>()
+            || !registry->Components.IsRegistered<StaticMeshComponent>())
             continue;
 
-        RenderExtractionSystem::Extract(*transforms, *renderers, *Meshes, *Materials, Camera, Queue);
+        RenderExtractionSystem::Extract(registry->Components, *Meshes, *Materials, Camera, Queue);
     }
 
     FrustumCullingSystem::Cull(Camera, Queue);

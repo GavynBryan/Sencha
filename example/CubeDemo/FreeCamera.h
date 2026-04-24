@@ -2,7 +2,7 @@
 
 #include <input/InputFrame.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <world/transform/TransformStore.h>
 
 struct FreeCamera

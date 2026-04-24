@@ -87,11 +87,30 @@ public:
         return Records[idx].Location;
     }
 
+    uint32_t GenerationForIndex(EntityIndex idx) const
+    {
+        assert(idx < Records.size());
+        return Records[idx].Generation;
+    }
+
     size_t Count() const
     {
         size_t n = 0;
         for (const auto& r : Records) n += r.Alive ? 1 : 0;
         return n;
+    }
+
+    std::vector<EntityId> GetAliveEntities() const
+    {
+        std::vector<EntityId> result;
+        result.reserve(Count());
+        for (EntityIndex index = 0; index < Records.size(); ++index)
+        {
+            const EntityRecord& record = Records[index];
+            if (record.Alive)
+                result.push_back(EntityId{ index, record.Generation });
+        }
+        return result;
     }
 
 private:

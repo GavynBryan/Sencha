@@ -1,4 +1,4 @@
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformPropagation.h>

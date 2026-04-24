@@ -3,10 +3,11 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
+#include <render/StaticMeshComponent.h>
 #include <render/StaticMeshComponentStore.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
 

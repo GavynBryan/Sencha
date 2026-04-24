@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/serialization/Archive.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
