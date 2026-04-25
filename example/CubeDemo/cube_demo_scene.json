@@ -4,9 +4,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [0.0, 1.0, 5.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [1.0, 1.0, 1.0]
+                    "local": {
+                        "position": [0.0, 1.0, 5.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
                 },
                 "Camera": {
                     "projection": "perspective",
@@ -19,9 +21,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [0.0, 0.0, 0.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [1.0, 1.0, 1.0]
+                    "local": {
+                        "position": [0.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
                 },
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
@@ -35,9 +39,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [1.15, 0.0, 0.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [0.35, 0.35, 0.35]
+                    "local": {
+                        "position": [1.15, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [0.35, 0.35, 0.35]
+                    }
                 },
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
@@ -51,9 +57,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [-2.2, 0.0, -1.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [1.0, 1.0, 1.0]
+                    "local": {
+                        "position": [-2.2, 0.0, -1.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
                 },
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
@@ -67,9 +75,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [2.2, 0.0, -1.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [0.75, 1.5, 0.75]
+                    "local": {
+                        "position": [2.2, 0.0, -1.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [0.75, 1.5, 0.75]
+                    }
                 },
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
@@ -83,9 +93,11 @@
         {
             "components": {
                 "Transform": {
-                    "position": [0.0, -1.4, -3.0],
-                    "rotation": [0.0, 0.0, 0.0, 1.0],
-                    "scale": [8.0, 0.15, 8.0]
+                    "local": {
+                        "position": [0.0, -1.4, -3.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [8.0, 0.15, 8.0]
+                    }
                 },
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
