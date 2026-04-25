@@ -32,8 +32,8 @@ struct RenderQueueItem
 // RenderQueue
 //
 // Transient per-frame list of draw calls. Populated by RenderExtractionSystem,
-// pruned by FrustumCullingSystem, sorted by SortOpaque(), then consumed by
-// MeshRenderFeature. Call Reset() at the start of each frame.
+// sorted by SortOpaque(), then consumed by MeshRenderFeature. Call Reset() at
+// the start of each frame. Frustum culling is applied during extraction.
 //=============================================================================
 class RenderQueue
 {

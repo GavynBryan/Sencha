@@ -7,6 +7,14 @@
 
 #include <array>
 
+namespace
+{
+    struct ExtraComponent
+    {
+        int Value = 0;
+    };
+}
+
 TEST(TransformPropagation, PropagatesDefaultRegistryTransforms)
 {
     ZoneRuntime zones;
@@ -100,4 +108,33 @@ TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
     }, 0);
 
     EXPECT_EQ(changedRows, 1u);
+}
+
+TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
+    world.RegisterComponent<ExtraComponent>();
+
+    EntityId parent = world.CreateEntity();
+    EntityId child = world.CreateEntity();
+
+    world.AddComponent(parent, LocalTransform{ Transform3f(Vec3d(5.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(parent, WorldTransform{});
+    world.AddComponent(child, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(child, WorldTransform{});
+    world.AddComponent(child, Parent{ parent });
+
+    PropagateTransforms(world);
+
+    world.AddComponent(child, ExtraComponent{ 7 });
+    world.TryGet<LocalTransform>(child)->Value.Position = Vec3d(3.0f, 0.0f, 0.0f);
+
+    PropagateTransforms(world);
+
+    const WorldTransform* childWorld = world.TryGet<WorldTransform>(child);
+    ASSERT_NE(childWorld, nullptr);
+    EXPECT_EQ(childWorld->Value.Position, Vec3d(8.0f, 0.0f, 0.0f));
 }

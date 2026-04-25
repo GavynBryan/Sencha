@@ -23,16 +23,3 @@ public:
                         const CameraRenderData& camera,
                         RenderQueue& queue);
 };
-
-//=============================================================================
-// FrustumCullingSystem
-//
-// Stateless system that removes items from a RenderQueue whose world-space
-// AABB does not intersect the camera frustum. Run after extraction and before
-// sort/draw.
-//=============================================================================
-class FrustumCullingSystem
-{
-public:
-    static void Cull(const CameraRenderData& camera, RenderQueue& queue);
-};

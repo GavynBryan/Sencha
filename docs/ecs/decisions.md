@@ -550,8 +550,8 @@ change filter. This is correct: the frame-0 case is always a full rebuild.
 
 **Decision:** `RenderExtractionSystem::Extract` now iterates via
 `Query<Read<WorldTransform>, Read<StaticMeshComponent>>` at chunk granularity with the
-frustum test inlined in the inner loop. `FrustumCullingSystem::Cull` is a no-op; the
-declaration is preserved so existing call sites compile without modification.
+frustum test inlined in the inner loop. The standalone `FrustumCullingSystem::Cull`
+post-pass is deleted.
 
 **Rationale:** The old `Extract` used `ForEachComponent<StaticMeshComponent>` followed
 by a `TryGet<WorldTransform>` per entity — two separate linear passes with cross-entity
@@ -560,10 +560,9 @@ eliminating the per-entity `TryGet` hop. Inlining the frustum cull removes the s
 erase-remove post-pass, reducing peak `RenderQueue::Opaque` vector size for scenes with
 many out-of-frustum entities.
 
-`FrustumCullingSystem::Cull` is kept as a no-op rather than removed because
-`DefaultRenderPipeline.cpp` calls it and removing the call would be a separate concern
-with no Phase 3 exit criteria. The no-op signature is a safe placeholder; it can be
-deleted in Phase 4 when the render pipeline is cleaned up.
+The temporary Phase-3 compatibility stub has now been removed from
+`DefaultRenderPipeline.cpp`, `RenderExtractionSystem.h`, and
+`RenderExtractionSystem.cpp`. Extraction owns both extraction and culling.
 
 **RenderQueueItem copies data** (world matrix, bounds, mesh handle, material handle) as
 mandated by MigrationPlan.md Phase 3: copied items decouple extraction from submission
@@ -827,25 +826,27 @@ entity registry (index + generation slot).
 
 ---
 
-### D4.1 — Transform propagation sweep performance regression vs pre-migration
+### D4.1 — Transform propagation pointer caching landed as Phase 5 entry cleanup
 
-**Decision:** Accept the 39% regression (209 vs 150.7 ns/transform) in the propagation
-sweep, and defer the fix to Phase 5.
+**Decision:** `PropagationEntry` now caches `LocalTransform*`, `WorldTransform*`, and the
+resolved parent `WorldTransform*` during `RebuildCache()`. `Propagate()` uses those cached
+pointers directly rather than calling `World::TryGet` in the hot inner loop.
 
-**Rationale:** The regression is fully explained by the D3.2 design choice: the
-propagation sweep uses `World::TryGet` (registry lookup) per entity rather than direct
-array-index access. The fix — caching chunk+row in `PropagationEntry` so the sweep is
-pointer-direct — is straightforward but requires that `PropagationOrderCache` be rebuilt
-whenever entity locations change (not just when hierarchy structure changes). At current
-Sencha target scene sizes (< 10k entities), 209 ns × 10 000 = 2.1 ms per frame, which is
-within budget for a 60 Hz target frame time of 16.7 ms. Accepting the regression and
-deferring the optimization is the right call: fixing it now is premature optimization for
-a workload size that doesn't stress the engine yet, and it would increase the complexity
-of the cache invalidation logic.
+**Rationale:** The Phase 4 regression was exactly the D3.2 tradeoff: topological ordering
+was correct, but each propagation step still paid registry lookup cost. Caching the
+resolved pointers during rebuild moves that cost out of the steady-state sweep. The inner
+loop is now just pointer null checks, one compose, and one store.
 
-**Trigger for revisiting:** If profiling at production scene sizes (> 50k entities)
-shows propagation dominating frame time, add chunk+row caching to `PropagationEntry` and
-change the cache invalidation trigger to include entity location changes.
+**Invalidation:** pointer caches must be rebuilt when entity locations can change. In
+addition to `Changed<Parent>` detection, `PropagationOrderCache` now records the archetype
+count seen at rebuild time and invalidates when `World::GetArchetypes().size()` changes.
+This covers structural moves that create a new archetype and would otherwise leave cached
+pointers stale.
+
+**Remaining caveat:** this invalidation rule intentionally tracks archetype growth, which
+matches the D4.1 mitigation plan and fixes the concrete migration-path regression. If
+future profiling reveals stale-pointer risk from structural moves that reuse existing
+archetypes heavily, promote this to a broader world structural version.
 
 ---
 

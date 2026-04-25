@@ -23,11 +23,12 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
 {
     auto& order = cache.GetOrder();
     order.clear();
+    const size_t archetypeCount = Target.GetArchetypes().size();
 
     if (!Target.IsRegistered<LocalTransform>()
         || !Target.IsRegistered<WorldTransform>())
     {
-        cache.MarkClean();
+        cache.MarkClean(archetypeCount);
         return;
     }
 
@@ -45,7 +46,7 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
 
     if (indexToId.empty())
     {
-        cache.MarkClean();
+        cache.MarkClean(archetypeCount);
         return;
     }
 
@@ -117,7 +118,26 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
         }
     }
 
-    cache.MarkClean();
+    std::unordered_map<EntityIndex, size_t> indexToOrder;
+    indexToOrder.reserve(order.size());
+    for (size_t i = 0; i < order.size(); ++i)
+        indexToOrder.emplace(order[i].Child.Index, i);
+
+    for (PropagationEntry& entry : order)
+    {
+        entry.LocalPtr = Target.TryGet<LocalTransform>(entry.Child);
+        entry.WorldPtr = Target.TryGet<WorldTransform>(entry.Child);
+        entry.ParentWorldPtr = nullptr;
+
+        if (!entry.Parent.IsValid())
+            continue;
+
+        auto parentIt = indexToOrder.find(entry.Parent.Index);
+        if (parentIt != indexToOrder.end())
+            entry.ParentWorldPtr = order[parentIt->second].WorldPtr;
+    }
+
+    cache.MarkClean(archetypeCount);
 }
 
 // ─── Propagate ────────────────────────────────────────────────────────────────
@@ -145,15 +165,18 @@ void TransformPropagationSystem::Propagate()
         Target.AddResource<PropagationOrderCache>();
 
     PropagationOrderCache& cache = Target.GetResource<PropagationOrderCache>();
+    const size_t archetypeCount = Target.GetArchetypes().size();
+
+    if (!cache.IsDirty() && !cache.ArchetypeCountMatches(archetypeCount))
+        cache.Invalidate();
 
     // Detect structural hierarchy changes via Changed<Parent>. If the Parent
     // column in any chunk has been written (entity gained or lost a Parent
     // component) since referenceFrame, the sort order may be stale.
     //
-    // We use referenceFrame=0 with Changed<Parent> so we detect any write, not
-    // just last-frame writes. This is safe because Changed<Parent> only fires
-    // when an entity's archetype changed (AddComponent<Parent> / RemoveComponent<
-    // Parent>), and those are structural changes that definitely require a rebuild.
+    // We use referenceFrame=prevFrame so we detect chunks whose Parent column was
+    // written since the previous frame. Parent changes are structural, so any hit
+    // here means the cached order (and cached pointers) must be rebuilt.
     if (!cache.IsDirty() && Target.IsRegistered<Parent>())
     {
         const uint32_t prevFrame = Target.CurrentFrame() > 0
@@ -178,28 +201,19 @@ void TransformPropagationSystem::Propagate()
         return;
 
     // Forward sweep over the ordered list.
-    // We write WorldTransform via TryGet (direct pointer) rather than a separate
+    // We write WorldTransform via cached pointers rather than a separate
     // Write<WorldTransform> query loop to keep the sweep a single pass. The
     // Write<WorldTransform> query below is a separate bump-only pass so that
     // Changed<WorldTransform> is correctly set for all written entities.
     for (const PropagationEntry& entry : order)
     {
-        const LocalTransform* local = Target.TryGet<LocalTransform>(entry.Child);
-        WorldTransform* world = Target.TryGet<WorldTransform>(entry.Child);
-        if (!local || !world) continue;
+        if (entry.LocalPtr == nullptr || entry.WorldPtr == nullptr)
+            continue;
 
-        if (entry.Parent.IsValid())
-        {
-            const WorldTransform* parentWorld = Target.TryGet<WorldTransform>(entry.Parent);
-            if (parentWorld)
-                world->Value = parentWorld->Value * local->Value;
-            else
-                world->Value = local->Value;
-        }
+        if (entry.ParentWorldPtr != nullptr)
+            entry.WorldPtr->Value = entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
         else
-        {
-            world->Value = local->Value;
-        }
+            entry.WorldPtr->Value = entry.LocalPtr->Value;
     }
 
     // Bump Changed<WorldTransform> column version counters so downstream systems

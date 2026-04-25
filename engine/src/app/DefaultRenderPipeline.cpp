@@ -88,7 +88,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         RenderExtractionSystem::Extract(registry->Components, *Meshes, *Materials, Camera, Queue);
     }
 
-    FrustumCullingSystem::Cull(Camera, Queue);
     Queue.SortOpaque();
 
     ctx.PacketWrite.Camera = Camera;

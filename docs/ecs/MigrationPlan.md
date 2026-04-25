@@ -311,6 +311,8 @@ Rationale: single responsibility per component (LSP, A2), one change-detection m
 
 Once Phase 4 is complete and benchmarks are in hand, if profiling indicates query iteration is a significant cost, chunk-level parallelization is the next step. Archetype chunks parallelize cleanly — a job system can hand each worker N chunks and trust that disjoint chunks never alias. This is a separate subproject with its own design doc.
 
+Current design note: `docs/ecs/parallelization.md`.
+
 ---
 
 ## Guardrails

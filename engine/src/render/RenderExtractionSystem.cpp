@@ -88,9 +88,3 @@ void RenderExtractionSystem::Extract(const World& world,
         }
     });
 }
-
-// Frustum culling is now inlined in Extract above. This no-op exists so
-// existing call sites in DefaultRenderPipeline compile without modification.
-void FrustumCullingSystem::Cull(const CameraRenderData& /*camera*/, RenderQueue& /*queue*/)
-{
-}
