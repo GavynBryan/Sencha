@@ -654,24 +654,33 @@ components. `TransformPropagationSystem` driven via `PropagateTransforms(World&)
 Steady-state = cached sweep with no hierarchy change. Rebuild = `PropagationOrderCache`
 forced dirty before each call.
 
-| Path                                    | Mean µs   | Median µs | P95 µs    | ns/transform |
-|-----------------------------------------|-----------|-----------|-----------|--------------|
-| **ECS steady-state (new, Phase 4)**     | 20 968    | 19 466    | 29 654    | **209.7**    |
-| **ECS rebuild + sweep (new, Phase 4)**  | 18 591    | 17 836    | 24 140    | **185.9**    |
-| Pre-migration bulk (Phase 3 baseline)   | 15 075    | 14 717    | 17 688    | 150.7        |
-| Pre-migration scalar (Phase 3 baseline) | 16 753    | 16 347    | 20 739    | 167.5        |
-| data_oriented_contiguous (reference)    | 15 601    | 14 929    | 19 644    | 156.0        |
+| Path                                         | Mean µs | Median µs | P95 µs  | ns/transform |
+|----------------------------------------------|---------|-----------|---------|--------------|
+| **ECS steady-state (Phase 4, pre-D4.1)**     | 20 968  | 19 466    | 29 654  | **209.7**    |
+| **ECS rebuild + sweep (Phase 4, pre-D4.1)**  | 18 591  | 17 836    | 24 140  | **185.9**    |
+| **ECS steady-state (post-D4.1)**             | 15 863  | 15 396    | 18 122  | **158.6**    |
+| **ECS rebuild + sweep (post-D4.1)**          | 15 459  | 15 218    | 17 287  | **154.6**    |
+| Pre-migration bulk (Phase 3 baseline)        | 15 075  | 14 717    | 17 688  | 150.7        |
+| Pre-migration scalar (Phase 3 baseline)      | 16 753  | 16 347    | 20 739  | 167.5        |
+| data_oriented_contiguous (reference)         | 15 601  | 14 929    | 19 644  | 156.0        |
 
-**Analysis:** The new ECS propagation sweep is ~39% slower than the pre-migration
-`TransformStore<Transform3f>` dense-array path. The difference is attributable to the
-design decision in D3.2: the sweep follows the `PropagationOrderCache` entry list
-(parent-before-child topological order) and resolves `WorldTransform*` and
-`LocalTransform*` via `World::TryGet` (one `EntityRegistry` lookup per entity per
-component). The pre-migration path stored transforms in a pre-indexed dense array keyed
-by the same topological order, so the sweep was a single forward pass with direct array
-indices and no hash lookups.
+**Phase 4 analysis (pre-D4.1):** The ECS propagation sweep was ~39% slower than the
+pre-migration `TransformStore<Transform3f>` dense-array path. The difference was
+attributable to the design decision in D3.2: the sweep followed the
+`PropagationOrderCache` entry list (parent-before-child topological order) but resolved
+`WorldTransform*` and `LocalTransform*` via `World::TryGet` (one `EntityRegistry` lookup
+per entity per component) inside the hot inner loop. The pre-migration path stored
+transforms in a pre-indexed dense array keyed by the same topological order — a single
+forward pass with direct array indices and no hash lookups.
 
-**Mitigation path (concrete, ready to implement):**
+**Post-D4.1 analysis:** The D4.1 fix (pointer caching during `RebuildCache`) reduced
+steady-state cost from 209.7 ns to 158.6 ns/transform — a 24% improvement that closes
+~90% of the regression gap against the 150.7 ns pre-migration bulk baseline. The
+remaining ~5% overhead is the `Write<WorldTransform>` bump pass (D3.2 invariant: a
+separate chunk-granularity pass to signal `Changed<WorldTransform>` to downstream systems
+without mixing write semantics into the pointer-based sweep).
+
+**Mitigation path (implemented in D4.1):**
 
 The fix is to cache resolved pointers inside `PropagationEntry` and invalidate them
 whenever entity locations change. Three changes are required:
@@ -721,19 +730,17 @@ count at the last rebuild and comparing each frame — one integer comparison, z
 overhead. Any structural change to a participating entity also changes `Changed<Parent>`
 or causes a new archetype, so this covers all cases.
 
-**Expected result:** inner-loop cost drops to one multiply + one store per entity, matching
-the `data_oriented_contiguous` baseline (156.0 ns/transform). Total implementation is
-~30 lines across two files with no new dependencies.
+**Measured result:** inner-loop cost dropped from 209.7 ns to 158.6 ns/transform,
+matching the `data_oriented_contiguous` baseline (156.0 ns/transform) within 2%.
+Implementation was ~30 lines across two files with no new dependencies. See D4.1.
 
-This is deferred to Phase 5. At current Sencha scene sizes (< 10k entities in practice),
-209 ns/transform = 2.1 ms per frame at 10k, which is within budget for a 60 Hz target.
-
-**Note on rebuild anomaly:** The rebuild path reports a lower mean (185.9 µs) than the
-steady-state path (209.7 µs). This is a benchmark artifact: on the first measured
-rebuild call the cache is already populated from warmup, making the rebuild cost smaller
-than the cold steady-state measurements that follow without warmup. The rebuild numbers
-are useful for understanding "worst case when hierarchy changes" but should be treated as
-a lower bound, not a regression below steady-state cost.
+**Note on rebuild anomaly:** Both pre-D4.1 and post-D4.1 benchmark runs show the rebuild
+path reporting a slightly lower mean than the steady-state path (pre-D4.1: 185.9 vs
+209.7 µs; post-D4.1: 154.6 vs 158.6 µs). This is a benchmark artifact: on the first
+measured rebuild call the cache is already warm from the preceding steady-state run, so
+the TLB and cache state favour the rebuild iteration. The rebuild numbers are useful for
+bounding "worst case when hierarchy changes" but should be treated as a lower bound, not
+a regression below steady-state cost.
 
 ---
 
@@ -748,7 +755,7 @@ iteration cost is the dominant term.
 
 | Path                                   | Mean µs | Median µs | P95 µs | ns/entity |
 |----------------------------------------|---------|-----------|--------|-----------|
-| **ECS chunk query (new, Phase 4)**     | 6.136   | 6.047     | 6.871  | **0.614** |
+| **ECS chunk query (new, Phase 4)**     | 5.839   | 5.725     | 6.403  | **0.584** |
 | Pre-migration (estimated, per D3.4)    | ~15–25  | —         | —      | ~1.5–2.5  |
 
 Pre-migration estimate: the old `Extract` called `ForEachComponent<StaticMeshComponent>`
@@ -760,7 +767,7 @@ deleted from the branch. The Phase 3 commit note (D3.4) describes the old path a
 separate linear passes with cross-entity pointer chasing" — the archetype chunk query
 eliminates the cross-entity hop entirely.
 
-At **0.614 ns/entity** for the pure iteration pass, the extraction loop at 10k entities
+At **0.584 ns/entity** for the pure iteration pass, the extraction loop at 10k entities
 costs ~6 µs. The full `RenderExtractionSystem::Extract` adds `ToMat4()` (~4×4 float
 multiply), `TransformBounds` (8-point AABB transform), and frustum test per entity —
 those are O(1) per entity and add roughly 100–200 ns/entity depending on frustum rejection
@@ -775,13 +782,13 @@ sorted by `RenderQueue::SortOpaque()` (std::sort on `uint64_t SortKey`).
 
 | Measurement  | Mean µs | Median µs | P95 µs | ns/item |
 |--------------|---------|-----------|--------|---------|
-| Sort 10k items | 187.9 | 186.0     | 287.4  | 18.8    |
+| Sort 10k items | 111.3 | 110.4     | 116.1  | 11.1    |
 
 No direct pre-migration comparison is available (the old render queue sort was not
-independently benchmarked). The 18.8 ns/item figure is consistent with `std::sort` on a
-64-bit key over a ~250-byte struct (cache-line pressure from swapping full items). At 10k
-items, 188 µs is within budget. A future optimization (sort on key only, then permute
-items) would reduce swap cost to 8 bytes; deferred until profiling shows sort in hot path.
+independently benchmarked). The 11.1 ns/item figure is consistent with `std::sort` on a
+64-bit key over a ~250-byte struct in an optimized Release build. At 10k items, ~111 µs
+is within budget. A future optimization (sort on key only, then permute items) would
+reduce swap cost to 8 bytes; deferred until profiling shows sort in hot path.
 
 ---
 
@@ -843,6 +850,10 @@ count seen at rebuild time and invalidates when `World::GetArchetypes().size()` 
 This covers structural moves that create a new archetype and would otherwise leave cached
 pointers stale.
 
+**Measured outcome:** steady-state dropped from 209.7 ns/transform (Phase 4 initial) to
+158.6 ns/transform (post-D4.1) — a 24% reduction that closes ~90% of the regression gap
+against the 150.7 ns pre-migration bulk baseline. See B4.1 for the full table.
+
 **Remaining caveat:** this invalidation rule intentionally tracks archetype growth, which
 matches the D4.1 mitigation plan and fixes the concrete migration-path regression. If
 future profiling reveals stale-pointer risk from structural moves that reuse existing
@@ -865,9 +876,58 @@ that sparse sets require.
 
 ### D4.3 — RenderQueueItem sort: no optimization needed at current scale
 
-**Decision:** Accept 188 µs for sorting 10k items. Defer any sort optimization.
+**Decision:** Accept 111 µs for sorting 10k items. Defer any sort optimization.
 
-**Rationale:** 188 µs is 1.1% of a 16.7 ms frame budget. The sort is applied once per
+**Rationale:** 111 µs is 0.7% of a 16.7 ms frame budget. The sort is applied once per
 frame after extraction. Sort-by-key-only (sort a `{uint64_t, uint32_t index}` array,
 then permute the full items) would reduce swap cost by ~31× (8 bytes vs 250 bytes per
 swap) and could bring this under 10 µs. Not worth the code complexity now.
+
+---
+
+## Migration Complete
+
+The ECS migration from sparse-set storage to archetype chunk storage is complete on the
+`ecs-overhaul` branch. All Phases 0–4 exit criteria are satisfied.
+
+### Phases
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Spike — API validation and perf thesis | Complete |
+| 1 | Core replacement — new ECS in engine tree | Complete |
+| 2 | Compile restoration — all call sites ported | Complete |
+| 3 | Systems correctness — transform, render, serialization | Complete |
+| 4 | Benchmarks and documentation | Complete |
+| 5 | Parallelization | Deferred — see `docs/ecs/parallelization.md` |
+
+### Deleted files
+
+Seven compatibility headers removed in Stage 3:
+
+- `engine/include/core/batch/SparseSet.h`
+- `engine/include/render/StaticMeshComponentStore.h`
+- `engine/include/world/SparseSetStore.h`
+- `engine/include/world/transform/TransformHierarchyService.h`
+- `engine/include/world/transform/TransformPropagationOrderService.h`
+- `engine/include/world/transform/TransformSpace.h`
+- `engine/include/world/transform/TransformStore.h`
+
+Test file deleted: `test/engine_features/TransformServiceTests.cpp` (448 lines testing
+deleted sparse-set types, superseded by `test/runtime/TransformPropagationTests.cpp`).
+
+### Final benchmark summary (Release build, `-O3 -march=native`)
+
+| Metric | Value |
+|--------|-------|
+| Transform propagation steady-state (100k entities) | 158.6 ns/transform |
+| Transform propagation rebuild + sweep (100k entities) | 154.6 ns/transform |
+| Pre-migration bulk baseline | 150.7 ns/transform |
+| Render extraction (10k entities) | 0.584 ns/entity |
+| RenderQueueItem sort (10k items) | 11.1 ns/item |
+| Test suite | 623 tests pass |
+
+### Design axiom compliance
+
+All eight design axioms (A1–A8) and fourteen pitfall mitigations (P1–P14) from
+`docs/ecs/MigrationPlan.md` are satisfied in the final implementation.

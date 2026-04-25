@@ -301,9 +301,12 @@ Rationale: single responsibility per component (LSP, A2), one change-detection m
 - `docs/ecs/decisions.md` — finalized with benchmark numbers and any design choices made during Phases 1–3.
 
 **Exit criteria**:
-- Benchmarks recorded.
-- All five docs above exist and are accurate to the landed code.
-- A fresh reader can write a new component + system from the docs alone without reading ECS core source.
+- Benchmarks recorded. ✓
+- All five docs above exist and are accurate to the landed code. ✓
+- A fresh reader can write a new component + system from the docs alone without reading ECS core source. ✓
+
+**Status: Complete.** See `docs/ecs/decisions.md` — Migration Complete section for final
+numbers and deleted-file list.
 
 ### Phase 5 — Parallelization (deferred)
 
