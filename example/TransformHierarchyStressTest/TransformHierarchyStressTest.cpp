@@ -1,9 +1,4 @@
-#include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagation.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformStore.h>
 
 #include <algorithm>
 #include <atomic>
@@ -57,9 +52,6 @@ namespace
 	{
 		std::string Name;
 		double SetupUs = 0.0;
-		double BatchEmplaceUs = 0.0;
-		double BatchRemoveUs = 0.0;
-		double HierarchyUnregisterUs = 0.0;
 		double Checksum = 0.0;
 		size_t TransformCount = 0;
 		size_t NodeAllocations = 0;
@@ -67,13 +59,6 @@ namespace
 		size_t ChildPointerStorageBytes = 0;
 		size_t ParentIndexStorageBytes = 0;
 		SampleStats Propagation;
-		SampleStats RebuildAndPropagate;  // Propagate() when cache is dirty each iteration.
-	};
-
-	enum class ProductionBatchMode
-	{
-		Scalar,
-		Bulk
 	};
 
 	size_t ParseSizeArgument(const char* value, const char* label)
@@ -389,98 +374,6 @@ namespace
 		std::vector<uint32_t> ParentIndices;
 	};
 
-	// Production-path fixture: drives the real transform propagation path against
-	// the real entity-indexed TransformStore<Transform3f> + hierarchy services.
-	//
-	// Used to confirm that the production path matches the hand-written
-	// contiguous fixture in both correctness and performance.
-	struct ProductionPropagationFixture
-	{
-		using Hierarchy3f = TransformHierarchyService;
-		using PropagationOrder3f = TransformPropagationOrderService;
-
-		Hierarchy3f Hierarchy;
-		PropagationOrder3f PropagationOrder;
-		TransformStore<Transform3f> Transforms;
-
-		std::vector<EntityId> Keys;
-		double BatchEmplaceUs = 0.0;
-		double BatchRemoveUs = 0.0;
-		double HierarchyUnregisterUs = 0.0;
-		ProductionBatchMode BatchMode = ProductionBatchMode::Bulk;
-
-		ProductionPropagationFixture(
-			size_t count,
-			size_t branchingFactor,
-			ProductionBatchMode batchMode)
-			: Transforms(PropagationOrder)
-			, BatchMode(batchMode)
-		{
-			Transforms.GetItems();
-			Keys.reserve(count);
-
-			const auto emplaceStart = Clock::now();
-			for (size_t i = 0; i < count; ++i)
-			{
-				EntityId entity{ static_cast<EntityIndex>(i + 1), 1 };
-				Keys.push_back(entity);
-				Transforms.Add(entity, MakeLocalTransform(i));
-				Hierarchy.Register(entity);
-			}
-			const auto emplaceEnd = Clock::now();
-			BatchEmplaceUs = ElapsedMicroseconds(emplaceStart, emplaceEnd);
-
-			for (size_t i = 1; i < count; ++i)
-			{
-				Hierarchy.SetParent(Keys[i], Keys[ParentIndexFor(i, branchingFactor)]);
-			}
-		}
-
-		void Advance(size_t frame)
-		{
-			Transform3f* root = Transforms.TryGetLocalMutable(Keys[0]);
-			if (root)
-				SetRootFrame(*root, frame);
-		}
-
-		void PropagateTick()
-		{
-			PropagateTransforms(Transforms, Hierarchy, PropagationOrder);
-		}
-
-		double Checksum() const
-		{
-			double checksum = 0.0;
-			for (const TransformComponent<Transform3f>& component : Transforms.GetItems())
-				checksum += TransformChecksum(component.World);
-			return checksum;
-		}
-
-		size_t TransformPayloadBytes() const
-		{
-			return Transforms.Count() * sizeof(TransformComponent<Transform3f>);
-		}
-
-		void RemoveAll()
-		{
-			const auto hierarchyStart = Clock::now();
-			for (EntityId key : Keys)
-				Hierarchy.Unregister(key);
-			const auto hierarchyEnd = Clock::now();
-
-			const auto removeStart = Clock::now();
-			for (EntityId key : Keys)
-				Transforms.Remove(key);
-			const auto removeEnd = Clock::now();
-
-			HierarchyUnregisterUs = ElapsedMicroseconds(hierarchyStart, hierarchyEnd);
-			BatchRemoveUs = ElapsedMicroseconds(removeStart, removeEnd);
-
-			if (Transforms.Count() != 0 || Hierarchy.Count() != 0)
-				throw std::runtime_error("Production removal did not empty the fixture.");
-		}
-	};
-
 	void ValidateEquivalentWorlds(
 		const TraditionalFixture& traditional,
 		const DataOrientedFixture& dataOriented)
@@ -499,65 +392,6 @@ namespace
 		}
 	}
 
-	void ValidateProductionMatchesTraditional(
-		const TraditionalFixture& traditional,
-		const ProductionPropagationFixture& production)
-	{
-		if (traditional.Nodes.size() != production.Keys.size())
-			throw std::runtime_error("Fixture transform counts do not match.");
-
-		for (size_t i = 0; i < traditional.Nodes.size(); ++i)
-		{
-			const Transform3f& traditionalWorld = traditional.Nodes[i]->WorldTransform;
-			const Transform3f* productionWorld = production.Transforms.TryGetWorld(production.Keys[i]);
-			if (!productionWorld
-				|| !traditionalWorld.NearlyEquals(*productionWorld, static_cast<float>(ValidationEpsilon)))
-			{
-				throw std::runtime_error("Traditional and production-system world transforms diverged.");
-			}
-		}
-	}
-
-	// Measures the cost of Propagate() when the propagation cache is forced dirty
-	// on every iteration. Registers a sentinel key that has no entry in any
-	// TransformStore: this bumps the hierarchy version (triggering a full rebuild on the
-	// next Propagate) but is silently skipped by the BFS, so results stay valid.
-	// The sentinel entity uses an id well above any real benchmark entity.
-	SampleStats MeasureRebuildCost(
-		const RunConfig& config,
-		ProductionPropagationFixture& fixture)
-	{
-		constexpr EntityId SentinelKey{ 0xFFFFu, 1 };
-
-		// Warmup: ensure the cache is hot before measuring.
-		for (size_t i = 0; i < config.WarmupIterations; ++i)
-		{
-			fixture.Hierarchy.Register(SentinelKey);
-			fixture.Hierarchy.Unregister(SentinelKey);
-			fixture.PropagateTick();
-		}
-
-		std::vector<double> samplesUs;
-		samplesUs.reserve(config.MeasuredIterations);
-
-		for (size_t i = 0; i < config.MeasuredIterations; ++i)
-		{
-			// Dirty the hierarchy version so the next Propagate must rebuild.
-			fixture.Hierarchy.Register(SentinelKey);
-			fixture.Hierarchy.Unregister(SentinelKey);
-
-			std::atomic_signal_fence(std::memory_order_seq_cst);
-			const auto start = Clock::now();
-			fixture.PropagateTick();
-			std::atomic_signal_fence(std::memory_order_seq_cst);
-			const auto end = Clock::now();
-
-			samplesUs.push_back(ElapsedMicroseconds(start, end));
-		}
-
-		return CalculateStats(samplesUs, fixture.Keys.size());
-	}
-
 	void PrintStats(const char* prefix, const SampleStats& stats)
 	{
 		std::cout << "  " << prefix << "_mean_us: " << stats.MeanUs << "\n";
@@ -573,9 +407,6 @@ namespace
 	{
 		std::cout << "\n" << result.Name << "\n";
 		std::cout << "  setup_us: " << result.SetupUs << "\n";
-		std::cout << "  batch_emplace_us: " << result.BatchEmplaceUs << "\n";
-		std::cout << "  batch_remove_us: " << result.BatchRemoveUs << "\n";
-		std::cout << "  hierarchy_unregister_us: " << result.HierarchyUnregisterUs << "\n";
 		std::cout << "  transforms: " << result.TransformCount << "\n";
 		std::cout << "  checksum: " << result.Checksum << "\n";
 		std::cout << "  node_allocations: " << result.NodeAllocations << "\n";
@@ -586,11 +417,6 @@ namespace
 		std::cout << "  parent_index_storage_bytes: "
 				  << result.ParentIndexStorageBytes << "\n";
 		PrintStats("propagation", result.Propagation);
-		PrintStats("rebuild_and_propagate", result.RebuildAndPropagate);
-		const double rebuildCostUs = result.RebuildAndPropagate.MeanUs - result.Propagation.MeanUs;
-		std::cout << "  rebuild_only_mean_us: " << rebuildCostUs << "\n";
-		std::cout << "  rebuild_only_ns_per_transform: "
-				  << (rebuildCostUs * 1000.0) / static_cast<double>(result.TransformCount) << "\n";
 	}
 
 	void PrintCsvRow(const BenchmarkResult& result)
@@ -600,9 +426,6 @@ namespace
 			<< result.Name << ","
 			<< result.TransformCount << ","
 			<< result.SetupUs << ","
-			<< result.BatchEmplaceUs << ","
-			<< result.BatchRemoveUs << ","
-			<< result.HierarchyUnregisterUs << ","
 			<< result.Propagation.TotalUs << ","
 			<< result.Propagation.MinUs << ","
 			<< result.Propagation.MeanUs << ","
@@ -644,31 +467,11 @@ int main(int argc, char** argv)
 		DataOrientedFixture dataOriented(config.TransformCount, config.BranchingFactor);
 		const auto dataSetupEnd = Clock::now();
 
-		const auto productionScalarSetupStart = Clock::now();
-		ProductionPropagationFixture productionScalar(
-			config.TransformCount,
-			config.BranchingFactor,
-			ProductionBatchMode::Scalar);
-		const auto productionScalarSetupEnd = Clock::now();
-
-		const auto productionBulkSetupStart = Clock::now();
-		ProductionPropagationFixture productionBulk(
-			config.TransformCount,
-			config.BranchingFactor,
-			ProductionBatchMode::Bulk);
-		const auto productionBulkSetupEnd = Clock::now();
-
 		traditional.Advance(0);
 		dataOriented.Advance(0);
-		productionScalar.Advance(0);
-		productionBulk.Advance(0);
 		traditional.PropagateRecursive();
 		dataOriented.Propagate();
-		productionScalar.PropagateTick();
-		productionBulk.PropagateTick();
 		ValidateEquivalentWorlds(traditional, dataOriented);
-		ValidateProductionMatchesTraditional(traditional, productionScalar);
-		ValidateProductionMatchesTraditional(traditional, productionBulk);
 		std::cout << "validation: equivalent world transforms\n";
 
 		const size_t childPointerBytes = traditional.Root->ChildPointerStorageBytesRecursive();
@@ -712,66 +515,20 @@ int main(int argc, char** argv)
 			[&]() { dataOriented.Propagate(); });
 		dataResult.Checksum = dataOriented.Checksum();
 
-		BenchmarkResult productionScalarResult;
-		productionScalarResult.Name = "production_transform_propagation_scalar";
-		productionScalarResult.TransformCount = config.TransformCount;
-		productionScalarResult.SetupUs = ElapsedMicroseconds(
-			productionScalarSetupStart,
-			productionScalarSetupEnd);
-		productionScalarResult.BatchEmplaceUs = productionScalar.BatchEmplaceUs;
-		productionScalarResult.ContiguousTransformPayloadBytes =
-			productionScalar.TransformPayloadBytes();
-		productionScalarResult.ParentIndexStorageBytes = 0;
-		productionScalarResult.Propagation = MeasurePropagation(
-			config,
-			[&](size_t frame) { productionScalar.Advance(frame); },
-			[&]() { productionScalar.PropagateTick(); });
-		productionScalarResult.RebuildAndPropagate = MeasureRebuildCost(config, productionScalar);
-		productionScalarResult.Checksum = productionScalar.Checksum();
-
-		productionScalar.RemoveAll();
-		productionScalarResult.BatchRemoveUs = productionScalar.BatchRemoveUs;
-		productionScalarResult.HierarchyUnregisterUs = productionScalar.HierarchyUnregisterUs;
-
-		BenchmarkResult productionBulkResult;
-		productionBulkResult.Name = "production_transform_propagation_bulk";
-		productionBulkResult.TransformCount = config.TransformCount;
-		productionBulkResult.SetupUs = ElapsedMicroseconds(
-			productionBulkSetupStart,
-			productionBulkSetupEnd);
-		productionBulkResult.BatchEmplaceUs = productionBulk.BatchEmplaceUs;
-		productionBulkResult.ContiguousTransformPayloadBytes =
-			productionBulk.TransformPayloadBytes();
-		productionBulkResult.ParentIndexStorageBytes = 0;
-		productionBulkResult.Propagation = MeasurePropagation(
-			config,
-			[&](size_t frame) { productionBulk.Advance(frame); },
-			[&]() { productionBulk.PropagateTick(); });
-		productionBulkResult.RebuildAndPropagate = MeasureRebuildCost(config, productionBulk);
-		productionBulkResult.Checksum = productionBulk.Checksum();
-
-		productionBulk.RemoveAll();
-		productionBulkResult.BatchRemoveUs = productionBulk.BatchRemoveUs;
-		productionBulkResult.HierarchyUnregisterUs = productionBulk.HierarchyUnregisterUs;
-
 		PrintResult(traditionalRecursive);
 		PrintResult(traditionalIterative);
 		PrintResult(dataResult);
-		PrintResult(productionScalarResult);
-		PrintResult(productionBulkResult);
 
 		std::cout << "\nCSV\n";
 		std::cout
-			<< "csv,name,transforms,setup_us,batch_emplace_us,batch_remove_us,"
-			<< "hierarchy_unregister_us,total_us,min_us,mean_us,median_us,"
+			<< "csv,name,transforms,setup_us,"
+			<< "total_us,min_us,mean_us,median_us,"
 			<< "p95_us,max_us,stddev_us,ns_per_transform,transforms_per_second,"
 			<< "checksum,node_allocations,contiguous_transform_payload_bytes,"
 			<< "child_pointer_storage_bytes,parent_index_storage_bytes\n";
 		PrintCsvRow(traditionalRecursive);
 		PrintCsvRow(traditionalIterative);
 		PrintCsvRow(dataResult);
-		PrintCsvRow(productionScalarResult);
-		PrintCsvRow(productionBulkResult);
 		return 0;
 	}
 	catch (const std::exception& ex)

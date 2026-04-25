@@ -11,7 +11,6 @@
 #include <math/Vec.h>
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/SparseSetStore.h>
 #include <vulkan/vulkan.h>
 
 #include <string_view>
@@ -37,7 +36,7 @@ struct EnumSchema<ProjectionKind>
 // CameraComponent
 //
 // ECS component that describes a camera's projection parameters. Attach to
-// any entity that also has a Transform3f in a TransformStore.
+// any entity that also has LocalTransform and WorldTransform.
 //
 // FovYRadians is ignored for Orthographic cameras; OrthographicHeight is
 // ignored for Perspective cameras.
@@ -50,8 +49,6 @@ struct CameraComponent
     float FarPlane = 1000.0f;
     float OrthographicHeight = 10.0f;
 };
-
-using CameraStore = SparseSetStore<CameraComponent>;
 
 template <>
 struct TypeSchema<CameraComponent>
