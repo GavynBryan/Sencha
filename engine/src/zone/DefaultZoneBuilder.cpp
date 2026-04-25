@@ -1,7 +1,6 @@
 #include <zone/DefaultZoneBuilder.h>
 
 #include <world/registry/Registry.h>
-#include <world/transform/TransformHierarchyService.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneRuntime.h>
 
@@ -12,7 +11,6 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
-    registry.Resources.Register<TransformHierarchyService>();
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.RegisterComponent<LocalTransform>();
     registry.Components.RegisterComponent<WorldTransform>();
@@ -27,7 +25,6 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
 {
     EntityId entity = registry.Components.CreateEntity();
-    registry.Resources.Get<TransformHierarchyService>().Register(entity);
     registry.Components.AddComponent(entity, LocalTransform{ local });
     registry.Components.AddComponent(entity, WorldTransform{ local });
     return entity;

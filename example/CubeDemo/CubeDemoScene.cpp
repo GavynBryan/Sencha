@@ -7,7 +7,6 @@
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
 #include <world/serialization/SceneSerializer.h>
-#include <world/transform/TransformHierarchyService.h>
 #include <zone/DefaultZoneBuilder.h>
 
 #include <cassert>

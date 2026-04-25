@@ -18,7 +18,6 @@
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
-#include <world/transform/TransformHierarchyService.h>
 
 #include <sstream>
 #include <string_view>
@@ -66,7 +65,6 @@ namespace
     Registry MakeSceneRegistry()
     {
         Registry registry;
-        registry.Resources.Register<TransformHierarchyService>();
         registry.Components.RegisterComponent<LocalTransform>();
         registry.Components.RegisterComponent<WorldTransform>();
         registry.Components.RegisterComponent<Parent>();
@@ -106,7 +104,6 @@ namespace
 
     void SetParent(Registry& registry, EntityId child, EntityId parent)
     {
-        registry.Resources.Get<TransformHierarchyService>().SetParent(child, parent);
         registry.Components.AddComponent(child, Parent{ parent });
     }
 }
@@ -119,10 +116,8 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
     EntityId parent = source.Entities.Create();
     EntityId child = source.Entities.Create();
 
-    auto& hierarchy = source.Resources.Get<TransformHierarchyService>();
     AddTransform(source, parent, MakeTransform(1.0f, 2.0f, 3.0f));
     AddTransform(source, child, MakeTransform(4.0f, 5.0f, 6.0f));
-    hierarchy.Register(parent);
     SetParent(source, child, parent);
 
     CameraComponent camera{
@@ -146,10 +141,9 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
 
     EXPECT_EQ(loaded.Entities.Count(), 2u);
 
-    auto& loadedHierarchy = loaded.Resources.Get<TransformHierarchyService>();
-
     ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
     ASSERT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+    ASSERT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
 
     EntityId loadedChild;
     EntityId loadedParent;
@@ -159,8 +153,8 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
         loadedParent = parentComponent.Entity;
     });
 
-    ASSERT_TRUE(loadedHierarchy.GetParent(loadedChild).IsValid());
-    EXPECT_EQ(loadedHierarchy.GetParent(loadedChild).Index, loadedParent.Index);
+    ASSERT_TRUE(loadedChild.IsValid());
+    ASSERT_TRUE(loadedParent.IsValid());
     ASSERT_NE(loaded.Components.TryGet<LocalTransform>(loadedParent), nullptr);
     EXPECT_EQ(loaded.Components.TryGet<LocalTransform>(loadedParent)->Value.Position, Vec3d(1.0f, 2.0f, 3.0f));
 
@@ -175,7 +169,6 @@ TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
     ResetSceneSerializers();
     Registry source = MakeSceneRegistry();
     EntityId sourceEntity = source.Entities.Create();
-    source.Resources.Get<TransformHierarchyService>().Register(sourceEntity);
     AddTransform(source, sourceEntity, MakeTransform(8.0f, 0.0f, 0.0f));
 
     auto stream = MakeBinaryStream();
@@ -211,7 +204,6 @@ TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
     ResetSceneSerializers();
     Registry source = MakeSceneRegistry();
     EntityId entity = source.Entities.Create();
-    source.Resources.Get<TransformHierarchyService>().Register(entity);
     AddTransform(source, entity, MakeTransform(2.0f, 3.0f, 4.0f));
     source.Components.AddComponent(entity, CameraComponent{});
 
@@ -283,7 +275,7 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
     EXPECT_EQ(loaded.Entities.Count(), 2u);
     EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
     EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
-    EXPECT_EQ(loaded.Resources.Get<TransformHierarchyService>().GetRoots().size(), 1u);
+    EXPECT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
 }
 
 TEST(SceneSerializer, RegistersStaticMeshThroughGenericSerializer)
@@ -491,7 +483,6 @@ TEST(SceneSerializer, JsonLoadRollsBackEntitiesAndComponentsOnFailure)
 
     EXPECT_EQ(loaded.Entities.Count(), 0u);
     EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 0u);
-    EXPECT_EQ(loaded.Resources.Get<TransformHierarchyService>().Count(), 0u);
 }
 
 TEST(SceneSerializer, BinaryLoadRollsBackCreatedEntitiesOnFailure)
