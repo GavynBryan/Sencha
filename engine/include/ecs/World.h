@@ -135,6 +135,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "CreateEntity called while a query/lifecycle hook is active.");
         EntityCreated = true;
+        ++StructuralCounter;
         EntityId id   = Entities.Create();
         Archetype* empty = GetOrCreateArchetype(ArchetypeSignature{});
         auto [ci, ri] = empty->AddRow(id.Index);
@@ -149,6 +150,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "CreateEntityWithSignature called while a query/lifecycle hook is active.");
         EntityCreated = true;
+        ++StructuralCounter;
         EntityId id   = Entities.Create();
         Archetype* arch = GetOrCreateArchetype(sig);
         auto [ci, ri] = arch->AddRow(id.Index);
@@ -161,6 +163,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "DestroyEntity called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
+        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
@@ -180,6 +183,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "AddComponent called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
+        ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
         EntityLocation     loc = Entities.GetLocation(entity);
@@ -219,6 +223,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "RemoveComponent called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
+        ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
         EntityLocation     loc = Entities.GetLocation(entity);
@@ -251,6 +256,11 @@ public:
 
     // ── Component access ─────────────────────────────────────────────────────
 
+    // Non-const TryGet grants mutable access, so it conservatively bumps the
+    // column version for T — the same semantics as Write<T> query access
+    // (see docs/ecs/decisions.md D0.9 and D4.4). Use the const overload
+    // (e.g. via std::as_const) for read-only access that must not register
+    // as a change.
     template <typename T>
     T* TryGet(EntityId entity)
     {
@@ -259,17 +269,26 @@ public:
         const EntityLocation loc = Entities.GetLocation(entity);
         const Archetype&   arch = *ArchetypeList[loc.ArchetypeId];
         if (!arch.Signature.test(id)) return nullptr;
-        const Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
+        Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
         const uint32_t col = chunk->FindColumn(id);
         if (col == UINT32_MAX) return nullptr;
-        return reinterpret_cast<T*>(
-            const_cast<uint8_t*>(chunk->ColumnData(col))) + loc.RowIndex;
+        chunk->BumpColumnVersion(col, FrameCounter);
+        return reinterpret_cast<T*>(chunk->ColumnData(col)) + loc.RowIndex;
     }
 
     template <typename T>
     const T* TryGet(EntityId entity) const
     {
-        return const_cast<World*>(this)->TryGet<T>(entity);
+        // Read-only access: no column-version bump (unlike the non-const overload).
+        if (!Entities.IsAlive(entity)) return nullptr;
+        const ComponentId  id  = GetComponentId<T>();
+        const EntityLocation loc = Entities.GetLocation(entity);
+        const Archetype&   arch = *ArchetypeList[loc.ArchetypeId];
+        if (!arch.Signature.test(id)) return nullptr;
+        const Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
+        const uint32_t col = chunk->FindColumn(id);
+        if (col == UINT32_MAX) return nullptr;
+        return reinterpret_cast<const T*>(chunk->ColumnData(col)) + loc.RowIndex;
     }
 
     template <typename T>
@@ -281,6 +300,10 @@ public:
         return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
     }
 
+    // Non-const ForEachComponent hands out mutable references, so it bumps
+    // each visited chunk's column version for T — same conservative semantics
+    // as Write<T> and non-const TryGet (decisions.md D4.4). The const overload
+    // iterates without bumping.
     template <typename T, typename F>
     void ForEachComponent(F&& fn)
     {
@@ -305,6 +328,8 @@ public:
                 const EntityIndex* entities = chunk.EntityIndices();
                 for (uint32_t row = 0; row < chunk.RowCount; ++row)
                     fn(EntityId{ entities[row], GenerationForIndex(entities[row]) }, values[row]);
+
+                chunk.BumpColumnVersion(col, FrameCounter);
             }
         }
     }
@@ -312,7 +337,29 @@ public:
     template <typename T, typename F>
     void ForEachComponent(F&& fn) const
     {
-        const_cast<World*>(this)->ForEachComponent<T>(std::forward<F>(fn));
+        const ComponentId id = GetComponentId<T>();
+        for (const auto& archPtr : ArchetypeList)
+        {
+            const Archetype& arch = *archPtr;
+            if (!arch.Signature.test(id))
+                continue;
+
+            for (const auto& chunkPtr : arch.Chunks)
+            {
+                const Chunk& chunk = *chunkPtr;
+                if (chunk.IsEmpty())
+                    continue;
+
+                const uint32_t col = chunk.FindColumn(id);
+                if (col == UINT32_MAX)
+                    continue;
+
+                auto values = chunk.ColumnSpan<T>(col);
+                const EntityIndex* entities = chunk.EntityIndices();
+                for (uint32_t row = 0; row < chunk.RowCount; ++row)
+                    fn(EntityId{ entities[row], GenerationForIndex(entities[row]) }, values[row]);
+            }
+        }
     }
 
     template <typename T>
@@ -350,6 +397,39 @@ public:
 
     uint32_t CurrentFrame() const { return FrameCounter; }
     void AdvanceFrame()           { ++FrameCounter; }
+
+    // ── Structural version ───────────────────────────────────────────────────
+    //
+    // Monotonic counter bumped by every operation that can move entity rows:
+    // entity create/destroy and component add/remove (direct or via command
+    // buffer flush). Systems that cache chunk pointers or row addresses across
+    // frames must key their invalidation off this value — archetype count is
+    // NOT sufficient (moves into existing archetypes and swap-removes change
+    // row locations without changing the archetype count). See decisions.md D4.4.
+
+    uint64_t StructuralVersion() const { return StructuralCounter; }
+
+    // ── Entity chunk location ────────────────────────────────────────────────
+    //
+    // Resolves the chunk and row currently holding an entity, for systems that
+    // cache row pointers across frames (e.g. transform propagation). Returns
+    // {nullptr, 0} for dead entities. The result is invalidated by any
+    // structural change; pair cached results with StructuralVersion().
+    // Does NOT bump any column version — pure address resolution.
+
+    struct EntityChunkLocation
+    {
+        Chunk*   ChunkPtr = nullptr;
+        uint32_t Row      = 0;
+    };
+
+    EntityChunkLocation LocateEntity(EntityId entity)
+    {
+        if (!Entities.IsAlive(entity)) return {};
+        const EntityLocation loc = Entities.GetLocation(entity);
+        return { ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get(),
+                 loc.RowIndex };
+    }
 
     // ── Resources ────────────────────────────────────────────────────────────
 
@@ -479,6 +559,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
+        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
@@ -522,6 +603,7 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
+        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
@@ -563,6 +645,7 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
+        ++StructuralCounter;
 
         struct Move
         {
@@ -618,6 +701,7 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
+        ++StructuralCounter;
 
         struct Move
         {
@@ -701,6 +785,7 @@ private:
     uint32_t QueryDepth   = 0;
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
+    uint64_t StructuralCounter = 0;
     bool     EntityCreated = false;
 
     static void ClearOwnedTypeErased(
@@ -727,6 +812,7 @@ private:
         QueryDepth = other.QueryDepth;
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
+        StructuralCounter = other.StructuralCounter;
         EntityCreated = other.EntityCreated;
 
         other.Resources.clear();

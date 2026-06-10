@@ -51,6 +51,9 @@ q.ForEachChunk(callback, referenceFrame);
 - `callback` receives `ChunkView<Accessors...>&`.
 - `referenceFrame` defaults to 0, which matches any chunk that has ever been written.
   Pass `world.CurrentFrame() - 1` to match only chunks written since the previous frame.
+- A non-zero `referenceFrame` requires at least one `Changed<T>` accessor in the query
+  — without one the filter is inert and the value would be silently ignored (asserted
+  in debug builds; see decisions.md D4.5).
 
 ---
 
@@ -88,7 +91,9 @@ q.ForEachChunk([dt](auto& view)
 `Write<T>` grants mutable access and **bumps the T column version once per chunk** after
 the callback returns — whether or not any row was actually written. This is conservative:
 a system that holds `Write<T>` but never modifies any row will still cause `Changed<T>`
-to match that chunk this frame.
+to match that chunk this frame. The same semantics apply to non-const `World::TryGet<T>`
+and non-const `World::ForEachComponent<T>`; use the const overloads for reads that must
+not register as changes.
 
 ---
 

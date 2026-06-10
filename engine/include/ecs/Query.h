@@ -107,6 +107,12 @@ public:
     template <typename F>
     void ForEachChunk(F&& fn, uint32_t referenceFrame = 0)
     {
+        // A referenceFrame is only meaningful to Changed<T> accessors. Passing
+        // one without any Changed<T> in the query silently filters nothing —
+        // see docs/ecs/decisions.md D4.5 for the bug this caught.
+        assert((referenceFrame == 0 || ChangedSig.any())
+               && "referenceFrame passed to a query with no Changed<T> accessor.");
+
         W->PushQueryScope();
         RebuildIfStale();
 

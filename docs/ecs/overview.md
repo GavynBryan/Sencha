@@ -133,7 +133,10 @@ move between archetypes twice per frame just to flip a bit.
 
 Each chunk stores a per-column **last-written-frame counter**. When a `Write<T>` query
 finishes iterating a chunk, the counter for column T is bumped to the current frame
-(conservative bump — regardless of whether any row was actually written).
+(conservative bump — regardless of whether any row was actually written). Non-const
+`World::TryGet<T>` and non-const `World::ForEachComponent<T>` follow the same rule:
+granting mutable access counts as a write. Use the const overloads (e.g. via
+`std::as_const(world)`) for reads that must not register as changes.
 
 `Changed<T>` in a query signature filters out chunks whose T column was not bumped since
 the reference frame. This lets downstream systems skip large chunks of unchanged data.

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // ─── RebuildCache ─────────────────────────────────────────────────────────────
@@ -23,12 +24,12 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
 {
     auto& order = cache.GetOrder();
     order.clear();
-    const size_t archetypeCount = Target.GetArchetypes().size();
+    const uint64_t structuralVersion = Target.StructuralVersion();
 
     if (!Target.IsRegistered<LocalTransform>()
         || !Target.IsRegistered<WorldTransform>())
     {
-        cache.MarkClean(archetypeCount);
+        cache.MarkClean(structuralVersion);
         return;
     }
 
@@ -38,7 +39,8 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
     std::unordered_map<EntityIndex, EntityId> indexToId;
     indexToId.reserve(Target.CountComponents<LocalTransform>());
 
-    Target.ForEachComponent<LocalTransform>([&](EntityId id, const LocalTransform&)
+    std::as_const(Target).ForEachComponent<LocalTransform>(
+        [&](EntityId id, const LocalTransform&)
     {
         if (Target.HasComponent<WorldTransform>(id))
             indexToId.emplace(id.Index, id);
@@ -46,7 +48,7 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
 
     if (indexToId.empty())
     {
-        cache.MarkClean(archetypeCount);
+        cache.MarkClean(structuralVersion);
         return;
     }
 
@@ -123,34 +125,69 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
     for (size_t i = 0; i < order.size(); ++i)
         indexToOrder.emplace(order[i].Child.Index, i);
 
+    // Resolve chunk locations and row pointers for the steady-state sweep.
+    // LocateEntity is pure address resolution — unlike non-const TryGet it
+    // bumps no column versions, so a rebuild does not register as a change.
+    // Parents precede children in BFS order, so order[parentIdx].WorldPtr is
+    // already resolved when a child entry reads it.
+    const ComponentId localId = Target.GetComponentId<LocalTransform>();
+    const ComponentId worldId = Target.GetComponentId<WorldTransform>();
+
     for (PropagationEntry& entry : order)
     {
-        entry.LocalPtr = Target.TryGet<LocalTransform>(entry.Child);
-        entry.WorldPtr = Target.TryGet<WorldTransform>(entry.Child);
-        entry.ParentWorldPtr = nullptr;
+        const World::EntityChunkLocation loc = Target.LocateEntity(entry.Child);
+        if (loc.ChunkPtr != nullptr)
+        {
+            const uint32_t localCol = loc.ChunkPtr->FindColumn(localId);
+            const uint32_t worldCol = loc.ChunkPtr->FindColumn(worldId);
+            if (localCol != UINT32_MAX && worldCol != UINT32_MAX)
+            {
+                entry.ChunkPtr = loc.ChunkPtr;
+                entry.LocalCol = localCol;
+                entry.WorldCol = worldCol;
+                entry.LocalPtr = reinterpret_cast<LocalTransform*>(
+                    loc.ChunkPtr->ColumnData(localCol)) + loc.Row;
+                entry.WorldPtr = reinterpret_cast<WorldTransform*>(
+                    loc.ChunkPtr->ColumnData(worldCol)) + loc.Row;
+            }
+        }
 
         if (!entry.Parent.IsValid())
             continue;
 
         auto parentIt = indexToOrder.find(entry.Parent.Index);
         if (parentIt != indexToOrder.end())
+        {
+            entry.ParentOrderIndex = static_cast<uint32_t>(parentIt->second);
             entry.ParentWorldPtr = order[parentIt->second].WorldPtr;
+        }
     }
 
-    cache.MarkClean(archetypeCount);
+    cache.MarkClean(structuralVersion);
 }
 
 // ─── Propagate ────────────────────────────────────────────────────────────────
 //
 // 1. Ensure the PropagationOrderCache resource exists.
-// 2. Detect hierarchy changes via Changed<Parent>: if any chunk with a Parent
-//    column was written (parent added/removed) since the last propagation,
-//    invalidate the cache so it rebuilds this frame.
-// 3. Rebuild if dirty.
-// 4. Forward sweep: world[child] = world[parent] * local[child].
-//    For root entities, world[child] = local[child].
-// 5. The Write<WorldTransform> query bumps per-chunk change-detection counters so
-//    downstream consumers (render extraction, physics) can use Changed<WorldTransform>.
+// 2. Invalidate the cache when World::StructuralVersion() has moved — any
+//    entity create/destroy or component add/remove can relocate rows and stale
+//    the cached pointers (swap-removes and moves into existing archetypes do
+//    NOT change the archetype count, so the count is not a sufficient key).
+// 3. Also invalidate on Changed<Parent>: re-parenting via Write<Parent> or
+//    non-const TryGet<Parent> mutates hierarchy order without any structural
+//    change.
+// 4. Rebuild if dirty. A rebuild forces a full sweep (structural moves copy
+//    component data without bumping column versions).
+// 5. Forward sweep: world[child] = world[parent] * local[child]; for roots,
+//    world[child] = local[child]. An entry is recomputed only when its
+//    LocalTransform column changed since the last sweep, or its parent entry
+//    was recomputed this sweep (hierarchy dirtiness propagates down). The
+//    sweep bumps the WorldTransform column version for exactly the chunks it
+//    writes, so downstream Changed<WorldTransform> filters skip clean chunks.
+//
+// Skip granularity is chunk-conservative for the local-change test (a chunk
+// write marks all its rows locally dirty) — consistent with the documented
+// Changed<T> semantics.
 
 void TransformPropagationSystem::Propagate()
 {
@@ -165,24 +202,27 @@ void TransformPropagationSystem::Propagate()
         Target.AddResource<PropagationOrderCache>();
 
     PropagationOrderCache& cache = Target.GetResource<PropagationOrderCache>();
-    const size_t archetypeCount = Target.GetArchetypes().size();
 
-    if (!cache.IsDirty() && !cache.ArchetypeCountMatches(archetypeCount))
+    if (!cache.IsDirty()
+        && !cache.StructuralVersionMatches(Target.StructuralVersion()))
+    {
         cache.Invalidate();
+    }
 
-    // Detect structural hierarchy changes via Changed<Parent>. If the Parent
-    // column in any chunk has been written (entity gained or lost a Parent
-    // component) since referenceFrame, the sort order may be stale.
+    // Detect hierarchy edits via Changed<Parent>. Parent add/remove is already
+    // covered by the structural version above; this catches re-parenting that
+    // rewrites an existing Parent value (Write<Parent> query access or
+    // non-const TryGet<Parent>), which moves no rows.
     //
-    // We use referenceFrame=prevFrame so we detect chunks whose Parent column was
-    // written since the previous frame. Parent changes are structural, so any hit
-    // here means the cached order (and cached pointers) must be rebuilt.
+    // The Changed<Parent> accessor is what arms the filter — a plain
+    // Read<Parent> query ignores referenceFrame entirely and would report
+    // every chunk as changed, forcing a rebuild every frame.
     if (!cache.IsDirty() && Target.IsRegistered<Parent>())
     {
         const uint32_t prevFrame = Target.CurrentFrame() > 0
                                        ? Target.CurrentFrame() - 1
                                        : 0;
-        Query<Read<Parent>> parentChanged(Target);
+        Query<Changed<Parent>> parentChanged(Target);
         bool anyChanged = false;
         parentChanged.ForEachChunk([&](auto& /*view*/)
         {
@@ -196,31 +236,48 @@ void TransformPropagationSystem::Propagate()
     if (cache.IsDirty())
         RebuildCache(cache);
 
-    const auto& order = cache.GetOrder();
+    auto& order = cache.GetOrder();
+    const bool fullSweep = cache.ConsumeFullSweepPending();
     if (order.empty())
         return;
 
-    // Forward sweep over the ordered list.
-    // We write WorldTransform via cached pointers rather than a separate
-    // Write<WorldTransform> query loop to keep the sweep a single pass. The
-    // Write<WorldTransform> query below is a separate bump-only pass so that
-    // Changed<WorldTransform> is correctly set for all written entities.
-    for (const PropagationEntry& entry : order)
+    const uint32_t frame     = Target.CurrentFrame();
+    const uint32_t lastSweep = cache.LastSweepFrame();
+
+    // Frame-local dirty flags indexed like `order`. Parents precede children,
+    // so dirty[ParentOrderIndex] is final by the time a child reads it.
+    std::vector<uint8_t>& dirty = cache.DirtyScratch();
+    dirty.assign(order.size(), 0);
+
+    for (size_t i = 0; i < order.size(); ++i)
     {
+        const PropagationEntry& entry = order[i];
         if (entry.LocalPtr == nullptr || entry.WorldPtr == nullptr)
             continue;
+
+        const bool parentDirty =
+            entry.ParentOrderIndex != UINT32_MAX
+            && dirty[entry.ParentOrderIndex] != 0;
+        const bool localDirty =
+            entry.ChunkPtr->ColumnLastWrittenFrame(entry.LocalCol) >= lastSweep;
+
+        if (!fullSweep && !parentDirty && !localDirty)
+            continue;
+
+        dirty[i] = 1;
 
         if (entry.ParentWorldPtr != nullptr)
             entry.WorldPtr->Value = entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
         else
             entry.WorldPtr->Value = entry.LocalPtr->Value;
+
+        // Precise change signal: only chunks actually written this sweep match
+        // Changed<WorldTransform> downstream. Redundant bumps within a chunk
+        // are a single store each.
+        entry.ChunkPtr->BumpColumnVersion(entry.WorldCol, frame);
     }
 
-    // Bump Changed<WorldTransform> column version counters so downstream systems
-    // using Changed<WorldTransform> get chunk-granularity change detection.
-    // This is a write-only pass; the actual data was already set above.
-    Query<Write<WorldTransform>, With<LocalTransform>> bumpQuery(Target);
-    bumpQuery.ForEachChunk([](auto& /*view*/) {});
+    cache.SetLastSweepFrame(frame);
 }
 
 void PropagateTransforms(std::span<Registry*> registries)

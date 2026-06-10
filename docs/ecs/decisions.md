@@ -885,6 +885,114 @@ swap) and could bring this under 10 µs. Not worth the code complexity now.
 
 ---
 
+### D4.4 — World structural version; propagation skips clean subtrees; mutable access bumps
+
+Closes the D4.1 "remaining caveat" — which turned out to be a reachable memory-safety
+bug, not a theoretical one — and the degenerate `Changed<WorldTransform>` signal.
+
+**Problem 1 — stale cached pointers.** `PropagationOrderCache` invalidated on
+`Changed<Parent>` plus *archetype count growth*. Three normal-gameplay scenarios
+relocate rows without changing the archetype count, leaving the cached
+`LocalTransform*` / `WorldTransform*` pointers stale or the cache silently incomplete:
+
+1. `DestroyEntity` swap-removes another entity's row into the vacated slot.
+2. Add/remove of an unrelated component moves an entity into an *existing* archetype.
+3. A new entity spawned into an existing archetype is never picked up at all.
+
+**Decision:** `World` now maintains a monotonic `StructuralVersion()` counter, bumped
+by every operation that can move entity rows: entity create/destroy and component
+add/remove, both direct and through command-buffer flush (`*Raw` / `*RawBatch` paths).
+The propagation cache records the version at rebuild and invalidates on any mismatch.
+Archetype-count tracking is deleted. Any future system that caches chunk pointers or
+row addresses across frames must key invalidation off `StructuralVersion()`.
+
+**Problem 2 — degenerate change signal.** The sweep recomputed every entry every frame
+and a blanket `Write<WorldTransform>` query bumped every chunk every frame, so
+`Changed<WorldTransform>` matched everything, always.
+
+**Decision:** the sweep now recomputes an entry only when its `LocalTransform` column
+changed since the last sweep (`>= LastSweepFrame`, chunk-conservative) or its parent
+entry was recomputed this sweep — dirtiness propagates down the tree via a
+`ParentOrderIndex` per entry and a frame-local flag array, satisfying the Phase 3
+hierarchy-dirtiness invariant with skips. The sweep bumps the `WorldTransform` column
+version for exactly the chunks it writes; the blanket bump query is deleted. A cache
+rebuild always forces one full sweep, because structural moves copy component data
+without bumping column versions. `PropagationEntry` caches the chunk pointer and both
+column indices (one chunk serves both columns — same entity, same row); the entry is
+one cache line.
+
+**Enabling decision — mutable access bumps, everywhere.** The skip is only sound if
+every mutable-access path registers a change. `Write<T>` query access already bumped;
+non-const `World::TryGet<T>` and non-const `ForEachComponent<T>` did not — and
+`FreeCamera`, `CubeDemo`, and the editor panels all mutate `LocalTransform` through
+non-const `TryGet`. Both now bump the column version, same conservative semantics as
+`Write<T>` (D0.9): granting mutable access counts as a write. The const overloads do
+not bump (the const `TryGet`/`ForEachComponent` bodies were un-`const_cast`ed to keep
+that true). Use `std::as_const(world).TryGet<T>(...)` for reads that must not register.
+Side benefit: re-parenting via `TryGet<Parent>()->Entity = x` is now caught by the
+`Changed<Parent>` rebuild check — previously a silent stale-order hole. Cost per
+mutable `TryGet`: one store; `FindColumn` was already paid.
+
+**Alternatives considered:** per-archetype version counters (finer invalidation, but
+the cache spans archetypes so any bump invalidates it anyway — no win for the
+complexity); re-resolving pointers every frame (reverts the D4.1 24% regression fix);
+proxy/handle types instead of raw pointers in `PropagationEntry` (violates A3 in the
+hot loop). Conservative one-frame redundancy from the `>=` sweep comparison is
+accepted: a write landing after the sweep in the same frame re-propagates once.
+
+**Cache resolution detail:** `RebuildCache` resolves pointers via the new
+`World::LocateEntity` (pure address resolution, no version bump) instead of non-const
+`TryGet`, so a rebuild itself does not flag every transform as changed.
+
+**Regression tests:** `DestroyedSiblingSwapRemoveDoesNotStalePropagation`,
+`MoveIntoExistingArchetypeInvalidatesCache`, `NewEntityInExistingArchetypeIsPropagated`,
+`TryGetLocalMutationIsRepropagated`, `ReparentViaTryGetRebuildsOrder`,
+`ChangedWorldTransformSkipsCleanChunks` in `test/runtime/TransformPropagationTests.cpp`.
+
+**Measured outcome:** see B4.5 below.
+
+---
+
+### D4.5 — Hierarchy-change detection was silently rebuilding every frame
+
+**Discovery (post-D4.4 benchmark):** "steady-state" (11 558 µs) and "rebuild + sweep"
+(11 562 µs) measured identical — the cached path never ran. The hierarchy-change check
+used `Query<Read<Parent>>` with a `referenceFrame` argument, but `PassesChangedFilter`
+returns true unconditionally when a query has no `Changed<>` accessor (`ChangedSig`
+empty). `anyChanged` was therefore always true, the cache invalidated every frame, and
+every prior "steady-state" benchmark number (209.7, 158.6 ns/transform) was actually
+measuring rebuild + full sweep.
+
+**Decision:** the check now uses `Query<Changed<Parent>>`, which is what arms the
+filter. Re-parenting through non-const `TryGet<Parent>` is still detected because
+mutable access bumps the column version (D4.4).
+
+**Lesson recorded:** `referenceFrame` is inert without a `Changed<>` accessor in the
+query parameter list. If this trips anyone again, consider a debug assert when
+`referenceFrame != 0` and `ChangedSig` is empty.
+
+---
+
+### B4.5 — Transform propagation after D4.4/D4.5 (100k entities, 4-ary tree)
+
+Release build, `-O3 -march=native`, same setup as B4.1.
+
+| Path | Before (B4.1, post-D4.1) | After D4.4/D4.5 |
+|------|--------------------------|------------------|
+| Steady-state, no transforms changed | 158.6 ns/transform | **1.73 ns/transform** (172.6 µs total) |
+| Rebuild + full sweep (cache dirty) | 154.6 ns/transform | 118.3 ns/transform |
+
+The steady-state row is not directly comparable across columns: the old number was
+secretly a rebuild every frame (D4.5), and the new sweep skips clean subtrees
+(D4.4), so a quiet frame costs one pass of per-entry dirty checks — 91× cheaper than
+before. A worst-case frame (every local written, or post-rebuild) costs the full-sweep
+number, which itself improved 23% over B4.1 because the rebuild now resolves chunk
+locations once via `LocateEntity` instead of two `TryGet` calls per entry.
+
+Test suite: 629 tests pass (623 prior + 6 D4.4 regression tests).
+
+---
+
 ## Migration Complete
 
 The ECS migration from sparse-set storage to archetype chunk storage is complete on the
@@ -920,12 +1028,15 @@ deleted sparse-set types, superseded by `test/runtime/TransformPropagationTests.
 
 | Metric | Value |
 |--------|-------|
-| Transform propagation steady-state (100k entities) | 158.6 ns/transform |
-| Transform propagation rebuild + sweep (100k entities) | 154.6 ns/transform |
+| Transform propagation steady-state, quiet frame (100k entities) | 1.73 ns/transform |
+| Transform propagation rebuild + full sweep (100k entities) | 118.3 ns/transform |
 | Pre-migration bulk baseline | 150.7 ns/transform |
 | Render extraction (10k entities) | 0.584 ns/entity |
 | RenderQueueItem sort (10k items) | 11.1 ns/item |
-| Test suite | 623 tests pass |
+| Test suite | 629 tests pass |
+
+See B4.5 / D4.4 / D4.5 for the post-migration correctness and change-detection fixes
+behind the propagation numbers.
 
 ### Design axiom compliance
 

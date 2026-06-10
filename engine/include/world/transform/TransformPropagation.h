@@ -16,10 +16,13 @@ class Registry;
 // components, respecting the spatial hierarchy expressed by the Parent component.
 //
 // Uses a PropagationOrderCache World resource: a parent-before-child dense
-// ordered list rebuilt only when Changed<Parent> signals a structural hierarchy
-// change. Each frame the sweep is a single forward pass with no hash lookups.
+// ordered list rebuilt when World::StructuralVersion() moves (any entity
+// create/destroy or component add/remove can relocate rows) or when
+// Changed<Parent> signals a hierarchy edit. Each frame the sweep is a single
+// forward pass with no hash lookups that recomputes only dirty subtrees
+// (local transform changed, or an ancestor was recomputed).
 //
-// See docs/ecs/decisions.md D3.1 for the mandate and benchmark rationale.
+// See docs/ecs/decisions.md D3.1 and D4.4 for mandate and benchmark rationale.
 //=============================================================================
 class TransformPropagationSystem
 {
