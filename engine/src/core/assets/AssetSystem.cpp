@@ -1,10 +1,8 @@
 #include <core/assets/AssetSystem.h>
 
-#include <assets/material/MaterialLoader.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <graphics/vulkan/TextureCache.h>
-#include <render/ImageLoader.h>
 #include <render/MaterialCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
@@ -16,12 +14,7 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          StaticMeshCache& meshes,
                          MaterialCache& materials,
                          TextureCache& textures)
-    : Log(logging.GetLogger<AssetSystem>())
-    , Registry(registry)
-    , StaticMeshes(&meshes)
-    , Materials(&materials)
-    , Textures(&textures)
-    , StaticMeshFileLoader(logging)
+    : AssetSystem(logging, registry, &meshes, &materials, &textures)
 {
 }
 
@@ -35,7 +28,9 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , StaticMeshes(meshes)
     , Materials(materials)
     , Textures(textures)
-    , StaticMeshFileLoader(logging)
+    , MeshLoader(logging, meshes)
+    , TexLoader(logging, textures)
+    , MatLoader(logging, *this, materials, textures)
 {
 }
 
@@ -194,20 +189,14 @@ StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
         if (StaticMeshHandle existing = StaticMeshes->Acquire(record->Path); existing.IsValid())
             return existing;
 
-        StaticMeshData mesh;
-        const std::string_view filePath =
-            record->FilePath.empty() ? std::string_view(record->Path) : std::string_view(record->FilePath);
-        if (!StaticMeshFileLoader.LoadFromFile(filePath, mesh))
-            return {};
-
-        StaticMeshHandle handle = StaticMeshes->CreateFromData(record->Path, mesh);
-        if (!handle.IsValid())
+        AssetStaging staging = MeshLoader.LoadStaged(*record, Source);
+        if (!staging.IsValid())
         {
-            Log.Error("AssetSystem: failed to upload static mesh '{}'", filePath);
+            Log.Error("AssetSystem: {}", staging.Error);
             return {};
         }
 
-        return handle;
+        return MeshLoader.CommitTyped(std::move(staging));
     }
     case AssetSourceKind::Generated:
         Log.Error("AssetSystem: generated static mesh loading not implemented: {}", record->Path);
@@ -257,52 +246,14 @@ MaterialHandle AssetSystem::LoadMaterial(std::string_view path)
         if (MaterialHandle existing = Materials->Acquire(record->Path); existing.IsValid())
             return existing;
 
-        const std::string_view filePath =
-            record->FilePath.empty() ? std::string_view(record->Path) : std::string_view(record->FilePath);
-
-        MaterialDescription desc;
-        MaterialParseError parseError;
-        if (!LoadMaterialFromFile(filePath, desc, &parseError))
+        AssetStaging staging = MatLoader.LoadStaged(*record, Source);
+        if (!staging.IsValid())
         {
-            Log.Error("AssetSystem: failed to load material '{}': {}", filePath, parseError.Message);
+            Log.Error("AssetSystem: failed to load material '{}': {}", record->Path, staging.Error);
             return {};
         }
 
-        Material material;
-        material.Pass = ShaderPassId::ForwardOpaque;
-        material.BaseColor = desc.BaseColorFactor;
-        material.EmissiveFactor = desc.EmissiveFactor;
-        material.NormalScale = desc.NormalScale;
-        material.RoughnessFactor = desc.RoughnessFactor;
-        material.MetallicFactor = desc.MetallicFactor;
-        material.AlphaMode = desc.AlphaMode;
-        material.AlphaCutoff = desc.AlphaCutoff;
-
-        if (material.AlphaMode == MaterialAlphaMode::Blend)
-        {
-            Log.Warn("AssetSystem: material '{}' uses alpha_mode 'blend'; "
-                     "transparent phase not implemented, rendering opaque",
-                     record->Path);
-        }
-
-        std::vector<TextureCacheHandle> ownedTextures;
-        ResolveMaterialTextureSlot(desc.BaseColorTexture, /*srgb*/ true,
-                                   material.BaseColorTextureIndex, ownedTextures);
-        ResolveMaterialTextureSlot(desc.NormalTexture, /*srgb*/ false,
-                                   material.NormalTextureIndex, ownedTextures);
-        ResolveMaterialTextureSlot(desc.OrmTexture, /*srgb*/ false,
-                                   material.OrmTextureIndex, ownedTextures);
-        ResolveMaterialTextureSlot(desc.EmissiveTexture, /*srgb*/ true,
-                                   material.EmissiveTextureIndex, ownedTextures);
-
-        MaterialHandle handle = Materials->Register(record->Path, material, std::move(ownedTextures));
-        if (!handle.IsValid())
-        {
-            Log.Error("AssetSystem: failed to create material runtime resource: {}", record->Path);
-            return {};
-        }
-
-        return handle;
+        return MatLoader.CommitTyped(std::move(staging));
     }
     case AssetSourceKind::Generated:
         Log.Error("AssetSystem: generated material loading not implemented: {}", record->Path);
@@ -350,21 +301,14 @@ TextureHandle AssetSystem::LoadTexture(std::string_view path, bool srgb)
             return existing;
         }
 
-        const std::string_view filePath =
-            record->FilePath.empty() ? std::string_view(record->Path) : std::string_view(record->FilePath);
-
-        std::optional<Image> image = LoadImageFromFile(filePath, srgb);
-        if (!image)
+        AssetStaging staging = TexLoader.LoadStaged(*record, Source, srgb);
+        if (!staging.IsValid())
         {
-            Log.Error("AssetSystem: failed to load image '{}'", filePath);
+            Log.Error("AssetSystem: {}", staging.Error);
             return {};
         }
 
-        TextureHandle handle = Textures->CreateFromImage(record->Path, *image);
-        if (!handle.IsValid())
-            Log.Error("AssetSystem: failed to upload texture '{}'", filePath);
-
-        return handle;
+        return TexLoader.CommitTyped(std::move(staging));
     }
     case AssetSourceKind::Generated:
         Log.Error("AssetSystem: generated texture loading not implemented: {}", record->Path);
@@ -378,36 +322,3 @@ TextureHandle AssetSystem::LoadTexture(std::string_view path, bool srgb)
     }
 }
 
-void AssetSystem::ResolveMaterialTextureSlot(const AssetRef& ref,
-                                             bool srgb,
-                                             uint32_t& outIndex,
-                                             std::vector<TextureCacheHandle>& owned)
-{
-    if (!ref.IsValid())
-        return;
-
-    if (!Textures)
-    {
-        Log.Warn("AssetSystem: no TextureCache; texture '{}' left at neutral default", ref.Path);
-        return;
-    }
-
-    TextureHandle handle = LoadTexture(ref.Path, srgb);
-    if (!handle.IsValid())
-    {
-        Log.Error("AssetSystem: failed to resolve texture '{}'; using neutral default", ref.Path);
-        return;
-    }
-
-    const BindlessImageIndex bindless = Textures->GetBindlessIndex(handle);
-    if (!bindless.IsValid())
-    {
-        Log.Error("AssetSystem: texture '{}' has no bindless slot; using neutral default", ref.Path);
-        Textures->Release(handle);
-        return;
-    }
-
-    outIndex = bindless.Value;
-    // LoadTexture already incremented the refcount -- wrap without attaching.
-    owned.emplace_back(Textures, handle, TextureCacheHandle::NoAttachTag{});
-}

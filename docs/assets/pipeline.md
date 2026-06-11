@@ -660,6 +660,46 @@ loads, refcounts, and releases — the data outlives the toy shading); no
 cache level (component-trait release was already tested; the new link —
 material frees texture — is what the new tests pin).
 
+## Stage 2 status (2026-06-11)
+
+Landed, test-verified (719 tests green; 12 new in
+`test/core/AssetLoaderTests.cpp`; CubeDemo verified unchanged on the
+recomposed path):
+
+- `core/assets/AssetSource.h` — the Decision I byte seam: `IAssetSource`,
+  `FileAssetSource` (the v1 open-file implementation), and
+  `ReadAssetBytes(record)` resolving `FilePath` with virtual-path fallback.
+  Tests drive loaders through a `MemoryAssetSource` — no filesystem, no
+  threads.
+- `core/assets/AssetLoader.h` — the Decision C contract: `AssetStaging`
+  (record + type-erased `std::any` payload + error string), `IAssetLoader`
+  with the `LoadStaged` (task-thread, pure, errors-not-logs) / `Commit`
+  (owner-thread, logs) split. Each loader also exposes a typed
+  `CommitTyped` returning its handle; the virtual `Commit` wraps it for
+  the heterogeneous driver Stage 3 needs.
+- Three implementations: `StaticMeshAssetLoader` (payload `StaticMeshData`),
+  `TextureAssetLoader` (payload `Image`; the srgb parameter lives on a typed
+  overload, and the generic driver-facing overload assumes sRGB until
+  `.stex` usage tags), and `MaterialAssetLoader` (payload
+  `MaterialDescription`; slot resolution and the Blend warning moved here
+  from `AssetSystem`). Materials are the first payload that references other
+  assets — its commit loads textures through the front door, which the
+  manifest path will have pre-staged (Decision O said this shape recurs).
+- `AssetSystem` File branches are now literally dedup-check + `LoadStaged` +
+  `CommitTyped` back-to-back — the sync path *is* the async path's two
+  halves on one thread. `StaticMeshFileLoader` left `AssetSystem`; it lives
+  inside the mesh loader now.
+- `core/assets/AssetInFlightTable.h` — owner-thread coalescing bookkeeping
+  (`Begin` → Started/Joined, `Finish` → requester count for retains).
+  Built and tested standalone; deliberately not wired into `AssetSystem`,
+  because the synchronous path has no in-flight window — Stage 3's
+  manifest-driven loads are its first consumer.
+- Gate honesty: mesh and texture *commit* halves need a GPU, so the
+  zero-thread suite covers their stage halves (including malformed-bytes
+  failures and a payload-type-mismatch contract test) plus clean null-cache
+  commit failure; the material loader round-trips fully headless. Sync
+  behavior is pinned by the Stage 1 tests passing unchanged.
+
 ## Product input record (2026-06-11)
 
 The original open questions were answered the day the plan was written:

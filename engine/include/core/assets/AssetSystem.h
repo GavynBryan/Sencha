@@ -1,7 +1,10 @@
 #pragma once
 
-#include <assets/static_mesh/StaticMeshLoader.h>
+#include <assets/material/MaterialAssetLoader.h>
+#include <assets/static_mesh/StaticMeshAssetLoader.h>
+#include <assets/texture/TextureAssetLoader.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetSource.h>
 #include <core/logging/Logger.h>
 #include <render/Material.h>
 #include <render/TextureHandle.h>
@@ -9,13 +12,21 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <string_view>
-#include <vector>
 
 class MaterialCache;
 class LoggingProvider;
 class StaticMeshCache;
 class TextureCache;
 
+//=============================================================================
+// AssetSystem
+//
+// The asset front door. Load* resolves a virtual path through the registry
+// and composes the type's staged loader (docs/assets/pipeline.md, Decision
+// C): dedup check, LoadStaged, CommitTyped — back-to-back on the owner
+// thread here; split across the async lane by the manifest-driven zone path
+// (Stage 3). One code path, two schedulings.
+//=============================================================================
 class AssetSystem
 {
 public:
@@ -47,19 +58,14 @@ public:
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
 private:
-    // Resolves one material texture slot: loads the texture, writes its
-    // bindless index into `outIndex`, and appends the owning reference. An
-    // empty ref or a failed load leaves `outIndex` at the slot's neutral
-    // default (UINT32_MAX).
-    void ResolveMaterialTextureSlot(const AssetRef& ref,
-                                    bool srgb,
-                                    uint32_t& outIndex,
-                                    std::vector<TextureCacheHandle>& owned);
-
     Logger& Log;
     AssetRegistry& Registry;
     StaticMeshCache* StaticMeshes = nullptr;
     MaterialCache* Materials = nullptr;
     TextureCache* Textures = nullptr;
-    StaticMeshLoader StaticMeshFileLoader;
+
+    FileAssetSource Source;
+    StaticMeshAssetLoader MeshLoader;
+    TextureAssetLoader TexLoader;
+    MaterialAssetLoader MatLoader;
 };
