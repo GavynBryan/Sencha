@@ -7,6 +7,8 @@
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
+#include <cstdint>
+
 // Per-frame uniform data uploaded to set 0, binding 0 each draw call.
 struct MeshFrameUniforms
 {
@@ -14,11 +16,12 @@ struct MeshFrameUniforms
     Vec4 ViewPositionTime;
 };
 
-// Per-draw push constants: world matrix and base color.
+// Per-draw push constants: world matrix and base-color material inputs.
 struct MeshPushConstants
 {
     Mat4 World;
     Vec4 BaseColor;
+    uint32_t BaseColorTextureIndex = UINT32_MAX;
 };
 
 //=============================================================================

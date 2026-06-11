@@ -12,6 +12,10 @@
 #include <cstddef>
 #include <cstring>
 
+static_assert(offsetof(MeshPushConstants, World) == 0);
+static_assert(offsetof(MeshPushConstants, BaseColor) == 64);
+static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 80);
+
 MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      StaticMeshCache& meshes,
                                      MaterialCache& materials,
@@ -111,6 +115,9 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
     VkDescriptorSet frameSet = Descriptors->GetFrameSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             0, 1, &frameSet, 1, &dynamicOffset);
+    VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
+    vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
+                            1, 1, &bindlessSet, 0, nullptr);
 
     for (const RenderQueueItem& item : Queue->Opaque())
     {
@@ -129,6 +136,7 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         MeshPushConstants push{};
         push.World = item.WorldMatrix.Transposed();
         push.BaseColor = material->BaseColor;
+        push.BaseColorTextureIndex = material->BaseColorTextureIndex;
 
         vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
         vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);

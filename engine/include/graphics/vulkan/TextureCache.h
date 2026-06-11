@@ -1,6 +1,7 @@
 #pragma once
 
 #include <render/Image.h>
+#include <render/TextureData.h>
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/handle/LifetimeHandle.h>
@@ -84,6 +85,14 @@ public:
     [[nodiscard]] TextureHandle CreateFromImage(std::string_view name,
                                                 const Image& image,
                                                 const SamplerDesc& sampler = {});
+
+    // Cooked-texture upload (docs/assets/pipeline.md, Decisions E/L): takes
+    // the format-tagged, mip-tabled TextureData as-is — explicit mip chain,
+    // block-compressed formats included; the runtime never generates mips
+    // for cooked content. Same name-dedup semantics as CreateFromImage.
+    [[nodiscard]] TextureHandle CreateFromTextureData(std::string_view name,
+                                                      const TextureData& texture,
+                                                      const SamplerDesc& sampler = {});
 
     // Returns the handle registered under `name` without affecting refcounts,
     // or an invalid handle if none exists.

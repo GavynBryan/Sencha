@@ -443,9 +443,9 @@ nothing crashes, the warning is the to-do list.
 
 **Runtime `Material`** grows one descriptor index per slot (same
 `UINT32_MAX` = neutral convention as today); the bindless array already has
-the headroom. The current lambert shader keeps consuming base color only —
-unknown slots ride the asset and are ignored by the shader, which is
-precisely the point: the data outlives the toy shading.
+the headroom. The current lambert shader consumes the base-color factor and
+texture only; normal/ORM/emissive slots ride the asset and are ignored by
+the shader, which is precisely the point: the data outlives the toy shading.
 
 **Not decided here:** the PBR shading implementation, light culling, and
 everything else on the render ladder — only what the bytes look like.
@@ -623,8 +623,8 @@ Landed, test-verified (707 tests green; 13 new in
 
 - `render/Material.h` — the runtime material is the full Decision L PBR
   model: four descriptor-index slots (`UINT32_MAX` = neutral), factor
-  fields, `MaterialAlphaMode` + cutoff. The forward shader still consumes
-  `BaseColor` only, as Decision L specifies.
+  fields, `MaterialAlphaMode` + cutoff. The forward shader consumes the
+  base-color factor and texture only, as Decision L specifies.
 - `assets/material/MaterialFormat.h` + `MaterialLoader.{h,cpp}` — the
   `.smat` JSON parser: pure functions (no logging, no engine state),
   full Decision L schema, **unknown keys are errors** (a typo that silently
@@ -653,12 +653,11 @@ Landed, test-verified (707 tests green; 13 new in
   (Decision M). Verified end to end: scan registers 5 records, the scene
   loads through `.smesh` + `.smat` + PNG with zero errors under llvmpipe.
 
-Deliberately not done, with reasons: no shader sampling of the loaded
-texture (Decision L keeps the lambert shader base-color-only; the texture
-loads, refcounts, and releases — the data outlives the toy shading); no
-`.stex` (Stage 4); the zone-level release-chain assertion is covered at
-cache level (component-trait release was already tested; the new link —
-material frees texture — is what the new tests pin).
+Deliberately not done, with reasons: no `.stex` yet (Stage 4); no
+normal/ORM/emissive shader use or PBR lighting (the render ladder owns
+those). The zone-level release-chain assertion is covered at cache level
+(component-trait release was already tested; the new link — material frees
+texture — is what the new tests pin).
 
 ## Stage 2 status (2026-06-11)
 
@@ -807,6 +806,53 @@ Test-verified (753 tests green; 22 new across
   both recook; corrupt index recooks everything; escape and failure paths
   pinned. No consumer is wired yet — CubeDemo still scans runtime formats
   directly; the first real importer (4b) flips it.
+
+### Stage 4b — `.stex` + texture cook (landed)
+
+Test-verified (764 tests green; 11 new in `test/core/TextureAssetTests.cpp`,
+TSan-clean), Decisions E and L made real:
+
+- `render/TextureData.{h,cpp}` — the widened upload seam: format-tagged,
+  usage-tagged, mip-tabled CPU texture, backend-free. BC4/BC5/BC7(/sRGB)
+  are first-class alongside RGBA8 from v1, and `ValidateTextureData` pins
+  the structural invariants (contiguous mips, halving extents, exact blob
+  coverage) so a malformed container is rejected, never patched.
+- `assets/texture/TextureFormat.h` + `TextureLoader` + `TextureSerializer`
+  — the `.stex` container and its pure read/write halves. The BC fixture
+  rides the suite from this first commit: hand-built BC7_SRGB and BC5
+  chains round-trip the serializer, so the compressed path can never rot
+  into a de-facto RGBA8 assumption.
+- `assets/cook/TextureCook.{h,cpp}` (SENCHA_ENABLE_COOK only) — the cook
+  owns mip generation and BC compression; the runtime never generates mips
+  for cooked content. Downsampling is colorspace-correct (the test pins
+  linear-space averaging: a black/white checker mips to ~188, not the naive
+  128) and normal maps renormalize per level (pinned: averaged tilted
+  normals snap back to unit length). Usage comes from the
+  authoring-convention stem suffix (`_n`, `_orm`, `_emissive`, `_mask`), and
+  maps to the Decision L format table: BaseColor/Emissive -> BC7_SRGB,
+  Normal -> BC5, ORM/LinearData -> BC7. `PngTextureImporter` emits the
+  artifact under the **source's virtual path** — authored references never
+  churn when the cooked format evolves.
+- Runtime consumption: `VulkanImageService::UploadMips` (one staging pass,
+  per-level copy regions, explicit chains only — it rejects GenerateMips
+  images), `TextureCache::CreateFromTextureData` with the BC VkFormat
+  mapping, and `TextureAssetLoader` now **sniffs container magic instead of
+  trusting extensions** — a cooked artifact keeps its `.png` path while
+  serving `.stex` bytes. The `srgb` parameter now applies only to loose
+  image bytes; cooked textures carry their own tags.
+- The scanner's Stage 1 `.png → Texture` mapping retired on schedule:
+  source formats reach the registry only through import-on-demand. CubeDemo
+  runs `ImportAssetsOnDemand` (PNG importer registered) before the scan,
+  under `SENCHA_ENABLE_COOK`.
+- Verified end to end under llvmpipe: cold run cooks the checker PNG into
+  `.cooked/textures/dev/checker.png.stex` and streams the 5-mip chain
+  through the async lane and `UploadMips` with zero errors; warm run serves
+  from the cooked cache without invoking the importer.
+- Known limits, recorded: LinearData currently cooks to BC7 because PNG
+  decode always yields RGBA; the "BC4 by channel count" branch waits for a
+  source format or metadata that preserves channel count. The renderer's
+  4b validation slice samples base color only; normal/ORM/emissive sampling
+  and PBR lighting remain render-ladder work.
 
 
 

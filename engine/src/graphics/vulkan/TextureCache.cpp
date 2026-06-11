@@ -18,6 +18,20 @@ namespace
         }
         return VK_FORMAT_R8G8B8A8_SRGB;
     }
+
+    VkFormat ToVkFormat(TexturePixelFormat fmt)
+    {
+        switch (fmt)
+        {
+            case TexturePixelFormat::RGBA8:      return VK_FORMAT_R8G8B8A8_UNORM;
+            case TexturePixelFormat::RGBA8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+            case TexturePixelFormat::BC4:        return VK_FORMAT_BC4_UNORM_BLOCK;
+            case TexturePixelFormat::BC5:        return VK_FORMAT_BC5_UNORM_BLOCK;
+            case TexturePixelFormat::BC7:        return VK_FORMAT_BC7_UNORM_BLOCK;
+            case TexturePixelFormat::BC7_SRGB:   return VK_FORMAT_BC7_SRGB_BLOCK;
+            default:                             return VK_FORMAT_UNDEFINED;
+        }
+    }
 } // namespace
 
 TextureCache::TextureCache(LoggingProvider& logging,
@@ -102,6 +116,80 @@ TextureHandle TextureCache::CreateFromImage(std::string_view name,
         return {};
 
     return AllocNamedHandle(name, std::move(entry));
+}
+
+TextureHandle TextureCache::CreateFromTextureData(std::string_view name,
+                                                  const TextureData& texture,
+                                                  const SamplerDesc& sampler)
+{
+    if (TextureHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
+        return existing;
+
+    if (!ValidateTextureData(texture))
+    {
+        Log.Error("TextureCache: structurally invalid TextureData for '{}'", name);
+        return {};
+    }
+
+    const VkFormat format = ToVkFormat(texture.Format);
+    if (format == VK_FORMAT_UNDEFINED)
+    {
+        Log.Error("TextureCache: unsupported cooked format {} for '{}'",
+                  static_cast<uint32_t>(texture.Format), name);
+        return {};
+    }
+
+    ImageCreateInfo info;
+    info.Format = format;
+    info.Extent = { texture.Width, texture.Height };
+    info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info.MipLevels = static_cast<uint32_t>(texture.Mips.size());
+    info.GenerateMips = false;
+    const std::string debugName(name);
+    info.DebugName = debugName.c_str();
+
+    ImageHandle gpuImage = Images->Create(info);
+    if (!gpuImage.IsValid())
+    {
+        Log.Error("TextureCache: VulkanImageService::Create failed for '{}'", name);
+        return {};
+    }
+
+    std::vector<VulkanImageService::MipUploadRegion> regions;
+    regions.reserve(texture.Mips.size());
+    for (uint32_t i = 0; i < texture.Mips.size(); ++i)
+    {
+        const TextureMipLevel& mip = texture.Mips[i];
+        regions.push_back(VulkanImageService::MipUploadRegion{
+            .MipLevel = i,
+            .Width = mip.Width,
+            .Height = mip.Height,
+            .Offset = static_cast<VkDeviceSize>(mip.Offset),
+        });
+    }
+
+    if (!Images->UploadMips(gpuImage, texture.Blob.data(),
+                            static_cast<VkDeviceSize>(texture.Blob.size()), regions))
+    {
+        Log.Error("TextureCache: mip-chain upload failed for '{}'", name);
+        Images->Destroy(gpuImage);
+        return {};
+    }
+
+    VkSampler vkSampler = Samplers->Get(sampler);
+    BindlessImageIndex bindless = Descriptors->RegisterSampledImage(gpuImage, vkSampler);
+    if (!bindless.IsValid())
+    {
+        Log.Error("TextureCache: bindless descriptor slot exhausted for '{}'", name);
+        Images->Destroy(gpuImage);
+        return {};
+    }
+
+    TextureEntry entry;
+    entry.GpuImage = gpuImage;
+    entry.Bindless = bindless;
+    entry.Extent = { texture.Width, texture.Height };
+    return name.empty() ? AllocHandle(std::move(entry)) : AllocNamedHandle(name, std::move(entry));
 }
 
 TextureHandle TextureCache::Find(std::string_view name) const

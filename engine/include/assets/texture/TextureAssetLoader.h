@@ -11,8 +11,8 @@ class TextureCache;
 // TextureAssetLoader
 //
 // Staged-load contract for textures (docs/assets/pipeline.md, Decision C).
-// Stage: bytes -> decoded CPU Image. Commit: GPU upload + bindless slot via
-// TextureCache. Payload type: Image.
+// Stage: bytes -> decoded CPU Image for loose image data, or TextureData for
+// cooked .stex. Commit: GPU upload + bindless slot via TextureCache.
 //
 // The srgb parameter exists only for the Stage 1 loose-PNG mapping, where
 // usage is unknowable from the bytes; the generic LoadStaged assumes sRGB

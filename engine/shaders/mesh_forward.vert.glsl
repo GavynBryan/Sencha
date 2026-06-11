@@ -14,6 +14,7 @@ layout(push_constant) uniform MeshPush
 {
     mat4 World;
     vec4 BaseColor;
+    uint BaseColorTextureIndex;
 } pushData;
 
 layout(location = 0) out vec3 outWorldNormal;

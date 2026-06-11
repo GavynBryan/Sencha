@@ -379,6 +379,131 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
     return ok;
 }
 
+bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDeviceSize size,
+                                    std::span<const MipUploadRegion> regions)
+{
+    if (data == nullptr || size == 0 || regions.empty()) return false;
+
+    auto* entry = Resolve(handle);
+    if (entry == nullptr)
+    {
+        Log.Error("UploadMips: invalid ImageHandle");
+        return false;
+    }
+
+    if (entry->GenerateMips)
+    {
+        Log.Error("UploadMips: image was created with GenerateMips; cooked chains are explicit");
+        return false;
+    }
+
+    for (const MipUploadRegion& region : regions)
+    {
+        if (region.MipLevel >= entry->MipLevels)
+        {
+            Log.Error("UploadMips: region mip {} out of range (image has {})",
+                      region.MipLevel, entry->MipLevels);
+            return false;
+        }
+        if (region.Offset >= size)
+        {
+            Log.Error("UploadMips: region offset {} beyond blob size {}",
+                      static_cast<uint64_t>(region.Offset), static_cast<uint64_t>(size));
+            return false;
+        }
+    }
+
+    // Staging buffer holding the whole packed chain.
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+                    | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer staging = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    VmaAllocationInfo stagingResult{};
+    VkResult result = vmaCreateBuffer(
+        Allocator, &bufferInfo, &allocInfo, &staging, &stagingAllocation, &stagingResult);
+    if (result != VK_SUCCESS)
+    {
+        Log.Error("mip upload: staging vmaCreateBuffer failed ({})", static_cast<int>(result));
+        return false;
+    }
+
+    std::memcpy(stagingResult.pMappedData, data, static_cast<size_t>(size));
+    vmaFlushAllocation(Allocator, stagingAllocation, 0, size);
+
+    VkCommandBuffer cmd = UploadCtx->Begin();
+    if (cmd == VK_NULL_HANDLE)
+    {
+        vmaDestroyBuffer(Allocator, staging, stagingAllocation);
+        return false;
+    }
+
+    // UNDEFINED -> TRANSFER_DST across the whole chain.
+    {
+        VulkanBarriers::ImageTransition t{};
+        t.Image = entry->Image;
+        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        t.NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        t.DstStage = VK_PIPELINE_STAGE_2_COPY_BIT;
+        t.SrcAccess = 0;
+        t.DstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        t.BaseMipLevel = 0;
+        t.LevelCount = entry->MipLevels;
+        VulkanBarriers::TransitionImage(cmd, t);
+    }
+
+    std::vector<VkBufferImageCopy> copies;
+    copies.reserve(regions.size());
+    for (const MipUploadRegion& region : regions)
+    {
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = region.Offset;
+        copy.bufferRowLength = 0;
+        copy.bufferImageHeight = 0;
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy.imageSubresource.mipLevel = region.MipLevel;
+        copy.imageSubresource.baseArrayLayer = 0;
+        copy.imageSubresource.layerCount = 1;
+        copy.imageOffset = { 0, 0, 0 };
+        copy.imageExtent = { region.Width, region.Height, 1 };
+        copies.push_back(copy);
+    }
+
+    vkCmdCopyBufferToImage(
+        cmd, staging, entry->Image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        static_cast<uint32_t>(copies.size()), copies.data());
+
+    {
+        VulkanBarriers::ImageTransition t{};
+        t.Image = entry->Image;
+        t.OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        t.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        t.SrcStage = VK_PIPELINE_STAGE_2_COPY_BIT;
+        t.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        t.SrcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        t.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        t.BaseMipLevel = 0;
+        t.LevelCount = entry->MipLevels;
+        VulkanBarriers::TransitionImage(cmd, t);
+    }
+
+    const bool ok = UploadCtx->Submit(cmd);
+    vmaDestroyBuffer(Allocator, staging, stagingAllocation);
+    return ok;
+}
+
 void VulkanImageService::RecordMipChain(VkCommandBuffer cmd, ImageEntry& entry)
 {
     // Base mip is currently TRANSFER_DST (from the copy above). Transition it

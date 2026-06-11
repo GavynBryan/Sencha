@@ -1,9 +1,12 @@
 #include <assets/texture/TextureAssetLoader.h>
 
+#include <assets/texture/TextureFormat.h>
+#include <assets/texture/TextureLoader.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/Image.h>
 #include <render/ImageLoader.h>
+#include <render/TextureData.h>
 
 #include <format>
 #include <optional>
@@ -34,6 +37,25 @@ AssetStaging TextureAssetLoader::LoadStaged(const AssetRecord& record,
         return staging;
     }
 
+    // Sniff the container magic rather than trusting the extension: a cooked
+    // artifact keeps its source's virtual path (Decision B), so the path may
+    // say ".png" while the bytes are a cooked .stex. The .stex carries its
+    // own format and usage tags — `srgb` applies only to loose image bytes.
+    if (LooksLikeStex(bytes.data(), bytes.size()))
+    {
+        TextureData texture;
+        std::string stexError;
+        if (!LoadStexFromBytes(bytes, texture, &stexError))
+        {
+            staging.Error = std::format("failed to parse .stex for '{}': {}",
+                                        record.Path, stexError);
+            return staging;
+        }
+
+        staging.Payload = std::move(texture);
+        return staging;
+    }
+
     std::optional<Image> image = LoadImageFromMemory(
         reinterpret_cast<const uint8_t*>(bytes.data()), static_cast<int>(bytes.size()), srgb);
     if (!image)
@@ -60,21 +82,28 @@ TextureHandle TextureAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    Image* image = std::any_cast<Image>(&staged.Payload);
-    if (image == nullptr)
-    {
-        Log.Error("TextureAssetLoader: staging payload for '{}' is not an Image",
-                  staged.Record.Path);
-        return {};
-    }
-
     if (!Cache)
     {
         Log.Error("TextureAssetLoader: missing TextureCache for '{}'", staged.Record.Path);
         return {};
     }
 
-    TextureHandle handle = Cache->CreateFromImage(staged.Record.Path, *image);
+    TextureHandle handle{};
+    if (TextureData* texture = std::any_cast<TextureData>(&staged.Payload))
+    {
+        handle = Cache->CreateFromTextureData(staged.Record.Path, *texture);
+    }
+    else if (Image* image = std::any_cast<Image>(&staged.Payload))
+    {
+        handle = Cache->CreateFromImage(staged.Record.Path, *image);
+    }
+    else
+    {
+        Log.Error("TextureAssetLoader: staging payload for '{}' is neither TextureData nor Image",
+                  staged.Record.Path);
+        return {};
+    }
+
     if (!handle.IsValid())
         Log.Error("TextureAssetLoader: failed to upload texture '{}'", staged.Record.Path);
 

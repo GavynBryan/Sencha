@@ -119,6 +119,29 @@ target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
+
+    # BC block encoders for the texture cook (docs/assets/pipeline.md,
+    # Decisions E/L): bc7enc (BC7) + rgbcx (BC4/BC5) + bc7decomp (tests
+    # decode-verify the encoder). MIT, single-purpose — the stb precedent.
+    # Cook-only: never rides in a shipping binary. Populated without
+    # add_subdirectory because the repo's own CMakeLists builds a test app.
+    # bc7enc.c is plain C — the only C in the tree, hence the enable here.
+    enable_language(C)
+    include(FetchContent)
+    FetchContent_Declare(
+        bc7enc
+        GIT_REPOSITORY https://github.com/richgel999/bc7enc.git
+        GIT_TAG        f66c2e489b07138f2673a2fb3d27c1aa1d565c48
+    )
+    FetchContent_GetProperties(bc7enc)
+    if(NOT bc7enc_POPULATED)
+        FetchContent_Populate(bc7enc)
+    endif()
+    target_sources(sencha_engine PRIVATE
+        "${bc7enc_SOURCE_DIR}/bc7enc.c"
+        "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
+    )
+    target_include_directories(sencha_engine PUBLIC "${bc7enc_SOURCE_DIR}")
 endif()
 
 if(WIN32)

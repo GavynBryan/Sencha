@@ -21,6 +21,10 @@ struct VulkanBootstrapPolicy
         // Sencha always requires anisotropic sampling so VulkanSamplerCache
         // callers can opt into it without a feature-enable dance.
         DeviceFeatures.samplerAnisotropy = VK_TRUE;
+        // Cooked textures are BC-compressed (docs/assets/pipeline.md,
+        // Decision L); BC is universal on desktop hardware, which is the
+        // only target the Vulkan backend serves.
+        DeviceFeatures.textureCompressionBC = VK_TRUE;
     }
 
     std::string AppName = "Sencha";

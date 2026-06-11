@@ -6,6 +6,10 @@
 #include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
+#ifdef SENCHA_ENABLE_COOK
+#include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/TextureCook.h>
+#endif
 #include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
@@ -103,6 +107,20 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     InitSceneSerializer();
+
+#ifdef SENCHA_ENABLE_COOK
+    // Import-on-demand (docs/assets/pipeline.md, Decision B): cook source
+    // formats (the checker PNG → usage-tagged .stex) into .cooked/ and
+    // register the artifacts under their virtual paths. Runs before the
+    // scan; the scanner only knows runtime formats and skips .cooked/.
+    {
+        PngTextureImporter pngImporter;
+        AssetImporterRegistry importers;
+        importers.Register(pngImporter);
+        ImportAssetsOnDemand("assets", importers, runtimeAssets.Registry, logging);
+    }
+#endif
+
     ScanAssetsDirectory("assets", runtimeAssets.Registry);
 
     // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and

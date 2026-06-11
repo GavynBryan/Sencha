@@ -53,7 +53,12 @@ struct CookedSourceEntry
     std::vector<CookedArtifact> Artifacts;
 };
 
-inline constexpr uint32_t kCookedCacheIndexVersion = 1;
+// Bumping this is the blunt cook-invalidation knob: an old index is a cold
+// cache, so every source recooks. Version 2: texture cook output changed
+// from RGBA8 to BC-compressed (Decision L format table). A per-importer
+// cook version is the finer-grained eventual replacement if bumps become
+// frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 2;
 
 class CookedCacheIndex
 {
