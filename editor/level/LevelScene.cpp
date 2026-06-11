@@ -1,6 +1,6 @@
 #include "LevelScene.h"
 
-#include <world/transform/TransformHierarchyService.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 
@@ -11,13 +11,13 @@ LevelScene::LevelScene(Registry& registry)
 
 EntityId LevelScene::CreateBrush(Vec3d position, Vec3d halfExtents)
 {
-    EntityId entity = Registry_.Entities.Create();
-    Registry_.Resources.Get<TransformHierarchyService>().Register(entity);
-
     Transform3f transform = Transform3f::Identity();
     transform.Position = position;
-    Registry_.Components.Get<TransformStore<Transform3f>>().Add(entity, transform);
-    Registry_.Components.Get<BrushComponentStore>().Add(entity, BrushComponent{ .HalfExtents = halfExtents });
+
+    World& world = Registry_.Components;
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, LocalTransform{ transform });
+    world.AddComponent(entity, BrushComponent{ .HalfExtents = halfExtents });
 
     Entities.push_back(entity);
     return entity;
@@ -25,13 +25,13 @@ EntityId LevelScene::CreateBrush(Vec3d position, Vec3d halfExtents)
 
 EntityId LevelScene::CreateCamera(Vec3d position)
 {
-    EntityId entity = Registry_.Entities.Create();
-    Registry_.Resources.Get<TransformHierarchyService>().Register(entity);
-
     Transform3f transform = Transform3f::Identity();
     transform.Position = position;
-    Registry_.Components.Get<TransformStore<Transform3f>>().Add(entity, transform);
-    Registry_.Components.Get<CameraStore>().Add(entity, CameraComponent{});
+
+    World& world = Registry_.Components;
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, LocalTransform{ transform });
+    world.AddComponent(entity, CameraComponent{});
 
     Entities.push_back(entity);
     return entity;
@@ -39,38 +39,29 @@ EntityId LevelScene::CreateCamera(Vec3d position)
 
 void LevelScene::DestroyEntity(EntityId entity)
 {
-    if (!Registry_.Entities.IsAlive(entity))
+    World& world = Registry_.Components;
+    if (!world.IsAlive(entity))
         return;
 
-    if (auto* cameras = Registry_.Components.TryGet<CameraStore>())
-        cameras->Remove(entity);
-    if (auto* brushes = Registry_.Components.TryGet<BrushComponentStore>())
-        brushes->Remove(entity);
-    if (auto* transforms = Registry_.Components.TryGet<TransformStore<Transform3f>>())
-        transforms->Remove(entity);
-    if (auto* hierarchy = Registry_.Resources.TryGet<TransformHierarchyService>())
-        hierarchy->Unregister(entity);
-
-    Registry_.Entities.Destroy(entity);
+    world.DestroyEntity(entity);
     std::erase(Entities, entity);
 }
 
 void LevelScene::SetTransform(EntityId entity, const Transform3f& transform)
 {
-    if (auto* transforms = Registry_.Components.TryGet<TransformStore<Transform3f>>())
-        transforms->SetLocal(entity, transform);
+    if (LocalTransform* local = Registry_.Components.TryGet<LocalTransform>(entity))
+        local->Value = transform;
 }
 
 void LevelScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
 {
-    if (auto* brushes = Registry_.Components.TryGet<BrushComponentStore>())
-        if (BrushComponent* brush = brushes->TryGet(entity))
-            brush->HalfExtents = halfExtents;
+    if (BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
+        brush->HalfExtents = halfExtents;
 }
 
 bool LevelScene::HasEntity(EntityId entity) const
 {
-    return Registry_.Entities.IsAlive(entity);
+    return Registry_.Components.IsAlive(entity);
 }
 
 uint32_t LevelScene::GetEntityCount() const
@@ -85,20 +76,21 @@ std::span<const EntityId> LevelScene::GetAllEntities() const
 
 const Transform3f* LevelScene::TryGetTransform(EntityId entity) const
 {
-    const auto* transforms = Registry_.Components.TryGet<TransformStore<Transform3f>>();
-    return transforms != nullptr ? transforms->TryGetLocal(entity) : nullptr;
+    const World& world = Registry_.Components;
+    const LocalTransform* local = world.TryGet<LocalTransform>(entity);
+    return local != nullptr ? &local->Value : nullptr;
 }
 
 const BrushComponent* LevelScene::TryGetBrush(EntityId entity) const
 {
-    const auto* brushes = Registry_.Components.TryGet<BrushComponentStore>();
-    return brushes != nullptr ? brushes->TryGet(entity) : nullptr;
+    const World& world = Registry_.Components;
+    return world.TryGet<BrushComponent>(entity);
 }
 
 const CameraComponent* LevelScene::TryGetCamera(EntityId entity) const
 {
-    const auto* cameras = Registry_.Components.TryGet<CameraStore>();
-    return cameras != nullptr ? cameras->TryGet(entity) : nullptr;
+    const World& world = Registry_.Components;
+    return world.TryGet<CameraComponent>(entity);
 }
 
 Registry& LevelScene::GetRegistry()

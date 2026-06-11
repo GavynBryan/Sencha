@@ -1,8 +1,7 @@
 #include "LevelDocument.h"
 
 #include <render/Camera.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
+#include <world/transform/TransformComponents.h>
 
 LevelDocument::LevelDocument()
     : Registry_()
@@ -12,12 +11,13 @@ LevelDocument::LevelDocument()
     Registry_.Kind = RegistryKind::Transient;
     Registry_.Zone = ZoneId::Invalid();
 
-    auto& order = Registry_.Resources.Register<TransformPropagationOrderService>();
-    Registry_.Resources.Register<TransformHierarchyService>();
     Registry_.Resources.Register<ActiveCameraService>();
-    Registry_.Components.Register<TransformStore<Transform3f>>(order);
-    Registry_.Components.Register<BrushComponentStore>();
-    Registry_.Components.Register<CameraStore>();
+
+    // Component registration must happen before any entity is created.
+    World& world = Registry_.Components;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<BrushComponent>();
+    world.RegisterComponent<CameraComponent>();
 }
 
 std::string_view LevelDocument::GetDisplayName() const

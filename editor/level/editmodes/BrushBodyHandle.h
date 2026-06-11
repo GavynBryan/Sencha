@@ -3,7 +3,7 @@
 #include "../../editmodes/handles/IHandle.h"
 #include "../../level/LevelScene.h"
 
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 
 class LevelDocument;
 

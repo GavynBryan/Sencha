@@ -2,13 +2,11 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/EntityId.h>
 #include <math/MathSchemas.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
-#include <world/SparseSetStore.h>
-#include <world/entity/EntityId.h>
 #include <world/registry/Registry.h>
-#include <world/transform/TransformStore.h>
 
 #include <span>
 #include <string_view>
@@ -18,8 +16,6 @@ struct BrushComponent
 {
     Vec3d HalfExtents = { 0.5, 0.5, 0.5 };
 };
-
-using BrushComponentStore = SparseSetStore<BrushComponent>;
 
 template <>
 struct TypeSchema<BrushComponent>

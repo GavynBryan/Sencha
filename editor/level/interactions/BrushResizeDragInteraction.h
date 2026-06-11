@@ -5,7 +5,7 @@
 #include "../../level/LevelScene.h"
 #include "../../selection/SelectableRef.h"
 
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 
 class LevelDocument;
 
