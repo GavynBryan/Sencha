@@ -121,8 +121,10 @@ public:
         Commands.push_back(std::move(cmd));
     }
 
-    // Creates an entity with no initial components (empty archetype).
-    // To create with components, use CreateEntity() then queue AddComponent calls.
+    // Creates an entity with no initial components (empty archetype) at flush.
+    // This does not expose the created EntityId. For fully initialized spawns,
+    // create directly outside query scope or use a higher-level spawn request
+    // that is realized at a safe scheduler boundary.
     void CreateEntity()
     {
         Command cmd;

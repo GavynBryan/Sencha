@@ -37,7 +37,7 @@ void RenderExtractionSystem::Extract(const World& world,
     // Single chunk-level pass: Read<WorldTransform> + Read<StaticMeshComponent>.
     // Frustum culling is inlined — no separate post-pass required.
     // Items are copied into RenderQueueItem (not pointer-into-chunk) per the
-    // MigrationPlan Phase 3 decision: copied data decouples extraction from
+    // ECS migration decision: copied data decouples extraction from
     // submission and tolerates any structural change between extract and draw.
     Query<Read<WorldTransform>, Read<StaticMeshComponent>> query(const_cast<World&>(world));
     query.ForEachChunk([&](auto& view)
@@ -60,7 +60,7 @@ void RenderExtractionSystem::Extract(const World& world,
 
             // Inline frustum cull — skip the item entirely if it's outside
             // the view frustum. This replaces the separate FrustumCullingSystem
-            // post-pass (see MigrationPlan.md Phase 3, point 3).
+            // post-pass from the pre-archetype render path.
             if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
                 continue;
 

@@ -32,6 +32,10 @@ Hook presence is detected via C++20 concepts — you do not need to set boolean 
 Define `OnAdd` if the component has add behavior; define `OnRemove` if it has remove
 behavior. You can define one without the other.
 
+Current implementation note: hooks dispatch only for non-empty component types.
+Empty tag components have no stored object pointer, so they should not rely on
+`OnAdd` or `OnRemove`.
+
 ---
 
 ## Adding hooks
@@ -78,10 +82,10 @@ static void OnRemove(const T& component, World& world, EntityId entity);
 
 | Operation                               | Hook fired         | Timing                          |
 |-----------------------------------------|--------------------|----------------------------------|
-| `world.AddComponent<T>(entity, value)`  | `OnAdd`            | Immediately, inline              |
-| `world.RemoveComponent<T>(entity)`      | `OnRemove`         | Before the entity moves archetype|
-| `cmds.AddComponent<T>(entity, value)`   | `OnAdd`            | During `CommandBuffer::Flush`    |
-| `cmds.RemoveComponent<T>(entity)`       | `OnRemove`         | During `CommandBuffer::Flush`    |
+| `world.AddComponent<T>(entity, value)`  | `OnAdd` for non-empty T | Immediately, inline              |
+| `world.RemoveComponent<T>(entity)`      | `OnRemove` for non-empty T | Before the entity moves archetype|
+| `cmds.AddComponent<T>(entity, value)`   | `OnAdd` for non-empty T | During `CommandBuffer::Flush`    |
+| `cmds.RemoveComponent<T>(entity)`       | `OnRemove` for non-empty T | During `CommandBuffer::Flush`    |
 
 Hooks run **synchronously** at the call site (for direct mutations) or during flush (for
 command buffer operations). They execute in the order commands were recorded for
@@ -126,11 +130,11 @@ performance impact. See `docs/ecs/decisions.md` D1.5 for the batching strategy.
 ## Discovering all hooked components
 
 ```sh
-grep -r "ComponentTraits<" engine/include/ engine/src/
+rg "ComponentTraits<" engine/include engine/src
 ```
 
 By design, `ComponentTraits` specializations live near the component definition.
-`grep ComponentTraits` in the engine tree lists every component with hooks.
+`rg ComponentTraits` in the engine tree lists every component with hooks.
 
 ---
 
@@ -151,5 +155,5 @@ By design, `ComponentTraits` specializations live near the component definition.
   a system, not a hook.
 - High-frequency per-frame state. Hooks run at structural-change time, not per-frame.
 
-The rule from `docs/ecs/MigrationPlan.md` (A6, P6): hooks are synchronous, traceable,
-and minimal. They are not an observer bus.
+The rule is intentionally small: hooks are synchronous, traceable, and minimal.
+They are not an observer bus.

@@ -1,4 +1,45 @@
-# Parallel Execution Design (Jobs)
+# Sencha ECS: Jobs, Async Work, And Parallel Execution
+
+This document describes the parallel execution support that exists in the codebase
+today and the chunk-query work that remains deferred. It is no longer a phase plan
+to execute top-to-bottom.
+
+If you are wiring gameplay or engine systems, the current surfaces are:
+
+- `JobSystem` / `ThreadPoolJobSystem`: frame-lane fork/join work. The engine owns
+  one pool and exposes it as `Engine::Jobs()`.
+- `AsyncTaskQueue`: cross-frame work lane. Work runs on task threads; commit
+  callbacks run on the owner thread from `FramePhase::DrainAsyncTasks`.
+- `AsyncZoneLoader`: first consumer of the async lane. It builds detached
+  registries off-thread and attaches them during the drain phase.
+- `PropagateTransforms(...)`: serial and zone-parallel overloads. The Simulate
+  phase uses the serial overload by default because the target game shape keeps
+  only a few room-sized zones live.
+- `ForEachRegistryParallel`: helper for one-job-per-registry work over disjoint
+  registries.
+
+The important runtime knobs live in `EngineRuntimeConfig`:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `JobWorkerCount` | `-1` | `-1` auto-sizes the frame pool, `0` runs jobs inline in deterministic index order, positive values pin worker count. |
+| `AsyncTaskThreadCount` | `1` | Number of async-lane task threads. Must be at least one in engine runtime. |
+| `AsyncCommitBudgetMs` | `2.0` | Wall-time budget for the async drain phase. `0.0` means unbudgeted. The first ready commit always runs. |
+| `ZoneParallelPropagation` | `false` | Runs transform propagation one zone per job in Simulate when enabled. Off by default for room-scale workloads. |
+
+What is intentionally not available yet:
+
+- No chunk-parallel `Query::ForEachChunkParallel` in the public API.
+- No concurrent execution of multiple systems within one phase.
+- No worker-thread structural ECS mutation. Use `CommandBuffer`, and flush on the
+  main thread outside query scope.
+- No shared mutable output queues from jobs. Use per-worker buffers or explicit
+  merge slots when you add a parallel consumer.
+
+The rest of this document preserves the design rationale, measurements, and staged
+status that led to the current shape.
+
+---
 
 This document supersedes the original Phase 5 draft (preserved in git history). The
 draft had three defects this revision fixes:
@@ -17,10 +58,10 @@ draft had three defects this revision fixes:
    extraction ~0.614 ns/entity (~6 µs at 10k, the flagship use case). The plan
    parallelized the microsecond work and excluded the millisecond work.
 
-The revised plan is staged so each stage is independently shippable, and the stages
-are ordered by return-on-complexity: the substrate first, latency-hiding (async
-loading) second, structural parallelism (zones) third, chunk-level data parallelism
-last and gated on profiling.
+The executed design was staged so each stage could ship independently, ordered by
+return-on-complexity: the substrate first, latency-hiding (async loading) second,
+structural parallelism (zones) third, chunk-level data parallelism last and gated
+on profiling.
 
 ## Goals
 
@@ -39,12 +80,10 @@ last and gated on profiling.
 - No cross-system overlap (two systems running concurrently within a phase). This is
   explicitly deferred to a future stage and sketched in Appendix A so the eventual
   design is not hand-waved — but nothing below depends on it.
-- No parallel transform propagation. Parent-before-child ordering makes it a separate
-  design problem; at the time of writing it was also the only system where the win
-  would be measurable. (Since superseded: D4.1 pointer caching plus dirty-subtree
-  tracking took the steady-state sweep to ~6.6 ns/transform — verified 2026-06-11 —
-  so there is currently **no** millisecond-scale system in the engine, and this
-  non-goal costs nothing.)
+- No chunk-level or intra-zone parallel transform propagation. Parent-before-child
+  ordering makes that a separate design problem. Zone-level propagation did land
+  later because disjoint registries are an independent axis; it remains disabled
+  by default for room-scale workloads.
 - No lock-free ECS mutation from worker threads. Workers never perform structural
   changes; `CommandBuffer` remains the only mutation channel and flushes remain
   main-thread, outside parallel sections.
@@ -265,9 +304,11 @@ This stage is only profitable when multiple populated zones are live, which is a
 product question (streaming worlds, server-style simulation) — hence its position
 *after* async loading, which creates multi-zone workloads in the first place.
 
-## Decision 5: frame lane, axis 2 — chunk-level parallel queries
+## Decision 5: deferred frame lane, axis 2 — chunk-level parallel queries
 
-`Query` gains a parallel entry point; the serial surface is untouched:
+This section is a design sketch for the next consumer that clears the profiling
+gate. It is not implemented in the current public `Query` API. When it lands,
+the intended entry point is:
 
 ```cpp
 query.ForEachChunkParallel(jobs, [&](auto& view) { /* same ChunkView contract */ },

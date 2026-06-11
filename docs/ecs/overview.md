@@ -236,26 +236,21 @@ Key points:
 ```cpp
 void DeathSystem(World& world, CommandBuffer& cmds)
 {
-    Query<Read<Health>> q(world);
-    q.ForEachChunk([&cmds](auto& view)
+    std::as_const(world).ForEachComponent<Health>(
+        [&cmds](EntityId entity, const Health& health)
     {
-        const auto  health   = view.template Read<Health>();
-        const auto* entities = view.Entities();
-        for (uint32_t i = 0; i < view.Count(); ++i)
-        {
-            if (health[i].Current <= 0.f)
-                cmds.DestroyEntity(EntityId{ entities[i], 0 });
-        }
+        if (health.Current <= 0.f)
+            cmds.DestroyEntity(entity);
     });
     // cmds is flushed by the scheduler at the end of this phase.
 }
 ```
 
-> **Note on entity IDs inside ForEachChunk:** `view.Entities()` returns `EntityIndex*`
-> (the raw slot index, no generation). To reconstruct a full `EntityId` with generation
-> for use outside the query, look up through `World::GetAliveEntities()` or store the
-> `EntityId` at creation time. For `cmds.DestroyEntity` the generation is not checked
-> at record time — it is validated at flush.
+`ForEachComponent<T>` is convenient when the system needs full generational
+`EntityId`s. `ChunkView::Entities()` only returns raw `EntityIndex` values for the
+current chunk; it is useful for index-keyed caches and diagnostics, but it is not a
+full entity handle. Do not fabricate `EntityId{index, 0}` except in tests that
+explicitly know the generation is zero.
 
 ---
 

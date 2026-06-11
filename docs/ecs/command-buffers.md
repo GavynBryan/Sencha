@@ -42,8 +42,8 @@ cmds.AddComponent<TagFrozen>(entity); // tag: no value needed (default T{})
 ```
 
 The component value is copied into the buffer's payload arena at record time. The arena
-is a `std::vector<uint8_t>` that grows on demand; there are no per-command heap
-allocations.
+is a `std::vector<uint8_t>` that grows on demand. Recording does not allocate one blob
+per command; `Flush` may still allocate temporary vectors while preparing bulk runs.
 
 ### RemoveComponent\<T\>
 
@@ -66,10 +66,12 @@ If the entity is no longer alive at flush time, the command is a no-op.
 cmds.CreateEntity(); // creates an entity in the empty archetype at flush
 ```
 
-To create with initial components, record `CreateEntity()` followed by `AddComponent`
-commands for the same logical entity. Note: the new entity's `EntityId` is not available
-at record time — it is assigned during flush. If you need the id after flush, use
-`World::CreateEntity()` directly (only legal outside query scope and lifecycle hooks).
+The buffered `CreateEntity()` command does not return an `EntityId`. It is useful for
+fire-and-forget creation where another system can discover the entity later, but it is
+not the right API when the creator must immediately add components to that new entity.
+For fully initialized spawns, create directly with `World::CreateEntity()` outside query
+scope, or add a higher-level spawn queue that owns logical spawn requests and realizes
+them at a safe scheduler boundary.
 
 ---
 
@@ -162,23 +164,20 @@ The hook must not call `AddComponent<B>` itself — that would assertion-fail.
 ```cpp
 void PruneDeadEntities(World& world, CommandBuffer& cmds)
 {
-    // Read Health across all entities; queue destruction for those at zero HP.
-    Query<Read<Health>> q(world);
-    q.ForEachChunk([&cmds](auto& view)
+    // For destruction we need full generational EntityIds, so use the
+    // component convenience iterator instead of ChunkView::Entities().
+    std::as_const(world).ForEachComponent<Health>(
+        [&cmds](EntityId entity, const Health& health)
     {
-        const auto health  = view.template Read<Health>();
-        const auto indices = view.Entities();
-
-        for (uint32_t i = 0; i < view.Count(); ++i)
-        {
-            if (health[i].Current <= 0.f)
-            {
-                // generation=0: DestroyEntity validates alive-ness at flush.
-                cmds.DestroyEntity(EntityId{ indices[i], 0 });
-            }
-        }
+        if (health.Current <= 0.f)
+            cmds.DestroyEntity(entity);
     });
     // cmds.Flush() is called by the scheduler at the end of this phase.
     // Do NOT call cmds.Flush() inside ForEachChunk.
 }
 ```
+
+`ChunkView::Entities()` returns raw `EntityIndex` values, not full `EntityId`s.
+Use it for index-keyed side tables. For commands that target entities, pass a
+real handle captured at creation time, stored in a component, returned by
+`ForEachComponent`, or obtained from another API that supplies the generation.

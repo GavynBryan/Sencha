@@ -16,7 +16,7 @@
 //
 // Hooks run synchronously at command-buffer flush.
 // Hooks must not perform structural ECS mutations (AddComponent, RemoveComponent,
-// CreateEntity, DestroyEntity) — see docs/ecs/MigrationPlan.md §Lifecycle hooks.
+// CreateEntity, DestroyEntity) — see docs/ecs/component-traits.md.
 
 class World;
 

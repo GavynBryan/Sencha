@@ -215,14 +215,42 @@ q.ForEachChunk([&cmds](auto& view)
 
     for (uint32_t i = 0; i < view.Count(); ++i)
     {
+        // Good for index-keyed side tables:
+        MarkPossiblyDead(indices[i], health[i].Current <= 0.f);
+    }
+});
+```
+
+`ChunkView::Entities()` returns `EntityIndex` values only. The generation is not
+stored in the chunk, so this is not enough to build a valid `EntityId` in the
+general case. If the system needs full handles, use one of these patterns:
+
+```cpp
+// Convenience path: full EntityId, no extra query filters.
+std::as_const(world).ForEachComponent<Health>(
+    [&cmds](EntityId entity, const Health& health)
+{
+    if (health.Current <= 0.f)
+        cmds.DestroyEntity(entity);
+});
+```
+
+```cpp
+// Hot path with additional query filters: keep the EntityId somewhere explicit.
+struct Owner
+{
+    EntityId Value;
+};
+
+Query<Read<Health>, Read<Owner>, Without<TagInvulnerable>> q(world);
+q.ForEachChunk([&cmds](auto& view)
+{
+    const auto health = view.template Read<Health>();
+    const auto owner  = view.template Read<Owner>();
+    for (uint32_t i = 0; i < view.Count(); ++i)
+    {
         if (health[i].Current <= 0.f)
-        {
-            // EntityId needs the generation, which is not available from the chunk.
-            // Use world.TryGet or the EntityId stored elsewhere.
-            // For destruction via CommandBuffer, pass the index as EntityId with
-            // generation=0 — DestroyEntity validates at flush, not at record time.
-            cmds.DestroyEntity(EntityId{ indices[i], 0 });
-        }
+            cmds.DestroyEntity(owner[i].Value);
     }
 });
 ```

@@ -1,8 +1,22 @@
 # Sencha ECS: Design Decisions
 
-This document records every non-obvious design decision made during the ECS migration,
-each with a rationale. Future maintainers (human or AI) should read this before changing
-core ECS code.
+This document records non-obvious design decisions made during the ECS migration
+and the later job/async work, each with rationale and benchmark context. It is a
+historical decision log, not the first API reference.
+
+For current usage, read:
+
+- `overview.md` for the ECS mental model and examples.
+- `queries.md` for query accessors and change-detection semantics.
+- `command-buffers.md` for deferred structural mutation.
+- `component-traits.md` for lifecycle hooks.
+- `parallelization.md` for the landed job/async surfaces and current runtime knobs.
+- `MigrationPlan.md` for the migration record and code map.
+
+When an older phase note conflicts with the current reference docs or the code, the
+current docs and code win. Add a new decision entry when changing the reason behind
+a rule; do not rewrite old benchmark history unless the original record is factually
+wrong.
 
 ---
 
@@ -564,10 +578,10 @@ The temporary Phase-3 compatibility stub has now been removed from
 `DefaultRenderPipeline.cpp`, `RenderExtractionSystem.h`, and
 `RenderExtractionSystem.cpp`. Extraction owns both extraction and culling.
 
-**RenderQueueItem copies data** (world matrix, bounds, mesh handle, material handle) as
-mandated by MigrationPlan.md Phase 3: copied items decouple extraction from submission
-and tolerate any structural change between extract and draw. Chunk-reference queue items
-are deferred to Phase 4+ per the plan.
+**RenderQueueItem copies data** (world matrix, bounds, mesh handle, material handle).
+Copied items decouple extraction from submission and tolerate any structural change
+between extract and draw. Chunk-reference queue items remain a possible future
+optimization if profiling shows the copy cost matters.
 
 ---
 
