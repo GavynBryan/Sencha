@@ -57,6 +57,29 @@ public:
 
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
+    // Cached-only acquisition: a ref-counted handle if the asset is already
+    // resident, an invalid handle otherwise. Never loads, never logs — the
+    // preload path uses these to dedup against the caches before submitting
+    // staged work.
+    [[nodiscard]] StaticMeshHandle TryAcquireStaticMesh(std::string_view path);
+    [[nodiscard]] MaterialHandle TryAcquireMaterial(std::string_view path);
+    [[nodiscard]] TextureHandle TryAcquireTexture(std::string_view path);
+
+    // Release counterparts to Load*/TryAcquire* — thin forwards to the caches
+    // so callers that hold raw handles don't need cache access to let go.
+    void ReleaseStaticMesh(StaticMeshHandle handle);
+    void ReleaseMaterial(MaterialHandle handle);
+    void ReleaseTexture(TextureHandle handle);
+
+    // The staged-load surface (Decision C), exposed for async drivers: the
+    // preloader runs LoaderFor(type)->LoadStaged on a task thread against
+    // DefaultSource(), and CommitTyped at the drain point.
+    [[nodiscard]] IAssetLoader* LoaderFor(AssetType type);
+    [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
+    [[nodiscard]] StaticMeshAssetLoader& StaticMeshLoaderRef() { return MeshLoader; }
+    [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
+    [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
+
 private:
     Logger& Log;
     AssetRegistry& Registry;

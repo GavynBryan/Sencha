@@ -700,6 +700,58 @@ recomposed path):
   commit failure; the material loader round-trips fully headless. Sync
   behavior is pinned by the Stage 1 tests passing unchanged.
 
+## Stage 3 status (2026-06-11)
+
+Landed, test-verified (731 tests green; 12 new across
+`test/runtime/AssetPreloadTests.cpp` and the reshaped in-flight-table tests;
+new tests TSan-clean including the threaded smoke). This closes the headline
+deferral from the jobs plan: a zone's assets stream through the async lane,
+and the zone attaches only when they are resident.
+
+- `core/assets/AssetManifest.{h,cpp}` — `CollectAssetPaths` walks any JSON
+  document for `asset://` strings, deliberately schema-agnostic: a future
+  component that serializes an asset ref as a path string is covered
+  without this code knowing it exists (the Decision O discipline). Manifest
+  entries are paths only; the type always comes from the registry record,
+  so the manifest can never contradict the registry.
+- `core/assets/AssetPreloader.{h,cpp}` — the manifest driver: dedup against
+  caches (`TryAcquire*`), coalescing against loads already in flight (the
+  Stage 2 table, reshaped to carry waiters — its first consumer revealed
+  that counting alone was the wrong API), `LoadStaged` on task threads,
+  `CommitTyped` at the drain point, where every commit is individually
+  metered by the existing `AsyncCommitBudgetMs`. **Two waves**: leaf assets
+  (textures, meshes) first, materials submitted by the last wave-1 commit —
+  so material commits always resolve their texture refs against warm caches
+  instead of decoding inline at the drain.
+- `AssetPreload` — the per-request tracker. Its handles are scaffolding:
+  they keep assets alive (and deduplicated) between commit and the moment
+  finalize's entities take their own references through component traits,
+  then `ReleaseAll()` lets go. Failures are advisory and count toward
+  completion — preload is an optimization; correctness always rests on the
+  synchronous fallback.
+- `AsyncZoneLoader::BeginLoad` gained the preload-gated overload: if the
+  build commits before the assets land, the attach defers — still at the
+  drain point, still owner-thread, fired by the preload's last asset commit.
+  A cancelled preload counts as complete (attach proceeds, sync fallback
+  covers gaps), so a preload can never wedge a zone. A zone whose build has
+  committed but whose attach is deferred can no longer be cancelled.
+- Manifest emission lives in `GenerateCubeDemoAssets` (the proto-cook):
+  scene refs plus one level of `.smat` indirection, the same
+  `CollectAssetPaths` walk for both. CubeDemo loads the manifest at startup,
+  preloads, and passes the preload to `BeginLoad` — verified end to end with
+  zero errors and zero fallback warnings; all five assets (mesh, three
+  materials, the texture pulled in transitively through `red.smat`) stream
+  through the async lane before the zone attaches.
+- Gate honesty: the ordering, coalescing, refcount-exactness (entries free
+  when the last holder releases), deferral, and cancellation properties are
+  pinned by zero-thread deterministic tests. The wall-clock half of the gate
+  (zero missed fixed ticks while streaming a textured multi-mesh room over a
+  *running* game, dormant preload invisible to frame spans) needs a second
+  room and frame instrumentation — CubeDemo has one zone loaded at startup.
+  The mechanism for that measurement exists (FrameTrace, the Stage B missed-
+  tick criterion); the measurement itself is owed when multi-room content
+  exists, and the doc will record it then.
+
 ## Product input record (2026-06-11)
 
 The original open questions were answered the day the plan was written:

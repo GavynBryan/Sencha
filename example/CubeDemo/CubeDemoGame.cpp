@@ -3,6 +3,7 @@
 #include "CubeDemoSystems.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
 #include <world/serialization/SceneSerializer.h>
@@ -110,6 +111,24 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     // commit that attaches the zone. DemoRegistry flips from null there —
     // systems and the panel idle until it does.
     ZoneLoader.emplace(engine.Tasks(), engine.Zones(), engine.Runtime());
+    Preloader.emplace(logging, runtimeAssets.Registry, runtimeAssets.Assets, engine.Tasks());
+
+    // Manifest-driven preload (docs/assets/pipeline.md, Decision D): the
+    // zone's assets stream through the async lane and the attach waits for
+    // them. A missing manifest is the sync fallback — slower first frame,
+    // same result.
+    std::shared_ptr<AssetPreload> preload;
+    AssetManifest manifest;
+    std::string manifestError;
+    if (LoadAssetManifestFile("cube_demo_scene.manifest.json", manifest, &manifestError))
+    {
+        preload = Preloader->Begin(manifest.Paths);
+    }
+    else
+    {
+        logging.GetLogger<CubeDemoGame>().Warn(
+            "CubeDemo: no asset manifest ({}); falling back to resolve-on-attach", manifestError);
+    }
 
     auto parsed = std::make_shared<DemoSceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
@@ -128,7 +147,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
                 DemoRegistry = &registry;
             }
         },
-        ZoneParticipation{ .Visible = true, .Logic = true });
+        ZoneParticipation{ .Visible = true, .Logic = true },
+        std::move(preload));
 
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)

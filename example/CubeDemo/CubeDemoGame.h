@@ -4,6 +4,7 @@
 #include "FreeCamera.h"
 
 #include <app/Game.h>
+#include <core/assets/AssetPreloader.h>
 #include <core/assets/RuntimeAssets.h>
 #include <zone/AsyncZoneLoader.h>
 
@@ -31,6 +32,7 @@ private:
     // the zone) while the load is in flight.
     Registry* DemoRegistry = nullptr;
     std::optional<RuntimeAssets> Assets;
+    std::optional<AssetPreloader> Preloader;
     std::optional<AsyncZoneLoader> ZoneLoader;
     FreeCamera FreeCam;
     DemoScene Demo;

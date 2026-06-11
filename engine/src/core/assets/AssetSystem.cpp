@@ -322,3 +322,53 @@ TextureHandle AssetSystem::LoadTexture(std::string_view path, bool srgb)
     }
 }
 
+
+StaticMeshHandle AssetSystem::TryAcquireStaticMesh(std::string_view path)
+{
+    return StaticMeshes ? StaticMeshes->Acquire(path) : StaticMeshHandle{};
+}
+
+MaterialHandle AssetSystem::TryAcquireMaterial(std::string_view path)
+{
+    return Materials ? Materials->Acquire(path) : MaterialHandle{};
+}
+
+TextureHandle AssetSystem::TryAcquireTexture(std::string_view path)
+{
+    if (!Textures)
+        return {};
+
+    TextureHandle handle = Textures->Find(path);
+    if (handle.IsValid())
+        Textures->Retain(handle);
+    return handle;
+}
+
+void AssetSystem::ReleaseStaticMesh(StaticMeshHandle handle)
+{
+    if (StaticMeshes)
+        StaticMeshes->Release(handle);
+}
+
+void AssetSystem::ReleaseMaterial(MaterialHandle handle)
+{
+    if (Materials)
+        Materials->Release(handle);
+}
+
+void AssetSystem::ReleaseTexture(TextureHandle handle)
+{
+    if (Textures)
+        Textures->Release(handle);
+}
+
+IAssetLoader* AssetSystem::LoaderFor(AssetType type)
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh: return &MeshLoader;
+    case AssetType::Texture:    return &TexLoader;
+    case AssetType::Material:   return &MatLoader;
+    default:                    return nullptr;
+    }
+}

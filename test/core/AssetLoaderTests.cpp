@@ -125,26 +125,28 @@ TEST(AssetSource, ReadAssetBytesFallsBackToVirtualPath)
 
 TEST(AssetInFlightTable, FirstBeginStartsLaterBeginsJoin)
 {
-    AssetInFlightTable table;
-    EXPECT_EQ(table.Begin("asset://a"), AssetInFlightTable::BeginResult::Started);
-    EXPECT_EQ(table.Begin("asset://a"), AssetInFlightTable::BeginResult::Joined);
-    EXPECT_EQ(table.Begin("asset://a"), AssetInFlightTable::BeginResult::Joined);
+    using Table = AssetInFlightTable<int>;
+    Table table;
+    EXPECT_EQ(table.Begin("asset://a", 1), Table::BeginResult::Started);
+    EXPECT_EQ(table.Begin("asset://a", 2), Table::BeginResult::Joined);
+    EXPECT_EQ(table.Begin("asset://a", 3), Table::BeginResult::Joined);
     EXPECT_TRUE(table.IsInFlight("asset://a"));
-    EXPECT_EQ(table.Begin("asset://b"), AssetInFlightTable::BeginResult::Started);
+    EXPECT_EQ(table.Begin("asset://b", 4), Table::BeginResult::Started);
     EXPECT_EQ(table.Size(), 2u);
 }
 
-TEST(AssetInFlightTable, FinishReturnsRequesterCountAndClears)
+TEST(AssetInFlightTable, FinishReturnsAllWaitersAndClears)
 {
-    AssetInFlightTable table;
-    (void)table.Begin("asset://a");
-    (void)table.Begin("asset://a");
-    (void)table.Begin("asset://a");
+    AssetInFlightTable<int> table;
+    (void)table.Begin("asset://a", 10);
+    (void)table.Begin("asset://a", 20);
+    (void)table.Begin("asset://a", 30);
 
-    EXPECT_EQ(table.Finish("asset://a"), 3u);
+    const std::vector<int> waiters = table.Finish("asset://a");
+    EXPECT_EQ(waiters, (std::vector<int>{ 10, 20, 30 }));
     EXPECT_FALSE(table.IsInFlight("asset://a"));
-    EXPECT_EQ(table.Finish("asset://a"), 0u);
-    EXPECT_EQ(table.Finish("asset://never"), 0u);
+    EXPECT_TRUE(table.Finish("asset://a").empty());
+    EXPECT_TRUE(table.Finish("asset://never").empty());
 }
 
 // -- StaticMeshAssetLoader --------------------------------------------------------

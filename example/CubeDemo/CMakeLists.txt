@@ -21,6 +21,8 @@ add_custom_command(TARGET CubeDemo POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/assets
         $<TARGET_FILE_DIR:CubeDemo>/assets
-    COMMAND GenerateCubeDemoAssets $<TARGET_FILE_DIR:CubeDemo>/assets
+    COMMAND GenerateCubeDemoAssets
+        $<TARGET_FILE_DIR:CubeDemo>/assets
+        $<TARGET_FILE_DIR:CubeDemo>/cube_demo_scene.json
 )
 add_dependencies(CubeDemo GenerateCubeDemoAssets)
