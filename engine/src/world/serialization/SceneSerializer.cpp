@@ -8,14 +8,13 @@
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
 #include <world/serialization/SceneFormat.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformSchemas.h>
-#include <world/transform/TransformStore.h>
+#include <math/MathSchemas.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -60,6 +59,23 @@ namespace
         return nullptr;
     }
 
+    void RegisterSerializedComponentStorage(Registry& registry)
+    {
+        for (const auto& entry : SerializerEntries())
+            entry->RegisterStorage(registry);
+    }
+
+    void SetParentComponent(Registry& registry, EntityId child, EntityId parent)
+    {
+        if (!registry.Components.IsRegistered<Parent>())
+            return;
+
+        if (Parent* existing = registry.Components.TryGet<Parent>(child))
+            existing->Entity = parent;
+        else
+            registry.Components.AddComponent(child, Parent{ parent });
+    }
+
     bool SaveRegistryChunk(const std::vector<EntityId>& entities, BinaryWriter& writer)
     {
         ChunkWriter chunk;
@@ -82,27 +98,18 @@ namespace
         return chunk.End(writer);
     }
 
-    void CollectHierarchyPairs(
-        const TransformHierarchyService& hierarchy,
-        EntityId entity,
-        std::vector<std::pair<EntityId, EntityId>>& pairs)
-    {
-        for (EntityId child : hierarchy.GetChildren(entity))
-        {
-            pairs.emplace_back(child, entity);
-            CollectHierarchyPairs(hierarchy, child, pairs);
-        }
-    }
-
     bool SaveHierarchyChunk(const Registry& registry, BinaryWriter& writer)
     {
-        const auto* hierarchy = registry.Resources.TryGet<TransformHierarchyService>();
-        if (!hierarchy)
-            return true;
-
         std::vector<std::pair<EntityId, EntityId>> pairs;
-        for (EntityId root : hierarchy->GetRoots())
-            CollectHierarchyPairs(*hierarchy, root, pairs);
+        if (registry.Components.IsRegistered<Parent>())
+        {
+            registry.Components.ForEachComponent<Parent>(
+                [&](EntityId child, const Parent& parent)
+                {
+                    if (parent.Entity.IsValid())
+                        pairs.emplace_back(child, parent.Entity);
+                });
+        }
 
         ChunkWriter chunk;
         if (!chunk.Begin(writer, SceneChunk::Hierarchy, SceneVersion))
@@ -145,14 +152,14 @@ namespace
         for (std::uint32_t i = 0; i < count; ++i)
         {
             EntityIndex savedIndex = 0;
-            std::uint16_t savedGeneration = 0;
+            std::uint32_t savedGeneration = 0;
             if (!Deserialize(reader, savedIndex)
                 || !Deserialize(reader, savedGeneration))
             {
                 return false;
             }
 
-            EntityId runtime = registry.Entities.Create();
+            EntityId runtime = registry.Components.CreateEntity();
             remap[savedIndex] = runtime;
             loadedEntities.push_back(runtime);
         }
@@ -165,8 +172,6 @@ namespace
                             Registry& registry,
                             const std::unordered_map<EntityIndex, EntityId>& remap)
     {
-        auto& hierarchy = registry.Resources.Ensure<TransformHierarchyService>();
-
         for (std::uint32_t i = 0; i < count; ++i)
         {
             EntityIndex childIndex = 0;
@@ -182,7 +187,7 @@ namespace
             if (!child.IsValid() || !parent.IsValid())
                 return false;
 
-            hierarchy.SetParent(child, parent);
+            SetParentComponent(registry, child, parent);
         }
 
         return true;
@@ -254,17 +259,11 @@ namespace
 
     void RollbackLoadedEntities(Registry& registry, const std::vector<EntityId>& entities)
     {
-        if (auto* hierarchy = registry.Resources.TryGet<TransformHierarchyService>())
-        {
-            for (auto it = entities.rbegin(); it != entities.rend(); ++it)
-                hierarchy->Unregister(*it);
-        }
-
         for (auto it = entities.rbegin(); it != entities.rend(); ++it)
         {
             for (const auto& serializer : SerializerEntries())
                 serializer->Remove(*it, registry);
-            registry.Entities.Destroy(*it);
+            registry.Components.DestroyEntity(*it);
         }
     }
 }
@@ -292,7 +291,7 @@ void ClearComponentSerializers()
 
 void InitSceneSerializer()
 {
-    RegisterComponent<TransformComponent<Transform3f>>();
+    RegisterComponent<LocalTransform>();
     RegisterComponent<CameraComponent>();
     RegisterComponent<StaticMeshComponent>();
 }
@@ -314,7 +313,7 @@ bool SaveSceneBinary(const Registry& registry,
                      SceneSerializationContext& context,
                      SceneSaveError* error)
 {
-    const auto entities = registry.Entities.GetAliveEntities();
+    const auto entities = registry.Components.GetAliveEntities();
 
     if (!WriteBinaryHeader(writer, SceneMagic, SceneVersion))
     {
@@ -373,6 +372,8 @@ bool LoadSceneBinary(BinaryReader& reader,
     std::vector<EntityId> loadedEntities;
     bool loadedRegistry = false;
 
+    RegisterSerializedComponentStorage(registry);
+
     while (true)
     {
         ChunkReader chunk;
@@ -403,7 +404,7 @@ bool LoadSceneBinary(BinaryReader& reader,
         if (!ok)
         {
             RollbackLoadedEntities(registry, loadedEntities);
-            SetError(error, "Failed to read scene chunk.");
+            SetError(error, "Failed to read scene chunk " + std::to_string(chunkHeader.Id) + ".");
             return false;
         }
 
@@ -436,7 +437,7 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
 {
     JsonValue::Array entitiesJson;
     JsonValue::Array hierarchyJson;
-    const auto entities = registry.Entities.GetAliveEntities();
+    const auto entities = registry.Components.GetAliveEntities();
     std::unordered_map<EntityIndex, std::uint32_t> entityToJsonIndex;
     entityToJsonIndex.reserve(entities.size());
 
@@ -462,16 +463,16 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
         });
     }
 
-    if (const auto* hierarchy = registry.Resources.TryGet<TransformHierarchyService>())
+    if (registry.Components.IsRegistered<Parent>())
     {
         for (EntityId child : entities)
         {
-            EntityId parent = hierarchy->GetParent(child);
-            if (!parent.IsValid())
+            const Parent* p = registry.Components.TryGet<Parent>(child);
+            if (!p || !p->Entity.IsValid())
                 continue;
 
             auto childIt = entityToJsonIndex.find(child.Index);
-            auto parentIt = entityToJsonIndex.find(parent.Index);
+            auto parentIt = entityToJsonIndex.find(p->Entity.Index);
             if (childIt == entityToJsonIndex.end() || parentIt == entityToJsonIndex.end())
                 continue;
 
@@ -520,6 +521,8 @@ bool LoadSceneJson(const JsonValue& root,
     std::vector<EntityId> entities;
     entities.reserve(entitiesValue->AsArray().size());
 
+    RegisterSerializedComponentStorage(registry);
+
     for (const JsonValue& entityValue : entitiesValue->AsArray())
     {
         if (!entityValue.IsObject())
@@ -529,7 +532,7 @@ bool LoadSceneJson(const JsonValue& root,
             return false;
         }
 
-        EntityId entity = registry.Entities.Create();
+        EntityId entity = registry.Components.CreateEntity();
         entities.push_back(entity);
 
         const JsonValue* components = entityValue.Find("components");
@@ -569,7 +572,6 @@ bool LoadSceneJson(const JsonValue& root,
 
     if (hierarchyValue)
     {
-        auto& hierarchy = registry.Resources.Ensure<TransformHierarchyService>();
         for (const JsonValue& relation : hierarchyValue->AsArray())
         {
             if (!relation.IsObject())
@@ -597,7 +599,7 @@ bool LoadSceneJson(const JsonValue& root,
                 return false;
             }
 
-            hierarchy.SetParent(entities[childIndex], entities[parentIndex]);
+            SetParentComponent(registry, entities[childIndex], entities[parentIndex]);
         }
     }
 

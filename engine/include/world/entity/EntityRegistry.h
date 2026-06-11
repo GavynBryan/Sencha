@@ -1,7 +1,6 @@
 #pragma once
 
-#include <world/entity/EntityId.h>
-#include <world/transform/TransformHierarchyService.h>
+#include <ecs/EntityId.h>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -9,9 +8,9 @@
 //=============================================================================
 // EntityRegistry
 //
-// Lightweight handle allocator for the hybrid ECS path. Component lifetime is
-// explicit in SparseSet-backed stores; the registry only owns id/generation
-// liveness and provides hierarchy-aware destruction ordering.
+// Lightweight handle allocator. Component lifetime is explicit in
+// archetype/SparseSet-backed stores; the registry only owns id/generation
+// liveness.
 //=============================================================================
 class EntityRegistry
 {
@@ -49,14 +48,6 @@ public:
         return true;
     }
 
-    void DestroySubtree(EntityId root, const TransformHierarchyService& hierarchy)
-    {
-        std::vector<EntityId> postOrder;
-        CollectPostOrder(hierarchy, root, postOrder);
-
-        for (EntityId entity : postOrder)
-            Destroy(entity);
-    }
 
     bool IsAlive(EntityId entity) const
     {
@@ -89,16 +80,6 @@ private:
         uint16_t Generation = 1;
         bool Alive = false;
     };
-
-    static void CollectPostOrder(
-        const TransformHierarchyService& hierarchy,
-        EntityId entity,
-        std::vector<EntityId>& out)
-    {
-        for (EntityId child : hierarchy.GetChildren(entity))
-            CollectPostOrder(hierarchy, child, out);
-        out.push_back(entity);
-    }
 
     std::vector<Entry> Entries;
     std::vector<EntityIndex> FreeIds;

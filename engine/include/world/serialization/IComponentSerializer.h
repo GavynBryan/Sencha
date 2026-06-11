@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/serialization/Archive.h>
-#include <world/entity/EntityId.h>
+#include <ecs/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
@@ -20,6 +20,7 @@ struct IComponentSerializer
     virtual std::string_view JsonKey() const = 0;
     virtual std::uint32_t BinaryChunkId() const = 0;
 
+    virtual void RegisterStorage(Registry& registry) const = 0;
     virtual bool HasComponent(EntityId entity, const Registry& registry) const = 0;
     virtual bool Save(IWriteArchive& archive,
                       EntityId entity,

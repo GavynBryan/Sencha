@@ -6,6 +6,7 @@
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <concepts>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -65,6 +66,12 @@ namespace SceneComponentSerialization
     }
 }
 
+template <typename Traits, typename Component>
+concept ComponentTraitsRegistersStorage = requires(Registry& registry)
+{
+    { Traits::Register(registry) } -> std::same_as<void>;
+};
+
 //=============================================================================
 // ComponentSerializer
 //
@@ -81,10 +88,21 @@ public:
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
     std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
 
+    void RegisterStorage(Registry& registry) const override
+    {
+        if constexpr (ComponentTraitsRegistersStorage<Traits, Component>)
+            Traits::Register(registry);
+        else
+        {
+            if (!registry.Components.IsRegistered<Component>())
+                registry.Components.RegisterComponent<Component>();
+        }
+    }
+
     bool HasComponent(EntityId entity, const Registry& registry) const override
     {
-        const auto* store = registry.Components.TryGet<typename Traits::Store>();
-        return store && store->TryGet(entity);
+        return registry.Components.IsRegistered<Component>()
+            && registry.Components.HasComponent<Component>(entity);
     }
 
     bool Save(IWriteArchive& archive,
@@ -92,8 +110,9 @@ public:
               const Registry& registry,
               SceneSerializationContext& context) const override
     {
-        const auto* store = registry.Components.TryGet<typename Traits::Store>();
-        const Component* component = store ? store->TryGet(entity) : nullptr;
+        const Component* component = registry.Components.IsRegistered<Component>()
+            ? registry.Components.TryGet<Component>(entity)
+            : nullptr;
         if (!component)
             return true;
 
@@ -114,65 +133,12 @@ public:
 
     bool Remove(EntityId entity, Registry& registry) const override
     {
-        auto* store = registry.Components.TryGet<typename Traits::Store>();
-        return !store || !store->TryGet(entity) || store->Remove(entity);
-    }
-};
-
-//=============================================================================
-// ComponentSerializer<TransformComponent<Transform3f>>
-//
-// Persists only the Local transform. World is excluded because it is
-// recomputed by the propagation system after load.
-//=============================================================================
-template <>
-class ComponentSerializer<TransformComponent<Transform3f>> final : public IComponentSerializer
-{
-    using Component = TransformComponent<Transform3f>;
-    using Traits = ComponentStorageTraits<Component>;
-
-public:
-    std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
-    std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        const auto* store = registry.Components.TryGet<typename Traits::Store>();
-        return store && store->TryGet(entity);
-    }
-
-    bool Save(IWriteArchive& archive,
-              EntityId entity,
-              const Registry& registry,
-              SceneSerializationContext&) const override
-    {
-        const auto* store = registry.Components.TryGet<typename Traits::Store>();
-        const Component* component = store ? store->TryGet(entity) : nullptr;
-        if (!component)
+        if (!registry.Components.IsRegistered<Component>()
+            || !registry.Components.HasComponent<Component>(entity))
+        {
             return true;
-
-        WriteArchiveValue(archive, {}, component->Local);
-        return archive.Ok();
-    }
-
-    bool Load(IReadArchive& archive,
-              EntityId entity,
-              Registry& registry,
-              SceneSerializationContext&) override
-    {
-        Component component{};
-        ReadArchiveValue(archive, {}, component.Local);
-        // World is not persisted; propagation recalculates it on first update.
-        component.World = Transform3f::Identity();
-        if (!archive.Ok())
-            return false;
-
-        return Traits::Add(registry, entity, component);
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        auto* store = registry.Components.TryGet<typename Traits::Store>();
-        return !store || !store->TryGet(entity) || store->Remove(entity);
+        }
+        registry.Components.RemoveComponent<Component>(entity);
+        return true;
     }
 };

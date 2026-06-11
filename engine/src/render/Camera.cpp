@@ -1,5 +1,7 @@
 #include <render/Camera.h>
 
+#include <world/transform/TransformComponents.h>
+
 #include <cmath>
 
 namespace
@@ -38,8 +40,7 @@ namespace
 }
 
 bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
-                                   const CameraStore& cameras,
-                                   const TransformStore<Transform3f>& transforms,
+                                   const World& world,
                                    VkExtent2D targetExtent,
                                    CameraRenderData& out)
 {
@@ -49,8 +50,8 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     }
 
     const EntityId entity = activeCamera.GetActive();
-    const CameraComponent* camera = cameras.TryGet(entity);
-    const Transform3f* transform = transforms.TryGetWorld(entity);
+    const CameraComponent* camera = world.TryGet<CameraComponent>(entity);
+    const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
     if (camera == nullptr || transform == nullptr)
     {
         return false;
@@ -74,10 +75,10 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     }
 
     out.Entity = entity;
-    out.View = transform->ToMat4().AffineInverse();
+    out.View = transform->Value.ToMat4().AffineInverse();
     out.Projection = projection;
     out.ViewProjection = projection * out.View;
-    out.Position = transform->Position;
+    out.Position = transform->Value.Position;
     out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
     return true;
 }

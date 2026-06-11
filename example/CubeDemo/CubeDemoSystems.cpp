@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <math/Quat.h>
+#include <world/transform/TransformComponents.h>
 
 #include <SDL3/SDL.h>
 
@@ -25,7 +26,7 @@ namespace
 
             FreeCam.TickFixed(
                 ctx.Input,
-                DemoTransforms(*RegistryInstance),
+                RegistryInstance->Components,
                 static_cast<float>(ctx.Time.DeltaSeconds));
         }
 
@@ -46,9 +47,11 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
 
-            if (Transform3f* cube = DemoTransforms(*RegistryInstance).TryGetLocalMutable(Scene.CenterCube))
+            LocalTransform* cube =
+                RegistryInstance->Components.TryGet<LocalTransform>(Scene.CenterCube);
+            if (cube != nullptr)
             {
-                cube->Rotation *= Quatf::FromAxisAngle(
+                cube->Value.Rotation *= Quatf::FromAxisAngle(
                     Vec3d::Up(),
                     static_cast<float>(ctx.Time.DeltaSeconds));
             }
@@ -72,7 +75,7 @@ namespace
                 return;
 
             FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(DemoTransforms(*RegistryInstance));
+            FreeCam.ApplyRotation(RegistryInstance->Components);
         }
 
         Registry*& RegistryInstance;

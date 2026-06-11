@@ -1,6 +1,7 @@
 #include "FreeCamera.h"
 
 #include <math/Quat.h>
+#include <world/transform/TransformComponents.h>
 
 #include <SDL3/SDL.h>
 
@@ -15,11 +16,9 @@ void FreeCamera::UpdateLook(const InputFrame& input)
     Pitch = SDL_clamp(Pitch, -1.5f, 1.5f);
 }
 
-void FreeCamera::TickFixed(const InputFrame& input,
-                           TransformStore<Transform3f>& transforms,
-                           float fixedDt)
+void FreeCamera::TickFixed(const InputFrame& input, World& world, float fixedDt)
 {
-    Transform3f* transform = transforms.TryGetLocalMutable(Entity);
+    LocalTransform* transform = world.TryGet<LocalTransform>(Entity);
     if (transform == nullptr)
         return;
 
@@ -31,24 +30,24 @@ void FreeCamera::TickFixed(const InputFrame& input,
     if (input.IsKeyDown(SDL_SCANCODE_E)) move += Vec3d::Up();
     if (input.IsKeyDown(SDL_SCANCODE_Q)) move += Vec3d::Down();
 
-    ApplyRotation(transforms);
+    ApplyRotation(world);
 
     if (move.SqrMagnitude() > 0.0f)
     {
         move = move.Normalized();
         const float speed = MoveSpeed
             * (input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FastMultiplier : 1.0f);
-        transform->Position += transform->Rotation.RotateVector(move) * (speed * fixedDt);
+        transform->Value.Position += transform->Value.Rotation.RotateVector(move) * (speed * fixedDt);
     }
 }
 
-void FreeCamera::ApplyRotation(TransformStore<Transform3f>& transforms) const
+void FreeCamera::ApplyRotation(World& world) const
 {
-    Transform3f* transform = transforms.TryGetLocalMutable(Entity);
+    LocalTransform* transform = world.TryGet<LocalTransform>(Entity);
     if (transform == nullptr)
         return;
 
-    transform->Rotation =
+    transform->Value.Rotation =
         Quatf::FromAxisAngle(Vec3d::Up(), Yaw)
         * Quatf::FromAxisAngle(Vec3d::Right(), Pitch);
 }

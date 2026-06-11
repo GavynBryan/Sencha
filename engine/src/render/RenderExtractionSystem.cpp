@@ -1,6 +1,7 @@
 #include <render/RenderExtractionSystem.h>
 
-#include <algorithm>
+#include <ecs/Query.h>
+#include <world/transform/TransformComponents.h>
 
 namespace
 {
@@ -21,59 +22,69 @@ namespace
     }
 }
 
-void RenderExtractionSystem::Extract(const TransformStore<Transform3f>& transforms,
-                                     const StaticMeshComponentStore& renderers,
+void RenderExtractionSystem::Extract(const World& world,
                                      const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
                                      const CameraRenderData& camera,
                                      RenderQueue& queue)
 {
-    const auto items = renderers.GetItems();
-    const auto owners = renderers.GetOwnerIds();
-
-    for (size_t i = 0; i < items.size(); ++i)
+    if (!world.IsRegistered<WorldTransform>()
+        || !world.IsRegistered<StaticMeshComponent>())
     {
-        const StaticMeshComponent& renderer = items[i];
-        if (!renderer.Visible) continue;
-
-        // SparseSet stores raw indices; generation 1 is the minimum valid value.
-        EntityId entity{ static_cast<EntityIndex>(owners[i]), 1 };
-        const Transform3f* transform = transforms.TryGetWorld(entity);
-        const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
-        const Material* material = materials.Get(renderer.Material);
-        if (transform == nullptr || mesh == nullptr || material == nullptr) continue;
-
-        const Mat4 world = transform->ToMat4();
-        const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, world);
-        const Vec4 cameraSpaceCenter =
-            camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y, worldBounds.Center().Z, 1.0f);
-        const float cameraDepth = -cameraSpaceCenter.Z;
-
-        for (uint32_t sectionIndex = 0;
-             sectionIndex < static_cast<uint32_t>(mesh->Sections.size());
-             ++sectionIndex)
-        {
-            if ((renderer.SectionMask & (1u << sectionIndex)) == 0) continue;
-
-            RenderQueueItem item{};
-            item.Mesh = renderer.Mesh;
-            item.Material = renderer.Material;
-            item.SectionIndex = sectionIndex;
-            item.WorldMatrix = world;
-            item.WorldBounds = worldBounds;
-            item.CameraDepth = cameraDepth;
-            item.Pass = material->Pass;
-            queue.AddOpaque(item);
-        }
+        return;
     }
-}
 
-void FrustumCullingSystem::Cull(const CameraRenderData& camera, RenderQueue& queue)
-{
-    auto& opaque = queue.Opaque();
-    opaque.erase(std::remove_if(opaque.begin(), opaque.end(),
-                                [&camera](const RenderQueueItem& item) {
-                                    return !camera.ViewFrustum.IntersectsAabb(item.WorldBounds);
-                                }),
-                 opaque.end());
+    // Single chunk-level pass: Read<WorldTransform> + Read<StaticMeshComponent>.
+    // Frustum culling is inlined — no separate post-pass required.
+    // Items are copied into RenderQueueItem (not pointer-into-chunk) per the
+    // MigrationPlan Phase 3 decision: copied data decouples extraction from
+    // submission and tolerates any structural change between extract and draw.
+    Query<Read<WorldTransform>, Read<StaticMeshComponent>> query(const_cast<World&>(world));
+    query.ForEachChunk([&](auto& view)
+    {
+        const auto transforms  = view.template Read<WorldTransform>();
+        const auto renderers   = view.template Read<StaticMeshComponent>();
+        const uint32_t count   = view.Count();
+
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const StaticMeshComponent& renderer = renderers[i];
+            if (!renderer.Visible) continue;
+
+            const GpuStaticMesh* mesh     = meshes.Get(renderer.Mesh);
+            const Material*      material = materials.Get(renderer.Material);
+            if (mesh == nullptr || material == nullptr) continue;
+
+            const Mat4   worldMatrix  = transforms[i].Value.ToMat4();
+            const Aabb3d worldBounds  = TransformBounds(mesh->LocalBounds, worldMatrix);
+
+            // Inline frustum cull — skip the item entirely if it's outside
+            // the view frustum. This replaces the separate FrustumCullingSystem
+            // post-pass (see MigrationPlan.md Phase 3, point 3).
+            if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
+                continue;
+
+            const Vec4  cameraSpaceCenter =
+                camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y,
+                                   worldBounds.Center().Z, 1.0f);
+            const float cameraDepth = -cameraSpaceCenter.Z;
+
+            for (uint32_t sectionIndex = 0;
+                 sectionIndex < static_cast<uint32_t>(mesh->Sections.size());
+                 ++sectionIndex)
+            {
+                if ((renderer.SectionMask & (1u << sectionIndex)) == 0) continue;
+
+                RenderQueueItem item{};
+                item.Mesh         = renderer.Mesh;
+                item.Material     = renderer.Material;
+                item.SectionIndex = sectionIndex;
+                item.WorldMatrix  = worldMatrix;
+                item.WorldBounds  = worldBounds;
+                item.CameraDepth  = cameraDepth;
+                item.Pass         = material->Pass;
+                queue.AddOpaque(item);
+            }
+        }
+    });
 }

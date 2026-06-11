@@ -14,6 +14,12 @@ FetchContent_MakeAvailable(googletest)
 file(GLOB_RECURSE CORE_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp
 )
+foreach(_removed_ecs_test
+    "/core/DataBatchTests.cpp$"
+    "/core/InstanceRegistryTests.cpp$"
+)
+    list(FILTER CORE_TEST_SOURCES EXCLUDE REGEX "${_removed_ecs_test}")
+endforeach()
 
 file(GLOB_RECURSE MATH_GEOMETRY_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/math_geometry/*.cpp
@@ -25,6 +31,10 @@ file(GLOB_RECURSE ENGINE_FEATURE_TEST_SOURCES CONFIGURE_DEPENDS
 
 file(GLOB_RECURSE RUNTIME_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.cpp
+)
+
+file(GLOB_RECURSE ECS_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/ecs/*.cpp
 )
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
@@ -47,6 +57,12 @@ if(ENGINE_FEATURE_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS engine_feature_tests)
 endif()
 
+if(ECS_TEST_SOURCES)
+    add_executable(ecs_tests ${ECS_TEST_SOURCES})
+    target_link_libraries(ecs_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS ecs_tests)
+endif()
+
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
 
 include(GoogleTest)
@@ -66,6 +82,12 @@ endif()
 
 if(TARGET runtime_tests)
     gtest_discover_tests(runtime_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET ecs_tests)
+    gtest_discover_tests(ecs_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

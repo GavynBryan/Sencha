@@ -13,15 +13,11 @@
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/StaticMeshComponent.h>
-#include <render/StaticMeshComponentStore.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
-#include <world/transform/TransformHierarchyService.h>
-#include <world/transform/TransformPropagationOrderService.h>
-#include <world/transform/TransformStore.h>
 
 #include <sstream>
 #include <string_view>
@@ -48,12 +44,14 @@ struct TypeSchema<SceneCodecMaterialComponent>
 template <>
 struct ComponentStorageTraits<SceneCodecMaterialComponent>
 {
-    using Store = SparseSetStore<SceneCodecMaterialComponent>;
     static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'A', 'T');
 
     static bool Add(Registry& registry, EntityId entity, SceneCodecMaterialComponent component)
     {
-        return registry.Components.Ensure<Store>().Add(entity, component);
+        if (registry.Components.HasComponent<SceneCodecMaterialComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
+        return true;
     }
 };
 
@@ -67,11 +65,11 @@ namespace
     Registry MakeSceneRegistry()
     {
         Registry registry;
-        auto& order = registry.Resources.Register<TransformPropagationOrderService>();
-        registry.Resources.Register<TransformHierarchyService>();
-        registry.Components.Register<TransformStore<Transform3f>>(order);
-        registry.Components.Register<StaticMeshComponentStore>();
-        registry.Components.Register<CameraStore>();
+        registry.Components.RegisterComponent<LocalTransform>();
+        registry.Components.RegisterComponent<WorldTransform>();
+        registry.Components.RegisterComponent<Parent>();
+        registry.Components.RegisterComponent<StaticMeshComponent>();
+        registry.Components.RegisterComponent<CameraComponent>();
         return registry;
     }
 
@@ -97,6 +95,17 @@ namespace
             Quatf::Identity(),
             Vec3d(1.0f, 2.0f, 3.0f));
     }
+
+    void AddTransform(Registry& registry, EntityId entity, const Transform3f& transform)
+    {
+        registry.Components.AddComponent(entity, LocalTransform{ transform });
+        registry.Components.AddComponent(entity, WorldTransform{ transform });
+    }
+
+    void SetParent(Registry& registry, EntityId child, EntityId parent)
+    {
+        registry.Components.AddComponent(child, Parent{ parent });
+    }
 }
 
 TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
@@ -107,12 +116,9 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
     EntityId parent = source.Entities.Create();
     EntityId child = source.Entities.Create();
 
-    auto& transforms = source.Components.Get<TransformStore<Transform3f>>();
-    auto& hierarchy = source.Resources.Get<TransformHierarchyService>();
-    transforms.Add(parent, MakeTransform(1.0f, 2.0f, 3.0f));
-    transforms.Add(child, MakeTransform(4.0f, 5.0f, 6.0f));
-    hierarchy.Register(parent);
-    hierarchy.SetParent(child, parent);
+    AddTransform(source, parent, MakeTransform(1.0f, 2.0f, 3.0f));
+    AddTransform(source, child, MakeTransform(4.0f, 5.0f, 6.0f));
+    SetParent(source, child, parent);
 
     CameraComponent camera{
         .Projection = ProjectionKind::Orthographic,
@@ -121,7 +127,7 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
         .FarPlane = 250.0f,
         .OrthographicHeight = 12.0f,
     };
-    source.Components.Get<CameraStore>().Add(parent, camera);
+    source.Components.AddComponent(parent, camera);
 
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
@@ -135,25 +141,24 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
 
     EXPECT_EQ(loaded.Entities.Count(), 2u);
 
-    auto& loadedTransforms = loaded.Components.Get<TransformStore<Transform3f>>();
-    auto& loadedHierarchy = loaded.Resources.Get<TransformHierarchyService>();
-    auto& loadedCameras = loaded.Components.Get<CameraStore>();
+    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
+    ASSERT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+    ASSERT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
 
-    ASSERT_EQ(loadedTransforms.Count(), 2u);
-    ASSERT_EQ(loadedCameras.Count(), 1u);
+    EntityId loadedChild;
+    EntityId loadedParent;
+    loaded.Components.ForEachComponent<Parent>([&](EntityId childEntity, const Parent& parentComponent)
+    {
+        loadedChild = childEntity;
+        loadedParent = parentComponent.Entity;
+    });
 
-    const auto owners = loadedTransforms.GetOwnerIds();
-    EntityId loadedParent{ owners[0], 1 };
-    EntityId loadedChild{ owners[1], 1 };
-    if (loadedHierarchy.GetParent(loadedParent).IsValid())
-        std::swap(loadedParent, loadedChild);
+    ASSERT_TRUE(loadedChild.IsValid());
+    ASSERT_TRUE(loadedParent.IsValid());
+    ASSERT_NE(loaded.Components.TryGet<LocalTransform>(loadedParent), nullptr);
+    EXPECT_EQ(loaded.Components.TryGet<LocalTransform>(loadedParent)->Value.Position, Vec3d(1.0f, 2.0f, 3.0f));
 
-    ASSERT_TRUE(loadedHierarchy.GetParent(loadedChild).IsValid());
-    EXPECT_EQ(loadedHierarchy.GetParent(loadedChild).Index, loadedParent.Index);
-    ASSERT_NE(loadedTransforms.TryGet(loadedParent), nullptr);
-    EXPECT_EQ(loadedTransforms.TryGet(loadedParent)->Local.Position, Vec3d(1.0f, 2.0f, 3.0f));
-
-    const CameraComponent* loadedCamera = loadedCameras.TryGet(loadedParent);
+    const CameraComponent* loadedCamera = loaded.Components.TryGet<CameraComponent>(loadedParent);
     ASSERT_NE(loadedCamera, nullptr);
     EXPECT_EQ(loadedCamera->Projection, ProjectionKind::Orthographic);
     EXPECT_FLOAT_EQ(loadedCamera->OrthographicHeight, 12.0f);
@@ -164,8 +169,7 @@ TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
     ResetSceneSerializers();
     Registry source = MakeSceneRegistry();
     EntityId sourceEntity = source.Entities.Create();
-    source.Resources.Get<TransformHierarchyService>().Register(sourceEntity);
-    source.Components.Get<TransformStore<Transform3f>>().Add(sourceEntity, MakeTransform(8.0f, 0.0f, 0.0f));
+    AddTransform(source, sourceEntity, MakeTransform(8.0f, 0.0f, 0.0f));
 
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
@@ -173,21 +177,25 @@ TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
 
     Registry loaded = MakeSceneRegistry();
     EntityId preexisting = loaded.Entities.Create();
-    loaded.Components.Get<TransformStore<Transform3f>>().Add(preexisting, MakeTransform(-1.0f, 0.0f, 0.0f));
+    AddTransform(loaded, preexisting, MakeTransform(-1.0f, 0.0f, 0.0f));
 
     stream.seekg(0);
     BinaryReader reader(stream);
     ASSERT_TRUE(LoadSceneBinary(reader, loaded));
 
     EXPECT_EQ(loaded.Entities.Count(), 2u);
-    auto& transforms = loaded.Components.Get<TransformStore<Transform3f>>();
-    ASSERT_EQ(transforms.Count(), 2u);
-    EXPECT_NE(transforms.TryGet(EntityId{ sourceEntity.Index, sourceEntity.Generation })->Local.Position,
-        Vec3d(8.0f, 0.0f, 0.0f));
+    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
+    if (const LocalTransform* staleSource = loaded.Components.TryGet<LocalTransform>(
+            EntityId{ sourceEntity.Index, sourceEntity.Generation }))
+    {
+        EXPECT_NE(staleSource->Value.Position, Vec3d(8.0f, 0.0f, 0.0f));
+    }
 
     bool foundRemapped = false;
-    for (const auto& component : transforms.GetItems())
-        foundRemapped = foundRemapped || component.Local.Position == Vec3d(8.0f, 0.0f, 0.0f);
+    loaded.Components.ForEachComponent<LocalTransform>([&](EntityId, const LocalTransform& component)
+    {
+        foundRemapped = foundRemapped || component.Value.Position == Vec3d(8.0f, 0.0f, 0.0f);
+    });
     EXPECT_TRUE(foundRemapped);
 }
 
@@ -196,9 +204,8 @@ TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
     ResetSceneSerializers();
     Registry source = MakeSceneRegistry();
     EntityId entity = source.Entities.Create();
-    source.Resources.Get<TransformHierarchyService>().Register(entity);
-    source.Components.Get<TransformStore<Transform3f>>().Add(entity, MakeTransform(2.0f, 3.0f, 4.0f));
-    source.Components.Get<CameraStore>().Add(entity, CameraComponent{});
+    AddTransform(source, entity, MakeTransform(2.0f, 3.0f, 4.0f));
+    source.Components.AddComponent(entity, CameraComponent{});
 
     JsonValue json = SaveSceneJson(source);
     std::string text = JsonStringify(json, true);
@@ -209,10 +216,15 @@ TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
     ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
 
     ASSERT_EQ(loaded.Entities.Count(), 1u);
-    auto& loadedTransforms = loaded.Components.Get<TransformStore<Transform3f>>();
-    ASSERT_EQ(loadedTransforms.Count(), 1u);
-    EXPECT_EQ(loadedTransforms.GetItems()[0].Local.Position, Vec3d(2.0f, 3.0f, 4.0f));
-    EXPECT_EQ(loaded.Components.Get<CameraStore>().Count(), 1u);
+    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 1u);
+    const LocalTransform* loadedTransform = nullptr;
+    loaded.Components.ForEachComponent<LocalTransform>([&](EntityId, const LocalTransform& component)
+    {
+        loadedTransform = &component;
+    });
+    ASSERT_NE(loadedTransform, nullptr);
+    EXPECT_EQ(loadedTransform->Value.Position, Vec3d(2.0f, 3.0f, 4.0f));
+    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
 }
 
 TEST(SceneSerializer, LoadsHandAuthoredJson)
@@ -224,9 +236,11 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
             {
                 "components": {
                     "Transform": {
-                        "position": [0, 0, 0],
-                        "rotation": [0, 0, 0, 1],
-                        "scale": [1, 1, 1]
+                        "local": {
+                            "position": [0, 0, 0],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
                     },
                     "Camera": {
                         "projection": "orthographic",
@@ -240,9 +254,11 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
             {
                 "components": {
                     "Transform": {
-                        "position": [5, 0, 0],
-                        "rotation": [0, 0, 0, 1],
-                        "scale": [1, 1, 1]
+                        "local": {
+                            "position": [5, 0, 0],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
                     }
                 }
             }
@@ -257,9 +273,9 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
     ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
 
     EXPECT_EQ(loaded.Entities.Count(), 2u);
-    EXPECT_EQ(loaded.Components.Get<TransformStore<Transform3f>>().Count(), 2u);
-    EXPECT_EQ(loaded.Components.Get<CameraStore>().Count(), 1u);
-    EXPECT_EQ(loaded.Resources.Get<TransformHierarchyService>().GetRoots().size(), 1u);
+    EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
+    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+    EXPECT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
 }
 
 TEST(SceneSerializer, RegistersStaticMeshThroughGenericSerializer)
@@ -287,9 +303,9 @@ TEST(SceneSerializer, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
     Registry registry;
+    registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
     EntityId entity = registry.Entities.Create();
-    registry.Components.Ensure<SparseSetStore<SceneCodecMaterialComponent>>()
-        .Add(entity, SceneCodecMaterialComponent{ .Material = material });
+    registry.Components.AddComponent(entity, SceneCodecMaterialComponent{ .Material = material });
 
     SceneSerializationContext context(logging, &assets);
     JsonValue json = SaveSceneJson(registry, context);
@@ -446,9 +462,11 @@ TEST(SceneSerializer, JsonLoadRollsBackEntitiesAndComponentsOnFailure)
             {
                 "components": {
                     "Transform": {
-                        "position": [1, 2, 3],
-                        "rotation": [0, 0, 0, 1],
-                        "scale": [1, 1, 1]
+                        "local": {
+                            "position": [1, 2, 3],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
                     }
                 }
             }
@@ -464,8 +482,7 @@ TEST(SceneSerializer, JsonLoadRollsBackEntitiesAndComponentsOnFailure)
     EXPECT_FALSE(LoadSceneJson(*parsed, loaded, &error));
 
     EXPECT_EQ(loaded.Entities.Count(), 0u);
-    EXPECT_EQ(loaded.Components.Get<TransformStore<Transform3f>>().Count(), 0u);
-    EXPECT_EQ(loaded.Resources.Get<TransformHierarchyService>().Count(), 0u);
+    EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 0u);
 }
 
 TEST(SceneSerializer, BinaryLoadRollsBackCreatedEntitiesOnFailure)
@@ -500,7 +517,7 @@ TEST(SceneSerializer, BinaryLoadRollsBackCreatedEntitiesOnFailure)
     EXPECT_FALSE(LoadSceneBinary(reader, loaded, &error));
 
     EXPECT_EQ(loaded.Entities.Count(), 0u);
-    EXPECT_EQ(loaded.Components.Get<CameraStore>().Count(), 0u);
+    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 0u);
 }
 
 TEST(SceneSerializer, BinarySkipsUnknownChunks)
@@ -542,7 +559,7 @@ TEST(SceneSerializer, BinarySkipsUnknownChunks)
     ASSERT_TRUE(LoadSceneBinary(reader, loaded));
 
     EXPECT_EQ(loaded.Entities.Count(), 1u);
-    EXPECT_EQ(loaded.Components.Get<CameraStore>().Count(), 1u);
+    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
 }
 
 TEST(SceneSerializer, HandlesEmptyRegistry)
