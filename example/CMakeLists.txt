@@ -1,5 +1,6 @@
 add_subdirectory(TransformHierarchyStressTest)
 add_subdirectory(EcsBenchmark)
+add_subdirectory(JobSystemBenchmark)
 add_subdirectory(AudioTest)
 if(SENCHA_ENABLE_VULKAN)
     add_subdirectory(CubeDemo)

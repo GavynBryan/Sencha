@@ -14,9 +14,10 @@ FileLogSink::~FileLogSink()
 
 void FileLogSink::Write(LogLevel level, std::string_view category, std::string_view message)
 {
-    if (level < MinLevel) return;
+    if (level < GetMinLevel()) return;
     if (!Stream.is_open()) return;
 
+    std::lock_guard<std::mutex> lock(WriteMutex);
     Stream << "[" << Timestamp() << "] [" << LevelToString(level) << "] " << category << ": " << message << "\n";
     Stream.flush();
 }
