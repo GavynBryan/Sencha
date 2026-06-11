@@ -31,6 +31,12 @@ void CommandStack::Redo()
     ++Cursor;
 }
 
+void CommandStack::Clear()
+{
+    Commands.clear();
+    Cursor = 0;
+}
+
 bool CommandStack::CanUndo() const
 {
     return Cursor > 0;

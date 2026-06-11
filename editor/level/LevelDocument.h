@@ -15,7 +15,11 @@ public:
     [[nodiscard]] std::string_view GetDisplayName() const;
     [[nodiscard]] bool IsDirty() const;
     bool Save();
+    bool SaveAs(std::string_view path);
     bool Load(std::string_view path);
+    void New();
+
+    [[nodiscard]] bool HasFilePath() const;
 
     void MarkDirty(bool dirty = true);
     [[nodiscard]] LevelScene& GetScene();

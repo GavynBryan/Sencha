@@ -1,8 +1,12 @@
 #include "EditorApp.h"
 
+#include "../app/EditorFrameHook.h"
 #include "../app/EditorViewportCameraSystem.h"
+#include "../level/LevelSerialization.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorUiFeature.h"
+#include "../ui/InspectorPanel.h"
+#include "../ui/SceneHierarchyPanel.h"
 #include "../ui/ToolPalettePanel.h"
 #include "../ui/ViewportPanel.h"
 
@@ -39,6 +43,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     SdlWindow* window = windows.GetPrimaryWindow();
     if (window == nullptr)
         return;
+    Window = window;
+
+    RegisterLevelSerializers();
 
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<LevelWorkspace>();
@@ -57,6 +64,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     Shortcuts->Register(SDLK_Z, { .Ctrl = true }, [this] { Commands->Undo(); });
     Shortcuts->Register(SDLK_Z, { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); });
     Shortcuts->Register(SDLK_Y, { .Ctrl = true }, [this] { Commands->Redo(); });
+    Shortcuts->Register(SDLK_N, { .Ctrl = true }, [this] { NewDocument(); });
+    Shortcuts->Register(SDLK_O, { .Ctrl = true }, [this] { RequestOpenDialog(); });
+    Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { SaveDocument(); });
 
     Router = std::make_unique<InputRouter>();
     Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
@@ -76,11 +86,20 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         [this]() { if (Commands) Commands->Redo(); },
         [this]() { return Commands != nullptr && Commands->CanUndo(); },
         [this]() { return Commands != nullptr && Commands->CanRedo(); });
+    UiFeature->SetFileActions(
+        [this]() { NewDocument(); },
+        [this]() { RequestOpenDialog(); },
+        [this]() { SaveDocument(); },
+        [this]() { RequestSaveAsDialog(); });
 
     auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
     UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));
+    UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
+        Workspace->Document.GetScene(), Workspace->Selection, *Commands));
+    UiFeature->AddPanel(std::make_unique<InspectorPanel>(
+        Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
 
     renderer.AddFeature(std::move(uiFeature));
 }
@@ -91,6 +110,7 @@ void EditorApp::OnRegisterSystems(SystemRegisterContext& ctx)
         return;
 
     CameraSystem = &ctx.Schedule.Register<EditorViewportCameraSystem>(Workspace->Layout);
+    FrameHook = &ctx.Schedule.Register<EditorFrameHook>([this] { OnFrame(); });
 }
 
 void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
@@ -130,14 +150,149 @@ void EditorApp::OnShutdown(GameShutdownContext& ctx)
         SetRelativeMouseMode(*EnginePtr, false);
 
     CameraSystem = nullptr;
+    FrameHook = nullptr;
     Viewports = nullptr;
     UiFeature = nullptr;
+    Window = nullptr;
     Workspace.reset();
     Commands.reset();
     Router.reset();
     Navigation.reset();
     Shortcuts.reset();
     EnginePtr = nullptr;
+}
+
+namespace
+{
+constexpr SDL_DialogFileFilter kLevelFileFilters[] = {
+    { "Sencha Level", "json" },
+    { "All files", "*" },
+};
+} // namespace
+
+void EditorApp::NewDocument()
+{
+    if (Workspace == nullptr)
+        return;
+
+    Workspace->Document.New();
+    ResetEditorState();
+}
+
+void EditorApp::SaveDocument()
+{
+    if (Workspace == nullptr)
+        return;
+
+    if (!Workspace->Document.HasFilePath())
+    {
+        RequestSaveAsDialog();
+        return;
+    }
+
+    Workspace->Document.Save();
+}
+
+void EditorApp::RequestOpenDialog()
+{
+    if (Window == nullptr || Window->GetHandle() == nullptr)
+        return;
+
+    SDL_ShowOpenFileDialog(
+        [](void* userdata, const char* const* filelist, int)
+        {
+            auto* app = static_cast<EditorApp*>(userdata);
+            if (filelist != nullptr && filelist[0] != nullptr)
+                app->EnqueueFileAction(FileActionKind::Open, filelist[0]);
+        },
+        this,
+        Window->GetHandle(),
+        kLevelFileFilters,
+        static_cast<int>(std::size(kLevelFileFilters)),
+        nullptr,
+        false);
+}
+
+void EditorApp::RequestSaveAsDialog()
+{
+    if (Window == nullptr || Window->GetHandle() == nullptr)
+        return;
+
+    SDL_ShowSaveFileDialog(
+        [](void* userdata, const char* const* filelist, int)
+        {
+            auto* app = static_cast<EditorApp*>(userdata);
+            if (filelist != nullptr && filelist[0] != nullptr)
+                app->EnqueueFileAction(FileActionKind::SaveAs, filelist[0]);
+        },
+        this,
+        Window->GetHandle(),
+        kLevelFileFilters,
+        static_cast<int>(std::size(kLevelFileFilters)),
+        nullptr);
+}
+
+void EditorApp::EnqueueFileAction(FileActionKind kind, std::string path)
+{
+    const std::scoped_lock lock(PendingFileMutex);
+    PendingFileActions.push_back({ kind, std::move(path) });
+}
+
+void EditorApp::ProcessPendingFileActions()
+{
+    std::vector<PendingFileAction> actions;
+    {
+        const std::scoped_lock lock(PendingFileMutex);
+        actions.swap(PendingFileActions);
+    }
+
+    if (Workspace == nullptr)
+        return;
+
+    for (const PendingFileAction& action : actions)
+    {
+        switch (action.Kind)
+        {
+        case FileActionKind::Open:
+            if (Workspace->Document.Load(action.Path))
+                ResetEditorState();
+            break;
+        case FileActionKind::SaveAs:
+            Workspace->Document.SaveAs(action.Path);
+            break;
+        }
+    }
+}
+
+void EditorApp::ResetEditorState()
+{
+    if (Commands != nullptr)
+        Commands->Clear();
+    if (Workspace != nullptr)
+        Workspace->Selection.ClearSelection();
+}
+
+void EditorApp::UpdateWindowTitle()
+{
+    if (Window == nullptr || Workspace == nullptr)
+        return;
+
+    std::string title = "Sencha Editor - ";
+    title += Workspace->Document.GetDisplayName();
+    if (Workspace->Document.IsDirty())
+        title += " *";
+
+    if (title != LastWindowTitle)
+    {
+        Window->SetTitle(title);
+        LastWindowTitle = title;
+    }
+}
+
+void EditorApp::OnFrame()
+{
+    ProcessPendingFileActions();
+    UpdateWindowTitle();
 }
 
 void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)

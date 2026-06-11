@@ -12,6 +12,7 @@ public:
     void Execute(std::unique_ptr<ICommand> command);
     void Undo();
     void Redo();
+    void Clear();
 
     [[nodiscard]] bool CanUndo() const;
     [[nodiscard]] bool CanRedo() const;

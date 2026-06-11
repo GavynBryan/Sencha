@@ -59,6 +59,19 @@ void LevelScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
         brush->HalfExtents = halfExtents;
 }
 
+void LevelScene::Clear()
+{
+    World& world = Registry_.Components;
+    for (EntityId entity : world.GetAliveEntities())
+        world.DestroyEntity(entity);
+    Entities.clear();
+}
+
+void LevelScene::SyncFromRegistry()
+{
+    Entities = Registry_.Components.GetAliveEntities();
+}
+
 bool LevelScene::HasEntity(EntityId entity) const
 {
     return Registry_.Components.IsAlive(entity);

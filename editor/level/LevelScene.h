@@ -41,6 +41,22 @@ public:
     void SetTransform(EntityId entity, const Transform3f& transform);
     void SetBrushHalfExtents(EntityId entity, Vec3d halfExtents);
 
+    // Overwrites an existing component wholesale. Used by editor commands;
+    // does nothing if the entity lacks the component.
+    template <typename T>
+    void SetComponent(EntityId entity, const T& value)
+    {
+        if (T* existing = Registry_.Components.TryGet<T>(entity))
+            *existing = value;
+    }
+
+    // Destroys every entity in the scene.
+    void Clear();
+
+    // Rebuilds the entity list from the registry. Required after operations
+    // that create entities without going through LevelScene (e.g. scene load).
+    void SyncFromRegistry();
+
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;
     [[nodiscard]] std::span<const EntityId> GetAllEntities() const;

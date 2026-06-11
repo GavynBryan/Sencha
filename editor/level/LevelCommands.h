@@ -61,6 +61,42 @@ private:
     LevelDocument& Document;
 };
 
+// Replaces a single component's value wholesale. Used by the inspector for
+// schema-driven field edits; old/new snapshots make the edit undoable.
+template <typename Component>
+class EditComponentCommand : public ICommand
+{
+public:
+    EditComponentCommand(EntityId entity, Component oldValue, Component newValue,
+                         LevelScene& scene, LevelDocument& document)
+        : Entity(entity)
+        , OldValue(std::move(oldValue))
+        , NewValue(std::move(newValue))
+        , Scene(scene)
+        , Document(document)
+    {
+    }
+
+    void Execute() override
+    {
+        Scene.SetComponent(Entity, NewValue);
+        Document.MarkDirty();
+    }
+
+    void Undo() override
+    {
+        Scene.SetComponent(Entity, OldValue);
+        Document.MarkDirty();
+    }
+
+private:
+    EntityId Entity;
+    Component OldValue;
+    Component NewValue;
+    LevelScene& Scene;
+    LevelDocument& Document;
+};
+
 class DeleteEntityCommand : public ICommand
 {
 public:

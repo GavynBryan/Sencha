@@ -128,6 +128,17 @@ void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
     CanRedoAction = std::move(canRedoAction);
 }
 
+void EditorUiFeature::SetFileActions(std::function<void()> newAction,
+                                     std::function<void()> openAction,
+                                     std::function<void()> saveAction,
+                                     std::function<void()> saveAsAction)
+{
+    NewAction = std::move(newAction);
+    OpenAction = std::move(openAction);
+    SaveAction = std::move(saveAction);
+    SaveAsAction = std::move(saveAsAction);
+}
+
 bool EditorUiFeature::InitImGui(const RendererServices& services)
 {
     if (!services.Device || !services.PhysicalDevice || !services.Queues || !services.Swapchain)
@@ -251,10 +262,14 @@ void EditorUiFeature::DrawMainMenuBar()
 
     if (ImGui::BeginMenu("File"))
     {
-        ImGui::MenuItem("New", nullptr, false, false);
-        ImGui::MenuItem("Open", nullptr, false, false);
-        ImGui::MenuItem("Save", nullptr, false, false);
-        ImGui::MenuItem("Save As", nullptr, false, false);
+        if (ImGui::MenuItem("New", "Ctrl+N", false, NewAction != nullptr) && NewAction)
+            NewAction();
+        if (ImGui::MenuItem("Open", "Ctrl+O", false, OpenAction != nullptr) && OpenAction)
+            OpenAction();
+        if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveAction != nullptr) && SaveAction)
+            SaveAction();
+        if (ImGui::MenuItem("Save As", nullptr, false, SaveAsAction != nullptr) && SaveAsAction)
+            SaveAsAction();
         if (ImGui::MenuItem("Exit"))
             EngineInstance.RequestExit();
         ImGui::EndMenu();

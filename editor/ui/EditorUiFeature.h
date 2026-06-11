@@ -39,6 +39,10 @@ public:
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
                         std::function<bool()> canRedoAction);
+    void SetFileActions(std::function<void()> newAction,
+                        std::function<void()> openAction,
+                        std::function<void()> saveAction,
+                        std::function<void()> saveAsAction);
 
 private:
     bool InitImGui(const RendererServices& services);
@@ -64,6 +68,11 @@ private:
     std::function<void()> RedoAction;
     std::function<bool()> CanUndoAction;
     std::function<bool()> CanRedoAction;
+
+    std::function<void()> NewAction;
+    std::function<void()> OpenAction;
+    std::function<void()> SaveAction;
+    std::function<void()> SaveAsAction;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
 };
