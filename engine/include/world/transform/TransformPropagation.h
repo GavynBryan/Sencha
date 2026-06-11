@@ -7,6 +7,7 @@
 
 #include <span>
 
+class JobSystem;
 class Registry;
 
 //=============================================================================
@@ -55,3 +56,11 @@ inline void PropagateTransforms(World& world)
 
 // Restores world-transform coherence for every unique registry in the span.
 void PropagateTransforms(std::span<Registry*> registries);
+
+// Zone-parallel variant (docs/ecs/parallelization.md, Stage C): one job per
+// unique registry. Legal because propagation is per-World pure — the order
+// cache is a World resource and parent-before-child ordering is an intra-zone
+// constraint, so zones propagate independently. Results are bit-identical to
+// the serial overload: the per-zone work is unchanged, only which thread runs
+// it differs.
+void PropagateTransforms(JobSystem& jobs, std::span<Registry*> registries);

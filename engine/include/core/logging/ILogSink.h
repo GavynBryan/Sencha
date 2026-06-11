@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LogLevel.h>
+#include <atomic>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -33,6 +34,11 @@ static constexpr const char* LevelToString(LogLevel level)
 // minimum severity level.
 //
 // The LoggingProvider owns sinks and distributes messages to all of them.
+//
+// Threading: Write must be safe to call from job/task threads (see
+// docs/ecs/parallelization.md). Sink construction and LoggingProvider setup
+// remain main-thread-only; MinLevel is atomic so a setup-time SetMinLevel
+// never races an in-flight Write.
 //=============================================================================
 class ILogSink
 {
@@ -41,11 +47,11 @@ public:
 
 	virtual void Write(LogLevel level, std::string_view category, std::string_view message) = 0;
 
-	void SetMinLevel(LogLevel level) { MinLevel = level; }
-	LogLevel GetMinLevel() const { return MinLevel; }
+	void SetMinLevel(LogLevel level) { MinLevel.store(level, std::memory_order_relaxed); }
+	LogLevel GetMinLevel() const { return MinLevel.load(std::memory_order_relaxed); }
 
 protected:
-	LogLevel MinLevel = LogLevel::Debug;
+	std::atomic<LogLevel> MinLevel{ LogLevel::Debug };
 
 	// Returns a timestamp string: "YYYY-MM-DD HH:MM:SS.mmm"
 	static std::string Timestamp()

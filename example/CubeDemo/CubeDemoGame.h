@@ -5,6 +5,7 @@
 
 #include <app/Game.h>
 #include <core/assets/RuntimeAssets.h>
+#include <zone/AsyncZoneLoader.h>
 
 #include <optional>
 
@@ -25,8 +26,12 @@ private:
     RuntimeAssets& RuntimeAssetState();
     const RuntimeAssets& RuntimeAssetState() const;
 
+    // Null until the async zone load commits; systems and the debug panel
+    // null-check it every tick, so the demo runs (and renders nothing from
+    // the zone) while the load is in flight.
     Registry* DemoRegistry = nullptr;
     std::optional<RuntimeAssets> Assets;
+    std::optional<AsyncZoneLoader> ZoneLoader;
     FreeCamera FreeCam;
     DemoScene Demo;
 

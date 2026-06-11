@@ -11,6 +11,15 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               MaterialCache* materials)
 {
     Registry& registry = zones.CreateZone(zone);
+    InitializeDefault3DRegistry(registry, meshes, materials);
+    zones.SetParticipation(zone, participation);
+    return registry;
+}
+
+void InitializeDefault3DRegistry(Registry& registry,
+                                 StaticMeshCache* meshes,
+                                 MaterialCache* materials)
+{
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.RegisterComponent<LocalTransform>();
     registry.Components.RegisterComponent<WorldTransform>();
@@ -18,8 +27,6 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
     registry.Components.RegisterComponent<StaticMeshComponent>();
     registry.Components.RegisterComponent<CameraComponent>();
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
-    zones.SetParticipation(zone, participation);
-    return registry;
 }
 
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)

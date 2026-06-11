@@ -10,8 +10,11 @@
 
 #include <memory>
 
+class AsyncTaskQueue;
 class FrameDriver;
 class Game;
+class JobSystem;
+class ThreadPoolJobSystem;
 
 //=============================================================================
 // Engine
@@ -54,6 +57,17 @@ public:
     [[nodiscard]] FrameDriver* Driver() { return FrameDriverInstance.get(); }
     [[nodiscard]] const FrameDriver* Driver() const { return FrameDriverInstance.get(); }
 
+    // Async (cross-frame) task lane. Valid after Initialize. Commits run on
+    // the main thread each frame in FramePhase::DrainAsyncTasks.
+    [[nodiscard]] AsyncTaskQueue& Tasks();
+    [[nodiscard]] const AsyncTaskQueue& Tasks() const;
+
+    // Frame-lane fork-join pool. Valid after Initialize. Sized by
+    // EngineRuntimeConfig::JobWorkerCount (0 = single-threaded, the
+    // engine-wide bisect/determinism switch).
+    [[nodiscard]] JobSystem& Jobs();
+    [[nodiscard]] const JobSystem& Jobs() const;
+
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
     [[nodiscard]] const TimingHistory& Timing() const { return TimingData; }
 
@@ -70,6 +84,10 @@ private:
     RuntimeFrameLoop RuntimeLoop;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     TimingHistory TimingData;
+    // Declared last: destroyed first, so task/worker threads are joined (and
+    // pending commits dropped) before the zones and services they reference.
+    std::unique_ptr<AsyncTaskQueue> TaskQueueInstance;
+    std::unique_ptr<ThreadPoolJobSystem> FramePoolInstance;
     bool Initialized = false;
     bool Running = false;
     bool FramePhasesRegistered = false;

@@ -37,6 +37,10 @@ file(GLOB_RECURSE ECS_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/ecs/*.cpp
 )
 
+file(GLOB_RECURSE JOBS_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/jobs/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -61,6 +65,12 @@ if(ECS_TEST_SOURCES)
     add_executable(ecs_tests ${ECS_TEST_SOURCES})
     target_link_libraries(ecs_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS ecs_tests)
+endif()
+
+if(JOBS_TEST_SOURCES)
+    add_executable(jobs_tests ${JOBS_TEST_SOURCES})
+    target_link_libraries(jobs_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS jobs_tests)
 endif()
 
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
@@ -88,6 +98,12 @@ endif()
 
 if(TARGET ecs_tests)
     gtest_discover_tests(ecs_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET jobs_tests)
+    gtest_discover_tests(jobs_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

@@ -7,6 +7,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::PumpPlatform: return "PumpPlatform";
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
+    case FramePhase::DrainAsyncTasks: return "DrainAsyncTasks";
     case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
     case FramePhase::Update: return "Update";
@@ -84,6 +85,7 @@ void FrameDriver::StepOnce()
 
     InvokePhase(FramePhase::ResolveLifecycle, ctx);
     InvokePhase(FramePhase::RebuildGraphics, ctx);
+    InvokePhase(FramePhase::DrainAsyncTasks, ctx);
     InvokePhase(FramePhase::ScheduleTicks, ctx);
 
     // Fixed-step simulation loop. Each fixed tick is its own mini-phase so

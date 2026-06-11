@@ -27,6 +27,14 @@ public:
     bool DestroyZone(ZoneId zone);
     bool IsZoneLoaded(ZoneId zone) const;
 
+    // Detached-build workflow for async zone loading (docs/ecs/parallelization.md,
+    // Decision 3): reserve an id on the main thread, build a Registry off-thread
+    // with MakeZoneRegistry(reservedId, zone), then attach it here between
+    // frames. Attach is main-thread-only, like all zone lifecycle.
+    RegistryId ReserveRegistryId();
+    Registry& AttachZone(std::unique_ptr<Registry> registry,
+                         ZoneParticipation participation = {});
+
     Registry* FindZone(ZoneId zone);
     const Registry* FindZone(ZoneId zone) const;
 

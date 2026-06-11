@@ -10,17 +10,12 @@
 #include <zone/DefaultZoneBuilder.h>
 
 #include <cassert>
+#include <format>
 #include <fstream>
 #include <sstream>
 
-DemoScene LoadDemoScene(Registry& registry,
-                        AssetSystem& assets,
-                        LoggingProvider& logging,
-                        FreeCamera& freeCamera,
-                        std::string_view scenePath)
+void RegisterDemoSceneAssets(DemoScene& scene, AssetSystem& assets)
 {
-    DemoScene scene;
-
     scene.CubeMesh = assets.RegisterProceduralStaticMesh(
         "asset://meshes/dev/cube.smesh",
         StaticMeshPrimitives::BuildCube(1.0f));
@@ -33,37 +28,55 @@ DemoScene LoadDemoScene(Registry& registry,
     scene.Blue = assets.RegisterProceduralMaterial(
         "asset://materials/dev/blue.smat",
         Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
+}
 
-    std::ifstream file{std::string(scenePath)};
+DemoSceneParse ParseDemoSceneFile(std::string_view scenePath)
+{
+    DemoSceneParse result;
+
+    std::ifstream file{ std::string(scenePath) };
     if (!file.is_open())
     {
-        logging.GetLogger<DemoScene>().Error("CubeDemo: could not open scene file '{}'", scenePath);
-        assert(false && "Failed to open demo scene file");
-        return scene;
+        result.Error = std::format("could not open scene file '{}'", scenePath);
+        return result;
     }
 
     std::ostringstream buf;
     buf << file.rdbuf();
 
     JsonParseError parseError;
-    auto json = JsonParse(buf.str(), &parseError);
-    if (!json)
+    result.Json = JsonParse(buf.str(), &parseError);
+    if (!result.Json)
     {
-        logging.GetLogger<DemoScene>().Error(
-            "CubeDemo: scene JSON parse error at {}: {}",
-            parseError.Position,
-            parseError.Message);
-        assert(false && "Failed to parse demo scene JSON");
-        return scene;
+        result.Error = std::format("scene JSON parse error at {}: {}",
+                                   parseError.Position, parseError.Message);
+    }
+    return result;
+}
+
+bool FinalizeDemoScene(DemoScene& scene,
+                       Registry& registry,
+                       const DemoSceneParse& parsed,
+                       AssetSystem& assets,
+                       LoggingProvider& logging,
+                       FreeCamera& freeCamera)
+{
+    Logger& log = logging.GetLogger<DemoScene>();
+
+    if (!parsed.Json)
+    {
+        log.Error("CubeDemo: {}", parsed.Error);
+        assert(false && "Failed to read/parse demo scene file");
+        return false;
     }
 
     SceneLoadError loadError;
     SceneSerializationContext sceneContext(logging, &assets);
-    if (!LoadSceneJson(*json, registry, sceneContext, &loadError))
+    if (!LoadSceneJson(*parsed.Json, registry, sceneContext, &loadError))
     {
-        logging.GetLogger<DemoScene>().Error("CubeDemo: scene load error: {}", loadError.Message);
+        log.Error("CubeDemo: scene load error: {}", loadError.Message);
         assert(false && "Failed to load demo scene");
-        return scene;
+        return false;
     }
 
     // Entities are loaded in JSON array order: 0=camera, 1=center cube, 2=center cube child.
@@ -76,5 +89,5 @@ DemoScene LoadDemoScene(Registry& registry,
 
     registry.Resources.Get<ActiveCameraService>().SetActive(scene.Camera);
     freeCamera.Entity = scene.Camera;
-    return scene;
+    return true;
 }

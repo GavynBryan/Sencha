@@ -44,6 +44,33 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
     return *registryPtr;
 }
 
+RegistryId ZoneRuntime::ReserveRegistryId()
+{
+    return AllocateRegistryId();
+}
+
+Registry& ZoneRuntime::AttachZone(std::unique_ptr<Registry> registry,
+                                  ZoneParticipation participation)
+{
+    assert(registry && "ZoneRuntime::AttachZone: registry must not be null");
+    assert(registry->Kind == RegistryKind::Zone && "ZoneRuntime::AttachZone: registry kind must be Zone");
+    assert(registry->Zone.IsValid() && "ZoneRuntime::AttachZone: registry must carry a valid ZoneId");
+    assert(registry->Id.IsValid() && "ZoneRuntime::AttachZone: registry id must be reserved via ReserveRegistryId");
+    assert(!FindLoadedZone(registry->Zone) && "ZoneRuntime::AttachZone: duplicate zone id");
+    assert(!FindRegistry(registry->Id) && "ZoneRuntime::AttachZone: duplicate registry id");
+
+    InvalidateFrameScratch();
+
+    auto loaded = std::make_unique<LoadedZone>();
+    loaded->Zone = registry->Zone;
+    loaded->ZoneRegistry = std::move(registry);
+    loaded->Participation = participation;
+
+    Registry* registryPtr = loaded->ZoneRegistry.get();
+    Zones.push_back(std::move(loaded));
+    return *registryPtr;
+}
+
 bool ZoneRuntime::DestroyZone(ZoneId zone)
 {
     auto it = std::find_if(Zones.begin(), Zones.end(),

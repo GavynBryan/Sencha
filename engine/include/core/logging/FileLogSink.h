@@ -3,6 +3,7 @@
 #include <core/logging/ILogSink.h>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -31,9 +32,11 @@ public:
 
 	~FileLogSink() override;
 
+	// Thread-safe: lines from concurrent threads never interleave.
 	void Write(LogLevel level, std::string_view category, std::string_view message) override;
 
 private:
 	static void RotateExistingLogs(const std::string& basePath);
 	std::ofstream Stream;
+	std::mutex WriteMutex;
 };

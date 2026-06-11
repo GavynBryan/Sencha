@@ -4,6 +4,8 @@
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
+#include <jobs/AsyncTaskQueue.h>
+#include <jobs/ThreadPoolJobSystem.h>
 #include <runtime/FrameDriver.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -14,6 +16,7 @@
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 
+#include <cassert>
 #include <cstdio>
 #include <utility>
 
@@ -42,6 +45,8 @@ bool Engine::Initialize()
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();
+        TaskQueueInstance.reset();
+        FramePoolInstance.reset();
         ServiceRegistry.Clear();
         FramePhasesRegistered = false;
         Running = false;
@@ -50,6 +55,16 @@ bool Engine::Initialize()
 
     RuntimeLoop.SetResizeSettleSeconds(Configuration.Runtime.ResizeSettleSeconds);
     RuntimeLoop.GetSimulationClock().SetFixedTickRate(Configuration.Runtime.FixedTickRate);
+
+    // Task threads block on IO, so they never compete with the frame. The
+    // count is config: 1 suits room-scale streaming, open worlds raise it.
+    TaskQueueInstance = std::make_unique<AsyncTaskQueue>(
+        static_cast<uint32_t>(Configuration.Runtime.AsyncTaskThreadCount));
+
+    const int configuredWorkers = Configuration.Runtime.JobWorkerCount;
+    FramePoolInstance = std::make_unique<ThreadPoolJobSystem>(
+        configuredWorkers < 0 ? ThreadPoolJobSystem::DefaultWorkerCount()
+                              : static_cast<uint32_t>(configuredWorkers));
 
     if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
     {
@@ -99,10 +114,36 @@ void Engine::Shutdown()
 
     EngineSystems.Shutdown();
     FrameDriverInstance.reset();
+    TaskQueueInstance.reset();
+    FramePoolInstance.reset();
     ServiceRegistry.Clear();
     FramePhasesRegistered = false;
     Initialized = false;
     Running = false;
+}
+
+JobSystem& Engine::Jobs()
+{
+    assert(FramePoolInstance && "Engine::Jobs: valid only between Initialize and Shutdown");
+    return *FramePoolInstance;
+}
+
+const JobSystem& Engine::Jobs() const
+{
+    assert(FramePoolInstance && "Engine::Jobs: valid only between Initialize and Shutdown");
+    return *FramePoolInstance;
+}
+
+AsyncTaskQueue& Engine::Tasks()
+{
+    assert(TaskQueueInstance && "Engine::Tasks: valid only between Initialize and Shutdown");
+    return *TaskQueueInstance;
+}
+
+const AsyncTaskQueue& Engine::Tasks() const
+{
+    assert(TaskQueueInstance && "Engine::Tasks: valid only between Initialize and Shutdown");
+    return *TaskQueueInstance;
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
