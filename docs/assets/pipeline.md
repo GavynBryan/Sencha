@@ -752,7 +752,63 @@ and the zone attaches only when they are resident.
   tick criterion); the measurement itself is owed when multi-room content
   exists, and the doc will record it then.
 
-## Product input record (2026-06-11)
+## Stage 4 status (2026-06-11, in progress)
+
+Stage 4 is the widest stage and lands as five gated sub-stages:
+**4a** foundations (content hashing, cooked cache, import-on-demand,
+`SENCHA_ENABLE_COOK`), **4b** `.stex` + texture cook (Decisions E, L),
+**4c** mesh (tangents, glTF/cgltf, MikkTSpace, headless Blender —
+Decisions B, M), **4d** audio (WAV/OGG importers, `AssetSystem`
+registration — Decision F), **4e** AssetId groundwork (Decision A; scheme:
+a persisted id map maintained by the cook — new assets get an id at first
+sight, renames keep theirs via the map).
+
+One inventory correction discovered entering the stage: `AudioClipCache`
+already sits on the `AssetCache` CRTP base, so 4d is registration plus an
+`IAssetLoader` and OGG support — the "migration" half of the Decision F
+proof is already done.
+
+### Stage 4a — foundations (landed)
+
+Test-verified (753 tests green; 22 new across
+`test/core/ContentHashTests.cpp` and `test/core/AssetImportTests.cpp`):
+
+- `core/hash/ContentHash.h` — `HashBytes64` (XXH64, implemented in-tree,
+  ~130 lines; pinned against published reference vectors) and
+  `HashFileContents`. Explicitly non-cryptographic; little-endian assumed
+  (the cooked cache is per-checkout, not distributed).
+- `ScanAssetsDirectory` now fills `AssetRecord::ContentHash` — the one
+  shared mechanism Decisions B and H both key off — and skips the
+  `.cooked/` directory (`kCookedCacheDirName`): cooked artifacts register
+  under cook-assigned virtual paths, never by extension discovery.
+- `assets/cook/CookedCache.{h,cpp}` — the cooked-cache index at
+  `<assets-root>/.cooked/index.json`, keyed source-relative-path →
+  (source hash, **set of artifacts**) per Decision B. Hashes serialize as
+  hex strings (JSON numbers are doubles); serialization is sorted for
+  deterministic diffs; a corrupt index is a cold cache, never an error.
+- `assets/cook/AssetImporter.h` — the importer contract, mirroring
+  Decision C's stage half: pure (bytes in via `ImportInput`, artifacts out
+  via the `ICookOutputWriter` seam — tests run importers against memory),
+  errors-not-logs, one source → many artifacts. Plus
+  `AssetImporterRegistry` (extension → importer, owner-thread, duplicate
+  claims rejected).
+- `assets/cook/ImportOnDemand.{h,cpp}` — the Decision B dev-build driver:
+  walk sources by importer extension, hash, serve fresh entries from the
+  cooked cache (artifact files verified on disk), re-import on miss/stale,
+  register every artifact with the registry. Artifacts must land under
+  `.cooked/` — the driver rejects escapes. Per-source failures are logged
+  and isolated; the return value stays strict for tools and tests.
+- `SENCHA_ENABLE_COOK` (default ON, the dev posture): `assets/cook/**` is
+  filtered from the build when OFF — same never-ships pattern as glslang.
+  Future cook-only deps (cgltf, MikkTSpace, bc7enc, the Blender shell-out)
+  gate on it.
+- Gate: cold cache imports and registers; warm cache provably skips the
+  importer (invocation-counted); changed source bytes and deleted artifacts
+  both recook; corrupt index recooks everything; escape and failure paths
+  pinned. No consumer is wired yet — CubeDemo still scans runtime formats
+  directly; the first real importer (4b) flips it.
+
+
 
 The original open questions were answered the day the plan was written:
 

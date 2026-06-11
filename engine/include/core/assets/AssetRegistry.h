@@ -41,3 +41,9 @@ private:
 
 [[nodiscard]] bool IsValidAssetPath(std::string_view path);
 bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry);
+
+// Name of the cooked-asset cache directory under an assets root
+// (docs/assets/pipeline.md, Decision B). The directory scanner skips it —
+// cooked artifacts are registered by the import-on-demand driver under
+// their intended virtual paths, never discovered by extension.
+inline constexpr std::string_view kCookedCacheDirName = ".cooked";

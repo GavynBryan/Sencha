@@ -10,6 +10,10 @@ option(SENCHA_ENABLE_DEBUG_UI
     "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
     OFF)
 
+option(SENCHA_ENABLE_COOK
+    "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
+    ON)
+
 if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
     message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
 endif()
@@ -52,6 +56,16 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
+if(NOT SENCHA_ENABLE_COOK)
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]assets[/\\\\]cook[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]cook[/\\\\]"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -102,6 +116,10 @@ target_include_directories(sencha_engine
 )
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
+
+if(SENCHA_ENABLE_COOK)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
+endif()
 
 if(WIN32)
     # winmm for timeBeginPeriod/timeEndPeriod used by FramePacer to achieve

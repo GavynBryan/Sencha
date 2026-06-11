@@ -1,5 +1,7 @@
 #include <core/assets/AssetRegistry.h>
 
+#include <core/hash/ContentHash.h>
+
 #include <filesystem>
 
 namespace
@@ -177,7 +179,14 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         }
 
         if (!it->is_regular_file(ec))
+        {
+            // Never descend into the cooked cache: its artifacts carry
+            // virtual paths assigned at cook time, not derived from their
+            // physical location (docs/assets/pipeline.md, Decision B).
+            if (it->path().filename() == kCookedCacheDirName)
+                it.disable_recursion_pending();
             continue;
+        }
 
         const AssetType type = AssetTypeFromExtension(it->path().extension().generic_string());
         if (type == AssetType::Unknown)
@@ -188,6 +197,12 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         record.SourceKind = AssetSourceKind::File;
         record.Path = MakeVirtualAssetPath(root, it->path());
         record.FilePath = it->path().generic_string();
+        if (!HashFileContents(record.FilePath, record.ContentHash))
+        {
+            registry.Log.Warn("AssetRegistry: could not hash '{}'; registered with no content hash",
+                record.FilePath);
+            ok = false;
+        }
         const bool inserted = registry.Register(record);
         if (inserted)
             ++registered;
