@@ -15,6 +15,12 @@ namespace
     thread_local bool TlsInJob = false;
 }
 
+uint32_t ThreadPoolJobSystem::DefaultWorkerCount()
+{
+    const uint32_t hw = std::thread::hardware_concurrency();
+    return hw > 2 ? hw - 2 : 0;
+}
+
 ThreadPoolJobSystem::ThreadPoolJobSystem(uint32_t workerCount)
 {
     Workers.reserve(workerCount);

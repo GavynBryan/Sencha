@@ -19,6 +19,14 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               StaticMeshCache* meshes = nullptr,
                               MaterialCache* materials = nullptr);
 
+// Registration-only part of CreateDefault3DZone, usable on a detached
+// registry (async zone builds): components, resources, and the asset-store
+// pointers. Storing the cache pointers is plain data — safe off-thread; the
+// caches themselves are only dereferenced by main-thread consumers later.
+void InitializeDefault3DRegistry(Registry& registry,
+                                 StaticMeshCache* meshes = nullptr,
+                                 MaterialCache* materials = nullptr);
+
 EntityId CreateDefaultEntity(Registry& registry,
                              const Transform3f& local = Transform3f::Identity());
 

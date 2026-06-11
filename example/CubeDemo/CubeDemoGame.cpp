@@ -39,7 +39,7 @@ namespace
         CubeDemoPanel(RenderQueue& queue,
                       CameraRenderData& camera,
                       FreeCamera& freeCamera,
-                      Registry& registry,
+                      Registry*& registry,
                       DemoScene& scene)
             : Queue(queue)
             , Camera(camera)
@@ -52,6 +52,12 @@ namespace
         void Draw() override
         {
             ImGui::Begin("Cube Demo");
+            if (RegistryInstance == nullptr)
+            {
+                ImGui::Text("Zone loading...");
+                ImGui::End();
+                return;
+            }
             ImGui::Text("Right mouse: look");
             ImGui::Text("WASD: move, Q/E: down/up, Shift: fast");
             ImGui::Separator();
@@ -61,7 +67,7 @@ namespace
             ImGui::DragFloat("Mouse sensitivity", &FreeCam.MouseSensitivity, 0.0001f, 0.0001f, 0.02f);
 
             if (LocalTransform* cube =
-                    RegistryInstance.Components.TryGet<LocalTransform>(Scene.CenterCube))
+                    RegistryInstance->Components.TryGet<LocalTransform>(Scene.CenterCube))
                 ImGui::DragFloat3("Center cube position", &cube->Value.Position.X, 0.05f);
 
             ImGui::End();
@@ -71,7 +77,7 @@ namespace
         RenderQueue& Queue;
         CameraRenderData& Camera;
         FreeCamera& FreeCam;
-        Registry& RegistryInstance;
+        Registry*& RegistryInstance;
         DemoScene& Scene;
     };
 #endif
@@ -89,13 +95,34 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     Assets.emplace(logging, buffers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    DemoRegistry = &CreateDefault3DZone(
-        engine.Zones(), ZoneId{ 1 },
-        ZoneParticipation{ .Visible = true, .Logic = true },
-        &runtimeAssets.StaticMeshes, &runtimeAssets.Materials);
-
     InitSceneSerializer();
-    Demo = LoadDemoScene(*DemoRegistry, runtimeAssets.Assets, logging, FreeCam, "cube_demo_scene.json");
+    RegisterDemoSceneAssets(Demo, runtimeAssets.Assets);
+
+    // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and
+    // the registry skeleton happen on the task thread; deserialization and
+    // game-state wiring happen in finalize, on the main thread, in the same
+    // commit that attaches the zone. DemoRegistry flips from null there —
+    // systems and the panel idle until it does.
+    ZoneLoader.emplace(engine.Tasks(), engine.Zones(), engine.Runtime());
+
+    auto parsed = std::make_shared<DemoSceneParse>();
+    StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
+    MaterialCache* materials = &runtimeAssets.Materials;
+
+    ZoneLoader->BeginLoad(
+        ZoneId{ 1 },
+        [parsed, meshes, materials](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materials);
+            *parsed = ParseDemoSceneFile("cube_demo_scene.json");
+        },
+        [this, parsed, &logging](Registry& registry) {
+            if (FinalizeDemoScene(Demo, registry, *parsed,
+                                  RuntimeAssetState().Assets, logging, FreeCam))
+            {
+                DemoRegistry = &registry;
+            }
+        },
+        ZoneParticipation{ .Visible = true, .Logic = true });
 
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
@@ -117,7 +144,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     if (pipeline != nullptr)
     {
         debugOverlay->AddPanel<CubeDemoPanel>(
-            pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, *DemoRegistry, Demo);
+            pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, DemoRegistry, Demo);
     }
     DebugOverlay = debugOverlay.get();
     auto& renderer = services.Get<Renderer>();
@@ -173,6 +200,14 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
     DebugOverlay = nullptr;
 #endif
     SetRelativeMouseMode(ctx.EngineInstance, false);
+
+    // Best-effort cancel if the load is still in flight; if the build is
+    // mid-run on the task thread, Engine::Shutdown drops the undrained
+    // commit, so the zone never attaches either way.
+    if (ZoneLoader && ZoneLoader->IsLoading(ZoneId{ 1 }))
+        ZoneLoader->CancelLoad(ZoneId{ 1 });
+    ZoneLoader.reset();
+
     ctx.EngineInstance.Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
 }

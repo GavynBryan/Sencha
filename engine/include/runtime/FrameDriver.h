@@ -28,12 +28,13 @@ enum class FramePhase : int
     PumpPlatform = 0,         // Poll OS events, populate InputFrame
     ResolveLifecycle = 1,     // Apply window events to RuntimeFrameLoop
     RebuildGraphics = 2,      // Recreate swapchain / swap device resources
-    ScheduleTicks = 3,        // Resolve presentation resets and fixed tick budget
-    Simulate = 4,             // Fixed-step: gameplay + propagation (0..N calls)
-    Update = 5,               // Per-frame game update: camera, HUD, input reactions
-    ExtractRenderPacket = 6,  // Build RenderPacket for this frame
-    Render = 7,               // Submit + present
-    EndFrame = 8,             // Flip buffers, pace, stamp telemetry
+    DrainAsyncTasks = 3,      // Run async-task commits (zone attach, asset publish)
+    ScheduleTicks = 4,        // Resolve presentation resets and fixed tick budget
+    Simulate = 5,             // Fixed-step: gameplay + propagation (0..N calls)
+    Update = 6,               // Per-frame game update: camera, HUD, input reactions
+    ExtractRenderPacket = 7,  // Build RenderPacket for this frame
+    Render = 8,               // Submit + present
+    EndFrame = 9,             // Flip buffers, pace, stamp telemetry
     Count,
 };
 

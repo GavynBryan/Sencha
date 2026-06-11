@@ -40,12 +40,53 @@ last and gated on profiling.
   explicitly deferred to a future stage and sketched in Appendix A so the eventual
   design is not hand-waved — but nothing below depends on it.
 - No parallel transform propagation. Parent-before-child ordering makes it a separate
-  design problem; it is also the only system where the win would currently be
-  measurable, so when profiling justifies parallelism work, *that* design happens
-  first, not more breadth here.
+  design problem; at the time of writing it was also the only system where the win
+  would be measurable. (Since superseded: D4.1 pointer caching plus dirty-subtree
+  tracking took the steady-state sweep to ~6.6 ns/transform — verified 2026-06-11 —
+  so there is currently **no** millisecond-scale system in the engine, and this
+  non-goal costs nothing.)
 - No lock-free ECS mutation from worker threads. Workers never perform structural
   changes; `CommandBuffer` remains the only mutation channel and flushes remain
   main-thread, outside parallel sections.
+
+## Product shape (added 2026-06-11)
+
+Sencha targets Metroidvania/Zelda-esque games: an interconnected world of
+small, room-sized zones, streamed as the player moves — the current room plus
+preloaded neighbors, so 2–4 live zones of hundreds of entities each, with
+constant load/unload churn from backtracking. That shape re-grades the stages:
+
+- **The async lane (Stage B) is the workhorse.** Seamless room transitions are
+  the genre's core feel; background preloading via `AsyncZoneLoader` with
+  dormant attaches (no discontinuity — see Decision 3) is the central engine
+  capability, not a supporting one.
+- **Zone-parallel execution (Stage C) is mechanism in waiting.** A whole
+  room-shaped Logic span costs tens of microseconds — far below the ~300 µs
+  dispatch floor — so the engine's Simulate phase propagates serially by
+  default (`ZoneParallelPropagation = false`). The parallel overload, helper,
+  and pool remain correct, tested, and one config flip away for workloads
+  that clear the floor.
+- **Chunk-parallel queries (Stage D) will likely never trigger.** Room-scale
+  entity counts cannot produce a 1 ms serial chunk sweep. Do not build Stage D
+  for this product on momentum; the gate stands.
+- **These are defaults, not commitments.** The genre never enters the engine
+  as an assumption — it enters as default values on mechanism that is itself
+  shape-neutral. The dials, all in `EngineRuntimeConfig` and all tested in
+  both positions: `ZoneParallelPropagation` (off; open worlds with many heavy
+  zones turn it on), `AsyncTaskThreadCount` (1; multi-chunk streaming raises
+  it), `JobWorkerCount` (auto; 0 is the serial bisect switch),
+  `AsyncCommitBudgetMs` (2 ms). Policy that is not a number stays out of
+  config entirely: preload/activation strategy is game code, and the
+  dormant-attach rule is derived from participation, which is genre-neutral
+  by construction — an open world streams dormant terrain chunks and flips
+  them live exactly the way a Metroidvania streams rooms. What we refuse on
+  purpose: genre-profile blobs and stringly-typed strategy selection.
+- **The expected next consumer is unload-side.** Backtracking means rooms
+  persist state when they unload (enemies, doors, pickups). When a save
+  system exists, the clean design is a `DetachZone` inverse of `AttachZone`:
+  move the registry out of the frame, hand it to an async task that owns it
+  solely — serialization off-thread with zero locks, by the same
+  publish-by-handoff symmetry the load path uses. Not built; no consumer yet.
 
 ## Decision 1: the substrate — `JobSystem`
 
@@ -125,12 +166,14 @@ public:
     bool IsComplete(TaskHandle) const;
     void Cancel(TaskHandle);   // best-effort: drops commit if not yet drained
 
-    // Called exactly once per frame on the main thread, immediately after
-    // RuntimeFrameLoop::BeginFrame and before any fixed tick. This is the only
+    // Called exactly once per frame on the main thread, from the dedicated
+    // FramePhase::DrainAsyncTasks (after RebuildGraphics, before ScheduleTicks
+    // and any fixed tick). A real phase rather than an inline call so drains
+    // show up in FrameTrace/TimingPanel like everything else. This is the only
     // place commit callbacks run, so commits may mutate anything the main
     // thread may mutate — including zone lifecycle, which the frame contract
     // already forbids mid-frame.
-    void DrainCompletions(std::size_t maxCommitsPerFrame = SIZE_MAX);
+    void DrainCompletions(const AsyncDrainBudget& budget = {});
 
     // Zero-thread test mode (mirrors ThreadPoolJobSystem(0)): constructed with
     // no task threads, Submit only enqueues; PumpWork runs pending work inline
@@ -169,12 +212,29 @@ problem jobs actually solve (a zone load today is a synchronous hitch):
    part; upload on the main thread is the cheap remainder and can move to a transfer
    queue later if profiles demand), attach the registry via `ZoneRuntime`, and fire
    `MarkTemporalDiscontinuity(TemporalDiscontinuityReason::ZoneLoad)` — the enum
-   value has been waiting for this since the frame loop was written.
+   value has been waiting for this since the frame loop was written. **Revision
+   (product shape):** the discontinuity fires only for attaches with any
+   participation. A dormant attach — the room-preload path — is invisible to
+   every frame span, so no discontinuity occurred, definitionally; activation
+   at the doorway is the game's own `SetParticipation` (plus `Teleport` if the
+   camera cuts).
 3. Zone *unloading* follows the existing rule: runtime Vulkan destruction goes
    through the deletion queue.
 
-`maxCommitsPerFrame` exists for this consumer: commits do GPU uploads, so the drain
-can be budgeted to avoid trading a load hitch for an upload hitch.
+The drain budget exists for this consumer: commits do GPU uploads, so the drain
+is budgeted to avoid trading a load hitch for an upload hitch. `AsyncDrainBudget`
+has two axes with distinct semantics: `MaxCommits` is a hard cap (0 = explicit
+pause; tests use small counts for deterministic stepping) and `MaxTime` is a
+soft wall-time cap — the first ready commit always runs so completions cannot
+starve, and no further commit starts once the budget is spent. The budget is
+wall time because that is the unit the frame actually cares about; a commit
+count is only a proxy and breaks as soon as commits stop being uniform. A
+budget deliberately cannot split a commit (commits are atomic by design), so a
+consumer with a large payload must shape it as multiple chunked tasks; the
+budget then meters between chunks. The engine drains once per frame with
+`EngineRuntimeConfig::AsyncCommitBudgetMs` (default 2 ms; 0 = unbudgeted,
+following the TargetFps convention — the magic zero lives only at the config
+boundary, never in the API).
 
 ## Decision 4: frame lane, axis 1 — zone-level parallelism
 
@@ -294,6 +354,94 @@ the test plan follows that split (harness: the existing GoogleTest suites):
 
 Each stage lands with the single-threaded configuration as the default for tests
 and a flag to force it engine-wide for bisecting threading bugs.
+
+### Stage C status (2026-06-11)
+
+Landed, test-verified (683 tests green, TSan clean including parallel
+propagation over live Worlds):
+
+- `world/registry/RegistryParallel.h` — `ForEachRegistryParallel`, the one
+  place the Decision 4 rules live. Spans of zero or one registries run inline
+  on the caller (the dispatch floor is never paid for an unparallelizable
+  span); larger spans fork one job per registry. Entries must be distinct.
+- `Engine` now owns the frame pool (`ThreadPoolJobSystem`), sized by
+  `EngineRuntimeConfig::JobWorkerCount` (-1 = auto `hardware_concurrency - 2`,
+  0 = the engine-wide single-threaded bisect/determinism switch the rollout
+  required, positive = pinned), exposed as `Engine::Jobs()`. Game systems
+  reach it through their context's `EngineInstance` — no context surface
+  growth until a game system actually wants it.
+- Transform propagation — the only millisecond-scale system — converted:
+  `PropagateTransforms(JobSystem&, span)` deduplicates, then runs one zone per
+  job. Legal because the propagation order cache is a World resource and
+  parent-before-child is an intra-zone constraint. The frame's Simulate phase
+  now uses it.
+- Render extraction deliberately not converted: it appends to a shared queue
+  (the Decision 5 output-collection problem) and costs ~6 µs — both reasons
+  independently disqualify it.
+
+Measured (release, 12 workers, 10k entities/zone, roots dirtied per rep):
+
+| zones | serial | zone-parallel | speedup |
+|------:|-------:|--------------:|--------:|
+| 1 | 0.124 ms | 0.125 ms | 1.00× (inline path) |
+| 2 | 0.250 ms | 0.340 ms | 0.74× |
+| 4 | 0.558 ms | 0.484 ms | 1.15× |
+| 8 | 2.674 ms | 0.660 ms | 4.05× |
+
+The 2-zone regression is the dispatch floor being honest: ~90 µs lost per
+fixed tick at 2 light zones, ~2 ms gained at 8. We explicitly chose **not** to
+hide a zone-count heuristic inside the helper — a count is a proxy for work,
+the same mistake as commit-count budgets, and the right threshold depends on
+per-zone cost the helper cannot know. The policy stays at the call site: a
+consumer that knows its zones are light can call the serial overload, and
+`JobWorkerCount = 0` turns the whole engine serial. If light-multi-zone scenes
+become the common case in practice, revisit with profiles, not a constant.
+
+**Revision (product shape, same day):** they are the common case — the target
+genre streams 2–4 room-sized zones. The Simulate phase call site reverted to
+the serial overload (the prediction above, settled by product knowledge rather
+than a heuristic). The mechanism stays; the engine default now matches the
+game it serves.
+
+### Stage B status (2026-06-11)
+
+Landed, test-verified end to end (671 tests green, TSan clean):
+
+- `jobs/AsyncTaskQueue.{h,cpp}` — per-task atomic state machine
+  (Pending → Running → AwaitingCommit → Committed, with Cancelled as the
+  diversion); handles observe state via shared pointers, so the queue keeps no
+  registry of finished tasks. `Submit<TPayload>` is templated; the payload is
+  type-erased inside the work/commit thunk (`AsyncTaskHandle` replaces the
+  sketch's `TaskHandle`).
+- `ZoneRuntime::ReserveRegistryId` + `AttachZone` — the detached-build seam:
+  the id is reserved on the main thread, the registry is built off-thread under
+  sole task ownership, attach is a move.
+- `zone/AsyncZoneLoader.{h,cpp}` — BeginLoad/IsLoading/CancelLoad; commit
+  attaches the zone and fires the `ZoneLoad` discontinuity.
+- `FramePhase::DrainAsyncTasks` — the drain point as a traced frame phase;
+  `Engine` owns one `AsyncTaskQueue` (one task thread) created in Initialize.
+- Tests: 16 queue tests + 10 zone-load tests, including zero-thread
+  deterministic paths (`PumpWork`), threaded smoke tests, cancellation, and
+  contract death tests.
+
+First real adoption: CubeDemo loads its zone through `AsyncZoneLoader`. The
+conversion drove one API addition — `BeginLoad` takes an optional main-thread
+`finalize` callback (runs inside the commit, after attach, before the
+discontinuity) because scene deserialization acquires from the asset caches
+and therefore cannot run in the work stage. The split is the template for
+future consumers: work = file IO + JSON parse + registry skeleton
+(`InitializeDefault3DRegistry`, extracted from `CreateDefault3DZone`);
+finalize = `LoadSceneJson` + camera/game-state wiring. The demo's systems and
+debug panel null-check the registry pointer every tick and idle until the
+commit flips it — the game runs normally while the zone loads.
+
+Commit budgeting landed with the conversion: `AsyncDrainBudget` (hard commit
+cap + soft wall-time cap with guaranteed progress), wired to
+`EngineRuntimeConfig::AsyncCommitBudgetMs` at the drain phase. Deliberately
+still out: asset staging through the async lane (no zone asset pipeline exists
+yet — CubeDemo pre-registers procedural assets on the main thread before
+submitting); when it arrives, large uploads must be shaped as chunked tasks so
+the budget can meter them.
 
 ### Stage A measured results (2026-06-11, WSL2, g++-14 -O3, 14 HW threads)
 

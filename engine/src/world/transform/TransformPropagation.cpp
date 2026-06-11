@@ -1,6 +1,7 @@
 #include <world/transform/TransformPropagation.h>
 
 #include <world/registry/Registry.h>
+#include <world/registry/RegistryParallel.h>
 #include <world/transform/PropagationOrderCache.h>
 
 #include <cstdint>
@@ -290,4 +291,23 @@ void PropagateTransforms(std::span<Registry*> registries)
 
         PropagateTransforms(registry->Components);
     }
+}
+
+void PropagateTransforms(JobSystem& jobs, std::span<Registry*> registries)
+{
+    // Deduplicate before the fork: ForEachRegistryParallel requires distinct
+    // entries, and duplicates here would mean two jobs propagating one World.
+    std::vector<Registry*> unique;
+    unique.reserve(registries.size());
+    std::unordered_set<Registry*> seen;
+    for (Registry* registry : registries)
+    {
+        if (registry != nullptr && seen.insert(registry).second)
+            unique.push_back(registry);
+    }
+
+    ForEachRegistryParallel(jobs, std::span<Registry* const>(unique),
+                            [](Registry& registry) {
+                                PropagateTransforms(registry.Components);
+                            });
 }

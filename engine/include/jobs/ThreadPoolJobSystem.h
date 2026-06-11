@@ -31,6 +31,11 @@ public:
     explicit ThreadPoolJobSystem(uint32_t workerCount);
     ~ThreadPoolJobSystem() override;
 
+    // hardware_concurrency() - 2 (main thread and render path are already
+    // occupied), clamped to 0 — which degrades to caller-only execution on
+    // small machines rather than oversubscribing them.
+    [[nodiscard]] static uint32_t DefaultWorkerCount();
+
     ThreadPoolJobSystem(const ThreadPoolJobSystem&) = delete;
     ThreadPoolJobSystem& operator=(const ThreadPoolJobSystem&) = delete;
 

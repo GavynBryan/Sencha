@@ -3,6 +3,7 @@
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlInputCapture.h>
+#include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <world/transform/TransformPropagation.h>
 
@@ -100,6 +101,19 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         }
     });
 
+    driver.Register(FramePhase::DrainAsyncTasks, [&engine, &config](PhaseContext&) {
+        // The config's 0.0 = unbudgeted convention is translated to the
+        // API's explicit "unlimited" here, at the config boundary, so the
+        // queue itself never carries a magic value.
+        AsyncDrainBudget budget;
+        if (config.Runtime.AsyncCommitBudgetMs > 0.0)
+        {
+            budget.MaxTime = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double, std::milli>(config.Runtime.AsyncCommitBudgetMs));
+        }
+        engine.Tasks().DrainCompletions(budget);
+    });
+
     driver.Register(FramePhase::ScheduleTicks, [&engine](PhaseContext& ctx) {
         ctx.Registries = engine.Schedule().BuildFrameView(engine.Zones());
         ctx.Runtime->ScheduleFixedTicks();
@@ -128,7 +142,16 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         };
         engine.Schedule().RunPhysics(physics);
 
-        PropagateTransforms(ctx.Registries.Logic);
+        // Config-selected axis. Serial default: the primary target streams a
+        // handful of room-sized zones, whose whole Logic span costs far less
+        // than the ~300 us pool dispatch floor (measured: 2 heavy zones
+        // already lose, 0.74x; see parallelization.md Stage C). Games holding
+        // many heavy zones live flip ZoneParallelPropagation; both paths are
+        // bit-identical.
+        if (config.Runtime.ZoneParallelPropagation)
+            PropagateTransforms(engine.Jobs(), ctx.Registries.Logic);
+        else
+            PropagateTransforms(ctx.Registries.Logic);
 
         PostFixedContext postFixed{
             .EngineInstance = engine,
