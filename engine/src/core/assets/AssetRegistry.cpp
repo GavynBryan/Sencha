@@ -12,6 +12,10 @@ namespace
         if (extension == ".smat")  return AssetType::Material;
         if (extension == ".stex")  return AssetType::Texture;
         if (extension == ".smap")  return AssetType::Scene;
+        // Stage 1 dev mapping: loose PNGs load as base-color textures until
+        // the cook step emits usage-tagged .stex (docs/assets/pipeline.md,
+        // Decisions B/E).
+        if (extension == ".png")   return AssetType::Texture;
         return AssetType::Unknown;
     }
 

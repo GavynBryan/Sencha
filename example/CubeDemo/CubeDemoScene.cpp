@@ -5,7 +5,6 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
 #include <world/serialization/SceneSerializer.h>
 #include <zone/DefaultZoneBuilder.h>
 
@@ -13,22 +12,6 @@
 #include <format>
 #include <fstream>
 #include <sstream>
-
-void RegisterDemoSceneAssets(DemoScene& scene, AssetSystem& assets)
-{
-    scene.CubeMesh = assets.RegisterProceduralStaticMesh(
-        "asset://meshes/dev/cube.smesh",
-        StaticMeshPrimitives::BuildCube(1.0f));
-    scene.Red = assets.RegisterProceduralMaterial(
-        "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.15f, 0.1f,  1.0f) });
-    scene.Green = assets.RegisterProceduralMaterial(
-        "asset://materials/dev/green.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.1f, 0.85f, 0.45f, 1.0f) });
-    scene.Blue = assets.RegisterProceduralMaterial(
-        "asset://materials/dev/blue.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(0.2f, 0.45f, 1.0f,  1.0f) });
-}
 
 DemoSceneParse ParseDemoSceneFile(std::string_view scenePath)
 {

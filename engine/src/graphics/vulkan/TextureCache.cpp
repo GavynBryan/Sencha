@@ -81,6 +81,34 @@ TextureHandle TextureCache::CreateFromImage(const Image& image,
     return AllocHandle(std::move(entry));
 }
 
+TextureHandle TextureCache::CreateFromImage(std::string_view name,
+                                             const Image& image,
+                                             const SamplerDesc& sampler)
+{
+    if (name.empty())
+        return CreateFromImage(image, sampler);
+
+    if (TextureHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
+        return existing;
+
+    if (!image.IsValid())
+    {
+        Log.Error("TextureCache: CreateFromImage called with invalid Image for '{}'", name);
+        return {};
+    }
+
+    TextureEntry entry;
+    if (!UploadImage(image, sampler, std::string(name).c_str(), entry))
+        return {};
+
+    return AllocNamedHandle(name, std::move(entry));
+}
+
+TextureHandle TextureCache::Find(std::string_view name) const
+{
+    return FindRegisteredHandle(name);
+}
+
 // -- Accessors ----------------------------------------------------------------
 
 BindlessImageIndex TextureCache::GetBindlessIndex(TextureHandle handle) const

@@ -40,6 +40,12 @@ For new ECS code, prefer the overview and cookbooks. Use the migration and
 decision records when you are changing core storage, scheduling, or lifecycle
 behavior.
 
+## Asset Docs
+
+- `docs/assets/pipeline.md` is the working plan for the asset pipeline: the
+  current-state inventory, the decisions deferred from the parallelization
+  work, and the staged rollout for async asset streaming.
+
 ## Requirements
 
 - CMake 3.20+

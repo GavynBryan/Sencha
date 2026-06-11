@@ -11,6 +11,9 @@
 #include <debug/DebugService.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
+#include <graphics/vulkan/VulkanDescriptorCache.h>
+#include <graphics/vulkan/VulkanImageService.h>
+#include <graphics/vulkan/VulkanSamplerCache.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
@@ -91,12 +94,15 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugService& debug = services.Get<DebugService>();
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();
+    auto& images = services.Get<VulkanImageService>();
+    auto& descriptors = services.Get<VulkanDescriptorCache>();
+    auto& samplers = services.Get<VulkanSamplerCache>();
 
-    Assets.emplace(logging, buffers);
+    Assets.emplace(logging, buffers, images, descriptors, samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     InitSceneSerializer();
-    RegisterDemoSceneAssets(Demo, runtimeAssets.Assets);
+    ScanAssetsDirectory("assets", runtimeAssets.Registry);
 
     // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and
     // the registry skeleton happen on the task thread; deserialization and

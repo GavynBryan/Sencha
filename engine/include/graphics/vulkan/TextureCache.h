@@ -30,8 +30,8 @@ struct TextureEntry
     std::string        PathKey;
 };
 
-class TextureCache;
-using TextureCacheHandle = LifetimeHandle<TextureCache, TextureHandle>;
+// TextureCacheHandle is declared alongside TextureHandle in
+// render/TextureHandle.h so backend-free code can own texture lifetimes.
 
 //=============================================================================
 // TextureCache
@@ -76,6 +76,18 @@ public:
     [[nodiscard]] TextureHandle CreateFromImage(const Image& image,
                                                 const SamplerDesc& sampler = {},
                                                 const char* debugName = nullptr);
+
+    // Named variant with path deduplication: a second call with the same name
+    // returns the existing handle with its refcount incremented (the image is
+    // ignored). Used by AssetSystem, which loads bytes itself and registers
+    // the result under the asset path.
+    [[nodiscard]] TextureHandle CreateFromImage(std::string_view name,
+                                                const Image& image,
+                                                const SamplerDesc& sampler = {});
+
+    // Returns the handle registered under `name` without affecting refcounts,
+    // or an invalid handle if none exists.
+    [[nodiscard]] TextureHandle Find(std::string_view name) const;
 
     // -- Accessors ------------------------------------------------------------
 

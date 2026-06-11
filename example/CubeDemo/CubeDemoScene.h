@@ -21,25 +21,20 @@ struct DemoScene
     EntityId Camera;
     EntityId CenterCube;
     EntityId CenterCubeChild;
-    StaticMeshHandle CubeMesh;
-    MaterialHandle Red;
-    MaterialHandle Green;
-    MaterialHandle Blue;
 };
 
-// The demo scene loads in three stages so the zone can load asynchronously
-// (docs/ecs/parallelization.md, Decision 3):
+// The demo scene loads in two stages so the zone can load asynchronously
+// (docs/ecs/parallelization.md, Decision 3). Assets are file-based: the
+// game scans the assets directory at startup, and the scene deserializer
+// loads .smesh/.smat/PNG content through AssetSystem on demand
+// (docs/assets/pipeline.md, Stage 1).
 //
-//   1. RegisterDemoSceneAssets — main thread, before the load is submitted.
-//      Registers procedural assets and stores their handles (plain values).
-//   2. ParseDemoSceneFile — the async work stage: file IO + JSON parse only.
+//   1. ParseDemoSceneFile — the async work stage: file IO + JSON parse only.
 //      Touches no engine state, so it is safe on a task thread; errors are
 //      returned, not logged, because logger resolution is main-thread-only.
-//   3. FinalizeDemoScene — main thread, inside the zone-load commit. Runs the
-//      scene deserializer (which acquires from the asset caches) and wires
-//      camera/game state. Returns false (and logs) if stage 2 or 3 failed.
-
-void RegisterDemoSceneAssets(DemoScene& scene, AssetSystem& assets);
+//   2. FinalizeDemoScene — main thread, inside the zone-load commit. Runs the
+//      scene deserializer (which loads and acquires from the asset caches)
+//      and wires camera/game state. Returns false (and logs) on failure.
 
 struct DemoSceneParse
 {
