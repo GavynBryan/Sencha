@@ -5,6 +5,7 @@
 #include <core/serialization/BinaryFormat.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
+#include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
@@ -296,6 +297,7 @@ void InitSceneSerializer()
     RegisterComponent<CameraComponent>();
     RegisterComponent<StaticMeshComponent>();
     RegisterComponent<AudioSourceComponent>();
+    RegisterComponent<AudioCaptionComponent>();
 }
 
 const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializerEntries()

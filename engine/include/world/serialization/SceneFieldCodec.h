@@ -1,6 +1,7 @@
 #pragma once
 
 #include <audio/AudioClipCache.h>
+#include <audio/Caption.h>
 #include <core/assets/AssetRef.h>
 #include <core/serialization/Archive.h>
 #include <core/text/InlineString.h>
@@ -80,6 +81,37 @@ struct SceneFieldCodec<AudioClipHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      AudioClipHandle& value,
+                     SceneSerializationContext& context);
+};
+
+// Caption enums persist as author-readable strings ("Subtitle", not 1) in
+// both text and binary. Unknown strings fail the load — a typo'd kind in
+// scene content should surface at load, not silently default.
+template<>
+struct SceneFieldCodec<CaptionKind>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     CaptionKind value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     CaptionKind& value,
+                     SceneSerializationContext& context);
+};
+
+template<>
+struct SceneFieldCodec<CaptionPriority>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     CaptionPriority value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     CaptionPriority& value,
                      SceneSerializationContext& context);
 };
 

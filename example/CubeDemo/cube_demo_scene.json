@@ -41,6 +41,12 @@
                     "pan": 0.0,
                     "looping": false,
                     "play_on_active": true
+                },
+                "AudioCaption": {
+                    "kind": "ClosedCaption",
+                    "channel": "World",
+                    "priority": "Gameplay",
+                    "text": "cc.cube.chime"
                 }
             }
         },

@@ -44,6 +44,15 @@ struct InlineString
         return *this;
     }
 
+    // Same rationale as the const char* constructor: without this, assigning
+    // a string literal is ambiguous between operator=(string_view) and the
+    // copy assignment reached through the converting constructor.
+    InlineString& operator=(const char* text)
+    {
+        Assign(text == nullptr ? std::string_view{} : std::string_view(text));
+        return *this;
+    }
+
     void Assign(std::string_view text)
     {
         const std::size_t count = std::min(text.size(), Capacity - 1);

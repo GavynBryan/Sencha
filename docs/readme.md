@@ -51,6 +51,12 @@ behavior.
   current-state inventory, the decisions deferred from the parallelization
   work, and the staged rollout for async asset streaming.
 
+## Audio Docs
+
+- `docs/audio/runtime.md` is the landed plan for scene-authored audio sources.
+- `docs/audio/captions-and-dialogue.md` is the working plan for subtitles,
+  closed captions, semantic audio cues, and dialogue-line routing.
+
 ## Requirements
 
 - CMake 3.20+

@@ -1,13 +1,18 @@
 #include "CubeDemoSystems.h"
 
+#include <app/Engine.h>
 #include <app/GameContexts.h>
+#include <audio/Caption.h>
+#include <audio/CaptionRuntime.h>
 #include <math/Quat.h>
 #include <world/transform/TransformComponents.h>
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -82,6 +87,69 @@ namespace
         FreeCamera& FreeCam;
     };
 
+    // Console presenter for the "World" channel. Demonstrates the idiomatic
+    // shape: pull Visible(channel) each frame, edge-detect new captions with
+    // Sequence, diff live ids for retirement. Real HUD presenters follow the
+    // same pattern — one per surface, each reading its own channel.
+    struct CaptionConsoleSystem
+    {
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            CaptionRuntime* captions =
+                ctx.EngineInstance.Services().TryGet<CaptionRuntime>();
+            if (captions == nullptr)
+                return;
+
+            std::span<const ActiveCaption> active = captions->Visible("World");
+
+            for (const ActiveCaption& caption : active)
+            {
+                if (caption.Sequence < NextUnseenSequence)
+                    continue;
+                NextUnseenSequence = caption.Sequence + 1;
+
+                const std::string_view kind = CaptionKindToString(caption.Payload.Kind);
+                std::printf("[caption] + %s | %.*s | %s%s\"%s\"",
+                    caption.Payload.Channel.Data,
+                    static_cast<int>(kind.size()), kind.data(),
+                    caption.Payload.Speaker.Data,
+                    caption.Payload.Speaker.Empty() ? "" : ": ",
+                    caption.Payload.Text.Data);
+                if (caption.Voice.IsValid())
+                    std::printf(" (voice-bound)");
+                if (caption.DurationSeconds > 0.0f)
+                    std::printf(" (%.1fs cap)", caption.DurationSeconds);
+                std::printf("\n");
+            }
+
+            // Anything tracked last frame and gone now has retired (voice
+            // stopped, duration expired, or explicit end — all look the same
+            // from outside, which is the point).
+            for (const LiveEntry& entry : Live)
+            {
+                const bool stillActive = std::any_of(
+                    active.begin(), active.end(),
+                    [&](const ActiveCaption& c) { return c.Id == entry.Id; });
+                if (!stillActive)
+                    std::printf("[caption] - \"%s\" after %.1fs\n", entry.Text.Data, entry.AgeSeconds);
+            }
+
+            Live.clear();
+            for (const ActiveCaption& caption : active)
+                Live.push_back({ caption.Id, caption.Payload.Text, caption.AgeSeconds });
+        }
+
+        struct LiveEntry
+        {
+            CaptionId Id;
+            CaptionTextKey Text;
+            float AgeSeconds = 0.0f;
+        };
+
+        uint64_t NextUnseenSequence = 0;
+        std::vector<LiveEntry> Live;
+    };
+
     struct MouseTraceSystem
     {
         explicit MouseTraceSystem(FreeCamera& freeCamera)
@@ -150,6 +218,7 @@ void RegisterCubeDemoSystems(EngineSchedule& schedule,
                              FreeCamera& freeCamera,
                              DemoScene& scene)
 {
+    schedule.Register<CaptionConsoleSystem>();
     schedule.Register<MouseTraceSystem>(freeCamera);
     schedule.Register<FreeCameraLookSystem>(registry, freeCamera);
     schedule.Register<FreeCameraMovementSystem>(registry, freeCamera);

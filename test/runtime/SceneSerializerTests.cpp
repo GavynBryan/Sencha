@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <core/assets/AssetSystem.h>
 #include <core/json/JsonParser.h>
@@ -72,6 +73,7 @@ namespace
         registry.Components.RegisterComponent<StaticMeshComponent>();
         registry.Components.RegisterComponent<CameraComponent>();
         registry.Components.RegisterComponent<AudioSourceComponent>();
+        registry.Components.RegisterComponent<AudioCaptionComponent>();
         return registry;
     }
 

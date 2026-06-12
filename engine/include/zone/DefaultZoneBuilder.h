@@ -12,6 +12,7 @@
 
 class AudioClipCache;
 class AudioService;
+class CaptionRuntime;
 class Registry;
 class ZoneRuntime;
 
@@ -21,7 +22,8 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               StaticMeshCache* meshes = nullptr,
                               MaterialCache* materials = nullptr,
                               AudioClipCache* audioClips = nullptr,
-                              AudioService* audio = nullptr);
+                              AudioService* audio = nullptr,
+                              CaptionRuntime* captions = nullptr);
 
 // Registration-only part of CreateDefault3DZone, usable on a detached
 // registry (async zone builds): components, resources, and the asset-store
@@ -31,7 +33,8 @@ void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes = nullptr,
                                  MaterialCache* materials = nullptr,
                                  AudioClipCache* audioClips = nullptr,
-                                 AudioService* audio = nullptr);
+                                 AudioService* audio = nullptr,
+                                 CaptionRuntime* captions = nullptr);
 
 EntityId CreateDefaultEntity(Registry& registry,
                              const Transform3f& local = Transform3f::Identity());

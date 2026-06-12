@@ -624,3 +624,5 @@ Read this map with:
 - `docs/ecs/parallelization.md` for job/async rationale and constraints
 - `docs/assets/pipeline.md` for the asset pipeline plan and current status
 - `docs/audio/runtime.md` for the audio source component slice
+- `docs/audio/captions-and-dialogue.md` for the planned subtitle, closed
+  caption, audio cue, and dialogue-line layer

@@ -2,6 +2,7 @@
 
 #include <core/config/AppConfig.h>
 #include <core/config/AudioConfig.h>
+#include <core/config/CaptionConfig.h>
 #include <core/config/DebugConfig.h>
 #include <core/config/GraphicsConfig.h>
 #include <core/config/RuntimeConfig.h>
@@ -35,6 +36,7 @@ struct EngineConfig
     EngineGraphicsConfig Graphics;
     EngineDebugConfig Debug;
     EngineAudioConfig Audio;
+    EngineCaptionConfig Captions;
 };
 
 //=============================================================================

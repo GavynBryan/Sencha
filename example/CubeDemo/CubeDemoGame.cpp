@@ -5,6 +5,7 @@
 #include <app/DefaultRenderPipeline.h>
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
+#include <audio/CaptionRuntime.h>
 #include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
@@ -167,11 +168,18 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     MaterialCache* materials = &runtimeAssets.Materials;
     AudioClipCache* audioClips = &runtimeAssets.AudioClips;
     AudioService* audio = services.TryGet<AudioService>();
+    CaptionRuntime* captions = services.TryGet<CaptionRuntime>();
+    if (captions != nullptr)
+    {
+        CaptionSettings captionSettings;
+        captionSettings.ClosedCaptionsEnabled = true;
+        captions->SetSettings(captionSettings);
+    }
 
     ZoneLoader->BeginLoad(
         ZoneId{ 1 },
-        [parsed, meshes, materials, audioClips, audio](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio);
+        [parsed, meshes, materials, audioClips, audio, captions](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
             *parsed = ParseDemoSceneFile("cube_demo_scene.json");
         },
         [this, parsed, &logging](Registry& registry) {

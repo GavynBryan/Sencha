@@ -1,5 +1,6 @@
 #include <zone/DefaultZoneBuilder.h>
 
+#include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -11,10 +12,11 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               StaticMeshCache* meshes,
                               MaterialCache* materials,
                               AudioClipCache* audioClips,
-                              AudioService* audio)
+                              AudioService* audio,
+                              CaptionRuntime* captions)
 {
     Registry& registry = zones.CreateZone(zone);
-    InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio);
+    InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
     zones.SetParticipation(zone, participation);
     return registry;
 }
@@ -23,7 +25,8 @@ void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes,
                                  MaterialCache* materials,
                                  AudioClipCache* audioClips,
-                                 AudioService* audio)
+                                 AudioService* audio,
+                                 CaptionRuntime* captions)
 {
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.RegisterComponent<LocalTransform>();
@@ -32,8 +35,9 @@ void InitializeDefault3DRegistry(Registry& registry,
     registry.Components.RegisterComponent<StaticMeshComponent>();
     registry.Components.RegisterComponent<CameraComponent>();
     registry.Components.RegisterComponent<AudioSourceComponent>();
+    registry.Components.RegisterComponent<AudioCaptionComponent>();
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
-    registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio);
+    registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio, captions);
 }
 
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
