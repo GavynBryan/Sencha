@@ -4,6 +4,12 @@
 
 #include <cstdint>
 
+// Version 2: tangents joined the base vertex (Decision M; 32 -> 48 bytes).
+// Taken once, alongside the glTF importer that emits them — there is no v1
+// content to migrate: dev meshes regenerate at build time and cooked meshes
+// recook.
+inline constexpr uint32_t kSmeshFormatVersion = 2;
+
 enum class SmeshIndexFormat : uint32_t
 {
     UInt32 = 0,
@@ -58,4 +64,4 @@ struct SmeshSectionRecord
 
 static_assert(sizeof(SmeshFileHeader) == 88);
 static_assert(sizeof(SmeshSectionRecord) == 48);
-static_assert(sizeof(StaticMeshVertex) == 32);
+static_assert(sizeof(StaticMeshVertex) == 48);

@@ -20,6 +20,11 @@ namespace
         return IsFinite(value.X) && IsFinite(value.Y) && IsFinite(value.Z);
     }
 
+    bool IsFinite(const Vec4& value)
+    {
+        return IsFinite(value.X) && IsFinite(value.Y) && IsFinite(value.Z) && IsFinite(value.W);
+    }
+
     bool IsFinite(const Aabb3d& bounds)
     {
         return IsFinite(bounds.Min) && IsFinite(bounds.Max);
@@ -53,6 +58,13 @@ StaticMeshValidationResult ValidateStaticMeshData(const StaticMeshData& mesh)
             AddError(result, "vertex " + std::to_string(vertexIndex) + " normal must be finite");
         if (!IsFinite(vertex.Uv0))
             AddError(result, "vertex " + std::to_string(vertexIndex) + " uv0 must be finite");
+        if (!IsFinite(vertex.Tangent))
+            AddError(result, "vertex " + std::to_string(vertexIndex) + " tangent must be finite");
+        // Cooked data is normalized at cook; the runtime never fixes it
+        // (Decision N's discipline). A zero or off-sign w means the producer
+        // skipped tangent generation, not a value to patch here.
+        if (vertex.Tangent.W != 1.0f && vertex.Tangent.W != -1.0f)
+            AddError(result, "vertex " + std::to_string(vertexIndex) + " tangent w must be +1 or -1");
     }
 
     for (size_t index = 0; index < mesh.Indices.size(); ++index)

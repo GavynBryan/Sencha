@@ -107,6 +107,24 @@
                     "section_mask": 4294967295
                 }
             }
+        },
+        {
+            "components": {
+                "Transform": {
+                    "local": {
+                        "position": [0.0, 1.1, -1.5],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                },
+                "StaticMesh": {
+                    "mesh": "asset://meshes/dev/torus.glb",
+                    "material": "asset://materials/dev/red.smat",
+                    "visible": true,
+                    "layer_mask": 4294967295,
+                    "section_mask": 4294967295
+                }
+            }
         }
     ],
     "hierarchy": [

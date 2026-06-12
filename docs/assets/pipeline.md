@@ -854,6 +854,69 @@ TSan-clean), Decisions E and L made real:
   4b validation slice samples base color only; normal/ORM/emissive sampling
   and PBR lighting remain render-ladder work.
 
+### Stage 4c — mesh cook (landed)
+
+Test-verified (782 tests green; 14 new in `test/core/MeshCookTests.cpp`, all
+zero-thread except the one that deliberately shells out to real Blender and
+skips where it isn't installed). Decisions B and M made real:
+
+- **The Decision M vertex bump, taken once:** `StaticMeshVertex` grew
+  `Vec4 Tangent` (xyz + handedness sign, the glTF convention; 32 → 48
+  bytes), `.smesh` moved to version 2 (`kSmeshFormatVersion`), and the
+  loader rejects any other version — there was no v1 content to migrate:
+  the dev cube regenerates at build time, cooked meshes recook. Validation
+  now pins the invariant every producer must meet: finite tangent, w
+  exactly ±1 (`MeshCook.LoaderRejectsVersionOneSmesh` pins the version
+  gate). The forward pipeline carries tangents via the binding stride but
+  declares no attribute until a shader consumes them — the validation
+  layer warns on attributes shaders ignore, and normal mapping is
+  render-ladder work.
+- `assets/cook/MeshCook.{h,cpp}` (SENCHA_ENABLE_COOK only) — the one glTF
+  import path: cgltf (v1.15, single-header, the stb precedent) parses
+  `.glb`/`.gltf`; each glTF mesh becomes a `StaticMeshData` with
+  primitives as sections (`MaterialSlot` = primitive ordinal), geometry in
+  mesh-local space. **Sources must be self-contained** (.glb or data: URI
+  buffers); external `.bin` files are rejected with a pointed error,
+  because the cooked cache keys staleness on one source file's hash and a
+  sibling that changes without the source changing would rot it.
+- **Tangents, three ways, every cooked vertex covered:** authored TANGENT
+  streams pass through (w snapped to ±1 — normalization is the cook's
+  job), sources with UVs get MikkTSpace (pinned commit, cook-only dep;
+  de-index → generate → re-weld exact duplicates so flat geometry doesn't
+  triple its vertex count), and UV-less sources get a deterministic
+  normal-derived basis. The MikkTSpace handedness is pinned by test: a +Z
+  quad with U along +X must yield T = +X, w = +1.
+- **Artifact naming:** a single-mesh source keeps the source's virtual
+  path (`asset://meshes/torus.glb` serves `.smesh` bytes — the texture-
+  cook precedent; the loader already sniffs bytes, not extensions). A
+  multi-mesh source emits `asset://<source>#<mesh-name>` per mesh — `#`
+  cannot appear in scanned file paths, so cooked names never collide with
+  real files. Caveat recorded: splitting a one-mesh file into several
+  renames its artifact from `<source>` to `<source>#<name>`.
+- `assets/cook/BlendCook.{h,cpp}` — the `.blend` front end: headless
+  Blender (`--background --factory-startup --python-expr`, executable
+  overridable via `SENCHA_BLENDER`) exports a temp `.glb`, which funnels
+  through the glTF path under the `.blend` source's own virtual path.
+  Blender is a dev-machine dependency of this importer only (the
+  glslang/MikkTSpace never-ships rule); a machine without it fails just
+  the `.blend` sources, isolated per source by the driver. This is the
+  one importer that cannot be pure (temp file + subprocess by nature);
+  everything after the export is the shared pure path. Verified against
+  real Blender 5.1: factory default scene → one welded cube artifact.
+- CubeDemo exercises the chain end to end: a committed `torus.glb`
+  (UV'd, no authored tangents — the MikkTSpace path) joined the scene
+  with the red material. Verified under llvmpipe: cold run cooks PNG +
+  glb and streams all six manifest assets through the async lane with
+  zero errors and zero fallback warnings; warm run serves both from the
+  cooked cache without invoking an importer.
+- Deliberately not done, with reasons: no node-transform baking (the
+  scene places instances; the cook emits geometry as authored), no
+  material/skin/animation extraction from glTF (materials are authored
+  `.smat`; skins/clips are Stage 5, where the multi-artifact keying
+  built in 4a starts paying), and glTF primitives without NORMAL are
+  rejected rather than computed — re-export is cheap, silent normal
+  generation is a data-quality lie.
+
 
 
 The original open questions were answered the day the plan was written:

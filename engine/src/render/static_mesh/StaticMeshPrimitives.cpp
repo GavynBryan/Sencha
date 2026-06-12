@@ -11,11 +11,19 @@ namespace
                  Vec3d d,
                  Vec3d normal)
     {
+        // The quad's UVs put U along a->b and V along a->d, so the tangent
+        // is the U direction; w orients the bitangent to match V (glTF
+        // convention: bitangent = cross(N, T) * w).
+        const Vec3d tangentDir = (b - a).Normalized();
+        const Vec3d vDir = (d - a).Normalized();
+        const float handedness = normal.Cross(tangentDir).Dot(vDir) >= 0.0f ? 1.0f : -1.0f;
+        const Vec4 tangent(tangentDir.X, tangentDir.Y, tangentDir.Z, handedness);
+
         const uint32_t base = static_cast<uint32_t>(mesh.Vertices.size());
-        mesh.Vertices.push_back({ a, normal, Vec2d(0.0f, 0.0f) });
-        mesh.Vertices.push_back({ b, normal, Vec2d(1.0f, 0.0f) });
-        mesh.Vertices.push_back({ c, normal, Vec2d(1.0f, 1.0f) });
-        mesh.Vertices.push_back({ d, normal, Vec2d(0.0f, 1.0f) });
+        mesh.Vertices.push_back({ a, normal, Vec2d(0.0f, 0.0f), tangent });
+        mesh.Vertices.push_back({ b, normal, Vec2d(1.0f, 0.0f), tangent });
+        mesh.Vertices.push_back({ c, normal, Vec2d(1.0f, 1.0f), tangent });
+        mesh.Vertices.push_back({ d, normal, Vec2d(0.0f, 1.0f), tangent });
         mesh.Indices.insert(mesh.Indices.end(), {
             base + 0, base + 1, base + 2,
             base + 0, base + 2, base + 3,

@@ -213,7 +213,7 @@ bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
         Log.Error("StaticMeshLoader: failed to load '{}': invalid magic", sourceName);
         return false;
     }
-    if (header.Version != 1)
+    if (header.Version != kSmeshFormatVersion)
     {
         Log.Error("StaticMeshLoader: failed to load '{}': unsupported version {}", sourceName, header.Version);
         return false;

@@ -81,7 +81,7 @@ bool StaticMeshSerializer::WriteToWriter(BinaryWriter& writer, const StaticMeshD
     header.Magic[1] = 'M';
     header.Magic[2] = 'S';
     header.Magic[3] = 'H';
-    header.Version = 1;
+    header.Version = kSmeshFormatVersion;
     header.Flags = 0;
     header.Reserved0 = 0;
     header.Reserved1 = 0;

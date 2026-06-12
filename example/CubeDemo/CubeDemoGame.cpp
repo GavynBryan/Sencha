@@ -8,6 +8,8 @@
 #include <app/Engine.h>
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/BlendCook.h>
+#include <assets/cook/MeshCook.h>
 #include <assets/cook/TextureCook.h>
 #endif
 #include <world/serialization/SceneSerializer.h>
@@ -110,14 +112,21 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
 #ifdef SENCHA_ENABLE_COOK
     // Import-on-demand (docs/assets/pipeline.md, Decision B): cook source
-    // formats (the checker PNG → usage-tagged .stex) into .cooked/ and
-    // register the artifacts under their virtual paths. Runs before the
-    // scan; the scanner only knows runtime formats and skips .cooked/.
+    // formats (the checker PNG → usage-tagged .stex, the torus .glb →
+    // tangent-carrying .smesh) into .cooked/ and register the artifacts
+    // under their virtual paths. Runs before the scan; the scanner only
+    // knows runtime formats and skips .cooked/. Per-source failures are
+    // logged and isolated by the driver; the demo proceeds with whatever
+    // cooked.
     {
         PngTextureImporter pngImporter;
+        GltfMeshImporter gltfImporter;
+        BlendMeshImporter blendImporter;
         AssetImporterRegistry importers;
         importers.Register(pngImporter);
-        ImportAssetsOnDemand("assets", importers, runtimeAssets.Registry, logging);
+        importers.Register(gltfImporter);
+        importers.Register(blendImporter);
+        (void)ImportAssetsOnDemand("assets", importers, runtimeAssets.Registry, logging);
     }
 #endif
 

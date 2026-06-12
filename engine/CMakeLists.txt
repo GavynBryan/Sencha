@@ -142,6 +142,33 @@ if(SENCHA_ENABLE_COOK)
         "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
     )
     target_include_directories(sencha_engine PUBLIC "${bc7enc_SOURCE_DIR}")
+
+    # glTF parsing for the mesh cook (Decision B): cgltf, single-header,
+    # the stb precedent. The implementation TU lives in src/assets/cook.
+    FetchContent_Declare(
+        cgltf
+        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+        GIT_TAG        bbeb5b0b070ddacddac6852fb72143eb68454937 # v1.15
+    )
+    FetchContent_GetProperties(cgltf)
+    if(NOT cgltf_POPULATED)
+        FetchContent_Populate(cgltf)
+    endif()
+    target_include_directories(sencha_engine PUBLIC "${cgltf_SOURCE_DIR}")
+
+    # Tangent generation for the mesh cook (Decision M): MikkTSpace, the
+    # de-facto standard. Cook-only, never ships — the glslang rule.
+    FetchContent_Declare(
+        mikktspace
+        GIT_REPOSITORY https://github.com/mmikk/MikkTSpace.git
+        GIT_TAG        3e895b49d05ea07e4c2133156cfa94369e19e409
+    )
+    FetchContent_GetProperties(mikktspace)
+    if(NOT mikktspace_POPULATED)
+        FetchContent_Populate(mikktspace)
+    endif()
+    target_sources(sencha_engine PRIVATE "${mikktspace_SOURCE_DIR}/mikktspace.c")
+    target_include_directories(sencha_engine PUBLIC "${mikktspace_SOURCE_DIR}")
 endif()
 
 if(WIN32)

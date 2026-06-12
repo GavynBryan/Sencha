@@ -71,6 +71,10 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
             { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
             { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
             { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
+            // Tangents (Decision M) ride the vertex via the binding stride
+            // but get no attribute until a shader consumes them (normal
+            // mapping is render-ladder work) — the validation layer warns
+            // on attributes the shader ignores.
         };
         desc.CullMode = VK_CULL_MODE_BACK_BIT;
         desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
