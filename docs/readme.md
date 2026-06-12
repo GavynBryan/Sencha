@@ -18,6 +18,11 @@ example/    Small executable examples.
 test/       GoogleTest-based engine tests.
 ```
 
+## Core Architecture Map
+
+- `docs/core-systems-map.md` is the first broad map of the engine: core
+  systems, ownership, dependency directions, frame flow, and constraints.
+
 ## ECS Docs
 
 The ECS docs describe the implementation currently in the tree:
