@@ -720,7 +720,7 @@ What landed where:
   voice's death. Default channels (World/Cutscene/UI) install when config is
   empty.
 - `audio/AudioCaptionComponent.h` — the component (Decision D), traits
-  (OnRemove ends the caption), TypeSchema; `SceneChunk::AudioCaptions`
+  (OnRemove ends the caption), TypeSchema with `SceneChunkId`
   ('ACAP'); enum-as-string codecs in `SceneFieldCodec` (unknown strings fail
   the load). `AudioSourceRuntime` grew the nullable `Captions` pointer.
 - `audio/CaptionSystem.{h,cpp}` — registered after `AudioSystem` (Decision

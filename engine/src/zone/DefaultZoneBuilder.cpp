@@ -1,8 +1,8 @@
 #include <zone/DefaultZoneBuilder.h>
 
-#include <audio/AudioCaptionComponent.h>
-#include <audio/AudioSourceComponent.h>
+#include <world/ComponentManifest.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/ComponentStorageTraits.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneRuntime.h>
 
@@ -29,13 +29,12 @@ void InitializeDefault3DRegistry(Registry& registry,
                                  CaptionRuntime* captions)
 {
     registry.Resources.Register<ActiveCameraService>();
-    registry.Components.RegisterComponent<LocalTransform>();
-    registry.Components.RegisterComponent<WorldTransform>();
-    registry.Components.RegisterComponent<Parent>();
-    registry.Components.RegisterComponent<StaticMeshComponent>();
-    registry.Components.RegisterComponent<CameraComponent>();
-    registry.Components.RegisterComponent<AudioSourceComponent>();
-    registry.Components.RegisterComponent<AudioCaptionComponent>();
+    // Storage traits, not raw RegisterComponent: LocalTransform's traits also
+    // register WorldTransform and Parent.
+    ForEachSceneComponent([&](auto tag)
+    {
+        ComponentStorageTraits<typename decltype(tag)::Type>::Register(registry);
+    });
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
     registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio, captions);
 }

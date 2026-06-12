@@ -4,6 +4,7 @@
 #include <core/metadata/EnumSchema.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <core/service/IService.h>
 #include <ecs/World.h>
 #include <ecs/EntityId.h>
@@ -54,6 +55,7 @@ template <>
 struct TypeSchema<CameraComponent>
 {
     static constexpr std::string_view Name = "Camera";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('C', 'A', 'M', 'R');
 
     static auto Fields()
     {

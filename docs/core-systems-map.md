@@ -220,14 +220,18 @@ Scene serialization is schema-driven:
 - `SceneFieldCodec<T>` handles special field types, especially runtime handles
   that serialize as asset paths.
 - `ComponentStorageTraits<T>` maps a serializable component to a binary chunk
-  ID and defines how it is inserted into registry storage.
+  ID and defines how it is inserted into registry storage. The primary
+  template handles any component whose `TypeSchema` declares a `SceneChunkId`;
+  only `LocalTransform` is specialized (it co-registers `WorldTransform` and
+  `Parent`). All specializations live in `ComponentStorageTraits.h` — see the
+  ODR note in that header.
 
-`InitSceneSerializer()` registers the built-in serializable components:
-
-- `LocalTransform` under JSON key `Transform`
-- `CameraComponent` under `Camera`
-- `StaticMeshComponent` under `StaticMesh`
-- `AudioSourceComponent` under `AudioSource`
+The set of serializable components is named once, in
+`world/ComponentManifest.h` (`EngineSceneComponents`). `InitSceneSerializer()`
+and `InitializeDefault3DRegistry()` both fold over that list, so serializer
+registration and storage registration cannot drift apart. Each component's
+JSON key and chunk FourCC live on its own `TypeSchema<T>` (`Name`,
+`SceneChunkId`).
 
 JSON scene format:
 
@@ -537,14 +541,22 @@ systems to know about gameplay or backend modules.
 
 New component:
 
-1. Define plain data near the owning feature.
-2. Register it before any entity is created in each registry that may use it.
-3. Add `TypeSchema<T>` only for authored fields.
+1. Define plain data near the owning feature. Components must be trivially
+   copyable (enforced by a `static_assert` in `World::RegisterComponent`).
+2. Add `TypeSchema<T>` only for authored fields. JSON keys are snake_case of
+   the member name; `.Default()` values must equal the member initializers
+   (both enforced by convention/tests so future reflection-generated schemas
+   stay wire-compatible — see docs/ecs/component-registration-plan.md).
+3. If it serializes, add `static constexpr std::uint32_t SceneChunkId` to its
+   `TypeSchema` and add the type to `EngineSceneComponents` in
+   `world/ComponentManifest.h`. That is the only registration edit; storage
+   traits default from the primary template.
 4. Add `ComponentTraits<T>` only if lifetime hooks are needed.
-5. If it serializes, add `ComponentStorageTraits<T>`, a unique `SceneChunk`
-   FourCC, and register it from `InitSceneSerializer()` or the owning module.
-6. If it holds asset handles, retain on add and release on remove through a
+5. If it holds asset handles, retain on add and release on remove through a
    world resource that stores cache pointers.
+6. Runtime-only (non-serialized) components register directly via
+   `RegisterComponent<T>()` before any entity is created in each registry
+   that may use them.
 
 New asset type:
 

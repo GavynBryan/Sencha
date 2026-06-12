@@ -89,6 +89,9 @@ public:
     template <typename T>
     ComponentId RegisterComponent()
     {
+        static_assert(std::is_trivially_copyable_v<T>,
+                      "Components must be trivially copyable: archetype chunks "
+                      "relocate rows with memcpy.");
         assert(!EntityCreated
                && "Component registration after entity creation is forbidden (v1).");
 

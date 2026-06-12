@@ -48,6 +48,12 @@ struct ComponentStorageTraits<SceneCodecMaterialComponent>
 {
     static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'A', 'T');
 
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<SceneCodecMaterialComponent>())
+            registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
+    }
+
     static bool Add(Registry& registry, EntityId entity, SceneCodecMaterialComponent component)
     {
         if (registry.Components.HasComponent<SceneCodecMaterialComponent>(entity))
@@ -508,7 +514,7 @@ TEST(SceneSerializer, BinaryLoadRollsBackCreatedEntitiesOnFailure)
 
     {
         ChunkWriter chunk;
-        ASSERT_TRUE(chunk.Begin(writer, SceneChunk::Cameras, SceneVersion));
+        ASSERT_TRUE(chunk.Begin(writer, TypeSchema<CameraComponent>::SceneChunkId, SceneVersion));
         ASSERT_TRUE(Serialize(writer, std::uint32_t{ 1 }));
         ASSERT_TRUE(Serialize(writer, EntityIndex{ 99 }));
         ASSERT_TRUE(chunk.End(writer));
@@ -550,7 +556,7 @@ TEST(SceneSerializer, BinarySkipsUnknownChunks)
 
     {
         ChunkWriter chunk;
-        ASSERT_TRUE(chunk.Begin(writer, SceneChunk::Cameras, SceneVersion));
+        ASSERT_TRUE(chunk.Begin(writer, TypeSchema<CameraComponent>::SceneChunkId, SceneVersion));
         ASSERT_TRUE(Serialize(writer, std::uint32_t{ 1 }));
         ASSERT_TRUE(Serialize(writer, EntityIndex{ 0 }));
         ASSERT_TRUE(Serialize(writer, CameraComponent{}));

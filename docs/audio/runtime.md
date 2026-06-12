@@ -75,8 +75,8 @@ struct AudioSourceComponent
 - `SceneFieldCodec<AudioClipHandle>` follows the mesh/material codecs:
   save writes the path (`AssetSystem::GetPathForAudioClip` — the parity gap
   deliberately skipped in 4d closes here), load resolves through
-  `AssetSystem::LoadAudioClip`. Registration is one
-  `RegisterComponent<AudioSourceComponent>()` line in `InitSceneSerializer`.
+  `AssetSystem::LoadAudioClip`. Registration is one line in
+  `EngineSceneComponents` (`world/ComponentManifest.h`).
 - The bus is a **name**, resolved per play. Buses are game config fixed at
   `AudioService` construction, but the component cannot resolve an index at
   deserialization time (no service in scope) and per-play name lookup is

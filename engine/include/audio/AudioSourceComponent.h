@@ -5,6 +5,7 @@
 #include <audio/AudioVoice.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <core/text/InlineString.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
@@ -80,9 +81,8 @@ struct AudioSourceRuntime
 };
 
 // Archetype storage relocates components with memcpy, so the component must
-// stay trivially copyable — this is why Bus is an InlineString, not std::string.
-static_assert(std::is_trivially_copyable_v<AudioSourceComponent>,
-              "AudioSourceComponent must be trivially copyable for ECS chunk storage");
+// stay trivially copyable (enforced by World::RegisterComponent) — this is
+// why Bus is an InlineString, not std::string.
 
 template <>
 struct ComponentTraits<AudioSourceComponent>
@@ -119,6 +119,7 @@ template <>
 struct TypeSchema<AudioSourceComponent>
 {
     static constexpr std::string_view Name = "AudioSource";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('A', 'S', 'R', 'C');
 
     static auto Fields()
     {

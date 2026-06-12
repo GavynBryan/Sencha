@@ -5,6 +5,7 @@
 #include <audio/CaptionRuntime.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
@@ -54,9 +55,8 @@ struct AudioCaptionComponent
 };
 
 // Archetype storage relocates components with memcpy, so the component must
-// stay trivially copyable — this is why the names are InlineStrings.
-static_assert(std::is_trivially_copyable_v<AudioCaptionComponent>,
-              "AudioCaptionComponent must be trivially copyable for ECS chunk storage");
+// stay trivially copyable (enforced by World::RegisterComponent) — this is
+// why the names are InlineStrings.
 
 template <>
 struct ComponentTraits<AudioCaptionComponent>
@@ -81,6 +81,7 @@ template <>
 struct TypeSchema<AudioCaptionComponent>
 {
     static constexpr std::string_view Name = "AudioCaption";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('A', 'C', 'A', 'P');
 
     static auto Fields()
     {
