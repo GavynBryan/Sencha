@@ -1,5 +1,6 @@
 #pragma once
 
+#include <audio/AudioSourceComponent.h>
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
@@ -79,6 +80,26 @@ struct ComponentStorageTraits<LocalTransform>
         registry.Components.AddComponent(entity, component);
         if (!registry.Components.HasComponent<WorldTransform>(entity))
             registry.Components.AddComponent(entity, WorldTransform{ component.Value });
+        return true;
+    }
+};
+
+template <>
+struct ComponentStorageTraits<AudioSourceComponent>
+{
+    static constexpr std::uint32_t BinaryChunkId = SceneChunk::AudioSources;
+
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<AudioSourceComponent>())
+            registry.Components.RegisterComponent<AudioSourceComponent>();
+    }
+
+    static bool Add(Registry& registry, EntityId entity, AudioSourceComponent component)
+    {
+        if (registry.Components.HasComponent<AudioSourceComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
         return true;
     }
 };

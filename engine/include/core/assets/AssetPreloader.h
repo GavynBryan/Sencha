@@ -1,5 +1,6 @@
 #pragma once
 
+#include <audio/AudioClipCache.h>
 #include <core/assets/AssetInFlightTable.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/Logger.h>
@@ -48,7 +49,8 @@ public:
     [[nodiscard]] uint32_t FailureCount() const { return Failures; }
     [[nodiscard]] uint32_t HeldHandleCount() const
     {
-        return static_cast<uint32_t>(Meshes.size() + Materials.size() + Textures.size());
+        return static_cast<uint32_t>(Meshes.size() + Materials.size()
+                                     + Textures.size() + AudioClips.size());
     }
 
     // Runs once, on the owner thread, when the last pending asset commits —
@@ -76,6 +78,7 @@ private:
     void Store(StaticMeshHandle handle);
     void Store(MaterialHandle handle);
     void Store(TextureHandle handle);
+    void Store(AudioClipHandle handle);
     void FireOnComplete();
 
     AssetSystem& Assets;
@@ -92,6 +95,7 @@ private:
     std::vector<StaticMeshHandle> Meshes;
     std::vector<MaterialHandle> Materials;
     std::vector<TextureHandle> Textures;
+    std::vector<AudioClipHandle> AudioClips;
 };
 
 //=============================================================================

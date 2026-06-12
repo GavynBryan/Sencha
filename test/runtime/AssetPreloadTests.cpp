@@ -1,3 +1,5 @@
+#include <assets/audio_clip/AudioClipSerializer.h>
+#include <audio/AudioClipCache.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetPreloader.h>
 #include <core/assets/AssetSystem.h>
@@ -54,13 +56,55 @@ namespace
         std::filesystem::path File;
     };
 
+    // One temp .sclip on disk plus its registry record — the audio analogue
+    // of TempMaterialAsset, and like materials the whole round trip is
+    // CPU-side, so the preload path runs headless.
+    class TempAudioClipAsset
+    {
+    public:
+        TempAudioClipAsset(AssetRegistry& registry, std::string_view name)
+        {
+            AudioClip clip;
+            clip.SampleRate = 22050;
+            clip.ChannelCount = 1;
+            clip.Samples = { 100, 200, 300, 400 };
+            std::vector<std::byte> bytes;
+            EXPECT_TRUE(WriteSclipToBytes(clip, bytes));
+
+            static int counter = 0;
+            File = std::filesystem::temp_directory_path() /
+                   ("sencha_preload_audio_" + std::to_string(++counter) + ".sclip");
+            std::ofstream out(File, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
+
+            Path = "asset://audio/test/" + std::string(name) + ".sclip";
+            EXPECT_TRUE(registry.Register(AssetRecord{
+                .Type = AssetType::Audio,
+                .SourceKind = AssetSourceKind::File,
+                .Path = Path,
+                .FilePath = File.generic_string(),
+            }));
+        }
+
+        ~TempAudioClipAsset()
+        {
+            std::error_code ec;
+            std::filesystem::remove(File, ec);
+        }
+
+        std::string Path;
+        std::filesystem::path File;
+    };
+
     struct PreloadHarness
     {
         PreloadHarness()
             : Tasks(0)
             , Registry(Logging)
             , Materials()
-            , Assets(Logging, Registry, nullptr, &Materials)
+            , AudioClips(Logging)
+            , Assets(Logging, Registry, nullptr, &Materials, nullptr, &AudioClips)
             , Preloader(Logging, Registry, Assets, Tasks)
         {
         }
@@ -69,6 +113,7 @@ namespace
         AsyncTaskQueue Tasks;
         AssetRegistry Registry;
         MaterialCache Materials;
+        AudioClipCache AudioClips;
         AssetSystem Assets;
         AssetPreloader Preloader;
     };
@@ -153,6 +198,36 @@ TEST(AssetPreload, MaterialsStreamToResidencyHeadless)
     preload->ReleaseAll();
     EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
     EXPECT_FALSE(h.Materials.Find(blue.Path).IsValid());
+}
+
+TEST(AssetPreload, AudioClipsStreamInWaveOne)
+{
+    PreloadHarness h;
+    TempAudioClipAsset blip(h.Registry, "blip");
+    TempMaterialAsset red(h.Registry, "red");
+
+    const std::vector<std::string> paths{ blip.Path, red.Path };
+    auto preload = h.Preloader.Begin(paths);
+    EXPECT_EQ(preload->PendingCount(), 2u);
+
+    // Wave 1 carries the leaf assets: exactly one task (the clip) is in
+    // flight; the material is deferred until the last wave-1 commit.
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(h.AudioClips.Find(blip.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
+
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 0u);
+    EXPECT_EQ(preload->HeldHandleCount(), 2u);
+
+    // The preload's handles are the only references: releasing them frees
+    // the whole batch.
+    preload->ReleaseAll();
+    EXPECT_FALSE(h.AudioClips.Find(blip.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
 }
 
 TEST(AssetPreload, TwoPreloadsCoalesceOnOneLoad)

@@ -1,6 +1,8 @@
 #include <app/Engine.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
+#include <audio/AudioService.h>
+#include <audio/AudioSystem.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -42,6 +44,12 @@ bool Engine::Initialize()
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     ServiceRegistry.AddService<DebugService>(logging, debugLog);
     EngineSystems.Register<DefaultRenderPipeline>();
+
+    // Audio backend + the system that drives scene AudioSourceComponents
+    // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
+    // is non-fatal: the system no-ops, the engine runs silent.
+    ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
+    EngineSystems.Register<AudioSystem>();
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();

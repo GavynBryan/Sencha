@@ -26,4 +26,5 @@ namespace SceneChunk
     constexpr std::uint32_t MeshRenders = MakeFourCC('M', 'E', 'S', 'H');
     constexpr std::uint32_t Cameras = MakeFourCC('C', 'A', 'M', 'R');
     constexpr std::uint32_t Hierarchy = MakeFourCC('H', 'I', 'E', 'R');
+    constexpr std::uint32_t AudioSources = MakeFourCC('A', 'S', 'R', 'C');
 }

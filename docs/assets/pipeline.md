@@ -917,7 +917,55 @@ skips where it isn't installed). Decisions B and M made real:
   rejected rather than computed — re-export is cheap, silent normal
   generation is a data-quality lie.
 
+### Stage 4d — audio (landed)
 
+Test-verified (799 tests green; 17 new across `test/core/AudioAssetTests.cpp`
+and the preload suite, TSan-clean). Decision F made real — and the
+extensibility proof came in cheap: the whole type is one container, one
+loader, one importer, and switch-case additions; no contract needed bending.
+
+- `assets/audio_clip/AudioClipFormat.h` + `AudioClipSerializer.{h,cpp}` —
+  the `.sclip` container: fixed header (magic, version, rate, channels,
+  sample count) + interleaved Sint16 PCM. Decode happens at cook; the
+  runtime parse is a validated copy, which is what makes the audio stage
+  half pure. Read/write halves are pure functions; bounds checks compare
+  counts, not byte products, so a crafted header can't overflow past them.
+  The container carries *clips* only — the Decision F streamed-music
+  boundary is restated in the header so it doesn't erode silently.
+- `AudioClipAssetLoader` — the staged contract, and the first loader whose
+  round trip is fully headless (no GPU half): stage sniffs container magic
+  (cooked artifacts keep their `.wav` virtual paths, the 4b precedent) and
+  falls back to in-memory WAV decode for loose bytes; commit registers
+  with `AudioClipCache`.
+- `AudioClipCache` lost its file IO (Decision I): `OnLoad` no longer
+  touches the filesystem — `Acquire` resolves registered entries only, so
+  it doubles as the never-loads `TryAcquire`. `Register`/`Find`/`GetName`
+  joined the surface; `LoadAudioClipFromFile` became
+  `LoadAudioClipFromWavBytes` (bytes in, clip out — shared by the runtime
+  fallback and the WAV importer).
+- `AssetSystem` gained `LoadAudioClip`/`TryAcquireAudioClip`/
+  `ReleaseAudioClip` and routes `AssetType::Audio` through `LoaderFor`;
+  `RuntimeAssets` owns an `AudioClipCache`; the preloader carries clips in
+  **wave 1** (audio is leaf data — nothing resolves refs against it at
+  commit); the scanner maps `.sclip` → Audio.
+- `assets/cook/AudioCook.{h,cpp}` (SENCHA_ENABLE_COOK only) — one
+  `AudioClipImporter` for `.wav` and `.ogg`, emitting `.sclip` under the
+  source's virtual path. OGG decode is stb_vorbis (single-TU inclusion
+  from the already-pinned stb checkout — no new dependency); WAV decode is
+  the shared SDL path. No resampling: clips keep the source rate and
+  `AudioService` resamples on playback, as before.
+- AudioTest is the end-to-end proof, migrated to the front door: cook
+  `assets/sampleSound.wav` → scan → `AssetSystem::LoadAudioClip` →
+  playback through the existing cache `Get`. Verified headless (dummy SDL
+  drivers): cold run cooks one artifact; warm run serves from the cooked
+  cache without invoking the importer.
+- Gate honesty: the OGG fixture is a committed 1024-frame sine encoded
+  once with libvorbis (`test/core/AudioOggFixture.h`) — vorbis is lossy,
+  so its tests pin rate/channels/duration and waveform amplitude, never
+  exact samples; the WAV path *is* byte-exact and tested as such. No
+  scene component references audio yet, so manifest-driven audio preload
+  is exercised by direct preloader tests rather than a demo scene — the
+  wave-1 path is pinned headless alongside the existing suite.
 
 The original open questions were answered the day the plan was written:
 

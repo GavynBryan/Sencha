@@ -3,10 +3,13 @@
 #include "CubeDemoSystems.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <audio/AudioClipCache.h>
+#include <audio/AudioService.h>
 #include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
 #ifdef SENCHA_ENABLE_COOK
+#include <assets/cook/AudioCook.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/BlendCook.h>
 #include <assets/cook/MeshCook.h>
@@ -122,10 +125,12 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
         PngTextureImporter pngImporter;
         GltfMeshImporter gltfImporter;
         BlendMeshImporter blendImporter;
+        AudioClipImporter audioImporter;
         AssetImporterRegistry importers;
         importers.Register(pngImporter);
         importers.Register(gltfImporter);
         importers.Register(blendImporter);
+        importers.Register(audioImporter);
         (void)ImportAssetsOnDemand("assets", importers, runtimeAssets.Registry, logging);
     }
 #endif
@@ -160,11 +165,13 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     auto parsed = std::make_shared<DemoSceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialCache* materials = &runtimeAssets.Materials;
+    AudioClipCache* audioClips = &runtimeAssets.AudioClips;
+    AudioService* audio = services.TryGet<AudioService>();
 
     ZoneLoader->BeginLoad(
         ZoneId{ 1 },
-        [parsed, meshes, materials](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materials);
+        [parsed, meshes, materials, audioClips, audio](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio);
             *parsed = ParseDemoSceneFile("cube_demo_scene.json");
         },
         [this, parsed, &logging](Registry& registry) {
@@ -174,7 +181,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
                 DemoRegistry = &registry;
             }
         },
-        ZoneParticipation{ .Visible = true, .Logic = true },
+        ZoneParticipation{ .Visible = true, .Logic = true, .Audio = true },
         std::move(preload));
 
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();

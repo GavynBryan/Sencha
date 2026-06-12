@@ -2,6 +2,7 @@
 
 #include <core/logging/LoggingProvider.h>
 
+#include <audio/AudioClipCache.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
@@ -13,8 +14,9 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          AssetRegistry& registry,
                          StaticMeshCache& meshes,
                          MaterialCache& materials,
-                         TextureCache& textures)
-    : AssetSystem(logging, registry, &meshes, &materials, &textures)
+                         TextureCache& textures,
+                         AudioClipCache& audioClips)
+    : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips)
 {
 }
 
@@ -22,15 +24,18 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          AssetRegistry& registry,
                          StaticMeshCache* meshes,
                          MaterialCache* materials,
-                         TextureCache* textures)
+                         TextureCache* textures,
+                         AudioClipCache* audioClips)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
     , StaticMeshes(meshes)
     , Materials(materials)
     , Textures(textures)
+    , AudioClips(audioClips)
     , MeshLoader(logging, meshes)
     , TexLoader(logging, textures)
     , MatLoader(logging, *this, materials, textures)
+    , ClipLoader(logging, audioClips)
 {
 }
 
@@ -124,6 +129,11 @@ std::string_view AssetSystem::GetPathForStaticMesh(StaticMeshHandle handle) cons
 std::string_view AssetSystem::GetPathForMaterial(MaterialHandle handle) const
 {
     return Materials ? Materials->GetName(handle) : std::string_view{};
+}
+
+std::string_view AssetSystem::GetPathForAudioClip(AudioClipHandle handle) const
+{
+    return AudioClips ? AudioClips->GetName(handle) : std::string_view{};
 }
 
 const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expectedType) const
@@ -323,6 +333,57 @@ TextureHandle AssetSystem::LoadTexture(std::string_view path, bool srgb)
 }
 
 
+AudioClipHandle AssetSystem::LoadAudioClip(std::string_view path)
+{
+    const AssetRecord* record = Resolve(path, AssetType::Audio);
+    if (!record)
+        return {};
+
+    if (!AudioClips)
+    {
+        Log.Error("AssetSystem: missing AudioClipCache for audio asset {}", record->Path);
+        return {};
+    }
+
+    switch (record->SourceKind)
+    {
+    case AssetSourceKind::Procedural:
+    {
+        AudioClipHandle handle = AudioClips->Acquire(record->Path);
+        if (!handle.IsValid())
+        {
+            Log.Error("AssetSystem: audio clip cache has no runtime resource for path {}", record->Path);
+            return {};
+        }
+
+        return handle;
+    }
+    case AssetSourceKind::File:
+    {
+        if (AudioClipHandle existing = AudioClips->Acquire(record->Path); existing.IsValid())
+            return existing;
+
+        AssetStaging staging = ClipLoader.LoadStaged(*record, Source);
+        if (!staging.IsValid())
+        {
+            Log.Error("AssetSystem: {}", staging.Error);
+            return {};
+        }
+
+        return ClipLoader.CommitTyped(std::move(staging));
+    }
+    case AssetSourceKind::Generated:
+        Log.Error("AssetSystem: generated audio clip loading not implemented: {}", record->Path);
+        return {};
+    case AssetSourceKind::Embedded:
+        Log.Error("AssetSystem: embedded audio clip loading not implemented: {}", record->Path);
+        return {};
+    default:
+        Log.Error("AssetSystem: unknown audio clip source kind for path {}", record->Path);
+        return {};
+    }
+}
+
 StaticMeshHandle AssetSystem::TryAcquireStaticMesh(std::string_view path)
 {
     return StaticMeshes ? StaticMeshes->Acquire(path) : StaticMeshHandle{};
@@ -344,6 +405,11 @@ TextureHandle AssetSystem::TryAcquireTexture(std::string_view path)
     return handle;
 }
 
+AudioClipHandle AssetSystem::TryAcquireAudioClip(std::string_view path)
+{
+    return AudioClips ? AudioClips->Acquire(path) : AudioClipHandle{};
+}
+
 void AssetSystem::ReleaseStaticMesh(StaticMeshHandle handle)
 {
     if (StaticMeshes)
@@ -362,6 +428,12 @@ void AssetSystem::ReleaseTexture(TextureHandle handle)
         Textures->Release(handle);
 }
 
+void AssetSystem::ReleaseAudioClip(AudioClipHandle handle)
+{
+    if (AudioClips)
+        AudioClips->Release(handle);
+}
+
 IAssetLoader* AssetSystem::LoaderFor(AssetType type)
 {
     switch (type)
@@ -369,6 +441,7 @@ IAssetLoader* AssetSystem::LoaderFor(AssetType type)
     case AssetType::StaticMesh: return &MeshLoader;
     case AssetType::Texture:    return &TexLoader;
     case AssetType::Material:   return &MatLoader;
+    case AssetType::Audio:      return &ClipLoader;
     default:                    return nullptr;
     }
 }

@@ -14,6 +14,7 @@ namespace
         if (extension == ".smat")  return AssetType::Material;
         if (extension == ".stex")  return AssetType::Texture;
         if (extension == ".smap")  return AssetType::Scene;
+        if (extension == ".sclip") return AssetType::Audio;
         // Source formats (.png, .gltf, ...) are deliberately absent: they
         // reach the registry through import-on-demand, registered under
         // their virtual path against the cooked artifact (Decision B). The

@@ -47,6 +47,10 @@ void AssetPreload::ReleaseAll()
     for (TextureHandle handle : Textures)
         Assets.ReleaseTexture(handle);
     Textures.clear();
+
+    for (AudioClipHandle handle : AudioClips)
+        Assets.ReleaseAudioClip(handle);
+    AudioClips.clear();
 }
 
 void AssetPreload::Cancel()
@@ -71,6 +75,7 @@ void AssetPreload::FinishOne(bool wave1, bool failed)
 void AssetPreload::Store(StaticMeshHandle handle) { Meshes.push_back(handle); }
 void AssetPreload::Store(MaterialHandle handle) { Materials.push_back(handle); }
 void AssetPreload::Store(TextureHandle handle) { Textures.push_back(handle); }
+void AssetPreload::Store(AudioClipHandle handle) { AudioClips.push_back(handle); }
 
 void AssetPreload::FireOnComplete()
 {
@@ -135,6 +140,15 @@ std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string>
         case AssetType::Material:
         {
             if (MaterialHandle handle = Assets.TryAcquireMaterial(path); handle.IsValid())
+            {
+                preload->Store(handle);
+                continue;
+            }
+            break;
+        }
+        case AssetType::Audio:
+        {
+            if (AudioClipHandle handle = Assets.TryAcquireAudioClip(path); handle.IsValid())
             {
                 preload->Store(handle);
                 continue;
@@ -279,6 +293,16 @@ void AssetPreloader::OnAssetCommitted(AssetType type, const std::string& path, A
                 Assets.ReleaseMaterial(created);
             break;
         }
+        case AssetType::Audio:
+        {
+            AudioClipHandle created = Assets.AudioClipLoaderRef().CommitTyped(std::move(staging));
+            failed = !created.IsValid();
+            for (const auto& waiter : waiters)
+                DeliverToWaiter(waiter, type, path, /*wave1*/ true, failed);
+            if (created.IsValid())
+                Assets.ReleaseAudioClip(created);
+            break;
+        }
         default:
             failed = true;
             break;
@@ -345,6 +369,16 @@ void AssetPreloader::DeliverToWaiter(const std::shared_ptr<AssetPreload>& preloa
         {
             if (preload->Cancelled)
                 Assets.ReleaseMaterial(handle);
+            else
+                preload->Store(handle);
+            delivered = true;
+        }
+        break;
+    case AssetType::Audio:
+        if (AudioClipHandle handle = Assets.TryAcquireAudioClip(path); handle.IsValid())
+        {
+            if (preload->Cancelled)
+                Assets.ReleaseAudioClip(handle);
             else
                 preload->Store(handle);
             delivered = true;

@@ -1,19 +1,19 @@
 #include <audio/AudioClipLoader.h>
 
 #include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_iostream.h>
 
-#include <cstring>
-#include <string>
-
-std::optional<AudioClip> LoadAudioClipFromFile(std::string_view path)
+std::optional<AudioClip> LoadAudioClipFromWavBytes(std::span<const std::byte> bytes)
 {
-    const std::string pathStr(path);
+    SDL_IOStream* io = SDL_IOFromConstMem(bytes.data(), bytes.size());
+    if (!io)
+        return std::nullopt;
 
     SDL_AudioSpec spec{};
     uint8_t*      rawData  = nullptr;
     uint32_t      rawBytes = 0;
 
-    if (!SDL_LoadWAV(pathStr.c_str(), &spec, &rawData, &rawBytes))
+    if (!SDL_LoadWAV_IO(io, /*closeio*/ true, &spec, &rawData, &rawBytes))
         return std::nullopt;
 
     // Convert whatever SDL decoded to Sint16 interleaved PCM.

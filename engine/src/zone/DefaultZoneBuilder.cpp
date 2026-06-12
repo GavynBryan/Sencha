@@ -1,5 +1,6 @@
 #include <zone/DefaultZoneBuilder.h>
 
+#include <audio/AudioSourceComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneRuntime.h>
@@ -8,17 +9,21 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation,
                               StaticMeshCache* meshes,
-                              MaterialCache* materials)
+                              MaterialCache* materials,
+                              AudioClipCache* audioClips,
+                              AudioService* audio)
 {
     Registry& registry = zones.CreateZone(zone);
-    InitializeDefault3DRegistry(registry, meshes, materials);
+    InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio);
     zones.SetParticipation(zone, participation);
     return registry;
 }
 
 void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes,
-                                 MaterialCache* materials)
+                                 MaterialCache* materials,
+                                 AudioClipCache* audioClips,
+                                 AudioService* audio)
 {
     registry.Resources.Register<ActiveCameraService>();
     registry.Components.RegisterComponent<LocalTransform>();
@@ -26,7 +31,9 @@ void InitializeDefault3DRegistry(Registry& registry,
     registry.Components.RegisterComponent<Parent>();
     registry.Components.RegisterComponent<StaticMeshComponent>();
     registry.Components.RegisterComponent<CameraComponent>();
+    registry.Components.RegisterComponent<AudioSourceComponent>();
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
+    registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio);
 }
 
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)

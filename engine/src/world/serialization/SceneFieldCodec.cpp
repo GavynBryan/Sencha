@@ -214,3 +214,51 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
 
     return archive.Ok();
 }
+
+bool SceneFieldCodec<AudioClipHandle>::Save(IWriteArchive& archive,
+                                            std::string_view key,
+                                            AudioClipHandle value,
+                                            SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryWrite(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForAudioClip(value), context);
+}
+
+bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
+                                            std::string_view key,
+                                            AudioClipHandle& value,
+                                            SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryRead(archive, key);
+
+    std::string path;
+    if (!ReadTypedAssetPath(archive, key, AssetType::Audio, path, context))
+        return false;
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    value = context.Assets->LoadAudioClip(path);
+    if (!value.IsValid())
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: failed to load audio clip asset '{}'", path);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return archive.Ok();
+}

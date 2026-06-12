@@ -169,7 +169,18 @@ VoiceId AudioService::Play(AssetId clipId, const AudioClip& clip, const PlayPara
         return {};
     }
 
-    if (!SDL_PutAudioStreamData(stream, clip.Samples.data(), static_cast<int>(clip.ByteSize())))
+    const uint32_t clipByteSize = clip.ByteSize();
+    if (clipByteSize > static_cast<uint32_t>(std::numeric_limits<int>::max()))
+    {
+        Log.Error("AudioService::Play: clip {} is too large for SDL audio stream", clipId.Value);
+        SDL_UnbindAudioStream(stream);
+        SDL_DestroyAudioStream(stream);
+        RetireVoice(slotIndex);
+        return {};
+    }
+    const int clipBytes = static_cast<int>(clipByteSize);
+
+    if (!SDL_PutAudioStreamData(stream, clip.Samples.data(), clipBytes))
     {
         Log.Error("AudioService::Play: SDL_PutAudioStreamData failed: {}", SDL_GetError());
         SDL_UnbindAudioStream(stream);
@@ -191,6 +202,14 @@ VoiceId AudioService::Play(AssetId clipId, const AudioClip& clip, const PlayPara
     slot.FrameCursor   = 0;
     slot.StartTick     = Ticks;
     slot.Stream        = stream;
+
+    // Looping keeps a copy of the PCM so Tick() can re-queue it; one-shots
+    // were flushed above and drain to retirement.
+    if (params.Looping)
+    {
+        slot.LoopPcm.assign(clip.Samples.begin(), clip.Samples.end());
+        slot.LoopPcmBytes = clipBytes;
+    }
 
     ApplyVoiceGain(slot, bus->Bus);
 
@@ -277,13 +296,29 @@ void AudioService::Tick()
         if (slot.State != VoiceState::Playing) continue;
 
         const int queued = SDL_GetAudioStreamQueued(slot.Stream);
+        if (queued < 0)
+        {
+            Log.Error("AudioService::Tick: SDL_GetAudioStreamQueued failed: {}", SDL_GetError());
+            RetireVoice(i);
+            continue;
+        }
 
         if (slot.Looping)
         {
-            // Looping voices hold an open stream that the caller is expected to
-            // keep fed. Sencha v1 does not hold a back-pointer to the AudioClip,
-            // so refilling is the caller's responsibility via Stop/Play cycling
-            // or a future AudioClipCache integration. Nothing to do here yet.
+            // SDL streams do not loop natively; a loop is kept playing by
+            // re-queuing the source PCM whenever the buffered amount falls
+            // below one clip's worth. Tick runs each frame and the device
+            // consumes far less than one ambient loop per frame, so this
+            // keeps roughly one-to-two clips buffered. (A clip
+            // shorter than a frame of audio could gap; ambients are not.)
+            if (!slot.LoopPcm.empty() && queued < slot.LoopPcmBytes)
+            {
+                if (!SDL_PutAudioStreamData(slot.Stream, slot.LoopPcm.data(), slot.LoopPcmBytes))
+                {
+                    Log.Error("AudioService::Tick: SDL_PutAudioStreamData failed: {}", SDL_GetError());
+                    RetireVoice(i);
+                }
+            }
             continue;
         }
 
@@ -376,7 +411,7 @@ uint32_t AudioService::AllocVoice(BusEntry& busEntry)
         }
 
         assert(oldestSlot != kInvalidSlot);
-        RetireVoice(oldestSlot);
+        RetireVoice(oldestSlot, false);
 
         // RetireVoice removed oldestSlot from VoiceIndices; reclaim it for the new voice.
         busEntry.VoiceIndices.push_back(oldestSlot);
@@ -386,7 +421,7 @@ uint32_t AudioService::AllocVoice(BusEntry& busEntry)
     return kInvalidSlot;
 }
 
-void AudioService::RetireVoice(uint32_t slotIndex)
+void AudioService::RetireVoice(uint32_t slotIndex, bool returnToPool)
 {
     assert(slotIndex > 0 && slotIndex < Voices.size());
 
@@ -399,9 +434,9 @@ void AudioService::RetireVoice(uint32_t slotIndex)
         slot.Stream = nullptr;
     }
 
-    if (slot.State != VoiceState::Idle)
+    for (BusEntry& bus : Buses)
     {
-        auto& indices = Buses[slot.BusIndex].VoiceIndices;
+        auto& indices = bus.VoiceIndices;
         indices.erase(std::remove(indices.begin(), indices.end(), slotIndex), indices.end());
     }
 
@@ -413,7 +448,8 @@ void AudioService::RetireVoice(uint32_t slotIndex)
     slot.Generation = gen;
     // State defaults to Idle via the default constructor.
 
-    FreeVoiceSlots.push_back(slotIndex);
+    if (returnToPool)
+        FreeVoiceSlots.push_back(slotIndex);
 }
 
 void AudioService::ApplyVoiceGain(const AudioVoiceSlot& slot, const AudioBus& bus) const

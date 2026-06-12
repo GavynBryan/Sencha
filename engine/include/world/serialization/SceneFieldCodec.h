@@ -1,12 +1,15 @@
 #pragma once
 
+#include <audio/AudioClipCache.h>
 #include <core/assets/AssetRef.h>
 #include <core/serialization/Archive.h>
+#include <core/text/InlineString.h>
 #include <render/Material.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cassert>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -64,4 +67,45 @@ struct SceneFieldCodec<MaterialHandle>
                      std::string_view key,
                      MaterialHandle& value,
                      SceneSerializationContext& context);
+};
+
+template<>
+struct SceneFieldCodec<AudioClipHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     AudioClipHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     AudioClipHandle& value,
+                     SceneSerializationContext& context);
+};
+
+// Inline strings persist as plain string fields in both text and binary.
+template<std::size_t Capacity>
+struct SceneFieldCodec<InlineString<Capacity>>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     const InlineString<Capacity>& value,
+                     SceneSerializationContext&)
+    {
+        archive.Field(key, value.View());
+        return archive.Ok();
+    }
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     InlineString<Capacity>& value,
+                     SceneSerializationContext&)
+    {
+        std::string text;
+        archive.Field(key, text);
+        if (!archive.Ok())
+            return false;
+        value.Assign(text);
+        return true;
+    }
 };

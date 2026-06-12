@@ -10,6 +10,8 @@
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
 
+class AudioClipCache;
+class AudioService;
 class Registry;
 class ZoneRuntime;
 
@@ -17,7 +19,9 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation = {},
                               StaticMeshCache* meshes = nullptr,
-                              MaterialCache* materials = nullptr);
+                              MaterialCache* materials = nullptr,
+                              AudioClipCache* audioClips = nullptr,
+                              AudioService* audio = nullptr);
 
 // Registration-only part of CreateDefault3DZone, usable on a detached
 // registry (async zone builds): components, resources, and the asset-store
@@ -25,7 +29,9 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
 // caches themselves are only dereferenced by main-thread consumers later.
 void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes = nullptr,
-                                 MaterialCache* materials = nullptr);
+                                 MaterialCache* materials = nullptr,
+                                 AudioClipCache* audioClips = nullptr,
+                                 AudioService* audio = nullptr);
 
 EntityId CreateDefaultEntity(Registry& registry,
                              const Transform3f& local = Transform3f::Identity());

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 #include <assets/texture/TextureAssetLoader.h>
@@ -13,6 +14,7 @@
 
 #include <string_view>
 
+class AudioClipCache;
 class MaterialCache;
 class LoggingProvider;
 class StaticMeshCache;
@@ -34,12 +36,14 @@ public:
                 AssetRegistry& registry,
                 StaticMeshCache& meshes,
                 MaterialCache& materials,
-                TextureCache& textures);
+                TextureCache& textures,
+                AudioClipCache& audioClips);
     AssetSystem(LoggingProvider& logging,
                 AssetRegistry& registry,
                 StaticMeshCache* meshes,
                 MaterialCache* materials,
-                TextureCache* textures = nullptr);
+                TextureCache* textures = nullptr,
+                AudioClipCache* audioClips = nullptr);
 
     [[nodiscard]] StaticMeshHandle LoadStaticMesh(std::string_view path);
     [[nodiscard]] MaterialHandle LoadMaterial(std::string_view path);
@@ -49,11 +53,14 @@ public:
     // replaces this parameter (docs/assets/pipeline.md, Decisions E/L).
     [[nodiscard]] TextureHandle LoadTexture(std::string_view path, bool srgb = true);
 
+    [[nodiscard]] AudioClipHandle LoadAudioClip(std::string_view path);
+
     [[nodiscard]] StaticMeshHandle RegisterProceduralStaticMesh(std::string_view path, StaticMeshData mesh);
     [[nodiscard]] MaterialHandle RegisterProceduralMaterial(std::string_view path, Material material);
 
     [[nodiscard]] std::string_view GetPathForStaticMesh(StaticMeshHandle handle) const;
     [[nodiscard]] std::string_view GetPathForMaterial(MaterialHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForAudioClip(AudioClipHandle handle) const;
 
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
@@ -64,12 +71,14 @@ public:
     [[nodiscard]] StaticMeshHandle TryAcquireStaticMesh(std::string_view path);
     [[nodiscard]] MaterialHandle TryAcquireMaterial(std::string_view path);
     [[nodiscard]] TextureHandle TryAcquireTexture(std::string_view path);
+    [[nodiscard]] AudioClipHandle TryAcquireAudioClip(std::string_view path);
 
     // Release counterparts to Load*/TryAcquire* — thin forwards to the caches
     // so callers that hold raw handles don't need cache access to let go.
     void ReleaseStaticMesh(StaticMeshHandle handle);
     void ReleaseMaterial(MaterialHandle handle);
     void ReleaseTexture(TextureHandle handle);
+    void ReleaseAudioClip(AudioClipHandle handle);
 
     // The staged-load surface (Decision C), exposed for async drivers: the
     // preloader runs LoaderFor(type)->LoadStaged on a task thread against
@@ -79,6 +88,7 @@ public:
     [[nodiscard]] StaticMeshAssetLoader& StaticMeshLoaderRef() { return MeshLoader; }
     [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
     [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
+    [[nodiscard]] AudioClipAssetLoader& AudioClipLoaderRef() { return ClipLoader; }
 
 private:
     Logger& Log;
@@ -86,9 +96,11 @@ private:
     StaticMeshCache* StaticMeshes = nullptr;
     MaterialCache* Materials = nullptr;
     TextureCache* Textures = nullptr;
+    AudioClipCache* AudioClips = nullptr;
 
     FileAssetSource Source;
     StaticMeshAssetLoader MeshLoader;
     TextureAssetLoader TexLoader;
     MaterialAssetLoader MatLoader;
+    AudioClipAssetLoader ClipLoader;
 };

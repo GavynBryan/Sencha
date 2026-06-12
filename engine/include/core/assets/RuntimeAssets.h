@@ -1,5 +1,6 @@
 #pragma once
 
+#include <audio/AudioClipCache.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
@@ -20,6 +21,7 @@ struct RuntimeAssets
     TextureCache Textures;
     MaterialCache Materials;
     StaticMeshCache StaticMeshes;
+    AudioClipCache AudioClips;
     AssetSystem Assets;
 
     RuntimeAssets(LoggingProvider& logging,
@@ -31,7 +33,8 @@ struct RuntimeAssets
         , Textures(logging, images, descriptors, samplers)
         , Materials()
         , StaticMeshes(logging, buffers)
-        , Assets(logging, Registry, StaticMeshes, Materials, Textures)
+        , AudioClips(logging)
+        , Assets(logging, Registry, StaticMeshes, Materials, Textures, AudioClips)
     {
     }
 
