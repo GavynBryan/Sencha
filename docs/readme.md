@@ -22,6 +22,10 @@ test/       GoogleTest-based engine tests.
 
 - `docs/core-systems-map.md` is the first broad map of the engine: core
   systems, ownership, dependency directions, frame flow, and constraints.
+- `docs/action-adventure-core-runtime.md` is the proposed cross-cutting plan for
+  action-adventure runtime guarantees: traversal hitching, world partition,
+  participation LOD, stateful streaming, timing, spatial queries, visibility, and
+  content-risk telemetry.
 
 ## ECS Docs
 
