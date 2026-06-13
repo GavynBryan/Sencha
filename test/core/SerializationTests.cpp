@@ -302,38 +302,45 @@ static bool Deserialize(BinaryReader& reader, PlayerRecord& r)
         && Deserialize(reader, r.Y);
 }
 
-struct AssetId
+// Local stand-ins for the id-wrapper pattern, in an anonymous namespace so
+// they can never ODR-collide with the engine's real AssetId (core/assets,
+// 64-bit) or TypeId (core/identity) — these tests exercise the serialization
+// vocabulary, not those types.
+namespace
 {
-    std::uint32_t Value = 0;
+    struct AssetId
+    {
+        std::uint32_t Value = 0;
 
-    bool operator==(const AssetId&) const = default;
-    explicit operator bool() const { return Value != 0; }
-};
+        bool operator==(const AssetId&) const = default;
+        explicit operator bool() const { return Value != 0; }
+    };
 
-struct TypeId
-{
-    std::uint32_t Value = 0;
+    struct TypeId
+    {
+        std::uint32_t Value = 0;
 
-    bool operator==(const TypeId&) const = default;
-    explicit operator bool() const { return Value != 0; }
-};
+        bool operator==(const TypeId&) const = default;
+        explicit operator bool() const { return Value != 0; }
+    };
 
-struct EntityId
-{
-    std::uint32_t Value = 0;
+    struct EntityId
+    {
+        std::uint32_t Value = 0;
 
-    bool operator==(const EntityId&) const = default;
-    explicit operator bool() const { return Value != 0; }
-};
+        bool operator==(const EntityId&) const = default;
+        explicit operator bool() const { return Value != 0; }
+    };
 
-static bool Serialize(BinaryWriter& writer, const AssetId& id) { return writer.Write(id.Value); }
-static bool Deserialize(BinaryReader& reader, AssetId& id) { return reader.Read(id.Value); }
+    bool Serialize(BinaryWriter& writer, const AssetId& id) { return writer.Write(id.Value); }
+    bool Deserialize(BinaryReader& reader, AssetId& id) { return reader.Read(id.Value); }
 
-static bool Serialize(BinaryWriter& writer, const TypeId& id) { return writer.Write(id.Value); }
-static bool Deserialize(BinaryReader& reader, TypeId& id) { return reader.Read(id.Value); }
+    bool Serialize(BinaryWriter& writer, const TypeId& id) { return writer.Write(id.Value); }
+    bool Deserialize(BinaryReader& reader, TypeId& id) { return reader.Read(id.Value); }
 
-static bool Serialize(BinaryWriter& writer, const EntityId& id) { return writer.Write(id.Value); }
-static bool Deserialize(BinaryReader& reader, EntityId& id) { return reader.Read(id.Value); }
+    bool Serialize(BinaryWriter& writer, const EntityId& id) { return writer.Write(id.Value); }
+    bool Deserialize(BinaryReader& reader, EntityId& id) { return reader.Read(id.Value); }
+} // namespace
 
 TEST(SerializationTests, RoundTripsPlayerRecord)
 {

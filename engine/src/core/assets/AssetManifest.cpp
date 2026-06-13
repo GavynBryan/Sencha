@@ -55,12 +55,32 @@ std::vector<std::string> CollectAssetPaths(const JsonValue& root)
     return paths;
 }
 
+std::vector<std::string> ResolveManifestPaths(const AssetManifest& manifest,
+                                              const AssetRegistry& registry)
+{
+    std::vector<std::string> paths;
+    paths.reserve(manifest.Entries.size());
+    for (const AssetManifestEntry& entry : manifest.Entries)
+    {
+        const AssetRecord* record =
+            entry.Id.IsValid() ? registry.FindById(entry.Id) : nullptr;
+        paths.push_back(record != nullptr ? record->Path : entry.Path);
+    }
+    return paths;
+}
+
 JsonValue AssetManifestToJson(const AssetManifest& manifest)
 {
     JsonValue::Array assets;
-    assets.reserve(manifest.Paths.size());
-    for (const std::string& path : manifest.Paths)
-        assets.emplace_back(path);
+    assets.reserve(manifest.Entries.size());
+    for (const AssetManifestEntry& entry : manifest.Entries)
+    {
+        JsonValue::Object item;
+        if (entry.Id.IsValid())
+            item.emplace_back("id", JsonValue(AssetIdToString(entry.Id)));
+        item.emplace_back("path", JsonValue(entry.Path));
+        assets.emplace_back(std::move(item));
+    }
 
     JsonValue::Object root;
     root.emplace_back("version", JsonValue(static_cast<double>(kAssetManifestVersion)));
@@ -76,8 +96,9 @@ bool ParseAssetManifestJson(const JsonValue& root, AssetManifest& out, std::stri
     const JsonValue* version = root.Find("version");
     if (version == nullptr || !version->IsNumber())
         return Fail(error, "missing or non-numeric 'version'");
-    if (static_cast<uint32_t>(version->AsNumber()) != kAssetManifestVersion)
-        return Fail(error, std::format("unsupported manifest version {} (expected {})",
+    const uint32_t versionNumber = static_cast<uint32_t>(version->AsNumber());
+    if (versionNumber != 1 && versionNumber != kAssetManifestVersion)
+        return Fail(error, std::format("unsupported manifest version {} (expected 1..{})",
                                        version->AsNumber(), kAssetManifestVersion));
 
     const JsonValue* assets = root.Find("assets");
@@ -85,12 +106,44 @@ bool ParseAssetManifestJson(const JsonValue& root, AssetManifest& out, std::stri
         return Fail(error, "missing or non-array 'assets'");
 
     AssetManifest manifest;
-    manifest.Paths.reserve(assets->Size());
+    manifest.Entries.reserve(assets->Size());
     for (const JsonValue& item : assets->AsArray())
     {
-        if (!item.IsString() || !IsValidAssetPath(item.AsString()))
-            return Fail(error, "manifest 'assets' entries must be asset path strings");
-        manifest.Paths.push_back(item.AsString());
+        AssetManifestEntry entry;
+
+        // Version 1 entries are bare path strings; version 2 entries are
+        // {"id": "<hex>", "path": ...} objects with the id optional.
+        if (item.IsString())
+        {
+            if (versionNumber != 1 || !IsValidAssetPath(item.AsString()))
+                return Fail(error, "manifest 'assets' entries must match the manifest version");
+            entry.Path = item.AsString();
+        }
+        else if (item.IsObject() && versionNumber == kAssetManifestVersion)
+        {
+            const JsonValue* path = item.Find("path");
+            if (path == nullptr || !path->IsString() || !IsValidAssetPath(path->AsString()))
+                return Fail(error, "manifest entry 'path' must be an asset path string");
+            entry.Path = path->AsString();
+
+            if (const JsonValue* id = item.Find("id"); id != nullptr)
+            {
+                if (!id->IsString())
+                    return Fail(error, std::format("manifest entry '{}' has a non-string 'id'",
+                                                   entry.Path));
+                const std::optional<AssetId> parsed = AssetIdFromString(id->AsString());
+                if (!parsed.has_value())
+                    return Fail(error, std::format("manifest entry '{}' has a malformed 'id'",
+                                                   entry.Path));
+                entry.Id = *parsed;
+            }
+        }
+        else
+        {
+            return Fail(error, "manifest 'assets' entries must match the manifest version");
+        }
+
+        manifest.Entries.push_back(std::move(entry));
     }
 
     out = std::move(manifest);

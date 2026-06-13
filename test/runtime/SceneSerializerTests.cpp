@@ -396,6 +396,74 @@ TEST(SceneSerializer, MaterialHandleSceneCodecLoadsLegacyAssetRefObject)
     EXPECT_EQ(loaded, registered);
 }
 
+TEST(SceneSerializer, MaterialHandleSceneCodecLoadsIdStampedRefAndIdWinsOverStalePath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    // The asset lives at its post-rename path; the stamped ref still
+    // carries the old one. The id must win (Decision A / Stage 4e).
+    RegisterMaterialAsset(registry, "asset://materials/dev/renamed.smat");
+    ASSERT_TRUE(registry.AssignId("asset://materials/dev/renamed.smat", AssetId{ 0xbeef }));
+
+    MaterialCache materials;
+    MaterialHandle registered = materials.Register(
+        "asset://materials/dev/renamed.smat",
+        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+    AssetSystem assets(logging, registry, nullptr, &materials);
+
+    auto parsed = JsonParse(R"({ "id": "000000000000beef", "path": "asset://materials/dev/old.smat" })");
+    ASSERT_TRUE(parsed.has_value());
+
+    SceneSerializationContext context(logging, &assets);
+    JsonReadArchive archive(*parsed);
+    MaterialHandle loaded;
+    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_EQ(loaded, registered);
+}
+
+TEST(SceneSerializer, MaterialHandleSceneCodecFallsBackToPathForUnknownId)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    RegisterMaterialAsset(registry, "asset://materials/dev/red.smat");
+    MaterialCache materials;
+    MaterialHandle registered = materials.Register(
+        "asset://materials/dev/red.smat",
+        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+    AssetSystem assets(logging, registry, nullptr, &materials);
+
+    auto parsed = JsonParse(R"({ "id": "00000000000dead0", "path": "asset://materials/dev/red.smat" })");
+    ASSERT_TRUE(parsed.has_value());
+
+    SceneSerializationContext context(logging, &assets);
+    JsonReadArchive archive(*parsed);
+    MaterialHandle loaded;
+    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_EQ(loaded, registered);
+}
+
+TEST(SceneSerializer, MaterialHandleSceneCodecRejectsMalformedIdAndIdWithoutFallback)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    MaterialCache materials;
+    AssetSystem assets(logging, registry, nullptr, &materials);
+    SceneSerializationContext context(logging, &assets);
+    MaterialHandle loaded;
+
+    auto malformed = JsonParse(R"({ "id": "not-hex", "path": "asset://materials/dev/red.smat" })");
+    ASSERT_TRUE(malformed.has_value());
+    JsonReadArchive malformedArchive(*malformed);
+    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(malformedArchive, "", loaded, context));
+    EXPECT_FALSE(malformedArchive.Ok());
+
+    auto idOnly = JsonParse(R"({ "id": "00000000000dead0" })");
+    ASSERT_TRUE(idOnly.has_value());
+    JsonReadArchive idOnlyArchive(*idOnly);
+    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(idOnlyArchive, "", loaded, context));
+    EXPECT_FALSE(idOnlyArchive.Ok());
+}
+
 TEST(SceneSerializer, MaterialHandleSceneCodecRejectsWrongTypeEmptyPathAndMissingPath)
 {
     LoggingProvider logging;

@@ -140,12 +140,27 @@ TEST(AssetManifest, CollectFindsNestedUniquePathsInOrder)
 TEST(AssetManifest, JsonRoundTrip)
 {
     AssetManifest manifest;
-    manifest.Paths = { "asset://a/b.smesh", "asset://c/d.smat" };
+    manifest.Entries = { { AssetId{ 0xabcdef0123456789ull }, "asset://a/b.smesh" },
+                         { AssetId{}, "asset://c/d.smat" } };
 
     AssetManifest parsed;
     std::string error;
     ASSERT_TRUE(ParseAssetManifestJson(AssetManifestToJson(manifest), parsed, &error)) << error;
-    EXPECT_EQ(parsed.Paths, manifest.Paths);
+    EXPECT_EQ(parsed.Entries, manifest.Entries);
+}
+
+TEST(AssetManifest, ParsesVersionOnePathStrings)
+{
+    const std::optional<JsonValue> v1 = JsonParse(
+        R"({"version": 1, "assets": ["asset://a/b.smesh", "asset://c/d.smat"]})");
+    ASSERT_TRUE(v1.has_value());
+
+    AssetManifest parsed;
+    std::string error;
+    ASSERT_TRUE(ParseAssetManifestJson(*v1, parsed, &error)) << error;
+    ASSERT_EQ(parsed.Entries.size(), 2u);
+    EXPECT_EQ(parsed.Entries[0].Path, "asset://a/b.smesh");
+    EXPECT_FALSE(parsed.Entries[0].Id.IsValid());
 }
 
 TEST(AssetManifest, ParseRejectsBadVersionAndShape)
@@ -160,6 +175,45 @@ TEST(AssetManifest, ParseRejectsBadVersionAndShape)
         JsonParse(R"({"version": 1, "assets": ["no_prefix"]})");
     ASSERT_TRUE(badEntry.has_value());
     EXPECT_FALSE(ParseAssetManifestJson(*badEntry, parsed));
+
+    // String entries belong to version 1, objects to version 2 — mixing
+    // shape and version is a malformed manifest, not a best-effort parse.
+    const std::optional<JsonValue> v2String =
+        JsonParse(R"({"version": 2, "assets": ["asset://a/b.smesh"]})");
+    ASSERT_TRUE(v2String.has_value());
+    EXPECT_FALSE(ParseAssetManifestJson(*v2String, parsed));
+
+    const std::optional<JsonValue> badId = JsonParse(
+        R"({"version": 2, "assets": [{"id": "xyz", "path": "asset://a/b.smesh"}]})");
+    ASSERT_TRUE(badId.has_value());
+    EXPECT_FALSE(ParseAssetManifestJson(*badId, parsed));
+}
+
+TEST(AssetManifest, ResolvePathsPrefersIdOverStalePath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+
+    AssetRecord record;
+    record.Type = AssetType::StaticMesh;
+    record.SourceKind = AssetSourceKind::File;
+    record.Path = "asset://meshes/renamed.smesh";
+    record.FilePath = "renamed.smesh";
+    ASSERT_TRUE(registry.Register(record));
+
+    const AssetId id{ 0x1111222233334444ull };
+    ASSERT_TRUE(registry.AssignId(record.Path, id));
+
+    AssetManifest manifest;
+    manifest.Entries = { { id, "asset://meshes/old_name.smesh" },
+                         { AssetId{ 0x9999888877776666ull }, "asset://meshes/unknown_id.smesh" },
+                         { AssetId{}, "asset://meshes/no_id.smesh" } };
+
+    const std::vector<std::string> paths = ResolveManifestPaths(manifest, registry);
+    ASSERT_EQ(paths.size(), 3u);
+    EXPECT_EQ(paths[0], "asset://meshes/renamed.smesh");   // id wins over the stale path
+    EXPECT_EQ(paths[1], "asset://meshes/unknown_id.smesh"); // unknown id falls back
+    EXPECT_EQ(paths[2], "asset://meshes/no_id.smesh");      // no id, path as before
 }
 
 TEST(AssetManifest, LoadFileReportsMissing)

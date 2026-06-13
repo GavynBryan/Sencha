@@ -64,6 +64,16 @@ public:
 
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
+    // Id-first ref resolution (Decision A / Stage 4e): when the registry
+    // knows the id, the record's current path wins — that is what makes an
+    // id-stamped ref survive a rename the stamped path predates. An unknown
+    // id (or a type mismatch, which is logged) falls back to the stamped
+    // path; an invalid id is simply "no id", not an error, so path-only
+    // refs flow through unchanged.
+    [[nodiscard]] std::string_view ResolveRefPath(AssetId id,
+                                                  std::string_view fallbackPath,
+                                                  AssetType expectedType) const;
+
     // Cached-only acquisition: a ref-counted handle if the asset is already
     // resident, an invalid handle otherwise. Never loads, never logs — the
     // preload path uses these to dedup against the caches before submitting

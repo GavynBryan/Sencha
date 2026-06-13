@@ -21,6 +21,22 @@ struct VoiceId
 };
 
 //=============================================================================
+// AudioClipKey
+//
+// Diagnostic token identifying which clip a voice is playing — in practice
+// the AudioClipHandle index. Not an asset identity: the stable, persisted
+// AssetId lives in core/assets/AssetId.h (docs/assets/pipeline.md,
+// Decision A) and has nothing to do with voice bookkeeping.
+//=============================================================================
+struct AudioClipKey
+{
+    uint32_t Value = 0;
+
+    bool operator==(const AudioClipKey&) const = default;
+    explicit operator bool() const { return Value != 0; }
+};
+
+//=============================================================================
 // VoiceState
 //
 // Discriminated playback state. Idle means the voice slot is unoccupied and

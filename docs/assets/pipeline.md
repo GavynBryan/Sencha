@@ -751,7 +751,7 @@ and the zone attaches only when they are resident.
   tick criterion); the measurement itself is owed when multi-room content
   exists, and the doc will record it then.
 
-## Stage 4 status (2026-06-11, in progress)
+## Stage 4 status (2026-06-11 — 2026-06-12, complete)
 
 Stage 4 is the widest stage and lands as five gated sub-stages:
 **4a** foundations (content hashing, cooked cache, import-on-demand,
@@ -966,6 +966,70 @@ loader, one importer, and switch-case additions; no contract needed bending.
   scene component references audio yet, so manifest-driven audio preload
   is exercised by direct preloader tests rather than a demo scene — the
   wave-1 path is pinned headless alongside the existing suite.
+
+### Stage 4e — AssetId groundwork (landed, 2026-06-12)
+
+Test-verified (826 tests green; 19 new across `test/core/AssetIdTests.cpp`,
+the manifest suite, and `test/runtime/SceneSerializerTests.cpp`, all
+zero-thread deterministic). Decision A made real; Stage 4 closes with it.
+
+- `core/assets/AssetId.h` — the stable identity: 64-bit, zero invalid,
+  16-digit lowercase hex in text formats (the cooked-index rule: JSON
+  numbers cannot carry 64 bits). The strict parse rejects anything a
+  re-format would not reproduce.
+- `core/assets/AssetIdMap.{h,cpp}` — the persisted id map, at
+  `<assets-root>/asset_ids.json`, **meant to be committed**: path →
+  (id, last-seen content hash). First sight mints the id from the path
+  hash — deterministic, so two branches adding the same asset agree and
+  committed maps merge cleanly — probing past collisions with a salt;
+  renames inherit: an unmapped path whose content hash matches a dead
+  entry takes that entry's id and retires it. The cook is the only
+  writer; a corrupt map **fails the cook** rather than silently
+  re-minting (a lost map costs rename history, not correctness).
+  Serialization sorts by path for deterministic diffs.
+- Registry and front door: `AssetRecord` carries an `Id` (never part of
+  registration or equivalence — `ApplyAssetIds` binds ids after import +
+  scan, with conflicts rejected loudly), `FindById` joins `FindByPath`,
+  and `AssetSystem::ResolveRefPath(id, fallbackPath, type)` is the one
+  resolution rule: a known id yields the record's *current* path — which
+  is what makes a stamped ref survive a rename its path predates — and
+  anything else falls back to the stamped path. Type mismatches log and
+  fall back rather than mis-load.
+- Scene refs grew a third accepted form: `{"id": "<hex>", "path": ...}`,
+  alongside bare path strings (authored) and the legacy `{type, path}`
+  object. **Authored scenes are untouched** — saves still write bare
+  paths, so the editor's save → load round trip is exactly as before;
+  the stamped form is cook output only. The proto-cook emits it as
+  `<scene-stem>.cooked.json` via a schema-agnostic walk (`StampAssetRefIds`
+  — unmapped refs stay plain strings, and `CollectAssetPaths` still sees
+  every path in stamped output because the object keeps the path field).
+- Manifest version 2: entries are `{id, path}` objects (id optional),
+  version-1 path-string manifests still parse, and `ResolveManifestPaths`
+  feeds the preloader id-first. CubeDemo loads the cooked scene with
+  authored fallback, applies the id map after the scan, and resolves its
+  manifest through ids — verified end to end under llvmpipe with zero
+  errors and zero fallback warnings; the demo's `asset_ids.json` is
+  committed and the cook is provably idempotent over it (re-running
+  writes nothing).
+- One collision surfaced and resolved: `core/identity/Id.h` had a
+  pre-existing 32-bit `AssetId` used by the audio runtime as a voice
+  diagnostic token (it wrapped a *cache-handle index*, not an asset
+  identity). It is now `AudioClipKey` in `audio/AudioVoice.h`; the
+  identity header keeps `TypeId`/`SerializedEntityId` and points at the
+  real `AssetId`. The same sweep fixed a latent ODR hazard in
+  `SerializationTests.cpp`, whose file-scope stand-in id types now live
+  in an anonymous namespace.
+- Gate honesty: "resolves by id with path as fallback" is pinned at all
+  three levels headlessly — codec (stamped ref loads through a rename,
+  unknown id falls back, malformed id fails loudly), manifest
+  (`ResolvePathsPrefersIdOverStalePath`), and front door
+  (`ResolveRefPathPrefersIdAndFallsBackToPath`). Two recorded limits:
+  ids exist only for assets a cooked scene/manifest references — cooked
+  artifacts nobody references yet get theirs at first reference, and
+  moving id assignment into the real cook driver is `sencha-cook`'s job
+  when it materializes; and the demo regenerates its map in the build
+  tree, so rename inheritance across a *clean* checkout rests on the
+  committed map (the real-game workflow), not on build-dir state.
 
 The original open questions were answered the day the plan was written:
 

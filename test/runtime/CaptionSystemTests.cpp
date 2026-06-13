@@ -259,7 +259,7 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
     PlayParams params;
     params.Bus = "Sfx";
     params.Looping = true;
-    VoiceId occupant = audio.Play(AssetId{ 99 }, occupantClip, params);
+    VoiceId occupant = audio.Play(AudioClipKey{ 99 }, occupantClip, params);
     ASSERT_TRUE(occupant.IsValid());
 
     Registry registry;
@@ -443,7 +443,7 @@ TEST(CaptionGate, ThreeContextsRouteFilterAndOrderDeterministically)
     PlayParams params;
     params.Bus = "Sfx";
     params.Looping = true;
-    VoiceId radioVoice = audio.Play(AssetId{ 7 }, radioClip, params);
+    VoiceId radioVoice = audio.Play(AudioClipKey{ 7 }, radioClip, params);
     ASSERT_TRUE(radioVoice.IsValid());
 
     CaptionPayload radioLine;

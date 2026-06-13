@@ -6,6 +6,7 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <audio/CaptionRuntime.h>
+#include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
@@ -138,6 +139,22 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
     ScanAssetsDirectory("assets", runtimeAssets.Registry);
 
+    // Stable ids (docs/assets/pipeline.md, Decision A / Stage 4e): the
+    // cook-maintained id map binds ids to the records import + scan just
+    // registered, so id-stamped refs in the cooked scene and manifest
+    // resolve by id with the path as fallback. A missing map is the
+    // path-only world, which still works.
+    {
+        AssetIdMap idMap;
+        std::string idMapError;
+        const std::string idMapPath = std::string("assets/") + std::string(kAssetIdMapFileName);
+        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
+            ApplyAssetIds(idMap, runtimeAssets.Registry);
+        else
+            logging.GetLogger<CubeDemoGame>().Warn(
+                "CubeDemo: no asset id map ({}); refs resolve by path only", idMapError);
+    }
+
     // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and
     // the registry skeleton happen on the task thread; deserialization and
     // game-state wiring happen in finalize, on the main thread, in the same
@@ -155,7 +172,9 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     std::string manifestError;
     if (LoadAssetManifestFile("cube_demo_scene.manifest.json", manifest, &manifestError))
     {
-        preload = Preloader->Begin(manifest.Paths);
+        const std::vector<std::string> paths =
+            ResolveManifestPaths(manifest, runtimeAssets.Registry);
+        preload = Preloader->Begin(paths);
     }
     else
     {
@@ -180,7 +199,11 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
         ZoneId{ 1 },
         [parsed, meshes, materials, audioClips, audio, captions](Registry& registry) {
             InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
-            *parsed = ParseDemoSceneFile("cube_demo_scene.json");
+            // Cooked scene first (id-stamped refs, Stage 4e); the authored
+            // scene is the fallback when no cook has run.
+            *parsed = ParseDemoSceneFile("cube_demo_scene.cooked.json");
+            if (!parsed->Json)
+                *parsed = ParseDemoSceneFile("cube_demo_scene.json");
         },
         [this, parsed, &logging](Registry& registry) {
             if (FinalizeDemoScene(Demo, registry, *parsed,

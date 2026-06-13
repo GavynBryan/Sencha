@@ -9,38 +9,19 @@
 //=============================================================================
 // Identity types
 //
-// Lightweight, distinct value types for tagging assets, types, and serialized entities.
-// Each wraps a uint32_t but is its own type to prevent accidental mixing
-// (e.g. passing an AssetId where a SerializedEntityId is expected).
+// Lightweight, distinct value types for tagging types and serialized
+// entities. Each wraps a uint32_t but is its own type to prevent accidental
+// mixing (e.g. passing a TypeId where a SerializedEntityId is expected).
 //
 // A zero Value means "invalid / unset". The explicit operator bool() lets
 // you write: if (id) { ... }
 //
 // Serialize/Deserialize overloads are provided so these integrate with the
 // serialization vocabulary in Serialize.h.
+//
+// The stable asset identity (AssetId) is not here — it is 64-bit, persisted
+// in the cook's id map, and lives in core/assets/AssetId.h (Decision A).
 //=============================================================================
-
-// --- AssetId ----------------------------------------------------------------
-
-struct AssetId
-{
-    std::uint32_t Value = 0;
-
-    bool operator==(const AssetId&) const = default;
-    auto operator<=>(const AssetId&) const = default;
-    explicit operator bool() const { return Value != 0; }
-};
-
-inline bool Serialize(BinaryWriter& writer, const AssetId& id)   { return writer.Write(id.Value); }
-inline bool Deserialize(BinaryReader& reader, AssetId& id)       { return reader.Read(id.Value); }
-
-template<> struct std::hash<AssetId>
-{
-    std::size_t operator()(const AssetId& id) const noexcept
-    {
-        return std::hash<std::uint32_t>{}(id.Value);
-    }
-};
 
 // --- TypeId -----------------------------------------------------------------
 

@@ -217,10 +217,10 @@ TEST(AudioServiceVoices, StealOldestSlotIsNotLeftOnFreeList)
     PlayParams sfx;
     sfx.Bus = "Sfx";
 
-    VoiceId first = audio.Play(AssetId{ 1 }, clip, sfx);
+    VoiceId first = audio.Play(AudioClipKey{ 1 }, clip, sfx);
     ASSERT_TRUE(first.IsValid());
 
-    VoiceId second = audio.Play(AssetId{ 2 }, clip, sfx);
+    VoiceId second = audio.Play(AudioClipKey{ 2 }, clip, sfx);
     ASSERT_TRUE(second.IsValid());
     EXPECT_FALSE(audio.IsPlaying(first));
     EXPECT_TRUE(audio.IsPlaying(second));
@@ -228,7 +228,7 @@ TEST(AudioServiceVoices, StealOldestSlotIsNotLeftOnFreeList)
     PlayParams ui;
     ui.Bus = "Ui";
 
-    VoiceId third = audio.Play(AssetId{ 3 }, clip, ui);
+    VoiceId third = audio.Play(AudioClipKey{ 3 }, clip, ui);
     ASSERT_TRUE(third.IsValid());
     EXPECT_NE(third, second);
     EXPECT_TRUE(audio.IsPlaying(second));

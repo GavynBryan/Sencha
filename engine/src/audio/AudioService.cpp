@@ -124,7 +124,7 @@ AudioService::~AudioService()
 // Playback
 // ---------------------------------------------------------------------------
 
-VoiceId AudioService::Play(AssetId clipId, const AudioClip& clip, const PlayParams& params)
+VoiceId AudioService::Play(AudioClipKey clipId, const AudioClip& clip, const PlayParams& params)
 {
     if (!Valid)
         return {};

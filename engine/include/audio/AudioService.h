@@ -80,7 +80,7 @@ public:
     // invalid, or the bus name is not found.
     //
     // `clip` must remain valid for the duration of this call.
-    [[nodiscard]] VoiceId Play(AssetId clipId, const AudioClip& clip,
+    [[nodiscard]] VoiceId Play(AudioClipKey clipId, const AudioClip& clip,
                                const PlayParams& params = {});
 
     // Stop the voice immediately and return its slot to the pool. Calling

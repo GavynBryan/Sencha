@@ -79,7 +79,9 @@ inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
 // Fields:
 //   Type  - expected asset type; validated on resolve.
 //   Path  - virtual asset path, e.g. "asset://meshes/dev/cube.smesh".
-//           Used as the primary identity until AssetId is introduced.
+//           The primary identity in authored data. Cooked scenes and
+//           manifests pair it with the stable AssetId (core/assets/
+//           AssetId.h), which resolves first with the path as fallback.
 //=============================================================================
 struct AssetRef
 {

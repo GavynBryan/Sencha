@@ -163,6 +163,30 @@ const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expecte
     return record;
 }
 
+std::string_view AssetSystem::ResolveRefPath(AssetId id,
+                                             std::string_view fallbackPath,
+                                             AssetType expectedType) const
+{
+    if (!id.IsValid())
+        return fallbackPath;
+
+    const AssetRecord* record = Registry.FindById(id);
+    if (record == nullptr)
+        return fallbackPath;
+
+    if (record->Type != expectedType)
+    {
+        Log.Error("AssetSystem: id {} is a {} asset, expected {}; falling back to path '{}'",
+                  AssetIdToString(id),
+                  AssetTypeToString(record->Type),
+                  AssetTypeToString(expectedType),
+                  fallbackPath);
+        return fallbackPath;
+    }
+
+    return record->Path;
+}
+
 StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
 {
     const AssetRecord* record = Resolve(path, AssetType::StaticMesh);

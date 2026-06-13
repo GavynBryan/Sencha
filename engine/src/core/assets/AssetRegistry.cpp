@@ -139,10 +139,53 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
     return true;
 }
 
+bool AssetRegistry::AssignId(std::string_view path, AssetId id)
+{
+    if (!id.IsValid())
+    {
+        Log.Warn("AssetRegistry: rejected invalid id for '{}'", path);
+        return false;
+    }
+
+    auto it = RecordsByPath.find(std::string(path));
+    if (it == RecordsByPath.end())
+    {
+        Log.Warn("AssetRegistry: cannot assign id to unregistered path '{}'", path);
+        return false;
+    }
+
+    if (it->second.Id == id)
+        return true;
+
+    if (it->second.Id.IsValid())
+    {
+        Log.Warn("AssetRegistry: '{}' already has id {}; rejected reassignment to {}",
+            path, AssetIdToString(it->second.Id), AssetIdToString(id));
+        return false;
+    }
+
+    if (auto bound = RecordsById.find(id); bound != RecordsById.end())
+    {
+        Log.Warn("AssetRegistry: id {} is already bound to '{}'; rejected for '{}'",
+            AssetIdToString(id), bound->second->Path, path);
+        return false;
+    }
+
+    it->second.Id = id;
+    RecordsById.emplace(id, &it->second);
+    return true;
+}
+
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const
 {
     auto it = RecordsByPath.find(std::string(path));
     return it == RecordsByPath.end() ? nullptr : &it->second;
+}
+
+const AssetRecord* AssetRegistry::FindById(AssetId id) const
+{
+    auto it = RecordsById.find(id);
+    return it == RecordsById.end() ? nullptr : it->second;
 }
 
 bool AssetRegistry::Contains(std::string_view path) const

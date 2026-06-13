@@ -124,7 +124,7 @@ int main()
                     {
                         PlayParams params;
                         params.Bus = kBusName;
-                        [[maybe_unused]] VoiceId voice = audio.Play(AssetId{clip.Id}, *pcm, params);
+                        [[maybe_unused]] VoiceId voice = audio.Play(AudioClipKey{clip.Id}, *pcm, params);
                     }
                     break;
                 }

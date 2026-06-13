@@ -316,7 +316,7 @@ TEST(CaptionVoiceBinding, VoiceStopRetiresCaption)
 
     PlayParams params;
     params.Bus = "Sfx";
-    VoiceId voice = audio.Play(AssetId{ 1 }, clip, params);
+    VoiceId voice = audio.Play(AudioClipKey{ 1 }, clip, params);
     ASSERT_TRUE(voice.IsValid());
 
     CaptionId id = captions.BeginVoiceCaption(voice, Subtitle("line.radio"));
@@ -351,14 +351,14 @@ TEST(CaptionVoiceBinding, VoiceStealRetiresCaption)
 
     PlayParams params;
     params.Bus = "Sfx";
-    VoiceId first = audio.Play(AssetId{ 1 }, clip, params);
+    VoiceId first = audio.Play(AudioClipKey{ 1 }, clip, params);
     ASSERT_TRUE(first.IsValid());
     CaptionId id = captions.BeginVoiceCaption(first, Subtitle("line.stolen"));
     ASSERT_TRUE(id.IsValid());
 
     // The steal invalidates the first voice; its caption falls out on Tick
     // with no caption-aware code anywhere near the steal.
-    VoiceId second = audio.Play(AssetId{ 2 }, clip, params);
+    VoiceId second = audio.Play(AudioClipKey{ 2 }, clip, params);
     ASSERT_TRUE(second.IsValid());
     captions.Tick(&audio, 0.016f);
     EXPECT_FALSE(captions.IsActive(id));
@@ -378,13 +378,13 @@ TEST(CaptionVoiceBinding, RejectedPlayStillSubtitlesButDropsClosedCaption)
 
     PlayParams params;
     params.Bus = "Sfx";
-    VoiceId occupant = audio.Play(AssetId{ 1 }, clip, params);
+    VoiceId occupant = audio.Play(AudioClipKey{ 1 }, clip, params);
     ASSERT_TRUE(occupant.IsValid());
 
     // The bus is full on a Reject policy — the common failure, not the
     // exotic one. Language content survives as a timed caption; a closed
     // caption for a sound that never happened would lie, so it is dropped.
-    VoiceId rejected = audio.Play(AssetId{ 2 }, clip, params);
+    VoiceId rejected = audio.Play(AudioClipKey{ 2 }, clip, params);
     ASSERT_FALSE(rejected.IsValid());
 
     CaptionId subtitle = captions.BeginVoiceCaption(
@@ -415,7 +415,7 @@ TEST(CaptionVoiceBinding, AuthoredDurationCapsLiveVoiceCaption)
     PlayParams params;
     params.Bus = "Sfx";
     params.Looping = true;
-    VoiceId voice = audio.Play(AssetId{ 1 }, clip, params);
+    VoiceId voice = audio.Play(AudioClipKey{ 1 }, clip, params);
     ASSERT_TRUE(voice.IsValid());
 
     // A looping generator with an authored finite caption: the voice plays

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
 #include <core/assets/AssetRef.h>
 #include <core/logging/LoggingProvider.h>
 
@@ -17,6 +18,11 @@ struct AssetRecord
     std::string Path;
     std::string FilePath;
 
+    // Stable identity from the cook's persisted id map (Decision A / Stage
+    // 4e). Invalid until ApplyAssetIds runs after import + scan; records
+    // register id-less and ids never participate in equivalence checks.
+    AssetId Id;
+
     uint64_t ContentHash = 0;
     uint32_t Version = 1;
 };
@@ -29,7 +35,14 @@ public:
     bool Register(const AssetRecord& record);
     bool RegisterOrVerify(const AssetRecord& record);
 
+    // Binds a stable id to an already-registered path (the ApplyAssetIds
+    // pass). Idempotent for the same pair; a record that already carries a
+    // different id, or an id already bound to another path, is a conflict
+    // and is rejected with a warning.
+    bool AssignId(std::string_view path, AssetId id);
+
     [[nodiscard]] const AssetRecord* FindByPath(std::string_view path) const;
+    [[nodiscard]] const AssetRecord* FindById(AssetId id) const;
     [[nodiscard]] bool Contains(std::string_view path) const;
 
 private:
@@ -37,6 +50,7 @@ private:
 
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
+    std::unordered_map<AssetId, const AssetRecord*> RecordsById;
 };
 
 [[nodiscard]] bool IsValidAssetPath(std::string_view path);

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <audio/AudioVoice.h>    // VoiceId, VoiceState -- public types only
-#include <core/identity/Id.h>
+#include <audio/AudioVoice.h>    // VoiceId, VoiceState, AudioClipKey -- public types only
 
 #include <SDL3/SDL_audio.h>
 #include <cstdint>
@@ -18,7 +17,7 @@
 //=============================================================================
 struct AudioVoiceSlot
 {
-    AssetId          ClipId;
+    AudioClipKey     ClipId;
     uint32_t         BusIndex     = 0;
     uint32_t         Generation   = 0;
 
