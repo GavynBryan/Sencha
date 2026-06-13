@@ -492,11 +492,11 @@ TEST(CaptionGate, ThreeContextsRouteFilterAndOrderDeterministically)
     captions.SetSettings(Everything());
     std::vector<uint32_t> firstOrder;
     for (const ActiveCaption& caption : captions.Active())
-        firstOrder.push_back(caption.Id.Id);
+        firstOrder.push_back(SlotIndex(caption.Id));
     captions.Tick(&audio, 0.0f);
     std::vector<uint32_t> secondOrder;
     for (const ActiveCaption& caption : captions.Active())
-        secondOrder.push_back(caption.Id.Id);
+        secondOrder.push_back(SlotIndex(caption.Id));
     EXPECT_EQ(firstOrder, secondOrder);
     EXPECT_EQ(captions.ActiveCount(), 3u);
 }

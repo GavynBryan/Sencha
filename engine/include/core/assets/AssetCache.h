@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/handle/ILifetimeOwner.h>
-#include <core/handle/LifetimeHandle.h>
+#include <core/handle/Owned.h>
 #include <core/service/IService.h>
 
 #include <cassert>
@@ -36,9 +36,10 @@
 //   // that point at a freed-but-not-yet-reused slot.
 //   bool IsEntryLive(const TEntry& entry) const;
 //
-// THandle requirements:
+// THandle requirements (satisfied by every Handle<Tag>):
 //   - bool IsValid() const
-//   - either uint32_t Id field, or uint32_t Index / Generation fields
+//   - uint32_t Index / Generation fields, aggregate-initializable as
+//     THandle{ index, generation }
 //
 // TEntry requirements:
 //   - uint32_t  Generation = 0
@@ -46,12 +47,6 @@
 //   - std::string PathKey  (empty for non-path entries)
 //=============================================================================
 
-namespace
-{
-    constexpr uint32_t kAssetCacheIndexBits    = 20u;
-    constexpr uint32_t kAssetCacheIndexMask    = (1u << kAssetCacheIndexBits) - 1u;
-    constexpr uint32_t kAssetCacheMaxGeneration = (1u << (32u - kAssetCacheIndexBits)) - 1u;
-} // namespace
 
 template<typename TDerived, typename THandle, typename TEntry>
 class AssetCache : public IService, public ILifetimeOwner
@@ -87,17 +82,16 @@ public:
         return handle;
     }
 
-    // RAII variant. Same semantics as Acquire(); wraps the handle in a
-    // LifetimeHandle that calls Release() automatically on destruction.
-    [[nodiscard]] LifetimeHandle<TDerived, THandle> AcquireOwned(std::string_view path)
+    // RAII variant. Same semantics as Acquire(); wraps the handle in an
+    // Owned<THandle> that calls Release() automatically on destruction.
+    [[nodiscard]] Owned<THandle> AcquireOwned(std::string_view path)
     {
         THandle handle = Acquire(path);
         if (!handle.IsValid())
             return {};
 
         // Acquire() already incremented RefCount -- skip Attach to avoid double-counting.
-        return LifetimeHandle<TDerived, THandle>(this, handle,
-            LifetimeHandle<TDerived, THandle>::NoAttach);
+        return Owned<THandle>(this, handle, Owned<THandle>::NoAttach);
     }
 
     void Retain(THandle handle)
@@ -199,8 +193,10 @@ protected:
             index = FreeSlots.back();
             FreeSlots.pop_back();
 
+            // 32-bit generation: only the wrap-to-zero case needs guarding;
+            // it is unreachable in practice (4 billion recycles of one slot).
             uint32_t gen = Entries[index].Generation + 1u;
-            if (gen == 0u || gen > kAssetCacheMaxGeneration) gen = 1u;
+            if (gen == 0u) gen = 1u;
             entry.Generation = gen;
             Entries[index] = std::move(entry);
         }
@@ -236,8 +232,8 @@ protected:
         return &entry;
     }
 
-    // Slot 0 is permanently reserved so that Handle::Id == 0 is always invalid.
-    // Derived constructors must call this once during setup.
+    // Slot 0 is permanently reserved so that a zero-index handle is always
+    // invalid. Derived constructors must call this once during setup.
     void ReserveNullSlot()
     {
         assert(Entries.empty() && "ReserveNullSlot must be called before any entries are added");
@@ -245,7 +241,7 @@ protected:
     }
 
 private:
-    // ILifetimeOwner -- called by LifetimeHandle on construction / destruction.
+    // ILifetimeOwner -- called by Owned on construction / destruction.
     void Attach(uint64_t token) override
     {
         THandle handle{};
@@ -278,37 +274,11 @@ private:
 
     [[nodiscard]] static THandle MakeHandle(uint32_t index, uint32_t generation)
     {
-        THandle h{};
-        if constexpr (requires { h.Id; })
-        {
-            h.Id = (generation << kAssetCacheIndexBits) | (index & kAssetCacheIndexMask);
-        }
-        else
-        {
-            h.Index = index;
-            h.Generation = generation;
-        }
-        return h;
+        return THandle{ index, generation };
     }
 
-    [[nodiscard]] static uint32_t HandleIndex(THandle handle)
-    {
-        if constexpr (requires { handle.Id; })
-            return DecodeIndex(handle.Id);
-        else
-            return handle.Index;
-    }
-
-    [[nodiscard]] static uint32_t HandleGeneration(THandle handle)
-    {
-        if constexpr (requires { handle.Id; })
-            return DecodeGeneration(handle.Id);
-        else
-            return handle.Generation;
-    }
-
-    [[nodiscard]] static uint32_t DecodeIndex(uint32_t id)      { return id & kAssetCacheIndexMask; }
-    [[nodiscard]] static uint32_t DecodeGeneration(uint32_t id) { return id >> kAssetCacheIndexBits; }
+    [[nodiscard]] static uint32_t HandleIndex(THandle handle) { return handle.Index; }
+    [[nodiscard]] static uint32_t HandleGeneration(THandle handle) { return handle.Generation; }
 
     TDerived& Derived() { return static_cast<TDerived&>(*this); }
     const TDerived& Derived() const { return static_cast<const TDerived&>(*this); }

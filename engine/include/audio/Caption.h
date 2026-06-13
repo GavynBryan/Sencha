@@ -1,6 +1,7 @@
 #pragma once
 
 #include <audio/AudioVoice.h>
+#include <core/handle/Handle.h>
 #include <core/text/InlineString.h>
 #include <ecs/EntityId.h>
 
@@ -51,18 +52,14 @@ using SpeakerKey = InlineString<64>;
 //=============================================================================
 // CaptionId
 //
-// Opaque generational handle returned by CaptionRuntime::Begin*. Same
-// contract as VoiceId: a zero Id means "invalid / no caption", stale handles
-// from a previous caption occupying the same slot are safely rejected, and
-// ending an invalid or already-ended caption is a no-op.
+// Opaque generational handle returned by CaptionRuntime::Begin* into the
+// caption slot pool: a stale handle from a previous caption occupying the same
+// slot is safely rejected, and ending an invalid or already-ended caption is a
+// no-op. One of the engine's unified Handle<Tag> types (handle convergence) —
+// transient, never persisted (the AudioCaptionComponent stores it as live
+// runtime state, outside its serialized schema).
 //=============================================================================
-struct CaptionId
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const CaptionId&) const = default;
-};
+using CaptionId = Handle<struct CaptionTag>;
 
 //=============================================================================
 // CaptionPayload

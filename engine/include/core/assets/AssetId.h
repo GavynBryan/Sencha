@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <core/identity/StrongId.h>
 
 //=============================================================================
 // AssetId (docs/assets/pipeline.md, Decision A)
@@ -14,27 +15,15 @@
 // id when a source moves — while paths remain the human-facing alias and
 // the dev-build fallback resolver.
 //
-// Zero is the invalid id. Text formats carry ids as 16-digit lowercase hex
-// strings (JSON numbers are doubles and cannot hold 64 bits — the same rule
-// the cooked-cache index follows for content hashes).
+// AssetId is a StrongId<Tag, uint64_t> — the engine's single id vocabulary —
+// so equality, ordering, hashing, and binary serialization come from there.
+// What is specific to AssetId is its text form: ids round-trip through 16-digit
+// lowercase hex (JSON numbers are doubles and cannot hold 64 bits — the same
+// rule the cooked-cache index follows for content hashes).
+//
+// Zero is the invalid id.
 //=============================================================================
-struct AssetId
-{
-    uint64_t Value = 0;
-
-    [[nodiscard]] bool IsValid() const { return Value != 0; }
-
-    friend bool operator==(AssetId, AssetId) = default;
-};
-
-template <>
-struct std::hash<AssetId>
-{
-    std::size_t operator()(AssetId id) const noexcept
-    {
-        return std::hash<uint64_t>{}(id.Value);
-    }
-};
+using AssetId = StrongId<struct AssetIdTag, uint64_t>;
 
 // 16-digit lowercase hex, no prefix: "00000000000001a4".
 [[nodiscard]] std::string AssetIdToString(AssetId id);

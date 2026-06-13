@@ -1,23 +1,16 @@
 #pragma once
-#include <core/handle/LifetimeHandle.h>
-
-#include <cstdint>
+#include <core/handle/Handle.h>
+#include <core/handle/Owned.h>
 
 //=============================================================================
 // AnimationClipHandle
 //
 // Opaque generational handle into AnimationClipCache (docs/assets/
 // pipeline.md, Decision J). Distinct from AudioClipHandle — "clip" is
-// overloaded in this engine; the types are not.
+// overloaded in this engine; the types are not. One of the engine's unified
+// Handle<Tag> types.
 //=============================================================================
-struct AnimationClipHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    [[nodiscard]] bool IsNull()  const { return Id == 0; }
-    bool operator==(const AnimationClipHandle&) const = default;
-};
+using AnimationClipHandle = Handle<struct AnimationClipHandleTag>;
 
 class AnimationClipCache;
-using AnimationClipCacheHandle = LifetimeHandle<AnimationClipCache, AnimationClipHandle>;
+using AnimationClipCacheHandle = Owned<AnimationClipHandle>;

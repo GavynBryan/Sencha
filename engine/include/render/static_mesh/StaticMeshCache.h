@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetCache.h>
-#include <core/handle/LifetimeHandle.h>
+#include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/GpuStaticMesh.h>
 #include <render/static_mesh/MeshGeometry.h>
@@ -23,7 +23,7 @@ struct StaticMeshEntry
 };
 
 class StaticMeshCache;
-using StaticMeshCacheHandle = LifetimeHandle<StaticMeshCache, StaticMeshHandle>;
+using StaticMeshCacheHandle = Owned<StaticMeshHandle>;
 
 class StaticMeshCache final
     : public AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry>

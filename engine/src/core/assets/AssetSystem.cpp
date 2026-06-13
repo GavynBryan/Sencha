@@ -194,6 +194,21 @@ const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expecte
     return record;
 }
 
+bool AssetSystem::IsResident(std::string_view path, AssetType type) const
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh:    return StaticMeshes && StaticMeshes->Find(path).IsValid();
+    case AssetType::SkinnedMesh:   return SkinnedMeshes && SkinnedMeshes->Find(path).IsValid();
+    case AssetType::Material:      return Materials && Materials->Find(path).IsValid();
+    case AssetType::Texture:       return Textures && Textures->Find(path).IsValid();
+    case AssetType::Audio:         return AudioClips && AudioClips->Find(path).IsValid();
+    case AssetType::Skeleton:      return Skeletons && Skeletons->Find(path).IsValid();
+    case AssetType::AnimationClip: return AnimationClips && AnimationClips->Find(path).IsValid();
+    default:                       return false;
+    }
+}
+
 std::string_view AssetSystem::ResolveRefPath(AssetId id,
                                              std::string_view fallbackPath,
                                              AssetType expectedType) const

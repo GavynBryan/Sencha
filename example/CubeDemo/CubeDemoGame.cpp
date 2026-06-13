@@ -96,6 +96,42 @@ namespace
         DemoScene& Scene;
     };
 #endif
+
+#ifdef SENCHA_ENABLE_COOK
+    // Throttled per-frame poll of the asset hot-reload watcher (Stage 6a).
+    // Detection + re-cook + async stage run here on the main thread; the swap
+    // commit lands at the engine's normal async drain point. Holds references
+    // to the game's optionals so it tolerates being registered before they
+    // populate (the demo's null-check-each-frame idiom).
+    struct HotReloadPollSystem
+    {
+        HotReloadPollSystem(std::optional<AssetSourceWatcher>& watcher,
+                            std::optional<AssetHotReloader>& reloader)
+            : Watcher(watcher)
+            , Reloader(reloader)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            if (!Watcher.has_value() || !Reloader.has_value())
+                return;
+
+            Accumulator += ctx.WallDeltaSeconds;
+            if (Accumulator < kPollIntervalSeconds)
+                return;
+            Accumulator = 0.0;
+
+            for (const std::string& changed : Watcher->PollChanged())
+                Reloader->ReloadSource(changed);
+        }
+
+        static constexpr double kPollIntervalSeconds = 0.3;
+        std::optional<AssetSourceWatcher>& Watcher;
+        std::optional<AssetHotReloader>& Reloader;
+        double Accumulator = 0.0;
+    };
+#endif
 }
 
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
@@ -154,6 +190,19 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
             logging.GetLogger<CubeDemoGame>().Warn(
                 "CubeDemo: no asset id map ({}); refs resolve by path only", idMapError);
     }
+
+#ifdef SENCHA_ENABLE_COOK
+    // Dev-only asset hot reload (Stage 6a, Decision H): watch texture sources
+    // and swap the live GPU texture in place on edit — re-cook through the
+    // same importer the startup cook uses, decode async, commit-swap at the
+    // drain point keeping the bindless slot so materials are unaffected. The
+    // poll itself is a throttled per-frame system (OnRegisterSystems).
+    HotReloadImporters.Register(HotReloadPngImporter);
+    Reloader.emplace(logging, runtimeAssets.Assets, runtimeAssets.Registry,
+                     HotReloadImporters, engine.Tasks(), std::string("assets"));
+    Watcher.emplace(logging, std::string("assets"), std::vector<std::string>{ ".png" });
+    Watcher->Initialize();
+#endif
 
     // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and
     // the registry skeleton happen on the task thread; deserialization and
@@ -256,6 +305,9 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo);
+#ifdef SENCHA_ENABLE_COOK
+    ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
+#endif
 }
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)

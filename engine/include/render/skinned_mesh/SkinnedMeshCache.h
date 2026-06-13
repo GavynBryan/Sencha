@@ -2,7 +2,7 @@
 
 #include <anim/SkeletonHandle.h>
 #include <core/assets/AssetCache.h>
-#include <core/handle/LifetimeHandle.h>
+#include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/skinned_mesh/SkinnedMeshData.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>

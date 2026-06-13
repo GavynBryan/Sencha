@@ -7,23 +7,9 @@
 #include <cassert>
 #include <limits>
 
-// ---------------------------------------------------------------------------
-// Handle encoding
-//
-// VoiceId::Id packs a 20-bit slot index and a 12-bit generation counter into
-// one uint32_t, matching the TextureHandle / ImageHandle convention used
-// throughout the engine. Generation 0 is reserved for the null/invalid state.
-// ---------------------------------------------------------------------------
 namespace
 {
-    constexpr uint32_t kIndexBits     = 20u;
-    constexpr uint32_t kIndexMask     = (1u << kIndexBits) - 1u;
-    constexpr uint32_t kMaxGeneration = (1u << (32u - kIndexBits)) - 1u;
-    constexpr uint32_t kInvalidSlot   = std::numeric_limits<uint32_t>::max();
-
-    uint32_t DecodeIndex(uint32_t id)      { return id & kIndexMask; }
-    uint32_t DecodeGeneration(uint32_t id) { return id >> kIndexBits; }
-    uint32_t EncodeId(uint32_t index, uint32_t gen) { return (gen << kIndexBits) | (index & kIndexMask); }
+    constexpr uint32_t kInvalidSlot = std::numeric_limits<uint32_t>::max();
 
     // All SDL streams are opened to this spec so the device sees uniform data.
     SDL_AudioSpec DeviceSpec()
@@ -441,8 +427,9 @@ void AudioService::RetireVoice(uint32_t slotIndex, bool returnToPool)
     }
 
     // Bump generation so outstanding VoiceIds for this slot become stale.
+    // A 32-bit generation never wraps in practice; only skip the reserved 0.
     uint32_t gen = slot.Generation + 1u;
-    if (gen == 0u || gen > kMaxGeneration) gen = 1u;
+    if (gen == 0u) gen = 1u;
 
     slot            = AudioVoiceSlot{};
     slot.Generation = gen;
@@ -462,33 +449,27 @@ void AudioService::ApplyVoiceGain(const AudioVoiceSlot& slot, const AudioBus& bu
 AudioVoiceSlot* AudioService::Resolve(VoiceId id)
 {
     if (!id.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(id.Id);
-    const uint32_t gen   = DecodeGeneration(id.Id);
-    if (index == 0 || index >= Voices.size()) return nullptr;
-    AudioVoiceSlot& slot = Voices[index];
-    if (slot.Generation != gen || slot.State == VoiceState::Idle) return nullptr;
+    if (id.Index == 0 || id.Index >= Voices.size()) return nullptr;
+    AudioVoiceSlot& slot = Voices[id.Index];
+    if (slot.Generation != id.Generation || slot.State == VoiceState::Idle) return nullptr;
     return &slot;
 }
 
 const AudioVoiceSlot* AudioService::Resolve(VoiceId id) const
 {
     if (!id.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(id.Id);
-    const uint32_t gen   = DecodeGeneration(id.Id);
-    if (index == 0 || index >= Voices.size()) return nullptr;
-    const AudioVoiceSlot& slot = Voices[index];
-    if (slot.Generation != gen || slot.State == VoiceState::Idle) return nullptr;
+    if (id.Index == 0 || id.Index >= Voices.size()) return nullptr;
+    const AudioVoiceSlot& slot = Voices[id.Index];
+    if (slot.Generation != id.Generation || slot.State == VoiceState::Idle) return nullptr;
     return &slot;
 }
 
 VoiceId AudioService::MakeVoiceId(uint32_t index, uint32_t generation)
 {
-    VoiceId id;
-    id.Id = EncodeId(index, generation);
-    return id;
+    return VoiceId{ index, generation };
 }
 
 uint32_t AudioService::VoiceIndex(VoiceId id)
 {
-    return DecodeIndex(id.Id);
+    return id.Index;
 }

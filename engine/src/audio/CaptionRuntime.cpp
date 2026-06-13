@@ -418,16 +418,13 @@ void CaptionRuntime::Retire(uint32_t slotIndex)
 
 CaptionId CaptionRuntime::MakeCaptionId(uint32_t index, uint32_t generation)
 {
-    // Low 16 bits: slot index + 1 (so a zero Id stays "invalid"); high 16
-    // bits: generation. Generation wrap is harmless — a collision needs the
-    // same slot plus exactly 65536 reuses between a stale id's birth and use.
-    assert(index < 0xFFFFu);
-    CaptionId id;
-    id.Id = ((generation & 0xFFFFu) << 16) | (index + 1);
-    return id;
+    // Slots are 0-based but Handle reserves index 0 as the null slot, so the
+    // stored Index is slot + 1 (a default-constructed CaptionId stays invalid).
+    // Generation starts at 1 and a 32-bit counter never wraps in practice.
+    return CaptionId{ index + 1, generation };
 }
 
 uint32_t CaptionRuntime::CaptionIndex(CaptionId id)
 {
-    return (id.Id & 0xFFFFu) - 1;
+    return id.Index - 1;
 }

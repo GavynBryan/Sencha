@@ -251,3 +251,68 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         *outStats = stats;
     return ok;
 }
+
+bool ReimportOneSource(std::string_view rootDirectory,
+                       std::string_view sourceRelPath,
+                       const AssetImporterRegistry& importers,
+                       LoggingProvider& logging,
+                       std::vector<std::string>& outArtifactPaths)
+{
+    Logger& log = logging.GetLogger<ImportOnDemandDriver>();
+    outArtifactPaths.clear();
+
+    const std::filesystem::path root{ std::string(rootDirectory) };
+    const std::filesystem::path sourcePath = root / std::string(sourceRelPath);
+
+    IAssetImporter* importer =
+        importers.FindByExtension(sourcePath.extension().generic_string());
+    if (importer == nullptr)
+    {
+        log.Warn("ReimportOneSource: no importer for '{}'", sourceRelPath);
+        return false;
+    }
+
+    std::vector<std::byte> bytes;
+    if (!ReadFileBytes(sourcePath, bytes))
+    {
+        log.Warn("ReimportOneSource: could not read source '{}'", sourceRelPath);
+        return false;
+    }
+    const uint64_t sourceHash = HashBytes64(bytes);
+
+    FileCookOutputWriter writer(root);
+    ImportResult result = importer->Import(ImportInput{ sourceRelPath, bytes }, writer);
+    std::string whyNot = result.Error;
+    if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
+    {
+        log.Warn("ReimportOneSource: re-import of '{}' failed: {}", sourceRelPath, whyNot);
+        return false;
+    }
+
+    for (const CookedArtifact& artifact : result.Artifacts)
+        outArtifactPaths.push_back(artifact.Path);
+
+    // Update the cooked index on disk so a later cold start sees the source as
+    // fresh and skips a redundant recook. Best-effort: a missing/corrupt index
+    // just means the next launch recooks, which is correct, only slower.
+    const std::filesystem::path cookedDir = root / kCookedCacheDirName;
+    const std::filesystem::path indexPath = cookedDir / kIndexFileName;
+    CookedCacheIndex index;
+    std::error_code ec;
+    if (std::filesystem::exists(indexPath, ec))
+    {
+        std::string indexError;
+        if (!CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index, &indexError))
+            index = {};
+    }
+    CookedSourceEntry entry;
+    entry.SourceRelPath = std::string(sourceRelPath);
+    entry.SourceHash = sourceHash;
+    entry.Artifacts = std::move(result.Artifacts);
+    index.Put(std::move(entry));
+    std::filesystem::create_directories(cookedDir, ec);
+    if (!index.SaveToFile(indexPath.generic_string()))
+        log.Warn("ReimportOneSource: could not update cooked index after reimporting '{}'", sourceRelPath);
+
+    return true;
+}

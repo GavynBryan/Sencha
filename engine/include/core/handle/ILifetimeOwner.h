@@ -5,7 +5,7 @@
 // ILifetimeOwner
 //
 // Type-erased interface for any object that manages the lifetime of
-// resources via LifetimeHandle. The handle calls Attach on construction
+// resources via Owned<H>. The handle calls Attach on construction
 // and Detach on destruction, enabling RAII ownership across unrelated
 // subsystems (batches, pools, registries, etc.).
 //
@@ -17,9 +17,9 @@ class ILifetimeOwner
 public:
 	virtual ~ILifetimeOwner() = default;
 
-	// Called by LifetimeHandle on construction.
+	// Called by Owned on construction.
 	virtual void Attach(uint64_t token) = 0;
 
-	// Called by LifetimeHandle on destruction / reset.
+	// Called by Owned on destruction / reset.
 	virtual void Detach(uint64_t token) = 0;
 };

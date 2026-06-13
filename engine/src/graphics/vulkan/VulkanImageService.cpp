@@ -11,12 +11,6 @@
 
 namespace
 {
-    constexpr uint32_t kIndexBits = 20;
-    constexpr uint32_t kIndexMask = (1u << kIndexBits) - 1u;
-    constexpr uint32_t kMaxGeneration = (1u << (32u - kIndexBits)) - 1u;
-
-    uint32_t DecodeIndex(uint32_t id) { return id & kIndexMask; }
-    uint32_t DecodeGeneration(uint32_t id) { return id >> kIndexBits; }
 
     uint32_t FloorLog2(uint32_t v)
     {
@@ -75,16 +69,14 @@ VulkanImageService::~VulkanImageService()
 
 ImageHandle VulkanImageService::MakeHandle(uint32_t index, uint32_t generation) const
 {
-    ImageHandle h;
-    h.Id = (generation << kIndexBits) | (index & kIndexMask);
-    return h;
+    return ImageHandle{ index, generation };
 }
 
 VulkanImageService::ImageEntry* VulkanImageService::Resolve(ImageHandle handle)
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Image == VK_NULL_HANDLE) return nullptr;
@@ -94,8 +86,8 @@ VulkanImageService::ImageEntry* VulkanImageService::Resolve(ImageHandle handle)
 const VulkanImageService::ImageEntry* VulkanImageService::Resolve(ImageHandle handle) const
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     const auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Image == VK_NULL_HANDLE) return nullptr;
@@ -165,12 +157,6 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     else
     {
         index = static_cast<uint32_t>(Entries.size());
-        if (index > kIndexMask)
-        {
-            Log.Error("VulkanImageService slot capacity exhausted");
-            vmaDestroyImage(Allocator, image, allocation);
-            return {};
-        }
         Entries.emplace_back();
     }
 
@@ -183,7 +169,7 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     entry.MipLevels = mipLevels;
     entry.GenerateMips = info.GenerateMips;
     entry.Generation = entry.Generation + 1;
-    if (entry.Generation == 0 || entry.Generation > kMaxGeneration)
+    if (entry.Generation == 0)
     {
         entry.Generation = 1;
     }
@@ -238,7 +224,7 @@ void VulkanImageService::Destroy(ImageHandle handle)
     entry->Image      = VK_NULL_HANDLE;
     entry->Allocation = VK_NULL_HANDLE;
 
-    const uint32_t index = DecodeIndex(handle.Id);
+    const uint32_t index = handle.Index;
     FreeSlots.push_back(index);
 
     // Defer the physical destroy until the GPU has retired all command buffers

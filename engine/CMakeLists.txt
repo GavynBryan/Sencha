@@ -63,9 +63,13 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
 endif()
 
 if(NOT SENCHA_ENABLE_COOK)
+    # Hot reload (Stage 6) re-cooks on source change, so it is dev-only too —
+    # filtered out alongside the cook layer it depends on.
     foreach(_pattern
         "[/\\\\]src[/\\\\]assets[/\\\\]cook[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]cook[/\\\\]"
+        "[/\\\\]src[/\\\\]assets[/\\\\]hotreload[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]hotreload[/\\\\]"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")

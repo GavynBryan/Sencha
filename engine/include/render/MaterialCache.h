@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetCache.h>
-#include <core/handle/LifetimeHandle.h>
+#include <core/handle/Owned.h>
 #include <render/Material.h>
 #include <render/TextureHandle.h>
 
@@ -24,7 +24,7 @@ struct MaterialEntry
 };
 
 class MaterialCache;
-using MaterialCacheHandle = LifetimeHandle<MaterialCache, MaterialHandle>;
+using MaterialCacheHandle = Owned<MaterialHandle>;
 
 //=============================================================================
 // MaterialCache

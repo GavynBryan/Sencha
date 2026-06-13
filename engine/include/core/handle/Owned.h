@@ -5,36 +5,35 @@
 #include <type_traits>
 
 //=============================================================================
-// LifetimeHandle<T, KeyT>
+// Owned<H>
 //
-// Generic RAII handle that pairs an ILifetimeOwner with a typed token. T names
-// the value type on the far side of the handle; KeyT names the token shape used
-// by the owner. Construction calls Attach(); destruction calls Detach().
+// The engine's single owning reference: a move-only RAII wrapper that pairs an
+// ILifetimeOwner with a typed token H and ref-counts it — Attach() on
+// construction, Detach() (release) on destruction. It is the one expression of
+// the owning-vs-observing distinction:
 //
-// KeyT requirements:
-//   - Pointer tokens (T*): encoded into ILifetimeOwner's uint64_t slot.
-//     Validity check: Token != nullptr.
-//   - Value tokens (e.g., DataBatchKey): copied into the uint64_t slot.
-//     Validity check: Token != KeyT{}.
+//   FooHandle        -> observing (cheap, may go stale)
+//   Owned<FooHandle> -> owning   (ref-counted, releases on destruction)
 //
-// Move-only. Designed for extensible use across any subsystem that
-// implements ILifetimeOwner (batches, pools, registries, etc.).
+// The owner is type-erased to ILifetimeOwner*, so Owned<H> needs only the
+// token type. H requirements:
+//   - Value tokens (Handle<Tag>, DataBatchKey): copied into the owner's
+//     uint64_t slot. Validity: Token != H{}.
+//   - Pointer tokens (T*): encoded into the slot. Validity: Token != nullptr.
 //
-// Common aliases:
-//   InstanceRegistryHandle<T> = LifetimeHandle<T, T*>
-//   DataBatchHandle<T>        = LifetimeHandle<T, DataBatchKey>
+// Move-only. Works with any subsystem implementing ILifetimeOwner.
 //=============================================================================
-template<typename T, typename KeyT>
-class LifetimeHandle
+template <typename H>
+class Owned
 {
-	static_assert(sizeof(KeyT) <= sizeof(uint64_t),
-		"LifetimeHandle key tokens must fit in ILifetimeOwner's uint64_t slot.");
+	static_assert(sizeof(H) <= sizeof(uint64_t),
+		"Owned token must fit in ILifetimeOwner's uint64_t slot.");
 
 public:
-	LifetimeHandle() = default;
+	Owned() = default;
 
 	// Standard construction: calls Attach on the owner.
-	LifetimeHandle(ILifetimeOwner* owner, KeyT token)
+	Owned(ILifetimeOwner* owner, H token)
 		: Owner(owner)
 		, Token(token)
 	{
@@ -44,21 +43,21 @@ public:
 		}
 	}
 
-	~LifetimeHandle()
+	~Owned()
 	{
 		Reset();
 	}
 
 	// Move-only semantics
-	LifetimeHandle(LifetimeHandle&& other) noexcept
+	Owned(Owned&& other) noexcept
 		: Owner(other.Owner)
 		, Token(other.Token)
 	{
 		other.Owner = nullptr;
-		other.Token = KeyT{};
+		other.Token = H{};
 	}
 
-	LifetimeHandle& operator=(LifetimeHandle&& other) noexcept
+	Owned& operator=(Owned&& other) noexcept
 	{
 		if (this != &other)
 		{
@@ -66,13 +65,13 @@ public:
 			Owner = other.Owner;
 			Token = other.Token;
 			other.Owner = nullptr;
-			other.Token = KeyT{};
+			other.Token = H{};
 		}
 		return *this;
 	}
 
-	LifetimeHandle(const LifetimeHandle&) = delete;
-	LifetimeHandle& operator=(const LifetimeHandle&) = delete;
+	Owned(const Owned&) = delete;
+	Owned& operator=(const Owned&) = delete;
 
 	// Manually release (calls Detach)
 	void Reset()
@@ -82,7 +81,7 @@ public:
 			Owner->Detach(Encode());
 		}
 		Owner = nullptr;
-		Token = KeyT{};
+		Token = H{};
 	}
 
 	// Check validity
@@ -90,7 +89,7 @@ public:
 	explicit operator bool() const { return IsValid(); }
 
 	// Typed token access.
-	KeyT GetToken() const { return Token; }
+	H GetToken() const { return Token; }
 
 	// Owner access (for advanced use)
 	ILifetimeOwner* GetOwner() const { return Owner; }
@@ -102,7 +101,7 @@ public:
 	struct NoAttachTag {};
 	static constexpr NoAttachTag NoAttach{};
 
-	LifetimeHandle(ILifetimeOwner* owner, KeyT token, NoAttachTag)
+	Owned(ILifetimeOwner* owner, H token, NoAttachTag)
 		: Owner(owner)
 		, Token(token)
 	{
@@ -114,26 +113,26 @@ protected:
 private:
 	uint64_t Encode() const
 	{
-		if constexpr (std::is_pointer_v<KeyT>)
+		if constexpr (std::is_pointer_v<H>)
 		{
 			return reinterpret_cast<uint64_t>(Token);
 		}
 		else
 		{
 			uint64_t v = 0;
-			std::memcpy(&v, &Token, sizeof(KeyT));
+			std::memcpy(&v, &Token, sizeof(H));
 			return v;
 		}
 	}
 
 	bool IsTokenValid() const
 	{
-		if constexpr (std::is_pointer_v<KeyT>)
+		if constexpr (std::is_pointer_v<H>)
 			return Token != nullptr;
 		else
-			return !(Token == KeyT{});
+			return !(Token == H{});
 	}
 
 	ILifetimeOwner* Owner = nullptr;
-	KeyT Token{};
+	H Token{};
 };

@@ -109,10 +109,19 @@ public:
     // RegisterSampledImage allocates a fresh index.
     void UnregisterSampledImage(BindlessImageIndex index);
 
+    // Repoints an existing bindless slot at a new (image, sampler) without
+    // reallocating the index — the hot-reload primitive (Stage 6). Because
+    // the slot stays the same, every material whose descriptor index points
+    // here renders the new image with no further work. Legal in place: the
+    // bindless set is UPDATE_AFTER_BIND, and the old image stays alive in the
+    // deletion queue until in-flight frames retire. The dedup map is kept
+    // consistent so a later RegisterSampledImage can't alias a freed image.
+    void UpdateSampledImage(BindlessImageIndex index, ImageHandle image, VkSampler sampler);
+
 private:
     struct BindlessKey
     {
-        uint32_t ImageId = 0;
+        ImageHandle Image{};
         VkSampler Sampler = VK_NULL_HANDLE;
 
         bool operator==(const BindlessKey&) const = default;
@@ -122,7 +131,8 @@ private:
     {
         size_t operator()(const BindlessKey& k) const noexcept
         {
-            const auto a = static_cast<uint64_t>(k.ImageId);
+            const auto a = (static_cast<uint64_t>(k.Image.Generation) << 32)
+                         | static_cast<uint64_t>(k.Image.Index);
             const auto b = reinterpret_cast<uint64_t>(k.Sampler);
             uint64_t h = a * 1099511628211ull;
             h ^= b + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);

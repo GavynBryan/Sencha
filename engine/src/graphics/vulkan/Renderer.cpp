@@ -81,12 +81,6 @@ Renderer::Renderer(LoggingProvider& logging,
 
 Renderer::~Renderer()
 {
-    // Vacate all registry slots before any Teardown() runs. This provides
-    // two-stage protection: Get() returns nullptr while the registry is still
-    // alive (slots cleared), and after ~Renderer returns the shared_ptr drops,
-    // so weak_ptr::lock() also fails for any refs that outlive the Renderer.
-    FeatureRegistry->RemoveAll();
-
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
     // the caches own the VkDevice objects, and the device service outlives us.

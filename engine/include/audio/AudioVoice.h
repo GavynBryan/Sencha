@@ -1,24 +1,21 @@
 #pragma once
 
+#include <core/handle/Handle.h>
+
 #include <cstdint>
 
 //=============================================================================
 // VoiceId
 //
-// Opaque generational handle returned by AudioService::Play(). Encodes a
-// slot index and generation counter in a single uint32_t so that stale
-// handles from a previous voice occupying the same slot are safely rejected.
+// Opaque generational handle returned by AudioService::Play() into the voice
+// slot pool, so a stale handle from a previous voice occupying the same slot
+// is safely rejected. One of the engine's unified Handle<Tag> types (handle
+// convergence) — transient, never persisted.
 //
-// A zero Id means "invalid / not playing". Check IsValid() before passing
+// A null VoiceId means "invalid / not playing". Check IsValid() before passing
 // to any AudioService method.
 //=============================================================================
-struct VoiceId
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const VoiceId&) const = default;
-};
+using VoiceId = Handle<struct VoiceTag>;
 
 //=============================================================================
 // AudioClipKey

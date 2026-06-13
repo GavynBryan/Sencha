@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/service/IService.h>
 #include <vk_mem_alloc.h>
@@ -39,13 +40,9 @@ class VulkanUploadContextService;
 // Upload runs on the graphics queue to avoid queue-family ownership
 // transfers. Same rationale as VulkanBufferService.
 //=============================================================================
-struct ImageHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const ImageHandle&) const = default;
-};
+// Generational handle to a GPU image owned by VulkanImageService. One of the
+// engine's unified Handle<Tag> types (handle convergence).
+using ImageHandle = Handle<struct ImageHandleTag>;
 
 struct ImageCreateInfo
 {

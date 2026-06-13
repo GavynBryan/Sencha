@@ -278,7 +278,7 @@ BindlessImageIndex VulkanDescriptorCache::RegisterSampledImage(ImageHandle image
         return {};
     }
 
-    const BindlessKey key{ image.Id, sampler };
+    const BindlessKey key{ image, sampler };
     if (auto it = BindlessLookup.find(key); it != BindlessLookup.end())
     {
         return it->second;
@@ -320,6 +320,39 @@ void VulkanDescriptorCache::UnregisterSampledImage(BindlessImageIndex index)
             return;
         }
     }
+}
+
+void VulkanDescriptorCache::UpdateSampledImage(BindlessImageIndex index, ImageHandle image, VkSampler sampler)
+{
+    if (!Valid || !index.IsValid()) return;
+
+    if (Images->GetView(image) == VK_NULL_HANDLE)
+    {
+        Log.Error("UpdateSampledImage: invalid ImageHandle");
+        return;
+    }
+    if (sampler == VK_NULL_HANDLE)
+    {
+        Log.Error("UpdateSampledImage: null sampler");
+        return;
+    }
+
+    // Repoint the slot in place. Old image memory is retired separately by the
+    // caller via the deletion queue; this only rewrites the descriptor.
+    WriteBindlessSlot(index.Value, image, sampler);
+
+    // Keep the dedup map consistent: drop whatever (old image, sampler) pair
+    // pointed at this slot and record the new pairing, so a future
+    // RegisterSampledImage can never alias a freed image onto this index.
+    for (auto it = BindlessLookup.begin(); it != BindlessLookup.end(); ++it)
+    {
+        if (it->second == index)
+        {
+            BindlessLookup.erase(it);
+            break;
+        }
+    }
+    BindlessLookup.emplace(BindlessKey{ image, sampler }, index);
 }
 
 void VulkanDescriptorCache::WriteBindlessSlot(uint32_t slot, ImageHandle image, VkSampler sampler)

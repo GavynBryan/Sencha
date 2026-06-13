@@ -1,26 +1,18 @@
 #pragma once
-#include <core/handle/LifetimeHandle.h>
-
-#include <cstdint>
+#include <core/handle/Handle.h>
+#include <core/handle/Owned.h>
 
 //=============================================================================
 // SkeletonHandle
 //
 // Opaque generational handle into SkeletonCache (docs/assets/pipeline.md,
-// Decision J).
+// Decision J). One of the engine's unified Handle<Tag> types.
 //=============================================================================
-struct SkeletonHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    [[nodiscard]] bool IsNull()  const { return Id == 0; }
-    bool operator==(const SkeletonHandle&) const = default;
-};
+using SkeletonHandle = Handle<struct SkeletonHandleTag>;
 
 // RAII skeleton reference. The alias lives here (the TextureHandle.h
 // precedent) so cache entries that *hold* skeletons — animation clips,
 // skinned mesh entries — can own the lifetime through the type-erased
 // ILifetimeOwner without including the cache header.
 class SkeletonCache;
-using SkeletonCacheHandle = LifetimeHandle<SkeletonCache, SkeletonHandle>;
+using SkeletonCacheHandle = Owned<SkeletonHandle>;

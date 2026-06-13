@@ -15,12 +15,6 @@
 
 namespace
 {
-    constexpr uint32_t kIndexBits  = 20u;
-    constexpr uint32_t kIndexMask  = (1u << kIndexBits) - 1u;
-    constexpr uint32_t kMaxGen     = (1u << (32u - kIndexBits)) - 1u;
-
-    uint32_t DecodeIndex(uint32_t id)      { return id & kIndexMask; }
-    uint32_t DecodeGeneration(uint32_t id) { return id >> kIndexBits; }
 
 #ifdef SENCHA_ENABLE_HOT_RELOAD
     // Process-wide ref-count for glslang initialisation.
@@ -91,16 +85,14 @@ VulkanShaderCache::~VulkanShaderCache()
 ShaderHandle VulkanShaderCache::MakeHandle(uint32_t index,
                                             uint32_t generation) const
 {
-    ShaderHandle h;
-    h.Id = (generation << kIndexBits) | (index & kIndexMask);
-    return h;
+    return ShaderHandle{ index, generation };
 }
 
 VulkanShaderCache::ShaderEntry* VulkanShaderCache::Resolve(ShaderHandle handle)
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen   = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen   = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Module == VK_NULL_HANDLE) return nullptr;
@@ -111,8 +103,8 @@ const VulkanShaderCache::ShaderEntry*
 VulkanShaderCache::Resolve(ShaderHandle handle) const
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen   = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen   = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     const auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Module == VK_NULL_HANDLE) return nullptr;
@@ -133,12 +125,6 @@ ShaderHandle VulkanShaderCache::RegisterEntry(VkShaderModule module,
     else
     {
         index = static_cast<uint32_t>(Entries.size());
-        if (index > kIndexMask)
-        {
-            Log.Error("VulkanShaderCache: slot capacity exhausted");
-            vkDestroyShaderModule(Device, module, nullptr);
-            return {};
-        }
         Entries.emplace_back();
     }
 
@@ -146,7 +132,7 @@ ShaderHandle VulkanShaderCache::RegisterEntry(VkShaderModule module,
     entry.Module = module;
     entry.Stage  = stage;
     entry.Generation++;
-    if (entry.Generation == 0 || entry.Generation > kMaxGen)
+    if (entry.Generation == 0)
         entry.Generation = 1;
 
     return MakeHandle(index, entry.Generation);
@@ -249,7 +235,7 @@ void VulkanShaderCache::Destroy(ShaderHandle handle)
     vkDestroyShaderModule(Device, entry->Module, nullptr);
     entry->Module = VK_NULL_HANDLE;
 
-    FreeSlots.push_back(DecodeIndex(handle.Id));
+    FreeSlots.push_back(handle.Index);
 }
 
 // ── Accessors ─────────────────────────────────────────────────────────────────

@@ -37,6 +37,13 @@ public:
     // the caller). The virtual Commit wraps this for heterogeneous drivers.
     [[nodiscard]] TextureHandle CommitTyped(AssetStaging&& staged);
 
+    // Owner-thread hot-reload commit (Stage 6): swaps the staged payload into
+    // the existing resident entry in place (same bindless slot, no new
+    // handle), retiring the old image. Returns false if the texture is not
+    // resident — there is nothing to reload, and the refreshed registry hash
+    // means the next normal load picks up the new bytes.
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged);
+
 private:
     Logger& Log;
     TextureCache* Cache = nullptr;

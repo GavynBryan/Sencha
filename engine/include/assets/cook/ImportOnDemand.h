@@ -3,7 +3,9 @@
 #include <assets/cook/AssetImporter.h>
 
 #include <cstddef>
+#include <string>
 #include <string_view>
+#include <vector>
 
 class AssetRegistry;
 class LoggingProvider;
@@ -38,3 +40,25 @@ struct ImportOnDemandStats
                                         AssetRegistry& registry,
                                         LoggingProvider& logging,
                                         ImportOnDemandStats* outStats = nullptr);
+
+//=============================================================================
+// Single-source re-import (Stage 6 hot reload).
+//
+// Re-runs the importer for one changed source unconditionally (the caller —
+// the hot-reload watcher — already knows the bytes changed, so there is no
+// freshness check), writes the cooked artifacts under .cooked/, and updates
+// the cooked-cache index on disk so a later cold start doesn't recook
+// needlessly. Fills `outArtifactPaths` with the virtual paths produced so the
+// caller can reload the resident ones. Owner-thread, dev-only.
+//
+// It does not touch the registry: a re-cook overwrites the existing cooked
+// artifact at the same FilePath the registry already points at, so the
+// resident asset's record stays valid and its loader reads the new bytes.
+// (A re-cook that changes the artifact *set* — mesh topology — is out of
+// Stage 6 scope.)
+//=============================================================================
+[[nodiscard]] bool ReimportOneSource(std::string_view rootDirectory,
+                                     std::string_view sourceRelPath,
+                                     const AssetImporterRegistry& importers,
+                                     LoggingProvider& logging,
+                                     std::vector<std::string>& outArtifactPaths);

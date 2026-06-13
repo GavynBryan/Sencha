@@ -29,7 +29,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(ServiceHost& services)
         return false;
 
     return renderer->AddFeature(
-        std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera)).IsValid();
+        std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera)) != nullptr;
 #else
     (void)services;
     return false;

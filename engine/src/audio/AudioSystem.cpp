@@ -126,7 +126,7 @@ void AudioSystem::DriveRegistry(AudioService& audio, Registry& registry,
         params.Pan = source.Pan;
         params.Looping = source.Looping;
 
-        source.Voice = audio.Play(AudioClipKey{ source.Clip.Id }, *clip, params);
+        source.Voice = audio.Play(AudioClipKey{ SlotIndex(source.Clip) }, *clip, params);
         source.Started = true;
         if (source.Voice.IsValid())
             playing.push_back(source.Voice);

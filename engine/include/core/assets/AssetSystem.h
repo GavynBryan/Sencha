@@ -86,6 +86,11 @@ public:
 
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
+    // True if `path` currently has a live entry in the cache for `type`,
+    // without touching its refcount. The hot-reload driver uses this to skip
+    // re-staging assets that aren't loaded (Stage 6).
+    [[nodiscard]] bool IsResident(std::string_view path, AssetType type) const;
+
     // Id-first ref resolution (Decision A / Stage 4e): when the registry
     // knows the id, the record's current path wins — that is what makes an
     // id-stamped ref survive a rename the stamped path predates. An unknown

@@ -109,3 +109,27 @@ TextureHandle TextureAssetLoader::CommitTyped(AssetStaging&& staged)
 
     return handle;
 }
+
+bool TextureAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    if (!staged.IsValid())
+    {
+        Log.Error("TextureAssetLoader: reload of failed staging for '{}': {}",
+                  staged.Record.Path, staged.Error);
+        return false;
+    }
+    if (!Cache)
+    {
+        Log.Error("TextureAssetLoader: missing TextureCache for reload of '{}'", staged.Record.Path);
+        return false;
+    }
+
+    if (TextureData* texture = std::any_cast<TextureData>(&staged.Payload))
+        return Cache->ReloadInPlace(staged.Record.Path, *texture);
+    if (Image* image = std::any_cast<Image>(&staged.Payload))
+        return Cache->ReloadInPlace(staged.Record.Path, *image);
+
+    Log.Error("TextureAssetLoader: reload payload for '{}' is neither TextureData nor Image",
+              staged.Record.Path);
+    return false;
+}
