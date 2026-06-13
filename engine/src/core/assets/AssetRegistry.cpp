@@ -6,15 +6,16 @@
 
 namespace
 {
-    constexpr std::string_view AssetPathPrefix = "asset://";
-
     AssetType AssetTypeFromExtension(std::string_view extension)
     {
-        if (extension == ".smesh") return AssetType::StaticMesh;
-        if (extension == ".smat")  return AssetType::Material;
-        if (extension == ".stex")  return AssetType::Texture;
-        if (extension == ".smap")  return AssetType::Scene;
-        if (extension == ".sclip") return AssetType::Audio;
+        if (extension == ".smesh")  return AssetType::StaticMesh;
+        if (extension == ".skmesh") return AssetType::SkinnedMesh;
+        if (extension == ".smat")   return AssetType::Material;
+        if (extension == ".stex")   return AssetType::Texture;
+        if (extension == ".smap")   return AssetType::Scene;
+        if (extension == ".sclip")  return AssetType::Audio;
+        if (extension == ".sskel")  return AssetType::Skeleton;
+        if (extension == ".sanim")  return AssetType::AnimationClip;
         // Source formats (.png, .gltf, ...) are deliberately absent: they
         // reach the registry through import-on-demand, registered under
         // their virtual path against the cooked artifact (Decision B). The
@@ -43,13 +44,6 @@ namespace
 AssetRegistry::AssetRegistry(LoggingProvider& logging)
     : Log(logging.GetLogger<AssetRegistry>())
 {
-}
-
-bool IsValidAssetPath(std::string_view path)
-{
-    return path.starts_with(AssetPathPrefix)
-        && path.size() > AssetPathPrefix.size()
-        && path.find('\\') == std::string_view::npos;
 }
 
 bool AssetRegistry::Register(const AssetRecord& record)

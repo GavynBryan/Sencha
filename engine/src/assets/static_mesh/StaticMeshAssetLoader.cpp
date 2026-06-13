@@ -1,8 +1,8 @@
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 
 #include <core/logging/LoggingProvider.h>
+#include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshCache.h>
-#include <render/static_mesh/StaticMeshData.h>
 
 #include <format>
 #include <utility>
@@ -26,7 +26,7 @@ AssetStaging StaticMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsset
         return staging;
     }
 
-    StaticMeshData data;
+    MeshGeometry data;
     if (!FileLoader.LoadFromBytes(bytes, data))
     {
         staging.Error = std::format("failed to parse .smesh data for '{}'", record.Path);
@@ -51,10 +51,10 @@ StaticMeshHandle StaticMeshAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    StaticMeshData* data = std::any_cast<StaticMeshData>(&staged.Payload);
+    MeshGeometry* data = std::any_cast<MeshGeometry>(&staged.Payload);
     if (data == nullptr)
     {
-        Log.Error("StaticMeshAssetLoader: staging payload for '{}' is not StaticMeshData",
+        Log.Error("StaticMeshAssetLoader: staging payload for '{}' is not MeshGeometry",
                   staged.Record.Path);
         return {};
     }

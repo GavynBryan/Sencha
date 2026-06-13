@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetId.h>
+#include <core/assets/AssetPath.h> // re-exports IsValidAssetPath for registry callers
 #include <core/assets/AssetRef.h>
 #include <core/logging/LoggingProvider.h>
 
@@ -53,7 +54,8 @@ private:
     std::unordered_map<AssetId, const AssetRecord*> RecordsById;
 };
 
-[[nodiscard]] bool IsValidAssetPath(std::string_view path);
+// IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so
+// low-level data validators can use it without depending on this header.
 bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry);
 
 // Name of the cooked-asset cache directory under an assets root

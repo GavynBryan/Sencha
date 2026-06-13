@@ -32,7 +32,7 @@ struct AssetStaging
 {
     AssetRecord Record;
 
-    // Loader-defined CPU payload (StaticMeshData, Image, MaterialDescription,
+    // Loader-defined CPU payload (MeshGeometry, Image, MaterialDescription,
     // ...). Type-erased so heterogeneous loads can flow through one driver;
     // each loader's Commit knows its own payload type and rejects others.
     std::any Payload;

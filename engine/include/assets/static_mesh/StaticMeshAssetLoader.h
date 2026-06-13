@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/static_mesh/StaticMeshLoader.h>
+#include <assets/static_mesh/MeshLoader.h>
 #include <core/assets/AssetLoader.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
@@ -11,8 +11,9 @@ class StaticMeshCache;
 // StaticMeshAssetLoader
 //
 // Staged-load contract for .smesh (docs/assets/pipeline.md, Decision C).
-// Stage: bytes -> StaticMeshData. Commit: GPU upload via StaticMeshCache.
-// Payload type: StaticMeshData.
+// Stage: bytes -> MeshGeometry (the static path rejects a skinned file).
+// Commit: GPU upload via StaticMeshCache. Payload type: MeshGeometry.
+// Skinned meshes are a distinct asset type (SkinnedMeshAssetLoader).
 //=============================================================================
 class StaticMeshAssetLoader final : public IAssetLoader
 {
@@ -31,5 +32,5 @@ public:
 private:
     Logger& Log;
     StaticMeshCache* Cache = nullptr;
-    StaticMeshLoader FileLoader;
+    MeshLoader FileLoader;
 };

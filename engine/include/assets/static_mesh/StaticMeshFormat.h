@@ -8,7 +8,15 @@
 // Taken once, alongside the glTF importer that emits them — there is no v1
 // content to migrate: dev meshes regenerate at build time and cooked meshes
 // recook.
-inline constexpr uint32_t kSmeshFormatVersion = 2;
+// Version 3: the skinned-capable format (Decisions J, M, N). The reserved
+// header fields became JointCount / SkinningDataOffset / SkeletonPathOffset,
+// gated on the skinned flag bit; non-skinned files write them as zero and
+// are otherwise byte-identical to v2. One version is live at a time — dev
+// meshes regenerate, cooked meshes recook (the cooked-index bump).
+inline constexpr uint32_t kSmeshFormatVersion = 3;
+
+// SmeshFileHeader::Flags bits.
+inline constexpr uint32_t kSmeshFlagSkinned = 1u << 0;
 
 enum class SmeshIndexFormat : uint32_t
 {
@@ -26,9 +34,15 @@ struct SmeshFileHeader
     uint32_t Version = 0;
 
     uint32_t Flags = 0;
-    uint32_t Reserved0 = 0;
-    uint32_t Reserved1 = 0;
-    uint32_t Reserved2 = 0;
+
+    // Skinned meshes only (kSmeshFlagSkinned); all three are zero otherwise.
+    // JointCount is the palette size either skinning runtime needs (Decision
+    // N: knowable from the header alone). SkinningDataOffset locates
+    // VertexCount MeshSkinInfluence records; SkeletonPathOffset
+    // locates a u32 length followed by the skeleton's asset path bytes.
+    uint32_t JointCount = 0;
+    uint32_t SkinningDataOffset = 0;
+    uint32_t SkeletonPathOffset = 0;
 
     uint32_t VertexCount = 0;
     uint32_t IndexCount = 0;

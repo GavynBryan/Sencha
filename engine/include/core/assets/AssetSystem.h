@@ -1,7 +1,12 @@
 #pragma once
 
+#include <anim/AnimationClipHandle.h>
+#include <anim/SkeletonHandle.h>
+#include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/material/MaterialAssetLoader.h>
+#include <assets/skeleton/SkeletonAssetLoader.h>
+#include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 #include <assets/texture/TextureAssetLoader.h>
 #include <core/assets/AssetRegistry.h>
@@ -9,14 +14,18 @@
 #include <core/logging/Logger.h>
 #include <render/Material.h>
 #include <render/TextureHandle.h>
-#include <render/static_mesh/StaticMeshData.h>
+#include <render/skinned_mesh/SkinnedMeshHandle.h>
+#include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <string_view>
 
+class AnimationClipCache;
 class AudioClipCache;
 class MaterialCache;
 class LoggingProvider;
+class SkeletonCache;
+class SkinnedMeshCache;
 class StaticMeshCache;
 class TextureCache;
 
@@ -37,15 +46,22 @@ public:
                 StaticMeshCache& meshes,
                 MaterialCache& materials,
                 TextureCache& textures,
-                AudioClipCache& audioClips);
+                AudioClipCache& audioClips,
+                SkeletonCache& skeletons,
+                AnimationClipCache& animationClips,
+                SkinnedMeshCache& skinnedMeshes);
     AssetSystem(LoggingProvider& logging,
                 AssetRegistry& registry,
                 StaticMeshCache* meshes,
                 MaterialCache* materials,
                 TextureCache* textures = nullptr,
-                AudioClipCache* audioClips = nullptr);
+                AudioClipCache* audioClips = nullptr,
+                SkeletonCache* skeletons = nullptr,
+                AnimationClipCache* animationClips = nullptr,
+                SkinnedMeshCache* skinnedMeshes = nullptr);
 
     [[nodiscard]] StaticMeshHandle LoadStaticMesh(std::string_view path);
+    [[nodiscard]] SkinnedMeshHandle LoadSkinnedMesh(std::string_view path);
     [[nodiscard]] MaterialHandle LoadMaterial(std::string_view path);
 
     // `srgb` applies only when the source is loose image bytes (Stage 1 PNG
@@ -55,12 +71,18 @@ public:
 
     [[nodiscard]] AudioClipHandle LoadAudioClip(std::string_view path);
 
-    [[nodiscard]] StaticMeshHandle RegisterProceduralStaticMesh(std::string_view path, StaticMeshData mesh);
+    [[nodiscard]] SkeletonHandle LoadSkeleton(std::string_view path);
+    [[nodiscard]] AnimationClipHandle LoadAnimationClip(std::string_view path);
+
+    [[nodiscard]] StaticMeshHandle RegisterProceduralStaticMesh(std::string_view path, MeshGeometry mesh);
     [[nodiscard]] MaterialHandle RegisterProceduralMaterial(std::string_view path, Material material);
 
     [[nodiscard]] std::string_view GetPathForStaticMesh(StaticMeshHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForSkinnedMesh(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetPathForMaterial(MaterialHandle handle) const;
     [[nodiscard]] std::string_view GetPathForAudioClip(AudioClipHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForSkeleton(SkeletonHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForAnimationClip(AnimationClipHandle handle) const;
 
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
@@ -79,16 +101,22 @@ public:
     // preload path uses these to dedup against the caches before submitting
     // staged work.
     [[nodiscard]] StaticMeshHandle TryAcquireStaticMesh(std::string_view path);
+    [[nodiscard]] SkinnedMeshHandle TryAcquireSkinnedMesh(std::string_view path);
     [[nodiscard]] MaterialHandle TryAcquireMaterial(std::string_view path);
     [[nodiscard]] TextureHandle TryAcquireTexture(std::string_view path);
     [[nodiscard]] AudioClipHandle TryAcquireAudioClip(std::string_view path);
+    [[nodiscard]] SkeletonHandle TryAcquireSkeleton(std::string_view path);
+    [[nodiscard]] AnimationClipHandle TryAcquireAnimationClip(std::string_view path);
 
     // Release counterparts to Load*/TryAcquire* — thin forwards to the caches
     // so callers that hold raw handles don't need cache access to let go.
     void ReleaseStaticMesh(StaticMeshHandle handle);
+    void ReleaseSkinnedMesh(SkinnedMeshHandle handle);
     void ReleaseMaterial(MaterialHandle handle);
     void ReleaseTexture(TextureHandle handle);
     void ReleaseAudioClip(AudioClipHandle handle);
+    void ReleaseSkeleton(SkeletonHandle handle);
+    void ReleaseAnimationClip(AnimationClipHandle handle);
 
     // The staged-load surface (Decision C), exposed for async drivers: the
     // preloader runs LoaderFor(type)->LoadStaged on a task thread against
@@ -96,9 +124,12 @@ public:
     [[nodiscard]] IAssetLoader* LoaderFor(AssetType type);
     [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
     [[nodiscard]] StaticMeshAssetLoader& StaticMeshLoaderRef() { return MeshLoader; }
+    [[nodiscard]] SkinnedMeshAssetLoader& SkinnedMeshLoaderRef() { return SkinnedLoader; }
     [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
     [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
     [[nodiscard]] AudioClipAssetLoader& AudioClipLoaderRef() { return ClipLoader; }
+    [[nodiscard]] SkeletonAssetLoader& SkeletonLoaderRef() { return SkelLoader; }
+    [[nodiscard]] AnimationClipAssetLoader& AnimationClipLoaderRef() { return AnimLoader; }
 
 private:
     Logger& Log;
@@ -107,10 +138,16 @@ private:
     MaterialCache* Materials = nullptr;
     TextureCache* Textures = nullptr;
     AudioClipCache* AudioClips = nullptr;
+    SkeletonCache* Skeletons = nullptr;
+    AnimationClipCache* AnimationClips = nullptr;
+    SkinnedMeshCache* SkinnedMeshes = nullptr;
 
     FileAssetSource Source;
     StaticMeshAssetLoader MeshLoader;
     TextureAssetLoader TexLoader;
     MaterialAssetLoader MatLoader;
     AudioClipAssetLoader ClipLoader;
+    SkeletonAssetLoader SkelLoader;
+    AnimationClipAssetLoader AnimLoader;
+    SkinnedMeshAssetLoader SkinnedLoader;
 };

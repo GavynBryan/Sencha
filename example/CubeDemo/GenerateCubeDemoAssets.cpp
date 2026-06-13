@@ -21,7 +21,7 @@
 //   The manifest is written next to the scene file as
 //   <scene-stem>.manifest.json.
 
-#include <assets/static_mesh/StaticMeshSerializer.h>
+#include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/hash/ContentHash.h>
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
     LoggingProvider logging;
     logging.AddSink<ConsoleLogSink>();
 
-    StaticMeshSerializer serializer(logging);
+    MeshSerializer serializer(logging);
     const std::string meshPath = (outRoot / "meshes/dev/cube.smesh").generic_string();
     if (!serializer.WriteToFile(meshPath, StaticMeshPrimitives::BuildCube(1.0f)))
         return 1;

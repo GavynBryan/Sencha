@@ -11,7 +11,7 @@
 
 #include <assets/cook/BlendCook.h>
 #include <assets/cook/MeshCook.h>
-#include <assets/static_mesh/StaticMeshLoader.h>
+#include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <cstdint>
@@ -164,7 +164,7 @@ TEST(MeshCook, QuadWithUvsGetsMikkTSpaceTangents)
     ASSERT_EQ(meshes.size(), 1u);
     EXPECT_EQ(meshes[0].Name, "Quad");
 
-    const StaticMeshData& mesh = meshes[0].Data;
+    const MeshGeometry& mesh = meshes[0].Geometry;
     // The de-index/weld round trip must not duplicate the flat quad.
     ASSERT_EQ(mesh.Vertices.size(), 4u);
     ASSERT_EQ(mesh.Indices.size(), 6u);
@@ -191,7 +191,7 @@ TEST(MeshCook, AuthoredTangentsPassThrough)
     ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
     ASSERT_EQ(meshes.size(), 1u);
 
-    for (const StaticMeshVertex& vertex : meshes[0].Data.Vertices)
+    for (const StaticMeshVertex& vertex : meshes[0].Geometry.Vertices)
     {
         EXPECT_EQ(vertex.Tangent.X, 0.0f);
         EXPECT_EQ(vertex.Tangent.Y, 1.0f);
@@ -212,7 +212,7 @@ TEST(MeshCook, UvLessQuadGetsSynthesizedTangents)
 
     // No texture space exists; the format invariant (finite tangent,
     // w == ±1, perpendicular to the normal) must still hold.
-    for (const StaticMeshVertex& vertex : meshes[0].Data.Vertices)
+    for (const StaticMeshVertex& vertex : meshes[0].Geometry.Vertices)
     {
         EXPECT_TRUE(vertex.Tangent.W == 1.0f || vertex.Tangent.W == -1.0f);
         const float dot = vertex.Tangent.X * vertex.Normal.X
@@ -234,7 +234,7 @@ TEST(MeshCook, MultiplePrimitivesBecomeSections)
     ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
     ASSERT_EQ(meshes.size(), 1u);
 
-    const StaticMeshData& mesh = meshes[0].Data;
+    const MeshGeometry& mesh = meshes[0].Geometry;
     ASSERT_EQ(mesh.Sections.size(), 2u);
     EXPECT_EQ(mesh.Sections[0].MaterialSlot, 0u);
     EXPECT_EQ(mesh.Sections[1].MaterialSlot, 1u);
@@ -253,7 +253,7 @@ TEST(MeshCook, GlbContainerParses)
     std::string error;
     ASSERT_TRUE(ImportGltfMeshes(glb, meshes, &error)) << error;
     ASSERT_EQ(meshes.size(), 1u);
-    EXPECT_EQ(meshes[0].Data.Vertices.size(), 4u);
+    EXPECT_EQ(meshes[0].Geometry.Vertices.size(), 4u);
 }
 
 TEST(MeshCook, ExternalBufferUriIsRejected)
@@ -318,8 +318,8 @@ TEST(MeshCook, SingleMeshArtifactKeepsSourceVirtualPath)
     // The cooked bytes round-trip the runtime loader (and are therefore
     // format version 2 with valid tangents).
     LoggingProvider logging;
-    StaticMeshLoader loader(logging);
-    StaticMeshData loaded;
+    MeshLoader loader(logging);
+    MeshGeometry loaded;
     ASSERT_TRUE(loader.LoadFromBytes(output.Files.at(".cooked/meshes/quad.gltf.smesh"), loaded));
     EXPECT_EQ(loaded.Vertices.size(), 4u);
     EXPECT_EQ(loaded.Indices.size(), 6u);
@@ -375,8 +375,8 @@ TEST(MeshCook, LoaderRejectsVersionOneSmesh)
     std::memcpy(bytes.data() + 4, &versionOne, sizeof(versionOne)); // after "SMSH"
 
     LoggingProvider logging;
-    StaticMeshLoader loader(logging);
-    StaticMeshData loaded;
+    MeshLoader loader(logging);
+    MeshGeometry loaded;
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
 }
 
@@ -431,8 +431,8 @@ TEST(MeshCook, BlendImportsThroughHeadlessBlender)
     EXPECT_EQ(result.Artifacts[0].Type, AssetType::StaticMesh);
 
     LoggingProvider logging;
-    StaticMeshLoader loader(logging);
-    StaticMeshData loaded;
+    MeshLoader loader(logging);
+    MeshGeometry loaded;
     ASSERT_TRUE(loader.LoadFromBytes(
         output.Files.at(".cooked/meshes/scene.blend.smesh"), loaded));
     EXPECT_EQ(loaded.Vertices.size() % 4, 0u); // a cube: 6 quads, welded corners

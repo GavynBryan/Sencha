@@ -2,9 +2,12 @@
 
 #include <core/logging/LoggingProvider.h>
 
+#include <anim/AnimationClipCache.h>
+#include <anim/SkeletonCache.h>
 #include <audio/AudioClipCache.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialCache.h>
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <cassert>
@@ -15,8 +18,12 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          StaticMeshCache& meshes,
                          MaterialCache& materials,
                          TextureCache& textures,
-                         AudioClipCache& audioClips)
-    : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips)
+                         AudioClipCache& audioClips,
+                         SkeletonCache& skeletons,
+                         AnimationClipCache& animationClips,
+                         SkinnedMeshCache& skinnedMeshes)
+    : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips,
+                  &skeletons, &animationClips, &skinnedMeshes)
 {
 }
 
@@ -25,21 +32,30 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          StaticMeshCache* meshes,
                          MaterialCache* materials,
                          TextureCache* textures,
-                         AudioClipCache* audioClips)
+                         AudioClipCache* audioClips,
+                         SkeletonCache* skeletons,
+                         AnimationClipCache* animationClips,
+                         SkinnedMeshCache* skinnedMeshes)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
     , StaticMeshes(meshes)
     , Materials(materials)
     , Textures(textures)
     , AudioClips(audioClips)
+    , Skeletons(skeletons)
+    , AnimationClips(animationClips)
+    , SkinnedMeshes(skinnedMeshes)
     , MeshLoader(logging, meshes)
     , TexLoader(logging, textures)
     , MatLoader(logging, *this, materials, textures)
     , ClipLoader(logging, audioClips)
+    , SkelLoader(logging, skeletons)
+    , AnimLoader(logging, *this, animationClips, skeletons)
+    , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
 {
 }
 
-StaticMeshHandle AssetSystem::RegisterProceduralStaticMesh(std::string_view path, StaticMeshData mesh)
+StaticMeshHandle AssetSystem::RegisterProceduralStaticMesh(std::string_view path, MeshGeometry mesh)
 {
     if (!IsValidAssetPath(path))
     {
@@ -131,9 +147,24 @@ std::string_view AssetSystem::GetPathForMaterial(MaterialHandle handle) const
     return Materials ? Materials->GetName(handle) : std::string_view{};
 }
 
+std::string_view AssetSystem::GetPathForSkinnedMesh(SkinnedMeshHandle handle) const
+{
+    return SkinnedMeshes ? SkinnedMeshes->GetName(handle) : std::string_view{};
+}
+
 std::string_view AssetSystem::GetPathForAudioClip(AudioClipHandle handle) const
 {
     return AudioClips ? AudioClips->GetName(handle) : std::string_view{};
+}
+
+std::string_view AssetSystem::GetPathForSkeleton(SkeletonHandle handle) const
+{
+    return Skeletons ? Skeletons->GetName(handle) : std::string_view{};
+}
+
+std::string_view AssetSystem::GetPathForAnimationClip(AnimationClipHandle handle) const
+{
+    return AnimationClips ? AnimationClips->GetName(handle) : std::string_view{};
 }
 
 const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expectedType) const
@@ -242,6 +273,37 @@ StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
         Log.Error("AssetSystem: unknown static mesh source kind for path {}", record->Path);
         return {};
     }
+}
+
+SkinnedMeshHandle AssetSystem::LoadSkinnedMesh(std::string_view path)
+{
+    const AssetRecord* record = Resolve(path, AssetType::SkinnedMesh);
+    if (!record)
+        return {};
+
+    if (!SkinnedMeshes)
+    {
+        Log.Error("AssetSystem: missing SkinnedMeshCache for skinned mesh asset {}", record->Path);
+        return {};
+    }
+
+    if (SkinnedMeshHandle existing = SkinnedMeshes->Acquire(record->Path); existing.IsValid())
+        return existing;
+
+    if (record->SourceKind != AssetSourceKind::File)
+    {
+        Log.Error("AssetSystem: skinned mesh cache has no runtime resource for path {}", record->Path);
+        return {};
+    }
+
+    AssetStaging staging = SkinnedLoader.LoadStaged(*record, Source);
+    if (!staging.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staging.Error);
+        return {};
+    }
+
+    return SkinnedLoader.CommitTyped(std::move(staging));
 }
 
 MaterialHandle AssetSystem::LoadMaterial(std::string_view path)
@@ -408,9 +470,76 @@ AudioClipHandle AssetSystem::LoadAudioClip(std::string_view path)
     }
 }
 
+SkeletonHandle AssetSystem::LoadSkeleton(std::string_view path)
+{
+    const AssetRecord* record = Resolve(path, AssetType::Skeleton);
+    if (!record)
+        return {};
+
+    if (!Skeletons)
+    {
+        Log.Error("AssetSystem: missing SkeletonCache for skeleton asset {}", record->Path);
+        return {};
+    }
+
+    if (SkeletonHandle existing = Skeletons->Acquire(record->Path); existing.IsValid())
+        return existing;
+
+    if (record->SourceKind != AssetSourceKind::File)
+    {
+        Log.Error("AssetSystem: skeleton cache has no runtime resource for path {}", record->Path);
+        return {};
+    }
+
+    AssetStaging staging = SkelLoader.LoadStaged(*record, Source);
+    if (!staging.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staging.Error);
+        return {};
+    }
+
+    return SkelLoader.CommitTyped(std::move(staging));
+}
+
+AnimationClipHandle AssetSystem::LoadAnimationClip(std::string_view path)
+{
+    const AssetRecord* record = Resolve(path, AssetType::AnimationClip);
+    if (!record)
+        return {};
+
+    if (!AnimationClips)
+    {
+        Log.Error("AssetSystem: missing AnimationClipCache for animation asset {}", record->Path);
+        return {};
+    }
+
+    if (AnimationClipHandle existing = AnimationClips->Acquire(record->Path); existing.IsValid())
+        return existing;
+
+    if (record->SourceKind != AssetSourceKind::File)
+    {
+        Log.Error("AssetSystem: animation clip cache has no runtime resource for path {}", record->Path);
+        return {};
+    }
+
+    AssetStaging staging = AnimLoader.LoadStaged(*record, Source);
+    if (!staging.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staging.Error);
+        return {};
+    }
+
+    return AnimLoader.CommitTyped(std::move(staging));
+}
+
 StaticMeshHandle AssetSystem::TryAcquireStaticMesh(std::string_view path)
 {
     return StaticMeshes ? StaticMeshes->Acquire(path) : StaticMeshHandle{};
+}
+
+SkinnedMeshHandle AssetSystem::TryAcquireSkinnedMesh(std::string_view path)
+{
+    return SkinnedMeshes ? SkinnedMeshes->Acquire(path) : SkinnedMeshHandle{};
 }
 
 MaterialHandle AssetSystem::TryAcquireMaterial(std::string_view path)
@@ -434,10 +563,26 @@ AudioClipHandle AssetSystem::TryAcquireAudioClip(std::string_view path)
     return AudioClips ? AudioClips->Acquire(path) : AudioClipHandle{};
 }
 
+SkeletonHandle AssetSystem::TryAcquireSkeleton(std::string_view path)
+{
+    return Skeletons ? Skeletons->Acquire(path) : SkeletonHandle{};
+}
+
+AnimationClipHandle AssetSystem::TryAcquireAnimationClip(std::string_view path)
+{
+    return AnimationClips ? AnimationClips->Acquire(path) : AnimationClipHandle{};
+}
+
 void AssetSystem::ReleaseStaticMesh(StaticMeshHandle handle)
 {
     if (StaticMeshes)
         StaticMeshes->Release(handle);
+}
+
+void AssetSystem::ReleaseSkinnedMesh(SkinnedMeshHandle handle)
+{
+    if (SkinnedMeshes)
+        SkinnedMeshes->Release(handle);
 }
 
 void AssetSystem::ReleaseMaterial(MaterialHandle handle)
@@ -458,14 +603,29 @@ void AssetSystem::ReleaseAudioClip(AudioClipHandle handle)
         AudioClips->Release(handle);
 }
 
+void AssetSystem::ReleaseSkeleton(SkeletonHandle handle)
+{
+    if (Skeletons)
+        Skeletons->Release(handle);
+}
+
+void AssetSystem::ReleaseAnimationClip(AnimationClipHandle handle)
+{
+    if (AnimationClips)
+        AnimationClips->Release(handle);
+}
+
 IAssetLoader* AssetSystem::LoaderFor(AssetType type)
 {
     switch (type)
     {
-    case AssetType::StaticMesh: return &MeshLoader;
-    case AssetType::Texture:    return &TexLoader;
-    case AssetType::Material:   return &MatLoader;
-    case AssetType::Audio:      return &ClipLoader;
-    default:                    return nullptr;
+    case AssetType::StaticMesh:    return &MeshLoader;
+    case AssetType::SkinnedMesh:   return &SkinnedLoader;
+    case AssetType::Texture:       return &TexLoader;
+    case AssetType::Material:      return &MatLoader;
+    case AssetType::Audio:         return &ClipLoader;
+    case AssetType::Skeleton:      return &SkelLoader;
+    case AssetType::AnimationClip: return &AnimLoader;
+    default:                       return nullptr;
     }
 }

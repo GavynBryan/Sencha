@@ -1,9 +1,9 @@
-#include <assets/static_mesh/StaticMeshLoader.h>
+#include <assets/static_mesh/MeshLoader.h>
 
 #include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
-#include <render/static_mesh/StaticMeshValidation.h>
+#include <render/static_mesh/MeshValidation.h>
 
 #include <algorithm>
 #include <cstring>
@@ -146,17 +146,41 @@ namespace
     }
 }
 
-StaticMeshLoader::StaticMeshLoader(LoggingProvider& logging)
-    : Log(logging.GetLogger<StaticMeshLoader>())
+MeshLoader::MeshLoader(LoggingProvider& logging)
+    : Log(logging.GetLogger<MeshLoader>())
 {
 }
 
-bool StaticMeshLoader::LoadFromFile(std::string_view path, StaticMeshData& out)
+bool MeshLoader::LoadFromFile(std::string_view path, MeshGeometry& out)
+{
+    return LoadFromFileImpl(path, out, nullptr);
+}
+
+bool MeshLoader::LoadFromBytes(std::span<const std::byte> bytes, MeshGeometry& out)
+{
+    return LoadFromBytesImpl(bytes, "<memory>", out, nullptr);
+}
+
+bool MeshLoader::LoadSkinnedFromFile(std::string_view path, SkinnedMeshData& out)
+{
+    out = {};
+    return LoadFromFileImpl(path, out.Geometry, &out.Skinning);
+}
+
+bool MeshLoader::LoadSkinnedFromBytes(std::span<const std::byte> bytes, SkinnedMeshData& out)
+{
+    out = {};
+    return LoadFromBytesImpl(bytes, "<memory>", out.Geometry, &out.Skinning);
+}
+
+bool MeshLoader::LoadFromFileImpl(std::string_view path,
+                                  MeshGeometry& outGeometry,
+                                  MeshSkinning* outSkinning)
 {
     std::ifstream stream(std::string(path), std::ios::binary);
     if (!stream.is_open())
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': could not open file", path);
+        Log.Error("MeshLoader: failed to load '{}': could not open file", path);
         return false;
     }
 
@@ -164,88 +188,106 @@ bool StaticMeshLoader::LoadFromFile(std::string_view path, StaticMeshData& out)
     const std::streamoff size = stream.tellg();
     if (size < 0)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': invalid file size", path);
+        Log.Error("MeshLoader: failed to load '{}': invalid file size", path);
         return false;
     }
 
     stream.seekg(0, std::ios::beg);
     BinaryReader reader(stream);
-    return LoadFromReader(reader, static_cast<size_t>(size), path, out);
+    return LoadFromReader(reader, static_cast<size_t>(size), path, outGeometry, outSkinning);
 }
 
-bool StaticMeshLoader::LoadFromBytes(std::span<const std::byte> bytes, StaticMeshData& out)
-{
-    return LoadFromBytes(bytes, out, "<memory>");
-}
-
-bool StaticMeshLoader::LoadFromBytes(std::span<const std::byte> bytes,
-                                     StaticMeshData& out,
-                                     std::string_view sourceName)
+bool MeshLoader::LoadFromBytesImpl(std::span<const std::byte> bytes,
+                                   std::string_view sourceName,
+                                   MeshGeometry& outGeometry,
+                                   MeshSkinning* outSkinning)
 {
     MemoryStreamBuffer buffer(bytes);
     std::istream stream(&buffer);
     BinaryReader reader(stream);
-    return LoadFromReader(reader, bytes.size(), sourceName, out);
+    return LoadFromReader(reader, bytes.size(), sourceName, outGeometry, outSkinning);
 }
 
-bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
-                                      size_t fileSize,
-                                      std::string_view sourceName,
-                                      StaticMeshData& out)
+bool MeshLoader::LoadFromReader(BinaryReader& reader,
+                                size_t fileSize,
+                                std::string_view sourceName,
+                                MeshGeometry& out,
+                                MeshSkinning* outSkinning)
 {
     out = {};
 
     if (fileSize < sizeof(SmeshFileHeader))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': file too small", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': file too small", sourceName);
         return false;
     }
 
     SmeshFileHeader header{};
     if (!ReadObjectAt(reader, 0, header))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': could not read header", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': could not read header", sourceName);
         return false;
     }
 
     if (std::memcmp(header.Magic, "SMSH", 4) != 0)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': invalid magic", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': invalid magic", sourceName);
         return false;
     }
     if (header.Version != kSmeshFormatVersion)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': unsupported version {}", sourceName, header.Version);
+        Log.Error("MeshLoader: failed to load '{}': unsupported version {}", sourceName, header.Version);
         return false;
     }
-    if (header.Flags != 0 || header.Reserved0 != 0 || header.Reserved1 != 0 || header.Reserved2 != 0)
+    const bool skinned = (header.Flags & kSmeshFlagSkinned) != 0;
+    if ((header.Flags & ~kSmeshFlagSkinned) != 0)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': unsupported flags or reserved fields", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': unsupported flags", sourceName);
+        return false;
+    }
+    // Enforce the static/skinned split at the byte boundary: the type the
+    // caller asked for must match the type the file carries.
+    if (skinned && outSkinning == nullptr)
+    {
+        Log.Error("MeshLoader: failed to load '{}': skinned mesh read through the static path",
+                  sourceName);
+        return false;
+    }
+    if (!skinned && outSkinning != nullptr)
+    {
+        Log.Error("MeshLoader: failed to load '{}': static mesh read through the skinned path",
+                  sourceName);
+        return false;
+    }
+    if (!skinned
+        && (header.JointCount != 0 || header.SkinningDataOffset != 0 || header.SkeletonPathOffset != 0))
+    {
+        Log.Error("MeshLoader: failed to load '{}': non-skinned mesh has skinning fields set", sourceName);
         return false;
     }
     if (header.HeaderSize != sizeof(SmeshFileHeader))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': header size mismatch", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': header size mismatch", sourceName);
         return false;
     }
     if (header.VertexStride != sizeof(StaticMeshVertex))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': vertex stride mismatch", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': vertex stride mismatch", sourceName);
         return false;
     }
     if (header.IndexFormat != SmeshIndexFormat::UInt32)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': unsupported index format", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': unsupported index format", sourceName);
         return false;
     }
     if (header.Topology != SmeshTopology::TriangleList)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': unsupported topology", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': unsupported topology", sourceName);
         return false;
     }
     if (header.VertexCount == 0 || header.IndexCount == 0 || header.SectionCount == 0)
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': vertex/index/section counts must be nonzero", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': vertex/index/section counts must be nonzero", sourceName);
         return false;
     }
 
@@ -273,25 +315,78 @@ bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
         || RegionsOverlap(sections, indices)
         || RegionsOverlap(vertices, indices))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': invalid offsets", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': invalid offsets", sourceName);
         return false;
     }
 
     std::vector<SmeshSectionRecord> records;
     if (!ReadArrayAt(reader, header.SectionTableOffset, header.SectionCount, records))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': could not read section table", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': could not read section table", sourceName);
         return false;
     }
     if (!ReadArrayAt(reader, header.VertexDataOffset, header.VertexCount, out.Vertices))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': could not read vertex data", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': could not read vertex data", sourceName);
         return false;
     }
     if (!ReadArrayAt(reader, header.IndexDataOffset, header.IndexCount, out.Indices))
     {
-        Log.Error("StaticMeshLoader: failed to load '{}': could not read index data", sourceName);
+        Log.Error("MeshLoader: failed to load '{}': could not read index data", sourceName);
         return false;
+    }
+
+    if (skinned)
+    {
+        // Skinning stream and skeleton path follow the index data. The path
+        // is a u32 length + bytes; bound every field against the file before
+        // reading (the ByteRegion discipline the static regions already use).
+        const uint64_t skinBytes = uint64_t(sizeof(MeshSkinInfluence)) * header.VertexCount;
+        const ByteRegion skinning{ .Offset = header.SkinningDataOffset, .Size = skinBytes };
+        const ByteRegion pathLen{ .Offset = header.SkeletonPathOffset, .Size = sizeof(uint32_t) };
+
+        if (header.JointCount == 0
+            || !IsRegionWithinFile(skinning, fileSize)
+            || !IsRegionWithinFile(pathLen, fileSize)
+            || RegionsOverlap(indices, skinning)
+            || RegionsOverlap(skinning, pathLen))
+        {
+            Log.Error("MeshLoader: failed to load '{}': invalid skinning offsets", sourceName);
+            return false;
+        }
+
+        MeshSkinning skin;
+        skin.JointCount = header.JointCount;
+        if (!ReadArrayAt(reader, header.SkinningDataOffset, header.VertexCount, skin.Influences))
+        {
+            Log.Error("MeshLoader: failed to load '{}': could not read skinning data", sourceName);
+            return false;
+        }
+
+        uint32_t pathLength = 0;
+        if (!ReadObjectAt(reader, header.SkeletonPathOffset, pathLength))
+        {
+            Log.Error("MeshLoader: failed to load '{}': could not read skeleton path length", sourceName);
+            return false;
+        }
+        const ByteRegion pathData{
+            .Offset = header.SkeletonPathOffset + sizeof(uint32_t),
+            .Size = pathLength,
+        };
+        if (pathLength == 0 || !IsRegionWithinFile(pathData, fileSize))
+        {
+            Log.Error("MeshLoader: failed to load '{}': invalid skeleton path", sourceName);
+            return false;
+        }
+
+        std::vector<char> pathBytes;
+        if (!ReadArrayAt(reader, static_cast<size_t>(pathData.Offset), pathLength, pathBytes))
+        {
+            Log.Error("MeshLoader: failed to load '{}': could not read skeleton path", sourceName);
+            return false;
+        }
+        skin.SkeletonPath.assign(pathBytes.begin(), pathBytes.end());
+        *outSkinning = std::move(skin);
     }
 
     out.LocalBounds = ReadBounds(header.BoundsMin, header.BoundsMax);
@@ -301,7 +396,7 @@ bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
         const SmeshSectionRecord& record = records[sectionIndex];
         if (record.Reserved0 != 0)
         {
-            Log.Error("StaticMeshLoader: failed to load '{}': section {} reserved field must be zero",
+            Log.Error("MeshLoader: failed to load '{}': section {} reserved field must be zero",
                       sourceName, sectionIndex);
             out = {};
             return false;
@@ -317,12 +412,16 @@ bool StaticMeshLoader::LoadFromReader(BinaryReader& reader,
         out.Sections.push_back(section);
     }
 
-    const StaticMeshValidationResult validation = ValidateStaticMeshData(out);
+    const MeshValidationResult validation = skinned
+        ? ValidateSkinnedMeshData(SkinnedMeshData{ out, *outSkinning })
+        : ValidateMeshGeometry(out);
     if (!validation.IsValid())
     {
-        for (const StaticMeshValidationError& error : validation.Errors)
-            Log.Error("StaticMeshLoader: failed to load '{}': {}", sourceName, error.Message);
+        for (const MeshValidationError& error : validation.Errors)
+            Log.Error("MeshLoader: failed to load '{}': {}", sourceName, error.Message);
         out = {};
+        if (outSkinning != nullptr)
+            *outSkinning = {};
         return false;
     }
 

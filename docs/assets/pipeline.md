@@ -374,18 +374,48 @@ Proposed shape:
     inverse-bind transforms. A shared, separately cached asset — many meshes
     and many clips reference one skeleton, by `AssetRef`, with the same
     refcount composition materials→textures use (Decision E).
-  - **Skinned mesh**: extend `.smesh` rather than fork a sibling format — the
-    header already carries `Flags` and reserved fields for exactly this; a
-    skinned vertex stream (joint indices + weights) gates on a flag bit and a
-    `Version` bump. The loader rejects skinned files it doesn't understand by
-    version, which is the upgrade path the format reserved for itself.
+  - **Skinned mesh** (`.skmesh`): a distinct asset type from a static mesh,
+    not a static mesh with an optional skinning field — see the revision
+    below. Geometry is the shared `MeshGeometry` core; the skinning stream
+    (joint indices + weights, a separate stream per Decision M) and the
+    skeleton ref are what `SkinnedMeshData` adds on top.
   - **Animation clip** (`.sanim`): per-joint tracks referencing their
     skeleton by `AssetRef`.
-- `AssetType` grows `Skeleton` and `AnimationClip` (skinned meshes stay
-  `StaticMesh`-adjacent or get their own tag — decided when the component
-  story exists); the scanner learns the extensions.
+- `AssetType` grows `Skeleton`, `AnimationClip`, **and `SkinnedMesh`**; the
+  scanner learns `.sskel`/`.sanim`/`.skmesh`.
 - Caches: skeleton and clip caches are CPU-side (`MaterialCache` pattern —
-  the CRTP base does the work); the skinned mesh follows `StaticMeshCache`.
+  the CRTP base does the work); the skinned mesh gets its **own**
+  `SkinnedMeshCache` (it holds the skeleton ref and the CPU skinning stream,
+  and will own per-instance posed buffers when Decision N lands), sharing
+  only the geometry GPU upload with `StaticMeshCache`.
+
+**Revision (2026-06-13, made during Stage 5 implementation; supersedes the
+original "extend `.smesh`, skinned meshes stay StaticMesh-adjacent").** The
+first cut bolted an optional skinning chunk onto `StaticMeshData` and let one
+`AssetType::StaticMesh` cover both. Product review rejected it on
+modularity grounds, and the rejection was right: the runtime of a skinned
+mesh diverges hard from a static one (bone palette, pose evaluation, a
+skinning pass, per-instance posed buffers — Decision N) and *will* split at
+the component and render-pipeline layer the way every serious engine splits
+it (Unreal's `UStaticMesh`/`USkeletalMesh`, Unity/Godot's
+`MeshRenderer`/`SkinnedMeshRenderer`). Conflating them at the asset layer
+also left the type system unable to distinguish the two without cracking
+open the binary — which directly produced a refcount bug in the first
+preloader wiring (a skinned mesh's commit could inline-load a skeleton that
+was also a pending async task, double-releasing the shared reference). The
+landed shape: a shared `MeshGeometry` value type (the geometry core both
+static and skinned meshes embed); `StaticMeshData`/`SkinnedMeshData` as
+distinct types; `AssetType::SkinnedMesh` with its own `.skmesh` extension so
+the kind is known from the path, never the payload; distinct caches and
+loaders. The binary *container* stays one format (SMSH magic, a skinned-flag
+bit and an optional trailing chunk — sharing the geometry encoding is the
+glTF/Unity precedent and the one place unification is correct); the loader's
+typed entry points enforce the split (the static load rejects a skinned
+file and vice versa). The component and render-pipeline split is left to the
+animation-runtime plan, where it is co-designed with pose evaluation —
+Stage 5 is asset-side, and it now hands that plan two clean, distinct types
+instead of one conflated one. Decision M's "skinning is a separate stream"
+is unchanged and orthogonal to this.
 - Deliberately **not decided here**: clip storage (sampled vs. keyframed)
   and clip compression — those belong to the animation runtime plan;
   `.sanim`'s version field is the room they get to move in. Committing to
@@ -592,8 +622,9 @@ Ordered, like the jobs plan, by return-on-complexity, each stage gated:
   packed-ORM fixtures cook to their tagged formats and round-trip the
   texture path.*
 - **Stage 5 — skeletal assets (Decisions J, M, N).** glTF skin/animation
-  import → `.sskel` + skinned `.smesh` (the Decision M skinning stream) +
-  `.sanim`, skeleton and clip caches, refcount chain (mesh→skeleton,
+  import → `.sskel` + `.skmesh` (the new `SkinnedMesh` type over the shared
+  `MeshGeometry` core, with the Decision M skinning stream) + `.sanim`,
+  skeleton / clip / skinned-mesh caches, refcount chain (mesh→skeleton,
   clip→skeleton), and the Decision N asset-side guarantees (cook-resolved
   joint indices, normalized weights, joint count in the header).
   *Gate: an animated character source imports clean to all three artifact
@@ -1030,6 +1061,101 @@ zero-thread deterministic). Decision A made real; Stage 4 closes with it.
   when it materializes; and the demo regenerates its map in the build
   tree, so rename inheritance across a *clean* checkout rests on the
   committed map (the real-game workflow), not on build-dir state.
+
+## Stage 5 status (2026-06-13, landed)
+
+Test-verified (840 tests green; 14 new across
+`test/core/SkeletalAssetTests.cpp` and `test/core/SkeletalCookTests.cpp`,
+TSan-clean; CubeDemo verified unchanged on the refactored type system).
+Decisions J, M, N made real on the asset side — and the static/skinned
+mesh type split (the Decision J revision above) was taken here.
+
+- **Formats.** `anim/Skeleton.h` (`SkeletonData`: topologically ordered
+  joints, bind TRS, inverse-bind matrices, `kMaxSkeletonJoints` cap) and
+  `anim/AnimationClip.h` (`AnimationClipData`: per-joint keyframed tracks,
+  linear/step interpolation, skeleton ref). Both have pure validators that
+  the runtime enforces rather than fixes. `.sskel` and `.sanim` are pure
+  read/write container pairs (the `.sclip` precedent), each re-validating on
+  load so a malformed container is rejected, never patched.
+- **The mesh type split.** `MeshGeometry` is the shared geometry core;
+  `StaticMeshData` is renamed to it, `SkinnedMeshData` embeds it plus a
+  `MeshSkinning` stream (joint indices `u16×4` + weights `unorm8×4`
+  normalized to sum 255, the Decision M separate stream) and a skeleton
+  ref. `AssetType::SkinnedMesh` and the `.skmesh` extension make the kind
+  path-level. One binary container (SMSH) still serves both via a
+  skinned-flag bit and an optional trailing chunk; `MeshSerializer`/
+  `MeshLoader` own it, and the loader's typed entry points reject a
+  cross-kind read (a skinned file through the static path or vice versa).
+  Geometry GPU upload is the shared `UploadMeshGeometryToGpu`; the
+  `.smesh`-version-3 bump (skinning-capable header) and the cooked-cache
+  index bump to 3 force a clean recook of existing content.
+- **Caches and the refcount chains.** `SkeletonCache` and
+  `AnimationClipCache` are CPU-side (the `MaterialCache` CRTP pattern);
+  `SkinnedMeshCache` is distinct from `StaticMeshCache` and holds the
+  skeleton ref + CPU skinning stream. Both the clip→skeleton and
+  mesh→skeleton chains use the `MaterialEntry`→`OwnedTextures` RAII
+  composition: releasing the last clip or skinned mesh frees the whole
+  chain, and a skeleton shared by several holders survives until the last
+  releases (pinned headless in `AnimationClipCache.*` tests).
+- **The cook, one glTF path.** `ImportGltfScene` parses once and emits
+  skeletons (one per skin, joints topologically reordered with a
+  skin-local→skeleton-local remap), skinned meshes (influences remapped to
+  skeleton-local, weights normalized, joint count recorded — Decision N's
+  asset-side guarantees), and animations (node targets resolved to skeleton
+  joints, cubic-spline rejected). `GltfMeshImporter` emits `.sskel` +
+  `.skmesh` + `.sanim` artifacts under the source's `#`-suffixed family,
+  with the skinned mesh and clips referencing the skeleton artifact by path;
+  `.blend` inherits all of it through the existing headless-Blender front
+  end.
+- **No silent partial cooking.** Where one glTF asset is ambiguous about
+  which single skeleton an artifact should bind to, the cook rejects with a
+  pointed error rather than honoring the first match and dropping the rest:
+  a mesh instanced with more than one skin, and an animation whose channels
+  target joints across more than one skin, are both refused (split per
+  skeleton or re-export). Skinned primitives must likewise carry authored
+  tangents (or be UV-less): MikkTSpace's de-index/reweld would desync the
+  influence stream, so the cook asks for a tangent re-export rather than
+  corrupt it. All three are in the spirit of the existing "reject missing
+  NORMAL / external buffers / cubic spline" stance — fail loud, never
+  half-right.
+- **Gate honesty.** "An animated character source imports clean to all
+  three artifact kinds; caches round-trip them; releasing the last
+  reference frees the whole chain" is pinned: the cook fixture (a
+  hand-built skinned, animated glTF) extracts and emits all three kinds and
+  round-trips each back through the runtime loaders, and the chain tests
+  pin the refcount freeing. Runtime playback is explicitly **not** gated
+  here — the animation-runtime plan owns pose evaluation, the GPU skinning
+  path choice (Decision N), and the `SkinnedMeshComponent` + render
+  pipeline. Two recorded gaps, both deliberate: skeletal assets are not
+  yet async-preloaded (no streamable component references them; wiring them
+  needs a skeletons-first wave so a dependent commit never inline-loads a
+  pending skeleton — they load synchronously via the front door until
+  then), and the mesh→skeleton chain's GPU-commit half is exercised by the
+  cook + future demo rather than headless (the `StaticMeshCache`/4c
+  precedent: GPU-commit halves are not headless-testable).
+- **Dependency hygiene.** `IsValidAssetPath` moved to a dependency-neutral
+  `core/assets/AssetPath.h`, so the low-level mesh and animation data
+  validators check skeleton/texture path well-formedness without reaching
+  up into `AssetRegistry`'s shape. `AssetRegistry.h` re-exports it for its
+  own callers.
+- **Two scaling considerations recorded, deliberately not acted on yet**
+  (both reviewed and judged premature — acting now trades real legibility
+  for speculative structure):
+  - *`AssetSystem` per-type plumbing.* Each asset type adds a cache
+    pointer, a loader member, `Load*`/`TryAcquire*`/`Release*`/`GetPathFor*`
+    forwards, and `LoaderFor` switch arms. Still explicit and readable, but
+    the repetition is visible. Before many more types (or skeletal async
+    preload) land, an `AssetTypeOps` traits/table layer could centralize
+    the plumbing — deferred until the repetition outweighs the indirection
+    a table would add.
+  - *Shared mesh infrastructure folder home.* `MeshGeometry`,
+    `MeshSerializer`, `MeshLoader`, `MeshValidation`, and `GpuStaticMesh`
+    are shared by static and skinned meshes but still sit under
+    `*/static_mesh/`, which under-states their shared ownership. The honest
+    end state is `render/mesh/` + `assets/mesh/` for the shared core
+    (with `GpuStaticMesh` → `GpuMesh`, and the vertex/section types renamed
+    off the `Static` prefix), leaving truly static-only pieces behind. That
+    is a focused rename pass worth its own change, not a rider on this one.
 
 The original open questions were answered the day the plan was written:
 

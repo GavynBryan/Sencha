@@ -155,6 +155,25 @@ std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string>
             }
             break;
         }
+        // Skeletal assets are deliberately *not* async-preloaded yet — an
+        // explicit policy, not missing support, and distinct from a failure.
+        // No streamable scene component references a skeleton, clip, or
+        // skinned mesh yet, and a skinned mesh / clip commit inline-loads its
+        // skeleton on the owner thread regardless. Wiring these into the async
+        // lane needs a skeletons-first wave: a dependent's commit must never
+        // inline-load a skeleton that is also a pending async task in the same
+        // drain, or the skeleton's own commit double-releases the shared
+        // reference (a use-after-free under real threads). That wave lands with
+        // the animation-runtime component story (docs/assets/pipeline.md,
+        // Stage 5 status). Until then they resolve through the synchronous
+        // fallback — out of this preload's scope, so not counted as a failure.
+        case AssetType::Skeleton:
+        case AssetType::AnimationClip:
+        case AssetType::SkinnedMesh:
+            Log.Debug("AssetPreloader: '{}' ({}) is not async-preloaded yet (Stage 5); "
+                      "the synchronous fallback resolves it",
+                      path, AssetTypeToString(record->Type));
+            continue;
         default:
             Log.Warn("AssetPreloader: '{}' has unsupported type {}; skipped",
                      path, AssetTypeToString(record->Type));

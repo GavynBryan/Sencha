@@ -9,7 +9,7 @@
 //=============================================================================
 // .stex read half. Pure with respect to engine state (no logging, no
 // services) so it can run on async task threads inside LoadStaged —
-// failures travel in `error`, mirroring StaticMeshLoader::LoadFromBytes.
+// failures travel in `error`, mirroring MeshLoader::LoadFromBytes.
 //
 // The loaded TextureData is re-validated structurally; a truncated or
 // inconsistent container is rejected, never patched.

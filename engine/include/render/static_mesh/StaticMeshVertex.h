@@ -2,6 +2,10 @@
 
 #include <math/Vec.h>
 
+// The base vertex shared by static and skinned meshes. Skinning influences
+// are a *separate* stream (render/skinned_mesh/SkinnedMeshData.h), never
+// interleaved here, so the static vertex layout is byte-identical whether or
+// not a mesh is skinned (Decision M).
 struct StaticMeshVertex
 {
     Vec3d Position;

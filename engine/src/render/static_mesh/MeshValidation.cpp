@@ -1,4 +1,7 @@
-#include <render/static_mesh/StaticMeshValidation.h>
+#include <render/static_mesh/MeshValidation.h>
+
+#include <anim/Skeleton.h>
+#include <core/assets/AssetPath.h>
 
 #include <cmath>
 #include <limits>
@@ -30,15 +33,15 @@ namespace
         return IsFinite(bounds.Min) && IsFinite(bounds.Max);
     }
 
-    void AddError(StaticMeshValidationResult& result, std::string message)
+    void AddError(MeshValidationResult& result, std::string message)
     {
         result.Errors.push_back({ .Message = std::move(message) });
     }
 }
 
-StaticMeshValidationResult ValidateStaticMeshData(const StaticMeshData& mesh)
+MeshValidationResult ValidateMeshGeometry(const MeshGeometry& mesh)
 {
-    StaticMeshValidationResult result;
+    MeshValidationResult result;
 
     if (mesh.Vertices.empty())
         AddError(result, "vertex buffer must not be empty");
@@ -114,7 +117,51 @@ StaticMeshValidationResult ValidateStaticMeshData(const StaticMeshData& mesh)
     return result;
 }
 
-Aabb3d ComputeStaticMeshBounds(std::span<const StaticMeshVertex> vertices)
+MeshValidationResult ValidateSkinnedMeshData(const SkinnedMeshData& mesh)
+{
+    // A skinned mesh is geometry plus skinning; the geometry must hold first.
+    MeshValidationResult result = ValidateMeshGeometry(mesh.Geometry);
+
+    // Skinning invariants (Decisions J, M, N) — cooked data is normalized at
+    // cook; the runtime rejects rather than fixes.
+    const MeshSkinning& skinning = mesh.Skinning;
+
+    if (!IsValidAssetPath(skinning.SkeletonPath))
+        AddError(result, "skinning skeleton path must be an asset:// path");
+    if (skinning.JointCount == 0 || skinning.JointCount > kMaxSkeletonJoints)
+        AddError(result, "skinning joint count must be in 1.." + std::to_string(kMaxSkeletonJoints));
+    if (skinning.Influences.size() != mesh.Geometry.Vertices.size())
+        AddError(result, "skinning influence count must match the vertex count");
+
+    for (size_t vertexIndex = 0; vertexIndex < skinning.Influences.size(); ++vertexIndex)
+    {
+        const MeshSkinInfluence& influence = skinning.Influences[vertexIndex];
+        uint32_t weightSum = 0;
+        bool slotsOk = true;
+        for (int slot = 0; slot < 4; ++slot)
+        {
+            weightSum += influence.Weights[slot];
+            if (influence.Joints[slot] >= skinning.JointCount)
+                slotsOk = false;
+            if (influence.Weights[slot] == 0 && influence.Joints[slot] != 0)
+                slotsOk = false;
+        }
+        if (!slotsOk)
+        {
+            AddError(result, "vertex " + std::to_string(vertexIndex)
+                     + " influence joints must be < joint count, with joint 0 in zero-weight slots");
+        }
+        if (weightSum != 255)
+        {
+            AddError(result, "vertex " + std::to_string(vertexIndex)
+                     + " influence weights must sum to exactly 255");
+        }
+    }
+
+    return result;
+}
+
+Aabb3d ComputeMeshBounds(std::span<const StaticMeshVertex> vertices)
 {
     Aabb3d bounds = Aabb3d::Empty();
     for (const StaticMeshVertex& vertex : vertices)
@@ -122,7 +169,7 @@ Aabb3d ComputeStaticMeshBounds(std::span<const StaticMeshVertex> vertices)
     return bounds;
 }
 
-Aabb3d ComputeStaticMeshSectionBounds(const StaticMeshData& mesh, const StaticMeshSection& section)
+Aabb3d ComputeMeshSectionBounds(const MeshGeometry& mesh, const StaticMeshSection& section)
 {
     Aabb3d bounds = Aabb3d::Empty();
 
@@ -137,9 +184,9 @@ Aabb3d ComputeStaticMeshSectionBounds(const StaticMeshData& mesh, const StaticMe
     return bounds;
 }
 
-void RecomputeStaticMeshBounds(StaticMeshData& mesh)
+void RecomputeMeshBounds(MeshGeometry& mesh)
 {
-    mesh.LocalBounds = ComputeStaticMeshBounds(mesh.Vertices);
+    mesh.LocalBounds = ComputeMeshBounds(mesh.Vertices);
     for (StaticMeshSection& section : mesh.Sections)
-        section.LocalBounds = ComputeStaticMeshSectionBounds(mesh, section);
+        section.LocalBounds = ComputeMeshSectionBounds(mesh, section);
 }

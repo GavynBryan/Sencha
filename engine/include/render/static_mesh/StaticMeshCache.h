@@ -4,7 +4,7 @@
 #include <core/handle/LifetimeHandle.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/GpuStaticMesh.h>
-#include <render/static_mesh/StaticMeshData.h>
+#include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
@@ -37,8 +37,8 @@ public:
     StaticMeshCache(StaticMeshCache&&) = delete;
     StaticMeshCache& operator=(StaticMeshCache&&) = delete;
 
-    [[nodiscard]] StaticMeshHandle Create(const StaticMeshData& data);
-    [[nodiscard]] StaticMeshHandle CreateFromData(std::string_view name, const StaticMeshData& data);
+    [[nodiscard]] StaticMeshHandle Create(const MeshGeometry& data);
+    [[nodiscard]] StaticMeshHandle CreateFromData(std::string_view name, const MeshGeometry& data);
 
     [[nodiscard]] StaticMeshHandle Acquire(std::string_view name);
     [[nodiscard]] StaticMeshCacheHandle AcquireOwned(std::string_view name);
@@ -56,7 +56,7 @@ private:
     void OnFree(StaticMeshEntry& entry);
     bool IsEntryLive(const StaticMeshEntry& entry) const;
 
-    bool UploadMesh(const StaticMeshData& data, StaticMeshEntry& out);
+    bool UploadMesh(const MeshGeometry& data, StaticMeshEntry& out);
 
     Logger& Log;
     VulkanBufferService* Buffers = nullptr;

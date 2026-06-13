@@ -147,7 +147,7 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        // StaticMeshData v1 uses global indices into the shared vertex buffer.
+        // MeshGeometry v1 uses global indices into the shared vertex buffer.
         // section.VertexOffset is metadata only in this phase. Do not pass it as
         // Vulkan vertexOffset unless sections are converted to local-index ranges.
         vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1, section.IndexOffset, 0, 0);

@@ -1,6 +1,6 @@
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
-#include <assets/static_mesh/StaticMeshSerializer.h>
+#include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureAssetLoader.h>
 #include <core/assets/AssetInFlightTable.h>
 #include <core/assets/AssetLoader.h>
@@ -154,7 +154,7 @@ TEST(AssetInFlightTable, FinishReturnsAllWaitersAndClears)
 TEST(StaticMeshAssetLoader, StagesSerializedMeshFromMemory)
 {
     LoggingProvider logging;
-    StaticMeshSerializer serializer(logging);
+    MeshSerializer serializer(logging);
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(StaticMeshPrimitives::BuildCube(1.0f), bytes));
 
@@ -166,7 +166,7 @@ TEST(StaticMeshAssetLoader, StagesSerializedMeshFromMemory)
         MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/cube.smesh"), source);
 
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
-    const auto* data = std::any_cast<StaticMeshData>(&staging.Payload);
+    const auto* data = std::any_cast<MeshGeometry>(&staging.Payload);
     ASSERT_NE(data, nullptr);
     EXPECT_FALSE(data->Vertices.empty());
     EXPECT_FALSE(data->Indices.empty());
@@ -306,7 +306,7 @@ TEST(AssetLoaderContract, CommitRejectsMismatchedPayload)
 
     AssetStaging meshStaging;
     meshStaging.Record = MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/wrong.smesh");
-    meshStaging.Payload = 42; // not a StaticMeshData
+    meshStaging.Payload = 42; // not a MeshGeometry
 
     StaticMeshAssetLoader meshLoader(logging, nullptr);
     EXPECT_FALSE(meshLoader.CommitTyped(std::move(meshStaging)).IsValid());
