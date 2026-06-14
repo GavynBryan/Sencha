@@ -71,3 +71,30 @@ StaticMeshHandle StaticMeshAssetLoader::CommitTyped(AssetStaging&& staged)
 
     return handle;
 }
+
+bool StaticMeshAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    if (!staged.IsValid())
+    {
+        Log.Error("StaticMeshAssetLoader: reload of failed staging for '{}': {}",
+                  staged.Record.Path, staged.Error);
+        return false;
+    }
+
+    MeshGeometry* data = std::any_cast<MeshGeometry>(&staged.Payload);
+    if (data == nullptr)
+    {
+        Log.Error("StaticMeshAssetLoader: reload payload for '{}' is not MeshGeometry",
+                  staged.Record.Path);
+        return false;
+    }
+
+    if (!Cache)
+    {
+        Log.Error("StaticMeshAssetLoader: missing StaticMeshCache for reload of '{}'",
+                  staged.Record.Path);
+        return false;
+    }
+
+    return Cache->ReloadInPlace(staged.Record.Path, *data);
+}

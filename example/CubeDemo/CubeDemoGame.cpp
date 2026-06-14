@@ -192,15 +192,20 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     }
 
 #ifdef SENCHA_ENABLE_COOK
-    // Dev-only asset hot reload (Stage 6a, Decision H): watch texture sources
-    // and swap the live GPU texture in place on edit — re-cook through the
-    // same importer the startup cook uses, decode async, commit-swap at the
-    // drain point keeping the bindless slot so materials are unaffected. The
-    // poll itself is a throttled per-frame system (OnRegisterSystems).
+    // Dev-only asset hot reload (Stage 6, Decision H): watch source files and
+    // swap the live GPU resource in place on edit — re-cook through the same
+    // importers the startup cook uses, decode async, commit-swap at the drain
+    // point keeping the handle/slot. Textures keep their bindless index (6a),
+    // meshes their buffers (6b); materials reload from authored .smat directly,
+    // no importer (6c). The poll itself is a throttled per-frame system
+    // (OnRegisterSystems).
     HotReloadImporters.Register(HotReloadPngImporter);
+    HotReloadImporters.Register(HotReloadGltfImporter);
+    HotReloadImporters.Register(HotReloadBlendImporter);
     Reloader.emplace(logging, runtimeAssets.Assets, runtimeAssets.Registry,
                      HotReloadImporters, engine.Tasks(), std::string("assets"));
-    Watcher.emplace(logging, std::string("assets"), std::vector<std::string>{ ".png" });
+    Watcher.emplace(logging, std::string("assets"),
+                    std::vector<std::string>{ ".png", ".glb", ".gltf", ".blend", ".smat" });
     Watcher->Initialize();
 #endif
 

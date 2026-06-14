@@ -211,6 +211,56 @@ TEST(MaterialCacheOwnership, CacheDestructionReleasesOwnedTextures)
     EXPECT_EQ(textures.Detached, 1);
 }
 
+// -- MaterialCache hot reload (Stage 6c) ---------------------------------------
+
+TEST(MaterialCacheReload, ReloadInPlaceSwapsValueAndReleasesOldTextures)
+{
+    CountingLifetimeOwner textures;
+    MaterialCache materials;
+
+    std::vector<TextureCacheHandle> first;
+    first.emplace_back(&textures, TextureHandle{ 1 }, TextureCacheHandle::NoAttach);
+
+    Material original;
+    original.BaseColor = { 1.0f, 0.0f, 0.0f, 1.0f };
+    MaterialHandle handle =
+        materials.Register("asset://materials/test/reload.smat", original, std::move(first));
+    ASSERT_TRUE(handle.IsValid());
+    EXPECT_EQ(textures.Detached, 0);
+
+    std::vector<TextureCacheHandle> second;
+    second.emplace_back(&textures, TextureHandle{ 2 }, TextureCacheHandle::NoAttach);
+    Material updated;
+    updated.BaseColor = { 0.0f, 1.0f, 0.0f, 1.0f };
+
+    ASSERT_TRUE(materials.ReloadInPlace(
+        "asset://materials/test/reload.smat", updated, std::move(second)));
+
+    // The handle is unchanged, the value is swapped, and the old texture ref
+    // is released while the new one is retained.
+    EXPECT_EQ(materials.Find("asset://materials/test/reload.smat"), handle);
+    const Material* material = materials.Get(handle);
+    ASSERT_NE(material, nullptr);
+    EXPECT_FLOAT_EQ(material->BaseColor.Y, 1.0f);
+    EXPECT_EQ(textures.Detached, 1);
+
+    materials.Destroy(handle);
+    EXPECT_EQ(textures.Detached, 2);
+}
+
+TEST(MaterialCacheReload, ReloadInPlaceOnAbsentEntryReleasesIncomingAndReturnsFalse)
+{
+    CountingLifetimeOwner textures;
+    MaterialCache materials;
+
+    std::vector<TextureCacheHandle> incoming;
+    incoming.emplace_back(&textures, TextureHandle{ 9 }, TextureCacheHandle::NoAttach);
+
+    EXPECT_FALSE(materials.ReloadInPlace(
+        "asset://materials/test/ghost.smat", Material{}, std::move(incoming)));
+    EXPECT_EQ(textures.Detached, 1);
+}
+
 // -- AssetSystem .smat file loading --------------------------------------------
 
 namespace

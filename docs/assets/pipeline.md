@@ -1157,6 +1157,74 @@ mesh type split (the Decision J revision above) was taken here.
     off the `Static` prefix), leaving truly static-only pieces behind. That
     is a focused rename pass worth its own change, not a rider on this one.
 
+## Stage 6 status (2026-06-13 — 2026-06-14, complete)
+
+Hot reload (Decision H) landed as three gated sub-stages, all dev-only under
+`SENCHA_ENABLE_COOK` (the glslang/cook never-ships precedent). The execution
+plan is `docs/assets/stage6-hot-reload-plan.md`; this is the rollup. The
+non-negotiable invariant held throughout: **a reload never changes a
+handle** — it swaps the *contents* of an existing cache slot (same index,
+generation, refcount, bindless descriptor index) and retires the old GPU
+resource through `VulkanDeletionQueueService`, so every live component handle
+is valid across the swap. The feature is purely additive: with the watcher
+off, behavior is byte-identical.
+
+The split, proven once and reused: a **detection half**
+(`AssetSourceWatcher` — polls watched source files by mtime, confirms with a
+content hash so touch-only saves are ignored, throttled ~300 ms) and a
+**reaction half** (`AssetHotReloader` — re-cooks the changed source, stages
+an async decode through the type's existing `LoadStaged`, and swaps the
+resident slot at the drain point via a new per-type `CommitReload` →
+`ReloadInPlace`). Each cache's `ReloadInPlace` and each loader's
+`CommitReload` are small and symmetric with the create/register path they
+mirror; the old resource is enqueued (never destroyed inline) inside
+`ReloadInPlace`.
+
+- **6a — textures** (2026-06-13, with the handle-unification commit).
+  `VulkanDescriptorCache::UpdateSampledImage` rewrites the bindless slot in
+  place (the set was already `UPDATE_AFTER_BIND`), so the texture's descriptor
+  index — and therefore every material pointing at it — is unaffected by the
+  swap. `TextureCache::ReloadInPlace`, `TextureAssetLoader::CommitReload`,
+  `ReimportOneSource`. *Gate: overwriting `checker.png` while CubeDemo runs
+  swaps the cube's texture in place, red material untouched, validation layer
+  clean.*
+- **6b — static meshes** (2026-06-14). `StaticMeshCache::ReloadInPlace`
+  (upload new geometry, retire old buffers through the deletion queue via the
+  already-deferred `DestroyGpuMesh`, adopt the new `GpuStaticMesh`),
+  `StaticMeshAssetLoader::CommitReload`, watcher learns `.glb/.gltf/.blend`,
+  the `StaticMesh` arm of `StageReload`. *Gate met under the validation layer:
+  overwriting `torus.glb` with another valid glTF re-imports through cgltf to
+  fresh `.smesh` geometry and swaps the live buffers — same handle, old
+  buffers deferred, zero validation output.*
+- **6c — materials** (2026-06-14). `MaterialCache::ReloadInPlace` (replace
+  value + owned texture refs; the old `OwnedTextures` vector releasing on
+  assignment *is* the texture-ref handoff — no GPU resource of its own), the
+  description→`Material` resolution factored into
+  `MaterialAssetLoader::ResolveDescription` so create and reload share it, and
+  `MaterialAssetLoader::CommitReload`. Materials are an **authored runtime
+  format with no importer**, so `AssetHotReloader::ReloadSource` branches:
+  any source whose extension no importer claims (`.smat`) skips the cook step
+  and resolves directly by virtual path, swapping only the resident entry.
+  *Gate met under the validation layer: editing `red.smat`'s base color
+  updates the cube live, re-resolving texture slots and releasing prior refs;
+  zero validation output.* The texture-ref handoff (a `.smat` repointed at a
+  different texture) is pinned headless in
+  `test/core/MaterialAssetTests.cpp`.
+
+- **Gate honesty.** The GPU swap halves (texture/mesh) need a device, so they
+  are covered by the live CubeDemo gate under the Vulkan validation layer (the
+  4b/4c precedent), not headless; the material refcount handoff, the watcher's
+  content-confirmed change detection, and `ReimportOneSource` are pinned by
+  zero-thread headless tests (852 tests green). Both 6b and 6c live gates were
+  driven by overwriting a source on disk while the demo ran — the poll fires
+  the reload with no user input — and both produced their `reloaded …` log
+  line with no validation-layer output (clean deletion queue, legal
+  descriptor/buffer handling).
+- **Deferred, recorded not built** (same machinery, add when a consumer
+  needs it): skinned-mesh and audio-clip reload, scene/`.json` reload,
+  file create/delete (topology) handling, and OS-native file watching (the
+  throttled poll is sufficient at room scale).
+
 The original open questions were answered the day the plan was written:
 
 1. **Mesh sources: glTF 2.0 and `.blend`** — `.blend` via headless Blender in

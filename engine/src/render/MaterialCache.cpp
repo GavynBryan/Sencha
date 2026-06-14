@@ -75,6 +75,22 @@ void MaterialCache::Destroy(MaterialHandle handle)
     Release(handle);
 }
 
+bool MaterialCache::ReloadInPlace(std::string_view path,
+                                  const Material& material,
+                                  std::vector<TextureCacheHandle> ownedTextures)
+{
+    MaterialEntry* entry = Resolve(FindRegisteredHandle(path));
+    if (entry == nullptr)
+        return false; // not resident; ownedTextures releases as this returns
+
+    // Adopt the new value and texture references; replacing OwnedTextures runs
+    // the old vector's destructors, releasing the previously-held texture
+    // refs. Generation, refcount, and the handle are untouched.
+    entry->Value = material;
+    entry->OwnedTextures = std::move(ownedTextures);
+    return true;
+}
+
 const Material* MaterialCache::Get(MaterialHandle handle) const
 {
     const MaterialEntry* entry = Resolve(handle);

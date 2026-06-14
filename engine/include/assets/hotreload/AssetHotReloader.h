@@ -23,9 +23,11 @@ struct AssetRecord;
 // handles never change and the old GPU resource retires through the deletion
 // queue. Owner-thread only.
 //
-// Stage 6a wires textures. Static/skinned meshes (6b) and materials (6c) slot
-// into StageReload once their loaders gain CommitReload and their caches gain
-// ReloadInPlace.
+// Stage 6 wires textures (6a), static meshes (6b), and materials (6c).
+// Materials are authored .smat with no cook step, so ReloadSource resolves
+// them directly by virtual path; cook sources re-import first. Skinned meshes
+// and audio clips reuse the same machinery when a streamable component
+// references them.
 //=============================================================================
 class AssetHotReloader
 {

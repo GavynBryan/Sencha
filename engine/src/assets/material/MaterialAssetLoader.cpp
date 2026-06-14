@@ -85,32 +85,8 @@ MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    Material material;
-    material.Pass = ShaderPassId::ForwardOpaque;
-    material.BaseColor = desc->BaseColorFactor;
-    material.EmissiveFactor = desc->EmissiveFactor;
-    material.NormalScale = desc->NormalScale;
-    material.RoughnessFactor = desc->RoughnessFactor;
-    material.MetallicFactor = desc->MetallicFactor;
-    material.AlphaMode = desc->AlphaMode;
-    material.AlphaCutoff = desc->AlphaCutoff;
-
-    if (material.AlphaMode == MaterialAlphaMode::Blend)
-    {
-        Log.Warn("MaterialAssetLoader: material '{}' uses alpha_mode 'blend'; "
-                 "transparent phase not implemented, rendering opaque",
-                 staged.Record.Path);
-    }
-
     std::vector<TextureCacheHandle> ownedTextures;
-    ResolveTextureSlot(desc->BaseColorTexture, /*srgb*/ true,
-                       material.BaseColorTextureIndex, ownedTextures);
-    ResolveTextureSlot(desc->NormalTexture, /*srgb*/ false,
-                       material.NormalTextureIndex, ownedTextures);
-    ResolveTextureSlot(desc->OrmTexture, /*srgb*/ false,
-                       material.OrmTextureIndex, ownedTextures);
-    ResolveTextureSlot(desc->EmissiveTexture, /*srgb*/ true,
-                       material.EmissiveTextureIndex, ownedTextures);
+    Material material = ResolveDescription(*desc, staged.Record.Path, ownedTextures);
 
     MaterialHandle handle =
         Materials->Register(staged.Record.Path, material, std::move(ownedTextures));
@@ -119,6 +95,69 @@ MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)
                   staged.Record.Path);
 
     return handle;
+}
+
+bool MaterialAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    if (!staged.IsValid())
+    {
+        Log.Error("MaterialAssetLoader: reload of failed staging for '{}': {}",
+                  staged.Record.Path, staged.Error);
+        return false;
+    }
+
+    const MaterialDescription* desc = std::any_cast<MaterialDescription>(&staged.Payload);
+    if (desc == nullptr)
+    {
+        Log.Error("MaterialAssetLoader: reload payload for '{}' is not a MaterialDescription",
+                  staged.Record.Path);
+        return false;
+    }
+
+    if (!Materials)
+    {
+        Log.Error("MaterialAssetLoader: missing MaterialCache for reload of '{}'",
+                  staged.Record.Path);
+        return false;
+    }
+
+    std::vector<TextureCacheHandle> ownedTextures;
+    Material material = ResolveDescription(*desc, staged.Record.Path, ownedTextures);
+
+    return Materials->ReloadInPlace(staged.Record.Path, material, std::move(ownedTextures));
+}
+
+Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc,
+                                                 std::string_view path,
+                                                 std::vector<TextureCacheHandle>& outOwned)
+{
+    Material material;
+    material.Pass = ShaderPassId::ForwardOpaque;
+    material.BaseColor = desc.BaseColorFactor;
+    material.EmissiveFactor = desc.EmissiveFactor;
+    material.NormalScale = desc.NormalScale;
+    material.RoughnessFactor = desc.RoughnessFactor;
+    material.MetallicFactor = desc.MetallicFactor;
+    material.AlphaMode = desc.AlphaMode;
+    material.AlphaCutoff = desc.AlphaCutoff;
+
+    if (material.AlphaMode == MaterialAlphaMode::Blend)
+    {
+        Log.Warn("MaterialAssetLoader: material '{}' uses alpha_mode 'blend'; "
+                 "transparent phase not implemented, rendering opaque",
+                 path);
+    }
+
+    ResolveTextureSlot(desc.BaseColorTexture, /*srgb*/ true,
+                       material.BaseColorTextureIndex, outOwned);
+    ResolveTextureSlot(desc.NormalTexture, /*srgb*/ false,
+                       material.NormalTextureIndex, outOwned);
+    ResolveTextureSlot(desc.OrmTexture, /*srgb*/ false,
+                       material.OrmTextureIndex, outOwned);
+    ResolveTextureSlot(desc.EmissiveTexture, /*srgb*/ true,
+                       material.EmissiveTextureIndex, outOwned);
+
+    return material;
 }
 
 void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,

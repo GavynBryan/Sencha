@@ -44,7 +44,21 @@ public:
     // the caller). The virtual Commit wraps this for heterogeneous drivers.
     [[nodiscard]] MaterialHandle CommitTyped(AssetStaging&& staged);
 
+    // Owner-thread hot-reload commit (Stage 6c): re-resolves the staged
+    // description (re-resolving its texture slots, which may load a newly
+    // referenced texture) and swaps it into the existing resident entry in
+    // place, keeping the handle and releasing the previously-owned texture
+    // refs. Returns false if the material is not resident.
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged);
+
 private:
+    // Builds the runtime Material from a parsed description, resolving each
+    // texture slot to a bindless index and accumulating the owned texture
+    // references into `outOwned`. Shared by CommitTyped and CommitReload.
+    [[nodiscard]] Material ResolveDescription(const MaterialDescription& desc,
+                                              std::string_view path,
+                                              std::vector<TextureCacheHandle>& outOwned);
+
     void ResolveTextureSlot(const AssetRef& ref,
                             bool srgb,
                             uint32_t& outIndex,

@@ -45,6 +45,13 @@ public:
     [[nodiscard]] StaticMeshHandle Find(std::string_view name) const;
     void Destroy(StaticMeshHandle handle);
 
+    // Hot reload (Stage 6b): swaps the geometry of an existing resident entry
+    // in place, keeping slot/generation/refcount/handle, and retires the old
+    // GPU buffers through the deletion queue. Returns false if `path` has no
+    // live entry — nothing to swap, and the next normal load picks up the new
+    // bytes.
+    [[nodiscard]] bool ReloadInPlace(std::string_view path, const MeshGeometry& data);
+
     [[nodiscard]] const GpuStaticMesh* Get(StaticMeshHandle handle) const;
     [[nodiscard]] std::string_view GetName(StaticMeshHandle handle) const;
     [[nodiscard]] bool IsAlive(StaticMeshHandle handle) const;

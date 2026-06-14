@@ -29,6 +29,13 @@ public:
     // the caller). The virtual Commit wraps this for heterogeneous drivers.
     [[nodiscard]] StaticMeshHandle CommitTyped(AssetStaging&& staged);
 
+    // Owner-thread hot-reload commit (Stage 6b): swaps the staged geometry into
+    // the existing resident entry in place (same handle, no new slot), retiring
+    // the old GPU buffers. Returns false if the mesh is not resident — there is
+    // nothing to reload, and the refreshed registry hash means the next normal
+    // load picks up the new bytes.
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged);
+
 private:
     Logger& Log;
     StaticMeshCache* Cache = nullptr;

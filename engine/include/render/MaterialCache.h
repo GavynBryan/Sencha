@@ -59,6 +59,16 @@ public:
     [[nodiscard]] MaterialHandle Find(std::string_view name) const;
     void Destroy(MaterialHandle handle);
 
+    // Hot reload (Stage 6c): replaces the value and owned texture references of
+    // an existing resident entry in place, keeping slot/generation/refcount/
+    // handle. The previously-owned texture references release as the old vector
+    // is replaced; a material has no GPU resource of its own. Returns false if
+    // `path` has no live entry — nothing to swap, and `ownedTextures` releases
+    // immediately on return.
+    [[nodiscard]] bool ReloadInPlace(std::string_view path,
+                                     const Material& material,
+                                     std::vector<TextureCacheHandle> ownedTextures);
+
     [[nodiscard]] const Material* Get(MaterialHandle handle) const;
     [[nodiscard]] std::string_view GetName(MaterialHandle handle) const;
 

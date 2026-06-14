@@ -12,6 +12,8 @@
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/AssetImporter.h>
+#include <assets/cook/BlendCook.h>
+#include <assets/cook/MeshCook.h>
 #include <assets/cook/TextureCook.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
@@ -45,12 +47,14 @@ private:
     DemoScene Demo;
 
 #ifdef SENCHA_ENABLE_COOK
-    // Dev-only asset hot reload (Stage 6a, textures): the importer the watcher
-    // re-cooks through (held here so the non-owning registry stays valid), the
+    // Dev-only asset hot reload (Stage 6): the importers the watcher re-cooks
+    // through (held here so the non-owning registry stays valid), the
     // source-change detector, and the reload driver. Ticked (throttled) by a
-    // per-frame system; see OnRegisterSystems. 6b/6c add the mesh/material
-    // importers + watched extensions.
+    // per-frame system; see OnRegisterSystems. Materials (6c) load directly
+    // from authored .smat with no importer, so none is held for them.
     PngTextureImporter HotReloadPngImporter;
+    GltfMeshImporter HotReloadGltfImporter;
+    BlendMeshImporter HotReloadBlendImporter;
     AssetImporterRegistry HotReloadImporters;
     std::optional<AssetSourceWatcher> Watcher;
     std::optional<AssetHotReloader> Reloader;

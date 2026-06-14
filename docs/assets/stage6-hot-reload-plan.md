@@ -1,10 +1,11 @@
 # Stage 6 — Asset Hot Reload: Implementation Plan
 
-Status: **ready to implement** (branch `asset-pipelines`). This is a
-self-contained execution plan for Stage 6 of `docs/assets/pipeline.md`
-(Decision H). It assumes Stages 1–5 are landed (they are, at commit
-`539116e`, 843 tests green). Hand this to the implementer; every load-bearing
-fact below was verified against the current tree.
+Status: **complete** (branch `asset-pipelines`) — all three sub-stages
+(6a textures, 6b static meshes, 6c materials) landed; see §9 for the
+per-sub-stage record. This is a self-contained execution plan for Stage 6 of
+`docs/assets/pipeline.md` (Decision H). It assumed Stages 1–5 were landed
+(they were, at commit `539116e`, 843 tests green). Every load-bearing fact
+below was verified against the tree as the work landed.
 
 ---
 
@@ -360,15 +361,34 @@ synchronously too; see §9.)
   'asset://textures/dev/checker.png'`, the red material is untouched, and the
   Vulkan validation layer reports nothing (clean deletion queue, legal
   descriptor rewrite). 846 tests green.*
-- **6b — Static mesh reload.** `StaticMeshCache::ReloadInPlace`,
-  `StaticMeshAssetLoader::CommitReload`, watcher learns `.glb/.gltf/.blend`.
-  *Gate: edit/re-export a mesh source → geometry swaps, same handle, old
-  buffers deferred.*
-- **6c — Material reload.** `MaterialCache::ReloadInPlace`, factor the
-  description→Material resolution, `MaterialAssetLoader::CommitReload`, watcher
-  learns `.smat`. *Gate: edit `red.smat`'s base-color factor → color updates
-  live; a `.smat` that points at a different texture re-resolves and retains
-  the new texture (old texture ref released).*
+- **6b — Static mesh reload. LANDED (2026-06-14).**
+  `StaticMeshCache::ReloadInPlace` (upload new geometry, then retire the old
+  buffers through the deletion queue — `DestroyGpuMesh` already defers — and
+  adopt the new `GpuStaticMesh`, keeping slot/generation/refcount/handle),
+  `StaticMeshAssetLoader::CommitReload`, the watcher learns
+  `.glb/.gltf/.blend`, and `AssetHotReloader::StageReload` gained the
+  `StaticMesh` case (re-cook via `ReimportOneSource`, async decode, swap at
+  the drain). *Gate met: overwriting `assets/meshes/dev/torus.glb` with
+  another valid glTF (`head.glb`) while CubeDemo runs re-imports through cgltf
+  to fresh `.smesh` geometry and swaps the live buffers in place — log shows
+  `reloaded static mesh 'asset://meshes/dev/torus.glb'`, same handle, old
+  buffers deferred, and the validation layer reports nothing.*
+- **6c — Material reload. LANDED (2026-06-14).**
+  `MaterialCache::ReloadInPlace` (replace value + owned texture refs; the old
+  `OwnedTextures` vector releasing on assignment is the texture-ref handoff,
+  no GPU resource of its own), the description→`Material` resolution factored
+  into `MaterialAssetLoader::ResolveDescription` so create and reload share it,
+  `MaterialAssetLoader::CommitReload`. Materials are an **authored runtime
+  format** with no importer, so `AssetHotReloader::ReloadSource` branches:
+  any source whose extension no importer claims (`.smat`) skips the cook step
+  and resolves directly by virtual path (`asset://` + rel) — only the resident
+  entry is swapped. *Gate met: editing `red.smat`'s base-color factor while
+  CubeDemo runs updates the cube's color live (`reloaded material
+  'asset://materials/dev/red.smat'`), re-resolving its texture slots and
+  releasing the prior refs; validation layer clean. The "points at a different
+  texture re-resolves and retains the new texture" property is pinned headless
+  by `MaterialCacheReload.ReloadInPlaceSwapsValueAndReleasesOldTextures` in
+  `test/core/MaterialAssetTests.cpp`.*
 
 **Headless tests (zero-thread, no GPU where possible):**
 - `ReimportOneSource` recooks a changed source and updates index + registry
