@@ -11,12 +11,6 @@ namespace
 {
     // Handle layout: high 12 bits = generation, low 20 bits = slot index.
     // Generation 0 is reserved so BufferHandle{0} is always invalid.
-    constexpr uint32_t kIndexBits = 20;
-    constexpr uint32_t kIndexMask = (1u << kIndexBits) - 1u;
-    constexpr uint32_t kMaxGeneration = (1u << (32u - kIndexBits)) - 1u;
-
-    uint32_t DecodeIndex(uint32_t id) { return id & kIndexMask; }
-    uint32_t DecodeGeneration(uint32_t id) { return id >> kIndexBits; }
 }
 
 VulkanBufferService::VulkanBufferService(
@@ -57,16 +51,14 @@ VulkanBufferService::~VulkanBufferService()
 
 BufferHandle VulkanBufferService::MakeHandle(uint32_t index, uint32_t generation) const
 {
-    BufferHandle h;
-    h.Id = (generation << kIndexBits) | (index & kIndexMask);
-    return h;
+    return BufferHandle{ index, generation };
 }
 
 VulkanBufferService::BufferEntry* VulkanBufferService::Resolve(BufferHandle handle)
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Buffer == VK_NULL_HANDLE) return nullptr;
@@ -76,8 +68,8 @@ VulkanBufferService::BufferEntry* VulkanBufferService::Resolve(BufferHandle hand
 const VulkanBufferService::BufferEntry* VulkanBufferService::Resolve(BufferHandle handle) const
 {
     if (!handle.IsValid()) return nullptr;
-    const uint32_t index = DecodeIndex(handle.Id);
-    const uint32_t gen = DecodeGeneration(handle.Id);
+    const uint32_t index = handle.Index;
+    const uint32_t gen = handle.Generation;
     if (index == 0 || index >= Entries.size()) return nullptr;
     const auto& entry = Entries[index];
     if (entry.Generation != gen || entry.Buffer == VK_NULL_HANDLE) return nullptr;
@@ -150,12 +142,6 @@ BufferHandle VulkanBufferService::Create(const BufferCreateInfo& info)
     else
     {
         index = static_cast<uint32_t>(Entries.size());
-        if (index > kIndexMask)
-        {
-            Log.Error("VulkanBufferService slot capacity exhausted");
-            vmaDestroyBuffer(Allocator, buffer, allocation);
-            return {};
-        }
         Entries.emplace_back();
     }
 
@@ -168,7 +154,7 @@ BufferHandle VulkanBufferService::Create(const BufferCreateInfo& info)
 
     // Bump generation; wrap is benign but we skip 0 to keep IsValid() honest.
     entry.Generation = entry.Generation + 1;
-    if (entry.Generation == 0 || entry.Generation > kMaxGeneration)
+    if (entry.Generation == 0)
     {
         entry.Generation = 1;
     }
@@ -189,7 +175,7 @@ void VulkanBufferService::Destroy(BufferHandle handle)
     entry->Size = 0;
     entry->MappedPtr = nullptr;
 
-    const uint32_t index = DecodeIndex(handle.Id);
+    const uint32_t index = handle.Index;
     FreeSlots.push_back(index);
 
     DeletionQueue->EnqueueBufferDestroy({ Allocator, buffer, allocation });

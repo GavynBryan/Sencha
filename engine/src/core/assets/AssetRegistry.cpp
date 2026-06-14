@@ -1,17 +1,25 @@
 #include <core/assets/AssetRegistry.h>
 
+#include <core/hash/ContentHash.h>
+
 #include <filesystem>
 
 namespace
 {
-    constexpr std::string_view AssetPathPrefix = "asset://";
-
     AssetType AssetTypeFromExtension(std::string_view extension)
     {
-        if (extension == ".smesh") return AssetType::StaticMesh;
-        if (extension == ".smat")  return AssetType::Material;
-        if (extension == ".stex")  return AssetType::Texture;
-        if (extension == ".smap")  return AssetType::Scene;
+        if (extension == ".smesh")  return AssetType::StaticMesh;
+        if (extension == ".skmesh") return AssetType::SkinnedMesh;
+        if (extension == ".smat")   return AssetType::Material;
+        if (extension == ".stex")   return AssetType::Texture;
+        if (extension == ".smap")   return AssetType::Scene;
+        if (extension == ".sclip")  return AssetType::Audio;
+        if (extension == ".sskel")  return AssetType::Skeleton;
+        if (extension == ".sanim")  return AssetType::AnimationClip;
+        // Source formats (.png, .gltf, ...) are deliberately absent: they
+        // reach the registry through import-on-demand, registered under
+        // their virtual path against the cooked artifact (Decision B). The
+        // Stage 1 loose-PNG mapping retired when the texture cook landed.
         return AssetType::Unknown;
     }
 
@@ -36,13 +44,6 @@ namespace
 AssetRegistry::AssetRegistry(LoggingProvider& logging)
     : Log(logging.GetLogger<AssetRegistry>())
 {
-}
-
-bool IsValidAssetPath(std::string_view path)
-{
-    return path.starts_with(AssetPathPrefix)
-        && path.size() > AssetPathPrefix.size()
-        && path.find('\\') == std::string_view::npos;
 }
 
 bool AssetRegistry::Register(const AssetRecord& record)
@@ -132,10 +133,53 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
     return true;
 }
 
+bool AssetRegistry::AssignId(std::string_view path, AssetId id)
+{
+    if (!id.IsValid())
+    {
+        Log.Warn("AssetRegistry: rejected invalid id for '{}'", path);
+        return false;
+    }
+
+    auto it = RecordsByPath.find(std::string(path));
+    if (it == RecordsByPath.end())
+    {
+        Log.Warn("AssetRegistry: cannot assign id to unregistered path '{}'", path);
+        return false;
+    }
+
+    if (it->second.Id == id)
+        return true;
+
+    if (it->second.Id.IsValid())
+    {
+        Log.Warn("AssetRegistry: '{}' already has id {}; rejected reassignment to {}",
+            path, AssetIdToString(it->second.Id), AssetIdToString(id));
+        return false;
+    }
+
+    if (auto bound = RecordsById.find(id); bound != RecordsById.end())
+    {
+        Log.Warn("AssetRegistry: id {} is already bound to '{}'; rejected for '{}'",
+            AssetIdToString(id), bound->second->Path, path);
+        return false;
+    }
+
+    it->second.Id = id;
+    RecordsById.emplace(id, &it->second);
+    return true;
+}
+
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const
 {
     auto it = RecordsByPath.find(std::string(path));
     return it == RecordsByPath.end() ? nullptr : &it->second;
+}
+
+const AssetRecord* AssetRegistry::FindById(AssetId id) const
+{
+    auto it = RecordsById.find(id);
+    return it == RecordsById.end() ? nullptr : it->second;
 }
 
 bool AssetRegistry::Contains(std::string_view path) const
@@ -173,7 +217,14 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         }
 
         if (!it->is_regular_file(ec))
+        {
+            // Never descend into the cooked cache: its artifacts carry
+            // virtual paths assigned at cook time, not derived from their
+            // physical location (docs/assets/pipeline.md, Decision B).
+            if (it->path().filename() == kCookedCacheDirName)
+                it.disable_recursion_pending();
             continue;
+        }
 
         const AssetType type = AssetTypeFromExtension(it->path().extension().generic_string());
         if (type == AssetType::Unknown)
@@ -184,6 +235,12 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         record.SourceKind = AssetSourceKind::File;
         record.Path = MakeVirtualAssetPath(root, it->path());
         record.FilePath = it->path().generic_string();
+        if (!HashFileContents(record.FilePath, record.ContentHash))
+        {
+            registry.Log.Warn("AssetRegistry: could not hash '{}'; registered with no content hash",
+                record.FilePath);
+            ok = false;
+        }
         const bool inserted = registry.Register(record);
         if (inserted)
             ++registered;

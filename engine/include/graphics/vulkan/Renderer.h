@@ -4,7 +4,6 @@
 #include <core/service/IService.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanFrameService.h>
-#include <core/handle/GenHandle.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -167,20 +166,19 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
 
-    // Take ownership of a feature, run its Setup(), and return a GenRef<T>
-    // (aliased as FeatureRef<T> below) backed by the Renderer's SlotRegistry.
-    // The ref stays valid until ~Renderer calls RemoveAll(), which happens
-    // before any Teardown().
+    // Take ownership of a feature, run its Setup(), and return the raw
+    // pointer (or nullptr on failure). The Renderer owns the feature for its
+    // lifetime; callers that need to reach it later cache this pointer, but
+    // features are expected to cache their own service pointers in Setup() and
+    // are driven each frame through the Renderer's internal phase buckets.
     template <typename T>
-    GenRef<T> AddFeature(std::unique_ptr<T> feature)
+    T* AddFeature(std::unique_ptr<T> feature)
     {
         static_assert(std::is_base_of_v<IRenderFeature, T>,
                       "T must derive from IRenderFeature");
-        if (!Valid || !feature) return {};
-        T* raw = static_cast<T*>(
+        if (!Valid || !feature) return nullptr;
+        return static_cast<T*>(
             AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release())));
-        if (!raw) return {};
-        return GenRef<T>(FeatureRegistry, FeatureRegistry->Insert(raw));
     }
 
     // Render frame scheduler entry point: acquire -> scratch rotate -> phase
@@ -200,7 +198,6 @@ private:
     VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
     RendererServices Services;
-    std::shared_ptr<SlotRegistry> FeatureRegistry = std::make_shared<SlotRegistry>();
     bool Valid = false;
 
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;
@@ -212,14 +209,7 @@ private:
 
     // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
     // Returns the raw pointer on success, nullptr on failure.
-    // Does not touch FeatureRegistry -- AddFeature<T> owns that step so the
-    // returned pointer can be inserted with the correct template type.
     IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
 
     void RecordMainColorPhase(const VulkanFrame& frame);
 };
-
-// Domain alias. GenRef<T> is the generic handle resolver; FeatureRef<T> is
-// what Renderer call sites use. Keeping the name avoids churn at usage points.
-template <typename T>
-using FeatureRef = GenRef<T>;

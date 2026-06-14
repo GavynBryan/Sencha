@@ -1,16 +1,23 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetSystem.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <platform/SdlVideoService.h>
 #include <platform/SdlWindowService.h>
 #include <platform/WindowCreateInfo.h>
 
+#ifdef SENCHA_ENABLE_COOK
+#include <assets/cook/AudioCook.h>
+#include <assets/cook/ImportOnDemand.h>
+#endif
+
 #include <SDL3/SDL.h>
 
 #include <cstdio>
 
-static constexpr const char* kSoundPath  = "sampleSound.wav";
+static constexpr const char* kSoundPath  = "asset://sampleSound.wav";
 static constexpr const char* kBusName    = "Sfx";
 static constexpr float       kVolumeStep = 0.1f;
 static constexpr float       kVolumeMin  = 0.0f;
@@ -53,8 +60,26 @@ int main()
         return 1;
     }
 
+    // -- Asset front door (docs/assets/pipeline.md, Stage 4d) -----------
+    // The WAV source under assets/ cooks to .sclip via import-on-demand
+    // and registers under its virtual path; the clip then loads through
+    // AssetSystem like every other asset type.
+    AssetRegistry registry(logging);
+    AssetSystem   assets(logging, registry, nullptr, nullptr, nullptr, &clipCache);
+
+#ifdef SENCHA_ENABLE_COOK
+    {
+        AudioClipImporter audioImporter;
+        AssetImporterRegistry importers;
+        importers.Register(audioImporter);
+        (void)ImportAssetsOnDemand("assets", importers, registry, logging);
+    }
+#endif
+
+    ScanAssetsDirectory("assets", registry);
+
     // -- Load clip -----------------------------------------------------
-    AudioClipHandle clip = clipCache.Acquire(kSoundPath);
+    AudioClipHandle clip = assets.LoadAudioClip(kSoundPath);
     if (!clip.IsValid())
     {
         std::fprintf(stderr, "Failed to load '%s'.\n", kSoundPath);
@@ -99,7 +124,7 @@ int main()
                     {
                         PlayParams params;
                         params.Bus = kBusName;
-                        [[maybe_unused]] VoiceId voice = audio.Play(AssetId{clip.Id}, *pcm, params);
+                        [[maybe_unused]] VoiceId voice = audio.Play(AudioClipKey{SlotIndex(clip)}, *pcm, params);
                     }
                     break;
                 }
@@ -135,6 +160,6 @@ int main()
         SDL_Delay(16);
     }
 
-    clipCache.Release(clip);
+    assets.ReleaseAudioClip(clip);
     return 0;
 }

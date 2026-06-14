@@ -2,6 +2,7 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/World.h>
 #include <render/Material.h>
@@ -81,6 +82,7 @@ template <>
 struct TypeSchema<StaticMeshComponent>
 {
     static constexpr std::string_view Name = "StaticMesh";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('M', 'E', 'S', 'H');
 
     static auto Fields()
     {

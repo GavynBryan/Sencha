@@ -1,6 +1,10 @@
 #include <app/Engine.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
+#include <audio/AudioService.h>
+#include <audio/AudioSystem.h>
+#include <audio/CaptionRuntime.h>
+#include <audio/CaptionSystem.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -42,6 +46,19 @@ bool Engine::Initialize()
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     ServiceRegistry.AddService<DebugService>(logging, debugLog);
     EngineSystems.Register<DefaultRenderPipeline>();
+
+    // Audio backend + the system that drives scene AudioSourceComponents
+    // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
+    // is non-fatal: the system no-ops, the engine runs silent.
+    ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
+    EngineSystems.Register<AudioSystem>();
+
+    // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
+    // No device dependency — always valid, headless included. CaptionSystem
+    // registers after AudioSystem so voices started or swept this frame are
+    // captioned/retired the same frame.
+    ServiceRegistry.AddService<CaptionRuntime>(logging, Configuration.Captions);
+    EngineSystems.Register<CaptionSystem>();
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/service/IService.h>
 #include <vk_mem_alloc.h>
@@ -46,13 +47,9 @@ enum class BufferMemory : uint8_t
     Readback,
 };
 
-struct BufferHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const BufferHandle&) const = default;
-};
+// Generational handle to a GPU buffer owned by VulkanBufferService. One of the
+// engine's unified Handle<Tag> types (handle convergence).
+using BufferHandle = Handle<struct BufferHandleTag>;
 
 struct BufferCreateInfo
 {

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 class VulkanAllocatorService;
@@ -38,13 +40,9 @@ class VulkanUploadContextService;
 // Upload runs on the graphics queue to avoid queue-family ownership
 // transfers. Same rationale as VulkanBufferService.
 //=============================================================================
-struct ImageHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const ImageHandle&) const = default;
-};
+// Generational handle to a GPU image owned by VulkanImageService. One of the
+// engine's unified Handle<Tag> types (handle convergence).
+using ImageHandle = Handle<struct ImageHandleTag>;
 
 struct ImageCreateInfo
 {
@@ -85,6 +83,24 @@ public:
     // handles the layout transitions and optional mip generation. On
     // success the image is left in SHADER_READ_ONLY_OPTIMAL.
     bool Upload(ImageHandle handle, const void* data, VkDeviceSize size);
+
+    // One mip's extent and byte offset within the blob handed to UploadMips.
+    struct MipUploadRegion
+    {
+        uint32_t MipLevel = 0;
+        uint32_t Width = 0;
+        uint32_t Height = 0;
+        VkDeviceSize Offset = 0;
+    };
+
+    // Upload a pre-generated mip chain in one staging pass: `data` is the
+    // packed blob, `regions` describe each level. For cooked textures — the
+    // runtime never generates mips for them (docs/assets/pipeline.md,
+    // Decision L) — so the image must have been created with an explicit
+    // MipLevels count and GenerateMips off. On success the image is left in
+    // SHADER_READ_ONLY_OPTIMAL.
+    bool UploadMips(ImageHandle handle, const void* data, VkDeviceSize size,
+                    std::span<const MipUploadRegion> regions);
 
     // -- Accessors ----------------------------------------------------------
 

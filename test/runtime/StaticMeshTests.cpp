@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
 
-#include <assets/static_mesh/StaticMeshLoader.h>
-#include <assets/static_mesh/StaticMeshSerializer.h>
+#include <assets/static_mesh/MeshLoader.h>
+#include <assets/static_mesh/MeshSerializer.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
-#include <render/static_mesh/StaticMeshValidation.h>
+#include <render/static_mesh/MeshValidation.h>
 
 namespace
 {
-    StaticMeshData MakeValidMesh()
+    MeshGeometry MakeValidMesh()
     {
         return StaticMeshPrimitives::BuildCube(2.0f);
     }
@@ -16,31 +16,31 @@ namespace
 
 TEST(StaticMeshValidation, CubeMeshValidates)
 {
-    const StaticMeshValidationResult result = ValidateStaticMeshData(MakeValidMesh());
+    const MeshValidationResult result = ValidateMeshGeometry(MakeValidMesh());
     EXPECT_TRUE(result.IsValid());
 }
 
 TEST(StaticMeshValidation, EmptyVertexBufferFails)
 {
-    StaticMeshData mesh = MakeValidMesh();
+    MeshGeometry mesh = MakeValidMesh();
     mesh.Vertices.clear();
 
-    const StaticMeshValidationResult result = ValidateStaticMeshData(mesh);
+    const MeshValidationResult result = ValidateMeshGeometry(mesh);
     EXPECT_FALSE(result.IsValid());
 }
 
 TEST(StaticMeshValidation, OutOfRangeIndexFails)
 {
-    StaticMeshData mesh = MakeValidMesh();
+    MeshGeometry mesh = MakeValidMesh();
     mesh.Indices[0] = static_cast<uint32_t>(mesh.Vertices.size());
 
-    const StaticMeshValidationResult result = ValidateStaticMeshData(mesh);
+    const MeshValidationResult result = ValidateMeshGeometry(mesh);
     EXPECT_FALSE(result.IsValid());
 }
 
 TEST(StaticMeshValidation, ComputeStaticMeshSectionBoundsUsesSectionIndices)
 {
-    StaticMeshData mesh;
+    MeshGeometry mesh;
     mesh.Vertices = {
         { Vec3d(0.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 0.0) },
         { Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(1.0, 0.0) },
@@ -56,14 +56,14 @@ TEST(StaticMeshValidation, ComputeStaticMeshSectionBoundsUsesSectionIndices)
         .MaterialSlot = 0,
     });
 
-    const Aabb3d bounds = ComputeStaticMeshSectionBounds(mesh, mesh.Sections[0]);
+    const Aabb3d bounds = ComputeMeshSectionBounds(mesh, mesh.Sections[0]);
     EXPECT_EQ(bounds.Min, Vec3d(0.0, 0.0, 0.0));
     EXPECT_EQ(bounds.Max, Vec3d(1.0, 1.0, 0.0));
 }
 
 TEST(StaticMeshValidation, SectionVertexRangeMustContainSectionIndices)
 {
-    StaticMeshData mesh;
+    MeshGeometry mesh;
     mesh.Vertices = {
         { Vec3d(0.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 0.0) },
         { Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(1.0, 0.0) },
@@ -78,17 +78,17 @@ TEST(StaticMeshValidation, SectionVertexRangeMustContainSectionIndices)
         .MaterialSlot = 0,
     });
 
-    const StaticMeshValidationResult result = ValidateStaticMeshData(mesh);
+    const MeshValidationResult result = ValidateMeshGeometry(mesh);
     EXPECT_FALSE(result.IsValid());
 }
 
 TEST(StaticMeshValidation, RecomputeStaticMeshBoundsUpdatesMeshAndSections)
 {
-    StaticMeshData mesh = MakeValidMesh();
+    MeshGeometry mesh = MakeValidMesh();
     mesh.LocalBounds = Aabb3d::Empty();
     mesh.Sections[0].LocalBounds = Aabb3d::Empty();
 
-    RecomputeStaticMeshBounds(mesh);
+    RecomputeMeshBounds(mesh);
 
     EXPECT_TRUE(mesh.LocalBounds.IsValid());
     EXPECT_TRUE(mesh.Sections[0].LocalBounds.IsValid());
@@ -98,15 +98,15 @@ TEST(StaticMeshValidation, RecomputeStaticMeshBoundsUpdatesMeshAndSections)
 TEST(StaticMeshSerialization, RoundTripPreservesCountsAndBounds)
 {
     LoggingProvider logging;
-    StaticMeshSerializer serializer(logging);
-    StaticMeshLoader loader(logging);
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
 
-    const StaticMeshData source = MakeValidMesh();
+    const MeshGeometry source = MakeValidMesh();
 
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(source, bytes));
 
-    StaticMeshData loaded;
+    MeshGeometry loaded;
     ASSERT_TRUE(loader.LoadFromBytes(bytes, loaded));
 
     EXPECT_EQ(loaded.Vertices.size(), source.Vertices.size());
@@ -118,13 +118,13 @@ TEST(StaticMeshSerialization, RoundTripPreservesCountsAndBounds)
 TEST(StaticMeshSerialization, BadMagicFails)
 {
     LoggingProvider logging;
-    StaticMeshSerializer serializer(logging);
-    StaticMeshLoader loader(logging);
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
 
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
     bytes[0] = std::byte{'B'};
 
-    StaticMeshData loaded;
+    MeshGeometry loaded;
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/service/IService.h>
 #include <vulkan/vulkan.h>
@@ -67,13 +68,9 @@ enum class ShaderStage : uint8_t
     Compute,
 };
 
-struct ShaderHandle
-{
-    uint32_t Id = 0;
-
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const ShaderHandle&) const = default;
-};
+// Generational handle to a shader module owned by VulkanShaderCache. One of
+// the engine's unified Handle<Tag> types (handle convergence).
+using ShaderHandle = Handle<struct ShaderHandleTag>;
 
 class VulkanShaderCache : public IService
 {

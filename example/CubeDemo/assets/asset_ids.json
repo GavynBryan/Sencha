@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "e0c4edca11d178c4",
+      "path": "asset://audio/ambient.wav",
+      "content_hash": "0dbee593727ac393"
+    },
+    {
+      "id": "41538983f4d22269",
+      "path": "asset://materials/dev/blue.smat",
+      "content_hash": "0b63a9cee87c6a25"
+    },
+    {
+      "id": "0ddcbe69fdda91a6",
+      "path": "asset://materials/dev/green.smat",
+      "content_hash": "d407e2b04fb5e04a"
+    },
+    {
+      "id": "0e0e315a012b08bc",
+      "path": "asset://materials/dev/red.smat",
+      "content_hash": "6e6ad1a7048296e3"
+    },
+    {
+      "id": "907508c9a3aa8c81",
+      "path": "asset://meshes/dev/cube.smesh",
+      "content_hash": "419e31429c78684c"
+    },
+    {
+      "id": "f4476b280ac42e17",
+      "path": "asset://meshes/dev/torus.glb",
+      "content_hash": "8cdfdb343bb44b76"
+    },
+    {
+      "id": "0cdcff425d246aa6",
+      "path": "asset://textures/dev/checker.png",
+      "content_hash": "eae42f92f07f8229"
+    }
+  ]
+}

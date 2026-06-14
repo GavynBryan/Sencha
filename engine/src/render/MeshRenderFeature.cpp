@@ -12,6 +12,10 @@
 #include <cstddef>
 #include <cstring>
 
+static_assert(offsetof(MeshPushConstants, World) == 0);
+static_assert(offsetof(MeshPushConstants, BaseColor) == 64);
+static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 80);
+
 MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      StaticMeshCache& meshes,
                                      MaterialCache& materials,
@@ -67,6 +71,10 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
             { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
             { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
             { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
+            // Tangents (Decision M) ride the vertex via the binding stride
+            // but get no attribute until a shader consumes them (normal
+            // mapping is render-ladder work) — the validation layer warns
+            // on attributes the shader ignores.
         };
         desc.CullMode = VK_CULL_MODE_BACK_BIT;
         desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -111,6 +119,9 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
     VkDescriptorSet frameSet = Descriptors->GetFrameSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             0, 1, &frameSet, 1, &dynamicOffset);
+    VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
+    vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
+                            1, 1, &bindlessSet, 0, nullptr);
 
     for (const RenderQueueItem& item : Queue->Opaque())
     {
@@ -129,13 +140,14 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         MeshPushConstants push{};
         push.World = item.WorldMatrix.Transposed();
         push.BaseColor = material->BaseColor;
+        push.BaseColorTextureIndex = material->BaseColorTextureIndex;
 
         vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
         vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        // StaticMeshData v1 uses global indices into the shared vertex buffer.
+        // MeshGeometry v1 uses global indices into the shared vertex buffer.
         // section.VertexOffset is metadata only in this phase. Do not pass it as
         // Vulkan vertexOffset unless sections are converted to local-index ranges.
         vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1, section.IndexOffset, 0, 0);

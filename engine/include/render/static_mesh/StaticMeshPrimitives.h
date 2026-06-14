@@ -1,8 +1,8 @@
 #pragma once
 
-#include <render/static_mesh/StaticMeshData.h>
+#include <render/static_mesh/MeshGeometry.h>
 
 namespace StaticMeshPrimitives
 {
-    StaticMeshData BuildCube(float size = 1.0f);
+    MeshGeometry BuildCube(float size = 1.0f);
 }

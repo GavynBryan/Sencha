@@ -93,7 +93,9 @@ std::optional<EngineConfig> LoadEngineConfig(
         || !ReadSection<EngineDebugConfig, DebugConfigError>(
             *root, "debug", config.Debug, sectionError, DeserializeDebugConfig)
         || !ReadSection<EngineAudioConfig, AudioConfigError>(
-            *root, "audio", config.Audio, sectionError, DeserializeAudioConfig))
+            *root, "audio", config.Audio, sectionError, DeserializeAudioConfig)
+        || !ReadSection<EngineCaptionConfig, CaptionConfigError>(
+            *root, "captions", config.Captions, sectionError, DeserializeCaptionConfig))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

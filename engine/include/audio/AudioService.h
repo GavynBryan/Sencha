@@ -46,9 +46,9 @@ struct PlayParams
 //
 // Ownership:
 //   - AudioService owns all voice slots and their SDL_AudioStreams.
-//   - AudioService does not own AudioClips. Play() receives a const reference;
-//     the caller (or asset cache) is responsible for keeping the clip alive
-//     for the duration of playback.
+//   - AudioService does not own AudioClips. Play() receives a const reference
+//     and copies the PCM it needs into the backend stream; looping voices also
+//     keep a private PCM copy so they can refill the stream.
 //   - Callers receive VoiceIds and must not hold raw slot pointers.
 //
 // Voice allocation policy (per bus, set in EngineAudioBusConfig):
@@ -79,9 +79,8 @@ public:
     // invalid VoiceId if the bus is full and its policy is Reject, the clip is
     // invalid, or the bus name is not found.
     //
-    // `clip` must remain valid for the duration of playback. For looping clips
-    // the caller must ensure the clip is not freed while the voice is active.
-    [[nodiscard]] VoiceId Play(AssetId clipId, const AudioClip& clip,
+    // `clip` must remain valid for the duration of this call.
+    [[nodiscard]] VoiceId Play(AudioClipKey clipId, const AudioClip& clip,
                                const PlayParams& params = {});
 
     // Stop the voice immediately and return its slot to the pool. Calling
@@ -136,7 +135,7 @@ private:
     [[nodiscard]] const BusEntry* FindBus(std::string_view name) const;
 
     [[nodiscard]] uint32_t AllocVoice(BusEntry& busEntry);
-    void RetireVoice(uint32_t slotIndex);
+    void RetireVoice(uint32_t slotIndex, bool returnToPool = true);
     void ApplyVoiceGain(const AudioVoiceSlot& slot, const AudioBus& bus) const;
 
     [[nodiscard]] AudioVoiceSlot*       Resolve(VoiceId voice);

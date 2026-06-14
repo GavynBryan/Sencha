@@ -3,14 +3,29 @@
 #include "CubeDemoSystems.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <audio/AudioClipCache.h>
+#include <audio/AudioService.h>
+#include <audio/CaptionRuntime.h>
+#include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetManifest.h>
 #include <world/transform/TransformComponents.h>
 #include <app/Engine.h>
+#ifdef SENCHA_ENABLE_COOK
+#include <assets/cook/AudioCook.h>
+#include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/BlendCook.h>
+#include <assets/cook/MeshCook.h>
+#include <assets/cook/TextureCook.h>
+#endif
 #include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
+#include <graphics/vulkan/VulkanDescriptorCache.h>
+#include <graphics/vulkan/VulkanImageService.h>
+#include <graphics/vulkan/VulkanSamplerCache.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
@@ -81,6 +96,42 @@ namespace
         DemoScene& Scene;
     };
 #endif
+
+#ifdef SENCHA_ENABLE_COOK
+    // Throttled per-frame poll of the asset hot-reload watcher (Stage 6a).
+    // Detection + re-cook + async stage run here on the main thread; the swap
+    // commit lands at the engine's normal async drain point. Holds references
+    // to the game's optionals so it tolerates being registered before they
+    // populate (the demo's null-check-each-frame idiom).
+    struct HotReloadPollSystem
+    {
+        HotReloadPollSystem(std::optional<AssetSourceWatcher>& watcher,
+                            std::optional<AssetHotReloader>& reloader)
+            : Watcher(watcher)
+            , Reloader(reloader)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            if (!Watcher.has_value() || !Reloader.has_value())
+                return;
+
+            Accumulator += ctx.WallDeltaSeconds;
+            if (Accumulator < kPollIntervalSeconds)
+                return;
+            Accumulator = 0.0;
+
+            for (const std::string& changed : Watcher->PollChanged())
+                Reloader->ReloadSource(changed);
+        }
+
+        static constexpr double kPollIntervalSeconds = 0.3;
+        std::optional<AssetSourceWatcher>& Watcher;
+        std::optional<AssetHotReloader>& Reloader;
+        double Accumulator = 0.0;
+    };
+#endif
 }
 
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
@@ -91,12 +142,72 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugService& debug = services.Get<DebugService>();
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();
+    auto& images = services.Get<VulkanImageService>();
+    auto& descriptors = services.Get<VulkanDescriptorCache>();
+    auto& samplers = services.Get<VulkanSamplerCache>();
 
-    Assets.emplace(logging, buffers);
+    Assets.emplace(logging, buffers, images, descriptors, samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     InitSceneSerializer();
-    RegisterDemoSceneAssets(Demo, runtimeAssets.Assets);
+
+#ifdef SENCHA_ENABLE_COOK
+    // Import-on-demand (docs/assets/pipeline.md, Decision B): cook source
+    // formats (the checker PNG → usage-tagged .stex, the torus .glb →
+    // tangent-carrying .smesh) into .cooked/ and register the artifacts
+    // under their virtual paths. Runs before the scan; the scanner only
+    // knows runtime formats and skips .cooked/. Per-source failures are
+    // logged and isolated by the driver; the demo proceeds with whatever
+    // cooked.
+    {
+        PngTextureImporter pngImporter;
+        GltfMeshImporter gltfImporter;
+        BlendMeshImporter blendImporter;
+        AudioClipImporter audioImporter;
+        AssetImporterRegistry importers;
+        importers.Register(pngImporter);
+        importers.Register(gltfImporter);
+        importers.Register(blendImporter);
+        importers.Register(audioImporter);
+        (void)ImportAssetsOnDemand("assets", importers, runtimeAssets.Registry, logging);
+    }
+#endif
+
+    ScanAssetsDirectory("assets", runtimeAssets.Registry);
+
+    // Stable ids (docs/assets/pipeline.md, Decision A / Stage 4e): the
+    // cook-maintained id map binds ids to the records import + scan just
+    // registered, so id-stamped refs in the cooked scene and manifest
+    // resolve by id with the path as fallback. A missing map is the
+    // path-only world, which still works.
+    {
+        AssetIdMap idMap;
+        std::string idMapError;
+        const std::string idMapPath = std::string("assets/") + std::string(kAssetIdMapFileName);
+        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
+            ApplyAssetIds(idMap, runtimeAssets.Registry);
+        else
+            logging.GetLogger<CubeDemoGame>().Warn(
+                "CubeDemo: no asset id map ({}); refs resolve by path only", idMapError);
+    }
+
+#ifdef SENCHA_ENABLE_COOK
+    // Dev-only asset hot reload (Stage 6, Decision H): watch source files and
+    // swap the live GPU resource in place on edit — re-cook through the same
+    // importers the startup cook uses, decode async, commit-swap at the drain
+    // point keeping the handle/slot. Textures keep their bindless index (6a),
+    // meshes their buffers (6b); materials reload from authored .smat directly,
+    // no importer (6c). The poll itself is a throttled per-frame system
+    // (OnRegisterSystems).
+    HotReloadImporters.Register(HotReloadPngImporter);
+    HotReloadImporters.Register(HotReloadGltfImporter);
+    HotReloadImporters.Register(HotReloadBlendImporter);
+    Reloader.emplace(logging, runtimeAssets.Assets, runtimeAssets.Registry,
+                     HotReloadImporters, engine.Tasks(), std::string("assets"));
+    Watcher.emplace(logging, std::string("assets"),
+                    std::vector<std::string>{ ".png", ".glb", ".gltf", ".blend", ".smat" });
+    Watcher->Initialize();
+#endif
 
     // Async zone load (docs/ecs/parallelization.md): file IO, JSON parse, and
     // the registry skeleton happen on the task thread; deserialization and
@@ -104,16 +215,49 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     // commit that attaches the zone. DemoRegistry flips from null there —
     // systems and the panel idle until it does.
     ZoneLoader.emplace(engine.Tasks(), engine.Zones(), engine.Runtime());
+    Preloader.emplace(logging, runtimeAssets.Registry, runtimeAssets.Assets, engine.Tasks());
+
+    // Manifest-driven preload (docs/assets/pipeline.md, Decision D): the
+    // zone's assets stream through the async lane and the attach waits for
+    // them. A missing manifest is the sync fallback — slower first frame,
+    // same result.
+    std::shared_ptr<AssetPreload> preload;
+    AssetManifest manifest;
+    std::string manifestError;
+    if (LoadAssetManifestFile("cube_demo_scene.manifest.json", manifest, &manifestError))
+    {
+        const std::vector<std::string> paths =
+            ResolveManifestPaths(manifest, runtimeAssets.Registry);
+        preload = Preloader->Begin(paths);
+    }
+    else
+    {
+        logging.GetLogger<CubeDemoGame>().Warn(
+            "CubeDemo: no asset manifest ({}); falling back to resolve-on-attach", manifestError);
+    }
 
     auto parsed = std::make_shared<DemoSceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialCache* materials = &runtimeAssets.Materials;
+    AudioClipCache* audioClips = &runtimeAssets.AudioClips;
+    AudioService* audio = services.TryGet<AudioService>();
+    CaptionRuntime* captions = services.TryGet<CaptionRuntime>();
+    if (captions != nullptr)
+    {
+        CaptionSettings captionSettings;
+        captionSettings.ClosedCaptionsEnabled = true;
+        captions->SetSettings(captionSettings);
+    }
 
     ZoneLoader->BeginLoad(
         ZoneId{ 1 },
-        [parsed, meshes, materials](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materials);
-            *parsed = ParseDemoSceneFile("cube_demo_scene.json");
+        [parsed, meshes, materials, audioClips, audio, captions](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
+            // Cooked scene first (id-stamped refs, Stage 4e); the authored
+            // scene is the fallback when no cook has run.
+            *parsed = ParseDemoSceneFile("cube_demo_scene.cooked.json");
+            if (!parsed->Json)
+                *parsed = ParseDemoSceneFile("cube_demo_scene.json");
         },
         [this, parsed, &logging](Registry& registry) {
             if (FinalizeDemoScene(Demo, registry, *parsed,
@@ -122,7 +266,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
                 DemoRegistry = &registry;
             }
         },
-        ZoneParticipation{ .Visible = true, .Logic = true });
+        ZoneParticipation{ .Visible = true, .Logic = true, .Audio = true },
+        std::move(preload));
 
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
@@ -165,6 +310,9 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo);
+#ifdef SENCHA_ENABLE_COOK
+    ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
+#endif
 }
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)

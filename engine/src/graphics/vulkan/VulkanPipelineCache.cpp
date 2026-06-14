@@ -76,8 +76,8 @@ VulkanPipelineCache::~VulkanPipelineCache()
 uint64_t VulkanPipelineCache::HashDesc(const GraphicsPipelineDesc& desc) const
 {
     Fnv1a h;
-    h.FeedPod(desc.VertexShader.Id);
-    h.FeedPod(desc.FragmentShader.Id);
+    h.FeedPod(desc.VertexShader);
+    h.FeedPod(desc.FragmentShader);
     h.FeedPod(desc.Layout);
 
     const uint32_t bindingCount = static_cast<uint32_t>(desc.VertexBindings.size());

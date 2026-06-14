@@ -2,9 +2,11 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cstdint>
 #include <string_view>
 #include <tuple>
 
@@ -45,6 +47,7 @@ template <>
 struct TypeSchema<LocalTransform>
 {
     static constexpr std::string_view Name = "Transform";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('X', 'F', 'R', 'M');
 
     static auto Fields()
     {

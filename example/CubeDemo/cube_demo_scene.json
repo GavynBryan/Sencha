@@ -33,6 +33,20 @@
                     "visible": true,
                     "layer_mask": 4294967295,
                     "section_mask": 4294967295
+                },
+                "AudioSource": {
+                    "clip": "asset://audio/ambient.wav",
+                    "bus": "Sfx",
+                    "gain": 0.8,
+                    "pan": 0.0,
+                    "looping": false,
+                    "play_on_active": true
+                },
+                "AudioCaption": {
+                    "kind": "ClosedCaption",
+                    "channel": "World",
+                    "priority": "Gameplay",
+                    "text": "cc.cube.chime"
                 }
             }
         },
@@ -102,6 +116,32 @@
                 "StaticMesh": {
                     "mesh": "asset://meshes/dev/cube.smesh",
                     "material": "asset://materials/dev/green.smat",
+                    "visible": true,
+                    "layer_mask": 4294967295,
+                    "section_mask": 4294967295
+                },
+                "AudioSource": {
+                    "clip": "asset://audio/ambient.wav",
+                    "bus": "Sfx",
+                    "gain": 0.4,
+                    "pan": 0.0,
+                    "looping": true,
+                    "play_on_active": true
+                }
+            }
+        },
+        {
+            "components": {
+                "Transform": {
+                    "local": {
+                        "position": [0.0, 1.1, -1.5],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                },
+                "StaticMesh": {
+                    "mesh": "asset://meshes/dev/torus.glb",
+                    "material": "asset://materials/dev/red.smat",
                     "visible": true,
                     "layer_mask": 4294967295,
                     "section_mask": 4294967295

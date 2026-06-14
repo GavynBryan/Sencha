@@ -1,5 +1,6 @@
 #include <zone/AsyncZoneLoader.h>
 
+#include <core/assets/AssetPreloader.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/registry/Registry.h>
 #include <zone/ZoneRuntime.h>
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <memory>
+#include <utility>
 
 AsyncZoneLoader::AsyncZoneLoader(AsyncTaskQueue& tasks, ZoneRuntime& zones, RuntimeFrameLoop& runtime)
     : Tasks(tasks)
@@ -22,6 +24,13 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(ZoneId zone, BuildFn build, ZoneParti
 
 AsyncTaskHandle AsyncZoneLoader::BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
                                            ZoneParticipation participation)
+{
+    return BeginLoad(zone, std::move(build), std::move(finalize), participation, nullptr);
+}
+
+AsyncTaskHandle AsyncZoneLoader::BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
+                                           ZoneParticipation participation,
+                                           std::shared_ptr<AssetPreload> assets)
 {
     assert(zone.IsValid() && "AsyncZoneLoader::BeginLoad: zone id must be valid");
     assert(build && "AsyncZoneLoader::BeginLoad: build callback must not be empty");
@@ -40,26 +49,60 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(ZoneId zone, BuildFn build, FinalizeF
             return registry;
         },
         // Commit, on the owner thread at the drain point: publish-by-handoff.
-        [this, zone, participation, finalize = std::move(finalize)](std::unique_ptr<Registry> registry)
+        // A cancelled preload counts as complete — the attach proceeds and
+        // finalize's synchronous fallback resolves whatever is missing.
+        [this, zone, participation, finalize = std::move(finalize), assets](
+            std::unique_ptr<Registry> registry) mutable
         {
-            RemoveInFlight(zone);
-            Registry& attached = Zones.AttachZone(std::move(registry), participation);
-            if (finalize)
+            if (assets && !assets->IsComplete() && !assets->IsCancelled())
             {
-                finalize(attached);
+                // Defer the attach to the preload's last asset commit. The
+                // shared wrappers exist because std::function requires
+                // copyable captures; everything still runs at the drain
+                // point on the owner thread.
+                auto deferredRegistry =
+                    std::make_shared<std::unique_ptr<Registry>>(std::move(registry));
+                auto deferredFinalize = std::make_shared<FinalizeFn>(std::move(finalize));
+                assets->SetOnComplete(
+                    [this, zone, participation, deferredRegistry, deferredFinalize, assets]()
+                    {
+                        AttachAndFinalize(zone, std::move(*deferredRegistry),
+                                          *deferredFinalize, participation, assets);
+                    });
+                return;
             }
-            // A dormant attach (no participation) is invisible to the frame —
-            // no discontinuity occurred, definitionally. This is the seamless
-            // room-preload path; activation later is the game's decision
-            // (SetParticipation, plus Teleport if the camera cuts).
-            if (participation.Any())
-            {
-                Runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::ZoneLoad);
-            }
+
+            AttachAndFinalize(zone, std::move(registry), finalize, participation, assets);
         });
 
-    InFlight.push_back(InFlightLoad{ zone, handle });
+    InFlight.push_back(InFlightLoad{ zone, handle, std::move(assets) });
     return handle;
+}
+
+void AsyncZoneLoader::AttachAndFinalize(ZoneId zone, std::unique_ptr<Registry> registry,
+                                        FinalizeFn& finalize, ZoneParticipation participation,
+                                        const std::shared_ptr<AssetPreload>& assets)
+{
+    RemoveInFlight(zone);
+    Registry& attached = Zones.AttachZone(std::move(registry), participation);
+    if (finalize)
+    {
+        finalize(attached);
+    }
+    // The preload's handles were scaffolding: finalize's entities hold their
+    // own references now (component traits), so the preload lets go.
+    if (assets)
+    {
+        assets->ReleaseAll();
+    }
+    // A dormant attach (no participation) is invisible to the frame —
+    // no discontinuity occurred, definitionally. This is the seamless
+    // room-preload path; activation later is the game's decision
+    // (SetParticipation, plus Teleport if the camera cuts).
+    if (participation.Any())
+    {
+        Runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::ZoneLoad);
+    }
 }
 
 bool AsyncZoneLoader::IsLoading(ZoneId zone) const

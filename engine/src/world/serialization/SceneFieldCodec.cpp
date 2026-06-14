@@ -1,7 +1,10 @@
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <core/assets/AssetId.h>
 #include <core/assets/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
+
+#include <optional>
 
 namespace
 {
@@ -28,19 +31,19 @@ namespace
         return false;
     }
 
-    bool ReadLegacyAssetRef(IReadArchive& archive,
-                            std::string_view key,
-                            AssetType expected,
-                            std::string& outPath,
-                            SceneSerializationContext& context)
+    // Reads the legacy {"type": ..., "path": ...} ref object. The enclosing
+    // object scope is already open.
+    bool ReadLegacyAssetRefFields(IReadArchive& archive,
+                                  std::string_view key,
+                                  AssetType expected,
+                                  std::string& outPath,
+                                  SceneSerializationContext& context)
     {
         std::string typeText;
         std::string path;
 
-        archive.BeginObject(key);
         archive.Field(std::string_view{"type"}, typeText);
         archive.Field(std::string_view{"path"}, path);
-        archive.End();
 
         if (!archive.Ok())
             return false;
@@ -72,6 +75,53 @@ namespace
         return true;
     }
 
+    // Reads the cooked-scene {"id": "<hex>", "path": ...} ref object
+    // (docs/assets/pipeline.md, Decision A / Stage 4e): the id wins when
+    // the registry knows it — that is what survives a rename the stamped
+    // path predates — and the stamped path is the fallback otherwise. The
+    // enclosing object scope is already open. Authored scenes keep writing
+    // bare path strings; the editor round trip never produces this form.
+    bool ReadStampedAssetRefFields(IReadArchive& archive,
+                                   std::string_view key,
+                                   AssetType expected,
+                                   std::string& outPath,
+                                   SceneSerializationContext& context)
+    {
+        std::string idText;
+        archive.Field(std::string_view{"id"}, idText);
+
+        std::string path;
+        if (archive.HasField(std::string_view{"path"}))
+            archive.Field(std::string_view{"path"}, path);
+
+        if (!archive.Ok())
+            return false;
+
+        const std::optional<AssetId> id = AssetIdFromString(idText);
+        if (!id.has_value())
+        {
+            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has malformed asset id '{}'",
+                                          key, idText);
+            archive.MarkInvalidField(key);
+            return false;
+        }
+
+        outPath = context.Assets
+            ? std::string(context.Assets->ResolveRefPath(*id, path, expected))
+            : std::move(path);
+
+        if (outPath.empty())
+        {
+            GetSceneLogger(context).Error(
+                "SceneFieldCodec: field '{}' has unknown asset id {} and no fallback path",
+                key, AssetIdToString(*id));
+            archive.MarkInvalidField(key);
+            return false;
+        }
+
+        return true;
+    }
+
     bool ReadTypedAssetPath(IReadArchive& archive,
                             std::string_view key,
                             AssetType expected,
@@ -93,10 +143,18 @@ namespace
         }
 
         if (archive.IsObject(key))
-            return ReadLegacyAssetRef(archive, key, expected, outPath, context);
+        {
+            archive.BeginObject(key);
+            const bool stamped = archive.HasField(std::string_view{"id"});
+            const bool ok = stamped
+                ? ReadStampedAssetRefFields(archive, key, expected, outPath, context)
+                : ReadLegacyAssetRefFields(archive, key, expected, outPath, context);
+            archive.End();
+            return ok && archive.Ok();
+        }
 
         GetSceneLogger(context).Error(
-            "SceneFieldCodec: field '{}' must be an asset path string or legacy AssetRef object", key);
+            "SceneFieldCodec: field '{}' must be an asset path string or an AssetRef object", key);
         archive.MarkInvalidField(key);
         return false;
     }
@@ -213,4 +271,118 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
     }
 
     return archive.Ok();
+}
+
+bool SceneFieldCodec<AudioClipHandle>::Save(IWriteArchive& archive,
+                                            std::string_view key,
+                                            AudioClipHandle value,
+                                            SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryWrite(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForAudioClip(value), context);
+}
+
+bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
+                                            std::string_view key,
+                                            AudioClipHandle& value,
+                                            SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryRead(archive, key);
+
+    std::string path;
+    if (!ReadTypedAssetPath(archive, key, AssetType::Audio, path, context))
+        return false;
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    value = context.Assets->LoadAudioClip(path);
+    if (!value.IsValid())
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<AudioClipHandle>: failed to load audio clip asset '{}'", path);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return archive.Ok();
+}
+
+namespace
+{
+    // Shared load body for the caption enum codecs: persisted as strings in
+    // both text and binary, an unknown string fails the load so content
+    // typos surface at load time.
+    template <typename Enum, typename FromString>
+    bool LoadEnumField(IReadArchive& archive, std::string_view key, Enum& value,
+                       SceneSerializationContext& context, FromString fromString,
+                       std::string_view enumName)
+    {
+        std::string text;
+        archive.Field(key, text);
+        if (!archive.Ok())
+            return false;
+
+        const auto parsed = fromString(text);
+        if (!parsed)
+        {
+            GetSceneLogger(context).Error(
+                "SceneFieldCodec<{}>: unknown value '{}' for field '{}'",
+                enumName, text, key);
+            archive.MarkInvalidField(key);
+            return false;
+        }
+
+        value = *parsed;
+        return true;
+    }
+}
+
+bool SceneFieldCodec<CaptionKind>::Save(IWriteArchive& archive,
+                                        std::string_view key,
+                                        CaptionKind value,
+                                        SceneSerializationContext&)
+{
+    archive.Field(key, CaptionKindToString(value));
+    return archive.Ok();
+}
+
+bool SceneFieldCodec<CaptionKind>::Load(IReadArchive& archive,
+                                        std::string_view key,
+                                        CaptionKind& value,
+                                        SceneSerializationContext& context)
+{
+    return LoadEnumField(archive, key, value, context,
+                         CaptionKindFromString, "CaptionKind");
+}
+
+bool SceneFieldCodec<CaptionPriority>::Save(IWriteArchive& archive,
+                                            std::string_view key,
+                                            CaptionPriority value,
+                                            SceneSerializationContext&)
+{
+    archive.Field(key, CaptionPriorityToString(value));
+    return archive.Ok();
+}
+
+bool SceneFieldCodec<CaptionPriority>::Load(IReadArchive& archive,
+                                            std::string_view key,
+                                            CaptionPriority& value,
+                                            SceneSerializationContext& context)
+{
+    return LoadEnumField(archive, key, value, context,
+                         CaptionPriorityFromString, "CaptionPriority");
 }

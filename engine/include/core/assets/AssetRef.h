@@ -20,6 +20,9 @@ enum class AssetType : uint16_t
     Geometry = 5,
     Audio = 6,
     Script = 7,
+    Skeleton = 8,
+    AnimationClip = 9,
+    SkinnedMesh = 10,
 };
 
 enum class AssetSourceKind : uint16_t
@@ -42,6 +45,9 @@ inline std::string_view AssetTypeToString(AssetType type)
     case AssetType::Geometry: return "Geometry";
     case AssetType::Audio:    return "Audio";
     case AssetType::Script:   return "Script";
+    case AssetType::Skeleton: return "Skeleton";
+    case AssetType::AnimationClip: return "AnimationClip";
+    case AssetType::SkinnedMesh: return "SkinnedMesh";
     default:                  return "Unknown";
     }
 }
@@ -55,6 +61,9 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "Geometry") { out = AssetType::Geometry; return true; }
     if (name == "Audio")    { out = AssetType::Audio;    return true; }
     if (name == "Script")   { out = AssetType::Script;   return true; }
+    if (name == "Skeleton") { out = AssetType::Skeleton; return true; }
+    if (name == "AnimationClip") { out = AssetType::AnimationClip; return true; }
+    if (name == "SkinnedMesh") { out = AssetType::SkinnedMesh; return true; }
     return false;
 }
 
@@ -79,7 +88,9 @@ inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
 // Fields:
 //   Type  - expected asset type; validated on resolve.
 //   Path  - virtual asset path, e.g. "asset://meshes/dev/cube.smesh".
-//           Used as the primary identity until AssetId is introduced.
+//           The primary identity in authored data. Cooked scenes and
+//           manifests pair it with the stable AssetId (core/assets/
+//           AssetId.h), which resolves first with the path as fallback.
 //=============================================================================
 struct AssetRef
 {

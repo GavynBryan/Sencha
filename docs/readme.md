@@ -18,6 +18,15 @@ example/    Small executable examples.
 test/       GoogleTest-based engine tests.
 ```
 
+## Core Architecture Map
+
+- `docs/core-systems-map.md` is the first broad map of the engine: core
+  systems, ownership, dependency directions, frame flow, and constraints.
+- `docs/action-adventure-core-runtime.md` is the proposed cross-cutting plan for
+  action-adventure runtime guarantees: traversal hitching, world partition,
+  participation LOD, stateful streaming, timing, spatial queries, visibility, and
+  content-risk telemetry.
+
 ## ECS Docs
 
 The ECS docs describe the implementation currently in the tree:
@@ -39,6 +48,18 @@ The ECS docs describe the implementation currently in the tree:
 For new ECS code, prefer the overview and cookbooks. Use the migration and
 decision records when you are changing core storage, scheduling, or lifecycle
 behavior.
+
+## Asset Docs
+
+- `docs/assets/pipeline.md` is the working plan for the asset pipeline: the
+  current-state inventory, the decisions deferred from the parallelization
+  work, and the staged rollout for async asset streaming.
+
+## Audio Docs
+
+- `docs/audio/runtime.md` is the landed plan for scene-authored audio sources.
+- `docs/audio/captions-and-dialogue.md` is the working plan for subtitles,
+  closed captions, semantic audio cues, and dialogue-line routing.
 
 ## Requirements
 

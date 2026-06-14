@@ -6,7 +6,6 @@
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 
-#include <concepts>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -66,12 +65,6 @@ namespace SceneComponentSerialization
     }
 }
 
-template <typename Traits, typename Component>
-concept ComponentTraitsRegistersStorage = requires(Registry& registry)
-{
-    { Traits::Register(registry) } -> std::same_as<void>;
-};
-
 //=============================================================================
 // ComponentSerializer
 //
@@ -90,13 +83,7 @@ public:
 
     void RegisterStorage(Registry& registry) const override
     {
-        if constexpr (ComponentTraitsRegistersStorage<Traits, Component>)
-            Traits::Register(registry);
-        else
-        {
-            if (!registry.Components.IsRegistered<Component>())
-                registry.Components.RegisterComponent<Component>();
-        }
+        Traits::Register(registry);
     }
 
     bool HasComponent(EntityId entity, const Registry& registry) const override

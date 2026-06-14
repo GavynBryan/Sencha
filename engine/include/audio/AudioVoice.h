@@ -1,23 +1,36 @@
 #pragma once
 
+#include <core/handle/Handle.h>
+
 #include <cstdint>
 
 //=============================================================================
 // VoiceId
 //
-// Opaque generational handle returned by AudioService::Play(). Encodes a
-// slot index and generation counter in a single uint32_t so that stale
-// handles from a previous voice occupying the same slot are safely rejected.
+// Opaque generational handle returned by AudioService::Play() into the voice
+// slot pool, so a stale handle from a previous voice occupying the same slot
+// is safely rejected. One of the engine's unified Handle<Tag> types (handle
+// convergence) — transient, never persisted.
 //
-// A zero Id means "invalid / not playing". Check IsValid() before passing
+// A null VoiceId means "invalid / not playing". Check IsValid() before passing
 // to any AudioService method.
 //=============================================================================
-struct VoiceId
-{
-    uint32_t Id = 0;
+using VoiceId = Handle<struct VoiceTag>;
 
-    [[nodiscard]] bool IsValid() const { return Id != 0; }
-    bool operator==(const VoiceId&) const = default;
+//=============================================================================
+// AudioClipKey
+//
+// Diagnostic token identifying which clip a voice is playing — in practice
+// the AudioClipHandle index. Not an asset identity: the stable, persisted
+// AssetId lives in core/assets/AssetId.h (docs/assets/pipeline.md,
+// Decision A) and has nothing to do with voice bookkeeping.
+//=============================================================================
+struct AudioClipKey
+{
+    uint32_t Value = 0;
+
+    bool operator==(const AudioClipKey&) const = default;
+    explicit operator bool() const { return Value != 0; }
 };
 
 //=============================================================================

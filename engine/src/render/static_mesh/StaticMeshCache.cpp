@@ -1,7 +1,7 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <graphics/vulkan/VulkanBufferService.h>
-#include <render/static_mesh/StaticMeshValidation.h>
+#include <render/static_mesh/MeshValidation.h>
 
 StaticMeshCache::StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
     : Log(logging.GetLogger<StaticMeshCache>())
@@ -15,7 +15,7 @@ StaticMeshCache::~StaticMeshCache()
     FreeAllEntries();
 }
 
-StaticMeshHandle StaticMeshCache::Create(const StaticMeshData& data)
+StaticMeshHandle StaticMeshCache::Create(const MeshGeometry& data)
 {
     StaticMeshEntry entry;
     if (!UploadMesh(data, entry))
@@ -24,7 +24,7 @@ StaticMeshHandle StaticMeshCache::Create(const StaticMeshData& data)
     return AllocHandle(std::move(entry));
 }
 
-StaticMeshHandle StaticMeshCache::CreateFromData(std::string_view name, const StaticMeshData& data)
+StaticMeshHandle StaticMeshCache::CreateFromData(std::string_view name, const MeshGeometry& data)
 {
     if (name.empty())
         return Create(data);
@@ -63,6 +63,27 @@ void StaticMeshCache::Destroy(StaticMeshHandle handle)
     Release(handle);
 }
 
+bool StaticMeshCache::ReloadInPlace(std::string_view path, const MeshGeometry& data)
+{
+    GpuStaticMesh newMesh;
+    if (!UploadMeshGeometryToGpu(*Buffers, data, newMesh, Log))
+        return false;
+
+    StaticMeshEntry* entry = Resolve(FindRegisteredHandle(path));
+    if (entry == nullptr)
+    {
+        // Not resident — nothing to swap. Discard the buffers we just built.
+        DestroyGpuMesh(*Buffers, newMesh);
+        return false;
+    }
+
+    // Retire the old buffers through the deletion queue, then adopt the new
+    // geometry. Generation, refcount, and the handle are untouched.
+    DestroyGpuMesh(*Buffers, entry->Mesh);
+    entry->Mesh = std::move(newMesh);
+    return true;
+}
+
 const GpuStaticMesh* StaticMeshCache::Get(StaticMeshHandle handle) const
 {
     const StaticMeshEntry* entry = Resolve(handle);
@@ -87,19 +108,7 @@ bool StaticMeshCache::OnLoad(std::string_view, StaticMeshEntry&)
 
 void StaticMeshCache::OnFree(StaticMeshEntry& entry)
 {
-    if (entry.Mesh.VertexBuffer.IsValid())
-    {
-        Buffers->Destroy(entry.Mesh.VertexBuffer);
-        entry.Mesh.VertexBuffer = {};
-    }
-
-    if (entry.Mesh.IndexBuffer.IsValid())
-    {
-        Buffers->Destroy(entry.Mesh.IndexBuffer);
-        entry.Mesh.IndexBuffer = {};
-    }
-
-    entry.Mesh = {};
+    DestroyGpuMesh(*Buffers, entry.Mesh);
     entry.Alive = false;
 }
 
@@ -108,53 +117,10 @@ bool StaticMeshCache::IsEntryLive(const StaticMeshEntry& entry) const
     return entry.Alive;
 }
 
-bool StaticMeshCache::UploadMesh(const StaticMeshData& data, StaticMeshEntry& out)
+bool StaticMeshCache::UploadMesh(const MeshGeometry& data, StaticMeshEntry& out)
 {
-    const StaticMeshValidationResult validation = ValidateStaticMeshData(data);
-    if (!validation.IsValid())
-    {
-        for (const StaticMeshValidationError& error : validation.Errors)
-            Log.Error("StaticMeshCache rejected mesh: {}", error.Message);
+    if (!UploadMeshGeometryToGpu(*Buffers, data, out.Mesh, Log))
         return false;
-    }
-
-    BufferCreateInfo vbInfo{};
-    vbInfo.Size = sizeof(StaticMeshVertex) * data.Vertices.size();
-    vbInfo.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    vbInfo.Memory = BufferMemory::GpuOnly;
-    vbInfo.DebugName = "Static mesh vertex buffer";
-
-    BufferCreateInfo ibInfo{};
-    ibInfo.Size = sizeof(uint32_t) * data.Indices.size();
-    ibInfo.Usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    ibInfo.Memory = BufferMemory::GpuOnly;
-    ibInfo.DebugName = "Static mesh index buffer";
-
-    BufferHandle vb = Buffers->Create(vbInfo);
-    BufferHandle ib = Buffers->Create(ibInfo);
-    if (!vb.IsValid() || !ib.IsValid())
-    {
-        Buffers->Destroy(vb);
-        Buffers->Destroy(ib);
-        return false;
-    }
-
-    if (!Buffers->Upload(vb, data.Vertices.data(), vbInfo.Size)
-        || !Buffers->Upload(ib, data.Indices.data(), ibInfo.Size))
-    {
-        Buffers->Destroy(vb);
-        Buffers->Destroy(ib);
-        return false;
-    }
-
-    out.Mesh = GpuStaticMesh{
-        .VertexBuffer = vb,
-        .IndexBuffer = ib,
-        .VertexCount = static_cast<uint32_t>(data.Vertices.size()),
-        .IndexCount = static_cast<uint32_t>(data.Indices.size()),
-        .LocalBounds = data.LocalBounds,
-        .Sections = data.Sections,
-    };
     out.Alive = true;
     return true;
 }

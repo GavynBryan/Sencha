@@ -18,6 +18,20 @@ namespace
         }
         return VK_FORMAT_R8G8B8A8_SRGB;
     }
+
+    VkFormat ToVkFormat(TexturePixelFormat fmt)
+    {
+        switch (fmt)
+        {
+            case TexturePixelFormat::RGBA8:      return VK_FORMAT_R8G8B8A8_UNORM;
+            case TexturePixelFormat::RGBA8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+            case TexturePixelFormat::BC4:        return VK_FORMAT_BC4_UNORM_BLOCK;
+            case TexturePixelFormat::BC5:        return VK_FORMAT_BC5_UNORM_BLOCK;
+            case TexturePixelFormat::BC7:        return VK_FORMAT_BC7_UNORM_BLOCK;
+            case TexturePixelFormat::BC7_SRGB:   return VK_FORMAT_BC7_SRGB_BLOCK;
+            default:                             return VK_FORMAT_UNDEFINED;
+        }
+    }
 } // namespace
 
 TextureCache::TextureCache(LoggingProvider& logging,
@@ -81,6 +95,107 @@ TextureHandle TextureCache::CreateFromImage(const Image& image,
     return AllocHandle(std::move(entry));
 }
 
+TextureHandle TextureCache::CreateFromImage(std::string_view name,
+                                             const Image& image,
+                                             const SamplerDesc& sampler)
+{
+    if (name.empty())
+        return CreateFromImage(image, sampler);
+
+    if (TextureHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
+        return existing;
+
+    if (!image.IsValid())
+    {
+        Log.Error("TextureCache: CreateFromImage called with invalid Image for '{}'", name);
+        return {};
+    }
+
+    TextureEntry entry;
+    if (!UploadImage(image, sampler, std::string(name).c_str(), entry))
+        return {};
+
+    return AllocNamedHandle(name, std::move(entry));
+}
+
+TextureHandle TextureCache::CreateFromTextureData(std::string_view name,
+                                                  const TextureData& texture,
+                                                  const SamplerDesc& sampler)
+{
+    if (TextureHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
+        return existing;
+
+    ImageHandle gpuImage = UploadGpuImage(texture, name);
+    if (!gpuImage.IsValid())
+        return {};
+
+    VkSampler vkSampler = Samplers->Get(sampler);
+    BindlessImageIndex bindless = Descriptors->RegisterSampledImage(gpuImage, vkSampler);
+    if (!bindless.IsValid())
+    {
+        Log.Error("TextureCache: bindless descriptor slot exhausted for '{}'", name);
+        Images->Destroy(gpuImage);
+        return {};
+    }
+
+    TextureEntry entry;
+    entry.GpuImage = gpuImage;
+    entry.Bindless = bindless;
+    entry.Extent = { texture.Width, texture.Height };
+    entry.Sampler = sampler;
+    return name.empty() ? AllocHandle(std::move(entry)) : AllocNamedHandle(name, std::move(entry));
+}
+
+TextureHandle TextureCache::Find(std::string_view name) const
+{
+    return FindRegisteredHandle(name);
+}
+
+// -- Hot reload ---------------------------------------------------------------
+
+bool TextureCache::ReloadInPlace(std::string_view path, const TextureData& texture)
+{
+    ImageHandle gpuImage = UploadGpuImage(texture, path);
+    if (!gpuImage.IsValid())
+        return false;
+    return ReloadEntryImage(path, gpuImage, { texture.Width, texture.Height });
+}
+
+bool TextureCache::ReloadInPlace(std::string_view path, const Image& image)
+{
+    if (!image.IsValid())
+    {
+        Log.Error("TextureCache: ReloadInPlace called with invalid Image for '{}'", path);
+        return false;
+    }
+    ImageHandle gpuImage = UploadGpuImage(image, std::string(path).c_str());
+    if (!gpuImage.IsValid())
+        return false;
+    return ReloadEntryImage(path, gpuImage, { image.Width, image.Height });
+}
+
+bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, VkExtent2D extent)
+{
+    TextureEntry* entry = Resolve(FindRegisteredHandle(path));
+    if (entry == nullptr)
+    {
+        // Not resident — nothing to swap. Discard the image we just built.
+        Images->Destroy(newImage);
+        return false;
+    }
+
+    // Repoint the existing bindless slot at the new image (same index, so
+    // materials are unaffected), then retire the old image through the
+    // deletion queue. Generation, refcount, and the handle are untouched.
+    VkSampler vkSampler = Samplers->Get(entry->Sampler);
+    Descriptors->UpdateSampledImage(entry->Bindless, newImage, vkSampler);
+    Images->Destroy(entry->GpuImage);
+
+    entry->GpuImage = newImage;
+    entry->Extent = extent;
+    return true;
+}
+
 // -- Accessors ----------------------------------------------------------------
 
 BindlessImageIndex TextureCache::GetBindlessIndex(TextureHandle handle) const
@@ -141,26 +256,9 @@ bool TextureCache::UploadImage(const Image& image,
 {
     assert(image.IsValid());
 
-    ImageCreateInfo info;
-    info.Format    = ToVkFormat(image.Format);
-    info.Extent    = { image.Width, image.Height };
-    info.Usage     = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    info.DebugName = debugName;
-
-    ImageHandle gpuImage = Images->Create(info);
+    ImageHandle gpuImage = UploadGpuImage(image, debugName);
     if (!gpuImage.IsValid())
-    {
-        Log.Error("TextureCache: VulkanImageService::Create failed");
         return false;
-    }
-
-    if (!Images->Upload(gpuImage, image.Pixels.data(),
-                        static_cast<VkDeviceSize>(image.ByteSize())))
-    {
-        Log.Error("TextureCache: VulkanImageService::Upload failed");
-        Images->Destroy(gpuImage);
-        return false;
-    }
 
     VkSampler vkSampler = Samplers->Get(sampler);
     BindlessImageIndex bindless = Descriptors->RegisterSampledImage(gpuImage, vkSampler);
@@ -174,5 +272,88 @@ bool TextureCache::UploadImage(const Image& image,
     out.GpuImage = gpuImage;
     out.Bindless = bindless;
     out.Extent   = { image.Width, image.Height };
+    out.Sampler  = sampler;
     return true;
+}
+
+ImageHandle TextureCache::UploadGpuImage(const Image& image, const char* debugName)
+{
+    ImageCreateInfo info;
+    info.Format    = ToVkFormat(image.Format);
+    info.Extent    = { image.Width, image.Height };
+    info.Usage     = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info.DebugName = debugName;
+
+    ImageHandle gpuImage = Images->Create(info);
+    if (!gpuImage.IsValid())
+    {
+        Log.Error("TextureCache: VulkanImageService::Create failed");
+        return {};
+    }
+
+    if (!Images->Upload(gpuImage, image.Pixels.data(),
+                        static_cast<VkDeviceSize>(image.ByteSize())))
+    {
+        Log.Error("TextureCache: VulkanImageService::Upload failed");
+        Images->Destroy(gpuImage);
+        return {};
+    }
+
+    return gpuImage;
+}
+
+ImageHandle TextureCache::UploadGpuImage(const TextureData& texture, std::string_view name)
+{
+    if (!ValidateTextureData(texture))
+    {
+        Log.Error("TextureCache: structurally invalid TextureData for '{}'", name);
+        return {};
+    }
+
+    const VkFormat format = ToVkFormat(texture.Format);
+    if (format == VK_FORMAT_UNDEFINED)
+    {
+        Log.Error("TextureCache: unsupported cooked format {} for '{}'",
+                  static_cast<uint32_t>(texture.Format), name);
+        return {};
+    }
+
+    ImageCreateInfo info;
+    info.Format = format;
+    info.Extent = { texture.Width, texture.Height };
+    info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info.MipLevels = static_cast<uint32_t>(texture.Mips.size());
+    info.GenerateMips = false;
+    const std::string debugName(name);
+    info.DebugName = debugName.c_str();
+
+    ImageHandle gpuImage = Images->Create(info);
+    if (!gpuImage.IsValid())
+    {
+        Log.Error("TextureCache: VulkanImageService::Create failed for '{}'", name);
+        return {};
+    }
+
+    std::vector<VulkanImageService::MipUploadRegion> regions;
+    regions.reserve(texture.Mips.size());
+    for (uint32_t i = 0; i < texture.Mips.size(); ++i)
+    {
+        const TextureMipLevel& mip = texture.Mips[i];
+        regions.push_back(VulkanImageService::MipUploadRegion{
+            .MipLevel = i,
+            .Width = mip.Width,
+            .Height = mip.Height,
+            .Offset = static_cast<VkDeviceSize>(mip.Offset),
+        });
+    }
+
+    if (!Images->UploadMips(gpuImage, texture.Blob.data(),
+                            static_cast<VkDeviceSize>(texture.Blob.size()), regions))
+    {
+        Log.Error("TextureCache: mip-chain upload failed for '{}'", name);
+        Images->Destroy(gpuImage);
+        return {};
+    }
+
+    return gpuImage;
 }

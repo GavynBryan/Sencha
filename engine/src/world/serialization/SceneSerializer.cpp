@@ -5,13 +5,13 @@
 #include <core/serialization/BinaryFormat.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
-#include <render/Camera.h>
-#include <render/StaticMeshComponent.h>
+#include <world/ComponentManifest.h>
 #include <world/serialization/SceneFormat.h>
 #include <math/MathSchemas.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
+#include <cassert>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -274,14 +274,25 @@ void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serialize
         return;
 
     auto& entries = SerializerEntries();
-    const auto duplicate = std::ranges::find_if(entries, [&](const auto& existing)
+    for (const auto& existing : entries)
     {
-        return existing->BinaryChunkId() == serializer->BinaryChunkId()
-            || existing->JsonKey() == serializer->JsonKey();
-    });
+        const bool sameChunk = existing->BinaryChunkId() == serializer->BinaryChunkId();
+        const bool sameKey = existing->JsonKey() == serializer->JsonKey();
 
-    if (duplicate == entries.end())
-        entries.push_back(std::move(serializer));
+        // Both match: idempotent re-registration (InitSceneSerializer may run
+        // more than once). One matches: a genuine collision between two
+        // different components — never register it half-working.
+        if (sameChunk && sameKey)
+            return;
+        if (sameChunk || sameKey)
+        {
+            assert(false && "Component serializer collision: chunk ID or JSON "
+                            "key already registered by a different component");
+            return;
+        }
+    }
+
+    entries.push_back(std::move(serializer));
 }
 
 void ClearComponentSerializers()
@@ -291,9 +302,10 @@ void ClearComponentSerializers()
 
 void InitSceneSerializer()
 {
-    RegisterComponent<LocalTransform>();
-    RegisterComponent<CameraComponent>();
-    RegisterComponent<StaticMeshComponent>();
+    ForEachSceneComponent([](auto tag)
+    {
+        RegisterComponent<typename decltype(tag)::Type>();
+    });
 }
 
 const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializerEntries()

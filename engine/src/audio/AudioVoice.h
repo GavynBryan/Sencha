@@ -1,10 +1,10 @@
 #pragma once
 
-#include <audio/AudioVoice.h>    // VoiceId, VoiceState -- public types only
-#include <core/identity/Id.h>
+#include <audio/AudioVoice.h>    // VoiceId, VoiceState, AudioClipKey -- public types only
 
 #include <SDL3/SDL_audio.h>
 #include <cstdint>
+#include <vector>
 
 //=============================================================================
 // AudioVoiceSlot
@@ -17,7 +17,7 @@
 //=============================================================================
 struct AudioVoiceSlot
 {
-    AssetId          ClipId;
+    AudioClipKey     ClipId;
     uint32_t         BusIndex     = 0;
     uint32_t         Generation   = 0;
 
@@ -31,4 +31,11 @@ struct AudioVoiceSlot
     uint32_t         StartTick    = 0;     // monotonic tick at allocation; used for StealOldest
 
     SDL_AudioStream* Stream       = nullptr;
+
+    // Looping voices only: a copy of the source PCM, re-queued into Stream by
+    // Tick() each frame (SDL streams do not loop natively). Owned here so a
+    // loop does not depend on the AudioClip outliving playback or on cache
+    // pointer stability. Empty for one-shots.
+    std::vector<int16_t> LoopPcm;
+    int                  LoopPcmBytes = 0;
 };

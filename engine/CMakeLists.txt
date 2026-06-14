@@ -10,6 +10,10 @@ option(SENCHA_ENABLE_DEBUG_UI
     "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
     OFF)
 
+option(SENCHA_ENABLE_COOK
+    "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
+    ON)
+
 if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
     message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
 endif()
@@ -52,6 +56,20 @@ if(NOT SENCHA_ENABLE_DEBUG_UI)
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
+if(NOT SENCHA_ENABLE_COOK)
+    # Hot reload (Stage 6) re-cooks on source change, so it is dev-only too —
+    # filtered out alongside the cook layer it depends on.
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]assets[/\\\\]cook[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]cook[/\\\\]"
+        "[/\\\\]src[/\\\\]assets[/\\\\]hotreload[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]hotreload[/\\\\]"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -102,6 +120,60 @@ target_include_directories(sencha_engine
 )
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
+
+if(SENCHA_ENABLE_COOK)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
+
+    # BC block encoders for the texture cook (docs/assets/pipeline.md,
+    # Decisions E/L): bc7enc (BC7) + rgbcx (BC4/BC5) + bc7decomp (tests
+    # decode-verify the encoder). MIT, single-purpose — the stb precedent.
+    # Cook-only: never rides in a shipping binary. Populated without
+    # add_subdirectory because the repo's own CMakeLists builds a test app.
+    # bc7enc.c is plain C — the only C in the tree, hence the enable here.
+    enable_language(C)
+    include(FetchContent)
+    FetchContent_Declare(
+        bc7enc
+        GIT_REPOSITORY https://github.com/richgel999/bc7enc.git
+        GIT_TAG        f66c2e489b07138f2673a2fb3d27c1aa1d565c48
+    )
+    FetchContent_GetProperties(bc7enc)
+    if(NOT bc7enc_POPULATED)
+        FetchContent_Populate(bc7enc)
+    endif()
+    target_sources(sencha_engine PRIVATE
+        "${bc7enc_SOURCE_DIR}/bc7enc.c"
+        "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
+    )
+    target_include_directories(sencha_engine PUBLIC "${bc7enc_SOURCE_DIR}")
+
+    # glTF parsing for the mesh cook (Decision B): cgltf, single-header,
+    # the stb precedent. The implementation TU lives in src/assets/cook.
+    FetchContent_Declare(
+        cgltf
+        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+        GIT_TAG        bbeb5b0b070ddacddac6852fb72143eb68454937 # v1.15
+    )
+    FetchContent_GetProperties(cgltf)
+    if(NOT cgltf_POPULATED)
+        FetchContent_Populate(cgltf)
+    endif()
+    target_include_directories(sencha_engine PUBLIC "${cgltf_SOURCE_DIR}")
+
+    # Tangent generation for the mesh cook (Decision M): MikkTSpace, the
+    # de-facto standard. Cook-only, never ships — the glslang rule.
+    FetchContent_Declare(
+        mikktspace
+        GIT_REPOSITORY https://github.com/mmikk/MikkTSpace.git
+        GIT_TAG        3e895b49d05ea07e4c2133156cfa94369e19e409
+    )
+    FetchContent_GetProperties(mikktspace)
+    if(NOT mikktspace_POPULATED)
+        FetchContent_Populate(mikktspace)
+    endif()
+    target_sources(sencha_engine PRIVATE "${mikktspace_SOURCE_DIR}/mikktspace.c")
+    target_include_directories(sencha_engine PUBLIC "${mikktspace_SOURCE_DIR}")
+endif()
 
 if(WIN32)
     # winmm for timeBeginPeriod/timeEndPeriod used by FramePacer to achieve

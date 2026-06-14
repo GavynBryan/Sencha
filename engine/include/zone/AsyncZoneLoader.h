@@ -5,8 +5,10 @@
 #include <zone/ZoneParticipation.h>
 
 #include <functional>
+#include <memory>
 #include <vector>
 
+class AssetPreload;
 class Registry;
 class RuntimeFrameLoop;
 class ZoneRuntime;
@@ -63,6 +65,21 @@ public:
     AsyncTaskHandle BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
                               ZoneParticipation participation = {});
 
+    // As above, additionally gated on an asset preload (docs/assets/
+    // pipeline.md, Decision D): if the build finishes before the preload,
+    // the attach defers — still at the drain point, still owner-thread —
+    // until the preload's last asset commits, so finalize always
+    // deserializes against warm caches. The preload's scaffolding handles
+    // are released after finalize (the zone's entities hold their own by
+    // then). A failed preload never blocks the zone: failures count as
+    // completion and finalize's synchronous fallback covers the gaps.
+    //
+    // A zone whose build has committed but whose attach is deferred can no
+    // longer be cancelled — it will attach when the assets land.
+    AsyncTaskHandle BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
+                              ZoneParticipation participation,
+                              std::shared_ptr<AssetPreload> assets);
+
     // True from BeginLoad until the zone attaches (or its load is cancelled).
     [[nodiscard]] bool IsLoading(ZoneId zone) const;
 
@@ -75,9 +92,13 @@ private:
     {
         ZoneId Zone;
         AsyncTaskHandle Handle;
+        std::shared_ptr<AssetPreload> Assets;
     };
 
     void RemoveInFlight(ZoneId zone);
+    void AttachAndFinalize(ZoneId zone, std::unique_ptr<Registry> registry,
+                           FinalizeFn& finalize, ZoneParticipation participation,
+                           const std::shared_ptr<AssetPreload>& assets);
 
     AsyncTaskQueue& Tasks;
     ZoneRuntime& Zones;

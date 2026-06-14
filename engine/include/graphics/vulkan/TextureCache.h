@@ -1,9 +1,10 @@
 #pragma once
 
 #include <render/Image.h>
+#include <render/TextureData.h>
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/handle/LifetimeHandle.h>
+#include <core/handle/Owned.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
@@ -25,13 +26,17 @@ struct TextureEntry
     ImageHandle        GpuImage;
     BindlessImageIndex Bindless;
     VkExtent2D         Extent{};
+    // The sampler this entry was registered with — kept so a hot reload
+    // (Stage 6) can repoint the same bindless slot at the new image with the
+    // original sampler.
+    SamplerDesc        Sampler{};
     uint32_t           Generation = 0;
     uint32_t           RefCount   = 0;
     std::string        PathKey;
 };
 
-class TextureCache;
-using TextureCacheHandle = LifetimeHandle<TextureCache, TextureHandle>;
+// TextureCacheHandle is declared alongside TextureHandle in
+// render/TextureHandle.h so backend-free code can own texture lifetimes.
 
 //=============================================================================
 // TextureCache
@@ -77,6 +82,37 @@ public:
                                                 const SamplerDesc& sampler = {},
                                                 const char* debugName = nullptr);
 
+    // Named variant with path deduplication: a second call with the same name
+    // returns the existing handle with its refcount incremented (the image is
+    // ignored). Used by AssetSystem, which loads bytes itself and registers
+    // the result under the asset path.
+    [[nodiscard]] TextureHandle CreateFromImage(std::string_view name,
+                                                const Image& image,
+                                                const SamplerDesc& sampler = {});
+
+    // Cooked-texture upload (docs/assets/pipeline.md, Decisions E/L): takes
+    // the format-tagged, mip-tabled TextureData as-is — explicit mip chain,
+    // block-compressed formats included; the runtime never generates mips
+    // for cooked content. Same name-dedup semantics as CreateFromImage.
+    [[nodiscard]] TextureHandle CreateFromTextureData(std::string_view name,
+                                                      const TextureData& texture,
+                                                      const SamplerDesc& sampler = {});
+
+    // Returns the handle registered under `name` without affecting refcounts,
+    // or an invalid handle if none exists.
+    [[nodiscard]] TextureHandle Find(std::string_view name) const;
+
+    // -- Hot reload (Stage 6, Decision H) -------------------------------------
+    //
+    // Swaps a resident texture's GPU image in place: builds the new image,
+    // repoints the SAME bindless index at it (so every material referencing
+    // the texture renders the new pixels with no further work), and retires
+    // the old image through the deletion queue. The handle, slot, generation,
+    // and refcount are all preserved — zero handle invalidation. Returns
+    // false if `path` has no live entry (nothing to reload).
+    [[nodiscard]] bool ReloadInPlace(std::string_view path, const TextureData& texture);
+    [[nodiscard]] bool ReloadInPlace(std::string_view path, const Image& image);
+
     // -- Accessors ------------------------------------------------------------
 
     [[nodiscard]] BindlessImageIndex GetBindlessIndex(TextureHandle handle) const;
@@ -95,6 +131,18 @@ private:
     // handles. Does not allocate a cache slot. Used by OnLoad and CreateFromImage.
     bool UploadImage(const Image& image, const SamplerDesc& sampler,
                      const char* debugName, TextureEntry& out);
+
+    // Build-only helpers: create + upload a GPU image, no bindless slot and no
+    // cache entry. Invalid handle on failure. Shared by the create and reload
+    // paths so the upload logic lives in one place.
+    [[nodiscard]] ImageHandle UploadGpuImage(const Image& image, const char* debugName);
+    [[nodiscard]] ImageHandle UploadGpuImage(const TextureData& texture, std::string_view name);
+
+    // Reload body: swaps `newImage` into the resident entry for `path`,
+    // repointing its bindless slot and deferring the old image. Destroys
+    // `newImage` and returns false if `path` is not resident.
+    [[nodiscard]] bool ReloadEntryImage(std::string_view path, ImageHandle newImage,
+                                        VkExtent2D extent);
 
     Logger&                Log;
     VulkanImageService*    Images      = nullptr;
