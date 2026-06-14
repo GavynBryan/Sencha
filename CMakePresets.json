@@ -1,0 +1,97 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "inherits": "base",
+      "displayName": "Development (Vulkan + Cook, Debug)",
+      "description": "Full-featured debug build for daily development.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SENCHA_ENABLE_VULKAN": "ON",
+        "SENCHA_ENABLE_COOK": "ON",
+        "SENCHA_ENABLE_DEBUG_UI": "OFF",
+        "SENCHA_ENABLE_HOT_RELOAD": "OFF"
+      }
+    },
+    {
+      "name": "dev-ui",
+      "inherits": "dev",
+      "displayName": "Development + ImGui debug overlay",
+      "description": "Like dev, with the ImGui debug panels (requires Vulkan).",
+      "binaryDir": "${sourceDir}/build-dev-ui",
+      "cacheVariables": {
+        "SENCHA_ENABLE_DEBUG_UI": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "Release (Vulkan + Cook)",
+      "description": "Optimized build. Hot-reload stays off -- shipping binaries carry no GLSL compiler.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SENCHA_ENABLE_VULKAN": "ON",
+        "SENCHA_ENABLE_COOK": "ON",
+        "SENCHA_ENABLE_DEBUG_UI": "OFF",
+        "SENCHA_ENABLE_HOT_RELOAD": "OFF"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "dev",
+      "displayName": "ThreadSanitizer",
+      "description": "Debug build with ThreadSanitizer for the job system's concurrent core.",
+      "binaryDir": "${sourceDir}/build-tsan",
+      "cacheVariables": {
+        "SENCHA_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "ci",
+      "inherits": "dev",
+      "displayName": "CI (Vulkan SDK required on runner)",
+      "description": "Build + test config for CI. Needs the Vulkan SDK headers on the runner; no GPU required to build/run the (non-graphical) test suite. A headless no-Vulkan build is not yet supported -- the render layer still includes Vulkan headers unconditionally.",
+      "binaryDir": "${sourceDir}/build-ci"
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "dev-ui", "configurePreset": "dev-ui" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "ci", "configurePreset": "ci" }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

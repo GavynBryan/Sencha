@@ -1,22 +1,6 @@
-option(SENCHA_ENABLE_VULKAN
-    "Build Sencha Vulkan graphics foundation"
-    ON)
-
-option(SENCHA_ENABLE_HOT_RELOAD
-    "Link glslang into the engine for runtime GLSL compilation and live shader reload. Always OFF in release builds -- shipping binaries must not contain a GLSL compiler."
-    OFF)
-
-option(SENCHA_ENABLE_DEBUG_UI
-    "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
-    OFF)
-
-option(SENCHA_ENABLE_COOK
-    "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
-    ON)
-
-if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
-    message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
-endif()
+# Feature flags (SENCHA_ENABLE_VULKAN/DEBUG_UI/COOK/HOT_RELOAD) and their
+# cross-option invariants are declared centrally in cmake/SenchaOptions.cmake,
+# included from the root CMakeLists before this subdirectory is added.
 
 set(SENCHA_ENGINE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SENCHA_ENGINE_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -31,16 +15,12 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
 
 if(NOT SENCHA_ENABLE_VULKAN)
+    # Only the Vulkan graphics subtree here. The ImGui debug panels are gated
+    # below by SENCHA_ENABLE_DEBUG_UI, which the guard above forces OFF whenever
+    # Vulkan is OFF -- so listing them here too would be dead duplication.
     foreach(_pattern
         "[/\\\\]src[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
         "[/\\\\]include[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
-        "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
-        "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
-        "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
-        "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
-        "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
-        "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
-        "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -113,6 +93,14 @@ add_library(sencha_engine STATIC
     ${SENCHA_ENGINE_GENERATED_HEADERS}
 )
 add_library(sencha::engine ALIAS sencha_engine)
+
+# Mirror the on-disk src/ and include/ layout in IDE project trees (Visual
+# Studio, Xcode, Qt Creator). Cosmetic for Ninja/Make. Generated headers live
+# under the binary dir and are intentionally left out of the source-tree group.
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
+    ${SENCHA_ENGINE_SOURCES}
+    ${SENCHA_ENGINE_HEADERS}
+)
 
 target_include_directories(sencha_engine
     PUBLIC "${SENCHA_ENGINE_INCLUDE_DIR}"

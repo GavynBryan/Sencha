@@ -1,7 +1,69 @@
-build/
-build**/
+# =============================================================================
+# Sencha — build artifacts & local noise
+# =============================================================================
+# Always build out-of-source:
+#   cmake -S . -B build
+#   cmake --build build
+#
+# To clean ignored junk (WARNING: deletes ALL ignored files, not just build/):
+#   git clean -ndX        # dry run — review first
+#   git clean -fdX        # actually delete
+# Or just:
+#   rm -rf build build-release build-*
+# =============================================================================
+
+# Out-of-source build / output / install trees (any depth).
+# Generated CMake/Ninja/Make files all live inside these, so they need no
+# rules of their own as long as builds stay out-of-source.
+build*/
+out*/
+install*/
+_deps/
+
+# In-source configure safety net (the root CMakeLists forbids in-source builds,
+# but ignore the stragglers in case someone runs configure in the wrong place).
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# CodeQL scratch dirs.
 _codeql_build_dir/
 _codeql_detected_source_root
-*.log
+
+# clangd / compile database (per-build; commit a top-level one by hand if wanted).
+compile_commands.json
+.cache/
+.clangd/
+
+# Coverage / profiling.
+*.gcda
+*.gcno
+*.gcov
+*.profdata
+*.profraw
+
+# IDE / editor.
+.vs/
+.vscode/
+.idea/
+*.user
+*.user.*
+CMakeSettings.json
+
+# OS cruft.
+.DS_Store
+Thumbs.db
+
+# AI / agent tool directories.
 .codex
 .claude/
+.agents/
+.copilot/
+
+# Logs & temporaries.
+*.log
+*.tmp
+*.swp
+*~

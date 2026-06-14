@@ -63,32 +63,36 @@ behavior.
 
 ## Requirements
 
-- CMake 3.20+
+- CMake 3.20+ (3.23+ to use the presets below)
 - C++20 compiler
+- Ninja (used by the presets)
 - SDL3 (via `find_package(SDL3 REQUIRED CONFIG)`)
-- Vulkan SDK (when `SENCHA_ENABLE_VULKAN` is on — default)
+- Vulkan SDK (required — the engine does not currently build without it)
 
 Optional: `SENCHA_ENABLE_HOT_RELOAD` (glslang), `SENCHA_ENABLE_DEBUG_UI` (ImGui).
 
 ## Build
 
-```powershell
+Presets are the canonical workflow (see [building.md](building.md) for the full
+list and a from-scratch / dirty-tree recovery guide):
+
+```sh
+cmake --preset dev
+cmake --build --preset dev --parallel
+ctest --preset dev
+```
+
+Without presets (CMake < 3.23):
+
+```sh
 cmake -S . -B build
-cmake --build build
-```
-
-Without Vulkan:
-
-```powershell
-cmake -S . -B build -DSENCHA_ENABLE_VULKAN=OFF
-cmake --build build
-```
-
-Run tests:
-
-```powershell
+cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+> A no-Vulkan / headless build is **not** currently supported — the render layer
+> includes Vulkan headers unconditionally. See the "Future work" section of
+> [cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md).
 
 ## Examples
 
