@@ -2,6 +2,7 @@
 
 #include "../app/EditorFrameHook.h"
 #include "../app/EditorViewportCameraSystem.h"
+#include "../input/UiInputGuard.h"
 #include "../level/LevelSerialization.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorUiFeature.h"
@@ -19,7 +20,10 @@
 #include <graphics/vulkan/VulkanInstanceService.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 
@@ -47,6 +51,10 @@ void EditorApp::OnStart(GameStartupContext& ctx)
 
     RegisterLevelSerializers();
 
+    // Load the project's game module (if any) BEFORE the document is created, so
+    // its components are registered when the document's World registers storage.
+    LoadGameModule();
+
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<LevelWorkspace>();
     Workspace->Layout.OnResize(window->GetExtent().Width, window->GetExtent().Height);
@@ -69,6 +77,20 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { SaveDocument(); });
 
     Router = std::make_unique<InputRouter>();
+    // The UI is the top layer of the input stack: events over an ImGui panel are
+    // consumed here before navigation, tools, or shortcuts can act on them. The
+    // viewport's 3D region is a passthrough hole — even though it is an ImGui
+    // window, input there belongs to the scene, so it is excluded from UI mouse
+    // ownership. (The guard adds pointer capture so drags survive crossing panels.)
+    Router->AddHandler(MakeUiInputGuard(
+        [this]
+        {
+            UiInputCapture capture = UiFeature != nullptr ? UiFeature->GetInputCapture()
+                                                          : UiInputCapture{};
+            if (Viewports != nullptr && Viewports->IsViewportRegionHovered())
+                capture.Mouse = false;
+            return capture;
+        }));
     Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
     Router->AddHandler([this](const InputEvent& e) { return Workspace->Dispatcher->OnInput(e); });
     Router->AddHandler([this](const InputEvent& e) { return Shortcuts->OnInput(e); });
@@ -133,14 +155,12 @@ void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
 
     if (Router != nullptr)
     {
+        // Uniform routing: the UI-capture guard at the head of the chain decides
+        // whether the UI owns this event (mouse or keyboard), so there is no
+        // per-device special-casing here.
         const std::optional<InputEvent> event = TranslateEvent(ctx.Event);
-        if (event.has_value())
-        {
-            const bool isKeyboard = std::holds_alternative<KeyDownEvent>(*event);
-            const bool imguiBlocksKeyboard = isKeyboard && ImGui::GetIO().WantCaptureKeyboard;
-            if (!imguiBlocksKeyboard && Router->Route(*event) == InputConsumed::Yes)
-                ctx.Handled = true;
-        }
+        if (event.has_value() && Router->Route(*event) == InputConsumed::Yes)
+            ctx.Handled = true;
     }
 }
 
@@ -154,6 +174,7 @@ void EditorApp::OnShutdown(GameShutdownContext& ctx)
     Viewports = nullptr;
     UiFeature = nullptr;
     Window = nullptr;
+    UnloadGameModule();
     Workspace.reset();
     Commands.reset();
     Router.reset();
@@ -293,6 +314,36 @@ void EditorApp::OnFrame()
 {
     ProcessPendingFileActions();
     UpdateWindowTitle();
+}
+
+void EditorApp::LoadGameModule()
+{
+    const char* path = std::getenv("SENCHA_GAME_MODULE");
+    if (path == nullptr || path[0] == '\0')
+        return;
+
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), HostInfo };
+    std::string error;
+    GameModule = ModuleLoader.Load(path, ctx, &error);
+    if (!GameModule.IsValid())
+    {
+        std::fprintf(stderr, "[editor] failed to load game module '%s': %s\n",
+                     path, error.c_str());
+        return;
+    }
+
+    const std::string_view name = GameModule.Module->Name();
+    std::fprintf(stderr, "[editor] loaded game module '%s' (%.*s)\n",
+                 path, static_cast<int>(name.size()), name.data());
+}
+
+void EditorApp::UnloadGameModule()
+{
+    if (!GameModule.IsValid())
+        return;
+
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), HostInfo };
+    ModuleLoader.Unload(GameModule, ctx);
 }
 
 void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)

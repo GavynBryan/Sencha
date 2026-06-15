@@ -5,6 +5,9 @@
 #include "../selection/SelectCommand.h"
 #include "../selection/SelectionService.h"
 
+#include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/SceneSerializer.h>
+
 #include <imgui.h>
 
 #include <memory>
@@ -37,16 +40,25 @@ void SceneHierarchyPanel::OnDraw()
 
     const SelectableRef current = Selection.GetPrimarySelection();
     const RegistryId registryId = Scene.GetRegistry().Id;
+    const World& world = Scene.GetRegistry().Components;
 
     for (EntityId entity : Scene.GetAllEntities())
     {
-        const char* kind = "Entity";
-        if (Scene.TryGetBrush(entity) != nullptr)
-            kind = "Brush";
-        else if (Scene.TryGetCamera(entity) != nullptr)
-            kind = "Camera";
+        // Registry-driven summary: the components present on this entity, named
+        // by the serializer registry — no hard-coded component list.
+        std::string summary;
+        for (const auto& serializer : GetComponentSerializerEntries())
+        {
+            const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
+            if (id == InvalidComponentId || !world.HasComponent(entity, id))
+                continue;
+            if (!summary.empty())
+                summary += ", ";
+            summary += std::string(serializer->JsonKey());
+        }
 
-        std::string label = std::string(kind) + " " + std::to_string(entity.Index);
+        const std::string kind = summary.empty() ? std::string("Entity") : summary;
+        std::string label = kind + " " + std::to_string(entity.Index);
         label += "##" + std::to_string(entity.Index) + "_" + std::to_string(entity.Generation);
 
         const bool isSelected = current.IsValid() && current.Entity == entity;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/Game.h>
+#include <app/GameModuleLoader.h>
 
 #include "../commands/CommandStack.h"
 #include "../input/InputEvent.h"
@@ -60,6 +61,12 @@ private:
     void UpdateWindowTitle();
     void OnFrame();
 
+    // Loads the project's game module (path from the SENCHA_GAME_MODULE env var
+    // for now; an EditorProject will own it later) so its components register into
+    // the editor's serializer registry before the document is created.
+    void LoadGameModule();
+    void UnloadGameModule();
+
     ViewportPanel* Viewports = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;
@@ -76,4 +83,8 @@ private:
     std::mutex PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;
     std::string LastWindowTitle;
+
+    GameModuleLoader ModuleLoader;
+    LoadedModule     GameModule;
+    EngineHostInfo   HostInfo;
 };

@@ -2,19 +2,24 @@
 
 #include "IEditorPanel.h"
 
+#include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
-#include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
-#include <world/transform/TransformComponents.h>
 
 #include "../level/LevelScene.h"
 
-#include <optional>
+#include <cstddef>
+#include <vector>
 
 class CommandStack;
 class LevelDocument;
 class SelectionService;
+struct IComponentSerializer;
 
+// Registry-driven inspector. For the selected entity it iterates the component
+// serializer registry, and for each component present draws its type-erased
+// RuntimeFields() over the component's raw bytes — so ANY component, engine or
+// game-module, is shown and edited without the editor naming its type. Edits are
+// undoable via RawComponentEditCommand. (docs/plans/sencha-level-editor/02 §5.3.)
 class InspectorPanel : public IEditorPanel
 {
 public:
@@ -28,26 +33,8 @@ public:
     void OnDraw() override;
 
 private:
-    // In-progress edit state for one component type. Working holds the live
-    // widget value while a drag is active; Original holds the pre-edit
-    // snapshot used to build the undoable command on commit.
-    template <typename T>
-    struct ComponentEditState
-    {
-        std::optional<T> Working;
-        std::optional<T> Original;
-
-        void Reset()
-        {
-            Working.reset();
-            Original.reset();
-        }
-    };
-
-    template <typename T>
-    void DrawComponentSection(const char* label, EntityId entity, const T* current,
-                              ComponentEditState<T>& state);
-
+    void DrawComponent(const IComponentSerializer& serializer, EntityId entity);
+    void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 
     LevelScene& Scene;
@@ -55,9 +42,13 @@ private:
     SelectionService& Selection;
     CommandStack& Commands;
 
-    ComponentEditState<LocalTransform> TransformEdit;
-    ComponentEditState<BrushComponent> BrushEdit;
-    ComponentEditState<CameraComponent> CameraEdit;
+    // A single in-flight edit (only one widget drags at a time). Captured on
+    // widget activation (pre-edit bytes), committed to a RawComponentEditCommand
+    // when the drag finishes.
+    ComponentId            EditingComponent = InvalidComponentId;
+    std::vector<std::byte> EditBefore;
+    bool                   EditActive = false;
+
     EntityId LastEntity = {};
     bool Visible = true;
 };

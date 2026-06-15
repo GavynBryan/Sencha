@@ -3,6 +3,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <render/Camera.h>
+#include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
@@ -24,6 +25,12 @@ LevelDocument::LevelDocument()
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<CameraComponent>();
+
+    // Register storage for every serializer the registry knows — engine, editor,
+    // and any game module loaded at startup — so game components are available
+    // (and inspectable/addable) before any entity exists. Idempotent.
+    for (const auto& serializer : GetComponentSerializerEntries())
+        serializer->RegisterStorage(Registry_);
 }
 
 std::string_view LevelDocument::GetDisplayName() const

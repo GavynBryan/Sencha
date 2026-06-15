@@ -407,14 +407,47 @@ public:
     no ImGui reaching the engine or game modules. Covered by
     [RuntimeSchemaTests.cpp](../../test/core/RuntimeSchemaTests.cpp) (kinds/sizes, offset
     round-trips, nested dotted paths, enum→underlying). 878 tests green.
-  - **Remaining for S3 (UI-coupled, needs a GUI/GPU session to verify the gate):**
-    1. Editor module pickup: an `EditorProject` carrying the game-module path, loaded via
-       `GameModuleLoader` into the editor's registries on project open. (The load→register→
-       serialize chain is already proven headlessly by the S2 loader test; this is wiring.)
-    2. Registry-driven `InspectorPanel`: iterate `ComponentSerializerRegistry::Entries()`,
-       for each present component draw its `RuntimeFields()` as widgets over the raw bytes,
-       and commit through `RawComponentEditCommand`. All the non-UI pieces now exist.
-    3. `SceneHierarchyPanel` component-summary column from the registry.
+  - **S3 UI landed (2026-06-14). 879 tests green; editor launches and loads a module.**
+    1. **Editor module pickup** — `EditorApp` loads a game module at startup (path from
+       `SENCHA_GAME_MODULE` for now; `EditorProject` will own it later) into the engine's
+       default serializer registry *before* the document is created, and `LevelDocument`
+       registers storage for every registered serializer so module components exist before
+       any entity. Verified live: the editor logs `loaded game module '…' (test.game)`.
+    2. **Registry-driven `InspectorPanel`** — iterates `GetComponentSerializerEntries()`,
+       draws each present component from its type-erased `RuntimeFields()` over
+       `World::GetComponentRaw` bytes (`DragScalar`/`Checkbox` by `FieldScalar`), commits
+       edits via `RawComponentEditCommand`, and offers "Add Component" for any registered
+       type via `RawComponentAddCommand`. No component is named in inspector code.
+    3. **`SceneHierarchyPanel`** entity rows now summarize present components from the
+       registry (no hard-coded Brush/Camera list).
+    - **Headless gate proof**: `GameModuleLoaderTests.ModuleComponentRoundTripsThroughSceneJson`
+      — a module-only component survives a full `SaveSceneJson`→`LoadSceneJson` (exactly what
+      `LevelDocument::Save/Load` call), into a stock registry linking no editor symbols.
+    - **Still open**: `EditorProject` (replace the env-var module path); visual QA of the
+      inspector widgets on a GPU box (editor renders behind a pre-existing
+      `shaderDemoteToHelperInvocation` device-feature warning, unrelated to this work).
+  - **Known tech debt from the S3 UI pass (address before/at the stages noted):**
+    1. **Inspector field model is scalar-only.** `RuntimeField`/`FieldScalar` cover
+       bool/int/float/double; `AssetRef`/string/handle render as `Unsupported`, and enums
+       downgrade to integer drags instead of named combos (a fidelity regression vs. the
+       typed `DrawSchemaFields` + `EnumSchema`). Needs a real property descriptor (enum
+       names, asset-ref/string kinds, range/step/units/tooltip) with an asset-ref picker.
+       **Owned by 04-** (first hard requirement: face material `AssetRef` editing); see the
+       note there. Explicitly the property-metadata expansion deferred in 01-§7.
+    2. **Editor uses the process-global serializer registry, not an owned instance.** S3's
+       `EditorApp`/`LevelDocument`/inspector route through `DefaultComponentSerializerRegistry()`
+       and the free-function shim, contradicting §2.1 / 00-§2 ("game/editor never host
+       engine-global state"). The owned `ComponentSerializerRegistry` exists but the editor
+       doesn't own one yet. Invisible single-document/single-project; a hazard for
+       multi-project or a sandboxed PIE world in one process. **Trigger to fix:** the second
+       in-process registry need (multi-project, or PIE world isolation — 05-/07-). Fix is to
+       have the editor own a `ComponentSerializerRegistry` and thread it through the document,
+       inspector, and hierarchy instead of the global. Tied to the dynamic-registration
+       constraint below.
+    3. **`LevelDocument` must know all component types before any entity exists** (World
+       forbids registration after entity creation), so a module loaded mid-session or a
+       project switch isn't supported. Acceptable for the open-project-then-edit flow;
+       revisit with #2's owned registry when project switching lands.
 
 ## 9. Risks & mitigations
 

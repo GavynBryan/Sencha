@@ -89,6 +89,18 @@ A **Face edit mode** (03- sub-element selection) plus a **Material/Texture panel
 These reuse the existing command stack + selection + inspector architecture; the only new
 data is `FaceMaterial`/`UvProjection` and the commands that edit them.
 
+> **Dependency / known gap (recorded 2026-06-14):** the registry-driven inspector built in
+> S3 currently has a **scalar-only** type-erased field model — `RuntimeField`/`FieldScalar`
+> cover bool/int/float/double only ([engine/include/core/metadata/RuntimeSchema.h](../../engine/include/core/metadata/RuntimeSchema.h)).
+> It cannot yet edit an `AssetRef` (renders as `Unsupported`) and downgrades enums to raw
+> integer drags instead of named combos (the older typed `DrawSchemaFields` used `EnumSchema`).
+> **This stage is the first to need richer fields** (material `AssetRef` editing, and likely
+> UV enum/justify presets). Before/at S5, extend the inspector property model: a real property
+> descriptor that carries enum value-names, asset-ref/string kinds, and per-field metadata
+> (range/step/units/tooltip), with the editor drawing an asset picker for `AssetRef`. This is
+> the "property/editor metadata expansion" explicitly deferred as a non-goal in 01-§7 — it
+> lands here, where a concrete feature requires it.
+
 ---
 
 ## 3. Material identity & the asset browser (minimum viable)

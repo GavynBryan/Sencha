@@ -7,9 +7,11 @@
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string_view>
+#include <vector>
 
 //=============================================================================
 // IComponentSerializer
@@ -32,6 +34,11 @@ struct IComponentSerializer
     // offsets within the component's raw bytes; no ImGui dependency reaches the
     // engine or game modules. (docs/plans/sencha-level-editor/02-...md §5.3.)
     virtual std::span<const RuntimeField> RuntimeFields() const = 0;
+
+    // The bytes of a value-initialized component (honoring the type's C++ default
+    // member initializers), for type-erased "add component" — so a new component
+    // starts at its intended defaults, not all-zero. Empty for tag components.
+    virtual std::vector<std::byte> DefaultBytes() const = 0;
 
     virtual void RegisterStorage(Registry& registry) const = 0;
     virtual bool HasComponent(EntityId entity, const Registry& registry) const = 0;

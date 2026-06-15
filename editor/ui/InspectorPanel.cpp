@@ -1,15 +1,72 @@
 #include "InspectorPanel.h"
 
-#include "SchemaWidgets.h"
-
 #include "../commands/CommandStack.h"
 #include "../level/LevelCommands.h"
 #include "../level/LevelDocument.h"
 #include "../selection/SelectionService.h"
 
+#include <core/metadata/RuntimeSchema.h>
+#include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/SceneSerializer.h>
+
 #include <imgui.h>
 
+#include <cstring>
 #include <memory>
+#include <string>
+
+namespace
+{
+    ImGuiDataType DataTypeFor(const RuntimeField& field)
+    {
+        switch (field.Scalar)
+        {
+        case FieldScalar::Float:  return ImGuiDataType_Float;
+        case FieldScalar::Double: return ImGuiDataType_Double;
+        case FieldScalar::Int32:
+            return field.Size == 1 ? ImGuiDataType_S8
+                 : field.Size == 2 ? ImGuiDataType_S16
+                 : field.Size >= 8 ? ImGuiDataType_S64
+                                   : ImGuiDataType_S32;
+        case FieldScalar::UInt32:
+            return field.Size == 1 ? ImGuiDataType_U8
+                 : field.Size == 2 ? ImGuiDataType_U16
+                 : field.Size >= 8 ? ImGuiDataType_U64
+                                   : ImGuiDataType_U32;
+        default:
+            return ImGuiDataType_S32;
+        }
+    }
+
+    struct FieldEdit
+    {
+        bool Activated = false; // widget gained focus this frame (pre-edit)
+        bool Committed = false; // edit finished this frame
+    };
+
+    // Draws one leaf scalar directly over the component's working bytes.
+    FieldEdit DrawRuntimeField(const RuntimeField& field, std::byte* component)
+    {
+        FieldEdit edit;
+        void* ptr = component + field.Offset;
+        const char* label = field.Name.c_str();
+
+        if (field.Scalar == FieldScalar::Unsupported)
+        {
+            ImGui::TextDisabled("%s: <unsupported>", label);
+            return edit;
+        }
+
+        if (field.Scalar == FieldScalar::Bool)
+            ImGui::Checkbox(label, reinterpret_cast<bool*>(ptr));
+        else
+            ImGui::DragScalar(label, DataTypeFor(field), ptr, 0.05f);
+
+        edit.Activated = ImGui::IsItemActivated();
+        edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
+        return edit;
+    }
+}
 
 InspectorPanel::InspectorPanel(LevelScene& scene,
                                LevelDocument& document,
@@ -34,50 +91,112 @@ bool InspectorPanel::IsVisible() const
 
 void InspectorPanel::ResetEditState()
 {
-    TransformEdit.Reset();
-    BrushEdit.Reset();
-    CameraEdit.Reset();
+    EditActive = false;
+    EditingComponent = InvalidComponentId;
+    EditBefore.clear();
 }
 
-template <typename T>
-void InspectorPanel::DrawComponentSection(const char* label, EntityId entity, const T* current,
-                                          ComponentEditState<T>& state)
+void InspectorPanel::DrawComponent(const IComponentSerializer& serializer, EntityId entity)
 {
-    if (current == nullptr)
-    {
-        state.Reset();
-        return;
-    }
-
-    if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen))
+    World& world = Scene.GetRegistry().Components;
+    const ComponentId id = world.GetComponentIdByType(serializer.TypeId());
+    if (id == InvalidComponentId)
         return;
 
-    ImGui::PushID(label);
+    const ComponentMeta* meta = world.GetMeta(id);
+    const std::size_t size = meta ? meta->Size : 0;
 
-    // While a drag is in progress, keep showing the working copy so the edit
-    // is not clobbered by the unchanged scene value.
-    T value = state.Working.has_value() ? *state.Working : *current;
+    const std::string header(serializer.JsonKey());
+    if (!ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+        return;
 
-    const SchemaWidgetResult result = DrawSchemaFields(value);
+    ImGui::PushID(header.c_str());
 
-    if (result.Changed)
+    // Work on a copy of the component's bytes so reads don't churn change
+    // tracking every frame; write back only when a widget actually edits.
+    std::vector<std::byte> working(size);
+    if (size > 0)
     {
-        if (!state.Original.has_value())
-            state.Original = *current;
-        state.Working = value;
-    }
-
-    if (result.Committed)
-    {
-        if (state.Original.has_value())
+        const void* live = world.GetComponentRaw(entity, id);
+        if (live == nullptr)
         {
-            Commands.Execute(std::make_unique<EditComponentCommand<T>>(
-                entity, *state.Original, value, Scene, Document));
+            ImGui::PopID();
+            return;
         }
-        state.Reset();
+        std::memcpy(working.data(), live, size);
+    }
+    const std::vector<std::byte> frameStart = working;
+
+    bool activated = false;
+    bool committed = false;
+    for (const RuntimeField& field : serializer.RuntimeFields())
+    {
+        const FieldEdit edit = DrawRuntimeField(field, working.data());
+        activated |= edit.Activated;
+        committed |= edit.Committed;
+    }
+
+    // Begin an undoable edit: snapshot the pre-edit bytes on widget activation.
+    // Refresh on every activation (only one widget is active at a time) so a
+    // click-release without an edit can't leave a stale snapshot behind.
+    if (activated)
+    {
+        EditActive = true;
+        EditingComponent = id;
+        EditBefore = frameStart;
+    }
+
+    // Apply this frame's edit to the live component for immediate feedback.
+    if (size > 0 && std::memcmp(working.data(), frameStart.data(), size) != 0)
+    {
+        if (void* live = world.GetComponentRaw(entity, id))
+            std::memcpy(live, working.data(), size);
+    }
+
+    // Commit: record one undoable command spanning the whole drag.
+    if (committed && EditActive && EditingComponent == id)
+    {
+        Commands.Execute(std::make_unique<RawComponentEditCommand>(
+            entity, id, EditBefore, working, Scene, Document));
+        EditActive = false;
+        EditingComponent = InvalidComponentId;
     }
 
     ImGui::PopID();
+}
+
+void InspectorPanel::DrawAddComponentMenu(EntityId entity)
+{
+    World& world = Scene.GetRegistry().Components;
+
+    // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
+    // the popup before a selection can be made.
+    if (ImGui::Button("Add Component"))
+        ImGui::OpenPopup("##add_component");
+
+    if (ImGui::BeginPopup("##add_component"))
+    {
+        bool anyAddable = false;
+        for (const auto& serializer : GetComponentSerializerEntries())
+        {
+            const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
+            if (id == InvalidComponentId || world.HasComponent(entity, id))
+                continue;
+
+            anyAddable = true;
+            const std::string label(serializer->JsonKey());
+            if (ImGui::Selectable(label.c_str()))
+            {
+                Commands.Execute(std::make_unique<RawComponentAddCommand>(
+                    entity, id, serializer->DefaultBytes(), Scene, Document));
+            }
+        }
+
+        if (!anyAddable)
+            ImGui::TextDisabled("All components present");
+
+        ImGui::EndPopup();
+    }
 }
 
 void InspectorPanel::OnDraw()
@@ -109,13 +228,18 @@ void InspectorPanel::OnDraw()
     ImGui::Text("Entity %u (gen %u)", entity.Index, entity.Generation);
     ImGui::Separator();
 
-    std::optional<LocalTransform> transform;
-    if (const Transform3f* current = Scene.TryGetTransform(entity))
-        transform = LocalTransform{ *current };
+    // Registry-driven: every component the registry knows about, drawn by schema.
+    // No component is named in editor code here.
+    World& world = Scene.GetRegistry().Components;
+    for (const auto& serializer : GetComponentSerializerEntries())
+    {
+        const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
+        if (id != InvalidComponentId && world.HasComponent(entity, id))
+            DrawComponent(*serializer, entity);
+    }
 
-    DrawComponentSection("Transform", entity, transform.has_value() ? &*transform : nullptr, TransformEdit);
-    DrawComponentSection("Brush", entity, Scene.TryGetBrush(entity), BrushEdit);
-    DrawComponentSection("Camera", entity, Scene.TryGetCamera(entity), CameraEdit);
+    ImGui::Separator();
+    DrawAddComponentMenu(entity);
 
     ImGui::End();
 }

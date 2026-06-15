@@ -13,7 +13,9 @@
 #include <ecs/ComponentTypeId.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/serialization/SceneSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -114,4 +116,65 @@ TEST(GameModuleLoader, RefusesAbiMismatch)
     // calling Register. Covered structurally here; a dedicated mismatched-version
     // module is added when the ABI first bumps (trigger: SENCHA_GAME_ABI_VERSION 2).
     SUCCEED();
+}
+
+// The headless proof of S3's editor gate: a component defined only in the game
+// module survives a FULL scene save→load (exactly what LevelDocument::Save/Load
+// call), loaded into a stock registry that links no editor symbols.
+TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
+{
+    // Use the engine's default registry — the one SaveSceneJson/LoadSceneJson read.
+    ClearComponentSerializers();
+    InitSceneSerializer();
+
+    EngineHostInfo host;
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), host };
+    GameModuleLoader loader;
+    std::string error;
+    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, ctx, &error);
+    ASSERT_TRUE(m.IsValid()) << error;
+
+    IComponentSerializer* gs = DefaultComponentSerializerRegistry().FindByJsonKey("spike.grapple_hook");
+    ASSERT_NE(gs, nullptr);
+
+    // Author an entity carrying the game component (type-erased, via its Load).
+    Registry source;
+    for (const auto& s : GetComponentSerializerEntries())
+        s->RegisterStorage(source);
+
+    LoggingProvider logging;
+    SceneSerializationContext sctx{ logging };
+    const EntityId e = source.Entities.Create();
+    auto parsed = JsonParse(R"({"anchor_x":1.0,"anchor_y":2.0,"anchor_z":3.0,"length":7.5})");
+    ASSERT_TRUE(parsed.has_value());
+    JsonReadArchive in{ *parsed };
+    ASSERT_TRUE(gs->Load(in, e, source, sctx));
+
+    // Save the whole scene, then load into a fresh registry (the runtime/editor path).
+    const JsonValue scene = SaveSceneJson(source);
+    Registry loaded;
+    SceneLoadError loadError;
+    ASSERT_TRUE(LoadSceneJson(scene, loaded, &loadError)) << loadError.Message;
+
+    // The game component came back, by its module-stable identity.
+    const ComponentId id = loaded.Components.GetComponentIdByType(gs->TypeId());
+    ASSERT_NE(id, InvalidComponentId);
+    bool found = false;
+    for (const EntityId entity : loaded.Entities.GetAliveEntities())
+    {
+        if (loaded.Components.HasComponent(entity, id))
+        {
+            found = true;
+            JsonWriteArchive out;
+            ASSERT_TRUE(gs->Save(out, entity, loaded, sctx));
+            const JsonValue saved = out.TakeValue();
+            const JsonValue* length = saved.Find("length");
+            ASSERT_NE(length, nullptr);
+            EXPECT_DOUBLE_EQ(length->AsNumber(), 7.5);
+        }
+    }
+    EXPECT_TRUE(found);
+
+    loader.Unload(m, ctx);
+    ClearComponentSerializers();
 }

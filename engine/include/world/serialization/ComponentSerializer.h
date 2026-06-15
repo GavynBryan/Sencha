@@ -6,9 +6,12 @@
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <cstddef>
+#include <cstring>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 namespace SceneComponentSerialization
 {
@@ -85,6 +88,21 @@ public:
     std::span<const RuntimeField> RuntimeFields() const override
     {
         return RuntimeFieldsOf<Component>();
+    }
+
+    std::vector<std::byte> DefaultBytes() const override
+    {
+        if constexpr (std::is_empty_v<Component>)
+        {
+            return {};
+        }
+        else
+        {
+            Component value{}; // C++ default member initializers
+            std::vector<std::byte> bytes(sizeof(Component));
+            std::memcpy(bytes.data(), &value, sizeof(Component));
+            return bytes;
+        }
     }
 
     void RegisterStorage(Registry& registry) const override

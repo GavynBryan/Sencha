@@ -13,6 +13,12 @@ public:
     bool IsVisible() const override;
     void OnDraw() override;
 
+    // True when the cursor is over a viewport's 3D render region with no UI panel
+    // on top of it (z-order aware). The viewport region is a passthrough hole in
+    // the UI: input there belongs to the scene/tools, not the UI. Reflects the
+    // last drawn frame. (See docs/plans/sencha-level-editor/02 §5.3 input layering.)
+    [[nodiscard]] bool IsViewportRegionHovered() const { return RegionHovered; }
+
 private:
     void DrawNode(const LayoutNode& node, ImVec2 size);
     void DrawViewport(EditorViewport& viewport, ImVec2 size);
@@ -20,4 +26,5 @@ private:
 
     ViewportLayout& Layout;
     bool Visible = true;
+    bool RegionHovered = false;
 };

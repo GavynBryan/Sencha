@@ -45,6 +45,9 @@ void ViewportPanel::OnDraw()
         | ImGuiWindowFlags_NoScrollWithMouse
         | ImGuiWindowFlags_NoBackground;
 
+    // Recomputed each frame as the leaves draw; OR-ed across all viewports.
+    RegionHovered = false;
+
     if (!ImGui::Begin(GetTitle().data(), &Visible, windowFlags))
     {
         ImGui::End();
@@ -99,6 +102,12 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         std::max(0.0f, ImGui::GetContentRegionAvail().x),
         std::max(0.0f, ImGui::GetContentRegionAvail().y));
     ImGui::BeginChild("ViewportRegion", renderSize, ImGuiChildFlags_None, kViewportChildFlags);
+
+    // This child holds only the 3D render area (the orientation combo lives in the
+    // parent child), so hovering it means the cursor is over the scene with no
+    // panel on top — the passthrough region where input belongs to the tools.
+    if (ImGui::IsWindowHovered())
+        RegionHovered = true;
 
     viewport.RegionMin = ImGui::GetWindowPos();
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,

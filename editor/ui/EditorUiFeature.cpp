@@ -111,6 +111,19 @@ bool EditorUiFeature::ProcessSdlEvent(const SDL_Event& event)
     return io.WantCaptureMouse || io.WantCaptureKeyboard || io.WantTextInput;
 }
 
+UiInputCapture EditorUiFeature::GetInputCapture() const
+{
+    if (!Valid)
+        return {};
+
+    const ImGuiIO& io = ImGui::GetIO();
+    return UiInputCapture{
+        .Mouse = io.WantCaptureMouse,
+        // Text input (an active text field) also implies keyboard ownership.
+        .Keyboard = io.WantCaptureKeyboard || io.WantTextInput,
+    };
+}
+
 void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
 {
     if (panel != nullptr)

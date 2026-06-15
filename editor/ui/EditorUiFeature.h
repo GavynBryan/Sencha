@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../input/UiInputCapture.h"
+
 #include <graphics/vulkan/Renderer.h>
 
 #include <functional>
@@ -34,6 +36,13 @@ public:
     void Teardown() override;
 
     bool ProcessSdlEvent(const SDL_Event& event);
+
+    // Which input devices the UI currently owns (mouse/keyboard hovered or
+    // focused by an ImGui widget). The input router consults this to keep events
+    // over the UI from reaching the viewport. Authoritative because this feature
+    // owns the ImGui context.
+    [[nodiscard]] UiInputCapture GetInputCapture() const;
+
     void AddPanel(std::unique_ptr<IEditorPanel> panel);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
