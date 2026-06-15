@@ -41,6 +41,10 @@ file(GLOB_RECURSE JOBS_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/jobs/*.cpp
 )
 
+file(GLOB_RECURSE BRUSH_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/brush/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -80,6 +84,21 @@ if(ECS_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS ecs_tests)
 endif()
 
+if(BRUSH_TEST_SOURCES)
+    # The brush geometry kernel is pure (math-only, no UI), so the tests compile
+    # its sources directly and link only the engine — no editor/Vulkan/ImGui deps.
+    add_executable(brush_tests
+        ${BRUSH_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp)
+    target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
+    target_link_libraries(brush_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS brush_tests)
+endif()
+
 if(JOBS_TEST_SOURCES)
     add_executable(jobs_tests ${JOBS_TEST_SOURCES})
     target_link_libraries(jobs_tests PRIVATE sencha_engine GTest::gtest_main)
@@ -117,6 +136,12 @@ endif()
 
 if(TARGET jobs_tests)
     gtest_discover_tests(jobs_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET brush_tests)
+    gtest_discover_tests(brush_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

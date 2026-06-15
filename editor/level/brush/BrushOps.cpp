@@ -1,0 +1,248 @@
+#include "BrushOps.h"
+
+#include "BrushValidation.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <utility>
+#include <vector>
+
+namespace
+{
+    constexpr float kClipEps = 1e-5f;
+
+    bool NearlyEqual(const Vec3d& a, const Vec3d& b, float tol = 1e-4f)
+    {
+        return (a - b).SqrMagnitude() <= tol * tol;
+    }
+
+    // Appends a face built from explicit corner positions, creating fresh vertices.
+    // Coincident vertices across faces are merged later by BrushValidateAndRepair.
+    void EmitFace(BrushMesh& mesh, const std::vector<Vec3d>& corners)
+    {
+        if (corners.size() < 3)
+            return;
+        BrushFace face;
+        face.Loop.reserve(corners.size());
+        for (const Vec3d& corner : corners)
+        {
+            face.Loop.push_back(static_cast<std::uint32_t>(mesh.Vertices.size()));
+            mesh.Vertices.push_back(BrushVertex{ corner });
+        }
+        mesh.Faces.push_back(std::move(face));
+    }
+}
+
+BrushMesh BrushOps::MakeBox(Vec3d halfExtents)
+{
+    const float x = halfExtents.X;
+    const float y = halfExtents.Y;
+    const float z = halfExtents.Z;
+
+    BrushMesh mesh;
+    mesh.Vertices = {
+        BrushVertex{ { -x, -y, -z } }, // 0
+        BrushVertex{ {  x, -y, -z } }, // 1
+        BrushVertex{ {  x,  y, -z } }, // 2
+        BrushVertex{ { -x,  y, -z } }, // 3
+        BrushVertex{ { -x, -y,  z } }, // 4
+        BrushVertex{ {  x, -y,  z } }, // 5
+        BrushVertex{ {  x,  y,  z } }, // 6
+        BrushVertex{ { -x,  y,  z } }, // 7
+    };
+    // Quad faces (winding fixed up to outward by ValidateAndRepair).
+    mesh.Faces = {
+        BrushFace{ { 0, 1, 2, 3 }, {} }, // -Z
+        BrushFace{ { 4, 5, 6, 7 }, {} }, // +Z
+        BrushFace{ { 0, 1, 5, 4 }, {} }, // -Y
+        BrushFace{ { 3, 2, 6, 7 }, {} }, // +Y
+        BrushFace{ { 0, 3, 7, 4 }, {} }, // -X
+        BrushFace{ { 1, 2, 6, 5 }, {} }, // +X
+    };
+    BrushValidateAndRepair(mesh);
+    return mesh;
+}
+
+BrushMesh BrushOps::Translate(const BrushMesh& mesh, Vec3d delta)
+{
+    BrushMesh out = mesh;
+    for (BrushVertex& vertex : out.Vertices)
+        vertex.Position += delta;
+    BrushValidateAndRepair(out);
+    return out;
+}
+
+BrushMesh BrushOps::ResizeFace(const BrushMesh& mesh, std::uint32_t face,
+                               float planePosition, float minThickness)
+{
+    BrushMesh out = mesh;
+    if (face >= out.Faces.size())
+        return out;
+
+    const Vec3d normal = BrushComputeFaceNormal(out, out.Faces[face]);
+    if (normal.SqrMagnitude() <= 0.0f)
+        return out;
+
+    // Which vertices belong to this face's loop.
+    std::vector<bool> inFace(out.Vertices.size(), false);
+    for (std::uint32_t index : out.Faces[face].Loop)
+        inFace[index] = true;
+
+    // Clamp so the moved face keeps minThickness against the rest of the solid.
+    float maxOther = -std::numeric_limits<float>::infinity();
+    for (std::size_t i = 0; i < out.Vertices.size(); ++i)
+        if (!inFace[i])
+            maxOther = std::max(maxOther, normal.Dot(out.Vertices[i].Position));
+
+    float target = planePosition;
+    if (std::isfinite(maxOther))
+        target = std::max(target, maxOther + minThickness);
+
+    const float current = normal.Dot(BrushFaceCentroid(out, out.Faces[face]));
+    const float delta = target - current;
+    for (std::uint32_t index : out.Faces[face].Loop)
+        out.Vertices[index].Position += normal * delta;
+
+    BrushValidateAndRepair(out);
+    return out;
+}
+
+BrushMesh BrushOps::ExtrudeFace(const BrushMesh& mesh, std::uint32_t face, float distance)
+{
+    BrushMesh out = mesh;
+    if (face >= out.Faces.size())
+        return out;
+
+    const Vec3d normal = BrushComputeFaceNormal(out, out.Faces[face]);
+    if (normal.SqrMagnitude() <= 0.0f)
+        return out;
+
+    const std::vector<std::uint32_t> baseLoop = out.Faces[face].Loop;
+    const std::size_t n = baseLoop.size();
+    const Vec3d offset = normal * distance;
+
+    // New (extruded) ring of vertices.
+    std::vector<std::uint32_t> topLoop(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        topLoop[i] = static_cast<std::uint32_t>(out.Vertices.size());
+        out.Vertices.push_back(BrushVertex{ out.Vertices[baseLoop[i]].Position + offset });
+    }
+
+    // The cap moves to the extruded ring; original ring becomes the base of the walls.
+    out.Faces[face].Loop = topLoop;
+
+    // Side wall per original edge (winding fixed up by repair).
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const std::size_t j = (i + 1) % n;
+        BrushFace wall;
+        wall.Loop = { baseLoop[i], baseLoop[j], topLoop[j], topLoop[i] };
+        out.Faces.push_back(std::move(wall));
+    }
+
+    BrushValidateAndRepair(out);
+    return out;
+}
+
+BrushMesh BrushOps::DeleteFace(const BrushMesh& mesh, std::uint32_t face)
+{
+    BrushMesh out = mesh;
+    if (face >= out.Faces.size())
+        return out;
+    out.Faces.erase(out.Faces.begin() + face);
+    BrushValidateAndRepair(out); // drops now-unreferenced vertices; flags open mesh
+    return out;
+}
+
+BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide)
+{
+    const Plane p = plane.Normalized();
+    auto inside = [&](const Vec3d& point) -> float
+    {
+        const float d = p.SignedDistanceTo(point);
+        return keepPositiveSide ? d : -d; // >= 0 means "keep"
+    };
+
+    BrushMesh out;
+    std::vector<std::pair<Vec3d, Vec3d>> capSegments;
+
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        if (n < 3)
+            continue;
+
+        std::vector<Vec3d> clipped;
+        std::vector<Vec3d> crossings;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const Vec3d a = mesh.Vertices[face.Loop[i]].Position;
+            const Vec3d b = mesh.Vertices[face.Loop[(i + 1) % n]].Position;
+            const float da = inside(a);
+            const float db = inside(b);
+            const bool inA = da >= -kClipEps;
+            const bool inB = db >= -kClipEps;
+
+            if (inA)
+                clipped.push_back(a);
+            if (inA != inB)
+            {
+                const float t = da / (da - db);
+                const Vec3d crossing = a + (b - a) * t;
+                clipped.push_back(crossing);
+                crossings.push_back(crossing);
+            }
+        }
+
+        if (clipped.size() >= 3)
+            EmitFace(out, clipped);
+        if (crossings.size() == 2)
+            capSegments.emplace_back(crossings[0], crossings[1]);
+    }
+
+    // Chain the cut segments into the cap polygon loop.
+    if (!capSegments.empty())
+    {
+        std::vector<Vec3d> cap;
+        std::vector<bool> used(capSegments.size(), false);
+        cap.push_back(capSegments[0].first);
+        cap.push_back(capSegments[0].second);
+        used[0] = true;
+
+        bool extended = true;
+        while (extended)
+        {
+            extended = false;
+            for (std::size_t i = 0; i < capSegments.size(); ++i)
+            {
+                if (used[i])
+                    continue;
+                if (NearlyEqual(capSegments[i].first, cap.back()))
+                {
+                    cap.push_back(capSegments[i].second);
+                    used[i] = true;
+                    extended = true;
+                }
+                else if (NearlyEqual(capSegments[i].second, cap.back()))
+                {
+                    cap.push_back(capSegments[i].first);
+                    used[i] = true;
+                    extended = true;
+                }
+            }
+        }
+
+        // Drop the final point if it closed back onto the start.
+        if (cap.size() >= 2 && NearlyEqual(cap.front(), cap.back()))
+            cap.pop_back();
+        if (cap.size() >= 3)
+            EmitFace(out, cap);
+    }
+
+    BrushValidateAndRepair(out);
+    return out;
+}

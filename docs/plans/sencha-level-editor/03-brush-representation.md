@@ -226,6 +226,32 @@ Work:
 
 ---
 
+## 6b. Progress log
+
+- 2026-06-15 — **Phase 1: geometry kernel landed; 20 unit tests, full suite 899 green.**
+  Pure, headless, math-only (no editor/UI deps) under [editor/level/brush/](../../editor/level/brush/):
+  - `BrushId`, `BrushMesh` (+ Newell normals, centroids, bounds), `BrushMeshStore`.
+  - Verbs in `BrushOps`: `MakeBox`, `Translate`, `ResizeFace` (normal-offset + min-thickness
+    clamp), `ExtrudeFace` (cap + side walls), `DeleteFace`, `Clip` (Sutherland-Hodgman per
+    face + cut-segment cap chaining). Each runs through `BrushValidateAndRepair`.
+  - `BrushValidateAndRepair` + `BrushWeldVertices`: weld, drop unreferenced, drop degenerate,
+    recompute normals, outward-orient (centroid heuristic — exact for convex/star-shaped),
+    closedness report, idempotent.
+  - `BrushBuildHalfEdge` / `BrushToFaceVertex` round-trip.
+  - Tests (`test/brush/`, new `brush_tests` target): MakeBox closed/outward/6-quads; extrude
+    keeps closed + correct vert/face counts; resize moves one face + clamps; delete opens;
+    clip by axis plane (caps, 6 faces, 8 verts) and diagonal plane stay closed/outward; weld;
+    repair orientation/idempotence/unreferenced/open/empty; half-edge twins + round-trip;
+    store id semantics.
+  - The box editor is untouched and still works — integration is Phase 2.
+  - Known: outward-orientation is a centroid heuristic (per §7 risk); fine for the convex-ish
+    brushes the verbs produce. A truly non-convex authored mesh may need per-face raycast
+    orientation — revisit if/when carve (boolean) lands.
+- **Remaining (Phase 2):** component `{HalfExtents}` → `{BrushId}`; `BrushMeshStore` on
+  `LevelDocument` + JSON sidecar serialization (§5); `BrushGeometry` mesh queries; picking;
+  selection sub-element addressing; handles → verbs; wireframe/selection rendering over face
+  loops. UI/visual — verified in a GPU session.
+
 ## 7. Risks & mitigations
 
 - **Robustness of mesh ops** (extrude/clip on awkward input) is the classic ProBuilder-class
