@@ -247,10 +247,31 @@ Work:
   - Known: outward-orientation is a centroid heuristic (per §7 risk); fine for the convex-ish
     brushes the verbs produce. A truly non-convex authored mesh may need per-face raycast
     orientation — revisit if/when carve (boolean) lands.
-- **Remaining (Phase 2):** component `{HalfExtents}` → `{BrushId}`; `BrushMeshStore` on
-  `LevelDocument` + JSON sidecar serialization (§5); `BrushGeometry` mesh queries; picking;
-  selection sub-element addressing; handles → verbs; wireframe/selection rendering over face
-  loops. UI/visual — verified in a GPU session.
+- 2026-06-15 — **Phase 2a: substrate swap landed (editor builds + launches; 899 green).**
+  The data model is now the mesh kernel, with behavior unchanged (brushes are still authored
+  and rendered as boxes — interactive mesh verbs are 2b):
+  - `BrushComponent` is now `{ BrushId }` (trivially copyable; archetype-safe). The mesh lives
+    in a `BrushMeshStore` owned by `LevelScene`. `CreateBrush` → `MakeBox` → store;
+    `CreateBrushFromMesh` for restore/load; `SetBrushHalfExtents` rebuilds the box mesh;
+    `SetBrushMesh` for future verbs; `TryGetBrushMesh` resolves id→mesh.
+  - `BrushGeometry::TryGetState` derives the box from the mesh's local bounds, so every
+    existing box handle/interaction (resize/move/create) keeps working unchanged.
+  - **Serialization:** `SceneFieldCodec<BrushId>` persists the component's id; `LevelDocument`
+    writes/reads a `brush_meshes` JSON sidecar keyed by `BrushId` (vertices + face loops),
+    running `ValidateAndRepair` on load. The component carries the id, the sidecar carries the
+    geometry — no fragile entity-matching.
+  - `DeleteEntityCommand` saves/restores the `BrushMesh` (round-trips non-box geometry on undo).
+  - Inspector shows the brush `id` as non-editable (BrushId is an `Unsupported` scalar in the
+    runtime-field model) — correct: brushes are edited via handles, not the field list.
+  - **Note (store ownership):** the plan placed `BrushMeshStore` on `LevelDocument`; it lives on
+    `LevelScene` instead (the object already threaded through all brush code), with `LevelDocument`
+    reaching it via `Scene.GetBrushMeshStore()` for the sidecar. Defensible; revisit if a
+    document needs multiple scenes.
+  - **Needs visual QA:** create a brush, save, reload — geometry should round-trip.
+- **Remaining (Phase 2b, UI/visual):** `BrushGeometry` general mesh queries; ray picking vs.
+  mesh; selection sub-element addressing (body/face/edge/vertex); handles → mesh verbs
+  (extrude/clip/delete-face); wireframe/selection rendering over arbitrary face loops. This is
+  what makes brushes *editable as meshes* and completes the S4a gate.
 
 ## 7. Risks & mitigations
 

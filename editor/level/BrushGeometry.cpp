@@ -6,13 +6,15 @@
 std::optional<BrushState> BrushGeometry::TryGetState(const LevelScene& scene, EntityId entity)
 {
     const Transform3f* transform = scene.TryGetTransform(entity);
-    const BrushComponent* brush = scene.TryGetBrush(entity);
-    if (transform == nullptr || brush == nullptr)
+    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    if (transform == nullptr || mesh == nullptr)
         return std::nullopt;
 
+    // The box-editing path derives an axis-aligned box from the mesh's local-space
+    // bounds. General (non-box) mesh queries/handles arrive in Phase 2b.
     return BrushState{
         .Transform = *transform,
-        .HalfExtents = brush->HalfExtents,
+        .HalfExtents = BrushComputeBounds(*mesh).HalfExtent(),
     };
 }
 

@@ -15,8 +15,8 @@ void DeleteEntityCommand::Execute()
     {
         if (const Transform3f* transform = Scene.TryGetTransform(TargetEntity))
             SavedTransform = *transform;
-        if (const BrushComponent* brush = Scene.TryGetBrush(TargetEntity))
-            SavedBrush = *brush;
+        if (const BrushMesh* mesh = Scene.TryGetBrushMesh(TargetEntity))
+            SavedMesh = *mesh;
         if (const CameraComponent* camera = Scene.TryGetCamera(TargetEntity))
             SavedCamera = *camera;
         CapturedState = true;
@@ -31,14 +31,13 @@ void DeleteEntityCommand::Undo()
     if (!SavedTransform.has_value())
         return;
 
-    if (SavedBrush.has_value())
-        RestoredEntity = Scene.CreateBrush(SavedTransform->Position, SavedBrush->HalfExtents);
+    if (SavedMesh.has_value())
+        RestoredEntity = Scene.CreateBrushFromMesh(*SavedTransform, *SavedMesh);
     else if (SavedCamera.has_value())
         RestoredEntity = Scene.CreateCamera(SavedTransform->Position);
     else
         return;
 
-    Transform3f restored = *SavedTransform;
-    Scene.SetTransform(RestoredEntity, restored);
+    Scene.SetTransform(RestoredEntity, *SavedTransform);
     Document.MarkDirty();
 }

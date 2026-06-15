@@ -1,8 +1,11 @@
 #include "LevelScene.h"
 
+#include "brush/BrushOps.h"
+
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
+#include <utility>
 
 LevelScene::LevelScene(Registry& registry)
     : Registry_(registry)
@@ -13,11 +16,15 @@ EntityId LevelScene::CreateBrush(Vec3d position, Vec3d halfExtents)
 {
     Transform3f transform = Transform3f::Identity();
     transform.Position = position;
+    return CreateBrushFromMesh(transform, BrushOps::MakeBox(halfExtents));
+}
 
+EntityId LevelScene::CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh)
+{
     World& world = Registry_.Components;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
-    world.AddComponent(entity, BrushComponent{ .HalfExtents = halfExtents });
+    world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
 
     Entities.push_back(entity);
     return entity;
@@ -55,8 +62,13 @@ void LevelScene::SetTransform(EntityId entity, const Transform3f& transform)
 
 void LevelScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
 {
-    if (BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
-        brush->HalfExtents = halfExtents;
+    SetBrushMesh(entity, BrushOps::MakeBox(halfExtents));
+}
+
+void LevelScene::SetBrushMesh(EntityId entity, BrushMesh mesh)
+{
+    if (const BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
+        BrushMeshes.Set(brush->Id, std::move(mesh));
 }
 
 void LevelScene::Clear()
@@ -65,6 +77,7 @@ void LevelScene::Clear()
     for (EntityId entity : world.GetAliveEntities())
         world.DestroyEntity(entity);
     Entities.clear();
+    BrushMeshes.Clear();
 }
 
 void LevelScene::SyncFromRegistry()
@@ -98,6 +111,12 @@ const BrushComponent* LevelScene::TryGetBrush(EntityId entity) const
 {
     const World& world = Registry_.Components;
     return world.TryGet<BrushComponent>(entity);
+}
+
+const BrushMesh* LevelScene::TryGetBrushMesh(EntityId entity) const
+{
+    const BrushComponent* brush = TryGetBrush(entity);
+    return brush != nullptr ? BrushMeshes.Find(brush->Id) : nullptr;
 }
 
 const CameraComponent* LevelScene::TryGetCamera(EntityId entity) const

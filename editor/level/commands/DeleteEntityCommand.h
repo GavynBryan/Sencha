@@ -20,7 +20,7 @@ private:
     LevelScene& Scene;
     LevelDocument& Document;
     std::optional<Transform3f> SavedTransform;
-    std::optional<BrushComponent> SavedBrush;
+    std::optional<BrushMesh> SavedMesh;
     std::optional<CameraComponent> SavedCamera;
     EntityId RestoredEntity = {};
     bool CapturedState = false;
