@@ -1,17 +1,22 @@
 #include "InspectorPanel.h"
 
 #include "../commands/CommandStack.h"
+#include "../level/commands/EditBrushMeshCommand.h"
 #include "../level/commands/RawComponentEditCommand.h"
 #include "../level/commands/RawComponentAddCommand.h"
+#include "../level/brush/BrushOps.h"
 #include "../level/LevelDocument.h"
 #include "../selection/SelectionService.h"
 
 #include <core/metadata/RuntimeSchema.h>
+#include <math/geometry/3d/Plane.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializer.h>
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -200,6 +205,54 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
     }
 }
 
+void InspectorPanel::DrawBrushTools(EntityId entity)
+{
+    const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
+    if (mesh == nullptr)
+        return;
+
+    if (!ImGui::CollapsingHeader("Brush Tools", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+
+    ImGui::PushID("brush_tools");
+
+    const int faceCount = static_cast<int>(mesh->Faces.size());
+    ImGui::Text("%d faces, %d verts", faceCount, static_cast<int>(mesh->Vertices.size()));
+
+    // Interim face picker: index into the mesh's faces (click-to-select arrives
+    // with mesh picking in a later pass). Clamp to the current face range.
+    ImGui::SliderInt("Face", &BrushFaceIndex, 0, faceCount > 0 ? faceCount - 1 : 0);
+    BrushFaceIndex = std::clamp(BrushFaceIndex, 0, faceCount > 0 ? faceCount - 1 : 0);
+    ImGui::DragFloat("Distance", &BrushExtrudeDistance, 0.05f);
+
+    const auto applyVerb = [&](const BrushMesh& after)
+    {
+        Commands.Execute(std::make_unique<EditBrushMeshCommand>(
+            entity, *mesh, after, Scene, Document));
+    };
+
+    if (ImGui::Button("Extrude Face"))
+        applyVerb(BrushOps::ExtrudeFace(*mesh, static_cast<std::uint32_t>(BrushFaceIndex),
+                                        BrushExtrudeDistance));
+    ImGui::SameLine();
+    if (ImGui::Button("Delete Face"))
+        applyVerb(BrushOps::DeleteFace(*mesh, static_cast<std::uint32_t>(BrushFaceIndex)));
+
+    // Clip by an axis-aligned plane through the brush's local origin, keeping the
+    // negative side. (A proper interactive clip plane comes with the clip tool.)
+    ImGui::TextUnformatted("Clip (local origin, keep -side):");
+    if (ImGui::Button("Clip X"))
+        applyVerb(BrushOps::Clip(*mesh, Plane::FromNormalAndPoint({ 1, 0, 0 }, { 0, 0, 0 }), false));
+    ImGui::SameLine();
+    if (ImGui::Button("Clip Y"))
+        applyVerb(BrushOps::Clip(*mesh, Plane::FromNormalAndPoint({ 0, 1, 0 }, { 0, 0, 0 }), false));
+    ImGui::SameLine();
+    if (ImGui::Button("Clip Z"))
+        applyVerb(BrushOps::Clip(*mesh, Plane::FromNormalAndPoint({ 0, 0, 1 }, { 0, 0, 0 }), false));
+
+    ImGui::PopID();
+}
+
 void InspectorPanel::OnDraw()
 {
     if (!ImGui::Begin(GetTitle().data(), &Visible))
@@ -238,6 +291,9 @@ void InspectorPanel::OnDraw()
         if (id != InvalidComponentId && world.HasComponent(entity, id))
             DrawComponent(*serializer, entity);
     }
+
+    ImGui::Separator();
+    DrawBrushTools(entity);
 
     ImGui::Separator();
     DrawAddComponentMenu(entity);

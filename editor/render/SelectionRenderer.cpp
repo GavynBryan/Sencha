@@ -84,13 +84,14 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
         return;
 
-    const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, selected.Entity);
-    if (!state.has_value())
+    const BrushMesh* mesh = Scene.TryGetBrushMesh(selected.Entity);
+    const Transform3f* transform = Scene.TryGetTransform(selected.Entity);
+    if (mesh == nullptr || transform == nullptr)
         return;
 
     std::vector<LineVertex> vertices;
     vertices.reserve(32);
-    AppendBrush(vertices, *state, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
+    AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
 
     if (selected.IsBrushFace())
     {
@@ -182,6 +183,24 @@ void SelectionRenderer::AppendBrush(std::vector<LineVertex>& vertices,
     {
         vertices.push_back(LineVertex{ .Position = corners[start], .Color = color });
         vertices.push_back(LineVertex{ .Position = corners[end], .Color = color });
+    }
+}
+
+void SelectionRenderer::AppendBrushMesh(std::vector<LineVertex>& vertices,
+                                        const BrushMesh& mesh,
+                                        const Transform3f& transform,
+                                        const Vec4& color) const
+{
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const Vec3d a = transform.TransformPoint(mesh.Vertices[face.Loop[i]].Position);
+            const Vec3d b = transform.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % n]].Position);
+            vertices.push_back(LineVertex{ .Position = a, .Color = color });
+            vertices.push_back(LineVertex{ .Position = b, .Color = color });
+        }
     }
 }
 

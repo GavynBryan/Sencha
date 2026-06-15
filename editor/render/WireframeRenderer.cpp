@@ -94,11 +94,12 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
     vertices.reserve(Scene.GetEntityCount() * 24);
     for (EntityId entity : Scene.GetAllEntities())
     {
-        const std::optional<BrushState> state = BrushGeometry::TryGetState(Scene, entity);
-        if (!state.has_value())
+        const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
+        const Transform3f* transform = Scene.TryGetTransform(entity);
+        if (mesh == nullptr || transform == nullptr)
             continue;
 
-        AppendBrush(vertices, *state, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
     }
 
     if (Preview != nullptr)
@@ -204,5 +205,23 @@ void WireframeRenderer::AppendBrush(std::vector<LineVertex>& vertices,
     {
         vertices.push_back(LineVertex{ .Position = corners[start], .Color = color });
         vertices.push_back(LineVertex{ .Position = corners[end], .Color = color });
+    }
+}
+
+void WireframeRenderer::AppendBrushMesh(std::vector<LineVertex>& vertices,
+                                        const BrushMesh& mesh,
+                                        const Transform3f& transform,
+                                        const Vec4& color) const
+{
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const Vec3d a = transform.TransformPoint(mesh.Vertices[face.Loop[i]].Position);
+            const Vec3d b = transform.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % n]].Position);
+            vertices.push_back(LineVertex{ .Position = a, .Color = color });
+            vertices.push_back(LineVertex{ .Position = b, .Color = color });
+        }
     }
 }

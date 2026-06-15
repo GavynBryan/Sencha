@@ -268,10 +268,29 @@ Work:
     reaching it via `Scene.GetBrushMeshStore()` for the sidecar. Defensible; revisit if a
     document needs multiple scenes.
   - **Needs visual QA:** create a brush, save, reload — geometry should round-trip.
-- **Remaining (Phase 2b, UI/visual):** `BrushGeometry` general mesh queries; ray picking vs.
-  mesh; selection sub-element addressing (body/face/edge/vertex); handles → mesh verbs
-  (extrude/clip/delete-face); wireframe/selection rendering over arbitrary face loops. This is
-  what makes brushes *editable as meshes* and completes the S4a gate.
+- 2026-06-15 — **Phase 2b (slice 1): mesh-edge rendering + verb invocation. 899 green,
+  editor launches.** The verbs are now usable end-to-end and the true geometry renders:
+  - **Wireframe + selection renderers draw the actual mesh** (every face loop, world-
+    transformed) via `AppendBrushMesh`, instead of a bounding box — so extruded/clipped/
+    face-deleted brushes render correctly. (`AppendBrush` stays only for the create-drag
+    preview box.)
+  - **`EditBrushMeshCommand`** (before/after `BrushMesh`) — the undoable wrapper for every
+    mesh verb.
+  - **Inspector "Brush Tools" section** (editor-owned, for the editor-only `BrushComponent`):
+    Extrude / Delete Face (by face index) and Clip X/Y/Z, each running the real `BrushOps`
+    verb through `EditBrushMeshCommand`. This exercises the whole chain — create box →
+    extrude/clip/delete → render → undo → save/reload — i.e. the S4a gate's behavior.
+  - **Interim, not final UX:** face selection is an index slider, not click-to-select; clip
+    is axis-aligned through the local origin, not an interactive plane. The box face *handles*
+    (resize/move drag) still operate on the box-derived state and are correct only for box
+    brushes — once a brush is non-box, edit it via Brush Tools, not the drag handles.
+  - **Needs visual QA:** create a brush → Brush Tools → Extrude/Clip/Delete → confirm it
+    renders, undoes, and survives save/reload.
+- **Remaining (Phase 2b, slice 2 — proper interaction):** general mesh face descriptors;
+  ray picking vs. mesh triangles; click-to-select body/face/edge/vertex (`SelectableRef`
+  already carries the element id); face/edge/vertex *handles* driving the verbs (drag-extrude,
+  interactive clip plane); retire the box-axis face system. This is the polished UX over the
+  now-working verb substrate.
 
 ## 7. Risks & mitigations
 

@@ -42,6 +42,13 @@ private:
     void AppendBrush(std::vector<LineVertex>& vertices,
                      const BrushState& brush,
                      const Vec4& color) const;
+    // Draws the actual mesh edges (every face loop), transformed to world — what
+    // renders non-box brushes correctly. AppendBrush stays for the create-drag
+    // preview box.
+    void AppendBrushMesh(std::vector<LineVertex>& vertices,
+                         const BrushMesh& mesh,
+                         const Transform3f& transform,
+                         const Vec4& color) const;
 
     LevelScene& Scene;
     PreviewBuffer* Preview = nullptr;

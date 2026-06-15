@@ -35,6 +35,9 @@ public:
 private:
     void DrawComponent(const IComponentSerializer& serializer, EntityId entity);
     void DrawAddComponentMenu(EntityId entity);
+    // Editor-owned mesh-edit verbs for the selected brush (extrude/clip/delete).
+    // Interim index/axis-based UI until click-to-select face picking lands (2b).
+    void DrawBrushTools(EntityId entity);
     void ResetEditState();
 
     LevelScene& Scene;
@@ -48,6 +51,10 @@ private:
     ComponentId            EditingComponent = InvalidComponentId;
     std::vector<std::byte> EditBefore;
     bool                   EditActive = false;
+
+    // Brush-tools UI state.
+    int   BrushFaceIndex      = 0;
+    float BrushExtrudeDistance = 1.0f;
 
     EntityId LastEntity = {};
     bool Visible = true;
