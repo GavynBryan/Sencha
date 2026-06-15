@@ -1,7 +1,51 @@
 #include "BrushGeometry.h"
 
-#include <algorithm>
-#include <cmath>
+#include <cstdint>
+
+namespace
+{
+    // Newell's method over world-space corners — robust outward normal.
+    Vec3d WorldFaceNormal(const std::vector<Vec3d>& corners)
+    {
+        Vec3d normal{ 0.0f, 0.0f, 0.0f };
+        const std::size_t n = corners.size();
+        if (n < 3)
+            return normal;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const Vec3d& a = corners[i];
+            const Vec3d& b = corners[(i + 1) % n];
+            normal.X += (a.Y - b.Y) * (a.Z + b.Z);
+            normal.Y += (a.Z - b.Z) * (a.X + b.X);
+            normal.Z += (a.X - b.X) * (a.Y + b.Y);
+        }
+        return normal.SqrMagnitude() > 0.0f ? normal.Normalized() : Vec3d{ 0.0f, 0.0f, 0.0f };
+    }
+
+    BrushFaceDescriptor BuildFaceDescriptor(const LevelScene& scene, EntityId entity,
+                                            std::uint32_t faceIndex,
+                                            const Transform3f& transform, const BrushMesh& mesh)
+    {
+        BrushFaceDescriptor desc;
+        desc.Ref = SelectableRef::BrushFaceSelection(scene.GetRegistry().Id, entity, faceIndex);
+        desc.Geometry.FaceIndex = faceIndex;
+
+        const BrushFace& face = mesh.Faces[faceIndex];
+        desc.Geometry.Corners.reserve(face.Loop.size());
+        Vec3d center{ 0.0f, 0.0f, 0.0f };
+        for (std::uint32_t index : face.Loop)
+        {
+            const Vec3d world = transform.TransformPoint(mesh.Vertices[index].Position);
+            desc.Geometry.Corners.push_back(world);
+            center += world;
+        }
+        if (!desc.Geometry.Corners.empty())
+            center = center * (1.0f / static_cast<float>(desc.Geometry.Corners.size()));
+        desc.Geometry.Center = center;
+        desc.Geometry.Normal = WorldFaceNormal(desc.Geometry.Corners);
+        return desc;
+    }
+}
 
 std::optional<BrushState> BrushGeometry::TryGetState(const LevelScene& scene, EntityId entity)
 {
@@ -10,18 +54,12 @@ std::optional<BrushState> BrushGeometry::TryGetState(const LevelScene& scene, En
     if (transform == nullptr || mesh == nullptr)
         return std::nullopt;
 
-    // The box-editing path derives an axis-aligned box from the mesh's local-space
-    // bounds. General (non-box) mesh queries/handles arrive in Phase 2b.
+    // Box view derived from the mesh's local bounds, for the body bounds/move and
+    // the create-drag preview.
     return BrushState{
         .Transform = *transform,
         .HalfExtents = BrushComputeBounds(*mesh).HalfExtent(),
     };
-}
-
-void BrushGeometry::ApplyState(LevelScene& scene, EntityId entity, const BrushState& state)
-{
-    scene.SetTransform(entity, state.Transform);
-    scene.SetBrushHalfExtents(entity, state.HalfExtents);
 }
 
 Aabb3d BrushGeometry::ComputeBounds(const BrushState& state)
@@ -43,71 +81,31 @@ std::array<Vec3d, 8> BrushGeometry::ComputeCorners(const BrushState& state)
     };
 }
 
-std::array<Vec3d, 4> BrushGeometry::ComputeFaceCorners(const BrushState& state, int faceIndex)
+std::vector<BrushFaceDescriptor> BrushGeometry::EnumerateFaces(const LevelScene& scene, EntityId entity)
 {
-    const std::array<Vec3d, 8> corners = ComputeCorners(state);
-
-    switch (faceIndex)
-    {
-    case 0: return { corners[1], corners[2], corners[6], corners[5] };
-    case 1: return { corners[0], corners[4], corners[7], corners[3] };
-    case 2: return { corners[3], corners[7], corners[6], corners[2] };
-    case 3: return { corners[0], corners[1], corners[5], corners[4] };
-    case 4: return { corners[4], corners[5], corners[6], corners[7] };
-    case 5: return { corners[0], corners[3], corners[2], corners[1] };
-    default: return {};
-    }
-}
-
-BrushFaceGeometry BrushGeometry::ComputeFaceGeometry(const BrushState& state, int faceIndex, float thickness)
-{
-    BrushFaceGeometry face{};
-    face.Axis = faceIndex / 2;
-    face.Sign = (faceIndex % 2 == 0) ? 1.0f : -1.0f;
-    face.Normal[face.Axis] = face.Sign;
-    face.PlanePosition = state.Transform.Position[face.Axis] + face.Sign * state.HalfExtents[face.Axis];
-    face.Center = state.Transform.Position;
-    face.Center[face.Axis] = face.PlanePosition;
-    face.Bounds = ComputeBounds(state);
-    face.Bounds.Min[face.Axis] = face.PlanePosition - thickness;
-    face.Bounds.Max[face.Axis] = face.PlanePosition + thickness;
-    face.Corners = ComputeFaceCorners(state, faceIndex);
-    return face;
-}
-
-std::array<BrushFaceDescriptor, 6> BrushGeometry::EnumerateFaces(const LevelScene& scene,
-                                                                 EntityId entity,
-                                                                 float thickness)
-{
-    std::array<BrushFaceDescriptor, 6> faces{};
-    const std::optional<BrushState> state = TryGetState(scene, entity);
-    if (!state.has_value())
+    std::vector<BrushFaceDescriptor> faces;
+    const Transform3f* transform = scene.TryGetTransform(entity);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    if (transform == nullptr || mesh == nullptr)
         return faces;
 
-    for (uint32_t faceIndex = 0; faceIndex < faces.size(); ++faceIndex)
-    {
-        faces[faceIndex].Ref = SelectableRef::BrushFaceSelection(scene.GetRegistry().Id, entity, faceIndex);
-        faces[faceIndex].Geometry = ComputeFaceGeometry(*state, static_cast<int>(faceIndex), thickness);
-    }
-
+    faces.reserve(mesh->Faces.size());
+    for (std::uint32_t i = 0; i < mesh->Faces.size(); ++i)
+        faces.push_back(BuildFaceDescriptor(scene, entity, i, *transform, *mesh));
     return faces;
 }
 
-std::optional<BrushFaceDescriptor> BrushGeometry::TryGetFace(const LevelScene& scene,
-                                                             const SelectableRef& ref,
-                                                             float thickness)
+std::optional<BrushFaceDescriptor> BrushGeometry::TryGetFace(const LevelScene& scene, const SelectableRef& ref)
 {
-    if (!ref.IsBrushFace() || ref.Registry != scene.GetRegistry().Id || ref.ElementId >= 6)
+    if (!ref.IsBrushFace() || ref.Registry != scene.GetRegistry().Id)
         return std::nullopt;
 
-    const std::optional<BrushState> state = TryGetState(scene, ref.Entity);
-    if (!state.has_value())
+    const Transform3f* transform = scene.TryGetTransform(ref.Entity);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity);
+    if (transform == nullptr || mesh == nullptr || ref.ElementId >= mesh->Faces.size())
         return std::nullopt;
 
-    return BrushFaceDescriptor{
-        .Ref = ref,
-        .Geometry = ComputeFaceGeometry(*state, static_cast<int>(ref.ElementId), thickness),
-    };
+    return BuildFaceDescriptor(scene, ref.Entity, ref.ElementId, *transform, *mesh);
 }
 
 BrushState BrushGeometry::Translate(const BrushState& state, Vec3d delta)
@@ -115,18 +113,4 @@ BrushState BrushGeometry::Translate(const BrushState& state, Vec3d delta)
     BrushState translated = state;
     translated.Transform.Position += delta;
     return translated;
-}
-
-BrushState BrushGeometry::ResizeFace(const BrushState& state,
-                                     int faceIndex,
-                                     float facePosition,
-                                     float minHalfExtent)
-{
-    BrushState resized = state;
-    const int axis = faceIndex / 2;
-    const float sign = (faceIndex % 2 == 0) ? 1.0f : -1.0f;
-    const float fixedFacePos = state.Transform.Position[axis] - sign * state.HalfExtents[axis];
-    resized.Transform.Position[axis] = (facePosition + fixedFacePos) * 0.5f;
-    resized.HalfExtents[axis] = std::max(std::abs(facePosition - fixedFacePos) * 0.5f, minHalfExtent);
-    return resized;
 }

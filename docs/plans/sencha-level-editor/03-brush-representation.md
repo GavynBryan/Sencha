@@ -286,11 +286,26 @@ Work:
     brushes — once a brush is non-box, edit it via Brush Tools, not the drag handles.
   - **Needs visual QA:** create a brush → Brush Tools → Extrude/Clip/Delete → confirm it
     renders, undoes, and survives save/reload.
-- **Remaining (Phase 2b, slice 2 — proper interaction):** general mesh face descriptors;
-  ray picking vs. mesh triangles; click-to-select body/face/edge/vertex (`SelectableRef`
-  already carries the element id); face/edge/vertex *handles* driving the verbs (drag-extrude,
-  interactive clip plane); retire the box-axis face system. This is the polished UX over the
-  now-working verb substrate.
+- 2026-06-15 — **Phase 2b (slice 2a): mesh-face picking + click-to-select; box-axis face
+  system retired. brush_tests 20/20, editor builds + launches.**
+  - `BrushGeometry` face API is now **mesh-based**: `BrushFaceGeometry` carries
+    `{FaceIndex, world Normal, world Center, world Corners}` (was box `Axis/Sign/PlanePosition`);
+    `EnumerateFaces`/`TryGetFace` return world-space mesh faces with `Ref.ElementId` = the
+    `BrushMesh` face index.
+  - **Picking** uses ray-vs-face-polygon (Möller–Trumbore over a triangle fan) instead of
+    face AABBs, so clicking selects the actual mesh face of any (box or non-box) brush. The
+    selection renderer highlights that face's loop.
+  - **Brush Tools** now act on the **clicked face** (the `BrushFace` selection's element id),
+    falling back to the slider when only the body is selected.
+  - **Retired the box-axis face system:** deleted `BrushFaceHandle`, `BrushResizeDragInteraction`,
+    and `EditBrushCommand` (the box-only resize-drag); `BrushEditSession` now builds only the
+    body (move) handle. Face editing flows through click-select + Brush Tools.
+  - **Needs visual QA:** click individual faces of a box and an extruded brush → the correct
+    face highlights; with a face selected, Extrude/Delete acts on it.
+- **Remaining (Phase 2b, slice 2b — drag handles):** per-face drag handles that *move/extrude
+  a face along its normal* (the interactive drag math, ortho + perspective), an interactive
+  clip-plane tool, and edge/vertex sub-element handles. UX polish over the now-working,
+  click-driven verb substrate — built with drive-testing since it is pure interaction.
 
 ## 7. Risks & mitigations
 

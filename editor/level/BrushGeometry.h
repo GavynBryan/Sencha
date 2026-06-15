@@ -7,22 +7,25 @@
 
 #include <array>
 #include <optional>
+#include <vector>
 
+// Transient axis-aligned-box view of a brush, used by the create-drag preview and
+// whole-brush body bounds/move. Editable geometry is the BrushMesh; this is a
+// convenience box derived from its local bounds.
 struct BrushState
 {
     Transform3f Transform = Transform3f::Identity();
     Vec3d HalfExtents = { 0.5, 0.5, 0.5 };
 };
 
+// A single mesh face in world space, for selection, highlight, and picking.
+// ElementId in the matching SelectableRef is the face's index in BrushMesh::Faces.
 struct BrushFaceGeometry
 {
-    int Axis = 0;
-    float Sign = 1.0f;
-    Vec3d Normal = {};
-    float PlanePosition = 0.0f;
-    Vec3d Center = {};
-    Aabb3d Bounds = {};
-    std::array<Vec3d, 4> Corners = {};
+    uint32_t           FaceIndex = 0;
+    Vec3d              Normal = {};   // world-space outward normal
+    Vec3d              Center = {};   // world-space centroid
+    std::vector<Vec3d> Corners;       // world-space loop (N-gon)
 };
 
 struct BrushFaceDescriptor
@@ -35,24 +38,15 @@ class BrushGeometry
 {
 public:
     [[nodiscard]] static std::optional<BrushState> TryGetState(const LevelScene& scene, EntityId entity);
-    static void ApplyState(LevelScene& scene, EntityId entity, const BrushState& state);
 
     [[nodiscard]] static Aabb3d ComputeBounds(const BrushState& state);
     [[nodiscard]] static std::array<Vec3d, 8> ComputeCorners(const BrushState& state);
-    [[nodiscard]] static std::array<Vec3d, 4> ComputeFaceCorners(const BrushState& state, int faceIndex);
-    [[nodiscard]] static BrushFaceGeometry ComputeFaceGeometry(const BrushState& state,
-                                                              int faceIndex,
-                                                              float thickness = 0.0f);
-    [[nodiscard]] static std::array<BrushFaceDescriptor, 6> EnumerateFaces(const LevelScene& scene,
-                                                                           EntityId entity,
-                                                                           float thickness = 0.0f);
+
+    // Mesh faces in world space (Ref.ElementId = index in BrushMesh::Faces).
+    [[nodiscard]] static std::vector<BrushFaceDescriptor> EnumerateFaces(const LevelScene& scene,
+                                                                         EntityId entity);
     [[nodiscard]] static std::optional<BrushFaceDescriptor> TryGetFace(const LevelScene& scene,
-                                                                       const SelectableRef& ref,
-                                                                       float thickness = 0.0f);
+                                                                       const SelectableRef& ref);
 
     [[nodiscard]] static BrushState Translate(const BrushState& state, Vec3d delta);
-    [[nodiscard]] static BrushState ResizeFace(const BrushState& state,
-                                               int faceIndex,
-                                               float facePosition,
-                                               float minHalfExtent);
 };

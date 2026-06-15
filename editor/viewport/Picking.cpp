@@ -54,6 +54,52 @@ bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance
     outDistance = static_cast<float>(minDistance);
     return true;
 }
+
+// Möller–Trumbore ray/triangle.
+bool IntersectRayTriangle(const Ray3d& ray, const Vec3d& a, const Vec3d& b, const Vec3d& c, double& outT)
+{
+    const Vec3d e1 = b - a;
+    const Vec3d e2 = c - a;
+    const Vec3d p = ray.Direction.Cross(e2);
+    const double det = e1.Dot(p);
+    if (std::abs(det) < kParallelEpsilon)
+        return false;
+    const double inv = 1.0 / det;
+    const Vec3d tvec = ray.Origin - a;
+    const double u = tvec.Dot(p) * inv;
+    if (u < 0.0 || u > 1.0)
+        return false;
+    const Vec3d q = tvec.Cross(e1);
+    const double v = ray.Direction.Dot(q) * inv;
+    if (v < 0.0 || u + v > 1.0)
+        return false;
+    const double t = e2.Dot(q) * inv;
+    if (t < 0.0)
+        return false;
+    outT = t;
+    return true;
+}
+
+// Ray vs a planar face polygon via triangle fan; nearest hit.
+bool IntersectRayPolygon(const Ray3d& ray, const std::vector<Vec3d>& corners, float& outDistance)
+{
+    if (corners.size() < 3)
+        return false;
+    bool hit = false;
+    double best = kMaxPickDistance;
+    for (std::size_t i = 1; i + 1 < corners.size(); ++i)
+    {
+        double t = 0.0;
+        if (IntersectRayTriangle(ray, corners[0], corners[i], corners[i + 1], t) && t < best)
+        {
+            best = t;
+            hit = true;
+        }
+    }
+    if (hit)
+        outDistance = static_cast<float>(best);
+    return hit;
+}
 }
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
@@ -174,7 +220,7 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
             continue;
 
         float hitDistance = 0.0f;
-        if (!IntersectRayAabb(ray, face.Geometry.Bounds, hitDistance))
+        if (!IntersectRayPolygon(ray, face.Geometry.Corners, hitDistance))
             continue;
 
         outCandidates.push_back(PickCandidate{

@@ -219,9 +219,19 @@ void InspectorPanel::DrawBrushTools(EntityId entity)
     const int faceCount = static_cast<int>(mesh->Faces.size());
     ImGui::Text("%d faces, %d verts", faceCount, static_cast<int>(mesh->Vertices.size()));
 
-    // Interim face picker: index into the mesh's faces (click-to-select arrives
-    // with mesh picking in a later pass). Clamp to the current face range.
-    ImGui::SliderInt("Face", &BrushFaceIndex, 0, faceCount > 0 ? faceCount - 1 : 0);
+    // Prefer the clicked face (mesh picking sets the BrushFace selection); fall
+    // back to the slider when only the body is selected.
+    const SelectableRef selection = Selection.GetPrimarySelection();
+    if (selection.IsBrushFace() && selection.Entity == entity
+        && static_cast<int>(selection.ElementId) < faceCount)
+    {
+        BrushFaceIndex = static_cast<int>(selection.ElementId);
+        ImGui::Text("Selected face: %d", BrushFaceIndex);
+    }
+    else
+    {
+        ImGui::SliderInt("Face", &BrushFaceIndex, 0, faceCount > 0 ? faceCount - 1 : 0);
+    }
     BrushFaceIndex = std::clamp(BrushFaceIndex, 0, faceCount > 0 ? faceCount - 1 : 0);
     ImGui::DragFloat("Distance", &BrushExtrudeDistance, 0.05f);
 

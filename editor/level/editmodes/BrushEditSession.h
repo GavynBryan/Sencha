@@ -5,7 +5,6 @@
 #include "../../selection/SelectableRef.h"
 
 #include <memory>
-#include <vector>
 
 class LevelDocument;
 class LevelScene;
@@ -23,6 +22,5 @@ private:
     SelectableRef Selection;
     LevelScene& Scene;
     LevelDocument& Document;
-    std::vector<std::unique_ptr<IHandle>> FaceHandles;
     std::unique_ptr<IHandle> BodyHandle;
 };
