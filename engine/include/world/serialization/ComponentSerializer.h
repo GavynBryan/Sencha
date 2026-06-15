@@ -82,6 +82,11 @@ public:
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
     std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
 
+    std::span<const RuntimeField> RuntimeFields() const override
+    {
+        return RuntimeFieldsOf<Component>();
+    }
+
     void RegisterStorage(Registry& registry) const override
     {
         Traits::Register(registry);

@@ -384,6 +384,38 @@ public:
     cannot verify; the load/register/serialize chain it depends on is already proven by the
     kept test above.
 
+## 8c. S3 progress log
+
+- 2026-06-14 — **Type-erased editing keystone landed; 874 tests green.**
+  - `World` gained type-erased component access: `GetComponentRaw(EntityId, ComponentId)`
+    (const + mutable) and `HasComponent(EntityId, ComponentId)` — the path the
+    registry-driven inspector and the raw edit command use without naming `T`.
+  - **`RawComponentEditCommand`** ([editor/level/LevelCommands.h](../../editor/level/LevelCommands.h)):
+    the non-templated sibling of `EditComponentCommand<T>`; snapshots before/after raw
+    bytes by `ComponentId` and applies via `World::GetComponentRaw` (components are
+    memcpy-relocatable). Makes ANY component — engine or game-module — undoable without
+    the editor naming it. Covered by `test/core/TypeErasedComponentEditTests.cpp`
+    (round-trip, undo/redo, absent-component null).
+  - **Field-draw decision made + built (type-erased schema descriptor).** Rather than put
+    ImGui in the engine/modules, the engine exposes a flattened, type-erased field
+    descriptor and the editor owns all drawing:
+    [RuntimeSchema.h](../../engine/include/core/metadata/RuntimeSchema.h) flattens a
+    component's compile-time `TypeSchema` (recursing through Vec/Quat/Transform) into
+    leaf scalars — `{dotted name, byte offset, size, FieldScalar}` — via `RuntimeFieldsOf<T>()`.
+    `IComponentSerializer::RuntimeFields()` returns these, so the editor draws/edits ANY
+    component by reading/writing scalars at offsets in `World::GetComponentRaw` bytes, with
+    no ImGui reaching the engine or game modules. Covered by
+    [RuntimeSchemaTests.cpp](../../test/core/RuntimeSchemaTests.cpp) (kinds/sizes, offset
+    round-trips, nested dotted paths, enum→underlying). 878 tests green.
+  - **Remaining for S3 (UI-coupled, needs a GUI/GPU session to verify the gate):**
+    1. Editor module pickup: an `EditorProject` carrying the game-module path, loaded via
+       `GameModuleLoader` into the editor's registries on project open. (The load→register→
+       serialize chain is already proven headlessly by the S2 loader test; this is wiring.)
+    2. Registry-driven `InspectorPanel`: iterate `ComponentSerializerRegistry::Entries()`,
+       for each present component draw its `RuntimeFields()` as widgets over the raw bytes,
+       and commit through `RawComponentEditCommand`. All the non-UI pieces now exist.
+    3. `SceneHierarchyPanel` component-summary column from the registry.
+
 ## 9. Risks & mitigations
 
 - **Engine-as-shared-lib surface.** Going shared exposes which symbols are really public.

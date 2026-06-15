@@ -335,6 +335,44 @@ public:
         return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
     }
 
+    bool HasComponent(EntityId entity, ComponentId id) const
+    {
+        if (!Entities.IsAlive(entity)) return false;
+        return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
+    }
+
+    // ── Type-erased component access (by ComponentId) ─────────────────────────
+    //
+    // For code paths that know a component only by its runtime id — loaded game
+    // modules, the editor's registry-driven inspector and RawComponentEditCommand
+    // — and cannot name T. Returns a pointer to the component's raw bytes, or
+    // nullptr if the entity is dead or lacks the component. The non-const overload
+    // bumps the column version (mutable access), matching TryGet<T>.
+    void* GetComponentRaw(EntityId entity, ComponentId id)
+    {
+        if (!Entities.IsAlive(entity)) return nullptr;
+        const EntityLocation loc = Entities.GetLocation(entity);
+        Archetype& arch = *ArchetypeList[loc.ArchetypeId];
+        if (!arch.Signature.test(id)) return nullptr;
+        Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
+        const uint32_t col = chunk->FindColumn(id);
+        if (col == UINT32_MAX) return nullptr;
+        chunk->BumpColumnVersion(col, FrameCounter);
+        return chunk->ColumnData(col) + loc.RowIndex * chunk->Columns[col].Stride;
+    }
+
+    const void* GetComponentRaw(EntityId entity, ComponentId id) const
+    {
+        if (!Entities.IsAlive(entity)) return nullptr;
+        const EntityLocation loc = Entities.GetLocation(entity);
+        const Archetype& arch = *ArchetypeList[loc.ArchetypeId];
+        if (!arch.Signature.test(id)) return nullptr;
+        const Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
+        const uint32_t col = chunk->FindColumn(id);
+        if (col == UINT32_MAX) return nullptr;
+        return chunk->ColumnData(col) + loc.RowIndex * chunk->Columns[col].Stride;
+    }
+
     // Non-const ForEachComponent hands out mutable references, so it bumps
     // each visited chunk's column version for T — same conservative semantics
     // as Write<T> and non-const TryGet (decisions.md D4.4). The const overload

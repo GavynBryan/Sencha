@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/Archive.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
@@ -7,6 +8,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cstdint>
+#include <span>
 #include <string_view>
 
 //=============================================================================
@@ -24,6 +26,12 @@ struct IComponentSerializer
     virtual ComponentTypeId TypeId() const = 0;
     virtual std::string_view JsonKey() const = 0;
     virtual std::uint32_t BinaryChunkId() const = 0;
+
+    // Type-erased, flattened leaf-scalar fields of this component, for the
+    // editor's registry-driven inspector. The editor reads/writes these at
+    // offsets within the component's raw bytes; no ImGui dependency reaches the
+    // engine or game modules. (docs/plans/sencha-level-editor/02-...md §5.3.)
+    virtual std::span<const RuntimeField> RuntimeFields() const = 0;
 
     virtual void RegisterStorage(Registry& registry) const = 0;
     virtual bool HasComponent(EntityId entity, const Registry& registry) const = 0;
