@@ -21,14 +21,6 @@ if(NOT SENCHA_ENABLE_VULKAN)
     foreach(_pattern
         "[/\\\\]src[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
         "[/\\\\]include[/\\\\]graphics[/\\\\]vulkan[/\\\\]"
-    )
-        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
-        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
-    endforeach()
-endif()
-
-if(NOT SENCHA_ENABLE_DEBUG_UI)
-    foreach(_pattern
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"

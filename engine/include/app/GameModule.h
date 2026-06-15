@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/ModuleExport.h>
+#include <core/console/ConsoleRegistry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <cstdint>
@@ -30,6 +31,7 @@ struct EngineHostInfo
 struct GameModuleContext
 {
     ComponentSerializerRegistry& Serializers;
+    ConsoleRegistry&             Console;
     const EngineHostInfo&        Host;
 };
 

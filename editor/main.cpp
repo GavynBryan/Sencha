@@ -2,8 +2,8 @@
 
 #include "app/EditorApp.h"
 
-int main()
+int main(int argc, char** argv)
 {
-    Application app(0, nullptr);
+    Application app(argc, argv);
     return app.Run<EditorApp>();
 }

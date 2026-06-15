@@ -19,6 +19,7 @@
 #endif
 #include <world/serialization/SceneSerializer.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/console/ConsoleService.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
@@ -32,7 +33,6 @@
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/IDebugPanel.h>
 #include <debug/ImGuiDebugOverlay.h>
@@ -40,7 +40,6 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
 #include <imgui.h>
-#endif
 
 #include <SDL3/SDL.h>
 
@@ -52,7 +51,6 @@
 
 namespace
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
     class CubeDemoPanel : public IDebugPanel
     {
     public:
@@ -100,7 +98,6 @@ namespace
         Registry*& RegistryInstance;
         DemoScene& Scene;
     };
-#endif
 
 #ifdef SENCHA_ENABLE_COOK
     // Throttled per-frame poll of the asset hot-reload watcher (Stage 6a).
@@ -321,6 +318,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
+    ConsoleService& console = engine.Console();
     auto& windows = engine.Platform().Windows;
     SdlWindow* window = windows.GetPrimaryWindow();
     auto& instance = graphics.Instance;
@@ -328,7 +326,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
     auto debugOverlay =
         std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
-    debugOverlay->AddPanel<ConsolePanel>(debugLog);
+    debugOverlay->AddPanel<ConsolePanel>(debugLog, console);
     debugOverlay->AddPanel<TimingPanel>(engine.Timing());
     if (pipeline != nullptr)
     {
@@ -338,16 +336,12 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugOverlay = debugOverlay.get();
     auto& renderer = graphics.MainRenderer;
     renderer.AddFeature(std::move(debugOverlay));
-#else
-    (void)debugLog;
-    debug.Open();
-#endif
 
     std::printf("Sencha Cube Demo\n");
     std::printf("  Right mouse + move: look\n");
     std::printf("  WASD: move, Q/E: down/up, Shift: fast\n");
     std::printf("  F1: pause simulation (timescale 0)\n");
-    std::printf("  `: debugger when built with SENCHA_ENABLE_DEBUG_UI=ON\n");
+    std::printf("  `: debugger\n");
     std::printf("  Escape: quit\n");
 }
 
@@ -364,12 +358,8 @@ void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
     if (DebugOverlay != nullptr && DebugOverlay->ProcessSdlEvent(ctx.Event))
         ctx.Handled = true;
-#else
-    (void)ctx;
-#endif
     if (ctx.Handled)
         return;
 
@@ -391,7 +381,6 @@ void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 
 void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
     DebugOverlay = nullptr;
 #endif
     SetRelativeMouseMode(GetEngine(), false);

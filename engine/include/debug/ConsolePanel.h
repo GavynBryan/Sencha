@@ -4,7 +4,10 @@
 #include <core/logging/LogLevel.h>
 #include <array>
 #include <cstddef>
+#include <core/console/ConsoleTypes.h>
+#include <vector>
 
+class ConsoleService;
 class DebugLogSink;
 
 //=============================================================================
@@ -23,12 +26,13 @@ class DebugLogSink;
 class ConsolePanel : public IDebugPanel
 {
 public:
-	explicit ConsolePanel(DebugLogSink& sink);
+	ConsolePanel(DebugLogSink& sink, ConsoleService& console);
 
 	void Draw() override;
 
 private:
 	DebugLogSink& Sink;
+	ConsoleService& Console;
 
 	// Per-level visibility toggles (indexed by LogLevel cast to int).
 	std::array<bool, 5> LevelFilter = { true, true, true, true, true };
@@ -36,6 +40,9 @@ private:
 	// Substring filter applied to the Category field.
 	static constexpr std::size_t CategoryFilterBufSize = 128;
 	char CategoryFilterBuf[CategoryFilterBufSize] = {};
+	static constexpr std::size_t CommandBufSize = 256;
+	char CommandBuf[CommandBufSize] = {};
+	std::vector<ConsoleOutputEntry> CommandOutput;
 
 	bool ScrollToBottom = true;
 };

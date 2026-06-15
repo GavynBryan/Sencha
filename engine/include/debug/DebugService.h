@@ -3,6 +3,8 @@
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 
+#include <functional>
+
 //=============================================================================
 // DebugService
 //
@@ -33,6 +35,10 @@ public:
 	void Open();
 	void Close();
 	bool IsOpen() const { return Opened; }
+	void SetOpenChangedCallback(std::function<void(bool)> callback)
+	{
+		OnOpenChanged = std::move(callback);
+	}
 
 	// -- Sink access ----------------------------------------------------------
 
@@ -42,5 +48,6 @@ public:
 private:
 	Logger& Log;
 	DebugLogSink& LogSink;
+	std::function<void(bool)> OnOpenChanged;
 	bool Opened = false;
 };

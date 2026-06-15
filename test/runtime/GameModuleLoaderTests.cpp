@@ -6,6 +6,7 @@
 // TEST_GAME_MODULE_PATH is injected by CMake as the built test_game_module path.
 
 #include <app/GameModuleLoader.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
@@ -23,17 +24,20 @@
 
 namespace
 {
-    GameModuleContext MakeContext(ComponentSerializerRegistry& registry, const EngineHostInfo& host)
+    GameModuleContext MakeContext(ComponentSerializerRegistry& registry,
+                                  ConsoleRegistry& console,
+                                  const EngineHostInfo& host)
     {
-        return GameModuleContext{ registry, host };
+        return GameModuleContext{ registry, console, host };
     }
 }
 
 TEST(GameModuleLoader, RejectsMissingArtifact)
 {
     ComponentSerializerRegistry serializers;
+    ConsoleRegistry console;
     EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, host);
+    GameModuleContext ctx = MakeContext(serializers, console, host);
 
     GameModuleLoader loader;
     std::string error;
@@ -45,8 +49,9 @@ TEST(GameModuleLoader, RejectsMissingArtifact)
 TEST(GameModuleLoader, RejectsLibraryWithoutFactory)
 {
     ComponentSerializerRegistry serializers;
+    ConsoleRegistry console;
     EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, host);
+    GameModuleContext ctx = MakeContext(serializers, console, host);
 
     // The shared engine itself is a valid library but exports no game factory.
     GameModuleLoader loader;
@@ -59,8 +64,9 @@ TEST(GameModuleLoader, RejectsLibraryWithoutFactory)
 TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
 {
     ComponentSerializerRegistry serializers;
+    ConsoleRegistry console;
     EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, host);
+    GameModuleContext ctx = MakeContext(serializers, console, host);
 
     GameModuleLoader loader;
     std::string error;
@@ -68,6 +74,8 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     ASSERT_TRUE(m.IsValid()) << error;
     EXPECT_EQ(m.Module->Name(), "test.game");
     EXPECT_EQ(m.Module->AbiVersion(), SENCHA_GAME_ABI_VERSION);
+    EXPECT_NE(console.FindCVar("test.grapple_length"), nullptr);
+    EXPECT_NE(console.FindCommand("test.grapple"), nullptr);
 
     // The host never names GrappleHook, yet its serializer is now present, keyed
     // by the same stable identity the module computed inside its own .so.
@@ -108,6 +116,8 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     loader.Unload(m, ctx);
     EXPECT_FALSE(m.IsValid());
     EXPECT_EQ(serializers.FindByJsonKey("spike.grapple_hook"), nullptr);
+    EXPECT_EQ(console.FindCVar("test.grapple_length"), nullptr);
+    EXPECT_EQ(console.FindCommand("test.grapple"), nullptr);
 }
 
 TEST(GameModuleLoader, RefusesAbiMismatch)
@@ -128,7 +138,8 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     InitSceneSerializer();
 
     EngineHostInfo host;
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), host };
+    ConsoleRegistry console;
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console, host };
     GameModuleLoader loader;
     std::string error;
     LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, ctx, &error);

@@ -19,9 +19,7 @@
 #include <assets/hotreload/AssetSourceWatcher.h>
 #endif
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
 class ImGuiDebugOverlay;
-#endif
 
 class CubeDemoGame final : public Game
 {
@@ -60,7 +58,5 @@ private:
     std::optional<AssetHotReloader> Reloader;
 #endif
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
     ImGuiDebugOverlay* DebugOverlay = nullptr;
-#endif
 };

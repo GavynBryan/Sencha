@@ -92,6 +92,8 @@ std::optional<EngineConfig> LoadEngineConfig(
             *root, "graphics", config.Graphics, sectionError, DeserializeGraphicsConfig)
         || !ReadSection<EngineDebugConfig, DebugConfigError>(
             *root, "debug", config.Debug, sectionError, DeserializeDebugConfig)
+        || !ReadSection<EngineConsoleConfig, ConsoleConfigError>(
+            *root, "console", config.Console, sectionError, DeserializeConsoleConfig)
         || !ReadSection<EngineAudioConfig, AudioConfigError>(
             *root, "audio", config.Audio, sectionError, DeserializeAudioConfig)
         || !ReadSection<EngineCaptionConfig, CaptionConfigError>(

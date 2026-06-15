@@ -24,6 +24,8 @@ void DebugService::Open()
 
 	Opened = true;
 	Log.Debug("Debug opened");
+	if (OnOpenChanged)
+		OnOpenChanged(Opened);
 }
 
 void DebugService::Close()
@@ -33,4 +35,6 @@ void DebugService::Close()
 
 	Opened = false;
 	Log.Debug("Debug closed");
+	if (OnOpenChanged)
+		OnOpenChanged(Opened);
 }

@@ -1,4 +1,5 @@
 #include <debug/ConsolePanel.h>
+#include <core/console/ConsoleService.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugLogEntry.h>
 #include <imgui.h>
@@ -35,8 +36,9 @@ namespace
 	}
 }
 
-ConsolePanel::ConsolePanel(DebugLogSink& sink)
+ConsolePanel::ConsolePanel(DebugLogSink& sink, ConsoleService& console)
 	: Sink(sink)
+	, Console(console)
 {
 }
 
@@ -54,6 +56,7 @@ void ConsolePanel::Draw()
 	if (ImGui::Button("Clear"))
 	{
 		Sink.Clear();
+		CommandOutput.clear();
 	}
 
 	ImGui::SameLine();
@@ -71,6 +74,44 @@ void ConsolePanel::Draw()
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(160.0f);
 	ImGui::InputText("Category", CategoryFilterBuf, CategoryFilterBufSize);
+
+	ImGui::Separator();
+
+	// -- Command input --------------------------------------------------------
+
+	ImGui::SetNextItemWidth(-1.0f);
+	const bool submitted = ImGui::InputText("##console_command",
+		CommandBuf,
+		CommandBufSize,
+		ImGuiInputTextFlags_EnterReturnsTrue);
+	if (submitted && CommandBuf[0] != '\0')
+	{
+		ConsoleOutputEntry prompt;
+		prompt.Channel = "input";
+		prompt.Text = std::string("> ") + CommandBuf;
+		CommandOutput.push_back(std::move(prompt));
+
+		ConsoleResult result = Console.ExecuteLine(
+			CommandBuf,
+			{ .Description = "console ui" },
+			false);
+		CommandOutput.insert(CommandOutput.end(), result.Output.begin(), result.Output.end());
+		CommandBuf[0] = '\0';
+		ScrollToBottom = true;
+		ImGui::SetKeyboardFocusHere(-1);
+	}
+
+	for (const ConsoleOutputEntry& entry : CommandOutput)
+	{
+		ImVec4 color = { 0.80f, 0.80f, 0.80f, 1.0f };
+		if (entry.Severity == ConsoleOutputSeverity::Warning)
+			color = { 1.00f, 0.85f, 0.20f, 1.0f };
+		else if (entry.Severity == ConsoleOutputSeverity::Error)
+			color = { 1.00f, 0.35f, 0.35f, 1.0f };
+		ImGui::PushStyleColor(ImGuiCol_Text, color);
+		ImGui::TextUnformatted(entry.Text.c_str());
+		ImGui::PopStyleColor();
+	}
 
 	ImGui::Separator();
 

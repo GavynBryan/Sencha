@@ -5,6 +5,7 @@
 // it on unregister — the in-tree analog of a shipped game.so.
 
 #include <app/GameModule.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/metadata/Field.h>
 #include <core/serialization/FourCC.h>
 #include <world/serialization/ComponentSerializer.h>
@@ -50,12 +51,36 @@ namespace
         void Register(GameModuleContext& ctx) override
         {
             ctx.Serializers.Register(std::make_unique<ComponentSerializer<GrappleHook>>());
+            ConsoleResult cvarResult;
+            (void)cvarResult;
+            ctx.Console.RegisterCVar({
+                .Name = "test.grapple_length",
+                .Owner = "test.game",
+                .Type = CVarType::Double,
+                .DefaultValue = 7.5,
+                .CurrentValue = 7.5,
+                .Help = "Test module grapple length.",
+            }, &cvarResult);
+            ConsoleResult commandResult;
+            (void)commandResult;
+            ctx.Console.RegisterCommand({
+                .Name = "test.grapple",
+                .Owner = "test.game",
+                .Usage = "test.grapple",
+                .Help = "Test module command.",
+                .Callback = [](ConsoleExecutionContext&, std::span<const std::string>) {
+                    ConsoleResult result;
+                    result.Info("grapple");
+                    return result;
+                },
+            }, &commandResult);
         }
 
         void Unregister(GameModuleContext& ctx) override
         {
             // Module-owns: retract exactly our serializer while still mapped.
             ctx.Serializers.Remove(ResolveComponentTypeId<GrappleHook>());
+            ctx.Console.UnregisterOwner("test.game");
         }
     };
 }

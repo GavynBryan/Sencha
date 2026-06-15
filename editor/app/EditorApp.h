@@ -17,6 +17,7 @@
 #include <vector>
 
 class EditorUiFeature;
+class EditorConsolePanel;
 class ViewportPanel;
 class EditorViewportCameraSystem;
 class EditorFrameHook;
@@ -68,6 +69,7 @@ private:
     void UnloadGameModule();
 
     ViewportPanel* Viewports = nullptr;
+    EditorConsolePanel* ConsolePanel = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;
     EditorFrameHook* FrameHook = nullptr;

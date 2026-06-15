@@ -21,4 +21,4 @@
 // Bumped whenever IGameModule / GameModuleContext / the registration surface
 // changes shape. The host compares this against the module's reported version
 // and refuses an incompatible build, turning ABI skew into a clean error.
-#define SENCHA_GAME_ABI_VERSION 1u
+#define SENCHA_GAME_ABI_VERSION 2u

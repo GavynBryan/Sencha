@@ -2,6 +2,7 @@
 
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleStartupScript.h>
+#include <core/config/ConsoleConfig.h>
 #include <core/service/IService.h>
 
 #include <functional>
@@ -27,8 +28,14 @@ public:
                               ConsoleValueSource source = {},
                               bool deferrable = false);
     ConsoleResult ExecuteStartupScript(const ConsoleStartupScript& script);
+    ConsoleResult ApplyAssignments(const std::vector<EngineConsoleCVarAssignment>& assignments,
+                                   ConsoleValueSource source);
 
     void SetQuitHandler(std::function<void()> handler) { QuitHandler = std::move(handler); }
+    void SetMapHandler(std::function<ConsoleResult(std::string_view)> handler)
+    {
+        MapHandler = std::move(handler);
+    }
     void SetClearOutputHandler(std::function<void()> handler)
     {
         ClearOutputHandler = std::move(handler);
@@ -54,7 +61,7 @@ private:
     ConsolePhase CurrentPhase = ConsolePhase::EngineReady;
     std::vector<ConsoleCommandLine> Deferred;
     std::function<void()> QuitHandler;
+    std::function<ConsoleResult(std::string_view)> MapHandler;
     std::function<void()> ClearOutputHandler;
     int ExecRecursionLimit = 8;
 };
-

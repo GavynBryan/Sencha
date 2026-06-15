@@ -1,10 +1,12 @@
 #include <app/Engine.h>
+#include <app/EngineConsoleBuiltins.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
+#include <core/console/ConsoleService.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
@@ -45,6 +47,10 @@ bool Engine::Initialize()
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     DebugState = std::make_unique<DebugService>(logging, debugLog);
+    ConsoleState = std::make_unique<ConsoleService>();
+    RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
+    if (Configuration.Console.OpenOnStart)
+        DebugState->Open();
     EngineSystems.Register<DefaultRenderPipeline>();
 
     // Audio backend + the system that drives scene AudioSourceComponents
@@ -70,6 +76,7 @@ bool Engine::Initialize()
         PlatformState.reset();
         CaptionState.reset();
         AudioState.reset();
+        ConsoleState.reset();
         DebugState.reset();
         LoggingState.Clear();
         FramePhasesRegistered = false;
@@ -148,6 +155,7 @@ void Engine::Shutdown()
     PlatformState.reset();
     CaptionState.reset();
     AudioState.reset();
+    ConsoleState.reset();
     DebugState.reset();
     LoggingState.Clear();
     FramePhasesRegistered = false;
@@ -189,6 +197,18 @@ const CaptionRuntime& Engine::Captions() const
 {
     assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
     return *CaptionState;
+}
+
+ConsoleService& Engine::Console()
+{
+    assert(ConsoleState && "Engine::Console: valid only between Initialize and Shutdown");
+    return *ConsoleState;
+}
+
+const ConsoleService& Engine::Console() const
+{
+    assert(ConsoleState && "Engine::Console: valid only between Initialize and Shutdown");
+    return *ConsoleState;
 }
 
 PlatformServices& Engine::Platform()
@@ -289,10 +309,15 @@ int Engine::Run(Game& game)
     // Bind once, before any hook, so lifecycle contexts carry data only.
     game.AttachEngine(*this);
 
+    ConsoleService& console = Console();
+    console.AdvancePhase(ConsolePhase::EngineReady);
+
     GameStartupContext startup{
         .Config = Configuration,
     };
     game.OnStart(startup);
+    console.AdvancePhase(ConsolePhase::GameLoaded);
+    (void)console.ExecuteStartupScript(StartupScript);
 
     SystemRegisterContext registerSystems{
         .Config = Configuration,
@@ -300,6 +325,7 @@ int Engine::Run(Game& game)
     };
     game.OnRegisterSystems(registerSystems);
     EngineSystems.Init();
+    console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
     if (FrameDriverInstance != nullptr)
     {
@@ -313,4 +339,14 @@ int Engine::Run(Game& game)
     };
     game.OnShutdown(shutdown);
     return 0;
+}
+
+void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug)
+{
+    ConsoleRegistry& registry = console.Registry();
+    EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
+    EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
+    EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }

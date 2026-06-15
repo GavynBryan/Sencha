@@ -23,9 +23,7 @@ int main(int argc, char** argv)
         sfx.MaxVoices = 8;
         sfx.StealPolicy = VoiceStealPolicy::Reject;
         config.Audio.Buses.push_back(std::move(sfx));
-#ifdef SENCHA_ENABLE_DEBUG_UI
         config.Debug.DebugUi = true;
-#endif
     });
 
     return app.Run<CubeDemoGame>();

@@ -5,6 +5,7 @@
 #include "../input/UiInputGuard.h"
 #include "../level/LevelSerialization.h"
 #include "../render/EditorRenderFeature.h"
+#include "../ui/EditorConsolePanel.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/InspectorPanel.h"
 #include "../ui/SceneHierarchyPanel.h"
@@ -14,7 +15,9 @@
 #include <SDL3/SDL.h>
 
 #include <app/Engine.h>
+#include <core/console/ConsoleService.h>
 #include <core/service/ServiceHost.h>
+#include <debug/DebugService.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
@@ -39,6 +42,8 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     EnginePtr = &ctx.EngineInstance;
 
     ServiceHost& services = ctx.EngineInstance.Services();
+    auto& console = services.Get<ConsoleService>();
+    auto& debug = services.Get<DebugService>();
     auto& windows = services.Get<SdlWindowService>();
     auto& instance = services.Get<VulkanInstanceService>();
     auto& frames = services.Get<VulkanFrameService>();
@@ -117,6 +122,10 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
+    auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
+    ConsolePanel = editorConsole.get();
+    ConsolePanel->SetVisible(ctx.Config.Console.OpenOnStart);
+    UiFeature->AddPanel(std::move(editorConsole));
     UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->Document.GetScene(), Workspace->Selection, *Commands));
@@ -150,6 +159,16 @@ void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
         break;
     }
 
+    if (ctx.Event.type == SDL_EVENT_KEY_DOWN
+        && !ctx.Event.key.repeat
+        && ctx.Event.key.scancode == SDL_SCANCODE_GRAVE)
+    {
+        if (ConsolePanel != nullptr)
+            ConsolePanel->ToggleVisible();
+        ctx.Handled = true;
+        return;
+    }
+
     if (UiFeature != nullptr)
         UiFeature->ProcessSdlEvent(ctx.Event);
 
@@ -172,6 +191,7 @@ void EditorApp::OnShutdown(GameShutdownContext& ctx)
     CameraSystem = nullptr;
     FrameHook = nullptr;
     Viewports = nullptr;
+    ConsolePanel = nullptr;
     UiFeature = nullptr;
     Window = nullptr;
     UnloadGameModule();
@@ -322,7 +342,8 @@ void EditorApp::LoadGameModule()
     if (path == nullptr || path[0] == '\0')
         return;
 
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), HostInfo };
+    auto& console = EnginePtr->Services().Get<ConsoleService>();
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
     std::string error;
     GameModule = ModuleLoader.Load(path, ctx, &error);
     if (!GameModule.IsValid())
@@ -342,7 +363,8 @@ void EditorApp::UnloadGameModule()
     if (!GameModule.IsValid())
         return;
 
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), HostInfo };
+    auto& console = EnginePtr->Services().Get<ConsoleService>();
+    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
     ModuleLoader.Unload(GameModule, ctx);
 }
 
