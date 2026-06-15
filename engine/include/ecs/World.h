@@ -4,6 +4,7 @@
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTraits.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/EntityRegistry.h>
 
@@ -27,10 +28,12 @@ template <typename... Accessors> class Query;
 
 struct ComponentMeta
 {
-    ComponentId Id;
-    size_t      Size;
-    size_t      Alignment;
-    bool        IsTag; // zero-size marker; no per-entity column
+    ComponentId      Id;
+    ComponentTypeId  TypeId;    // stable, module-independent identity (replaces typeid key)
+    std::string_view Name;      // the stable name behind TypeId, for diagnostics
+    size_t           Size;
+    size_t           Alignment;
+    bool             IsTag;     // zero-size marker; no per-entity column
 };
 
 struct ComponentBatchItem
@@ -95,21 +98,36 @@ public:
         assert(!EntityCreated
                && "Component registration after entity creation is forbidden (v1).");
 
-        const std::type_index ti(typeid(T));
-        auto it = TypeToId.find(ti);
+        const ComponentTypeId key = ResolveComponentTypeId<T>();
+
+        const size_t size  = std::is_empty_v<T> ? 0 : sizeof(T);
+        const size_t align = std::is_empty_v<T> ? 1 : alignof(T);
+
+        auto it = TypeToId.find(key);
         if (it != TypeToId.end())
+        {
+            // Same stable identity must mean the same storage contract — a
+            // mismatch is two distinct types lying about a shared name, which
+            // would silently corrupt archetype layout. Fail loudly (§3.3).
+            const ComponentMeta& existing = ComponentMetas[it->second];
+            assert(existing.Size == size && existing.Alignment == align
+                   && existing.IsTag == std::is_empty_v<T>
+                   && "ComponentTypeId collision: same stable name, different storage layout.");
             return it->second;
+        }
 
         assert(NextComponentId < static_cast<ComponentId>(MaxComponents)
                && "Component budget (256) exceeded.");
 
         const ComponentId id = NextComponentId++;
-        TypeToId[ti] = id;
+        TypeToId[key] = id;
 
         ComponentMeta meta{};
         meta.Id        = id;
-        meta.Size      = std::is_empty_v<T> ? 0 : sizeof(T);
-        meta.Alignment = std::is_empty_v<T> ? 1 : alignof(T);
+        meta.TypeId    = key;
+        meta.Name      = ResolveComponentName<T>();
+        meta.Size      = size;
+        meta.Alignment = align;
         meta.IsTag     = std::is_empty_v<T>;
         ComponentMetas.push_back(meta);
 
@@ -119,8 +137,7 @@ public:
     template <typename T>
     ComponentId GetComponentId() const
     {
-        const std::type_index ti(typeid(T));
-        auto it = TypeToId.find(ti);
+        auto it = TypeToId.find(ResolveComponentTypeId<T>());
         assert(it != TypeToId.end() && "Component type not registered");
         return it->second;
     }
@@ -128,7 +145,22 @@ public:
     template <typename T>
     bool IsRegistered() const
     {
-        return TypeToId.count(std::type_index(typeid(T))) > 0;
+        return TypeToId.count(ResolveComponentTypeId<T>()) > 0;
+    }
+
+    // Runtime, type-erased identity lookup — for code paths that learned a
+    // component only via its stable ComponentTypeId (loaded modules, the editor's
+    // registry-driven inspector) and cannot name T. Returns InvalidComponentId if
+    // the type is not registered in this World.
+    ComponentId GetComponentIdByType(ComponentTypeId type) const
+    {
+        auto it = TypeToId.find(type);
+        return it == TypeToId.end() ? InvalidComponentId : it->second;
+    }
+
+    bool IsRegistered(ComponentTypeId type) const
+    {
+        return TypeToId.count(type) > 0;
     }
 
     // ── Entity lifecycle ─────────────────────────────────────────────────────
@@ -775,7 +807,7 @@ private:
     std::unordered_map<ArchetypeSignature, uint32_t, SigHash> SignatureToArchetype;
 
     std::vector<ComponentMeta>                         ComponentMetas;
-    std::unordered_map<std::type_index, ComponentId>   TypeToId;
+    std::unordered_map<ComponentTypeId, ComponentId>   TypeToId;
     ComponentId NextComponentId = 0;
 
     std::unordered_map<

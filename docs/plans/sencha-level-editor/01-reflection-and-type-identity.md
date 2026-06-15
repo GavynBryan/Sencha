@@ -435,4 +435,48 @@ This pillar is intentionally narrow. It does **not** introduce:
 - 2026-06-14 — Review pass tightened scope: identity is a component contract key, not a
   general reflection system; serializer registration will include `ComponentTypeId`; resource
   work is limited to minimal stable keys if needed; non-goals recorded.
-- _(S0 result to be recorded here.)_
+- 2026-06-14 — **S0 spike GREEN. Scheme confirmed; proceeding to S1.** A throwaway
+  `spike_game.so` (compiled `-fvisibility=hidden -fvisibility-inlines-hidden`, the
+  hostile posture for `typeid` merging) was loaded by a host that links a shared
+  `libspike_engine.so`. Verified across the real `.so` boundary, all green:
+  - `ResolveComponentTypeId<LocalTransform>()` computed *inside* game.so is bit-identical
+    to the host's value (the core claim — engine-type identity resolves the same in both
+    modules with **no RTTI**).
+  - A serializer registered by game.so is found by the host under the same name-hash key.
+  - `world.Query<LocalTransform, GrappleHook>()` instantiated in game.so matched exactly
+    the joined entities and read both engine- and game-component data correctly.
+  - Scene save→load round-trips both components.
+  - Conflicts rejected loudly: same name/diff layout, same JSON key/diff `ComponentTypeId`,
+    same FourCC/diff `ComponentTypeId` (serializer registry); and same stable name/diff
+    storage layout (World registration).
+  - Grep confirms no `typeid`/`type_index` in code on the identity path.
+  No constexpr-hash ODR subtlety surfaced. The throwaway lives under `spike/` (build +
+  run via `spike/build.sh`); delete after S1 lands its kept tests. `ComponentTypeId.h`
+  written during the spike is **permanent** — it is the real header S1 builds on.
+- 2026-06-14 — **S1 rewrite landed. Full suite green: 867 tests (was 852), 0 failures.**
+  - `World::TypeToId` now keys on `ComponentTypeId` via `ResolveComponentTypeId<T>()`;
+    `ComponentMeta` carries `{TypeId, Name}`; `RegisterComponent` asserts a same-identity
+    re-registration matches storage layout (size/align/tag) or aborts (§3.3).
+    `GetComponentId`/`IsRegistered` resolve through the stable key. `typeid` is **gone
+    from the component lookup path** (verified by grep).
+  - Engine non-schema components got explicit identities: `WorldTransform` →
+    `sencha.world_transform`, `Parent` → `sencha.parent`. `LocalTransform` identity
+    derives from its existing `TypeSchema::Name` (`"Transform"`) — left unqualified to
+    avoid breaking on-disk scenes; the `StableName`/`JsonKey` namespacing split (§2.4) is
+    **deferred** (trigger: a deliberate scene-format migration pass).
+  - `IComponentSerializer` gained `TypeId()`; the serializer registry now validates the
+    full `(TypeId, JsonKey, BinaryChunkId)` tuple — full match is idempotent, any partial
+    overlap aborts.
+  - New kept tests (`test/core/`): `ComponentTypeIdTests`, `WorldStableIdentityTests`,
+    `SceneSerializerIdentityTests`, and a two-TU test (`TwoTuIdentity*`) pinning that
+    identity is independent of the instantiation site. Conflict paths covered by death tests.
+  - **§3.2 decision — Resources/LegacyStores left on `typeid` for now.** They are
+    engine-owned, in-process, single-module; nothing crosses a module boundary through
+    them today, and the plan forbids introducing resource reflection speculatively. They
+    are *not* on the component lookup path. Trigger to revisit: the S2 module spike needs a
+    game system to `GetResource<EngineResource>()` across the boundary → introduce a minimal
+    `ResourceTypeKey<T>` then. (LegacyStores is migration-only; retire with its last caller.)
+  - The `spike/` tree (the S0 throwaway) was **deleted** once its assertions were
+    reproduced as kept tests: `TwoTuIdentity*` for in-process identity, and — landing in
+    S2 — `test/runtime/GameModuleLoaderTests.cpp` for the real-`.so` boundary on the
+    production loader.

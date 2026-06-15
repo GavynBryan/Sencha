@@ -18,6 +18,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The engine is a shared library (game modules and tools must share ONE copy of
+# its globals/registries — see docs/plans/sencha-level-editor/02-...md §2.1).
+# Position-independent code everywhere so the static third-party deps (bc7enc,
+# imgui, …) link cleanly into the shared engine, and game modules stay PIC.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Emit compile_commands.json for clangd and other tooling. It lands in the
 # build dir; symlink the chosen one to the repo root if your editor needs it.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json" FORCE)

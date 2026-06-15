@@ -346,6 +346,44 @@ public:
 
 ---
 
+## 8b. Progress log
+
+- 2026-06-14 — **S2 architectural seam landed; full suite green (871 tests, was 867).**
+  - `engine` is now a **SHARED** library ([engine/CMakeLists.txt](../../engine/CMakeLists.txt));
+    `CMAKE_POSITION_INDEPENDENT_CODE` is on globally so the static third-party deps link
+    into it. One process-wide copy of engine globals — the precondition for module loading.
+  - The free-function serializer global was refactored into an owned
+    **`ComponentSerializerRegistry`** object
+    ([ComponentSerializerRegistry.h](../../engine/include/world/serialization/ComponentSerializerRegistry.h));
+    the legacy `RegisterComponentSerializer`/`ClearComponentSerializers`/
+    `GetComponentSerializerEntries` free functions are now a thin shim over a process-default
+    instance, so existing callers are untouched while the object can be handed to a module.
+  - ABI surface landed: [ModuleExport.h](../../engine/include/app/ModuleExport.h)
+    (`SENCHA_GAME_EXPORT`, `SENCHA_GAME_ABI_VERSION`) and
+    [GameModule.h](../../engine/include/app/GameModule.h) (`IGameModule`, `GameModuleContext`).
+  - [GameModuleLoader](../../engine/include/app/GameModuleLoader.h) implements
+    open → resolve `SenchaCreateGameModule` → **ABI-check (before Register)** → `Register(ctx)`,
+    and `Unload` = `Unregister` + unmap. POSIX (`dlopen`) + Windows (`LoadLibrary`) paths.
+  - `World` gained runtime, type-erased identity lookup: `GetComponentIdByType(ComponentTypeId)`
+    / `IsRegistered(ComponentTypeId)` — needed by loaded modules and the S3 editor inspector.
+  - **Kept integration test** ([GameModuleLoaderTests.cpp](../../test/runtime/GameModuleLoaderTests.cpp))
+    on the REAL loader + a real loadable `test_game_module.so` (MODULE, hidden visibility,
+    only the factory exported): loads the module, finds its game component the host never
+    names by the stable `ComponentTypeId`, registers storage type-erased, round-trips the
+    component through the serializer vtable seam (authored JSON → Load → Save), and verifies
+    Unload retracts exactly its serializer. Plus loader-contract refusals (missing artifact,
+    no factory). This is the S0 spike's assertions, now on the production loader.
+  - **§3 ownership note (interim):** the registry currently *owns* the module's serializer
+    `unique_ptr`; the module retracts it in `Unregister` (via `ComponentSerializerRegistry::Remove`)
+    while still mapped, so no use-after-unmap. This works on Linux (shared libstdc++, one
+    allocator). The strict "module-owns / engine holds non-owning ref" rule matters for
+    **Windows separate-CRT and hot-reload** — convert then (trigger).
+  - **Remaining for S2:** wire `app/main.cpp` into the `GameHost` + CLI (`--game`, `--zone`)
+    and the `game/` top-level target. Deferred here because its gate ("game component drives
+    a *visible* result") needs GPU rendering to demonstrate, which the current environment
+    cannot verify; the load/register/serialize chain it depends on is already proven by the
+    kept test above.
+
 ## 9. Risks & mitigations
 
 - **Engine-as-shared-lib surface.** Going shared exposes which symbols are really public.

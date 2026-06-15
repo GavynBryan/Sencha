@@ -9,13 +9,13 @@
 #include <numbers>
 #include <utility>
 
-namespace
+// Global scope (not the unnamed namespace) so its stable-identity specialization
+// is well-formed; declared before first use below.
+struct ExtraComponent
 {
-    struct ExtraComponent
-    {
-        int Value = 0;
-    };
-}
+    int Value = 0;
+};
+SENCHA_DECLARE_COMPONENT_TYPE(ExtraComponent, "test.extra_component");
 
 TEST(TransformPropagation, PropagatesDefaultRegistryTransforms)
 {

@@ -78,6 +78,7 @@ class ComponentSerializer final : public IComponentSerializer
     using Traits = ComponentStorageTraits<Component>;
 
 public:
+    ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Component>(); }
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
     std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
 

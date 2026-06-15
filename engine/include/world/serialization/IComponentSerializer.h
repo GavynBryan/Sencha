@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/serialization/Archive.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -17,6 +18,10 @@
 //=============================================================================
 struct IComponentSerializer
 {
+    // Module-stable runtime identity of the component this serializer handles.
+    // Together with JsonKey() and BinaryChunkId() it forms the registration
+    // identity tuple the registry validates against aliasing (see §3.3).
+    virtual ComponentTypeId TypeId() const = 0;
     virtual std::string_view JsonKey() const = 0;
     virtual std::uint32_t BinaryChunkId() const = 0;
 

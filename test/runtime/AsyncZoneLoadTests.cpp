@@ -11,13 +11,16 @@
 #include <thread>
 #include <utility>
 
+// Global scope (not the unnamed namespace) so its stable-identity specialization
+// is well-formed; declared before first use below.
+struct ZoneLoadMarker
+{
+    int Value = 0;
+};
+SENCHA_DECLARE_COMPONENT_TYPE(ZoneLoadMarker, "test.zone_load_marker");
+
 namespace
 {
-    struct ZoneLoadMarker
-    {
-        int Value = 0;
-    };
-
     // The build callback the tests hand to the loader: exercises entity
     // creation and component registration on the detached registry — both
     // are safe off-thread because the registry is solely owned by the task.

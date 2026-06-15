@@ -53,6 +53,19 @@ if(RUNTIME_TEST_SOURCES)
     add_executable(runtime_tests ${RUNTIME_TEST_SOURCES})
     target_link_libraries(runtime_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS runtime_tests)
+
+    # A real loadable game module for the S2 boundary integration test. MODULE so
+    # it is dlopen-only; hidden visibility — only SenchaCreateGameModule exported.
+    add_library(test_game_module MODULE module/TestGameModule.cpp)
+    target_link_libraries(test_game_module PRIVATE sencha_engine)
+    set_target_properties(test_game_module PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        PREFIX "")
+    add_dependencies(runtime_tests test_game_module)
+    target_compile_definitions(runtime_tests PRIVATE
+        TEST_GAME_MODULE_PATH="$<TARGET_FILE:test_game_module>"
+        TEST_ENGINE_LIB_PATH="$<TARGET_FILE:sencha_engine>")
 endif()
 
 if(ENGINE_FEATURE_TEST_SOURCES)

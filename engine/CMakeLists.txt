@@ -87,7 +87,7 @@ endif()
 
 find_package(SDL3 REQUIRED CONFIG)
 
-add_library(sencha_engine STATIC
+add_library(sencha_engine SHARED
     ${SENCHA_ENGINE_SOURCES}
     ${SENCHA_ENGINE_HEADERS}
     ${SENCHA_ENGINE_GENERATED_HEADERS}
@@ -106,7 +106,7 @@ target_include_directories(sencha_engine
     PUBLIC "${SENCHA_ENGINE_INCLUDE_DIR}"
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
-target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
+target_link_libraries(sencha_engine PUBLIC SDL3::SDL3 ${CMAKE_DL_LIBS})
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
 # Diagnostics: PRIVATE so they apply to the engine build without leaking onto
