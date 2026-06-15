@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../commands/ICommand.h"
-#include "SelectableRef.h"
+#include "../../commands/ICommand.h"
+#include "../SelectableRef.h"
 
 class SelectionService;
 

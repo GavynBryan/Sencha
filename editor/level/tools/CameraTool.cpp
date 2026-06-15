@@ -1,6 +1,6 @@
 #include "CameraTool.h"
 
-#include "../LevelCommands.h"
+#include "../commands/CreateCameraCommand.h"
 #include "../../commands/CommandStack.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/Picking.h"

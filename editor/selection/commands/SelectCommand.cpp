@@ -1,6 +1,6 @@
 #include "SelectCommand.h"
 
-#include "SelectionService.h"
+#include "../SelectionService.h"
 
 SelectCommand::SelectCommand(SelectionService& service, SelectableRef selection)
     : Service(service)

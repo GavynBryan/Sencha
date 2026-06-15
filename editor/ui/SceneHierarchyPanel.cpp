@@ -2,7 +2,7 @@
 
 #include "../commands/CommandStack.h"
 #include "../level/LevelScene.h"
-#include "../selection/SelectCommand.h"
+#include "../selection/commands/SelectCommand.h"
 #include "../selection/SelectionService.h"
 
 #include <world/serialization/IComponentSerializer.h>

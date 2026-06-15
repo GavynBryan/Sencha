@@ -1,7 +1,7 @@
 #include "BrushResizeDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
-#include "../../level/LevelCommands.h"
+#include "../commands/EditBrushCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/EditorViewport.h"

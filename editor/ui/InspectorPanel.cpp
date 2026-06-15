@@ -1,7 +1,8 @@
 #include "InspectorPanel.h"
 
 #include "../commands/CommandStack.h"
-#include "../level/LevelCommands.h"
+#include "../level/commands/RawComponentEditCommand.h"
+#include "../level/commands/RawComponentAddCommand.h"
 #include "../level/LevelDocument.h"
 #include "../selection/SelectionService.h"
 

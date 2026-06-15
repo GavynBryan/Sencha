@@ -1,11 +1,11 @@
 #include "BrushCreateDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
-#include "../../level/LevelCommands.h"
+#include "../commands/CreateBrushCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../level/LevelScene.h"
 #include "../../render/PreviewBuffer.h"
-#include "../../selection/SelectCommand.h"
+#include "../../selection/commands/SelectCommand.h"
 #include "../../selection/SelectionService.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/EditorViewport.h"

@@ -4,7 +4,7 @@
 #include "../interactions/BrushCreateDragInteraction.h"
 #include "../../commands/CommandStack.h"
 #include "../../interaction/InteractionHost.h"
-#include "../../selection/SelectCommand.h"
+#include "../../selection/commands/SelectCommand.h"
 #include "../../selection/SelectionService.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/Picking.h"
