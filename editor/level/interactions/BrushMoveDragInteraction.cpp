@@ -1,7 +1,7 @@
 #include "BrushMoveDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
-#include "../commands/EditBrushCommand.h"
+#include "../commands/MoveEntityCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/EditorViewport.h"
@@ -34,24 +34,25 @@ void BrushMoveDragInteraction::OnPointerMove(ToolContext& ctx,
 
     const Vec3d moveDelta = *snapped - GridAnchor;
     CurrentState = BrushGeometry::Translate(InitialState, moveDelta);
-    BrushGeometry::ApplyState(Scene, Entity, CurrentState);
+    // Move only the transform — never rebuild the mesh (that would clobber any
+    // extrude/clip/delete edits).
+    Scene.SetTransform(Entity, CurrentState.Transform);
 }
 
 void BrushMoveDragInteraction::OnPointerUp(ToolContext& ctx,
                                            EditorViewport& /*viewport*/,
                                            ImVec2 /*pos*/)
 {
-    ctx.Commands.Execute(std::make_unique<EditBrushCommand>(
+    ctx.Commands.Execute(std::make_unique<MoveEntityCommand>(
         Entity,
-        InitialState.Transform.Position,
-        CurrentState.Transform.Position,
-        InitialState.HalfExtents,
-        CurrentState.HalfExtents,
+        InitialState.Transform,
+        CurrentState.Transform,
         Scene,
         Document));
 }
 
 void BrushMoveDragInteraction::OnCancel(ToolContext& /*ctx*/)
 {
-    BrushGeometry::ApplyState(Scene, Entity, InitialState);
+    // Restore the transform only; the mesh was never touched.
+    Scene.SetTransform(Entity, InitialState.Transform);
 }
