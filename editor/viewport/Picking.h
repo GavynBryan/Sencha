@@ -17,6 +17,8 @@ enum class BrushPickMode : uint8_t
     EntityOnly = 0,
     FacePreferred = 1,
     FaceOnly = 2,
+    EdgeOnly = 3,
+    VertexOnly = 4,
 };
 
 struct BrushPickRequest
@@ -58,5 +60,16 @@ private:
                                    const LevelScene& scene,
                                    EntityId entity,
                                    std::vector<PickCandidate>& outCandidates) const;
+
+    // Screen-space picking for edge/vertex modes: project mesh elements to the
+    // viewport and select the nearest within a pixel threshold, breaking ties by
+    // depth.
+    [[nodiscard]] SelectableRef PickEdge(const EditorViewport& viewport,
+                                         ImVec2 point,
+                                         const LevelScene& scene) const;
+    [[nodiscard]] SelectableRef PickVertex(const EditorViewport& viewport,
+                                           ImVec2 point,
+                                           const LevelScene& scene) const;
+
     [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point) const;
 };

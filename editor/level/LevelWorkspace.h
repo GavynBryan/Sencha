@@ -4,6 +4,7 @@
 #include "../editmodes/EditSessionHost.h"
 #include "../input/ViewportToolDispatcher.h"
 #include "../interaction/InteractionHost.h"
+#include "../meshedit/MeshEditService.h"
 #include "../render/PreviewBuffer.h"
 #include "../selection/SelectionContext.h"
 #include "../selection/SelectionService.h"
@@ -29,10 +30,10 @@ public:
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
+    MeshEditService MeshEdit;
     InteractionHost Interactions;
     PreviewBuffer Preview;
     EditSessionHost Sessions;
-    std::shared_ptr<SelectionService::ObserverFn> SelectionSubscription;
     std::unique_ptr<ToolContext> ActiveToolContext;
     std::unique_ptr<ToolRegistry> Tools;
     std::unique_ptr<ViewportToolDispatcher> Dispatcher;

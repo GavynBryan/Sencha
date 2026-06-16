@@ -1,6 +1,10 @@
 #include "SelectionRenderer.h"
 
-#include "../level/BrushGeometry.h"
+#include "../editmodes/IGizmo.h"
+#include "../editmodes/TranslateGizmo.h"
+#include "../level/editmodes/SelectionPivot.h"
+#include "../meshedit/MeshEditService.h"
+#include "../meshedit/MeshElements.h"
 
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -10,14 +14,16 @@
 #include <shaders/kEditorLineFragSpv.h>
 #include <shaders/kEditorLineVertSpv.h>
 
-#include <array>
 #include <cstddef>
 #include <cstring>
+#include <span>
 #include <vector>
 
-SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection)
+SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection, MeshEditService& meshEdit)
     : Scene(scene)
     , Selection(selection)
+    , MeshEdit(meshEdit)
+    , Gizmo(std::make_unique<TranslateGizmo>())
 {
 }
 
@@ -80,25 +86,49 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         CachedDepth = frame.DepthFormat;
     }
 
-    const SelectableRef selected = Selection.GetPrimarySelection();
-    if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
-        return;
-
-    const BrushMesh* mesh = Scene.TryGetBrushMesh(selected.Entity);
-    const Transform3f* transform = Scene.TryGetTransform(selected.Entity);
-    if (mesh == nullptr || transform == nullptr)
+    const std::span<const SelectableRef> selection = Selection.GetSelection();
+    if (selection.empty())
         return;
 
     std::vector<LineVertex> vertices;
-    vertices.reserve(32);
-    AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
-
-    if (selected.IsBrushFace())
+    vertices.reserve(selection.size() * 32);
+    for (SelectableRef selected : selection)
     {
-        const std::optional<BrushFaceDescriptor> face = BrushGeometry::TryGetFace(Scene, selected);
-        if (face.has_value())
-            AppendFace(vertices, face->Geometry, Vec4(1.0f, 0.4f, 0.1f, 1.0f));
+        if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
+            continue;
+
+        const BrushMesh* mesh = Scene.TryGetBrushMesh(selected.Entity);
+        const Transform3f* transform = Scene.TryGetTransform(selected.Entity);
+        if (mesh == nullptr || transform == nullptr)
+            continue;
+
+        AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
+
+        if (selected.IsFace())
+        {
+            if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, selected.ElementId))
+                AppendFace(vertices, *face, Vec4(1.0f, 0.4f, 0.1f, 1.0f));
+        }
+        else if (selected.IsEdge())
+        {
+            if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, selected.ElementId))
+                AppendEdge(vertices, *edge, Vec4(0.2f, 0.9f, 1.0f, 1.0f));
+        }
+        else if (selected.IsVertex())
+        {
+            if (const std::optional<VertexElement> vertex = MeshElements::TryGetVertex(*mesh, *transform, selected.ElementId))
+                AppendVertex(vertices, *vertex, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        }
     }
+
+    // The translate gizmo sits at the selection pivot for the active element mode,
+    // matching where MeshEditSession hit-tests it. (Phase C.)
+    if (const std::optional<Vec3d> pivot =
+            ComputeSelectionPivot(Scene, Selection.GetSnapshot(), MeshEdit.GetElementKind()))
+        AppendGizmo(vertices, viewport, *pivot);
+
+    if (vertices.empty())
+        return;
 
     const VkDeviceSize byteCount = sizeof(LineVertex) * vertices.size();
     const auto allocation = Scratch->AllocateVertex(byteCount);
@@ -167,25 +197,6 @@ void SelectionRenderer::Teardown()
     Device = VK_NULL_HANDLE;
 }
 
-void SelectionRenderer::AppendBrush(std::vector<LineVertex>& vertices,
-                                    const BrushState& brush,
-                                    const Vec4& color) const
-{
-    const std::array<Vec3d, 8> corners = BrushGeometry::ComputeCorners(brush);
-
-    constexpr std::array<std::pair<int, int>, 12> edges = {{
-        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
-        { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
-        { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 },
-    }};
-
-    for (const auto& [start, end] : edges)
-    {
-        vertices.push_back(LineVertex{ .Position = corners[start], .Color = color });
-        vertices.push_back(LineVertex{ .Position = corners[end], .Color = color });
-    }
-}
-
 void SelectionRenderer::AppendBrushMesh(std::vector<LineVertex>& vertices,
                                         const BrushMesh& mesh,
                                         const Transform3f& transform,
@@ -205,7 +216,7 @@ void SelectionRenderer::AppendBrushMesh(std::vector<LineVertex>& vertices,
 }
 
 void SelectionRenderer::AppendFace(std::vector<LineVertex>& vertices,
-                                   const BrushFaceGeometry& face,
+                                   const FaceElement& face,
                                    const Vec4& color) const
 {
     for (size_t i = 0; i < face.Corners.size(); ++i)
@@ -214,5 +225,44 @@ void SelectionRenderer::AppendFace(std::vector<LineVertex>& vertices,
         const Vec3d& end = face.Corners[(i + 1) % face.Corners.size()];
         vertices.push_back(LineVertex{ .Position = start, .Color = color });
         vertices.push_back(LineVertex{ .Position = end, .Color = color });
+    }
+}
+
+void SelectionRenderer::AppendEdge(std::vector<LineVertex>& vertices,
+                                   const EdgeElement& edge,
+                                   const Vec4& color) const
+{
+    vertices.push_back(LineVertex{ .Position = edge.A, .Color = color });
+    vertices.push_back(LineVertex{ .Position = edge.B, .Color = color });
+}
+
+void SelectionRenderer::AppendVertex(std::vector<LineVertex>& vertices,
+                                     const VertexElement& vertex,
+                                     const Vec4& color) const
+{
+    constexpr float radius = 0.05f;
+    const Vec3d p = vertex.Position;
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(-radius, 0.0f, 0.0f), .Color = color });
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(radius, 0.0f, 0.0f), .Color = color });
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(0.0f, -radius, 0.0f), .Color = color });
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(0.0f, radius, 0.0f), .Color = color });
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(0.0f, 0.0f, -radius), .Color = color });
+    vertices.push_back(LineVertex{ .Position = p + Vec3d(0.0f, 0.0f, radius), .Color = color });
+}
+
+void SelectionRenderer::AppendGizmo(std::vector<LineVertex>& vertices,
+                                    const EditorViewport& viewport,
+                                    Vec3d pivot) const
+{
+    // The gizmo draws itself: we just convert its line list. Whatever the active
+    // gizmo is (translate arrows now, rotate rings / scale handles later), this
+    // code is unchanged — no gizmo-shape assumption lives here.
+    Gizmo->SetPivot(pivot);
+    std::vector<GizmoLine> lines;
+    Gizmo->AppendGeometry(viewport, lines);
+    for (const GizmoLine& line : lines)
+    {
+        vertices.push_back(LineVertex{ .Position = line.A, .Color = line.Color });
+        vertices.push_back(LineVertex{ .Position = line.B, .Color = line.Color });
     }
 }

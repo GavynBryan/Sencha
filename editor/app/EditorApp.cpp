@@ -8,6 +8,7 @@
 #include "../ui/EditorConsolePanel.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/InspectorPanel.h"
+#include "../ui/MeshEditPanel.h"
 #include "../ui/SceneHierarchyPanel.h"
 #include "../ui/ToolPalettePanel.h"
 #include "../ui/ViewportPanel.h"
@@ -80,6 +81,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     Shortcuts->Register(SDLK_N, { .Ctrl = true }, [this] { NewDocument(); });
     Shortcuts->Register(SDLK_O, { .Ctrl = true }, [this] { RequestOpenDialog(); });
     Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { SaveDocument(); });
+    Shortcuts->Register(SDLK_V, { .Shift = true }, [this] { Workspace->MeshEdit.CycleElementKind(); });
 
     Router = std::make_unique<InputRouter>();
     // The UI is the top layer of the input stack: events over an ImGui panel are
@@ -104,7 +106,8 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Layout,
         Workspace->Document.GetScene(),
         Workspace->Selection,
-        Workspace->Preview));
+        Workspace->Preview,
+        Workspace->MeshEdit));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
     UiFeature = uiFeature.get();
@@ -131,6 +134,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Document.GetScene(), Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
+    UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
+        Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection,
+        Workspace->MeshEdit, *Commands));
 
     renderer.AddFeature(std::move(uiFeature));
 }

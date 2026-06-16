@@ -158,6 +158,41 @@ BrushMesh BrushOps::DeleteFace(const BrushMesh& mesh, std::uint32_t face)
     return out;
 }
 
+BrushMesh BrushOps::SplitEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    BrushMesh out = mesh;
+    if (a >= out.Vertices.size() || b >= out.Vertices.size() || a == b)
+        return out;
+
+    const std::uint32_t mid = static_cast<std::uint32_t>(out.Vertices.size());
+    out.Vertices.push_back(BrushVertex{
+        (out.Vertices[a].Position + out.Vertices[b].Position) * 0.5f });
+
+    bool inserted = false;
+    for (BrushFace& face : out.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const std::uint32_t u = face.Loop[i];
+            const std::uint32_t v = face.Loop[(i + 1) % n];
+            if ((u == a && v == b) || (u == b && v == a))
+            {
+                // Insert between u and v, preserving each loop's winding. An
+                // undirected edge appears at most once per face loop.
+                face.Loop.insert(face.Loop.begin() + static_cast<std::ptrdiff_t>(i) + 1, mid);
+                inserted = true;
+                break;
+            }
+        }
+    }
+
+    if (!inserted)
+        out.Vertices.pop_back(); // edge absent: leave the mesh untouched
+    // Validation is the caller's (MeshEditService) — see header.
+    return out;
+}
+
 BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide)
 {
     const Plane p = plane.Normalized();

@@ -93,7 +93,12 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp)
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/commands/SelectCommand.cpp)
     target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
     target_link_libraries(brush_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS brush_tests)
@@ -143,5 +148,14 @@ endif()
 if(TARGET brush_tests)
     gtest_discover_tests(brush_tests
         DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+# Static dependency-direction guard for the mesh-edit subsystem. Not a gtest —
+# a source scan run as a ctest so `ctest` fails if the layering regresses.
+if(NOT WIN32)
+    add_test(
+        NAME meshedit_dependency_directions
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_meshedit_deps.sh ${CMAKE_SOURCE_DIR}
     )
 endif()

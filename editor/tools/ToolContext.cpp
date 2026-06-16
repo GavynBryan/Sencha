@@ -6,7 +6,8 @@ ToolContext::ToolContext(CommandStack& commandStack,
                          LevelScene& levelScene,
                          LevelDocument& levelDocument,
                          InteractionHost& interactions,
-                         PreviewBuffer& preview)
+                         PreviewBuffer& preview,
+                         MeshEditService& meshEdit)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
@@ -14,5 +15,6 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Document(levelDocument)
     , Interactions(interactions)
     , Preview(preview)
+    , MeshEdit(meshEdit)
 {
 }

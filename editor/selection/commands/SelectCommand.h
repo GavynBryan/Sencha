@@ -2,6 +2,7 @@
 
 #include "../../commands/ICommand.h"
 #include "../SelectableRef.h"
+#include "../ISelectionContext.h"
 
 class SelectionService;
 
@@ -9,13 +10,14 @@ class SelectCommand : public ICommand
 {
 public:
     SelectCommand(SelectionService& service, SelectableRef selection);
+    SelectCommand(SelectionService& service, SelectionSnapshot selection);
 
     void Execute() override;
     void Undo() override;
 
 private:
     SelectionService& Service;
-    SelectableRef PreviousSelection = {};
-    SelectableRef NextSelection = {};
+    SelectionSnapshot PreviousSelection = {};
+    SelectionSnapshot NextSelection = {};
     bool CapturedPreviousSelection = false;
 };

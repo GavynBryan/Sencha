@@ -1,0 +1,137 @@
+#include "MeshEditPanel.h"
+
+#include "../commands/CommandStack.h"
+#include "../level/BrushEditTarget.h"
+#include "../meshedit/MeshEditService.h"
+#include "../selection/SelectionService.h"
+
+#include <imgui.h>
+
+#include <memory>
+
+MeshEditPanel::MeshEditPanel(LevelScene& scene,
+                             LevelDocument& document,
+                             SelectionService& selection,
+                             MeshEditService& meshEdit,
+                             CommandStack& commands)
+    : Scene(scene)
+    , Document(document)
+    , Selection(selection)
+    , MeshEdit(meshEdit)
+    , Commands(commands)
+{
+}
+
+std::string_view MeshEditPanel::GetTitle() const
+{
+    return "Mesh Edit";
+}
+
+bool MeshEditPanel::IsVisible() const
+{
+    return Visible;
+}
+
+void MeshEditPanel::DrawModeToolbar()
+{
+    const auto modeButton = [&](const char* label, MeshElementKind kind)
+    {
+        const bool active = MeshEdit.GetElementKind() == kind;
+        if (active)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.80f, 1.0f));
+        if (ImGui::Button(label))
+            MeshEdit.SetElementKind(kind);
+        if (active)
+            ImGui::PopStyleColor();
+    };
+
+    modeButton("Object", MeshElementKind::Object);
+    ImGui::SameLine();
+    modeButton("Vertex", MeshElementKind::Vertex);
+    ImGui::SameLine();
+    modeButton("Edge", MeshElementKind::Edge);
+    ImGui::SameLine();
+    modeButton("Face", MeshElementKind::Face);
+
+    ImGui::TextDisabled("Shift+V cycles modes");
+}
+
+void MeshEditPanel::DrawFaceVerbs()
+{
+    int selectedFaces = 0;
+    for (const SelectableRef& ref : Selection.GetSelection())
+    {
+        if (ref.IsFace())
+            ++selectedFaces;
+    }
+
+    ImGui::Text("%d face(s) selected", selectedFaces);
+    if (selectedFaces == 0)
+    {
+        ImGui::TextDisabled("Click a face to select");
+        return;
+    }
+
+    const auto applyVerb = [&](MeshEditVerb verb, const MeshEditParams& params)
+    {
+        BrushEditTarget target(Scene, Document);
+        if (auto command = MeshEdit.ApplyVerb(target, Selection.GetSnapshot(), verb, params))
+            Commands.Execute(std::move(command));
+    };
+
+    ImGui::DragFloat("Distance", &ExtrudeDistance, 0.05f);
+    if (ImGui::Button("Extrude"))
+    {
+        MeshEditParams params;
+        params.Distance = ExtrudeDistance;
+        applyVerb(MeshEditVerb::Extrude, params);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete"))
+        applyVerb(MeshEditVerb::Delete, {});
+}
+
+void MeshEditPanel::DrawEdgeVerbs()
+{
+    int selectedEdges = 0;
+    for (const SelectableRef& ref : Selection.GetSelection())
+    {
+        if (ref.IsEdge())
+            ++selectedEdges;
+    }
+
+    ImGui::Text("%d edge(s) selected", selectedEdges);
+    if (selectedEdges == 0)
+    {
+        ImGui::TextDisabled("Click an edge to select");
+        return;
+    }
+
+    if (ImGui::Button("Split"))
+    {
+        BrushEditTarget target(Scene, Document);
+        if (auto command = MeshEdit.ApplyVerb(target, Selection.GetSnapshot(), MeshEditVerb::SplitEdge, {}))
+            Commands.Execute(std::move(command));
+    }
+}
+
+void MeshEditPanel::OnDraw()
+{
+    if (!ImGui::Begin(GetTitle().data(), &Visible))
+    {
+        ImGui::End();
+        return;
+    }
+
+    DrawModeToolbar();
+    ImGui::Separator();
+
+    switch (MeshEdit.GetElementKind())
+    {
+    case MeshElementKind::Face: DrawFaceVerbs(); break;
+    case MeshElementKind::Edge: DrawEdgeVerbs(); break;
+    default:                    ImGui::TextDisabled("No verbs for this mode yet"); break;
+    }
+
+    ImGui::End();
+}

@@ -7,10 +7,11 @@
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LevelScene& scene,
                                          SelectionService& selection,
-                                         PreviewBuffer& preview)
+                                         PreviewBuffer& preview,
+                                         MeshEditService& meshEdit)
     : Layout(viewportLayout)
     , Wireframe(scene)
-    , Highlight(scene, selection)
+    , Highlight(scene, selection, meshEdit)
 {
     Wireframe.SetPreviewBuffer(&preview);
 }

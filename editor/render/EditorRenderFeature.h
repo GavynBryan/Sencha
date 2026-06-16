@@ -7,6 +7,7 @@
 #include <graphics/vulkan/Renderer.h>
 
 class LevelScene;
+class MeshEditService;
 class PreviewBuffer;
 class SelectionService;
 class ViewportLayout;
@@ -17,7 +18,8 @@ public:
     EditorRenderFeature(ViewportLayout& viewportLayout,
                         LevelScene& scene,
                         SelectionService& selection,
-                        PreviewBuffer& preview);
+                        PreviewBuffer& preview,
+                        MeshEditService& meshEdit);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     void Setup(const RendererServices& services) override;

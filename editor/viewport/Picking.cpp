@@ -4,6 +4,7 @@
 
 #include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
+#include "../meshedit/MeshElements.h"
 
 #include <math/geometry/3d/Aabb3d.h>
 
@@ -100,6 +101,48 @@ bool IntersectRayPolygon(const Ray3d& ray, const std::vector<Vec3d>& corners, fl
         outDistance = static_cast<float>(best);
     return hit;
 }
+
+// Pixel thresholds for screen-space element picking.
+constexpr float kEdgePickPixels = 8.0f;
+constexpr float kVertexPickPixels = 10.0f;
+
+// Projects a world point to viewport pixels. Returns nullopt when the point is
+// behind the camera. outDepth is the clip-space W (view depth) for tie-breaking.
+std::optional<ImVec2> ProjectToScreen(const Mat4& viewProjection,
+                                      const EditorViewport& viewport,
+                                      const Vec3d& world,
+                                      float& outDepth)
+{
+    const Vec4 clip = viewProjection * Vec4(static_cast<float>(world.X),
+                                            static_cast<float>(world.Y),
+                                            static_cast<float>(world.Z),
+                                            1.0f);
+    if (clip.W <= kParallelEpsilon)
+        return std::nullopt;
+
+    const float ndcX = clip.X / clip.W;
+    const float ndcY = clip.Y / clip.W;
+    const float width = viewport.RegionMax.x - viewport.RegionMin.x;
+    const float height = viewport.RegionMax.y - viewport.RegionMin.y;
+    outDepth = clip.W;
+    return ImVec2{
+        viewport.RegionMin.x + (ndcX * 0.5f + 0.5f) * width,
+        viewport.RegionMin.y + (ndcY * 0.5f + 0.5f) * height,
+    };
+}
+
+float DistancePointToSegment(ImVec2 p, ImVec2 a, ImVec2 b)
+{
+    const float abx = b.x - a.x;
+    const float aby = b.y - a.y;
+    const float lengthSq = abx * abx + aby * aby;
+    float t = 0.0f;
+    if (lengthSq > 0.0f)
+        t = std::clamp(((p.x - a.x) * abx + (p.y - a.y) * aby) / lengthSq, 0.0f, 1.0f);
+    const float dx = p.x - (a.x + t * abx);
+    const float dy = p.y - (a.y + t * aby);
+    return std::sqrt(dx * dx + dy * dy);
+}
 }
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
@@ -107,6 +150,11 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
                                    const LevelScene& scene,
                                    BrushPickRequest request) const
 {
+    if (request.Mode == BrushPickMode::EdgeOnly)
+        return PickEdge(viewport, point, scene);
+    if (request.Mode == BrushPickMode::VertexOnly)
+        return PickVertex(viewport, point, scene);
+
     const Ray3d ray = BuildRay(viewport, point);
     return PickBrushElement(ray, scene, request);
 }
@@ -169,9 +217,9 @@ uint8_t PickingService::PriorityFor(BrushPickRequest request, SelectableKind kin
     switch (request.Mode)
     {
     case BrushPickMode::FaceOnly:
-        return kind == SelectableKind::BrushFace ? 0u : 255u;
+        return kind == SelectableKind::Face ? 0u : 255u;
     case BrushPickMode::FacePreferred:
-        return kind == SelectableKind::BrushFace ? 0u : 1u;
+        return kind == SelectableKind::Face ? 0u : 1u;
     case BrushPickMode::EntityOnly:
     default:
         return 0u;
@@ -214,21 +262,107 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
                                                EntityId entity,
                                                std::vector<PickCandidate>& outCandidates) const
 {
-    for (const BrushFaceDescriptor& face : BrushGeometry::EnumerateFaces(scene, entity))
-    {
-        if (!face.Ref.IsValid())
-            continue;
+    const Transform3f* transform = scene.TryGetTransform(entity);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    if (transform == nullptr || mesh == nullptr)
+        return;
 
+    for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
+    {
         float hitDistance = 0.0f;
-        if (!IntersectRayPolygon(ray, face.Geometry.Corners, hitDistance))
+        if (!IntersectRayPolygon(ray, face.Corners, hitDistance))
             continue;
 
         outCandidates.push_back(PickCandidate{
-            .Ref = face.Ref,
+            .Ref = SelectableRef::FaceSelection(scene.GetRegistry().Id, entity, face.Index),
             .Distance = hitDistance,
             .Priority = 0u,
         });
     }
+}
+
+SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
+                                       ImVec2 point,
+                                       const LevelScene& scene) const
+{
+    const Mat4 viewProjection = viewport.BuildRenderData().ViewProjection;
+
+    SelectableRef best{};
+    float bestPixels = kEdgePickPixels;
+    float bestDepth = 0.0f;
+
+    for (EntityId entity : scene.GetAllEntities())
+    {
+        const Transform3f* transform = scene.TryGetTransform(entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+        if (transform == nullptr || mesh == nullptr)
+            continue;
+
+        for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
+        {
+            float depthA = 0.0f;
+            float depthB = 0.0f;
+            const std::optional<ImVec2> a = ProjectToScreen(viewProjection, viewport, edge.A, depthA);
+            const std::optional<ImVec2> b = ProjectToScreen(viewProjection, viewport, edge.B, depthB);
+            if (!a.has_value() || !b.has_value())
+                continue;
+
+            const float pixels = DistancePointToSegment(point, *a, *b);
+            const float depth = std::min(depthA, depthB);
+            if (pixels > bestPixels)
+                continue;
+            if (best.IsValid() && pixels >= bestPixels && depth >= bestDepth)
+                continue;
+
+            best = SelectableRef::EdgeSelection(scene.GetRegistry().Id, entity, edge.Index);
+            bestPixels = pixels;
+            bestDepth = depth;
+        }
+    }
+
+    return best;
+}
+
+SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
+                                         ImVec2 point,
+                                         const LevelScene& scene) const
+{
+    const Mat4 viewProjection = viewport.BuildRenderData().ViewProjection;
+
+    SelectableRef best{};
+    float bestPixels = kVertexPickPixels;
+    float bestDepth = 0.0f;
+
+    for (EntityId entity : scene.GetAllEntities())
+    {
+        const Transform3f* transform = scene.TryGetTransform(entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+        if (transform == nullptr || mesh == nullptr)
+            continue;
+
+        for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+        {
+            float depth = 0.0f;
+            const std::optional<ImVec2> projected =
+                ProjectToScreen(viewProjection, viewport, vertex.Position, depth);
+            if (!projected.has_value())
+                continue;
+
+            const float dx = point.x - projected->x;
+            const float dy = point.y - projected->y;
+            const float pixels = std::sqrt(dx * dx + dy * dy);
+            if (pixels > bestPixels)
+                continue;
+            if (best.IsValid() && pixels >= bestPixels && depth >= bestDepth)
+                continue;
+
+            best = SelectableRef::VertexSelection(scene.GetRegistry().Id, entity, vertex.Index);
+            bestPixels = pixels;
+            bestDepth = depth;
+        }
+    }
+
+    return best;
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const

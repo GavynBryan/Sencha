@@ -8,7 +8,9 @@
 enum class SelectableKind : uint8_t
 {
     Entity = 0,
-    BrushFace = 1,
+    Vertex = 1,
+    Edge = 2,
+    Face = 3,
 };
 
 struct SelectableRef
@@ -28,9 +30,24 @@ struct SelectableRef
         return IsValid() && Kind == SelectableKind::Entity;
     }
 
-    [[nodiscard]] bool IsBrushFace() const
+    [[nodiscard]] bool IsVertex() const
     {
-        return IsValid() && Kind == SelectableKind::BrushFace;
+        return IsValid() && Kind == SelectableKind::Vertex;
+    }
+
+    [[nodiscard]] bool IsEdge() const
+    {
+        return IsValid() && Kind == SelectableKind::Edge;
+    }
+
+    [[nodiscard]] bool IsFace() const
+    {
+        return IsValid() && Kind == SelectableKind::Face;
+    }
+
+    [[nodiscard]] bool IsMeshElement() const
+    {
+        return IsVertex() || IsEdge() || IsFace();
     }
 
     static SelectableRef EntitySelection(RegistryId registry, EntityId entity)
@@ -43,12 +60,32 @@ struct SelectableRef
         };
     }
 
-    static SelectableRef BrushFaceSelection(RegistryId registry, EntityId entity, uint32_t faceId)
+    static SelectableRef VertexSelection(RegistryId registry, EntityId entity, uint32_t vertexId)
     {
         return SelectableRef{
             .Registry = registry,
             .Entity = entity,
-            .Kind = SelectableKind::BrushFace,
+            .Kind = SelectableKind::Vertex,
+            .ElementId = vertexId,
+        };
+    }
+
+    static SelectableRef EdgeSelection(RegistryId registry, EntityId entity, uint32_t edgeId)
+    {
+        return SelectableRef{
+            .Registry = registry,
+            .Entity = entity,
+            .Kind = SelectableKind::Edge,
+            .ElementId = edgeId,
+        };
+    }
+
+    static SelectableRef FaceSelection(RegistryId registry, EntityId entity, uint32_t faceId)
+    {
+        return SelectableRef{
+            .Registry = registry,
+            .Entity = entity,
+            .Kind = SelectableKind::Face,
             .ElementId = faceId,
         };
     }

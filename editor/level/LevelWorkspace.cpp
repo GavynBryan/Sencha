@@ -1,6 +1,6 @@
 #include "LevelWorkspace.h"
 
-#include "editmodes/BrushEditSession.h"
+#include "editmodes/MeshEditSession.h"
 #include "tools/CameraTool.h"
 #include "tools/BrushTool.h"
 #include "tools/SelectTool.h"
@@ -21,7 +21,8 @@ void LevelWorkspace::Init(CommandStack& commands)
         Document.GetScene(),
         Document,
         Interactions,
-        Preview);
+        Preview,
+        MeshEdit);
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());
@@ -36,11 +37,9 @@ void LevelWorkspace::Init(CommandStack& commands)
         Sessions,
         *Tools);
 
-    SelectionSubscription = Selection.Subscribe([this](SelectableRef ref)
-    {
-        if (ref.IsValid() && Document.GetScene().TryGetBrush(ref.Entity) != nullptr)
-            Sessions.SetSession(std::make_unique<BrushEditSession>(ref, Document.GetScene(), Document));
-        else
-            Sessions.EndSession();
-    });
+    // The mesh-edit session reads selection and element mode live from the tool
+    // context on each pointer-down, so it never needs rebuilding when the
+    // selection or mode changes. It consumes a click only when a gizmo axis is
+    // hit; otherwise the select tool runs and picks normally.
+    Sessions.SetSession(std::make_unique<MeshEditSession>());
 }

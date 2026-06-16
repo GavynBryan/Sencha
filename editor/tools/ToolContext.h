@@ -5,6 +5,7 @@ class EditSessionHost;
 class InteractionHost;
 class LevelDocument;
 class LevelScene;
+class MeshEditService;
 class PickingService;
 class PreviewBuffer;
 class SelectionService;
@@ -17,7 +18,8 @@ struct ToolContext
                 LevelScene& levelScene,
                 LevelDocument& levelDocument,
                 InteractionHost& interactions,
-                PreviewBuffer& preview);
+                PreviewBuffer& preview,
+                MeshEditService& meshEdit);
 
     CommandStack& Commands;
     SelectionService& Selection;
@@ -26,4 +28,5 @@ struct ToolContext
     LevelDocument& Document;
     InteractionHost& Interactions;
     PreviewBuffer& Preview;
+    MeshEditService& MeshEdit;
 };

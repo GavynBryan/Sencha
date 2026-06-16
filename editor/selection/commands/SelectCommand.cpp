@@ -2,9 +2,19 @@
 
 #include "../SelectionService.h"
 
+#include <utility>
+
 SelectCommand::SelectCommand(SelectionService& service, SelectableRef selection)
     : Service(service)
-    , NextSelection(selection)
+    , NextSelection(selection.IsValid()
+        ? SelectionSnapshot{ .Items = { selection }, .Primary = selection }
+        : SelectionSnapshot{})
+{
+}
+
+SelectCommand::SelectCommand(SelectionService& service, SelectionSnapshot selection)
+    : Service(service)
+    , NextSelection(std::move(selection))
 {
 }
 
@@ -12,14 +22,14 @@ void SelectCommand::Execute()
 {
     if (!CapturedPreviousSelection)
     {
-        PreviousSelection = Service.GetPrimarySelection();
+        PreviousSelection = Service.GetSnapshot();
         CapturedPreviousSelection = true;
     }
 
-    Service.ApplySelection(NextSelection);
+    Service.ApplySnapshot(NextSelection);
 }
 
 void SelectCommand::Undo()
 {
-    Service.ApplySelection(PreviousSelection);
+    Service.ApplySnapshot(PreviousSelection);
 }

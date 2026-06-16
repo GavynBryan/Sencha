@@ -33,6 +33,14 @@ struct BrushOps
     // Remove a face, opening the solid (allowed during authoring).
     [[nodiscard]] static BrushMesh DeleteFace(const BrushMesh& mesh, std::uint32_t face);
 
+    // Insert a vertex at the midpoint of the undirected edge (a, b) into every
+    // face loop that traverses it, keeping the mesh 2-manifold. Pure topology:
+    // appends one vertex and leaves validation to the caller, so several splits
+    // compose by stable vertex indices before a single repair. No-op if the edge
+    // is absent.
+    [[nodiscard]] static BrushMesh SplitEdge(const BrushMesh& mesh,
+                                             std::uint32_t a, std::uint32_t b);
+
     // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
     // the half-space the plane normal points into. (The Hammer clip tool.)
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
