@@ -1,5 +1,7 @@
 #include "SceneHierarchyPanel.h"
 
+#include "fonts/IconsFontAwesome6.h"
+
 #include "../commands/CommandStack.h"
 #include "../level/LevelScene.h"
 #include "../selection/commands/SelectCommand.h"
@@ -58,7 +60,9 @@ void SceneHierarchyPanel::OnDraw()
         }
 
         const std::string kind = summary.empty() ? std::string("Entity") : summary;
-        std::string label = kind + " " + std::to_string(entity.Index);
+        // Leading glyph: a populated entity gets a cube, an empty one a faint dot.
+        const char* icon = summary.empty() ? ICON_FA_CIRCLE_DOT : ICON_FA_CUBE;
+        std::string label = std::string(icon) + "  " + kind + " " + std::to_string(entity.Index);
         label += "##" + std::to_string(entity.Index) + "_" + std::to_string(entity.Generation);
 
         const bool isSelected = current.IsValid() && current.Entity == entity;

@@ -1,5 +1,7 @@
 #include "InspectorPanel.h"
 
+#include "fonts/IconsFontAwesome6.h"
+
 #include "../commands/CommandStack.h"
 #include "../level/commands/RawComponentEditCommand.h"
 #include "../level/commands/RawComponentAddCommand.h"
@@ -12,6 +14,8 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cfloat>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -46,23 +50,30 @@ namespace
         bool Committed = false; // edit finished this frame
     };
 
-    // Draws one leaf scalar directly over the component's working bytes.
-    FieldEdit DrawRuntimeField(const RuntimeField& field, std::byte* component)
+    // Lays out one row as [label column | widget column], the widget filling the
+    // rest of the width — the two-column inspector look. The widget uses a hidden
+    // ("##") label so only the left-column text shows.
+    FieldEdit DrawRuntimeField(const RuntimeField& field, std::byte* component, float labelWidth)
     {
         FieldEdit edit;
         void* ptr = component + field.Offset;
-        const char* label = field.Name.c_str();
 
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(field.Name.c_str());
+        ImGui::SameLine(labelWidth);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+
+        const std::string id = "##" + field.Name;
         if (field.Scalar == FieldScalar::Unsupported)
         {
-            ImGui::TextDisabled("%s: <unsupported>", label);
+            ImGui::TextDisabled("<unsupported>");
             return edit;
         }
 
         if (field.Scalar == FieldScalar::Bool)
-            ImGui::Checkbox(label, reinterpret_cast<bool*>(ptr));
+            ImGui::Checkbox(id.c_str(), reinterpret_cast<bool*>(ptr));
         else
-            ImGui::DragScalar(label, DataTypeFor(field), ptr, 0.05f);
+            ImGui::DragScalar(id.c_str(), DataTypeFor(field), ptr, 0.05f);
 
         edit.Activated = ImGui::IsItemActivated();
         edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
@@ -108,11 +119,13 @@ void InspectorPanel::DrawComponent(const IComponentSerializer& serializer, Entit
     const ComponentMeta* meta = world.GetMeta(id);
     const std::size_t size = meta ? meta->Size : 0;
 
-    const std::string header(serializer.JsonKey());
+    const std::string key(serializer.JsonKey());
+    // Stable id from the JsonKey; the icon is display-only (kept out of the id).
+    const std::string header = std::string(ICON_FA_CUBES "  ") + key + "###" + key;
     if (!ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
-    ImGui::PushID(header.c_str());
+    ImGui::PushID(key.c_str());
 
     // Work on a copy of the component's bytes so reads don't churn change
     // tracking every frame; write back only when a widget actually edits.
@@ -129,11 +142,14 @@ void InspectorPanel::DrawComponent(const IComponentSerializer& serializer, Entit
     }
     const std::vector<std::byte> frameStart = working;
 
+    // Label column ~42% of the section width, clamped, so widgets line up.
+    const float labelWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.42f, 70.0f, 200.0f);
+
     bool activated = false;
     bool committed = false;
     for (const RuntimeField& field : serializer.RuntimeFields())
     {
-        const FieldEdit edit = DrawRuntimeField(field, working.data());
+        const FieldEdit edit = DrawRuntimeField(field, working.data(), labelWidth);
         activated |= edit.Activated;
         committed |= edit.Committed;
     }
@@ -173,7 +189,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
     // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
     // the popup before a selection can be made.
-    if (ImGui::Button("Add Component"))
+    if (ImGui::Button(ICON_FA_PLUS "  Add Component"))
         ImGui::OpenPopup("##add_component");
 
     if (ImGui::BeginPopup("##add_component"))
@@ -227,7 +243,10 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    ImGui::Text("Entity %u (gen %u)", entity.Index, entity.Generation);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text(ICON_FA_CUBE "  Entity %u", entity.Index);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();
 
     // Registry-driven: every component the registry knows about, drawn by schema.

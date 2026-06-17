@@ -186,8 +186,15 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    *Deliberately no snap/grid/angle **toggles**: those imply backing state
    (snap-enable, configurable spacing, angle snap) the editor doesn't have yet —
    they'd be fake buttons, so they're deferred to Phase 4 as a real feature.*
-3. **Panel polish** — inspector section styling, entity status colors, outliner
-   rows; tabbed viewport styling.
+3. **Panel polish** — DONE (the parts not gated on backing data). Inspector:
+   two-column `[label | widget]` field layout (widgets fill the row, labels in an
+   aligned left column) replacing ImGui's default label-after-widget look;
+   icon'd collapsing component sections; icon'd entity header + Add Component
+   button. Outliner: leading per-row glyph (cube for populated entities, dot for
+   empty), still fully registry-driven. *Deferred to Phase 4 (need backing state,
+   would be fake otherwise): entity **status colors** (Active/Locked/Idle),
+   per-row **eye/lock** toggles, and the **tabbed** single-viewport layout (a
+   layout feature, not styling — the four-way layout already works).*
 4. **Feature-backed elements** — visibility/lock state, material swatches, asset
    thumbnails (each its own scoped feature, gated on backing data).
 5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
