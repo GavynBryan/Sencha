@@ -1,5 +1,7 @@
 #include "EditorConsolePanel.h"
 
+#include "EditorUiStyle.h"
+
 #include <core/console/ConsoleService.h>
 #include <debug/DebugLogEntry.h>
 #include <debug/DebugLogSink.h>
@@ -8,16 +10,16 @@
 
 namespace
 {
-    constexpr ImVec4 LevelColour(LogLevel level)
+    ImVec4 LevelColour(LogLevel level)
     {
         switch (level)
         {
-        case LogLevel::Debug:    return { 0.60f, 0.60f, 0.60f, 1.0f };
-        case LogLevel::Info:     return { 1.00f, 1.00f, 1.00f, 1.0f };
-        case LogLevel::Warning:  return { 1.00f, 0.85f, 0.20f, 1.0f };
-        case LogLevel::Error:    return { 1.00f, 0.35f, 0.35f, 1.0f };
-        case LogLevel::Critical: return { 1.00f, 0.20f, 0.80f, 1.0f };
-        default:                 return { 1.00f, 1.00f, 1.00f, 1.0f };
+        case LogLevel::Debug:    return EditorUi::TextDim;
+        case LogLevel::Info:     return EditorUi::TextPrimary;
+        case LogLevel::Warning:  return EditorUi::Warning;
+        case LogLevel::Error:    return EditorUi::Danger;
+        case LogLevel::Critical: return EditorUi::Critical;
+        default:                 return EditorUi::TextPrimary;
         }
     }
 }
@@ -83,13 +85,15 @@ void EditorConsolePanel::OnDraw()
     }
 
     ImGui::BeginChild("ConsoleScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    if (ImFont* mono = EditorUi::MonoFont())
+        ImGui::PushFont(mono);
     for (const ConsoleOutputEntry& entry : CommandOutput)
     {
-        ImVec4 color = { 0.80f, 0.80f, 0.80f, 1.0f };
+        ImVec4 color = EditorUi::TextPrimary;
         if (entry.Severity == ConsoleOutputSeverity::Warning)
-            color = { 1.00f, 0.85f, 0.20f, 1.0f };
+            color = EditorUi::Warning;
         else if (entry.Severity == ConsoleOutputSeverity::Error)
-            color = { 1.00f, 0.35f, 0.35f, 1.0f };
+            color = EditorUi::Danger;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::TextUnformatted(entry.Text.c_str());
         ImGui::PopStyleColor();
@@ -110,6 +114,8 @@ void EditorConsolePanel::OnDraw()
         ImGui::Text("[%s] %s", e.Category.c_str(), e.Message.c_str());
         ImGui::PopStyleColor();
     }
+    if (EditorUi::MonoFont())
+        ImGui::PopFont();
     ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
     ImGui::End();

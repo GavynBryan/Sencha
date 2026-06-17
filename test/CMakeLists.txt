@@ -162,4 +162,8 @@ if(NOT WIN32)
         NAME module_abi_surface
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_module_abi.sh ${CMAKE_SOURCE_DIR}
     )
+    add_test(
+        NAME ui_color_discipline
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_ui_colors.sh ${CMAKE_SOURCE_DIR}
+    )
 endif()

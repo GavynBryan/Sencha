@@ -1,5 +1,7 @@
 #include "MeshEditPanel.h"
 
+#include "EditorUiStyle.h"
+
 #include "../commands/CommandStack.h"
 #include "../meshedit/IMeshEditTarget.h"
 #include "../meshedit/MeshEditService.h"
@@ -36,7 +38,7 @@ void MeshEditPanel::DrawModeToolbar()
     {
         const bool active = MeshEdit.GetElementKind() == kind;
         if (active)
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.80f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
         if (ImGui::Button(label))
             MeshEdit.SetElementKind(kind);
         if (active)

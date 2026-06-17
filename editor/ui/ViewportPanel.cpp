@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "EditorUiStyle.h"
+
 #include "../viewport/MarqueeState.h"
 
 #include <imgui.h>
@@ -118,8 +120,8 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImU32 borderColor = viewport.IsActive
-        ? IM_COL32(110, 170, 255, 255)
-        : IM_COL32(70, 70, 70, 255);
+        ? ImGui::GetColorU32(EditorUi::Accent)
+        : ImGui::GetColorU32(EditorUi::Border);
     drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
 
     // Rubber-band selection rectangle, drawn in the viewport it was started in.
@@ -129,8 +131,8 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
                         std::min(Marquee.Start.y, Marquee.Current.y));
         const ImVec2 hi(std::max(Marquee.Start.x, Marquee.Current.x),
                         std::max(Marquee.Start.y, Marquee.Current.y));
-        drawList->AddRectFilled(lo, hi, IM_COL32(110, 170, 255, 40));
-        drawList->AddRect(lo, hi, IM_COL32(140, 190, 255, 200));
+        drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(ImVec4(EditorUi::Accent.x, EditorUi::Accent.y, EditorUi::Accent.z, 0.16f)));
+        drawList->AddRect(lo, hi, ImGui::GetColorU32(EditorUi::AccentHover));
     }
 
     ImGui::EndChild();

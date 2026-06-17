@@ -1,5 +1,6 @@
 #include "EditorUiFeature.h"
 
+#include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 
 #include <app/Engine.h>
@@ -175,7 +176,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    ImGui::StyleColorsDark();
+    EditorUi::Apply(ImGui::GetStyle());
+    EditorUi::LoadFonts(io);
 
     const std::array<VkDescriptorPoolSize, 11> poolSizes{{
         { VK_DESCRIPTOR_TYPE_SAMPLER, 32 },
