@@ -80,6 +80,11 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
     ImGui::NewFrame();
 
     DrawMainMenuBar();
+    for (const std::function<void()>& chrome : ChromeBars)
+    {
+        if (chrome)
+            chrome();
+    }
     for (const std::unique_ptr<IEditorPanel>& panel : Panels)
     {
         if (panel != nullptr && panel->IsVisible())
@@ -129,6 +134,12 @@ void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
 {
     if (panel != nullptr)
         Panels.push_back(std::move(panel));
+}
+
+void EditorUiFeature::AddChrome(std::function<void()> draw)
+{
+    if (draw)
+        ChromeBars.push_back(std::move(draw));
 }
 
 void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,

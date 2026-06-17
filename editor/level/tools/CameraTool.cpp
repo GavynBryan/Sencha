@@ -1,5 +1,7 @@
 #include "CameraTool.h"
 
+#include "fonts/IconsFontAwesome6.h"
+
 #include "../commands/CreateCameraCommand.h"
 #include "../../commands/CommandStack.h"
 #include "../../tools/ToolContext.h"
@@ -15,6 +17,11 @@ std::string_view CameraTool::GetId() const
 std::string_view CameraTool::GetDisplayName() const
 {
     return "Camera";
+}
+
+std::string_view CameraTool::GetIcon() const
+{
+    return ICON_FA_VIDEO;
 }
 
 InputConsumed CameraTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)

@@ -175,8 +175,17 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
 1. **Theme foundation** — `EditorUiStyle` (palette + metrics) replacing
    `StyleColorsDark`, + fonts/icons. Console + mesh-edit ad-hoc colors repointed
    to the palette. *Biggest jump, lowest risk.*
-2. **Toolbar + status bar** — top icon tool row (tools + snap/grid/angle toggles,
-   active-state highlight) and the bottom status bar.
+2. **Toolbar + status bar** — DONE. `EditorToolbar` (top side bar): icon buttons
+   for the registered tools (driving `ToolRegistry`) + the mesh element modes
+   Object/Vertex/Edge/Face (driving `MeshEditService`), each with an accent
+   active-highlight; icons come from a new `ITool::GetIcon()` (`ICON_FA_*`).
+   `EditorStatusBar` (bottom side bar): read-only active tool, selection count,
+   active-viewport orientation + grid spacing, wall clock. Both are fixed chrome
+   drawn via `BeginViewportSideBar` (reserves work-area space the full-bleed
+   viewport panel avoids), registered through `EditorUiFeature::AddChrome`.
+   *Deliberately no snap/grid/angle **toggles**: those imply backing state
+   (snap-enable, configurable spacing, angle snap) the editor doesn't have yet —
+   they'd be fake buttons, so they're deferred to Phase 4 as a real feature.*
 3. **Panel polish** — inspector section styling, entity status colors, outliner
    rows; tabbed viewport styling.
 4. **Feature-backed elements** — visibility/lock state, material swatches, asset

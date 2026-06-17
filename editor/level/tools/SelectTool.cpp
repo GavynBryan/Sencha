@@ -1,5 +1,7 @@
 #include "SelectTool.h"
 
+#include "fonts/IconsFontAwesome6.h"
+
 #include "../../commands/CommandStack.h"
 #include "../../meshedit/MeshEditService.h"
 #include "../../selection/commands/SelectCommand.h"
@@ -80,6 +82,11 @@ std::string_view SelectTool::GetId() const
 std::string_view SelectTool::GetDisplayName() const
 {
     return "Select";
+}
+
+std::string_view SelectTool::GetIcon() const
+{
+    return ICON_FA_ARROW_POINTER;
 }
 
 InputConsumed SelectTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)

@@ -1,5 +1,7 @@
 #include "BrushTool.h"
 
+#include "fonts/IconsFontAwesome6.h"
+
 #include "../LevelScene.h"
 #include "../interactions/BrushCreateDragInteraction.h"
 #include "../../commands/CommandStack.h"
@@ -19,6 +21,11 @@ std::string_view BrushTool::GetId() const
 std::string_view BrushTool::GetDisplayName() const
 {
     return "Brush";
+}
+
+std::string_view BrushTool::GetIcon() const
+{
+    return ICON_FA_CUBE;
 }
 
 InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)

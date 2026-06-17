@@ -9,6 +9,8 @@
 #include "../input/ShortcutRegistry.h"
 #include "../input/ViewportNavigation.h"
 #include "../level/LevelWorkspace.h"
+#include "../ui/EditorStatusBar.h"
+#include "../ui/EditorToolbar.h"
 
 #include <memory>
 #include <mutex>
@@ -81,6 +83,10 @@ private:
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ShortcutRegistry> Shortcuts;
+    // Declared after Workspace so they are destroyed before the state they
+    // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
+    std::unique_ptr<EditorToolbar> Toolbar;
+    std::unique_ptr<EditorStatusBar> StatusBar;
 
     std::mutex PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;

@@ -12,6 +12,7 @@ class SelectTool : public ITool
 public:
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
+    std::string_view GetIcon() const override;
     InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;

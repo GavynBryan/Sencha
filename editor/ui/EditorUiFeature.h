@@ -44,6 +44,13 @@ public:
     [[nodiscard]] UiInputCapture GetInputCapture() const;
 
     void AddPanel(std::unique_ptr<IEditorPanel> panel);
+
+    // Fixed app chrome (toolbar, status bar) drawn after the main menu bar and
+    // before the panels, so any viewport-side-bar space they reserve is subtracted
+    // from the work area the full-bleed viewport panel reads. Insertion order =
+    // draw order. Kept as opaque draw callbacks so this feature stays decoupled
+    // from the editor's domain types.
+    void AddChrome(std::function<void()> draw);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
@@ -84,4 +91,5 @@ private:
     std::function<void()> SaveAsAction;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
+    std::vector<std::function<void()>> ChromeBars;
 };

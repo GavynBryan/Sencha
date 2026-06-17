@@ -7,5 +7,6 @@ class BrushTool : public ITool
 public:
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
+    std::string_view GetIcon() const override;
     InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
 };

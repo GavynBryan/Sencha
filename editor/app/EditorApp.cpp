@@ -6,6 +6,8 @@
 #include "../level/LevelSerialization.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorConsolePanel.h"
+#include "../ui/EditorStatusBar.h"
+#include "../ui/EditorToolbar.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/InspectorPanel.h"
 #include "../ui/MeshEditPanel.h"
@@ -121,6 +123,14 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         [this]() { RequestOpenDialog(); },
         [this]() { SaveDocument(); },
         [this]() { RequestSaveAsDialog(); });
+
+    // Fixed app chrome: top toolbar + bottom status bar. Registered before the
+    // panels so the work-area space they reserve is subtracted from the full-bleed
+    // viewport panel below.
+    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit);
+    StatusBar = std::make_unique<EditorStatusBar>(*Workspace->Tools, Workspace->Layout, Workspace->Selection);
+    UiFeature->AddChrome([this] { Toolbar->Draw(); });
+    UiFeature->AddChrome([this] { StatusBar->Draw(); });
 
     auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee);
     Viewports = viewportPanel.get();
