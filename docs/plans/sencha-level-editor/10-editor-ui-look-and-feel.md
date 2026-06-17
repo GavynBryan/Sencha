@@ -195,8 +195,18 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    would be fake otherwise): entity **status colors** (Active/Locked/Idle),
    per-row **eye/lock** toggles, and the **tabbed** single-viewport layout (a
    layout feature, not styling — the four-way layout already works).*
-4. **Feature-backed elements** — visibility/lock state, material swatches, asset
-   thumbnails (each its own scoped feature, gated on backing data).
+4. **Feature-backed elements** — each its own scoped feature, gated on backing data.
+   - **Per-entity visibility/lock — DONE.** Editor-only view flags on `LevelScene`
+     (sparse slot-index side-tables, *not* ECS components, so they never reach the
+     game module or serialize as gameplay; cleared on destroy/clear). Hidden
+     entities are skipped by `WireframeRenderer`, `ComponentVisualRenderer`,
+     `SelectionRenderer`, and all `PickingService` entity loops; locked entities
+     are skipped by picking (Hammer semantics: lock blocks viewport selection, not
+     outliner selection). Outliner rows gained eye/lock toggle buttons and dim
+     when hidden. *Known minor gap: a gizmo on an already-selected entity stays
+     interactive if it's then hidden/locked — manipulator-side lock is a follow-up.*
+   - **Remaining:** snap/grid/angle toggle state; material swatches; asset
+     thumbnails; tabbed viewport (each needs its own backing render/scene support).
 5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
    pixel-fidelity is wanted.
 

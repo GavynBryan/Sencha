@@ -52,6 +52,9 @@ void LevelScene::DestroyEntity(EntityId entity)
 
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
+    // Drop any editor flags so a reused slot index starts visible + unlocked.
+    HiddenEntities.erase(entity.Index);
+    LockedEntities.erase(entity.Index);
 }
 
 void LevelScene::SetTransform(EntityId entity, const Transform3f& transform)
@@ -78,6 +81,8 @@ void LevelScene::Clear()
         world.DestroyEntity(entity);
     Entities.clear();
     BrushMeshes.Clear();
+    HiddenEntities.clear();
+    LockedEntities.clear();
 }
 
 void LevelScene::SyncFromRegistry()
@@ -133,4 +138,30 @@ Registry& LevelScene::GetRegistry()
 const Registry& LevelScene::GetRegistry() const
 {
     return Registry_;
+}
+
+bool LevelScene::IsEntityVisible(EntityId entity) const
+{
+    return !HiddenEntities.contains(entity.Index);
+}
+
+bool LevelScene::IsEntityLocked(EntityId entity) const
+{
+    return LockedEntities.contains(entity.Index);
+}
+
+void LevelScene::SetEntityVisible(EntityId entity, bool visible)
+{
+    if (visible)
+        HiddenEntities.erase(entity.Index);
+    else
+        HiddenEntities.insert(entity.Index);
+}
+
+void LevelScene::SetEntityLocked(EntityId entity, bool locked)
+{
+    if (locked)
+        LockedEntities.insert(entity.Index);
+    else
+        LockedEntities.erase(entity.Index);
 }

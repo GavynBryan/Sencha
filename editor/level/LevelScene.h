@@ -14,6 +14,7 @@
 
 #include <span>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 // A brush is now an editable polygon mesh; the component holds a stable BrushId
@@ -84,6 +85,17 @@ public:
     [[nodiscard]] Registry& GetRegistry();
     [[nodiscard]] const Registry& GetRegistry() const;
 
+    // Per-entity editor view flags (visibility / lock). These are editor-only
+    // annotations — NOT ECS components — so they never enter the registry the
+    // game module sees, nor serialize as gameplay data. Stored sparsely by slot
+    // index (default: visible + unlocked) and cleared when the slot is destroyed
+    // so a reused index can't inherit a stale flag. Hidden entities are skipped by
+    // the renderers and picking; locked entities are skipped by picking.
+    [[nodiscard]] bool IsEntityVisible(EntityId entity) const;
+    [[nodiscard]] bool IsEntityLocked(EntityId entity) const;
+    void SetEntityVisible(EntityId entity, bool visible);
+    void SetEntityLocked(EntityId entity, bool locked);
+
     // The brush mesh store (serialized as a sidecar by LevelDocument).
     [[nodiscard]] BrushMeshStore& GetBrushMeshStore() { return BrushMeshes; }
     [[nodiscard]] const BrushMeshStore& GetBrushMeshStore() const { return BrushMeshes; }
@@ -92,4 +104,7 @@ private:
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
+    // Sparse editor view flags keyed by slot index (membership = non-default).
+    std::unordered_set<EntityIndex> HiddenEntities;
+    std::unordered_set<EntityIndex> LockedEntities;
 };

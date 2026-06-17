@@ -34,6 +34,8 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     {
         if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
             continue;
+        if (!Scene.IsEntityVisible(selected.Entity))
+            continue;
 
         const BrushMesh* mesh = Scene.TryGetBrushMesh(selected.Entity);
         const Transform3f* transform = Scene.TryGetTransform(selected.Entity);

@@ -130,6 +130,9 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
 
     for (EntityId entity : scene.GetAllEntities())
     {
+        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
+            continue;
+
         candidates.clear();
 
         if (AllowsFaces(request))
@@ -253,6 +256,9 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
 
     for (EntityId entity : scene.GetAllEntities())
     {
+        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
+            continue;
+
         const Transform3f* transform = scene.TryGetTransform(entity);
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
         if (transform == nullptr || mesh == nullptr)
@@ -293,6 +299,9 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
 
     for (EntityId entity : scene.GetAllEntities())
     {
+        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
+            continue;
+
         const Transform3f* transform = scene.TryGetTransform(entity);
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
         if (transform == nullptr || mesh == nullptr)
@@ -342,6 +351,9 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
 
     for (EntityId entity : scene.GetAllEntities())
     {
+        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
+            continue;
+
         if (mode == MeshElementKind::Object)
         {
             const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);

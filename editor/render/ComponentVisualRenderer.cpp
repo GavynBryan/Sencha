@@ -90,6 +90,9 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
     std::vector<EditorLineVertex> vertices;
     for (EntityId entity : Scene.GetAllEntities())
     {
+        if (!Scene.IsEntityVisible(entity))
+            continue;
+
         const Transform3f* transform = Scene.TryGetTransform(entity);
         if (transform == nullptr)
             continue;

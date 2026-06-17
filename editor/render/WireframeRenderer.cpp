@@ -24,6 +24,9 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
     vertices.reserve(Scene.GetEntityCount() * 24);
     for (EntityId entity : Scene.GetAllEntities())
     {
+        if (!Scene.IsEntityVisible(entity))
+            continue;
+
         const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
         const Transform3f* transform = Scene.TryGetTransform(entity);
         if (mesh == nullptr || transform == nullptr)
