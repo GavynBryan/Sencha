@@ -1,5 +1,6 @@
 #include "ManipulatorSession.h"
 
+#include "BoundsManipulator.h"
 #include "TranslateManipulator.h"
 #include "../interaction/InteractionHost.h"
 #include "../selection/SelectionService.h"
@@ -14,8 +15,10 @@ ManipulatorSession::ManipulatorSession(SelectionService& selection,
     , Service(service)
     , Sink(sink)
 {
-    // The only registration site: new manipulators (bounds/rotate/scale/clip)
-    // land here and nowhere else.
+    // The only registration site: new manipulators (rotate/scale/clip) land here
+    // and nowhere else. Order is priority — bounds handles take a hit before the
+    // translate gizmo in the ortho views where both apply.
+    Manipulators.push_back(std::make_unique<BoundsManipulator>());
     Manipulators.push_back(std::make_unique<TranslateManipulator>());
 }
 

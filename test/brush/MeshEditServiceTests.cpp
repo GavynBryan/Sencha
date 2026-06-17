@@ -271,6 +271,30 @@ TEST(MeshEditService, SplitEdgeInsertsMidpointAndStaysClosed)
     EXPECT_TRUE(repair.Closed); // sub-edges remain shared by exactly two faces
 }
 
+TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }); // verts at +/-1
+    MeshEditService service;
+
+    // Stretch +X to 2 (anchor the -X face), leave Y/Z alone.
+    const std::optional<BrushMesh> after = service.ResizeBounds(
+        box, Transform3f::Identity(),
+        Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(1.0f, 1.0f, 1.0f),
+        Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(2.0f, 1.0f, 1.0f),
+        true);
+
+    ASSERT_TRUE(after.has_value());
+    ASSERT_EQ(after->Vertices.size(), box.Vertices.size());
+    for (std::size_t i = 0; i < box.Vertices.size(); ++i)
+    {
+        // +X verts move to 2, -X verts stay at -1; Y/Z unchanged.
+        const float expectedX = box.Vertices[i].Position.X > 0.0f ? 2.0f : -1.0f;
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.X, expectedX);
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.Y, box.Vertices[i].Position.Y);
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.Z, box.Vertices[i].Position.Z);
+    }
+}
+
 TEST(MeshEditService, TranslateWithNoMatchingElementsReturnsNullopt)
 {
     const BrushMesh box = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });

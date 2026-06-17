@@ -340,3 +340,57 @@ std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& bas
 
     return after;
 }
+
+namespace
+{
+double AxisGet(const Vec3d& v, int a) { return a == 0 ? v.X : (a == 1 ? v.Y : v.Z); }
+void AxisSet(Vec3d& v, int a, double x)
+{
+    (a == 0 ? v.X : (a == 1 ? v.Y : v.Z)) = static_cast<float>(x);
+}
+
+// world -> local: undo the transform's translation, rotation, then scale.
+Vec3d InverseTransformPoint(const Transform3f& t, Vec3d world)
+{
+    const Vec3d rel = world - t.Position;
+    const Vec3d unrotated = t.Rotation.Conjugate().RotateVector(rel);
+    return Vec3d(
+        t.Scale.X != 0.0f ? unrotated.X / t.Scale.X : unrotated.X,
+        t.Scale.Y != 0.0f ? unrotated.Y / t.Scale.Y : unrotated.Y,
+        t.Scale.Z != 0.0f ? unrotated.Z / t.Scale.Z : unrotated.Z);
+}
+}
+
+std::optional<BrushMesh> MeshEditService::ResizeBounds(const BrushMesh& base,
+                                                       const Transform3f& transform,
+                                                       Vec3d oldMin, Vec3d oldMax,
+                                                       Vec3d newMin, Vec3d newMax,
+                                                       bool validate) const
+{
+    constexpr double kEps = 1.0e-9;
+    BrushMesh after = base;
+    for (BrushVertex& vertex : after.Vertices)
+    {
+        Vec3d world = transform.TransformPoint(vertex.Position);
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const double oldExtent = AxisGet(oldMax, axis) - AxisGet(oldMin, axis);
+            const double newExtent = AxisGet(newMax, axis) - AxisGet(newMin, axis);
+            // Degenerate source axis: leave the coordinate where it is.
+            const double t = oldExtent > kEps
+                ? (AxisGet(world, axis) - AxisGet(oldMin, axis)) / oldExtent
+                : 0.0;
+            AxisSet(world, axis, AxisGet(newMin, axis) + t * newExtent);
+        }
+        vertex.Position = InverseTransformPoint(transform, world);
+    }
+
+    if (validate)
+    {
+        BrushRepairResult repair = BrushValidateAndRepair(after);
+        if (!repair.Ok)
+            return std::nullopt;
+    }
+
+    return after;
+}
