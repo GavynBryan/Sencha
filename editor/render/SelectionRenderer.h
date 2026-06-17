@@ -26,10 +26,10 @@ public:
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
 
 private:
-    void AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
-                         const BrushMesh& mesh,
-                         const Transform3f& transform,
-                         const Vec4& color) const;
+    void AppendAABB(std::vector<EditorLineVertex>& vertices,
+                    const BrushMesh& mesh,
+                    const Transform3f& transform,
+                    const Vec4& color) const;
     void AppendFace(std::vector<EditorLineVertex>& vertices,
                     const FaceElement& face,
                     const Vec4& color) const;
@@ -38,7 +38,8 @@ private:
                     const Vec4& color) const;
     void AppendVertex(std::vector<EditorLineVertex>& vertices,
                       const VertexElement& vertex,
-                      const Vec4& color) const;
+                      const Vec4& color,
+                      float radius) const;
     void AppendManipulators(std::vector<EditorLineVertex>& vertices,
                             const EditorViewport& viewport) const;
 

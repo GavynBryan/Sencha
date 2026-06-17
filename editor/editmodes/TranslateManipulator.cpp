@@ -2,6 +2,7 @@
 
 #include "GizmoMath.h"
 #include "SelectionPivot.h"
+#include "../EditorTheme.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ToolContext.h"
@@ -38,11 +39,9 @@ Vec3d AxisDirection(int axis)
 
 float AxisLength(const EditorViewport& viewport, Vec3d pivot)
 {
-    const EditorCamera& camera = viewport.Camera;
-    if (camera.ActiveMode == EditorCamera::Mode::Orthographic)
-        return camera.OrthoHeight * 0.08f;
-    const double distance = std::sqrt((camera.Position - pivot).SqrMagnitude());
-    return static_cast<float>(std::max(0.5, distance * 0.18));
+    // Screen-constant: the gizmo is the same on-screen length at any zoom/distance,
+    // in both ortho and perspective. (P4 visual pass.)
+    return ViewportProjection(viewport).WorldSizeForPixels(pivot, EditorTheme::GizmoAxisPixels);
 }
 
 void PerpendicularBasis(Vec3d axis, Vec3d& outU, Vec3d& outV)
@@ -255,6 +254,7 @@ bool TranslateManipulator::AppliesTo(const ManipulatorContext& ctx, const Editor
 
 void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
                                        const EditorViewport& viewport,
+                                       int hoveredPart,
                                        ManipulatorVisual& out) const
 {
     const std::optional<Vec3d> pivot =
@@ -267,16 +267,12 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
     const float headRadius = headLength * 0.45f;
 
     const std::array<int, 3> axes = { kAxisX, kAxisY, kAxisZ };
-    const std::array<Vec4, 3> colors = {
-        Vec4(1.0f, 0.2f, 0.2f, 1.0f),
-        Vec4(0.2f, 1.0f, 0.2f, 1.0f),
-        Vec4(0.3f, 0.4f, 1.0f, 1.0f),
-    };
+    const std::array<Vec4, 3> colors = { EditorTheme::AxisX, EditorTheme::AxisY, EditorTheme::AxisZ };
 
     for (std::size_t i = 0; i < axes.size(); ++i)
     {
         const Vec3d dir = AxisDirection(axes[i]);
-        const Vec4 color = colors[i];
+        const Vec4 color = (axes[i] == hoveredPart) ? EditorTheme::Hover : colors[i];
         const Vec3d tip = *pivot + dir * length;
         const Vec3d base = tip - dir * headLength;
         out.Lines.push_back({ .A = *pivot, .B = tip, .Color = color });

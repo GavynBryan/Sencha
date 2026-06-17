@@ -49,8 +49,11 @@ struct IManipulator
     [[nodiscard]] virtual bool AppliesTo(const ManipulatorContext& ctx,
                                          const EditorViewport& viewport) const = 0;
 
+    // `hoveredPart` is the part currently under the cursor (0 = none), so the
+    // manipulator can brighten it; matches the part ids from HitTest/BeginDrag.
     virtual void BuildVisual(const ManipulatorContext& ctx,
                              const EditorViewport& viewport,
+                             int hoveredPart,
                              ManipulatorVisual& out) const = 0;
 
     [[nodiscard]] virtual int HitTest(const ManipulatorContext& ctx,

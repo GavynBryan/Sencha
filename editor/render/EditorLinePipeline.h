@@ -33,9 +33,12 @@ class EditorLinePipeline
 {
 public:
     void Setup(const RendererServices& services);
+    // onTop = true draws without depth-testing, so manipulators/selection are
+    // visible through geometry; false depth-tests against the scene.
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
-                std::span<const EditorLineVertex> vertices);
+                std::span<const EditorLineVertex> vertices,
+                bool onTop = false);
     void Teardown();
 
 private:
@@ -43,6 +46,8 @@ private:
     {
         Mat4 ViewProjection;
     };
+
+    [[nodiscard]] VkPipeline EnsurePipeline(const FrameContext& frame, bool onTop);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
@@ -52,7 +57,8 @@ private:
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline Pipeline = VK_NULL_HANDLE;
+    VkPipeline Pipeline = VK_NULL_HANDLE;       // depth-tested
+    VkPipeline PipelineOnTop = VK_NULL_HANDLE;  // depth-test disabled
     VkFormat CachedColor = VK_FORMAT_UNDEFINED;
     VkFormat CachedDepth = VK_FORMAT_UNDEFINED;
 };

@@ -1,11 +1,17 @@
 #include "SelectionRenderer.h"
 
+#include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
 #include "../meshedit/MeshElements.h"
+#include "../viewport/ViewportProjection.h"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection,
@@ -20,6 +26,7 @@ SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& select
 void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
 {
     std::vector<EditorLineVertex> vertices;
+    const ViewportProjection projection(viewport); // for screen-constant vertex dots
 
     const std::span<const SelectableRef> selection = Selection.GetSelection();
     vertices.reserve(selection.size() * 32);
@@ -33,22 +40,27 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         if (mesh == nullptr || transform == nullptr)
             continue;
 
-        AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
-
         if (selected.IsFace())
         {
             if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, selected.ElementId))
-                AppendFace(vertices, *face, Vec4(1.0f, 0.4f, 0.1f, 1.0f));
+                AppendFace(vertices, *face, EditorTheme::FaceHighlight);
         }
         else if (selected.IsEdge())
         {
             if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, selected.ElementId))
-                AppendEdge(vertices, *edge, Vec4(0.2f, 0.9f, 1.0f, 1.0f));
+                AppendEdge(vertices, *edge, EditorTheme::EdgeHighlight);
         }
         else if (selected.IsVertex())
         {
             if (const std::optional<VertexElement> vertex = MeshElements::TryGetVertex(*mesh, *transform, selected.ElementId))
-                AppendVertex(vertices, *vertex, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+            {
+                const float radius = projection.WorldSizeForPixels(vertex->Position, EditorTheme::VertexDotPixels) * 0.5f;
+                AppendVertex(vertices, *vertex, EditorTheme::VertexHighlight, radius);
+            }
+        }
+        else // object/entity: a clean amber bounding box, not the full wireframe
+        {
+            AppendAABB(vertices, *mesh, *transform, EditorTheme::Selection);
         }
     }
 
@@ -56,24 +68,42 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // never assumes a gizmo shape. (08-select-tool-v2.md)
     AppendManipulators(vertices, viewport);
 
-    Lines.Submit(frame, viewport, vertices);
+    // Selection feedback and gizmos read better drawn on top of geometry.
+    Lines.Submit(frame, viewport, vertices, /*onTop*/ true);
 }
 
-void SelectionRenderer::AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
-                                        const BrushMesh& mesh,
-                                        const Transform3f& transform,
-                                        const Vec4& color) const
+void SelectionRenderer::AppendAABB(std::vector<EditorLineVertex>& vertices,
+                                   const BrushMesh& mesh,
+                                   const Transform3f& transform,
+                                   const Vec4& color) const
 {
-    for (const BrushFace& face : mesh.Faces)
+    Vec3d mn(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+    Vec3d mx(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+    for (const BrushVertex& v : mesh.Vertices)
     {
-        const std::size_t n = face.Loop.size();
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            const Vec3d a = transform.TransformPoint(mesh.Vertices[face.Loop[i]].Position);
-            const Vec3d b = transform.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % n]].Position);
-            vertices.push_back(EditorLineVertex{ .Position = a, .Color = color });
-            vertices.push_back(EditorLineVertex{ .Position = b, .Color = color });
-        }
+        const Vec3d w = transform.TransformPoint(v.Position);
+        mn = Vec3d(std::min(mn.X, w.X), std::min(mn.Y, w.Y), std::min(mn.Z, w.Z));
+        mx = Vec3d(std::max(mx.X, w.X), std::max(mx.Y, w.Y), std::max(mx.Z, w.Z));
+    }
+    if (mesh.Vertices.empty())
+        return;
+
+    const auto corner = [&](bool xs, bool ys, bool zs) {
+        return Vec3d(xs ? mx.X : mn.X, ys ? mx.Y : mn.Y, zs ? mx.Z : mn.Z);
+    };
+    const Vec3d c[8] = {
+        corner(false, false, false), corner(true, false, false),
+        corner(true, true, false),   corner(false, true, false),
+        corner(false, false, true),  corner(true, false, true),
+        corner(true, true, true),    corner(false, true, true),
+    };
+    const int edges[12][2] = {
+        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7},
+    };
+    for (const auto& e : edges)
+    {
+        vertices.push_back(EditorLineVertex{ .Position = c[e[0]], .Color = color });
+        vertices.push_back(EditorLineVertex{ .Position = c[e[1]], .Color = color });
     }
 }
 
@@ -100,9 +130,9 @@ void SelectionRenderer::AppendEdge(std::vector<EditorLineVertex>& vertices,
 
 void SelectionRenderer::AppendVertex(std::vector<EditorLineVertex>& vertices,
                                      const VertexElement& vertex,
-                                     const Vec4& color) const
+                                     const Vec4& color,
+                                     float radius) const
 {
-    constexpr float radius = 0.05f;
     const Vec3d p = vertex.Position;
     vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(-radius, 0.0f, 0.0f), .Color = color });
     vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(radius, 0.0f, 0.0f), .Color = color });
@@ -116,8 +146,8 @@ void SelectionRenderer::AppendManipulators(std::vector<EditorLineVertex>& vertic
                                            const EditorViewport& viewport) const
 {
     // Each active manipulator draws itself; the renderer just converts the line
-    // list. Whatever the manipulators are (translate arrows now, bounds handles /
-    // rotate rings / scale later), this code is unchanged.
+    // list. Whatever the manipulators are (translate arrows, bounds handles,
+    // rotate/scale later), this code is unchanged.
     ManipulatorVisual visual;
     Session.BuildVisuals(viewport, visual);
     for (const ManipulatorVisual::Line& line : visual.Lines)

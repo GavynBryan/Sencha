@@ -14,6 +14,7 @@ public:
                                  const EditorViewport& viewport) const override;
     void BuildVisual(const ManipulatorContext& ctx,
                      const EditorViewport& viewport,
+                     int hoveredPart,
                      ManipulatorVisual& out) const override;
     [[nodiscard]] int HitTest(const ManipulatorContext& ctx,
                               const EditorViewport& viewport,

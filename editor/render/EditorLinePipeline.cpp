@@ -37,38 +37,52 @@ void EditorLinePipeline::Setup(const RendererServices& services)
     vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &PipelineLayout);
 }
 
+VkPipeline EditorLinePipeline::EnsurePipeline(const FrameContext& frame, bool onTop)
+{
+    if (CachedColor != frame.TargetFormat || CachedDepth != frame.DepthFormat)
+    {
+        Pipeline = VK_NULL_HANDLE;
+        PipelineOnTop = VK_NULL_HANDLE;
+        CachedColor = frame.TargetFormat;
+        CachedDepth = frame.DepthFormat;
+    }
+
+    VkPipeline& slot = onTop ? PipelineOnTop : Pipeline;
+    if (slot != VK_NULL_HANDLE)
+        return slot;
+
+    GraphicsPipelineDesc desc{};
+    desc.VertexShader = VertexShader;
+    desc.FragmentShader = FragmentShader;
+    desc.Layout = PipelineLayout;
+    desc.Topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    desc.VertexBindings = { { 0, sizeof(EditorLineVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
+    desc.VertexAttributes = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(EditorLineVertex, Position) },
+        { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(EditorLineVertex, Color) },
+    };
+    desc.CullMode = VK_CULL_MODE_NONE;
+    desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded
+    desc.DepthWrite = false;
+    desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+    desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+    desc.ColorFormats = { frame.TargetFormat };
+    desc.DepthFormat = frame.DepthFormat;
+    slot = Pipelines->GetGraphicsPipeline(desc);
+    return slot;
+}
+
 void EditorLinePipeline::Submit(const FrameContext& frame,
                                 const EditorViewport& viewport,
-                                std::span<const EditorLineVertex> vertices)
+                                std::span<const EditorLineVertex> vertices,
+                                bool onTop)
 {
     if (PipelineLayout == VK_NULL_HANDLE || Scratch == nullptr || Buffers == nullptr
         || frame.DepthFormat == VK_FORMAT_UNDEFINED || vertices.empty())
         return;
 
-    if (Pipeline == VK_NULL_HANDLE || CachedColor != frame.TargetFormat || CachedDepth != frame.DepthFormat)
-    {
-        GraphicsPipelineDesc desc{};
-        desc.VertexShader = VertexShader;
-        desc.FragmentShader = FragmentShader;
-        desc.Layout = PipelineLayout;
-        desc.Topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        desc.VertexBindings = { { 0, sizeof(EditorLineVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
-        desc.VertexAttributes = {
-            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(EditorLineVertex, Position) },
-            { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(EditorLineVertex, Color) },
-        };
-        desc.CullMode = VK_CULL_MODE_NONE;
-        desc.DepthTest = true;
-        desc.DepthWrite = false;
-        desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-        desc.ColorBlend = { ColorBlendAttachmentDesc{} };
-        desc.ColorFormats = { frame.TargetFormat };
-        desc.DepthFormat = frame.DepthFormat;
-        Pipeline = Pipelines->GetGraphicsPipeline(desc);
-        CachedColor = frame.TargetFormat;
-        CachedDepth = frame.DepthFormat;
-    }
-    if (Pipeline == VK_NULL_HANDLE)
+    const VkPipeline pipeline = EnsurePipeline(frame, onTop);
+    if (pipeline == VK_NULL_HANDLE)
         return;
 
     const float vpWidth = viewport.RegionMax.x - viewport.RegionMin.x;
@@ -104,7 +118,7 @@ void EditorLinePipeline::Submit(const FrameContext& frame,
     VkBuffer vertexBuffer = Buffers->GetBuffer(allocation.Buffer);
     VkDeviceSize vertexOffset = allocation.Offset;
 
-    vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
+    vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdSetViewport(frame.Cmd, 0, 1, &vkViewport);
     vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
     vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
@@ -129,6 +143,7 @@ void EditorLinePipeline::Teardown()
     }
 
     Pipeline = VK_NULL_HANDLE;
+    PipelineOnTop = VK_NULL_HANDLE;
     CachedColor = VK_FORMAT_UNDEFINED;
     CachedDepth = VK_FORMAT_UNDEFINED;
     Buffers = nullptr;

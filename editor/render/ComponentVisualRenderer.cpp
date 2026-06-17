@@ -1,5 +1,7 @@
 #include "ComponentVisualRenderer.h"
 
+#include "../EditorTheme.h"
+
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -14,8 +16,6 @@
 
 namespace
 {
-constexpr Vec4 kVisualColor{ 0.7f, 0.85f, 1.0f, 1.0f };
-
 std::vector<std::byte> ReadFileBytes(const std::string& path)
 {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);
@@ -105,8 +105,8 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
             const MeshEdges& edges = EdgesFor(visual->AssetPath);
             for (const auto& [a, b] : edges.Edges)
             {
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = kVisualColor });
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = kVisualColor });
+                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = EditorTheme::ComponentVisual });
+                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = EditorTheme::ComponentVisual });
             }
         }
     }
