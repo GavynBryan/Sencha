@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ComponentVisualRenderer.h"
+#include "EditorLinePipeline.h"
 #include "GpuGridRenderer.h"
 #include "SelectionRenderer.h"
 #include "WireframeRenderer.h"
@@ -30,6 +31,9 @@ public:
 private:
     ViewportLayout& Layout;
     GpuGridRenderer        Grid;
+    // Declared before the line renderers: they bind a reference to it at
+    // construction. (The feature owns the one shared line pipeline.)
+    EditorLinePipeline     Lines;
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
     SelectionRenderer      Highlight;

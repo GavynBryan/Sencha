@@ -27,6 +27,9 @@ private:
     InputConsumed HandlePointerUp(const PointerUpEvent& e);
     InputConsumed HandleKeyDown(const KeyDownEvent& e);
 
+    // Reverts any in-flight interaction and drops any tool gesture. (W4.)
+    void Abort();
+
     EditorViewport* FindViewport(ImVec2 pos);
     void SetActiveViewport(ViewportId id);
 

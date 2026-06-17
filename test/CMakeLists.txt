@@ -158,4 +158,8 @@ if(NOT WIN32)
         NAME meshedit_dependency_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_meshedit_deps.sh ${CMAKE_SOURCE_DIR}
     )
+    add_test(
+        NAME module_abi_surface
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_module_abi.sh ${CMAKE_SOURCE_DIR}
+    )
 endif()

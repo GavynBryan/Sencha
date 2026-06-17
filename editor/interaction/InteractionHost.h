@@ -13,7 +13,9 @@ struct EditorViewport;
 class InteractionHost
 {
 public:
-    void Begin(std::unique_ptr<IInteraction> interaction);
+    // Begins an interaction, cancelling (reverting) any already-active one first
+    // so a drag can never be silently abandoned mid-flight. (W4.)
+    void Begin(ToolContext& ctx, std::unique_ptr<IInteraction> interaction);
     void Cancel(ToolContext& ctx);
     bool IsActive() const;
 

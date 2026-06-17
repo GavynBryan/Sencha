@@ -32,7 +32,20 @@ InputConsumed ViewportToolDispatcher::OnInput(const InputEvent& event)
         return HandlePointerUp(*e);
     if (const auto* e = std::get_if<KeyDownEvent>(&event))
         return HandleKeyDown(*e);
+    if (std::get_if<FocusLostEvent>(&event))
+    {
+        // Losing focus mid-drag (e.g. alt-tab) aborts the gesture rather than
+        // stranding live preview state; not consumed, so others still observe it.
+        Abort();
+        return InputConsumed::No;
+    }
     return InputConsumed::No;
+}
+
+void ViewportToolDispatcher::Abort()
+{
+    Interactions.Cancel(Context); // revert any in-flight interaction (gizmo/brush)
+    Tools.Cancel();               // drop any tool gesture (marquee)
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e)
@@ -86,7 +99,7 @@ InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e)
 {
     if (e.Key == SDLK_ESCAPE && Interactions.IsActive())
     {
-        Interactions.Cancel(Context);
+        Abort();
         return InputConsumed::Yes;
     }
 

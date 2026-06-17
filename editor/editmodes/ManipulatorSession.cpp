@@ -34,7 +34,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
             continue;
         if (auto interaction = manipulator->BeginDrag(part, mctx, viewport, pos))
         {
-            ctx.Interactions.Begin(std::move(interaction));
+            ctx.Interactions.Begin(ctx, std::move(interaction));
             return InputConsumed::Yes;
         }
     }

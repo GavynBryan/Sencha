@@ -2,8 +2,9 @@
 
 #include "IInteraction.h"
 
-void InteractionHost::Begin(std::unique_ptr<IInteraction> interaction)
+void InteractionHost::Begin(ToolContext& ctx, std::unique_ptr<IInteraction> interaction)
 {
+    Cancel(ctx); // revert any in-flight interaction before replacing it
     Active = std::move(interaction);
 }
 

@@ -17,6 +17,11 @@ struct ITool
     virtual void OnActivate(ToolContext& ctx) {}
     virtual void OnDeactivate(ToolContext& ctx) {}
 
+    // Abort any in-progress gesture (e.g. a rubber-band drag) and drop its
+    // transient state. Called on Escape and focus loss so a tool drag, like an
+    // interaction, can never be left dangling. (W4.)
+    virtual void OnCancel(ToolContext& ctx) {}
+
     virtual InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }
     virtual InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }
     virtual InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }

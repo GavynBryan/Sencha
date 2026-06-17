@@ -134,3 +134,10 @@ InputConsumed SelectTool::OnPointerUp(ToolContext& ctx, EditorViewport& viewport
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
     return InputConsumed::Yes;
 }
+
+void SelectTool::OnCancel(ToolContext& ctx)
+{
+    // Drop an in-progress press/marquee without changing the selection.
+    Pressed = false;
+    ctx.Marquee = MarqueeState{};
+}

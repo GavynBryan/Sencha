@@ -37,7 +37,7 @@ InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewpor
     const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
     if (anchor.has_value())
     {
-        ctx.Interactions.Begin(std::make_unique<BrushCreateDragInteraction>(
+        ctx.Interactions.Begin(ctx, std::make_unique<BrushCreateDragInteraction>(
             *anchor, ctx.Scene, ctx.Document));
         return InputConsumed::Yes;
     }

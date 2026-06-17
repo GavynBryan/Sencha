@@ -27,6 +27,9 @@ public:
     [[nodiscard]] int GetActiveIndex() const;
     [[nodiscard]] const std::vector<std::unique_ptr<ITool>>& GetTools() const;
 
+    // Aborts the active tool's in-progress gesture, if any. (W4.)
+    void Cancel();
+
     InputConsumed HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed HandlePointerMove(EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed HandlePointerUp(EditorViewport& viewport, const PointerEvent& pointer);

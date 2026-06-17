@@ -70,6 +70,12 @@ const std::vector<std::unique_ptr<ITool>>& ToolRegistry::GetTools() const
     return Tools;
 }
 
+void ToolRegistry::Cancel()
+{
+    if (ITool* active = GetActiveTool())
+        active->OnCancel(Context);
+}
+
 InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();

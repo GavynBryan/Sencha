@@ -1,7 +1,7 @@
 #include "MeshEditPanel.h"
 
 #include "../commands/CommandStack.h"
-#include "../level/BrushEditTarget.h"
+#include "../meshedit/IMeshEditTarget.h"
 #include "../meshedit/MeshEditService.h"
 #include "../selection/SelectionService.h"
 
@@ -9,13 +9,11 @@
 
 #include <memory>
 
-MeshEditPanel::MeshEditPanel(LevelScene& scene,
-                             LevelDocument& document,
+MeshEditPanel::MeshEditPanel(IMeshEditTarget& target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
                              CommandStack& commands)
-    : Scene(scene)
-    , Document(document)
+    : Target(target)
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
@@ -74,8 +72,7 @@ void MeshEditPanel::DrawFaceVerbs()
 
     const auto applyVerb = [&](MeshEditVerb verb, const MeshEditParams& params)
     {
-        BrushEditTarget target(Scene, Document);
-        if (auto command = MeshEdit.ApplyVerb(target, Selection.GetSnapshot(), verb, params))
+        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), verb, params))
             Commands.Execute(std::move(command));
     };
 
@@ -109,8 +106,7 @@ void MeshEditPanel::DrawEdgeVerbs()
 
     if (ImGui::Button("Split"))
     {
-        BrushEditTarget target(Scene, Document);
-        if (auto command = MeshEdit.ApplyVerb(target, Selection.GetSnapshot(), MeshEditVerb::SplitEdge, {}))
+        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::SplitEdge, {}))
             Commands.Execute(std::move(command));
     }
 }

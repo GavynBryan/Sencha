@@ -60,6 +60,18 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
 
 void BrushManipulationSink::CommitMesh(EntityId entity, BrushMesh before, BrushMesh after)
 {
-    Commands.Execute(std::make_unique<EditBrushMeshCommand>(
-        entity, std::move(before), std::move(after), Scene, Document));
+    Commands.Execute(MakeEditCommand(entity, std::move(before), std::move(after)));
+}
+
+std::optional<MeshEditTargetMesh> BrushManipulationSink::Resolve(EntityId entity) const
+{
+    return ResolveMesh(entity);
+}
+
+std::unique_ptr<ICommand> BrushManipulationSink::MakeEditCommand(EntityId entity,
+                                                                BrushMesh before,
+                                                                BrushMesh after)
+{
+    return std::make_unique<EditBrushMeshCommand>(
+        entity, std::move(before), std::move(after), Scene, Document);
 }

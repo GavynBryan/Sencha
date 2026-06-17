@@ -135,8 +135,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
-        Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection,
-        Workspace->MeshEdit, *Commands));
+        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands));
 
     renderer.AddFeature(std::move(uiFeature));
 }
