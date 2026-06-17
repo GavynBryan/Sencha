@@ -9,6 +9,7 @@ class MeshEditService;
 class PickingService;
 class PreviewBuffer;
 class SelectionService;
+struct MarqueeState;
 
 struct ToolContext
 {
@@ -19,7 +20,8 @@ struct ToolContext
                 LevelDocument& levelDocument,
                 InteractionHost& interactions,
                 PreviewBuffer& preview,
-                MeshEditService& meshEdit);
+                MeshEditService& meshEdit,
+                MarqueeState& marquee);
 
     CommandStack& Commands;
     SelectionService& Selection;
@@ -29,4 +31,5 @@ struct ToolContext
     InteractionHost& Interactions;
     PreviewBuffer& Preview;
     MeshEditService& MeshEdit;
+    MarqueeState& Marquee;
 };

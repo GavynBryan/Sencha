@@ -5,17 +5,20 @@
 #include "../../selection/commands/SelectCommand.h"
 #include "../../selection/SelectionService.h"
 #include "../../tools/ToolContext.h"
+#include "../../viewport/EditorViewport.h"
+#include "../../viewport/MarqueeState.h"
 #include "../../viewport/Picking.h"
 
-#include <imgui.h>
-
 #include <algorithm>
+#include <cmath>
 #include <memory>
+#include <vector>
 
 namespace
 {
-// Maps the active mesh-element mode onto what a click selects. Object mode picks
-// the entity body; element modes pick that element kind only.
+// Drag past this many pixels turns a click into a box select.
+constexpr float kBoxSelectThreshold = 4.0f;
+
 BrushPickMode PickModeFor(MeshElementKind kind)
 {
     switch (kind)
@@ -26,6 +29,46 @@ BrushPickMode PickModeFor(MeshElementKind kind)
     case MeshElementKind::Object:
     default:                      return BrushPickMode::EntityOnly;
     }
+}
+
+bool Contains(const std::vector<SelectableRef>& items, SelectableRef ref)
+{
+    return std::find(items.begin(), items.end(), ref) != items.end();
+}
+
+// Folds a freshly-gathered set into the current selection per the modifiers.
+// SetSnapshot dedups and repairs the primary, so this can be loose.
+SelectionSnapshot ComputeSnapshot(const SelectionSnapshot& current,
+                                  const std::vector<SelectableRef>& gathered,
+                                  bool add, bool remove)
+{
+    SelectionSnapshot out;
+    if (remove)
+    {
+        out = current;
+        out.Items.erase(std::remove_if(out.Items.begin(), out.Items.end(),
+                                       [&](SelectableRef r) { return Contains(gathered, r); }),
+                        out.Items.end());
+        if (!Contains(out.Items, out.Primary))
+            out.Primary = out.Items.empty() ? SelectableRef{} : out.Items.back();
+    }
+    else if (add)
+    {
+        out = current;
+        for (SelectableRef ref : gathered)
+            if (ref.IsValid() && !Contains(out.Items, ref))
+                out.Items.push_back(ref);
+        if (!gathered.empty())
+            out.Primary = gathered.back();
+    }
+    else // replace
+    {
+        for (SelectableRef ref : gathered)
+            if (ref.IsValid())
+                out.Items.push_back(ref);
+        out.Primary = out.Items.empty() ? SelectableRef{} : out.Items.back();
+    }
+    return out;
 }
 }
 
@@ -39,43 +82,55 @@ std::string_view SelectTool::GetDisplayName() const
     return "Select";
 }
 
-InputConsumed SelectTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
+InputConsumed SelectTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
-    const SelectableRef picked = ctx.Picking.Pick(
-        viewport,
-        point,
-        ctx.Scene,
-        BrushPickRequest{ .Mode = PickModeFor(ctx.MeshEdit.GetElementKind()) });
+    Pressed = true;
+    PressModifiers = pointer.Modifiers;
+    ctx.Marquee = MarqueeState{ .Active = false, .Start = pointer.Position, .Current = pointer.Position, .Viewport = viewport.Id };
+    return InputConsumed::Yes;
+}
 
-    // Shift/Ctrl extend the current set; a plain click replaces it. ImGui's IO
-    // modifier state is current here: SDL events feed ImGui before tool routing.
-    const ImGuiIO& io = ImGui::GetIO();
-    const bool additive = io.KeyShift || io.KeyCtrl;
+InputConsumed SelectTool::OnPointerMove(ToolContext& ctx, EditorViewport&, const PointerEvent& pointer)
+{
+    if (!Pressed)
+        return InputConsumed::No;
 
-    if (!additive)
+    ctx.Marquee.Current = pointer.Position;
+    const float dx = pointer.Position.x - ctx.Marquee.Start.x;
+    const float dy = pointer.Position.y - ctx.Marquee.Start.y;
+    if (std::sqrt(dx * dx + dy * dy) > kBoxSelectThreshold)
+        ctx.Marquee.Active = true;
+    return InputConsumed::Yes;
+}
+
+InputConsumed SelectTool::OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
+{
+    if (!Pressed)
+        return InputConsumed::No;
+    Pressed = false;
+
+    const MeshElementKind mode = ctx.MeshEdit.GetElementKind();
+    // Modifiers captured at press (gesture intent), so a drag started with Shift
+    // adds regardless of what's held at release.
+    const bool add = PressModifiers.Shift;
+    const bool remove = PressModifiers.Ctrl;
+
+    std::vector<SelectableRef> gathered;
+    if (ctx.Marquee.Active)
     {
-        ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, picked));
-        return InputConsumed::Yes;
-    }
-
-    // An additive click on empty space is a no-op: it must not clear the set.
-    if (!picked.IsValid())
-        return InputConsumed::Yes;
-
-    SelectionSnapshot snapshot = ctx.Selection.GetSnapshot();
-    const auto it = std::find(snapshot.Items.begin(), snapshot.Items.end(), picked);
-    if (it != snapshot.Items.end())
-    {
-        snapshot.Items.erase(it);
-        if (snapshot.Primary == picked)
-            snapshot.Primary = snapshot.Items.empty() ? SelectableRef{} : snapshot.Items.back();
+        gathered = ctx.Picking.PickInRect(viewport, ctx.Marquee.Start, pointer.Position, ctx.Scene, mode);
     }
     else
     {
-        snapshot.Items.push_back(picked);
-        snapshot.Primary = picked;
+        const SelectableRef picked = ctx.Picking.Pick(
+            viewport, pointer.Position, ctx.Scene, BrushPickRequest{ .Mode = PickModeFor(mode) });
+        if (picked.IsValid())
+            gathered.push_back(picked);
     }
 
+    ctx.Marquee.Active = false;
+
+    SelectionSnapshot snapshot = ComputeSnapshot(ctx.Selection.GetSnapshot(), gathered, add, remove);
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
     return InputConsumed::Yes;
 }

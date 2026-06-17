@@ -12,8 +12,8 @@ class BrushCreateDragInteraction : public IInteraction
 public:
     BrushCreateDragInteraction(Vec3d anchorGrid, LevelScene& scene, LevelDocument& document);
 
-    void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, ImVec2 delta) override;
-    void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
+    void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     void OnCancel(ToolContext& ctx) override;
 
 private:

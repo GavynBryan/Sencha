@@ -15,10 +15,10 @@ bool EditSessionHost::HasSession() const
     return Active != nullptr;
 }
 
-InputConsumed EditSessionHost::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+InputConsumed EditSessionHost::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     if (!Active)
         return InputConsumed::No;
 
-    return Active->OnPointerDown(ctx, viewport, pos);
+    return Active->OnPointerDown(ctx, viewport, pointer);
 }

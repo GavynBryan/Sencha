@@ -46,10 +46,11 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
 
     SetActiveViewport(vp->Id);
 
-    if (Sessions.OnPointerDown(Context, *vp, e.Position) == InputConsumed::Yes)
+    const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
+    if (Sessions.OnPointerDown(Context, *vp, pointer) == InputConsumed::Yes)
         return InputConsumed::Yes;
 
-    return Tools.HandlePointerDown(*vp, e.Position);
+    return Tools.HandlePointerDown(*vp, pointer);
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e)
@@ -58,10 +59,11 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     if (vp == nullptr)
         return InputConsumed::No;
 
-    if (Interactions.OnPointerMove(Context, *vp, e.Position, e.Delta) == InputConsumed::Yes)
+    const PointerEvent pointer{ .Position = e.Position, .Delta = e.Delta, .Modifiers = e.Modifiers };
+    if (Interactions.OnPointerMove(Context, *vp, pointer) == InputConsumed::Yes)
         return InputConsumed::Yes;
 
-    return Tools.HandlePointerMove(*vp, e.Position, e.Delta);
+    return Tools.HandlePointerMove(*vp, pointer);
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
@@ -73,10 +75,11 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
     if (vp == nullptr)
         return InputConsumed::No;
 
-    if (Interactions.OnPointerUp(Context, *vp, e.Position) == InputConsumed::Yes)
+    const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
+    if (Interactions.OnPointerUp(Context, *vp, pointer) == InputConsumed::Yes)
         return InputConsumed::Yes;
 
-    return Tools.HandlePointerUp(*vp, e.Position);
+    return Tools.HandlePointerUp(*vp, pointer);
 }
 
 InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e)

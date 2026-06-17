@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/EditorVisual.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/Archive.h>
 #include <ecs/ComponentTypeId.h>
@@ -9,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -51,6 +53,12 @@ struct IComponentSerializer
                       Registry& registry,
                       SceneSerializationContext& context) = 0;
     virtual bool Remove(EntityId entity, Registry& registry) const = 0;
+
+    // Optional hint for how the editor should visualize an entity carrying this
+    // component (e.g. a camera mesh). None by default; pure tooling metadata the
+    // runtime ignores. Declared last so adding it appends a vtable slot rather
+    // than shifting existing ones. (core/metadata/EditorVisual.h)
+    virtual std::optional<EditorVisual> GetEditorVisual() const { return std::nullopt; }
 
     virtual ~IComponentSerializer() = default;
 };

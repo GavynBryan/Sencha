@@ -46,6 +46,21 @@ check "retired BrushGeometry face-projection API is referenced" \
       'EnumerateFaces|BrushFaceDescriptor|BrushFaceGeometry' \
       "$EDITOR"
 
+check "editor/editmodes depends on the scene (must go through ManipulationSink)" \
+      'LevelScene|LevelDocument' \
+      "$EDITOR/editmodes"
+
+# The ManipulationSink must only be implemented under editor/level (the lone
+# scene-mutation seam). An implementor anywhere else breaks the layering.
+sink_impls="$(grep -rlE 'public[[:space:]]+ManipulationSink' "$EDITOR" 2>/dev/null \
+              | grep -vE '^'"$EDITOR"'/level/')"
+if [ -n "$sink_impls" ]; then
+    echo "VIOLATION: ManipulationSink implemented outside editor/level"
+    echo "$sink_impls"
+    echo
+    status=1
+fi
+
 if [ "$status" -eq 0 ]; then
     echo "mesh-edit dependency directions: OK"
 fi

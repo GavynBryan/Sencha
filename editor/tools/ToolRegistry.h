@@ -27,9 +27,9 @@ public:
     [[nodiscard]] int GetActiveIndex() const;
     [[nodiscard]] const std::vector<std::unique_ptr<ITool>>& GetTools() const;
 
-    InputConsumed HandlePointerDown(EditorViewport& viewport, ImVec2 point);
-    InputConsumed HandlePointerMove(EditorViewport& viewport, ImVec2 point, ImVec2 delta);
-    InputConsumed HandlePointerUp(EditorViewport& viewport, ImVec2 point);
+    InputConsumed HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer);
+    InputConsumed HandlePointerMove(EditorViewport& viewport, const PointerEvent& pointer);
+    InputConsumed HandlePointerUp(EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed OnInput(const InputEvent& event);
 
 private:

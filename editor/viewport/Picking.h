@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math/geometry/3d/Ray3d.h>
+#include "../meshedit/MeshElementKind.h"
 #include "../selection/SelectableRef.h"
 
 #include <imgui.h>
@@ -35,6 +36,15 @@ public:
                                      BrushPickRequest request = {}) const;
     [[nodiscard]] std::optional<Vec3d> ProjectPointToGrid(const EditorViewport& viewport,
                                                           ImVec2 point) const;
+
+    // Rubber-band selection: every element of the given mode whose projection
+    // falls in the screen rectangle. Entities by projected-bounds overlap;
+    // vertices/edges/faces by projected point (position/midpoint/center) inside.
+    [[nodiscard]] std::vector<SelectableRef> PickInRect(const EditorViewport& viewport,
+                                                        ImVec2 rectMin,
+                                                        ImVec2 rectMax,
+                                                        const LevelScene& scene,
+                                                        MeshElementKind mode) const;
 
 private:
     struct PickCandidate

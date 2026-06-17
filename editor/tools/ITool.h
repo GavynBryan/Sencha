@@ -17,9 +17,9 @@ struct ITool
     virtual void OnActivate(ToolContext& ctx) {}
     virtual void OnDeactivate(ToolContext& ctx) {}
 
-    virtual InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point) { return InputConsumed::No; }
-    virtual InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, ImVec2 point, ImVec2 delta) { return InputConsumed::No; }
-    virtual InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, ImVec2 point) { return InputConsumed::No; }
+    virtual InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }
+    virtual InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }
+    virtual InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) { return InputConsumed::No; }
     virtual InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) { return InputConsumed::No; }
 
     virtual ~ITool() = default;

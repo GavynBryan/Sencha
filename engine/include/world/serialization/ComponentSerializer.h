@@ -90,6 +90,11 @@ public:
         return RuntimeFieldsOf<Component>();
     }
 
+    std::optional<EditorVisual> GetEditorVisual() const override
+    {
+        return ComponentEditorVisual<Component>::Value;
+    }
+
     std::vector<std::byte> DefaultBytes() const override
     {
         if constexpr (std::is_empty_v<Component>)

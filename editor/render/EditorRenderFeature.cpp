@@ -8,10 +8,11 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LevelScene& scene,
                                          SelectionService& selection,
                                          PreviewBuffer& preview,
-                                         MeshEditService& meshEdit)
+                                         ManipulatorSession& session)
     : Layout(viewportLayout)
     , Wireframe(scene)
-    , Highlight(scene, selection, meshEdit)
+    , Visuals(scene)
+    , Highlight(scene, selection, session)
 {
     Wireframe.SetPreviewBuffer(&preview);
 }
@@ -21,6 +22,7 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Grid.Setup(services);
     Wireframe.Setup(services);
+    Visuals.Setup(services);
     Highlight.Setup(services);
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
@@ -44,6 +46,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                           frame.TargetFormat,
                           frame.DepthFormat);
         Wireframe.DrawViewport(frame, *viewport);
+        Visuals.DrawViewport(frame, *viewport);
         Highlight.DrawViewport(frame, *viewport);
     }
 }
@@ -52,5 +55,6 @@ void EditorRenderFeature::Teardown()
 {
     Grid.Teardown();
     Wireframe.Teardown();
+    Visuals.Teardown();
     Highlight.Teardown();
 }

@@ -23,22 +23,21 @@ bool InteractionHost::IsActive() const
 
 InputConsumed InteractionHost::OnPointerMove(ToolContext& ctx,
                                               EditorViewport& viewport,
-                                              ImVec2 pos,
-                                              ImVec2 delta)
+                                              const PointerEvent& pointer)
 {
     if (!Active)
         return InputConsumed::No;
 
-    Active->OnPointerMove(ctx, viewport, pos, delta);
+    Active->OnPointerMove(ctx, viewport, pointer);
     return InputConsumed::Yes;
 }
 
-InputConsumed InteractionHost::OnPointerUp(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+InputConsumed InteractionHost::OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     if (!Active)
         return InputConsumed::No;
 
     auto interaction = std::move(Active);
-    interaction->OnPointerUp(ctx, viewport, pos);
+    interaction->OnPointerUp(ctx, viewport, pointer);
     return InputConsumed::Yes;
 }

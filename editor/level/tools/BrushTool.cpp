@@ -21,11 +21,11 @@ std::string_view BrushTool::GetDisplayName() const
     return "Brush";
 }
 
-InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
+InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     const SelectableRef picked = ctx.Picking.Pick(
         viewport,
-        point,
+        pointer.Position,
         ctx.Scene,
         BrushPickRequest{ .Mode = BrushPickMode::EntityOnly });
     if (picked.IsValid() && ctx.Scene.TryGetBrush(picked.Entity) != nullptr)
@@ -34,7 +34,7 @@ InputConsumed BrushTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewpor
         return InputConsumed::Yes;
     }
 
-    const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, point);
+    const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
     if (anchor.has_value())
     {
         ctx.Interactions.Begin(std::make_unique<BrushCreateDragInteraction>(

@@ -9,6 +9,6 @@ struct EditorViewport;
 
 struct IEditSession
 {
-    virtual InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) = 0;
+    virtual InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) = 0;
     virtual ~IEditSession() = default;
 };

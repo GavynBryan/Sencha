@@ -1,5 +1,6 @@
 #pragma once
 
+#include <app/GameModuleAbi.h>
 #include <app/ModuleExport.h>
 #include <core/console/ConsoleRegistry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>

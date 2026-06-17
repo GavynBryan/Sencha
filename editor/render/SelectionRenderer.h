@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../editmodes/IGizmo.h"
+#include "../editmodes/IManipulator.h"
 #include "../level/LevelScene.h"
 #include "../level/brush/BrushMesh.h"
 #include "../meshedit/MeshElements.h"
@@ -10,10 +10,9 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 
-#include <memory>
 #include <vector>
 
-class MeshEditService;
+class ManipulatorSession;
 class VulkanBufferService;
 class VulkanFrameScratch;
 class VulkanPipelineCache;
@@ -22,7 +21,7 @@ class VulkanShaderCache;
 class SelectionRenderer
 {
 public:
-    SelectionRenderer(LevelScene& scene, SelectionService& selection, MeshEditService& meshEdit);
+    SelectionRenderer(LevelScene& scene, SelectionService& selection, ManipulatorSession& session);
 
     void Setup(const RendererServices& services);
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
@@ -53,14 +52,12 @@ private:
     void AppendVertex(std::vector<LineVertex>& vertices,
                       const VertexElement& vertex,
                       const Vec4& color) const;
-    void AppendGizmo(std::vector<LineVertex>& vertices,
-                     const EditorViewport& viewport,
-                     Vec3d pivot) const;
+    void AppendManipulators(std::vector<LineVertex>& vertices,
+                            const EditorViewport& viewport) const;
 
     LevelScene& Scene;
     SelectionService& Selection;
-    MeshEditService& MeshEdit;
-    std::unique_ptr<IGizmo> Gizmo;
+    ManipulatorSession& Session;
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;

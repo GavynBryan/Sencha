@@ -18,7 +18,10 @@
   #define SENCHA_GAME_IMPORT
 #endif
 
-// Bumped whenever IGameModule / GameModuleContext / the registration surface
-// changes shape. The host compares this against the module's reported version
-// and refuses an incompatible build, turning ABI skew into a clean error.
-#define SENCHA_GAME_ABI_VERSION 2u
+// Bumped on a *deliberate* break of IGameModule / GameModuleContext / the
+// registration surface. Most skew is now caught automatically by the ABI
+// fingerprint (a hash of the module-facing headers) plus the build-identity
+// record in GameModuleAbi.h; this integer remains the human-meaningful
+// "intended break" marker. v3: added the GameModuleAbi handshake and the
+// EditorVisual hint on IComponentSerializer. (09-module-abi-hardening.md.)
+#define SENCHA_GAME_ABI_VERSION 3u

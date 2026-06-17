@@ -1,5 +1,8 @@
 #include <app/GameModuleLoader.h>
 
+#include <app/GameModuleAbi.h>
+
+#include <optional>
 #include <string>
 
 #if defined(_WIN32)
@@ -29,6 +32,39 @@ namespace
 #endif
 
     using FactoryFn = IGameModule* (*)();
+    using AbiFn = const GameModuleAbi* (*)();
+}
+
+std::optional<std::string> DescribeGameModuleAbiMismatch(const GameModuleAbi& m, const GameModuleAbi& host)
+{
+    const auto field = [](const char* what, std::uint64_t module, std::uint64_t expected) {
+        return std::optional<std::string>(std::string(what) + ": module " +
+            std::to_string(module) + ", host expects " + std::to_string(expected));
+    };
+
+    // StructSize first: a layout mismatch is caught before any other field is
+    // trusted (StructSize is the descriptor's first member, offset 0).
+    if (m.StructSize != host.StructSize)
+        return field("ABI descriptor size", m.StructSize, host.StructSize);
+    if (m.AbiVersion != host.AbiVersion)
+        return field("ABI version", m.AbiVersion, host.AbiVersion);
+    if (m.HeaderFingerprint != host.HeaderFingerprint)
+        return std::optional<std::string>(
+            "ABI header fingerprint differs (module built against different engine "
+            "headers — rebuild the module against this engine)");
+    if (m.CompilerId != host.CompilerId)
+        return field("compiler", m.CompilerId, host.CompilerId);
+    if (m.CompilerMajor != host.CompilerMajor)
+        return field("compiler major version", m.CompilerMajor, host.CompilerMajor);
+    if (m.StdLibId != host.StdLibId)
+        return field("C++ standard library", m.StdLibId, host.StdLibId);
+    if (m.StdLibVersion != host.StdLibVersion)
+        return field("C++ standard library version", m.StdLibVersion, host.StdLibVersion);
+    if (m.PointerBits != host.PointerBits)
+        return field("pointer width", m.PointerBits, host.PointerBits);
+    if (m.BuildConfig != host.BuildConfig)
+        return field("build configuration (debug/sanitizer flags)", m.BuildConfig, host.BuildConfig);
+    return std::nullopt;
 }
 
 LoadedModule GameModuleLoader::Load(const std::filesystem::path& artifact,
@@ -51,20 +87,38 @@ LoadedModule GameModuleLoader::Load(const std::filesystem::path& artifact,
         return {};
     }
 
-    IGameModule* module = factory();
-    if (!module)
+    // Validate the ABI through the C-linkage descriptor BEFORE constructing or
+    // calling into the module's C++ vtable — so a skewed build is refused, not
+    // crashed on. (09-module-abi-hardening.md.)
+    auto abiFn = reinterpret_cast<AbiFn>(ResolveSymbol(handle, "SenchaGameModuleAbi"));
+    if (!abiFn)
     {
-        SetError(error, "SenchaCreateGameModule returned null.");
+        SetError(error, "Game module '" + artifact.string() +
+                            "' is missing its ABI descriptor (SenchaGameModuleAbi) — rebuild it "
+                            "against this engine (SENCHA_EXPORT_GAME_MODULE_ABI).");
         CloseLibrary(handle);
         return {};
     }
 
-    // ABI check FIRST — never call Register on an incompatible build.
-    if (module->AbiVersion() != SENCHA_GAME_ABI_VERSION)
+    const GameModuleAbi* moduleAbi = abiFn();
+    const GameModuleAbi hostAbi = SenchaThisBuildAbi();
+    if (moduleAbi == nullptr)
     {
-        SetError(error, "Game module ABI mismatch: module reports " +
-                            std::to_string(module->AbiVersion()) + ", host expects " +
-                            std::to_string(SENCHA_GAME_ABI_VERSION) + ".");
+        SetError(error, "Game module '" + artifact.string() + "' returned a null ABI descriptor.");
+        CloseLibrary(handle);
+        return {};
+    }
+    if (const std::optional<std::string> mismatch = DescribeGameModuleAbiMismatch(*moduleAbi, hostAbi))
+    {
+        SetError(error, "Game module ABI mismatch (" + *mismatch + ").");
+        CloseLibrary(handle);
+        return {};
+    }
+
+    IGameModule* module = factory();
+    if (!module)
+    {
+        SetError(error, "SenchaCreateGameModule returned null.");
         CloseLibrary(handle);
         return {};
     }

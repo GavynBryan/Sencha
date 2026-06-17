@@ -52,6 +52,19 @@ struct KeyDownEvent
 
 struct FocusLostEvent {};
 
+// A viewport-space pointer event delivered to tools, edit sessions, and
+// interactions. One struct rather than decomposed scalars so routing can't
+// silently drop a field (the modifier-loss bug): add a field here and it reaches
+// every handler without touching a single signature.
+// (docs/architecture/hardening-and-consolidation.md W3.)
+struct PointerEvent
+{
+    ImVec2        Position = {};
+    ImVec2        Delta = {};                   // pointer motion (moves; {0,0} otherwise)
+    MouseButton   Button = MouseButton::Left;   // the button, for down/up
+    ModifierFlags Modifiers = {};
+};
+
 using InputEvent = std::variant<
     PointerDownEvent,
     PointerUpEvent,

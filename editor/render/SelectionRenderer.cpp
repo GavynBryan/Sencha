@@ -1,9 +1,6 @@
 #include "SelectionRenderer.h"
 
-#include "../editmodes/IGizmo.h"
-#include "../editmodes/TranslateGizmo.h"
-#include "../level/editmodes/SelectionPivot.h"
-#include "../meshedit/MeshEditService.h"
+#include "../editmodes/ManipulatorSession.h"
 #include "../meshedit/MeshElements.h"
 
 #include <graphics/vulkan/VulkanBufferService.h>
@@ -19,11 +16,10 @@
 #include <span>
 #include <vector>
 
-SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection, MeshEditService& meshEdit)
+SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection, ManipulatorSession& session)
     : Scene(scene)
     , Selection(selection)
-    , MeshEdit(meshEdit)
-    , Gizmo(std::make_unique<TranslateGizmo>())
+    , Session(session)
 {
 }
 
@@ -121,11 +117,9 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         }
     }
 
-    // The translate gizmo sits at the selection pivot for the active element mode,
-    // matching where MeshEditSession hit-tests it. (Phase C.)
-    if (const std::optional<Vec3d> pivot =
-            ComputeSelectionPivot(Scene, Selection.GetSnapshot(), MeshEdit.GetElementKind()))
-        AppendGizmo(vertices, viewport, *pivot);
+    // Manipulators draw themselves; the renderer just converts their line list and
+    // never assumes a gizmo shape. (08-select-tool-v2.md)
+    AppendManipulators(vertices, viewport);
 
     if (vertices.empty())
         return;
@@ -250,17 +244,15 @@ void SelectionRenderer::AppendVertex(std::vector<LineVertex>& vertices,
     vertices.push_back(LineVertex{ .Position = p + Vec3d(0.0f, 0.0f, radius), .Color = color });
 }
 
-void SelectionRenderer::AppendGizmo(std::vector<LineVertex>& vertices,
-                                    const EditorViewport& viewport,
-                                    Vec3d pivot) const
+void SelectionRenderer::AppendManipulators(std::vector<LineVertex>& vertices,
+                                           const EditorViewport& viewport) const
 {
-    // The gizmo draws itself: we just convert its line list. Whatever the active
-    // gizmo is (translate arrows now, rotate rings / scale handles later), this
-    // code is unchanged — no gizmo-shape assumption lives here.
-    Gizmo->SetPivot(pivot);
-    std::vector<GizmoLine> lines;
-    Gizmo->AppendGeometry(viewport, lines);
-    for (const GizmoLine& line : lines)
+    // Each active manipulator draws itself; the renderer just converts the line
+    // list. Whatever the manipulators are (translate arrows now, bounds handles /
+    // rotate rings / scale later), this code is unchanged.
+    ManipulatorVisual visual;
+    Session.BuildVisuals(viewport, visual);
+    for (const ManipulatorVisual::Line& line : visual.Lines)
     {
         vertices.push_back(LineVertex{ .Position = line.A, .Color = line.Color });
         vertices.push_back(LineVertex{ .Position = line.B, .Color = line.Color });

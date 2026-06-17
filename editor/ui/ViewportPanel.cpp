@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "../viewport/MarqueeState.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -14,8 +16,9 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
     | ImGuiWindowFlags_NoBackground;
 }
 
-ViewportPanel::ViewportPanel(ViewportLayout& layout)
+ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee)
     : Layout(layout)
+    , Marquee(marquee)
 {
 }
 
@@ -118,6 +121,17 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         ? IM_COL32(110, 170, 255, 255)
         : IM_COL32(70, 70, 70, 255);
     drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
+
+    // Rubber-band selection rectangle, drawn in the viewport it was started in.
+    if (Marquee.Active && Marquee.Viewport == viewport.Id)
+    {
+        const ImVec2 lo(std::min(Marquee.Start.x, Marquee.Current.x),
+                        std::min(Marquee.Start.y, Marquee.Current.y));
+        const ImVec2 hi(std::max(Marquee.Start.x, Marquee.Current.x),
+                        std::max(Marquee.Start.y, Marquee.Current.y));
+        drawList->AddRectFilled(lo, hi, IM_COL32(110, 170, 255, 40));
+        drawList->AddRect(lo, hi, IM_COL32(140, 190, 255, 200));
+    }
 
     ImGui::EndChild();
     ImGui::EndChild();

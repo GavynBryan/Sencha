@@ -70,31 +70,31 @@ const std::vector<std::unique_ptr<ITool>>& ToolRegistry::GetTools() const
     return Tools;
 }
 
-InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, ImVec2 point)
+InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
         return InputConsumed::No;
 
-    return active->OnPointerDown(Context, viewport, point);
+    return active->OnPointerDown(Context, viewport, pointer);
 }
 
-InputConsumed ToolRegistry::HandlePointerMove(EditorViewport& viewport, ImVec2 point, ImVec2 delta)
+InputConsumed ToolRegistry::HandlePointerMove(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
         return InputConsumed::No;
 
-    return active->OnPointerMove(Context, viewport, point, delta);
+    return active->OnPointerMove(Context, viewport, pointer);
 }
 
-InputConsumed ToolRegistry::HandlePointerUp(EditorViewport& viewport, ImVec2 point)
+InputConsumed ToolRegistry::HandlePointerUp(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
         return InputConsumed::No;
 
-    return active->OnPointerUp(Context, viewport, point);
+    return active->OnPointerUp(Context, viewport, pointer);
 }
 
 InputConsumed ToolRegistry::OnInput(const InputEvent& event)

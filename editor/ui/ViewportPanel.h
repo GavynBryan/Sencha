@@ -4,10 +4,12 @@
 
 #include "../viewport/ViewportLayout.h"
 
+struct MarqueeState;
+
 class ViewportPanel : public IEditorPanel
 {
 public:
-    explicit ViewportPanel(ViewportLayout& layout);
+    ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee);
 
     std::string_view GetTitle() const override;
     bool IsVisible() const override;
@@ -25,6 +27,7 @@ private:
     void DrawOrientationSelector(EditorViewport& viewport);
 
     ViewportLayout& Layout;
+    const MarqueeState& Marquee;
     bool Visible = true;
     bool RegionHovered = false;
 };

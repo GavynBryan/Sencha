@@ -1,7 +1,7 @@
 #include "SelectionPivot.h"
 
-#include "../../meshedit/MeshElements.h"
-#include "../LevelScene.h"
+#include "../meshedit/ManipulationSink.h"
+#include "../meshedit/MeshElements.h"
 
 namespace
 {
@@ -25,7 +25,7 @@ struct Accumulator
 };
 }
 
-std::optional<Vec3d> ComputeSelectionPivot(const LevelScene& scene,
+std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
                                            const SelectionSnapshot& selection,
                                            MeshElementKind kind)
 {
@@ -33,43 +33,45 @@ std::optional<Vec3d> ComputeSelectionPivot(const LevelScene& scene,
 
     for (SelectableRef ref : selection.Items)
     {
-        if (!ref.IsValid() || ref.Registry != scene.GetRegistry().Id)
+        if (!ref.IsValid())
             continue;
 
         if (kind == MeshElementKind::Object)
         {
-            if (!ref.IsEntity())
-                continue;
-            if (const Transform3f* transform = scene.TryGetTransform(ref.Entity))
-                pivot.Add(transform->Position);
+            if (ref.IsEntity())
+            {
+                if (const std::optional<Transform3f> transform = sink.ResolveTransform(ref.Entity))
+                    pivot.Add(transform->Position);
+            }
             continue;
         }
 
-        const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity);
-        const Transform3f* transform = scene.TryGetTransform(ref.Entity);
-        if (mesh == nullptr || transform == nullptr)
+        const std::optional<MeshEditTargetMesh> resolved = sink.ResolveMesh(ref.Entity);
+        if (!resolved.has_value() || resolved->Mesh == nullptr)
             continue;
+        const BrushMesh& mesh = *resolved->Mesh;
+        const Transform3f& transform = resolved->Transform;
 
         switch (kind)
         {
         case MeshElementKind::Vertex:
             if (ref.IsVertex())
             {
-                if (const auto vertex = MeshElements::TryGetVertex(*mesh, *transform, ref.ElementId))
+                if (const auto vertex = MeshElements::TryGetVertex(mesh, transform, ref.ElementId))
                     pivot.Add(vertex->Position);
             }
             break;
         case MeshElementKind::Edge:
             if (ref.IsEdge())
             {
-                if (const auto edge = MeshElements::TryGetEdge(*mesh, *transform, ref.ElementId))
+                if (const auto edge = MeshElements::TryGetEdge(mesh, transform, ref.ElementId))
                     pivot.Add(edge->Mid);
             }
             break;
         case MeshElementKind::Face:
             if (ref.IsFace())
             {
-                if (const auto face = MeshElements::TryGetFace(*mesh, *transform, ref.ElementId))
+                if (const auto face = MeshElements::TryGetFace(mesh, transform, ref.ElementId))
                     pivot.Add(face->Center);
             }
             break;

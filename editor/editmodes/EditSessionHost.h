@@ -14,7 +14,7 @@ public:
     void EndSession();
     bool HasSession() const;
 
-    InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
+    InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
 
 private:
     std::unique_ptr<IEditSession> Active;

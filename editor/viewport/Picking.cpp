@@ -1,6 +1,7 @@
 #include "Picking.h"
 
 #include "EditorViewport.h"
+#include "ViewportProjection.h"
 
 #include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
@@ -10,16 +11,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace
 {
 constexpr double kMaxPickDistance = 1.0e6;
 constexpr double kParallelEpsilon = 1.0e-8;
-constexpr float kVulkanNdcNear = 0.0f;
-constexpr float kVulkanNdcFar = 1.0f;
-constexpr float kNdcRangeScale = 2.0f;
-constexpr float kNdcRangeOffset = 1.0f;
 
 bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance)
 {
@@ -105,44 +103,6 @@ bool IntersectRayPolygon(const Ray3d& ray, const std::vector<Vec3d>& corners, fl
 // Pixel thresholds for screen-space element picking.
 constexpr float kEdgePickPixels = 8.0f;
 constexpr float kVertexPickPixels = 10.0f;
-
-// Projects a world point to viewport pixels. Returns nullopt when the point is
-// behind the camera. outDepth is the clip-space W (view depth) for tie-breaking.
-std::optional<ImVec2> ProjectToScreen(const Mat4& viewProjection,
-                                      const EditorViewport& viewport,
-                                      const Vec3d& world,
-                                      float& outDepth)
-{
-    const Vec4 clip = viewProjection * Vec4(static_cast<float>(world.X),
-                                            static_cast<float>(world.Y),
-                                            static_cast<float>(world.Z),
-                                            1.0f);
-    if (clip.W <= kParallelEpsilon)
-        return std::nullopt;
-
-    const float ndcX = clip.X / clip.W;
-    const float ndcY = clip.Y / clip.W;
-    const float width = viewport.RegionMax.x - viewport.RegionMin.x;
-    const float height = viewport.RegionMax.y - viewport.RegionMin.y;
-    outDepth = clip.W;
-    return ImVec2{
-        viewport.RegionMin.x + (ndcX * 0.5f + 0.5f) * width,
-        viewport.RegionMin.y + (ndcY * 0.5f + 0.5f) * height,
-    };
-}
-
-float DistancePointToSegment(ImVec2 p, ImVec2 a, ImVec2 b)
-{
-    const float abx = b.x - a.x;
-    const float aby = b.y - a.y;
-    const float lengthSq = abx * abx + aby * aby;
-    float t = 0.0f;
-    if (lengthSq > 0.0f)
-        t = std::clamp(((p.x - a.x) * abx + (p.y - a.y) * aby) / lengthSq, 0.0f, 1.0f);
-    const float dx = p.x - (a.x + t * abx);
-    const float dy = p.y - (a.y + t * aby);
-    return std::sqrt(dx * dx + dy * dy);
-}
 }
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
@@ -285,7 +245,7 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
                                        ImVec2 point,
                                        const LevelScene& scene) const
 {
-    const Mat4 viewProjection = viewport.BuildRenderData().ViewProjection;
+    const ViewportProjection projection(viewport);
 
     SelectableRef best{};
     float bestPixels = kEdgePickPixels;
@@ -300,15 +260,13 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
 
         for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
         {
-            float depthA = 0.0f;
-            float depthB = 0.0f;
-            const std::optional<ImVec2> a = ProjectToScreen(viewProjection, viewport, edge.A, depthA);
-            const std::optional<ImVec2> b = ProjectToScreen(viewProjection, viewport, edge.B, depthB);
+            const std::optional<ProjectedPoint> a = projection.WorldToPixel(edge.A);
+            const std::optional<ProjectedPoint> b = projection.WorldToPixel(edge.B);
             if (!a.has_value() || !b.has_value())
                 continue;
 
-            const float pixels = DistancePointToSegment(point, *a, *b);
-            const float depth = std::min(depthA, depthB);
+            const float pixels = ViewportProjection::DistancePointToSegment(point, a->Pixel, b->Pixel);
+            const float depth = std::min(a->Depth, b->Depth);
             if (pixels > bestPixels)
                 continue;
             if (best.IsValid() && pixels >= bestPixels && depth >= bestDepth)
@@ -327,7 +285,7 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
                                          ImVec2 point,
                                          const LevelScene& scene) const
 {
-    const Mat4 viewProjection = viewport.BuildRenderData().ViewProjection;
+    const ViewportProjection projection(viewport);
 
     SelectableRef best{};
     float bestPixels = kVertexPickPixels;
@@ -342,27 +300,110 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
 
         for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
         {
-            float depth = 0.0f;
-            const std::optional<ImVec2> projected =
-                ProjectToScreen(viewProjection, viewport, vertex.Position, depth);
+            const std::optional<ProjectedPoint> projected = projection.WorldToPixel(vertex.Position);
             if (!projected.has_value())
                 continue;
 
-            const float dx = point.x - projected->x;
-            const float dy = point.y - projected->y;
+            const float dx = point.x - projected->Pixel.x;
+            const float dy = point.y - projected->Pixel.y;
             const float pixels = std::sqrt(dx * dx + dy * dy);
             if (pixels > bestPixels)
                 continue;
-            if (best.IsValid() && pixels >= bestPixels && depth >= bestDepth)
+            if (best.IsValid() && pixels >= bestPixels && projected->Depth >= bestDepth)
                 continue;
 
             best = SelectableRef::VertexSelection(scene.GetRegistry().Id, entity, vertex.Index);
             bestPixels = pixels;
-            bestDepth = depth;
+            bestDepth = projected->Depth;
         }
     }
 
     return best;
+}
+
+std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& viewport,
+                                                      ImVec2 rectMin,
+                                                      ImVec2 rectMax,
+                                                      const LevelScene& scene,
+                                                      MeshElementKind mode) const
+{
+    const float minX = std::min(rectMin.x, rectMax.x);
+    const float minY = std::min(rectMin.y, rectMax.y);
+    const float maxX = std::max(rectMin.x, rectMax.x);
+    const float maxY = std::max(rectMin.y, rectMax.y);
+    const ViewportProjection projection(viewport);
+    const RegistryId registry = scene.GetRegistry().Id;
+
+    const auto inside = [&](ImVec2 p) {
+        return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+    };
+
+    std::vector<SelectableRef> result;
+
+    for (EntityId entity : scene.GetAllEntities())
+    {
+        if (mode == MeshElementKind::Object)
+        {
+            const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
+            if (!state.has_value())
+                continue;
+
+            // Overlap of the projected bounds' screen rectangle with the marquee.
+            const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
+            float bxMin = std::numeric_limits<float>::max();
+            float byMin = std::numeric_limits<float>::max();
+            float bxMax = std::numeric_limits<float>::lowest();
+            float byMax = std::numeric_limits<float>::lowest();
+            bool any = false;
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const Vec3d point(
+                    (corner & 1) ? bounds.Max.X : bounds.Min.X,
+                    (corner & 2) ? bounds.Max.Y : bounds.Min.Y,
+                    (corner & 4) ? bounds.Max.Z : bounds.Min.Z);
+                if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(point))
+                {
+                    bxMin = std::min(bxMin, p->Pixel.x);
+                    byMin = std::min(byMin, p->Pixel.y);
+                    bxMax = std::max(bxMax, p->Pixel.x);
+                    byMax = std::max(byMax, p->Pixel.y);
+                    any = true;
+                }
+            }
+            if (any && bxMin <= maxX && bxMax >= minX && byMin <= maxY && byMax >= minY)
+                result.push_back(SelectableRef::EntitySelection(registry, entity));
+            continue;
+        }
+
+        const Transform3f* transform = scene.TryGetTransform(entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+        if (transform == nullptr || mesh == nullptr)
+            continue;
+
+        switch (mode)
+        {
+        case MeshElementKind::Vertex:
+            for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+                if (const auto p = projection.WorldToPixel(vertex.Position); p && inside(p->Pixel))
+                    result.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
+            break;
+        case MeshElementKind::Edge:
+            for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
+                if (const auto p = projection.WorldToPixel(edge.Mid); p && inside(p->Pixel))
+                    result.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
+            break;
+        case MeshElementKind::Face:
+            for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
+                if (const auto p = projection.WorldToPixel(face.Center); p && inside(p->Pixel))
+                    result.push_back(SelectableRef::FaceSelection(registry, entity, face.Index));
+            break;
+        case MeshElementKind::Object:
+        default:
+            break;
+        }
+    }
+
+    return result;
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const
@@ -383,28 +424,5 @@ std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& vi
 
 Ray3d PickingService::BuildRay(const EditorViewport& viewport, ImVec2 point) const
 {
-    const float width = viewport.RegionMax.x - viewport.RegionMin.x;
-    const float height = viewport.RegionMax.y - viewport.RegionMin.y;
-    if (width <= 0.0f || height <= 0.0f)
-        return {};
-
-    const float localX = (point.x - viewport.RegionMin.x) / width;
-    const float localY = (point.y - viewport.RegionMin.y) / height;
-    const float clipX = localX * kNdcRangeScale - kNdcRangeOffset;
-    const float clipY = localY * kNdcRangeScale - kNdcRangeOffset;
-
-    const CameraRenderData renderData = viewport.BuildRenderData();
-    const Mat4 inverseViewProjection = renderData.ViewProjection.Inverse();
-
-    const Vec4 nearClip(clipX, clipY, kVulkanNdcNear, 1.0f);
-    const Vec4 farClip(clipX, clipY, kVulkanNdcFar, 1.0f);
-
-    Vec4 nearWorld = inverseViewProjection * nearClip;
-    Vec4 farWorld = inverseViewProjection * farClip;
-    nearWorld /= nearWorld.W;
-    farWorld /= farWorld.W;
-
-    const Vec3d origin(nearWorld.X, nearWorld.Y, nearWorld.Z);
-    const Vec3d target(farWorld.X, farWorld.Y, farWorld.Z);
-    return Ray3d(origin, (target - origin).Normalized());
+    return ViewportProjection(viewport).RayThroughPixel(point);
 }

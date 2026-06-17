@@ -92,3 +92,6 @@ extern "C" SENCHA_GAME_EXPORT IGameModule* SenchaCreateGameModule()
     static TestGameModule instance;
     return &instance;
 }
+
+// The C-linkage ABI descriptor the loader validates before touching the vtable.
+SENCHA_EXPORT_GAME_MODULE_ABI()

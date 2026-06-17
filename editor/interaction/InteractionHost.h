@@ -17,8 +17,8 @@ public:
     void Cancel(ToolContext& ctx);
     bool IsActive() const;
 
-    InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, ImVec2 delta);
-    InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
+    InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
+    InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
 
 private:
     std::unique_ptr<IInteraction> Active;

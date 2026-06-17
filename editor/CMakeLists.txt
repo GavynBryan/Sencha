@@ -77,4 +77,7 @@ target_include_directories(sencha_editor PRIVATE
 target_compile_definitions(sencha_editor PRIVATE
     SENCHA_ENABLE_VULKAN
     SENCHA_ENABLE_DEBUG_UI
+    # Dev-time editor asset root. Packaging will replace this with a resolved
+    # install path; for now editor visuals (e.g. camera.glb) load from source.
+    SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
 )

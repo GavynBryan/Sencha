@@ -1,7 +1,10 @@
 #pragma once
 
+#include "BrushManipulationSink.h"
+
 #include "../commands/CommandStack.h"
 #include "../editmodes/EditSessionHost.h"
+#include "../editmodes/ManipulatorSession.h"
 #include "../input/ViewportToolDispatcher.h"
 #include "../interaction/InteractionHost.h"
 #include "../meshedit/MeshEditService.h"
@@ -10,6 +13,7 @@
 #include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
 #include "../tools/ToolRegistry.h"
+#include "../viewport/MarqueeState.h"
 #include "../viewport/Picking.h"
 #include "../viewport/ViewportLayout.h"
 
@@ -31,9 +35,14 @@ public:
     SelectionService Selection;
     PickingService Picking;
     MeshEditService MeshEdit;
+    MarqueeState Marquee;
     InteractionHost Interactions;
     PreviewBuffer Preview;
     EditSessionHost Sessions;
+    std::unique_ptr<BrushManipulationSink> Sink;
+    // Non-owning; the EditSessionHost owns the session. Held so the overlay
+    // renderer can ask it for manipulator visuals.
+    ManipulatorSession* Manipulators = nullptr;
     std::unique_ptr<ToolContext> ActiveToolContext;
     std::unique_ptr<ToolRegistry> Tools;
     std::unique_ptr<ViewportToolDispatcher> Dispatcher;

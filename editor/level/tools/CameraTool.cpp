@@ -17,9 +17,9 @@ std::string_view CameraTool::GetDisplayName() const
     return "Camera";
 }
 
-InputConsumed CameraTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, ImVec2 point)
+InputConsumed CameraTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
-    const std::optional<Vec3d> snappedPoint = ctx.Picking.ProjectPointToGrid(viewport, point);
+    const std::optional<Vec3d> snappedPoint = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
     if (!snappedPoint.has_value())
         return InputConsumed::No;
 

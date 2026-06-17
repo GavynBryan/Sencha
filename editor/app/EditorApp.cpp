@@ -107,7 +107,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Document.GetScene(),
         Workspace->Selection,
         Workspace->Preview,
-        Workspace->MeshEdit));
+        *Workspace->Manipulators));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
     UiFeature = uiFeature.get();
@@ -122,7 +122,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         [this]() { SaveDocument(); },
         [this]() { RequestSaveAsDialog(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout);
+    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);

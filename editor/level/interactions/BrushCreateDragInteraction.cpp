@@ -60,10 +60,9 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx,
 
 void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
                                                EditorViewport& viewport,
-                                               ImVec2 pos,
-                                               ImVec2 /*delta*/)
+                                               const PointerEvent& pointer)
 {
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pos);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
     if (!snapped.has_value())
         return;
 
@@ -72,11 +71,11 @@ void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
 
 void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
                                              EditorViewport& viewport,
-                                             ImVec2 pos)
+                                             const PointerEvent& pointer)
 {
     ctx.Preview.Clear();
 
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pos);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
     if (snapped.has_value())
         UpdatePreview(ctx, *snapped, viewport);
 

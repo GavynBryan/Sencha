@@ -120,12 +120,32 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     EXPECT_EQ(console.FindCommand("test.grapple"), nullptr);
 }
 
+TEST(GameModuleLoader, AbiDescriptorAcceptsIdenticalBuild)
+{
+    const GameModuleAbi host = SenchaThisBuildAbi();
+    EXPECT_FALSE(DescribeGameModuleAbiMismatch(host, host).has_value());
+}
+
 TEST(GameModuleLoader, RefusesAbiMismatch)
 {
-    // The loader compares module->AbiVersion() to SENCHA_GAME_ABI_VERSION before
-    // calling Register. Covered structurally here; a dedicated mismatched-version
-    // module is added when the ABI first bumps (trigger: SENCHA_GAME_ABI_VERSION 2).
-    SUCCEED();
+    const GameModuleAbi host = SenchaThisBuildAbi();
+
+    // The incident: a module built against different ABI headers (stale .so).
+    GameModuleAbi staleHeaders = host;
+    staleHeaders.HeaderFingerprint ^= 0x1ull;
+    const auto headerReason = DescribeGameModuleAbiMismatch(staleHeaders, host);
+    ASSERT_TRUE(headerReason.has_value());
+    EXPECT_NE(headerReason->find("fingerprint"), std::string::npos);
+
+    // A deliberate ABI-version break is also refused.
+    GameModuleAbi oldVersion = host;
+    oldVersion.AbiVersion -= 1;
+    EXPECT_TRUE(DescribeGameModuleAbiMismatch(oldVersion, host).has_value());
+
+    // So is a toolchain mismatch (e.g. a different C++ standard library).
+    GameModuleAbi otherStdLib = host;
+    otherStdLib.StdLibId += 1;
+    EXPECT_TRUE(DescribeGameModuleAbiMismatch(otherStdLib, host).has_value());
 }
 
 // The headless proof of S3's editor gate: a component defined only in the game

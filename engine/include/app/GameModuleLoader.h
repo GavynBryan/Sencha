@@ -1,9 +1,18 @@
 #pragma once
 
 #include <app/GameModule.h>
+#include <app/GameModuleAbi.h>
 
 #include <filesystem>
+#include <optional>
 #include <string>
+
+// First incompatible field between a module's reported ABI descriptor and this
+// build's (SenchaThisBuildAbi()), as a human-readable reason — or nullopt when
+// compatible. Exposed (not just used by the loader) so the guard itself is unit-
+// testable. (09-module-abi-hardening.md.)
+[[nodiscard]] std::optional<std::string> DescribeGameModuleAbiMismatch(
+    const GameModuleAbi& module, const GameModuleAbi& host);
 
 //=============================================================================
 // GameModuleLoader
