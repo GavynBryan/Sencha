@@ -18,6 +18,7 @@ class DebugService;
 class FrameDriver;
 class Game;
 class JobSystem;
+struct PlatformServices;
 class ThreadPoolJobSystem;
 
 //=============================================================================
@@ -63,6 +64,11 @@ public:
     [[nodiscard]] CaptionRuntime& Captions();
     [[nodiscard]] const CaptionRuntime& Captions() const;
 
+    // SDL platform services. Present only when the engine runs windowed
+    // (GraphicsApi != None); valid between Initialize and Shutdown.
+    [[nodiscard]] PlatformServices& Platform();
+    [[nodiscard]] const PlatformServices& Platform() const;
+
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
 
@@ -107,6 +113,10 @@ private:
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
+    // SDL platform group. Declared before ServiceRegistry so the Vulkan
+    // services it holds (surface/swapchain depend on the window) tear down
+    // first. Null when headless.
+    std::unique_ptr<PlatformServices> PlatformState;
     ServiceHost ServiceRegistry;
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;

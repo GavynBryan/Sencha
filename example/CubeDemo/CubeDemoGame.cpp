@@ -26,6 +26,7 @@
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
+#include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
@@ -277,7 +278,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
-    auto& windows = services.Get<SdlWindowService>();
+    auto& windows = engine.Platform().Windows;
     SdlWindow* window = windows.GetPrimaryWindow();
     auto& instance = services.Get<VulkanInstanceService>();
     auto& frames = services.Get<VulkanFrameService>();
@@ -375,7 +376,7 @@ const RuntimeAssets& CubeDemoGame::RuntimeAssetState() const
 
 void CubeDemoGame::SetRelativeMouseMode(Engine& engine, bool enabled)
 {
-    SdlWindow* window = engine.Services().Get<SdlWindowService>().GetPrimaryWindow();
+    SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
 

@@ -16,7 +16,7 @@
 #include <graphics/vulkan/VulkanBootstrap.h>
 #endif
 
-#include <platform/SdlBootstrap.h>
+#include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 
@@ -65,6 +65,7 @@ bool Engine::Initialize()
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
         ServiceRegistry.Clear();
+        PlatformState.reset();
         CaptionState.reset();
         AudioState.reset();
         DebugState.reset();
@@ -93,7 +94,8 @@ bool Engine::Initialize()
         return true;
     }
 
-    SdlWindow* window = SdlBootstrap::Install(ServiceRegistry, Configuration, logging);
+    PlatformState = std::make_unique<PlatformServices>(logging);
+    SdlWindow* window = PlatformState->CreatePrimaryWindow(Configuration.Window);
     if (window == nullptr || !window->IsValid())
     {
         std::fprintf(stderr, "Failed to create Vulkan window.\n");
@@ -110,7 +112,7 @@ bool Engine::Initialize()
         return failInitialize();
     }
 
-    auto& windows = ServiceRegistry.Get<SdlWindowService>();
+    auto& windows = PlatformState->Windows;
     if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, logging, *window, windows))
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
@@ -138,6 +140,7 @@ void Engine::Shutdown()
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
     ServiceRegistry.Clear();
+    PlatformState.reset();
     CaptionState.reset();
     AudioState.reset();
     DebugState.reset();
@@ -181,6 +184,18 @@ const CaptionRuntime& Engine::Captions() const
 {
     assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
     return *CaptionState;
+}
+
+PlatformServices& Engine::Platform()
+{
+    assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
+    return *PlatformState;
+}
+
+const PlatformServices& Engine::Platform() const
+{
+    assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
+    return *PlatformState;
 }
 
 JobSystem& Engine::Jobs()
