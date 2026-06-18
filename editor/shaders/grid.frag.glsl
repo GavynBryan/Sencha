@@ -15,27 +15,35 @@ layout(push_constant) uniform GridPC {
 layout(location = 0) in  vec3 fragWorldPos;
 layout(location = 0) out vec4 outColor;
 
-// Coverage of the nearest grid line: a smooth ~1px-wide band (smoothstep AA),
-// faded out as a cell shrinks toward pixel size so distant lines dissolve cleanly
-// instead of aliasing into sparkly noise / moire.
+// Half-line widths in pixels. A bit wider than 1px so the lines read as solid at
+// 1 sample (no MSAA) instead of crawling; the axis line is widest since it's the
+// most visible. Distances are measured in pixels (world dist / derivative).
+const float kGridHalfPx = 1.15;
+const float kAxisHalfPx = 1.75;
+
+// Coverage of the nearest grid line: a smooth band whose width is fixed in pixels
+// (so it doesn't thin into sparkle at grazing angles), faded out as a cell shrinks
+// toward pixel size so distant lines dissolve cleanly instead of aliasing/moire.
 float gridLine(float coord, float spacing)
 {
     float fw       = max(fwidth(coord), 1e-6);
     float halfCell = spacing * 0.5;
     float dist     = abs(mod(coord + halfCell, spacing) - halfCell);
-    float cov      = 1.0 - smoothstep(0.0, fw, dist);
+    float distPx   = dist / fw;
+    float cov      = 1.0 - smoothstep(0.0, kGridHalfPx, distPx);
     // Level-of-detail: fade the line once its cell is only a few pixels wide.
     float cellPx   = spacing / fw;
     cov           *= clamp(cellPx * 0.5 - 0.5, 0.0, 1.0);
     return cov;
 }
 
-// Coverage of the world axis at coord == 0 — a smooth ~1px band (no LOD fade; the
-// axis line is always meaningful).
+// Coverage of the world axis at coord == 0 — a fixed pixel-width band so the long
+// thin diagonal reads as a solid line rather than a sparkly thread.
 float axisLine(float coord)
 {
-    float fw = max(fwidth(coord), 1e-6);
-    return 1.0 - smoothstep(0.0, fw, abs(coord));
+    float fw     = max(fwidth(coord), 1e-6);
+    float distPx = abs(coord) / fw;
+    return 1.0 - smoothstep(0.0, kAxisHalfPx, distPx);
 }
 
 // Derive a canonical editor axis color from a direction vector.
