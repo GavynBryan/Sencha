@@ -52,7 +52,7 @@ public:
 
 struct ImportResult
 {
-    std::vector<CookedArtifact> Artifacts;
+    std::vector<CookedArtifact> Artifacts{};
 
     // Non-empty means the import failed. Importers report; the driver logs.
     std::string Error;

@@ -35,6 +35,19 @@ struct Handle
     [[nodiscard]] bool IsNull() const { return !IsValid(); }
 
     bool operator==(const Handle&) const = default;
+
+    // Explicit, named packing for the ILifetimeOwner uint64_t token slot
+    // (see Owned<H>). Low 32 bits = Index, high 32 bits = Generation. This is
+    // the canonical encoding; on little-endian targets it is byte-identical to
+    // the generic memcpy Owned::Encode() uses for value tokens.
+    [[nodiscard]] static constexpr Handle FromToken(uint64_t t)
+    {
+        return { static_cast<uint32_t>(t & 0xFFFFFFFFu), static_cast<uint32_t>(t >> 32) };
+    }
+    [[nodiscard]] constexpr uint64_t ToToken() const
+    {
+        return static_cast<uint64_t>(Index) | (static_cast<uint64_t>(Generation) << 32);
+    }
 };
 
 // The slot index of a valid handle, for code that indexes a parallel array by

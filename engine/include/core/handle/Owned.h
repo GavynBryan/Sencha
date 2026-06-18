@@ -119,6 +119,9 @@ private:
 		}
 		else
 		{
+			// Generic value-token encode: H may be Handle<Tag>, DataBatchKey, etc.
+			// For Handle tokens this is byte-identical to Handle::ToToken() on
+			// little-endian targets (the decode side uses Handle::FromToken()).
 			uint64_t v = 0;
 			std::memcpy(&v, &Token, sizeof(H));
 			return v;

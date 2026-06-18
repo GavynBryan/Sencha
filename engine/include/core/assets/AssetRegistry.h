@@ -22,7 +22,7 @@ struct AssetRecord
     // Stable identity from the cook's persisted id map (Decision A / Stage
     // 4e). Invalid until ApplyAssetIds runs after import + scan; records
     // register id-less and ids never participate in equivalence checks.
-    AssetId Id;
+    AssetId Id{};
 
     uint64_t ContentHash = 0;
     uint32_t Version = 1;

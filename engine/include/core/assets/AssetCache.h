@@ -5,7 +5,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -243,17 +242,13 @@ private:
     // ILifetimeOwner -- called by Owned on construction / destruction.
     void Attach(uint64_t token) override
     {
-        THandle handle{};
-        std::memcpy(&handle, &token, sizeof(handle));
-        if (TEntry* entry = Resolve(handle))
+        if (TEntry* entry = Resolve(THandle::FromToken(token)))
             ++entry->RefCount;
     }
 
     void Detach(uint64_t token) override
     {
-        THandle handle{};
-        std::memcpy(&handle, &token, sizeof(handle));
-        Release(handle);
+        Release(THandle::FromToken(token));
     }
 
     void FreeEntry(uint32_t index, TEntry& entry)
