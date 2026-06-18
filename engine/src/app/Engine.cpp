@@ -50,15 +50,15 @@ bool Engine::Initialize()
     // Audio backend + the system that drives scene AudioSourceComponents
     // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
     // is non-fatal: the system no-ops, the engine runs silent.
-    ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
-    EngineSystems.Register<AudioSystem>();
+    auto& audioService = ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
+    EngineSystems.Register<AudioSystem>(&audioService);
 
     // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
     // No device dependency — always valid, headless included. CaptionSystem
     // registers after AudioSystem so voices started or swept this frame are
     // captioned/retired the same frame.
-    ServiceRegistry.AddService<CaptionRuntime>(logging, Configuration.Captions);
-    EngineSystems.Register<CaptionSystem>();
+    auto& captionRuntime = ServiceRegistry.AddService<CaptionRuntime>(logging, Configuration.Captions);
+    EngineSystems.Register<CaptionSystem>(&captionRuntime, &audioService);
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();

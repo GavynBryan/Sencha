@@ -7,6 +7,7 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
 class ServiceHost;
+class VulkanSwapchainService;
 
 //=============================================================================
 // DefaultRenderPipeline
@@ -32,4 +33,7 @@ private:
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
+    // Cached at AddMeshRenderFeature (wiring time) for the surface extent used
+    // during extraction; null until then, and in non-Vulkan builds.
+    VulkanSwapchainService* Swapchain = nullptr;
 };

@@ -31,9 +31,15 @@ struct Registry;
 class CaptionSystem
 {
 public:
-    // Schedule hook: resolves CaptionRuntime and AudioService from the
-    // engine and drives the active audio registries. A missing caption
-    // runtime is a silent no-op.
+    // CaptionRuntime and AudioService are injected at registration, not
+    // resolved per frame. Null is the headless-test path (the engine always
+    // injects); Update's null handling covers it.
+    CaptionSystem(CaptionRuntime* captions = nullptr, AudioService* audio = nullptr)
+        : Captions(captions), AudioBackend(audio) {}
+
+    // Schedule hook: drives the active audio registries through the injected
+    // CaptionRuntime and AudioService. An invalid audio service takes the
+    // no-device degrade path.
     void Audio(AudioContext& ctx);
 
     // Engine-free core, for headless tests. Null `captions` is a no-op.
@@ -46,4 +52,7 @@ public:
 
 private:
     void DriveRegistry(CaptionRuntime& captions, Registry& registry, bool noAudio);
+
+    CaptionRuntime* Captions = nullptr;
+    AudioService* AudioBackend = nullptr;
 };

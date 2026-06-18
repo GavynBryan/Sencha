@@ -1,6 +1,5 @@
 #include <app/DefaultRenderPipeline.h>
 
-#include <app/Engine.h>
 #include <core/service/ServiceHost.h>
 #include <render/RenderExtractionSystem.h>
 #include <world/registry/Registry.h>
@@ -25,7 +24,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(ServiceHost& services)
 {
 #ifdef SENCHA_ENABLE_VULKAN
     Renderer* renderer = services.TryGet<Renderer>();
-    if (renderer == nullptr || Meshes == nullptr || Materials == nullptr)
+    Swapchain = services.TryGet<VulkanSwapchainService>();
+    if (renderer == nullptr || Swapchain == nullptr || Meshes == nullptr || Materials == nullptr)
         return false;
 
     return renderer->AddFeature(
@@ -42,8 +42,12 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         return;
 
 #ifdef SENCHA_ENABLE_VULKAN
-    auto& swapchain = ctx.EngineInstance.Services().Get<VulkanSwapchainService>();
-    const VkExtent2D extent = swapchain.GetExtent();
+    if (Swapchain == nullptr)
+    {
+        ctx.PacketWrite.Renderable = false;
+        return;
+    }
+    const VkExtent2D extent = Swapchain->GetExtent();
 #else
     (void)ctx;
     return;

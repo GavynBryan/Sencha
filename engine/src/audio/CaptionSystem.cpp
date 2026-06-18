@@ -1,12 +1,10 @@
 #include <audio/CaptionSystem.h>
 
-#include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
 #include <audio/CaptionRuntime.h>
-#include <core/service/ServiceHost.h>
 #include <world/registry/Registry.h>
 
 namespace
@@ -43,10 +41,8 @@ namespace
 
 void CaptionSystem::Audio(AudioContext& ctx)
 {
-    CaptionRuntime* captions = ctx.EngineInstance.Services().TryGet<CaptionRuntime>();
-    AudioService* audio = ctx.EngineInstance.Services().TryGet<AudioService>();
-    Update(captions,
-           (audio != nullptr && audio->IsValid()) ? audio : nullptr,
+    Update(Captions,
+           (AudioBackend != nullptr && AudioBackend->IsValid()) ? AudioBackend : nullptr,
            ctx.ActiveRegistries,
            static_cast<float>(ctx.Presentation.DeltaSeconds));
 }

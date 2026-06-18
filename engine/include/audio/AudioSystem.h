@@ -30,9 +30,14 @@ struct Registry;
 class AudioSystem
 {
 public:
-    // Schedule hook: resolves AudioService from the engine and drives the
-    // active audio registries. A missing or invalid service is a silent
-    // no-op (no audio device — CI, headless).
+    // The AudioService is injected at registration, not resolved per frame.
+    // Null is the headless-test path (the engine always injects a service);
+    // Audio() then no-ops, exactly as an invalid service does.
+    explicit AudioSystem(AudioService* audio = nullptr) : AudioBackend(audio) {}
+
+    // Schedule hook: drives the active audio registries through the injected
+    // AudioService. An invalid service is a silent no-op (no audio device —
+    // CI, headless).
     void Audio(AudioContext& ctx);
 
     // Engine-free core, for headless tests: tick + sweep + start rules over
@@ -42,6 +47,8 @@ public:
 private:
     void DriveRegistry(AudioService& audio, Registry& registry,
                        std::vector<VoiceId>& playing);
+
+    AudioService* AudioBackend = nullptr;
 
     // Voices this system started, grouped by the registry whose sources own
     // them. Rebuilt each frame for active registries; entries for registries
