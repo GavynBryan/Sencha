@@ -1,5 +1,6 @@
 #include "SceneHierarchyPanel.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -35,6 +36,7 @@ void SceneHierarchyPanel::OnDraw()
         ImGui::End();
         return;
     }
+    EditorUiSkin::PanelBackdrop();
 
     const SelectableRef current = Selection.GetPrimarySelection();
     const RegistryId registryId = Scene.GetRegistry().Id;

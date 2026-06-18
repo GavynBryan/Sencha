@@ -76,13 +76,14 @@ void EditorUi::Apply(ImGuiStyle& style)
     c[ImGuiCol_DragDropTarget]       = Accent;
     c[ImGuiCol_NavHighlight]         = Accent;
 
-    style.WindowRounding    = 2.0f;
-    style.ChildRounding     = 2.0f;
-    style.FrameRounding     = 2.0f;
-    style.GrabRounding      = 2.0f;
-    style.TabRounding       = 2.0f;
-    style.ScrollbarRounding = 2.0f;
-    style.PopupRounding     = 2.0f;
+    // Sharp corners everywhere — beveled metal panels, not rounded cards.
+    style.WindowRounding    = 0.0f;
+    style.ChildRounding     = 0.0f;
+    style.FrameRounding     = 0.0f;
+    style.GrabRounding      = 0.0f;
+    style.TabRounding       = 0.0f;
+    style.ScrollbarRounding = 0.0f;
+    style.PopupRounding     = 0.0f;
     style.WindowBorderSize  = 1.0f;
     style.ChildBorderSize   = 1.0f;
     style.FrameBorderSize   = 1.0f;

@@ -1,5 +1,6 @@
 #include "EditorUiFeature.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 
@@ -389,6 +390,11 @@ void EditorUiFeature::DrawMainMenuBar()
 {
     if (!ImGui::BeginMainMenuBar())
         return;
+
+    EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                       ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                              ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                       EditorUi::HeaderBg);
 
     if (ImGui::BeginMenu("File"))
     {

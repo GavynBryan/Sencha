@@ -8,27 +8,27 @@
 // data + Apply(): deliberately not a theming framework. (10-editor-ui-look-and-feel.md)
 namespace EditorUi
 {
-// Palette. Tuned dark — a "dead CRT / cursed Winamp skin": near-black gunmetal
-// chrome, muted teal accent (not a glowing cyan), amber + lime VU secondaries.
-// Backgrounds sit at single-digit % lightness so the editor recedes and the
-// viewport/overlay carries the color. (See 10-editor-ui-look-and-feel.md.)
-inline const ImVec4 WindowBg       = ImVec4(0.024f, 0.031f, 0.039f, 1.0f); // app void, near black
-inline const ImVec4 PanelBg        = ImVec4(0.039f, 0.051f, 0.059f, 1.0f); // panel gunmetal
-inline const ImVec4 HeaderBg       = ImVec4(0.055f, 0.071f, 0.082f, 1.0f); // titles/menus, raised
-inline const ImVec4 FrameBg        = ImVec4(0.016f, 0.024f, 0.031f, 1.0f); // inset wells, darkest
-inline const ImVec4 FrameBgHovered = ImVec4(0.063f, 0.090f, 0.106f, 1.0f);
-inline const ImVec4 FrameBgActive  = ImVec4(0.090f, 0.129f, 0.153f, 1.0f);
-inline const ImVec4 Border         = ImVec4(0.110f, 0.149f, 0.169f, 1.0f); // hairline steel
-inline const ImVec4 Accent         = ImVec4(0.137f, 0.604f, 0.671f, 1.0f); // muted teal
-inline const ImVec4 AccentHover    = ImVec4(0.220f, 0.722f, 0.788f, 1.0f);
-inline const ImVec4 AccentDim      = ImVec4(0.078f, 0.337f, 0.376f, 1.0f);
-inline const ImVec4 Selected       = ImVec4(0.071f, 0.188f, 0.216f, 1.0f); // dim teal row
-inline const ImVec4 Warning        = ImVec4(0.851f, 0.557f, 0.149f, 1.0f); // amber
-inline const ImVec4 Danger         = ImVec4(0.792f, 0.275f, 0.235f, 1.0f); // LOCKED red
-inline const ImVec4 Critical       = ImVec4(0.890f, 0.196f, 0.467f, 1.0f); // magenta
-inline const ImVec4 Success        = ImVec4(0.420f, 0.745f, 0.290f, 1.0f); // VU lime
-inline const ImVec4 TextPrimary    = ImVec4(0.722f, 0.769f, 0.792f, 1.0f);
-inline const ImVec4 TextDim        = ImVec4(0.404f, 0.451f, 0.482f, 1.0f);
+// Palette — an "edgy 2003 Winamp skin": near-black blue-gunmetal chrome with a
+// glowing cyan accent and saturated VU secondaries (green/amber/magenta). The
+// EditorUiSkin draw-list layer turns these into glossy beveled gradients; the raw
+// colors stay vivid so the highlights actually glow. (10-editor-ui-look-and-feel.md.)
+inline const ImVec4 WindowBg       = ImVec4(0.020f, 0.027f, 0.035f, 1.0f); // app void, near black
+inline const ImVec4 PanelBg        = ImVec4(0.039f, 0.051f, 0.063f, 1.0f); // panel gunmetal
+inline const ImVec4 HeaderBg       = ImVec4(0.063f, 0.082f, 0.098f, 1.0f); // titles/menus, raised
+inline const ImVec4 FrameBg        = ImVec4(0.012f, 0.020f, 0.027f, 1.0f); // inset wells, darkest
+inline const ImVec4 FrameBgHovered = ImVec4(0.067f, 0.098f, 0.118f, 1.0f);
+inline const ImVec4 FrameBgActive  = ImVec4(0.094f, 0.137f, 0.165f, 1.0f);
+inline const ImVec4 Border         = ImVec4(0.133f, 0.180f, 0.204f, 1.0f); // hairline steel
+inline const ImVec4 Accent         = ImVec4(0.168f, 0.745f, 0.847f, 1.0f); // glow cyan
+inline const ImVec4 AccentHover    = ImVec4(0.357f, 0.910f, 1.000f, 1.0f); // hot cyan
+inline const ImVec4 AccentDim      = ImVec4(0.094f, 0.408f, 0.467f, 1.0f);
+inline const ImVec4 Selected       = ImVec4(0.082f, 0.220f, 0.255f, 1.0f); // dim teal row
+inline const ImVec4 Warning        = ImVec4(0.929f, 0.616f, 0.149f, 1.0f); // amber
+inline const ImVec4 Danger         = ImVec4(0.870f, 0.255f, 0.200f, 1.0f); // LOCKED red
+inline const ImVec4 Critical       = ImVec4(0.957f, 0.196f, 0.553f, 1.0f); // magenta
+inline const ImVec4 Success        = ImVec4(0.455f, 0.855f, 0.290f, 1.0f); // VU lime
+inline const ImVec4 TextPrimary    = ImVec4(0.769f, 0.820f, 0.851f, 1.0f);
+inline const ImVec4 TextDim        = ImVec4(0.435f, 0.486f, 0.522f, 1.0f);
 
 // Applies the palette + metrics onto the ImGui style (seeded from StyleColorsDark
 // so no entry is left uninitialized).

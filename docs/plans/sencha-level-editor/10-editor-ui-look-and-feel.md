@@ -236,8 +236,19 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    panels) to power a `View` menu (per-panel toggles + **Reset Layout**). Layout
    persists via `imgui.ini`; the viewport is the dock-managed central window. See
    plan `~/.claude/plans/enumerated-sparking-penguin.md`.
-5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
-   pixel-fidelity is wanted.
+5. **Skin pass (bevel + gradient) — IN PROGRESS.** The user wanted an "edgy 2003
+   Winamp skin", not a clean flat theme. Scoped (with the user) to the bounded
+   draw-list pass — not a full texture skin. `EditorUiSkin.{h,cpp}` is a single
+   draw-list layer (gradient+bevel fill, glossy metal `Band`, accent-glow `Button`,
+   `PanelBackdrop`) with all colors derived from the palette (so
+   `ui_color_discipline` holds) and all look constants centralized. Palette retuned
+   glowier (glow cyan accent, saturated VU green/amber/magenta) and corners set
+   sharp (0 rounding). Applied so far: menu/toolbar/status **bands**, glossy
+   **toolbar buttons**, and a subtle **panel backdrop** in the five content panels
+   (the viewport stays transparent for the 3D). Full texture-skin fidelity (9-slice
+   frames, the transport/EQ ornaments) remains out of scope — disproportionate for
+   a dev tool; residual flatness in stock ImGui widgets (combos, checkboxes) is the
+   honest ceiling of this approach.
 
 ## Risks / honest ceiling
 

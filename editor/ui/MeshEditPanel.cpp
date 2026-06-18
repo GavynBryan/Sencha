@@ -1,5 +1,6 @@
 #include "MeshEditPanel.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 
 #include "../commands/CommandStack.h"
@@ -115,6 +116,7 @@ void MeshEditPanel::OnDraw()
         ImGui::End();
         return;
     }
+    EditorUiSkin::PanelBackdrop();
 
     DrawModeToolbar();
     ImGui::Separator();

@@ -1,5 +1,7 @@
 #include "ToolPalettePanel.h"
 
+#include "EditorUiSkin.h"
+
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 
@@ -22,6 +24,7 @@ void ToolPalettePanel::OnDraw()
         ImGui::End();
         return;
     }
+    EditorUiSkin::PanelBackdrop();
 
     const auto& tools = Tools.GetTools();
     for (std::size_t index = 0; index < tools.size(); ++index)

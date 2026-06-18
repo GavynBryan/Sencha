@@ -1,5 +1,6 @@
 #include "InspectorPanel.h"
 
+#include "EditorUiSkin.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
@@ -219,6 +220,7 @@ void InspectorPanel::OnDraw()
         ImGui::End();
         return;
     }
+    EditorUiSkin::PanelBackdrop();
 
     const SelectableRef selection = Selection.GetPrimarySelection();
     const EntityId entity = selection.Entity;

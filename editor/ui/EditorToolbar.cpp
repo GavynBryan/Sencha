@@ -1,5 +1,6 @@
 #include "EditorToolbar.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -17,19 +18,26 @@
 
 namespace
 {
-// A square icon button that paints itself with the accent when active. The
-// highlight color is a palette constant (ui_color_discipline-clean: no inline
-// ImVec4 in PushStyleColor). Returns true when clicked.
-bool ToolButton(const char* icon, const char* tooltip, bool active, float size)
+// A square glossy beveled icon button (EditorUiSkin), accent-lit when active.
+// `id` is a stable ImGui id; `tooltip` may be dynamic. Returns true when clicked.
+bool ToolButton(const char* id, const char* icon, const char* tooltip, bool active, float size)
 {
-    if (active)
-        ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
-    const bool clicked = ImGui::Button(icon, ImVec2(size, size));
-    if (active)
-        ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered() && tooltip != nullptr)
+    const bool clicked = EditorUiSkin::Button(id, icon, ImVec2(size, size), active);
+    if (tooltip != nullptr && ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", tooltip);
     return clicked;
+}
+
+// Vertical divider matching the button height, for grouping the toolbar sections.
+void Divider(float height)
+{
+    ImGui::SameLine();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddLine(
+        ImVec2(p.x + 3.0f, p.y), ImVec2(p.x + 3.0f, p.y + height),
+        ImGui::GetColorU32(EditorUiSkin::WithAlpha(EditorUi::Border, 0.9f)));
+    ImGui::Dummy(ImVec2(7.0f, height));
+    ImGui::SameLine();
 }
 }
 
@@ -53,6 +61,12 @@ void EditorToolbar::Draw()
 
     if (ImGui::BeginViewportSideBar("##EditorToolbar", viewport, ImGuiDir_Up, barHeight, flags))
     {
+        // Glossy metal band behind the buttons.
+        EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                           ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                  ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                           EditorUi::HeaderBg);
+
         // Tools (Select/Brush/Camera): drive the ToolRegistry.
         const auto& tools = Tools.GetTools();
         for (std::size_t i = 0; i < tools.size(); ++i)
@@ -65,16 +79,13 @@ void EditorToolbar::Draw()
                 ImGui::SameLine();
 
             const std::string_view iconView = tool->GetIcon();
-            const std::string label =
-                (iconView.empty() ? std::string(tool->GetDisplayName()) : std::string(iconView))
-                + "##tool" + std::to_string(i);
+            const std::string icon(iconView.empty() ? tool->GetDisplayName() : iconView);
             const bool active = Tools.GetActiveIndex() == static_cast<int>(i);
-            if (ToolButton(label.c_str(), tool->GetDisplayName().data(), active, buttonSize))
+            if (ToolButton(tool->GetId().data(), icon.c_str(), tool->GetDisplayName().data(), active, buttonSize))
                 Tools.Activate(i);
         }
 
-        ImGui::SameLine();
-        ImGui::TextUnformatted("|");
+        Divider(buttonSize);
 
         // Mesh element mode (Object/Vertex/Edge/Face): drives MeshEditService.
         struct ModeEntry { const char* Icon; const char* Name; MeshElementKind Kind; };
@@ -84,22 +95,22 @@ void EditorToolbar::Draw()
             { ICON_FA_GRIP_LINES,    "Edge",   MeshElementKind::Edge   },
             { ICON_FA_VECTOR_SQUARE, "Face",   MeshElementKind::Face   },
         };
+        bool firstMode = true;
         for (const ModeEntry& mode : kModes)
         {
-            ImGui::SameLine();
-            const std::string label = std::string(mode.Icon) + "##mode" + mode.Name;
+            if (!firstMode)
+                ImGui::SameLine();
+            firstMode = false;
             const bool active = MeshEdit.GetElementKind() == mode.Kind;
-            if (ToolButton(label.c_str(), mode.Name, active, buttonSize))
+            if (ToolButton(mode.Name, mode.Icon, mode.Name, active, buttonSize))
                 MeshEdit.SetElementKind(mode.Kind);
         }
 
-        ImGui::SameLine();
-        ImGui::TextUnformatted("|");
+        Divider(buttonSize);
 
         // Grid snap toggle + spacing — drives the shared GridSettings, so picking,
         // manipulators and brush-create all honor it.
-        ImGui::SameLine();
-        if (ToolButton(ICON_FA_MAGNET "##snap",
+        if (ToolButton("snap", ICON_FA_MAGNET,
                        Grid.SnapEnabled ? "Grid snap: on" : "Grid snap: off",
                        Grid.SnapEnabled, buttonSize))
             Grid.SnapEnabled = !Grid.SnapEnabled;

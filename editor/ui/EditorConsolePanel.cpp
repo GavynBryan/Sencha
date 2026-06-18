@@ -1,5 +1,6 @@
 #include "EditorConsolePanel.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 
 #include <core/console/ConsoleService.h>
@@ -42,6 +43,7 @@ void EditorConsolePanel::OnDraw()
         ImGui::End();
         return;
     }
+    EditorUiSkin::PanelBackdrop();
 
     if (ImGui::Button("Clear"))
     {

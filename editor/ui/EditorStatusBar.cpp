@@ -1,5 +1,6 @@
 #include "EditorStatusBar.h"
 
+#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -35,6 +36,10 @@ void EditorStatusBar::Draw()
 
     if (ImGui::BeginViewportSideBar("##EditorStatusBar", viewport, ImGuiDir_Down, barHeight, flags))
     {
+        EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                           ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                  ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                           EditorUi::HeaderBg);
         if (ImGui::BeginMenuBar())
         {
             const ITool* tool = Tools.GetActiveTool();
