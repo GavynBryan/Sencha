@@ -4,7 +4,6 @@
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/ServiceHost.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -53,9 +52,6 @@ public:
     // need it; never registered as a service.
     [[nodiscard]] LoggingProvider& Logging() { return LoggingState; }
     [[nodiscard]] const LoggingProvider& Logging() const { return LoggingState; }
-
-    [[nodiscard]] ServiceHost& Services() { return ServiceRegistry; }
-    [[nodiscard]] const ServiceHost& Services() const { return ServiceRegistry; }
 
     // Always-present singleton services. Valid between Initialize and Shutdown.
     [[nodiscard]] DebugService& Debug();
@@ -110,14 +106,13 @@ private:
     void RegisterFramePhases(Game& game);
 
     EngineConfig Configuration;
-    // Declared before ServiceRegistry/EngineSystems: members destroy in reverse
-    // declaration order, so logging outlives the services and systems whose
-    // destructors may log.
+    // Foundation: declared before every service and system so that -- members
+    // destroy in reverse declaration order -- logging outlives everything whose
+    // destructor may log.
     LoggingProvider LoggingState;
     // Always-present services, valid between Initialize and Shutdown. Declared
-    // after LoggingState (they may log on teardown) and before ServiceRegistry
-    // (they do not depend on the SDL/Vulkan services, so they tear down after
-    // them).
+    // after LoggingState (they may log on teardown) and before the SDL/Vulkan
+    // groups (they do not depend on those, so they tear down after them).
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
@@ -129,7 +124,6 @@ private:
     // (surface/swapchain reference the window). Null when headless.
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif
-    ServiceHost ServiceRegistry;
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;

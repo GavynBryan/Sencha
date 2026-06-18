@@ -22,7 +22,7 @@
 //=============================================================================
 // LoggingProvider
 //
-// Central factory and owner of Loggers and LogSinks. NOT an IService â€”
+// Central factory and owner of Loggers and LogSinks. NOT a service â€”
 // it is engine Foundation, owned directly rather than registered as a
 // service, and consumed by passing a LoggingProvider& into constructors.
 //

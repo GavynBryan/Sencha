@@ -2,7 +2,6 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -72,7 +71,7 @@ enum class ShaderStage : uint8_t
 // the engine's unified Handle<Tag> types (handle convergence).
 using ShaderHandle = Handle<struct ShaderHandleTag>;
 
-class VulkanShaderCache : public IService
+class VulkanShaderCache
 {
 public:
     VulkanShaderCache(LoggingProvider& logging, VulkanDeviceService& device);

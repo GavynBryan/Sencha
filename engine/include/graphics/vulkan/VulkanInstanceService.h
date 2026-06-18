@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/vulkan.h>
@@ -11,12 +10,12 @@
 // Owns VkInstance and the optional debug messenger. Created early in the
 // engine lifetime and destroyed after all other Vulkan services.
 //
-// Construction:
-//   auto& inst = services.AddService<VulkanInstanceService>(logging, policy);
-//   if (!inst.IsValid()) { /* handle failure */ }
+// Construction (as a member of GraphicsServices, in dependency order):
+//   VulkanInstanceService instance(logging, policy);
+//   if (!instance.IsValid()) { /* handle failure */ }
 //
 //=============================================================================
-class VulkanInstanceService : public IService
+class VulkanInstanceService
 {
 public:
     VulkanInstanceService(LoggingProvider& logging, const VulkanBootstrapPolicy& policy);

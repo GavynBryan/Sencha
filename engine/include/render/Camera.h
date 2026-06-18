@@ -5,7 +5,6 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
-#include <core/service/IService.h>
 #include <ecs/World.h>
 #include <ecs/EntityId.h>
 #include <math/Mat.h>
@@ -77,7 +76,7 @@ struct TypeSchema<CameraComponent>
 // Only one camera can be active at a time. CameraRenderDataSystem reads this
 // each frame to build CameraRenderData.
 //=============================================================================
-class ActiveCameraService : public IService
+class ActiveCameraService
 {
 public:
     void SetActive(EntityId entity) { Active = entity; }

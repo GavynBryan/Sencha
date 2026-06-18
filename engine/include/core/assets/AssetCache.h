@@ -2,7 +2,6 @@
 
 #include <core/handle/ILifetimeOwner.h>
 #include <core/handle/Owned.h>
-#include <core/service/IService.h>
 
 #include <cassert>
 #include <cstdint>
@@ -49,7 +48,7 @@
 
 
 template<typename TDerived, typename THandle, typename TEntry>
-class AssetCache : public IService, public ILifetimeOwner
+class AssetCache : public ILifetimeOwner
 {
 public:
     // -- Load from filesystem -------------------------------------------------

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <vulkan/vulkan.h>
 
@@ -103,7 +102,7 @@ struct GraphicsPipelineDesc
     bool operator==(const GraphicsPipelineDesc&) const = default;
 };
 
-class VulkanPipelineCache : public IService
+class VulkanPipelineCache
 {
 public:
     VulkanPipelineCache(LoggingProvider& logging,

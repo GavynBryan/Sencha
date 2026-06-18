@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <platform/WindowTypes.h>
 
 #include <SDL3/SDL.h>
@@ -13,7 +12,7 @@ class SdlVideoService;
 class SdlWindow;
 struct WindowCreateInfo;
 
-class SdlWindowService : public IService
+class SdlWindowService
 {
 public:
     using WindowId = uint32_t;

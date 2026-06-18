@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -35,7 +34,7 @@ class VulkanQueueService;
 // uploads, this grows a per-worker pool; the public API above does not
 // need to change.
 //=============================================================================
-class VulkanUploadContextService : public IService
+class VulkanUploadContextService
 {
 public:
     VulkanUploadContextService(LoggingProvider& logging,

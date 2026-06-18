@@ -64,7 +64,6 @@ bool Engine::Initialize()
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
-        ServiceRegistry.Clear();
 #ifdef SENCHA_ENABLE_VULKAN
         GraphicsState.reset();
 #endif
@@ -143,7 +142,6 @@ void Engine::Shutdown()
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
-    ServiceRegistry.Clear();
 #ifdef SENCHA_ENABLE_VULKAN
     GraphicsState.reset();
 #endif

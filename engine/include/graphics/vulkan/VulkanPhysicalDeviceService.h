@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanQueueFamilies.h>
@@ -11,7 +10,7 @@
 class VulkanInstanceService;
 class VulkanSurfaceService;
 
-class VulkanPhysicalDeviceService : public IService
+class VulkanPhysicalDeviceService
 {
 public:
     VulkanPhysicalDeviceService(LoggingProvider& logging,

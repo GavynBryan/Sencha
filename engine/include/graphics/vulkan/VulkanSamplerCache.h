@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -39,7 +38,7 @@ struct SamplerDesc
     bool operator==(const SamplerDesc&) const = default;
 };
 
-class VulkanSamplerCache : public IService
+class VulkanSamplerCache
 {
 public:
     VulkanSamplerCache(LoggingProvider& logging, VulkanDeviceService& device);

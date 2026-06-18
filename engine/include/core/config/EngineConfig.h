@@ -15,7 +15,7 @@
 // EngineConfig
 //
 // Aggregates all launch/runtime subsystem configs that are loaded from
-// engine.json at startup. Not an IService -- callers hold an EngineConfig
+// engine.json at startup. Not a service -- callers hold an EngineConfig
 // value directly and pass the relevant sub-config to each service at
 // construction time:
 //

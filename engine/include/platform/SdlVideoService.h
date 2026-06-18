@@ -1,9 +1,8 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 
-class SdlVideoService : public IService
+class SdlVideoService
 {
 public:
     explicit SdlVideoService(LoggingProvider& logging);

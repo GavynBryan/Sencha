@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -60,7 +59,7 @@ struct DeferredBufferDestroy
 
 // -- VulkanDeletionQueueService ----------------------------------------------
 
-class VulkanDeletionQueueService : public IService
+class VulkanDeletionQueueService
 {
 public:
     // `framesInFlight` must equal the frames-in-flight count passed to

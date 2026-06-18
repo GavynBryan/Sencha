@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <platform/IWindow.h>
 #include <platform/WindowCreateInfo.h>
@@ -8,7 +7,7 @@
 struct SDL_Window;
 class SdlVideoService;
 
-class SdlWindow : public IWindow, public IService
+class SdlWindow : public IWindow
 {
 public:
     SdlWindow(LoggingProvider& logging, SdlVideoService& video, const WindowCreateInfo& createInfo);

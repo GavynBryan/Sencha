@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <time/FrameClock.h>
 
 #include <chrono>
@@ -15,7 +14,7 @@
 //
 // This service does not clamp, scale, reset, or accumulate gameplay time.
 //=============================================================================
-class TimeService : public IService
+class TimeService
 {
 public:
     TimeService();

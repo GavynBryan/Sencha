@@ -2,7 +2,6 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -59,7 +58,7 @@ struct BufferCreateInfo
     const char* DebugName = nullptr;
 };
 
-class VulkanBufferService : public IService
+class VulkanBufferService
 {
 public:
     VulkanBufferService(LoggingProvider& logging,

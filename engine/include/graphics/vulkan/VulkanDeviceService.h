@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <vulkan/vulkan.h>
@@ -14,7 +13,7 @@ class VulkanPhysicalDeviceService;
 // Owns VkDevice. Physical-device selection, surfaces, and queue retrieval are
 // separate bootstrap services so their lifetimes and decisions stay visible.
 //=============================================================================
-class VulkanDeviceService : public IService
+class VulkanDeviceService
 {
 public:
     VulkanDeviceService(LoggingProvider& logging,

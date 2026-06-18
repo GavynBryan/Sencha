@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -54,7 +53,7 @@ struct VulkanFrameTiming
     uint64_t SwapchainGeneration = 0;
 };
 
-class VulkanFrameService : public IService
+class VulkanFrameService
 {
 public:
     VulkanFrameService(LoggingProvider& logging,
