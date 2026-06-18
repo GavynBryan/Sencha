@@ -80,6 +80,10 @@ void EditorConsolePanel::OnDraw()
     }
 
     ImGui::BeginChild("ConsoleScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    // Sticky auto-scroll: follow the tail only while the user is already pinned to
+    // the bottom (measured before this frame's content is appended). Otherwise leave
+    // the scroll position alone so the user can scroll up and read history.
+    const bool wasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY();
     if (ImFont* mono = EditorUi::MonoFont())
         ImGui::PushFont(mono);
     for (const ConsoleOutputEntry& entry : CommandOutput)
@@ -111,7 +115,8 @@ void EditorConsolePanel::OnDraw()
     }
     if (EditorUi::MonoFont())
         ImGui::PopFont();
-    ImGui::SetScrollHereY(1.0f);
+    if (wasAtBottom)
+        ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
     ImGui::End();
 }
