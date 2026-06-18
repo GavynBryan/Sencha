@@ -153,14 +153,39 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
             chrome();
     }
 
-    // Host dockspace over the work area the chrome bars left. PassthruCentralNode
-    // keeps the central node transparent so the viewport's 3D shows through.
-    const ImGuiID dockId = ImGui::DockSpaceOverViewport(
-        0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
+    // Host dockspace filling the work area the chrome bars left. We build the host
+    // window ourselves with NoBackground + a plain DockSpace (NOT PassthruCentralNode):
+    // PassthruCentralNode fills WindowBg over the whole root and only leaves a
+    // transparent hole when the central node is *empty* — but the viewport docks
+    // *into* the central node, so that bg would paint over the 3D. With no dockspace
+    // bg, the viewport window's own NoBackground keeps the central node clear so the
+    // scene (rendered behind ImGui and scissored to the viewport rect) shows through;
+    // the side panels carry their own opaque backgrounds.
     {
-        BuildDefaultDockLayout(dockId, Panels);
-        LayoutDirty = false;
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->WorkPos);
+        ImGui::SetNextWindowSize(vp->WorkSize);
+        ImGui::SetNextWindowViewport(vp->ID);
+
+        const ImGuiWindowFlags hostFlags =
+            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+            | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus
+            | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
+        ImGui::PopStyleVar(3);
+
+        const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
+        if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
+        {
+            BuildDefaultDockLayout(dockId, Panels);
+            LayoutDirty = false;
+        }
+        ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+        ImGui::End();
     }
 
     for (const std::unique_ptr<IEditorPanel>& panel : Panels)
