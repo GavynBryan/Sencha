@@ -1,13 +1,12 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 
-class SdlVideoService : public IService
+class SdlVideoService
 {
 public:
     explicit SdlVideoService(LoggingProvider& logging);
-    ~SdlVideoService() override;
+    ~SdlVideoService();
 
     SdlVideoService(const SdlVideoService&) = delete;
     SdlVideoService& operator=(const SdlVideoService&) = delete;

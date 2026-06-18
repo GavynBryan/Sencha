@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/logging/ConsoleLogSink.h>
-#include <core/service/ServiceHost.h>
-#include <core/service/ServiceProvider.h>
 #include <debug/DebugLogSink.h>
 
 // --- Test sink that captures messages ---
@@ -175,44 +173,14 @@ TEST(DebugLogSink, ZeroCapacityDropsMessages)
 	EXPECT_EQ(sink.Count(), 0u);
 }
 
-// --- ServiceHost integration tests ---
-
-TEST(LoggingProvider, AccessibleViaServiceHost)
+TEST(LoggingProvider, AddSinkAndGetLoggerDeliverMessage)
 {
-	ServiceHost host;
-	auto& sink = host.GetLoggingProvider().AddSink<TestLogSink>();
+	LoggingProvider provider;
+	auto& sink = provider.AddSink<TestLogSink>();
 
-	auto& logger = host.GetLoggingProvider().GetLogger<BetaSystem>();
-	logger.Info("from host");
-
-	ASSERT_EQ(sink.Entries.size(), 1u);
-	EXPECT_EQ(sink.Entries[0].Message, "from host");
-}
-
-// --- ServiceProvider integration tests ---
-
-TEST(LoggingProvider, GetLoggerViaServiceProvider)
-{
-	ServiceHost host;
-	auto& sink = host.GetLoggingProvider().AddSink<TestLogSink>();
-
-	ServiceProvider provider(host);
 	auto& logger = provider.GetLogger<BetaSystem>();
-	logger.Warn("from provider");
+	logger.Info("from provider");
 
 	ASSERT_EQ(sink.Entries.size(), 1u);
-	EXPECT_EQ(sink.Entries[0].Level, LogLevel::Warning);
 	EXPECT_EQ(sink.Entries[0].Message, "from provider");
-	EXPECT_NE(sink.Entries[0].Category.find("BetaSystem"), std::string::npos);
-}
-
-TEST(LoggingProvider, ServiceProviderAndHostReturnSameLogger)
-{
-	ServiceHost host;
-	host.GetLoggingProvider().AddSink<TestLogSink>();
-
-	ServiceProvider provider(host);
-	auto& fromHost     = host.GetLoggingProvider().GetLogger<AlphaSystem>();
-	auto& fromProvider = provider.GetLogger<AlphaSystem>();
-	EXPECT_EQ(&fromHost, &fromProvider);
 }

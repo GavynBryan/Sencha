@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <vulkan/vulkan.h>
@@ -49,7 +48,7 @@ struct BindlessImageIndex
     bool operator==(const BindlessImageIndex&) const = default;
 };
 
-class VulkanDescriptorCache : public IService
+class VulkanDescriptorCache
 {
 public:
     // Capacity of the bindless sampled-image array. Any single registered
@@ -61,7 +60,7 @@ public:
                           VulkanDeviceService& device,
                           VulkanBufferService& buffers,
                           VulkanImageService& images);
-    ~VulkanDescriptorCache() override;
+    ~VulkanDescriptorCache();
 
     VulkanDescriptorCache(const VulkanDescriptorCache&) = delete;
     VulkanDescriptorCache& operator=(const VulkanDescriptorCache&) = delete;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
 
@@ -25,7 +24,7 @@ struct SwapchainState
     VkColorSpaceKHR ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 };
 
-class VulkanSwapchainService : public IService
+class VulkanSwapchainService
 {
 public:
     VulkanSwapchainService(LoggingProvider& logging,
@@ -34,7 +33,7 @@ public:
                            VulkanSurfaceService& surface,
                            VulkanQueueService& queues,
                            WindowExtent desiredExtent);
-    ~VulkanSwapchainService() override;
+    ~VulkanSwapchainService();
 
     VulkanSwapchainService(const VulkanSwapchainService&) = delete;
     VulkanSwapchainService& operator=(const VulkanSwapchainService&) = delete;

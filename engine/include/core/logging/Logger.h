@@ -14,8 +14,7 @@
 // Each Logger carries a category string (typically the class name) so
 // that log output can be filtered or searched by origin.
 //
-// Obtained via LoggingProvider::GetLogger<T>() or
-//              ServiceProvider::GetLogger<T>().
+// Obtained via LoggingProvider::GetLogger<T>().
 //
 // Supports std::format-style formatting:
 //   logger.Info("Loaded {} textures in {:.1f}ms", count, elapsed);

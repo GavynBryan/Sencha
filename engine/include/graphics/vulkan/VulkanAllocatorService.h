@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -22,14 +21,14 @@ class VulkanPhysicalDeviceService;
 // buffer. Creation and destruction happen at service lifetime boundaries,
 // so no locking is needed at the service layer.
 //=============================================================================
-class VulkanAllocatorService : public IService
+class VulkanAllocatorService
 {
 public:
     VulkanAllocatorService(LoggingProvider& logging,
                            VulkanInstanceService& instance,
                            VulkanPhysicalDeviceService& physicalDevice,
                            VulkanDeviceService& device);
-    ~VulkanAllocatorService() override;
+    ~VulkanAllocatorService();
 
     VulkanAllocatorService(const VulkanAllocatorService&) = delete;
     VulkanAllocatorService& operator=(const VulkanAllocatorService&) = delete;

@@ -6,7 +6,6 @@
 #include <audio/AudioClip.h>
 #include <core/identity/Id.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 
 #include <cstdint>
 #include <string>
@@ -59,11 +58,11 @@ struct PlayParams
 //   "Engine" -- MaxVoices: 1, Reject policy. Reserved for engine-level
 //   sounds. Always present; do not include it in EngineAudioConfig.
 //=============================================================================
-class AudioService : public IService
+class AudioService
 {
 public:
     AudioService(LoggingProvider& logging, const EngineAudioConfig& config);
-    ~AudioService() override;
+    ~AudioService();
 
     AudioService(const AudioService&) = delete;
     AudioService& operator=(const AudioService&) = delete;

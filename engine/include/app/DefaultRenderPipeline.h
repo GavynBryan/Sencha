@@ -6,7 +6,8 @@
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
-class ServiceHost;
+struct GraphicsServices;
+class VulkanSwapchainService;
 
 //=============================================================================
 // DefaultRenderPipeline
@@ -24,7 +25,7 @@ public:
     [[nodiscard]] const CameraRenderData& GetCameraData() const { return Camera; }
 
     void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials);
-    bool AddMeshRenderFeature(ServiceHost& services);
+    bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
 private:
@@ -32,4 +33,7 @@ private:
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
+    // Cached at AddMeshRenderFeature (wiring time) for the surface extent used
+    // during extraction; null until then, and in non-Vulkan builds.
+    VulkanSwapchainService* Swapchain = nullptr;
 };

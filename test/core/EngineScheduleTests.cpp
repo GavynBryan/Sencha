@@ -13,7 +13,6 @@ namespace
     struct ScheduleHarness
     {
         EngineConfig Config;
-        Engine EngineInstance{ Config };
         RuntimeFrameLoop Runtime;
         InputFrame Input;
         ZoneRuntime Zones;
@@ -100,7 +99,6 @@ TEST_F(EngineScheduleTest, DependencyOrderingAppliesWithinPhase)
 
     FrameRegistryView view = harness.BuildView();
     FixedLogicContext ctx{
-        .EngineInstance = harness.EngineInstance,
         .Config = harness.Config,
         .Runtime = harness.Runtime,
         .Input = harness.Input,
@@ -129,7 +127,6 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
 
     FrameRegistryView view = harness.BuildView();
     FixedLogicContext fixed{
-        .EngineInstance = harness.EngineInstance,
         .Config = harness.Config,
         .Runtime = harness.Runtime,
         .Input = harness.Input,
@@ -140,7 +137,6 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     harness.Schedule.RunFixedLogic(fixed);
 
     FrameUpdateContext frame{
-        .EngineInstance = harness.EngineInstance,
         .Config = harness.Config,
         .Runtime = harness.Runtime,
         .Input = harness.Input,
@@ -153,7 +149,6 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
 
     RenderPacketDoubleBuffer packets;
     RenderExtractContext extract{
-        .EngineInstance = harness.EngineInstance,
         .Config = harness.Config,
         .Runtime = harness.Runtime,
         .Input = harness.Input,

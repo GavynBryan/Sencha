@@ -2,7 +2,6 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -55,7 +54,7 @@ struct ImageCreateInfo
     const char* DebugName = nullptr;
 };
 
-class VulkanImageService : public IService
+class VulkanImageService
 {
 public:
     VulkanImageService(LoggingProvider& logging,
@@ -63,7 +62,7 @@ public:
                        VulkanAllocatorService& allocator,
                        VulkanUploadContextService& upload,
                        VulkanDeletionQueueService& deletionQueue);
-    ~VulkanImageService() override;
+    ~VulkanImageService();
 
     VulkanImageService(const VulkanImageService&) = delete;
     VulkanImageService& operator=(const VulkanImageService&) = delete;

@@ -21,7 +21,7 @@ More than expected — the engine pre-built the audio lane and never used it:
 
 | Piece | State |
 | ----- | ----- |
-| `AudioService` | Complete v1 backend: buses with voice budgets and steal policies (`Reject`/`StealOldest`), gain/pan/**looping**, pause/resume, generational `VoiceId`s, `Tick()` retires drained voices. **Constructed by nobody in the engine** — AudioTest builds it by hand; it is not in `ServiceHost` and nothing calls `Tick`. |
+| `AudioService` | Complete v1 backend: buses with voice budgets and steal policies (`Reject`/`StealOldest`), gain/pan/**looping**, pause/resume, generational `VoiceId`s, `Tick()` retires drained voices. Owned by `Engine` as `Engine::Audio()` and driven by `AudioSystem` (which calls `Tick` each frame); AudioTest also builds it by hand for isolated tests. |
 | Clip assets (Stage 4d) | `.sclip` container, headless `AudioClipCache`, `AssetSystem::LoadAudioClip`/`TryAcquire`/`Release`, preload wave 1, WAV/OGG cook. Done. |
 | The audio frame lane | `ZoneParticipation.Audio` → `FrameRegistryView.Audio` (dormant zones excluded by construction) → `AudioContext` + `EngineSchedule::RunAudio` + the `HasAudio` system concept, invoked in `FramePhase::Update` after `RunFrameUpdate`. **No system registers for it.** |
 | Component machinery | `ComponentTraits` retain/release through World resources (the `StaticMeshComponentAssets` pattern), `TypeSchema` + `SceneFieldCodec` (handle codecs resolve through `AssetSystem`), `RegisterComponent<T>()`. A new component is a stamped template. |
@@ -159,11 +159,11 @@ shape — and it doesn't: spatial is one more step between "visit" and
 
 ### G. `AudioService` joins the engine
 
-**Proposed.** `Engine::Initialize` constructs `AudioService` from
-`Configuration.Audio` (the config struct has waited for exactly this) into
-`ServiceHost`. An invalid service (no device) is non-fatal: the engine
-runs, the system no-ops. AudioTest keeps its hand-built setup — it tests
-the service in isolation, which stays valuable.
+`Engine::Initialize` constructs `AudioService` from `Configuration.Audio` (the
+config struct has waited for exactly this) as the Engine-owned `Engine::Audio()`.
+An invalid service (no device) is non-fatal: the engine runs, the system no-ops.
+AudioTest keeps its hand-built setup — it tests the service in isolation, which
+stays valuable.
 
 ## Slice 1 rollout — one stage, gated
 
@@ -209,8 +209,8 @@ a display (below).
   strings in both text and binary.
 - `audio/AudioSystem.{h,cpp}` — the engine-registered system (Decision D):
   `Update(AudioService*, active registries)` is engine-free for headless
-  tests; the `Audio(AudioContext&)` hook resolves the service from the
-  ServiceHost and feeds it the audio view. Tick → sweep (by VoiceId copy,
+  tests; the `Audio(AudioContext&)` hook drives the constructor-injected
+  service over the audio view. Tick → sweep (by VoiceId copy,
   never dereferencing a registry pointer) → visit with the Decision E start
   rules. `Engine::Initialize` constructs `AudioService` from
   `Configuration.Audio` and registers `AudioSystem`; both wire into the

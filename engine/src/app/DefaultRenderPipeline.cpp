@@ -1,12 +1,11 @@
 #include <app/DefaultRenderPipeline.h>
 
-#include <app/Engine.h>
-#include <core/service/ServiceHost.h>
 #include <render/RenderExtractionSystem.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/MeshRenderFeature.h>
@@ -21,17 +20,17 @@ void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes, MaterialCach
     Materials = &materials;
 }
 
-bool DefaultRenderPipeline::AddMeshRenderFeature(ServiceHost& services)
+bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 {
 #ifdef SENCHA_ENABLE_VULKAN
-    Renderer* renderer = services.TryGet<Renderer>();
-    if (renderer == nullptr || Meshes == nullptr || Materials == nullptr)
+    if (Meshes == nullptr || Materials == nullptr)
         return false;
 
-    return renderer->AddFeature(
+    Swapchain = &graphics.Swapchain;
+    return graphics.MainRenderer.AddFeature(
         std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera)) != nullptr;
 #else
-    (void)services;
+    (void)graphics;
     return false;
 #endif
 }
@@ -42,8 +41,12 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         return;
 
 #ifdef SENCHA_ENABLE_VULKAN
-    auto& swapchain = ctx.EngineInstance.Services().Get<VulkanSwapchainService>();
-    const VkExtent2D extent = swapchain.GetExtent();
+    if (Swapchain == nullptr)
+    {
+        ctx.PacketWrite.Renderable = false;
+        return;
+    }
+    const VkExtent2D extent = Swapchain->GetExtent();
 #else
     (void)ctx;
     return;

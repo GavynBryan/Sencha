@@ -1,8 +1,15 @@
 #include <gtest/gtest.h>
 #include <app/Application.h>
 
+#include <SDL3/SDL.h>
+
 namespace
 {
+    void UseDummyAudioDriver()
+    {
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    }
+
     class LifecycleGame final : public Game
     {
     public:
@@ -20,9 +27,9 @@ namespace
         {
             ++StartCalls;
             SawConfiguredName = ctx.Config.App.Name == "Configured Game";
-            SawEngineConfig = ctx.EngineInstance.Config().Runtime.TargetFps == 144.0;
+            SawEngineConfig = GetEngine().Config().Runtime.TargetFps == 144.0;
             SawFixedTickRate =
-                ctx.EngineInstance.Runtime().GetSimulationClock().GetFixedDt() == 1.0 / 120.0;
+                GetEngine().Runtime().GetSimulationClock().GetFixedDt() == 1.0 / 120.0;
         }
 
         void OnShutdown(GameShutdownContext& ctx) override
@@ -55,9 +62,9 @@ namespace
             ctx.Config.Debug.ConsoleLogging = false;
         }
 
-        void OnStart(GameStartupContext& ctx) override
+        void OnStart(GameStartupContext&) override
         {
-            EngineSeen = &ctx.EngineInstance;
+            EngineSeen = &GetEngine();
         }
 
         static inline Engine* EngineSeen = nullptr;
@@ -67,6 +74,8 @@ namespace
 
 TEST(Application, RunInvokesGameLifecycleWithConfiguredEngineConfig)
 {
+    UseDummyAudioDriver();
+
     Application app(0, nullptr);
     LifecycleGame game;
 
@@ -97,6 +106,8 @@ TEST(Application, ConfigureMutatesEngineConfigBeforeRun)
 
 TEST(Application, OwnedRunDestroysGameBeforeEngineShutdown)
 {
+    UseDummyAudioDriver();
+
     OwnedLifetimeGame::EngineSeen = nullptr;
     OwnedLifetimeGame::DestructorSawLiveEngine = false;
 

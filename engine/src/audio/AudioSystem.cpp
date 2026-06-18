@@ -1,19 +1,16 @@
 #include <audio/AudioSystem.h>
 
-#include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
 #include <core/identity/Id.h>
-#include <core/service/ServiceHost.h>
 #include <world/registry/Registry.h>
 
 #include <unordered_set>
 
 void AudioSystem::Audio(AudioContext& ctx)
 {
-    AudioService* audio = ctx.EngineInstance.Services().TryGet<AudioService>();
-    Update(audio, ctx.ActiveRegistries);
+    Update(AudioBackend, ctx.ActiveRegistries);
 }
 
 void AudioSystem::Update(AudioService* audio, std::span<Registry*> active)

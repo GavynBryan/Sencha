@@ -13,10 +13,10 @@
 #include <runtime/FrameDriver.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
-#include <graphics/vulkan/VulkanBootstrap.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #endif
 
-#include <platform/SdlBootstrap.h>
+#include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 
@@ -39,32 +39,39 @@ bool Engine::Initialize()
     if (Initialized)
         return true;
 
-    LoggingProvider& logging = ServiceRegistry.GetLoggingProvider();
+    LoggingProvider& logging = LoggingState;
     if (Configuration.Debug.ConsoleLogging)
         logging.AddSink<ConsoleLogSink>();
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
-    ServiceRegistry.AddService<DebugService>(logging, debugLog);
+    DebugState = std::make_unique<DebugService>(logging, debugLog);
     EngineSystems.Register<DefaultRenderPipeline>();
 
     // Audio backend + the system that drives scene AudioSourceComponents
     // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
     // is non-fatal: the system no-ops, the engine runs silent.
-    ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
-    EngineSystems.Register<AudioSystem>();
+    AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
+    EngineSystems.Register<AudioSystem>(AudioState.get());
 
     // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
     // No device dependency — always valid, headless included. CaptionSystem
     // registers after AudioSystem so voices started or swept this frame are
     // captioned/retired the same frame.
-    ServiceRegistry.AddService<CaptionRuntime>(logging, Configuration.Captions);
-    EngineSystems.Register<CaptionSystem>();
+    CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
+    EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
-        ServiceRegistry.Clear();
+#ifdef SENCHA_ENABLE_VULKAN
+        GraphicsState.reset();
+#endif
+        PlatformState.reset();
+        CaptionState.reset();
+        AudioState.reset();
+        DebugState.reset();
+        LoggingState.Clear();
         FramePhasesRegistered = false;
         Running = false;
         return false;
@@ -89,7 +96,8 @@ bool Engine::Initialize()
         return true;
     }
 
-    SdlWindow* window = SdlBootstrap::Install(ServiceRegistry, Configuration, logging);
+    PlatformState = std::make_unique<PlatformServices>(logging);
+    SdlWindow* window = PlatformState->CreatePrimaryWindow(Configuration.Window);
     if (window == nullptr || !window->IsValid())
     {
         std::fprintf(stderr, "Failed to create Vulkan window.\n");
@@ -106,8 +114,9 @@ bool Engine::Initialize()
         return failInitialize();
     }
 
-    auto& windows = ServiceRegistry.Get<SdlWindowService>();
-    if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, *window, windows))
+    auto& windows = PlatformState->Windows;
+    GraphicsState = std::make_unique<GraphicsServices>(logging, Configuration, *window, windows);
+    if (!GraphicsState->IsValid())
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
@@ -133,11 +142,100 @@ void Engine::Shutdown()
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
-    ServiceRegistry.Clear();
+#ifdef SENCHA_ENABLE_VULKAN
+    GraphicsState.reset();
+#endif
+    PlatformState.reset();
+    CaptionState.reset();
+    AudioState.reset();
+    DebugState.reset();
+    LoggingState.Clear();
     FramePhasesRegistered = false;
     Initialized = false;
     Running = false;
 }
+
+DebugService& Engine::Debug()
+{
+    assert(DebugState && "Engine::Debug: valid only between Initialize and Shutdown");
+    return *DebugState;
+}
+
+const DebugService& Engine::Debug() const
+{
+    assert(DebugState && "Engine::Debug: valid only between Initialize and Shutdown");
+    return *DebugState;
+}
+
+AudioService& Engine::Audio()
+{
+    assert(AudioState && "Engine::Audio: valid only between Initialize and Shutdown");
+    return *AudioState;
+}
+
+const AudioService& Engine::Audio() const
+{
+    assert(AudioState && "Engine::Audio: valid only between Initialize and Shutdown");
+    return *AudioState;
+}
+
+CaptionRuntime& Engine::Captions()
+{
+    assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
+    return *CaptionState;
+}
+
+const CaptionRuntime& Engine::Captions() const
+{
+    assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
+    return *CaptionState;
+}
+
+PlatformServices& Engine::Platform()
+{
+    assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
+    return *PlatformState;
+}
+
+const PlatformServices& Engine::Platform() const
+{
+    assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
+    return *PlatformState;
+}
+
+PlatformServices* Engine::TryPlatform()
+{
+    return PlatformState.get();
+}
+
+const PlatformServices* Engine::TryPlatform() const
+{
+    return PlatformState.get();
+}
+
+#ifdef SENCHA_ENABLE_VULKAN
+GraphicsServices& Engine::Graphics()
+{
+    assert(GraphicsState && "Engine::Graphics: valid only when windowed, between Initialize and Shutdown");
+    return *GraphicsState;
+}
+
+const GraphicsServices& Engine::Graphics() const
+{
+    assert(GraphicsState && "Engine::Graphics: valid only when windowed, between Initialize and Shutdown");
+    return *GraphicsState;
+}
+
+GraphicsServices* Engine::TryGraphics()
+{
+    return GraphicsState.get();
+}
+
+const GraphicsServices* Engine::TryGraphics() const
+{
+    return GraphicsState.get();
+}
+#endif
 
 JobSystem& Engine::Jobs()
 {
@@ -188,14 +286,15 @@ int Engine::Run(Game& game)
     if (!Initialize())
         return 1;
 
+    // Bind once, before any hook, so lifecycle contexts carry data only.
+    game.AttachEngine(*this);
+
     GameStartupContext startup{
-        .EngineInstance = *this,
         .Config = Configuration,
     };
     game.OnStart(startup);
 
     SystemRegisterContext registerSystems{
-        .EngineInstance = *this,
         .Config = Configuration,
         .Schedule = EngineSystems,
     };
@@ -210,7 +309,6 @@ int Engine::Run(Game& game)
     }
 
     GameShutdownContext shutdown{
-        .EngineInstance = *this,
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);

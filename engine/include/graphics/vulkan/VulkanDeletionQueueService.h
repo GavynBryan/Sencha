@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -60,13 +59,13 @@ struct DeferredBufferDestroy
 
 // -- VulkanDeletionQueueService ----------------------------------------------
 
-class VulkanDeletionQueueService : public IService
+class VulkanDeletionQueueService
 {
 public:
     // `framesInFlight` must equal the frames-in-flight count passed to
     // VulkanFrameService so that the ring and the fence cadence stay in sync.
     VulkanDeletionQueueService(LoggingProvider& logging, uint32_t framesInFlight);
-    ~VulkanDeletionQueueService() override;
+    ~VulkanDeletionQueueService();
 
     VulkanDeletionQueueService(const VulkanDeletionQueueService&) = delete;
     VulkanDeletionQueueService& operator=(const VulkanDeletionQueueService&) = delete;

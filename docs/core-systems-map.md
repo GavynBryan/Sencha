@@ -44,7 +44,7 @@ High-value files to read first:
 | Asset front door | `engine/include/core/assets/AssetSystem.h`, `engine/include/core/assets/AssetLoader.h` |
 | Asset streaming | `engine/include/core/assets/AssetPreloader.h`, `engine/src/core/assets/AssetPreloader.cpp` |
 | Render extraction | `engine/src/app/DefaultRenderPipeline.cpp`, `engine/src/render/RenderExtractionSystem.cpp` |
-| Vulkan backend | `engine/src/graphics/vulkan/VulkanBootstrap.cpp`, `engine/src/graphics/vulkan/Renderer.cpp` |
+| Vulkan backend | `engine/src/graphics/vulkan/GraphicsServices.cpp`, `engine/src/graphics/vulkan/Renderer.cpp` |
 | Audio runtime | `engine/include/audio/AudioSourceComponent.h`, `engine/src/audio/AudioSystem.cpp` |
 | Concurrency contracts | `engine/include/jobs/JobSystem.h`, `engine/include/jobs/AsyncTaskQueue.h`, `docs/ecs/parallelization.md` |
 
@@ -56,22 +56,22 @@ The runtime ownership shape looks like this:
 Application
   Engine
     EngineConfig value
-    ServiceHost
-      LoggingProvider
-      DebugService
-      AudioService
-      SDL window/video services
-      Vulkan services
-      Renderer
-    RuntimeFrameLoop
-    FrameDriver
+    LoggingProvider              (Foundation: owned first, destroyed last)
+    DebugService                 (always-present singleton services)
+    AudioService
+    CaptionRuntime
+    PlatformServices             (SDL video + window; null when headless)
+    GraphicsServices             (the Vulkan chain + Renderer; null when headless)
     EngineSchedule
       DefaultRenderPipeline
       AudioSystem
+      CaptionSystem
       game systems
     ZoneRuntime
       global Registry
       zone Registries
+    RuntimeFrameLoop
+    FrameDriver
     AsyncTaskQueue
     ThreadPoolJobSystem
     TimingHistory
@@ -94,11 +94,17 @@ the game owns `RuntimeAssets`, `AssetPreloader`, and `AsyncZoneLoader` because
 those are content/runtime policy objects. The engine owns the lower-level
 services and frame machinery.
 
-Service lifetime is explicit. `ServiceHost` destroys services in reverse
-insertion order. Vulkan services are installed in dependency order, and
-`Renderer` is added last so it tears down first, before the services and device
-objects used by render features. `Engine` destroys worker/task queues before
-zones and services, so pending work cannot keep reaching into torn-down state.
+Service lifetime is explicit, and ownership is named rather than type-erased.
+The engine's services are `Engine` members (singletons) and dependency-ordered
+groups (`PlatformServices`, `GraphicsServices`); there is no service container.
+Teardown is reverse member-declaration order: inside `GraphicsServices` the
+Vulkan services are declared in dependency order with `Renderer` last, so it is
+destroyed first; `GraphicsServices` is declared after `PlatformServices`, so
+Vulkan tears down before the SDL window it draws on. `Engine` declares the
+worker/task queues last, so they are destroyed (threads joined, pending commits
+dropped) before the zones and services they reference. Access is by name --
+`Engine::Graphics()`, `Engine::Platform()`, `Engine::Audio()` -- resolved at
+compile time, not by runtime type lookup.
 
 ## Frame Contract
 
@@ -382,8 +388,8 @@ The built-in mesh feature receives references to those extracted objects, while
 extraction cannot invalidate draw submission.
 
 `Renderer` owns `IRenderFeature`s. Features receive `RendererServices` during
-`Setup()` and cache direct pointers. They should not use `ServiceHost` in the
-hot draw path.
+`Setup()` and cache direct pointers. They should not resolve engine services in
+the hot draw path.
 
 `Renderer::DrawFrameScheduled()` owns:
 
@@ -432,7 +438,8 @@ this slice.
 
 SDL integration is split:
 
-- `SdlBootstrap` installs video/window services.
+- `PlatformServices` owns the video and window services as a group and creates
+  the primary window; `Engine` owns it as `Engine::Platform()`.
 - `SdlWindowService` owns windows and window state.
 - `SdlInputCapture` translates SDL events into `InputFrame`.
 
@@ -607,7 +614,7 @@ New render feature:
 
 Be cautious when you see:
 
-- a task-thread lambda capturing `ServiceHost`, caches, `Renderer`, or live
+- a task-thread lambda capturing engine services, caches, `Renderer`, or live
   registries by reference
 - worker jobs writing global or shared mutable state without explicit merge
   slots
@@ -616,7 +623,7 @@ Be cautious when you see:
 - a lifecycle hook calling structural ECS APIs
 - direct `World::AddComponent` or `DestroyEntity` inside query iteration
 - a renderer or Vulkan service reading live ECS state during draw
-- a service resolving sibling services through `ServiceHost` instead of taking
+- a service resolving sibling services at use time instead of taking them as
   explicit constructor dependencies
 - a handwritten asset manifest
 - a scene field storing runtime handles without a path/string serialization

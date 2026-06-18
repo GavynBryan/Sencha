@@ -3,7 +3,7 @@
 #include <app/DefaultRenderPipeline.h>
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
-#include <core/service/ServiceHost.h>
+#include <core/logging/LoggingProvider.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -11,9 +11,14 @@
 #include <memory>
 
 class AsyncTaskQueue;
+class AudioService;
+class CaptionRuntime;
+class DebugService;
 class FrameDriver;
 class Game;
+struct GraphicsServices;
 class JobSystem;
+struct PlatformServices;
 class ThreadPoolJobSystem;
 
 //=============================================================================
@@ -42,8 +47,42 @@ public:
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const { return Configuration; }
 
-    [[nodiscard]] ServiceHost& Services() { return ServiceRegistry; }
-    [[nodiscard]] const ServiceHost& Services() const { return ServiceRegistry; }
+    // Foundation: owned before any service or system so it outlives everything
+    // that logs during teardown. Injected by reference into the things that
+    // need it; never registered as a service.
+    [[nodiscard]] LoggingProvider& Logging() { return LoggingState; }
+    [[nodiscard]] const LoggingProvider& Logging() const { return LoggingState; }
+
+    // Always-present singleton services. Valid between Initialize and Shutdown.
+    [[nodiscard]] DebugService& Debug();
+    [[nodiscard]] const DebugService& Debug() const;
+    [[nodiscard]] AudioService& Audio();
+    [[nodiscard]] const AudioService& Audio() const;
+    [[nodiscard]] CaptionRuntime& Captions();
+    [[nodiscard]] const CaptionRuntime& Captions() const;
+
+    // SDL platform services. Present only when the engine runs windowed
+    // (GraphicsApi != None); valid between Initialize and Shutdown.
+    [[nodiscard]] PlatformServices& Platform();
+    [[nodiscard]] const PlatformServices& Platform() const;
+
+    // Nullable form for code paths that must work headless: returns nullptr
+    // when platform services are absent instead of asserting. Prefer Platform()
+    // on the required path; use this only where headless is a valid state.
+    [[nodiscard]] PlatformServices* TryPlatform();
+    [[nodiscard]] const PlatformServices* TryPlatform() const;
+
+#ifdef SENCHA_ENABLE_VULKAN
+    // Vulkan backend services. Present when running windowed; valid between
+    // Initialize and Shutdown.
+    [[nodiscard]] GraphicsServices& Graphics();
+    [[nodiscard]] const GraphicsServices& Graphics() const;
+
+    // Nullable form; returns nullptr when graphics services are absent
+    // (headless / no Vulkan device) instead of asserting.
+    [[nodiscard]] GraphicsServices* TryGraphics();
+    [[nodiscard]] const GraphicsServices* TryGraphics() const;
+#endif
 
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
@@ -78,7 +117,24 @@ private:
     void RegisterFramePhases(Game& game);
 
     EngineConfig Configuration;
-    ServiceHost ServiceRegistry;
+    // Foundation: declared before every service and system so that -- members
+    // destroy in reverse declaration order -- logging outlives everything whose
+    // destructor may log.
+    LoggingProvider LoggingState;
+    // Always-present services, valid between Initialize and Shutdown. Declared
+    // after LoggingState (they may log on teardown) and before the SDL/Vulkan
+    // groups (they do not depend on those, so they tear down after them).
+    std::unique_ptr<DebugService> DebugState;
+    std::unique_ptr<AudioService> AudioState;
+    std::unique_ptr<CaptionRuntime> CaptionState;
+    // SDL platform group. Declared before the Vulkan group so the window
+    // outlives the surface/swapchain that depend on it. Null when headless.
+    std::unique_ptr<PlatformServices> PlatformState;
+#ifdef SENCHA_ENABLE_VULKAN
+    // Vulkan group. Declared after PlatformState so it tears down first
+    // (surface/swapchain reference the window). Null when headless.
+    std::unique_ptr<GraphicsServices> GraphicsState;
+#endif
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;

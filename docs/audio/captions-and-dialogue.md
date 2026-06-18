@@ -487,7 +487,7 @@ struct ActiveCaption
 ## `CaptionRuntime`
 
 ```cpp
-class CaptionRuntime : public IService
+class CaptionRuntime
 {
 public:
     CaptionRuntime(LoggingProvider& logging, const CaptionConfig& config);
@@ -519,14 +519,15 @@ public:
 };
 ```
 
-Constructed in `Engine::Initialize` from `Configuration.Captions` into
-`ServiceHost`, beside `AudioService`. Unlike `AudioService` it has no device
-dependency, so it is always valid — caption logic is fully headless-testable.
+Constructed in `Engine::Initialize` from `Configuration.Captions` as the
+Engine-owned `Engine::Captions()`, beside `AudioService`. Unlike `AudioService`
+it has no device dependency, so it is always valid — caption logic is fully
+headless-testable.
 
 Revision 1 left "is `CaptionRuntime` a service immediately?" open and floated
 starting `AudioCueService` game-side because `RuntimeAssets` is game-owned.
 With the cue stack deferred, that boundary tension is gone: `CaptionRuntime`
-has no asset dependencies at all and belongs in `ServiceHost` from day one.
+has no asset dependencies at all and is an engine-owned service from day one.
 
 ## Priority, Merging, And Spam Control
 
@@ -605,7 +606,7 @@ slot in additively later.
 
 `CaptionKind`, `CaptionPriority`, `CaptionChannelName`, `CaptionPayload`,
 `CaptionId`, `CaptionSettings`, `CaptionConfig` + channel defaults,
-`CaptionRuntime` in `ServiceHost`. No audio coupling beyond `VoiceId` as an
+`CaptionRuntime` owned by `Engine`. No audio coupling beyond `VoiceId` as an
 opaque value; no assets; fully headless.
 
 Tests: subtitle/CC visibility under each settings combination; **mid-life
@@ -712,7 +713,7 @@ What landed where:
 - `core/config/CaptionConfig.h/.cpp` — `EngineCaptionConfig` (named with the
   `Engine*Config` house prefix) + channel deserializer, wired into
   `EngineConfig` as the `captions` section.
-- `audio/CaptionRuntime.{h,cpp}` — the service, in `ServiceHost` from
+- `audio/CaptionRuntime.{h,cpp}` — the service, owned by `Engine` from
   `Engine::Initialize`. Read-time filtering (Decision B) via lazily rebuilt
   snapshots (a dirty flag; spans invalidate on Begin/End/Tick/SetSettings).
   Merge is refresh-and-*rebind*: a merged duplicate adopts the new voice and

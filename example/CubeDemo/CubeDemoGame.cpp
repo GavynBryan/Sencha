@@ -21,11 +21,13 @@
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
+#include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
@@ -43,7 +45,10 @@
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 
 namespace
 {
@@ -132,19 +137,58 @@ namespace
         double Accumulator = 0.0;
     };
 #endif
+
+    uint32_t ReadAutoExitFrameCount()
+    {
+        const char* raw = std::getenv("SENCHA_CUBE_DEMO_EXIT_AFTER_FRAMES");
+        if (raw == nullptr || raw[0] == '\0')
+            return 0;
+
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(raw, &end, 10);
+        if (end == raw || *end != '\0' || parsed == 0
+            || parsed > std::numeric_limits<uint32_t>::max())
+        {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(parsed);
+    }
+
+    struct AutoExitSystem
+    {
+        AutoExitSystem(Engine& engine, uint32_t frameCount)
+            : EngineInstance(engine)
+            , RemainingFrames(frameCount)
+        {
+        }
+
+        void EndFrame(EndFrameContext&)
+        {
+            if (RemainingFrames == 0)
+                return;
+
+            --RemainingFrames;
+            if (RemainingFrames == 0)
+                EngineInstance.RequestExit();
+        }
+
+        Engine& EngineInstance;
+        uint32_t RemainingFrames = 0;
+    };
 }
 
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
 {
-    Engine& engine = ctx.EngineInstance;
-    ServiceHost& services = engine.Services();
-    LoggingProvider& logging = services.GetLoggingProvider();
-    DebugService& debug = services.Get<DebugService>();
+    Engine& engine = GetEngine();
+    LoggingProvider& logging = engine.Logging();
+    DebugService& debug = engine.Debug();
     DebugLogSink& debugLog = debug.GetLogSink();
-    auto& buffers = services.Get<VulkanBufferService>();
-    auto& images = services.Get<VulkanImageService>();
-    auto& descriptors = services.Get<VulkanDescriptorCache>();
-    auto& samplers = services.Get<VulkanSamplerCache>();
+    GraphicsServices& graphics = engine.Graphics();
+    auto& buffers = graphics.Buffers;
+    auto& images = graphics.Images;
+    auto& descriptors = graphics.Descriptors;
+    auto& samplers = graphics.Samplers;
 
     Assets.emplace(logging, buffers, images, descriptors, samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
@@ -240,8 +284,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialCache* materials = &runtimeAssets.Materials;
     AudioClipCache* audioClips = &runtimeAssets.AudioClips;
-    AudioService* audio = services.TryGet<AudioService>();
-    CaptionRuntime* captions = services.TryGet<CaptionRuntime>();
+    AudioService* audio = &engine.Audio();
+    CaptionRuntime* captions = &engine.Captions();
     if (captions != nullptr)
     {
         CaptionSettings captionSettings;
@@ -273,14 +317,14 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     if (pipeline != nullptr)
     {
         pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials);
-        pipeline->AddMeshRenderFeature(services);
+        pipeline->AddMeshRenderFeature(graphics);
     }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
-    auto& windows = services.Get<SdlWindowService>();
+    auto& windows = engine.Platform().Windows;
     SdlWindow* window = windows.GetPrimaryWindow();
-    auto& instance = services.Get<VulkanInstanceService>();
-    auto& frames = services.Get<VulkanFrameService>();
+    auto& instance = graphics.Instance;
+    auto& frames = graphics.Frames;
 
     auto debugOverlay =
         std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
@@ -292,7 +336,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
             pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, DemoRegistry, Demo);
     }
     DebugOverlay = debugOverlay.get();
-    auto& renderer = services.Get<Renderer>();
+    auto& renderer = graphics.MainRenderer;
     renderer.AddFeature(std::move(debugOverlay));
 #else
     (void)debugLog;
@@ -309,10 +353,13 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
 void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
-    RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo);
+    CaptionRuntime* captions = &GetEngine().Captions();
+    RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo, captions);
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
 #endif
+    if (const uint32_t autoExitFrames = ReadAutoExitFrameCount(); autoExitFrames > 0)
+        ctx.Schedule.Register<AutoExitSystem>(GetEngine(), autoExitFrames);
 }
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
@@ -329,16 +376,16 @@ void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, true);
+        SetRelativeMouseMode(GetEngine(), true);
     }
     else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, false);
+        SetRelativeMouseMode(GetEngine(), false);
     }
     else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, false);
+        SetRelativeMouseMode(GetEngine(), false);
     }
 }
 
@@ -347,7 +394,7 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 #ifdef SENCHA_ENABLE_DEBUG_UI
     DebugOverlay = nullptr;
 #endif
-    SetRelativeMouseMode(ctx.EngineInstance, false);
+    SetRelativeMouseMode(GetEngine(), false);
 
     // Best-effort cancel if the load is still in flight; if the build is
     // mid-run on the task thread, Engine::Shutdown drops the undrained
@@ -356,7 +403,7 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
         ZoneLoader->CancelLoad(ZoneId{ 1 });
     ZoneLoader.reset();
 
-    ctx.EngineInstance.Zones().DestroyZone(ZoneId{ 1 });
+    GetEngine().Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
 }
 
@@ -374,7 +421,7 @@ const RuntimeAssets& CubeDemoGame::RuntimeAssetState() const
 
 void CubeDemoGame::SetRelativeMouseMode(Engine& engine, bool enabled)
 {
-    SdlWindow* window = engine.Services().Get<SdlWindowService>().GetPrimaryWindow();
+    SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
 

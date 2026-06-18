@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
@@ -39,7 +38,7 @@ class VulkanDepthTarget;
 //     any Vulkan service is torn down.
 //
 //   * The per-frame path is flat. OnDraw() receives a small, cache-dense
-//     FrameContext and nothing else -- there are no ServiceHost lookups in
+//     FrameContext and nothing else -- there are no service lookups in
 //     the hot loop. Features are expected to cache direct pointers during
 //     Setup() from the RendererServices bundle.
 //
@@ -63,7 +62,7 @@ enum class RenderPhase : uint8_t
 };
 
 // Direct service pointers handed to features in Setup(). Features should
-// cache whichever ones they need and never reach for the ServiceHost again.
+// cache whichever ones they need and never reach for engine services again.
 struct RendererServices
 {
     LoggingProvider* Logging = nullptr;
@@ -131,7 +130,7 @@ public:
     virtual void Teardown() {}
 };
 
-class Renderer : public IService
+class Renderer
 {
 public:
     enum class DrawStatus
@@ -157,7 +156,7 @@ public:
              VulkanDescriptorCache& descriptors,
              VulkanFrameScratch& scratch,
              VulkanUploadContextService& upload);
-    ~Renderer() override;
+    ~Renderer();
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanQueueFamilies.h>
@@ -11,14 +10,14 @@
 class VulkanInstanceService;
 class VulkanSurfaceService;
 
-class VulkanPhysicalDeviceService : public IService
+class VulkanPhysicalDeviceService
 {
 public:
     VulkanPhysicalDeviceService(LoggingProvider& logging,
                                 VulkanInstanceService& instance,
                                 const VulkanBootstrapPolicy& policy,
                                 const VulkanSurfaceService* surface = nullptr);
-    ~VulkanPhysicalDeviceService() override = default;
+    ~VulkanPhysicalDeviceService() = default;
 
     VulkanPhysicalDeviceService(const VulkanPhysicalDeviceService&) = delete;
     VulkanPhysicalDeviceService& operator=(const VulkanPhysicalDeviceService&) = delete;

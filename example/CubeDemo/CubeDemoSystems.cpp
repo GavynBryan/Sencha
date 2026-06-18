@@ -93,14 +93,14 @@ namespace
     // same pattern — one per surface, each reading its own channel.
     struct CaptionConsoleSystem
     {
-        void FrameUpdate(FrameUpdateContext& ctx)
+        explicit CaptionConsoleSystem(CaptionRuntime* captions) : Captions(captions) {}
+
+        void FrameUpdate(FrameUpdateContext&)
         {
-            CaptionRuntime* captions =
-                ctx.EngineInstance.Services().TryGet<CaptionRuntime>();
-            if (captions == nullptr)
+            if (Captions == nullptr)
                 return;
 
-            std::span<const ActiveCaption> active = captions->Visible("World");
+            std::span<const ActiveCaption> active = Captions->Visible("World");
 
             for (const ActiveCaption& caption : active)
             {
@@ -146,6 +146,7 @@ namespace
             float AgeSeconds = 0.0f;
         };
 
+        CaptionRuntime* Captions = nullptr;
         uint64_t NextUnseenSequence = 0;
         std::vector<LiveEntry> Live;
     };
@@ -216,9 +217,10 @@ namespace
 void RegisterCubeDemoSystems(EngineSchedule& schedule,
                              Registry*& registry,
                              FreeCamera& freeCamera,
-                             DemoScene& scene)
+                             DemoScene& scene,
+                             CaptionRuntime* captions)
 {
-    schedule.Register<CaptionConsoleSystem>();
+    schedule.Register<CaptionConsoleSystem>(captions);
     schedule.Register<MouseTraceSystem>(freeCamera);
     schedule.Register<FreeCameraLookSystem>(registry, freeCamera);
     schedule.Register<FreeCameraMovementSystem>(registry, freeCamera);

@@ -1,19 +1,18 @@
 #pragma once
 
-#include <core/service/IService.h>
 #include <core/logging/LoggingProvider.h>
 #include <vulkan/vulkan.h>
 
 class SdlWindow;
 class VulkanInstanceService;
 
-class VulkanSurfaceService : public IService
+class VulkanSurfaceService
 {
 public:
     VulkanSurfaceService(LoggingProvider& logging,
                          VulkanInstanceService& instance,
                          const SdlWindow& window);
-    ~VulkanSurfaceService() override;
+    ~VulkanSurfaceService();
 
     VulkanSurfaceService(const VulkanSurfaceService&) = delete;
     VulkanSurfaceService& operator=(const VulkanSurfaceService&) = delete;

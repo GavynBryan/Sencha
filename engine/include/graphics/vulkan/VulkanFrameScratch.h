@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <vulkan/vulkan.h>
 
@@ -39,7 +38,7 @@ class VulkanPhysicalDeviceService;
 // at once during setup.
 //=============================================================================
 
-class VulkanFrameScratch : public IService
+class VulkanFrameScratch
 {
 public:
     struct Config
@@ -62,7 +61,7 @@ public:
                        VulkanPhysicalDeviceService& physicalDevice,
                        VulkanBufferService& buffers,
                        Config config);
-    ~VulkanFrameScratch() override;
+    ~VulkanFrameScratch();
 
     VulkanFrameScratch(const VulkanFrameScratch&) = delete;
     VulkanFrameScratch& operator=(const VulkanFrameScratch&) = delete;

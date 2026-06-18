@@ -4,7 +4,6 @@
 #include <audio/Caption.h>
 #include <core/config/CaptionConfig.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/service/IService.h>
 
 #include <cstdint>
 #include <span>
@@ -41,7 +40,7 @@ class AudioService;
 // Unlike AudioService there is no device dependency: the runtime is always
 // valid and caption behavior is fully headless-testable. Main thread only.
 //=============================================================================
-class CaptionRuntime : public IService
+class CaptionRuntime
 {
 public:
     CaptionRuntime(LoggingProvider& logging, const EngineCaptionConfig& config);

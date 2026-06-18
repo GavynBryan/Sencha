@@ -6,7 +6,10 @@
 #include <app/EngineSchedule.h>
 #include <world/registry/Registry.h>
 
+class CaptionRuntime;
+
 void RegisterCubeDemoSystems(EngineSchedule& schedule,
                              Registry*& registry,
                              FreeCamera& freeCamera,
-                             DemoScene& scene);
+                             DemoScene& scene,
+                             CaptionRuntime* captions);
