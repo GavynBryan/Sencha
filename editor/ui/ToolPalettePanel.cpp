@@ -15,11 +15,6 @@ std::string_view ToolPalettePanel::GetTitle() const
     return "Tools";
 }
 
-bool ToolPalettePanel::IsVisible() const
-{
-    return Visible;
-}
-
 void ToolPalettePanel::OnDraw()
 {
     if (!ImGui::Begin(GetTitle().data(), &Visible))

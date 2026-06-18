@@ -27,11 +27,6 @@ std::string_view MeshEditPanel::GetTitle() const
     return "Mesh Edit";
 }
 
-bool MeshEditPanel::IsVisible() const
-{
-    return Visible;
-}
-
 void MeshEditPanel::DrawModeToolbar()
 {
     const auto modeButton = [&](const char* label, MeshElementKind kind)

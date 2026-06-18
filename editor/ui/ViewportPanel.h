@@ -12,8 +12,8 @@ public:
     ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee);
 
     std::string_view GetTitle() const override;
-    bool IsVisible() const override;
     void OnDraw() override;
+    DockSlot GetDockSlot() const override { return DockSlot::Center; }
 
     // True when the cursor is over a viewport's 3D render region with no UI panel
     // on top of it (z-order aware). The viewport region is a passthrough hole in
@@ -30,7 +30,6 @@ private:
 
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
-    bool Visible = true;
     bool RegionHovered = false;
     // Set when switching into single mode so the orientation tab bar selects the
     // active viewport's current orientation once, instead of snapping to the first.

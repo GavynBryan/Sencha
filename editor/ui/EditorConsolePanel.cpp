@@ -35,11 +35,6 @@ std::string_view EditorConsolePanel::GetTitle() const
     return "Console";
 }
 
-bool EditorConsolePanel::IsVisible() const
-{
-    return Visible;
-}
-
 void EditorConsolePanel::OnDraw()
 {
     if (!ImGui::Begin(GetTitle().data(), &Visible))

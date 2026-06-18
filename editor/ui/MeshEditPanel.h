@@ -21,8 +21,8 @@ public:
                   CommandStack& commands);
 
     std::string_view GetTitle() const override;
-    bool IsVisible() const override;
     void OnDraw() override;
+    DockSlot GetDockSlot() const override { return DockSlot::Right; }
 
 private:
     void DrawModeToolbar();
@@ -35,5 +35,4 @@ private:
     CommandStack& Commands;
 
     float ExtrudeDistance = 1.0f;
-    bool Visible = true;
 };

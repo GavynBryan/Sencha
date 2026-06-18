@@ -29,8 +29,8 @@ public:
                    CommandStack& commands);
 
     std::string_view GetTitle() const override;
-    bool IsVisible() const override;
     void OnDraw() override;
+    DockSlot GetDockSlot() const override { return DockSlot::Right; }
 
 private:
     void DrawComponent(const IComponentSerializer& serializer, EntityId entity);
@@ -50,5 +50,4 @@ private:
     bool                   EditActive = false;
 
     EntityId LastEntity = {};
-    bool Visible = true;
 };

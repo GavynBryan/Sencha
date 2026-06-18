@@ -92,4 +92,6 @@ private:
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;
+    // Forces a default-layout rebuild on the next frame (first run / View>Reset).
+    bool LayoutDirty = false;
 };

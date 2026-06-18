@@ -14,13 +14,80 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h> // DockBuilder* for the default layout
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
 #include <array>
+#include <string>
+#include <vector>
 
 namespace
 {
+// Docks a region node's panels top-to-bottom so they stack (matches the mockup's
+// columns) rather than tab. Single-panel regions just dock the one window.
+void DockStacked(ImGuiID region, const std::vector<IEditorPanel*>& panels)
+{
+    const int count = static_cast<int>(panels.size());
+    for (int i = 0; i < count; ++i)
+    {
+        if (i < count - 1)
+        {
+            // Slice the top 1/(remaining) off for this panel; recurse into the rest.
+            ImGuiID top = 0;
+            const float lowerRatio = static_cast<float>(count - 1 - i) / static_cast<float>(count - i);
+            const ImGuiID lower = ImGui::DockBuilderSplitNode(region, ImGuiDir_Down, lowerRatio, nullptr, &top);
+            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), top);
+            region = lower;
+        }
+        else
+        {
+            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), region);
+        }
+    }
+}
+
+// Builds the designed default layout from each panel's DockSlot hint: a left and
+// right column (stacked), a bottom strip, and the viewport in the center (no tab
+// bar). No panel is named here — placement is declarative on the panels.
+void BuildDefaultDockLayout(ImGuiID dockId, const std::vector<std::unique_ptr<IEditorPanel>>& panels)
+{
+    ImGui::DockBuilderRemoveNode(dockId);
+    ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
+
+    ImGuiID center = dockId;
+    const ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.18f, nullptr, &center);
+    const ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.24f, nullptr, &center);
+    const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.26f, nullptr, &center);
+
+    std::vector<IEditorPanel*> leftPanels, rightPanels, bottomPanels, centerPanels;
+    for (const std::unique_ptr<IEditorPanel>& panel : panels)
+    {
+        if (panel == nullptr)
+            continue;
+        switch (panel->GetDockSlot())
+        {
+        case DockSlot::Left:   leftPanels.push_back(panel.get());   break;
+        case DockSlot::Right:  rightPanels.push_back(panel.get());  break;
+        case DockSlot::Bottom: bottomPanels.push_back(panel.get()); break;
+        case DockSlot::Center: centerPanels.push_back(panel.get()); break;
+        case DockSlot::Floating: break; // left undocked
+        }
+    }
+
+    DockStacked(left, leftPanels);
+    DockStacked(right, rightPanels);
+    DockStacked(bottom, bottomPanels);
+
+    // The viewport owns the central node; drop its tab bar so it reads as the scene.
+    if (ImGuiDockNode* centerNode = ImGui::DockBuilderGetNode(center))
+        centerNode->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+    DockStacked(center, centerPanels);
+
+    ImGui::DockBuilderFinish(dockId);
+}
+
 bool IsEditorUiInputEvent(const SDL_Event& event)
 {
     switch (event.type)
@@ -85,6 +152,17 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
         if (chrome)
             chrome();
     }
+
+    // Host dockspace over the work area the chrome bars left. PassthruCentralNode
+    // keeps the central node transparent so the viewport's 3D shows through.
+    const ImGuiID dockId = ImGui::DockSpaceOverViewport(
+        0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
+    {
+        BuildDefaultDockLayout(dockId, Panels);
+        LayoutDirty = false;
+    }
+
     for (const std::unique_ptr<IEditorPanel>& panel : Panels)
     {
         if (panel != nullptr && panel->IsVisible())
@@ -187,6 +265,7 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     EditorUi::Apply(ImGui::GetStyle());
     EditorUi::LoadFonts(io);
 
@@ -311,6 +390,23 @@ void EditorUiFeature::DrawMainMenuBar()
         if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && RedoAction)
             RedoAction();
 
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("View"))
+    {
+        // Per-panel visibility (the viewport is the central node — not hideable).
+        for (const std::unique_ptr<IEditorPanel>& panel : Panels)
+        {
+            if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
+                continue;
+            const std::string title(panel->GetTitle());
+            if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
+                panel->ToggleVisible();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset Layout"))
+            LayoutDirty = true;
         ImGui::EndMenu();
     }
 

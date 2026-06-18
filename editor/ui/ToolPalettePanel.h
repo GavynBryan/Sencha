@@ -10,10 +10,9 @@ public:
     explicit ToolPalettePanel(ToolRegistry& tools);
 
     std::string_view GetTitle() const override;
-    bool IsVisible() const override;
     void OnDraw() override;
+    DockSlot GetDockSlot() const override { return DockSlot::Left; }
 
 private:
     ToolRegistry& Tools;
-    bool Visible = true;
 };

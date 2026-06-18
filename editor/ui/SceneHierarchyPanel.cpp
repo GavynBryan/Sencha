@@ -28,11 +28,6 @@ std::string_view SceneHierarchyPanel::GetTitle() const
     return "Hierarchy";
 }
 
-bool SceneHierarchyPanel::IsVisible() const
-{
-    return Visible;
-}
-
 void SceneHierarchyPanel::OnDraw()
 {
     if (!ImGui::Begin(GetTitle().data(), &Visible))

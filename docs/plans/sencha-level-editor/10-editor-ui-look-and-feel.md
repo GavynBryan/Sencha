@@ -225,6 +225,17 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    - **Remaining (need other features first / a higher-level plan):** angle snap
      (needs a rotate manipulator); material swatches + asset thumbnails (materials/
      asset pipeline live in a higher-level plan).
+4b. **Panel docking — DONE** (the gap the user hit: panels were free-floating and
+   overlapping). Switched ImGui to the version-matched `v1.91.9-docking` tag and
+   enabled `DockingEnable`. `EditorUiFeature` hosts one passthru `DockSpaceOverViewport`
+   between the chrome bars and builds a default layout from each panel's new
+   `IEditorPanel::GetDockSlot()` hint (Left/Right/Bottom/Center/Floating) — left &
+   right columns stacked, console bottom, viewport centre (no tab bar, 3D shows
+   through). Placement is declarative (no panel names in the host). Visibility state
+   was lifted into `IEditorPanel` (drops the duplicated `bool Visible` from six
+   panels) to power a `View` menu (per-panel toggles + **Reset Layout**). Layout
+   persists via `imgui.ini`; the viewport is the dock-managed central window. See
+   plan `~/.claude/plans/enumerated-sparking-penguin.md`.
 5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
    pixel-fidelity is wanted.
 

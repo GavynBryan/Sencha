@@ -30,24 +30,13 @@ std::string_view ViewportPanel::GetTitle() const
     return "Viewport";
 }
 
-bool ViewportPanel::IsVisible() const
-{
-    return Visible;
-}
-
 void ViewportPanel::OnDraw()
 {
-    const ImGuiViewport* mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(mainViewport->WorkPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(mainViewport->WorkSize, ImGuiCond_Always);
-
+    // Dock-managed: the host docks this into the central node (see EditorUiFeature).
+    // NoBackground keeps the window transparent so the 3D scene — drawn into the
+    // swapchain behind ImGui and scissored to RegionMin/Max — shows through.
     const ImGuiWindowFlags windowFlags =
-        ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        | ImGuiWindowFlags_NoScrollbar
+        ImGuiWindowFlags_NoScrollbar
         | ImGuiWindowFlags_NoScrollWithMouse
         | ImGuiWindowFlags_NoBackground;
 

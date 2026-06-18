@@ -18,15 +18,12 @@ public:
     EditorConsolePanel(DebugLogSink& sink, ConsoleService& console);
 
     std::string_view GetTitle() const override;
-    bool IsVisible() const override;
     void OnDraw() override;
-    void ToggleVisible() { Visible = !Visible; }
-    void SetVisible(bool visible) { Visible = visible; }
+    DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
 
 private:
     DebugLogSink& Sink;
     ConsoleService& Console;
-    bool Visible = false;
     std::array<bool, 5> LevelFilter = { true, true, true, true, true };
     char CategoryFilterBuf[128] = {};
     char CommandBuf[256] = {};

@@ -97,11 +97,6 @@ std::string_view InspectorPanel::GetTitle() const
     return "Inspector";
 }
 
-bool InspectorPanel::IsVisible() const
-{
-    return Visible;
-}
-
 void InspectorPanel::ResetEditState()
 {
     EditActive = false;
