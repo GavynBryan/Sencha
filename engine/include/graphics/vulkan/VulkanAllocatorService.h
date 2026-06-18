@@ -28,7 +28,7 @@ public:
                            VulkanInstanceService& instance,
                            VulkanPhysicalDeviceService& physicalDevice,
                            VulkanDeviceService& device);
-    ~VulkanAllocatorService() override;
+    ~VulkanAllocatorService();
 
     VulkanAllocatorService(const VulkanAllocatorService&) = delete;
     VulkanAllocatorService& operator=(const VulkanAllocatorService&) = delete;

@@ -62,7 +62,7 @@ class AudioService
 {
 public:
     AudioService(LoggingProvider& logging, const EngineAudioConfig& config);
-    ~AudioService() override;
+    ~AudioService();
 
     AudioService(const AudioService&) = delete;
     AudioService& operator=(const AudioService&) = delete;

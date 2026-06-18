@@ -33,7 +33,7 @@ public:
                            VulkanSurfaceService& surface,
                            VulkanQueueService& queues,
                            WindowExtent desiredExtent);
-    ~VulkanSwapchainService() override;
+    ~VulkanSwapchainService();
 
     VulkanSwapchainService(const VulkanSwapchainService&) = delete;
     VulkanSwapchainService& operator=(const VulkanSwapchainService&) = delete;

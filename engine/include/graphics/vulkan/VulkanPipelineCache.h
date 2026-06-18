@@ -108,7 +108,7 @@ public:
     VulkanPipelineCache(LoggingProvider& logging,
                         VulkanDeviceService& device,
                         VulkanShaderCache& shaders);
-    ~VulkanPipelineCache() override;
+    ~VulkanPipelineCache();
 
     VulkanPipelineCache(const VulkanPipelineCache&) = delete;
     VulkanPipelineCache& operator=(const VulkanPipelineCache&) = delete;

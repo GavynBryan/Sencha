@@ -15,7 +15,7 @@ public:
                        VulkanDeviceService& device,
                        VulkanPhysicalDeviceService& physicalDevice,
                        const VulkanBootstrapPolicy& policy);
-    ~VulkanQueueService() override = default;
+    ~VulkanQueueService() = default;
 
     VulkanQueueService(const VulkanQueueService&) = delete;
     VulkanQueueService& operator=(const VulkanQueueService&) = delete;

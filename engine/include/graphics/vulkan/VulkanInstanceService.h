@@ -19,7 +19,7 @@ class VulkanInstanceService
 {
 public:
     VulkanInstanceService(LoggingProvider& logging, const VulkanBootstrapPolicy& policy);
-    ~VulkanInstanceService() override;
+    ~VulkanInstanceService();
 
     VulkanInstanceService(const VulkanInstanceService&) = delete;
     VulkanInstanceService& operator=(const VulkanInstanceService&) = delete;

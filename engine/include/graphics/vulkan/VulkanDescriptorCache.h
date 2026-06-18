@@ -60,7 +60,7 @@ public:
                           VulkanDeviceService& device,
                           VulkanBufferService& buffers,
                           VulkanImageService& images);
-    ~VulkanDescriptorCache() override;
+    ~VulkanDescriptorCache();
 
     VulkanDescriptorCache(const VulkanDescriptorCache&) = delete;
     VulkanDescriptorCache& operator=(const VulkanDescriptorCache&) = delete;

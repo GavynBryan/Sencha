@@ -27,7 +27,7 @@ public:
     };
 
     SdlWindowService(LoggingProvider& logging, SdlVideoService& video);
-    ~SdlWindowService() override;
+    ~SdlWindowService();
 
     SdlWindowService(const SdlWindowService&) = delete;
     SdlWindowService& operator=(const SdlWindowService&) = delete;

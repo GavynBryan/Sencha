@@ -6,7 +6,7 @@ class SdlVideoService
 {
 public:
     explicit SdlVideoService(LoggingProvider& logging);
-    ~SdlVideoService() override;
+    ~SdlVideoService();
 
     SdlVideoService(const SdlVideoService&) = delete;
     SdlVideoService& operator=(const SdlVideoService&) = delete;

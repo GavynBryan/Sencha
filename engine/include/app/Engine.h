@@ -66,11 +66,22 @@ public:
     [[nodiscard]] PlatformServices& Platform();
     [[nodiscard]] const PlatformServices& Platform() const;
 
+    // Nullable form for code paths that must work headless: returns nullptr
+    // when platform services are absent instead of asserting. Prefer Platform()
+    // on the required path; use this only where headless is a valid state.
+    [[nodiscard]] PlatformServices* TryPlatform();
+    [[nodiscard]] const PlatformServices* TryPlatform() const;
+
 #ifdef SENCHA_ENABLE_VULKAN
     // Vulkan backend services. Present when running windowed; valid between
     // Initialize and Shutdown.
     [[nodiscard]] GraphicsServices& Graphics();
     [[nodiscard]] const GraphicsServices& Graphics() const;
+
+    // Nullable form; returns nullptr when graphics services are absent
+    // (headless / no Vulkan device) instead of asserting.
+    [[nodiscard]] GraphicsServices* TryGraphics();
+    [[nodiscard]] const GraphicsServices* TryGraphics() const;
 #endif
 
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }

@@ -40,7 +40,7 @@ public:
     VulkanUploadContextService(LoggingProvider& logging,
                                VulkanDeviceService& device,
                                VulkanQueueService& queues);
-    ~VulkanUploadContextService() override;
+    ~VulkanUploadContextService();
 
     VulkanUploadContextService(const VulkanUploadContextService&) = delete;
     VulkanUploadContextService& operator=(const VulkanUploadContextService&) = delete;

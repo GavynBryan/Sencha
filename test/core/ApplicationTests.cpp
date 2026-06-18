@@ -1,8 +1,15 @@
 #include <gtest/gtest.h>
 #include <app/Application.h>
 
+#include <SDL3/SDL.h>
+
 namespace
 {
+    void UseDummyAudioDriver()
+    {
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    }
+
     class LifecycleGame final : public Game
     {
     public:
@@ -67,6 +74,8 @@ namespace
 
 TEST(Application, RunInvokesGameLifecycleWithConfiguredEngineConfig)
 {
+    UseDummyAudioDriver();
+
     Application app(0, nullptr);
     LifecycleGame game;
 
@@ -97,6 +106,8 @@ TEST(Application, ConfigureMutatesEngineConfigBeforeRun)
 
 TEST(Application, OwnedRunDestroysGameBeforeEngineShutdown)
 {
+    UseDummyAudioDriver();
+
     OwnedLifetimeGame::EngineSeen = nullptr;
     OwnedLifetimeGame::DestructorSawLiveEngine = false;
 

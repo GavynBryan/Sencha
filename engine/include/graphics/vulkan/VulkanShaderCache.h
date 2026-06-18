@@ -75,7 +75,7 @@ class VulkanShaderCache
 {
 public:
     VulkanShaderCache(LoggingProvider& logging, VulkanDeviceService& device);
-    ~VulkanShaderCache() override;
+    ~VulkanShaderCache();
 
     VulkanShaderCache(const VulkanShaderCache&)            = delete;
     VulkanShaderCache& operator=(const VulkanShaderCache&) = delete;

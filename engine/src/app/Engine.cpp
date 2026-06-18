@@ -203,6 +203,16 @@ const PlatformServices& Engine::Platform() const
     return *PlatformState;
 }
 
+PlatformServices* Engine::TryPlatform()
+{
+    return PlatformState.get();
+}
+
+const PlatformServices* Engine::TryPlatform() const
+{
+    return PlatformState.get();
+}
+
 #ifdef SENCHA_ENABLE_VULKAN
 GraphicsServices& Engine::Graphics()
 {
@@ -214,6 +224,16 @@ const GraphicsServices& Engine::Graphics() const
 {
     assert(GraphicsState && "Engine::Graphics: valid only when windowed, between Initialize and Shutdown");
     return *GraphicsState;
+}
+
+GraphicsServices* Engine::TryGraphics()
+{
+    return GraphicsState.get();
+}
+
+const GraphicsServices* Engine::TryGraphics() const
+{
+    return GraphicsState.get();
 }
 #endif
 

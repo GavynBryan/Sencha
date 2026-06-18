@@ -45,7 +45,10 @@
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 
 namespace
 {
@@ -134,6 +137,45 @@ namespace
         double Accumulator = 0.0;
     };
 #endif
+
+    uint32_t ReadAutoExitFrameCount()
+    {
+        const char* raw = std::getenv("SENCHA_CUBE_DEMO_EXIT_AFTER_FRAMES");
+        if (raw == nullptr || raw[0] == '\0')
+            return 0;
+
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(raw, &end, 10);
+        if (end == raw || *end != '\0' || parsed == 0
+            || parsed > std::numeric_limits<uint32_t>::max())
+        {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(parsed);
+    }
+
+    struct AutoExitSystem
+    {
+        AutoExitSystem(Engine& engine, uint32_t frameCount)
+            : EngineInstance(engine)
+            , RemainingFrames(frameCount)
+        {
+        }
+
+        void EndFrame(EndFrameContext&)
+        {
+            if (RemainingFrames == 0)
+                return;
+
+            --RemainingFrames;
+            if (RemainingFrames == 0)
+                EngineInstance.RequestExit();
+        }
+
+        Engine& EngineInstance;
+        uint32_t RemainingFrames = 0;
+    };
 }
 
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
@@ -316,6 +358,8 @@ void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
 #endif
+    if (const uint32_t autoExitFrames = ReadAutoExitFrameCount(); autoExitFrames > 0)
+        ctx.Schedule.Register<AutoExitSystem>(GetEngine(), autoExitFrames);
 }
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)

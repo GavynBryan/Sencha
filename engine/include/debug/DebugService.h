@@ -20,7 +20,7 @@ public:
 	// before constructing DebugService, so it captures log output from startup.
 	DebugService(LoggingProvider& logging, DebugLogSink& sink);
 
-	~DebugService() override;
+	~DebugService();
 
 	DebugService(const DebugService&) = delete;
 	DebugService& operator=(const DebugService&) = delete;

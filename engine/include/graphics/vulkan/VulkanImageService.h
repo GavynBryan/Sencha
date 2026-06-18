@@ -62,7 +62,7 @@ public:
                        VulkanAllocatorService& allocator,
                        VulkanUploadContextService& upload,
                        VulkanDeletionQueueService& deletionQueue);
-    ~VulkanImageService() override;
+    ~VulkanImageService();
 
     VulkanImageService(const VulkanImageService&) = delete;
     VulkanImageService& operator=(const VulkanImageService&) = delete;

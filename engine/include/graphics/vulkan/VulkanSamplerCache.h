@@ -42,7 +42,7 @@ class VulkanSamplerCache
 {
 public:
     VulkanSamplerCache(LoggingProvider& logging, VulkanDeviceService& device);
-    ~VulkanSamplerCache() override;
+    ~VulkanSamplerCache();
 
     VulkanSamplerCache(const VulkanSamplerCache&) = delete;
     VulkanSamplerCache& operator=(const VulkanSamplerCache&) = delete;

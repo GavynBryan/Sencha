@@ -62,7 +62,7 @@ public:
                        VulkanSwapchainService& swapchain,
                        VulkanDeletionQueueService& deletionQueue,
                        uint32_t framesInFlight = 2);
-    ~VulkanFrameService() override;
+    ~VulkanFrameService();
 
     VulkanFrameService(const VulkanFrameService&) = delete;
     VulkanFrameService& operator=(const VulkanFrameService&) = delete;

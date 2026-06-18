@@ -17,7 +17,7 @@ public:
                                 VulkanInstanceService& instance,
                                 const VulkanBootstrapPolicy& policy,
                                 const VulkanSurfaceService* surface = nullptr);
-    ~VulkanPhysicalDeviceService() override = default;
+    ~VulkanPhysicalDeviceService() = default;
 
     VulkanPhysicalDeviceService(const VulkanPhysicalDeviceService&) = delete;
     VulkanPhysicalDeviceService& operator=(const VulkanPhysicalDeviceService&) = delete;

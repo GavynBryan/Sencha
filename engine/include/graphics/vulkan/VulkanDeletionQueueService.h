@@ -65,7 +65,7 @@ public:
     // `framesInFlight` must equal the frames-in-flight count passed to
     // VulkanFrameService so that the ring and the fence cadence stay in sync.
     VulkanDeletionQueueService(LoggingProvider& logging, uint32_t framesInFlight);
-    ~VulkanDeletionQueueService() override;
+    ~VulkanDeletionQueueService();
 
     VulkanDeletionQueueService(const VulkanDeletionQueueService&) = delete;
     VulkanDeletionQueueService& operator=(const VulkanDeletionQueueService&) = delete;

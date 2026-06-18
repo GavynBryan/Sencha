@@ -19,7 +19,7 @@ public:
     VulkanDeviceService(LoggingProvider& logging,
                         VulkanPhysicalDeviceService& physicalDevice,
                         const VulkanBootstrapPolicy& policy);
-    ~VulkanDeviceService() override;
+    ~VulkanDeviceService();
 
     VulkanDeviceService(const VulkanDeviceService&) = delete;
     VulkanDeviceService& operator=(const VulkanDeviceService&) = delete;

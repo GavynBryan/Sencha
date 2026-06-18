@@ -61,7 +61,7 @@ public:
                        VulkanPhysicalDeviceService& physicalDevice,
                        VulkanBufferService& buffers,
                        Config config);
-    ~VulkanFrameScratch() override;
+    ~VulkanFrameScratch();
 
     VulkanFrameScratch(const VulkanFrameScratch&) = delete;
     VulkanFrameScratch& operator=(const VulkanFrameScratch&) = delete;

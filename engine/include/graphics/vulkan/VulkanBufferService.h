@@ -66,7 +66,7 @@ public:
                         VulkanAllocatorService& allocator,
                         VulkanUploadContextService& upload,
                         VulkanDeletionQueueService& deletionQueue);
-    ~VulkanBufferService() override;
+    ~VulkanBufferService();
 
     VulkanBufferService(const VulkanBufferService&) = delete;
     VulkanBufferService& operator=(const VulkanBufferService&) = delete;

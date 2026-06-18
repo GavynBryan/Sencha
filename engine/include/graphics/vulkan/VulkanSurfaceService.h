@@ -12,7 +12,7 @@ public:
     VulkanSurfaceService(LoggingProvider& logging,
                          VulkanInstanceService& instance,
                          const SdlWindow& window);
-    ~VulkanSurfaceService() override;
+    ~VulkanSurfaceService();
 
     VulkanSurfaceService(const VulkanSurfaceService&) = delete;
     VulkanSurfaceService& operator=(const VulkanSurfaceService&) = delete;
