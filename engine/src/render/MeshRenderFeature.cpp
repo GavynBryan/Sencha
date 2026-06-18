@@ -123,8 +123,15 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             1, 1, &bindlessSet, 0, nullptr);
 
-    for (const RenderQueueItem& item : Queue->Opaque())
+    // Walk the sorted order (indices into Opaque()) rather than the items in
+    // insertion order. Track the last-bound buffers so the back-to-back sections
+    // of a mesh — adjacent after the sort — don't rebind identical buffers.
+    const std::vector<RenderQueueItem>& items = Queue->Opaque();
+    VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
+    VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
+    for (const uint32_t itemIndex : Queue->OpaqueOrder())
     {
+        const RenderQueueItem& item = items[itemIndex];
         const GpuStaticMesh* mesh = Meshes->Get(item.Mesh);
         const Material* material = Materials->Get(item.Material);
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
@@ -135,15 +142,23 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
         VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
         VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
-        VkDeviceSize vertexOffset = 0;
 
         MeshPushConstants push{};
         push.World = item.WorldMatrix.Transposed();
         push.BaseColor = material->BaseColor;
         push.BaseColorTextureIndex = material->BaseColorTextureIndex;
 
-        vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
-        vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        if (vertexBuffer != lastVertexBuffer)
+        {
+            VkDeviceSize vertexOffset = 0;
+            vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
+            lastVertexBuffer = vertexBuffer;
+        }
+        if (indexBuffer != lastIndexBuffer)
+        {
+            vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            lastIndexBuffer = indexBuffer;
+        }
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);

@@ -44,6 +44,12 @@ public:
     [[nodiscard]] const std::vector<RenderQueueItem>& Opaque() const { return OpaqueItems; }
     void SortOpaque();
 
+    // Draw order produced by SortOpaque(): indices into Opaque(), sorted by
+    // SortKey. Consumers walk this rather than the items so the sort never moves
+    // the 128-byte items themselves. Empty until SortOpaque() has run.
+    [[nodiscard]] const std::vector<uint32_t>& OpaqueOrder() const { return OpaqueOrderIndices; }
+
 private:
     std::vector<RenderQueueItem> OpaqueItems;
+    std::vector<uint32_t>        OpaqueOrderIndices;
 };

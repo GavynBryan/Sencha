@@ -67,10 +67,6 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
             const EntityIndex* entities = view.Entities();
             for (uint32_t i = 0; i < view.Count(); ++i)
             {
-                const EntityId childId = EntityId{
-                    entities[i],
-                    0 // generation placeholder — we look up via indexToId below
-                };
                 // Recover the full EntityId for the child from our map.
                 auto childIt = indexToId.find(entities[i]);
                 if (childIt == indexToId.end()) continue;

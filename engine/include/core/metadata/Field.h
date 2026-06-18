@@ -24,7 +24,7 @@ struct Field
     std::string_view Name;
     Member Class::* Ptr = nullptr;
     bool IsOptional = false;
-    std::optional<Member> DefaultValue;
+    std::optional<Member> DefaultValue{};
     std::uint32_t StableId = 0;
 
     Field& Optional()

@@ -109,6 +109,13 @@ target_include_directories(sencha_engine
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3)
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
+# Diagnostics: PRIVATE so they apply to the engine build without leaking onto
+# consumers. Not -Werror yet — the warning set still needs triage.
+target_compile_options(sencha_engine PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->
+)
+
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
 
@@ -133,7 +140,9 @@ if(SENCHA_ENABLE_COOK)
         "${bc7enc_SOURCE_DIR}/bc7enc.c"
         "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
     )
-    target_include_directories(sencha_engine PUBLIC "${bc7enc_SOURCE_DIR}")
+    # SYSTEM: vendored third-party headers — keep their -Wall/-Wextra noise out
+    # of the engine's own diagnostics.
+    target_include_directories(sencha_engine SYSTEM PUBLIC "${bc7enc_SOURCE_DIR}")
 
     # glTF parsing for the mesh cook (Decision B): cgltf, single-header,
     # the stb precedent. The implementation TU lives in src/assets/cook.
@@ -146,7 +155,7 @@ if(SENCHA_ENABLE_COOK)
     if(NOT cgltf_POPULATED)
         FetchContent_Populate(cgltf)
     endif()
-    target_include_directories(sencha_engine PUBLIC "${cgltf_SOURCE_DIR}")
+    target_include_directories(sencha_engine SYSTEM PUBLIC "${cgltf_SOURCE_DIR}")
 
     # Tangent generation for the mesh cook (Decision M): MikkTSpace, the
     # de-facto standard. Cook-only, never ships — the glslang rule.
@@ -160,7 +169,7 @@ if(SENCHA_ENABLE_COOK)
         FetchContent_Populate(mikktspace)
     endif()
     target_sources(sencha_engine PRIVATE "${mikktspace_SOURCE_DIR}/mikktspace.c")
-    target_include_directories(sencha_engine PUBLIC "${mikktspace_SOURCE_DIR}")
+    target_include_directories(sencha_engine SYSTEM PUBLIC "${mikktspace_SOURCE_DIR}")
 endif()
 
 if(WIN32)
@@ -176,7 +185,7 @@ FetchContent_Declare(
     GIT_TAG        ae721c50eaf761660b4f90cc590453cdb0c2acd0
 )
 FetchContent_MakeAvailable(stb)
-target_include_directories(sencha_engine PRIVATE "${stb_SOURCE_DIR}")
+target_include_directories(sencha_engine SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 
 if(SENCHA_ENABLE_VULKAN)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)
