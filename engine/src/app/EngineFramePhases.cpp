@@ -28,7 +28,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     auto& renderer = services.Get<Renderer>();
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
-    driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
+    driver.Register(FramePhase::PumpPlatform, [&game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
         SDL_Event event;
         while (SDL_PollEvent(&event))
@@ -36,7 +36,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             windows.HandleEvent(event);
 
             PlatformEventContext eventCtx{
-                .EngineInstance = engine,
                 .Config = config,
                 .Event = event,
             };
@@ -121,7 +120,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
 
     driver.Register(FramePhase::Simulate, [&engine, &config](PhaseContext& ctx) {
         FixedLogicContext logic{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -132,7 +130,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         engine.Schedule().RunFixedLogic(logic);
 
         PhysicsContext physics{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -154,7 +151,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             PropagateTransforms(ctx.Registries.Logic);
 
         PostFixedContext postFixed{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -168,7 +164,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     driver.Register(FramePhase::Update, [&engine, &config](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
         FrameUpdateContext update{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -180,7 +175,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         engine.Schedule().RunFrameUpdate(update);
 
         AudioContext audio{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -193,7 +187,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
 
     driver.Register(FramePhase::ExtractRenderPacket, [&engine, &config](PhaseContext& ctx) {
         RenderExtractContext extract{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
@@ -236,7 +229,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
         EndFrameContext endFrame{
-            .EngineInstance = engine,
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,

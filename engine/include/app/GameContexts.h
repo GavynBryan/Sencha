@@ -11,6 +11,17 @@
 
 #include <span>
 
+//=============================================================================
+// Game and frame contexts
+//
+// Each hook and frame phase receives a context carrying the per-call data its
+// consumer needs -- config, input, timing, registry views, render packets.
+// Contexts do NOT carry an engine handle. A game reaches the engine it drives
+// through Game::GetEngine() (bound once by Engine::Run); a system takes the
+// engine dependencies it needs as constructor parameters at registration. So a
+// context stays an honest statement of what its consumer may touch.
+//=============================================================================
+
 class Engine;
 class EngineSchedule;
 
@@ -28,24 +39,22 @@ struct GameConfigureContext
 //=============================================================================
 // GameStartupContext
 //
-// Provides engine and configuration access during game startup.
-// Used after engine initialization and before normal frame processing begins.
+// Per-call configuration for game startup; the engine is reached via
+// Game::GetEngine(). Runs after engine initialization, before frame processing.
 //=============================================================================
 struct GameStartupContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
 };
 
 //=============================================================================
 // GameShutdownContext
 //
-// Provides engine and configuration access during game shutdown.
-// Used for game-owned cleanup while engine services are still reachable.
+// Per-call configuration for game shutdown; the engine is reached via
+// Game::GetEngine(). Used for game-owned cleanup while services are reachable.
 //=============================================================================
 struct GameShutdownContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
 };
 
@@ -57,7 +66,6 @@ struct GameShutdownContext
 //=============================================================================
 struct SystemRegisterContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     EngineSchedule& Schedule;
 };
@@ -65,12 +73,11 @@ struct SystemRegisterContext
 //=============================================================================
 // PlatformEventContext
 //
-// Wraps an SDL platform event with engine state and a handled flag.
+// Wraps an SDL platform event with a handled flag.
 // Used by a Game to consume window, input, and platform messages.
 //=============================================================================
 struct PlatformEventContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     SDL_Event& Event;
     bool Handled = false;
@@ -84,7 +91,6 @@ struct PlatformEventContext
 //=============================================================================
 struct FixedLogicContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -101,7 +107,6 @@ struct FixedLogicContext
 //=============================================================================
 struct PhysicsContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -118,7 +123,6 @@ struct PhysicsContext
 //=============================================================================
 struct PostFixedContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -142,7 +146,6 @@ struct PostFixedContext
 //=============================================================================
 struct FrameUpdateContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -161,7 +164,6 @@ struct FrameUpdateContext
 //=============================================================================
 struct RenderExtractContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -180,7 +182,6 @@ struct RenderExtractContext
 //=============================================================================
 struct AudioContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
@@ -197,7 +198,6 @@ struct AudioContext
 //=============================================================================
 struct EndFrameContext
 {
-    Engine& EngineInstance;
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;

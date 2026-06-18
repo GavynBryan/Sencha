@@ -136,7 +136,7 @@ namespace
 
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
 {
-    Engine& engine = ctx.EngineInstance;
+    Engine& engine = GetEngine();
     ServiceHost& services = engine.Services();
     LoggingProvider& logging = engine.Logging();
     DebugService& debug = services.Get<DebugService>();
@@ -309,7 +309,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
 void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
-    RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo);
+    CaptionRuntime* captions = GetEngine().Services().TryGet<CaptionRuntime>();
+    RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo, captions);
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
 #endif
@@ -329,16 +330,16 @@ void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, true);
+        SetRelativeMouseMode(GetEngine(), true);
     }
     else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, false);
+        SetRelativeMouseMode(GetEngine(), false);
     }
     else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
     {
-        SetRelativeMouseMode(ctx.EngineInstance, false);
+        SetRelativeMouseMode(GetEngine(), false);
     }
 }
 
@@ -347,7 +348,7 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 #ifdef SENCHA_ENABLE_DEBUG_UI
     DebugOverlay = nullptr;
 #endif
-    SetRelativeMouseMode(ctx.EngineInstance, false);
+    SetRelativeMouseMode(GetEngine(), false);
 
     // Best-effort cancel if the load is still in flight; if the build is
     // mid-run on the task thread, Engine::Shutdown drops the undrained
@@ -356,7 +357,7 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
         ZoneLoader->CancelLoad(ZoneId{ 1 });
     ZoneLoader.reset();
 
-    ctx.EngineInstance.Zones().DestroyZone(ZoneId{ 1 });
+    GetEngine().Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
 }
 

@@ -408,9 +408,10 @@ propagation over live Worlds):
 - `Engine` now owns the frame pool (`ThreadPoolJobSystem`), sized by
   `EngineRuntimeConfig::JobWorkerCount` (-1 = auto `hardware_concurrency - 2`,
   0 = the engine-wide single-threaded bisect/determinism switch the rollout
-  required, positive = pinned), exposed as `Engine::Jobs()`. Game systems
-  reach it through their context's `EngineInstance` — no context surface
-  growth until a game system actually wants it.
+  required, positive = pinned), exposed as `Engine::Jobs()`. A game system
+  that needs it takes it as a constructor dependency at registration, like any
+  other engine dependency — frame contexts carry per-call data, not an engine
+  handle.
 - Transform propagation — the only millisecond-scale system — converted:
   `PropagateTransforms(JobSystem&, span)` deduplicates, then runs one zone per
   job. Legal because the propagation order cache is a World resource and

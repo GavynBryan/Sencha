@@ -190,14 +190,15 @@ int Engine::Run(Game& game)
     if (!Initialize())
         return 1;
 
+    // Bind once, before any hook, so lifecycle contexts carry data only.
+    game.AttachEngine(*this);
+
     GameStartupContext startup{
-        .EngineInstance = *this,
         .Config = Configuration,
     };
     game.OnStart(startup);
 
     SystemRegisterContext registerSystems{
-        .EngineInstance = *this,
         .Config = Configuration,
         .Schedule = EngineSystems,
     };
@@ -212,7 +213,6 @@ int Engine::Run(Game& game)
     }
 
     GameShutdownContext shutdown{
-        .EngineInstance = *this,
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
