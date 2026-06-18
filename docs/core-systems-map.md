@@ -438,7 +438,8 @@ this slice.
 
 SDL integration is split:
 
-- `SdlBootstrap` installs video/window services.
+- `PlatformServices` owns the video and window services as a group and creates
+  the primary window; `Engine` owns it as `Engine::Platform()`.
 - `SdlWindowService` owns windows and window state.
 - `SdlInputCapture` translates SDL events into `InputFrame`.
 

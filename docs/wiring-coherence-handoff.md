@@ -1,63 +1,69 @@
-# Wiring Coherence — Handoff
+# Wiring Coherence & Service Ownership — Handoff
 
 Branch: `claude/inspiring-johnson-1krl1o`
-Status: implemented across 5 commits, pushed, **not yet compiled against the
-full engine** (see Verification). Pick up from "Build-watch" and "Open
-threads".
+Status: two arcs, both implemented and pushed, **not yet compiled against the
+full engine** (see Verification). The teardown-order invariant is the one thing
+that must be validated on a real build — start there.
 
-This document is the working record for the wiring-coherence pass: why it
-happened, the architecture it establishes, what changed, and what is
-deliberately left open. Read it beside `docs/core-systems-map.md`.
+This is the working record for two connected refactors:
 
-## Why this exists
+1. **Wiring coherence** — move the engine from service-location to explicit
+   constructor injection; purge the `Engine&` god-object from contexts.
+2. **Service-ownership dissolution** — delete `ServiceHost`/`IService` and own
+   every service by name (singletons as `Engine` members; SDL and Vulkan as
+   dependency-ordered groups).
 
-An audit of `ServiceHost` found the engine had two wiring philosophies fighting
-each other:
+The second completes the first: once wiring is explicit everywhere, the locator
+that injection made redundant has no job left. Read this beside
+`docs/core-systems-map.md`.
+
+## Why this happened
+
+An audit of `ServiceHost` found two wiring philosophies fighting:
 
 - **Services and game systems** wired dependencies explicitly through
-  constructor injection (the Vulkan chain in `VulkanBootstrap` is the model).
+  constructor injection (the old `VulkanBootstrap` chain was the model).
 - **The engine's own built-in systems** plus a god-object on every context
   resolved dependencies at use time, through `ctx.EngineInstance.Services()`.
 
-On top of that, `ServiceHost` carried a large dead surface (a `ServiceProvider`
-view with zero production callers, tagged services, `GetAll`, `Remove*`, an
-interface-registration overload — all tests-only) that advertised a
-service-locator/DI architecture the engine never adopted. `LoggingProvider` sat
-inside `ServiceHost` as a privileged non-service member — the same
-first-class-vs-bag ambiguity the host's boundary is meant to remove, one level
-down.
+`ServiceHost` also carried a large dead surface (a `ServiceProvider` view with
+zero callers, tagged services, `GetAll`, `Remove*`, an interface-registration
+overload — all tests-only), advertising a service-locator/DI architecture the
+engine never adopted. And once injection was universal, the remaining
+`Get<T>()` calls were all at wiring sites that could just hold a named
+reference — so the locator contradicted the very rule we adopted.
 
-The goal was coherence: one wiring rule, a self-documenting boundary, no dead
-surface, without lobotomizing the parts that earn their place (notably the
-host's LIFO teardown, which the Vulkan stack relies on).
+The endpoint: **named ownership.** No container, no `IService` marker, explicit
+wiring, teardown by member-declaration order.
 
 ## The architecture
 
-### The boundary — three tiers, one marker
+### The boundary — three tiers
 
 The discriminator that resolves every case is **lifetime**, not "does the frame
 loop touch it" (the frame loop touches everything).
 
-| Tier | What it is | Owner | In-code signal |
-| ---- | ---------- | ----- | -------------- |
-| **Foundation** | Substrate every tier needs in order to construct at all (logging) | `Engine`, declared first | injected by reference; owned by nobody below it |
-| **Machinery** | The engine's own moving parts; lifetime must **bracket** the service set, or the Engine drives them directly each frame (schedule, zones, frame loop/driver, timing, worker lanes) | `Engine`, named members | a named `Engine::` member + accessor |
-| **Service** | A capability the engine *has*; sits in a backend dependency chain needing ordered teardown, or wraps an external/optional backend (SDL, Vulkan, Renderer, Audio, Debug, Captions) | `ServiceHost` | `: public IService` |
+| Tier | What it is | How it's owned now |
+| ---- | ---------- | ------------------ |
+| **Foundation** | Substrate every tier needs in order to construct at all (logging) | `Engine` member, declared first → destroyed last; injected by reference |
+| **Machinery** | The engine's own moving parts; lifetime must **bracket** the service set, or the Engine drives them each frame (schedule, zones, frame loop/driver, timing, worker lanes) | named `Engine::` member + accessor |
+| **Service** | A capability the engine *has*; sits in a backend dependency chain needing ordered teardown, or wraps an external/optional backend (SDL, Vulkan, Renderer, Audio, Debug, Captions) | a named `Engine` member (singletons) or a dependency-ordered group struct (`PlatformServices`, `GraphicsServices`) |
 
 Decisive cases:
 
 - **Worker lanes** (`AsyncTaskQueue`, `ThreadPoolJobSystem`) are Machinery, not
-  services, because they must be destroyed *before the entire service set*
-  (`Engine::Shutdown` joins them before `ServiceRegistry.Clear()`). A thing
-  whose lifetime must contain the services cannot live inside them.
+  services, because they must be destroyed *before the entire service set*. A
+  thing whose lifetime must contain the services cannot live inside them.
 - **Renderer** is a Service despite being driven every frame, because it is the
   apex of an 18-deep Vulkan dependency chain that must tear down in reverse
-  order — its lifetime is *inside* the service set.
+  order. It is `GraphicsServices::MainRenderer`, declared last so it is
+  destroyed first.
 - **`LoggingProvider`** is Foundation: no engine deps, needed by every service's
   constructor, must outlive them all.
 
-The self-documenting marker is `: public IService`. Its contract is written on
-the base class in `engine/include/core/service/IService.h` — read that first.
+There is no longer an `IService` marker: a "service" is now anything owned in
+the service region of `Engine` (the singleton members plus the two group
+structs). The boundary is the ownership location, made legible by name.
 
 ### The wiring law
 
@@ -67,103 +73,111 @@ the base class in `engine/include/core/service/IService.h` — read that first.
 Corollaries:
 
 - Constructors take what they need; you learn a type's dependencies by reading
-  its constructor.
-- Only the integration root — `Engine`, the bootstraps, frame-phase
-  registration — calls `Get<T>()`, and it does so once, capturing references.
-- `ServiceHost::Get/TryGet` are **wiring-time tools**, not ambient runtime
-  authority. Steady-state code holds the references it was handed.
+  its constructor (or, for a group, by reading the struct top to bottom).
+- Only the integration root — `Engine`, the group constructors, frame-phase
+  registration — assembles the graph, once.
+- Steady-state code holds the references it was handed. Access is by name
+  (`engine.Graphics().Swapchain`), compile-checked, no runtime type lookup.
 - Contexts carry per-call **data**, never an engine handle.
 
-`GameContexts.h` and `Game.h` state this contract inline.
+`GameContexts.h` and `Game.h` state the context half inline; `IService` is gone,
+and the service boundary now lives in the `Engine` member layout and the group
+structs.
 
 ## What changed (by commit)
 
-| Commit | Phase | Change |
-| ------ | ----- | ------ |
-| `568b120` | 0 | Delete `ServiceProvider`; remove tagged API, `GetAll`, `Remove*`, the interface overload; collapse the registry from `type -> vector<IService*>` to `type -> IService*`; rewrite the `ServiceHost` doc comment; trim tests; fix stale `ServiceProvider` references in logging docs. |
-| `1666474` | 1 | Promote `LoggingProvider` to an `Engine` Foundation member (`Engine::Logging()`), declared before `ServiceRegistry` so teardown order is correct by construction. `ServiceHost` no longer owns or exposes logging. `VulkanBootstrap::Install` takes `LoggingProvider&` explicitly. |
-| `605ac02` | 2 | Write the service boundary contract onto `IService`. |
-| `1e52ea0` | 3 | Constructor-inject `AudioSystem`/`CaptionSystem` (defaulted pointer — see below). `DefaultRenderPipeline` caches `VulkanSwapchainService` at `AddMeshRenderFeature` instead of reaching through the context each extract. |
-| `86982f1` | 4 | Remove `Engine& EngineInstance` from all eleven contexts. `Game` gains `AttachEngine` (called once by `Engine::Run`) and protected `GetEngine()`. CubeDemo, both test games, frame phases, `Engine::Run`, and the parallelization doc follow the contract. |
+Arc 1 — wiring coherence:
 
-### Why a defaulted pointer for the audio systems
+| Commit | Change |
+| ------ | ------ |
+| `568b120` | Delete `ServiceProvider`; remove the dead `ServiceHost` API (tagged, `GetAll`, `Remove*`, interface overload); collapse the registry to `type -> IService*`. |
+| `1666474` | Promote `LoggingProvider` to an `Engine` Foundation member; `ServiceHost` becomes services-only. |
+| `605ac02` | Write the (then-current) service boundary contract onto `IService`. |
+| `1e52ea0` | Constructor-inject `AudioSystem`/`CaptionSystem` (defaulted pointer — keeps the headless-test seam); `DefaultRenderPipeline` caches the swapchain at its wiring point. |
+| `86982f1` | Remove `Engine& EngineInstance` from all eleven contexts; `Game` gains `AttachEngine`/`GetEngine`. |
 
-`AudioSystem`/`CaptionSystem` take their service(s) as a constructor pointer
-defaulted to `nullptr`. The engine always injects a valid pointer; `nullptr` is
-the existing **headless-test seam** — the "engine-free core" `Update()` is
-driven directly by tests (including a deliberate "no audio device at all"
-caption-degrade test). Mandatory reference injection would have broken that
-seam, which is itself good design worth keeping. The member name is
-`AudioBackend`, not `Audio`, because `Audio` is the phase-method name.
+Arc 2 — service-ownership dissolution:
 
-### Why no facade for the Game
+| Commit | Change |
+| ------ | ------ |
+| `3dba55a` | Singletons (`Debug`/`Audio`/`Captions`) → named `Engine` members (`unique_ptr`, emplaced in `Initialize`, reset in reverse on teardown). |
+| `7163a79` | SDL → `PlatformServices` group (`Video`, `Windows`); `SdlBootstrap` deleted. |
+| `077db46` | Vulkan chain → `GraphicsServices` group (dependency-ordered members; delegating ctor builds the policy + chain; `IsValid()` folds the old chain check); `VulkanBootstrap` deleted. |
+| `5c0f30c` | Delete `ServiceHost` + `IService`; strip the base from 27 types; remove `Engine::Services()`; teardown is now pure member-declaration order. |
 
-`Game::OnStart` legitimately touches `Services()`, `Tasks()`, `Zones()`,
-`Runtime()`, `Timing()`, `GetRenderPipeline()` — it is the integration partner.
-Replacing the context's `Engine&` with a view that re-exposes the same surface
-would be Engine-by-another-name (indirection without reduction). Instead the
-Game holds the engine via a one-time `AttachEngine` bind and reaches it through
-`GetEngine()`; the contexts become pure data. No new interface.
+### Two design notes worth keeping
+
+- **Defaulted-pointer injection** for `AudioSystem`/`CaptionSystem`: the service
+  is a constructor pointer defaulted to `nullptr`. The engine always injects;
+  `nullptr` is the headless-test seam (the engine-free `Update()` core, incl. a
+  deliberate "no audio device" test). Member is `AudioBackend`, not `Audio`,
+  because `Audio` is the phase-method name.
+- **No facade for the Game**: `Game::OnStart` legitimately touches the whole
+  engine — it is the integration partner. It holds the engine via a one-time
+  `AttachEngine` bind and reaches it through `GetEngine()`; contexts stay pure
+  data. No new interface.
+- **`Renderer MainRenderer;`**: a member may not share its type's name (`Renderer
+  Renderer;` is ill-formed — `-Wchanges-meaning`). Only that member collided.
 
 ## Verification
 
-This environment has **no SDL3, no Vulkan, and no network** (FetchContent for
-gtest/VMA/glslang/imgui cannot run), and every test target links the full
-`sencha_engine` library. So the full engine and test suite could not be built
-here. The CI preset note confirms a headless no-Vulkan build is not supported.
+This environment has **no SDL3, no Vulkan, and no network**, and every test
+target links the full `sencha_engine` library, so the full engine and test
+suite could not be built here.
 
-Verified locally:
+Verified locally (compiled and run, standalone):
 
-- `ServiceHost` core — **compiled and run** in a throwaway TU: `AddService`
-  arg forwarding, `Get`/`TryGet`/`Has`, throw-on-missing, `Clear`. Passes.
-- `IService.h`, `ServiceHost.h`, `LoggingProvider.h`, `Logger.h` —
-  `g++ -std=c++20 -fsyntax-only`. Pass.
+- The original `ServiceHost` core (before deletion).
+- The **same-name-member** check that caught `Renderer Renderer;` (ill-formed)
+  → renamed to `MainRenderer`.
+- The **delegating-ctor + static-policy-helper + cross-referencing init-list**
+  pattern that `GraphicsServices` uses.
 
-Everything that includes SDL/Vulkan headers (the systems, contexts, `Engine`,
-`EngineFramePhases`, CubeDemo, runtime/audio tests) is **hand-reviewed but
-uncompiled**. Build locally with a Vulkan SDK + SDL3 (`cmake --preset dev`).
+Everything that includes SDL/Vulkan headers is **hand-reviewed but uncompiled**.
+Build locally with a Vulkan SDK + SDL3 (`cmake --preset dev`).
 
-## Build-watch (most likely snags when you compile)
+## Build-watch (in priority order)
 
-1. **Removed includes.** `<app/Engine.h>` and `<core/service/ServiceHost.h>`
-   were dropped from `AudioSystem.cpp`, `CaptionSystem.cpp`, and
-   `DefaultRenderPipeline.cpp` (they no longer reach through the engine). Each
-   symbol they still use was traced to another include, but a transitive
-   surprise is the single most likely failure. Fix is a one-line `#include`.
-2. **`EngineScheduleTests.cpp`** now has an unused `<app/Engine.h>` (the harness
-   no longer constructs an `Engine`). Harmless; left in to avoid guessing.
-3. **Non-Vulkan builds:** `DefaultRenderPipeline::Swapchain` is an unused
-   private field. No `-Werror` in the build, so it is only a warning.
-4. **Designated initializers:** contexts now lead with `.Config`. If you add a
-   field, keep declaration order matching initialization order.
+1. **Teardown order is the whole risk.** It is now encoded in member
+   declaration order. Inside `GraphicsServices`, the Vulkan services are
+   declared in dependency order with `MainRenderer` last (destroyed first);
+   `GraphicsState` is declared after `PlatformState`, so Vulkan tears down
+   before the SDL window. **Validate with Vulkan validation layers** — a wrong
+   order is a use-after-free in shutdown, and it is the one thing that cannot be
+   checked without a GPU build.
+2. **`GraphicsServices` init list** mirrors the deleted `VulkanBootstrap::
+   Install` argument-for-argument (18 constructions transcribed by hand). Worth
+   a read against `git show 077db46^:engine/src/graphics/vulkan/VulkanBootstrap.cpp`.
+3. **Removed includes** across the systems/pipeline files — each symbol was
+   traced to another include, but a transitive surprise is a likely small
+   failure. Fix is a one-line `#include`.
+4. **Conditional presence:** `GraphicsState`/`Graphics()` are
+   `#ifdef SENCHA_ENABLE_VULKAN`-gated (the `unique_ptr` deleter needs the
+   complete type). `SENCHA_ENABLE_VULKAN` is a `PUBLIC` definition, so the
+   `Engine` layout is consistent across consumers.
 
 ## Open threads / not done
 
-- **Phase 5 (naming):** `CaptionRuntime` lives in the host but its name connotes
-  Machinery (collides with `ZoneRuntime`). Once `: public IService` is the real
-  signal this matters less; aligning it (`CaptionService`) would make tier
-  legible from the identifier. Optional, low value, rename churn — not done
-  blind.
-- **CubeDemo `SetRelativeMouseMode`** still resolves `SdlWindowService` via
-  `GetEngine().Services()` on each mouse event. Event-time, through the bound
-  engine (not a context god-object), so it honors the law. A stricter form
-  caches the window service at `OnStart`. Left as-is — it is example code and
-  the extra state did not seem worth it.
+- **Naming:** `CaptionRuntime` connotes Machinery (collides with `ZoneRuntime`)
+  but is a service. Renaming (`CaptionService`) would make the tier legible from
+  the identifier. Low value, rename churn — not done.
+- **CubeDemo `SetRelativeMouseMode`** resolves `SdlWindowService` via
+  `GetEngine().Platform().Windows` on each mouse event. Event-time, through the
+  bound engine (not a context god-object), so it honors the law. A stricter form
+  caches the window service at `OnStart`. Left as-is — example code.
 - **Asset ownership:** `RuntimeAssets` is game-owned in CubeDemo (a known gap in
-  `core-systems-map.md`). Adjacent to wiring but a separate concern — out of
-  scope here.
-- **`ServiceHost` vs `EngineSchedule`:** both have a typed `Get<T>`. They are
-  deliberately *not* merged — they own different tiers (services vs systems),
-  and `EngineSchedule` additionally topo-sorts and dispatches phases. The
-  duplication is now justified by the taxonomy rather than accidental.
+  `core-systems-map.md`). Adjacent but a separate concern.
+- **Runtime dependency graph (dropped):** a debug-menu view of the service graph
+  was considered and dropped. If revived, it re-justifies recording nodes/edges
+  at the wiring site — see the discussion that produced this refactor.
 
 ## Where to look in the code
 
 | Topic | File |
 | ----- | ---- |
-| Service boundary contract | `engine/include/core/service/IService.h` |
-| The host (ownership + LIFO + typed lookup) | `engine/include/core/service/ServiceHost.h` |
-| Foundation ownership + teardown order | `engine/include/app/Engine.h` (member order), `engine/src/app/Engine.cpp` (`Shutdown`, fail-init) |
+| Service ownership + teardown order | `engine/include/app/Engine.h` (member order), `engine/src/app/Engine.cpp` (`Initialize`/`Shutdown`/fail-init, accessors) |
+| Vulkan group (the dependency graph, in source) | `engine/include/graphics/vulkan/GraphicsServices.h`, `engine/src/graphics/vulkan/GraphicsServices.cpp` |
+| SDL group | `engine/include/platform/PlatformServices.h` |
 | Context contract | `engine/include/app/GameContexts.h` (header note), `engine/include/app/Game.h` (`AttachEngine`/`GetEngine`) |
 | Built-in system injection | `engine/src/app/Engine.cpp` (`Initialize`) |
 | Frame-phase wiring (capture-once pattern) | `engine/src/app/EngineFramePhases.cpp` |
