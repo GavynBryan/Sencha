@@ -1,6 +1,9 @@
 #include "EditorUiSkin.h"
 
+#include "EditorSkin.h"
 #include "EditorUiStyle.h"
+
+#include <algorithm>
 
 namespace
 {
@@ -11,6 +14,48 @@ constexpr float kBandTop   = 0.14f; // band top highlight
 constexpr float kBandBot   = 0.12f; // band bottom darken
 constexpr float kPanelTop  = 0.06f; // panel backdrop top lighten
 constexpr float kPanelBot  = 0.05f; // panel backdrop bottom darken
+
+// Active texture skin (set at init); null => gradient fallback.
+const EditorSkin* g_Skin = nullptr;
+}
+
+void EditorUiSkin::SetActiveSkin(const EditorSkin* skin)
+{
+    g_Skin = skin;
+}
+
+void EditorUiSkin::Draw9Slice(ImDrawList* dl, const ImVec2& mn, const ImVec2& mx,
+                              const SkinElement& s, ImU32 tint)
+{
+    const float w = s.Size.x, h = s.Size.y;
+    const float u1 = s.Inset / w, u2 = 1.0f - s.Inset / w;
+    const float v1 = s.Inset / h, v2 = 1.0f - s.Inset / h;
+    // Clamp the dest border so it never exceeds half the rect (small widgets).
+    const float di = std::min(s.Inset, std::min((mx.x - mn.x) * 0.5f, (mx.y - mn.y) * 0.5f));
+    const float x0 = mn.x, x1 = mn.x + di, x2 = mx.x - di, x3 = mx.x;
+    const float y0 = mn.y, y1 = mn.y + di, y2 = mx.y - di, y3 = mx.y;
+    const ImTextureID t = s.Texture;
+    const auto cell = [&](float ax, float ay, float bx, float by,
+                          float au, float av, float bu, float bv) {
+        dl->AddImage(t, ImVec2(ax, ay), ImVec2(bx, by), ImVec2(au, av), ImVec2(bu, bv), tint);
+    };
+    cell(x0, y0, x1, y1, 0,  0,  u1, v1); cell(x1, y0, x2, y1, u1, 0,  u2, v1); cell(x2, y0, x3, y1, u2, 0,  1,  v1);
+    cell(x0, y1, x1, y2, 0,  v1, u1, v2); cell(x1, y1, x2, y2, u1, v1, u2, v2); cell(x2, y1, x3, y2, u2, v1, 1,  v2);
+    cell(x0, y2, x1, y3, 0,  v2, u1, 1 ); cell(x1, y2, x2, y3, u1, v2, u2, 1 ); cell(x2, y2, x3, y3, u2, v2, 1,  1 );
+}
+
+void EditorUiSkin::GlowText(const ImVec2& pos, ImU32 textColor, const ImVec4& glowColor, const char* text)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 halo = ImGui::GetColorU32(WithAlpha(glowColor, 0.30f));
+    const float o = 1.0f;
+    const ImVec2 offs[8] = {
+        { -o, 0 }, { o, 0 }, { 0, -o }, { 0, o },
+        { -o, -o }, { o, -o }, { -o, o }, { o, o },
+    };
+    for (const ImVec2& d : offs)
+        dl->AddText(ImVec2(pos.x + d.x, pos.y + d.y), halo, text);
+    dl->AddText(pos, textColor, text);
 }
 
 ImVec4 EditorUiSkin::Lighten(const ImVec4& c, float a)
@@ -47,6 +92,12 @@ void EditorUiSkin::GradientBevel(ImDrawList* dl, const ImVec2& mn, const ImVec2&
 
 void EditorUiSkin::Band(ImDrawList* dl, const ImVec2& mn, const ImVec2& mx, const ImVec4& base)
 {
+    if (g_Skin != nullptr && g_Skin->Band.Valid())
+    {
+        Draw9Slice(dl, mn, mx, g_Skin->Band, IM_COL32_WHITE);
+        return;
+    }
+
     const ImU32 top = ImGui::GetColorU32(Lighten(base, kBandTop));
     const ImU32 bot = ImGui::GetColorU32(Darken(base, kBandBot));
     dl->AddRectFilledMultiColor(mn, mx, top, top, bot, bot);
@@ -69,10 +120,21 @@ bool EditorUiSkin::Button(const char* id, const char* label, const ImVec2& size,
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 mx(pos.x + size.x, pos.y + size.y);
 
-    const ImVec4 base = active ? EditorUi::AccentDim
-                      : hovered ? EditorUi::FrameBgHovered
-                                : EditorUi::FrameBg;
-    GradientBevel(dl, pos, mx, base, /*raised=*/!held);
+    if (g_Skin != nullptr && g_Skin->Button.Valid())
+    {
+        // Neutral metal face, tinted cyan when active; pressed darkens slightly.
+        const ImU32 tint = active ? ImGui::GetColorU32(EditorUi::AccentHover)
+                         : held   ? ImGui::GetColorU32(WithAlpha(EditorUi::TextPrimary, 0.85f))
+                                  : IM_COL32_WHITE;
+        Draw9Slice(dl, pos, mx, g_Skin->Button, tint);
+    }
+    else
+    {
+        const ImVec4 base = active ? EditorUi::AccentDim
+                          : hovered ? EditorUi::FrameBgHovered
+                                    : EditorUi::FrameBg;
+        GradientBevel(dl, pos, mx, base, /*raised=*/!held);
+    }
 
     if (hovered || active)
     {
@@ -99,6 +161,13 @@ void EditorUiSkin::PanelBackdrop()
     const ImVec2 mx(wpos.x + wsize.x, wpos.y + wsize.y);
     if (mx.x <= mn.x || mx.y <= mn.y)
         return;
+
+    if (g_Skin != nullptr && g_Skin->Frame.Valid())
+    {
+        // Beveled metal frame + dark interior over the panel body.
+        Draw9Slice(dl, mn, mx, g_Skin->Frame, IM_COL32_WHITE);
+        return;
+    }
 
     const ImU32 top = ImGui::GetColorU32(Lighten(EditorUi::PanelBg, kPanelTop));
     const ImU32 bot = ImGui::GetColorU32(Darken(EditorUi::PanelBg, kPanelBot));

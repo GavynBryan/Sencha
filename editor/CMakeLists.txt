@@ -81,4 +81,5 @@ target_compile_definitions(sencha_editor PRIVATE
     # install path; for now editor visuals (e.g. camera.glb) load from source.
     SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
     SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fonts"
+    SENCHA_EDITOR_SKIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/skin"
 )

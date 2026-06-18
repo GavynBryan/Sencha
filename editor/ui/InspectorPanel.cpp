@@ -1,6 +1,7 @@
 #include "InspectorPanel.h"
 
 #include "EditorUiSkin.h"
+#include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -240,8 +242,12 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text(ICON_FA_CUBE "  Entity %u", entity.Index);
+    // Glowing accent title.
+    char title[64];
+    std::snprintf(title, sizeof(title), ICON_FA_CUBE "  Entity %u", entity.Index);
+    EditorUiSkin::GlowText(ImGui::GetCursorScreenPos(),
+                           ImGui::GetColorU32(EditorUi::AccentHover), EditorUi::Accent, title);
+    ImGui::Dummy(ImGui::CalcTextSize(title));
     ImGui::SameLine();
     ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();

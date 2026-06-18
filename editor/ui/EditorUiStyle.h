@@ -12,10 +12,10 @@ namespace EditorUi
 // glowing cyan accent and saturated VU secondaries (green/amber/magenta). The
 // EditorUiSkin draw-list layer turns these into glossy beveled gradients; the raw
 // colors stay vivid so the highlights actually glow. (10-editor-ui-look-and-feel.md.)
-inline const ImVec4 WindowBg       = ImVec4(0.020f, 0.027f, 0.035f, 1.0f); // app void, near black
-inline const ImVec4 PanelBg        = ImVec4(0.039f, 0.051f, 0.063f, 1.0f); // panel gunmetal
-inline const ImVec4 HeaderBg       = ImVec4(0.063f, 0.082f, 0.098f, 1.0f); // titles/menus, raised
-inline const ImVec4 FrameBg        = ImVec4(0.012f, 0.020f, 0.027f, 1.0f); // inset wells, darkest
+inline const ImVec4 WindowBg       = ImVec4(0.012f, 0.016f, 0.022f, 1.0f); // app void, near black
+inline const ImVec4 PanelBg        = ImVec4(0.031f, 0.043f, 0.055f, 1.0f); // panel gunmetal
+inline const ImVec4 HeaderBg       = ImVec4(0.047f, 0.063f, 0.078f, 1.0f); // titles/menus, raised
+inline const ImVec4 FrameBg        = ImVec4(0.008f, 0.014f, 0.020f, 1.0f); // inset wells, darkest
 inline const ImVec4 FrameBgHovered = ImVec4(0.067f, 0.098f, 0.118f, 1.0f);
 inline const ImVec4 FrameBgActive  = ImVec4(0.094f, 0.137f, 0.165f, 1.0f);
 inline const ImVec4 Border         = ImVec4(0.133f, 0.180f, 0.204f, 1.0f); // hairline steel

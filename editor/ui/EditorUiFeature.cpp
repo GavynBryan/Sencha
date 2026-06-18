@@ -1,5 +1,6 @@
 #include "EditorUiFeature.h"
 
+#include "EditorSkin.h"
 #include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
@@ -357,6 +358,17 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     }
     VulkanBackendReady = true;
 
+    // Load the 9-slice texture skin (soft dependency: if it fails, EditorUiSkin
+    // keeps its gradient rendering). Needs the Vulkan backend up (AddTexture).
+    if (services.Images != nullptr && services.Samplers != nullptr)
+    {
+        Skin = std::make_unique<EditorSkin>(*services.Images, *services.Samplers, SENCHA_EDITOR_SKIN_DIR);
+        if (Skin->Loaded())
+            EditorUiSkin::SetActiveSkin(Skin.get());
+        else if (Log)
+            Log->Warn("EditorUiFeature: skin textures not loaded; using gradient fallback");
+    }
+
     return true;
 }
 
@@ -364,6 +376,11 @@ void EditorUiFeature::ShutdownImGui()
 {
     if (DeviceHandle != VK_NULL_HANDLE)
         vkDeviceWaitIdle(DeviceHandle);
+
+    // Release the skin (its ImGui descriptor sets + images) while the backend and
+    // image service are still alive.
+    EditorUiSkin::SetActiveSkin(nullptr);
+    Skin.reset();
 
     if (VulkanBackendReady)
         ImGui_ImplVulkan_Shutdown();

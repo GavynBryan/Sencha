@@ -2,6 +2,9 @@
 
 #include <imgui.h>
 
+struct SkinElement;
+class EditorSkin;
+
 // Draw-list "skin" layer that turns the flat ImGui chrome into a glossy, beveled
 // 2003-Winamp-style metal skin: vertical gradients, 1px bevels, and accent glow.
 // Every color derives from the EditorUi palette (no literals), so the theme stays
@@ -32,4 +35,17 @@ bool Button(const char* id, const char* label, const ImVec2& size, bool active);
 // Subtle top-lit gradient + inner top bevel over the current window's content
 // area, giving panels depth. Call once right after a panel's Begin().
 void PanelBackdrop();
+
+// Sets the active texture skin (or nullptr). When set, Band/Button/PanelBackdrop
+// render from its 9-slice textures; when null they use the gradient fallback above.
+// Module-level, mirroring ImGui's global font/style model — set once at init.
+void SetActiveSkin(const EditorSkin* skin);
+
+// Draws `element`'s texture as a 9-slice stretched over [mn,mx], multiplied by tint.
+void Draw9Slice(ImDrawList* dl, const ImVec2& mn, const ImVec2& mx,
+                const SkinElement& element, ImU32 tint);
+
+// Text with a soft accent halo (drawn a few times at small offsets) then crisp on
+// top — for titles / accent labels. Body text should stay plain.
+void GlowText(const ImVec2& pos, ImU32 textColor, const ImVec4& glowColor, const char* text);
 }
