@@ -44,27 +44,30 @@ bool Engine::Initialize()
         logging.AddSink<ConsoleLogSink>();
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
-    ServiceRegistry.AddService<DebugService>(logging, debugLog);
+    DebugState = std::make_unique<DebugService>(logging, debugLog);
     EngineSystems.Register<DefaultRenderPipeline>();
 
     // Audio backend + the system that drives scene AudioSourceComponents
     // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
     // is non-fatal: the system no-ops, the engine runs silent.
-    auto& audioService = ServiceRegistry.AddService<AudioService>(logging, Configuration.Audio);
-    EngineSystems.Register<AudioSystem>(&audioService);
+    AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
+    EngineSystems.Register<AudioSystem>(AudioState.get());
 
     // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
     // No device dependency — always valid, headless included. CaptionSystem
     // registers after AudioSystem so voices started or swept this frame are
     // captioned/retired the same frame.
-    auto& captionRuntime = ServiceRegistry.AddService<CaptionRuntime>(logging, Configuration.Captions);
-    EngineSystems.Register<CaptionSystem>(&captionRuntime, &audioService);
+    CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
+    EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
         ServiceRegistry.Clear();
+        CaptionState.reset();
+        AudioState.reset();
+        DebugState.reset();
         LoggingState.Clear();
         FramePhasesRegistered = false;
         Running = false;
@@ -135,10 +138,49 @@ void Engine::Shutdown()
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
     ServiceRegistry.Clear();
+    CaptionState.reset();
+    AudioState.reset();
+    DebugState.reset();
     LoggingState.Clear();
     FramePhasesRegistered = false;
     Initialized = false;
     Running = false;
+}
+
+DebugService& Engine::Debug()
+{
+    assert(DebugState && "Engine::Debug: valid only between Initialize and Shutdown");
+    return *DebugState;
+}
+
+const DebugService& Engine::Debug() const
+{
+    assert(DebugState && "Engine::Debug: valid only between Initialize and Shutdown");
+    return *DebugState;
+}
+
+AudioService& Engine::Audio()
+{
+    assert(AudioState && "Engine::Audio: valid only between Initialize and Shutdown");
+    return *AudioState;
+}
+
+const AudioService& Engine::Audio() const
+{
+    assert(AudioState && "Engine::Audio: valid only between Initialize and Shutdown");
+    return *AudioState;
+}
+
+CaptionRuntime& Engine::Captions()
+{
+    assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
+    return *CaptionState;
+}
+
+const CaptionRuntime& Engine::Captions() const
+{
+    assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
+    return *CaptionState;
 }
 
 JobSystem& Engine::Jobs()

@@ -12,6 +12,9 @@
 #include <memory>
 
 class AsyncTaskQueue;
+class AudioService;
+class CaptionRuntime;
+class DebugService;
 class FrameDriver;
 class Game;
 class JobSystem;
@@ -52,6 +55,14 @@ public:
     [[nodiscard]] ServiceHost& Services() { return ServiceRegistry; }
     [[nodiscard]] const ServiceHost& Services() const { return ServiceRegistry; }
 
+    // Always-present singleton services. Valid between Initialize and Shutdown.
+    [[nodiscard]] DebugService& Debug();
+    [[nodiscard]] const DebugService& Debug() const;
+    [[nodiscard]] AudioService& Audio();
+    [[nodiscard]] const AudioService& Audio() const;
+    [[nodiscard]] CaptionRuntime& Captions();
+    [[nodiscard]] const CaptionRuntime& Captions() const;
+
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
 
@@ -89,6 +100,13 @@ private:
     // declaration order, so logging outlives the services and systems whose
     // destructors may log.
     LoggingProvider LoggingState;
+    // Always-present services, valid between Initialize and Shutdown. Declared
+    // after LoggingState (they may log on teardown) and before ServiceRegistry
+    // (they do not depend on the SDL/Vulkan services, so they tear down after
+    // them).
+    std::unique_ptr<DebugService> DebugState;
+    std::unique_ptr<AudioService> AudioState;
+    std::unique_ptr<CaptionRuntime> CaptionState;
     ServiceHost ServiceRegistry;
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;

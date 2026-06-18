@@ -139,7 +139,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     Engine& engine = GetEngine();
     ServiceHost& services = engine.Services();
     LoggingProvider& logging = engine.Logging();
-    DebugService& debug = services.Get<DebugService>();
+    DebugService& debug = engine.Debug();
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();
     auto& images = services.Get<VulkanImageService>();
@@ -240,8 +240,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialCache* materials = &runtimeAssets.Materials;
     AudioClipCache* audioClips = &runtimeAssets.AudioClips;
-    AudioService* audio = services.TryGet<AudioService>();
-    CaptionRuntime* captions = services.TryGet<CaptionRuntime>();
+    AudioService* audio = &engine.Audio();
+    CaptionRuntime* captions = &engine.Captions();
     if (captions != nullptr)
     {
         CaptionSettings captionSettings;
@@ -309,7 +309,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
 void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
-    CaptionRuntime* captions = GetEngine().Services().TryGet<CaptionRuntime>();
+    CaptionRuntime* captions = &GetEngine().Captions();
     RegisterCubeDemoSystems(ctx.Schedule, DemoRegistry, FreeCam, Demo, captions);
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(Watcher, Reloader);
