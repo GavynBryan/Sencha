@@ -62,42 +62,24 @@ void EditorConsolePanel::OnDraw()
     ImGui::InputText("Category", CategoryFilterBuf, sizeof(CategoryFilterBuf));
 
     ImGui::Separator();
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##editor_console_command", CommandBuf, sizeof(CommandBuf),
-                         ImGuiInputTextFlags_EnterReturnsTrue)
-        && CommandBuf[0] != '\0')
-    {
-        CommandOutput.push_back({
-            .Severity = ConsoleOutputSeverity::Info,
-            .Channel = "input",
-            .Text = std::string("> ") + CommandBuf,
-        });
-        ConsoleResult result =
-            Console.ExecuteLine(CommandBuf, { .Description = "editor console ui" }, false);
-        CommandOutput.insert(CommandOutput.end(), result.Output.begin(), result.Output.end());
-        CommandBuf[0] = '\0';
-        ImGui::SetKeyboardFocusHere(-1);
-    }
 
-    ImGui::BeginChild("ConsoleScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-    // Sticky auto-scroll: follow the tail only while the user is already pinned to
-    // the bottom (measured before this frame's content is appended). Otherwise leave
-    // the scroll position alone so the user can scroll up and read history.
-    const bool wasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY();
+    // Output region, sized to leave the command input pinned at the bottom (the
+    // input is drawn after this child — terminal layout, newest output above it).
+    const float footerHeight = ImGui::GetFrameHeightWithSpacing();
+    ImGui::BeginChild("ConsoleScroll", ImVec2(0.0f, -footerHeight), false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+
+    // Sticky auto-scroll: follow the tail while the user is already pinned to the
+    // bottom (measured before this frame's content), or right after a command. Both
+    // streams render oldest->newest, so the most recent line sits at the bottom.
+    const bool stick = ScrollToBottom || ImGui::GetScrollY() >= ImGui::GetScrollMaxY();
+    ScrollToBottom = false;
+
     if (ImFont* mono = EditorUi::MonoFont())
         ImGui::PushFont(mono);
-    for (const ConsoleOutputEntry& entry : CommandOutput)
-    {
-        ImVec4 color = EditorUi::TextPrimary;
-        if (entry.Severity == ConsoleOutputSeverity::Warning)
-            color = EditorUi::Warning;
-        else if (entry.Severity == ConsoleOutputSeverity::Error)
-            color = EditorUi::Danger;
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::TextUnformatted(entry.Text.c_str());
-        ImGui::PopStyleColor();
-    }
 
+    // Engine log feed first (chronological); the user's command transcript renders
+    // below it so it stays just above the input box.
     const std::string_view categoryFilter(CategoryFilterBuf);
     for (std::size_t i = 0; i < Sink.Count(); ++i)
     {
@@ -113,10 +95,44 @@ void EditorConsolePanel::OnDraw()
         ImGui::Text("[%s] %s", e.Category.c_str(), e.Message.c_str());
         ImGui::PopStyleColor();
     }
+
+    for (const ConsoleOutputEntry& entry : CommandOutput)
+    {
+        ImVec4 color = EditorUi::TextPrimary;
+        if (entry.Severity == ConsoleOutputSeverity::Warning)
+            color = EditorUi::Warning;
+        else if (entry.Severity == ConsoleOutputSeverity::Error)
+            color = EditorUi::Danger;
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextUnformatted(entry.Text.c_str());
+        ImGui::PopStyleColor();
+    }
+
     if (EditorUi::MonoFont())
         ImGui::PopFont();
-    if (wasAtBottom)
+    if (stick)
         ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
+
+    // Command input, pinned at the bottom.
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::InputText("##editor_console_command", CommandBuf, sizeof(CommandBuf),
+                         ImGuiInputTextFlags_EnterReturnsTrue)
+        && CommandBuf[0] != '\0')
+    {
+        CommandOutput.push_back({
+            .Severity = ConsoleOutputSeverity::Info,
+            .Channel = "input",
+            .Text = std::string("> ") + CommandBuf,
+        });
+        ConsoleResult result =
+            Console.ExecuteLine(CommandBuf, { .Description = "editor console ui" }, false);
+        CommandOutput.insert(CommandOutput.end(), result.Output.begin(), result.Output.end());
+        CommandBuf[0] = '\0';
+        ScrollToBottom = true;
+        ImGui::SetKeyboardFocusHere(-1);
+    }
+
     ImGui::End();
 }

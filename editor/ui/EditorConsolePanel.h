@@ -28,4 +28,6 @@ private:
     char CategoryFilterBuf[128] = {};
     char CommandBuf[256] = {};
     std::vector<ConsoleOutputEntry> CommandOutput;
+    // Set when a command is entered so the next frame snaps the view to the tail.
+    bool ScrollToBottom = false;
 };

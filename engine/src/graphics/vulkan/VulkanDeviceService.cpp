@@ -78,6 +78,10 @@ bool VulkanDeviceService::CreateLogicalDevice(
     v13.pNext = &v12;
     v13.synchronization2 = VK_TRUE;
     v13.dynamicRendering = VK_TRUE;
+    // Fragment shaders that `discard` (e.g. the editor grid) make glslang emit the
+    // SPIR-V DemoteToHelperInvocation capability, which requires this feature.
+    // Core in Vulkan 1.3 (already required), so enabling it is free + portable.
+    v13.shaderDemoteToHelperInvocation = VK_TRUE;
 
     void* featuresChainHead = &v13;
 
