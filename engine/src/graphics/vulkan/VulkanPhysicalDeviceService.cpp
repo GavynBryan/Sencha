@@ -151,7 +151,12 @@ int VulkanPhysicalDeviceService::RateDevice(
 
         vkGetPhysicalDeviceFeatures2(device, &features2);
 
-        if (!v13.synchronization2 || !v13.dynamicRendering)
+        // shaderDemoteToHelperInvocation: SPIR-V 1.6 (mandated by Vulkan 1.3)
+        // deprecates OpKill, so glslang lowers `discard` to OpDemoteToHelperInvocation
+        // (used by the editor grid shader). Core-mandatory in 1.3, but verified here
+        // so every feature the device service enables is also required at selection —
+        // no enabling a feature without a matching check.
+        if (!v13.synchronization2 || !v13.dynamicRendering || !v13.shaderDemoteToHelperInvocation)
         {
             return -1;
         }
