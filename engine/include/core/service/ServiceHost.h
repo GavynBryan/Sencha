@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/service/IService.h>
-#include <core/logging/LoggingProvider.h>
 #include <stdexcept>
 #include <string>
 #include <typeindex>
@@ -60,13 +59,9 @@ public:
 
 	void Clear();
 
-	LoggingProvider& GetLoggingProvider() { return Logging; }
-	const LoggingProvider& GetLoggingProvider() const { return Logging; }
-
 private:
 	std::vector<std::unique_ptr<IService>> Services;
 	std::unordered_map<std::type_index, IService*> Registry;
-	LoggingProvider Logging;
 };
 
 template <typename T, typename... Args>
@@ -123,5 +118,4 @@ inline void ServiceHost::Clear()
 	{
 		Services.pop_back();
 	}
-	Logging.Clear();
 }

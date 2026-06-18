@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/logging/ConsoleLogSink.h>
-#include <core/service/ServiceHost.h>
 #include <debug/DebugLogSink.h>
 
 // --- Test sink that captures messages ---
@@ -174,16 +173,14 @@ TEST(DebugLogSink, ZeroCapacityDropsMessages)
 	EXPECT_EQ(sink.Count(), 0u);
 }
 
-// --- ServiceHost integration tests ---
-
-TEST(LoggingProvider, AccessibleViaServiceHost)
+TEST(LoggingProvider, AddSinkAndGetLoggerDeliverMessage)
 {
-	ServiceHost host;
-	auto& sink = host.GetLoggingProvider().AddSink<TestLogSink>();
+	LoggingProvider provider;
+	auto& sink = provider.AddSink<TestLogSink>();
 
-	auto& logger = host.GetLoggingProvider().GetLogger<BetaSystem>();
-	logger.Info("from host");
+	auto& logger = provider.GetLogger<BetaSystem>();
+	logger.Info("from provider");
 
 	ASSERT_EQ(sink.Entries.size(), 1u);
-	EXPECT_EQ(sink.Entries[0].Message, "from host");
+	EXPECT_EQ(sink.Entries[0].Message, "from provider");
 }

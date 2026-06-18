@@ -138,7 +138,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 {
     Engine& engine = ctx.EngineInstance;
     ServiceHost& services = engine.Services();
-    LoggingProvider& logging = services.GetLoggingProvider();
+    LoggingProvider& logging = engine.Logging();
     DebugService& debug = services.Get<DebugService>();
     DebugLogSink& debugLog = debug.GetLogSink();
     auto& buffers = services.Get<VulkanBufferService>();

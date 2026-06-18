@@ -3,6 +3,7 @@
 #include <app/DefaultRenderPipeline.h>
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/service/ServiceHost.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
@@ -42,6 +43,12 @@ public:
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const { return Configuration; }
 
+    // Foundation: owned before any service or system so it outlives everything
+    // that logs during teardown. Injected by reference into the things that
+    // need it; never registered as a service.
+    [[nodiscard]] LoggingProvider& Logging() { return LoggingState; }
+    [[nodiscard]] const LoggingProvider& Logging() const { return LoggingState; }
+
     [[nodiscard]] ServiceHost& Services() { return ServiceRegistry; }
     [[nodiscard]] const ServiceHost& Services() const { return ServiceRegistry; }
 
@@ -78,6 +85,10 @@ private:
     void RegisterFramePhases(Game& game);
 
     EngineConfig Configuration;
+    // Declared before ServiceRegistry/EngineSystems: members destroy in reverse
+    // declaration order, so logging outlives the services and systems whose
+    // destructors may log.
+    LoggingProvider LoggingState;
     ServiceHost ServiceRegistry;
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;

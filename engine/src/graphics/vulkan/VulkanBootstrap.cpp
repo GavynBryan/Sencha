@@ -26,11 +26,10 @@
 
 bool VulkanBootstrap::Install(ServiceHost& services,
                               const EngineConfig& config,
+                              LoggingProvider& logging,
                               SdlWindow& window,
                               SdlWindowService& windows)
 {
-    LoggingProvider& logging = services.GetLoggingProvider();
-
     VulkanBootstrapPolicy policy;
     policy.AppName = config.App.Name;
     policy.EnableValidation = config.Graphics.EnableValidation;

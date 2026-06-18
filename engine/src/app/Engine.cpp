@@ -39,7 +39,7 @@ bool Engine::Initialize()
     if (Initialized)
         return true;
 
-    LoggingProvider& logging = ServiceRegistry.GetLoggingProvider();
+    LoggingProvider& logging = LoggingState;
     if (Configuration.Debug.ConsoleLogging)
         logging.AddSink<ConsoleLogSink>();
 
@@ -65,6 +65,7 @@ bool Engine::Initialize()
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
         ServiceRegistry.Clear();
+        LoggingState.Clear();
         FramePhasesRegistered = false;
         Running = false;
         return false;
@@ -107,7 +108,7 @@ bool Engine::Initialize()
     }
 
     auto& windows = ServiceRegistry.Get<SdlWindowService>();
-    if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, *window, windows))
+    if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, logging, *window, windows))
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
@@ -134,6 +135,7 @@ void Engine::Shutdown()
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
     ServiceRegistry.Clear();
+    LoggingState.Clear();
     FramePhasesRegistered = false;
     Initialized = false;
     Running = false;
