@@ -242,12 +242,10 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    // Glowing accent title.
+    // Plain accent title (the glow is reserved for panel titles now).
     char title[64];
     std::snprintf(title, sizeof(title), ICON_FA_CUBE "  Entity %u", entity.Index);
-    EditorUiSkin::GlowText(ImGui::GetCursorScreenPos(),
-                           ImGui::GetColorU32(EditorUi::AccentHover), EditorUi::Accent, title);
-    ImGui::Dummy(ImGui::CalcTextSize(title));
+    ImGui::TextColored(EditorUi::Accent, "%s", title);
     ImGui::SameLine();
     ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();

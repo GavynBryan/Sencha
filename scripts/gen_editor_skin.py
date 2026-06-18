@@ -25,8 +25,8 @@ BORDER      = np.array([28, 58, 58])    # #1C3A3A  steel border
 TEAL        = np.array([0, 229, 204])   # #00E5CC  primary accent (glow)
 TEAL_DIM    = np.array([0, 90, 80])     # dimmed teal for the soft edge glow
 
-INTERIOR_HI = FRAME_BG + 4              # subtle interior gradient
-INTERIOR_LO = FRAME_BG - 3
+INTERIOR_HI = FRAME_BG + 2              # subtle interior gradient (kept faint: the
+INTERIOR_LO = FRAME_BG - 1              # 9-slice center is stretched across the panel)
 
 rng = np.random.default_rng(0x5E11CA)  # deterministic noise
 
@@ -79,14 +79,16 @@ def save(name, rgb, alpha=255):
 
 
 def gen_frame():
-    """48x48, 12px inset. Dark teal-black panel: steel border, soft teal edge glow,
-    and bright teal corner brackets — the mockup's sci-fi panel look."""
+    """48x48, 12px inset. Dark teal-black panel interior with a subtle steel border.
+    The bright teal corner brackets are drawn at runtime (EditorUiSkin::CornerBrackets)
+    so they sit crisply on the panel's *outer* corners; baking a full teal edge here
+    read as a busy bright box, not the mockup's thin-frame + corner-accent look."""
     n = 48
-    rgb = brushed(vgrad(n, n, INTERIOR_HI, INTERIOR_LO), 3.0)
+    # Very low brushed amount: the center cell is stretched over the whole panel, so
+    # strong per-row noise reads as ugly horizontal banding (mockup panels are clean).
+    rgb = brushed(vgrad(n, n, INTERIOR_HI, INTERIOR_LO), 0.6)
     edge_rect(rgb, 0, BORDER)        # 1px steel outer border
-    edge_rect(rgb, 2, TEAL_DIM)      # soft teal halo
-    edge_rect(rgb, 3, TEAL)          # crisp teal edge line
-    corner_brackets(rgb, TEAL, length=10, edge=2, thick=2)
+    edge_rect(rgb, 1, INTERIOR_HI)   # thin inner highlight, just enough to read as beveled
     save("frame.png", rgb)
 
 

@@ -22,6 +22,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
 void EditorRenderFeature::Setup(const RendererServices& services)
 {
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
+    Backdrop.Setup(services);
     Grid.Setup(services);
     Lines.Setup(services);
     if (Log != nullptr)
@@ -38,6 +39,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     const auto drawViewport = [&](EditorViewport& viewport)
     {
+        Backdrop.DrawViewport(frame.Cmd, viewport, frame.TargetExtent,
+                              frame.TargetFormat, frame.DepthFormat);
         Grid.DrawViewport(frame.Cmd, viewport, GridCfg,
                           frame.TargetExtent,
                           frame.TargetFormat,
@@ -65,6 +68,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
 void EditorRenderFeature::Teardown()
 {
+    Backdrop.Teardown();
     Grid.Teardown();
     Lines.Teardown();
 }

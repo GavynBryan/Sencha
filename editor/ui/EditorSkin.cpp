@@ -25,14 +25,15 @@ EditorSkin::~EditorSkin()
 
 SkinElement EditorSkin::Load(const std::string& path, float inset)
 {
-    // Linear (UNORM) so the authored bytes blend exactly like ImGui's vertex colors
-    // and the palette — no GPU sRGB linearization fighting the look.
-    const std::optional<Image> image = LoadImageFromFile(path, /*srgb=*/false);
+    // sRGB format: the PNGs hold authored sRGB bytes, so the sampler linearizes them
+    // on read. That matches the (now linear) EditorUi palette and ImGui vertex colors,
+    // and the sRGB swapchain then re-encodes on write — net identity, correct color.
+    const std::optional<Image> image = LoadImageFromFile(path, /*srgb=*/true);
     if (!image)
         return {};
 
     ImageCreateInfo info;
-    info.Format = VK_FORMAT_R8G8B8A8_UNORM;
+    info.Format = VK_FORMAT_R8G8B8A8_SRGB;
     info.Extent = VkExtent2D{ image->Width, image->Height };
     info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     info.DebugName = "editor_skin";

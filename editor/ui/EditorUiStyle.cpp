@@ -33,6 +33,18 @@ void EditorUi::Apply(ImGuiStyle& style)
     // then paint the palette over the entries that define the look.
     ImGui::StyleColorsDark(&style);
 
+    // We render into an sRGB swapchain (the GPU encodes linear->sRGB on write), so
+    // every color ImGui outputs must be LINEAR to land on its authored sRGB value.
+    // The EditorUi palette is already linear (see EditorUiStyle.h); linearize the
+    // stock-dark seeds here so default-styled widgets match, then overwrite with the
+    // palette below (which is already linear, so it must come after this loop).
+    for (ImVec4& col : style.Colors)
+    {
+        col.x = EditorUi::detail::ToLinear(col.x);
+        col.y = EditorUi::detail::ToLinear(col.y);
+        col.z = EditorUi::detail::ToLinear(col.z);
+    }
+
     ImVec4* c = style.Colors;
     c[ImGuiCol_Text]                 = TextPrimary;
     c[ImGuiCol_TextDisabled]         = TextDim;

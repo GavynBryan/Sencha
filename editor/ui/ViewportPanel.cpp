@@ -42,6 +42,7 @@ void ViewportPanel::OnDraw()
 
     // Recomputed each frame as the leaves draw; OR-ed across all viewports.
     RegionHovered = false;
+    RegionRects.clear();
 
     if (!ImGui::Begin(GetTitle().data(), &Visible, windowFlags))
     {
@@ -56,6 +57,8 @@ void ViewportPanel::OnDraw()
         DrawSingleView(avail);
     else
         DrawNode(Layout.Tree(), avail);
+
+    FillGapsBehindViewports();
 
     ImGui::End();
 }
@@ -163,6 +166,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool sho
     viewport.RegionMin = ImGui::GetWindowPos();
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
+    RegionRects.emplace_back(viewport.RegionMin, viewport.RegionMax);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImU32 borderColor = viewport.IsActive
@@ -183,6 +187,59 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool sho
 
     ImGui::EndChild();
     ImGui::EndChild();
+}
+
+void ViewportPanel::FillGapsBehindViewports()
+{
+    // The panel window is NoBackground so the 3D scene shows through the viewport
+    // region rects. Everything else (splitter gaps, per-viewport header strips, the
+    // toggle row) would otherwise show the engine's bright clear color. Fill that
+    // complement with the dark panel color: build a grid from the region-rect edges
+    // and fill each cell whose center lies outside every region. General over the
+    // single/quad/arbitrary-split layouts.
+    const ImVec2 wp = ImGui::GetWindowPos();
+    const ImVec2 cMin(wp.x + ImGui::GetWindowContentRegionMin().x,
+                      wp.y + ImGui::GetWindowContentRegionMin().y);
+    const ImVec2 cMax(wp.x + ImGui::GetWindowContentRegionMax().x,
+                      wp.y + ImGui::GetWindowContentRegionMax().y);
+    if (cMax.x <= cMin.x || cMax.y <= cMin.y)
+        return;
+
+    std::vector<float> xs{ cMin.x, cMax.x };
+    std::vector<float> ys{ cMin.y, cMax.y };
+    for (const auto& r : RegionRects)
+    {
+        xs.push_back(std::clamp(r.first.x, cMin.x, cMax.x));
+        xs.push_back(std::clamp(r.second.x, cMin.x, cMax.x));
+        ys.push_back(std::clamp(r.first.y, cMin.y, cMax.y));
+        ys.push_back(std::clamp(r.second.y, cMin.y, cMax.y));
+    }
+    const auto dedup = [](std::vector<float>& v) {
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end(),
+                            [](float a, float b) { return std::abs(a - b) < 0.5f; }),
+                v.end());
+    };
+    dedup(xs);
+    dedup(ys);
+
+    const auto insideRegion = [&](float px, float py) {
+        for (const auto& r : RegionRects)
+            if (px >= r.first.x && px <= r.second.x && py >= r.first.y && py <= r.second.y)
+                return true;
+        return false;
+    };
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 fill = ImGui::GetColorU32(EditorUi::PanelBg);
+    for (std::size_t i = 0; i + 1 < xs.size(); ++i)
+        for (std::size_t j = 0; j + 1 < ys.size(); ++j)
+        {
+            const float cx = (xs[i] + xs[i + 1]) * 0.5f;
+            const float cy = (ys[j] + ys[j + 1]) * 0.5f;
+            if (!insideRegion(cx, cy))
+                dl->AddRectFilled(ImVec2(xs[i], ys[j]), ImVec2(xs[i + 1], ys[j + 1]), fill);
+        }
 }
 
 void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)

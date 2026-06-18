@@ -4,6 +4,7 @@
 #include "EditorLinePipeline.h"
 #include "GpuGridRenderer.h"
 #include "SelectionRenderer.h"
+#include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -33,6 +34,7 @@ public:
 private:
     ViewportLayout& Layout;
     const GridSettings&    GridCfg;
+    ViewportBackdropRenderer Backdrop;
     GpuGridRenderer        Grid;
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)

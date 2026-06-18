@@ -4,6 +4,11 @@
 
 #include "../viewport/ViewportLayout.h"
 
+#include <imgui.h>
+
+#include <utility>
+#include <vector>
+
 struct MarqueeState;
 
 class ViewportPanel : public IEditorPanel
@@ -27,10 +32,17 @@ private:
     void DrawSingleView(ImVec2 size);
     void DrawViewport(EditorViewport& viewport, ImVec2 size, bool showOrientationSelector = true);
     void DrawOrientationSelector(EditorViewport& viewport);
+    // Fills the panel area NOT covered by a 3D region rect (the splitter gaps + the
+    // per-viewport header strips) with the dark panel color, so the bright engine
+    // clear color stops bleeding through the transparent (NoBackground) panel.
+    void FillGapsBehindViewports();
 
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
     bool RegionHovered = false;
+    // 3D render-region rects collected this frame (the passthrough holes to keep
+    // transparent); everything else in the panel gets the dark gap fill.
+    std::vector<std::pair<ImVec2, ImVec2>> RegionRects;
     // Set when switching into single mode so the orientation tab bar selects the
     // active viewport's current orientation once, instead of snapping to the first.
     bool SyncTabToOrientation = false;

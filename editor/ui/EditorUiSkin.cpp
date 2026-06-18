@@ -3,7 +3,10 @@
 #include "EditorSkin.h"
 #include "EditorUiStyle.h"
 
+#include <imgui_internal.h> // GetCurrentWindow / TitleBarRect for the title glow
+
 #include <algorithm>
+#include <cstring>
 
 namespace
 {
@@ -150,6 +153,28 @@ bool EditorUiSkin::Button(const char* id, const char* label, const ImVec2& size,
     return clicked;
 }
 
+// Glowing L-shaped accent brackets at the four corners of [mn,mx] — the mockup's
+// signature "analog" panel detail. A dim wide leg behind a crisp bright leg gives a
+// soft neon glow. Drawn into `dl` (the window draw list, so it stays panel-local).
+static void CornerBrackets(ImDrawList* dl, const ImVec2& mn, const ImVec2& mx)
+{
+    const float L = 13.0f;  // leg length
+    const float i = 1.5f;   // inset from the very edge (sit inside the steel border)
+    const ImU32 glow  = ImGui::GetColorU32(EditorUiSkin::WithAlpha(EditorUi::Accent, 0.30f));
+    const ImU32 crisp = ImGui::GetColorU32(EditorUi::Accent);
+    const auto bracket = [&](float cx, float cy, float sx, float sy) {
+        // Wide soft glow leg, then the crisp 1px leg on top.
+        dl->AddLine(ImVec2(cx, cy), ImVec2(cx + sx * L, cy), glow, 3.0f);
+        dl->AddLine(ImVec2(cx, cy), ImVec2(cx, cy + sy * L), glow, 3.0f);
+        dl->AddLine(ImVec2(cx, cy), ImVec2(cx + sx * L, cy), crisp, 1.0f);
+        dl->AddLine(ImVec2(cx, cy), ImVec2(cx, cy + sy * L), crisp, 1.0f);
+    };
+    bracket(mn.x + i, mn.y + i,  1.0f,  1.0f); // top-left
+    bracket(mx.x - i, mn.y + i, -1.0f,  1.0f); // top-right
+    bracket(mn.x + i, mx.y - i,  1.0f, -1.0f); // bottom-left
+    bracket(mx.x - i, mx.y - i, -1.0f, -1.0f); // bottom-right
+}
+
 void EditorUiSkin::PanelBackdrop()
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -163,15 +188,41 @@ void EditorUiSkin::PanelBackdrop()
         return;
 
     if (g_Skin != nullptr && g_Skin->Frame.Valid())
-    {
         // Beveled metal frame + dark interior over the panel body.
         Draw9Slice(dl, mn, mx, g_Skin->Frame, IM_COL32_WHITE);
-        return;
+    else
+    {
+        const ImU32 top = ImGui::GetColorU32(Lighten(EditorUi::PanelBg, kPanelTop));
+        const ImU32 bot = ImGui::GetColorU32(Darken(EditorUi::PanelBg, kPanelBot));
+        dl->AddRectFilledMultiColor(mn, mx, top, top, bot, bot);
+        dl->AddLine(ImVec2(mn.x, mn.y + 0.5f), ImVec2(mx.x, mn.y + 0.5f),
+                    ImGui::GetColorU32(WithAlpha(Lighten(EditorUi::PanelBg, 0.18f), 0.7f)));
     }
 
-    const ImU32 top = ImGui::GetColorU32(Lighten(EditorUi::PanelBg, kPanelTop));
-    const ImU32 bot = ImGui::GetColorU32(Darken(EditorUi::PanelBg, kPanelBot));
-    dl->AddRectFilledMultiColor(mn, mx, top, top, bot, bot);
-    dl->AddLine(ImVec2(mn.x, mn.y + 0.5f), ImVec2(mx.x, mn.y + 0.5f),
-                ImGui::GetColorU32(WithAlpha(Lighten(EditorUi::PanelBg, 0.18f), 0.7f)));
+    // Accent brackets framing the whole panel (title bar included) — the analog look.
+    CornerBrackets(dl, wpos, mx);
+
+    // Glowing teal panel title: ImGui already drew the title text (plain) during
+    // Begin(); overlay a haloed accent copy on top so panel titles read as the
+    // glowing label (the per-widget glow, e.g. the inspector entity header, is plain).
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    if (w != nullptr && (w->Flags & ImGuiWindowFlags_NoTitleBar) == 0)
+    {
+        // Visible label = window name up to the "##" id separator.
+        char label[128];
+        const char* name = w->Name ? w->Name : "";
+        const char* hashes = std::strstr(name, "##");
+        const std::size_t len = hashes ? static_cast<std::size_t>(hashes - name) : std::strlen(name);
+        const std::size_t n = std::min(len, sizeof(label) - 1);
+        std::memcpy(label, name, n);
+        label[n] = '\0';
+
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImRect tb = w->TitleBarRect();
+        float x = tb.Min.x + style.FramePadding.x;
+        if ((w->Flags & ImGuiWindowFlags_NoCollapse) == 0)
+            x += ImGui::GetFontSize() + style.FramePadding.x; // skip the collapse arrow
+        const float y = tb.Min.y + style.FramePadding.y;
+        GlowText(ImVec2(x, y), ImGui::GetColorU32(EditorUi::AccentHover), EditorUi::Accent, label);
+    }
 }
