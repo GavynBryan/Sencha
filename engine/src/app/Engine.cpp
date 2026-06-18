@@ -13,7 +13,7 @@
 #include <runtime/FrameDriver.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
-#include <graphics/vulkan/VulkanBootstrap.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #endif
 
 #include <platform/PlatformServices.h>
@@ -65,6 +65,9 @@ bool Engine::Initialize()
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
         ServiceRegistry.Clear();
+#ifdef SENCHA_ENABLE_VULKAN
+        GraphicsState.reset();
+#endif
         PlatformState.reset();
         CaptionState.reset();
         AudioState.reset();
@@ -113,7 +116,8 @@ bool Engine::Initialize()
     }
 
     auto& windows = PlatformState->Windows;
-    if (!VulkanBootstrap::Install(ServiceRegistry, Configuration, logging, *window, windows))
+    GraphicsState = std::make_unique<GraphicsServices>(logging, Configuration, *window, windows);
+    if (!GraphicsState->IsValid())
     {
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
@@ -140,6 +144,9 @@ void Engine::Shutdown()
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
     ServiceRegistry.Clear();
+#ifdef SENCHA_ENABLE_VULKAN
+    GraphicsState.reset();
+#endif
     PlatformState.reset();
     CaptionState.reset();
     AudioState.reset();
@@ -197,6 +204,20 @@ const PlatformServices& Engine::Platform() const
     assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
     return *PlatformState;
 }
+
+#ifdef SENCHA_ENABLE_VULKAN
+GraphicsServices& Engine::Graphics()
+{
+    assert(GraphicsState && "Engine::Graphics: valid only when windowed, between Initialize and Shutdown");
+    return *GraphicsState;
+}
+
+const GraphicsServices& Engine::Graphics() const
+{
+    assert(GraphicsState && "Engine::Graphics: valid only when windowed, between Initialize and Shutdown");
+    return *GraphicsState;
+}
+#endif
 
 JobSystem& Engine::Jobs()
 {

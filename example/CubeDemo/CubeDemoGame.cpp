@@ -21,6 +21,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
@@ -138,14 +139,14 @@ namespace
 void CubeDemoGame::OnStart(GameStartupContext& ctx)
 {
     Engine& engine = GetEngine();
-    ServiceHost& services = engine.Services();
     LoggingProvider& logging = engine.Logging();
     DebugService& debug = engine.Debug();
     DebugLogSink& debugLog = debug.GetLogSink();
-    auto& buffers = services.Get<VulkanBufferService>();
-    auto& images = services.Get<VulkanImageService>();
-    auto& descriptors = services.Get<VulkanDescriptorCache>();
-    auto& samplers = services.Get<VulkanSamplerCache>();
+    GraphicsServices& graphics = engine.Graphics();
+    auto& buffers = graphics.Buffers;
+    auto& images = graphics.Images;
+    auto& descriptors = graphics.Descriptors;
+    auto& samplers = graphics.Samplers;
 
     Assets.emplace(logging, buffers, images, descriptors, samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
@@ -274,14 +275,14 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     if (pipeline != nullptr)
     {
         pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials);
-        pipeline->AddMeshRenderFeature(services);
+        pipeline->AddMeshRenderFeature(graphics);
     }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
     auto& windows = engine.Platform().Windows;
     SdlWindow* window = windows.GetPrimaryWindow();
-    auto& instance = services.Get<VulkanInstanceService>();
-    auto& frames = services.Get<VulkanFrameService>();
+    auto& instance = graphics.Instance;
+    auto& frames = graphics.Frames;
 
     auto debugOverlay =
         std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
@@ -293,7 +294,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
             pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, DemoRegistry, Demo);
     }
     DebugOverlay = debugOverlay.get();
-    auto& renderer = services.Get<Renderer>();
+    auto& renderer = graphics.MainRenderer;
     renderer.AddFeature(std::move(debugOverlay));
 #else
     (void)debugLog;

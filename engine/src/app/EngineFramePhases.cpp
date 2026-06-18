@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/TimingSampler.h>
 #include <graphics/vulkan/VulkanFrameService.h>
@@ -21,12 +22,11 @@
 void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& driver)
 {
 #ifdef SENCHA_ENABLE_VULKAN
-    auto& services = engine.Services();
     auto& config = engine.Config();
     auto& windows = engine.Platform().Windows;
-    auto& swapchain = services.Get<VulkanSwapchainService>();
-    auto& frames = services.Get<VulkanFrameService>();
-    auto& renderer = services.Get<Renderer>();
+    auto& swapchain = engine.Graphics().Swapchain;
+    auto& frames = engine.Graphics().Frames;
+    auto& renderer = engine.Graphics().MainRenderer;
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
     driver.Register(FramePhase::PumpPlatform, [&game, &config, &windows, windowId](PhaseContext& ctx) {

@@ -6,7 +6,7 @@
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
-class ServiceHost;
+struct GraphicsServices;
 class VulkanSwapchainService;
 
 //=============================================================================
@@ -25,7 +25,7 @@ public:
     [[nodiscard]] const CameraRenderData& GetCameraData() const { return Camera; }
 
     void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials);
-    bool AddMeshRenderFeature(ServiceHost& services);
+    bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
 private:

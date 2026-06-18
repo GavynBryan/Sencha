@@ -17,6 +17,7 @@ class CaptionRuntime;
 class DebugService;
 class FrameDriver;
 class Game;
+struct GraphicsServices;
 class JobSystem;
 struct PlatformServices;
 class ThreadPoolJobSystem;
@@ -69,6 +70,13 @@ public:
     [[nodiscard]] PlatformServices& Platform();
     [[nodiscard]] const PlatformServices& Platform() const;
 
+#ifdef SENCHA_ENABLE_VULKAN
+    // Vulkan backend services. Present when running windowed; valid between
+    // Initialize and Shutdown.
+    [[nodiscard]] GraphicsServices& Graphics();
+    [[nodiscard]] const GraphicsServices& Graphics() const;
+#endif
+
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
 
@@ -113,10 +121,14 @@ private:
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
-    // SDL platform group. Declared before ServiceRegistry so the Vulkan
-    // services it holds (surface/swapchain depend on the window) tear down
-    // first. Null when headless.
+    // SDL platform group. Declared before the Vulkan group so the window
+    // outlives the surface/swapchain that depend on it. Null when headless.
     std::unique_ptr<PlatformServices> PlatformState;
+#ifdef SENCHA_ENABLE_VULKAN
+    // Vulkan group. Declared after PlatformState so it tears down first
+    // (surface/swapchain reference the window). Null when headless.
+    std::unique_ptr<GraphicsServices> GraphicsState;
+#endif
     ServiceHost ServiceRegistry;
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;
