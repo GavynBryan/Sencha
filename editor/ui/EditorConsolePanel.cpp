@@ -49,6 +49,13 @@ void EditorConsolePanel::OnDraw()
         CommandOutput.clear();
     }
     ImGui::SameLine();
+    // ImGui text isn't selectable; copy the visible (filtered) transcript to the
+    // clipboard instead. LogToClipboard captures whatever is rendered between it
+    // and LogFinish, so it honors the level/category filters automatically.
+    const bool copyRequested = ImGui::Button("Copy");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Copy the visible log to the clipboard");
+    ImGui::SameLine();
     static constexpr const char* LevelNames[] = { "Debug", "Info", "Warn", "Error", "Crit" };
     for (int i = 0; i < 5; ++i)
     {
@@ -77,6 +84,9 @@ void EditorConsolePanel::OnDraw()
 
     if (ImFont* mono = EditorUi::MonoFont())
         ImGui::PushFont(mono);
+
+    if (copyRequested)
+        ImGui::LogToClipboard();
 
     // Engine log feed first (chronological); the user's command transcript renders
     // below it so it stays just above the input box.
@@ -107,6 +117,9 @@ void EditorConsolePanel::OnDraw()
         ImGui::TextUnformatted(entry.Text.c_str());
         ImGui::PopStyleColor();
     }
+
+    if (copyRequested)
+        ImGui::LogFinish();
 
     if (EditorUi::MonoFont())
         ImGui::PopFont();
