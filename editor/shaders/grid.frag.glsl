@@ -15,20 +15,27 @@ layout(push_constant) uniform GridPC {
 layout(location = 0) in  vec3 fragWorldPos;
 layout(location = 0) out vec4 outColor;
 
-// 1 when exactly on a grid line, falling off within one screen pixel on each side.
+// Coverage of the nearest grid line: a smooth ~1px-wide band (smoothstep AA),
+// faded out as a cell shrinks toward pixel size so distant lines dissolve cleanly
+// instead of aliasing into sparkly noise / moire.
 float gridLine(float coord, float spacing)
 {
-    float fw      = fwidth(coord);
+    float fw       = max(fwidth(coord), 1e-6);
     float halfCell = spacing * 0.5;
     float dist     = abs(mod(coord + halfCell, spacing) - halfCell);
-    return 1.0 - clamp(dist / max(fw, 1e-6), 0.0, 1.0);
+    float cov      = 1.0 - smoothstep(0.0, fw, dist);
+    // Level-of-detail: fade the line once its cell is only a few pixels wide.
+    float cellPx   = spacing / fw;
+    cov           *= clamp(cellPx * 0.5 - 0.5, 0.0, 1.0);
+    return cov;
 }
 
-// 1 when exactly on the world axis at coord == 0.
+// Coverage of the world axis at coord == 0 — a smooth ~1px band (no LOD fade; the
+// axis line is always meaningful).
 float axisLine(float coord)
 {
-    float fw = fwidth(coord);
-    return 1.0 - clamp(abs(coord) / max(fw, 1e-6), 0.0, 1.0);
+    float fw = max(fwidth(coord), 1e-6);
+    return 1.0 - smoothstep(0.0, fw, abs(coord));
 }
 
 // Derive a canonical editor axis color from a direction vector.
