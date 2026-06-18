@@ -37,12 +37,23 @@ struct LayoutNode
                                                  std::unique_ptr<LayoutNode> second);
 };
 
+// How the viewport area is presented: the four-way split, or a single viewport
+// whose orientation is switched by tabs.
+enum class LayoutMode
+{
+    Quad,
+    Single
+};
+
 class ViewportLayout
 {
 public:
     using ViewportStorage = std::unique_ptr<EditorViewport>;
 
     static ViewportLayout MakeFourWay();
+
+    [[nodiscard]] LayoutMode GetMode() const { return Mode; }
+    void SetMode(LayoutMode mode) { Mode = mode; }
 
     EditorViewport* Active();
     const EditorViewport* Active() const;
@@ -63,6 +74,7 @@ private:
 
     std::vector<ViewportStorage> Viewports;
     std::unique_ptr<LayoutNode> Root;
+    LayoutMode Mode = LayoutMode::Quad;
     ViewportId ActiveId = {};
     ViewportId NextId = { 1 };
     uint32_t Width = 0;

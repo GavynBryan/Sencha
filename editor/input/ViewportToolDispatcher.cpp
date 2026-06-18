@@ -108,6 +108,15 @@ InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e)
 
 EditorViewport* ViewportToolDispatcher::FindViewport(ImVec2 pos)
 {
+    // In single mode only the active viewport is on screen; the others hold stale
+    // screen rects, so hit-test just the active one to avoid routing input to a
+    // hidden viewport whose old quadrant rect overlaps the cursor.
+    if (Layout.GetMode() == LayoutMode::Single)
+    {
+        EditorViewport* active = Layout.Active();
+        return (active != nullptr && active->Contains(pos)) ? active : nullptr;
+    }
+
     for (const auto& viewport : Layout.All())
     {
         if (viewport != nullptr && viewport->Contains(pos))

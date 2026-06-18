@@ -1,6 +1,7 @@
 #include "ViewportPanel.h"
 
 #include "EditorUiStyle.h"
+#include "fonts/IconsFontAwesome6.h"
 
 #include "../viewport/MarqueeState.h"
 
@@ -59,9 +60,64 @@ void ViewportPanel::OnDraw()
         return;
     }
 
-    DrawNode(Layout.Tree(), ImGui::GetContentRegionAvail());
+    DrawLayoutToggle();
+
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (Layout.GetMode() == LayoutMode::Single)
+        DrawSingleView(avail);
+    else
+        DrawNode(Layout.Tree(), avail);
 
     ImGui::End();
+}
+
+void ViewportPanel::DrawLayoutToggle()
+{
+    const bool single = Layout.GetMode() == LayoutMode::Single;
+    if (ImGui::SmallButton(single ? ICON_FA_TABLE_CELLS_LARGE : ICON_FA_WINDOW_MAXIMIZE))
+    {
+        Layout.SetMode(single ? LayoutMode::Quad : LayoutMode::Single);
+        if (Layout.GetMode() == LayoutMode::Single)
+            SyncTabToOrientation = true;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(single ? "Switch to four-way layout" : "Switch to single tabbed viewport");
+
+    // In single mode the orientation tabs share this row with the toggle.
+    if (single)
+        ImGui::SameLine();
+}
+
+void ViewportPanel::DrawSingleView(ImVec2 size)
+{
+    EditorViewport* viewport = Layout.Active();
+    if (viewport == nullptr && !Layout.All().empty())
+        viewport = Layout.All().front().get();
+    if (viewport == nullptr)
+        return;
+
+    // The tab bar both reflects and drives the single viewport's orientation. On
+    // the frame we entered single mode, force-select the current orientation;
+    // otherwise the active tab is authoritative so clicks switch the view.
+    if (ImGui::BeginTabBar("##ViewOrientationTabs", ImGuiTabBarFlags_None))
+    {
+        for (ViewportOrientation orientation : AllViewportOrientations())
+        {
+            ImGuiTabItemFlags flags = 0;
+            if (SyncTabToOrientation && viewport->Orientation == orientation)
+                flags |= ImGuiTabItemFlags_SetSelected;
+            if (ImGui::BeginTabItem(Traits(orientation).Label, nullptr, flags))
+            {
+                if (!SyncTabToOrientation && viewport->Orientation != orientation)
+                    viewport->ApplyOrientation(orientation);
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+    SyncTabToOrientation = false;
+
+    DrawViewport(*viewport, ImGui::GetContentRegionAvail(), /*showOrientationSelector=*/false);
 }
 
 void ViewportPanel::DrawNode(const LayoutNode& node, ImVec2 size)
@@ -97,11 +153,12 @@ void ViewportPanel::DrawNode(const LayoutNode& node, ImVec2 size)
     DrawNode(*node.Second, ImVec2(size.x, secondHeight));
 }
 
-void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
+void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool showOrientationSelector)
 {
     ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_Borders, kViewportChildFlags);
 
-    DrawOrientationSelector(viewport);
+    if (showOrientationSelector)
+        DrawOrientationSelector(viewport);
 
     const ImVec2 renderSize(
         std::max(0.0f, ImGui::GetContentRegionAvail().x),

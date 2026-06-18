@@ -22,12 +22,17 @@ public:
     [[nodiscard]] bool IsViewportRegionHovered() const { return RegionHovered; }
 
 private:
+    void DrawLayoutToggle();
     void DrawNode(const LayoutNode& node, ImVec2 size);
-    void DrawViewport(EditorViewport& viewport, ImVec2 size);
+    void DrawSingleView(ImVec2 size);
+    void DrawViewport(EditorViewport& viewport, ImVec2 size, bool showOrientationSelector = true);
     void DrawOrientationSelector(EditorViewport& viewport);
 
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
     bool Visible = true;
     bool RegionHovered = false;
+    // Set when switching into single mode so the orientation tab bar selects the
+    // active viewport's current orientation once, instead of snapping to the first.
+    bool SyncTabToOrientation = false;
 };

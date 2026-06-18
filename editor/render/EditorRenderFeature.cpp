@@ -36,18 +36,30 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         LoggedFirstDraw = true;
     }
 
-    for (const auto& viewport : Layout.All())
+    const auto drawViewport = [&](EditorViewport& viewport)
     {
-        if (viewport == nullptr)
-            continue;
-
-        Grid.DrawViewport(frame.Cmd, *viewport, GridCfg,
+        Grid.DrawViewport(frame.Cmd, viewport, GridCfg,
                           frame.TargetExtent,
                           frame.TargetFormat,
                           frame.DepthFormat);
-        Wireframe.DrawViewport(frame, *viewport);
-        Visuals.DrawViewport(frame, *viewport);
-        Highlight.DrawViewport(frame, *viewport);
+        Wireframe.DrawViewport(frame, viewport);
+        Visuals.DrawViewport(frame, viewport);
+        Highlight.DrawViewport(frame, viewport);
+    };
+
+    // Render only what the panel lays out: every leaf in quad mode, just the
+    // active viewport in single mode (the others hold stale screen rects).
+    if (Layout.GetMode() == LayoutMode::Single)
+    {
+        if (EditorViewport* active = Layout.Active())
+            drawViewport(*active);
+        return;
+    }
+
+    for (const auto& viewport : Layout.All())
+    {
+        if (viewport != nullptr)
+            drawViewport(*viewport);
     }
 }
 

@@ -214,9 +214,17 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
      and `ManipulatorContext` (manipulators); the render feature/status bar/toolbar
      hold it directly. Toolbar gained a magnet snap-toggle + a grid-size combo; the
      status bar shows size + "(snap off)".
-   - **Remaining:** angle snap (needs a rotate manipulator first); material
-     swatches; asset thumbnails; tabbed viewport (each needs its own backing
-     render/scene support).
+   - **Tabbed viewport — DONE.** `ViewportLayout` gained a `LayoutMode`
+     (Quad/Single). A toggle in the viewport panel flips between the four-way
+     split and a single viewport whose orientation is switched by an ImGui tab bar
+     (Perspective/Top/Front/…). The tab bar both reflects and drives the active
+     viewport's orientation (one-shot `SetSelected` sync on entry, active tab
+     authoritative after). The render feature and input dispatcher honor the mode
+     — in single mode only the active viewport is drawn / hit-tested, so the hidden
+     viewports' stale screen rects can't paint grids or steal input.
+   - **Remaining (need other features first / a higher-level plan):** angle snap
+     (needs a rotate manipulator); material swatches + asset thumbnails (materials/
+     asset pipeline live in a higher-level plan).
 5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
    pixel-fidelity is wanted.
 
