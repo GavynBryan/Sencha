@@ -23,17 +23,16 @@
 // LoggingProvider
 //
 // Central factory and owner of Loggers and LogSinks. NOT an IService â€”
-// it lives as a first-class member of ServiceHost and is accessible
-// through ServiceProvider::GetLogger<T>().
+// it is engine Foundation, owned directly rather than registered as a
+// service, and consumed by passing a LoggingProvider& into constructors.
 //
 // Usage (setup):
-//   ServiceHost services;
-//   services.GetLoggingProvider().AddSink<ConsoleLogSink>();
-//   services.GetLoggingProvider().SetMinLevel(LogLevel::Info);
+//   logging.AddSink<ConsoleLogSink>();
+//   logging.SetMinLevel(LogLevel::Info);
 //
-// Usage (consumption, typically in a system constructor):
-//   RenderSystem::RenderSystem(const ServiceProvider& provider)
-//       : Log(provider.GetLogger<RenderSystem>())
+// Usage (consumption, typically in a system or service constructor):
+//   RenderSystem::RenderSystem(LoggingProvider& logging)
+//       : Log(logging.GetLogger<RenderSystem>())
 //   { }
 //
 // Loggers are created lazily and cached by type â€” requesting the same
