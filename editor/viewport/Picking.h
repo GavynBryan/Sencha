@@ -11,6 +11,7 @@
 #include <vector>
 
 struct EditorViewport;
+struct GridSettings;
 class LevelScene;
 
 enum class BrushPickMode : uint8_t
@@ -35,7 +36,8 @@ public:
                                      const LevelScene& scene,
                                      BrushPickRequest request = {}) const;
     [[nodiscard]] std::optional<Vec3d> ProjectPointToGrid(const EditorViewport& viewport,
-                                                          ImVec2 point) const;
+                                                          ImVec2 point,
+                                                          const GridSettings& settings) const;
 
     // Rubber-band selection: every element of the given mode whose projection
     // falls in the screen rectangle. Entities by projected-bounds overlap;

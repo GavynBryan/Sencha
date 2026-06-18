@@ -160,30 +160,34 @@ public:
                   std::unique_ptr<ITranslateApply> apply)
         : Pivot(pivot), AxisDir(axisDir), StartParam(startParam), Apply(std::move(apply)) {}
 
-    void OnPointerMove(ToolContext&, EditorViewport& viewport, const PointerEvent& pointer) override
+    void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
     {
-        if (UpdateDelta(viewport, pointer.Position))
+        if (UpdateDelta(ctx, viewport, pointer.Position))
             Apply->Preview(LastDelta);
     }
 
-    void OnPointerUp(ToolContext&, EditorViewport& viewport, const PointerEvent& pointer) override
+    void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
     {
-        UpdateDelta(viewport, pointer.Position);
+        UpdateDelta(ctx, viewport, pointer.Position);
         Apply->Commit(LastDelta);
     }
 
     void OnCancel(ToolContext&) override { Apply->Cancel(); }
 
 private:
-    bool UpdateDelta(const EditorViewport& viewport, ImVec2 pos)
+    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
     {
         const std::optional<double> s =
             GizmoMath::ClosestAxisParam(Pivot, AxisDir, ViewportProjection(viewport).RayThroughPixel(pos));
         if (!s.has_value())
             return false;
-        const GridPlane grid = viewport.GetGrid();
-        const double offset = GizmoMath::SnapAxisOffset(
-            *s - StartParam, Pivot.Dot(AxisDir), grid.Origin.Dot(AxisDir), grid.Spacing);
+        const GridPlane grid = viewport.GetGrid(ctx.Grid);
+        const double rawOffset = *s - StartParam;
+        // Honor the grid-snap toggle: snap the moved coordinate to grid lines, or
+        // move freely when snapping is off.
+        const double offset = grid.SnapEnabled
+            ? GizmoMath::SnapAxisOffset(rawOffset, Pivot.Dot(AxisDir), grid.Origin.Dot(AxisDir), grid.Spacing)
+            : rawOffset;
         LastDelta = AxisDir * static_cast<float>(offset);
         return true;
     }

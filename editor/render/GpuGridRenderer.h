@@ -5,6 +5,7 @@
 
 struct EditorViewport;
 struct RendererServices;
+struct GridSettings;
 class VulkanPipelineCache;
 
 class GpuGridRenderer
@@ -13,6 +14,7 @@ public:
     void Setup(const RendererServices& services);
     void DrawViewport(VkCommandBuffer cmd,
                       const EditorViewport& viewport,
+                      const GridSettings& gridSettings,
                       VkExtent2D targetExtent,
                       VkFormat colorFormat,
                       VkFormat depthFormat);

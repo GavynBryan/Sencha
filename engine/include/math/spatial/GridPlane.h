@@ -12,9 +12,15 @@ struct GridPlane
     Vec3d AxisV = { 0, 0, 1 };
     float Spacing = 1.0f;
     uint32_t Subdivisions = 10;
+    // When false, Snap() projects onto the plane without quantizing to spacing —
+    // backs the editor's grid-snap toggle. Default true keeps existing behavior.
+    bool SnapEnabled = true;
 
     Vec3d Snap(Vec3d worldPos) const
     {
+        if (!SnapEnabled)
+            return Project(worldPos);
+
         const Vec3d projected = Project(worldPos);
         const Vec3d local = projected - Origin;
         const float snappedU = std::round(local.Dot(AxisU) / Spacing) * Spacing;

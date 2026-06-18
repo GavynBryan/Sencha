@@ -13,6 +13,7 @@ class ManipulatorSession;
 class PreviewBuffer;
 class SelectionService;
 class ViewportLayout;
+struct GridSettings;
 
 class EditorRenderFeature : public IRenderFeature
 {
@@ -21,7 +22,8 @@ public:
                         LevelScene& scene,
                         SelectionService& selection,
                         PreviewBuffer& preview,
-                        ManipulatorSession& session);
+                        ManipulatorSession& session,
+                        const GridSettings& grid);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     void Setup(const RendererServices& services) override;
@@ -30,6 +32,7 @@ public:
 
 private:
     ViewportLayout& Layout;
+    const GridSettings&    GridCfg;
     GpuGridRenderer        Grid;
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)

@@ -14,6 +14,7 @@
 struct EditorViewport;
 class MeshEditService;
 struct ManipulationSink;
+struct GridSettings;
 
 // What a manipulator needs to query the scene and drive an edit, all through
 // generic seams (no LevelScene). The current element mode lives on the service.
@@ -22,6 +23,7 @@ struct ManipulatorContext
     const SelectionSnapshot& Selection;
     MeshEditService& Service;
     ManipulationSink& Sink;
+    const GridSettings& Grid;
 };
 
 // A manipulator's drawable geometry. Lines now; P3 adds screen-constant handle

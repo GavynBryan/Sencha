@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorCamera.h"
+#include "GridSettings.h"
 #include "ViewportId.h"
 #include "ViewportOrientation.h"
 
@@ -21,7 +22,9 @@ struct EditorViewport
 
     void ApplyOrientation(ViewportOrientation orientation);
     [[nodiscard]] const OrientationTraits& GetOrientationTraits() const;
-    [[nodiscard]] GridPlane GetGrid() const;
+    // Grid plane for snapping/drawing, with the shared spacing + snap-enable from
+    // the editor settings stamped onto the per-orientation plane.
+    [[nodiscard]] GridPlane GetGrid(const GridSettings& settings) const;
     [[nodiscard]] const char* GetDisplayLabel() const;
     [[nodiscard]] float AspectRatio() const;
     [[nodiscard]] CameraRenderData BuildRenderData() const;

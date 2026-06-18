@@ -2,6 +2,7 @@
 
 class ToolRegistry;
 class MeshEditService;
+struct GridSettings;
 
 // The top icon toolbar (fixed app chrome, not a dockable panel). Two backed
 // control groups, each with an active-state highlight:
@@ -12,11 +13,12 @@ class MeshEditService;
 class EditorToolbar
 {
 public:
-    EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit);
+    EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid);
 
     void Draw();
 
 private:
     ToolRegistry& Tools;
     MeshEditService& MeshEdit;
+    GridSettings& Grid;
 };

@@ -23,7 +23,8 @@ void LevelWorkspace::Init(CommandStack& commands)
         Interactions,
         Preview,
         MeshEdit,
-        Marquee);
+        Marquee,
+        Grid);
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());
@@ -45,7 +46,7 @@ void LevelWorkspace::Init(CommandStack& commands)
     // The session reads selection and element mode live on each pointer-down, so
     // it never needs rebuilding when the selection or mode changes. It consumes a
     // click only when a manipulator is hit; otherwise the select tool picks.
-    auto session = std::make_unique<ManipulatorSession>(Selection, MeshEdit, *Sink);
+    auto session = std::make_unique<ManipulatorSession>(Selection, MeshEdit, *Sink, Grid);
     Manipulators = session.get();
     Sessions.SetSession(std::move(session));
 }

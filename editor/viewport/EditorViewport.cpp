@@ -16,12 +16,13 @@ const OrientationTraits& EditorViewport::GetOrientationTraits() const
     return Traits(Orientation);
 }
 
-GridPlane EditorViewport::GetGrid() const
+GridPlane EditorViewport::GetGrid(const GridSettings& settings) const
 {
     const OrientationTraits& traits = GetOrientationTraits();
-    if (traits.UsesCameraAxis)
-        return GridForAxis(Camera.OrthoAxis);
-    return traits.Grid;
+    GridPlane plane = traits.UsesCameraAxis ? GridForAxis(Camera.OrthoAxis) : traits.Grid;
+    plane.Spacing = settings.Spacing;
+    plane.SnapEnabled = settings.SnapEnabled;
+    return plane;
 }
 
 const char* EditorViewport::GetDisplayLabel() const

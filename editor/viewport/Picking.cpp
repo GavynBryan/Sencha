@@ -418,10 +418,12 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
     return result;
 }
 
-std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport, ImVec2 point) const
+std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport,
+                                                        ImVec2 point,
+                                                        const GridSettings& settings) const
 {
     const Ray3d ray = BuildRay(viewport, point);
-    const GridPlane grid = viewport.GetGrid();
+    const GridPlane grid = viewport.GetGrid(settings);
     const Vec3d normal = grid.AxisU.Cross(grid.AxisV).Normalized();
     const double denominator = normal.Dot(ray.Direction);
     if (std::abs(denominator) < kParallelEpsilon)

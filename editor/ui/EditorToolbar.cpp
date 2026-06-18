@@ -7,10 +7,12 @@
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
+#include "../viewport/GridSettings.h"
 
 #include <imgui.h>
 #include <imgui_internal.h> // BeginViewportSideBar (reserves work-area space)
 
+#include <cstdio>
 #include <string>
 
 namespace
@@ -31,9 +33,10 @@ bool ToolButton(const char* icon, const char* tooltip, bool active, float size)
 }
 }
 
-EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit)
+EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid)
     : Tools(tools)
     , MeshEdit(meshEdit)
+    , Grid(grid)
 {
 }
 
@@ -89,6 +92,36 @@ void EditorToolbar::Draw()
             if (ToolButton(label.c_str(), mode.Name, active, buttonSize))
                 MeshEdit.SetElementKind(mode.Kind);
         }
+
+        ImGui::SameLine();
+        ImGui::TextUnformatted("|");
+
+        // Grid snap toggle + spacing — drives the shared GridSettings, so picking,
+        // manipulators and brush-create all honor it.
+        ImGui::SameLine();
+        if (ToolButton(ICON_FA_MAGNET "##snap",
+                       Grid.SnapEnabled ? "Grid snap: on" : "Grid snap: off",
+                       Grid.SnapEnabled, buttonSize))
+            Grid.SnapEnabled = !Grid.SnapEnabled;
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(96.0f);
+        static const float kGridSizes[] = { 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f, 32.0f, 64.0f };
+        char preview[32];
+        std::snprintf(preview, sizeof(preview), ICON_FA_BORDER_ALL "  %g", Grid.Spacing);
+        if (ImGui::BeginCombo("##gridsize", preview))
+        {
+            for (float size : kGridSizes)
+            {
+                char item[16];
+                std::snprintf(item, sizeof(item), "%g", size);
+                if (ImGui::Selectable(item, Grid.Spacing == size))
+                    Grid.Spacing = size;
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Grid size");
     }
     ImGui::End();
 }

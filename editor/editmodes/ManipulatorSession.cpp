@@ -13,10 +13,12 @@
 
 ManipulatorSession::ManipulatorSession(SelectionService& selection,
                                        MeshEditService& service,
-                                       ManipulationSink& sink)
+                                       ManipulationSink& sink,
+                                       const GridSettings& grid)
     : Selection(selection)
     , Service(service)
     , Sink(sink)
+    , Grid(grid)
 {
     // The only registration site: new manipulators (rotate/scale/clip) land here
     // and nowhere else. Order is priority — bounds handles take a hit before the
@@ -29,7 +31,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 {
     const ImVec2 pos = pointer.Position;
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
-    const ManipulatorContext mctx{ snapshot, Service, Sink };
+    const ManipulatorContext mctx{ snapshot, Service, Sink, Grid };
 
     for (const std::unique_ptr<IManipulator>& manipulator : Manipulators)
     {
@@ -51,7 +53,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 void ManipulatorSession::BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const
 {
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
-    const ManipulatorContext mctx{ snapshot, Service, Sink };
+    const ManipulatorContext mctx{ snapshot, Service, Sink, Grid };
 
     // Hover: when the cursor is over this viewport, find the part it would grab —
     // in the same priority order routing uses, so only the manipulator that would

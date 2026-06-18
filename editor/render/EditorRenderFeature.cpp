@@ -8,8 +8,10 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LevelScene& scene,
                                          SelectionService& selection,
                                          PreviewBuffer& preview,
-                                         ManipulatorSession& session)
+                                         ManipulatorSession& session,
+                                         const GridSettings& grid)
     : Layout(viewportLayout)
+    , GridCfg(grid)
     , Wireframe(scene, Lines)
     , Visuals(scene, Lines)
     , Highlight(scene, selection, session, Lines)
@@ -39,7 +41,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         if (viewport == nullptr)
             continue;
 
-        Grid.DrawViewport(frame.Cmd, *viewport,
+        Grid.DrawViewport(frame.Cmd, *viewport, GridCfg,
                           frame.TargetExtent,
                           frame.TargetFormat,
                           frame.DepthFormat);

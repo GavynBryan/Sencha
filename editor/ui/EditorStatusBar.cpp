@@ -7,6 +7,7 @@
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/EditorViewport.h"
+#include "../viewport/GridSettings.h"
 #include "../viewport/ViewportLayout.h"
 
 #include <imgui.h>
@@ -14,10 +15,12 @@
 
 #include <ctime>
 
-EditorStatusBar::EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection)
+EditorStatusBar::EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection,
+                                 const GridSettings& grid)
     : Tools(tools)
     , Layout(layout)
     , Selection(selection)
+    , Grid(grid)
 {
 }
 
@@ -45,9 +48,10 @@ void EditorStatusBar::Draw()
             {
                 ImGui::Separator();
                 ImGui::Text("%s", active->GetDisplayLabel());
-                ImGui::Separator();
-                ImGui::Text(ICON_FA_BORDER_ALL "  grid %.0f", active->GetGrid().Spacing);
             }
+            ImGui::Separator();
+            ImGui::Text(ICON_FA_BORDER_ALL "  grid %g%s",
+                        Grid.Spacing, Grid.SnapEnabled ? "" : " (snap off)");
 
             // Wall clock, right-aligned.
             std::time_t now = std::time(nullptr);

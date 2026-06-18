@@ -109,7 +109,8 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Document.GetScene(),
         Workspace->Selection,
         Workspace->Preview,
-        *Workspace->Manipulators));
+        *Workspace->Manipulators,
+        Workspace->Grid));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
     UiFeature = uiFeature.get();
@@ -127,8 +128,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     // Fixed app chrome: top toolbar + bottom status bar. Registered before the
     // panels so the work-area space they reserve is subtracted from the full-bleed
     // viewport panel below.
-    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit);
-    StatusBar = std::make_unique<EditorStatusBar>(*Workspace->Tools, Workspace->Layout, Workspace->Selection);
+    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit, Workspace->Grid);
+    StatusBar = std::make_unique<EditorStatusBar>(
+        *Workspace->Tools, Workspace->Layout, Workspace->Selection, Workspace->Grid);
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
 

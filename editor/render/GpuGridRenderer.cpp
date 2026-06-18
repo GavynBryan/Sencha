@@ -53,6 +53,7 @@ void GpuGridRenderer::Setup(const RendererServices& services)
 
 void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
                                    const EditorViewport& viewport,
+                                   const GridSettings& gridSettings,
                                    VkExtent2D targetExtent,
                                    VkFormat colorFormat,
                                    VkFormat depthFormat)
@@ -127,7 +128,7 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
 
     const CameraRenderData renderData = viewport.BuildRenderData();
 
-    const GridPlane grid = viewport.GetGrid();
+    const GridPlane grid = viewport.GetGrid(gridSettings);
 
     const Vec3d gridCenter =
         viewport.Camera.ActiveMode == EditorCamera::Mode::Perspective

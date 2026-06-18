@@ -205,8 +205,18 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
      outliner selection). Outliner rows gained eye/lock toggle buttons and dim
      when hidden. *Known minor gap: a gizmo on an already-selected entity stays
      interactive if it's then hidden/locked — manipulator-side lock is a follow-up.*
-   - **Remaining:** snap/grid/angle toggle state; material swatches; asset
-     thumbnails; tabbed viewport (each needs its own backing render/scene support).
+   - **Grid snap toggle + grid size — DONE.** A shared `GridSettings` (snap
+     on/off + spacing) on `LevelWorkspace` is the single source: `EditorViewport::
+     GetGrid(settings)` stamps it onto the returned `GridPlane` (engine `GridPlane`
+     gained a `SnapEnabled` flag; `Snap()` projects-without-quantizing when off),
+     so picking, the translate/bounds manipulators, brush-create, and the grid
+     renderer all honor one setting. Threaded via `ToolContext` (tools/interactions)
+     and `ManipulatorContext` (manipulators); the render feature/status bar/toolbar
+     hold it directly. Toolbar gained a magnet snap-toggle + a grid-size combo; the
+     status bar shows size + "(snap off)".
+   - **Remaining:** angle snap (needs a rotate manipulator first); material
+     swatches; asset thumbnails; tabbed viewport (each needs its own backing
+     render/scene support).
 5. *(Optional, expensive)* custom beveled/glow chrome via draw-list, only if
    pixel-fidelity is wanted.
 

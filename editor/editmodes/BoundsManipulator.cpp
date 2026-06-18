@@ -134,7 +134,7 @@ bool Resolve(const ManipulatorContext& ctx, const EditorViewport& viewport, Reso
     out.Min = mn;
     out.Max = mx;
 
-    const GridPlane grid = viewport.GetGrid();
+    const GridPlane grid = viewport.GetGrid(ctx.Grid);
     out.UAxis = AxisIndex(grid.AxisU);
     out.VAxis = AxisIndex(grid.AxisV);
     out.WAxis = 3 - out.UAxis - out.VAxis;
@@ -173,7 +173,7 @@ private:
     std::optional<BrushMesh> Compute(ToolContext& ctx, EditorViewport& viewport,
                                      const PointerEvent& pointer, bool validate) const
     {
-        const std::optional<Vec3d> grid = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
+        const std::optional<Vec3d> grid = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
         if (!grid.has_value())
             return std::nullopt;
 
@@ -228,7 +228,7 @@ void BoundsManipulator::BuildVisual(const ManipulatorContext& ctx,
     if (!Resolve(ctx, viewport, r))
         return;
 
-    const GridPlane grid = viewport.GetGrid();
+    const GridPlane grid = viewport.GetGrid(ctx.Grid);
     const Vec3d uVec = grid.AxisU;
     const Vec3d vVec = grid.AxisV;
     const Vec4 boxColor = EditorTheme::BoundsBox;

@@ -36,7 +36,7 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx,
                                                Vec3d snapped,
                                                const EditorViewport& viewport)
 {
-    const GridPlane grid = viewport.GetGrid();
+    const GridPlane grid = viewport.GetGrid(ctx.Grid);
     const int uIdx = AxisIndex(grid.AxisU);
     const int vIdx = AxisIndex(grid.AxisV);
     const float minHalf = grid.Spacing * 0.5f;
@@ -62,7 +62,7 @@ void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
                                                EditorViewport& viewport,
                                                const PointerEvent& pointer)
 {
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
     if (!snapped.has_value())
         return;
 
@@ -75,7 +75,7 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
 {
     ctx.Preview.Clear();
 
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
     if (snapped.has_value())
         UpdatePreview(ctx, *snapped, viewport);
 

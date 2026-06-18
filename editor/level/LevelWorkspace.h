@@ -13,6 +13,7 @@
 #include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
 #include "../tools/ToolRegistry.h"
+#include "../viewport/GridSettings.h"
 #include "../viewport/MarqueeState.h"
 #include "../viewport/Picking.h"
 #include "../viewport/ViewportLayout.h"
@@ -35,6 +36,7 @@ public:
     SelectionService Selection;
     PickingService Picking;
     MeshEditService MeshEdit;
+    GridSettings Grid;
     MarqueeState Marquee;
     InteractionHost Interactions;
     PreviewBuffer Preview;
