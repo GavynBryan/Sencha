@@ -75,6 +75,10 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         {
             if (EnginePtr != nullptr)
                 SetRelativeMouseMode(*EnginePtr, enabled);
+            // The camera and the UI can't both own the mouse: while a viewport is
+            // captured for navigation the cursor is hidden, so ImGui must ignore it.
+            if (UiFeature != nullptr)
+                UiFeature->SetMouseInputEnabled(!enabled);
         });
 
     Shortcuts = std::make_unique<ShortcutRegistry>();

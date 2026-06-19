@@ -235,6 +235,20 @@ UiInputCapture EditorUiFeature::GetInputCapture() const
     };
 }
 
+void EditorUiFeature::SetMouseInputEnabled(bool enabled)
+{
+    if (!Valid)
+        return;
+
+    // NoMouse parks io.MousePos off-screen and drops button state on the next
+    // NewFrame, so hover/highlight/click all stop until the flag is cleared.
+    ImGuiIO& io = ImGui::GetIO();
+    if (enabled)
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    else
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+}
+
 void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
 {
     if (panel != nullptr)

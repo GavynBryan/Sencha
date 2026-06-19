@@ -71,7 +71,12 @@ void MeshEditPanel::DrawFaceVerbs()
     const auto applyVerb = [&](MeshEditVerb verb, const MeshEditParams& params)
     {
         if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), verb, params))
+        {
             Commands.Execute(std::move(command));
+            // The verb rebuilt the brush: element indices have shifted/reindexed,
+            // so any kept element selection would point at the wrong element.
+            Selection.ClearMeshElementSelections();
+        }
     };
 
     ImGui::DragFloat("Distance", &ExtrudeDistance, 0.05f);
@@ -105,7 +110,10 @@ void MeshEditPanel::DrawEdgeVerbs()
     if (ImGui::Button("Split"))
     {
         if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::SplitEdge, {}))
+        {
             Commands.Execute(std::move(command));
+            Selection.ClearMeshElementSelections();
+        }
     }
 }
 

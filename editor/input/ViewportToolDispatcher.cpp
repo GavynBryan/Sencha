@@ -46,6 +46,7 @@ void ViewportToolDispatcher::Abort()
 {
     Interactions.Cancel(Context); // revert any in-flight interaction (gizmo/brush)
     Tools.Cancel();               // drop any tool gesture (marquee)
+    GestureActive = false;        // and release the gesture's viewport capture
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e)
@@ -57,7 +58,14 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     if (vp == nullptr)
         return InputConsumed::No;
 
+    // While a viewport owns the pointer for navigation (fly look / ortho pan) the
+    // cursor is hidden and belongs to the camera — tools must not act on it.
+    if (vp->WantsFlyCameraInput || vp->WantsOrthoPanInput)
+        return InputConsumed::No;
+
     SetActiveViewport(vp->Id);
+    GestureViewport = vp->Id;
+    GestureActive = true;
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
     if (Sessions.OnPointerDown(Context, *vp, pointer) == InputConsumed::Yes)
@@ -68,7 +76,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
 
 InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e)
 {
-    EditorViewport* vp = Layout.Active();
+    EditorViewport* vp = ActiveGestureViewport();
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -84,7 +92,8 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = Layout.Active();
+    EditorViewport* vp = ActiveGestureViewport();
+    GestureActive = false; // the LMB gesture ends here regardless of who handles it
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -128,4 +137,17 @@ EditorViewport* ViewportToolDispatcher::FindViewport(ImVec2 pos)
 void ViewportToolDispatcher::SetActiveViewport(ViewportId id)
 {
     Layout.SetActive(id);
+}
+
+EditorViewport* ViewportToolDispatcher::ActiveGestureViewport()
+{
+    if (!GestureActive)
+        return Layout.Active();
+
+    // Pin the gesture to the viewport it began in. If that viewport vanished
+    // mid-drag (e.g. a layout change), abandon the gesture rather than retarget it.
+    EditorViewport* vp = Layout.Find(GestureViewport);
+    if (vp == nullptr)
+        Abort(); // clears GestureActive
+    return vp;
 }

@@ -152,6 +152,23 @@ void ViewportLayout::OnResize(uint32_t width, uint32_t height)
 {
     Width = width;
     Height = height;
+
+    // Seed any not-yet-drawn viewport with a full-window rect. ViewportPanel writes
+    // the real per-leaf rects during draw, which runs *after* the first frame's
+    // input — so without this the first frame would project / aspect-test against a
+    // degenerate {0,0} box. Only fills uninitialized rects, so it never clobbers the
+    // live rects already on screen when a later resize arrives.
+    for (const ViewportStorage& viewport : Viewports)
+    {
+        if (viewport == nullptr)
+            continue;
+        if (viewport->RegionMax.x <= viewport->RegionMin.x
+            || viewport->RegionMax.y <= viewport->RegionMin.y)
+        {
+            viewport->RegionMin = ImVec2(0.0f, 0.0f);
+            viewport->RegionMax = ImVec2(static_cast<float>(width), static_cast<float>(height));
+        }
+    }
 }
 
 void ViewportLayout::SyncActiveFlags()

@@ -3,11 +3,8 @@
 #include "EditorViewport.h"
 #include "ViewportProjection.h"
 
-#include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
 #include "../meshedit/MeshElements.h"
-
-#include <math/geometry/3d/Aabb3d.h>
 
 #include <algorithm>
 #include <cmath>
@@ -18,41 +15,6 @@ namespace
 {
 constexpr double kMaxPickDistance = 1.0e6;
 constexpr double kParallelEpsilon = 1.0e-8;
-
-bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& bounds, float& outDistance)
-{
-    double minDistance = 0.0;
-    double maxDistance = kMaxPickDistance;
-
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        const double origin = ray.Origin[axis];
-        const double direction = ray.Direction[axis];
-        const double minBound = bounds.Min[axis];
-        const double maxBound = bounds.Max[axis];
-
-        if (std::abs(direction) < kParallelEpsilon)
-        {
-            if (origin < minBound || origin > maxBound)
-                return false;
-            continue;
-        }
-
-        const double inverseDirection = 1.0 / direction;
-        double t0 = (minBound - origin) * inverseDirection;
-        double t1 = (maxBound - origin) * inverseDirection;
-        if (t0 > t1)
-            std::swap(t0, t1);
-
-        minDistance = std::max(minDistance, t0);
-        maxDistance = std::min(maxDistance, t1);
-        if (maxDistance < minDistance)
-            return false;
-    }
-
-    outDistance = static_cast<float>(minDistance);
-    return true;
-}
 
 // Möller–Trumbore ray/triangle.
 bool IntersectRayTriangle(const Ray3d& ray, const Vec3d& a, const Vec3d& b, const Vec3d& c, double& outT)
@@ -97,6 +59,27 @@ bool IntersectRayPolygon(const Ray3d& ray, const std::vector<Vec3d>& corners, fl
     }
     if (hit)
         outDistance = static_cast<float>(best);
+    return hit;
+}
+
+// Nearest ray/brush-body hit. Tests the real transformed faces (the brush is a
+// convex solid) instead of an origin-anchored box, so whole-brush selection
+// matches the rendered geometry under rotation/scale and for off-origin meshes.
+bool RayHitsBrushBody(const BrushMesh& mesh, const Transform3f& transform, const Ray3d& ray, float& outDistance)
+{
+    bool hit = false;
+    float best = static_cast<float>(kMaxPickDistance);
+    for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+    {
+        float distance = 0.0f;
+        if (IntersectRayPolygon(ray, face.Corners, distance) && distance < best)
+        {
+            best = distance;
+            hit = true;
+        }
+    }
+    if (hit)
+        outDistance = best;
     return hit;
 }
 
@@ -204,13 +187,13 @@ std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandid
                                                                                     const LevelScene& scene,
                                                                                     EntityId entity) const
 {
-    const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
-    if (!state.has_value())
+    const Transform3f* transform = scene.TryGetTransform(entity);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    if (transform == nullptr || mesh == nullptr)
         return std::nullopt;
 
-    const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
     float hitDistance = 0.0f;
-    if (!IntersectRayAabb(ray, bounds, hitDistance))
+    if (!RayHitsBrushBody(*mesh, *transform, ray, hitDistance))
         return std::nullopt;
 
     return PickCandidate{
@@ -356,24 +339,21 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
 
         if (mode == MeshElementKind::Object)
         {
-            const std::optional<BrushState> state = BrushGeometry::TryGetState(scene, entity);
-            if (!state.has_value())
+            const Transform3f* transform = scene.TryGetTransform(entity);
+            const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+            if (transform == nullptr || mesh == nullptr)
                 continue;
 
-            // Overlap of the projected bounds' screen rectangle with the marquee.
-            const Aabb3d bounds = BrushGeometry::ComputeBounds(*state);
+            // Overlap of the real geometry's projected screen rectangle with the
+            // marquee — projecting the actual mesh vertices, not an origin box.
             float bxMin = std::numeric_limits<float>::max();
             float byMin = std::numeric_limits<float>::max();
             float bxMax = std::numeric_limits<float>::lowest();
             float byMax = std::numeric_limits<float>::lowest();
             bool any = false;
-            for (int corner = 0; corner < 8; ++corner)
+            for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
             {
-                const Vec3d point(
-                    (corner & 1) ? bounds.Max.X : bounds.Min.X,
-                    (corner & 2) ? bounds.Max.Y : bounds.Min.Y,
-                    (corner & 4) ? bounds.Max.Z : bounds.Min.Z);
-                if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(point))
+                if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(vertex.Position))
                 {
                     bxMin = std::min(bxMin, p->Pixel.x);
                     byMin = std::min(byMin, p->Pixel.y);

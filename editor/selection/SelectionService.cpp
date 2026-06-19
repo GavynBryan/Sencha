@@ -114,6 +114,22 @@ void SelectionService::ClearSelection()
     Notify();
 }
 
+void SelectionService::ClearMeshElementSelections()
+{
+    const std::span<const SelectableRef> current = Context.GetSelection();
+    std::vector<SelectableRef> kept;
+    kept.reserve(current.size());
+    for (const SelectableRef& ref : current)
+    {
+        if (!ref.IsMeshElement())
+            kept.push_back(ref);
+    }
+    if (kept.size() == current.size())
+        return; // no element selections to drop; don't churn observers
+
+    SetSelection(std::move(kept));
+}
+
 ISelectionContext& SelectionService::GetContext()
 {
     return Context;
