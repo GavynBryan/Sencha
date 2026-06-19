@@ -19,11 +19,12 @@
 
 #include <app/Engine.h>
 #include <core/console/ConsoleService.h>
-#include <core/service/ServiceHost.h>
 #include <debug/DebugService.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
+#include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -42,15 +43,15 @@ void EditorApp::OnConfigure(GameConfigureContext& ctx)
 
 void EditorApp::OnStart(GameStartupContext& ctx)
 {
-    EnginePtr = &ctx.EngineInstance;
+    EnginePtr = &GetEngine();
+    Engine& engine = *EnginePtr;
 
-    ServiceHost& services = ctx.EngineInstance.Services();
-    auto& console = services.Get<ConsoleService>();
-    auto& debug = services.Get<DebugService>();
-    auto& windows = services.Get<SdlWindowService>();
-    auto& instance = services.Get<VulkanInstanceService>();
-    auto& frames = services.Get<VulkanFrameService>();
-    auto& renderer = services.Get<Renderer>();
+    auto& console = engine.Console();
+    auto& debug = engine.Debug();
+    auto& windows = engine.Platform().Windows;
+    auto& instance = engine.Graphics().Instance;
+    auto& frames = engine.Graphics().Frames;
+    auto& renderer = engine.Graphics().MainRenderer;
 
     SdlWindow* window = windows.GetPrimaryWindow();
     if (window == nullptr)
@@ -112,7 +113,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         *Workspace->Manipulators,
         Workspace->Grid));
 
-    auto uiFeature = std::make_unique<EditorUiFeature>(ctx.EngineInstance, *window, instance, frames);
+    auto uiFeature = std::make_unique<EditorUiFeature>(engine, *window, instance, frames);
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },
@@ -359,7 +360,7 @@ void EditorApp::LoadGameModule()
     if (path == nullptr || path[0] == '\0')
         return;
 
-    auto& console = EnginePtr->Services().Get<ConsoleService>();
+    auto& console = EnginePtr->Console();
     GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
     std::string error;
     GameModule = ModuleLoader.Load(path, ctx, &error);
@@ -380,14 +381,14 @@ void EditorApp::UnloadGameModule()
     if (!GameModule.IsValid())
         return;
 
-    auto& console = EnginePtr->Services().Get<ConsoleService>();
+    auto& console = EnginePtr->Console();
     GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
     ModuleLoader.Unload(GameModule, ctx);
 }
 
 void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)
 {
-    SdlWindow* window = engine.Services().Get<SdlWindowService>().GetPrimaryWindow();
+    SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
 

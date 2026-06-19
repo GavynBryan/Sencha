@@ -336,6 +336,10 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DebugOverlay = debugOverlay.get();
     auto& renderer = graphics.MainRenderer;
     renderer.AddFeature(std::move(debugOverlay));
+#else
+    (void)debugLog;
+    debug.Open();
+#endif
 
     std::printf("Sencha Cube Demo\n");
     std::printf("  Right mouse + move: look\n");
@@ -358,8 +362,12 @@ void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
+#ifdef SENCHA_ENABLE_DEBUG_UI
     if (DebugOverlay != nullptr && DebugOverlay->ProcessSdlEvent(ctx.Event))
         ctx.Handled = true;
+#else
+    (void)ctx;
+#endif
     if (ctx.Handled)
         return;
 
@@ -381,6 +389,7 @@ void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 
 void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 {
+#ifdef SENCHA_ENABLE_DEBUG_UI
     DebugOverlay = nullptr;
 #endif
     SetRelativeMouseMode(GetEngine(), false);

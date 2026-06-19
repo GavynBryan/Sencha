@@ -3,13 +3,12 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/ConsoleConfig.h>
-#include <core/service/IService.h>
 
 #include <functional>
 #include <string>
 #include <vector>
 
-class ConsoleService : public IService
+class ConsoleService
 {
 public:
     ConsoleService();
