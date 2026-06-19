@@ -1,5 +1,7 @@
 #include "ViewportToolDispatcher.h"
 
+#include "InputRouter.h"
+
 #include "../editmodes/EditSessionHost.h"
 #include "../interaction/InteractionHost.h"
 #include "../tools/ToolContext.h"
@@ -22,21 +24,23 @@ ViewportToolDispatcher::ViewportToolDispatcher(ViewportLayout& layout,
 {
 }
 
-InputConsumed ViewportToolDispatcher::OnInput(const InputEvent& event)
+InputConsumed ViewportToolDispatcher::OnInput(const InputEvent& event, PointerCapture& capture)
 {
     if (const auto* e = std::get_if<PointerDownEvent>(&event))
-        return HandlePointerDown(*e);
+        return HandlePointerDown(*e, capture);
     if (const auto* e = std::get_if<PointerMoveEvent>(&event))
-        return HandlePointerMove(*e);
+        return HandlePointerMove(*e, capture);
     if (const auto* e = std::get_if<PointerUpEvent>(&event))
-        return HandlePointerUp(*e);
+        return HandlePointerUp(*e, capture);
     if (const auto* e = std::get_if<KeyDownEvent>(&event))
-        return HandleKeyDown(*e);
+        return HandleKeyDown(*e, capture);
     if (std::get_if<FocusLostEvent>(&event))
     {
         // Losing focus mid-drag (e.g. alt-tab) aborts the gesture rather than
         // stranding live preview state; not consumed, so others still observe it.
         Abort();
+        if (capture.HeldBySelf())
+            capture.Release();
         return InputConsumed::No;
     }
     return InputConsumed::No;
@@ -46,10 +50,9 @@ void ViewportToolDispatcher::Abort()
 {
     Interactions.Cancel(Context); // revert any in-flight interaction (gizmo/brush)
     Tools.Cancel();               // drop any tool gesture (marquee)
-    GestureActive = false;        // and release the gesture's viewport capture
 }
 
-InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e)
+InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)
 {
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
@@ -58,14 +61,12 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     if (vp == nullptr)
         return InputConsumed::No;
 
-    // While a viewport owns the pointer for navigation (fly look / ortho pan) the
-    // cursor is hidden and belongs to the camera — tools must not act on it.
-    if (vp->WantsFlyCameraInput || vp->WantsOrthoPanInput)
-        return InputConsumed::No;
-
+    // Own the pointer for the gesture: while held, the router delivers every move/up
+    // here exclusively, so navigation can't re-activate a viewport from under the
+    // drag and the camera/UI never see these events.
     SetActiveViewport(vp->Id);
     GestureViewport = vp->Id;
-    GestureActive = true;
+    capture.Acquire(PointerCaptureKind::Viewport);
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
     if (Sessions.OnPointerDown(Context, *vp, pointer) == InputConsumed::Yes)
@@ -74,9 +75,9 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     return Tools.HandlePointerDown(*vp, pointer);
 }
 
-InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e)
+InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e, PointerCapture& capture)
 {
-    EditorViewport* vp = ActiveGestureViewport();
+    EditorViewport* vp = ResolveGestureViewport(capture);
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -87,13 +88,14 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     return Tools.HandlePointerMove(*vp, pointer);
 }
 
-InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
+InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, PointerCapture& capture)
 {
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = ActiveGestureViewport();
-    GestureActive = false; // the LMB gesture ends here regardless of who handles it
+    EditorViewport* vp = ResolveGestureViewport(capture);
+    if (capture.HeldBySelf())
+        capture.Release(); // the LMB gesture ends here
     if (vp == nullptr)
         return InputConsumed::No;
 
@@ -104,11 +106,13 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e)
     return Tools.HandlePointerUp(*vp, pointer);
 }
 
-InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e)
+InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e, PointerCapture& capture)
 {
     if (e.Key == SDLK_ESCAPE && Interactions.IsActive())
     {
         Abort();
+        if (capture.HeldBySelf())
+            capture.Release();
         return InputConsumed::Yes;
     }
 
@@ -139,15 +143,18 @@ void ViewportToolDispatcher::SetActiveViewport(ViewportId id)
     Layout.SetActive(id);
 }
 
-EditorViewport* ViewportToolDispatcher::ActiveGestureViewport()
+EditorViewport* ViewportToolDispatcher::ResolveGestureViewport(PointerCapture& capture)
 {
-    if (!GestureActive)
+    if (!capture.HeldBySelf())
         return Layout.Active();
 
     // Pin the gesture to the viewport it began in. If that viewport vanished
     // mid-drag (e.g. a layout change), abandon the gesture rather than retarget it.
     EditorViewport* vp = Layout.Find(GestureViewport);
     if (vp == nullptr)
-        Abort(); // clears GestureActive
+    {
+        Abort();
+        capture.Release();
+    }
     return vp;
 }

@@ -1,5 +1,7 @@
 #include "ViewportNavigation.h"
 
+#include "InputRouter.h"
+
 #include "../viewport/EditorCamera.h"
 #include "../viewport/EditorViewport.h"
 #include "../viewport/ViewportLayout.h"
@@ -11,22 +13,22 @@ ViewportNavigation::ViewportNavigation(ViewportLayout& layout,
 {
 }
 
-InputConsumed ViewportNavigation::OnInput(const InputEvent& event)
+InputConsumed ViewportNavigation::OnInput(const InputEvent& event, PointerCapture& capture)
 {
     if (const auto* e = std::get_if<PointerDownEvent>(&event))
-        return HandlePointerDown(*e);
+        return HandlePointerDown(*e, capture);
     if (const auto* e = std::get_if<PointerUpEvent>(&event))
-        return HandlePointerUp(*e);
+        return HandlePointerUp(*e, capture);
     if (const auto* e = std::get_if<PointerMoveEvent>(&event))
         return HandlePointerMove(*e);
     if (const auto* e = std::get_if<WheelEvent>(&event))
         return HandleWheel(*e);
     if (const auto* e = std::get_if<FocusLostEvent>(&event))
-        return HandleFocusLost(*e);
+        return HandleFocusLost(*e, capture);
     return InputConsumed::No;
 }
 
-InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e)
+InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)
 {
     if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
         return InputConsumed::No;
@@ -52,23 +54,27 @@ InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e)
     {
         hit->WantsFlyCameraInput = true;
         OnRelativeModeChange(true);
+        capture.Acquire(PointerCaptureKind::Viewport);
     }
     else if (e.Button == MouseButton::Middle
              && hit->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
     {
         hit->WantsOrthoPanInput = true;
+        capture.Acquire(PointerCaptureKind::Viewport);
     }
 
     return InputConsumed::Yes;
 }
 
-InputConsumed ViewportNavigation::HandlePointerUp(const PointerUpEvent& e)
+InputConsumed ViewportNavigation::HandlePointerUp(const PointerUpEvent& e, PointerCapture& capture)
 {
     if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
         return InputConsumed::No;
 
     ClearCapture();
     OnRelativeModeChange(false);
+    if (capture.HeldBySelf())
+        capture.Release();
     return InputConsumed::Yes;
 }
 
@@ -119,10 +125,12 @@ InputConsumed ViewportNavigation::HandleWheel(const WheelEvent& e)
     return InputConsumed::Yes;
 }
 
-InputConsumed ViewportNavigation::HandleFocusLost(const FocusLostEvent&)
+InputConsumed ViewportNavigation::HandleFocusLost(const FocusLostEvent&, PointerCapture& capture)
 {
     ClearCapture();
     OnRelativeModeChange(false);
+    if (capture.HeldBySelf())
+        capture.Release();
     return InputConsumed::No;
 }
 

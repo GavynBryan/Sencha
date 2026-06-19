@@ -73,12 +73,11 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Layout,
         [this](bool enabled)
         {
+            // Fly-look only: hide the cursor and switch to relative mouse. The ImGui
+            // mouse gate is driven by pointer capture (Router->SetCaptureChanged
+            // below), which also covers ortho-pan and tool drags.
             if (EnginePtr != nullptr)
                 SetRelativeMouseMode(*EnginePtr, enabled);
-            // The camera and the UI can't both own the mouse: while a viewport is
-            // captured for navigation the cursor is hidden, so ImGui must ignore it.
-            if (UiFeature != nullptr)
-                UiFeature->SetMouseInputEnabled(!enabled);
         });
 
     Shortcuts = std::make_unique<ShortcutRegistry>();
@@ -105,9 +104,19 @@ void EditorApp::OnStart(GameStartupContext& ctx)
                 capture.Mouse = false;
             return capture;
         }));
-    Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
-    Router->AddHandler([this](const InputEvent& e) { return Workspace->Dispatcher->OnInput(e); });
-    Router->AddHandler([this](const InputEvent& e) { return Shortcuts->OnInput(e); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Dispatcher->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
+
+    // The pointer's owner drives the ImGui mouse gate: while a viewport gesture
+    // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores the mouse,
+    // so the unowned/hidden cursor can't hover or click the UI. A UI drag keeps it on.
+    Router->SetCaptureChanged(
+        [this](std::optional<PointerCaptureKind> kind)
+        {
+            if (UiFeature != nullptr)
+                UiFeature->SetMouseInputEnabled(kind != PointerCaptureKind::Viewport);
+        });
 
     renderer.AddFeature(std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
