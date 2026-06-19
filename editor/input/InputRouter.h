@@ -27,7 +27,9 @@ class InputRouter;
 class PointerCapture
 {
 public:
-    void Acquire(PointerCaptureKind kind);
+    // `origin` is the viewport the gesture began in; the router stamps it onto
+    // subsequent pointer events so the gesture stays on its starting viewport.
+    void Acquire(PointerCaptureKind kind, ViewportId origin = {});
     void Release();
     [[nodiscard]] bool HeldBySelf() const;
 
@@ -55,18 +57,24 @@ public:
     void AddHandler(Handler handler);
     InputConsumed Route(const InputEvent& event);
 
+    // Whether a pointer capture is currently held, and the viewport its holder
+    // recorded at Acquire. Used by the input boundary to stamp events while captured.
+    [[nodiscard]] bool PointerCaptured() const { return CapturedIndex.has_value(); }
+    [[nodiscard]] ViewportId CaptureViewport() const { return CaptureOrigin; }
+
     // Notified when the capture owner changes: the new kind, or nullopt on release.
     // Drives the ImGui mouse gate (off while a Viewport capture is held).
     void SetCaptureChanged(std::function<void(std::optional<PointerCaptureKind>)> callback);
 
 private:
     friend class PointerCapture;
-    void AcquireFor(std::size_t index, PointerCaptureKind kind);
+    void AcquireFor(std::size_t index, PointerCaptureKind kind, ViewportId origin);
     void ReleaseFor(std::size_t index);
     [[nodiscard]] static bool IsPointerEvent(const InputEvent& event);
 
     std::vector<Handler> Handlers;
     std::optional<std::size_t> CapturedIndex;
     PointerCaptureKind CapturedKind = PointerCaptureKind::Viewport;
+    ViewportId CaptureOrigin = {};
     std::function<void(std::optional<PointerCaptureKind>)> CaptureChanged;
 };

@@ -33,34 +33,24 @@ InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e, P
     if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
         return InputConsumed::No;
 
-    EditorViewport* hit = nullptr;
-    for (const auto& viewport : Layout.All())
-    {
-        if (viewport != nullptr && viewport->Contains(e.Position))
-        {
-            hit = viewport.get();
-            break;
-        }
-    }
-
+    EditorViewport* hit = Layout.Find(e.Viewport);
     if (hit == nullptr)
         return InputConsumed::No;
 
-    Layout.SetActive(hit->Id);
-    ClearCapture();
+    ClearCapture(); // focus is set by the input boundary, not here
 
     if (e.Button == MouseButton::Right
         && hit->Camera.ActiveMode == EditorCamera::Mode::Perspective)
     {
         hit->WantsFlyCameraInput = true;
         OnRelativeModeChange(true);
-        capture.Acquire(PointerCaptureKind::Viewport);
+        capture.Acquire(PointerCaptureKind::Viewport, hit->Id);
     }
     else if (e.Button == MouseButton::Middle
              && hit->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
     {
         hit->WantsOrthoPanInput = true;
-        capture.Acquire(PointerCaptureKind::Viewport);
+        capture.Acquire(PointerCaptureKind::Viewport, hit->Id);
     }
 
     return InputConsumed::Yes;
@@ -80,32 +70,26 @@ InputConsumed ViewportNavigation::HandlePointerUp(const PointerUpEvent& e, Point
 
 InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
 {
-    EditorViewport* active = Layout.Active();
-    if (active == nullptr)
+    // Reached for camera motion only while this nav holds capture (fly/pan); the
+    // event then carries the captured viewport. Focus when nothing is captured is
+    // owned by the input boundary, so there is no hover-activate here.
+    EditorViewport* vp = Layout.Find(e.Viewport);
+    if (vp == nullptr)
         return InputConsumed::No;
 
-    if (active->WantsFlyCameraInput
-        && active->Camera.ActiveMode == EditorCamera::Mode::Perspective)
+    if (vp->WantsFlyCameraInput
+        && vp->Camera.ActiveMode == EditorCamera::Mode::Perspective)
     {
-        active->Camera.ApplyPerspectiveLook(e.Delta.x, e.Delta.y);
+        vp->Camera.ApplyPerspectiveLook(e.Delta.x, e.Delta.y);
         return InputConsumed::Yes;
     }
 
-    if (active->WantsOrthoPanInput
-        && active->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    if (vp->WantsOrthoPanInput
+        && vp->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
     {
-        const float viewportHeight = active->RegionMax.y - active->RegionMin.y;
-        active->Camera.ApplyOrthoPan(e.Delta.x, e.Delta.y, viewportHeight);
+        const float viewportHeight = vp->RegionMax.y - vp->RegionMin.y;
+        vp->Camera.ApplyOrthoPan(e.Delta.x, e.Delta.y, viewportHeight);
         return InputConsumed::Yes;
-    }
-
-    for (const auto& viewport : Layout.All())
-    {
-        if (viewport != nullptr && viewport->Contains(e.Position))
-        {
-            Layout.SetActive(viewport->Id);
-            break;
-        }
     }
 
     return InputConsumed::No;

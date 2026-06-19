@@ -53,6 +53,10 @@ private:
     void SetRelativeMouseMode(Engine& engine, bool enabled);
     static ModifierFlags ReadModifiers(SDL_Keymod mod);
     static std::optional<InputEvent> TranslateEvent(const SDL_Event& event);
+    // Resolves and stamps a translated pointer event's origin viewport before it is
+    // routed: the captured viewport while a gesture holds the pointer, otherwise the
+    // viewport under the cursor (which also becomes the focused viewport).
+    void StampOriginViewport(InputEvent& event);
 
     void NewDocument();
     void SaveDocument();

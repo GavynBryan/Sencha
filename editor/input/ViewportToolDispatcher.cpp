@@ -57,16 +57,14 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = FindViewport(e.Position);
+    EditorViewport* vp = Layout.Find(e.Viewport);
     if (vp == nullptr)
         return InputConsumed::No;
 
     // Own the pointer for the gesture: while held, the router delivers every move/up
-    // here exclusively, so navigation can't re-activate a viewport from under the
-    // drag and the camera/UI never see these events.
-    SetActiveViewport(vp->Id);
-    GestureViewport = vp->Id;
-    capture.Acquire(PointerCaptureKind::Viewport);
+    // here exclusively and re-stamps them with this viewport, so the gesture stays on
+    // its origin viewport and the camera/UI never see these events.
+    capture.Acquire(PointerCaptureKind::Viewport, vp->Id);
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
     if (Sessions.OnPointerDown(Context, *vp, pointer) == InputConsumed::Yes)
@@ -77,9 +75,17 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
 
 InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e, PointerCapture& capture)
 {
-    EditorViewport* vp = ResolveGestureViewport(capture);
+    EditorViewport* vp = Layout.Find(e.Viewport);
     if (vp == nullptr)
+    {
+        // The gesture's viewport vanished mid-drag (e.g. a layout change): abandon it.
+        if (capture.HeldBySelf())
+        {
+            Abort();
+            capture.Release();
+        }
         return InputConsumed::No;
+    }
 
     const PointerEvent pointer{ .Position = e.Position, .Delta = e.Delta, .Modifiers = e.Modifiers };
     if (Interactions.OnPointerMove(Context, *vp, pointer) == InputConsumed::Yes)
@@ -93,11 +99,17 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, P
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = ResolveGestureViewport(capture);
-    if (capture.HeldBySelf())
+    EditorViewport* vp = Layout.Find(e.Viewport);
+    const bool wasHeld = capture.HeldBySelf();
+    if (wasHeld)
         capture.Release(); // the LMB gesture ends here
+
     if (vp == nullptr)
+    {
+        if (wasHeld)
+            Abort(); // origin viewport gone; revert rather than strand preview state
         return InputConsumed::No;
+    }
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
     if (Interactions.OnPointerUp(Context, *vp, pointer) == InputConsumed::Yes)
@@ -117,44 +129,4 @@ InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e, Point
     }
 
     return Tools.OnInput(InputEvent{ e });
-}
-
-EditorViewport* ViewportToolDispatcher::FindViewport(ImVec2 pos)
-{
-    // In single mode only the active viewport is on screen; the others hold stale
-    // screen rects, so hit-test just the active one to avoid routing input to a
-    // hidden viewport whose old quadrant rect overlaps the cursor.
-    if (Layout.GetMode() == LayoutMode::Single)
-    {
-        EditorViewport* active = Layout.Active();
-        return (active != nullptr && active->Contains(pos)) ? active : nullptr;
-    }
-
-    for (const auto& viewport : Layout.All())
-    {
-        if (viewport != nullptr && viewport->Contains(pos))
-            return viewport.get();
-    }
-    return nullptr;
-}
-
-void ViewportToolDispatcher::SetActiveViewport(ViewportId id)
-{
-    Layout.SetActive(id);
-}
-
-EditorViewport* ViewportToolDispatcher::ResolveGestureViewport(PointerCapture& capture)
-{
-    if (!capture.HeldBySelf())
-        return Layout.Active();
-
-    // Pin the gesture to the viewport it began in. If that viewport vanished
-    // mid-drag (e.g. a layout change), abandon the gesture rather than retarget it.
-    EditorViewport* vp = Layout.Find(GestureViewport);
-    if (vp == nullptr)
-    {
-        Abort();
-        capture.Release();
-    }
-    return vp;
 }

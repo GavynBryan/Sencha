@@ -2,9 +2,9 @@
 
 #include <variant>
 
-void PointerCapture::Acquire(PointerCaptureKind kind)
+void PointerCapture::Acquire(PointerCaptureKind kind, ViewportId origin)
 {
-    Router.AcquireFor(Index, kind);
+    Router.AcquireFor(Index, kind, origin);
 }
 
 void PointerCapture::Release()
@@ -30,12 +30,13 @@ bool InputRouter::IsPointerEvent(const InputEvent& event)
         || std::holds_alternative<WheelEvent>(event);
 }
 
-void InputRouter::AcquireFor(std::size_t index, PointerCaptureKind kind)
+void InputRouter::AcquireFor(std::size_t index, PointerCaptureKind kind, ViewportId origin)
 {
     const bool changed =
         !CapturedIndex.has_value() || *CapturedIndex != index || CapturedKind != kind;
     CapturedIndex = index;
     CapturedKind = kind;
+    CaptureOrigin = origin;
     if (changed && CaptureChanged)
         CaptureChanged(kind);
 }

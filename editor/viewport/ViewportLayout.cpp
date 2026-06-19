@@ -171,6 +171,22 @@ void ViewportLayout::OnResize(uint32_t width, uint32_t height)
     }
 }
 
+ViewportId ViewportLayout::ResolveAt(ImVec2 point) const
+{
+    if (Mode == LayoutMode::Single)
+    {
+        const EditorViewport* active = Active();
+        return (active != nullptr && active->Contains(point)) ? active->Id : ViewportId{};
+    }
+
+    for (const ViewportStorage& viewport : Viewports)
+    {
+        if (viewport != nullptr && viewport->Contains(point))
+            return viewport->Id;
+    }
+    return ViewportId{};
+}
+
 void ViewportLayout::SyncActiveFlags()
 {
     for (const ViewportStorage& viewport : Viewports)
