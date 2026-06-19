@@ -8,7 +8,7 @@ layout(push_constant) uniform GridPC {
     float spacing;
     vec3 axisV;
     float subdivSpacing;
-    vec3 cameraPos;
+    vec3 gridForward;
     float fadeEnd;
 } pc;
 

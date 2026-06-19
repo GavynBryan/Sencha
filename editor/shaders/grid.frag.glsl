@@ -8,7 +8,7 @@ layout(push_constant) uniform GridPC {
     float spacing;
     vec3 axisV;
     float subdivSpacing;
-    vec3 cameraPos;
+    vec3 gridForward;
     float fadeEnd;
 } pc;
 
@@ -22,8 +22,9 @@ const float kGridHalfPx = 1.15;
 const float kAxisHalfPx = 1.75;
 
 // Coverage of the nearest grid line: a smooth band whose width is fixed in pixels
-// (so it doesn't thin into sparkle at grazing angles), faded out as a cell shrinks
-// toward pixel size so distant lines dissolve cleanly instead of aliasing/moire.
+// (so it doesn't thin into sparkle at grazing angles). When a cell shrinks past a
+// few pixels the line can no longer be resolved, so coverage converges to its duty
+// cycle — a flat gray haze — instead of dissolving to black.
 float gridLine(float coord, float spacing)
 {
     float fw       = max(fwidth(coord), 1e-6);
@@ -31,10 +32,16 @@ float gridLine(float coord, float spacing)
     float dist     = abs(mod(coord + halfCell, spacing) - halfCell);
     float distPx   = dist / fw;
     float cov      = 1.0 - smoothstep(0.0, kGridHalfPx, distPx);
-    // Level-of-detail: fade the line once its cell is only a few pixels wide.
-    float cellPx   = spacing / fw;
-    cov           *= clamp(cellPx * 0.5 - 0.5, 0.0, 1.0);
-    return cov;
+
+    // Minify toward the line's average coverage (its duty cycle), not toward zero:
+    // zeroing collapses fastest where cells compress most — the vanishing point —
+    // which pinched the grid into a concave notch. The distance fade then blacks out
+    // the resulting haze along a straight, horizon-parallel front.
+    float lineWidthPx = 2.0 * kGridHalfPx;                     // full drawn line width
+    float cellPx      = spacing / fw;                          // this fragment's cell size
+    float duty        = clamp(lineWidthPx / cellPx, 0.0, 1.0); // average coverage when dense
+    float minify      = clamp(2.0 / cellPx - 0.5, 0.0, 1.0);   // 0 at 4 px/cell, 1 at 4/3 px
+    return mix(cov, duty, minify);
 }
 
 // Coverage of the world axis at coord == 0 — a fixed pixel-width band so the long
@@ -60,9 +67,14 @@ void main()
     float u = dot(fragWorldPos, pc.axisU);
     float v = dot(fragWorldPos, pc.axisV);
 
-    // Fade with distance from camera's projection onto the grid plane.
-    float dist = length(fragWorldPos - pc.gridCenter);
-    float fade = 1.0 - smoothstep(pc.fadeEnd * 0.5, pc.fadeEnd, dist);
+    // Fade toward the horizon by distance measured ALONG the camera's heading
+    // (pc.gridForward = forward projected onto the plane), so the fade front runs
+    // parallel to the horizon and the grid reaches a flat edge; radial distance would
+    // fade on a circle and read as a concave bowl. In ortho / looking straight down the
+    // renderer sends a zero heading, leaving the metric at zero so the grid stays
+    // uniform and unfaded — what a top-down view wants.
+    float metric = dot(fragWorldPos - pc.gridCenter, pc.gridForward);
+    float fade   = 1.0 - smoothstep(pc.fadeEnd * 0.5, pc.fadeEnd, metric);
     if (fade < 0.001) discard;
 
     // --- line contributions --------------------------------------------------
