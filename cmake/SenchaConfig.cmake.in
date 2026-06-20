@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+# Sencha SDK package config (real-engine-roadmap.md Phase 0). An out-of-tree
+# game project does find_package(Sencha) and gets the imported sencha::engine
+# target plus the sencha_game_module() helper, with no engine source present.
+
+include(CMakeFindDependencyMacro)
+
+# SDL3 and Vulkan are PUBLIC link dependencies of the engine, so a consumer
+# linking sencha::engine resolves them here rather than vendoring them.
+find_dependency(SDL3 CONFIG)
+find_dependency(Vulkan)
+
+include("${CMAKE_CURRENT_LIST_DIR}/SenchaTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/SenchaGameModule.cmake")
+
+check_required_components(Sencha)

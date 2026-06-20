@@ -35,6 +35,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json" F
 
 enable_testing()
 
+# Standard bin/lib/include destinations for the install/export of the SDK
+# (real-engine-roadmap.md Phase 0). Included at the root so every subdirectory's
+# install rules and the engine's INSTALL_INTERFACE include dir agree on layout.
+include(GNUInstallDirs)
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

@@ -10,6 +10,8 @@
 #include "../input/ViewportNavigation.h"
 #include "../level/LevelWorkspace.h"
 #include "../level/MaterialLibrary.h"
+#include "../project/PieSession.h"
+#include "../project/Project.h"
 #include "../ui/EditorStatusBar.h"
 #include "../ui/EditorToolbar.h"
 
@@ -70,11 +72,17 @@ private:
     void UpdateWindowTitle();
     void OnFrame();
 
-    // Loads the project's game module (path from the SENCHA_GAME_MODULE env var
-    // for now; an EditorProject will own it later) so its components register into
-    // the editor's serializer registry before the document is created.
+    // Opens the project (SENCHA_PROJECT = path to a .senchaproj) and loads its
+    // game module so its components register into the editor's serializer registry
+    // before the document is created. Falls back to a bare module path in
+    // SENCHA_GAME_MODULE when no project is set.
     void LoadGameModule();
     void UnloadGameModule();
+
+    // Registers the `play [map]` / `stop` console commands that drive PIE.
+    void RegisterPlayCommands();
+    // Resolves the prebuilt `app` host beside the editor executable.
+    [[nodiscard]] std::string ResolveHostAppPath() const;
 
     ViewportPanel* Viewports = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
@@ -101,4 +109,7 @@ private:
 
     GameModuleLoader ModuleLoader;
     LoadedModule     GameModule;
+
+    std::optional<ProjectDescriptor> Project;
+    PieSession                       Pie;
 };

@@ -20,7 +20,9 @@
 #include <SDL3/SDL.h>
 
 #include <app/Engine.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/console/ConsoleTypes.h>
 #include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
@@ -36,6 +38,8 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string>
 
 EditorApp::~EditorApp() = default;
 
@@ -66,6 +70,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     // Load the project's game module (if any) BEFORE the document is created, so
     // its components are registered when the document's World registers storage.
     LoadGameModule();
+
+    // PIE drives the project through these console commands (`play`, `stop`).
+    RegisterPlayCommands();
 
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<LevelWorkspace>();
@@ -395,23 +402,108 @@ void EditorApp::OnFrame()
 
 void EditorApp::LoadGameModule()
 {
-    const char* path = std::getenv("SENCHA_GAME_MODULE");
-    if (path == nullptr || path[0] == '\0')
+    // Prefer a project descriptor (SENCHA_PROJECT); fall back to a bare module
+    // path (SENCHA_GAME_MODULE) so the pre-project workflow still works.
+    std::string modulePath;
+    if (const char* projectPath = std::getenv("SENCHA_PROJECT");
+        projectPath != nullptr && projectPath[0] != '\0')
+    {
+        ProjectDescriptor descriptor;
+        std::string error;
+        if (!ProjectDescriptor::Load(projectPath, descriptor, &error))
+        {
+            std::fprintf(stderr, "[editor] failed to open project '%s': %s\n",
+                         projectPath, error.c_str());
+            return;
+        }
+        Project = std::move(descriptor);
+        modulePath = Project->GameModulePath;
+        std::fprintf(stderr, "[editor] opened project '%s' (%s)\n",
+                     Project->Name.c_str(), projectPath);
+    }
+    else if (const char* envPath = std::getenv("SENCHA_GAME_MODULE");
+             envPath != nullptr && envPath[0] != '\0')
+    {
+        modulePath = envPath;
+    }
+
+    if (modulePath.empty())
         return;
 
     std::string error;
-    GameModule = ModuleLoader.Load(path, &error);
+    GameModule = ModuleLoader.Load(modulePath, &error);
     if (!GameModule.IsValid())
     {
         std::fprintf(stderr, "[editor] failed to load game module '%s': %s\n",
-                     path, error.c_str());
+                     modulePath.c_str(), error.c_str());
         return;
     }
 
     // The editor only borrows the module's component serializers (so it can edit
     // scenes containing game components); it never runs the game's lifecycle.
     GameModule.Instance->OnRegisterComponents(DefaultComponentSerializerRegistry());
-    std::fprintf(stderr, "[editor] loaded game module '%s'\n", path);
+    std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
+}
+
+std::string EditorApp::ResolveHostAppPath() const
+{
+    // The `app` host installs beside the editor (bin/app, bin/sencha_editor).
+    const char* base = SDL_GetBasePath();
+    if (base == nullptr)
+        return "app";
+    return (std::filesystem::path(base) / "app").string();
+}
+
+void EditorApp::RegisterPlayCommands()
+{
+    if (EnginePtr == nullptr)
+        return;
+
+    ConsoleRegistry& registry = EnginePtr->Console().Registry();
+
+    ConsoleCommandMetadata play;
+    play.Name = "play";
+    play.Owner = "editor";
+    play.Usage = "play [map]";
+    play.Help = "Launch the project in the app host (PIE), optionally loading a cooked map.";
+    play.Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+        ConsoleResult result;
+        if (!Project)
+        {
+            result.Error("no project open (set SENCHA_PROJECT)");
+            return result;
+        }
+        const std::string map = args.empty() ? std::string{} : args.front();
+        // CWD is the project directory: the game resolves its content roots
+        // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
+        std::string error;
+        if (!Pie.Launch(ResolveHostAppPath(), Project->GameModulePath, Project->Directory, map, &error))
+        {
+            result.Error("play failed: " + error);
+            return result;
+        }
+        result.Info(map.empty() ? "launched play session" : "launched play session: " + map);
+        return result;
+    };
+    registry.RegisterCommand(std::move(play));
+
+    ConsoleCommandMetadata stop;
+    stop.Name = "stop";
+    stop.Owner = "editor";
+    stop.Usage = "stop";
+    stop.Help = "Stop the running PIE session.";
+    stop.Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
+        ConsoleResult result;
+        if (!Pie.IsRunning())
+        {
+            result.Info("no play session running");
+            return result;
+        }
+        Pie.Stop();
+        result.Info("stopped play session");
+        return result;
+    };
+    registry.RegisterCommand(std::move(stop));
 }
 
 void EditorApp::UnloadGameModule()

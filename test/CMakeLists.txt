@@ -9,6 +9,10 @@ FetchContent_Declare(
 # Prevent GoogleTest from overriding compiler/linker options on Windows.
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
+# Keep GoogleTest out of the SDK install (real-engine-roadmap.md Phase 0): it is
+# a test-only dependency, not part of the published engine product.
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(googletest)
 
 file(GLOB_RECURSE CORE_TEST_SOURCES CONFIGURE_DEPENDS

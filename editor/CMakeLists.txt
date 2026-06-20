@@ -131,3 +131,11 @@ target_compile_definitions(sencha_editor PRIVATE
     SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fonts"
     SENCHA_EDITOR_SKIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/skin"
 )
+
+# Install the prebuilt editor into the SDK (real-engine-roadmap.md Phase 0). The
+# editor still resolves its own visual assets from the source tree via the
+# SENCHA_EDITOR_*_DIR defines above; making those relocatable is the Phase 3
+# packaging concern. RPATH matches the app's bin/ + lib/ layout.
+set_target_properties(sencha_editor PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+install(TARGETS sencha_editor RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

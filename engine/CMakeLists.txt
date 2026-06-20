@@ -148,9 +148,13 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
     ${SENCHA_ENGINE_HEADERS}
 )
 
+# BUILD_INTERFACE/INSTALL_INTERFACE so install(EXPORT) below does not bake
+# absolute build-tree paths into the exported target. In-tree consumers see the
+# source/generated dirs; an installed SDK sees the staged include dir.
 target_include_directories(sencha_engine
-    PUBLIC "${SENCHA_ENGINE_INCLUDE_DIR}"
-           "${CMAKE_CURRENT_BINARY_DIR}/generated-public"
+    PUBLIC "$<BUILD_INTERFACE:${SENCHA_ENGINE_INCLUDE_DIR}>"
+           "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated-public>"
+           "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3 ${CMAKE_DL_LIBS})
@@ -189,7 +193,9 @@ if(SENCHA_ENABLE_COOK)
     )
     # SYSTEM: vendored third-party headers — keep their -Wall/-Wextra noise out
     # of the engine's own diagnostics.
-    target_include_directories(sencha_engine SYSTEM PUBLIC "${bc7enc_SOURCE_DIR}")
+    # BUILD_INTERFACE only: cook headers are dev/editor-side; a game module SDK
+    # does not include them, so these vendored dirs stay out of the export.
+    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${bc7enc_SOURCE_DIR}>")
 
     # glTF parsing for the mesh cook (Decision B): cgltf, single-header,
     # the stb precedent. The implementation TU lives in src/assets/cook.
@@ -202,7 +208,7 @@ if(SENCHA_ENABLE_COOK)
     if(NOT cgltf_POPULATED)
         FetchContent_Populate(cgltf)
     endif()
-    target_include_directories(sencha_engine SYSTEM PUBLIC "${cgltf_SOURCE_DIR}")
+    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${cgltf_SOURCE_DIR}>")
 
     # Tangent generation for the mesh cook (Decision M): MikkTSpace, the
     # de-facto standard. Cook-only, never ships — the glslang rule.
@@ -216,7 +222,7 @@ if(SENCHA_ENABLE_COOK)
         FetchContent_Populate(mikktspace)
     endif()
     target_sources(sencha_engine PRIVATE "${mikktspace_SOURCE_DIR}/mikktspace.c")
-    target_include_directories(sencha_engine SYSTEM PUBLIC "${mikktspace_SOURCE_DIR}")
+    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${mikktspace_SOURCE_DIR}>")
 endif()
 
 if(WIN32)
@@ -248,7 +254,14 @@ if(SENCHA_ENABLE_VULKAN)
         GIT_TAG v3.2.1
     )
     FetchContent_MakeAvailable(VulkanMemoryAllocator)
-    target_link_libraries(sencha_engine PUBLIC GPUOpen::VulkanMemoryAllocator)
+    # PRIVATE link: the VMA implementation is compiled into the engine .so. Its
+    # header leaks through public graphics/vulkan headers, so the header dir
+    # (not the link) goes onto the public interface, mapped to the install tree
+    # for an out-of-tree module. vk_mem_alloc.h itself is installed below.
+    target_link_libraries(sencha_engine PRIVATE GPUOpen::VulkanMemoryAllocator)
+    target_include_directories(sencha_engine SYSTEM PUBLIC
+        "$<BUILD_INTERFACE:${vulkanmemoryallocator_SOURCE_DIR}/include>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
     if(SENCHA_ENABLE_HOT_RELOAD)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_HOT_RELOAD)
@@ -266,8 +279,12 @@ if(SENCHA_ENABLE_VULKAN)
             GIT_TAG        14.3.0
         )
         FetchContent_MakeAvailable(glslang)
+        # PRIVATE: glslang is compiled into the engine .so and only leaks through
+        # public headers behind SENCHA_ENABLE_HOT_RELOAD, which a game module
+        # never defines. Keeping it off the export interface lets install(EXPORT)
+        # succeed without exporting the glslang FetchContent targets.
         target_link_libraries(sencha_engine
-            PUBLIC
+            PRIVATE
                 glslang::glslang
                 glslang::SPIRV
                 glslang-default-resource-limits
@@ -308,7 +325,16 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    target_link_libraries(sencha_engine PUBLIC sencha_imgui_support)
+    # PRIVATE link: imgui is compiled into sencha_imgui_support and statically
+    # linked into the engine .so, which re-exports the ImGui symbols (the editor
+    # links only sencha::engine yet calls ImGui). A consumer therefore needs the
+    # imgui headers (leaked by public debug/ and serialization headers) but not
+    # the static lib, so only the header dirs go on the public interface.
+    target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)
+    target_include_directories(sencha_engine SYSTEM PUBLIC
+        "$<BUILD_INTERFACE:${IMGUI_DIR}>"
+        "$<BUILD_INTERFACE:${IMGUI_DIR}/backends>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
     if(SENCHA_ENABLE_DEBUG_UI)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
@@ -316,3 +342,59 @@ if(SENCHA_ENABLE_VULKAN)
 endif()
 
 add_library(engine ALIAS sencha_engine)
+
+# --- Install / export the SDK (real-engine-roadmap.md Phase 0) ---
+# A game developer consumes prebuilt binaries via find_package(Sencha): the
+# engine .so, the full public header tree, the generated ABI/SDK headers, and
+# the few vendored headers that leak through public engine headers. The app and
+# editor executables install from their own subdirectories.
+include(CMakePackageConfigHelpers)
+
+# Export as sencha::engine (matching the in-tree ALIAS), not sencha::sencha_engine:
+# ALIAS targets are not exported, so the consumer-facing name comes from
+# EXPORT_NAME + the NAMESPACE below.
+set_target_properties(sencha_engine PROPERTIES EXPORT_NAME engine)
+
+install(TARGETS sencha_engine
+    EXPORT SenchaTargets
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+# Public engine headers and the generated ABI fingerprint + SDK version headers.
+install(DIRECTORY "${SENCHA_ENGINE_INCLUDE_DIR}/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-public/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+# Vendored headers re-exposed by public engine headers (Vulkan builds only).
+if(SENCHA_ENABLE_VULKAN)
+    install(FILES "${vulkanmemoryallocator_SOURCE_DIR}/include/vk_mem_alloc.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    install(FILES "${IMGUI_DIR}/imgui.h" "${IMGUI_DIR}/imconfig.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+
+# The exported target set: an out-of-tree project sees sencha::engine with the
+# install-tree include dir and SDL3/Vulkan as found dependencies.
+install(EXPORT SenchaTargets
+    FILE SenchaTargets.cmake
+    NAMESPACE sencha::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+
+configure_package_config_file(
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
