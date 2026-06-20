@@ -21,12 +21,10 @@
 //   The manifest is written next to the scene file as
 //   <scene-stem>.manifest.json.
 
+#include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
-#include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
-#include <core/json/JsonStringify.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
@@ -37,7 +35,6 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 
 namespace
 {
@@ -104,93 +101,33 @@ int main(int argc, char** argv)
     if (!serializer.WriteToFile(meshPath, StaticMeshPrimitives::BuildCube(1.0f)))
         return 1;
 
-    // Manifest: scene refs first, then one level of .smat indirection (the
-    // only ref-bearing payload that exists yet — the same walk covers both
-    // because CollectAssetPaths is schema-agnostic).
+    // Manifest, id map, and stamped cooked scene: the shared cook-scene output
+    // (one level of .smat indirection, stable ids, id-stamped scene). The demo's
+    // asset:// mapping is the flat root/x; it has no Generated refs of its own.
     std::optional<JsonValue> sceneJson = ParseJsonFile(scenePath);
     if (!sceneJson)
         return 1;
 
-    std::vector<std::string> paths = CollectAssetPaths(*sceneJson);
-
-    std::unordered_set<std::string> seen(paths.begin(), paths.end());
-    const std::size_t sceneRefCount = paths.size();
-    for (std::size_t i = 0; i < sceneRefCount; ++i)
-    {
-        const std::string& path = paths[i];
-        if (!path.ends_with(".smat"))
-            continue;
-
-        std::optional<JsonValue> smatJson = ParseJsonFile(PhysicalPathFor(outRoot, path));
-        if (!smatJson)
-            return 1;
-
-        for (std::string& ref : CollectAssetPaths(*smatJson))
-        {
-            if (seen.insert(ref).second)
-                paths.push_back(std::move(ref));
-        }
-    }
-
-    // Stable ids (Decision A / Stage 4e): load the persisted map, give every
-    // manifest path an id — first sight mints, renames inherit via content
-    // hash — and save only when something changed.
-    const std::filesystem::path idMapPath = outRoot / kAssetIdMapFileName;
-    AssetIdMap idMap;
-    std::string idMapError;
-    if (std::filesystem::exists(idMapPath)
-        && !AssetIdMap::LoadFromFile(idMapPath.generic_string(), idMap, &idMapError))
-    {
-        // A broken id map must never silently re-mint ids: renames would
-        // lose their history. Fail the build; the committed map is the fix.
-        std::fprintf(stderr, "GenerateCubeDemoAssets: bad id map: %s\n", idMapError.c_str());
-        return 1;
-    }
-
-    const auto pathIsLive = [&outRoot](std::string_view assetPath) {
-        std::error_code existsEc;
-        return std::filesystem::exists(PhysicalPathFor(outRoot, assetPath), existsEc);
-    };
-
-    AssetManifest manifest;
-    manifest.Entries.reserve(paths.size());
-    for (const std::string& path : paths)
-    {
-        uint64_t contentHash = 0;
-        (void)HashFileContents(PhysicalPathFor(outRoot, path).generic_string(), contentHash);
-        manifest.Entries.push_back({ idMap.EnsureId(path, contentHash, pathIsLive), path });
-    }
-
-    if (idMap.IsDirty() && !idMap.SaveToFile(idMapPath.generic_string()))
-    {
-        std::fprintf(stderr, "GenerateCubeDemoAssets: could not write '%s'\n",
-                     idMapPath.generic_string().c_str());
-        return 1;
-    }
-
     std::filesystem::path manifestPath = scenePath;
     manifestPath.replace_extension();
     manifestPath += ".manifest.json";
-    if (!WriteAssetManifestFile(manifestPath.generic_string(), manifest))
-    {
-        std::fprintf(stderr, "GenerateCubeDemoAssets: could not write '%s'\n",
-                     manifestPath.generic_string().c_str());
-        return 1;
-    }
 
-    // The cooked scene: authored refs stamped with their ids. Refs the map
-    // does not know stay plain paths, so the cooked output is never less
-    // resolvable than the authored input.
     std::filesystem::path cookedScenePath = scenePath;
     cookedScenePath.replace_extension();
     cookedScenePath += ".cooked.json";
-    std::ofstream cookedScene(cookedScenePath, std::ios::trunc);
-    if (cookedScene.is_open())
-        cookedScene << JsonStringify(StampAssetRefIds(*sceneJson, idMap), /*pretty*/ true);
-    if (!cookedScene.good())
+
+    std::string cookError;
+    const bool cooked = WriteCookedScene(
+        *sceneJson,
+        /*extraRefs*/ {},
+        [&outRoot](std::string_view assetPath) { return PhysicalPathFor(outRoot, assetPath); },
+        outRoot / kAssetIdMapFileName,
+        manifestPath,
+        cookedScenePath,
+        &cookError);
+    if (!cooked)
     {
-        std::fprintf(stderr, "GenerateCubeDemoAssets: could not write '%s'\n",
-                     cookedScenePath.generic_string().c_str());
+        std::fprintf(stderr, "GenerateCubeDemoAssets: %s\n", cookError.c_str());
         return 1;
     }
 

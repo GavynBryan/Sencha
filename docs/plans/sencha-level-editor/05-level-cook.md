@@ -59,6 +59,43 @@ that reuses a baked tile and wants embedded defaults rather than per-placement b
 
 ---
 
+## Implementation notes (2026-06-20): S6 landed
+
+What shipped, and where it deviates from the sections below (codebase is the
+source of truth where they disagree):
+
+- **Layering correction to §10.** `LevelCook` is **editor-side**
+  (`editor/level/LevelCook.{h,cpp}`), not engine, because it consumes editor
+  brush types (`LevelScene`/`BrushTessellate`) and the engine layer must not
+  depend on the editor. The engine keeps only the brush-*agnostic* reusable
+  pieces: the bake (`BrushGeometryCook`), clustering (`BrushClustering`), the
+  shared cooked-scene output (`SceneCookOutput::WriteCookedScene`, the "shared
+  CookScene lib" §10 asked for, now also used by `GenerateCubeDemoAssets`), and
+  prune (`CookPrune`).
+- **Cooked-scene assembly is hybrid, not a registry rebuild.** Load the level,
+  destroy brush entities, `SaveSceneJson` the survivors (passthrough game
+  components + hierarchy, codec-correct, no `AssetSystem` needed since brushes
+  carry no asset handles), then append the uniform per-cell `StaticMesh`
+  entities as built JSON (bare asset:// paths, which `CollectAssetPaths` and
+  `StampAssetRefIds` then pick up). This keeps the cook headless-capable.
+- **Manifest covers sidecar materials for free**: every face material ends up in
+  some cell's `materials[]`, so it is already in the cooked scene; the cook also
+  passes the distinct set as `extraRefs` (belt-and-suspenders for §5 step 4).
+- **Freshness hash = the collected bake input**, not the source file: hash of
+  each face's resolved material + its world-space triangles + cell size, so
+  non-geometry component edits don't re-bake but a geometry/transform/material
+  change does (§3).
+- **Prune is generic + a liveness seam**: `PruneOrphanedGeneratedArtifacts`
+  deletes the recorded `.cooked/` artifacts and the cache entry for any source
+  the predicate reports dead (default: source file missing; the level cook can
+  pass "no brushes = dead"). No `Generated`-specific branch in the cache layer.
+- **Still open for the S6 *gate*** (host loads + renders): runtime registration
+  of the `Generated` cell meshes from `.cooked/` so the host resolves them by
+  id, the cell-size **cvar**, and the editor "Cook Level" button. S7 (PIE)
+  reuses the same collect -> cluster -> bake kernel with no disk writes.
+
+---
+
 ## 1. The authored ↔ cooked boundary (sacred)
 
 - **Authored** (repo, editor reads/writes): level `.json` = transforms + `BrushComponent`

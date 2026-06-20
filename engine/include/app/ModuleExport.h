@@ -18,10 +18,12 @@
   #define SENCHA_GAME_IMPORT
 #endif
 
-// Bumped on a *deliberate* break of IGameModule / GameModuleContext / the
-// registration surface. Most skew is now caught automatically by the ABI
-// fingerprint (a hash of the module-facing headers) plus the build-identity
-// record in GameModuleAbi.h; this integer remains the human-meaningful
-// "intended break" marker. v3: added the GameModuleAbi handshake and the
-// EditorVisual hint on IComponentSerializer. (09-module-abi-hardening.md.)
-#define SENCHA_GAME_ABI_VERSION 3u
+// Bumped on a *deliberate* break of the game-module contract / registration
+// surface. Most skew is now caught automatically by the ABI fingerprint (a hash
+// of the module-facing headers) plus the build-identity record in
+// GameModuleAbi.h; this integer remains the human-meaningful "intended break"
+// marker. v3: added the GameModuleAbi handshake and the EditorVisual hint on
+// IComponentSerializer. v4: the module factory returns a Game (retiring the
+// IGameModule/GameModuleContext side-contract); serializer registration is the
+// Game::OnRegisterComponents hook. (09-module-abi-hardening.md.)
+#define SENCHA_GAME_ABI_VERSION 4u

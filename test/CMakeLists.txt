@@ -45,6 +45,10 @@ file(GLOB_RECURSE BRUSH_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/brush/*.cpp
 )
 
+file(GLOB_RECURSE LEVEL_COOK_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/level_cook/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -115,6 +119,34 @@ if(JOBS_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS jobs_tests)
 endif()
 
+# The level cook is editor-side (it consumes editor brush/level types) but the
+# relevant sources are UI/Vulkan-free, so the tests compile them directly and
+# link only the engine (same discipline as brush_tests).
+if(LEVEL_COOK_TEST_SOURCES)
+    add_executable(level_cook_tests
+        ${LEVEL_COOK_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/level/LevelCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/LevelDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/LevelScene.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/LevelSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/BrushCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/ElementGeometry.cpp)
+    target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
+    target_link_libraries(level_cook_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
+endif()
+
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
 
 include(GoogleTest)
@@ -152,6 +184,12 @@ endif()
 
 if(TARGET brush_tests)
     gtest_discover_tests(brush_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET level_cook_tests)
+    gtest_discover_tests(level_cook_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

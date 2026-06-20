@@ -31,7 +31,7 @@ namespace
     std::string LastError()                      { const char* e = ::dlerror(); return e ? e : "unknown error"; }
 #endif
 
-    using FactoryFn = IGameModule* (*)();
+    using FactoryFn = Game* (*)();
     using AbiFn = const GameModuleAbi* (*)();
 }
 
@@ -67,9 +67,7 @@ std::optional<std::string> DescribeGameModuleAbiMismatch(const GameModuleAbi& m,
     return std::nullopt;
 }
 
-LoadedModule GameModuleLoader::Load(const std::filesystem::path& artifact,
-                                    GameModuleContext& ctx,
-                                    std::string* error)
+LoadedModule GameModuleLoader::Load(const std::filesystem::path& artifact, std::string* error)
 {
     void* handle = OpenLibrary(artifact.string().c_str());
     if (!handle)
@@ -115,22 +113,19 @@ LoadedModule GameModuleLoader::Load(const std::filesystem::path& artifact,
         return {};
     }
 
-    IGameModule* module = factory();
-    if (!module)
+    Game* game = factory();
+    if (!game)
     {
         SetError(error, "SenchaCreateGameModule returned null.");
         CloseLibrary(handle);
         return {};
     }
 
-    module->Register(ctx);
-    return LoadedModule{ handle, module };
+    return LoadedModule{ handle, game };
 }
 
-void GameModuleLoader::Unload(LoadedModule& module, GameModuleContext& ctx)
+void GameModuleLoader::Unload(LoadedModule& module)
 {
-    if (module.Module)
-        module.Module->Unregister(ctx);
     if (module.Handle)
         CloseLibrary(module.Handle);
     module = {};

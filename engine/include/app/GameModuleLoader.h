@@ -7,6 +7,8 @@
 #include <optional>
 #include <string>
 
+class Game;
+
 // First incompatible field between a module's reported ABI descriptor and this
 // build's (SenchaThisBuildAbi()), as a human-readable reason — or nullopt when
 // compatible. Exposed (not just used by the loader) so the guard itself is unit-
@@ -18,33 +20,32 @@
 // GameModuleLoader
 //
 // Loads a game module artifact at runtime: open the library, resolve the single
-// SenchaCreateGameModule factory, ABI-check, and call Register(ctx). Keeps the
+// SenchaCreateGameModule factory, ABI-check, and return its Game. Keeps the
 // library mapped until Unload. See docs/plans/sencha-level-editor/02-...md §3.
 //
-// Ownership rule (binding): the IGameModule instance and anything it registers
-// are owned by the MODULE and torn down in Unregister; the engine's registries
-// hold non-owning references for the module's lifetime. The host performs no
-// cross-allocator delete. The factory therefore returns a module-owned instance
-// (typically a function-local static), not something the host frees.
+// Ownership rule (binding): the Game instance is owned by the MODULE (typically
+// a function-local static). The host drives it (Engine::Run, or just
+// OnRegisterComponents for an editor borrowing serializers) but never deletes it
+// across the allocator boundary; teardown is the relevant Game hook then unmap.
 //=============================================================================
 struct LoadedModule
 {
-    void*        Handle = nullptr; // dlopen handle / HMODULE
-    IGameModule* Module = nullptr;
+    void* Handle   = nullptr; // dlopen handle / HMODULE
+    Game* Instance = nullptr; // module-owned Game (do not delete across the boundary)
 
-    [[nodiscard]] bool IsValid() const { return Handle != nullptr && Module != nullptr; }
+    [[nodiscard]] bool IsValid() const { return Handle != nullptr && Instance != nullptr; }
 };
 
 class GameModuleLoader
 {
 public:
     // Returns an invalid LoadedModule on any failure (open, missing symbol, ABI
-    // mismatch); on ABI mismatch Register is never called. *error, if provided,
-    // receives a human-readable reason.
-    LoadedModule Load(const std::filesystem::path& artifact,
-                      GameModuleContext& ctx,
-                      std::string* error = nullptr);
+    // mismatch). *error, if provided, receives a human-readable reason. The host
+    // decides what to do with the Game (run it, or only register components).
+    LoadedModule Load(const std::filesystem::path& artifact, std::string* error = nullptr);
 
-    // Unregister(ctx) then unmap. Safe on an invalid module (no-op).
-    void Unload(LoadedModule& module, GameModuleContext& ctx);
+    // Unmap the library. Safe on an invalid module (no-op). The caller is
+    // responsible for any Game teardown (OnShutdown / OnUnregisterComponents)
+    // BEFORE this, while the module is still mapped.
+    void Unload(LoadedModule& module);
 };

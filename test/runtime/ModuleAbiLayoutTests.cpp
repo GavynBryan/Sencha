@@ -5,7 +5,6 @@
 // change too). The static_asserts fail at compile time; the TEST mirrors them in
 // the suite. (docs/architecture/hardening-and-consolidation.md W6.)
 
-#include <app/GameModule.h>     // GameModuleContext
 #include <app/GameModuleAbi.h>  // GameModuleAbi
 
 #include <gtest/gtest.h>

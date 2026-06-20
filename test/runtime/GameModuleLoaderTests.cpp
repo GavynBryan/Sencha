@@ -3,10 +3,13 @@
 // module loaded at runtime registers a component the host never names, reachable
 // by its module-stable identity, fully serializable through the vtable seam.
 //
+// v4 contract: the module IS a Game; the editor/runtime borrow its serializers
+// through Game::OnRegisterComponents without running the game lifecycle.
+//
 // TEST_GAME_MODULE_PATH is injected by CMake as the built test_game_module path.
 
+#include <app/Game.h>
 #include <app/GameModuleLoader.h>
-#include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
@@ -22,60 +25,35 @@
 
 #include <string>
 
-namespace
-{
-    GameModuleContext MakeContext(ComponentSerializerRegistry& registry,
-                                  ConsoleRegistry& console,
-                                  const EngineHostInfo& host)
-    {
-        return GameModuleContext{ registry, console, host };
-    }
-}
-
 TEST(GameModuleLoader, RejectsMissingArtifact)
 {
-    ComponentSerializerRegistry serializers;
-    ConsoleRegistry console;
-    EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, console, host);
-
     GameModuleLoader loader;
     std::string error;
-    LoadedModule m = loader.Load("/no/such/module.so", ctx, &error);
+    LoadedModule m = loader.Load("/no/such/module.so", &error);
     EXPECT_FALSE(m.IsValid());
     EXPECT_FALSE(error.empty());
 }
 
 TEST(GameModuleLoader, RejectsLibraryWithoutFactory)
 {
-    ComponentSerializerRegistry serializers;
-    ConsoleRegistry console;
-    EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, console, host);
-
     // The shared engine itself is a valid library but exports no game factory.
     GameModuleLoader loader;
     std::string error;
-    LoadedModule m = loader.Load(TEST_ENGINE_LIB_PATH, ctx, &error);
+    LoadedModule m = loader.Load(TEST_ENGINE_LIB_PATH, &error);
     EXPECT_FALSE(m.IsValid());
     EXPECT_NE(error.find("SenchaCreateGameModule"), std::string::npos);
 }
 
 TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
 {
-    ComponentSerializerRegistry serializers;
-    ConsoleRegistry console;
-    EngineHostInfo host;
-    GameModuleContext ctx = MakeContext(serializers, console, host);
-
     GameModuleLoader loader;
     std::string error;
-    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, ctx, &error);
+    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
     ASSERT_TRUE(m.IsValid()) << error;
-    EXPECT_EQ(m.Module->Name(), "test.game");
-    EXPECT_EQ(m.Module->AbiVersion(), SENCHA_GAME_ABI_VERSION);
-    EXPECT_NE(console.FindCVar("test.grapple_length"), nullptr);
-    EXPECT_NE(console.FindCommand("test.grapple"), nullptr);
+
+    // Borrow the module's serializers exactly as the editor does — no game run.
+    ComponentSerializerRegistry serializers;
+    m.Instance->OnRegisterComponents(serializers);
 
     // The host never names GrappleHook, yet its serializer is now present, keyed
     // by the same stable identity the module computed inside its own .so.
@@ -112,12 +90,11 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     ASSERT_NE(length, nullptr);
     EXPECT_DOUBLE_EQ(length->AsNumber(), 7.5);
 
-    // Unload retracts exactly the module's serializer (while still mapped).
-    loader.Unload(m, ctx);
-    EXPECT_FALSE(m.IsValid());
+    // Retract the serializer (while still mapped), then unmap.
+    m.Instance->OnUnregisterComponents(serializers);
     EXPECT_EQ(serializers.FindByJsonKey("spike.grapple_hook"), nullptr);
-    EXPECT_EQ(console.FindCVar("test.grapple_length"), nullptr);
-    EXPECT_EQ(console.FindCommand("test.grapple"), nullptr);
+    loader.Unload(m);
+    EXPECT_FALSE(m.IsValid());
 }
 
 TEST(GameModuleLoader, AbiDescriptorAcceptsIdenticalBuild)
@@ -157,13 +134,11 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     ClearComponentSerializers();
     InitSceneSerializer();
 
-    EngineHostInfo host;
-    ConsoleRegistry console;
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console, host };
     GameModuleLoader loader;
     std::string error;
-    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, ctx, &error);
+    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
     ASSERT_TRUE(m.IsValid()) << error;
+    m.Instance->OnRegisterComponents(DefaultComponentSerializerRegistry());
 
     IComponentSerializer* gs = DefaultComponentSerializerRegistry().FindByJsonKey("spike.grapple_hook");
     ASSERT_NE(gs, nullptr);
@@ -206,6 +181,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     }
     EXPECT_TRUE(found);
 
-    loader.Unload(m, ctx);
+    m.Instance->OnUnregisterComponents(DefaultComponentSerializerRegistry());
+    loader.Unload(m);
     ClearComponentSerializers();
 }

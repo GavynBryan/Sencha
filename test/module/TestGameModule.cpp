@@ -1,14 +1,16 @@
 // A minimal, real game module for the S2 boundary integration test. Built as a
 // loadable library (MODULE) against the shared engine ABI, with hidden default
-// visibility; only SenchaCreateGameModule is exported. It defines a game
-// component, registers its serializer into the host-owned registry, and retracts
-// it on unregister — the in-tree analog of a shipped game.so.
+// visibility; only SenchaCreateGameModule is exported. It is a Game (the v4
+// module contract) whose OnRegisterComponents registers a game-defined component
+// serializer into the host-owned registry and OnUnregisterComponents retracts it
+// — the in-tree analog of a shipped game.so, exercised without running the game.
 
+#include <app/Game.h>
 #include <app/GameModule.h>
-#include <core/console/ConsoleRegistry.h>
 #include <core/metadata/Field.h>
 #include <core/serialization/FourCC.h>
 #include <world/serialization/ComponentSerializer.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/ComponentStorageTraits.h>
 
 #include <memory>
@@ -43,52 +45,25 @@ struct TypeSchema<GrappleHook>
 
 namespace
 {
-    struct TestGameModule final : IGameModule
+    struct TestGameModule final : Game
     {
-        std::string_view Name() const override { return "test.game"; }
-        std::uint32_t    AbiVersion() const override { return SENCHA_GAME_ABI_VERSION; }
-
-        void Register(GameModuleContext& ctx) override
+        void OnRegisterComponents(ComponentSerializerRegistry& serializers) override
         {
-            ctx.Serializers.Register(std::make_unique<ComponentSerializer<GrappleHook>>());
-            ConsoleResult cvarResult;
-            (void)cvarResult;
-            ctx.Console.RegisterCVar({
-                .Name = "test.grapple_length",
-                .Owner = "test.game",
-                .Type = CVarType::Double,
-                .DefaultValue = 7.5,
-                .CurrentValue = 7.5,
-                .Help = "Test module grapple length.",
-            }, &cvarResult);
-            ConsoleResult commandResult;
-            (void)commandResult;
-            ctx.Console.RegisterCommand({
-                .Name = "test.grapple",
-                .Owner = "test.game",
-                .Usage = "test.grapple",
-                .Help = "Test module command.",
-                .Callback = [](ConsoleExecutionContext&, std::span<const std::string>) {
-                    ConsoleResult result;
-                    result.Info("grapple");
-                    return result;
-                },
-            }, &commandResult);
+            serializers.Register(std::make_unique<ComponentSerializer<GrappleHook>>());
         }
 
-        void Unregister(GameModuleContext& ctx) override
+        void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
         {
             // Module-owns: retract exactly our serializer while still mapped.
-            ctx.Serializers.Remove(ResolveComponentTypeId<GrappleHook>());
-            ctx.Console.UnregisterOwner("test.game");
+            serializers.Remove(ResolveComponentTypeId<GrappleHook>());
         }
     };
 }
 
-extern "C" SENCHA_GAME_EXPORT IGameModule* SenchaCreateGameModule()
+extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()
 {
     // Module-owned static instance: nothing for the host to delete across the
-    // allocator boundary; teardown is Unregister + unmap.
+    // allocator boundary; teardown is OnUnregisterComponents + unmap.
     static TestGameModule instance;
     return &instance;
 }

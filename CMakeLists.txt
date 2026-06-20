@@ -12,7 +12,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
         "and CMakeFiles/ this attempt just created before retrying.")
 endif()
 
-project(Sencha LANGUAGES CXX)
+# VERSION is the engine SDK version: the semantic version of the published
+# binary product (engine + editor + app + headers), distinct from the per-build
+# ABI fingerprint in engine/CMakeLists.txt. The fingerprint catches accidental
+# binary skew between a host and a module; this version is the human-meaningful
+# release a game project targets via find_package(Sencha <version>).
+project(Sencha VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -399,10 +399,8 @@ void EditorApp::LoadGameModule()
     if (path == nullptr || path[0] == '\0')
         return;
 
-    auto& console = EnginePtr->Console();
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
     std::string error;
-    GameModule = ModuleLoader.Load(path, ctx, &error);
+    GameModule = ModuleLoader.Load(path, &error);
     if (!GameModule.IsValid())
     {
         std::fprintf(stderr, "[editor] failed to load game module '%s': %s\n",
@@ -410,9 +408,10 @@ void EditorApp::LoadGameModule()
         return;
     }
 
-    const std::string_view name = GameModule.Module->Name();
-    std::fprintf(stderr, "[editor] loaded game module '%s' (%.*s)\n",
-                 path, static_cast<int>(name.size()), name.data());
+    // The editor only borrows the module's component serializers (so it can edit
+    // scenes containing game components); it never runs the game's lifecycle.
+    GameModule.Instance->OnRegisterComponents(DefaultComponentSerializerRegistry());
+    std::fprintf(stderr, "[editor] loaded game module '%s'\n", path);
 }
 
 void EditorApp::UnloadGameModule()
@@ -420,9 +419,9 @@ void EditorApp::UnloadGameModule()
     if (!GameModule.IsValid())
         return;
 
-    auto& console = EnginePtr->Console();
-    GameModuleContext ctx{ DefaultComponentSerializerRegistry(), console.Registry(), HostInfo };
-    ModuleLoader.Unload(GameModule, ctx);
+    // Retract the serializers while the module is still mapped, then unmap.
+    GameModule.Instance->OnUnregisterComponents(DefaultComponentSerializerRegistry());
+    ModuleLoader.Unload(GameModule);
 }
 
 void EditorApp::SetRelativeMouseMode(Engine& engine, bool enabled)

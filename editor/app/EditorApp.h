@@ -101,5 +101,4 @@ private:
 
     GameModuleLoader ModuleLoader;
     LoadedModule     GameModule;
-    EngineHostInfo   HostInfo;
 };

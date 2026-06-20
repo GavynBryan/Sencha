@@ -13,6 +13,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/ThreadPoolJobSystem.h>
 #include <runtime/FrameDriver.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
@@ -308,6 +309,11 @@ int Engine::Run(Game& game)
 
     // Bind once, before any hook, so lifecycle contexts carry data only.
     game.AttachEngine(*this);
+
+    // Components before content: register the game's serializers (a module game
+    // registers its own here) so the first scene load resolves them. Same hook
+    // the editor calls standalone to edit scenes without running the game.
+    game.OnRegisterComponents(DefaultComponentSerializerRegistry());
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);

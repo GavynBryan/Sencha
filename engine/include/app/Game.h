@@ -5,6 +5,7 @@
 #include <cassert>
 
 class Engine;
+class ComponentSerializerRegistry;
 
 //=============================================================================
 // Game
@@ -23,6 +24,15 @@ public:
     virtual ~Game() = default;
 
     virtual void OnConfigure(GameConfigureContext&) {}
+
+    // Register the game's component serializers into the host registry. Called
+    // standalone by the editor (so it can edit scenes containing game components
+    // without ever starting the game) and by Engine::Run before any scene loads.
+    // Registration only: no entities, no engine state. OnUnregisterComponents is
+    // the symmetric teardown (editor module swap / host shutdown).
+    virtual void OnRegisterComponents(ComponentSerializerRegistry&) {}
+    virtual void OnUnregisterComponents(ComponentSerializerRegistry&) {}
+
     virtual void OnStart(GameStartupContext&) {}
     virtual void OnRegisterSystems(SystemRegisterContext&) {}
     virtual void OnPlatformEvent(PlatformEventContext&) {}
