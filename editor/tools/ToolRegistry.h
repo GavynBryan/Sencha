@@ -30,9 +30,9 @@ public:
     // Aborts the active tool's in-progress gesture, if any. (W4.)
     void Cancel();
 
-    InputConsumed HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer);
-    InputConsumed HandlePointerMove(EditorViewport& viewport, const PointerEvent& pointer);
-    InputConsumed HandlePointerUp(EditorViewport& viewport, const PointerEvent& pointer);
+    InputConsumed Click(EditorViewport& viewport, const PointerEvent& pointer);
+    InputConsumed DoubleClick(EditorViewport& viewport, const PointerEvent& pointer);
+    std::unique_ptr<IInteraction> BeginDrag(EditorViewport& viewport, const PointerEvent& pressPointer);
     InputConsumed OnInput(const InputEvent& event);
 
 private:

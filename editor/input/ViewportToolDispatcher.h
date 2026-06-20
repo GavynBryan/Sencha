@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GestureRecognizer.h"
 #include "InputEvent.h"
 
 class EditSessionHost;
@@ -35,4 +36,5 @@ private:
     InteractionHost& Interactions;
     EditSessionHost& Sessions;
     ToolRegistry& Tools;
+    GestureRecognizer Recognizer;
 };

@@ -8,5 +8,6 @@ public:
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
     std::string_view GetIcon() const override;
-    InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer) override;
 };
