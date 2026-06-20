@@ -273,6 +273,119 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
     return archive.Ok();
 }
 
+bool SceneFieldCodec<MaterialSetHandle>::Save(IWriteArchive& archive,
+                                              std::string_view key,
+                                              MaterialSetHandle value,
+                                              SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryWrite(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialSetHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    const std::vector<MaterialHandle>* members = context.Assets->GetMaterialSet(value);
+    const std::size_t count = members ? members->size() : 0;
+    archive.BeginArray(key, count);
+    if (members)
+    {
+        for (const MaterialHandle material : *members)
+        {
+            // Key is ignored inside an array scope; the element is appended.
+            if (!WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(material), context))
+            {
+                archive.End();
+                return false;
+            }
+        }
+    }
+    archive.End();
+    return archive.Ok();
+}
+
+bool SceneFieldCodec<MaterialSetHandle>::Load(IReadArchive& archive,
+                                              std::string_view key,
+                                              MaterialSetHandle& value,
+                                              SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryRead(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialSetHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    const auto resolveInto = [&](std::string_view refKey, std::vector<MaterialHandle>& out) {
+        std::string path;
+        if (!ReadTypedAssetPath(archive, refKey, AssetType::Material, path, context))
+            return false;
+        const MaterialHandle material = context.Assets->LoadMaterial(path);
+        if (!material.IsValid())
+        {
+            GetSceneLogger(context).Error("SceneFieldCodec<MaterialSetHandle>: failed to load material asset '{}'", path);
+            archive.MarkInvalidField(refKey);
+            return false;
+        }
+        out.push_back(material);
+        return true;
+    };
+
+    std::vector<MaterialHandle> materials;
+
+    if (archive.HasField(key))
+    {
+        std::size_t count = 0;
+        archive.BeginArray(key, count);
+        if (!archive.Ok())
+        {
+            archive.End();
+            return false;
+        }
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (!resolveInto(key, materials))
+            {
+                archive.End();
+                return false;
+            }
+        }
+        archive.End();
+    }
+    else if (archive.HasField(std::string_view{"material"}))
+    {
+        // Legacy single-material scene form, before per-section binding.
+        if (!resolveInto(std::string_view{"material"}, materials))
+            return false;
+    }
+    else
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialSetHandle>: field '{}' is missing", key);
+        archive.MarkMissingField(key);
+        return false;
+    }
+
+    // The set takes ownership of each member; drop the load references the
+    // resolve step took so the set is the sole owner.
+    value = context.Assets->AcquireMaterialSet(materials);
+    for (const MaterialHandle material : materials)
+        context.Assets->ReleaseMaterial(material);
+
+    if (!value.IsValid())
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<MaterialSetHandle>: could not intern material set for '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+    return archive.Ok();
+}
+
 bool SceneFieldCodec<AudioClipHandle>::Save(IWriteArchive& archive,
                                             std::string_view key,
                                             AudioClipHandle value,

@@ -12,6 +12,53 @@
 
 ---
 
+## Revision (2026-06-20): per-cluster granularity + instance-level materials
+
+Two decisions taken with the product owner this session **supersede §3's "one mesh per
+level" and §5's "one consolidated entity"**. The rest of the doc (the pure bake §2, the
+`Generated` kind §4, cache/prune §6, PIE §7, bake-out §8) stands.
+
+**1. Granularity: per-spatial-cluster, not one zone monolith.** A brush is an uncooked
+static mesh, not necessarily CSG. One consolidated mesh per zone has a single bounding
+volume, so frustum/occlusion culling becomes all-or-nothing for the whole zone, which is
+wrong at the real target (zones of 50-1000 brushes, multiple zones resident). The cook
+buckets mergeable brushes into world-space grid cells (cell size a cvar) and emits **one
+Generated `.smesh` + one `StaticMeshComponent` per cell**, geometry baked **cell-local**
+(cell origin subtracted) so coordinates stay small and the cell is relocatable. Each cell
+mesh still has one section per distinct material (the §2 bake, called per cell). Draw-call
+batching (instancing / merging) is a separate optimization deferred behind a profiling
+trigger: per-cell meshes are a correct final shape, not a throwaway.
+
+The cook is a pipeline; today builds the middle, the rest are named seams that slot in
+without reworking it:
+1. **Modifier expansion** *(future: array/mirror/...)* — expand a brush into concrete instances.
+2. **Classification** *(future)* — tag each brush *mergeable fill* vs *instanced*. Today all mergeable.
+3. **Spatial clustering** *(build now)* — bucket mergeable brushes into cells, bake one mesh per cell.
+4. **Instanced emission** *(future)* — instanced brushes emit a shared mesh + N placements (the
+   opposite of merging, which is why classification gates it).
+5. **Write + register** *(build now)* — Generated meshes, cooked scene (a component per cell),
+   manifest + AssetId + cache, prune.
+
+In-place bake-out (§8) needs nothing here: a baked-out brush stops being a brush and becomes an
+authored, instanceable `StaticMeshComponent` the cook never sees.
+
+**2. Materials are instance-level, not mesh-intrinsic.** Per-section materials bind on the
+component via a trivially-copyable `MaterialSetHandle` (8 bytes) into a `MaterialSetCache`
+that owns the variable-length, content-deduped material arrays (and a reference to each
+member material). They are **not** baked into the `.smesh`: instancing, array/mirror
+modifiers, and reused baked tiles all require the same mesh to be reskinned per placement,
+which mesh-intrinsic materials preclude. Serialized as a `materials: [...]` array of refs on
+the component (the §5 shape, now per-cell); resolution stays in the scene/codec layer where
+material paths already resolve. `RenderExtraction` indexes the set by `section.MaterialSlot`
+(the field that existed but was dead), falling back to the last/only material when the set is
+shorter. This generalizes to a future glTF multi-material path: one pipeline, no brush branch.
+
+Mesh *default* material slots (a baked authored mesh carrying its own defaults, overridable
+per instance) are deferred until a baked-out asset needs them. Trigger: the first content
+that reuses a baked tile and wants embedded defaults rather than per-placement binding.
+
+---
+
 ## 1. The authored ↔ cooked boundary (sacred)
 
 - **Authored** (repo, editor reads/writes): level `.json` = transforms + `BrushComponent`

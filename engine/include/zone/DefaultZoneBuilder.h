@@ -2,7 +2,7 @@
 
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
-#include <render/MaterialCache.h>
+#include <render/MaterialSetCache.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
@@ -20,7 +20,7 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation = {},
                               StaticMeshCache* meshes = nullptr,
-                              MaterialCache* materials = nullptr,
+                              MaterialSetCache* materialSets = nullptr,
                               AudioClipCache* audioClips = nullptr,
                               AudioService* audio = nullptr,
                               CaptionRuntime* captions = nullptr);
@@ -31,7 +31,7 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
 // caches themselves are only dereferenced by main-thread consumers later.
 void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes = nullptr,
-                                 MaterialCache* materials = nullptr,
+                                 MaterialSetCache* materialSets = nullptr,
                                  AudioClipCache* audioClips = nullptr,
                                  AudioService* audio = nullptr,
                                  CaptionRuntime* captions = nullptr);
@@ -42,7 +42,7 @@ EntityId CreateDefaultEntity(Registry& registry,
 bool AddDefaultMeshRenderer(Registry& registry,
                             EntityId entity,
                             StaticMeshHandle mesh,
-                            MaterialHandle material);
+                            MaterialSetHandle materials);
 
 bool AddDefaultCamera(Registry& registry,
                       EntityId entity,

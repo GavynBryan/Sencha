@@ -40,6 +40,12 @@ struct FaceMaterial
     UvProjection Uv;
 };
 
+// The material a face actually renders/cooks with: its own when set, otherwise the
+// level default. The ONE place the "empty face ⇒ level default" rule lives — preview,
+// the cook, and PIE resolve through here instead of re-inlining the empty check
+// (04-§2). Authored data stays inherit-based; this resolves only at the point of use.
+[[nodiscard]] const AssetRef& EffectiveMaterial(const FaceMaterial& face, const AssetRef& levelDefault);
+
 // UV for a vertex of a face, computed from its brush-local position. Never
 // stored. Rotation spins the (U,V) basis in its own plane (standard texture
 // rotation), then each axis is scaled and offset.

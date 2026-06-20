@@ -49,6 +49,11 @@ namespace
     }
 }
 
+const AssetRef& EffectiveMaterial(const FaceMaterial& face, const AssetRef& levelDefault)
+{
+    return face.Material.Path.empty() ? levelDefault : face.Material;
+}
+
 Vec2d ProjectUv(const UvProjection& p, Vec3d localPos)
 {
     // Rotate the (U,V) basis in its own plane by p.Rotation (standard texture

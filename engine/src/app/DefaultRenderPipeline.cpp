@@ -14,10 +14,13 @@
 #include <memory>
 #include <unordered_set>
 
-void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials)
+void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
+                                           MaterialCache& materials,
+                                           MaterialSetCache& materialSets)
 {
     Meshes = &meshes;
     Materials = &materials;
+    MaterialSets = &materialSets;
 }
 
 bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
@@ -37,7 +40,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 {
-    if (Meshes == nullptr || Materials == nullptr)
+    if (Meshes == nullptr || Materials == nullptr || MaterialSets == nullptr)
         return;
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -88,7 +91,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             || !registry->Components.IsRegistered<StaticMeshComponent>())
             continue;
 
-        RenderExtractionSystem::Extract(registry->Components, *Meshes, *Materials, Camera, Queue);
+        RenderExtractionSystem::Extract(registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
     }
 
     Queue.SortOpaque();

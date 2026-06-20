@@ -161,6 +161,25 @@ TEST(UvProjectionJustify, EmptyPointsLeaveProjectionUnchanged)
 }
 
 //=============================================================================
+// EffectiveMaterial — the single "empty face ⇒ level default" resolver.
+//=============================================================================
+
+TEST(EffectiveMaterial, EmptyFaceResolvesToLevelDefault)
+{
+    const AssetRef levelDefault{ AssetType::Material, "asset://materials/dev/gray.smat" };
+    FaceMaterial face; // Material left empty
+    EXPECT_EQ(EffectiveMaterial(face, levelDefault).Path, levelDefault.Path);
+}
+
+TEST(EffectiveMaterial, SetFaceOverridesLevelDefault)
+{
+    const AssetRef levelDefault{ AssetType::Material, "asset://materials/dev/gray.smat" };
+    FaceMaterial face;
+    face.Material = AssetRef{ AssetType::Material, "asset://materials/dev/brick.smat" };
+    EXPECT_EQ(EffectiveMaterial(face, levelDefault).Path, "asset://materials/dev/brick.smat");
+}
+
+//=============================================================================
 // FaceMaterial survives the brush edit ops (it rides on BrushFace).
 //=============================================================================
 

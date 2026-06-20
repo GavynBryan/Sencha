@@ -279,7 +279,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
     auto parsed = std::make_shared<DemoSceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
-    MaterialCache* materials = &runtimeAssets.Materials;
+    MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
     AudioClipCache* audioClips = &runtimeAssets.AudioClips;
     AudioService* audio = &engine.Audio();
     CaptionRuntime* captions = &engine.Captions();
@@ -292,8 +292,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
 
     ZoneLoader->BeginLoad(
         ZoneId{ 1 },
-        [parsed, meshes, materials, audioClips, audio, captions](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
+        [parsed, meshes, materialSets, audioClips, audio, captions](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materialSets, audioClips, audio, captions);
             // Cooked scene first (id-stamped refs, Stage 4e); the authored
             // scene is the fallback when no cook has run.
             *parsed = ParseDemoSceneFile("cube_demo_scene.cooked.json");
@@ -313,7 +313,7 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
     {
-        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials);
+        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets);
         pipeline->AddMeshRenderFeature(graphics);
     }
 

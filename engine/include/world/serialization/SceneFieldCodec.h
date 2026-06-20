@@ -6,6 +6,7 @@
 #include <core/serialization/Archive.h>
 #include <core/text/InlineString.h>
 #include <render/Material.h>
+#include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
 
@@ -67,6 +68,25 @@ struct SceneFieldCodec<MaterialHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      MaterialHandle& value,
+                     SceneSerializationContext& context);
+};
+
+// A StaticMeshComponent's per-section materials persist as a JSON array of
+// material refs ("materials": [ ... ]); each element is a path string or an
+// id/legacy ref object, resolved through the AssetSystem and interned into a
+// MaterialSetCache. A legacy singular "material" field still reads as a
+// one-element set (the pre-multi-material scene form).
+template<>
+struct SceneFieldCodec<MaterialSetHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     MaterialSetHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     MaterialSetHandle& value,
                      SceneSerializationContext& context);
 };
 
