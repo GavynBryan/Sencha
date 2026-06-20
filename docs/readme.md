@@ -1,8 +1,11 @@
 # Sencha Documentation
 
-Sencha is a C++20 game engine built around explicit systems, explicit services,
-and a flat domain tree. Dependencies are traced by hand, ownership is visible at
-construction, and backends live behind opt-in interfaces.
+Sencha is a C++20 3D game engine built on an Entity Component System (ECS),
+aimed at action/adventure games — specifically 3D Metroidvanias, survival
+horror, and soulslikes. The architecture favors explicit systems, explicit
+ownership, and a flat domain tree: dependencies are traced by hand, ownership is
+visible at construction, and backends (Vulkan, SDL3) live behind opt-in
+interfaces rather than leaking upward through the engine.
 
 This directory is meant to be useful to both humans and AI agents working in the
 repo. Start with the current architecture notes, then use the decision records
@@ -13,7 +16,8 @@ when you need the "why" behind a rule.
 ```
 app/        Minimal application target.
 docs/       Architecture notes, subsystem guides, and decision records.
-engine/     Shared engine library: core, math, world, render, graphics, audio, input, time, runtime.
+engine/     Shared engine library: core, math, ecs, world, zone, render, graphics,
+            audio, input, anim, assets, jobs, time, runtime, platform, debug.
 example/    Small executable examples.
 test/       GoogleTest-based engine tests.
 ```
@@ -96,15 +100,22 @@ ctest --test-dir build --output-on-failure
 
 ## Examples
 
-After building, run the JasmineGreen sprite example (requires Vulkan):
+The `example/` directory holds small executables that exercise the engine.
+`CubeDemo` is the main graphical sample (requires Vulkan); the rest —
+`AudioTest`, `EcsBenchmark`, `JobSystemBenchmark`, and
+`TransformHierarchyStressTest` — are non-graphical.
 
-```powershell
-.\build\example\JasmineGreen\JasmineGreen.exe
+After building, run the CubeDemo:
+
+```sh
+./build/example/CubeDemo/CubeDemo
 ```
 
 ## Design Notes
 
-- Services are ordinary objects owned by a host — no service locator, no global singletons.
+- Services are named members owned directly by the `Engine` (grouped into
+  `PlatformServices` / `GraphicsServices` where they share a backend) — no
+  service locator, no global singletons.
 - Systems declare dependencies through construction, not through runtime lookup.
 - Backends live behind interfaces rather than leaking upward through the engine.
 - Load-time formats compile into runtime tables before hot-path use.
