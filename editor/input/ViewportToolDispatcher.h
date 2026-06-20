@@ -1,13 +1,14 @@
 #pragma once
 
+#include "GestureRecognizer.h"
 #include "InputEvent.h"
 
 class EditSessionHost;
 class InteractionHost;
+class PointerCapture;
 class ToolRegistry;
 struct EditorViewport;
 struct ToolContext;
-struct ViewportId;
 class ViewportLayout;
 
 class ViewportToolDispatcher
@@ -19,23 +20,21 @@ public:
                            EditSessionHost& sessions,
                            ToolRegistry& tools);
 
-    InputConsumed OnInput(const InputEvent& event);
+    InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
 
 private:
-    InputConsumed HandlePointerDown(const PointerDownEvent& e);
-    InputConsumed HandlePointerMove(const PointerMoveEvent& e);
-    InputConsumed HandlePointerUp(const PointerUpEvent& e);
-    InputConsumed HandleKeyDown(const KeyDownEvent& e);
+    InputConsumed HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture);
+    InputConsumed HandlePointerMove(const PointerMoveEvent& e, PointerCapture& capture);
+    InputConsumed HandlePointerUp(const PointerUpEvent& e, PointerCapture& capture);
+    InputConsumed HandleKeyDown(const KeyDownEvent& e, PointerCapture& capture);
 
     // Reverts any in-flight interaction and drops any tool gesture. (W4.)
     void Abort();
-
-    EditorViewport* FindViewport(ImVec2 pos);
-    void SetActiveViewport(ViewportId id);
 
     ViewportLayout& Layout;
     ToolContext& Context;
     InteractionHost& Interactions;
     EditSessionHost& Sessions;
     ToolRegistry& Tools;
+    GestureRecognizer Recognizer;
 };

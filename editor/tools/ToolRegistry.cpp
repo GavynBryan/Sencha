@@ -76,31 +76,31 @@ void ToolRegistry::Cancel()
         active->OnCancel(Context);
 }
 
-InputConsumed ToolRegistry::HandlePointerDown(EditorViewport& viewport, const PointerEvent& pointer)
+InputConsumed ToolRegistry::Click(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
         return InputConsumed::No;
 
-    return active->OnPointerDown(Context, viewport, pointer);
+    return active->OnClick(Context, viewport, pointer);
 }
 
-InputConsumed ToolRegistry::HandlePointerMove(EditorViewport& viewport, const PointerEvent& pointer)
+InputConsumed ToolRegistry::DoubleClick(EditorViewport& viewport, const PointerEvent& pointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
         return InputConsumed::No;
 
-    return active->OnPointerMove(Context, viewport, pointer);
+    return active->OnDoubleClick(Context, viewport, pointer);
 }
 
-InputConsumed ToolRegistry::HandlePointerUp(EditorViewport& viewport, const PointerEvent& pointer)
+std::unique_ptr<IInteraction> ToolRegistry::BeginDrag(EditorViewport& viewport, const PointerEvent& pressPointer)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
-        return InputConsumed::No;
+        return nullptr;
 
-    return active->OnPointerUp(Context, viewport, pointer);
+    return active->BeginDrag(Context, viewport, pressPointer);
 }
 
 InputConsumed ToolRegistry::OnInput(const InputEvent& event)

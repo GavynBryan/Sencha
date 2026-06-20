@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../viewport/ViewportId.h"
+
 #include <SDL3/SDL_keycode.h>
 #include <imgui.h>
 
@@ -21,6 +23,11 @@ struct PointerDownEvent
     ImVec2 Position;
     MouseButton Button;
     ModifierFlags Modifiers;
+    // The viewport this event belongs to, resolved once at the input boundary: the
+    // viewport under the cursor, or — while a gesture holds capture — the viewport
+    // it began in. Lets navigation and tools skip re-resolving, and keeps a drag on
+    // its origin viewport even as the cursor crosses into another.
+    ViewportId Viewport = {};
 };
 
 struct PointerUpEvent
@@ -28,6 +35,7 @@ struct PointerUpEvent
     ImVec2 Position;
     MouseButton Button;
     ModifierFlags Modifiers;
+    ViewportId Viewport = {};
 };
 
 struct PointerMoveEvent
@@ -35,6 +43,7 @@ struct PointerMoveEvent
     ImVec2 Position;
     ImVec2 Delta;
     ModifierFlags Modifiers;
+    ViewportId Viewport = {};
 };
 
 struct WheelEvent

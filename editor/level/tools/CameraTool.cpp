@@ -24,7 +24,7 @@ std::string_view CameraTool::GetIcon() const
     return ICON_FA_VIDEO;
 }
 
-InputConsumed CameraTool::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
+InputConsumed CameraTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     const std::optional<Vec3d> snappedPoint = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
     if (!snappedPoint.has_value())

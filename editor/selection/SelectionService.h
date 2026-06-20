@@ -27,6 +27,12 @@ public:
     void ApplySnapshot(SelectionSnapshot snapshot);
     void ClearSelection();
 
+    // Drops every per-element (vertex/edge/face) selection, keeping object-level
+    // (entity) selections. Called after a structural mesh edit, where element
+    // indices shift or reindex so a kept element ref would resolve to the wrong
+    // element (or none).
+    void ClearMeshElementSelections();
+
     [[nodiscard]] ISelectionContext& GetContext();
     [[nodiscard]] const ISelectionContext& GetContext() const;
 

@@ -69,6 +69,12 @@ public:
     const LayoutNode& Tree() const;
     void OnResize(uint32_t width, uint32_t height);
 
+    // The viewport whose on-screen rect contains `point` (window-space pixels), or
+    // an invalid id if none. Single mode hit-tests only the visible (active)
+    // viewport — the hidden ones keep stale quad rects. The one place a pixel maps
+    // to a viewport; the input boundary stamps events with the result.
+    [[nodiscard]] ViewportId ResolveAt(ImVec2 point) const;
+
 private:
     void SyncActiveFlags();
 

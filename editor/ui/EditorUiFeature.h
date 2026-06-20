@@ -44,6 +44,13 @@ public:
     // owns the ImGui context.
     [[nodiscard]] UiInputCapture GetInputCapture() const;
 
+    // Enables or disables ImGui mouse input wholesale (ImGuiConfigFlags_NoMouse).
+    // While a viewport owns the pointer for navigation (fly look / ortho pan) the
+    // cursor is hidden and belongs to the camera, so the UI must stop hovering,
+    // highlighting, and clicking. Driven by the same seam that toggles SDL relative
+    // mouse mode, keeping a single authority for who owns the pointer.
+    void SetMouseInputEnabled(bool enabled);
+
     void AddPanel(std::unique_ptr<IEditorPanel> panel);
 
     // Fixed app chrome (toolbar, status bar) drawn after the main menu bar and

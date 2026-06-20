@@ -73,6 +73,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Layout,
         [this](bool enabled)
         {
+            // Fly-look only: hide the cursor and switch to relative mouse. The ImGui
+            // mouse gate is driven by pointer capture (Router->SetCaptureChanged
+            // below), which also covers ortho-pan and tool drags.
             if (EnginePtr != nullptr)
                 SetRelativeMouseMode(*EnginePtr, enabled);
         });
@@ -101,9 +104,19 @@ void EditorApp::OnStart(GameStartupContext& ctx)
                 capture.Mouse = false;
             return capture;
         }));
-    Router->AddHandler([this](const InputEvent& e) { return Navigation->OnInput(e); });
-    Router->AddHandler([this](const InputEvent& e) { return Workspace->Dispatcher->OnInput(e); });
-    Router->AddHandler([this](const InputEvent& e) { return Shortcuts->OnInput(e); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Dispatcher->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
+
+    // The pointer's owner drives the ImGui mouse gate: while a viewport gesture
+    // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores the mouse,
+    // so the unowned/hidden cursor can't hover or click the UI. A UI drag keeps it on.
+    Router->SetCaptureChanged(
+        [this](std::optional<PointerCaptureKind> kind)
+        {
+            if (UiFeature != nullptr)
+                UiFeature->SetMouseInputEnabled(kind != PointerCaptureKind::Viewport);
+        });
 
     renderer.AddFeature(std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
@@ -190,14 +203,19 @@ void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
     if (UiFeature != nullptr)
         UiFeature->ProcessSdlEvent(ctx.Event);
 
-    if (Router != nullptr)
+    if (Router != nullptr && Workspace != nullptr)
     {
         // Uniform routing: the UI-capture guard at the head of the chain decides
         // whether the UI owns this event (mouse or keyboard), so there is no
-        // per-device special-casing here.
-        const std::optional<InputEvent> event = TranslateEvent(ctx.Event);
-        if (event.has_value() && Router->Route(*event) == InputConsumed::Yes)
-            ctx.Handled = true;
+        // per-device special-casing here. Pointer events are stamped with their
+        // origin viewport first, so navigation and tools never re-resolve it.
+        std::optional<InputEvent> event = TranslateEvent(ctx.Event);
+        if (event.has_value())
+        {
+            StampOriginViewport(*event);
+            if (Router->Route(*event) == InputConsumed::Yes)
+                ctx.Handled = true;
+        }
     }
 }
 
@@ -481,4 +499,33 @@ std::optional<InputEvent> EditorApp::TranslateEvent(const SDL_Event& event)
     default:
         return std::nullopt;
     }
+}
+
+void EditorApp::StampOriginViewport(InputEvent& event)
+{
+    if (Router == nullptr || Workspace == nullptr)
+        return;
+
+    ViewportLayout& layout = Workspace->Layout;
+
+    // While a gesture holds the pointer, every event belongs to the viewport it began
+    // in; otherwise a positioned event belongs to the viewport under the cursor, which
+    // also becomes the focused viewport. (Wheel carries no position and keeps
+    // targeting the focused viewport downstream.)
+    const auto resolve = [&](ImVec2 position) -> ViewportId
+    {
+        if (Router->PointerCaptured())
+            return Router->CaptureViewport();
+        const ViewportId hovered = layout.ResolveAt(position);
+        if (hovered.IsValid())
+            layout.SetActive(hovered);
+        return hovered;
+    };
+
+    if (auto* e = std::get_if<PointerDownEvent>(&event))
+        e->Viewport = resolve(e->Position);
+    else if (auto* e = std::get_if<PointerUpEvent>(&event))
+        e->Viewport = resolve(e->Position);
+    else if (auto* e = std::get_if<PointerMoveEvent>(&event))
+        e->Viewport = resolve(e->Position);
 }
