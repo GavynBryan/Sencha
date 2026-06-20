@@ -5,10 +5,13 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../meshedit/MeshElementKind.h"
+#include "../meshedit/MeshElementKindTraits.h"
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/GridSettings.h"
+
+#include <array>
 
 #include <imgui.h>
 #include <imgui_internal.h> // BeginViewportSideBar (reserves work-area space)
@@ -88,22 +91,24 @@ void EditorToolbar::Draw()
         Divider(buttonSize);
 
         // Mesh element mode (Object/Vertex/Edge/Face): drives MeshEditService.
-        struct ModeEntry { const char* Icon; const char* Name; MeshElementKind Kind; };
-        static const ModeEntry kModes[] = {
-            { ICON_FA_CUBE,          "Object", MeshElementKind::Object },
-            { ICON_FA_CIRCLE_DOT,    "Vertex", MeshElementKind::Vertex },
-            { ICON_FA_GRIP_LINES,    "Edge",   MeshElementKind::Edge   },
-            { ICON_FA_VECTOR_SQUARE, "Face",   MeshElementKind::Face   },
+        // Order + labels come from the shared MeshElementKind traits; only the
+        // icon glyph is a UI-local presentation choice (keyed by kind).
+        static constexpr std::array<const char*, MeshElementKindCount> kModeIcons = {
+            ICON_FA_CUBE,          // Object
+            ICON_FA_CIRCLE_DOT,    // Vertex
+            ICON_FA_GRIP_LINES,    // Edge
+            ICON_FA_VECTOR_SQUARE, // Face
         };
         bool firstMode = true;
-        for (const ModeEntry& mode : kModes)
+        for (MeshElementKind kind : AllMeshElementKinds())
         {
             if (!firstMode)
                 ImGui::SameLine();
             firstMode = false;
-            const bool active = MeshEdit.GetElementKind() == mode.Kind;
-            if (ToolButton(mode.Name, mode.Icon, mode.Name, active, buttonSize))
-                MeshEdit.SetElementKind(mode.Kind);
+            const char* label = Traits(kind).Label;
+            const bool active = MeshEdit.GetElementKind() == kind;
+            if (ToolButton(label, kModeIcons[static_cast<std::size_t>(kind)], label, active, buttonSize))
+                MeshEdit.SetElementKind(kind);
         }
 
         Divider(buttonSize);

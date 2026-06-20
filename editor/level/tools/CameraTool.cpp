@@ -2,7 +2,7 @@
 
 #include "fonts/IconsFontAwesome6.h"
 
-#include "../commands/CreateCameraCommand.h"
+#include "../commands/CreateEntityCommand.h"
 #include "../../commands/CommandStack.h"
 #include "../../tools/ToolContext.h"
 #include "../../viewport/Picking.h"
@@ -30,9 +30,6 @@ InputConsumed CameraTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
     if (!snappedPoint.has_value())
         return InputConsumed::No;
 
-    ctx.Commands.Execute(std::make_unique<CreateCameraCommand>(
-        *snappedPoint,
-        ctx.Scene,
-        ctx.Document));
+    ctx.Commands.Execute(MakeCreateCameraCommand(*snappedPoint, ctx.Scene, ctx.Document));
     return InputConsumed::Yes;
 }

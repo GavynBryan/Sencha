@@ -21,11 +21,15 @@ namespace
 
     // Appends a face built from explicit corner positions, creating fresh vertices.
     // Coincident vertices across faces are merged later by BrushValidateAndRepair.
-    void EmitFace(BrushMesh& mesh, const std::vector<Vec3d>& corners)
+    // The face inherits the supplied material (the clipped piece of a source face
+    // keeps its texturing; a fresh cap passes the default). (04-§1.1)
+    void EmitFace(BrushMesh& mesh, const std::vector<Vec3d>& corners,
+                  const FaceMaterial& material = {})
     {
         if (corners.size() < 3)
             return;
         BrushFace face;
+        face.Material = material;
         face.Loop.reserve(corners.size());
         for (const Vec3d& corner : corners)
         {
@@ -63,6 +67,10 @@ BrushMesh BrushOps::MakeBox(Vec3d halfExtents)
         BrushFace{ { 1, 2, 6, 5 }, {} }, // +X
     };
     BrushValidateAndRepair(mesh);
+    // Seed world-aligned UV axes from each (now-valid) face normal so a fresh box
+    // textures sensibly; the material ref stays empty (= inherit level default).
+    for (BrushFace& face : mesh.Faces)
+        face.Material.Uv = UvProjectionForNormal(face.Normal, /*worldAligned*/ true);
     return mesh;
 }
 
@@ -121,6 +129,7 @@ BrushMesh BrushOps::ExtrudeFace(const BrushMesh& mesh, std::uint32_t face, float
         return out;
 
     const std::vector<std::uint32_t> baseLoop = out.Faces[face].Loop;
+    const FaceMaterial sourceMaterial = out.Faces[face].Material; // walls inherit it
     const std::size_t n = baseLoop.size();
     const Vec3d offset = normal * distance;
 
@@ -140,6 +149,7 @@ BrushMesh BrushOps::ExtrudeFace(const BrushMesh& mesh, std::uint32_t face, float
     {
         const std::size_t j = (i + 1) % n;
         BrushFace wall;
+        wall.Material = sourceMaterial;
         wall.Loop = { baseLoop[i], baseLoop[j], topLoop[j], topLoop[i] };
         out.Faces.push_back(std::move(wall));
     }
@@ -234,7 +244,7 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         }
 
         if (clipped.size() >= 3)
-            EmitFace(out, clipped);
+            EmitFace(out, clipped, face.Material); // clipped piece keeps its texturing
         if (crossings.size() == 2)
             capSegments.emplace_back(crossings[0], crossings[1]);
     }
@@ -275,7 +285,13 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         if (cap.size() >= 2 && NearlyEqual(cap.front(), cap.back()))
             cap.pop_back();
         if (cap.size() >= 3)
-            EmitFace(out, cap);
+        {
+            // The cut cap is a fresh face: default material, world-aligned UVs
+            // from the clip plane normal (which is the cap's normal).
+            FaceMaterial capMaterial;
+            capMaterial.Uv = UvProjectionForNormal(p.Normal, /*worldAligned*/ true);
+            EmitFace(out, cap, capMaterial);
+        }
     }
 
     BrushValidateAndRepair(out);

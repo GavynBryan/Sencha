@@ -9,6 +9,7 @@
 #include "../input/ShortcutRegistry.h"
 #include "../input/ViewportNavigation.h"
 #include "../level/LevelWorkspace.h"
+#include "../level/MaterialLibrary.h"
 #include "../ui/EditorStatusBar.h"
 #include "../ui/EditorToolbar.h"
 
@@ -64,6 +65,7 @@ private:
     void RequestSaveAsDialog();
     void EnqueueFileAction(FileActionKind kind, std::string path);
     void ProcessPendingFileActions();
+    void RescanMaterials(const std::string& levelPath);
     void ResetEditorState();
     void UpdateWindowTitle();
     void OnFrame();
@@ -91,6 +93,7 @@ private:
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
     std::unique_ptr<EditorStatusBar> StatusBar;
+    std::unique_ptr<MaterialLibrary> Materials;
 
     std::mutex PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;

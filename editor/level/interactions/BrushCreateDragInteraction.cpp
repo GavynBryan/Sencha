@@ -1,7 +1,7 @@
 #include "BrushCreateDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
-#include "../commands/CreateBrushCommand.h"
+#include "../commands/CreateEntityCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../level/LevelScene.h"
 #include "../../render/PreviewBuffer.h"
@@ -84,8 +84,8 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     if (!HasValidSize)
         return;
 
-    auto cmd = std::make_unique<CreateBrushCommand>(LastCenter, LastHalfExtents, Scene, Document);
-    CreateBrushCommand* rawCmd = cmd.get();
+    auto cmd = MakeCreateBrushCommand(LastCenter, LastHalfExtents, Scene, Document);
+    CreateEntityCommand* rawCmd = cmd.get();
     ctx.Commands.Execute(std::move(cmd));
 
     const EntityId created = rawCmd->GetCreatedEntity();

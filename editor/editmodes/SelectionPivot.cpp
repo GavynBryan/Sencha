@@ -1,7 +1,7 @@
 #include "SelectionPivot.h"
 
+#include "../meshedit/ElementGeometry.h"
 #include "../meshedit/ManipulationSink.h"
-#include "../meshedit/MeshElements.h"
 
 namespace
 {
@@ -49,36 +49,12 @@ std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
         const std::optional<MeshEditTargetMesh> resolved = sink.ResolveMesh(ref.Entity);
         if (!resolved.has_value() || resolved->Mesh == nullptr)
             continue;
-        const BrushMesh& mesh = *resolved->Mesh;
-        const Transform3f& transform = resolved->Transform;
 
-        switch (kind)
-        {
-        case MeshElementKind::Vertex:
-            if (ref.IsVertex())
-            {
-                if (const auto vertex = MeshElements::TryGetVertex(mesh, transform, ref.ElementId))
-                    pivot.Add(vertex->Position);
-            }
-            break;
-        case MeshElementKind::Edge:
-            if (ref.IsEdge())
-            {
-                if (const auto edge = MeshElements::TryGetEdge(mesh, transform, ref.ElementId))
-                    pivot.Add(edge->Mid);
-            }
-            break;
-        case MeshElementKind::Face:
-            if (ref.IsFace())
-            {
-                if (const auto face = MeshElements::TryGetFace(mesh, transform, ref.ElementId))
-                    pivot.Add(face->Center);
-            }
-            break;
-        case MeshElementKind::Object:
-        default:
-            break;
-        }
+        // Each mesh-element ref reports its own center (vertex pos / edge mid /
+        // face center); no per-mode switch.
+        if (const std::optional<Vec3d> center =
+                ElementCenter(*resolved->Mesh, resolved->Transform, ref))
+            pivot.Add(*center);
     }
 
     return pivot.Average();

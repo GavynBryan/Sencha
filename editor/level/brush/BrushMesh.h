@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FaceMaterial.h"
+
 #include <math/Vec.h>
 #include <math/geometry/3d/Aabb3d.h>
 
@@ -20,8 +22,9 @@ struct BrushVertex
 
 struct BrushFace
 {
-    std::vector<std::uint32_t> Loop;   // CCW vertex indices, outward-facing (>=3)
+    std::vector<std::uint32_t> Loop;     // CCW vertex indices, outward-facing (>=3)
     Vec3d                      Normal = {}; // cached; recomputed on edit (Newell)
+    FaceMaterial               Material;  // per-face texturing; survives edits (04-)
 };
 
 struct BrushMesh

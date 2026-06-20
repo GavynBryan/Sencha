@@ -5,6 +5,7 @@
 #include "../EditorTheme.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
+#include "../meshedit/MeshElementKindTraits.h"
 #include "../tools/ToolContext.h"
 #include "../viewport/EditorViewport.h"
 #include "../viewport/ViewportProjection.h"
@@ -50,18 +51,6 @@ void PerpendicularBasis(Vec3d axis, Vec3d& outU, Vec3d& outV)
                                                      : Vec3d(1.0f, 0.0f, 0.0f);
     outU = axis.Cross(reference).Normalized();
     outV = axis.Cross(outU).Normalized();
-}
-
-SelectableKind ElementSelectableKind(MeshElementKind kind)
-{
-    switch (kind)
-    {
-    case MeshElementKind::Vertex: return SelectableKind::Vertex;
-    case MeshElementKind::Edge:   return SelectableKind::Edge;
-    case MeshElementKind::Face:   return SelectableKind::Face;
-    case MeshElementKind::Object:
-    default:                      return SelectableKind::Entity;
-    }
 }
 
 // Applies a translation delta to whatever is being manipulated, via the sink.
@@ -240,7 +229,7 @@ std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
 std::unique_ptr<ITranslateApply> MakeElementApply(const ManipulatorContext& ctx, MeshElementKind kind)
 {
     std::vector<SelectableRef> elements;
-    const EntityId entity = GatherModeElements(ctx.Selection, ElementSelectableKind(kind), elements);
+    const EntityId entity = GatherModeElements(ctx.Selection, Traits(kind).Selectable, elements);
     if (!entity.IsValid() || elements.empty())
         return nullptr;
     const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(entity);

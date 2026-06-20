@@ -4,6 +4,7 @@
 #include "GridSettings.h"
 #include "ViewportId.h"
 #include "ViewportOrientation.h"
+#include "ViewportShading.h"
 
 #include <math/spatial/GridPlane.h>
 
@@ -14,6 +15,9 @@ struct EditorViewport
     EditorCamera Camera;
     ViewportId Id = {};
     ViewportOrientation Orientation = ViewportOrientation::Perspective;
+    // How brushes draw in this view. Defaulted from the orientation by
+    // ApplyOrientation; left public so a future per-view toggle can override it.
+    ViewportShading Shading = ViewportShading::Wireframe;
     ImVec2 RegionMin = {};
     ImVec2 RegionMax = {};
     bool IsActive = false;

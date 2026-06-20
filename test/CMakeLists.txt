@@ -90,12 +90,17 @@ if(BRUSH_TEST_SOURCES)
     add_executable(brush_tests
         ${BRUSH_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
         ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
         ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/meshedit/ElementGeometry.cpp
         ${CMAKE_SOURCE_DIR}/editor/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/selection/commands/SelectCommand.cpp)

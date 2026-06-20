@@ -46,6 +46,14 @@ public:
     [[nodiscard]] const AssetRecord* FindById(AssetId id) const;
     [[nodiscard]] bool Contains(std::string_view path) const;
 
+    // Read-only enumeration of every registered record (keyed by virtual path).
+    // Lets tooling list assets of a kind (e.g. the editor's material picker)
+    // without a parallel asset-discovery path. (04-§3)
+    [[nodiscard]] const std::unordered_map<std::string, AssetRecord>& Records() const
+    {
+        return RecordsByPath;
+    }
+
 private:
     friend bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry);
 

@@ -2,8 +2,7 @@
 
 #include "LevelDocument.h"
 #include "LevelScene.h"
-#include "commands/EditBrushMeshCommand.h"
-#include "commands/MoveEntityCommand.h"
+#include "commands/ValueCommand.h"
 #include "../commands/CommandStack.h"
 #include "../commands/CompositeCommand.h"
 
@@ -52,8 +51,7 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
     std::vector<std::unique_ptr<ICommand>> commands;
     commands.reserve(edits.size());
     for (const TransformEdit& edit : edits)
-        commands.push_back(std::make_unique<MoveEntityCommand>(
-            edit.Entity, edit.Before, edit.After, Scene, Document));
+        commands.push_back(MakeMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
 
     Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
 }
@@ -72,6 +70,5 @@ std::unique_ptr<ICommand> BrushManipulationSink::MakeEditCommand(EntityId entity
                                                                 BrushMesh before,
                                                                 BrushMesh after)
 {
-    return std::make_unique<EditBrushMeshCommand>(
-        entity, std::move(before), std::move(after), Scene, Document);
+    return MakeEditBrushMeshCommand(entity, std::move(before), std::move(after), Scene, Document);
 }

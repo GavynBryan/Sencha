@@ -4,12 +4,26 @@
 #include "ViewportProjection.h"
 
 #include "../level/LevelScene.h"
+#include "../level/SceneBrushWalk.h"
+#include "../meshedit/MeshElementKindTraits.h" // MeshElementKindCount
 #include "../meshedit/MeshElements.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <vector>
+
+BrushPickMode PickModeForElementKind(MeshElementKind kind)
+{
+    static constexpr std::array<BrushPickMode, MeshElementKindCount> kModes = {
+        BrushPickMode::EntityOnly, // Object
+        BrushPickMode::VertexOnly, // Vertex
+        BrushPickMode::EdgeOnly,   // Edge
+        BrushPickMode::FaceOnly,   // Face
+    };
+    return kModes[static_cast<std::size_t>(kind)];
+}
 
 namespace
 {
@@ -237,17 +251,10 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
     float bestPixels = kEdgePickPixels;
     float bestDepth = 0.0f;
 
-    for (EntityId entity : scene.GetAllEntities())
+    ForEachVisibleBrush(scene, /*skipLocked*/ true,
+        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
     {
-        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
-            continue;
-
-        const Transform3f* transform = scene.TryGetTransform(entity);
-        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        if (transform == nullptr || mesh == nullptr)
-            continue;
-
-        for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
+        for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
         {
             const std::optional<ProjectedPoint> a = projection.WorldToPixel(edge.A);
             const std::optional<ProjectedPoint> b = projection.WorldToPixel(edge.B);
@@ -265,7 +272,7 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
             bestPixels = pixels;
             bestDepth = depth;
         }
-    }
+    });
 
     return best;
 }
@@ -280,17 +287,10 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
     float bestPixels = kVertexPickPixels;
     float bestDepth = 0.0f;
 
-    for (EntityId entity : scene.GetAllEntities())
+    ForEachVisibleBrush(scene, /*skipLocked*/ true,
+        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
     {
-        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
-            continue;
-
-        const Transform3f* transform = scene.TryGetTransform(entity);
-        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        if (transform == nullptr || mesh == nullptr)
-            continue;
-
-        for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+        for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
         {
             const std::optional<ProjectedPoint> projected = projection.WorldToPixel(vertex.Position);
             if (!projected.has_value())
@@ -308,7 +308,7 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
             bestPixels = pixels;
             bestDepth = projected->Depth;
         }
-    }
+    });
 
     return best;
 }
@@ -332,18 +332,11 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
 
     std::vector<SelectableRef> result;
 
-    for (EntityId entity : scene.GetAllEntities())
+    ForEachVisibleBrush(scene, /*skipLocked*/ true,
+        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
     {
-        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
-            continue;
-
         if (mode == MeshElementKind::Object)
         {
-            const Transform3f* transform = scene.TryGetTransform(entity);
-            const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-            if (transform == nullptr || mesh == nullptr)
-                continue;
-
             // Overlap of the real geometry's projected screen rectangle with the
             // marquee — projecting the actual mesh vertices, not an origin box.
             float bxMin = std::numeric_limits<float>::max();
@@ -351,7 +344,7 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
             float bxMax = std::numeric_limits<float>::lowest();
             float byMax = std::numeric_limits<float>::lowest();
             bool any = false;
-            for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+            for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
             {
                 if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(vertex.Position))
                 {
@@ -364,28 +357,23 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
             }
             if (any && bxMin <= maxX && bxMax >= minX && byMin <= maxY && byMax >= minY)
                 result.push_back(SelectableRef::EntitySelection(registry, entity));
-            continue;
+            return;
         }
-
-        const Transform3f* transform = scene.TryGetTransform(entity);
-        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        if (transform == nullptr || mesh == nullptr)
-            continue;
 
         switch (mode)
         {
         case MeshElementKind::Vertex:
-            for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+            for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
                 if (const auto p = projection.WorldToPixel(vertex.Position); p && inside(p->Pixel))
                     result.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
             break;
         case MeshElementKind::Edge:
-            for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
+            for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
                 if (const auto p = projection.WorldToPixel(edge.Mid); p && inside(p->Pixel))
                     result.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
             break;
         case MeshElementKind::Face:
-            for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
+            for (const FaceElement& face : MeshElements::Faces(mesh, transform))
                 if (const auto p = projection.WorldToPixel(face.Center); p && inside(p->Pixel))
                     result.push_back(SelectableRef::FaceSelection(registry, entity, face.Index));
             break;
@@ -393,7 +381,7 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
         default:
             break;
         }
-    }
+    });
 
     return result;
 }

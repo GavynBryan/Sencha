@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorLinePipeline.h"
+#include "IBrushBodyRenderer.h"
 
 #include "../level/BrushGeometry.h"
 #include "../level/LevelScene.h"
@@ -13,13 +14,15 @@
 
 // Draws brush mesh wireframes (and the create-drag preview box) via the shared
 // editor line pipeline. Owns no GPU state of its own — it only gathers lines.
-class WireframeRenderer
+// The Wireframe shading strategy; the render feature runs it for viewports whose
+// ViewportShading is Wireframe.
+class WireframeRenderer : public IBrushBodyRenderer
 {
 public:
     WireframeRenderer(LevelScene& scene, EditorLinePipeline& lines);
 
     void SetPreviewBuffer(PreviewBuffer* preview);
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
 
 private:
     void AppendBrush(std::vector<EditorLineVertex>& vertices,

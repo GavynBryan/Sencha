@@ -12,11 +12,14 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          const GridSettings& grid)
     : Layout(viewportLayout)
     , GridCfg(grid)
+    , BrushSolid(scene, Solid)
     , Wireframe(scene, Lines)
     , Visuals(scene, Lines)
     , Highlight(scene, selection, session, Lines)
 {
     Wireframe.SetPreviewBuffer(&preview);
+    BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &Wireframe;
+    BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
 }
 
 void EditorRenderFeature::Setup(const RendererServices& services)
@@ -24,6 +27,7 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Backdrop.Setup(services);
     Grid.Setup(services);
+    Solid.Setup(services);
     Lines.Setup(services);
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
@@ -45,7 +49,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                           frame.TargetExtent,
                           frame.TargetFormat,
                           frame.DepthFormat);
-        Wireframe.DrawViewport(frame, viewport);
+        if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
+            body->DrawViewport(frame, viewport);
         Visuals.DrawViewport(frame, viewport);
         Highlight.DrawViewport(frame, viewport);
     };
@@ -70,5 +75,6 @@ void EditorRenderFeature::Teardown()
 {
     Backdrop.Teardown();
     Grid.Teardown();
+    Solid.Teardown();
     Lines.Teardown();
 }

@@ -1,6 +1,7 @@
 #include "WireframeRenderer.h"
 
 #include "../level/BrushGeometry.h"
+#include "../level/SceneBrushWalk.h"
 
 #include <array>
 #include <cstddef>
@@ -22,18 +23,9 @@ void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorView
 {
     std::vector<EditorLineVertex> vertices;
     vertices.reserve(Scene.GetEntityCount() * 24);
-    for (EntityId entity : Scene.GetAllEntities())
-    {
-        if (!Scene.IsEntityVisible(entity))
-            continue;
-
-        const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = Scene.TryGetTransform(entity);
-        if (mesh == nullptr || transform == nullptr)
-            continue;
-
-        AppendBrushMesh(vertices, *mesh, *transform, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
-    }
+    ForEachVisibleBrush(Scene, /*skipLocked*/ false,
+        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
+        { AppendBrushMesh(vertices, mesh, transform, Vec4(1.0f, 0.0f, 0.0f, 1.0f)); });
 
     if (Preview != nullptr)
     {

@@ -16,21 +16,6 @@
 #include <memory>
 #include <vector>
 
-namespace
-{
-BrushPickMode PickModeFor(MeshElementKind kind)
-{
-    switch (kind)
-    {
-    case MeshElementKind::Vertex: return BrushPickMode::VertexOnly;
-    case MeshElementKind::Edge:   return BrushPickMode::EdgeOnly;
-    case MeshElementKind::Face:   return BrushPickMode::FaceOnly;
-    case MeshElementKind::Object:
-    default:                      return BrushPickMode::EntityOnly;
-    }
-}
-}
-
 std::string_view SelectTool::GetId() const
 {
     return "select";
@@ -54,7 +39,7 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
 
     std::vector<SelectableRef> gathered;
     const SelectableRef picked = ctx.Picking.Pick(
-        viewport, pointer.Position, ctx.Scene, BrushPickRequest{ .Mode = PickModeFor(mode) });
+        viewport, pointer.Position, ctx.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
     if (picked.IsValid())
         gathered.push_back(picked);
 

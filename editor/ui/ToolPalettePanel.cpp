@@ -1,6 +1,6 @@
 #include "ToolPalettePanel.h"
 
-#include "EditorUiSkin.h"
+#include "ScopedPanel.h"
 
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
@@ -19,12 +19,9 @@ std::string_view ToolPalettePanel::GetTitle() const
 
 void ToolPalettePanel::OnDraw()
 {
-    if (!ImGui::Begin(GetTitle().data(), &Visible))
-    {
-        ImGui::End();
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
         return;
-    }
-    EditorUiSkin::PanelBackdrop();
 
     const auto& tools = Tools.GetTools();
     for (std::size_t index = 0; index < tools.size(); ++index)
@@ -36,6 +33,4 @@ void ToolPalettePanel::OnDraw()
         if (ImGui::Selectable(tools[index]->GetDisplayName().data(), isActive))
             Tools.Activate(index);
     }
-
-    ImGui::End();
 }

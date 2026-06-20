@@ -9,6 +9,10 @@ void EditorViewport::ApplyOrientation(ViewportOrientation orientation)
 
     if (!traits.UsesCameraAxis)
         Camera.OrthoAxis = traits.OrthoAxis;
+
+    // Perspective gets the solid checker preview; ortho grid views stay wireframe.
+    Shading = traits.Mode == EditorCamera::Mode::Perspective ? ViewportShading::Solid
+                                                             : ViewportShading::Wireframe;
 }
 
 const OrientationTraits& EditorViewport::GetOrientationTraits() const

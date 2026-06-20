@@ -1,10 +1,13 @@
 #include "MeshEditService.h"
 
+#include "ElementGeometry.h"
+#include "MeshElementKindTraits.h"
 #include "MeshElements.h"
 #include "../level/brush/BrushOps.h"
 #include "../level/brush/BrushValidation.h"
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -43,279 +46,36 @@ std::optional<std::uint32_t> FindFace(const BrushMesh& mesh, const FaceKey& key)
     }
     return std::nullopt;
 }
-}
 
-MeshElementKind MeshEditService::GetElementKind() const
-{
-    return ElementKind;
-}
-
-void MeshEditService::SetElementKind(MeshElementKind kind)
-{
-    ElementKind = kind;
-}
-
-MeshElementKind MeshEditService::CycleElementKind()
-{
-    switch (ElementKind)
-    {
-    case MeshElementKind::Object:
-        ElementKind = MeshElementKind::Vertex;
-        break;
-    case MeshElementKind::Vertex:
-        ElementKind = MeshElementKind::Edge;
-        break;
-    case MeshElementKind::Edge:
-        ElementKind = MeshElementKind::Face;
-        break;
-    case MeshElementKind::Face:
-    default:
-        ElementKind = MeshElementKind::Object;
-        break;
-    }
-    return ElementKind;
-}
-
-std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
-                                                     const SelectionSnapshot& selection,
-                                                     MeshEditVerb verb,
-                                                     const MeshEditParams& params) const
-{
-    // Element translation works on vertex/edge/face refs (per the active mode),
-    // not just faces, so it takes its own path rather than the face filter below.
-    if (verb == MeshEditVerb::TranslateElements)
-    {
-        std::vector<SelectableRef> elements;
-        for (SelectableRef ref : selection.Items)
-        {
-            if (ref.IsMeshElement())
-                elements.push_back(ref);
-        }
-        if (elements.empty())
-            return nullptr;
-
-        const EntityId entity = elements.front().Entity;
-        const RegistryId registry = elements.front().Registry;
-        for (SelectableRef ref : elements)
-        {
-            if (ref.Entity != entity || ref.Registry != registry)
-                return nullptr;
-        }
-
-        const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
-        if (!resolved.has_value() || resolved->Mesh == nullptr)
-            return nullptr;
-
-        BrushMesh before = *resolved->Mesh;
-        std::optional<BrushMesh> after = TranslateElements(
-            before, resolved->Transform, elements, ElementKind, params.TranslateDelta, true);
-        if (!after.has_value())
-            return nullptr;
-
-        return target.MakeEditCommand(entity, std::move(before), std::move(*after));
-    }
-
-    // Edge split also works on edge refs, not faces, so it takes its own path.
-    if (verb == MeshEditVerb::SplitEdge)
-    {
-        std::vector<SelectableRef> edges;
-        for (SelectableRef ref : selection.Items)
-        {
-            if (ref.IsEdge())
-                edges.push_back(ref);
-        }
-        if (edges.empty())
-            return nullptr;
-
-        const EntityId entity = edges.front().Entity;
-        const RegistryId registry = edges.front().Registry;
-        for (SelectableRef ref : edges)
-        {
-            if (ref.Entity != entity || ref.Registry != registry)
-                return nullptr;
-        }
-
-        const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
-        if (!resolved.has_value() || resolved->Mesh == nullptr)
-            return nullptr;
-
-        BrushMesh before = *resolved->Mesh;
-        BrushMesh after = before;
-        // Resolve edge endpoints from `before`; SplitEdge only appends, so these
-        // vertex indices stay valid as splits compose. One repair at the end.
-        int applied = 0;
-        for (SelectableRef ref : edges)
-        {
-            const std::optional<EdgeElement> edge =
-                MeshElements::TryGetEdge(before, resolved->Transform, ref.ElementId);
-            if (!edge.has_value())
-                continue;
-            after = BrushOps::SplitEdge(after, edge->VertexA, edge->VertexB);
-            ++applied;
-        }
-        if (applied == 0)
-            return nullptr;
-
-        BrushRepairResult repair = BrushValidateAndRepair(after);
-        if (!repair.Ok)
-            return nullptr;
-
-        return target.MakeEditCommand(entity, std::move(before), std::move(after));
-    }
-
-    std::vector<SelectableRef> faces;
-    faces.reserve(selection.Items.size());
-    for (SelectableRef ref : selection.Items)
-    {
-        if (ref.IsFace())
-            faces.push_back(ref);
-    }
-
-    if (faces.empty())
-        return nullptr;
-
-    const EntityId entity = faces.front().Entity;
-    const RegistryId registry = faces.front().Registry;
-    for (SelectableRef ref : faces)
-    {
-        if (ref.Entity != entity || ref.Registry != registry)
-            return nullptr;
-    }
-
-    const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
-    if (!resolved.has_value() || resolved->Mesh == nullptr)
-        return nullptr;
-
-    BrushMesh before = *resolved->Mesh;
-    BrushMesh after = before;
-
-    // Resolve target faces by stable identity before mutating, so applying the
-    // verb to one face can't invalidate the others (indices shift across repair).
-    std::vector<FaceKey> faceKeys;
-    faceKeys.reserve(faces.size());
-    for (SelectableRef ref : faces)
-    {
-        if (ref.ElementId >= before.Faces.size())
-            return nullptr;
-        faceKeys.push_back(MakeFaceKey(before, ref.ElementId));
-    }
-
-    switch (verb)
-    {
-    case MeshEditVerb::Extrude:
-    {
-        int applied = 0;
-        for (const FaceKey& key : faceKeys)
-        {
-            if (const std::optional<std::uint32_t> index = FindFace(after, key))
-            {
-                after = BrushOps::ExtrudeFace(after, *index, params.Distance);
-                ++applied;
-            }
-        }
-        if (applied == 0)
-            return nullptr;
-        break;
-    }
-    case MeshEditVerb::Delete:
-    {
-        int applied = 0;
-        for (const FaceKey& key : faceKeys)
-        {
-            if (const std::optional<std::uint32_t> index = FindFace(after, key))
-            {
-                after = BrushOps::DeleteFace(after, *index);
-                ++applied;
-            }
-        }
-        if (applied == 0)
-            return nullptr;
-        break;
-    }
-    case MeshEditVerb::Clip:
-        after = BrushOps::Clip(after, params.ClipPlane, params.KeepPositiveSide);
-        break;
-    case MeshEditVerb::ResizeFace:
-        if (faces.size() != 1 || faces.front().ElementId >= after.Faces.size())
-            return nullptr;
-        after = BrushOps::ResizeFace(after, faces.front().ElementId,
-                                     params.PlanePosition, params.MinThickness);
-        break;
-    case MeshEditVerb::TranslateElements:
-    case MeshEditVerb::SplitEdge:
-        return nullptr; // handled by the early branches above
-    }
-
-    BrushRepairResult repair = BrushValidateAndRepair(after);
-    if (!repair.Ok)
-        return nullptr;
-
-    return target.MakeEditCommand(entity, std::move(before), std::move(after));
-}
-
-namespace
-{
-// Collects the unique local vertex indices referenced by `elements` under the
-// given mode. Shared vertices (e.g. across selected faces or edges) appear once.
+// Collects the unique local vertex indices referenced by `elements` that match
+// the active mode's selectable kind (so e.g. a stray face ref contributes nothing
+// in vertex mode). Each matching ref reports its own vertices via the shared
+// primitive; shared vertices (across faces/edges) appear once. No mode switch.
 std::vector<std::uint32_t> GatherVertexIndices(const BrushMesh& mesh,
                                                const Transform3f& transform,
                                                std::span<const SelectableRef> elements,
-                                               MeshElementKind kind)
+                                               SelectableKind want)
 {
     std::vector<std::uint32_t> indices;
-    const auto add = [&](std::uint32_t index)
+    for (const SelectableRef& ref : elements)
     {
-        if (index >= mesh.Vertices.size())
-            return;
-        if (std::find(indices.begin(), indices.end(), index) == indices.end())
-            indices.push_back(index);
-    };
-
-    for (SelectableRef ref : elements)
-    {
-        switch (kind)
-        {
-        case MeshElementKind::Vertex:
-            if (ref.IsVertex())
-                add(ref.ElementId);
-            break;
-        case MeshElementKind::Edge:
-            if (ref.IsEdge())
-            {
-                if (const std::optional<EdgeElement> edge =
-                        MeshElements::TryGetEdge(mesh, transform, ref.ElementId))
-                {
-                    add(edge->VertexA);
-                    add(edge->VertexB);
-                }
-            }
-            break;
-        case MeshElementKind::Face:
-            if (ref.IsFace() && ref.ElementId < mesh.Faces.size())
-            {
-                for (std::uint32_t v : mesh.Faces[ref.ElementId].Loop)
-                    add(v);
-            }
-            break;
-        case MeshElementKind::Object:
-        default:
-            break;
-        }
+        if (ref.Kind != want)
+            continue;
+        for (std::uint32_t index : ElementVertexIndices(mesh, transform, ref))
+            if (std::find(indices.begin(), indices.end(), index) == indices.end())
+                indices.push_back(index);
     }
-
     return indices;
 }
-}
 
-std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& base,
-                                                            const Transform3f& transform,
-                                                            std::span<const SelectableRef> elements,
-                                                            MeshElementKind kind,
-                                                            Vec3d worldDelta,
-                                                            bool validate) const
+// Move the vertices the (mode-matching) refs reference by a world delta. Shared by
+// the public TranslateElements member and the TranslateElements verb.
+std::optional<BrushMesh> TranslateElementsImpl(const BrushMesh& base,
+                                               const Transform3f& transform,
+                                               std::span<const SelectableRef> elements,
+                                               SelectableKind want, Vec3d worldDelta, bool validate)
 {
-    const std::vector<std::uint32_t> indices =
-        GatherVertexIndices(base, transform, elements, kind);
+    const std::vector<std::uint32_t> indices = GatherVertexIndices(base, transform, elements, want);
     if (indices.empty())
         return std::nullopt;
 
@@ -331,14 +91,190 @@ std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& bas
     for (std::uint32_t index : indices)
         after.Vertices[index].Position += localDelta;
 
-    if (validate)
+    if (validate && !BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
+// Everything a verb's apply needs: the resolved mesh + transform, the refs already
+// filtered to the verb's element kind, the params, and the active element mode.
+struct VerbContext
+{
+    const BrushMesh&               Before;
+    const Transform3f&             Transform;
+    std::span<const SelectableRef> Refs;
+    const MeshEditParams&          Params;
+    MeshElementKind                ElementKind;
+};
+
+// Per-face verbs (extrude/delete): resolve faces by stable identity up front so one
+// face's edit can't invalidate another's index, apply per surviving face, validate.
+template <typename Op>
+std::optional<BrushMesh> ApplyPerFace(const BrushMesh& before, std::span<const SelectableRef> faces, Op op)
+{
+    std::vector<FaceKey> faceKeys;
+    faceKeys.reserve(faces.size());
+    for (const SelectableRef& ref : faces)
     {
-        BrushRepairResult repair = BrushValidateAndRepair(after);
-        if (!repair.Ok)
+        if (ref.ElementId >= before.Faces.size())
             return std::nullopt;
+        faceKeys.push_back(MakeFaceKey(before, ref.ElementId));
     }
 
+    BrushMesh after = before;
+    int applied = 0;
+    for (const FaceKey& key : faceKeys)
+        if (const std::optional<std::uint32_t> index = FindFace(after, key))
+        {
+            after = op(after, *index);
+            ++applied;
+        }
+    if (applied == 0)
+        return std::nullopt;
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
     return after;
+}
+
+std::optional<BrushMesh> ApplyExtrude(const VerbContext& ctx)
+{
+    return ApplyPerFace(ctx.Before, ctx.Refs, [d = ctx.Params.Distance](const BrushMesh& m, std::uint32_t i)
+                        { return BrushOps::ExtrudeFace(m, i, d); });
+}
+
+std::optional<BrushMesh> ApplyDelete(const VerbContext& ctx)
+{
+    return ApplyPerFace(ctx.Before, ctx.Refs,
+                        [](const BrushMesh& m, std::uint32_t i) { return BrushOps::DeleteFace(m, i); });
+}
+
+std::optional<BrushMesh> ApplyClip(const VerbContext& ctx)
+{
+    BrushMesh after = BrushOps::Clip(ctx.Before, ctx.Params.ClipPlane, ctx.Params.KeepPositiveSide);
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
+std::optional<BrushMesh> ApplyResizeFace(const VerbContext& ctx)
+{
+    if (ctx.Refs.size() != 1 || ctx.Refs.front().ElementId >= ctx.Before.Faces.size())
+        return std::nullopt;
+    BrushMesh after = BrushOps::ResizeFace(ctx.Before, ctx.Refs.front().ElementId,
+                                           ctx.Params.PlanePosition, ctx.Params.MinThickness);
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
+std::optional<BrushMesh> ApplyTranslate(const VerbContext& ctx)
+{
+    return TranslateElementsImpl(ctx.Before, ctx.Transform, ctx.Refs,
+                                 Traits(ctx.ElementKind).Selectable, ctx.Params.TranslateDelta, true);
+}
+
+std::optional<BrushMesh> ApplySplitEdge(const VerbContext& ctx)
+{
+    BrushMesh after = ctx.Before;
+    int applied = 0;
+    for (const SelectableRef& ref : ctx.Refs)
+    {
+        // Endpoints from Before; SplitEdge only appends, so indices stay valid as
+        // splits compose. One repair at the end.
+        if (const std::optional<EdgeElement> edge =
+                MeshElements::TryGetEdge(ctx.Before, ctx.Transform, ref.ElementId))
+        {
+            after = BrushOps::SplitEdge(after, edge->VertexA, edge->VertexB);
+            ++applied;
+        }
+    }
+    if (applied == 0)
+        return std::nullopt;
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
+// Which refs a verb operates on, and how it transforms the mesh. Adding a verb =
+// add the enum value + one row here (+ its apply above). Row order == MeshEditVerb.
+struct VerbDescriptor
+{
+    bool (*Filter)(const SelectableRef&);
+    std::optional<BrushMesh> (*Apply)(const VerbContext&);
+};
+
+bool IsFaceRef(const SelectableRef& r) { return r.IsFace(); }
+bool IsEdgeRef(const SelectableRef& r) { return r.IsEdge(); }
+bool IsMeshElementRef(const SelectableRef& r) { return r.IsMeshElement(); }
+
+const std::array<VerbDescriptor, 6> kVerbs = { {
+    { IsFaceRef,        ApplyExtrude },    // Extrude
+    { IsFaceRef,        ApplyDelete },     // Delete
+    { IsFaceRef,        ApplyClip },       // Clip
+    { IsFaceRef,        ApplyResizeFace }, // ResizeFace
+    { IsMeshElementRef, ApplyTranslate },  // TranslateElements
+    { IsEdgeRef,        ApplySplitEdge },  // SplitEdge
+} };
+}
+
+MeshElementKind MeshEditService::GetElementKind() const
+{
+    return ElementKind;
+}
+
+void MeshEditService::SetElementKind(MeshElementKind kind)
+{
+    ElementKind = kind;
+}
+
+MeshElementKind MeshEditService::CycleElementKind()
+{
+    ElementKind = Traits(ElementKind).Next;
+    return ElementKind;
+}
+
+std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
+                                                     const SelectionSnapshot& selection,
+                                                     MeshEditVerb verb,
+                                                     const MeshEditParams& params) const
+{
+    const VerbDescriptor& desc = kVerbs[static_cast<std::size_t>(verb)];
+
+    // Gather the refs this verb operates on; they must all belong to one entity.
+    std::vector<SelectableRef> refs;
+    for (const SelectableRef& ref : selection.Items)
+        if (desc.Filter(ref))
+            refs.push_back(ref);
+    if (refs.empty())
+        return nullptr;
+
+    const EntityId entity = refs.front().Entity;
+    const RegistryId registry = refs.front().Registry;
+    for (const SelectableRef& ref : refs)
+        if (ref.Entity != entity || ref.Registry != registry)
+            return nullptr;
+
+    const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
+    if (!resolved.has_value() || resolved->Mesh == nullptr)
+        return nullptr;
+
+    BrushMesh before = *resolved->Mesh;
+    const VerbContext ctx{ before, resolved->Transform, refs, params, ElementKind };
+    std::optional<BrushMesh> after = desc.Apply(ctx);
+    if (!after.has_value())
+        return nullptr;
+
+    return target.MakeEditCommand(entity, std::move(before), std::move(*after));
+}
+
+std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& base,
+                                                            const Transform3f& transform,
+                                                            std::span<const SelectableRef> elements,
+                                                            MeshElementKind kind,
+                                                            Vec3d worldDelta,
+                                                            bool validate) const
+{
+    return TranslateElementsImpl(base, transform, elements, Traits(kind).Selectable, worldDelta, validate);
 }
 
 namespace

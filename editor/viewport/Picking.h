@@ -28,6 +28,11 @@ struct BrushPickRequest
     BrushPickMode Mode = BrushPickMode::EntityOnly;
 };
 
+// The pick mode an element edit-mode selects with (Object->EntityOnly,
+// Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —
+// BrushPickMode stays viewport-side, so this is the projection, not a switch.
+[[nodiscard]] BrushPickMode PickModeForElementKind(MeshElementKind kind);
+
 class PickingService
 {
 public:

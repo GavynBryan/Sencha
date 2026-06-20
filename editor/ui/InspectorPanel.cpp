@@ -1,7 +1,7 @@
 #include "InspectorPanel.h"
 
-#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
+#include "ScopedPanel.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
@@ -217,12 +217,9 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
 void InspectorPanel::OnDraw()
 {
-    if (!ImGui::Begin(GetTitle().data(), &Visible))
-    {
-        ImGui::End();
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
         return;
-    }
-    EditorUiSkin::PanelBackdrop();
 
     const SelectableRef selection = Selection.GetPrimarySelection();
     const EntityId entity = selection.Entity;
@@ -232,7 +229,6 @@ void InspectorPanel::OnDraw()
         ImGui::TextDisabled("No selection");
         ResetEditState();
         LastEntity = {};
-        ImGui::End();
         return;
     }
 
@@ -262,6 +258,4 @@ void InspectorPanel::OnDraw()
 
     ImGui::Separator();
     DrawAddComponentMenu(entity);
-
-    ImGui::End();
 }

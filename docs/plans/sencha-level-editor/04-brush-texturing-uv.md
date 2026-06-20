@@ -1,7 +1,56 @@
 # Pillar 3b — Brush Texturing & Projection UVs
 
-**Status**: Working plan (2026-06-14). Layers on the brush mesh (03-); feeds the cook (05-).
+**Status**: Implemented (2026-06-19). Layers on the brush mesh (03-); feeds the cook (05-).
 **Owns Stage S5.**
+
+## Implementation status (2026-06-19)
+
+S5 landed in three phases, all building + tested:
+
+- **Data spine** — `editor/level/brush/FaceMaterial.{h,cpp}` (`UvProjection`,
+  `FaceMaterial`, pure `ProjectUv`, `UvProjectionForNormal`). `FaceMaterial`
+  rides on `BrushFace`; the order-preserving ops carry it for free and
+  extrude/clip thread it onto minted faces. Fresh faces (box, clip cap) seed
+  world-aligned UV axes from their normal. Per-face JSON (`{loop, material?, uv}`)
+  with bare-array back-compat, extracted to the pure unit
+  `editor/level/brush/BrushMeshSerialization.{h,cpp}`. Level default material on
+  `LevelDocument` (empty face material ⇒ inherit it). 14 unit tests
+  (`test/brush/FaceMaterialTests.cpp`): projection correctness, resize
+  invariance, material-survives-edits, round-trip.
+- **UX** — `MaterialPanel` (`editor/ui/`) applies materials and edits the UV
+  projection (scale/offset/rotation, world/face toggle, Fit/Center/Reset axes),
+  each an undoable `EditBrushMeshCommand` routed through `IMeshEditTarget` (no new
+  command type, no scene coupling). `MaterialLibrary` (`editor/level/`) lists
+  `.smat` via the engine's `ScanAssetsDirectory` (read-only `AssetRegistry::Records()`
+  added), scanning the loaded level's directory.
+- **Preview** — `EditorSolidPipeline` + `BrushSolidRenderer` + `editor_solid.*`
+  shaders draw a lit, UV-checkered solid pass (depth-writing, under the wireframe
+  overlay). The checker makes the projection legible: resize keeps texel density
+  constant, UV-scale changes it uniformly. Per-viewport `ViewportShading`
+  (data, not an orientation test) selects an `IBrushBodyRenderer` strategy:
+  perspective = solid, ortho = wireframe.
+
+**Shared geometry (so the cook can't diverge from the preview):**
+- `BrushTessellate(mesh, transform, emit)` (`editor/level/brush/`) is the one
+  brush → triangles+normals+UVs path. The preview consumes it today; the cook
+  (05-) reuses the *same* function, so previewed and cooked geometry are
+  identical by construction. Pure + unit-tested. (Fan-triangulation assumes
+  convex faces — true for the ops today; robust triangulation lands with carve.)
+- UV justify (`UvProjectionFit`/`Center`) lives beside `ProjectUv` in
+  `FaceMaterial` (pure, tested), not in the UI.
+- The two editor immediate pipelines collapsed into one
+  `EditorImmediatePipeline<TVertex>`; line/solid are thin configs.
+
+**Decisions / deferrals recorded:**
+- **Live preview is a UV checker, not real texture sampling.** Per §2 ("solid
+  shaded pass, *or the PIE bake*"), real `.smat` albedo sampling is deferred to the
+  cook/PIE (S6/S7), which owns the engine material path — the editor does not grow
+  a parallel textured pipeline.
+- **Face texturing uses a dedicated `MaterialPanel`, not the registry-driven
+  inspector.** This defers the scalar-only inspector's property-model rewrite
+  (the §2 "known gap") until a real *component* needs an `AssetRef`/enum field.
+- **Manifest-walk of brush-sidecar material refs is still owed to S6** (§4) — the
+  cook must see face `material` refs so cooked levels preload them.
 
 > Product requirement (2026-06-14): brushes have **texturing/UV tools**, and **UVs update
 > automatically as brushes are resized**. That last clause is a *design constraint*, not a

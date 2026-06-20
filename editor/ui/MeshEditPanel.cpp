@@ -1,7 +1,7 @@
 #include "MeshEditPanel.h"
 
-#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
+#include "ScopedPanel.h"
 
 #include "../commands/CommandStack.h"
 #include "../meshedit/IMeshEditTarget.h"
@@ -119,12 +119,9 @@ void MeshEditPanel::DrawEdgeVerbs()
 
 void MeshEditPanel::OnDraw()
 {
-    if (!ImGui::Begin(GetTitle().data(), &Visible))
-    {
-        ImGui::End();
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
         return;
-    }
-    EditorUiSkin::PanelBackdrop();
 
     DrawModeToolbar();
     ImGui::Separator();
@@ -135,6 +132,4 @@ void MeshEditPanel::OnDraw()
     case MeshElementKind::Edge: DrawEdgeVerbs(); break;
     default:                    ImGui::TextDisabled("No verbs for this mode yet"); break;
     }
-
-    ImGui::End();
 }

@@ -8,7 +8,8 @@ class LevelDocument;
 class LevelScene;
 
 // The one brush-backed edit backend: previews by writing the live scene and
-// commits via MoveEntityCommand / EditBrushMeshCommand. Implements both the
+// commits via the value-command factories (MakeMoveCommand / MakeEditBrushMeshCommand).
+// Implements both the
 // manipulator-facing ManipulationSink (preview/commit during drags) and the
 // verb-facing IMeshEditTarget (resolve + make-command for MeshEditService). The
 // only class in the edit path that knows LevelScene + the command stack, so

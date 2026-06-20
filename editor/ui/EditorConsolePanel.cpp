@@ -1,7 +1,7 @@
 #include "EditorConsolePanel.h"
 
-#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
+#include "ScopedPanel.h"
 
 #include <core/console/ConsoleService.h>
 #include <debug/DebugLogEntry.h>
@@ -38,12 +38,9 @@ std::string_view EditorConsolePanel::GetTitle() const
 
 void EditorConsolePanel::OnDraw()
 {
-    if (!ImGui::Begin(GetTitle().data(), &Visible))
-    {
-        ImGui::End();
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
         return;
-    }
-    EditorUiSkin::PanelBackdrop();
 
     if (ImGui::Button("Clear"))
     {
@@ -148,6 +145,4 @@ void EditorConsolePanel::OnDraw()
         ScrollToBottom = true;
         ImGui::SetKeyboardFocusHere(-1);
     }
-
-    ImGui::End();
 }

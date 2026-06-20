@@ -77,11 +77,35 @@ sencha_embed_spirv(
     OUT_HEADER _viewport_backdrop_frag_header
 )
 
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/editor_solid.vert.glsl"
+    STAGE      vert
+    OUTPUT_SPV _editor_solid_vert_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_editor_solid_vert_spv}"
+    VAR_NAME   kEditorSolidVertSpv
+    OUT_HEADER _editor_solid_vert_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/editor_solid.frag.glsl"
+    STAGE      frag
+    OUTPUT_SPV _editor_solid_frag_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_editor_solid_frag_spv}"
+    VAR_NAME   kEditorSolidFragSpv
+    OUT_HEADER _editor_solid_frag_header
+)
+
 set(SENCHA_EDITOR_GENERATED_HEADERS
     "${_grid_vert_header}"
     "${_grid_frag_header}"
     "${_editor_line_vert_header}"
     "${_editor_line_frag_header}"
+    "${_editor_solid_vert_header}"
+    "${_editor_solid_frag_header}"
     "${_viewport_backdrop_vert_header}"
     "${_viewport_backdrop_frag_header}"
 )

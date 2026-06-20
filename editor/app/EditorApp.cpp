@@ -4,12 +4,14 @@
 #include "../app/EditorViewportCameraSystem.h"
 #include "../input/UiInputGuard.h"
 #include "../level/LevelSerialization.h"
+#include "../level/MaterialLibrary.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorConsolePanel.h"
 #include "../ui/EditorStatusBar.h"
 #include "../ui/EditorToolbar.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/InspectorPanel.h"
+#include "../ui/MaterialPanel.h"
 #include "../ui/MeshEditPanel.h"
 #include "../ui/SceneHierarchyPanel.h"
 #include "../ui/ToolPalettePanel.h"
@@ -31,6 +33,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <optional>
 
@@ -162,6 +165,10 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
         *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands));
+    Materials = std::make_unique<MaterialLibrary>(engine.Logging());
+    UiFeature->AddPanel(std::make_unique<MaterialPanel>(
+        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
+        *Materials, Workspace->Document));
 
     renderer.AddFeature(std::move(uiFeature));
 }
@@ -332,13 +339,27 @@ void EditorApp::ProcessPendingFileActions()
         {
         case FileActionKind::Open:
             if (Workspace->Document.Load(action.Path))
+            {
                 ResetEditorState();
+                RescanMaterials(action.Path);
+            }
             break;
         case FileActionKind::SaveAs:
             Workspace->Document.SaveAs(action.Path);
+            RescanMaterials(action.Path);
             break;
         }
     }
+}
+
+void EditorApp::RescanMaterials(const std::string& levelPath)
+{
+    // Materials are project-relative: scan the directory holding the level file
+    // so face textures resolve to the same asset:// paths the runtime will use.
+    if (Materials == nullptr)
+        return;
+    const std::filesystem::path dir = std::filesystem::path(levelPath).parent_path();
+    Materials->Rescan(dir.string());
 }
 
 void EditorApp::ResetEditorState()

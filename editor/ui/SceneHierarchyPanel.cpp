@@ -1,7 +1,7 @@
 #include "SceneHierarchyPanel.h"
 
-#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
+#include "ScopedPanel.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
@@ -31,12 +31,9 @@ std::string_view SceneHierarchyPanel::GetTitle() const
 
 void SceneHierarchyPanel::OnDraw()
 {
-    if (!ImGui::Begin(GetTitle().data(), &Visible))
-    {
-        ImGui::End();
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
         return;
-    }
-    EditorUiSkin::PanelBackdrop();
 
     const SelectableRef current = Selection.GetPrimarySelection();
     const RegistryId registryId = Scene.GetRegistry().Id;
@@ -92,6 +89,4 @@ void SceneHierarchyPanel::OnDraw()
 
         ImGui::PopID();
     }
-
-    ImGui::End();
 }
