@@ -26,6 +26,7 @@ class ViewportLayout;
 class AssetSystem;
 class AssetRegistry;
 class LoggingProvider;
+class ConsoleRegistry;
 struct GridSettings;
 
 class EditorRenderFeature : public IRenderFeature
@@ -38,6 +39,7 @@ public:
                         ManipulatorSession& session,
                         const GridSettings& grid,
                         LoggingProvider& logging,
+                        const ConsoleRegistry& console,
                         AssetSystem* assets,
                         const AssetRegistry* catalog);
 
@@ -69,6 +71,7 @@ private:
     // viewport's shading. A new shading mode registers its strategy here — the
     // draw loop never changes.
     std::array<IBrushBodyRenderer*, ViewportShadingCount> BodyRenderers{};
+    const ConsoleRegistry* Console        = nullptr;
     Logger*                Log            = nullptr;
     bool                   LoggedFirstDraw = false;
 };

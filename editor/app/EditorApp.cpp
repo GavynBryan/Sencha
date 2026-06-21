@@ -148,6 +148,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         *Workspace->Manipulators,
         Workspace->Grid,
         engine.Logging(),
+        engine.Console().Registry(),
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr));
 
@@ -571,6 +572,17 @@ void EditorApp::RegisterEditorCommands()
         .Help = "World-space grid size the level cook clusters brushes into per-cell meshes.",
         .Source = { "editor" },
         .Min = 0.0,
+    });
+
+    registry.RegisterCVar({
+        .Name = "editor.cull_backfaces",
+        .Owner = "editor",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        .Flags = CVarFlags::Archive,
+        .Help = "Backface-cull the editor solid viewport to match play mode.",
+        .Source = { "editor" },
     });
 
     ConsoleCommandMetadata cook;

@@ -33,6 +33,7 @@ struct EditorImmediatePipelineConfig
     const char*          FragmentName = "";
     std::vector<VertexInputAttributeDesc> Attributes;
     VkPrimitiveTopology  Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCullModeFlags      CullMode = VK_CULL_MODE_NONE;
     bool                 DepthWrite = false;
 };
 
@@ -126,6 +127,17 @@ public:
         vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
     }
 
+    // Switch cull mode at runtime (cvar toggle). Nulls the cached pipelines so the
+    // next Submit re-fetches the variant from the shared cache (which keys on cull mode).
+    void SetCullMode(VkCullModeFlags mode)
+    {
+        if (mode == Config.CullMode)
+            return;
+        Config.CullMode = mode;
+        Pipeline = VK_NULL_HANDLE;
+        PipelineOnTop = VK_NULL_HANDLE;
+    }
+
     void Teardown()
     {
         if (Shaders != nullptr)
@@ -178,7 +190,7 @@ private:
         desc.Topology = Config.Topology;
         desc.VertexBindings = { { 0, sizeof(TVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
         desc.VertexAttributes = Config.Attributes;
-        desc.CullMode = VK_CULL_MODE_NONE;
+        desc.CullMode = Config.CullMode;
         desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded
         desc.DepthWrite = Config.DepthWrite;
         desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;

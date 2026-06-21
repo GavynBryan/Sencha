@@ -4,6 +4,11 @@
 
 #include "../viewport/ViewportLayout.h"
 
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleTypes.h>
+
+#include <variant>
+
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LevelScene& scene,
                                          SelectionService& selection,
@@ -11,6 +16,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          ManipulatorSession& session,
                                          const GridSettings& grid,
                                          LoggingProvider& logging,
+                                         const ConsoleRegistry& console,
                                          AssetSystem* assets,
                                          const AssetRegistry* catalog)
     : Layout(viewportLayout)
@@ -21,6 +27,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Visuals(scene, Lines)
     , Highlight(scene, selection, session, Lines)
     , Preview(preview, Lines)
+    , Console(&console)
 {
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &Wireframe;
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
@@ -44,6 +51,14 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         Log->Info("EditorRenderFeature drawing");
         LoggedFirstDraw = true;
     }
+
+    // Match play-mode backface culling by default; the cvar lets you draw both sides to
+    // diagnose inverted/missing-winding geometry. Missing cvar falls back to culling.
+    bool cullBackfaces = true;
+    if (const CVarMetadata* cvar = Console->FindCVar("editor.cull_backfaces");
+        cvar != nullptr && std::holds_alternative<bool>(cvar->CurrentValue))
+        cullBackfaces = std::get<bool>(cvar->CurrentValue);
+    Solid.SetCullBackfaces(cullBackfaces);
 
     const auto drawViewport = [&](EditorViewport& viewport)
     {
