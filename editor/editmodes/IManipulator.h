@@ -62,11 +62,15 @@ struct IManipulator
                                       const EditorViewport& viewport,
                                       ImVec2 screenPos) const = 0;
 
+    // `modifiers` carries the pointer-down modifier state (Shift/Ctrl/Alt) so a
+    // manipulator can pick a drag variant (e.g. Shift = duplicate/extrude) without
+    // the session decoding intent. 0-cost for manipulators that ignore it.
     [[nodiscard]] virtual std::unique_ptr<IInteraction> BeginDrag(
         int part,
         const ManipulatorContext& ctx,
         const EditorViewport& viewport,
-        ImVec2 screenPos) const = 0;
+        ImVec2 screenPos,
+        ModifierFlags modifiers) const = 0;
 
     virtual ~IManipulator() = default;
 };

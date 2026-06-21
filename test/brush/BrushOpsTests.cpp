@@ -3,6 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <cstdint>
+
 namespace
 {
     // Every undirected edge shared by exactly two faces == closed solid.
@@ -129,4 +132,82 @@ TEST(BrushOps, ClipByDiagonalPlaneStaysClosed)
     EXPECT_TRUE(IsClosed(half));
     EXPECT_TRUE(AllNormalsOutward(half));
     EXPECT_GT(half.Faces.size(), 4u);
+}
+
+namespace
+{
+    // A valid UV projection never points an axis along the face normal: both axes
+    // lie in the face plane. The old extrude inherited the cap's projection onto
+    // the perpendicular walls, which put an axis along the wall normal and
+    // stretched the texture edge-on. This is the regression guard for that.
+    bool AllUvAxesInFacePlanes(const BrushMesh& mesh)
+    {
+        for (const BrushFace& face : mesh.Faces)
+        {
+            const Vec3d n = BrushComputeFaceNormal(mesh, face).Normalized();
+            const UvProjection& uv = face.Material.Uv;
+            if (std::abs(uv.AxisU.Normalized().Dot(n)) > 1e-3f)
+                return false;
+            if (std::abs(uv.AxisV.Normalized().Dot(n)) > 1e-3f)
+                return false;
+        }
+        return true;
+    }
+}
+
+TEST(BrushOps, ExtrudeFaceWallsGetTheirOwnUvProjection)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+
+    std::uint32_t plusX = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).X > 0.9f)
+            plusX = i;
+
+    const BrushMesh extruded = BrushOps::ExtrudeFace(box, plusX, 2.0f);
+    // Every face, including the new side walls, projects UVs in its own plane.
+    EXPECT_TRUE(AllUvAxesInFacePlanes(extruded));
+}
+
+TEST(BrushOps, ExtrudeFaceAlongOffsetFollowsTheVector)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+
+    std::uint32_t plusZ = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
+            plusZ = i;
+
+    // Offset is not along the face normal: the cap follows the vector.
+    const BrushMesh extruded = BrushOps::ExtrudeFaceAlong(box, plusZ, { 0.0f, 0.0f, 3.0f });
+    EXPECT_EQ(extruded.Vertices.size(), 12u);
+    EXPECT_EQ(extruded.Faces.size(), 10u);
+    EXPECT_FLOAT_EQ(BrushComputeBounds(extruded).Max.Z, 4.0f); // 1 + 3
+    EXPECT_TRUE(AllUvAxesInFacePlanes(extruded));
+}
+
+TEST(BrushOps, ExtrudeEdgePullsOneNewPlane)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    BrushMesh pulled = BrushOps::ExtrudeEdge(box, a, b, { 0.0f, 0.0f, 3.0f });
+    BrushValidateAndRepair(pulled); // ExtrudeEdge leaves validation to the caller
+    EXPECT_EQ(pulled.Vertices.size(), 10u); // 8 + 2
+    EXPECT_EQ(pulled.Faces.size(), 7u);     // 6 + 1 strip
+    EXPECT_FALSE(IsClosed(pulled));         // a flap opens the mesh
+}
+
+TEST(BrushOps, ExtrudeEdgeZeroOffsetIsNoOp)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    BrushMesh pulled = BrushOps::ExtrudeEdge(box, a, b, { 0.0f, 0.0f, 0.0f });
+    BrushValidateAndRepair(pulled); // welds the coincident ring away
+    EXPECT_EQ(pulled.Vertices.size(), 8u);
+    EXPECT_EQ(pulled.Faces.size(), 6u);
+    EXPECT_TRUE(IsClosed(pulled));
 }

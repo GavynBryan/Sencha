@@ -59,6 +59,30 @@ public:
                                                              Vec3d worldDelta,
                                                              bool validate) const;
 
+    // The extruded mesh plus the ids of the newly created "outer" elements in it
+    // (the new cap faces for a face extrude, the new edges for an edge extrude),
+    // so the drag can leave them selected for a follow-up edit. Ids index the same
+    // space SelectableRef uses (face index / MeshElements edge index).
+    struct ExtrudeResult
+    {
+        BrushMesh                  Mesh;
+        std::vector<std::uint32_t> NewElementIds;
+    };
+
+    // Extrudes the elements referenced by `elements` (faces or edges, per `kind`)
+    // by a world-space delta: faces grow a new cap + side walls, edges pull a new
+    // quad plane, both offset along the (axis-constrained) drag vector. The delta
+    // is converted to local through `transform`. Always repairs the result (an
+    // unwelded extrusion is not renderable); returns nullopt if unusable. Used by
+    // the gizmo Shift-drag extrude. `validate` is accepted for signature symmetry
+    // with TranslateElements but extrude repairs regardless.
+    [[nodiscard]] std::optional<ExtrudeResult> ExtrudeElements(const BrushMesh& base,
+                                                               const Transform3f& transform,
+                                                               std::span<const SelectableRef> elements,
+                                                               MeshElementKind kind,
+                                                               Vec3d worldDelta,
+                                                               bool validate) const;
+
     // Remaps every vertex from the world AABB [oldMin,oldMax] to [newMin,newMax]
     // per axis (affine), so resizing the bounds scales the brush about the fixed
     // anchor. Degenerate (zero-extent) axes are left untouched. Vertices are

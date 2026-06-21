@@ -56,8 +56,17 @@ public:
     // the serializer registry, plus the brush sidecar mesh and view flags) so a
     // deletion can be undone. RestoreEntity recreates it and returns the new id
     // (a fresh generational handle: the original index/generation is not reused).
+    // With freshMesh, a captured brush mesh is given a NEW BrushId instead of
+    // re-seating at the source's id: required when the source is still alive (a
+    // duplicate), so the two entities don't share one mesh. Undo-of-delete keeps
+    // the default (freshMesh == false) to preserve stable ids.
     [[nodiscard]] EntitySnapshot CaptureEntity(EntityId entity) const;
-    EntityId RestoreEntity(const EntitySnapshot& snapshot);
+    EntityId RestoreEntity(const EntitySnapshot& snapshot, bool freshMesh = false);
+
+    // Deep copy of a live entity (capture + restore with a fresh brush mesh). The
+    // one "clone a live entity" primitive; the duplicate command and the drag
+    // preview both go through here.
+    EntityId DuplicateEntity(EntityId source);
 
     // Captures one component's persistent state as JSON (asset fields as stable
     // paths), and restores it onto the same entity. Used to make component removal

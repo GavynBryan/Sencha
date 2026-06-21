@@ -193,7 +193,7 @@ EntitySnapshot LevelDocument::CaptureEntity(EntityId entity) const
     return snapshot;
 }
 
-EntityId LevelDocument::RestoreEntity(const EntitySnapshot& snapshot)
+EntityId LevelDocument::RestoreEntity(const EntitySnapshot& snapshot, bool freshMesh)
 {
     SceneSerializationContext context(Logging, Assets);
     EntityId entity = Registry_.Components.CreateEntity();
@@ -220,14 +220,31 @@ EntityId LevelDocument::RestoreEntity(const EntitySnapshot& snapshot)
 
     Scene.TrackEntity(entity);
 
-    // Re-seat the brush mesh at its original id. BrushMeshStore::NextId is
-    // monotonic and never reuses a freed id, so this cannot collide with a Create.
     if (snapshot.Mesh.has_value())
-        Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Mesh);
+    {
+        if (freshMesh)
+        {
+            // Source is still alive and owns snapshot.MeshId: give the copy its own
+            // mesh and repoint its brush component, so the two are independent.
+            const BrushId id = Scene.GetBrushMeshStore().Create(*snapshot.Mesh);
+            Scene.SetComponent(entity, BrushComponent{ id });
+        }
+        else
+        {
+            // Re-seat at the original id. BrushMeshStore::NextId is monotonic and
+            // never reuses a freed id, so this cannot collide with a Create.
+            Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Mesh);
+        }
+    }
 
     Scene.SetEntityVisible(entity, !snapshot.Hidden);
     Scene.SetEntityLocked(entity, snapshot.Locked);
     return entity;
+}
+
+EntityId LevelDocument::DuplicateEntity(EntityId source)
+{
+    return RestoreEntity(CaptureEntity(source), /*freshMesh*/ true);
 }
 
 JsonValue LevelDocument::CaptureComponent(EntityId entity,

@@ -279,6 +279,125 @@ std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& bas
 
 namespace
 {
+// World delta -> local delta: undo the transform's rotation and scale only (the
+// translation cancels for a delta). Shared by the extrude path. Mirrors the
+// inline conversion in TranslateElementsImpl.
+Vec3d WorldToLocalDelta(const Transform3f& transform, Vec3d worldDelta)
+{
+    const Vec3d unrotated = transform.Rotation.Conjugate().RotateVector(worldDelta);
+    return Vec3d(
+        transform.Scale.X != 0.0f ? unrotated.X / transform.Scale.X : 0.0f,
+        transform.Scale.Y != 0.0f ? unrotated.Y / transform.Scale.Y : 0.0f,
+        transform.Scale.Z != 0.0f ? unrotated.Z / transform.Scale.Z : 0.0f);
+}
+
+// Undirected endpoint match for re-finding a new edge after repair reindexes.
+bool EdgeEndpointsMatch(Vec3d a0, Vec3d b0, Vec3d a1, Vec3d b1)
+{
+    constexpr float kEps = 1.0e-4f;
+    const auto near = [](Vec3d p, Vec3d q) { return (p - q).SqrMagnitude() <= kEps * kEps; };
+    return (near(a0, a1) && near(b0, b1)) || (near(a0, b1) && near(b0, a1));
+}
+}
+
+std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
+    const BrushMesh& base,
+    const Transform3f& transform,
+    std::span<const SelectableRef> elements,
+    MeshElementKind kind,
+    Vec3d worldDelta,
+    bool /*validate*/) const
+{
+    const Vec3d offset = WorldToLocalDelta(transform, worldDelta);
+    // Below the weld tolerance the extruded ring merges back into the base (repair
+    // welds it), so there is nothing to extrude: report no-op so the drag previews
+    // the original and commits nothing.
+    constexpr float kMinExtrude = 1e-4f;
+    if (offset.SqrMagnitude() <= kMinExtrude * kMinExtrude)
+        return std::nullopt;
+    const SelectableKind want = Traits(kind).Selectable;
+
+    if (want == SelectableKind::Face)
+    {
+        // Resolve sources and their post-extrude caps up front by identity: each
+        // extrude repairs/reindexes, so neither the source nor the cap can be
+        // addressed by a fixed index across the loop. The cap is the source loop
+        // translated rigidly by offset (centroid + offset, same normal).
+        std::vector<FaceKey> sourceKeys;
+        std::vector<FaceKey> capKeys;
+        for (const SelectableRef& ref : elements)
+        {
+            if (!ref.IsFace())
+                continue;
+            if (ref.ElementId >= base.Faces.size())
+                return std::nullopt;
+            const Vec3d centroid = BrushFaceCentroid(base, base.Faces[ref.ElementId]);
+            const Vec3d normal = BrushComputeFaceNormal(base, base.Faces[ref.ElementId]);
+            sourceKeys.push_back(FaceKey{ centroid, normal });
+            capKeys.push_back(FaceKey{ centroid + offset, normal });
+        }
+        if (sourceKeys.empty())
+            return std::nullopt;
+
+        BrushMesh after = base;
+        int applied = 0;
+        for (const FaceKey& key : sourceKeys)
+            if (const std::optional<std::uint32_t> index = FindFace(after, key))
+            {
+                after = BrushOps::ExtrudeFaceAlong(after, *index, offset);
+                ++applied;
+            }
+        if (applied == 0 || !BrushValidateAndRepair(after).Ok)
+            return std::nullopt;
+
+        std::vector<std::uint32_t> ids;
+        for (const FaceKey& key : capKeys)
+            if (const std::optional<std::uint32_t> index = FindFace(after, key))
+                ids.push_back(*index);
+        return ExtrudeResult{ std::move(after), std::move(ids) };
+    }
+
+    if (want == SelectableKind::Edge)
+    {
+        BrushMesh after = base;
+        int applied = 0;
+        std::vector<std::pair<Vec3d, Vec3d>> newEdges; // local endpoints of each pulled edge
+        for (const SelectableRef& ref : elements)
+        {
+            if (!ref.IsEdge())
+                continue;
+            // Endpoints from base; ExtrudeEdge only appends, so indices stay valid
+            // as strips compose. One repair at the end.
+            if (const std::optional<EdgeElement> edge =
+                    MeshElements::TryGetEdge(base, transform, ref.ElementId))
+            {
+                const Vec3d a = base.Vertices[edge->VertexA].Position;
+                const Vec3d b = base.Vertices[edge->VertexB].Position;
+                after = BrushOps::ExtrudeEdge(after, edge->VertexA, edge->VertexB, offset);
+                newEdges.emplace_back(a + offset, b + offset);
+                ++applied;
+            }
+        }
+        if (applied == 0 || !BrushValidateAndRepair(after).Ok)
+            return std::nullopt;
+
+        std::vector<std::uint32_t> ids;
+        const std::vector<EdgeElement> edges = MeshElements::Edges(after, Transform3f::Identity());
+        for (const auto& [a, b] : newEdges)
+            for (const EdgeElement& e : edges)
+                if (EdgeEndpointsMatch(e.A, e.B, a, b))
+                {
+                    ids.push_back(e.Index);
+                    break;
+                }
+        return ExtrudeResult{ std::move(after), std::move(ids) };
+    }
+
+    return std::nullopt;
+}
+
+namespace
+{
 double AxisGet(const Vec3d& v, int a) { return a == 0 ? v.X : (a == 1 ? v.Y : v.Z); }
 void AxisSet(Vec3d& v, int a, double x)
 {

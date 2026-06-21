@@ -46,7 +46,7 @@ void LevelWorkspace::Init(CommandStack& commands)
 
     // All scene mutation during manipulation goes through this one sink; the
     // session and manipulators stay scene-agnostic.
-    Sink = std::make_unique<BrushManipulationSink>(Document.GetScene(), Document, commands);
+    Sink = std::make_unique<BrushManipulationSink>(Document.GetScene(), Document, commands, Selection);
 
     // The session reads selection and element mode live on each pointer-down, so
     // it never needs rebuilding when the selection or mode changes. It consumes a

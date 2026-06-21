@@ -292,7 +292,8 @@ std::unique_ptr<IInteraction> BoundsManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2) const
+    ImVec2,
+    ModifierFlags) const
 {
     Resolved r;
     if (!Resolve(ctx, viewport, r))

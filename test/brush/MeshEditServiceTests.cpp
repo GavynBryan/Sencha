@@ -308,3 +308,103 @@ TEST(MeshEditService, TranslateWithNoMatchingElementsReturnsNullopt)
         box, Transform3f::Identity(), refs, MeshElementKind::Vertex, Vec3d(1.0f, 0.0f, 0.0f), false)
         .has_value());
 }
+
+TEST(MeshEditService, ExtrudeElementsFaceGrowsCapAndWalls)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> refs = {
+        SelectableRef::FaceSelection(RegistryId::Global(), kEntity, 0),
+    };
+    // Extrude outward along face 0's own normal (dragging inward would push the
+    // cap into the opposing face and weld it away).
+    const Vec3d outward = BrushComputeFaceNormal(box, box.Faces[0]).Normalized() * 2.0f;
+    const auto after = service.ExtrudeElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Face, outward, true);
+
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(after->Mesh.Vertices.size(), 12u); // 8 + 4 extruded ring
+    EXPECT_EQ(after->Mesh.Faces.size(), 10u);    // 6 + 4 side walls
+
+    // The new cap is reported and sits at the source centroid plus the offset.
+    ASSERT_EQ(after->NewElementIds.size(), 1u);
+    const Vec3d expectedCap = BrushFaceCentroid(box, box.Faces[0]) + outward;
+    const std::uint32_t cap = after->NewElementIds[0];
+    ASSERT_LT(cap, after->Mesh.Faces.size());
+    const Vec3d capCentroid = BrushFaceCentroid(after->Mesh, after->Mesh.Faces[cap]);
+    EXPECT_NEAR((capCentroid - expectedCap).SqrMagnitude(), 0.0f, 1e-6f);
+}
+
+TEST(MeshEditService, ExtrudeElementsEdgePullsNewPlane)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const Vec3d offset(0.0f, 0.0f, 3.0f);
+    const std::vector<SelectableRef> refs = {
+        SelectableRef::EdgeSelection(RegistryId::Global(), kEntity, edges[0].Index),
+    };
+    const auto after = service.ExtrudeElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Edge, offset, true);
+
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(after->Mesh.Vertices.size(), 10u); // 8 + 2
+    EXPECT_EQ(after->Mesh.Faces.size(), 7u);     // 6 + 1 strip
+
+    // The new outer edge is reported; its endpoints are the source endpoints plus
+    // the offset.
+    ASSERT_EQ(after->NewElementIds.size(), 1u);
+    const auto outer = MeshElements::TryGetEdge(after->Mesh, Transform3f::Identity(), after->NewElementIds[0]);
+    ASSERT_TRUE(outer.has_value());
+    const Vec3d na = edges[0].A + offset;
+    const Vec3d nb = edges[0].B + offset;
+    const bool matches = ((outer->A - na).SqrMagnitude() < 1e-6f && (outer->B - nb).SqrMagnitude() < 1e-6f)
+                      || ((outer->A - nb).SqrMagnitude() < 1e-6f && (outer->B - na).SqrMagnitude() < 1e-6f);
+    EXPECT_TRUE(matches);
+}
+
+TEST(MeshEditService, ExtrudeElementsBelowThresholdIsNullopt)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> refs = {
+        SelectableRef::FaceSelection(RegistryId::Global(), kEntity, 0),
+    };
+    // A drag that has not yet crossed the extrude threshold: no-op, not a
+    // degenerate weld.
+    EXPECT_FALSE(service.ExtrudeElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Face, Vec3d(0.0f, 0.0f, 1e-6f), true)
+        .has_value());
+}
+
+TEST(MeshEditService, ExtrudeElementsMultiFaceReportsEveryCap)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    std::uint32_t plusZ = 0;
+    std::uint32_t plusX = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+    {
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f) plusZ = i;
+        if (BrushComputeFaceNormal(box, box.Faces[i]).X > 0.9f) plusX = i;
+    }
+    const std::vector<SelectableRef> refs = {
+        SelectableRef::FaceSelection(RegistryId::Global(), kEntity, plusZ),
+        SelectableRef::FaceSelection(RegistryId::Global(), kEntity, plusX),
+    };
+    // A diagonal offset keeps both caps non-degenerate and non-colliding, so both
+    // faces extrude and both caps are re-found by identity.
+    const Vec3d offset(1.0f, 0.0f, 1.0f);
+    const auto after = service.ExtrudeElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Face, offset, true);
+
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(after->NewElementIds.size(), 2u);
+    for (std::uint32_t cap : after->NewElementIds)
+        EXPECT_LT(cap, after->Mesh.Faces.size());
+}

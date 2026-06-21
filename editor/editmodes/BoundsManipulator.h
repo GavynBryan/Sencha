@@ -24,5 +24,6 @@ public:
         int part,
         const ManipulatorContext& ctx,
         const EditorViewport& viewport,
-        ImVec2 screenPos) const override;
+        ImVec2 screenPos,
+        ModifierFlags modifiers) const override;
 };

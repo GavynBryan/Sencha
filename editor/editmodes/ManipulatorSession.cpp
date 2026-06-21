@@ -40,7 +40,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
         const int part = manipulator->HitTest(mctx, viewport, pos);
         if (part == 0)
             continue;
-        if (auto interaction = manipulator->BeginDrag(part, mctx, viewport, pos))
+        if (auto interaction = manipulator->BeginDrag(part, mctx, viewport, pos, pointer.Modifiers))
         {
             ctx.Interactions.Begin(ctx, std::move(interaction));
             return InputConsumed::Yes;

@@ -2,18 +2,22 @@
 
 #include "LevelDocument.h"
 #include "LevelScene.h"
+#include "commands/DuplicateEntitiesCommand.h"
 #include "commands/ValueCommand.h"
 #include "../commands/CommandStack.h"
 #include "../commands/CompositeCommand.h"
+#include "../selection/SelectionService.h"
 
 #include <memory>
 #include <utility>
 #include <vector>
 
-BrushManipulationSink::BrushManipulationSink(LevelScene& scene, LevelDocument& document, CommandStack& commands)
+BrushManipulationSink::BrushManipulationSink(LevelScene& scene, LevelDocument& document,
+                                             CommandStack& commands, SelectionService& selection)
     : Scene(scene)
     , Document(document)
     , Commands(commands)
+    , Selection(selection)
 {
 }
 
@@ -59,6 +63,35 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
 void BrushManipulationSink::CommitMesh(EntityId entity, BrushMesh before, BrushMesh after)
 {
     Commands.Execute(MakeEditCommand(entity, std::move(before), std::move(after)));
+}
+
+void BrushManipulationSink::SelectElements(std::span<const SelectableRef> refs)
+{
+    Selection.SetSelection(std::vector<SelectableRef>(refs.begin(), refs.end()));
+}
+
+std::vector<EntityId> BrushManipulationSink::CreatePreviewDuplicates(std::span<const EntityId> sources)
+{
+    std::vector<EntityId> copies;
+    copies.reserve(sources.size());
+    for (EntityId source : sources)
+        copies.push_back(Document.DuplicateEntity(source));
+    return copies;
+}
+
+void BrushManipulationSink::DestroyPreviewEntities(std::span<const EntityId> entities)
+{
+    for (EntityId entity : entities)
+        Scene.DestroyEntity(entity);
+}
+
+void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
+                                            std::span<const Transform3f> transforms)
+{
+    if (sources.empty())
+        return;
+    Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
+        sources, transforms, Scene, Document, Selection));
 }
 
 std::optional<MeshEditTargetMesh> BrushManipulationSink::Resolve(EntityId entity) const

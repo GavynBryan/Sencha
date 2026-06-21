@@ -30,6 +30,23 @@ struct BrushOps
     [[nodiscard]] static BrushMesh ExtrudeFace(const BrushMesh& mesh, std::uint32_t face,
                                                float distance);
 
+    // Duplicate a face's loop offset by an arbitrary vector; connect with side
+    // quads. The general form behind ExtrudeFace (which offsets along the normal).
+    // The gizmo extrude-drag passes the axis-constrained drag vector here so the
+    // new cap follows whichever arrow was grabbed. Side walls get a UV projection
+    // for their own normal, not the cap's (so the texture is not stretched).
+    [[nodiscard]] static BrushMesh ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face,
+                                                    Vec3d offset);
+
+    // Pull a new quad plane out of the undirected edge (a, b): duplicate the two
+    // endpoints offset by `offset` and bridge with one face. Opens the mesh (the
+    // edge ends up shared by more than two faces / on a boundary); authoring
+    // tolerates that, as with DeleteFace. Pure append (like SplitEdge): leaves
+    // validation to the caller so several edge extrudes compose on stable base
+    // indices before a single repair. No-op if a == b or either index is absent.
+    [[nodiscard]] static BrushMesh ExtrudeEdge(const BrushMesh& mesh,
+                                               std::uint32_t a, std::uint32_t b, Vec3d offset);
+
     // Remove a face, opening the solid (allowed during authoring).
     [[nodiscard]] static BrushMesh DeleteFace(const BrushMesh& mesh, std::uint32_t face);
 

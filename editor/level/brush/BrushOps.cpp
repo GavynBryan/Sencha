@@ -120,18 +120,23 @@ BrushMesh BrushOps::ResizeFace(const BrushMesh& mesh, std::uint32_t face,
 
 BrushMesh BrushOps::ExtrudeFace(const BrushMesh& mesh, std::uint32_t face, float distance)
 {
+    if (face >= mesh.Faces.size())
+        return mesh;
+    const Vec3d normal = BrushComputeFaceNormal(mesh, mesh.Faces[face]);
+    if (normal.SqrMagnitude() <= 0.0f)
+        return mesh;
+    return ExtrudeFaceAlong(mesh, face, normal * distance);
+}
+
+BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, Vec3d offset)
+{
     BrushMesh out = mesh;
     if (face >= out.Faces.size())
         return out;
 
-    const Vec3d normal = BrushComputeFaceNormal(out, out.Faces[face]);
-    if (normal.SqrMagnitude() <= 0.0f)
-        return out;
-
     const std::vector<std::uint32_t> baseLoop = out.Faces[face].Loop;
-    const FaceMaterial sourceMaterial = out.Faces[face].Material; // walls inherit it
+    const FaceMaterial sourceMaterial = out.Faces[face].Material; // walls keep its texture
     const std::size_t n = baseLoop.size();
-    const Vec3d offset = normal * distance;
 
     // New (extruded) ring of vertices.
     std::vector<std::uint32_t> topLoop(n);
@@ -141,20 +146,54 @@ BrushMesh BrushOps::ExtrudeFace(const BrushMesh& mesh, std::uint32_t face, float
         out.Vertices.push_back(BrushVertex{ out.Vertices[baseLoop[i]].Position + offset });
     }
 
-    // The cap moves to the extruded ring; original ring becomes the base of the walls.
+    // The cap moves to the extruded ring; original ring becomes the base of the
+    // walls. The cap keeps its material (it translates rigidly, so its projection
+    // stays pinned).
     out.Faces[face].Loop = topLoop;
 
-    // Side wall per original edge (winding fixed up by repair).
+    // Side wall per original edge (winding fixed up by repair). The wall keeps the
+    // source texture but gets a projection for its OWN normal: inheriting the cap's
+    // projection (chosen for the cap normal) would point a UV axis along the wall
+    // normal and stretch the texture edge-on.
     for (std::size_t i = 0; i < n; ++i)
     {
         const std::size_t j = (i + 1) % n;
+        const Vec3d edge = out.Vertices[baseLoop[j]].Position - out.Vertices[baseLoop[i]].Position;
+        const Vec3d wallNormal = edge.Cross(offset); // perpendicular to edge and extrude dir
+
         BrushFace wall;
-        wall.Material = sourceMaterial;
         wall.Loop = { baseLoop[i], baseLoop[j], topLoop[j], topLoop[i] };
+        wall.Material.Material = sourceMaterial.Material;
+        wall.Material.Uv = UvProjectionForNormal(wallNormal, sourceMaterial.Uv.WorldAligned);
+        wall.Material.Uv.Scale = sourceMaterial.Uv.Scale; // match cap texel density
         out.Faces.push_back(std::move(wall));
     }
 
     BrushValidateAndRepair(out);
+    return out;
+}
+
+BrushMesh BrushOps::ExtrudeEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b, Vec3d offset)
+{
+    BrushMesh out = mesh;
+    if (a >= out.Vertices.size() || b >= out.Vertices.size() || a == b)
+        return out;
+
+    const Vec3d posA = out.Vertices[a].Position;
+    const Vec3d posB = out.Vertices[b].Position;
+
+    const std::uint32_t a2 = static_cast<std::uint32_t>(out.Vertices.size());
+    out.Vertices.push_back(BrushVertex{ posA + offset });
+    const std::uint32_t b2 = static_cast<std::uint32_t>(out.Vertices.size());
+    out.Vertices.push_back(BrushVertex{ posB + offset });
+
+    BrushFace strip;
+    strip.Loop = { a, b, b2, a2 };
+    strip.Material.Uv = UvProjectionForNormal((posB - posA).Cross(offset), /*worldAligned*/ true);
+    out.Faces.push_back(std::move(strip));
+
+    // Validation is the caller's (see header), so composed extrudes share base
+    // indices.
     return out;
 }
 

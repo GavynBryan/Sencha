@@ -62,21 +62,30 @@ struct ITranslateApply
     virtual ~ITranslateApply() = default;
 };
 
+// One selected entity and its pre-drag transform. Shared by the move and the
+// Shift-drag duplicate of object mode.
+struct ObjectItem
+{
+    EntityId Entity;
+    Transform3f Initial;
+};
+
+[[nodiscard]] Transform3f WithDelta(const Transform3f& initial, Vec3d delta)
+{
+    Transform3f result = initial;
+    result.Position += delta;
+    return result;
+}
+
 class ObjectApply : public ITranslateApply
 {
 public:
-    struct Item
-    {
-        EntityId Entity;
-        Transform3f Initial;
-    };
-
-    ObjectApply(std::vector<Item> items, ManipulationSink& sink)
+    ObjectApply(std::vector<ObjectItem> items, ManipulationSink& sink)
         : Items(std::move(items)), Sink(sink) {}
 
     void Preview(Vec3d delta) override
     {
-        for (const Item& item : Items)
+        for (const ObjectItem& item : Items)
             Sink.PreviewTransform(item.Entity, WithDelta(item.Initial, delta));
     }
 
@@ -84,27 +93,77 @@ public:
     {
         std::vector<TransformEdit> edits;
         edits.reserve(Items.size());
-        for (const Item& item : Items)
+        for (const ObjectItem& item : Items)
             edits.push_back({ item.Entity, item.Initial, WithDelta(item.Initial, delta) });
         Sink.CommitTransforms(edits);
     }
 
     void Cancel() override
     {
-        for (const Item& item : Items)
+        for (const ObjectItem& item : Items)
             Sink.PreviewTransform(item.Entity, item.Initial);
     }
 
 private:
-    [[nodiscard]] static Transform3f WithDelta(const Transform3f& initial, Vec3d delta)
+    std::vector<ObjectItem> Items;
+    ManipulationSink& Sink;
+};
+
+// Shift-drag in object mode: live copies are created on the first move and follow
+// the cursor (the originals stay put), so the duplicate is visible during the
+// drag. On release the preview copies are dropped and the same copies are
+// committed as one undoable step (and selected); cancel just drops them.
+class DuplicateApply : public ITranslateApply
+{
+public:
+    DuplicateApply(std::vector<ObjectItem> items, ManipulationSink& sink)
+        : Items(std::move(items)), Sink(sink) {}
+
+    void Preview(Vec3d delta) override
     {
-        Transform3f result = initial;
-        result.Position += delta;
-        return result;
+        if (Previews.empty())
+        {
+            std::vector<EntityId> sources;
+            sources.reserve(Items.size());
+            for (const ObjectItem& item : Items)
+                sources.push_back(item.Entity);
+            Previews = Sink.CreatePreviewDuplicates(sources);
+        }
+        for (std::size_t i = 0; i < Previews.size() && i < Items.size(); ++i)
+            Sink.PreviewTransform(Previews[i], WithDelta(Items[i].Initial, delta));
     }
 
-    std::vector<ObjectApply::Item> Items;
+    void Commit(Vec3d delta) override
+    {
+        Sink.DestroyPreviewEntities(Previews);
+        Previews.clear();
+
+        // A Shift-click with no real drag should not stamp an in-place copy.
+        if (delta.SqrMagnitude() <= 0.0f)
+            return;
+
+        std::vector<EntityId> sources;
+        std::vector<Transform3f> transforms;
+        sources.reserve(Items.size());
+        transforms.reserve(Items.size());
+        for (const ObjectItem& item : Items)
+        {
+            sources.push_back(item.Entity);
+            transforms.push_back(WithDelta(item.Initial, delta));
+        }
+        Sink.CommitDuplicate(sources, transforms);
+    }
+
+    void Cancel() override
+    {
+        Sink.DestroyPreviewEntities(Previews);
+        Previews.clear();
+    }
+
+private:
+    std::vector<ObjectItem> Items;
     ManipulationSink& Sink;
+    std::vector<EntityId> Previews;
 };
 
 class ElementApply : public ITranslateApply
@@ -128,6 +187,59 @@ public:
             Sink.CommitMesh(Entity, Initial, std::move(*mesh));
         else
             Sink.PreviewMesh(Entity, Initial); // unusable result: revert
+    }
+
+    void Cancel() override { Sink.PreviewMesh(Entity, Initial); }
+
+private:
+    EntityId Entity;
+    BrushMesh Initial;
+    Transform3f Transform;
+    std::vector<SelectableRef> Elements;
+    MeshElementKind Kind;
+    MeshEditService& Service;
+    ManipulationSink& Sink;
+};
+
+// Shift-drag on a face or edge: grow new geometry (cap + walls, or a new quad
+// plane) offset by the axis-constrained drag, instead of moving the element.
+class ExtrudeApply : public ITranslateApply
+{
+public:
+    ExtrudeApply(EntityId entity, BrushMesh initial, Transform3f transform,
+                 std::vector<SelectableRef> elements, MeshElementKind kind,
+                 MeshEditService& service, ManipulationSink& sink)
+        : Entity(entity), Initial(std::move(initial)), Transform(transform)
+        , Elements(std::move(elements)), Kind(kind), Service(service), Sink(sink) {}
+
+    void Preview(Vec3d delta) override
+    {
+        if (auto result = Service.ExtrudeElements(Initial, Transform, Elements, Kind, delta, true))
+            Sink.PreviewMesh(Entity, result->Mesh);
+        else
+            Sink.PreviewMesh(Entity, Initial); // below the extrude threshold: show original
+    }
+
+    void Commit(Vec3d delta) override
+    {
+        auto result = Service.ExtrudeElements(Initial, Transform, Elements, Kind, delta, true);
+        if (!result.has_value())
+        {
+            Sink.PreviewMesh(Entity, Initial); // no real extrude: revert, commit nothing
+            return;
+        }
+
+        Sink.CommitMesh(Entity, Initial, std::move(result->Mesh));
+        // The mesh reindexed; select the freshly created outer cap/edge so it can be
+        // extruded or moved again (empty refs clears, as MeshEditPanel does).
+        const RegistryId registry = Elements.empty() ? RegistryId::Invalid() : Elements.front().Registry;
+        std::vector<SelectableRef> refs;
+        refs.reserve(result->NewElementIds.size());
+        for (std::uint32_t id : result->NewElementIds)
+            refs.push_back(Kind == MeshElementKind::Face
+                               ? SelectableRef::FaceSelection(registry, Entity, id)
+                               : SelectableRef::EdgeSelection(registry, Entity, id));
+        Sink.SelectElements(refs);
     }
 
     void Cancel() override { Sink.PreviewMesh(Entity, Initial); }
@@ -209,11 +321,10 @@ EntityId GatherModeElements(const SelectionSnapshot& selection, SelectableKind w
     return entity;
 }
 
-std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
+// Every selected entity that resolves to a transform, with its pre-drag state.
+std::vector<ObjectItem> GatherObjectItems(const ManipulatorContext& ctx)
 {
-    // Move every selected entity that resolves to a transform — one drag, one
-    // undo, all of them.
-    std::vector<ObjectApply::Item> items;
+    std::vector<ObjectItem> items;
     for (SelectableRef ref : ctx.Selection.Items)
     {
         if (!ref.IsEntity())
@@ -221,22 +332,64 @@ std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
         if (const std::optional<Transform3f> transform = ctx.Sink.ResolveTransform(ref.Entity))
             items.push_back({ ref.Entity, *transform });
     }
+    return items;
+}
+
+std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
+{
+    // Move every selected entity — one drag, one undo, all of them.
+    std::vector<ObjectItem> items = GatherObjectItems(ctx);
     if (items.empty())
         return nullptr;
     return std::make_unique<ObjectApply>(std::move(items), ctx.Sink);
 }
 
-std::unique_ptr<ITranslateApply> MakeElementApply(const ManipulatorContext& ctx, MeshElementKind kind)
+std::unique_ptr<ITranslateApply> MakeDuplicateApply(const ManipulatorContext& ctx)
+{
+    std::vector<ObjectItem> items = GatherObjectItems(ctx);
+    if (items.empty())
+        return nullptr;
+    return std::make_unique<DuplicateApply>(std::move(items), ctx.Sink);
+}
+
+// Resolves the active-mode element selection to one entity, its mesh, transform,
+// and the refs of that kind. Shared by the element move and the extrude.
+struct ResolvedElements
+{
+    EntityId Entity;
+    BrushMesh Mesh;
+    Transform3f Transform;
+    std::vector<SelectableRef> Elements;
+};
+
+std::optional<ResolvedElements> ResolveElements(const ManipulatorContext& ctx, MeshElementKind kind)
 {
     std::vector<SelectableRef> elements;
     const EntityId entity = GatherModeElements(ctx.Selection, Traits(kind).Selectable, elements);
     if (!entity.IsValid() || elements.empty())
-        return nullptr;
+        return std::nullopt;
     const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(entity);
     if (!resolved.has_value() || resolved->Mesh == nullptr)
+        return std::nullopt;
+    return ResolvedElements{ entity, *resolved->Mesh, resolved->Transform, std::move(elements) };
+}
+
+std::unique_ptr<ITranslateApply> MakeElementApply(const ManipulatorContext& ctx, MeshElementKind kind)
+{
+    std::optional<ResolvedElements> r = ResolveElements(ctx, kind);
+    if (!r.has_value())
         return nullptr;
     return std::make_unique<ElementApply>(
-        entity, *resolved->Mesh, resolved->Transform, std::move(elements), kind, ctx.Service, ctx.Sink);
+        r->Entity, std::move(r->Mesh), r->Transform, std::move(r->Elements), kind, ctx.Service, ctx.Sink);
+}
+
+std::unique_ptr<ITranslateApply> MakeExtrudeApply(const ManipulatorContext& ctx, MeshElementKind kind)
+{
+    std::optional<ResolvedElements> r = ResolveElements(ctx, kind);
+    if (!r.has_value())
+        return nullptr;
+    return std::make_unique<ExtrudeApply>(
+        r->Entity, std::move(r->Mesh), r->Transform, std::move(r->Elements), kind, ctx.Service, ctx.Sink);
 }
 }
 
@@ -323,7 +476,8 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2 screenPos) const
+    ImVec2 screenPos,
+    ModifierFlags modifiers) const
 {
     const Vec3d axisDir = AxisDirection(part);
     if (part == 0 || axisDir.SqrMagnitude() == 0.0f)
@@ -339,8 +493,16 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     if (!startParam.has_value())
         return nullptr;
 
-    std::unique_ptr<ITranslateApply> apply =
-        (kind == MeshElementKind::Object) ? MakeObjectApply(ctx) : MakeElementApply(ctx, kind);
+    // Shift turns the drag into duplicate (object) or extrude (face/edge); vertex
+    // mode and the plain drag stay a move. Extrude falls back to a move if no
+    // face/edge refs resolve, so Shift never dead-ends the drag.
+    std::unique_ptr<ITranslateApply> apply;
+    if (kind == MeshElementKind::Object)
+        apply = modifiers.Shift ? MakeDuplicateApply(ctx) : MakeObjectApply(ctx);
+    else if (modifiers.Shift && (kind == MeshElementKind::Face || kind == MeshElementKind::Edge))
+        apply = MakeExtrudeApply(ctx, kind);
+    if (apply == nullptr)
+        apply = (kind == MeshElementKind::Object) ? MakeObjectApply(ctx) : MakeElementApply(ctx, kind);
     if (apply == nullptr)
         return nullptr;
 
