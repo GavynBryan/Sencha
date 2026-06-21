@@ -3,6 +3,7 @@
 #include "LevelScene.h"
 
 #include <core/assets/AssetRef.h>
+#include <core/json/JsonValue.h>
 #include <world/registry/Registry.h>
 
 #include <string>
@@ -19,6 +20,13 @@ public:
     bool SaveAs(std::string_view path);
     bool Load(std::string_view path);
     void New();
+
+    // In-memory serialization (scene + brush meshes + default material). Save and
+    // Load are the file-backed wrappers; the live-document cook snapshots the
+    // editor's current state through these without writing the .level file, so an
+    // unsaved level still cooks.
+    [[nodiscard]] JsonValue ToJson() const;
+    bool LoadFromJson(const JsonValue& root);
 
     [[nodiscard]] bool HasFilePath() const;
 

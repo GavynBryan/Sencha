@@ -79,10 +79,15 @@ private:
     void LoadGameModule();
     void UnloadGameModule();
 
-    // Registers the `play [map]` / `stop` console commands that drive PIE.
-    void RegisterPlayCommands();
+    // Registers the editor's console surface: the cook cell-size cvar and the
+    // `cook [name]` / `play [map]` / `stop` commands that drive the author -> cook
+    // -> play loop.
+    void RegisterEditorCommands();
     // Resolves the prebuilt `app` host beside the editor executable.
     [[nodiscard]] std::string ResolveHostAppPath() const;
+    // Cooks the live document into the project's assets root, returning the cooked
+    // map name (e.g. "levels/foo") or empty on failure.
+    std::string CookCurrentLevel(const std::string& levelName);
 
     ViewportPanel* Viewports = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
@@ -112,4 +117,7 @@ private:
 
     std::optional<ProjectDescriptor> Project;
     PieSession                       Pie;
+    // Last successfully cooked map ("levels/<name>"); `play` with no arg uses it,
+    // closing the author -> cook -> play loop.
+    std::string LastCookedMap;
 };

@@ -25,4 +25,17 @@ struct ProjectDescriptor
     // Loads and resolves a descriptor. Returns false and sets *error on a missing
     // file, malformed JSON, or a missing required field.
     static bool Load(const std::string& path, ProjectDescriptor& out, std::string* error);
+
+    // Writes the descriptor to `path` as JSON, with paths made relative to the
+    // file's directory where possible so the project stays a relocatable folder.
+    // Sets Directory to that directory. Returns false and sets *error on failure.
+    bool Save(const std::string& path, std::string* error = nullptr);
+
+    // Creates a new project: a descriptor with a default game module and content
+    // root, written to <directory>/project.senchaproj, with the content root dir
+    // created. Returns false and sets *error on failure.
+    static bool Create(const std::string& directory,
+                       const std::string& name,
+                       ProjectDescriptor& out,
+                       std::string* error);
 };

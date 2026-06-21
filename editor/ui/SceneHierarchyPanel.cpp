@@ -5,6 +5,7 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
+#include "../level/commands/CreateEntityCommand.h"
 #include "../level/LevelScene.h"
 #include "../selection/commands/SelectCommand.h"
 #include "../selection/SelectionService.h"
@@ -17,8 +18,10 @@
 #include <memory>
 #include <string>
 
-SceneHierarchyPanel::SceneHierarchyPanel(LevelScene& scene, SelectionService& selection, CommandStack& commands)
+SceneHierarchyPanel::SceneHierarchyPanel(LevelScene& scene, LevelDocument& document,
+                                         SelectionService& selection, CommandStack& commands)
     : Scene(scene)
+    , Document(document)
     , Selection(selection)
     , Commands(commands)
 {
@@ -38,6 +41,18 @@ void SceneHierarchyPanel::OnDraw()
     const SelectableRef current = Selection.GetPrimarySelection();
     const RegistryId registryId = Scene.GetRegistry().Id;
     const World& world = Scene.GetRegistry().Components;
+
+    // Create a plain entity (Transform only) and select it; the inspector adds
+    // game components to it. This is the non-brush authoring path.
+    if (ImGui::Button(ICON_FA_PLUS "  New Entity"))
+    {
+        auto create = MakeCreateEntityCommand(Vec3d::Zero(), Scene, Document);
+        CreateEntityCommand* cmd = create.get();
+        Commands.Execute(std::move(create));
+        Commands.Execute(std::make_unique<SelectCommand>(
+            Selection, SelectableRef::EntitySelection(registryId, cmd->GetCreatedEntity())));
+    }
+    ImGui::Separator();
 
     for (EntityId entity : Scene.GetAllEntities())
     {

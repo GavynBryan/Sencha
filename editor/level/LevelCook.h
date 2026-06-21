@@ -42,10 +42,21 @@ struct LevelCookResult
                                         std::string_view meshPath,
                                         std::span<const AssetRef> materials);
 
+class LevelDocument;
+
 // Cooks the authored level at `authoredLevelPath` into `assetsRoot`. cellSize is
 // the spatial grid size (a cvar at the call site). Requires
 // RegisterLevelSerializers() to have run (the cooked-scene assembly uses the
 // scene serializers for passthrough game components).
 [[nodiscard]] LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
+                                        const std::filesystem::path& assetsRoot,
+                                        double cellSize);
+
+// Cooks the live (possibly unsaved) editor document, named `levelName` (the
+// artifact stem). The document is snapshotted internally, so the caller's
+// document is not modified. This is the editor Cook button's path: author, cook,
+// play without a save-to-disk round trip.
+[[nodiscard]] LevelCookResult CookLevel(const LevelDocument& liveDocument,
+                                        std::string_view levelName,
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize);

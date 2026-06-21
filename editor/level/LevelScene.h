@@ -51,6 +51,10 @@ public:
     // or loading). The mesh is moved into the store and the entity gets its id.
     EntityId CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh);
     EntityId CreateCamera(Vec3d position);
+    // A plain entity: just a LocalTransform, ready for game components added via
+    // the inspector. The non-brush authoring path (the cook passes such entities
+    // through unchanged).
+    EntityId CreateEntity(Vec3d position);
     void DestroyEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents

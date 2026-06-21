@@ -138,6 +138,30 @@ void EditorToolbar::Draw()
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Grid size");
+
+        // Author -> cook -> play loop. Cook bakes the live level; Play launches it
+        // out-of-process (PIE); Stop ends the session. Play flips to a lit state
+        // while a session runs.
+        const bool playing = Play.IsPlaying && Play.IsPlaying();
+        Divider(buttonSize);
+
+        if (Play.Cook)
+        {
+            if (ToolButton("cook", ICON_FA_HAMMER, "Cook level", false, buttonSize))
+                Play.Cook();
+        }
+        ImGui::SameLine();
+        if (Play.Play)
+        {
+            if (ToolButton("play", ICON_FA_PLAY, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
+                Play.Play();
+        }
+        ImGui::SameLine();
+        if (Play.Stop)
+        {
+            if (ToolButton("stop", ICON_FA_STOP, "Stop", false, buttonSize) && playing)
+                Play.Stop();
+        }
     }
     ImGui::End();
 }

@@ -1,5 +1,7 @@
 #include "TemplateGame.h"
 
+#include "SpinComponent.h"
+
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
@@ -11,12 +13,14 @@
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
+#include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
 
 #include <SDL3/SDL.h>
@@ -112,15 +116,49 @@ namespace
         Registry*& RegistryInstance;
         FreeCamera& FreeCam;
     };
+
+    // A game system: rotates every entity carrying a SpinComponent. The example
+    // of gameplay reading a game-defined component placed in the editor and baked
+    // through the cook. Mutates transform values only, never archetype membership.
+    struct SpinSystem
+    {
+        explicit SpinSystem(Registry*& registry)
+            : RegistryInstance(registry)
+        {
+        }
+
+        void FixedLogic(FixedLogicContext& ctx)
+        {
+            if (RegistryInstance == nullptr)
+                return;
+            World& world = RegistryInstance->Components;
+            if (!world.IsRegistered<SpinComponent>())
+                return;
+
+            const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
+            world.ForEachComponent<SpinComponent>([&](EntityId id, SpinComponent& spin) {
+                LocalTransform* transform = world.TryGet<LocalTransform>(id);
+                if (transform == nullptr)
+                    return;
+                transform->Value.Rotation =
+                    transform->Value.Rotation
+                    * Quatf::FromAxisAngle(Vec3d::Up(), spin.RadiansPerSecond * dt);
+            });
+        }
+
+        Registry*& RegistryInstance;
+    };
 } // namespace
 
 void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
 {
-    // Built-in scene components only (Transform, StaticMesh, Camera, ...). Add
-    // RegisterComponentSerializer<YourComponent>(...) calls here for the game's
-    // own components; the editor reuses this hook to edit scenes that contain
-    // them without ever starting the game.
+    // Built-in scene components (Transform, StaticMesh, Camera, ...) plus the
+    // game's own. RegisterComponent<T>() is schema-driven, so SpinComponent
+    // serializes through the cook and shows up editable in the editor inspector.
+    // The editor reuses this hook to edit scenes containing the game's components
+    // without ever starting the game.
     InitSceneSerializer();
+    RegisterComponent<SpinComponent>();
 }
 
 void TemplateGame::OnStart(GameStartupContext&)
@@ -259,6 +297,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
     ctx.Schedule.Register<FreeCameraMovementSystem>(ActiveZoneRegistry, FreeCam);
+    ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }
 
 void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)

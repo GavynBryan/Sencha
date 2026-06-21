@@ -47,11 +47,8 @@ bool LevelDocument::IsDirty() const
     return Dirty;
 }
 
-bool LevelDocument::Save()
+JsonValue LevelDocument::ToJson() const
 {
-    if (FilePath.empty())
-        return false;
-
     JsonValue root = SaveSceneJson(Registry_);
     if (root.IsObject())
     {
@@ -59,7 +56,36 @@ bool LevelDocument::Save()
         if (DefaultMaterial.IsValid())
             root.AsObject().emplace_back("default_material", JsonValue(DefaultMaterial.Path));
     }
-    const std::string text = JsonStringify(root, /*pretty*/ true);
+    return root;
+}
+
+bool LevelDocument::LoadFromJson(const JsonValue& root)
+{
+    Scene.Clear();
+
+    SceneLoadError loadError;
+    if (!LoadSceneJson(root, Registry_, &loadError))
+    {
+        Scene.SyncFromRegistry();
+        return false;
+    }
+
+    if (const JsonValue* meshes = root.Find("brush_meshes"))
+        DeserializeBrushMeshes(*meshes, Scene.GetBrushMeshStore());
+
+    if (const JsonValue* material = root.Find("default_material"); material && material->IsString())
+        DefaultMaterial = AssetRef{ AssetType::Material, material->AsString() };
+
+    Scene.SyncFromRegistry();
+    return true;
+}
+
+bool LevelDocument::Save()
+{
+    if (FilePath.empty())
+        return false;
+
+    const std::string text = JsonStringify(ToJson(), /*pretty*/ true);
 
     std::ofstream file(FilePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open())
@@ -96,22 +122,9 @@ bool LevelDocument::Load(std::string_view path)
     if (!root.has_value())
         return false;
 
-    Scene.Clear();
-
-    SceneLoadError loadError;
-    if (!LoadSceneJson(*root, Registry_, &loadError))
-    {
-        Scene.SyncFromRegistry();
+    if (!LoadFromJson(*root))
         return false;
-    }
 
-    if (const JsonValue* meshes = root->Find("brush_meshes"))
-        DeserializeBrushMeshes(*meshes, Scene.GetBrushMeshStore());
-
-    if (const JsonValue* material = root->Find("default_material"); material && material->IsString())
-        DefaultMaterial = AssetRef{ AssetType::Material, material->AsString() };
-
-    Scene.SyncFromRegistry();
     FilePath.assign(path);
     Dirty = false;
     return true;

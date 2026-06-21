@@ -85,18 +85,20 @@ JsonValue BuildCellEntity(const Vec3d& origin,
     });
 }
 
-LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
-                          const std::filesystem::path& assetsRoot,
-                          double cellSize)
+namespace
+{
+// The cook kernel. Operates on a mutable document it is free to mutate
+// destructively (it drops brush entities before serializing the passthrough
+// scene), so both callers hand it a throwaway: the file cook loads one from
+// disk, the live cook snapshots the editor's document. stem names the level's
+// artifacts; sourceRel is the cooked-cache source key.
+LevelCookResult CookLevelDocument(LevelDocument& doc,
+                                  std::string_view stem,
+                                  std::string_view sourceRel,
+                                  const std::filesystem::path& assetsRoot,
+                                  double cellSize)
 {
     LevelCookResult result;
-
-    LevelDocument doc;
-    if (!doc.Load(authoredLevelPath.generic_string()))
-    {
-        result.Error = "CookLevel: could not load '" + authoredLevelPath.generic_string() + "'";
-        return result;
-    }
 
     // Collect -> hash -> cluster. The hash is taken on the collected input so it
     // reflects exactly what gets baked.
@@ -104,7 +106,7 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
     const uint64_t geometryHash = HashBrushInputs(brushes, cellSize);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
-    const std::string stem = authoredLevelPath.stem().generic_string();
+    const std::string stemStr(stem);
     LoggingProvider logging;
     MeshSerializer serializer(logging);
 
@@ -127,8 +129,8 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
         }
 
         const std::string cellName = CellName(cell.Coord);
-        const std::string meshAssetPath = "asset://levels/" + stem + "/" + cellName;
-        const std::string meshRelPath = ".cooked/levels/" + stem + "/" + cellName;
+        const std::string meshAssetPath = "asset://levels/" + stemStr + "/" + cellName;
+        const std::string meshRelPath = ".cooked/levels/" + stemStr + "/" + cellName;
         const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
 
         std::error_code ec;
@@ -181,8 +183,8 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
     std::error_code ec;
     const std::filesystem::path cookedDir = assetsRoot / ".cooked/levels";
     std::filesystem::create_directories(cookedDir, ec);
-    const std::filesystem::path cookedScenePath = cookedDir / (stem + ".cooked.json");
-    const std::filesystem::path manifestPath = cookedDir / (stem + ".manifest.json");
+    const std::filesystem::path cookedScenePath = cookedDir / (stemStr + ".cooked.json");
+    const std::filesystem::path manifestPath = cookedDir / (stemStr + ".manifest.json");
 
     // asset:// resolution: Generated cell meshes live under .cooked/; every other
     // ref (materials, their textures) is an authored asset under the root.
@@ -203,12 +205,13 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
         return result;
     }
 
-    // Record source -> artifacts (source = level path, key = brush-geometry hash).
+    // Record source -> artifacts (source key = caller-supplied rel path, hash key
+    // = brush-geometry hash).
     const std::filesystem::path indexPath = assetsRoot / ".cooked/index.json";
     CookedCacheIndex index;
     (void)CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index); // cold cache is fine
     CookedSourceEntry entry;
-    entry.SourceRelPath = std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
+    entry.SourceRelPath = std::string(sourceRel);
     entry.SourceHash = geometryHash;
     entry.Artifacts = std::move(artifacts);
     index.Put(std::move(entry));
@@ -219,4 +222,43 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
     result.ManifestPath = manifestPath;
     result.CellCount = cells.size();
     return result;
+}
+} // namespace
+
+LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
+                          const std::filesystem::path& assetsRoot,
+                          double cellSize)
+{
+    LevelDocument doc;
+    if (!doc.Load(authoredLevelPath.generic_string()))
+    {
+        LevelCookResult result;
+        result.Error = "CookLevel: could not load '" + authoredLevelPath.generic_string() + "'";
+        return result;
+    }
+
+    std::error_code ec;
+    const std::string sourceRel =
+        std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
+    return CookLevelDocument(doc, authoredLevelPath.stem().generic_string(), sourceRel,
+                             assetsRoot, cellSize);
+}
+
+LevelCookResult CookLevel(const LevelDocument& liveDocument,
+                          std::string_view levelName,
+                          const std::filesystem::path& assetsRoot,
+                          double cellSize)
+{
+    // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
+    // free to mutate, leaving the editor's document untouched.
+    LevelDocument snapshot;
+    if (!snapshot.LoadFromJson(liveDocument.ToJson()))
+    {
+        LevelCookResult result;
+        result.Error = "CookLevel: could not snapshot the live document";
+        return result;
+    }
+
+    const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
+    return CookLevelDocument(snapshot, levelName, sourceRel, assetsRoot, cellSize);
 }

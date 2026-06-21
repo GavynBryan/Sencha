@@ -116,6 +116,47 @@ TEST_F(LevelCookTest, CooksPerCellMeshesAndScene)
     EXPECT_EQ(staticMeshEntities, 2u);
 }
 
+TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
+{
+    // A never-saved document: a brush plus a non-brush entity (a camera) that must
+    // pass through the cook unchanged, standing in for any game component entity.
+    LevelDocument doc;
+    doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
+    doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    const EntityId camera = doc.GetScene().CreateCamera(Vec3d{ 0, 2, 5 });
+    const std::size_t entityCountBefore = doc.GetScene().GetAllEntities().size();
+
+    const LevelCookResult result = CookLevel(doc, "live", Root, /*cellSize*/ 16.0);
+    ASSERT_TRUE(result.Success) << result.Error;
+    EXPECT_EQ(result.CellCount, 1u);
+
+    // The live overload snapshots internally: the editor's document is untouched
+    // (its brush and camera both survive, unlike the throwaway the cook mutated).
+    EXPECT_EQ(doc.GetScene().GetAllEntities().size(), entityCountBefore);
+    EXPECT_TRUE(doc.GetScene().HasEntity(camera));
+
+    // The cooked scene drops brushes, emits one cell StaticMesh, and passes the
+    // camera entity through.
+    const JsonValue cooked = ReadJson(result.CookedScenePath);
+    const JsonValue* entities = cooked.Find("entities");
+    ASSERT_NE(entities, nullptr);
+    ASSERT_TRUE(entities->IsArray());
+
+    int cameras = 0, staticMeshes = 0, brushes = 0;
+    for (const JsonValue& entity : entities->AsArray())
+    {
+        const JsonValue* components = entity.Find("components");
+        if (components == nullptr)
+            continue;
+        cameras += components->Find("Camera") != nullptr;
+        staticMeshes += components->Find("StaticMesh") != nullptr;
+        brushes += components->Find("brush") != nullptr;
+    }
+    EXPECT_EQ(cameras, 1);
+    EXPECT_EQ(staticMeshes, 1);
+    EXPECT_EQ(brushes, 0);
+}
+
 TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();

@@ -59,3 +59,10 @@ private:
     return std::make_unique<CreateEntityCommand>(
         [&scene, position] { return scene.CreateCamera(position); }, scene, document);
 }
+
+[[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreateEntityCommand(
+    Vec3d position, LevelScene& scene, LevelDocument& document)
+{
+    return std::make_unique<CreateEntityCommand>(
+        [&scene, position] { return scene.CreateEntity(position); }, scene, document);
+}

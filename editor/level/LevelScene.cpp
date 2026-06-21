@@ -44,6 +44,19 @@ EntityId LevelScene::CreateCamera(Vec3d position)
     return entity;
 }
 
+EntityId LevelScene::CreateEntity(Vec3d position)
+{
+    Transform3f transform = Transform3f::Identity();
+    transform.Position = position;
+
+    World& world = Registry_.Components;
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, LocalTransform{ transform });
+
+    Entities.push_back(entity);
+    return entity;
+}
+
 void LevelScene::DestroyEntity(EntityId entity)
 {
     World& world = Registry_.Components;
