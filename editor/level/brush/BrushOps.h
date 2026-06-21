@@ -6,6 +6,17 @@
 
 #include <cstdint>
 
+// Creation sub-modes for the Brush tool. A primitive is just a BrushMesh built
+// from the create-drag box; everything downstream is shape-agnostic.
+enum class BrushPrimitive : std::uint8_t { Box, Plane, Cylinder };
+
+struct BrushPrimitiveParams
+{
+    Vec3d HalfExtents{ 0.5, 0.5, 0.5 };
+    int   DepthAxis = 1;     // plane normal / cylinder axis (0=X, 1=Y, 2=Z)
+    int   CylinderSides = 12;
+};
+
 //=============================================================================
 // Brush edit verbs — each a pure function BrushMesh -> BrushMesh, wrapped by an
 // undoable command in the editor. Pure so they are unit-tested with zero UI.
@@ -16,6 +27,18 @@ struct BrushOps
 {
     // The default brush: 8 vertices, 6 quad faces, outward normals.
     [[nodiscard]] static BrushMesh MakeBox(Vec3d halfExtents);
+
+    // A single flat quad on the two non-depth axes (zero thickness). Open mesh,
+    // like the result of DeleteFace; authoring tolerates it.
+    [[nodiscard]] static BrushMesh MakePlane(Vec3d halfExtents, int depthAxis);
+
+    // An N-sided prism about depthAxis (clamped to >= 3 sides). Cross-section
+    // fills the drag footprint: ring radii are the two non-depth half-extents.
+    [[nodiscard]] static BrushMesh MakeCylinder(Vec3d halfExtents, int depthAxis, int sides);
+
+    // Dispatch over the closed primitive set. One pipeline; the sub-mode is data.
+    [[nodiscard]] static BrushMesh MakePrimitive(BrushPrimitive kind,
+                                                 const BrushPrimitiveParams& params);
 
     // Whole-brush move (mesh is local space; normally the entity transform moves
     // instead — provided for completeness and testing).

@@ -5,6 +5,7 @@
 class ToolRegistry;
 class MeshEditService;
 struct GridSettings;
+struct BrushCreationSettings;
 
 // The top icon toolbar (fixed app chrome, not a dockable panel). Backed control
 // groups, each with an active-state highlight:
@@ -27,7 +28,8 @@ public:
         std::function<bool()> IsPlaying;
     };
 
-    EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid);
+    EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid,
+                  BrushCreationSettings& brushCreate);
 
     void SetPlayControls(PlayControls controls) { Play = std::move(controls); }
 
@@ -37,5 +39,6 @@ private:
     ToolRegistry& Tools;
     MeshEditService& MeshEdit;
     GridSettings& Grid;
+    BrushCreationSettings& BrushCreate;
     PlayControls Play;
 };

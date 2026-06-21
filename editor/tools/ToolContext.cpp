@@ -9,7 +9,8 @@ ToolContext::ToolContext(CommandStack& commandStack,
                          PreviewBuffer& preview,
                          MeshEditService& meshEdit,
                          MarqueeState& marquee,
-                         GridSettings& grid)
+                         GridSettings& grid,
+                         BrushCreationSettings& brushCreate)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
@@ -20,5 +21,6 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , MeshEdit(meshEdit)
     , Marquee(marquee)
     , Grid(grid)
+    , BrushCreate(brushCreate)
 {
 }

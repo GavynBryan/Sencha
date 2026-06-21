@@ -17,17 +17,3 @@ std::optional<Aabb3d> BrushGeometry::ComputeWorldBounds(const LevelScene& scene,
 
     return ComputeWorldBounds(*mesh, *transform);
 }
-
-std::array<Vec3d, 8> BrushGeometry::ComputeCorners(const BrushState& state)
-{
-    return {
-        state.Transform.TransformPoint(Vec3d(-state.HalfExtents.X, -state.HalfExtents.Y, -state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(state.HalfExtents.X, -state.HalfExtents.Y, -state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(state.HalfExtents.X, state.HalfExtents.Y, -state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(-state.HalfExtents.X, state.HalfExtents.Y, -state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(-state.HalfExtents.X, -state.HalfExtents.Y, state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(state.HalfExtents.X, -state.HalfExtents.Y, state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(state.HalfExtents.X, state.HalfExtents.Y, state.HalfExtents.Z)),
-        state.Transform.TransformPoint(Vec3d(-state.HalfExtents.X, state.HalfExtents.Y, state.HalfExtents.Z)),
-    };
-}

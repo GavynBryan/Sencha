@@ -18,6 +18,7 @@
 #include "../viewport/Picking.h"
 #include "../viewport/ViewportLayout.h"
 
+#include "BrushCreationSettings.h"
 #include "LevelDocument.h"
 
 #include <functional>
@@ -42,6 +43,7 @@ public:
     PickingService Picking;
     MeshEditService MeshEdit;
     GridSettings Grid;
+    BrushCreationSettings BrushCreate;
     MarqueeState Marquee;
     InteractionHost Interactions;
     PreviewBuffer Preview;

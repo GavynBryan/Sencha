@@ -53,6 +53,14 @@ private:
         [&scene, position, halfExtents] { return scene.CreateBrush(position, halfExtents); }, scene, document);
 }
 
+[[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreateBrushMeshCommand(
+    Transform3f transform, BrushMesh mesh, LevelScene& scene, LevelDocument& document)
+{
+    return std::make_unique<CreateEntityCommand>(
+        [&scene, transform, mesh = std::move(mesh)]
+        { return scene.CreateBrushFromMesh(transform, mesh); }, scene, document);
+}
+
 [[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreateCameraCommand(
     Vec3d position, LevelScene& scene, LevelDocument& document)
 {

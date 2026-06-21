@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -72,6 +73,98 @@ BrushMesh BrushOps::MakeBox(Vec3d halfExtents)
     for (BrushFace& face : mesh.Faces)
         face.Material.Uv = UvProjectionForNormal(face.Normal, /*worldAligned*/ true);
     return mesh;
+}
+
+namespace
+{
+    // The two axes orthogonal to depthAxis, in ascending index order.
+    std::pair<int, int> PlaneAxes(int depthAxis)
+    {
+        const int u = (depthAxis + 1) % 3;
+        const int v = (depthAxis + 2) % 3;
+        return u < v ? std::pair{ u, v } : std::pair{ v, u };
+    }
+
+    Vec3d AxisPoint(int uIdx, double u, int vIdx, double v, int dIdx, double d)
+    {
+        Vec3d p{};
+        p[uIdx] = u;
+        p[vIdx] = v;
+        p[dIdx] = d;
+        return p;
+    }
+
+    // World-aligned UV per face from its (now valid) normal, matching MakeBox.
+    void SeedFaceUvs(BrushMesh& mesh)
+    {
+        for (BrushFace& face : mesh.Faces)
+            face.Material.Uv = UvProjectionForNormal(face.Normal, /*worldAligned*/ true);
+    }
+}
+
+BrushMesh BrushOps::MakePlane(Vec3d halfExtents, int depthAxis)
+{
+    const auto [uIdx, vIdx] = PlaneAxes(depthAxis);
+    const double hu = halfExtents[uIdx];
+    const double hv = halfExtents[vIdx];
+    constexpr double d = 0.0; // flat: zero thickness on the depth axis
+
+    BrushMesh mesh;
+    EmitFace(mesh, {
+        AxisPoint(uIdx, -hu, vIdx, -hv, depthAxis, d),
+        AxisPoint(uIdx, hu, vIdx, -hv, depthAxis, d),
+        AxisPoint(uIdx, hu, vIdx, hv, depthAxis, d),
+        AxisPoint(uIdx, -hu, vIdx, hv, depthAxis, d),
+    });
+    BrushValidateAndRepair(mesh);
+    SeedFaceUvs(mesh);
+    return mesh;
+}
+
+BrushMesh BrushOps::MakeCylinder(Vec3d halfExtents, int depthAxis, int sides)
+{
+    sides = std::max(sides, 3);
+    const auto [uIdx, vIdx] = PlaneAxes(depthAxis);
+    const double ru = halfExtents[uIdx];
+    const double rv = halfExtents[vIdx];
+    const double hd = halfExtents[depthAxis];
+
+    std::vector<Vec3d> bottom(sides);
+    std::vector<Vec3d> top(sides);
+    for (int i = 0; i < sides; ++i)
+    {
+        const double angle = 2.0 * std::numbers::pi * i / sides;
+        const double u = ru * std::cos(angle);
+        const double v = rv * std::sin(angle);
+        bottom[i] = AxisPoint(uIdx, u, vIdx, v, depthAxis, -hd);
+        top[i] = AxisPoint(uIdx, u, vIdx, v, depthAxis, hd);
+    }
+
+    BrushMesh mesh;
+    EmitFace(mesh, bottom);
+    EmitFace(mesh, top);
+    for (int i = 0; i < sides; ++i)
+    {
+        const int j = (i + 1) % sides;
+        EmitFace(mesh, { bottom[i], bottom[j], top[j], top[i] });
+    }
+    BrushValidateAndRepair(mesh);
+    SeedFaceUvs(mesh);
+    return mesh;
+}
+
+BrushMesh BrushOps::MakePrimitive(BrushPrimitive kind, const BrushPrimitiveParams& params)
+{
+    switch (kind)
+    {
+        case BrushPrimitive::Plane:
+            return MakePlane(params.HalfExtents, params.DepthAxis);
+        case BrushPrimitive::Cylinder:
+            return MakeCylinder(params.HalfExtents, params.DepthAxis, params.CylinderSides);
+        case BrushPrimitive::Box:
+        default:
+            return MakeBox(params.HalfExtents);
+    }
 }
 
 BrushMesh BrushOps::Translate(const BrushMesh& mesh, Vec3d delta)

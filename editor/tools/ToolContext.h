@@ -11,6 +11,7 @@ class PreviewBuffer;
 class SelectionService;
 struct MarqueeState;
 struct GridSettings;
+struct BrushCreationSettings;
 
 struct ToolContext
 {
@@ -23,7 +24,8 @@ struct ToolContext
                 PreviewBuffer& preview,
                 MeshEditService& meshEdit,
                 MarqueeState& marquee,
-                GridSettings& grid);
+                GridSettings& grid,
+                BrushCreationSettings& brushCreate);
 
     CommandStack& Commands;
     SelectionService& Selection;
@@ -35,4 +37,5 @@ struct ToolContext
     MeshEditService& MeshEdit;
     MarqueeState& Marquee;
     GridSettings& Grid;
+    BrushCreationSettings& BrushCreate;
 };

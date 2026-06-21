@@ -7,10 +7,12 @@
 #include "../meshedit/MeshElementKind.h"
 #include "../meshedit/MeshElementKindTraits.h"
 #include "../meshedit/MeshEditService.h"
+#include "../level/BrushCreationSettings.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/GridSettings.h"
 
+#include <algorithm>
 #include <array>
 
 #include <imgui.h>
@@ -44,10 +46,12 @@ void Divider(float height)
 }
 }
 
-EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid)
+EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid,
+                             BrushCreationSettings& brushCreate)
     : Tools(tools)
     , MeshEdit(meshEdit)
     , Grid(grid)
+    , BrushCreate(brushCreate)
 {
 }
 
@@ -86,6 +90,41 @@ void EditorToolbar::Draw()
             const bool active = Tools.GetActiveIndex() == static_cast<int>(i);
             if (ToolButton(tool->GetId().data(), icon.c_str(), tool->GetDisplayName().data(), active, buttonSize))
                 Tools.Activate(i);
+        }
+
+        // Brush create sub-mode (Cube/Plane/Cylinder): drives BrushCreationSettings.
+        // Only meaningful while the Brush tool is active, so it shows only then.
+        const ITool* activeTool = Tools.GetActiveTool();
+        if (activeTool != nullptr && activeTool->GetId() == "brush")
+        {
+            Divider(buttonSize);
+
+            struct PrimitiveButton { BrushPrimitive Kind; const char* Icon; const char* Label; };
+            static constexpr std::array<PrimitiveButton, 3> kPrimitives = {{
+                { BrushPrimitive::Box, ICON_FA_CUBE, "Cube" },
+                { BrushPrimitive::Plane, ICON_FA_SQUARE, "Plane" },
+                { BrushPrimitive::Cylinder, ICON_FA_CIRCLE, "Cylinder" },
+            }};
+            bool firstPrim = true;
+            for (const PrimitiveButton& prim : kPrimitives)
+            {
+                if (!firstPrim)
+                    ImGui::SameLine();
+                firstPrim = false;
+                const bool active = BrushCreate.ActivePrimitive == prim.Kind;
+                if (ToolButton(prim.Label, prim.Icon, prim.Label, active, buttonSize))
+                    BrushCreate.ActivePrimitive = prim.Kind;
+            }
+
+            if (BrushCreate.ActivePrimitive == BrushPrimitive::Cylinder)
+            {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(72.0f);
+                if (ImGui::DragInt("##cylsides", &BrushCreate.CylinderSides, 0.25f, 3, 64, "%d sides"))
+                    BrushCreate.CylinderSides = std::clamp(BrushCreate.CylinderSides, 3, 64);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Cylinder sides");
+            }
         }
 
         Divider(buttonSize);

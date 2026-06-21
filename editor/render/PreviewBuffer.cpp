@@ -1,16 +1,18 @@
 #include "PreviewBuffer.h"
 
-void PreviewBuffer::SetBox(Vec3d center, Vec3d halfExtents)
+#include <utility>
+
+void PreviewBuffer::SetMesh(const Transform3f& transform, BrushMesh mesh)
 {
-    Box = PreviewBox{ center, halfExtents };
+    Preview = PreviewMesh{ transform, std::move(mesh) };
 }
 
 void PreviewBuffer::Clear()
 {
-    Box.reset();
+    Preview.reset();
 }
 
-const std::optional<PreviewBox>& PreviewBuffer::GetBox() const
+const std::optional<PreviewMesh>& PreviewBuffer::GetMesh() const
 {
-    return Box;
+    return Preview;
 }

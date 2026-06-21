@@ -1,22 +1,28 @@
 #pragma once
 
-#include <math/Vec.h>
+#include "../level/brush/BrushMesh.h"
+
+#include <math/geometry/3d/Transform3d.h>
 
 #include <optional>
 
-struct PreviewBox
+// The live create-drag preview: the actual brush mesh that will be committed,
+// at the transform it will be placed. The renderer draws its wireframe, so any
+// primitive (box, plane, cylinder) previews as its true silhouette with no
+// per-shape preview code.
+struct PreviewMesh
 {
-    Vec3d Center;
-    Vec3d HalfExtents;
+    Transform3f Transform;
+    BrushMesh   Mesh;
 };
 
 class PreviewBuffer
 {
 public:
-    void SetBox(Vec3d center, Vec3d halfExtents);
+    void SetMesh(const Transform3f& transform, BrushMesh mesh);
     void Clear();
-    [[nodiscard]] const std::optional<PreviewBox>& GetBox() const;
+    [[nodiscard]] const std::optional<PreviewMesh>& GetMesh() const;
 
 private:
-    std::optional<PreviewBox> Box;
+    std::optional<PreviewMesh> Preview;
 };

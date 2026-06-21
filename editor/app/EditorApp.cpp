@@ -167,7 +167,8 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     // Fixed app chrome: top toolbar + bottom status bar. Registered before the
     // panels so the work-area space they reserve is subtracted from the full-bleed
     // viewport panel below.
-    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit, Workspace->Grid);
+    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit, Workspace->Grid,
+                                              Workspace->BrushCreate);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({

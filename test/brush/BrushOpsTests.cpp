@@ -211,3 +211,52 @@ TEST(BrushOps, ExtrudeEdgeZeroOffsetIsNoOp)
     EXPECT_EQ(pulled.Faces.size(), 6u);
     EXPECT_TRUE(IsClosed(pulled));
 }
+
+TEST(BrushOps, MakePlaneIsOneFlatQuad)
+{
+    // Depth axis Y: the quad lies in X/Z with zero Y extent.
+    const BrushMesh plane = BrushOps::MakePlane({ 2.0f, 1.0f, 3.0f }, /*depthAxis*/ 1);
+    EXPECT_EQ(plane.Vertices.size(), 4u);
+    ASSERT_EQ(plane.Faces.size(), 1u);
+    EXPECT_EQ(plane.Faces[0].Loop.size(), 4u);
+
+    const Aabb3d bounds = BrushComputeBounds(plane);
+    EXPECT_FLOAT_EQ(bounds.Min.Y, 0.0f);
+    EXPECT_FLOAT_EQ(bounds.Max.Y, 0.0f); // flat: zero thickness on the depth axis
+    EXPECT_FLOAT_EQ(bounds.Max.X, 2.0f);
+    EXPECT_FLOAT_EQ(bounds.Max.Z, 3.0f);
+    // UV axes lie in the face plane (seeded like MakeBox).
+    EXPECT_TRUE(AllUvAxesInFacePlanes(plane));
+}
+
+TEST(BrushOps, MakeCylinderIsClosedPrismAboutDepthAxis)
+{
+    const int sides = 8;
+    const BrushMesh cyl = BrushOps::MakeCylinder({ 1.0f, 2.0f, 1.0f }, /*depthAxis*/ 1, sides);
+    EXPECT_EQ(cyl.Vertices.size(), static_cast<std::size_t>(sides) * 2u); // welded top + bottom rings
+    EXPECT_EQ(cyl.Faces.size(), static_cast<std::size_t>(sides) + 2u);    // sides + two caps
+    EXPECT_TRUE(IsClosed(cyl));
+    EXPECT_TRUE(AllNormalsOutward(cyl));
+
+    const Aabb3d bounds = BrushComputeBounds(cyl);
+    EXPECT_FLOAT_EQ(bounds.Min.Y, -2.0f); // height on the depth axis
+    EXPECT_FLOAT_EQ(bounds.Max.Y, 2.0f);
+    EXPECT_NEAR(bounds.Max.X, 1.0f, 1e-4f); // cross-section fills the footprint
+    EXPECT_NEAR(bounds.Max.Z, 1.0f, 1e-4f);
+}
+
+TEST(BrushOps, MakeCylinderClampsSidesToThree)
+{
+    const BrushMesh cyl = BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, /*depthAxis*/ 1, /*sides*/ 1);
+    EXPECT_EQ(cyl.Faces.size(), 5u); // clamped to a triangular prism: 3 sides + 2 caps
+    EXPECT_TRUE(IsClosed(cyl));
+}
+
+TEST(BrushOps, MakePrimitiveDispatchesToBox)
+{
+    BrushPrimitiveParams params{};
+    params.HalfExtents = { 1.0f, 1.0f, 1.0f };
+    const BrushMesh box = BrushOps::MakePrimitive(BrushPrimitive::Box, params);
+    EXPECT_EQ(box.Faces.size(), 6u);
+    EXPECT_TRUE(IsClosed(box));
+}

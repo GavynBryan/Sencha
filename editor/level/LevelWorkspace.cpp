@@ -29,7 +29,8 @@ void LevelWorkspace::Init(CommandStack& commands)
         Preview,
         MeshEdit,
         Marquee,
-        Grid);
+        Grid,
+        BrushCreate);
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());

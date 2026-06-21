@@ -1,6 +1,8 @@
 #include "BrushCreateDragInteraction.h"
 
 #include "../../commands/CommandStack.h"
+#include "../../level/BrushCreationSettings.h"
+#include "../brush/BrushOps.h"
 #include "../commands/CreateEntityCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../level/LevelScene.h"
@@ -33,6 +35,24 @@ int BrushCreateDragInteraction::AxisIndex(Vec3d axis)
     return 2;
 }
 
+namespace
+{
+    // The mesh the drag will both preview and commit, plus the transform placing
+    // it. One MakePrimitive call feeds both so they never diverge.
+    std::pair<Transform3f, BrushMesh> BuildPrimitive(const BrushCreationSettings& settings,
+                                                     int depthAxis, Vec3d center, Vec3d halfExtents)
+    {
+        BrushPrimitiveParams params{};
+        params.HalfExtents = halfExtents;
+        params.DepthAxis = depthAxis;
+        params.CylinderSides = settings.CylinderSides;
+
+        Transform3f transform = Transform3f::Identity();
+        transform.Position = center;
+        return { transform, BrushOps::MakePrimitive(settings.ActivePrimitive, params) };
+    }
+}
+
 void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
 {
     const int uIdx = AxisIndex(Plane.Plane.AxisU);
@@ -57,7 +77,9 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
 
     LastCenter = center;
     LastHalfExtents = halfExtents;
-    ctx.Preview.SetBox(center, halfExtents);
+
+    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, Plane.DepthAxis, center, halfExtents);
+    ctx.Preview.SetMesh(transform, std::move(mesh));
 }
 
 void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
@@ -86,7 +108,8 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     if (!HasValidSize)
         return;
 
-    auto cmd = MakeCreateBrushCommand(LastCenter, LastHalfExtents, Scene, Document);
+    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, Plane.DepthAxis, LastCenter, LastHalfExtents);
+    auto cmd = MakeCreateBrushMeshCommand(transform, std::move(mesh), Scene, Document);
     CreateEntityCommand* rawCmd = cmd.get();
     ctx.Commands.Execute(std::move(cmd));
 
