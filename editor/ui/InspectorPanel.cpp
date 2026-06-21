@@ -133,15 +133,19 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // Remove affordances on the header row: a right-click context menu (bound to
     // the header, so registered before any later same-row item) and a right-
     // aligned trash button. Both defer to PendingRemoval, executed after the loop.
-    if (ImGui::BeginPopupContextItem(("##ctx_" + key).c_str()))
+    // Suppressed for components the registry marks non-removable (the transform).
+    if (serializer.IsRemovable())
     {
-        if (ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
+        if (ImGui::BeginPopupContextItem(("##ctx_" + key).c_str()))
+        {
+            if (ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
+                PendingRemoval = &serializer;
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
+        if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
             PendingRemoval = &serializer;
-        ImGui::EndPopup();
     }
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
-    if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
-        PendingRemoval = &serializer;
 
     if (!open)
         return;
