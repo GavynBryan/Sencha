@@ -1,6 +1,7 @@
 #include "BoundsManipulator.h"
 
 #include "../EditorTheme.h"
+#include "../level/BrushGeometry.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ToolContext.h"
@@ -12,7 +13,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <optional>
 #include <vector>
 
@@ -120,19 +120,9 @@ bool Resolve(const ManipulatorContext& ctx, const EditorViewport& viewport, Reso
     out.Mesh = resolved->Mesh;
     out.Transform = resolved->Transform;
 
-    Vec3d mn(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    Vec3d mx(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-    for (const BrushVertex& v : out.Mesh->Vertices)
-    {
-        const Vec3d world = out.Transform.TransformPoint(v.Position);
-        for (int a = 0; a < 3; ++a)
-        {
-            AxisSet(mn, a, std::min(AxisGet(mn, a), AxisGet(world, a)));
-            AxisSet(mx, a, std::max(AxisGet(mx, a), AxisGet(world, a)));
-        }
-    }
-    out.Min = mn;
-    out.Max = mx;
+    const Aabb3d bounds = BrushGeometry::ComputeWorldBounds(*out.Mesh, out.Transform);
+    out.Min = bounds.Min;
+    out.Max = bounds.Max;
 
     const GridPlane grid = viewport.GetGrid(ctx.Grid);
     out.UAxis = AxisIndex(grid.AxisU);

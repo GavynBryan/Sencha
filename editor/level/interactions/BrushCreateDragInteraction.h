@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../interaction/IInteraction.h"
+#include "BrushCreationPlane.h"
 
 #include <math/Vec.h>
 
@@ -10,7 +11,7 @@ class LevelScene;
 class BrushCreateDragInteraction : public IInteraction
 {
 public:
-    BrushCreateDragInteraction(Vec3d anchorGrid, LevelScene& scene, LevelDocument& document);
+    BrushCreateDragInteraction(BrushCreationPlane plane, LevelScene& scene, LevelDocument& document);
 
     void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
@@ -18,9 +19,9 @@ public:
 
 private:
     static int AxisIndex(Vec3d axis);
-    void UpdatePreview(ToolContext& ctx, Vec3d snapped, const EditorViewport& viewport);
+    void UpdatePreview(ToolContext& ctx, Vec3d snapped);
 
-    Vec3d AnchorGrid;
+    BrushCreationPlane Plane;
     Vec3d LastCenter;
     Vec3d LastHalfExtents;
     bool HasValidSize = false;

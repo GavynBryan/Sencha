@@ -4,6 +4,7 @@
 
 #include "../LevelScene.h"
 #include "../interactions/BrushCreateDragInteraction.h"
+#include "../interactions/BrushCreationPlane.h"
 #include "../../commands/CommandStack.h"
 #include "../../selection/commands/SelectCommand.h"
 #include "../../selection/SelectionService.h"
@@ -41,16 +42,14 @@ InputConsumed BrushTool::OnClick(ToolContext& ctx, EditorViewport& viewport, con
 
 std::unique_ptr<IInteraction> BrushTool::BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer)
 {
-    // Dragging on a brush does nothing (selection is a click); dragging on empty
-    // grid creates a brush from the press anchor.
-    const SelectableRef picked = ctx.Picking.Pick(
-        viewport, pressPointer.Position, ctx.Scene, BrushPickRequest{ .Mode = BrushPickMode::EntityOnly });
-    if (picked.IsValid() && ctx.Scene.TryGetBrush(picked.Entity) != nullptr)
+    // Selection is a click; a drag always creates, including inside an existing
+    // brush's bounds. The resolver decides the plane and depth (rest on grid,
+    // copy a selected brush's off-axis size, or rest on the surface under the
+    // cursor in perspective).
+    const std::optional<BrushCreationPlane> plane =
+        ResolveBrushCreationPlane(ctx, viewport, pressPointer.Position);
+    if (!plane.has_value())
         return nullptr;
 
-    const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToGrid(viewport, pressPointer.Position, ctx.Grid);
-    if (!anchor.has_value())
-        return nullptr;
-
-    return std::make_unique<BrushCreateDragInteraction>(*anchor, ctx.Scene, ctx.Document);
+    return std::make_unique<BrushCreateDragInteraction>(*plane, ctx.Scene, ctx.Document);
 }

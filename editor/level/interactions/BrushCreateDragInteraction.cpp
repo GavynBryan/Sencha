@@ -13,12 +13,13 @@
 
 #include <cmath>
 #include <memory>
+#include <utility>
 
-BrushCreateDragInteraction::BrushCreateDragInteraction(Vec3d anchorGrid,
+BrushCreateDragInteraction::BrushCreateDragInteraction(BrushCreationPlane plane,
                                                        LevelScene& scene,
                                                        LevelDocument& document)
-    : AnchorGrid(anchorGrid)
-    , LastCenter(anchorGrid)
+    : Plane(plane)
+    , LastCenter(plane.Anchor)
     , LastHalfExtents(Vec3d(0.5f, 0.5f, 0.5f))
     , Scene(scene)
     , Document(document)
@@ -32,26 +33,27 @@ int BrushCreateDragInteraction::AxisIndex(Vec3d axis)
     return 2;
 }
 
-void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx,
-                                               Vec3d snapped,
-                                               const EditorViewport& viewport)
+void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
 {
-    const GridPlane grid = viewport.GetGrid(ctx.Grid);
-    const int uIdx = AxisIndex(grid.AxisU);
-    const int vIdx = AxisIndex(grid.AxisV);
-    const float minHalf = grid.Spacing * 0.5f;
+    const int uIdx = AxisIndex(Plane.Plane.AxisU);
+    const int vIdx = AxisIndex(Plane.Plane.AxisV);
+    const int dIdx = Plane.DepthAxis;
+    const float spacing = ctx.Grid.Spacing;
+    const float minHalf = spacing * 0.5f;
 
-    Vec3d halfExtents(0.5f, 0.5f, 0.5f);
-    halfExtents[uIdx] = std::max(std::abs(snapped[uIdx] - AnchorGrid[uIdx]) * 0.5f, minHalf);
-    halfExtents[vIdx] = std::max(std::abs(snapped[vIdx] - AnchorGrid[vIdx]) * 0.5f, minHalf);
+    Vec3d halfExtents{};
+    halfExtents[uIdx] = std::max(std::abs(snapped[uIdx] - Plane.Anchor[uIdx]) * 0.5f, minHalf);
+    halfExtents[vIdx] = std::max(std::abs(snapped[vIdx] - Plane.Anchor[vIdx]) * 0.5f, minHalf);
+    halfExtents[dIdx] = Plane.DepthHalf;
 
-    Vec3d center = AnchorGrid;
-    center[uIdx] = (AnchorGrid[uIdx] + snapped[uIdx]) * 0.5f;
-    center[vIdx] = (AnchorGrid[vIdx] + snapped[vIdx]) * 0.5f;
+    Vec3d center{};
+    center[uIdx] = (Plane.Anchor[uIdx] + snapped[uIdx]) * 0.5f;
+    center[vIdx] = (Plane.Anchor[vIdx] + snapped[vIdx]) * 0.5f;
+    center[dIdx] = Plane.DepthCenter;
 
-    const float dragU = std::abs(snapped[uIdx] - AnchorGrid[uIdx]);
-    const float dragV = std::abs(snapped[vIdx] - AnchorGrid[vIdx]);
-    HasValidSize = (dragU >= grid.Spacing || dragV >= grid.Spacing);
+    const float dragU = std::abs(snapped[uIdx] - Plane.Anchor[uIdx]);
+    const float dragV = std::abs(snapped[vIdx] - Plane.Anchor[vIdx]);
+    HasValidSize = (dragU >= spacing || dragV >= spacing);
 
     LastCenter = center;
     LastHalfExtents = halfExtents;
@@ -62,11 +64,11 @@ void BrushCreateDragInteraction::OnPointerMove(ToolContext& ctx,
                                                EditorViewport& viewport,
                                                const PointerEvent& pointer)
 {
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToPlane(viewport, pointer.Position, Plane.Plane);
     if (!snapped.has_value())
         return;
 
-    UpdatePreview(ctx, *snapped, viewport);
+    UpdatePreview(ctx, *snapped);
 }
 
 void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
@@ -75,9 +77,9 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
 {
     ctx.Preview.Clear();
 
-    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToGrid(viewport, pointer.Position, ctx.Grid);
+    const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToPlane(viewport, pointer.Position, Plane.Plane);
     if (snapped.has_value())
-        UpdatePreview(ctx, *snapped, viewport);
+        UpdatePreview(ctx, *snapped);
 
     ctx.Preview.Clear();
 

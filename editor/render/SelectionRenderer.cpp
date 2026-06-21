@@ -2,13 +2,13 @@
 
 #include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
+#include "../level/BrushGeometry.h"
 #include "../meshedit/MeshElements.h"
 #include "../viewport/ViewportProjection.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <limits>
 #include <optional>
 #include <span>
 #include <utility>
@@ -79,16 +79,11 @@ void SelectionRenderer::AppendAABB(std::vector<EditorLineVertex>& vertices,
                                    const Transform3f& transform,
                                    const Vec4& color) const
 {
-    Vec3d mn(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    Vec3d mx(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-    for (const BrushVertex& v : mesh.Vertices)
-    {
-        const Vec3d w = transform.TransformPoint(v.Position);
-        mn = Vec3d(std::min(mn.X, w.X), std::min(mn.Y, w.Y), std::min(mn.Z, w.Z));
-        mx = Vec3d(std::max(mx.X, w.X), std::max(mx.Y, w.Y), std::max(mx.Z, w.Z));
-    }
-    if (mesh.Vertices.empty())
+    const Aabb3d bounds = BrushGeometry::ComputeWorldBounds(mesh, transform);
+    if (!bounds.IsValid())
         return;
+    const Vec3d mn = bounds.Min;
+    const Vec3d mx = bounds.Max;
 
     const auto corner = [&](bool xs, bool ys, bool zs) {
         return Vec3d(xs ? mx.X : mn.X, ys ? mx.Y : mn.Y, zs ? mx.Z : mn.Z);

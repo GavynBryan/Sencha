@@ -390,18 +390,47 @@ std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& vi
                                                         ImVec2 point,
                                                         const GridSettings& settings) const
 {
+    return ProjectPointToPlane(viewport, point, viewport.GetGrid(settings));
+}
+
+std::optional<Vec3d> PickingService::ProjectPointToPlane(const EditorViewport& viewport,
+                                                         ImVec2 point,
+                                                         const GridPlane& plane) const
+{
     const Ray3d ray = BuildRay(viewport, point);
-    const GridPlane grid = viewport.GetGrid(settings);
-    const Vec3d normal = grid.AxisU.Cross(grid.AxisV).Normalized();
+    const Vec3d normal = plane.AxisU.Cross(plane.AxisV).Normalized();
     const double denominator = normal.Dot(ray.Direction);
     if (std::abs(denominator) < kParallelEpsilon)
         return std::nullopt;
 
-    const double distance = normal.Dot(grid.Origin - ray.Origin) / denominator;
+    const double distance = normal.Dot(plane.Origin - ray.Origin) / denominator;
     if (distance < 0.0)
         return std::nullopt;
 
-    return grid.Snap(ray.PointAt(static_cast<float>(distance)));
+    return plane.Snap(ray.PointAt(static_cast<float>(distance)));
+}
+
+std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& viewport,
+                                                      ImVec2 point,
+                                                      const LevelScene& scene) const
+{
+    const Ray3d ray = BuildRay(viewport, point);
+    float best = static_cast<float>(kMaxPickDistance);
+    std::optional<SurfaceHit> hit;
+    ForEachVisibleBrush(scene, /*skipLocked*/ true,
+        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
+        {
+            for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+            {
+                float distance = 0.0f;
+                if (IntersectRayPolygon(ray, face.Corners, distance) && distance < best)
+                {
+                    best = distance;
+                    hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };
+                }
+            }
+        });
+    return hit;
 }
 
 Ray3d PickingService::BuildRay(const EditorViewport& viewport, ImVec2 point) const

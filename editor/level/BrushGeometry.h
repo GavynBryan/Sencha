@@ -19,10 +19,12 @@ struct BrushState
 class BrushGeometry
 {
 public:
-    [[nodiscard]] static std::optional<BrushState> TryGetState(const LevelScene& scene, EntityId entity);
+    // True world AABB of a brush: every vertex transformed, min/max. Offset-aware
+    // (unlike a pivot-symmetric box), and the one bounds the selection box, the
+    // bounds gizmo, and create-from-selection all share.
+    [[nodiscard]] static Aabb3d ComputeWorldBounds(const BrushMesh& mesh, const Transform3f& transform);
+    [[nodiscard]] static std::optional<Aabb3d> ComputeWorldBounds(const LevelScene& scene, EntityId entity);
 
-    [[nodiscard]] static Aabb3d ComputeBounds(const BrushState& state);
+    // Corners of the symmetric create-drag preview box (centered on the transform).
     [[nodiscard]] static std::array<Vec3d, 8> ComputeCorners(const BrushState& state);
-
-    [[nodiscard]] static BrushState Translate(const BrushState& state, Vec3d delta);
 };

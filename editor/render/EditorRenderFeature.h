@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BrushPreviewRenderer.h"
 #include "BrushSolidRenderer.h"
 #include "ComponentVisualRenderer.h"
 #include "EditorLinePipeline.h"
@@ -62,6 +63,8 @@ private:
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
     SelectionRenderer      Highlight;
+    // Create-drag preview overlay; runs in every viewport (not a body strategy).
+    BrushPreviewRenderer   Preview;
     // Brush-body strategy per ViewportShading; the draw loop indexes this by the
     // viewport's shading. A new shading mode registers its strategy here — the
     // draw loop never changes.

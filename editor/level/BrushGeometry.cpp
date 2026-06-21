@@ -1,23 +1,21 @@
 #include "BrushGeometry.h"
 
-std::optional<BrushState> BrushGeometry::TryGetState(const LevelScene& scene, EntityId entity)
+Aabb3d BrushGeometry::ComputeWorldBounds(const BrushMesh& mesh, const Transform3f& transform)
 {
-    const Transform3f* transform = scene.TryGetTransform(entity);
-    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    if (transform == nullptr || mesh == nullptr)
-        return std::nullopt;
-
-    // Box view derived from the mesh's local bounds, for the body bounds/move and
-    // the create-drag preview.
-    return BrushState{
-        .Transform = *transform,
-        .HalfExtents = BrushComputeBounds(*mesh).HalfExtent(),
-    };
+    Aabb3d bounds = Aabb3d::Empty();
+    for (const BrushVertex& vertex : mesh.Vertices)
+        bounds.ExpandToInclude(transform.TransformPoint(vertex.Position));
+    return bounds;
 }
 
-Aabb3d BrushGeometry::ComputeBounds(const BrushState& state)
+std::optional<Aabb3d> BrushGeometry::ComputeWorldBounds(const LevelScene& scene, EntityId entity)
 {
-    return Aabb3d::FromCenterHalfExtent(state.Transform.Position, state.HalfExtents);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    const Transform3f* transform = scene.TryGetTransform(entity);
+    if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
+        return std::nullopt;
+
+    return ComputeWorldBounds(*mesh, *transform);
 }
 
 std::array<Vec3d, 8> BrushGeometry::ComputeCorners(const BrushState& state)
@@ -32,11 +30,4 @@ std::array<Vec3d, 8> BrushGeometry::ComputeCorners(const BrushState& state)
         state.Transform.TransformPoint(Vec3d(state.HalfExtents.X, state.HalfExtents.Y, state.HalfExtents.Z)),
         state.Transform.TransformPoint(Vec3d(-state.HalfExtents.X, state.HalfExtents.Y, state.HalfExtents.Z)),
     };
-}
-
-BrushState BrushGeometry::Translate(const BrushState& state, Vec3d delta)
-{
-    BrushState translated = state;
-    translated.Transform.Position += delta;
-    return translated;
 }

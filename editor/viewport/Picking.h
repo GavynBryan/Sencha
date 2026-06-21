@@ -12,6 +12,7 @@
 
 struct EditorViewport;
 struct GridSettings;
+struct GridPlane;
 class LevelScene;
 
 enum class BrushPickMode : uint8_t
@@ -26,6 +27,14 @@ enum class BrushPickMode : uint8_t
 struct BrushPickRequest
 {
     BrushPickMode Mode = BrushPickMode::EntityOnly;
+};
+
+// Nearest ray/brush-surface intersection: the world hit point and that face's
+// world-space normal. Used to rest a new brush on the geometry under the cursor.
+struct SurfaceHit
+{
+    Vec3d Point = {};
+    Vec3d Normal = {};
 };
 
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
@@ -43,6 +52,17 @@ public:
     [[nodiscard]] std::optional<Vec3d> ProjectPointToGrid(const EditorViewport& viewport,
                                                           ImVec2 point,
                                                           const GridSettings& settings) const;
+    // Ray/plane intersection snapped on the given plane (which carries its own
+    // origin, axes, spacing and snap-enable). ProjectPointToGrid is this against
+    // the viewport's orientation grid.
+    [[nodiscard]] std::optional<Vec3d> ProjectPointToPlane(const EditorViewport& viewport,
+                                                           ImVec2 point,
+                                                           const GridPlane& plane) const;
+    // Nearest brush surface under the cursor (visible, unlocked brushes), or
+    // nullopt if the ray misses every brush.
+    [[nodiscard]] std::optional<SurfaceHit> PickSurface(const EditorViewport& viewport,
+                                                        ImVec2 point,
+                                                        const LevelScene& scene) const;
 
     // Rubber-band selection: every element of the given mode whose projection
     // falls in the screen rectangle. Entities by projected-bounds overlap;

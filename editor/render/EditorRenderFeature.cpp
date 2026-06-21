@@ -20,8 +20,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Wireframe(scene, Lines)
     , Visuals(scene, Lines)
     , Highlight(scene, selection, session, Lines)
+    , Preview(preview, Lines)
 {
-    Wireframe.SetPreviewBuffer(&preview);
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &Wireframe;
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
 }
@@ -60,6 +60,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         Meshes.DrawViewport(frame, viewport);
         Visuals.DrawViewport(frame, viewport);
         Highlight.DrawViewport(frame, viewport);
+        Preview.DrawViewport(frame, viewport);
     };
 
     // Render only what the panel lays out: every leaf in quad mode, just the
