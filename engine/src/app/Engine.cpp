@@ -344,6 +344,12 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
+
+    // Symmetric teardown of OnRegisterComponents above: retract the game's
+    // serializers while the module is still mapped (the host unloads it after Run
+    // returns). A module-owned serializer left in the registry would be freed at
+    // exit, after dlclose, against unmapped code.
+    game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
     return 0;
 }
 

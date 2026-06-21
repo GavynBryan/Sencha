@@ -12,6 +12,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/ComponentTypeId.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -19,6 +20,7 @@
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
@@ -159,6 +161,15 @@ void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
     // without ever starting the game.
     InitSceneSerializer();
     RegisterComponent<SpinComponent>();
+}
+
+void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serializers)
+{
+    // Symmetric teardown: retract the serializers whose code lives in THIS module
+    // before the host unmaps it. Without this, the SpinComponent serializer would
+    // outlive dlclose and crash when the registry frees it at exit. Built-in
+    // serializers (engine code) are left for the host to manage.
+    serializers.Remove(ResolveComponentTypeId<SpinComponent>());
 }
 
 void TemplateGame::OnStart(GameStartupContext&)

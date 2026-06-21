@@ -1,0 +1,6 @@
+# The game module build tree.
+/build/
+
+# Cook output: regenerated from authored content by the editor Cook / cook path.
+/assets/.cooked/
+/assets/asset_ids.json
