@@ -60,5 +60,11 @@ struct IComponentSerializer
     // than shifting existing ones. (core/metadata/EditorVisual.h)
     virtual std::optional<EditorVisual> GetEditorVisual() const { return std::nullopt; }
 
+    // Whether a tool may remove this component from an entity. True by default;
+    // structural components (the transform) opt out. Pure tooling metadata the
+    // runtime ignores. Declared last so adding it appends a vtable slot rather
+    // than shifting existing ones. (core/metadata/ComponentRemovable.h)
+    virtual bool IsRemovable() const { return true; }
+
     virtual ~IComponentSerializer() = default;
 };

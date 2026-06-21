@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
@@ -56,6 +57,15 @@ struct TypeSchema<LocalTransform>
             MakeField("local", &LocalTransform::Value),
         };
     }
+};
+
+// Structural: paired with the derived WorldTransform, so the editor must not let
+// it be removed (that would orphan the pairing). A transform-less entity is made
+// by never adding one, not by stripping it. (core/metadata/ComponentRemovable.h)
+template <>
+struct ComponentRemovable<LocalTransform>
+{
+    static constexpr bool Value = false;
 };
 
 // WorldTransform and Parent are pure-runtime (never serialized themselves), so

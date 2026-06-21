@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 #include <world/serialization/ComponentStorageTraits.h>
@@ -93,6 +94,11 @@ public:
     std::optional<EditorVisual> GetEditorVisual() const override
     {
         return ComponentEditorVisual<Component>::Value;
+    }
+
+    bool IsRemovable() const override
+    {
+        return ComponentRemovable<Component>::Value;
     }
 
     std::vector<std::byte> DefaultBytes() const override

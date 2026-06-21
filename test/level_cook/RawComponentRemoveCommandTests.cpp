@@ -73,4 +73,17 @@ namespace
         command.Execute();
         EXPECT_FALSE(HasComponent(entity, *camera));
     }
+
+    TEST_F(RawComponentRemoveCommandTest, TransformIsNotRemovable)
+    {
+        // The structural transform opts out of removal; ordinary components do not.
+        // Queried through the serializer, so no component type is named here.
+        const IComponentSerializer* transform = SerializerFor("Transform");
+        const IComponentSerializer* camera = SerializerFor("Camera");
+        ASSERT_NE(transform, nullptr);
+        ASSERT_NE(camera, nullptr);
+
+        EXPECT_FALSE(transform->IsRemovable());
+        EXPECT_TRUE(camera->IsRemovable());
+    }
 } // namespace

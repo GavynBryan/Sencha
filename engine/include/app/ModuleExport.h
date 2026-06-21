@@ -25,5 +25,6 @@
 // marker. v3: added the GameModuleAbi handshake and the EditorVisual hint on
 // IComponentSerializer. v4: the module factory returns a Game (retiring the
 // IGameModule/GameModuleContext side-contract); serializer registration is the
-// Game::OnRegisterComponents hook. (09-module-abi-hardening.md.)
-#define SENCHA_GAME_ABI_VERSION 4u
+// Game::OnRegisterComponents hook. (09-module-abi-hardening.md.) v5: added the
+// IsRemovable hint on IComponentSerializer (a new trailing vtable slot).
+#define SENCHA_GAME_ABI_VERSION 5u
