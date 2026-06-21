@@ -1,3 +1,4 @@
+#include <core/assets/AssetRef.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <math/MathSchemas.h>
@@ -48,6 +49,24 @@ template <> struct TypeSchema<EnumComp>
     static auto Fields() { return std::tuple{ MakeField("mode", &EnumComp::M) }; }
 };
 
+// A handle-shaped leaf (no TypeSchema) tagged as an asset reference. Stands in
+// for StaticMeshHandle/MaterialSetHandle so the reflection test stays in core.
+struct FakeHandle { std::uint32_t Index = 0; std::uint32_t Generation = 0; };
+struct AssetComp { FakeHandle Mesh; FakeHandle Material; FakeHandle Materials; float Tint = 0.f; };
+template <> struct TypeSchema<AssetComp>
+{
+    static constexpr std::string_view Name = "test.asset";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("mesh",      &AssetComp::Mesh).AsAsset(AssetType::StaticMesh),
+            MakeField("material",  &AssetComp::Material).AsAsset(AssetType::Material),
+            MakeField("materials", &AssetComp::Materials).AsAsset(AssetType::Material, AssetArity::List),
+            MakeField("tint",      &AssetComp::Tint),
+        };
+    }
+};
+
 namespace
 {
     const RuntimeField* Find(const std::vector<RuntimeField>& fields, std::string_view name)
@@ -56,6 +75,37 @@ namespace
             if (f.Name == name) return &f;
         return nullptr;
     }
+}
+
+TEST(RuntimeSchema, AssetTaggedFieldsCarryTheirAssetType)
+{
+    const auto& fields = RuntimeFieldsOf<AssetComp>();
+    ASSERT_EQ(fields.size(), 4u);
+
+    const RuntimeField* mesh = Find(fields, "mesh");
+    ASSERT_NE(mesh, nullptr);
+    EXPECT_EQ(mesh->Asset, AssetType::StaticMesh);
+    // A handle is not a scalar the inspector can drag; it is an asset ref instead.
+    EXPECT_EQ(mesh->Scalar, FieldScalar::Unsupported);
+    // Untagged arity defaults to a single handle.
+    EXPECT_EQ(mesh->Arity, AssetArity::Single);
+
+    const RuntimeField* material = Find(fields, "material");
+    ASSERT_NE(material, nullptr);
+    EXPECT_EQ(material->Asset, AssetType::Material);
+    EXPECT_EQ(material->Arity, AssetArity::Single);
+
+    // A list-tagged field keeps its asset type and reflects as an ordered list.
+    const RuntimeField* materials = Find(fields, "materials");
+    ASSERT_NE(materials, nullptr);
+    EXPECT_EQ(materials->Asset, AssetType::Material);
+    EXPECT_EQ(materials->Arity, AssetArity::List);
+
+    // An untagged field carries no asset type, so it stays a plain scalar.
+    const RuntimeField* tint = Find(fields, "tint");
+    ASSERT_NE(tint, nullptr);
+    EXPECT_EQ(tint->Asset, AssetType::Unknown);
+    EXPECT_EQ(tint->Scalar, FieldScalar::Float);
 }
 
 TEST(RuntimeSchema, FlatScalarsHaveCorrectKindsAndSizes)

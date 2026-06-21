@@ -35,10 +35,18 @@ bool PieSession::Launch(const std::string& appPath,
 
     if (pid == 0)
     {
-        // Child: run in the project directory so the game's content roots ("assets",
+        // Child: between fork and exec only async-signal-safe calls (the editor is
+        // multithreaded; malloc/stdio locks could be held by another thread at fork).
+        // Failures here are otherwise invisible, so report them with write(2).
+        const auto childFail = [](const char* message) {
+            (void)write(STDERR_FILENO, message, std::char_traits<char>::length(message));
+            _exit(127);
+        };
+
+        // Run in the project directory so the game's content roots ("assets",
         // "assets/.cooked") resolve relative to CWD, exactly as a shipped game does.
         if (!workingDir.empty() && chdir(workingDir.c_str()) != 0)
-            _exit(127);
+            childFail("[pie:child] chdir to project directory failed\n");
 
         std::vector<char*> argv;
         argv.push_back(const_cast<char*>(appPath.c_str()));
@@ -54,7 +62,7 @@ bool PieSession::Launch(const std::string& appPath,
         argv.push_back(nullptr);
 
         execv(appPath.c_str(), argv.data());
-        _exit(127); // execv only returns on failure
+        childFail("[pie:child] execv failed: host app not found or not executable\n");
     }
 
     ChildPid = pid;

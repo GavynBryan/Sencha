@@ -129,11 +129,16 @@ endif()
 if(LEVEL_COOK_TEST_SOURCES)
     add_executable(level_cook_tests
         ${LEVEL_COOK_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/level/AssetFieldIo.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/LevelCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/LevelDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/LevelScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/LevelSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/BrushCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/selection/commands/SelectCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushTessellation.cpp

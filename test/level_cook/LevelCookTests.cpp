@@ -51,7 +51,7 @@ namespace
         // 16m cells) and saves it through the real LevelDocument save path.
         fs::path AuthorTwoBrushLevel()
         {
-            LevelDocument doc;
+            LevelDocument doc(Logging);
             doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
             doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
             doc.GetScene().CreateBrush(Vec3d{ 100, 0, 0 });
@@ -71,6 +71,7 @@ namespace
         }
 
         fs::path Root;
+        LoggingProvider Logging; // sink-less: a silent no-op for headless cooks
     };
 }
 
@@ -120,13 +121,13 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
 {
     // A never-saved document: a brush plus a non-brush entity (a camera) that must
     // pass through the cook unchanged, standing in for any game component entity.
-    LevelDocument doc;
+    LevelDocument doc(Logging);
     doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
     doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
     const EntityId camera = doc.GetScene().CreateCamera(Vec3d{ 0, 2, 5 });
     const std::size_t entityCountBefore = doc.GetScene().GetAllEntities().size();
 
-    const LevelCookResult result = CookLevel(doc, "live", Root, /*cellSize*/ 16.0);
+    const LevelCookResult result = CookLevel(doc, "live", Root, /*cellSize*/ 16.0, Logging);
     ASSERT_TRUE(result.Success) << result.Error;
     EXPECT_EQ(result.CellCount, 1u);
 

@@ -6,6 +6,12 @@
 
 #include <optional>
 
+// Per-handle-type asset I/O for the archive (text scene JSON). The editor's
+// live-memory equivalent is editor/level/AssetFieldIo (handle bytes in a
+// running component, with refcount balance). They are kept separate on purpose
+// (archive I/O vs live edit are different operations). A new asset-handle type
+// adds a specialization here and a case there.
+
 namespace
 {
     Logger& GetSceneLogger(SceneSerializationContext& context)

@@ -34,6 +34,16 @@ enum class AssetSourceKind : uint16_t
     Embedded,
 };
 
+// How a member stores its asset handle. Single is one handle (e.g. a mesh);
+// List is an ordered, positionally-indexed set (e.g. StaticMeshComponent's
+// per-slot materials, where index binds to a mesh section). The call site
+// states this so the metadata layer never names a concrete handle type.
+enum class AssetArity : uint16_t
+{
+    Single = 0,
+    List,
+};
+
 inline std::string_view AssetTypeToString(AssetType type)
 {
     switch (type)

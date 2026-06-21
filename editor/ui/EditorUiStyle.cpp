@@ -119,11 +119,12 @@ void EditorUi::LoadFonts(ImGuiIO& io)
     constexpr float kUiSize = 15.0f;
     constexpr float kMonoSize = 14.0f;
 
-    const std::string ui = FontPath("Inter-Regular.ttf");
+    const std::string ui = FontPath("JetBrainsMono-Regular.ttf");
     const std::string icons = FontPath("fa-solid-900.ttf");
     const std::string mono = FontPath("JetBrainsMono-Regular.ttf");
 
-    // UI font (default). If absent, keep ImGui's built-in so the editor still runs.
+    // UI font (default): monospace for the terminal/console look. If absent, keep
+    // ImGui's built-in so the editor still runs.
     if (FontExists(ui))
         io.Fonts->AddFontFromFileTTF(ui.c_str(), kUiSize);
     else

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -16,6 +18,8 @@
 //   MakeField("health", &Actor::Health)
 //   MakeField("speed",  &Actor::Speed).Default(1.0f)
 //   MakeField("tag",    &Actor::Tag).Optional()
+//   MakeField("mesh",   &Actor::Mesh).AsAsset(AssetType::StaticMesh)
+//   MakeField("mats",   &Actor::Mats).AsAsset(AssetType::Material, AssetArity::List)
 //=============================================================================
 
 template <typename Class, typename Member>
@@ -26,6 +30,14 @@ struct Field
     bool IsOptional = false;
     std::optional<Member> DefaultValue{};
     std::uint32_t StableId = 0;
+    // Asset-reference shape of this member, the two co-varying together: Asset is
+    // the kind (Unknown means "not an asset field"), Arity is how it is stored
+    // (one handle, or an ordered list). Tooling resolves the handle to/from an
+    // asset:// path (the editor renders a picker; the runtime carries plain
+    // handles). Mechanism, not a per-component branch: any handle member tagged
+    // here gets it.
+    AssetType  Asset = AssetType::Unknown;
+    AssetArity Arity = AssetArity::Single;
 
     Field& Optional()
     {
@@ -37,6 +49,13 @@ struct Field
     {
         DefaultValue = value;
         IsOptional = true;
+        return *this;
+    }
+
+    Field& AsAsset(AssetType type, AssetArity arity = AssetArity::Single)
+    {
+        Asset = type;
+        Arity = arity;
         return *this;
     }
 };

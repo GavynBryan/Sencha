@@ -2,6 +2,7 @@
 
 #include <app/Game.h>
 #include <app/GameModuleLoader.h>
+#include <core/assets/RuntimeAssets.h>
 
 #include "../commands/CommandStack.h"
 #include "../input/InputEvent.h"
@@ -79,15 +80,24 @@ private:
     void LoadGameModule();
     void UnloadGameModule();
 
+    // Builds the engine asset system from the live graphics services and mounts the
+    // project's content roots (authored + cooked overlay) so asset refs resolve as
+    // they do at runtime. No-op without a project.
+    void InitAssets();
+
     // Registers the editor's console surface: the cook cell-size cvar and the
     // `cook [name]` / `play [map]` / `stop` commands that drive the author -> cook
     // -> play loop.
     void RegisterEditorCommands();
-    // Resolves the prebuilt `app` host beside the editor executable.
+    // Resolves the prebuilt `app` host: beside the editor (installed SDK layout),
+    // else build/app/app (the build tree, where editor and app sit in sibling dirs).
     [[nodiscard]] std::string ResolveHostAppPath() const;
     // Cooks the live document into the project's assets root, returning the cooked
     // map name (e.g. "levels/foo") or empty on failure.
     std::string CookCurrentLevel(const std::string& levelName);
+    // Launches a PIE session for `map` (the toolbar Play button and the `play`
+    // console command both route here), logging the outcome so failures are visible.
+    void StartPlaySession(const std::string& map);
 
     ViewportPanel* Viewports = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
@@ -96,6 +106,12 @@ private:
     EditorFrameHook* FrameHook = nullptr;
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;
+
+    // The engine asset system, shared by editor authoring, the cook, and (by the
+    // same paths) the runtime. Declared before Workspace so it outlives the
+    // document whose StaticMeshComponents hold handles into its caches. Reset in
+    // OnShutdown before the engine frees the graphics services it borrows.
+    std::optional<RuntimeAssets> Assets;
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<LevelWorkspace> Workspace;

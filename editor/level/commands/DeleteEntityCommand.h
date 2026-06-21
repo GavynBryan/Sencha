@@ -1,12 +1,20 @@
 #pragma once
 
 #include "../../commands/ICommand.h"
+#include "../EntitySnapshot.h"
 #include "../LevelDocument.h"
 
-#include <optional>
+#include <ecs/EntityId.h>
 
-// Deletes an entity, capturing enough state (transform + brush/camera) to
-// recreate it on Undo.
+#include <memory>
+#include <span>
+
+class SelectionService;
+
+// Deletes an entity and makes it undoable by capturing its full state (every
+// registered component via the serializer registry, plus the brush sidecar mesh
+// and view flags) on first Execute. Undo recreates the entity and retargets to
+// the new id, so a subsequent redo deletes the right entity.
 class DeleteEntityCommand : public ICommand
 {
 public:
@@ -16,12 +24,16 @@ public:
     void Undo() override;
 
 private:
-    EntityId TargetEntity = {};
-    LevelScene& Scene;
+    EntityId       Current; // the live id to delete; retargeted by Undo to the restored id
+    LevelScene&    Scene;
     LevelDocument& Document;
-    std::optional<Transform3f> SavedTransform;
-    std::optional<BrushMesh> SavedMesh;
-    std::optional<CameraComponent> SavedCamera;
-    EntityId RestoredEntity = {};
-    bool CapturedState = false;
+    EntitySnapshot Snapshot;
+    bool           Captured = false;
 };
+
+// Builds one undoable step that clears the selection (so a deleted entity's
+// handle is not left selected) then deletes each given entity. Mirrors how the
+// create path pairs a CreateEntityCommand with a SelectCommand.
+[[nodiscard]] std::unique_ptr<ICommand> MakeDeleteEntitiesCommand(
+    std::span<const EntityId> entities, LevelScene& scene, LevelDocument& document,
+    SelectionService& selection);

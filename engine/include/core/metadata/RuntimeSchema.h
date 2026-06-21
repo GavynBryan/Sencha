@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 
@@ -40,6 +41,12 @@ struct RuntimeField
     std::size_t  Offset; // bytes from the component's start
     std::size_t  Size;   // bytes of the scalar (so editors never over/under-write)
     FieldScalar  Scalar;
+    // Non-Unknown for a member tagged AsAsset: the leaf is an asset handle of
+    // this type, so an editor resolves it to/from an asset:// path instead of
+    // treating it as an opaque scalar. (Scalar stays Unsupported for these.)
+    // Arity says whether it is one handle or an ordered list (per-slot materials).
+    AssetType    Asset = AssetType::Unknown;
+    AssetArity   Arity = AssetArity::Single;
 };
 
 namespace RuntimeSchemaDetail
@@ -93,7 +100,8 @@ namespace RuntimeSchemaDetail
             else
             {
                 Out.push_back(RuntimeField{
-                    std::move(name), offset, sizeof(MemberType), ScalarKindOf<MemberType>() });
+                    std::move(name), offset, sizeof(MemberType),
+                    ScalarKindOf<MemberType>(), field.Asset, field.Arity });
             }
         }
     };

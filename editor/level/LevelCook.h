@@ -43,11 +43,15 @@ struct LevelCookResult
                                         std::span<const AssetRef> materials);
 
 class LevelDocument;
+class LoggingProvider;
+struct RuntimeAssets;
 
 // Cooks the authored level at `authoredLevelPath` into `assetsRoot`. cellSize is
 // the spatial grid size (a cvar at the call site). Requires
 // RegisterLevelSerializers() to have run (the cooked-scene assembly uses the
-// scene serializers for passthrough game components).
+// scene serializers for passthrough game components). Brush-only: passthrough
+// entities carrying asset-handle components (e.g. StaticMesh props) need the
+// live overload, which supplies the asset system to resolve their refs.
 [[nodiscard]] LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize);
@@ -55,8 +59,14 @@ class LevelDocument;
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
 // document is not modified. This is the editor Cook button's path: author, cook,
-// play without a save-to-disk round trip.
+// play without a save-to-disk round trip. `assets` is the shared engine asset
+// system (the same one the editor authored through and the runtime loads with),
+// so passthrough asset-handle components serialize handle->path consistently;
+// null cooks brush-only (no prop support), the headless path tests use without
+// graphics. `logging` is required (a sink-less provider is fine for headless).
 [[nodiscard]] LevelCookResult CookLevel(const LevelDocument& liveDocument,
                                         std::string_view levelName,
                                         const std::filesystem::path& assetsRoot,
-                                        double cellSize);
+                                        double cellSize,
+                                        LoggingProvider& logging,
+                                        RuntimeAssets* assets = nullptr);

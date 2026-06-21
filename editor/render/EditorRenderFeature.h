@@ -7,6 +7,7 @@
 #include "GpuGridRenderer.h"
 #include "IBrushBodyRenderer.h"
 #include "SelectionRenderer.h"
+#include "StaticMeshRenderer.h"
 #include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
 
@@ -21,6 +22,9 @@ class ManipulatorSession;
 class PreviewBuffer;
 class SelectionService;
 class ViewportLayout;
+class AssetSystem;
+class AssetRegistry;
+class LoggingProvider;
 struct GridSettings;
 
 class EditorRenderFeature : public IRenderFeature
@@ -31,7 +35,10 @@ public:
                         SelectionService& selection,
                         PreviewBuffer& preview,
                         ManipulatorSession& session,
-                        const GridSettings& grid);
+                        const GridSettings& grid,
+                        LoggingProvider& logging,
+                        AssetSystem* assets,
+                        const AssetRegistry* catalog);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     void Setup(const RendererServices& services) override;
@@ -47,6 +54,8 @@ private:
     // (The feature owns the one shared solid pipeline.)
     EditorSolidPipeline    Solid;
     BrushSolidRenderer     BrushSolid;
+    // Solid preview of placed static meshes; shares the one Solid pipeline above.
+    StaticMeshRenderer     Meshes;
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)
     EditorLinePipeline     Lines;

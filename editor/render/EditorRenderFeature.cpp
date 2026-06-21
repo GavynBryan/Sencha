@@ -9,10 +9,14 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          SelectionService& selection,
                                          PreviewBuffer& preview,
                                          ManipulatorSession& session,
-                                         const GridSettings& grid)
+                                         const GridSettings& grid,
+                                         LoggingProvider& logging,
+                                         AssetSystem* assets,
+                                         const AssetRegistry* catalog)
     : Layout(viewportLayout)
     , GridCfg(grid)
     , BrushSolid(scene, Solid)
+    , Meshes(scene, Solid, logging, assets, catalog)
     , Wireframe(scene, Lines)
     , Visuals(scene, Lines)
     , Highlight(scene, selection, session, Lines)
@@ -51,6 +55,9 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                           frame.DepthFormat);
         if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
             body->DrawViewport(frame, viewport);
+        // Meshes draw solid in every viewport so a placed mesh reads regardless of
+        // the viewport's brush shading.
+        Meshes.DrawViewport(frame, viewport);
         Visuals.DrawViewport(frame, viewport);
         Highlight.DrawViewport(frame, viewport);
     };

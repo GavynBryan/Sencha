@@ -1,19 +1,24 @@
 #include "LevelWorkspace.h"
 
+#include "commands/DeleteEntityCommand.h"
 #include "tools/CameraTool.h"
 #include "tools/BrushTool.h"
 #include "tools/SelectTool.h"
 
 #include <memory>
 #include <utility>
+#include <vector>
 
-LevelWorkspace::LevelWorkspace()
-    : Selection(LevelSelection)
+LevelWorkspace::LevelWorkspace(LoggingProvider& logging)
+    : Document(logging)
+    , Selection(LevelSelection)
 {
 }
 
 void LevelWorkspace::Init(CommandStack& commands)
 {
+    Commands = &commands;
+
     ActiveToolContext = std::make_unique<ToolContext>(
         commands,
         Selection,
@@ -49,4 +54,21 @@ void LevelWorkspace::Init(CommandStack& commands)
     auto session = std::make_unique<ManipulatorSession>(Selection, MeshEdit, *Sink, Grid);
     Manipulators = session.get();
     Sessions.SetSession(std::move(session));
+}
+
+void LevelWorkspace::DeleteSelection()
+{
+    if (Commands == nullptr)
+        return;
+
+    // Entity-kind selections only; vertex/edge/face element refs are not entities.
+    std::vector<EntityId> entities;
+    for (const SelectableRef& ref : Selection.GetSelection())
+        if (ref.Kind == SelectableKind::Entity && ref.Entity.IsValid())
+            entities.push_back(ref.Entity);
+
+    if (entities.empty())
+        return;
+
+    Commands->Execute(MakeDeleteEntitiesCommand(entities, Document.GetScene(), Document, Selection));
 }

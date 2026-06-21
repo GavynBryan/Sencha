@@ -56,6 +56,9 @@ public:
     // through unchanged).
     EntityId CreateEntity(Vec3d position);
     void DestroyEntity(EntityId entity);
+    // Adopts an externally-created entity into the tracked list (used to restore
+    // a deleted entity, which the registry recreates under a fresh id).
+    void TrackEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents
     // (the box-editing path; general mesh edits go through BrushOps verbs).

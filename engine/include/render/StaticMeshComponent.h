@@ -93,8 +93,9 @@ struct TypeSchema<StaticMeshComponent>
     static auto Fields()
     {
         return std::tuple{
-            MakeField("mesh", &StaticMeshComponent::Mesh),
-            MakeField("materials", &StaticMeshComponent::Materials),
+            MakeField("mesh", &StaticMeshComponent::Mesh).AsAsset(AssetType::StaticMesh),
+            MakeField("materials", &StaticMeshComponent::Materials)
+                .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &StaticMeshComponent::Visible),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),

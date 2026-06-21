@@ -23,12 +23,17 @@
 #include <functional>
 #include <memory>
 
+class LoggingProvider;
+
 class LevelWorkspace
 {
 public:
-    LevelWorkspace();
+    explicit LevelWorkspace(LoggingProvider& logging);
 
     void Init(CommandStack& commands);
+
+    // Deletes the entity-kind selection as one undoable step (no-op if empty).
+    void DeleteSelection();
 
     LevelDocument Document;
     ViewportLayout Layout = ViewportLayout::MakeFourWay();
@@ -48,4 +53,7 @@ public:
     std::unique_ptr<ToolContext> ActiveToolContext;
     std::unique_ptr<ToolRegistry> Tools;
     std::unique_ptr<ViewportToolDispatcher> Dispatcher;
+    // Non-owning; the command stack passed to Init (owned by EditorApp), held so
+    // workspace-level edits (DeleteSelection) route through the same undo history.
+    CommandStack* Commands = nullptr;
 };

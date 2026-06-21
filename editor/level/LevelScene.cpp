@@ -63,11 +63,24 @@ void LevelScene::DestroyEntity(EntityId entity)
     if (!world.IsAlive(entity))
         return;
 
+    // Free the brush's sidecar mesh; nothing else references it once the entity
+    // is gone (DestroyEntity is the single destruction path, including undo).
+    if (const BrushComponent* brush = world.TryGet<BrushComponent>(entity))
+        BrushMeshes.Destroy(brush->Id);
+
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
     // Drop any editor flags so a reused slot index starts visible + unlocked.
     HiddenEntities.erase(entity.Index);
     LockedEntities.erase(entity.Index);
+}
+
+void LevelScene::TrackEntity(EntityId entity)
+{
+    // Adopt an entity created outside the Create* helpers (a restored deletion)
+    // into the tracked list, without the full-list reorder SyncFromRegistry does.
+    if (std::find(Entities.begin(), Entities.end(), entity) == Entities.end())
+        Entities.push_back(entity);
 }
 
 void LevelScene::SetTransform(EntityId entity, const Transform3f& transform)

@@ -21,9 +21,12 @@
 #include <SDL3/SDL.h>
 
 #include <app/Engine.h>
+#include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
+#include <core/logging/Logger.h>
 #include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
@@ -72,12 +75,18 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     // its components are registered when the document's World registers storage.
     LoadGameModule();
 
+    // Build the asset system and mount the project content (needs the project from
+    // LoadGameModule). The document then serializes through it.
+    InitAssets();
+
     // The author -> cook -> play loop runs through these console commands
     // (`cook`, `play`, `stop`) and the cook cell-size cvar.
     RegisterEditorCommands();
 
     Commands = std::make_unique<CommandStack>();
-    Workspace = std::make_unique<LevelWorkspace>();
+    Workspace = std::make_unique<LevelWorkspace>(engine.Logging());
+    if (Assets)
+        Workspace->Document.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(window->GetExtent().Width, window->GetExtent().Height);
     Workspace->Init(*Commands);
 
@@ -96,6 +105,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     Shortcuts->Register(SDLK_Z, { .Ctrl = true }, [this] { Commands->Undo(); });
     Shortcuts->Register(SDLK_Z, { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); });
     Shortcuts->Register(SDLK_Y, { .Ctrl = true }, [this] { Commands->Redo(); });
+    Shortcuts->Register(SDLK_DELETE, {}, [this] { Workspace->DeleteSelection(); });
     Shortcuts->Register(SDLK_N, { .Ctrl = true }, [this] { NewDocument(); });
     Shortcuts->Register(SDLK_O, { .Ctrl = true }, [this] { RequestOpenDialog(); });
     Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { SaveDocument(); });
@@ -136,7 +146,10 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         Workspace->Selection,
         Workspace->Preview,
         *Workspace->Manipulators,
-        Workspace->Grid));
+        Workspace->Grid,
+        engine.Logging(),
+        Assets ? &Assets->Assets : nullptr,
+        Assets ? &Assets->Registry : nullptr));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(engine, *window, instance, frames);
     UiFeature = uiFeature.get();
@@ -159,13 +172,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     // console commands.
     Toolbar->SetPlayControls({
         .Cook = [this] { CookCurrentLevel(""); },
-        .Play = [this] {
-            if (!Project)
-                return;
-            std::string error;
-            (void)Pie.Launch(ResolveHostAppPath(), Project->GameModulePath,
-                             Project->Directory, LastCookedMap, &error);
-        },
+        .Play = [this] { StartPlaySession(LastCookedMap); },
         .Stop = [this] { Pie.Stop(); },
         .IsPlaying = [this] { return Pie.IsRunning(); },
     });
@@ -266,6 +273,9 @@ void EditorApp::OnShutdown(GameShutdownContext& ctx)
     Router.reset();
     Navigation.reset();
     Shortcuts.reset();
+    // After Workspace: the document's StaticMeshComponents release into these caches
+    // on teardown. Before the engine frees the graphics services the caches borrow.
+    Assets.reset();
     EnginePtr = nullptr;
 }
 
@@ -461,13 +471,86 @@ void EditorApp::LoadGameModule()
     std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
 }
 
+void EditorApp::InitAssets()
+{
+    if (EnginePtr == nullptr)
+        return;
+    Engine& engine = *EnginePtr;
+    GraphicsServices& graphics = engine.Graphics();
+    LoggingProvider& logging = engine.Logging();
+
+    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
+    if (!Project)
+        return;
+
+    // Mount each content root and its cooked overlay, then apply that root's asset
+    // id map. The same resolution the runtime uses, so an authored ref the editor
+    // resolves is the one the cook stamps and the runtime loads.
+    Logger& log = logging.GetLogger<EditorApp>();
+    for (const std::string& root : Project->ContentRoots)
+    {
+        ScanAssetsDirectory(root, Assets->Registry);
+        ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(), Assets->Registry);
+
+        AssetIdMap idMap;
+        std::string idMapError;
+        const std::string idMapPath = (std::filesystem::path(root) / kAssetIdMapFileName).string();
+        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
+            ApplyAssetIds(idMap, Assets->Registry);
+    }
+    log.Info("assets: mounted {} content root(s)", Project->ContentRoots.size());
+}
+
 std::string EditorApp::ResolveHostAppPath() const
 {
-    // The `app` host installs beside the editor (bin/app, bin/sencha_editor).
     const char* base = SDL_GetBasePath();
     if (base == nullptr)
         return "app";
-    return (std::filesystem::path(base) / "app").string();
+
+    // weakly_canonical drops SDL's trailing slash so parent_path is the real parent.
+    const std::filesystem::path baseDir = std::filesystem::weakly_canonical(base);
+
+    // Installed SDK: app sits beside the editor (bin/app, bin/sencha_editor).
+    std::filesystem::path candidate = baseDir / "app";
+    if (std::filesystem::exists(candidate))
+        return candidate.string();
+
+    // Build tree: editor is build/editor/, app is build/app/.
+    candidate = baseDir.parent_path() / "app" / "app";
+    if (std::filesystem::exists(candidate))
+        return candidate.string();
+
+    return (baseDir / "app").string();
+}
+
+void EditorApp::StartPlaySession(const std::string& map)
+{
+    if (EnginePtr == nullptr)
+        return;
+    Logger& log = EnginePtr->Logging().GetLogger<EditorApp>();
+
+    if (!Project)
+    {
+        log.Error("play: no project open (set SENCHA_PROJECT)");
+        return;
+    }
+    if (map.empty())
+    {
+        log.Error("play: no cooked map; cook a level first or pass a map name");
+        return;
+    }
+
+    const std::string app = ResolveHostAppPath();
+    // CWD is the project directory: the game resolves its content roots
+    // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
+    log.Info("play: {} --game {} +map {} (cwd {})",
+             app, Project->GameModulePath, map, Project->Directory);
+
+    std::string error;
+    if (!Pie.Launch(app, Project->GameModulePath, Project->Directory, map, &error))
+        log.Error("play failed: " + error);
+    else
+        log.Info("play: session started (" + map + ")");
 }
 
 void EditorApp::RegisterEditorCommands()
@@ -512,23 +595,9 @@ void EditorApp::RegisterEditorCommands()
     play.Usage = "play [map]";
     play.Help = "Launch the project in the app host (PIE); map defaults to the last cooked level.";
     play.Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
-        ConsoleResult result;
-        if (!Project)
-        {
-            result.Error("no project open (set SENCHA_PROJECT)");
-            return result;
-        }
         const std::string map = args.empty() ? LastCookedMap : args.front();
-        // CWD is the project directory: the game resolves its content roots
-        // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
-        std::string error;
-        if (!Pie.Launch(ResolveHostAppPath(), Project->GameModulePath, Project->Directory, map, &error))
-        {
-            result.Error("play failed: " + error);
-            return result;
-        }
-        result.Info(map.empty() ? "launched play session" : "launched play session: " + map);
-        return result;
+        StartPlaySession(map);
+        return ConsoleResult{};
     };
     registry.RegisterCommand(std::move(play));
 
@@ -608,9 +677,10 @@ std::string EditorApp::CookCurrentLevel(const std::string& levelName)
 {
     if (EnginePtr == nullptr || Workspace == nullptr)
         return {};
+    Logger& log = EnginePtr->Logging().GetLogger<EditorApp>();
     if (!Project)
     {
-        std::fprintf(stderr, "[editor] cook: no project open (set SENCHA_PROJECT)\n");
+        log.Error("cook: no project open (set SENCHA_PROJECT)");
         return {};
     }
 
@@ -628,18 +698,24 @@ std::string EditorApp::CookCurrentLevel(const std::string& levelName)
         cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
         cellSize = std::get<double>(cvar->CurrentValue);
 
+    if (!Assets)
+    {
+        log.Error("cook: asset system not initialized");
+        return {};
+    }
+
     const std::filesystem::path assetsRoot = std::filesystem::path(Project->Directory) / "assets";
-    const LevelCookResult cooked = CookLevel(Workspace->Document, name, assetsRoot, cellSize);
+    const LevelCookResult cooked =
+        CookLevel(Workspace->Document, name, assetsRoot, cellSize, EnginePtr->Logging(), &*Assets);
     if (!cooked.Success)
     {
-        std::fprintf(stderr, "[editor] cook failed: %s\n", cooked.Error.c_str());
+        log.Error("cook failed: " + cooked.Error);
         return {};
     }
 
     LastCookedMap = "levels/" + name;
-    std::fprintf(stderr, "[editor] cooked '%s' (%zu cells) -> %s\n",
-                 LastCookedMap.c_str(), cooked.CellCount,
-                 cooked.CookedScenePath.generic_string().c_str());
+    log.Info("cooked '{}' ({} cells) -> {}",
+             LastCookedMap, cooked.CellCount, cooked.CookedScenePath.generic_string());
     return LastCookedMap;
 }
 

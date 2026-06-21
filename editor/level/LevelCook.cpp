@@ -9,10 +9,12 @@
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
+#include <core/assets/RuntimeAssets.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/MeshGeometry.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 
 #include <cstdint>
@@ -96,7 +98,9 @@ LevelCookResult CookLevelDocument(LevelDocument& doc,
                                   std::string_view stem,
                                   std::string_view sourceRel,
                                   const std::filesystem::path& assetsRoot,
-                                  double cellSize)
+                                  double cellSize,
+                                  LoggingProvider& logging,
+                                  AssetSystem* assetSystem)
 {
     LevelCookResult result;
 
@@ -107,7 +111,6 @@ LevelCookResult CookLevelDocument(LevelDocument& doc,
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
     const std::string stemStr(stem);
-    LoggingProvider logging;
     MeshSerializer serializer(logging);
 
     JsonValue::Array cellEntities;
@@ -163,7 +166,12 @@ LevelCookResult CookLevelDocument(LevelDocument& doc,
             scene.DestroyEntity(entity);
     }
 
-    JsonValue cooked = SaveSceneJson(doc.GetRegistry());
+    // Serialize passthrough entities through the shared asset system so prop
+    // StaticMesh handles emit asset:// paths (the cell entities are raw JSON and
+    // bypass the codec, but authored props go through it). A null assetSystem is
+    // the brush-only cook (no asset fields to resolve).
+    SceneSerializationContext context(logging, assetSystem);
+    JsonValue cooked = SaveSceneJson(doc.GetRegistry(), context);
     bool appended = false;
     if (cooked.IsObject())
         for (auto& [key, value] : cooked.AsObject())
@@ -229,7 +237,9 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
                           double cellSize)
 {
-    LevelDocument doc;
+    // Headless, brush-only: a sink-less logger discards everything, no assets.
+    LoggingProvider logging;
+    LevelDocument doc(logging);
     if (!doc.Load(authoredLevelPath.generic_string()))
     {
         LevelCookResult result;
@@ -241,17 +251,22 @@ LevelCookResult CookLevel(const std::filesystem::path& authoredLevelPath,
     const std::string sourceRel =
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
     return CookLevelDocument(doc, authoredLevelPath.stem().generic_string(), sourceRel,
-                             assetsRoot, cellSize);
+                             assetsRoot, cellSize, logging, nullptr);
 }
 
 LevelCookResult CookLevel(const LevelDocument& liveDocument,
                           std::string_view levelName,
                           const std::filesystem::path& assetsRoot,
-                          double cellSize)
+                          double cellSize,
+                          LoggingProvider& logging,
+                          RuntimeAssets* assets)
 {
     // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
-    // free to mutate, leaving the editor's document untouched.
-    LevelDocument snapshot;
+    // free to mutate, leaving the editor's document untouched. The snapshot shares
+    // the same asset system so its prop handles round-trip through ToJson/LoadFromJson.
+    LevelDocument snapshot(logging);
+    if (assets != nullptr)
+        snapshot.SetAssetEnvironment(*assets);
     if (!snapshot.LoadFromJson(liveDocument.ToJson()))
     {
         LevelCookResult result;
@@ -260,5 +275,6 @@ LevelCookResult CookLevel(const LevelDocument& liveDocument,
     }
 
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
-    return CookLevelDocument(snapshot, levelName, sourceRel, assetsRoot, cellSize);
+    return CookLevelDocument(snapshot, levelName, sourceRel, assetsRoot, cellSize,
+                             logging, assets != nullptr ? &assets->Assets : nullptr);
 }

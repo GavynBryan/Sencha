@@ -6,6 +6,7 @@
 
 #include "../commands/CommandStack.h"
 #include "../level/commands/CreateEntityCommand.h"
+#include "../level/commands/DeleteEntityCommand.h"
 #include "../level/LevelScene.h"
 #include "../selection/commands/SelectCommand.h"
 #include "../selection/SelectionService.h"
@@ -16,6 +17,7 @@
 #include <imgui.h>
 
 #include <memory>
+#include <span>
 #include <string>
 
 SceneHierarchyPanel::SceneHierarchyPanel(LevelScene& scene, LevelDocument& document,
@@ -53,6 +55,10 @@ void SceneHierarchyPanel::OnDraw()
             Selection, SelectableRef::EntitySelection(registryId, cmd->GetCreatedEntity())));
     }
     ImGui::Separator();
+
+    // Deferred so the delete command (which erases from the entity list) does not
+    // mutate the vector this loop iterates.
+    EntityId toDelete = {};
 
     for (EntityId entity : Scene.GetAllEntities())
     {
@@ -102,6 +108,17 @@ void SceneHierarchyPanel::OnDraw()
                 SelectableRef::EntitySelection(registryId, entity)));
         }
 
+        if (ImGui::BeginPopupContextItem("##row_ctx"))
+        {
+            if (ImGui::MenuItem(ICON_FA_TRASH "  Delete"))
+                toDelete = entity;
+            ImGui::EndPopup();
+        }
+
         ImGui::PopID();
     }
+
+    if (toDelete.IsValid())
+        Commands.Execute(MakeDeleteEntitiesCommand(
+            std::span<const EntityId>(&toDelete, 1), Scene, Document, Selection));
 }

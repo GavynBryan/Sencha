@@ -14,6 +14,7 @@ class CommandStack;
 class LevelDocument;
 class SelectionService;
 struct IComponentSerializer;
+struct RuntimeField;
 
 // Registry-driven inspector. For the selected entity it iterates the component
 // serializer registry, and for each component present draws its type-erased
@@ -33,7 +34,11 @@ public:
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
 
 private:
-    void DrawComponent(const IComponentSerializer& serializer, EntityId entity);
+    void DrawComponent(IComponentSerializer& serializer, EntityId entity);
+    // Picker for an asset-handle field (RuntimeField tagged with an AssetType):
+    // a combo of scanned assets of that type, applied via AssetFieldEditCommand.
+    void DrawAssetField(const RuntimeField& field, EntityId entity,
+                        ComponentId component, float labelWidth);
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 
@@ -48,6 +53,11 @@ private:
     ComponentId            EditingComponent = InvalidComponentId;
     std::vector<std::byte> EditBefore;
     bool                   EditActive = false;
+
+    // A component remove requested this frame, executed after the component loop
+    // (removal is a structural change, so it must not run mid-iteration). Points
+    // at a process-global serializer entry, so it never dangles.
+    IComponentSerializer*  PendingRemoval = nullptr;
 
     EntityId LastEntity = {};
 };
