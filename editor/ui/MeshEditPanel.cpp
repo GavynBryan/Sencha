@@ -52,6 +52,28 @@ void MeshEditPanel::DrawModeToolbar()
     ImGui::TextDisabled("Shift+V cycles modes");
 }
 
+void MeshEditPanel::DrawObjectVerbs()
+{
+    int selectedBrushes = 0;
+    for (const SelectableRef& ref : Selection.GetSelection())
+        if (ref.IsEntity())
+            ++selectedBrushes;
+
+    if (selectedBrushes == 0)
+    {
+        ImGui::TextDisabled("Select a brush to edit it");
+        return;
+    }
+
+    if (ImGui::Button("Recalculate Normals"))
+    {
+        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(),
+                                              MeshEditVerb::RecalculateNormals, {}))
+            Commands.Execute(std::move(command));
+    }
+    ImGui::TextDisabled("Re-orients every face outward (concave-safe)");
+}
+
 void MeshEditPanel::DrawFaceVerbs()
 {
     int selectedFaces = 0;
@@ -89,6 +111,9 @@ void MeshEditPanel::DrawFaceVerbs()
     ImGui::SameLine();
     if (ImGui::Button("Delete"))
         applyVerb(MeshEditVerb::Delete, {});
+    ImGui::SameLine();
+    if (ImGui::Button("Flip Normals"))
+        applyVerb(MeshEditVerb::FlipFaceNormal, {});
 }
 
 void MeshEditPanel::DrawEdgeVerbs()
@@ -128,8 +153,9 @@ void MeshEditPanel::OnDraw()
 
     switch (MeshEdit.GetElementKind())
     {
-    case MeshElementKind::Face: DrawFaceVerbs(); break;
-    case MeshElementKind::Edge: DrawEdgeVerbs(); break;
-    default:                    ImGui::TextDisabled("No verbs for this mode yet"); break;
+    case MeshElementKind::Object: DrawObjectVerbs(); break;
+    case MeshElementKind::Face:   DrawFaceVerbs(); break;
+    case MeshElementKind::Edge:   DrawEdgeVerbs(); break;
+    default:                      ImGui::TextDisabled("No verbs for this mode yet"); break;
     }
 }

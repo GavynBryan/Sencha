@@ -3,12 +3,15 @@
 #include "ElementGeometry.h"
 #include "MeshElementKindTraits.h"
 #include "MeshElements.h"
+#include "../level/brush/BrushHalfEdge.h"
 #include "../level/brush/BrushOps.h"
 #include "../level/brush/BrushValidation.h"
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -148,6 +151,21 @@ std::optional<BrushMesh> ApplyDelete(const VerbContext& ctx)
                         [](const BrushMesh& m, std::uint32_t i) { return BrushOps::DeleteFace(m, i); });
 }
 
+std::optional<BrushMesh> ApplyFlipNormal(const VerbContext& ctx)
+{
+    return ApplyPerFace(ctx.Before, ctx.Refs,
+                        [](const BrushMesh& m, std::uint32_t i) { return BrushOps::FlipFace(m, i); });
+}
+
+std::optional<BrushMesh> ApplyRecalculateNormals(const VerbContext& ctx)
+{
+    BrushMesh after = ctx.Before;
+    BrushOrientFacesOutward(after);
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
 std::optional<BrushMesh> ApplyClip(const VerbContext& ctx)
 {
     BrushMesh after = BrushOps::Clip(ctx.Before, ctx.Params.ClipPlane, ctx.Params.KeepPositiveSide);
@@ -206,14 +224,17 @@ struct VerbDescriptor
 bool IsFaceRef(const SelectableRef& r) { return r.IsFace(); }
 bool IsEdgeRef(const SelectableRef& r) { return r.IsEdge(); }
 bool IsMeshElementRef(const SelectableRef& r) { return r.IsMeshElement(); }
+bool IsEntityRef(const SelectableRef& r) { return r.IsEntity(); }
 
-const std::array<VerbDescriptor, 6> kVerbs = { {
-    { IsFaceRef,        ApplyExtrude },    // Extrude
-    { IsFaceRef,        ApplyDelete },     // Delete
-    { IsFaceRef,        ApplyClip },       // Clip
-    { IsFaceRef,        ApplyResizeFace }, // ResizeFace
-    { IsMeshElementRef, ApplyTranslate },  // TranslateElements
-    { IsEdgeRef,        ApplySplitEdge },  // SplitEdge
+const std::array<VerbDescriptor, 8> kVerbs = { {
+    { IsFaceRef,        ApplyExtrude },             // Extrude
+    { IsFaceRef,        ApplyDelete },              // Delete
+    { IsFaceRef,        ApplyClip },                // Clip
+    { IsFaceRef,        ApplyResizeFace },          // ResizeFace
+    { IsMeshElementRef, ApplyTranslate },           // TranslateElements
+    { IsEdgeRef,        ApplySplitEdge },           // SplitEdge
+    { IsFaceRef,        ApplyFlipNormal },          // FlipFaceNormal
+    { IsEntityRef,      ApplyRecalculateNormals },  // RecalculateNormals
 } };
 }
 
@@ -298,6 +319,37 @@ bool EdgeEndpointsMatch(Vec3d a0, Vec3d b0, Vec3d a1, Vec3d b1)
     const auto near = [](Vec3d p, Vec3d q) { return (p - q).SqrMagnitude() <= kEps * kEps; };
     return (near(a0, a1) && near(b0, b1)) || (near(a0, b1) && near(b0, a1));
 }
+
+std::uint64_t UndirectedEdgeKey(std::uint32_t a, std::uint32_t b)
+{
+    return (static_cast<std::uint64_t>(std::min(a, b)) << 32) | std::max(a, b);
+}
+
+// Directed endpoints (origin -> target) of each undirected edge as its bordering
+// face winds it. A pulled flap is then wound the OPPOSITE way across the shared
+// edge so its orientation continues the source face's (the manifold-consistency
+// rule): this is the single rule that makes an in-plane extrude keep facing like
+// the floor and a vertical extrude fold that facing up into the wall. The raw
+// EdgeElement order is normalized to (min,max) and on its own is a per-edge coin
+// flip. Boundary edges have one bordering half-edge; an interior edge keeps the
+// first visited.
+std::unordered_map<std::uint64_t, std::pair<std::uint32_t, std::uint32_t>>
+EdgeSourceWinding(const BrushMesh& mesh)
+{
+    const BrushHalfEdgeMesh he = BrushBuildHalfEdge(mesh);
+    std::unordered_map<std::uint64_t, std::pair<std::uint32_t, std::uint32_t>> directed;
+    for (const BrushHalfEdge& edge : he.HalfEdges)
+    {
+        if (edge.Origin >= mesh.Vertices.size() || edge.Next >= he.HalfEdges.size())
+            continue;
+        const std::uint32_t target = he.HalfEdges[edge.Next].Origin;
+        if (target >= mesh.Vertices.size() || target == edge.Origin)
+            continue;
+        directed.emplace(UndirectedEdgeKey(edge.Origin, target),
+                         std::pair{ edge.Origin, target });
+    }
+    return directed;
+}
 }
 
 std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
@@ -359,6 +411,11 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
 
     if (want == SelectableKind::Edge)
     {
+        // Wind each flap to continue the source face's orientation across the shared
+        // edge (opposite traversal), so in-plane and vertical extrudes stay
+        // consistent with the floor instead of coin-flipping per edge.
+        const auto sourceWinding = EdgeSourceWinding(base);
+
         BrushMesh after = base;
         int applied = 0;
         std::vector<std::pair<Vec3d, Vec3d>> newEdges; // local endpoints of each pulled edge
@@ -371,9 +428,20 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
             if (const std::optional<EdgeElement> edge =
                     MeshElements::TryGetEdge(base, transform, ref.ElementId))
             {
-                const Vec3d a = base.Vertices[edge->VertexA].Position;
-                const Vec3d b = base.Vertices[edge->VertexB].Position;
-                after = BrushOps::ExtrudeEdge(after, edge->VertexA, edge->VertexB, offset);
+                std::uint32_t va = edge->VertexA;
+                std::uint32_t vb = edge->VertexB;
+                // ExtrudeEdge winds the flap base va -> vb. The source face traverses
+                // the edge origin -> target, so wind the flap target -> origin to
+                // continue its orientation (manifold-consistent).
+                if (const auto it = sourceWinding.find(UndirectedEdgeKey(va, vb));
+                    it != sourceWinding.end())
+                {
+                    va = it->second.second; // source target
+                    vb = it->second.first;  // source origin
+                }
+                const Vec3d a = base.Vertices[va].Position;
+                const Vec3d b = base.Vertices[vb].Position;
+                after = BrushOps::ExtrudeEdge(after, va, vb, offset);
                 newEdges.emplace_back(a + offset, b + offset);
                 ++applied;
             }

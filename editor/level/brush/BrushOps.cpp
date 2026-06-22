@@ -68,6 +68,7 @@ BrushMesh BrushOps::MakeBox(Vec3d halfExtents)
         BrushFace{ { 1, 2, 6, 5 }, {} }, // +X
     };
     BrushValidateAndRepair(mesh);
+    BrushOrientFacesOutward(mesh); // authored winding above is inward; fix it once
     // Seed world-aligned UV axes from each (now-valid) face normal so a fresh box
     // textures sensibly; the material ref stays empty (= inherit level default).
     for (BrushFace& face : mesh.Faces)
@@ -118,10 +119,9 @@ BrushMesh BrushOps::MakePlane(Vec3d halfExtents, int depthAxis)
     });
     BrushValidateAndRepair(mesh);
 
-    // A single open face has no interior, so ValidateAndRepair's orient-outward step
-    // is a no-op (face centroid == mesh centroid). The winding from PlaneAxes can
-    // therefore leave the normal pointing along -depthAxis (down). Face it along
-    // +depthAxis, matching the grid up / the surface it was placed against.
+    // Repair does not reorient, so the single face keeps the winding from PlaneAxes,
+    // whose normal can point along -depthAxis (down). Face it along +depthAxis,
+    // matching the grid up / the surface it was placed against.
     if (!mesh.Faces.empty() && mesh.Faces[0].Normal[depthAxis] < 0.0f)
     {
         std::reverse(mesh.Faces[0].Loop.begin(), mesh.Faces[0].Loop.end());
@@ -159,6 +159,7 @@ BrushMesh BrushOps::MakeCylinder(Vec3d halfExtents, int depthAxis, int sides)
         EmitFace(mesh, { bottom[i], bottom[j], top[j], top[i] });
     }
     BrushValidateAndRepair(mesh);
+    BrushOrientFacesOutward(mesh); // authored caps/walls may wind inward; fix once
     SeedFaceUvs(mesh);
     return mesh;
 }
@@ -310,6 +311,16 @@ BrushMesh BrushOps::DeleteFace(const BrushMesh& mesh, std::uint32_t face)
     return out;
 }
 
+BrushMesh BrushOps::FlipFace(const BrushMesh& mesh, std::uint32_t face)
+{
+    BrushMesh out = mesh;
+    if (face >= out.Faces.size())
+        return out;
+    std::reverse(out.Faces[face].Loop.begin(), out.Faces[face].Loop.end());
+    out.Faces[face].Normal = -out.Faces[face].Normal;
+    return out;
+}
+
 BrushMesh BrushOps::SplitEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
 {
     BrushMesh out = mesh;
@@ -437,5 +448,6 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
     }
 
     BrushValidateAndRepair(out);
+    BrushOrientFacesOutward(out); // freshly rebuilt mesh: orient the cut cap + pieces
     return out;
 }

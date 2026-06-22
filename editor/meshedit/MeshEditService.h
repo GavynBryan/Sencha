@@ -21,6 +21,8 @@ enum class MeshEditVerb : uint8_t
     ResizeFace,
     TranslateElements,
     SplitEdge,
+    FlipFaceNormal,
+    RecalculateNormals,
 };
 
 struct MeshEditParams

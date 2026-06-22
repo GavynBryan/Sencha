@@ -26,6 +26,7 @@ public:
 
 private:
     void DrawModeToolbar();
+    void DrawObjectVerbs();
     void DrawFaceVerbs();
     void DrawEdgeVerbs();
 

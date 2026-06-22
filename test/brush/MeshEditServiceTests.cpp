@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
 #include <optional>
 #include <vector>
@@ -407,4 +408,146 @@ TEST(MeshEditService, ExtrudeElementsMultiFaceReportsEveryCap)
     EXPECT_EQ(after->NewElementIds.size(), 2u);
     for (std::uint32_t cap : after->NewElementIds)
         EXPECT_LT(cap, after->Mesh.Faces.size());
+}
+
+TEST(MeshEditService, FlipFaceNormalReversesEverySelectedFace)
+{
+    StubMeshEditTarget target(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }));
+    MeshEditService service;
+
+    const Vec3d n0 = BrushComputeFaceNormal(target.Mesh, target.Mesh.Faces[0]);
+    const Vec3d n1 = BrushComputeFaceNormal(target.Mesh, target.Mesh.Faces[1]);
+
+    std::unique_ptr<ICommand> command = service.ApplyVerb(
+        target, FaceSelectionMulti(target.Entity, { 0, 1 }), MeshEditVerb::FlipFaceNormal);
+
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    // Both selected faces now point the opposite way, and repair did not undo it.
+    EXPECT_LT(BrushComputeFaceNormal(captured->After, captured->After.Faces[0]).Dot(n0), -0.9f);
+    EXPECT_LT(BrushComputeFaceNormal(captured->After, captured->After.Faces[1]).Dot(n1), -0.9f);
+}
+
+TEST(MeshEditService, RecalculateNormalsReorientsFlippedBrush)
+{
+    // A box with one inward-flipped face; recalc must put every face outward.
+    BrushMesh box = BrushOps::FlipFace(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }), 0);
+    StubMeshEditTarget target(std::move(box));
+    MeshEditService service;
+
+    const SelectableRef ref = SelectableRef::EntitySelection(RegistryId::Global(), target.Entity);
+    const SelectionSnapshot selection{ .Items = { ref }, .Primary = ref };
+
+    std::unique_ptr<ICommand> command =
+        service.ApplyVerb(target, selection, MeshEditVerb::RecalculateNormals);
+
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    const Vec3d center = BrushMeshCentroid(captured->After);
+    for (const BrushFace& face : captured->After.Faces)
+        EXPECT_GT(BrushComputeFaceNormal(captured->After, face).Dot(
+                      BrushFaceCentroid(captured->After, face) - center), 0.0f);
+}
+
+TEST(MeshEditService, RecalculateNormalsIgnoresFaceSelection)
+{
+    StubMeshEditTarget target(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }));
+    MeshEditService service;
+
+    // The verb filters to entity refs, so a face selection yields no command.
+    EXPECT_EQ(service.ApplyVerb(
+                  target, FaceSelection(target.Entity, 0), MeshEditVerb::RecalculateNormals),
+              nullptr);
+}
+
+namespace
+{
+// Two faces are part of one oriented surface iff they traverse their shared edge
+// in opposite directions. Returns true only when a shared edge exists and is
+// opposed; false if it is traversed the same way (a flipped/inconsistent face).
+bool FacesContinueSurface(const BrushMesh& mesh, std::uint32_t f0, std::uint32_t f1)
+{
+    const std::vector<std::uint32_t>& a = mesh.Faces[f0].Loop;
+    const std::vector<std::uint32_t>& b = mesh.Faces[f1].Loop;
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        const std::uint32_t a0 = a[i];
+        const std::uint32_t a1 = a[(i + 1) % a.size()];
+        for (std::size_t j = 0; j < b.size(); ++j)
+        {
+            const std::uint32_t b0 = b[j];
+            const std::uint32_t b1 = b[(j + 1) % b.size()];
+            if (a0 == b1 && a1 == b0)
+                return true; // opposed: consistent
+            if (a0 == b0 && a1 == b1)
+                return false; // same direction: inconsistent
+        }
+    }
+    return false; // no shared edge found
+}
+
+// Index of the single +Y floor face in a plane-extrude result.
+std::uint32_t FloorFace(const BrushMesh& mesh)
+{
+    for (std::uint32_t i = 0; i < mesh.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(mesh, mesh.Faces[i]).Y > 0.9f)
+            return i;
+    return 0;
+}
+}
+
+TEST(MeshEditService, EdgeExtrudeInPlaneKeepsFacingLikeFloor)
+{
+    // Pull the +X boundary edge outward, in the floor plane. The new piece is
+    // coplanar and must face the same way as the floor (+Y), as it does today.
+    const BrushMesh floor = BrushOps::MakePlane({ 1.0f, 1.0f, 1.0f }, /*depthAxis*/ 1);
+    MeshEditService service;
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(floor, Transform3f::Identity());
+    std::uint32_t plusX = 0;
+    for (const EdgeElement& edge : edges)
+        if (edge.Mid.X > 0.9f)
+            plusX = edge.Index;
+    const std::vector<SelectableRef> refs = {
+        SelectableRef::EdgeSelection(RegistryId::Global(), kEntity, plusX),
+    };
+
+    const auto after = service.ExtrudeElements(
+        floor, Transform3f::Identity(), refs, MeshElementKind::Edge, Vec3d(1.0f, 0.0f, 0.0f), true);
+    ASSERT_TRUE(after.has_value());
+
+    // Every coplanar piece still faces +Y (no inward-flipped extension).
+    for (const BrushFace& face : after->Mesh.Faces)
+        EXPECT_GT(BrushComputeFaceNormal(after->Mesh, face).Y, 0.9f);
+}
+
+TEST(MeshEditService, EdgeExtrudeUpContinuesFloorSurface)
+{
+    // The reported bug: pulling edges up made walls face the opposite way to the
+    // floor's surface. Each wall must continue the floor's orientation (shared edge
+    // opposed), the same rule that makes the in-plane extrude correct.
+    const BrushMesh floor = BrushOps::MakePlane({ 1.0f, 1.0f, 1.0f }, /*depthAxis*/ 1);
+    MeshEditService service;
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(floor, Transform3f::Identity());
+    std::vector<SelectableRef> refs;
+    for (const EdgeElement& edge : edges)
+        refs.push_back(SelectableRef::EdgeSelection(RegistryId::Global(), kEntity, edge.Index));
+
+    const auto after = service.ExtrudeElements(
+        floor, Transform3f::Identity(), refs, MeshElementKind::Edge, Vec3d(0.0f, 1.0f, 0.0f), true);
+    ASSERT_TRUE(after.has_value());
+
+    const std::uint32_t floorFace = FloorFace(after->Mesh);
+    int walls = 0;
+    for (std::uint32_t i = 0; i < after->Mesh.Faces.size(); ++i)
+    {
+        if (std::abs(BrushComputeFaceNormal(after->Mesh, after->Mesh.Faces[i]).Y) > 0.5f)
+            continue; // a horizontal cap, not a wall
+        ++walls;
+        EXPECT_TRUE(FacesContinueSurface(after->Mesh, floorFace, i));
+    }
+    EXPECT_EQ(walls, 4);
 }

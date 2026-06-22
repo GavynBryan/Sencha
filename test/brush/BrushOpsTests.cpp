@@ -107,6 +107,26 @@ TEST(BrushOps, DeleteFaceOpensTheMesh)
     EXPECT_FALSE(IsClosed(opened)); // open mesh — allowed during authoring
 }
 
+TEST(BrushOps, FlipFaceReversesWindingAndSurvivesRepair)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::uint32_t plusX = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).X > 0.9f)
+            plusX = i;
+
+    const Vec3d original = BrushComputeFaceNormal(box, box.Faces[plusX]);
+    BrushMesh flipped = BrushOps::FlipFace(box, plusX);
+
+    // Winding reversed: both the recomputed and the cached normal point the other way.
+    EXPECT_LT(BrushComputeFaceNormal(flipped, flipped.Faces[plusX]).Dot(original), -0.9f);
+    EXPECT_LT(flipped.Faces[plusX].Normal.Dot(original), -0.9f);
+
+    // Repair recomputes normals but must NOT re-orient, so the flip persists.
+    BrushValidateAndRepair(flipped);
+    EXPECT_LT(BrushComputeFaceNormal(flipped, flipped.Faces[plusX]).Dot(original), -0.9f);
+}
+
 TEST(BrushOps, ClipByAxisPlaneKeepsHalfAndCaps)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });

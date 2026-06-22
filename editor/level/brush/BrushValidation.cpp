@@ -146,18 +146,10 @@ BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance)
         return result;
     }
 
-    // Orient outward: a face whose normal points toward the mesh centroid is
-    // wound inward — reverse it. (Heuristic, exact for convex/star-shaped solids.)
-    const Vec3d center = BrushMeshCentroid(mesh);
-    for (BrushFace& face : mesh.Faces)
-    {
-        const Vec3d centroid = BrushFaceCentroid(mesh, face);
-        if (face.Normal.Dot(centroid - center) < 0.0f)
-        {
-            std::reverse(face.Loop.begin(), face.Loop.end());
-            face.Normal = -face.Normal;
-        }
-    }
+    // Winding (and therefore normals) is left as authored: orienting outward is a
+    // separate, explicit step (BrushOrientFacesOutward), so in-place edits do not
+    // re-flip already-correct faces. (Construction ops and the recalc-normals verb
+    // call it; this path only recomputes normals from the current winding.)
 
     // Closedness: every undirected edge shared by exactly two faces.
     std::unordered_map<std::uint64_t, int> edgeCounts;
@@ -191,4 +183,127 @@ BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance)
             result.Changed = mesh.Faces[i].Loop != before.Faces[i].Loop;
     }
     return result;
+}
+
+void BrushOrientFacesOutward(BrushMesh& mesh)
+{
+    const std::uint32_t faceCount = static_cast<std::uint32_t>(mesh.Faces.size());
+    if (faceCount == 0)
+        return;
+
+    // Undirected edge -> the directed (A,B) traversals that reference it, tagged
+    // with their owning face. Two faces are consistently wound iff they traverse a
+    // shared edge in opposite directions.
+    struct FaceEdge { std::uint32_t Face; std::uint32_t A; std::uint32_t B; };
+    std::unordered_map<std::uint64_t, std::vector<FaceEdge>> edges;
+    for (std::uint32_t f = 0; f < faceCount; ++f)
+    {
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        const std::size_t n = loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+            edges[EdgeKey(loop[i], loop[(i + 1) % n])].push_back(
+                FaceEdge{ f, loop[i], loop[(i + 1) % n] });
+    }
+
+    // Flood-fill winding consistency across shared edges, per connected component.
+    // Seeds and neighbours are walked in index order so the result is deterministic.
+    std::vector<bool> visited(faceCount, false);
+    std::vector<std::uint32_t> stack;
+    for (std::uint32_t seed = 0; seed < faceCount; ++seed)
+    {
+        if (visited[seed])
+            continue;
+        visited[seed] = true;
+        stack.push_back(seed);
+        while (!stack.empty())
+        {
+            const std::uint32_t f = stack.back();
+            stack.pop_back();
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            const std::size_t n = loop.size();
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const std::uint32_t a = loop[i];
+                const std::uint32_t b = loop[(i + 1) % n];
+                const auto it = edges.find(EdgeKey(a, b));
+                if (it == edges.end())
+                    continue;
+                for (const FaceEdge& neighbor : it->second)
+                {
+                    if (neighbor.Face == f || visited[neighbor.Face])
+                        continue;
+                    // Unvisited neighbour is still in its original winding: traversing
+                    // the shared edge in the SAME direction as f means it is wound the
+                    // opposite way in space, so reverse it to agree.
+                    if (neighbor.A == a && neighbor.B == b)
+                        std::reverse(mesh.Faces[neighbor.Face].Loop.begin(),
+                                     mesh.Faces[neighbor.Face].Loop.end());
+                    visited[neighbor.Face] = true;
+                    stack.push_back(neighbor.Face);
+                }
+            }
+        }
+    }
+
+    for (BrushFace& face : mesh.Faces)
+        face.Normal = BrushComputeFaceNormal(mesh, face);
+
+    // The mesh is now wound consistently (all-outward or all-inward). Pick the sign.
+    bool closed = true;
+    for (const auto& [key, incident] : edges)
+    {
+        (void)key;
+        if (incident.size() != 2)
+        {
+            closed = false;
+            break;
+        }
+    }
+
+    bool flipAll = false;
+    if (closed)
+    {
+        // Signed volume via the divergence theorem: positive for outward winding.
+        double volume = 0.0;
+        for (const BrushFace& face : mesh.Faces)
+        {
+            const std::vector<std::uint32_t>& loop = face.Loop;
+            const std::size_t n = loop.size();
+            if (n < 3)
+                continue;
+            const Vec3d p0 = mesh.Vertices[loop[0]].Position;
+            for (std::size_t i = 1; i + 1 < n; ++i)
+            {
+                const Vec3d c = mesh.Vertices[loop[i]].Position.Cross(
+                    mesh.Vertices[loop[i + 1]].Position);
+                volume += static_cast<double>(p0.X) * c.X
+                        + static_cast<double>(p0.Y) * c.Y
+                        + static_cast<double>(p0.Z) * c.Z;
+            }
+        }
+        flipAll = volume < 0.0;
+    }
+    else
+    {
+        // Open mesh: no enclosed volume. Best-effort majority vote against the mesh
+        // centroid (mutual consistency still holds; only the global sign is a guess).
+        const Vec3d center = BrushMeshCentroid(mesh);
+        int outward = 0;
+        int inward = 0;
+        for (const BrushFace& face : mesh.Faces)
+        {
+            if (face.Normal.Dot(BrushFaceCentroid(mesh, face) - center) >= 0.0f)
+                ++outward;
+            else
+                ++inward;
+        }
+        flipAll = inward > outward;
+    }
+
+    if (flipAll)
+        for (BrushFace& face : mesh.Faces)
+        {
+            std::reverse(face.Loop.begin(), face.Loop.end());
+            face.Normal = -face.Normal;
+        }
 }

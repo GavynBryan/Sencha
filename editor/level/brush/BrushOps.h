@@ -20,8 +20,11 @@ struct BrushPrimitiveParams
 //=============================================================================
 // Brush edit verbs — each a pure function BrushMesh -> BrushMesh, wrapped by an
 // undoable command in the editor. Pure so they are unit-tested with zero UI.
-// Results are run through BrushValidateAndRepair, so callers get welded, outward-
-// oriented geometry. (docs/plans/sencha-level-editor/03-brush-representation.md §3)
+// Results are run through BrushValidateAndRepair (weld + recompute normals).
+// Construction ops (MakeBox/MakeCylinder/MakePlane/Clip) also orient outward;
+// in-place edits preserve the existing winding (FlipFace / the recalc-normals
+// verb are the explicit ways to change it).
+// (docs/plans/sencha-level-editor/03-brush-representation.md §3)
 //=============================================================================
 struct BrushOps
 {
@@ -72,6 +75,10 @@ struct BrushOps
 
     // Remove a face, opening the solid (allowed during authoring).
     [[nodiscard]] static BrushMesh DeleteFace(const BrushMesh& mesh, std::uint32_t face);
+
+    // Reverse one face's winding (and its cached normal). The manual counterpart to
+    // the recalc-normals verb: repair no longer re-orients, so the flip persists.
+    [[nodiscard]] static BrushMesh FlipFace(const BrushMesh& mesh, std::uint32_t face);
 
     // Insert a vertex at the midpoint of the undirected edge (a, b) into every
     // face loop that traverses it, keeping the mesh 2-manifold. Pure topology:

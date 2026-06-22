@@ -25,7 +25,16 @@ struct BrushRepairResult
 // must merge for adjacency to be well-defined.
 void BrushWeldVertices(BrushMesh& mesh, float tolerance = 1e-4f);
 
-// Weld, drop unreferenced vertices, remove degenerate faces, recompute normals,
-// orient outward, and report closedness. Idempotent: a repaired mesh repairs to
-// itself with Changed == false.
+// Weld, drop unreferenced vertices, remove degenerate faces, recompute normals
+// from the current winding, and report closedness. Does NOT re-wind faces, so an
+// in-place edit keeps its existing orientation. Idempotent: a repaired mesh
+// repairs to itself with Changed == false.
 BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance = 1e-4f);
+
+// Reorient every face to point outward with a consistent winding, for any
+// orientable manifold brush (concave included): flood-fills winding consistency
+// across shared edges, then picks the outward global sign by signed volume (closed
+// mesh) or a centroid majority vote (open mesh). Recomputes cached normals.
+// Call at construction and for an explicit "recalculate normals"; in-place edit
+// ops deliberately do not, so they leave authored normals alone.
+void BrushOrientFacesOutward(BrushMesh& mesh);
