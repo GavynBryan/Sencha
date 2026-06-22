@@ -1,7 +1,7 @@
 #include "EditorViewportCameraSystem.h"
 
-#include "../viewport/EditorViewport.h"
-#include "../viewport/ViewportLayout.h"
+#include "EditorViewport.h"
+#include "ViewportLayout.h"
 
 #include <SDL3/SDL_scancode.h>
 

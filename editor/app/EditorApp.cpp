@@ -1,7 +1,7 @@
 #include "EditorApp.h"
 
 #include "../app/EditorFrameHook.h"
-#include "../app/EditorViewportCameraSystem.h"
+#include "../viewport/EditorViewportCameraSystem.h"
 #include "../input/UiInputGuard.h"
 #include "../level/LevelCook.h"
 #include "../level/LevelSerialization.h"
