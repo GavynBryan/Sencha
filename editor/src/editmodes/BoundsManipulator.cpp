@@ -1,7 +1,7 @@
 #include "BoundsManipulator.h"
 
 #include "../EditorTheme.h"
-#include "../level/BrushGeometry.h"
+#include "../level/brush/BrushBounds.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ToolContext.h"
@@ -120,7 +120,7 @@ bool Resolve(const ManipulatorContext& ctx, const EditorViewport& viewport, Reso
     out.Mesh = resolved->Mesh;
     out.Transform = resolved->Transform;
 
-    const Aabb3d bounds = BrushGeometry::ComputeWorldBounds(*out.Mesh, out.Transform);
+    const Aabb3d bounds = BrushWorldBounds(*out.Mesh, out.Transform);
     out.Min = bounds.Min;
     out.Max = bounds.Max;
 

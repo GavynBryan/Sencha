@@ -1,5 +1,6 @@
 #include "LevelScene.h"
 
+#include "brush/BrushBounds.h"
 #include "brush/BrushOps.h"
 
 #include <world/transform/TransformComponents.h>
@@ -154,6 +155,16 @@ const CameraComponent* LevelScene::TryGetCamera(EntityId entity) const
 {
     const World& world = Registry_.Components;
     return world.TryGet<CameraComponent>(entity);
+}
+
+std::optional<Aabb3d> LevelScene::TryGetWorldBounds(EntityId entity) const
+{
+    const BrushMesh* mesh = TryGetBrushMesh(entity);
+    const Transform3f* transform = TryGetTransform(entity);
+    if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
+        return std::nullopt;
+
+    return BrushWorldBounds(*mesh, *transform);
 }
 
 Registry& LevelScene::GetRegistry()

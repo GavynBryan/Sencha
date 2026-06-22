@@ -2,7 +2,7 @@
 
 #include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
-#include "../level/BrushGeometry.h"
+#include "../level/brush/BrushBounds.h"
 #include "../meshedit/MeshElements.h"
 #include "../viewport/ViewportProjection.h"
 
@@ -79,7 +79,7 @@ void SelectionRenderer::AppendAABB(std::vector<EditorLineVertex>& vertices,
                                    const Transform3f& transform,
                                    const Vec4& color) const
 {
-    const Aabb3d bounds = BrushGeometry::ComputeWorldBounds(mesh, transform);
+    const Aabb3d bounds = BrushWorldBounds(mesh, transform);
     if (!bounds.IsValid())
         return;
     const Vec3d mn = bounds.Min;

@@ -97,22 +97,22 @@ if(BRUSH_TEST_SOURCES)
     # its sources directly and link only the engine — no editor/Vulkan/ImGui deps.
     add_executable(brush_tests
         ${BRUSH_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/ElementGeometry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/commands/SelectCommand.cpp)
-    target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp)
+    target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
     target_link_libraries(brush_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS brush_tests)
 endif()
@@ -129,29 +129,30 @@ endif()
 if(LEVEL_COOK_TEST_SOURCES)
     add_executable(level_cook_tests
         ${LEVEL_COOK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/level/AssetFieldIo.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/LevelCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/LevelDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/LevelScene.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/LevelSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/BrushCookInput.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/commands/DeleteEntityCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/selection/commands/SelectCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/meshedit/ElementGeometry.cpp)
-    target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
+        ${CMAKE_SOURCE_DIR}/editor/src/level/AssetFieldIo.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelScene.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/BrushCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushBounds.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp)
+    target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
     target_link_libraries(level_cook_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
 endif()

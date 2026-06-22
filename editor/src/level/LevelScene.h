@@ -8,10 +8,12 @@
 #include <core/metadata/TypeSchema.h>
 #include <ecs/EntityId.h>
 #include <math/MathSchemas.h>
+#include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
 
+#include <optional>
 #include <span>
 #include <string_view>
 #include <unordered_set>
@@ -89,6 +91,10 @@ public:
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
     [[nodiscard]] const CameraComponent* TryGetCamera(EntityId entity) const;
+    // World AABB of a brush entity (offset-aware): nullopt when it has no brush
+    // mesh/transform or the mesh is empty. Shared by the selection box, the
+    // bounds gizmo, and create-from-selection.
+    [[nodiscard]] std::optional<Aabb3d> TryGetWorldBounds(EntityId entity) const;
     [[nodiscard]] Registry& GetRegistry();
     [[nodiscard]] const Registry& GetRegistry() const;
 
