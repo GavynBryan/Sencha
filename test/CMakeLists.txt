@@ -147,6 +147,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushValidation.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushHalfEdge.cpp
         ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/level/brush/BrushBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElements.cpp
         ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshEditService.cpp
         ${CMAKE_SOURCE_DIR}/editor/meshedit/MeshElementKindTraits.cpp
