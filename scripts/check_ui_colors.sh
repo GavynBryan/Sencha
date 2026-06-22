@@ -11,7 +11,7 @@
 set -uo pipefail
 
 ROOT="${1:-.}"
-UI="$ROOT/editor/ui"
+UI="$ROOT/editor/src/ui"
 status=0
 
 # Greps UI sources for a pattern, excluding EditorUiStyle.* and comment-only lines.

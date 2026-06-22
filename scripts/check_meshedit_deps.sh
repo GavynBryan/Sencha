@@ -15,7 +15,7 @@
 set -uo pipefail
 
 ROOT="${1:-.}"
-EDITOR="$ROOT/editor"
+EDITOR="$ROOT/editor/src"
 status=0
 
 # Greps for a pattern but drops lines that are purely comments, so prose that
