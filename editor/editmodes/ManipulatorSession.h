@@ -1,7 +1,8 @@
 #pragma once
 
-#include "IEditSession.h"
 #include "IManipulator.h"
+
+#include "../input/InputEvent.h"
 
 #include <memory>
 #include <vector>
@@ -19,13 +20,13 @@ struct GridSettings;
 // only through the injected SelectionService, MeshEditService, and
 // ManipulationSink. Replaces the brush-coupled MeshEditSession. Adding a
 // manipulator is a push_back here; nothing else changes. (08-select-tool-v2.md)
-class ManipulatorSession : public IEditSession
+class ManipulatorSession
 {
 public:
     ManipulatorSession(SelectionService& selection, MeshEditService& service, ManipulationSink& sink,
                        const GridSettings& grid);
 
-    InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
 
     // Visuals for every applicable manipulator (drawn by the overlay renderer).
     void BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const;

@@ -1,6 +1,12 @@
 #include "EditSessionHost.h"
 
-void EditSessionHost::SetSession(std::unique_ptr<IEditSession> session)
+#include "ManipulatorSession.h"
+
+#include <utility>
+
+EditSessionHost::~EditSessionHost() = default;
+
+void EditSessionHost::SetSession(std::unique_ptr<ManipulatorSession> session)
 {
     Active = std::move(session);
 }
