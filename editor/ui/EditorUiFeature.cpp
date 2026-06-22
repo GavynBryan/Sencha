@@ -249,6 +249,21 @@ void EditorUiFeature::SetMouseInputEnabled(bool enabled)
         io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
 }
 
+void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
+{
+    if (!Valid)
+        return;
+
+    // NoKeyboard ignores keyboard events and clears existing key state, so a
+    // focused widget (e.g. the console input) stops receiving keystrokes while a
+    // viewport gesture owns input and the keys belong to the fly camera.
+    ImGuiIO& io = ImGui::GetIO();
+    if (enabled)
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoKeyboard;
+    else
+        io.ConfigFlags |= ImGuiConfigFlags_NoKeyboard;
+}
+
 void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
 {
     if (panel != nullptr)

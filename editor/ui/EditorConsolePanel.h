@@ -2,16 +2,14 @@
 
 #include "IEditorPanel.h"
 
-#include <core/console/ConsoleTypes.h>
-#include <core/logging/LogLevel.h>
-
-#include <array>
-#include <cstddef>
-#include <vector>
+#include <debug/ConsoleView.h>
 
 class ConsoleService;
 class DebugLogSink;
 
+// Editor console panel: the same body as the runtime ConsolePanel (shared via
+// DrawConsoleView) styled with the editor palette and mono font, docked at the
+// bottom of the editor layout.
 class EditorConsolePanel : public IEditorPanel
 {
 public:
@@ -24,10 +22,5 @@ public:
 private:
     DebugLogSink& Sink;
     ConsoleService& Console;
-    std::array<bool, 5> LevelFilter = { true, true, true, true, true };
-    char CategoryFilterBuf[128] = {};
-    char CommandBuf[256] = {};
-    std::vector<ConsoleOutputEntry> CommandOutput;
-    // Set when a command is entered so the next frame snaps the view to the tail.
-    bool ScrollToBottom = false;
+    ConsoleViewState State;
 };

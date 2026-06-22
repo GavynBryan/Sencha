@@ -225,8 +225,21 @@ TEST(BrushOps, MakePlaneIsOneFlatQuad)
     EXPECT_FLOAT_EQ(bounds.Max.Y, 0.0f); // flat: zero thickness on the depth axis
     EXPECT_FLOAT_EQ(bounds.Max.X, 2.0f);
     EXPECT_FLOAT_EQ(bounds.Max.Z, 3.0f);
+    // The face must point along +depthAxis (up), not flipped down: a single open
+    // face is not reoriented by ValidateAndRepair, so MakePlane fixes it.
+    EXPECT_GT(BrushComputeFaceNormal(plane, plane.Faces[0]).Y, 0.9f);
     // UV axes lie in the face plane (seeded like MakeBox).
     EXPECT_TRUE(AllUvAxesInFacePlanes(plane));
+}
+
+TEST(BrushOps, MakePlaneFacesUpForEveryDepthAxis)
+{
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 1.0f, 1.0f }, axis);
+        ASSERT_EQ(plane.Faces.size(), 1u);
+        EXPECT_GT(BrushComputeFaceNormal(plane, plane.Faces[0])[axis], 0.9f);
+    }
 }
 
 TEST(BrushOps, MakeCylinderIsClosedPrismAboutDepthAxis)

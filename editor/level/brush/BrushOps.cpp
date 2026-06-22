@@ -117,6 +117,16 @@ BrushMesh BrushOps::MakePlane(Vec3d halfExtents, int depthAxis)
         AxisPoint(uIdx, -hu, vIdx, hv, depthAxis, d),
     });
     BrushValidateAndRepair(mesh);
+
+    // A single open face has no interior, so ValidateAndRepair's orient-outward step
+    // is a no-op (face centroid == mesh centroid). The winding from PlaneAxes can
+    // therefore leave the normal pointing along -depthAxis (down). Face it along
+    // +depthAxis, matching the grid up / the surface it was placed against.
+    if (!mesh.Faces.empty() && mesh.Faces[0].Normal[depthAxis] < 0.0f)
+    {
+        std::reverse(mesh.Faces[0].Loop.begin(), mesh.Faces[0].Loop.end());
+        mesh.Faces[0].Normal = -mesh.Faces[0].Normal;
+    }
     SeedFaceUvs(mesh);
     return mesh;
 }

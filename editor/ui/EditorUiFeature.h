@@ -51,6 +51,12 @@ public:
     // mouse mode, keeping a single authority for who owns the pointer.
     void SetMouseInputEnabled(bool enabled);
 
+    // Enables or disables ImGui keyboard input wholesale (ImGuiConfigFlags_NoKeyboard).
+    // Driven by the same capture seam as the mouse: while a viewport gesture owns
+    // input (fly camera) the keys belong to the camera, so ImGui must not route
+    // them to a focused widget (otherwise WASD fills the console input box).
+    void SetKeyboardInputEnabled(bool enabled);
+
     void AddPanel(std::unique_ptr<IEditorPanel> panel);
 
     // Fixed app chrome (toolbar, status bar) drawn after the main menu bar and

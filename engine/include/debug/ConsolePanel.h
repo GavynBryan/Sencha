@@ -1,11 +1,7 @@
 #pragma once
 
+#include <debug/ConsoleView.h>
 #include <debug/IDebugPanel.h>
-#include <core/logging/LogLevel.h>
-#include <array>
-#include <cstddef>
-#include <core/console/ConsoleTypes.h>
-#include <vector>
 
 class ConsoleService;
 class DebugLogSink;
@@ -13,13 +9,10 @@ class DebugLogSink;
 //=============================================================================
 // ConsolePanel
 //
-// Debug panel that displays captured log entries from a DebugLogSink.
-// Rendered as an ImGui window with:
-//   - Per-level colour coding
-//   - Level filter checkboxes (Debug / Info / Warning / Error / Critical)
-//   - Source category filter text input
-//   - Auto-scroll to newest entry
-//   - Clear button
+// Debug-overlay console: the captured log feed (per-level colors, level and
+// category filters) plus a command input with history recall and autosuggest.
+// The body is shared with the editor via DrawConsoleView; this adapter supplies
+// the runtime style and the IDebugPanel seam.
 //
 // Registered with ImGuiDebugOverlay::AddPanel() during app setup.
 //=============================================================================
@@ -33,16 +26,5 @@ public:
 private:
 	DebugLogSink& Sink;
 	ConsoleService& Console;
-
-	// Per-level visibility toggles (indexed by LogLevel cast to int).
-	std::array<bool, 5> LevelFilter = { true, true, true, true, true };
-
-	// Substring filter applied to the Category field.
-	static constexpr std::size_t CategoryFilterBufSize = 128;
-	char CategoryFilterBuf[CategoryFilterBufSize] = {};
-	static constexpr std::size_t CommandBufSize = 256;
-	char CommandBuf[CommandBufSize] = {};
-	std::vector<ConsoleOutputEntry> CommandOutput;
-
-	bool ScrollToBottom = true;
+	ConsoleViewState State;
 };

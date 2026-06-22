@@ -1,38 +1,26 @@
 #include <debug/ConsolePanel.h>
-#include <core/console/ConsoleService.h>
-#include <debug/DebugLogSink.h>
-#include <debug/DebugLogEntry.h>
+
+#include <debug/ConsoleView.h>
+
 #include <imgui.h>
-#include <cstring>
-#include <string_view>
 
 namespace
 {
-	// Colour per log level — RGBA floats matching ImGui's convention.
-	constexpr ImVec4 LevelColour(LogLevel level)
+	// Plain colors for the runtime overlay (no editor palette / mono font).
+	ConsoleViewStyle RuntimeStyle()
 	{
-		switch (level)
-		{
-			case LogLevel::Debug:    return { 0.60f, 0.60f, 0.60f, 1.0f }; // grey
-			case LogLevel::Info:     return { 1.00f, 1.00f, 1.00f, 1.0f }; // white
-			case LogLevel::Warning:  return { 1.00f, 0.85f, 0.20f, 1.0f }; // yellow
-			case LogLevel::Error:    return { 1.00f, 0.35f, 0.35f, 1.0f }; // red
-			case LogLevel::Critical: return { 1.00f, 0.20f, 0.80f, 1.0f }; // magenta
-			default:                 return { 1.00f, 1.00f, 1.00f, 1.0f };
-		}
-	}
-
-	constexpr const char* LevelLabel(LogLevel level)
-	{
-		switch (level)
-		{
-			case LogLevel::Debug:    return "DBG";
-			case LogLevel::Info:     return "INF";
-			case LogLevel::Warning:  return "WRN";
-			case LogLevel::Error:    return "ERR";
-			case LogLevel::Critical: return "CRT";
-			default:                 return "???";
-		}
+		ConsoleViewStyle style;
+		style.LevelColors = {
+			ImVec4{ 0.60f, 0.60f, 0.60f, 1.0f }, // Debug    grey
+			ImVec4{ 1.00f, 1.00f, 1.00f, 1.0f }, // Info     white
+			ImVec4{ 1.00f, 0.85f, 0.20f, 1.0f }, // Warning  yellow
+			ImVec4{ 1.00f, 0.35f, 0.35f, 1.0f }, // Error    red
+			ImVec4{ 1.00f, 0.20f, 0.80f, 1.0f }, // Critical magenta
+		};
+		style.TextPrimary = ImVec4{ 0.80f, 0.80f, 0.80f, 1.0f };
+		style.Warning = ImVec4{ 1.00f, 0.85f, 0.20f, 1.0f };
+		style.Error = ImVec4{ 1.00f, 0.35f, 0.35f, 1.0f };
+		return style;
 	}
 }
 
@@ -51,103 +39,7 @@ void ConsolePanel::Draw()
 		return;
 	}
 
-	// -- Toolbar --------------------------------------------------------------
+	DrawConsoleView(Sink, Console, State, RuntimeStyle());
 
-	if (ImGui::Button("Clear"))
-	{
-		Sink.Clear();
-		CommandOutput.clear();
-	}
-
-	ImGui::SameLine();
-
-	// Level filter checkboxes.
-	static constexpr const char* LevelNames[] = { "Debug", "Info", "Warn", "Error", "Crit" };
-	for (int i = 0; i < 5; ++i)
-	{
-		ImGui::SameLine();
-		ImGui::PushStyleColor(ImGuiCol_Text, LevelColour(static_cast<LogLevel>(i)));
-		ImGui::Checkbox(LevelNames[i], &LevelFilter[static_cast<std::size_t>(i)]);
-		ImGui::PopStyleColor();
-	}
-
-	ImGui::SameLine();
-	ImGui::SetNextItemWidth(160.0f);
-	ImGui::InputText("Category", CategoryFilterBuf, CategoryFilterBufSize);
-
-	ImGui::Separator();
-
-	// -- Command input --------------------------------------------------------
-
-	ImGui::SetNextItemWidth(-1.0f);
-	const bool submitted = ImGui::InputText("##console_command",
-		CommandBuf,
-		CommandBufSize,
-		ImGuiInputTextFlags_EnterReturnsTrue);
-	if (submitted && CommandBuf[0] != '\0')
-	{
-		ConsoleOutputEntry prompt;
-		prompt.Channel = "input";
-		prompt.Text = std::string("> ") + CommandBuf;
-		CommandOutput.push_back(std::move(prompt));
-
-		ConsoleResult result = Console.ExecuteLine(
-			CommandBuf,
-			{ .Description = "console ui" },
-			false);
-		CommandOutput.insert(CommandOutput.end(), result.Output.begin(), result.Output.end());
-		CommandBuf[0] = '\0';
-		ScrollToBottom = true;
-		ImGui::SetKeyboardFocusHere(-1);
-	}
-
-	for (const ConsoleOutputEntry& entry : CommandOutput)
-	{
-		ImVec4 color = { 0.80f, 0.80f, 0.80f, 1.0f };
-		if (entry.Severity == ConsoleOutputSeverity::Warning)
-			color = { 1.00f, 0.85f, 0.20f, 1.0f };
-		else if (entry.Severity == ConsoleOutputSeverity::Error)
-			color = { 1.00f, 0.35f, 0.35f, 1.0f };
-		ImGui::PushStyleColor(ImGuiCol_Text, color);
-		ImGui::TextUnformatted(entry.Text.c_str());
-		ImGui::PopStyleColor();
-	}
-
-	ImGui::Separator();
-
-	// -- Entry list -----------------------------------------------------------
-
-	ImGui::BeginChild("ScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-
-	const std::size_t count = Sink.Count();
-	const std::string_view categoryFilter(CategoryFilterBuf);
-
-	for (std::size_t i = 0; i < count; ++i)
-	{
-		const DebugLogEntry& e = Sink.GetEntry(i);
-		const int levelIdx = static_cast<int>(e.Level);
-
-		if (levelIdx < 0 || levelIdx >= 5)
-			continue;
-		if (!LevelFilter[static_cast<std::size_t>(levelIdx)])
-			continue;
-		if (!categoryFilter.empty() && e.Category.find(categoryFilter) == std::string::npos)
-			continue;
-
-		ImGui::PushStyleColor(ImGuiCol_Text, LevelColour(e.Level));
-		ImGui::TextUnformatted(LevelLabel(e.Level));
-		ImGui::PopStyleColor();
-
-		ImGui::SameLine();
-		ImGui::TextDisabled("[%s]", e.Category.c_str());
-		ImGui::SameLine();
-		ImGui::TextUnformatted(e.Message.c_str());
-	}
-
-	if (ScrollToBottom || ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-		ImGui::SetScrollHereY(1.0f);
-	ScrollToBottom = false;
-
-	ImGui::EndChild();
 	ImGui::End();
 }

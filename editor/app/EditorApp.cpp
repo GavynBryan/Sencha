@@ -130,14 +130,20 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Dispatcher->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
 
-    // The pointer's owner drives the ImGui mouse gate: while a viewport gesture
-    // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores the mouse,
-    // so the unowned/hidden cursor can't hover or click the UI. A UI drag keeps it on.
+    // The pointer's owner drives the ImGui input gate: while a viewport gesture
+    // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores both mouse
+    // and keyboard, so the unowned/hidden cursor can't hover or click the UI and the
+    // fly camera's WASD/QE don't leak into a focused widget (the console input). A UI
+    // drag (kind != Viewport) keeps both on.
     Router->SetCaptureChanged(
         [this](std::optional<PointerCaptureKind> kind)
         {
             if (UiFeature != nullptr)
-                UiFeature->SetMouseInputEnabled(kind != PointerCaptureKind::Viewport);
+            {
+                const bool uiOwnsInput = kind != PointerCaptureKind::Viewport;
+                UiFeature->SetMouseInputEnabled(uiOwnsInput);
+                UiFeature->SetKeyboardInputEnabled(uiOwnsInput);
+            }
         });
 
     renderer.AddFeature(std::make_unique<EditorRenderFeature>(
