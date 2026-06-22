@@ -1,6 +1,5 @@
 #include "BrushCreationPlane.h"
 
-#include "../BrushGeometry.h"
 #include "../LevelScene.h"
 #include "../../selection/SelectionService.h"
 #include "../../tools/ToolContext.h"
@@ -70,7 +69,7 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     {
         const SelectableRef sel = ctx.Selection.GetPrimarySelection();
         if (sel.IsEntity() && ctx.Scene.TryGetBrush(sel.Entity) != nullptr)
-            selectedBounds = BrushGeometry::ComputeWorldBounds(ctx.Scene, sel.Entity);
+            selectedBounds = ctx.Scene.TryGetWorldBounds(sel.Entity);
     }
 
     BrushDepthPlacement depth;
