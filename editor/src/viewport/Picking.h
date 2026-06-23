@@ -73,6 +73,16 @@ public:
                                                         const LevelScene& scene,
                                                         MeshElementKind mode) const;
 
+    // The edge to seed loop selection from under the cursor. In Edge mode the
+    // nearest edge (same as PickEdge); in Face mode the edge of the ray-picked face
+    // that is nearest the cursor in screen space (so the face strip follows the side
+    // the cursor leans toward, anywhere on the face). Invalid ref if nothing is hit
+    // or the mode is not Edge/Face.
+    [[nodiscard]] SelectableRef PickLoopSeedEdge(const EditorViewport& viewport,
+                                                 ImVec2 point,
+                                                 const LevelScene& scene,
+                                                 MeshElementKind mode) const;
+
 private:
     struct PickCandidate
     {

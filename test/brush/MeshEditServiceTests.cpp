@@ -7,9 +7,13 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <initializer_list>
 #include <optional>
+#include <set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -380,6 +384,157 @@ TEST(MeshEditService, InsertEdgeLoopRepeatsStably)
         EXPECT_TRUE(repair.Closed) << "pass " << pass;
         mesh = after;
     }
+}
+
+namespace
+{
+// A flat NxN grid of unit quads in the XY plane, vertex index = j*(N+1)+i. Interior
+// vertices are valence 4, so it exercises the edge-loop walk that primitives (all
+// valence-3 corners) cannot.
+BrushMesh QuadGrid(int n)
+{
+    const int stride = n + 1;
+    BrushMesh mesh;
+    for (int j = 0; j < stride; ++j)
+        for (int i = 0; i < stride; ++i)
+            mesh.Vertices.push_back(BrushVertex{ { static_cast<float>(i), static_cast<float>(j), 0.0f } });
+    for (int gj = 0; gj < n; ++gj)
+        for (int gi = 0; gi < n; ++gi)
+        {
+            const std::uint32_t v00 = static_cast<std::uint32_t>(gj * stride + gi);
+            mesh.Faces.push_back(BrushFace{
+                { v00, v00 + 1, v00 + 1 + stride, v00 + stride }, {} });
+        }
+    BrushValidateAndRepair(mesh);
+    return mesh;
+}
+
+std::set<std::array<std::uint32_t, 2>> EdgeSet(const std::vector<std::array<std::uint32_t, 2>>& edges)
+{
+    return { edges.begin(), edges.end() };
+}
+}
+
+TEST(BrushOps, TraceEdgeLoopFollowsRowThroughInteriorVertices)
+{
+    const BrushMesh grid = QuadGrid(3); // 4x4 verts; (1,1)=5 and (2,1)=6 are interior
+    // Seed the middle horizontal edge of row j=1. The loop continues straight across
+    // the two interior (valence-4) vertices and stops at the boundary poles: the
+    // whole j=1 row, {4,5},{5,6},{6,7}.
+    const std::vector<std::array<std::uint32_t, 2>> loop = BrushOps::TraceEdgeLoop(grid, 5, 6);
+    EXPECT_EQ(EdgeSet(loop),
+              (std::set<std::array<std::uint32_t, 2>>{ { 4, 5 }, { 5, 6 }, { 6, 7 } }));
+}
+
+TEST(BrushOps, TraceEdgeLoopStopsAtValenceThreePrimitiveVertices)
+{
+    // Every box vertex is valence 3, so no edge loop extends: the seed alone.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const std::vector<std::array<std::uint32_t, 2>> loop =
+        BrushOps::TraceEdgeLoop(box, edges[0].VertexA, edges[0].VertexB);
+    EXPECT_EQ(loop.size(), 1u);
+}
+
+TEST(BrushOps, TraceEdgeLoopSelectsInsertedLoopAfterCut)
+{
+    // The core workflow: a loop cut makes valence-4 midpoints, so the inserted loop
+    // then selects as a whole. Cut a box, seed one of the new (midpoint-to-midpoint)
+    // edges, and expect the full closed ring of 4 inserted edges.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::vector<EdgeElement> seed = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(seed.empty());
+    BrushMesh cut = BrushOps::InsertEdgeLoop(box, seed[0].VertexA, seed[0].VertexB);
+    BrushValidateAndRepair(cut);
+
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> loopSeed;
+    for (const EdgeElement& edge : MeshElements::Edges(cut, Transform3f::Identity()))
+        if (edge.VertexA >= box.Vertices.size() && edge.VertexB >= box.Vertices.size())
+        {
+            loopSeed = { edge.VertexA, edge.VertexB };
+            break;
+        }
+    ASSERT_TRUE(loopSeed.has_value());
+
+    const std::vector<std::array<std::uint32_t, 2>> loop =
+        BrushOps::TraceEdgeLoop(cut, loopSeed->first, loopSeed->second);
+    EXPECT_EQ(loop.size(), 4u);
+}
+
+TEST(BrushOps, TraceEdgeLoopFollowsCylinderCapRim)
+{
+    // A capped cylinder's rim vertex is a valence-3 fan (cap ngon + 2 side quads),
+    // topologically the same as a pole; the geometric fallback carries the loop all
+    // the way around the rim. Regression for "alt+click on the top rim selects nothing".
+    const int sides = 8;
+    const BrushMesh cyl = BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, 1, sides);
+
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> rim;
+    for (const EdgeElement& edge : MeshElements::Edges(cyl, Transform3f::Identity()))
+        if (cyl.Vertices[edge.VertexA].Position.Y > 0.9f && cyl.Vertices[edge.VertexB].Position.Y > 0.9f)
+        {
+            rim = { edge.VertexA, edge.VertexB };
+            break;
+        }
+    ASSERT_TRUE(rim.has_value());
+
+    const std::vector<std::array<std::uint32_t, 2>> loop = BrushOps::TraceEdgeLoop(cyl, rim->first, rim->second);
+    EXPECT_EQ(loop.size(), static_cast<std::size_t>(sides));
+}
+
+TEST(BrushOps, TraceEdgeLoopOnCylinderVerticalEdgeStaysSingle)
+{
+    // A vertical side edge is a "rung", not a loop: at the rim the only straighter-than-
+    // 90-degree continuation would be another vertical, and there is none, so it stops.
+    const BrushMesh cyl = BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, 1, 8);
+
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> vertical;
+    for (const EdgeElement& edge : MeshElements::Edges(cyl, Transform3f::Identity()))
+    {
+        const float ya = cyl.Vertices[edge.VertexA].Position.Y;
+        const float yb = cyl.Vertices[edge.VertexB].Position.Y;
+        if ((ya > 0.9f) != (yb > 0.9f)) // one endpoint top, one bottom
+        {
+            vertical = { edge.VertexA, edge.VertexB };
+            break;
+        }
+    }
+    ASSERT_TRUE(vertical.has_value());
+
+    const std::vector<std::array<std::uint32_t, 2>> loop =
+        BrushOps::TraceEdgeLoop(cyl, vertical->first, vertical->second);
+    EXPECT_EQ(loop.size(), 1u);
+}
+
+TEST(BrushOps, TraceEdgeRingMatchesInsertEdgeLoopStrip)
+{
+    const BrushMesh grid = QuadGrid(3);
+    const BrushOps::BrushEdgeRing ring = BrushOps::TraceEdgeRing(grid, 5, 6);
+    // Seed {5,6} is horizontal; the ring crosses the vertical column of 3 quads and
+    // its 4 horizontal rungs. The strip is exactly what InsertEdgeLoop splits (both
+    // share the flood-fill), so the cut adds one face per strip face.
+    EXPECT_EQ(ring.StripFaces.size(), 3u);
+    EXPECT_EQ(ring.RingEdges.size(), 4u);
+    const BrushMesh cut = BrushOps::InsertEdgeLoop(grid, 5, 6);
+    EXPECT_EQ(cut.Faces.size(), grid.Faces.size() + ring.StripFaces.size());
+}
+
+TEST(BrushOps, TraceEdgeRingFaceLoopOnBox)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const BrushOps::BrushEdgeRing ring =
+        BrushOps::TraceEdgeRing(box, edges[0].VertexA, edges[0].VertexB);
+    EXPECT_EQ(ring.StripFaces.size(), 4u); // a belt of 4 faces around the box
+}
+
+TEST(BrushOps, TraceAbsentSeedReturnsEmpty)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    EXPECT_TRUE(BrushOps::TraceEdgeLoop(box, 0, 6).empty());        // diagonal, not an edge
+    EXPECT_TRUE(BrushOps::TraceEdgeRing(box, 0, 6).StripFaces.empty());
 }
 
 TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)

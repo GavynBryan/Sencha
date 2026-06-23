@@ -11,7 +11,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <map>
+#include <utility>
 #include <vector>
 
 BrushPickMode PickModeForElementKind(MeshElementKind kind)
@@ -309,6 +312,62 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
             bestDepth = projected->Depth;
         }
     });
+
+    return best;
+}
+
+SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
+                                               ImVec2 point,
+                                               const LevelScene& scene,
+                                               MeshElementKind mode) const
+{
+    if (mode == MeshElementKind::Edge)
+        return PickEdge(viewport, point, scene);
+    if (mode != MeshElementKind::Face)
+        return {};
+
+    // Face mode seeds from the edge of the picked face nearest the cursor: ray-pick
+    // the face, then pick its screen-nearest loop edge.
+    const Ray3d ray = BuildRay(viewport, point);
+    const SelectableRef face = PickBrushElement(ray, scene, BrushPickRequest{ .Mode = BrushPickMode::FaceOnly });
+    if (!face.IsFace())
+        return {};
+
+    const BrushMesh* mesh = scene.TryGetBrushMesh(face.Entity);
+    const Transform3f* transform = scene.TryGetTransform(face.Entity);
+    if (mesh == nullptr || transform == nullptr || face.ElementId >= mesh->Faces.size())
+        return {};
+
+    // The face's loop edges resolve to global edge ids via their sorted vertex pair.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, EdgeElement> edges;
+    for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
+        edges[{ edge.VertexA, edge.VertexB }] = edge;
+
+    const ViewportProjection projection(viewport);
+    const std::vector<std::uint32_t>& loop = mesh->Faces[face.ElementId].Loop;
+
+    SelectableRef best{};
+    float bestPixels = std::numeric_limits<float>::max();
+    for (std::size_t i = 0; i < loop.size(); ++i)
+    {
+        const std::uint32_t va = loop[i];
+        const std::uint32_t vb = loop[(i + 1) % loop.size()];
+        const auto it = edges.find({ std::min(va, vb), std::max(va, vb) });
+        if (it == edges.end())
+            continue;
+
+        const std::optional<ProjectedPoint> a = projection.WorldToPixel(it->second.A);
+        const std::optional<ProjectedPoint> b = projection.WorldToPixel(it->second.B);
+        if (!a.has_value() || !b.has_value())
+            continue;
+
+        const float pixels = ViewportProjection::DistancePointToSegment(point, a->Pixel, b->Pixel);
+        if (pixels >= bestPixels)
+            continue;
+
+        bestPixels = pixels;
+        best = SelectableRef::EdgeSelection(scene.GetRegistry().Id, face.Entity, it->second.Index);
+    }
 
     return best;
 }

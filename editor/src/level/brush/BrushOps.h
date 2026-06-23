@@ -4,7 +4,9 @@
 
 #include <math/geometry/3d/Plane.h>
 
+#include <array>
 #include <cstdint>
+#include <vector>
 
 // Creation sub-modes for the Brush tool. A primitive is just a BrushMesh built
 // from the create-drag box; everything downstream is shape-agnostic.
@@ -79,6 +81,31 @@ struct BrushOps
     // Reverse one face's winding (and its cached normal). The manual counterpart to
     // the recalc-normals verb: repair no longer re-orients, so the flip persists.
     [[nodiscard]] static BrushMesh FlipFace(const BrushMesh& mesh, std::uint32_t face);
+
+    // The quad strip and perpendicular edge ring reached from a seed edge by the
+    // loop-cut flood-fill: StripFaces are the quads the cut crosses (the face loop),
+    // RingEdges are the parallel edges it would split (the edge ring), each as a
+    // sorted (min, max) vertex pair. Empty if the seed edge is absent or touches no
+    // quad. Winding-independent (built from face loops, no half-edge twins).
+    struct BrushEdgeRing
+    {
+        std::vector<std::uint32_t> StripFaces;
+        std::vector<std::array<std::uint32_t, 2>> RingEdges;
+    };
+    [[nodiscard]] static BrushEdgeRing TraceEdgeRing(const BrushMesh& mesh,
+                                                     std::uint32_t a, std::uint32_t b);
+
+    // Walk the edge loop containing the seed undirected edge (a, b): the connected run
+    // of edges that continues "straight on" through each vertex. At a regular valence-4
+    // vertex that is the edge whose faces are disjoint from the current edge's (exact
+    // topology). At an irregular vertex (a cap rim or open boundary, where a 3-face fan
+    // is topologically ambiguous) it is the geometrically straightest edge, taken only
+    // if the turn is under 90 degrees. Returns each edge as a sorted (min, max) vertex
+    // pair, including the seed. Terminates at sharp corners, dead ends, or a cycle back
+    // to the seed; the seed alone if it continues nowhere; empty if the seed is absent.
+    // The perpendicular companion to TraceEdgeRing (loop vs ring).
+    [[nodiscard]] static std::vector<std::array<std::uint32_t, 2>> TraceEdgeLoop(
+        const BrushMesh& mesh, std::uint32_t a, std::uint32_t b);
 
     // Walk a topological edge loop from the seed undirected edge (a, b), splitting
     // every edge in the loop at its midpoint and subdividing each traversed face

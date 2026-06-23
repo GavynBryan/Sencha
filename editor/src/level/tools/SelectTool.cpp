@@ -3,7 +3,9 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../interactions/MarqueeInteraction.h"
+#include "../LevelScene.h"
 #include "../../commands/CommandStack.h"
+#include "../../meshedit/LoopSelection.h"
 #include "../../meshedit/MeshEditService.h"
 #include "../../selection/SelectionFold.h"
 #include "../../selection/SelectionService.h"
@@ -36,12 +38,25 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
     const MeshElementKind mode = ctx.MeshEdit.GetElementKind();
     const bool add = pointer.Modifiers.Shift;
     const bool remove = pointer.Modifiers.Ctrl;
+    const bool loop = pointer.Modifiers.Alt
+        && (mode == MeshElementKind::Edge || mode == MeshElementKind::Face);
 
     std::vector<SelectableRef> gathered;
-    const SelectableRef picked = ctx.Picking.Pick(
-        viewport, pointer.Position, ctx.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
-    if (picked.IsValid())
-        gathered.push_back(picked);
+    if (loop)
+    {
+        const SelectableRef seed = ctx.Picking.PickLoopSeedEdge(viewport, pointer.Position, ctx.Scene, mode);
+        const BrushMesh* mesh = seed.IsValid() ? ctx.Scene.TryGetBrushMesh(seed.Entity) : nullptr;
+        const Transform3f* transform = seed.IsValid() ? ctx.Scene.TryGetTransform(seed.Entity) : nullptr;
+        if (mesh != nullptr && transform != nullptr)
+            gathered = GatherLoopSelection(*mesh, *transform, seed, mode);
+    }
+    else
+    {
+        const SelectableRef picked = ctx.Picking.Pick(
+            viewport, pointer.Position, ctx.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
+        if (picked.IsValid())
+            gathered.push_back(picked);
+    }
 
     SelectionSnapshot snapshot = SelectionFold::Apply(ctx.Selection.GetSnapshot(), gathered, add, remove);
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));

@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -340,6 +341,190 @@ namespace
     {
         return UndirectedEdge(loop[i], loop[(i + 1) % loop.size()]);
     }
+
+    using EdgeFaces = std::map<UndirectedEdge, std::vector<std::pair<std::uint32_t, std::uint32_t>>>;
+
+    // Undirected edge -> the (face, localEdgeIndex) pairs that traverse it. Built
+    // straight from face loops, so it is independent of winding (no half-edge twin
+    // linking to misfire after an extrude leaves local winding inconsistent) and it
+    // exposes non-manifold edges (3+ incident faces) honestly instead of silently
+    // dropping one side.
+    EdgeFaces BuildEdgeFaces(const BrushMesh& mesh)
+    {
+        EdgeFaces edgeFaces;
+        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+        {
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            for (std::size_t i = 0; i < loop.size(); ++i)
+                edgeFaces[FaceEdge(loop, i)].push_back({ f, static_cast<std::uint32_t>(i) });
+        }
+        return edgeFaces;
+    }
+
+    struct RingFill
+    {
+        std::set<UndirectedEdge> CutEdges;
+        std::set<std::uint32_t> SplitFaces;
+    };
+
+    // Flood-fill the loop. A cut edge propagates to the opposite edge of every
+    // adjacent quad; that adjacency is symmetric, so seeding one edge fans out in
+    // BOTH directions (the single-direction half-edge walk this replaced cut only
+    // half a loop and stranded midpoints on the unvisited side). Non-quads and
+    // boundaries do not propagate: the loop terminates at poles and open edges.
+    RingFill FloodFillRing(const BrushMesh& mesh, const EdgeFaces& edgeFaces, UndirectedEdge seed)
+    {
+        RingFill fill;
+        fill.CutEdges.insert(seed);
+        std::vector<UndirectedEdge> frontier{ seed };
+        while (!frontier.empty())
+        {
+            const UndirectedEdge e = frontier.back();
+            frontier.pop_back();
+            for (const auto& [f, i] : edgeFaces.at(e))
+            {
+                const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+                if (loop.size() != 4)
+                    continue; // pole: the loop ends here, this face is not split
+                if (!fill.SplitFaces.insert(f).second)
+                    continue; // already handled
+                const UndirectedEdge opposite = FaceEdge(loop, (i + 2) % 4);
+                if (fill.CutEdges.insert(opposite).second)
+                    frontier.push_back(opposite);
+            }
+        }
+        return fill;
+    }
+}
+
+BrushOps::BrushEdgeRing BrushOps::TraceEdgeRing(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
+        return {};
+
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    const UndirectedEdge seed(a, b);
+    if (!edgeFaces.count(seed))
+        return {}; // seed edge not present in the mesh
+
+    const RingFill fill = FloodFillRing(mesh, edgeFaces, seed);
+
+    BrushEdgeRing ring;
+    ring.StripFaces.assign(fill.SplitFaces.begin(), fill.SplitFaces.end());
+    ring.RingEdges.reserve(fill.CutEdges.size());
+    for (const UndirectedEdge& e : fill.CutEdges)
+        ring.RingEdges.push_back({ e.U, e.V });
+    return ring;
+}
+
+std::vector<std::array<std::uint32_t, 2>> BrushOps::TraceEdgeLoop(const BrushMesh& mesh,
+                                                                  std::uint32_t a, std::uint32_t b)
+{
+    if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
+        return {};
+
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    const UndirectedEdge seed(a, b);
+    if (!edgeFaces.count(seed))
+        return {}; // seed edge not present in the mesh
+
+    // Edges incident to each vertex, for valence checks and stepping. Same source
+    // (face loops) as edgeFaces, so it shares its winding-independence.
+    std::map<std::uint32_t, std::set<UndirectedEdge>> vertexEdges;
+    for (const auto& [edge, faces] : edgeFaces)
+    {
+        vertexEdges[edge.U].insert(edge);
+        vertexEdges[edge.V].insert(edge);
+    }
+
+    auto faceSet = [&](const UndirectedEdge& e) {
+        std::set<std::uint32_t> faces;
+        for (const auto& [f, i] : edgeFaces.at(e))
+            faces.insert(f);
+        return faces;
+    };
+    auto otherEnd = [](const UndirectedEdge& e, std::uint32_t v) { return e.U == v ? e.V : e.U; };
+
+    // The loop continuation of edge e past vertex v.
+    auto stepAcross = [&](const UndirectedEdge& e, std::uint32_t v) -> std::optional<UndirectedEdge> {
+        const std::set<UndirectedEdge>& incident = vertexEdges.at(v);
+        if (incident.size() == 4)
+        {
+            // Regular interior vertex: the unique edge whose faces are disjoint from
+            // e's (it goes "straight on" rather than turning along a shared face).
+            // Purely topological, so it is exact under any quad winding.
+            const std::set<std::uint32_t> eFaces = faceSet(e);
+            std::optional<UndirectedEdge> next;
+            for (const UndirectedEdge& cand : incident)
+            {
+                if (cand.U == e.U && cand.V == e.V)
+                    continue;
+                const std::set<std::uint32_t> candFaces = faceSet(cand);
+                bool disjoint = true;
+                for (std::uint32_t f : candFaces)
+                    if (eFaces.count(f)) { disjoint = false; break; }
+                if (!disjoint)
+                    continue;
+                if (next.has_value())
+                    return std::nullopt; // ambiguous: not a clean loop, stop here
+                next = cand;
+            }
+            return next;
+        }
+
+        // Irregular vertex (cap rim, open boundary, pole). A 3-face fan is topologically
+        // identical whether it is a loop continuation or a dead end, so fall back to
+        // geometry: continue to the straightest edge, and only if the turn stays under
+        // 90 degrees (a sharp corner ends the loop). This carries an edge loop around a
+        // cylinder cap rim or an open boundary; it stops at box corners (90 degree turns)
+        // and reversals.
+        const Vec3d travel = mesh.Vertices[v].Position - mesh.Vertices[otherEnd(e, v)].Position;
+        if (travel.SqrMagnitude() <= 0.0f)
+            return std::nullopt;
+        const Vec3d dir = travel.Normalized();
+
+        std::optional<UndirectedEdge> next;
+        double bestDot = 0.0; // strictly straighter than a right angle
+        for (const UndirectedEdge& cand : incident)
+        {
+            if (cand.U == e.U && cand.V == e.V)
+                continue;
+            const Vec3d step = mesh.Vertices[otherEnd(cand, v)].Position - mesh.Vertices[v].Position;
+            if (step.SqrMagnitude() <= 0.0f)
+                continue;
+            const double dot = dir.Dot(step.Normalized());
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                next = cand;
+            }
+        }
+        return next;
+    };
+
+    std::set<UndirectedEdge> visited{ seed };
+    // Walk both endpoints of the seed outward until a pole, boundary, or cycle.
+    for (std::uint32_t start : { seed.V, seed.U })
+    {
+        UndirectedEdge current = seed;
+        std::uint32_t vertex = start;
+        while (true)
+        {
+            const std::optional<UndirectedEdge> next = stepAcross(current, vertex);
+            if (!next.has_value())
+                break;
+            if (!visited.insert(*next).second)
+                break; // cycled back into the loop
+            vertex = (next->U == vertex) ? next->V : next->U;
+            current = *next;
+        }
+    }
+
+    std::vector<std::array<std::uint32_t, 2>> loop;
+    loop.reserve(visited.size());
+    for (const UndirectedEdge& e : visited)
+        loop.push_back({ e.U, e.V });
+    return loop;
 }
 
 BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
@@ -347,47 +532,14 @@ BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::
     if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
         return mesh;
 
-    // Undirected edge -> the (face, localEdgeIndex) pairs that traverse it. Built
-    // straight from face loops, so it is independent of winding (no half-edge twin
-    // linking to misfire after an extrude leaves local winding inconsistent) and
-    // it exposes non-manifold edges (3+ incident faces) honestly instead of
-    // silently dropping one side.
-    std::map<UndirectedEdge, std::vector<std::pair<std::uint32_t, std::uint32_t>>> edgeFaces;
-    for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
-    {
-        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
-        for (std::size_t i = 0; i < loop.size(); ++i)
-            edgeFaces[FaceEdge(loop, i)].push_back({ f, static_cast<std::uint32_t>(i) });
-    }
-
+    EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
     const UndirectedEdge seed(a, b);
     if (!edgeFaces.count(seed))
         return mesh; // seed edge not present in the mesh
 
-    // Flood-fill the loop. A cut edge propagates to the opposite edge of every
-    // adjacent quad; that adjacency is symmetric, so seeding one edge fans out in
-    // BOTH directions (the single-direction half-edge walk this replaced cut only
-    // half a loop and stranded midpoints on the unvisited side). Non-quads and
-    // boundaries do not propagate: the loop terminates at poles and open edges.
-    std::set<UndirectedEdge> cutEdges{ seed };
-    std::set<std::uint32_t> splitFaces;
-    std::vector<UndirectedEdge> frontier{ seed };
-    while (!frontier.empty())
-    {
-        const UndirectedEdge e = frontier.back();
-        frontier.pop_back();
-        for (const auto& [f, i] : edgeFaces[e])
-        {
-            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
-            if (loop.size() != 4)
-                continue; // pole: the loop ends here, this face is not split
-            if (!splitFaces.insert(f).second)
-                continue; // already handled
-            const UndirectedEdge opposite = FaceEdge(loop, (i + 2) % 4);
-            if (cutEdges.insert(opposite).second)
-                frontier.push_back(opposite);
-        }
-    }
+    const RingFill fill = FloodFillRing(mesh, edgeFaces, seed);
+    const std::set<UndirectedEdge>& cutEdges = fill.CutEdges;
+    const std::set<std::uint32_t>& splitFaces = fill.SplitFaces;
 
     if (splitFaces.empty())
         return mesh; // seed touched no quad: nothing to cut
