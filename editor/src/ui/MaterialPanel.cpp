@@ -4,8 +4,8 @@
 #include "ScopedPanel.h"
 
 #include "../commands/CommandStack.h"
-#include "../level/LevelDocument.h"
-#include "../level/MaterialLibrary.h"
+#include "../document/EditorDocument.h"
+#include "../document/MaterialLibrary.h"
 #include "../brush/BrushMesh.h"
 #include "../brush/FaceMaterial.h"
 #include "../meshedit/IMeshEditTarget.h"
@@ -41,7 +41,7 @@ MaterialPanel::MaterialPanel(IMeshEditTarget& target,
                              MeshEditService& meshEdit,
                              CommandStack& commands,
                              MaterialLibrary& materials,
-                             LevelDocument& document)
+                             EditorDocument& document)
     : Target(target)
     , Selection(selection)
     , MeshEdit(meshEdit)

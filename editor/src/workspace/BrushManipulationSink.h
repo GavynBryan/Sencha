@@ -4,8 +4,8 @@
 #include "../meshedit/ManipulationSink.h"
 
 class CommandStack;
-class LevelDocument;
-class LevelScene;
+class EditorDocument;
+class EditorScene;
 class SelectionService;
 
 // The one brush-backed edit backend: previews by writing the live scene and
@@ -13,14 +13,14 @@ class SelectionService;
 // Implements both the
 // manipulator-facing ManipulationSink (preview/commit during drags) and the
 // verb-facing IMeshEditTarget (resolve + make-command for MeshEditService). The
-// only class in the edit path that knows LevelScene + the command stack, so
+// only class in the edit path that knows EditorScene + the command stack, so
 // manipulators, the session, and the verb service all stay generic.
 // (docs/architecture/hardening-and-consolidation.md W5 — merged from the former
 // separate BrushEditTarget.)
 class BrushManipulationSink : public ManipulationSink, public IMeshEditTarget
 {
 public:
-    BrushManipulationSink(LevelScene& scene, LevelDocument& document, CommandStack& commands,
+    BrushManipulationSink(EditorScene& scene, EditorDocument& document, CommandStack& commands,
                           SelectionService& selection);
 
     // ManipulationSink
@@ -44,8 +44,8 @@ public:
                                                             BrushMesh after) override;
 
 private:
-    LevelScene& Scene;
-    LevelDocument& Document;
+    EditorScene& Scene;
+    EditorDocument& Document;
     CommandStack& Commands;
     SelectionService& Selection;
 };

@@ -5,12 +5,12 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
-#include "../level/AssetFieldIo.h"
-#include "../level/commands/AssetFieldEditCommand.h"
-#include "../level/commands/RawComponentEditCommand.h"
-#include "../level/commands/RawComponentAddCommand.h"
-#include "../level/commands/RawComponentRemoveCommand.h"
-#include "../level/LevelDocument.h"
+#include "../document/AssetFieldIo.h"
+#include "../document/commands/AssetFieldEditCommand.h"
+#include "../document/commands/RawComponentEditCommand.h"
+#include "../document/commands/RawComponentAddCommand.h"
+#include "../document/commands/RawComponentRemoveCommand.h"
+#include "../document/EditorDocument.h"
 #include "../selection/SelectionService.h"
 
 #include <core/assets/AssetRegistry.h>
@@ -89,8 +89,8 @@ namespace
     }
 }
 
-InspectorPanel::InspectorPanel(LevelScene& scene,
-                               LevelDocument& document,
+InspectorPanel::InspectorPanel(EditorScene& scene,
+                               EditorDocument& document,
                                SelectionService& selection,
                                CommandStack& commands)
     : Scene(scene)

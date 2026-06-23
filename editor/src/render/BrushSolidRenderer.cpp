@@ -1,6 +1,6 @@
 #include "BrushSolidRenderer.h"
 
-#include "../level/SceneBrushWalk.h"
+#include "../document/SceneBrushWalk.h"
 #include "../brush/BrushTessellation.h"
 #include "../brush/FaceMaterial.h"
 
@@ -32,7 +32,7 @@ namespace
     }
 }
 
-BrushSolidRenderer::BrushSolidRenderer(LevelScene& scene, EditorSolidPipeline& solid)
+BrushSolidRenderer::BrushSolidRenderer(EditorScene& scene, EditorSolidPipeline& solid)
     : Scene(scene)
     , Solid(solid)
 {

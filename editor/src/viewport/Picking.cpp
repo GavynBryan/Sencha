@@ -3,8 +3,8 @@
 #include "EditorViewport.h"
 #include "ViewportProjection.h"
 
-#include "../level/LevelScene.h"
-#include "../level/SceneBrushWalk.h"
+#include "../document/EditorScene.h"
+#include "../document/SceneBrushWalk.h"
 #include "../meshedit/MeshElementKindTraits.h" // MeshElementKindCount
 #include "../meshedit/MeshElements.h"
 
@@ -104,7 +104,7 @@ constexpr float kVertexPickPixels = 10.0f;
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
                                    ImVec2 point,
-                                   const LevelScene& scene,
+                                   const EditorScene& scene,
                                    BrushPickRequest request) const
 {
     if (request.Mode == BrushPickMode::EdgeOnly)
@@ -117,7 +117,7 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
 }
 
 SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
-                                               const LevelScene& scene,
+                                               const EditorScene& scene,
                                                BrushPickRequest request) const
 {
     PickCandidate bestCandidate{};
@@ -198,7 +198,7 @@ bool PickingService::IsBetterCandidate(const PickCandidate& candidate,
 }
 
 std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandidate(const Ray3d& ray,
-                                                                                    const LevelScene& scene,
+                                                                                    const EditorScene& scene,
                                                                                     EntityId entity) const
 {
     const Transform3f* transform = scene.TryGetTransform(entity);
@@ -218,7 +218,7 @@ std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandid
 }
 
 void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
-                                               const LevelScene& scene,
+                                               const EditorScene& scene,
                                                EntityId entity,
                                                std::vector<PickCandidate>& outCandidates) const
 {
@@ -243,7 +243,7 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
 
 SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
                                        ImVec2 point,
-                                       const LevelScene& scene) const
+                                       const EditorScene& scene) const
 {
     const ViewportProjection projection(viewport);
 
@@ -279,7 +279,7 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
 
 SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
                                          ImVec2 point,
-                                         const LevelScene& scene) const
+                                         const EditorScene& scene) const
 {
     const ViewportProjection projection(viewport);
 
@@ -316,7 +316,7 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
 std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& viewport,
                                                       ImVec2 rectMin,
                                                       ImVec2 rectMax,
-                                                      const LevelScene& scene,
+                                                      const EditorScene& scene,
                                                       MeshElementKind mode) const
 {
     const float minX = std::min(rectMin.x, rectMax.x);
@@ -412,7 +412,7 @@ std::optional<Vec3d> PickingService::ProjectPointToPlane(const EditorViewport& v
 
 std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& viewport,
                                                       ImVec2 point,
-                                                      const LevelScene& scene) const
+                                                      const EditorScene& scene) const
 {
     const Ray3d ray = BuildRay(viewport, point);
     float best = static_cast<float>(kMaxPickDistance);

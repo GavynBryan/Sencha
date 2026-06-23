@@ -4,10 +4,10 @@
 // CameraComponent, which needs no asset system; the asset-bearing
 // StaticMeshComponent path is covered at runtime.
 
-#include "level/LevelDocument.h"
-#include "level/LevelScene.h"
-#include "level/LevelSerialization.h"
-#include "level/commands/RawComponentRemoveCommand.h"
+#include "document/EditorDocument.h"
+#include "document/EditorScene.h"
+#include "document/DocumentSerialization.h"
+#include "document/commands/RawComponentRemoveCommand.h"
 
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
@@ -23,7 +23,7 @@ namespace
     class RawComponentRemoveCommandTest : public ::testing::Test
     {
     protected:
-        static void SetUpTestSuite() { RegisterLevelSerializers(); }
+        static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
         // The serializer for a given JSON key (process-global, stable).
         IComponentSerializer* SerializerFor(std::string_view jsonKey) const
@@ -45,8 +45,8 @@ namespace
         }
 
         LoggingProvider Logging;
-        LevelDocument   Document{ Logging };
-        LevelScene&     Scene = Document.GetScene();
+        EditorDocument   Document{ Logging };
+        EditorScene&     Scene = Document.GetScene();
     };
 
     TEST_F(RawComponentRemoveCommandTest, RemovesAndRestoresComponent)

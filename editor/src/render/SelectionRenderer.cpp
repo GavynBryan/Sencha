@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection,
+SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection,
                                      ManipulatorSession& session, EditorLinePipeline& lines)
     : Scene(scene)
     , Selection(selection)

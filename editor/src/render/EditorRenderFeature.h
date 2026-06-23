@@ -18,7 +18,7 @@
 
 #include <array>
 
-class LevelScene;
+class EditorScene;
 class ManipulatorSession;
 class PreviewBuffer;
 class SelectionService;
@@ -33,7 +33,7 @@ class EditorRenderFeature : public IRenderFeature
 {
 public:
     EditorRenderFeature(ViewportLayout& viewportLayout,
-                        LevelScene& scene,
+                        EditorScene& scene,
                         SelectionService& selection,
                         PreviewBuffer& preview,
                         ManipulatorSession& session,

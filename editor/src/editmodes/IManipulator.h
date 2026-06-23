@@ -17,7 +17,7 @@ struct ManipulationSink;
 struct GridSettings;
 
 // What a manipulator needs to query the scene and drive an edit, all through
-// generic seams (no LevelScene). The current element mode lives on the service.
+// generic seams (no EditorScene). The current element mode lives on the service.
 struct ManipulatorContext
 {
     const SelectionSnapshot& Selection;

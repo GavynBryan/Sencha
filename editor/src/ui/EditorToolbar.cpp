@@ -7,7 +7,7 @@
 #include "../meshedit/MeshElementKind.h"
 #include "../meshedit/MeshElementKindTraits.h"
 #include "../meshedit/MeshEditService.h"
-#include "../level/BrushCreationSettings.h"
+#include "../document/BrushCreationSettings.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/GridSettings.h"

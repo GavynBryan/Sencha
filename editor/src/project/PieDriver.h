@@ -5,7 +5,7 @@
 #include <string>
 
 class Engine;
-class LevelDocument;
+class EditorDocument;
 class ConsoleRegistry;
 struct ProjectDescriptor;
 struct RuntimeAssets;
@@ -18,7 +18,7 @@ struct RuntimeAssets;
 class PieDriver
 {
 public:
-    PieDriver(Engine& engine, LevelDocument& document, ProjectDescriptor* project, RuntimeAssets* assets);
+    PieDriver(Engine& engine, EditorDocument& document, ProjectDescriptor* project, RuntimeAssets* assets);
 
     // Cooks the live document into the project's assets root, returning the cooked
     // map name ("levels/<name>") or empty on failure. An empty name defaults to the
@@ -39,7 +39,7 @@ private:
     [[nodiscard]] std::string ResolveHostAppPath() const;
 
     Engine&            Engine_;
-    LevelDocument&     Document_;
+    EditorDocument&     Document_;
     ProjectDescriptor* Project_ = nullptr;
     RuntimeAssets*     Assets_ = nullptr;
     PieSession         Pie;

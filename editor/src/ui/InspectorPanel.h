@@ -5,13 +5,13 @@
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
 
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 
 #include <cstddef>
 #include <vector>
 
 class CommandStack;
-class LevelDocument;
+class EditorDocument;
 class SelectionService;
 struct IComponentSerializer;
 struct RuntimeField;
@@ -24,8 +24,8 @@ struct RuntimeField;
 class InspectorPanel : public IEditorPanel
 {
 public:
-    InspectorPanel(LevelScene& scene,
-                   LevelDocument& document,
+    InspectorPanel(EditorScene& scene,
+                   EditorDocument& document,
                    SelectionService& selection,
                    CommandStack& commands);
 
@@ -42,8 +42,8 @@ private:
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 
-    LevelScene& Scene;
-    LevelDocument& Document;
+    EditorScene& Scene;
+    EditorDocument& Document;
     SelectionService& Selection;
     CommandStack& Commands;
 

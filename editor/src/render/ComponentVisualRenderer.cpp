@@ -31,7 +31,7 @@ std::vector<std::byte> ReadFileBytes(const std::string& path)
 }
 }
 
-ComponentVisualRenderer::ComponentVisualRenderer(LevelScene& scene, EditorLinePipeline& lines)
+ComponentVisualRenderer::ComponentVisualRenderer(EditorScene& scene, EditorLinePipeline& lines)
     : Scene(scene)
     , Lines(lines)
 {

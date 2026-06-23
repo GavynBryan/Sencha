@@ -8,8 +8,8 @@
 #include "../input/InputRouter.h"
 #include "../input/ShortcutRegistry.h"
 #include "../input/ViewportNavigation.h"
-#include "../workspace/LevelWorkspace.h"
-#include "../level/MaterialLibrary.h"
+#include "../workspace/EditorWorkspace.h"
+#include "../document/MaterialLibrary.h"
 #include "../project/Project.h"
 #include "../ui/EditorStatusBar.h"
 #include "../ui/EditorToolbar.h"
@@ -103,7 +103,7 @@ private:
     std::optional<RuntimeAssets> Assets;
 
     std::unique_ptr<CommandStack> Commands;
-    std::unique_ptr<LevelWorkspace> Workspace;
+    std::unique_ptr<EditorWorkspace> Workspace;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ShortcutRegistry> Shortcuts;

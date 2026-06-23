@@ -1,9 +1,9 @@
 #include "BrushManipulationSink.h"
 
-#include "../level/LevelDocument.h"
-#include "../level/LevelScene.h"
-#include "../level/commands/DuplicateEntitiesCommand.h"
-#include "../level/commands/ValueCommand.h"
+#include "../document/EditorDocument.h"
+#include "../document/EditorScene.h"
+#include "../document/commands/DuplicateEntitiesCommand.h"
+#include "../document/commands/ValueCommand.h"
 #include "../commands/CommandStack.h"
 #include "../commands/CompositeCommand.h"
 #include "../selection/SelectionService.h"
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-BrushManipulationSink::BrushManipulationSink(LevelScene& scene, LevelDocument& document,
+BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument& document,
                                              CommandStack& commands, SelectionService& selection)
     : Scene(scene)
     , Document(document)

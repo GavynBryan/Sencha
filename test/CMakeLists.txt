@@ -129,13 +129,13 @@ endif()
 if(LEVEL_COOK_TEST_SOURCES)
     add_executable(level_cook_tests
         ${LEVEL_COOK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/src/level/AssetFieldIo.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelScene.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/LevelSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/BrushCookInput.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/AssetFieldIo.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/EditorDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/EditorScene.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/BrushCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/commands/DeleteEntityCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp

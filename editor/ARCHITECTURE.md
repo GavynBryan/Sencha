@@ -3,7 +3,7 @@
 A current-state map of how the editor is laid out, so a change can start from
 "where does this live" instead of a file hunt. For the original design intent see
 `docs/SenchaEditor.md` (the pre-implementation spec; it predates the code and has
-drifted, e.g. its `document/` is today's `level/`).
+drifted, so where they differ the code is the source of truth).
 
 ## Big picture
 
@@ -32,8 +32,8 @@ Read the editor bottom to top. Each layer depends only on layers below it.
    `brush/`. Self-contained, no editor-domain dependencies. `brush/` is the
    half-edge geometry kernel and a pure leaf (engine-only).
 3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
-   `render/`, and the `level/` document domain. Each owns one slice of authoring.
-4. Workspace aggregator: `workspace/`. `LevelWorkspace` is the per-document
+   `render/`, and the `document/` domain. Each owns one slice of authoring.
+4. Workspace aggregator: `workspace/`. `EditorWorkspace` is the per-document
    session: it composes the document plus every layer-3 subsystem into the shared
    state panels and tools read. It is the editor's central hub by design, so it
    has the widest fan-out; that breadth lives here, not scattered.
@@ -45,8 +45,8 @@ Read the editor bottom to top. Each layer depends only on layers below it.
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
 | `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`). | -- |
-| `workspace/` | The per-document authoring hub (`LevelWorkspace`, `BrushManipulationSink`). | -- |
-| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `level`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
+| `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`). | -- |
+| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
 | `commands/` | Generic undo/redo infrastructure (`CommandStack`, `CompositeCommand`). | `ICommand` |
 | `selection/` | Multi-element selection model (`SelectionService`, `SelectionContext`, `SelectableRef`). | -- |
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
@@ -57,21 +57,27 @@ Read the editor bottom to top. Each layer depends only on layers below it.
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes). | `IRenderFeature` (engine) |
 | `ui/` | ImGui chrome + panels host (`EditorUiFeature`, toolbar, status bar, skin, the panels). | `IEditorPanel` |
-| `level/` | Scene/document domain (see below). | -- |
+| `document/` | Scene/document domain (see below). | -- |
 | `project/` | Project descriptor + Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-### Inside `level/` (the document domain)
+### Inside `document/` (the document domain)
 
-- Document/scene model: `LevelDocument`, `LevelScene`, `LevelSerialization`,
+- Document/scene model: `EditorDocument`, `EditorScene`, `DocumentSerialization`,
   `EntitySnapshot`.
-- Cook: `LevelCook`, `BrushCookInput`.
+- Cook: `DocumentCook` (`CookDocument` turns an `EditorDocument` into a runtime
+  level file), `BrushCookInput`.
 - File + materials: `DocumentFileActions`, `MaterialLibrary`, `AssetFieldIo`.
-- `level/commands/`: entity-edit commands (`ICommand` implementations).
-- `level/tools/`: built-in tools (`SelectTool`, `BrushTool`, `CameraTool`).
-- `level/interactions/`: tool-driven drag interactions (`IInteraction`).
+- `document/commands/`: entity-edit commands (`ICommand` implementations).
+- `document/tools/`: built-in tools (`SelectTool`, `BrushTool`, `CameraTool`).
+- `document/interactions/`: tool-driven drag interactions (`IInteraction`).
 
 The authoring session that ties these to tools, mesh edit, viewport, and render
-lives one layer up, in `workspace/LevelWorkspace`, not here.
+lives one layer up, in `workspace/EditorWorkspace`, not here.
+
+Naming note: the editor edits a `Document`; cooking it produces a runtime *level*
+artifact, so the on-disk format keeps that vocabulary (`CookDocument` writes
+`levels/<name>.level.json`). The "level" vocabulary is intentional only at that
+format boundary; the editor's own types use document/scene vocabulary.
 
 ## Dependency rules
 
@@ -82,15 +88,15 @@ lives one layer up, in `workspace/LevelWorkspace`, not here.
   the reverse.
 - Cross-subsystem composition belongs in `workspace/` (the aggregator), so the
   layer-3 subsystems stay independent of each other.
-- Domain commands live next to their domain (`level/commands/`), not in the
+- Domain commands live next to their domain (`document/commands/`), not in the
   generic `commands/` directory.
 
 ## Where do I add ...
 
 - A panel: implement `IEditorPanel` in `ui/`, register it in
   `EditorServices::BuildUi`.
-- A tool: implement `ITool` (built-ins live in `level/tools/`), register it with
-  the `ToolRegistry` populated in `workspace/LevelWorkspace`.
+- A tool: implement `ITool` (built-ins live in `document/tools/`), register it
+  with the `ToolRegistry` populated in `workspace/EditorWorkspace`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - A keyboard shortcut: `EditorServices::BuildInput`.

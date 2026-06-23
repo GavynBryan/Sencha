@@ -1,8 +1,8 @@
 #include "PieDriver.h"
 
 #include "Project.h"
-#include "../level/LevelCook.h"
-#include "../level/LevelDocument.h"
+#include "../document/DocumentCook.h"
+#include "../document/EditorDocument.h"
 
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
@@ -16,7 +16,7 @@
 #include <span>
 #include <variant>
 
-PieDriver::PieDriver(Engine& engine, LevelDocument& document, ProjectDescriptor* project, RuntimeAssets* assets)
+PieDriver::PieDriver(Engine& engine, EditorDocument& document, ProjectDescriptor* project, RuntimeAssets* assets)
     : Engine_(engine)
     , Document_(document)
     , Project_(project)
@@ -54,8 +54,8 @@ std::string PieDriver::Cook(const std::string& levelName)
     }
 
     const std::filesystem::path assetsRoot = std::filesystem::path(Project_->Directory) / "assets";
-    const LevelCookResult cooked =
-        CookLevel(Document_, name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
+    const DocumentCookResult cooked =
+        CookDocument(Document_, name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
     if (!cooked.Success)
     {
         log.Error("cook failed: " + cooked.Error);

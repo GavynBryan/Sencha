@@ -1,13 +1,13 @@
-// LevelDocument::DuplicateEntity must produce a fully independent copy: a live
+// EditorDocument::DuplicateEntity must produce a fully independent copy: a live
 // duplicate of a brush gets its OWN sidecar mesh (a fresh BrushId), so editing
 // one brush never changes the other. This is the regression guard for the
 // "duplicates are instanced" bug. RestoreEntity's default (freshMesh == false)
 // still re-seats at the original id for undo-of-delete; that path is covered by
 // DeleteEntityCommandTests.
 
-#include "level/LevelDocument.h"
-#include "level/LevelScene.h"
-#include "level/LevelSerialization.h"
+#include "document/EditorDocument.h"
+#include "document/EditorScene.h"
+#include "document/DocumentSerialization.h"
 
 #include <core/logging/LoggingProvider.h>
 
@@ -18,11 +18,11 @@ namespace
     class DuplicateEntityTest : public ::testing::Test
     {
     protected:
-        static void SetUpTestSuite() { RegisterLevelSerializers(); }
+        static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
         LoggingProvider Logging;
-        LevelDocument   Document{ Logging };
-        LevelScene&     Scene = Document.GetScene();
+        EditorDocument   Document{ Logging };
+        EditorScene&     Scene = Document.GetScene();
     };
 
     TEST_F(DuplicateEntityTest, BrushCopyHasItsOwnMesh)

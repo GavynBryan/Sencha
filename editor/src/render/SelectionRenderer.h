@@ -3,7 +3,7 @@
 #include "EditorLinePipeline.h"
 
 #include "../editmodes/IManipulator.h"
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 #include "../brush/BrushMesh.h"
 #include "../meshedit/MeshElements.h"
 #include "../selection/SelectionService.h"
@@ -20,7 +20,7 @@ class ManipulatorSession;
 class SelectionRenderer
 {
 public:
-    SelectionRenderer(LevelScene& scene, SelectionService& selection,
+    SelectionRenderer(EditorScene& scene, SelectionService& selection,
                       ManipulatorSession& session, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
@@ -43,7 +43,7 @@ private:
     void AppendManipulators(std::vector<EditorLineVertex>& vertices,
                             const EditorViewport& viewport) const;
 
-    LevelScene& Scene;
+    EditorScene& Scene;
     SelectionService& Selection;
     ManipulatorSession& Session;
     EditorLinePipeline& Lines;

@@ -3,14 +3,14 @@
 #include "IEditorPanel.h"
 
 class CommandStack;
-class LevelScene;
-class LevelDocument;
+class EditorScene;
+class EditorDocument;
 class SelectionService;
 
 class SceneHierarchyPanel : public IEditorPanel
 {
 public:
-    SceneHierarchyPanel(LevelScene& scene, LevelDocument& document,
+    SceneHierarchyPanel(EditorScene& scene, EditorDocument& document,
                         SelectionService& selection, CommandStack& commands);
 
     std::string_view GetTitle() const override;
@@ -18,8 +18,8 @@ public:
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
 
 private:
-    LevelScene& Scene;
-    LevelDocument& Document;
+    EditorScene& Scene;
+    EditorDocument& Document;
     SelectionService& Selection;
     CommandStack& Commands;
 };

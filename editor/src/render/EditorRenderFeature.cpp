@@ -12,7 +12,7 @@
 #include <variant>
 
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
-                                         LevelScene& scene,
+                                         EditorScene& scene,
                                          SelectionService& selection,
                                          PreviewBuffer& preview,
                                          ManipulatorSession& session,

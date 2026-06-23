@@ -8,7 +8,7 @@
 
 //=============================================================================
 // BrushMeshStore — owns the heavy BrushMesh data, keyed by BrushId. A resource
-// on the editor's LevelDocument (not an archetype component), so BrushComponent
+// on the editor's EditorDocument (not an archetype component), so BrushComponent
 // stays trivially copyable. Serialized as a sidecar alongside the scene (§5).
 // (docs/plans/sencha-level-editor/03-brush-representation.md §2.2)
 //=============================================================================

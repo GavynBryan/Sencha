@@ -5,9 +5,9 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "../commands/CommandStack.h"
-#include "../level/commands/CreateEntityCommand.h"
-#include "../level/commands/DeleteEntityCommand.h"
-#include "../level/LevelScene.h"
+#include "../document/commands/CreateEntityCommand.h"
+#include "../document/commands/DeleteEntityCommand.h"
+#include "../document/EditorScene.h"
 #include "../selection/commands/SelectCommand.h"
 #include "../selection/SelectionService.h"
 
@@ -20,7 +20,7 @@
 #include <span>
 #include <string>
 
-SceneHierarchyPanel::SceneHierarchyPanel(LevelScene& scene, LevelDocument& document,
+SceneHierarchyPanel::SceneHierarchyPanel(EditorScene& scene, EditorDocument& document,
                                          SelectionService& selection, CommandStack& commands)
     : Scene(scene)
     , Document(document)

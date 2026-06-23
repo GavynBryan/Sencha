@@ -3,7 +3,7 @@
 #include "EditorLinePipeline.h"
 #include "IBrushBodyRenderer.h"
 
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 #include "../viewport/EditorViewport.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -16,7 +16,7 @@
 class WireframeRenderer : public IBrushBodyRenderer
 {
 public:
-    WireframeRenderer(LevelScene& scene, EditorLinePipeline& lines);
+    WireframeRenderer(EditorScene& scene, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
     void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport, const Vec4& color);
@@ -27,6 +27,6 @@ private:
                          const Transform3f& transform,
                          const Vec4& color) const;
 
-    LevelScene& Scene;
+    EditorScene& Scene;
     EditorLinePipeline& Lines;
 };

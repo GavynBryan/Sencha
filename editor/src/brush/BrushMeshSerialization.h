@@ -8,7 +8,7 @@
 //=============================================================================
 // BrushMeshSerialization — pure JSON <-> BrushMesh conversion for the brush
 // sidecar (03-§5, 04-§4). Lives in the brush kernel (no scene/UI deps) so it
-// is unit-testable on its own; LevelDocument only embeds the result.
+// is unit-testable on its own; EditorDocument only embeds the result.
 //
 // A face serializes as { loop, material?, uv } with the UV stored as a
 // PROJECTION (axes/scale/offset/rotation), never baked coordinates — that is

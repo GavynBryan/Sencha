@@ -4,9 +4,9 @@
 #include "../viewport/EditorViewportCameraSystem.h"
 #include "../input/SdlEventTranslation.h"
 #include "../input/UiInputGuard.h"
-#include "../level/DocumentFileActions.h"
-#include "../level/LevelSerialization.h"
-#include "../level/MaterialLibrary.h"
+#include "../document/DocumentFileActions.h"
+#include "../document/DocumentSerialization.h"
+#include "../document/MaterialLibrary.h"
 #include "../project/PieDriver.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorConsolePanel.h"
@@ -50,7 +50,7 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
     EnginePtr = &engine;
     Window = &window;
 
-    RegisterLevelSerializers();
+    RegisterDocumentSerializers();
     // Load the project's game module (if any) BEFORE the document is created, so its
     // components are registered when the document's World registers storage.
     LoadGameModule();
@@ -92,7 +92,7 @@ void EditorServices::BuildDocument()
 {
     Engine& engine = *EnginePtr;
     Commands = std::make_unique<CommandStack>();
-    Workspace = std::make_unique<LevelWorkspace>(engine.Logging());
+    Workspace = std::make_unique<EditorWorkspace>(engine.Logging());
     if (Assets)
         Workspace->Document.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
