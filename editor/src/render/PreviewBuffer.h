@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../level/brush/BrushMesh.h"
+#include "../brush/BrushMesh.h"
 
 #include <math/geometry/3d/Transform3d.h>
 

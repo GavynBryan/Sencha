@@ -126,7 +126,7 @@ TEST(GameModuleLoader, RefusesAbiMismatch)
 }
 
 // The headless proof of S3's editor gate: a component defined only in the game
-// module survives a FULL scene save→load (exactly what LevelDocument::Save/Load
+// module survives a FULL scene save→load (exactly what EditorDocument::Save/Load
 // call), loaded into a stock registry that links no editor symbols.
 TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
 {

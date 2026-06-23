@@ -1,11 +1,11 @@
 #include "WireframeRenderer.h"
 
-#include "../level/SceneBrushWalk.h"
+#include "../document/SceneBrushWalk.h"
 
 #include <cstddef>
 #include <vector>
 
-WireframeRenderer::WireframeRenderer(LevelScene& scene, EditorLinePipeline& lines)
+WireframeRenderer::WireframeRenderer(EditorScene& scene, EditorLinePipeline& lines)
     : Scene(scene)
     , Lines(lines)
 {

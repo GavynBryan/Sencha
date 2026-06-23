@@ -2,7 +2,7 @@
 
 #include "EditorLinePipeline.h"
 
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 #include "../viewport/EditorViewport.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -21,7 +21,7 @@
 class ComponentVisualRenderer
 {
 public:
-    ComponentVisualRenderer(LevelScene& scene, EditorLinePipeline& lines);
+    ComponentVisualRenderer(EditorScene& scene, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
 
@@ -35,7 +35,7 @@ private:
 
     const MeshEdges& EdgesFor(std::string_view assetPath);
 
-    LevelScene& Scene;
+    EditorScene& Scene;
     EditorLinePipeline& Lines;
     std::unordered_map<std::string, MeshEdges> Cache;
 };

@@ -1,6 +1,6 @@
-#include "level/LevelCook.h"
-#include "level/LevelDocument.h"
-#include "level/LevelSerialization.h"
+#include "document/DocumentCook.h"
+#include "document/EditorDocument.h"
+#include "document/DocumentSerialization.h"
 
 #include <assets/cook/CookPrune.h>
 #include <assets/cook/CookedCache.h>
@@ -26,7 +26,7 @@ namespace
     class LevelCookTest : public ::testing::Test
     {
     protected:
-        static void SetUpTestSuite() { RegisterLevelSerializers(); }
+        static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
         void SetUp() override
         {
@@ -48,10 +48,10 @@ namespace
         }
 
         // Authors a two-brush level (brushes far enough apart to land in separate
-        // 16m cells) and saves it through the real LevelDocument save path.
+        // 16m cells) and saves it through the real EditorDocument save path.
         fs::path AuthorTwoBrushLevel()
         {
-            LevelDocument doc(Logging);
+            EditorDocument doc(Logging);
             doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
             doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
             doc.GetScene().CreateBrush(Vec3d{ 100, 0, 0 });
@@ -79,7 +79,7 @@ TEST_F(LevelCookTest, CooksPerCellMeshesAndScene)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();
 
-    const LevelCookResult result = CookLevel(levelPath, Root, /*cellSize*/ 16.0);
+    const DocumentCookResult result = CookDocument(levelPath, Root, /*cellSize*/ 16.0);
     ASSERT_TRUE(result.Success) << result.Error;
 
     // Two far-apart brushes -> two cells -> two Generated meshes, each on disk.
@@ -121,13 +121,13 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
 {
     // A never-saved document: a brush plus a non-brush entity (a camera) that must
     // pass through the cook unchanged, standing in for any game component entity.
-    LevelDocument doc(Logging);
+    EditorDocument doc(Logging);
     doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
     doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
     const EntityId camera = doc.GetScene().CreateCamera(Vec3d{ 0, 2, 5 });
     const std::size_t entityCountBefore = doc.GetScene().GetAllEntities().size();
 
-    const LevelCookResult result = CookLevel(doc, "live", Root, /*cellSize*/ 16.0, Logging);
+    const DocumentCookResult result = CookDocument(doc, "live", Root, /*cellSize*/ 16.0, Logging);
     ASSERT_TRUE(result.Success) << result.Error;
     EXPECT_EQ(result.CellCount, 1u);
 
@@ -161,7 +161,7 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
 TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();
-    ASSERT_TRUE(CookLevel(levelPath, Root, 16.0).Success);
+    ASSERT_TRUE(CookDocument(levelPath, Root, 16.0).Success);
 
     // The runtime's resolution inputs: scan the authored assets and the cooked
     // overlay, then bind ids. Scanning .cooked/ as its own root maps each
@@ -202,11 +202,11 @@ TEST_F(LevelCookTest, RecookKeepsStableIds)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();
 
-    ASSERT_TRUE(CookLevel(levelPath, Root, 16.0).Success);
+    ASSERT_TRUE(CookDocument(levelPath, Root, 16.0).Success);
     AssetIdMap first;
     ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), first));
 
-    ASSERT_TRUE(CookLevel(levelPath, Root, 16.0).Success);
+    ASSERT_TRUE(CookDocument(levelPath, Root, 16.0).Success);
     AssetIdMap second;
     ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), second));
 
@@ -220,7 +220,7 @@ TEST_F(LevelCookTest, RecookKeepsStableIds)
 TEST_F(LevelCookTest, PruneRemovesArtifactsWhenLevelDeleted)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();
-    const LevelCookResult result = CookLevel(levelPath, Root, 16.0);
+    const DocumentCookResult result = CookDocument(levelPath, Root, 16.0);
     ASSERT_TRUE(result.Success);
 
     fs::remove(levelPath); // the level was deleted from the project

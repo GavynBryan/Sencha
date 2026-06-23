@@ -6,10 +6,10 @@
 // plain transform-only, camera). The asset-backed StaticMeshComponent path needs
 // a live AssetSystem and is covered at runtime, not here.
 
-#include "level/LevelDocument.h"
-#include "level/LevelScene.h"
-#include "level/LevelSerialization.h"
-#include "level/commands/DeleteEntityCommand.h"
+#include "document/EditorDocument.h"
+#include "document/EditorScene.h"
+#include "document/DocumentSerialization.h"
+#include "document/commands/DeleteEntityCommand.h"
 
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
@@ -23,7 +23,7 @@ namespace
     class DeleteEntityCommandTest : public ::testing::Test
     {
     protected:
-        static void SetUpTestSuite() { RegisterLevelSerializers(); }
+        static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
         // A stable text form of an entity's captured component state, for
         // before/after comparison across a delete + undo round-trip.
@@ -33,8 +33,8 @@ namespace
         }
 
         LoggingProvider Logging;
-        LevelDocument   Document{ Logging };
-        LevelScene&     Scene = Document.GetScene();
+        EditorDocument   Document{ Logging };
+        EditorScene&     Scene = Document.GetScene();
     };
 
     TEST_F(DeleteEntityCommandTest, BrushRoundTripsAndFreesMesh)

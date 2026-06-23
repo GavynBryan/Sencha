@@ -11,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 
-class LevelScene;
+class EditorScene;
 class AssetSystem;
 class AssetRegistry;
 class LoggingProvider;
@@ -25,7 +25,7 @@ class LoggingProvider;
 class StaticMeshRenderer
 {
 public:
-    StaticMeshRenderer(LevelScene& scene,
+    StaticMeshRenderer(EditorScene& scene,
                        EditorSolidPipeline& solid,
                        LoggingProvider& logging,
                        AssetSystem* assets,
@@ -41,7 +41,7 @@ private:
     // session on a large project pushes memory.
     const MeshGeometry* GeometryFor(const std::string& assetPath);
 
-    LevelScene& Scene;
+    EditorScene& Scene;
     EditorSolidPipeline& Solid;
     MeshLoader Loader;
     AssetSystem* Assets = nullptr;

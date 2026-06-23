@@ -1,4 +1,4 @@
-#include "level/interactions/BrushCreationPlane.h"
+#include "document/interactions/BrushCreationPlane.h"
 
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/Vec.h>

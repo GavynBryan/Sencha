@@ -3,7 +3,7 @@
 // against a real AssetSystem with material caches. The Single (static mesh) path
 // needs a graphics-backed StaticMeshCache and is covered at runtime, not here.
 
-#include "level/AssetFieldIo.h"
+#include "document/AssetFieldIo.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>

@@ -1,7 +1,7 @@
 #include "LoopSelection.h"
 
 #include "MeshElements.h"
-#include "../level/brush/BrushOps.h"
+#include "../brush/BrushOps.h"
 
 #include <array>
 #include <cstdint>

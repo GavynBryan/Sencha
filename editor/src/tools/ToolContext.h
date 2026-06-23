@@ -3,8 +3,8 @@
 class CommandStack;
 class EditSessionHost;
 class InteractionHost;
-class LevelDocument;
-class LevelScene;
+class EditorDocument;
+class EditorScene;
 class MeshEditService;
 class PickingService;
 class PreviewBuffer;
@@ -18,8 +18,8 @@ struct ToolContext
     ToolContext(CommandStack& commandStack,
                 SelectionService& selectionService,
                 PickingService& pickingService,
-                LevelScene& levelScene,
-                LevelDocument& levelDocument,
+                EditorScene& levelScene,
+                EditorDocument& levelDocument,
                 InteractionHost& interactions,
                 PreviewBuffer& preview,
                 MeshEditService& meshEdit,
@@ -30,8 +30,8 @@ struct ToolContext
     CommandStack& Commands;
     SelectionService& Selection;
     PickingService& Picking;
-    LevelScene& Scene;
-    LevelDocument& Document;
+    EditorScene& Scene;
+    EditorDocument& Document;
     InteractionHost& Interactions;
     PreviewBuffer& Preview;
     MeshEditService& MeshEdit;

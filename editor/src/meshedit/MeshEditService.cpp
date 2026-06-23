@@ -3,9 +3,9 @@
 #include "ElementGeometry.h"
 #include "MeshElementKindTraits.h"
 #include "MeshElements.h"
-#include "../level/brush/BrushHalfEdge.h"
-#include "../level/brush/BrushOps.h"
-#include "../level/brush/BrushValidation.h"
+#include "../brush/BrushHalfEdge.h"
+#include "../brush/BrushOps.h"
+#include "../brush/BrushValidation.h"
 
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>

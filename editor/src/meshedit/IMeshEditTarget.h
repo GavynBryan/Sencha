@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../commands/ICommand.h"
-#include "../level/brush/BrushMesh.h"
+#include "../brush/BrushMesh.h"
 
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>

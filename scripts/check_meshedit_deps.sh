@@ -39,7 +39,7 @@ check "UI/viewport/render/editmodes include BrushOps" \
       "$EDITOR/ui" "$EDITOR/viewport" "$EDITOR/render" "$EDITOR/editmodes"
 
 check "editor/meshedit depends on scene/UI/render/viewport" \
-      'LevelScene|LevelDocument|imgui|Renderer|EditorViewport' \
+      'EditorScene|EditorDocument|imgui|Renderer|EditorViewport' \
       "$EDITOR/meshedit"
 
 check "retired BrushGeometry face-projection API is referenced" \
@@ -47,15 +47,15 @@ check "retired BrushGeometry face-projection API is referenced" \
       "$EDITOR"
 
 check "editor/editmodes depends on the scene (must go through ManipulationSink)" \
-      'LevelScene|LevelDocument' \
+      'EditorScene|EditorDocument' \
       "$EDITOR/editmodes"
 
-# The ManipulationSink must only be implemented under editor/level (the lone
+# The ManipulationSink must only be implemented under editor/workspace (the lone
 # scene-mutation seam). An implementor anywhere else breaks the layering.
 sink_impls="$(grep -rlE 'public[[:space:]]+ManipulationSink' "$EDITOR" 2>/dev/null \
-              | grep -vE '^'"$EDITOR"'/level/')"
+              | grep -vE '^'"$EDITOR"'/workspace/')"
 if [ -n "$sink_impls" ]; then
-    echo "VIOLATION: ManipulationSink implemented outside editor/level"
+    echo "VIOLATION: ManipulationSink implemented outside editor/workspace"
     echo "$sink_impls"
     echo
     status=1

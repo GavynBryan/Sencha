@@ -3,7 +3,7 @@
 #include "EditorSolidPipeline.h"
 #include "IBrushBodyRenderer.h"
 
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 #include "../viewport/EditorViewport.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -19,7 +19,7 @@
 class BrushSolidRenderer : public IBrushBodyRenderer
 {
 public:
-    BrushSolidRenderer(LevelScene& scene, EditorSolidPipeline& solid);
+    BrushSolidRenderer(EditorScene& scene, EditorSolidPipeline& solid);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
 
@@ -28,6 +28,6 @@ private:
                          const BrushMesh& mesh,
                          const Transform3f& transform) const;
 
-    LevelScene& Scene;
+    EditorScene& Scene;
     EditorSolidPipeline& Solid;
 };

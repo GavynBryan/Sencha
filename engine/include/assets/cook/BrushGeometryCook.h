@@ -16,7 +16,7 @@
 // The single brush→static-mesh bake, used by BOTH the offline level cook and
 // PIE ("one path, two schedulings"). It deliberately consumes faces that are
 // ALREADY triangulated into world space: the editor fills them straight from
-// BrushTessellate (editor/level/brush/BrushTessellation.h), so the cooked mesh
+// BrushTessellate (editor/brush/BrushTessellation.h), so the cooked mesh
 // is built from the exact triangles the editor previewed — cooked geometry ==
 // preview by construction, not by a parallel reimplementation. (This is why the
 // bake takes baked triangles rather than the plan's literal CookBrush+UvProjection:

@@ -1,6 +1,6 @@
 #include "StaticMeshRenderer.h"
 
-#include "../level/LevelScene.h"
+#include "../document/EditorScene.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-StaticMeshRenderer::StaticMeshRenderer(LevelScene& scene,
+StaticMeshRenderer::StaticMeshRenderer(EditorScene& scene,
                                        EditorSolidPipeline& solid,
                                        LoggingProvider& logging,
                                        AssetSystem* assets,

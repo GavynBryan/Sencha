@@ -1,7 +1,7 @@
 #include "BoundsManipulator.h"
 
 #include "../EditorTheme.h"
-#include "../level/brush/BrushBounds.h"
+#include "../brush/BrushBounds.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../tools/ToolContext.h"

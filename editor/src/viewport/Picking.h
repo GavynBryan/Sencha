@@ -13,7 +13,7 @@
 struct EditorViewport;
 struct GridSettings;
 struct GridPlane;
-class LevelScene;
+class EditorScene;
 
 enum class BrushPickMode : uint8_t
 {
@@ -47,7 +47,7 @@ class PickingService
 public:
     [[nodiscard]] SelectableRef Pick(const EditorViewport& viewport,
                                      ImVec2 point,
-                                     const LevelScene& scene,
+                                     const EditorScene& scene,
                                      BrushPickRequest request = {}) const;
     [[nodiscard]] std::optional<Vec3d> ProjectPointToGrid(const EditorViewport& viewport,
                                                           ImVec2 point,
@@ -62,7 +62,7 @@ public:
     // nullopt if the ray misses every brush.
     [[nodiscard]] std::optional<SurfaceHit> PickSurface(const EditorViewport& viewport,
                                                         ImVec2 point,
-                                                        const LevelScene& scene) const;
+                                                        const EditorScene& scene) const;
 
     // Rubber-band selection: every element of the given mode whose projection
     // falls in the screen rectangle. Entities by projected-bounds overlap;
@@ -70,7 +70,7 @@ public:
     [[nodiscard]] std::vector<SelectableRef> PickInRect(const EditorViewport& viewport,
                                                         ImVec2 rectMin,
                                                         ImVec2 rectMax,
-                                                        const LevelScene& scene,
+                                                        const EditorScene& scene,
                                                         MeshElementKind mode) const;
 
     // The edge to seed loop selection from under the cursor. In Edge mode the
@@ -80,7 +80,7 @@ public:
     // or the mode is not Edge/Face.
     [[nodiscard]] SelectableRef PickLoopSeedEdge(const EditorViewport& viewport,
                                                  ImVec2 point,
-                                                 const LevelScene& scene,
+                                                 const EditorScene& scene,
                                                  MeshElementKind mode) const;
 
 private:
@@ -92,7 +92,7 @@ private:
     };
 
     [[nodiscard]] SelectableRef PickBrushElement(const Ray3d& ray,
-                                                 const LevelScene& scene,
+                                                 const EditorScene& scene,
                                                  BrushPickRequest request) const;
     [[nodiscard]] static bool AllowsEntities(BrushPickRequest request);
     [[nodiscard]] static bool AllowsFaces(BrushPickRequest request);
@@ -101,10 +101,10 @@ private:
                                                 const PickCandidate& best,
                                                 bool hasBest);
     [[nodiscard]] std::optional<PickCandidate> MakeBrushBodyCandidate(const Ray3d& ray,
-                                                                      const LevelScene& scene,
+                                                                      const EditorScene& scene,
                                                                       EntityId entity) const;
     void GatherBrushFaceCandidates(const Ray3d& ray,
-                                   const LevelScene& scene,
+                                   const EditorScene& scene,
                                    EntityId entity,
                                    std::vector<PickCandidate>& outCandidates) const;
 
@@ -113,10 +113,10 @@ private:
     // depth.
     [[nodiscard]] SelectableRef PickEdge(const EditorViewport& viewport,
                                          ImVec2 point,
-                                         const LevelScene& scene) const;
+                                         const EditorScene& scene) const;
     [[nodiscard]] SelectableRef PickVertex(const EditorViewport& viewport,
                                            ImVec2 point,
-                                           const LevelScene& scene) const;
+                                           const EditorScene& scene) const;
 
     [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point) const;
 };

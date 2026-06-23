@@ -2,13 +2,13 @@
 
 #include "IEditorPanel.h"
 
-#include "../level/brush/FaceMaterial.h"
+#include "../brush/FaceMaterial.h"
 
 #include <functional>
 #include <optional>
 
 class CommandStack;
-class LevelDocument;
+class EditorDocument;
 class MaterialLibrary;
 class MeshEditService;
 class SelectionService;
@@ -29,7 +29,7 @@ public:
                   MeshEditService& meshEdit,
                   CommandStack& commands,
                   MaterialLibrary& materials,
-                  LevelDocument& document);
+                  EditorDocument& document);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -55,7 +55,7 @@ private:
     MeshEditService& MeshEdit;
     CommandStack& Commands;
     MaterialLibrary& Materials;
-    LevelDocument& Document;
+    EditorDocument& Document;
 
     // In-progress UV drag. A drag mutates this buffer (so it accumulates instead
     // of being reset to the scene value each frame) and commits one command when

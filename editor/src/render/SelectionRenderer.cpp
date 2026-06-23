@@ -2,7 +2,7 @@
 
 #include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
-#include "../level/brush/BrushBounds.h"
+#include "../brush/BrushBounds.h"
 #include "../meshedit/MeshElements.h"
 #include "../viewport/ViewportProjection.h"
 
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-SelectionRenderer::SelectionRenderer(LevelScene& scene, SelectionService& selection,
+SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection,
                                      ManipulatorSession& session, EditorLinePipeline& lines)
     : Scene(scene)
     , Selection(selection)

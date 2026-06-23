@@ -11,7 +11,7 @@
 // The single generic seam through which manipulators read, preview, and commit
 // edits. Manipulators (editor/editmodes) depend only on this interface; the lone
 // implementation (BrushManipulationSink, editor/level) is the only place in the
-// manipulation path that touches LevelScene and the command stack. This is what
+// manipulation path that touches EditorScene and the command stack. This is what
 // keeps the manipulator/verb/target axes orthogonal. (08-select-tool-v2.md)
 //
 // Preview mutates live scene state without recording undo; the driving
