@@ -55,7 +55,7 @@ public:
     std::unique_ptr<ToolContext> ActiveToolContext;
     std::unique_ptr<ToolRegistry> Tools;
     std::unique_ptr<ViewportToolDispatcher> Dispatcher;
-    // Non-owning; the command stack passed to Init (owned by EditorApp), held so
-    // workspace-level edits (DeleteSelection) route through the same undo history.
+    // Non-owning; the command stack passed to Init (owned by EditorServices), held
+    // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;
 };
