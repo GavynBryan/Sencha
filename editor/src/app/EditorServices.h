@@ -8,7 +8,7 @@
 #include "../input/InputRouter.h"
 #include "../input/ShortcutRegistry.h"
 #include "../input/ViewportNavigation.h"
-#include "../level/LevelWorkspace.h"
+#include "../workspace/LevelWorkspace.h"
 #include "../level/MaterialLibrary.h"
 #include "../project/Project.h"
 #include "../ui/EditorStatusBar.h"

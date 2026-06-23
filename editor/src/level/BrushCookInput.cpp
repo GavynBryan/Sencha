@@ -1,8 +1,8 @@
 #include "BrushCookInput.h"
 
 #include "SceneBrushWalk.h"
-#include "brush/BrushTessellation.h"
-#include "brush/FaceMaterial.h"
+#include "../brush/BrushTessellation.h"
+#include "../brush/FaceMaterial.h"
 
 #include <span>
 

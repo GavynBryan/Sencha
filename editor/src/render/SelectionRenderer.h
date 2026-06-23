@@ -4,7 +4,7 @@
 
 #include "../editmodes/IManipulator.h"
 #include "../level/LevelScene.h"
-#include "../level/brush/BrushMesh.h"
+#include "../brush/BrushMesh.h"
 #include "../meshedit/MeshElements.h"
 #include "../selection/SelectionService.h"
 #include "../viewport/EditorViewport.h"

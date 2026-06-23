@@ -97,14 +97,14 @@ if(BRUSH_TEST_SOURCES)
     # its sources directly and link only the engine — no editor/Vulkan/ImGui deps.
     add_executable(brush_tests
         ${BRUSH_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushOps.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
@@ -139,15 +139,15 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/level/brush/BrushBounds.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp

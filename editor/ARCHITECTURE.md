@@ -23,11 +23,30 @@ Two files own the entry point:
   `BuildInput` -> `BuildViewportRendering` -> `BuildUi`. Member order is teardown
   order; the destructor reproduces the load-bearing sequence explicitly.
 
+## Layers
+
+Read the editor bottom to top. Each layer depends only on layers below it.
+
+1. Engine (external): window, Vulkan, console, logging, ECS, assets.
+2. Core abstractions: `commands/`, `selection/`, `tools/`, `interaction/`,
+   `brush/`. Self-contained, no editor-domain dependencies. `brush/` is the
+   half-edge geometry kernel and a pure leaf (engine-only).
+3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
+   `render/`, and the `level/` document domain. Each owns one slice of authoring.
+4. Workspace aggregator: `workspace/`. `LevelWorkspace` is the per-document
+   session: it composes the document plus every layer-3 subsystem into the shared
+   state panels and tools read. It is the editor's central hub by design, so it
+   has the widest fan-out; that breadth lives here, not scattered.
+5. App composition: `app/`. `EditorServices` owns the workspace, input, UI, and
+   play loop, and wires them into the engine.
+
 ## Subsystem map
 
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
 | `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`). | -- |
+| `workspace/` | The per-document authoring hub (`LevelWorkspace`, `BrushManipulationSink`). | -- |
+| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `level`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
 | `commands/` | Generic undo/redo infrastructure (`CommandStack`, `CompositeCommand`). | `ICommand` |
 | `selection/` | Multi-element selection model (`SelectionService`, `SelectionContext`, `SelectableRef`). | -- |
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
@@ -38,32 +57,31 @@ Two files own the entry point:
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes). | `IRenderFeature` (engine) |
 | `ui/` | ImGui chrome + panels host (`EditorUiFeature`, toolbar, status bar, skin, the panels). | `IEditorPanel` |
-| `level/` | Scene authoring domain (see below). | -- |
+| `level/` | Scene/document domain (see below). | -- |
 | `project/` | Project descriptor + Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-### Inside `level/` (the largest subsystem)
+### Inside `level/` (the document domain)
 
 - Document/scene model: `LevelDocument`, `LevelScene`, `LevelSerialization`,
   `EntitySnapshot`.
-- Aggregator: `LevelWorkspace` bundles the per-document authoring state (layout,
-  selection, picking, mesh edit, tools, interactions, grid) that panels and tools
-  share.
 - Cook: `LevelCook`, `BrushCookInput`.
 - File + materials: `DocumentFileActions`, `MaterialLibrary`, `AssetFieldIo`.
-- `level/brush/`: the half-edge brush geometry kernel (mesh, ops, tessellation,
-  validation). It is a pure leaf (depends only on the engine) and is consumed by
-  `level`, `meshedit`, `render`, `ui`, `editmodes`, and interactions. It reads as
-  level-specific but is actually a shared kernel.
 - `level/commands/`: entity-edit commands (`ICommand` implementations).
 - `level/tools/`: built-in tools (`SelectTool`, `BrushTool`, `CameraTool`).
 - `level/interactions/`: tool-driven drag interactions (`IInteraction`).
+
+The authoring session that ties these to tools, mesh edit, viewport, and render
+lives one layer up, in `workspace/LevelWorkspace`, not here.
 
 ## Dependency rules
 
 - Editor depends on engine, never the reverse.
 - `app/` sits on top; it composes everything and is depended on by nothing.
-- Generic infrastructure (`commands/`, `selection/`, `tools/`, `interaction/`)
-  has no editor-domain dependencies; domain code depends on it, not the reverse.
+- Core abstractions (`commands/`, `selection/`, `tools/`, `interaction/`,
+  `brush/`) have no editor-domain dependencies; domain code depends on them, not
+  the reverse.
+- Cross-subsystem composition belongs in `workspace/` (the aggregator), so the
+  layer-3 subsystems stay independent of each other.
 - Domain commands live next to their domain (`level/commands/`), not in the
   generic `commands/` directory.
 
@@ -72,7 +90,7 @@ Two files own the entry point:
 - A panel: implement `IEditorPanel` in `ui/`, register it in
   `EditorServices::BuildUi`.
 - A tool: implement `ITool` (built-ins live in `level/tools/`), register it with
-  the `ToolRegistry` populated in `LevelWorkspace`.
+  the `ToolRegistry` populated in `workspace/LevelWorkspace`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - A keyboard shortcut: `EditorServices::BuildInput`.

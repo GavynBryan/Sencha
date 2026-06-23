@@ -2,7 +2,7 @@
 
 #include "IEditorPanel.h"
 
-#include "../level/brush/FaceMaterial.h"
+#include "../brush/FaceMaterial.h"
 
 #include <functional>
 #include <optional>

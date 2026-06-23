@@ -1,5 +1,5 @@
-#include "level/brush/BrushHalfEdge.h"
-#include "level/brush/BrushOps.h"
+#include "brush/BrushHalfEdge.h"
+#include "brush/BrushOps.h"
 
 #include <gtest/gtest.h>
 

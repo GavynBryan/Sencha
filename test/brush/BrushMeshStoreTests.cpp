@@ -1,5 +1,5 @@
-#include "level/brush/BrushMeshStore.h"
-#include "level/brush/BrushOps.h"
+#include "brush/BrushMeshStore.h"
+#include "brush/BrushOps.h"
 
 #include <gtest/gtest.h>
 

@@ -1,9 +1,9 @@
 #include "BrushManipulationSink.h"
 
-#include "LevelDocument.h"
-#include "LevelScene.h"
-#include "commands/DuplicateEntitiesCommand.h"
-#include "commands/ValueCommand.h"
+#include "../level/LevelDocument.h"
+#include "../level/LevelScene.h"
+#include "../level/commands/DuplicateEntitiesCommand.h"
+#include "../level/commands/ValueCommand.h"
 #include "../commands/CommandStack.h"
 #include "../commands/CompositeCommand.h"
 #include "../selection/SelectionService.h"

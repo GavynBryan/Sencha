@@ -2,7 +2,7 @@
 
 #include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
-#include "../level/brush/BrushBounds.h"
+#include "../brush/BrushBounds.h"
 #include "../meshedit/MeshElements.h"
 #include "../viewport/ViewportProjection.h"
 

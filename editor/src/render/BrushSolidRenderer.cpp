@@ -1,8 +1,8 @@
 #include "BrushSolidRenderer.h"
 
 #include "../level/SceneBrushWalk.h"
-#include "../level/brush/BrushTessellation.h"
-#include "../level/brush/FaceMaterial.h"
+#include "../brush/BrushTessellation.h"
+#include "../brush/FaceMaterial.h"
 
 #include <cstdint>
 #include <span>

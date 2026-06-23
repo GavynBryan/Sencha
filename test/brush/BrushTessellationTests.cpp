@@ -1,6 +1,6 @@
-#include "level/brush/BrushOps.h"
-#include "level/brush/BrushTessellation.h"
-#include "level/brush/FaceMaterial.h"
+#include "brush/BrushOps.h"
+#include "brush/BrushTessellation.h"
+#include "brush/FaceMaterial.h"
 
 #include <gtest/gtest.h>
 

@@ -2,7 +2,7 @@
 
 #include "../../commands/CommandStack.h"
 #include "../../level/BrushCreationSettings.h"
-#include "../brush/BrushOps.h"
+#include "../../brush/BrushOps.h"
 #include "../commands/CreateEntityCommand.h"
 #include "../../level/LevelDocument.h"
 #include "../../level/LevelScene.h"

@@ -1,7 +1,7 @@
-#include "level/brush/BrushMeshSerialization.h"
-#include "level/brush/BrushOps.h"
-#include "level/brush/BrushValidation.h"
-#include "level/brush/FaceMaterial.h"
+#include "brush/BrushMeshSerialization.h"
+#include "brush/BrushOps.h"
+#include "brush/BrushValidation.h"
+#include "brush/FaceMaterial.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>

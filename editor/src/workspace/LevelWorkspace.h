@@ -18,8 +18,8 @@
 #include "../viewport/Picking.h"
 #include "../viewport/ViewportLayout.h"
 
-#include "BrushCreationSettings.h"
-#include "LevelDocument.h"
+#include "../level/BrushCreationSettings.h"
+#include "../level/LevelDocument.h"
 
 #include <functional>
 #include <memory>

@@ -1,9 +1,9 @@
 #include "LevelWorkspace.h"
 
-#include "commands/DeleteEntityCommand.h"
-#include "tools/CameraTool.h"
-#include "tools/BrushTool.h"
-#include "tools/SelectTool.h"
+#include "../level/commands/DeleteEntityCommand.h"
+#include "../level/tools/CameraTool.h"
+#include "../level/tools/BrushTool.h"
+#include "../level/tools/SelectTool.h"
 
 #include <memory>
 #include <utility>

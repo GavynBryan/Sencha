@@ -1,7 +1,7 @@
 #include "LevelScene.h"
 
-#include "brush/BrushBounds.h"
-#include "brush/BrushOps.h"
+#include "../brush/BrushBounds.h"
+#include "../brush/BrushOps.h"
 
 #include <world/transform/TransformComponents.h>
 

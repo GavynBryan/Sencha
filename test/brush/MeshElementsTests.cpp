@@ -1,6 +1,6 @@
 #include "meshedit/MeshElements.h"
 
-#include "level/brush/BrushOps.h"
+#include "brush/BrushOps.h"
 
 #include <gtest/gtest.h>
 

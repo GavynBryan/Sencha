@@ -1,6 +1,6 @@
 #include "LevelDocument.h"
 
-#include "brush/BrushMeshSerialization.h"
+#include "../brush/BrushMeshSerialization.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/RuntimeAssets.h>

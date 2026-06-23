@@ -1,8 +1,8 @@
 #pragma once
 
-#include "brush/BrushId.h"
-#include "brush/BrushMesh.h"
-#include "brush/BrushMeshStore.h"
+#include "../brush/BrushId.h"
+#include "../brush/BrushMesh.h"
+#include "../brush/BrushMeshStore.h"
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "brush/BrushOps.h" // BrushPrimitive
+#include "../brush/BrushOps.h" // BrushPrimitive
 
 // Editor-wide brush-creation settings: the active create sub-mode and the
 // cylinder side count. Owned by LevelWorkspace, read by the create-drag

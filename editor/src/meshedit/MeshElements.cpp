@@ -1,6 +1,6 @@
 #include "MeshElements.h"
 
-#include "../level/brush/BrushHalfEdge.h"
+#include "../brush/BrushHalfEdge.h"
 
 #include <algorithm>
 #include <cstddef>

@@ -1,5 +1,5 @@
-#include "level/brush/BrushOps.h"
-#include "level/brush/BrushValidation.h"
+#include "brush/BrushOps.h"
+#include "brush/BrushValidation.h"
 
 #include <gtest/gtest.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "brush/BrushId.h"
-#include "brush/BrushMesh.h"
+#include "../brush/BrushId.h"
+#include "../brush/BrushMesh.h"
 
 #include <core/json/JsonValue.h>
 
