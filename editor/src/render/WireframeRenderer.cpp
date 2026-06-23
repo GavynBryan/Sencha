@@ -13,11 +13,16 @@ WireframeRenderer::WireframeRenderer(LevelScene& scene, EditorLinePipeline& line
 
 void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
 {
+    DrawWireframe(frame, viewport, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+}
+
+void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorViewport& viewport, const Vec4& color)
+{
     std::vector<EditorLineVertex> vertices;
     vertices.reserve(Scene.GetEntityCount() * 24);
     ForEachVisibleBrush(Scene, /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
-        { AppendBrushMesh(vertices, mesh, transform, Vec4(1.0f, 0.0f, 0.0f, 1.0f)); });
+        { AppendBrushMesh(vertices, mesh, transform, color); });
 
     Lines.Submit(frame, viewport, vertices);
 }

@@ -19,6 +19,7 @@ public:
     WireframeRenderer(LevelScene& scene, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
+    void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport, const Vec4& color);
 
 private:
     void AppendBrushMesh(std::vector<EditorLineVertex>& vertices,

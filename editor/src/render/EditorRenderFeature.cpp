@@ -2,7 +2,9 @@
 
 #include "PreviewBuffer.h"
 
+#include "../EditorTheme.h"
 #include "../viewport/ViewportLayout.h"
+#include "../viewport/ViewportShading.h"
 
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
@@ -70,6 +72,9 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                           frame.DepthFormat);
         if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
             body->DrawViewport(frame, viewport);
+        // Wireframe overlay on solid perspective view for edge visibility.
+        if (viewport.Shading == ViewportShading::Solid)
+            Wireframe.DrawWireframe(frame, viewport, EditorTheme::SolidWireframe);
         // Meshes draw solid in every viewport so a placed mesh reads regardless of
         // the viewport's brush shading.
         Meshes.DrawViewport(frame, viewport);

@@ -24,6 +24,7 @@ inline constexpr Vec4 FaceHighlight{ 1.0f, 0.45f, 0.12f, 1.0f };
 inline constexpr Vec4 EdgeHighlight{ 0.2f, 0.9f, 1.0f, 1.0f };
 inline constexpr Vec4 VertexHighlight{ 1.0f, 1.0f, 1.0f, 1.0f };
 inline constexpr Vec4 ComponentVisual{ 0.7f, 0.85f, 1.0f, 1.0f };
+inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 
 // Screen-constant sizes (pixels), resolved to world via ViewportProjection.
 inline constexpr float GizmoAxisPixels = 90.0f;
