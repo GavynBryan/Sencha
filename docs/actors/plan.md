@@ -82,22 +82,31 @@ What already exists and is reused (no changes required to land the substrate):
 : A non-owning value handle `{ World*, EntityId }` with ergonomic component
   access. Zero storage, no vtable.
 
-`ActorLogic` (`IActorLogic`)
-: A heap behavior object for one bespoke entity. Holds rich per-instance state
-  freely (it is not a component). Implements `BeginPlay`/`Tick`/`OnInput`/
-  `EndPlay`.
+`ActorLogic`
+: A plain heap behavior type for one bespoke entity (no base class), validated
+  by the `ActorLogic` concept. Holds rich per-instance state freely (it is not a
+  component). Defines any of `BeginPlay`/`Tick`/`OnInput`/`EndPlay` it needs;
+  each callback is opt-in (see D-I).
+
+`ActorKind`
+: The per-kind dispatch record stamped at `RegisterKind<T>()`: the factory
+  (`Make`/`Destroy`) plus function pointers for the callbacks `T` defines, null
+  for those it omits. The runtime-heterogeneous equivalent of a vtable, built
+  the way `EngineSchedule` erases systems (see D-I).
 
 `ScriptComponent`
 : A trivially-copyable component linking an entity to its logic: `KindId` (the
   serialized factory key) and `LogicSlot` (runtime-only index into the table).
 
 `ActorLogicTable`
-: A per-`World` resource owning the live `IActorLogic` objects, their owner
-  `EntityId`s, a free list of slots, and the pending BeginPlay/EndPlay queues.
+: A per-`World` resource owning the live logic instances (type-erased state +
+  the owning `ActorKind`), their owner `EntityId`s, a free list of slots, and
+  the pending BeginPlay/EndPlay queues.
 
 `Kind` / `KindId`
-: A named, factory-registered logic type (`DoorLogic`, `BossLogic`). `KindId`
-  is what serializes; the factory rebuilds the object on load.
+: A named logic type registered via `RegisterKind<T>()` (`DoorLogic`,
+  `BossLogic`), which produces its `ActorKind` record. `KindId` is what
+  serializes; `ActorKind::Make` rebuilds the object on load.
 
 `Connection`
 : An authored output→input link: `{ EntityId Target, uint16 OutputId,
@@ -114,10 +123,11 @@ What already exists and is reused (no changes required to land the substrate):
 
 Components are `static_assert`-ed trivially copyable, so behavior cannot live in
 them. A bespoke entity carries a POD `ScriptComponent { KindId, LogicSlot }`;
-the actual `IActorLogic` object (with arbitrary state — `std::vector`,
-sub-state-machines, timers) lives in the `ActorLogicTable` resource. This keeps
-the component relocatable for chunk storage while giving behavior a real home
-with locality.
+the actual logic object — a plain `ActorLogic`-conforming type with arbitrary
+state (`std::vector`, sub-state-machines, timers) — lives in the
+`ActorLogicTable` resource. This keeps the component relocatable for chunk
+storage while giving behavior a real home with locality. How those types are
+dispatched without a base class is D-I.
 
 ### D-B — Actors are driven from a side table, not an ECS query
 
@@ -171,7 +181,8 @@ top-level scene section keyed by entity array index, exactly like `hierarchy`.
 
 ### D-G — The authoring front-end is separate and deferred
 
-The substrate (`IActorLogic` + the event bus) is the **runtime contract**.
+The substrate (the `ActorLogic` contract + the event bus) is the **runtime
+contract**.
 Behavior trees, coroutine scripts, visual flowcharts, and Hammer-style I/O
 wiring are all front-ends that lower onto it. Build the C++ substrate first; it
 already solves the boss and encounter problems in code and is what every
@@ -185,6 +196,59 @@ access bumps the column version, D4.4); `Actor::Get<T>() const` routes through
 `std::as_const(World)` and does not bump. Logic that reads without intending to
 dirty must use the const path, same discipline as the rest of the engine.
 
+### D-I — Dispatch is a concept plus a per-kind function-pointer record
+
+Logic types are plain structs validated by an `ActorLogic` concept; per-kind
+dispatch is a stamped function-pointer record (`ActorKind`) built at the typed
+`RegisterKind<T>()` site. No abstract base class, no vtable. Each callback is
+detected by its own concept (`HasBeginPlay<T>`, `HasActorTick<T>`,
+`HasOnInput<T>`, `HasEndPlay<T>`) and left null in the record when `T` omits it,
+exactly as a system implements only the schedule phases it needs.
+
+```cpp
+template <typename T>
+concept HasActorTick = requires(T& t, Actor a, ActorContext& c) { t.Tick(a, c); };
+// ...HasBeginPlay / HasOnInput / HasEndPlay
+
+struct ActorKind {                                   // one per registered kind
+    KindId Id;
+    void* (*Make)();   void (*Destroy)(void*);
+    void  (*BeginPlay)(void*, Actor, ActorContext&)                    = nullptr;
+    void  (*Tick)     (void*, Actor, ActorContext&)                    = nullptr;
+    void  (*OnInput)  (void*, Actor, const InputEvent&, ActorContext&) = nullptr;
+    void  (*EndPlay)  (void*, Actor, ActorContext&)                    = nullptr;
+};
+
+template <typename T> ActorKind MakeActorKind(KindId id) {
+    ActorKind k{ id, [] { return static_cast<void*>(new T{}); },
+                     [](void* p) { delete static_cast<T*>(p); } };
+    if constexpr (HasActorTick<T>)
+        k.Tick = [](void* p, Actor a, ActorContext& c) { static_cast<T*>(p)->Tick(a, c); };
+    if constexpr (HasOnInput<T>)
+        k.OnInput = [](void* p, Actor a, const InputEvent& e, ActorContext& c)
+                    { static_cast<T*>(p)->OnInput(a, e, c); };
+    // ...BeginPlay / EndPlay
+    return k;
+}
+```
+
+`ActorLogicTable` stores per-instance `void* State` plus the owning
+`ActorKind*`; the system skips null callbacks. `Make`/`Destroy` make the record
+double as the `KindId` factory used by spawning (D-D) and load (D-F), so
+data-driven creation and dispatch share one registration.
+
+**Rationale.** The engine already resolves "typed registration site +
+runtime-heterogeneous storage" this way three times: `EngineSchedule` phase
+dispatch, `CommandBuffer` lifecycle-hook stamping, and `ComponentTraits` concept
+detection (D2.2). A virtual `IActorLogic` would be the only inheritance
+hierarchy in the systems/components layer.
+
+**Explicitly not a performance decision.** `record->Tick(state, …)` is two
+indirections, equivalent to a vtable. A3 ("no virtual calls in hot paths") does
+not apply — actor tick is the cold path. The choice buys idiomatic consistency
+and a flat, inheritance-free type model, not speed; a virtual interface would
+have been a defensible simpler alternative on readability grounds alone.
+
 ## Rollout
 
 Ordered so each stage is independently testable and lands value. Stages 1–4 are
@@ -192,8 +256,9 @@ the front-end-agnostic substrate; Stage 6 is the deferred fork.
 
 ### Stage 1 — Handle + minimal substrate
 
-`Actor`, `IActorLogic`, `ScriptComponent`, `ActorLogicTable`, and
-`ActorScriptSystem` (Tick only). A `Kind` factory registry.
+`Actor`, the `ActorLogic` concept + `ActorKind` dispatch record (D-I),
+`ScriptComponent`, `ActorLogicTable`, and `ActorScriptSystem` (Tick only).
+`RegisterKind<T>()` plus the `KindId` registry.
 
 Gate: a test registers a kind, creates an entity with a `ScriptComponent`, and
 sees `Tick` called with an `Actor` that can read and write a sibling component.
@@ -236,7 +301,8 @@ example/test.
 ### Stage 6 — Authoring front-end (deferred; decide first)
 
 Choose behavior trees / coroutine scripts / flowchart / wiring based on the
-Open Questions; the chosen front-end lowers to `IActorLogic` + the event bus.
+Open Questions; the chosen front-end lowers to the `ActorLogic` contract + the
+event bus.
 
 Gate: one authored example reproduces the boss (#3) or encounter (#2) without
 hand-written C++ logic.
@@ -268,7 +334,7 @@ hand-written C++ logic.
 Be suspicious when new code:
 
 - gives a high-count or uniform entity a `ScriptComponent`
-- adds a "tick every entity" path or dispatches `IActorLogic` from an ECS query
+- adds a "tick every entity" path or dispatches actor logic from an ECS query
 - stores rich/irregular state in `ScriptComponent` instead of the logic object
 - performs structural mutation inside `ComponentTraits<ScriptComponent>` hooks
 - caches chunk row pointers in a logic object across frames without keying
