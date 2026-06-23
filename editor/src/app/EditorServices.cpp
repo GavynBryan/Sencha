@@ -50,40 +50,76 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
     EnginePtr = &engine;
     Window = &window;
 
-    auto& console = engine.Console();
-    auto& debug = engine.Debug();
-    auto& instance = engine.Graphics().Instance;
-    auto& frames = engine.Graphics().Frames;
-    auto& renderer = engine.Graphics().MainRenderer;
-
     RegisterLevelSerializers();
-
-    // Load the project's game module (if any) BEFORE the document is created, so
-    // its components are registered when the document's World registers storage.
+    // Load the project's game module (if any) BEFORE the document is created, so its
+    // components are registered when the document's World registers storage.
     LoadGameModule();
-
     // Build the asset system and mount the project content (needs the project from
     // LoadGameModule). The document then serializes through it.
     InitAssets();
 
+    BuildDocument();
+    BuildPlayLoop();
+    BuildFileActions();
+    BuildInput();
+    BuildViewportRendering();
+    BuildUi(config.Console.OpenOnStart);
+}
+
+EditorServices::~EditorServices()
+{
+    if (Window != nullptr)
+        SetRelativeMouseMode(*Window, false);
+
+    // Pie and Files reference Workspace/Commands/Materials/Project; tear them down
+    // before that state goes away.
+    Files.reset();
+    Pie.reset();
+    UnloadGameModule();
+    Workspace.reset();
+    Commands.reset();
+    Router.reset();
+    Navigation.reset();
+    Shortcuts.reset();
+    // After Workspace: the document's StaticMeshComponents release into these caches
+    // on teardown. Before the engine frees the graphics services the caches borrow.
+    Assets.reset();
+    // Toolbar, StatusBar, Materials, and the project/module state release with the
+    // object in reverse declaration order; none touch the subsystems reset above.
+}
+
+void EditorServices::BuildDocument()
+{
+    Engine& engine = *EnginePtr;
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<LevelWorkspace>(engine.Logging());
     if (Assets)
         Workspace->Document.SetAssetEnvironment(*Assets);
-    Workspace->Layout.OnResize(window.GetExtent().Width, window.GetExtent().Height);
+    Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
     Workspace->Init(*Commands);
+}
 
-    // The author -> cook -> play loop: cook the live document, launch/stop PIE,
-    // and the cook/play/stop/project console commands all run through here.
+void EditorServices::BuildPlayLoop()
+{
+    // The author -> cook -> play loop: cook the live document, launch/stop PIE, and
+    // the cook/play/stop/project console commands all run through here.
+    Engine& engine = *EnginePtr;
     Pie = std::make_unique<PieDriver>(engine, Workspace->Document,
                                       Project ? &*Project : nullptr,
                                       Assets ? &*Assets : nullptr);
-    Pie->RegisterCommands(console.Registry());
+    Pie->RegisterCommands(engine.Console().Registry());
+}
 
+void EditorServices::BuildFileActions()
+{
+    Engine& engine = *EnginePtr;
     Materials = std::make_unique<MaterialLibrary>(engine.Logging());
     Files = std::make_unique<DocumentFileActions>(
-        window, Workspace->Document, *Commands, Workspace->Selection, *Materials);
+        *Window, Workspace->Document, *Commands, Workspace->Selection, *Materials);
+}
 
+void EditorServices::BuildInput()
+{
     Navigation = std::make_unique<ViewportNavigation>(
         Workspace->Layout,
         [this](bool enabled)
@@ -139,6 +175,12 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
                 UiFeature->SetKeyboardInputEnabled(uiOwnsInput);
             }
         });
+}
+
+void EditorServices::BuildViewportRendering()
+{
+    Engine& engine = *EnginePtr;
+    ConsoleService& console = engine.Console();
 
     // The solid pass reads this cvar to backface-cull the editor viewport to match
     // play mode (EditorRenderFeature / EditorSolidPipeline).
@@ -153,7 +195,7 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
         .Source = { "editor" },
     });
 
-    renderer.AddFeature(std::make_unique<EditorRenderFeature>(
+    engine.Graphics().MainRenderer.AddFeature(std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
         Workspace->Document.GetScene(),
         Workspace->Selection,
@@ -161,11 +203,21 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
         *Workspace->Manipulators,
         Workspace->Grid,
         engine.Logging(),
-        engine.Console().Registry(),
+        console.Registry(),
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr));
+}
 
-    auto uiFeature = std::make_unique<EditorUiFeature>(engine, window, instance, frames);
+void EditorServices::BuildUi(bool consoleOpenOnStart)
+{
+    Engine& engine = *EnginePtr;
+    ConsoleService& console = engine.Console();
+    DebugService& debug = engine.Debug();
+    auto& instance = engine.Graphics().Instance;
+    auto& frames = engine.Graphics().Frames;
+    Renderer& renderer = engine.Graphics().MainRenderer;
+
+    auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames);
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },
@@ -201,7 +253,7 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
     UiFeature->AddPanel(std::move(viewportPanel));
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
     ConsolePanel = editorConsole.get();
-    ConsolePanel->SetVisible(config.Console.OpenOnStart);
+    ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
     UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
@@ -215,28 +267,6 @@ EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineCo
         *Materials, Workspace->Document));
 
     renderer.AddFeature(std::move(uiFeature));
-}
-
-EditorServices::~EditorServices()
-{
-    if (Window != nullptr)
-        SetRelativeMouseMode(*Window, false);
-
-    // Pie and Files reference Workspace/Commands/Materials/Project; tear them down
-    // before that state goes away.
-    Files.reset();
-    Pie.reset();
-    UnloadGameModule();
-    Workspace.reset();
-    Commands.reset();
-    Router.reset();
-    Navigation.reset();
-    Shortcuts.reset();
-    // After Workspace: the document's StaticMeshComponents release into these caches
-    // on teardown. Before the engine frees the graphics services the caches borrow.
-    Assets.reset();
-    // Toolbar, StatusBar, Materials, and the project/module state release with the
-    // object in reverse declaration order; none touch the subsystems reset above.
 }
 
 void EditorServices::RegisterSystems(EngineSchedule& schedule)

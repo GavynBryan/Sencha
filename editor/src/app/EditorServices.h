@@ -64,6 +64,16 @@ public:
     void HandlePlatformEvent(PlatformEventContext& ctx);
 
 private:
+    // Constructor phases, in call order. Each builds one cohesive slice of the
+    // editor against the engine (*EnginePtr) and primary window (*Window), so the
+    // constructor reads as the bring-up sequence.
+    void BuildDocument();
+    void BuildPlayLoop();
+    void BuildFileActions();
+    void BuildInput();
+    void BuildViewportRendering();
+    void BuildUi(bool consoleOpenOnStart);
+
     void ProcessFrame();
 
     // Opens the project (SENCHA_PROJECT = path to a .senchaproj) and loads its
