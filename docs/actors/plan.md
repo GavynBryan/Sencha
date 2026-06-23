@@ -309,6 +309,19 @@ hand-written C++ logic.
 
 ## Open Questions
 
+- **Keeping ECS the default.** Actors are an opt-in exception by policy, but
+  affordances beat policy: if writing an actor is easier than defining POD
+  components plus a system, developers will default to actors and erode the
+  data-oriented core — the Unreal "everything is an `AActor`" failure mode. This
+  matters because dispatch parity (D-I) is per-call only; systems still batch
+  SoA over chunks and crush per-actor dispatch at scale, so over-adoption is a
+  silent performance regression, not just a style drift. Open: how to balance
+  ergonomics so the ECS path is not the heavier one (give systems/components
+  sugar comparable to the `Actor` handle); whether examples and the first
+  tutorial lead with pure ECS and frame actors as the exception; and whether to
+  make over-adoption a *measurable* content risk — e.g. flag a `KindId`
+  instantiated above a threshold, or a zone where actors outnumber plain
+  entities — surfaced through the action-adventure content-risk dashboard.
 - **Authoring front-end.** Who authors logic — programmers or non-programmer
   designers? And what is the dominant shape — reactive AI (→ behavior trees),
   scripted sequences/set-pieces (→ coroutine scripts or a timeline), or heavy
