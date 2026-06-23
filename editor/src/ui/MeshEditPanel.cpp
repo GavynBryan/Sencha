@@ -132,9 +132,9 @@ void MeshEditPanel::DrawEdgeVerbs()
         return;
     }
 
-    if (ImGui::Button("Split"))
+    if (ImGui::Button("Insert Loop"))
     {
-        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::SplitEdge, {}))
+        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, {}))
         {
             Commands.Execute(std::move(command));
             Selection.ClearMeshElementSelections();

@@ -80,13 +80,14 @@ struct BrushOps
     // the recalc-normals verb: repair no longer re-orients, so the flip persists.
     [[nodiscard]] static BrushMesh FlipFace(const BrushMesh& mesh, std::uint32_t face);
 
-    // Insert a vertex at the midpoint of the undirected edge (a, b) into every
-    // face loop that traverses it, keeping the mesh 2-manifold. Pure topology:
-    // appends one vertex and leaves validation to the caller, so several splits
-    // compose by stable vertex indices before a single repair. No-op if the edge
-    // is absent.
-    [[nodiscard]] static BrushMesh SplitEdge(const BrushMesh& mesh,
-                                             std::uint32_t a, std::uint32_t b);
+    // Walk a topological edge loop from the seed undirected edge (a, b), splitting
+    // every edge in the loop at its midpoint and subdividing each traversed face
+    // into two faces. Produces a clean edge ring parallel to the seed edge on a
+    // quad-like mesh. Pure topology: appends vertices and faces, leaves validation
+    // to the caller. The loop terminates at: a boundary edge, an odd-sided face, or
+    // a cycle back to a visited face. No-op if the seed edge is absent.
+    [[nodiscard]] static BrushMesh InsertEdgeLoop(const BrushMesh& mesh,
+                                                  std::uint32_t a, std::uint32_t b);
 
     // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
     // the half-space the plane normal points into. (The Hammer clip tool.)

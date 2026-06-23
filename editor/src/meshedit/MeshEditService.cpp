@@ -7,6 +7,9 @@
 #include "../level/brush/BrushOps.h"
 #include "../level/brush/BrushValidation.h"
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -100,7 +103,8 @@ std::optional<BrushMesh> TranslateElementsImpl(const BrushMesh& base,
 }
 
 // Everything a verb's apply needs: the resolved mesh + transform, the refs already
-// filtered to the verb's element kind, the params, and the active element mode.
+// filtered to the verb's element kind, the params, the active element mode, and an
+// optional logger a verb uses to report why it refused an edit (null in tests).
 struct VerbContext
 {
     const BrushMesh&               Before;
@@ -108,6 +112,7 @@ struct VerbContext
     std::span<const SelectableRef> Refs;
     const MeshEditParams&          Params;
     MeshElementKind                ElementKind;
+    Logger*                        Log;
 };
 
 // Per-face verbs (extrude/delete): resolve faces by stable identity up front so one
@@ -191,25 +196,37 @@ std::optional<BrushMesh> ApplyTranslate(const VerbContext& ctx)
                                  Traits(ctx.ElementKind).Selectable, ctx.Params.TranslateDelta, true);
 }
 
-std::optional<BrushMesh> ApplySplitEdge(const VerbContext& ctx)
+std::optional<BrushMesh> ApplyInsertEdgeLoop(const VerbContext& ctx)
 {
-    BrushMesh after = ctx.Before;
-    int applied = 0;
-    for (const SelectableRef& ref : ctx.Refs)
+    // A loop is seeded from a single edge; ignore any extra selection.
+    const std::optional<EdgeElement> edge =
+        MeshElements::TryGetEdge(ctx.Before, ctx.Transform, ctx.Refs.front().ElementId);
+    if (!edge.has_value())
     {
-        // Endpoints from Before; SplitEdge only appends, so indices stay valid as
-        // splits compose. One repair at the end.
-        if (const std::optional<EdgeElement> edge =
-                MeshElements::TryGetEdge(ctx.Before, ctx.Transform, ref.ElementId))
-        {
-            after = BrushOps::SplitEdge(after, edge->VertexA, edge->VertexB);
-            ++applied;
-        }
+        if (ctx.Log)
+            ctx.Log->Warn("Insert Loop: selected edge {} did not resolve to a mesh edge",
+                          ctx.Refs.front().ElementId);
+        return std::nullopt;
     }
-    if (applied == 0)
+
+    BrushMesh after = BrushOps::InsertEdgeLoop(ctx.Before, edge->VertexA, edge->VertexB);
+    // InsertEdgeLoop returns the input untouched when the seed admits no clean loop.
+    // Detect that (no vertices appended) and produce no command, so the undo stack
+    // never gets a do-nothing entry.
+    if (after.Vertices.size() == ctx.Before.Vertices.size())
+    {
+        if (ctx.Log)
+            ctx.Log->Info("Insert Loop: no clean loop from edge {}-{} "
+                          "(blocked by a non-quad face or open boundary)",
+                          edge->VertexA, edge->VertexB);
         return std::nullopt;
+    }
     if (!BrushValidateAndRepair(after).Ok)
+    {
+        if (ctx.Log)
+            ctx.Log->Warn("Insert Loop: loop result failed validation; edit discarded");
         return std::nullopt;
+    }
     return after;
 }
 
@@ -232,10 +249,15 @@ const std::array<VerbDescriptor, 8> kVerbs = { {
     { IsFaceRef,        ApplyClip },                // Clip
     { IsFaceRef,        ApplyResizeFace },          // ResizeFace
     { IsMeshElementRef, ApplyTranslate },           // TranslateElements
-    { IsEdgeRef,        ApplySplitEdge },           // SplitEdge
+    { IsEdgeRef,        ApplyInsertEdgeLoop },      // InsertEdgeLoop
     { IsFaceRef,        ApplyFlipNormal },          // FlipFaceNormal
     { IsEntityRef,      ApplyRecalculateNormals },  // RecalculateNormals
 } };
+}
+
+MeshEditService::MeshEditService(LoggingProvider& logging)
+    : Logging(&logging)
+{
 }
 
 MeshElementKind MeshEditService::GetElementKind() const
@@ -280,7 +302,8 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
         return nullptr;
 
     BrushMesh before = *resolved->Mesh;
-    const VerbContext ctx{ before, resolved->Transform, refs, params, ElementKind };
+    Logger* log = Logging ? &Logging->GetLogger<MeshEditService>() : nullptr;
+    const VerbContext ctx{ before, resolved->Transform, refs, params, ElementKind, log };
     std::optional<BrushMesh> after = desc.Apply(ctx);
     if (!after.has_value())
         return nullptr;

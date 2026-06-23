@@ -12,6 +12,7 @@
 LevelWorkspace::LevelWorkspace(LoggingProvider& logging)
     : Document(logging)
     , Selection(LevelSelection)
+    , MeshEdit(logging)
 {
 }
 

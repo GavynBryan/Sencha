@@ -13,6 +13,8 @@
 #include <optional>
 #include <span>
 
+class LoggingProvider;
+
 enum class MeshEditVerb : uint8_t
 {
     Extrude,
@@ -20,7 +22,7 @@ enum class MeshEditVerb : uint8_t
     Clip,
     ResizeFace,
     TranslateElements,
-    SplitEdge,
+    InsertEdgeLoop,
     FlipFaceNormal,
     RecalculateNormals,
 };
@@ -38,6 +40,11 @@ struct MeshEditParams
 class MeshEditService
 {
 public:
+    MeshEditService() = default;
+    // Logging is optional: verbs that refuse an edit report why through this
+    // provider. Tests default-construct without one and the reports become no-ops.
+    explicit MeshEditService(LoggingProvider& logging);
+
     [[nodiscard]] MeshElementKind GetElementKind() const;
     void SetElementKind(MeshElementKind kind);
     MeshElementKind CycleElementKind();
@@ -98,4 +105,5 @@ public:
 
 private:
     MeshElementKind ElementKind = MeshElementKind::Object;
+    LoggingProvider* Logging = nullptr;
 };

@@ -243,7 +243,7 @@ TEST(MeshEditService, TranslateElementsVerbProducesValidatedCommand)
     EXPECT_EQ(captured->After.Vertices.size(), 8u);
 }
 
-TEST(MeshEditService, SplitEdgeInsertsMidpointAndStaysClosed)
+TEST(MeshEditService, InsertEdgeLoopOnBoxProducesClosedManifold)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
     StubMeshEditTarget target(box);
@@ -258,18 +258,128 @@ TEST(MeshEditService, SplitEdgeInsertsMidpointAndStaysClosed)
     const SelectionSnapshot selection{ .Items = { ref }, .Primary = ref };
 
     std::unique_ptr<ICommand> command =
-        service.ApplyVerb(target, selection, MeshEditVerb::SplitEdge);
+        service.ApplyVerb(target, selection, MeshEditVerb::InsertEdgeLoop);
 
     ASSERT_NE(command, nullptr);
     const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
     ASSERT_NE(captured, nullptr);
-    EXPECT_EQ(captured->After.Vertices.size(), box.Vertices.size() + 1); // one midpoint
-    EXPECT_EQ(captured->After.Faces.size(), box.Faces.size());           // split adds no faces
+    // Any seed edge on a box drives a ring of 4 faces (4 sides, or 2 sides + 2 caps);
+    // the ring crosses 4 edges, so 4 midpoints and 4 extra faces, staying closed.
+    EXPECT_EQ(captured->After.Vertices.size(), box.Vertices.size() + 4);
+    EXPECT_EQ(captured->After.Faces.size(), box.Faces.size() + 4);
 
     BrushMesh check = captured->After;
     const BrushRepairResult repair = BrushValidateAndRepair(check);
     EXPECT_TRUE(repair.Ok);
-    EXPECT_TRUE(repair.Closed); // sub-edges remain shared by exactly two faces
+    EXPECT_TRUE(repair.Closed);
+}
+
+namespace
+{
+// A flat open strip of three quads in a row (8 vertices, 3 faces), CCW from +Z.
+// Used to prove the loop spans both directions from a middle seed edge.
+BrushMesh ThreeQuadStrip()
+{
+    BrushMesh mesh;
+    mesh.Vertices = {
+        BrushVertex{ { 0, 0, 0 } }, BrushVertex{ { 1, 0, 0 } },
+        BrushVertex{ { 2, 0, 0 } }, BrushVertex{ { 3, 0, 0 } },
+        BrushVertex{ { 0, 1, 0 } }, BrushVertex{ { 1, 1, 0 } },
+        BrushVertex{ { 2, 1, 0 } }, BrushVertex{ { 3, 1, 0 } },
+    };
+    mesh.Faces = {
+        BrushFace{ { 0, 1, 5, 4 }, {} },
+        BrushFace{ { 1, 2, 6, 5 }, {} },
+        BrushFace{ { 2, 3, 7, 6 }, {} },
+    };
+    BrushValidateAndRepair(mesh);
+    return mesh;
+}
+}
+
+TEST(MeshEditService, InsertEdgeLoopSpansBothDirectionsFromMiddleSeed)
+{
+    // The regression this hardening fixes: the old one-directional walk cut only the
+    // half of the loop on one side of the seed (and stranded midpoints, opening the
+    // mesh). Seeding the MIDDLE edge {1,5} must split all three quads, not one or two.
+    const BrushMesh strip = ThreeQuadStrip();
+
+    const BrushMesh after = BrushOps::InsertEdgeLoop(strip, 1, 5);
+
+    EXPECT_EQ(after.Vertices.size(), strip.Vertices.size() + 4); // 4 rungs cut
+    EXPECT_EQ(after.Faces.size(), strip.Faces.size() + 3);       // all 3 quads split
+
+    BrushMesh check = after;
+    EXPECT_TRUE(BrushValidateAndRepair(check).Ok); // no T-junctions, valid geometry
+}
+
+TEST(MeshEditService, InsertEdgeLoopAbsentSeedReturnsUnchanged)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+
+    // Vertices 0 and 6 are diagonally opposite corners: not a real edge.
+    const BrushMesh after = BrushOps::InsertEdgeLoop(box, 0, 6);
+
+    EXPECT_EQ(after.Vertices.size(), box.Vertices.size());
+    EXPECT_EQ(after.Faces.size(), box.Faces.size());
+}
+
+TEST(MeshEditService, InsertEdgeLoopNeverCorruptsMeshForAnySeed)
+{
+    // Predictability contract: for EVERY edge of several mesh shapes, the loop cut is
+    // either a clean no-op or a valid manifold edit. It never produces broken
+    // geometry, and it never opens a mesh that was closed.
+    BrushMesh openBox = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    openBox.Faces.erase(openBox.Faces.begin()); // a hole, like a carved doorway wall
+    BrushValidateAndRepair(openBox);
+
+    const std::vector<BrushMesh> shapes = {
+        BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }),
+        BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, 1, 8),
+        openBox,
+        ThreeQuadStrip(),
+    };
+
+    for (const BrushMesh& shape : shapes)
+    {
+        BrushMesh closedCheck = shape;
+        const bool inputClosed = BrushValidateAndRepair(closedCheck).Closed;
+
+        for (const EdgeElement& edge : MeshElements::Edges(shape, Transform3f::Identity()))
+        {
+            BrushMesh after = BrushOps::InsertEdgeLoop(shape, edge.VertexA, edge.VertexB);
+            const BrushRepairResult repair = BrushValidateAndRepair(after);
+
+            EXPECT_TRUE(repair.Ok) << "seed edge " << edge.VertexA << "-" << edge.VertexB;
+            if (after.Faces.size() != shape.Faces.size())
+            {
+                EXPECT_GT(after.Vertices.size(), shape.Vertices.size());
+                EXPECT_GT(after.Faces.size(), shape.Faces.size());
+            }
+            if (inputClosed)
+                EXPECT_TRUE(repair.Closed) << "loop cut opened a closed mesh";
+        }
+    }
+}
+
+TEST(MeshEditService, InsertEdgeLoopRepeatsStably)
+{
+    // Mimics the user's multi-step workflow: stack several loop cuts and confirm the
+    // mesh stays a valid closed manifold the whole way (no drift into broken state).
+    BrushMesh mesh = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });
+
+    for (int pass = 0; pass < 5; ++pass)
+    {
+        const std::vector<EdgeElement> edges = MeshElements::Edges(mesh, Transform3f::Identity());
+        ASSERT_FALSE(edges.empty());
+        const EdgeElement& seed = edges[pass % edges.size()];
+
+        BrushMesh after = BrushOps::InsertEdgeLoop(mesh, seed.VertexA, seed.VertexB);
+        const BrushRepairResult repair = BrushValidateAndRepair(after);
+        ASSERT_TRUE(repair.Ok) << "pass " << pass;
+        EXPECT_TRUE(repair.Closed) << "pass " << pass;
+        mesh = after;
+    }
 }
 
 TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)

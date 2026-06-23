@@ -7,7 +7,9 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <numbers>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -321,38 +323,141 @@ BrushMesh BrushOps::FlipFace(const BrushMesh& mesh, std::uint32_t face)
     return out;
 }
 
-BrushMesh BrushOps::SplitEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+namespace
 {
-    BrushMesh out = mesh;
-    if (a >= out.Vertices.size() || b >= out.Vertices.size() || a == b)
-        return out;
-
-    const std::uint32_t mid = static_cast<std::uint32_t>(out.Vertices.size());
-    out.Vertices.push_back(BrushVertex{
-        (out.Vertices[a].Position + out.Vertices[b].Position) * 0.5f });
-
-    bool inserted = false;
-    for (BrushFace& face : out.Faces)
+    // Undirected edge identity (sorted endpoints), for adjacency and midpoint maps.
+    // Ordered comparison keeps every container iteration deterministic, so the
+    // appended midpoint vertices land at the same indices on every run.
+    struct UndirectedEdge
     {
-        const std::size_t n = face.Loop.size();
-        for (std::size_t i = 0; i < n; ++i)
+        std::uint32_t U, V;
+        UndirectedEdge(std::uint32_t a, std::uint32_t b) : U(std::min(a, b)), V(std::max(a, b)) {}
+        bool operator<(const UndirectedEdge& o) const { return U != o.U ? U < o.U : V < o.V; }
+    };
+
+    // A face's edge at local index i, and the "opposite" edge of a quad (i+2).
+    UndirectedEdge FaceEdge(const std::vector<std::uint32_t>& loop, std::size_t i)
+    {
+        return UndirectedEdge(loop[i], loop[(i + 1) % loop.size()]);
+    }
+}
+
+BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
+        return mesh;
+
+    // Undirected edge -> the (face, localEdgeIndex) pairs that traverse it. Built
+    // straight from face loops, so it is independent of winding (no half-edge twin
+    // linking to misfire after an extrude leaves local winding inconsistent) and
+    // it exposes non-manifold edges (3+ incident faces) honestly instead of
+    // silently dropping one side.
+    std::map<UndirectedEdge, std::vector<std::pair<std::uint32_t, std::uint32_t>>> edgeFaces;
+    for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+    {
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        for (std::size_t i = 0; i < loop.size(); ++i)
+            edgeFaces[FaceEdge(loop, i)].push_back({ f, static_cast<std::uint32_t>(i) });
+    }
+
+    const UndirectedEdge seed(a, b);
+    if (!edgeFaces.count(seed))
+        return mesh; // seed edge not present in the mesh
+
+    // Flood-fill the loop. A cut edge propagates to the opposite edge of every
+    // adjacent quad; that adjacency is symmetric, so seeding one edge fans out in
+    // BOTH directions (the single-direction half-edge walk this replaced cut only
+    // half a loop and stranded midpoints on the unvisited side). Non-quads and
+    // boundaries do not propagate: the loop terminates at poles and open edges.
+    std::set<UndirectedEdge> cutEdges{ seed };
+    std::set<std::uint32_t> splitFaces;
+    std::vector<UndirectedEdge> frontier{ seed };
+    while (!frontier.empty())
+    {
+        const UndirectedEdge e = frontier.back();
+        frontier.pop_back();
+        for (const auto& [f, i] : edgeFaces[e])
         {
-            const std::uint32_t u = face.Loop[i];
-            const std::uint32_t v = face.Loop[(i + 1) % n];
-            if ((u == a && v == b) || (u == b && v == a))
-            {
-                // Insert between u and v, preserving each loop's winding. An
-                // undirected edge appears at most once per face loop.
-                face.Loop.insert(face.Loop.begin() + static_cast<std::ptrdiff_t>(i) + 1, mid);
-                inserted = true;
-                break;
-            }
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            if (loop.size() != 4)
+                continue; // pole: the loop ends here, this face is not split
+            if (!splitFaces.insert(f).second)
+                continue; // already handled
+            const UndirectedEdge opposite = FaceEdge(loop, (i + 2) % 4);
+            if (cutEdges.insert(opposite).second)
+                frontier.push_back(opposite);
         }
     }
 
-    if (!inserted)
-        out.Vertices.pop_back(); // edge absent: leave the mesh untouched
-    // Validation is the caller's (MeshEditService) — see header.
+    if (splitFaces.empty())
+        return mesh; // seed touched no quad: nothing to cut
+
+    // Predictability gate: refuse anything that would not stay a clean 2-manifold.
+    // For every cut edge, EITHER all its incident faces are being split (interior of
+    // the loop, both sides cut consistently) OR it is a boundary edge (its single
+    // face is split). Any other case puts a midpoint on an edge whose neighbour is
+    // NOT split: a T-junction that opens the mesh. And every split quad must have
+    // exactly one opposite pair cut; if the perpendicular pair is also flagged the
+    // loop crosses itself in that face. In either case we return the mesh untouched,
+    // so the result is always a complete loop or a no-op, never corrupt geometry.
+    for (const UndirectedEdge& e : cutEdges)
+        for (const auto& [f, i] : edgeFaces[e])
+            if (!splitFaces.count(f))
+                return mesh; // T-junction would result
+    for (std::uint32_t f : splitFaces)
+    {
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        const bool pair0 = cutEdges.count(FaceEdge(loop, 0)) && cutEdges.count(FaceEdge(loop, 2));
+        const bool pair1 = cutEdges.count(FaceEdge(loop, 1)) && cutEdges.count(FaceEdge(loop, 3));
+        if (pair0 == pair1)
+            return mesh; // neither pair, or both pairs (self-crossing): refuse
+    }
+
+    // One midpoint vertex per cut edge (deterministic order from the ordered set).
+    BrushMesh out = mesh;
+    std::map<UndirectedEdge, std::uint32_t> edgeMid;
+    for (const UndirectedEdge& e : cutEdges)
+    {
+        edgeMid[e] = static_cast<std::uint32_t>(out.Vertices.size());
+        out.Vertices.push_back(BrushVertex{
+            (out.Vertices[e.U].Position + out.Vertices[e.V].Position) * 0.5 });
+    }
+
+    // Split each quad between the midpoints of its cut pair, preserving winding.
+    std::vector<BrushFace> rebuilt;
+    rebuilt.reserve(out.Faces.size() + splitFaces.size());
+    for (std::uint32_t f = 0; f < out.Faces.size(); ++f)
+    {
+        if (!splitFaces.count(f))
+        {
+            rebuilt.push_back(std::move(out.Faces[f]));
+            continue;
+        }
+
+        const std::vector<std::uint32_t> loop = out.Faces[f].Loop;
+        // Orient the split so iCut/iCut+2 are the cut pair (guaranteed to exist by
+        // the gate above). Quad [v0 v1 v2 v3] cut across edges (i0,i1) and (i2,i3):
+        //   A = [mEntry, v1, v2, mExit]   B = [mExit, v3, v0, mEntry]
+        const std::size_t iCut = cutEdges.count(FaceEdge(loop, 0)) ? 0 : 1;
+        const std::uint32_t v0 = loop[iCut];
+        const std::uint32_t v1 = loop[(iCut + 1) % 4];
+        const std::uint32_t v2 = loop[(iCut + 2) % 4];
+        const std::uint32_t v3 = loop[(iCut + 3) % 4];
+        const std::uint32_t mEntry = edgeMid.at(UndirectedEdge(v0, v1));
+        const std::uint32_t mExit = edgeMid.at(UndirectedEdge(v2, v3));
+
+        BrushFace faceA;
+        faceA.Material = out.Faces[f].Material;
+        faceA.Loop = { mEntry, v1, v2, mExit };
+        BrushFace faceB;
+        faceB.Material = out.Faces[f].Material;
+        faceB.Loop = { mExit, v3, v0, mEntry };
+        rebuilt.push_back(std::move(faceA));
+        rebuilt.push_back(std::move(faceB));
+    }
+
+    out.Faces = std::move(rebuilt);
+    // Validation (weld + normals) is the caller's, see header.
     return out;
 }
 
