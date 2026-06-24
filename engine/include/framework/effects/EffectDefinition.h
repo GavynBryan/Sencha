@@ -7,7 +7,7 @@
 #include <vector>
 
 //=============================================================================
-// EffectDefinition (GameplayEffect equivalent), authored data.
+// EffectDefinition, authored data.
 //
 // Modifier application by duration policy:
 //   - Instant            : modifiers applied once to Base.

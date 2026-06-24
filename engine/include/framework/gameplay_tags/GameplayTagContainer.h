@@ -20,7 +20,7 @@ class GameplayTagRegistry;
 // bumps the column version, so Changed<GameplayTagContainer> sees grant/revoke.
 // Hierarchical queries take the GameplayTagRegistry, which lives as a world
 // resource (the provenance "who granted this tag" is not stored here — the
-// effect entity that granted a tag is its provenance; see the GAS plan).
+// effect entity that granted a tag is its provenance).
 //=============================================================================
 struct GameplayTagContainer
 {
@@ -43,8 +43,8 @@ struct GameplayTagContainer
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
 
-    // True iff any held tag is `ancestor` or a descendant of it (GAS HasTag
-    // semantics: holding State.Stunned.Root satisfies a query for State.Stunned).
+    // True iff any held tag is `ancestor` or a descendant of it (holding
+    // State.Stunned.Root satisfies a query for State.Stunned).
     [[nodiscard]] bool HasDescendantOf(const GameplayTagRegistry& registry,
                                        GameplayTagId ancestor) const;
 

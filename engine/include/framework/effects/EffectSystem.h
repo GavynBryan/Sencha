@@ -6,8 +6,7 @@
 class World;
 
 //=============================================================================
-// Effect runtime (free functions; the FixedLogic system wrapper is a trivial
-// later addition once a game wires the framework into its schedule).
+// Effect runtime (free functions; a game can wrap them in a scheduled system).
 //
 // Required world resources: EffectRegistry, AttributeRegistry (for clamping).
 // Required registered components: ActiveEffect, AttributeSet, GameplayTagContainer.

@@ -11,8 +11,8 @@
 // Per-entity attribute values as a trivially-copyable ECS component: a fixed-cap,
 // id-sorted block of (Base, Current). Base is authoritative — set by authoring
 // and instant effects. Current is derived each tick by ResolveAttributes (Base
-// folded with active modifiers, then clamped); Stage 2 has no modifiers yet, so
-// Current is just clamp(Base). Attribute *definitions* live in AttributeRegistry.
+// folded with active modifiers, then clamped). Attribute *definitions* live in
+// AttributeRegistry.
 //=============================================================================
 struct AttributeSet
 {

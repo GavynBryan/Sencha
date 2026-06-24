@@ -15,7 +15,7 @@
 // target; their modifiers fold additively and their granted tags ref-count.
 //
 // Runtime-only state: not scene-serialized (persistence is the streaming
-// overlay's job, deferred). Trivially copyable so it lives in chunks.
+// overlay's job). Trivially copyable so it lives in chunks.
 //=============================================================================
 struct ActiveEffect
 {

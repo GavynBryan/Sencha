@@ -9,7 +9,7 @@
 // being (de)serialized. Call once at startup, after InitSceneSerializer().
 //
 // This lives in the framework, not the engine manifest: the engine's
-// EngineSceneComponents must not name gameplay types (D-J).
+// EngineSceneComponents must not name gameplay types.
 //=============================================================================
 
 void RegisterGameplayTagSerializer();

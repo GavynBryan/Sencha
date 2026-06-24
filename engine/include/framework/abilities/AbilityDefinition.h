@@ -4,7 +4,7 @@
 #include <framework/gameplay_tags/GameplayTagQuery.h>
 
 //=============================================================================
-// AbilityDefinition (GameplayAbility equivalent), authored data.
+// AbilityDefinition, authored data.
 //
 // An ability is thin orchestration over effects + tags. Everything it does to
 // the world is an effect:

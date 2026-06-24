@@ -6,13 +6,12 @@ class World;
 // ResolveAttributes
 //
 // Recompute every AttributeSet's Current from its Base, clamped to each
-// attribute's range (from the AttributeRegistry world resource). Stage 2 has no
-// modifiers; Stage 3 folds active effect modifiers in before the clamp. No-op if
-// the world has no AttributeRegistry resource.
+// attribute's range (from the AttributeRegistry world resource). When active
+// effects are present, the effects module folds their modifiers in before the
+// clamp. No-op if the world has no AttributeRegistry resource.
 //
-// Free function (not yet an EngineSchedule system) so it is testable without the
-// frame-context stack; the FixedLogic wrapper is trivial to add when a game wires
-// the framework into its schedule.
+// Free functions, so they run without the frame-context stack; a game can wrap
+// them in a scheduled system.
 //=============================================================================
 void ResolveAttributes(World& world);
 

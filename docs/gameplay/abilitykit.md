@@ -1,8 +1,8 @@
-# Sencha Gameplay Ability System Plan
+# AbilityKit — Sencha's Gameplay Framework
 
 Status: **proposed working plan** (2026-06-24).
 
-This document plans a Gameplay Ability System (GAS) for Sencha, built the
+This document plans **AbilityKit**, Sencha's gameplay framework, built the
 data-driven ECS way: bespoke gameplay behavior lives in **authored data**
 (tags, attribute tables, effect and ability definitions) interpreted by
 **uniform systems** over **POD components**. It deliberately rebuilds the
@@ -71,8 +71,8 @@ What exists and is reused:
 - **No networking / replication / prediction.** GAS's replication model is out of
   scope; single-player authored play first, matching the action-adventure plan.
 - **No real physics, animation, or VFX dependency.** Knockback, hit windows, and
-  cues integrate through thin sinks the GAS owns (D-J); they are stubbed until
-  those systems exist, so the GAS is buildable in parallel.
+  cues integrate through thin sinks AbilityKit owns (D-J); they are stubbed until
+  those systems exist, so AbilityKit is buildable in parallel.
 - **No authoring front-end.** Definitions are authored as data files (JSON/asset)
   first; a visual editor is a later, separate concern.
 
@@ -196,14 +196,14 @@ resource); per-occurrence **payloads** (event entities, spawn→process→despaw
 optional `DeathEvent` in a queue. Never add/remove a transient flag component per
 frame (archetype churn); clear event data in bulk instead.
 
-### D-G — Behavior reaches the world through thin sinks the GAS owns
+### D-G — Behavior reaches the world through thin sinks AbilityKit owns
 
 An ability's effects on attributes and tags are pure data. Its effects on the
 *world* — impulse/knockback, montage + hit-window timing, overlap/trace hit
 detection, cosmetic cues — go through narrow interfaces (`IImpulseSink`,
-`IMontageSink`, `IHitQuery`, `ICueSink`) that the GAS defines and that physics /
+`IMontageSink`, `IHitQuery`, `ICueSink`) that AbilityKit defines and that physics /
 animation / render / audio implement later. Stubs now; real implementations when
-those systems land. The GAS must not reach into those backends directly.
+those systems land. AbilityKit must not reach into those backends directly.
 
 ### D-H — Serialize tags and attributes by name, definitions by asset path
 
@@ -220,10 +220,10 @@ An input/AI mapping layer produces activation `Intent`s (a queue resource or a
 small per-entity intent component); `AbilityActivationSystem` consumes them. The
 ability system never reads raw input, so the same system serves player and AI.
 
-### D-J — GAS lives in a delineated `framework/` area, decoupled by rule, not a separate library
+### D-J — AbilityKit lives in a delineated `framework/` area, decoupled by rule, not a separate library
 
 Gameplay is not core engine behavior, but the separation that matters is a
-*dependency rule*, not a build target. All GAS code — gameplay tags, attributes,
+*dependency rule*, not a build target. All AbilityKit code — gameplay tags, attributes,
 effects, abilities, quest/state, and their systems — lives under a delineated
 `framework/` area compiled into the existing `sencha_engine` library
 (`engine/include/framework/…`, `engine/src/framework/…`), kept apart from
@@ -381,7 +381,7 @@ Be suspicious when new code:
 - adds or removes a *transient* event/flag component every frame (archetype churn)
 - serializes raw tag/attribute ids into a scene instead of names
 - has ability behavior call physics/animation/render/audio directly instead of
-  through a GAS-owned sink
+  through an AbilityKit-owned sink
 - makes the heap-backed `GameplayTagSet`/`CountedGameplayTagSet` a component
 - lets `framework/` code include `render/`/`graphics/`/scene headers, or lets
   engine `core/`/`render` include `framework/` — either direction breaks the

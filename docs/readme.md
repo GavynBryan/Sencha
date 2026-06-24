@@ -63,15 +63,14 @@ behavior.
 
 ## Gameplay Docs
 
-- `docs/gameplay/ability-system-plan.md` is the working plan for a data-driven
-  ECS Gameplay Ability System (attributes, effects, abilities, gameplay tags),
-  rebuilding Unreal GAS concepts as POD components + data assets + uniform
-  systems — no ability-system object, tags for mutual exclusion, events as data.
-- The gameplay tags module currently sits in `engine/include/core/gameplay_tags/`
-  (registry, sets, hierarchical query); the plan relocates it — with the rest of
-  the GAS — to a delineated `framework/` area (decoupled from render/scene by
-  rule, not a separate library), since gameplay is not core engine behavior. ECS
-  integration plus that move are Stage 1 of the plan.
+- `docs/gameplay/abilitykit.md` is the working plan for **AbilityKit**, Sencha's
+  data-driven gameplay framework: tags, attributes, effects, and abilities as POD
+  components + data + uniform systems — no per-entity behavior object, tags for
+  mutual exclusion, events as data. Public entry point:
+  `engine/include/framework/AbilityKit.h`.
+- AbilityKit lives under `engine/.../framework/`, kept decoupled from the renderer
+  and scene data by the `framework_isolation` check
+  (`cmake/CheckFrameworkIsolation.cmake`).
 
 ## Requirements
 

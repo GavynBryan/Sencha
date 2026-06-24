@@ -14,8 +14,7 @@
 //
 // Authored effect definitions keyed by name/id, installed as a world resource —
 // the same data-driven shape as AttributeRegistry / GameplayTagRegistry. (An
-// EffectId can later be backed by a loaded asset; the indirection is already in
-// place.)
+// EffectId can be backed by a loaded asset; the indirection is already in place.)
 //=============================================================================
 class EffectRegistry
 {

@@ -12,7 +12,7 @@
 // Declared in <world/serialization/SceneSerializer.h>. Forward-declared here so
 // framework code does not include that header, which pulls ComponentSerializer ->
 // SceneFieldCodec -> render/audio. Keeps the framework free of engine render/scene
-// includes (D-J).
+// includes.
 void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer);
 
 namespace

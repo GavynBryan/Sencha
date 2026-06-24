@@ -10,7 +10,7 @@
 #include <memory>
 
 // Declared in <world/serialization/SceneSerializer.h>; forward-declared here to
-// keep framework code clear of the render/audio-pulling scene-codec headers (D-J).
+// keep framework code clear of the render/audio-pulling scene-codec headers.
 void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer);
 
 namespace

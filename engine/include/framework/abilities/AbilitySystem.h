@@ -6,8 +6,7 @@
 class World;
 
 //=============================================================================
-// Ability activation (free functions; FixedLogic system wrapper added when a
-// game wires the framework into its schedule).
+// Ability activation (free functions; a game can wrap them in a scheduled system).
 //
 // Resources used: AbilityRegistry, EffectRegistry, GameplayTagRegistry.
 // Components used: AbilitySet, GameplayTagContainer, AttributeSet.
