@@ -27,8 +27,13 @@ struct Accumulator
 
 std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
                                            const SelectionSnapshot& selection,
-                                           MeshElementKind kind)
+                                           MeshElementKind kind,
+                                           const PivotState& pivotState)
 {
+    // The transient pivot, once moved, wins over the computed center.
+    if (pivotState.Override.has_value())
+        return pivotState.Override;
+
     Accumulator pivot;
 
     for (SelectableRef ref : selection.Items)

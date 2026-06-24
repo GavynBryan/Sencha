@@ -103,6 +103,56 @@ bool RayHitsBrushBody(const BrushMesh& mesh, const Transform3f& transform, const
 // Pixel thresholds for screen-space element picking.
 constexpr float kEdgePickPixels = 8.0f;
 constexpr float kVertexPickPixels = 10.0f;
+
+// True if solid brush geometry lies in front of `worldPoint` along the ray through
+// its `pixel`, i.e. the point is hidden behind geometry and must not be pickable.
+// The relative slack keeps the point's own incident faces (met at ~tPoint) from
+// counting as occluders.
+bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Vec3d worldPoint, ImVec2 pixel)
+{
+    const Ray3d ray = projection.RayThroughPixel(pixel);
+    const double tPoint = (worldPoint - ray.Origin).Dot(ray.Direction);
+    if (tPoint <= 0.0)
+        return true; // behind the camera
+    const double threshold = tPoint - std::max(0.05, tPoint * 0.01);
+
+    bool hidden = false;
+    ForEachVisibleBrush(scene, /*skipLocked*/ true,
+        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
+    {
+        if (hidden)
+            return;
+        for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+        {
+            float t = 0.0f;
+            if (IntersectRayPolygon(ray, face.Corners, t) && static_cast<double>(t) < threshold)
+            {
+                hidden = true;
+                return;
+            }
+        }
+    });
+    return hidden;
+}
+
+// The point on segment [a, b] closest to the ray. Used to test occlusion at the true
+// world point under the cursor: a screen-space interpolation lands at the wrong depth
+// on an edge that recedes from the camera, so the edge's own face reads as a
+// self-occluder. Same closest-param math as GizmoMath (ray.Direction assumed unit).
+Vec3d ClosestPointOnSegmentToRay(Vec3d a, Vec3d b, const Ray3d& ray)
+{
+    const Vec3d u = b - a;
+    const double uu = u.Dot(u);
+    if (uu < 1.0e-18)
+        return a;
+    const Vec3d w0 = a - ray.Origin;
+    const double bd = u.Dot(ray.Direction);
+    const double denom = uu - bd * bd; // uu * sin^2(edge, ray)
+    if (denom < uu * 1.0e-9)
+        return a; // edge ~parallel to the ray: any point is ~equidistant
+    const double s = std::clamp((bd * ray.Direction.Dot(w0) - u.Dot(w0)) / denom, 0.0, 1.0);
+    return a + u * s;
+}
 }
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
@@ -111,9 +161,9 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
                                    BrushPickRequest request) const
 {
     if (request.Mode == BrushPickMode::EdgeOnly)
-        return PickEdge(viewport, point, scene);
+        return PickEdge(viewport, point, scene, request.RestrictTo);
     if (request.Mode == BrushPickMode::VertexOnly)
-        return PickVertex(viewport, point, scene);
+        return PickVertex(viewport, point, scene, request.RestrictTo);
 
     const Ray3d ray = BuildRay(viewport, point);
     return PickBrushElement(ray, scene, request);
@@ -130,6 +180,8 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
 
     for (EntityId entity : scene.GetAllEntities())
     {
+        if (request.RestrictTo.IsValid() && entity != request.RestrictTo)
+            continue;
         if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
             continue;
 
@@ -232,6 +284,10 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
 
     for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
     {
+        // Back-facing surfaces aren't selectable: you pick what faces you.
+        if (face.Normal.Dot(ray.Direction) >= 0.0)
+            continue;
+
         float hitDistance = 0.0f;
         if (!IntersectRayPolygon(ray, face.Corners, hitDistance))
             continue;
@@ -246,9 +302,13 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
 
 SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
                                        ImVec2 point,
-                                       const EditorScene& scene) const
+                                       const EditorScene& scene,
+                                       EntityId restrictTo) const
 {
     const ViewportProjection projection(viewport);
+    // Occlusion only matters where geometry hides things: a wireframe (ortho) view
+    // shows every edge, so all are selectable there.
+    const bool occlude = viewport.Shading == ViewportShading::Solid;
 
     SelectableRef best{};
     float bestPixels = kEdgePickPixels;
@@ -257,6 +317,8 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
     ForEachVisibleBrush(scene, /*skipLocked*/ true,
         [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
     {
+        if (restrictTo.IsValid() && entity != restrictTo)
+            return;
         for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
         {
             const std::optional<ProjectedPoint> a = projection.WorldToPixel(edge.A);
@@ -270,6 +332,19 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
                 continue;
             if (best.IsValid() && pixels >= bestPixels && depth >= bestDepth)
                 continue;
+            // Skip the edge if the point the cursor grabs is hidden. Grab it in 3D
+            // (closest point on the edge to the cursor ray) and test visibility along
+            // the ray through that point, so the edge's own foreshortened face is met
+            // at the edge (not nearer) and doesn't self-occlude. A partly-occluded
+            // edge stays grabbable by its visible part; a back edge is rejected.
+            // (PickVertex tests at the vertex's own pixel for the same reason.)
+            if (occlude)
+            {
+                const Vec3d grab = ClosestPointOnSegmentToRay(edge.A, edge.B, projection.RayThroughPixel(point));
+                if (const std::optional<ProjectedPoint> gp = projection.WorldToPixel(grab);
+                    gp.has_value() && IsHidden(scene, projection, grab, gp->Pixel))
+                    continue;
+            }
 
             best = SelectableRef::EdgeSelection(scene.GetRegistry().Id, entity, edge.Index);
             bestPixels = pixels;
@@ -282,9 +357,11 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
 
 SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
                                          ImVec2 point,
-                                         const EditorScene& scene) const
+                                         const EditorScene& scene,
+                                         EntityId restrictTo) const
 {
     const ViewportProjection projection(viewport);
+    const bool occlude = viewport.Shading == ViewportShading::Solid;
 
     SelectableRef best{};
     float bestPixels = kVertexPickPixels;
@@ -293,6 +370,8 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
     ForEachVisibleBrush(scene, /*skipLocked*/ true,
         [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
     {
+        if (restrictTo.IsValid() && entity != restrictTo)
+            return;
         for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
         {
             const std::optional<ProjectedPoint> projected = projection.WorldToPixel(vertex.Position);
@@ -305,6 +384,9 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
             if (pixels > bestPixels)
                 continue;
             if (best.IsValid() && pixels >= bestPixels && projected->Depth >= bestDepth)
+                continue;
+            // Skip vertices hidden behind geometry (solid views only).
+            if (occlude && IsHidden(scene, projection, vertex.Position, projected->Pixel))
                 continue;
 
             best = SelectableRef::VertexSelection(scene.GetRegistry().Id, entity, vertex.Index);
@@ -319,17 +401,19 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
 SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
                                                ImVec2 point,
                                                const EditorScene& scene,
-                                               MeshElementKind mode) const
+                                               MeshElementKind mode,
+                                               EntityId restrictTo) const
 {
     if (mode == MeshElementKind::Edge)
-        return PickEdge(viewport, point, scene);
+        return PickEdge(viewport, point, scene, restrictTo);
     if (mode != MeshElementKind::Face)
         return {};
 
     // Face mode seeds from the edge of the picked face nearest the cursor: ray-pick
     // the face, then pick its screen-nearest loop edge.
     const Ray3d ray = BuildRay(viewport, point);
-    const SelectableRef face = PickBrushElement(ray, scene, BrushPickRequest{ .Mode = BrushPickMode::FaceOnly });
+    const SelectableRef face = PickBrushElement(ray, scene,
+        BrushPickRequest{ .Mode = BrushPickMode::FaceOnly, .RestrictTo = restrictTo });
     if (!face.IsFace())
         return {};
 

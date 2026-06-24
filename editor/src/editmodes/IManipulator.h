@@ -1,5 +1,8 @@
 #pragma once
 
+#include "PivotState.h"
+#include "TransformMode.h"
+
 #include "../interaction/IInteraction.h"
 #include "../meshedit/MeshElementKind.h"
 #include "../selection/ISelectionContext.h"
@@ -24,6 +27,10 @@ struct ManipulatorContext
     MeshEditService& Service;
     ManipulationSink& Sink;
     const GridSettings& Grid;
+    // Read by every manipulator (via ComputeSelectionPivot); written only by the
+    // Move gizmo's pivot-edit drag. A reference member, so the pivot-edit apply can
+    // update it even though the context is passed const.
+    PivotState& Pivot;
 };
 
 // A manipulator's drawable geometry. Lines now; P3 adds screen-constant handle
@@ -48,6 +55,10 @@ struct ManipulatorVisual
 // opaque non-zero ids the manipulator interprets (0 == miss).
 struct IManipulator
 {
+    // Which transform gizmo this is. The session shows and routes only the
+    // manipulator(s) matching the active TransformMode, so gizmos are switchable.
+    [[nodiscard]] virtual TransformMode Mode() const = 0;
+
     [[nodiscard]] virtual bool AppliesTo(const ManipulatorContext& ctx,
                                          const EditorViewport& viewport) const = 0;
 

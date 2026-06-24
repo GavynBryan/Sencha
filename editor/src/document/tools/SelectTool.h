@@ -14,5 +14,8 @@ public:
     std::string_view GetDisplayName() const override;
     std::string_view GetIcon() const override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    // Double-click: edge -> its loop, face -> all faces (or the face loop if it is
+    // already selected), vertex -> all vertices.
+    InputConsumed OnDoubleClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer) override;
 };

@@ -209,8 +209,10 @@ std::optional<BrushMesh> ApplyInsertEdgeLoop(const VerbContext& ctx)
         return std::nullopt;
     }
 
-    BrushMesh after = BrushOps::InsertEdgeLoop(ctx.Before, edge->VertexA, edge->VertexB);
-    // InsertEdgeLoop returns the input untouched when the seed admits no clean loop.
+    BrushMesh after = ctx.Params.LoopCut
+        ? BrushOps::InsertEdgeLoop(ctx.Before, edge->VertexA, edge->VertexB, ctx.Params.CutPosition)
+        : BrushOps::InsertEdgeCut(ctx.Before, edge->VertexA, edge->VertexB, ctx.Params.CutPosition);
+    // The cut returns the input untouched when the seed admits no clean cut.
     // Detect that (no vertices appended) and produce no command, so the undo stack
     // never gets a do-nothing entry.
     if (after.Vertices.size() == ctx.Before.Vertices.size())
@@ -538,5 +540,60 @@ std::optional<BrushMesh> MeshEditService::ResizeBounds(const BrushMesh& base,
             return std::nullopt;
     }
 
+    return after;
+}
+
+std::optional<BrushMesh> MeshEditService::RotateElements(const BrushMesh& base,
+                                                         const Transform3f& transform,
+                                                         std::span<const SelectableRef> elements,
+                                                         MeshElementKind kind,
+                                                         Vec3d axis,
+                                                         double radians,
+                                                         Vec3d pivot,
+                                                         bool validate) const
+{
+    const std::vector<std::uint32_t> indices =
+        GatherVertexIndices(base, transform, elements, Traits(kind).Selectable);
+    if (indices.empty())
+        return std::nullopt;
+
+    const Quatf rotation = Quatf::FromAxisAngle(axis, static_cast<float>(radians));
+    BrushMesh after = base;
+    for (std::uint32_t index : indices)
+    {
+        const Vec3d world = transform.TransformPoint(after.Vertices[index].Position);
+        const Vec3d rotated = pivot + rotation.RotateVector(world - pivot);
+        after.Vertices[index].Position = InverseTransformPoint(transform, rotated);
+    }
+
+    if (validate && !BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    return after;
+}
+
+std::optional<BrushMesh> MeshEditService::ScaleElements(const BrushMesh& base,
+                                                        const Transform3f& transform,
+                                                        std::span<const SelectableRef> elements,
+                                                        MeshElementKind kind,
+                                                        Vec3d factor,
+                                                        Vec3d pivot,
+                                                        bool validate) const
+{
+    const std::vector<std::uint32_t> indices =
+        GatherVertexIndices(base, transform, elements, Traits(kind).Selectable);
+    if (indices.empty())
+        return std::nullopt;
+
+    BrushMesh after = base;
+    for (std::uint32_t index : indices)
+    {
+        const Vec3d world = transform.TransformPoint(after.Vertices[index].Position);
+        const Vec3d rel = world - pivot;
+        const Vec3d scaled = pivot + Vec3d(rel.X * factor.X, rel.Y * factor.Y, rel.Z * factor.Z);
+        after.Vertices[index].Position = InverseTransformPoint(transform, scaled);
+    }
+
+    if (validate && !BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
     return after;
 }

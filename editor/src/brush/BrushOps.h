@@ -108,13 +108,28 @@ struct BrushOps
         const BrushMesh& mesh, std::uint32_t a, std::uint32_t b);
 
     // Walk a topological edge loop from the seed undirected edge (a, b), splitting
-    // every edge in the loop at its midpoint and subdividing each traversed face
-    // into two faces. Produces a clean edge ring parallel to the seed edge on a
-    // quad-like mesh. Pure topology: appends vertices and faces, leaves validation
-    // to the caller. The loop terminates at: a boundary edge, an odd-sided face, or
-    // a cycle back to a visited face. No-op if the seed edge is absent.
+    // every edge in the loop at `position` (0..1 from a toward b, propagated
+    // consistently around the loop so the cut stays parallel) and subdividing each
+    // traversed face into two. position 0.5 is the midpoint (orientation-independent).
+    // Produces a clean edge ring parallel to the seed edge on a quad-like mesh. Pure
+    // topology: appends vertices and faces, leaves validation to the caller. The loop
+    // terminates at: a boundary edge, an odd-sided face, or a cycle back to a visited
+    // face. No-op if the seed edge is absent.
     [[nodiscard]] static BrushMesh InsertEdgeLoop(const BrushMesh& mesh,
-                                                  std::uint32_t a, std::uint32_t b);
+                                                  std::uint32_t a, std::uint32_t b,
+                                                  float position = 0.5f);
+
+    // Single-edge cut: split only the seed edge (a, b) at `position` (0..1 from a)
+    // and subdivide its adjacent quads, without propagating around the loop. Leaves
+    // a T-vertex on each cut face's opposite edge (the open result is tolerated for
+    // authoring, as with DeleteFace). `faceIndex` restricts the cut to one of the
+    // edge's faces (the one under the cursor); the default 0xFFFFFFFF cuts every
+    // adjacent face. No-op if the seed is absent or touches no quad.
+    static constexpr std::uint32_t kAllAdjacentFaces = 0xFFFFFFFFu;
+    [[nodiscard]] static BrushMesh InsertEdgeCut(const BrushMesh& mesh,
+                                                 std::uint32_t a, std::uint32_t b,
+                                                 float position = 0.5f,
+                                                 std::uint32_t faceIndex = kAllAdjacentFaces);
 
     // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
     // the half-space the plane normal points into. (The Hammer clip tool.)

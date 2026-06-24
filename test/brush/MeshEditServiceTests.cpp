@@ -227,6 +227,75 @@ TEST(MeshEditService, TranslateConvertsWorldDeltaThroughTransformScale)
     EXPECT_FLOAT_EQ(after->Vertices[0].Position.X, box.Vertices[0].Position.X + 1.0f);
 }
 
+TEST(MeshEditService, RotateVertexAboutPivotRotatesItInPlane)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> refs = VertexRefs({ 0 });
+    const Vec3d axis(0.0f, 0.0f, 1.0f);
+    const double radians = 3.14159265358979 / 2.0; // +90 about Z: (x,y) -> (-y,x)
+    const std::optional<BrushMesh> after = service.RotateElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Vertex, axis, radians, Vec3d(0.0f, 0.0f, 0.0f), false);
+
+    ASSERT_TRUE(after.has_value());
+    const Vec3d before = box.Vertices[0].Position;
+    EXPECT_NEAR(after->Vertices[0].Position.X, -before.Y, 1e-4);
+    EXPECT_NEAR(after->Vertices[0].Position.Y, before.X, 1e-4);
+    EXPECT_NEAR(after->Vertices[0].Position.Z, before.Z, 1e-4);
+    for (std::size_t i = 1; i < box.Vertices.size(); ++i)
+    {
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.X, box.Vertices[i].Position.X);
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.Y, box.Vertices[i].Position.Y);
+        EXPECT_FLOAT_EQ(after->Vertices[i].Position.Z, box.Vertices[i].Position.Z);
+    }
+}
+
+TEST(MeshEditService, ScaleVertexAboutPivotScalesOffsetPerAxis)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> refs = VertexRefs({ 0 });
+    const Vec3d factor(2.0f, 1.0f, 0.5f);
+    const std::optional<BrushMesh> after = service.ScaleElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Vertex, factor, Vec3d(0.0f, 0.0f, 0.0f), false);
+
+    ASSERT_TRUE(after.has_value());
+    const Vec3d before = box.Vertices[0].Position;
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.X, before.X * 2.0f);
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.Y, before.Y * 1.0f);
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.Z, before.Z * 0.5f);
+}
+
+TEST(MeshEditService, ScaleAboutAVertexPivotLeavesThatVertexFixed)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> refs = VertexRefs({ 0 });
+    const Vec3d pivot = box.Vertices[0].Position; // identity transform: world == local
+    const std::optional<BrushMesh> after = service.ScaleElements(
+        box, Transform3f::Identity(), refs, MeshElementKind::Vertex, Vec3d(3.0f, 3.0f, 3.0f), pivot, false);
+
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.X, pivot.X);
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.Y, pivot.Y);
+    EXPECT_FLOAT_EQ(after->Vertices[0].Position.Z, pivot.Z);
+}
+
+TEST(MeshEditService, RotateAndScaleWithNoMatchingElementsReturnNullopt)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f });
+    MeshEditService service;
+
+    const std::vector<SelectableRef> none;
+    EXPECT_FALSE(service.RotateElements(box, Transform3f::Identity(), none, MeshElementKind::Vertex,
+                                        Vec3d(0.0f, 0.0f, 1.0f), 1.0, Vec3d(0.0f, 0.0f, 0.0f), false).has_value());
+    EXPECT_FALSE(service.ScaleElements(box, Transform3f::Identity(), none, MeshElementKind::Vertex,
+                                       Vec3d(2.0f, 2.0f, 2.0f), Vec3d(0.0f, 0.0f, 0.0f), false).has_value());
+}
+
 TEST(MeshEditService, TranslateElementsVerbProducesValidatedCommand)
 {
     StubMeshEditTarget target(BrushOps::MakeBox({ 2.0f, 2.0f, 2.0f }));

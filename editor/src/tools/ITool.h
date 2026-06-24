@@ -37,5 +37,12 @@ struct ITool
     virtual std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer) { return nullptr; }
     virtual InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) { return InputConsumed::No; }
 
+    // Cursor motion with no button held. A tool that drives a live hover preview
+    // (e.g. the edge cut) handles it and returns Yes, which suppresses the default
+    // element-hover glow. OnHoverEnd fires when the cursor leaves the viewport, a
+    // drag starts, or the tool deactivates, so the tool can drop its preview.
+    virtual InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) { return InputConsumed::No; }
+    virtual void OnHoverEnd(ToolContext& ctx) {}
+
     virtual ~ITool() = default;
 };

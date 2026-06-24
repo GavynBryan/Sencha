@@ -10,7 +10,10 @@ ToolContext::ToolContext(CommandStack& commandStack,
                          MeshEditService& meshEdit,
                          MarqueeState& marquee,
                          GridSettings& grid,
-                         BrushCreationSettings& brushCreate)
+                         BrushCreationSettings& brushCreate,
+                         EditorOverlayState& overlay,
+                         ManipulationSink& sink,
+                         EdgeCutSettings& edgeCut)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
@@ -22,5 +25,8 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Marquee(marquee)
     , Grid(grid)
     , BrushCreate(brushCreate)
+    , Overlay(overlay)
+    , Sink(sink)
+    , EdgeCut(edgeCut)
 {
 }

@@ -2,8 +2,8 @@
 
 #include "../EditorTheme.h"
 #include "../editmodes/ManipulatorSession.h"
-#include "../brush/BrushBounds.h"
-#include "../meshedit/MeshElements.h"
+#include "../meshedit/MeshEditService.h"
+#include "../overlay/EditorOverlayState.h"
 #include "../viewport/ViewportProjection.h"
 
 #include <algorithm>
@@ -14,10 +14,31 @@
 #include <utility>
 #include <vector>
 
-SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection,
-                                     ManipulatorSession& session, EditorLinePipeline& lines)
+namespace
+{
+// View-plane right/up so a vertex square faces the camera in any view.
+void ViewBasis(const EditorViewport& viewport, Vec3d& right, Vec3d& up)
+{
+    if (viewport.Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    {
+        right = viewport.Camera.GetOrthoRightVector();
+        up = viewport.Camera.GetOrthoUpVector();
+    }
+    else
+    {
+        right = viewport.Camera.GetRightVector();
+        up = viewport.Camera.GetUpVector();
+    }
+}
+}
+
+SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection, MeshEditService& meshEdit,
+                                     const EditorOverlayState& overlay, ManipulatorSession& session,
+                                     EditorLinePipeline& lines)
     : Scene(scene)
     , Selection(selection)
+    , MeshEdit(meshEdit)
+    , Overlay(overlay)
     , Session(session)
     , Lines(lines)
 {
@@ -25,11 +46,34 @@ SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selec
 
 void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
 {
-    std::vector<EditorLineVertex> vertices;
-    const ViewportProjection projection(viewport); // for screen-constant vertex dots
-
     const std::span<const SelectableRef> selection = Selection.GetSelection();
-    vertices.reserve(selection.size() * 32);
+    const std::vector<EntityId> bodies = GatherActiveBodies();
+    const bool vertexMode = MeshEdit.GetElementKind() == MeshElementKind::Vertex;
+
+    // The active-body wireframe and vertex handles are occluded by solid geometry so
+    // back edges/handles you can't pick aren't drawn (matching PickEdge/PickVertex,
+    // which occlude only in solid shading). In wireframe/ortho they ride the on-top
+    // list, since picking doesn't occlude there either.
+    const bool occludeBody = viewport.Shading == ViewportShading::Solid;
+    std::vector<EditorLineVertex> occluded;
+    std::vector<EditorLineVertex> onTop;
+    onTop.reserve(selection.size() * 32 + 64);
+    std::vector<EditorLineVertex>& bodyLines = occludeBody ? occluded : onTop;
+
+    for (EntityId entity : bodies)
+    {
+        const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
+        const Transform3f* transform = Scene.TryGetTransform(entity);
+        if (mesh == nullptr || transform == nullptr)
+            continue;
+        AppendWireframe(bodyLines, *mesh, *transform, EditorTheme::SelectedWireframe);
+        if (vertexMode)
+            for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
+                AppendVertexSquare(bodyLines, viewport, vertex.Position, EditorTheme::VertexHandle);
+    }
+
+    // Per-element highlights, the hover glow, and the gizmos stay on top so the
+    // selection and manipulators read through geometry.
     for (SelectableRef selected : selection)
     {
         if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
@@ -45,62 +89,58 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         if (selected.IsFace())
         {
             if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, selected.ElementId))
-                AppendFace(vertices, *face, EditorTheme::FaceHighlight);
+                AppendFace(onTop, *face, EditorTheme::FaceHighlight);
         }
         else if (selected.IsEdge())
         {
             if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, selected.ElementId))
-                AppendEdge(vertices, *edge, EditorTheme::EdgeHighlight);
+                AppendEdge(onTop, *edge, EditorTheme::EdgeHighlight);
         }
         else if (selected.IsVertex())
         {
             if (const std::optional<VertexElement> vertex = MeshElements::TryGetVertex(*mesh, *transform, selected.ElementId))
-            {
-                const float radius = projection.WorldSizeForPixels(vertex->Position, EditorTheme::VertexDotPixels) * 0.5f;
-                AppendVertex(vertices, *vertex, EditorTheme::VertexHighlight, radius);
-            }
+                AppendVertexSquare(onTop, viewport, vertex->Position, EditorTheme::VertexHighlight);
         }
-        else // object/entity: a clean amber bounding box, not the full wireframe
-        {
-            AppendAABB(vertices, *mesh, *transform, EditorTheme::Selection);
-        }
+        // object: the active-body wireframe above already covers it.
     }
 
-    // Manipulators draw themselves; the renderer just converts their line list and
-    // never assumes a gizmo shape. (08-select-tool-v2.md)
-    AppendManipulators(vertices, viewport);
+    AppendHover(onTop, viewport);
 
-    // Selection feedback and gizmos read better drawn on top of geometry.
-    Lines.Submit(frame, viewport, vertices, /*onTop*/ true);
+    // Manipulators draw themselves; the renderer just converts their line list and
+    // never assumes a gizmo shape.
+    AppendManipulators(onTop, viewport);
+
+    // Body wireframe/handles depth-test against the scene (back ones cull); selection
+    // feedback and gizmos draw on top.
+    if (!occluded.empty())
+        Lines.Submit(frame, viewport, occluded, /*onTop*/ false);
+    Lines.Submit(frame, viewport, onTop, /*onTop*/ true);
 }
 
-void SelectionRenderer::AppendAABB(std::vector<EditorLineVertex>& vertices,
-                                   const BrushMesh& mesh,
-                                   const Transform3f& transform,
-                                   const Vec4& color) const
+std::vector<EntityId> SelectionRenderer::GatherActiveBodies() const
 {
-    const Aabb3d bounds = BrushWorldBounds(mesh, transform);
-    if (!bounds.IsValid())
-        return;
-    const Vec3d mn = bounds.Min;
-    const Vec3d mx = bounds.Max;
-
-    const auto corner = [&](bool xs, bool ys, bool zs) {
-        return Vec3d(xs ? mx.X : mn.X, ys ? mx.Y : mn.Y, zs ? mx.Z : mn.Z);
-    };
-    const Vec3d c[8] = {
-        corner(false, false, false), corner(true, false, false),
-        corner(true, true, false),   corner(false, true, false),
-        corner(false, false, true),  corner(true, false, true),
-        corner(true, true, true),    corner(false, true, true),
-    };
-    const int edges[12][2] = {
-        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7},
-    };
-    for (const auto& e : edges)
+    std::vector<EntityId> bodies;
+    for (SelectableRef ref : Selection.GetSelection())
     {
-        vertices.push_back(EditorLineVertex{ .Position = c[e[0]], .Color = color });
-        vertices.push_back(EditorLineVertex{ .Position = c[e[1]], .Color = color });
+        if (!ref.IsValid() || ref.Registry != Scene.GetRegistry().Id || !ref.Entity.IsValid())
+            continue;
+        if (!Scene.IsEntityVisible(ref.Entity))
+            continue;
+        if (std::find(bodies.begin(), bodies.end(), ref.Entity) == bodies.end())
+            bodies.push_back(ref.Entity);
+    }
+    return bodies;
+}
+
+void SelectionRenderer::AppendWireframe(std::vector<EditorLineVertex>& vertices,
+                                        const BrushMesh& mesh,
+                                        const Transform3f& transform,
+                                        const Vec4& color) const
+{
+    for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
+    {
+        vertices.push_back(EditorLineVertex{ .Position = edge.A, .Color = color });
+        vertices.push_back(EditorLineVertex{ .Position = edge.B, .Color = color });
     }
 }
 
@@ -125,26 +165,67 @@ void SelectionRenderer::AppendEdge(std::vector<EditorLineVertex>& vertices,
     vertices.push_back(EditorLineVertex{ .Position = edge.B, .Color = color });
 }
 
-void SelectionRenderer::AppendVertex(std::vector<EditorLineVertex>& vertices,
-                                     const VertexElement& vertex,
-                                     const Vec4& color,
-                                     float radius) const
+void SelectionRenderer::AppendVertexSquare(std::vector<EditorLineVertex>& vertices,
+                                           const EditorViewport& viewport,
+                                           Vec3d position,
+                                           const Vec4& color) const
 {
-    const Vec3d p = vertex.Position;
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(-radius, 0.0f, 0.0f), .Color = color });
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(radius, 0.0f, 0.0f), .Color = color });
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(0.0f, -radius, 0.0f), .Color = color });
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(0.0f, radius, 0.0f), .Color = color });
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(0.0f, 0.0f, -radius), .Color = color });
-    vertices.push_back(EditorLineVertex{ .Position = p + Vec3d(0.0f, 0.0f, radius), .Color = color });
+    const float half = ViewportProjection(viewport).WorldSizeForPixels(position, EditorTheme::VertexDotPixels) * 0.5f;
+    Vec3d right;
+    Vec3d up;
+    ViewBasis(viewport, right, up);
+
+    const std::array<Vec3d, 4> corners = {
+        position + right * half + up * half,
+        position - right * half + up * half,
+        position - right * half - up * half,
+        position + right * half - up * half,
+    };
+    for (std::size_t i = 0; i < corners.size(); ++i)
+    {
+        vertices.push_back(EditorLineVertex{ .Position = corners[i], .Color = color });
+        vertices.push_back(EditorLineVertex{ .Position = corners[(i + 1) % corners.size()], .Color = color });
+    }
+}
+
+void SelectionRenderer::AppendHover(std::vector<EditorLineVertex>& vertices, const EditorViewport& viewport) const
+{
+    const SelectableRef hovered = Overlay.Hover.Element;
+    if (!hovered.IsValid() || hovered.Registry != Scene.GetRegistry().Id)
+        return;
+    if (!Scene.IsEntityVisible(hovered.Entity))
+        return;
+
+    const BrushMesh* mesh = Scene.TryGetBrushMesh(hovered.Entity);
+    const Transform3f* transform = Scene.TryGetTransform(hovered.Entity);
+    if (mesh == nullptr || transform == nullptr)
+        return;
+
+    const Vec4 color = EditorTheme::HoverEligible;
+    if (hovered.IsFace())
+    {
+        if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, hovered.ElementId))
+            AppendFace(vertices, *face, color);
+    }
+    else if (hovered.IsEdge())
+    {
+        if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))
+            AppendEdge(vertices, *edge, color);
+    }
+    else if (hovered.IsVertex())
+    {
+        if (const std::optional<VertexElement> vertex = MeshElements::TryGetVertex(*mesh, *transform, hovered.ElementId))
+            AppendVertexSquare(vertices, viewport, vertex->Position, color);
+    }
+    else // object: glow its wireframe so you see what a click would select
+    {
+        AppendWireframe(vertices, *mesh, *transform, color);
+    }
 }
 
 void SelectionRenderer::AppendManipulators(std::vector<EditorLineVertex>& vertices,
                                            const EditorViewport& viewport) const
 {
-    // Each active manipulator draws itself; the renderer just converts the line
-    // list. Whatever the manipulators are (translate arrows, bounds handles,
-    // rotate/scale later), this code is unchanged.
     ManipulatorVisual visual;
     Session.BuildVisuals(viewport, visual);
     for (const ManipulatorVisual::Line& line : visual.Lines)

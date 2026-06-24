@@ -527,7 +527,7 @@ std::vector<std::array<std::uint32_t, 2>> BrushOps::TraceEdgeLoop(const BrushMes
     return loop;
 }
 
-BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b, float position)
 {
     if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
         return mesh;
@@ -565,14 +565,47 @@ BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::
             return mesh; // neither pair, or both pairs (self-crossing): refuse
     }
 
-    // One midpoint vertex per cut edge (deterministic order from the ordered set).
+    // Orient every cut edge consistently around the loop so the cut sits at the same
+    // parametric position on each. Propagate a "t=0 endpoint" from the seed (t=0 at
+    // a) across each split quad to its opposite edge: the endpoints joined by a quad
+    // side share the t=0 side. (At t=0.5 the orientation is moot — it is the midpoint.)
+    const float t = position < 0.02f ? 0.02f : (position > 0.98f ? 0.98f : position);
+    std::map<UndirectedEdge, std::uint32_t> forward;
+    forward[seed] = a;
+    {
+        std::vector<UndirectedEdge> frontier{ seed };
+        std::set<std::uint32_t> propagated;
+        while (!frontier.empty())
+        {
+            const UndirectedEdge e = frontier.back();
+            frontier.pop_back();
+            for (const auto& [f, i] : edgeFaces.at(e))
+            {
+                if (!splitFaces.count(f) || !propagated.insert(f).second)
+                    continue;
+                const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+                const UndirectedEdge opposite = FaceEdge(loop, (i + 2) % 4);
+                const std::uint32_t fwd = forward.at(e);
+                // The t=0 endpoint of e (loop[i] or loop[i+1]) joins, via a quad side,
+                // loop[i+3] or loop[i+2] respectively: that is opposite's t=0 endpoint.
+                const std::uint32_t fwdOpposite =
+                    (fwd == loop[i]) ? loop[(i + 3) % 4] : loop[(i + 2) % 4];
+                if (forward.emplace(opposite, fwdOpposite).second)
+                    frontier.push_back(opposite);
+            }
+        }
+    }
+
+    // One split vertex per cut edge, at position t from its t=0 endpoint.
     BrushMesh out = mesh;
     std::map<UndirectedEdge, std::uint32_t> edgeMid;
     for (const UndirectedEdge& e : cutEdges)
     {
+        const std::uint32_t fwd = forward.count(e) ? forward.at(e) : e.U;
+        const std::uint32_t other = (e.U == fwd) ? e.V : e.U;
         edgeMid[e] = static_cast<std::uint32_t>(out.Vertices.size());
         out.Vertices.push_back(BrushVertex{
-            (out.Vertices[e.U].Position + out.Vertices[e.V].Position) * 0.5 });
+            out.Vertices[fwd].Position * (1.0f - t) + out.Vertices[other].Position * t });
     }
 
     // Split each quad between the midpoints of its cut pair, preserving winding.
@@ -610,6 +643,73 @@ BrushMesh BrushOps::InsertEdgeLoop(const BrushMesh& mesh, std::uint32_t a, std::
 
     out.Faces = std::move(rebuilt);
     // Validation (weld + normals) is the caller's, see header.
+    return out;
+}
+
+BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b,
+                                 float position, std::uint32_t faceIndex)
+{
+    if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
+        return mesh;
+
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    const auto seedIt = edgeFaces.find(UndirectedEdge(a, b));
+    if (seedIt == edgeFaces.end())
+        return mesh;
+
+    const float t = position < 0.02f ? 0.02f : (position > 0.98f ? 0.98f : position);
+    BrushMesh out = mesh;
+
+    // One shared split vertex on the seed edge (t from a toward b).
+    const std::uint32_t mSeed = static_cast<std::uint32_t>(out.Vertices.size());
+    out.Vertices.push_back(BrushVertex{
+        out.Vertices[a].Position * (1.0f - t) + out.Vertices[b].Position * t });
+
+    std::set<std::uint32_t> splitFaces;
+    std::vector<BrushFace> halves;
+    for (const auto& [f, i] : seedIt->second)
+    {
+        if (faceIndex != kAllAdjacentFaces && f != faceIndex)
+            continue; // restricted to the one face under the cursor
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        if (loop.size() != 4)
+            continue; // only quads cut cleanly
+        splitFaces.insert(f);
+
+        // Quad [v0 v1 v2 v3] with the seed at edge (v0, v1). Split it across mSeed (on
+        // v0-v1) and a new mOpp on the opposite edge (v2-v3), at the matching t: the
+        // opposite endpoint joined to a by a quad side is its t=0 end.
+        const std::uint32_t v0 = loop[i];
+        const std::uint32_t v1 = loop[(i + 1) % 4];
+        const std::uint32_t v2 = loop[(i + 2) % 4];
+        const std::uint32_t v3 = loop[(i + 3) % 4];
+        const std::uint32_t fwdOpp = (v0 == a) ? v3 : v2; // v0->v3 side, v1->v2 side
+        const std::uint32_t othOpp = (fwdOpp == v2) ? v3 : v2;
+        const std::uint32_t mOpp = static_cast<std::uint32_t>(out.Vertices.size());
+        out.Vertices.push_back(BrushVertex{
+            out.Vertices[fwdOpp].Position * (1.0f - t) + out.Vertices[othOpp].Position * t });
+
+        BrushFace faceA;
+        faceA.Material = mesh.Faces[f].Material;
+        faceA.Loop = { mSeed, v1, v2, mOpp };
+        BrushFace faceB;
+        faceB.Material = mesh.Faces[f].Material;
+        faceB.Loop = { mOpp, v3, v0, mSeed };
+        halves.push_back(std::move(faceA));
+        halves.push_back(std::move(faceB));
+    }
+
+    if (splitFaces.empty())
+        return mesh; // seed touched no quad
+
+    std::vector<BrushFace> rebuilt;
+    rebuilt.reserve(out.Faces.size() + halves.size());
+    for (std::uint32_t f = 0; f < out.Faces.size(); ++f)
+        if (!splitFaces.count(f))
+            rebuilt.push_back(std::move(out.Faces[f]));
+    for (BrushFace& half : halves)
+        rebuilt.push_back(std::move(half));
+    out.Faces = std::move(rebuilt);
     return out;
 }
 

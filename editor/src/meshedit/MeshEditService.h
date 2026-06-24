@@ -35,6 +35,8 @@ struct MeshEditParams
     float PlanePosition = 0.0f;
     float MinThickness = 0.1f;
     Vec3d TranslateDelta = {}; // world-space, for MeshEditVerb::TranslateElements
+    float CutPosition = 0.5f;  // 0..1 along the seed edge, for InsertEdgeLoop
+    bool LoopCut = true;       // InsertEdgeLoop: full loop (true) or single edge (false)
 };
 
 class MeshEditService
@@ -67,6 +69,33 @@ public:
                                                              MeshElementKind kind,
                                                              Vec3d worldDelta,
                                                              bool validate) const;
+
+    // Rotates the local vertices referenced by `elements` (per `kind`) by `radians`
+    // about the world axis `axis` through the world `pivot`. Like TranslateElements,
+    // each vertex is taken to world through `transform`, rotated, and returned to
+    // local; shared vertices move once. `validate` as in TranslateElements (false
+    // for live preview, true to commit). Object-mode rotation must NOT use this; it
+    // composes the entity transform instead.
+    [[nodiscard]] std::optional<BrushMesh> RotateElements(const BrushMesh& base,
+                                                          const Transform3f& transform,
+                                                          std::span<const SelectableRef> elements,
+                                                          MeshElementKind kind,
+                                                          Vec3d axis,
+                                                          double radians,
+                                                          Vec3d pivot,
+                                                          bool validate) const;
+
+    // Scales the local vertices referenced by `elements` (per `kind`) by the
+    // per-axis world `factor` about the world `pivot`. Same world round-trip and
+    // `validate` contract as RotateElements. Object-mode scale composes the entity
+    // transform instead.
+    [[nodiscard]] std::optional<BrushMesh> ScaleElements(const BrushMesh& base,
+                                                         const Transform3f& transform,
+                                                         std::span<const SelectableRef> elements,
+                                                         MeshElementKind kind,
+                                                         Vec3d factor,
+                                                         Vec3d pivot,
+                                                         bool validate) const;
 
     // The extruded mesh plus the ids of the newly created "outer" elements in it
     // (the new cap faces for a face extrude, the new edges for an edge extrude),

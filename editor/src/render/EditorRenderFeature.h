@@ -20,6 +20,7 @@
 
 class EditorScene;
 class ManipulatorSession;
+class MeshEditService;
 class PreviewBuffer;
 class SelectionService;
 class ViewportLayout;
@@ -28,6 +29,7 @@ class AssetRegistry;
 class LoggingProvider;
 class ConsoleRegistry;
 struct GridSettings;
+struct EditorOverlayState;
 
 class EditorRenderFeature : public IRenderFeature
 {
@@ -35,6 +37,8 @@ public:
     EditorRenderFeature(ViewportLayout& viewportLayout,
                         EditorScene& scene,
                         SelectionService& selection,
+                        MeshEditService& meshEdit,
+                        const EditorOverlayState& overlay,
                         PreviewBuffer& preview,
                         ManipulatorSession& session,
                         const GridSettings& grid,

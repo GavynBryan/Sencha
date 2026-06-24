@@ -27,6 +27,10 @@ enum class BrushPickMode : uint8_t
 struct BrushPickRequest
 {
     BrushPickMode Mode = BrushPickMode::EntityOnly;
+    // When valid, only this entity is considered (the rest of the scene is ignored,
+    // not just filtered out after, so an occluding brush can't block it). The
+    // element edit modes lock picking to the brush being edited.
+    EntityId RestrictTo = {};
 };
 
 // Nearest ray/brush-surface intersection: the world hit point and that face's
@@ -81,7 +85,8 @@ public:
     [[nodiscard]] SelectableRef PickLoopSeedEdge(const EditorViewport& viewport,
                                                  ImVec2 point,
                                                  const EditorScene& scene,
-                                                 MeshElementKind mode) const;
+                                                 MeshElementKind mode,
+                                                 EntityId restrictTo = {}) const;
 
 private:
     struct PickCandidate
@@ -113,10 +118,12 @@ private:
     // depth.
     [[nodiscard]] SelectableRef PickEdge(const EditorViewport& viewport,
                                          ImVec2 point,
-                                         const EditorScene& scene) const;
+                                         const EditorScene& scene,
+                                         EntityId restrictTo = {}) const;
     [[nodiscard]] SelectableRef PickVertex(const EditorViewport& viewport,
                                            ImVec2 point,
-                                           const EditorScene& scene) const;
+                                           const EditorScene& scene,
+                                           EntityId restrictTo = {}) const;
 
     [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point) const;
 };

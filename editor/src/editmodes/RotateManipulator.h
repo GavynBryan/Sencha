@@ -2,15 +2,15 @@
 
 #include "IManipulator.h"
 
-// 3-axis translate manipulator. Hit-tests the X/Y/Z axes in screen space and
-// produces an axis-constrained, grid-snapped drag; object mode moves the entity
-// transform, element modes move mesh vertices — both through the ManipulationSink.
-// Draws itself as 3 colored arrows. Stateless: the pivot is derived from context
-// each call. First concrete IManipulator. (08-select-tool-v2.md)
-class TranslateManipulator : public IManipulator
+// 3-axis rotate manipulator: a ring per world axis (X/Y/Z), drawn screen-constant
+// around the selection pivot. Dragging a ring rotates about that axis through the
+// pivot; object mode composes the entity transform, element modes rotate the
+// selected vertices (MeshEditService::RotateElements), both through the
+// ManipulationSink. Stateless; the pivot derives from context each call.
+class RotateManipulator : public IManipulator
 {
 public:
-    [[nodiscard]] TransformMode Mode() const override { return TransformMode::Move; }
+    [[nodiscard]] TransformMode Mode() const override { return TransformMode::Rotate; }
     [[nodiscard]] bool AppliesTo(const ManipulatorContext& ctx,
                                  const EditorViewport& viewport) const override;
     void BuildVisual(const ManipulatorContext& ctx,

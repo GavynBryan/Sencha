@@ -4,6 +4,7 @@
 #include "ScopedPanel.h"
 
 #include "../commands/CommandStack.h"
+#include "../editmodes/ManipulatorSession.h"
 #include "../meshedit/IMeshEditTarget.h"
 #include "../meshedit/MeshEditService.h"
 #include "../selection/SelectionService.h"
@@ -15,17 +16,65 @@
 MeshEditPanel::MeshEditPanel(IMeshEditTarget& target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
-                             CommandStack& commands)
+                             CommandStack& commands,
+                             ManipulatorSession& manipulators,
+                             std::function<void()> setOriginToPivot)
     : Target(target)
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
+    , Manipulators(manipulators)
+    , SetOriginToPivot(std::move(setOriginToPivot))
 {
 }
 
 std::string_view MeshEditPanel::GetTitle() const
 {
     return "Mesh Edit";
+}
+
+void MeshEditPanel::DrawGizmoToolbar()
+{
+    const auto gizmoButton = [&](const char* label, TransformMode mode)
+    {
+        const bool active = Manipulators.GetTransformMode() == mode;
+        if (active)
+            ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
+        if (ImGui::Button(label))
+            Manipulators.SetTransformMode(mode);
+        if (active)
+            ImGui::PopStyleColor();
+    };
+
+    gizmoButton("Resize", TransformMode::Resize);
+    ImGui::SameLine();
+    gizmoButton("Move", TransformMode::Move);
+    ImGui::SameLine();
+    gizmoButton("Rotate", TransformMode::Rotate);
+    ImGui::SameLine();
+    gizmoButton("Scale", TransformMode::Scale);
+
+    // Pivot edit: the Move gizmo moves the transient rotate/scale center instead of
+    // the selection. Persists until the selection changes.
+    const bool editingPivot = Manipulators.IsEditingPivot();
+    if (editingPivot)
+        ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
+    if (ImGui::Button(editingPivot ? "Pivot: editing" : "Edit Pivot"))
+        Manipulators.SetEditingPivot(!editingPivot);
+    if (editingPivot)
+        ImGui::PopStyleColor();
+
+    // Bake the moved pivot into the brush's origin (only meaningful once moved).
+    ImGui::SameLine();
+    const bool hasPivot = Manipulators.HasPivotOverride();
+    if (!hasPivot)
+        ImGui::BeginDisabled();
+    if (ImGui::Button("Set Origin to Pivot") && SetOriginToPivot)
+        SetOriginToPivot();
+    if (!hasPivot)
+        ImGui::EndDisabled();
+
+    ImGui::TextDisabled("Q/W/E/R switch gizmos");
 }
 
 void MeshEditPanel::DrawModeToolbar()
@@ -132,9 +181,18 @@ void MeshEditPanel::DrawEdgeVerbs()
         return;
     }
 
-    if (ImGui::Button("Insert Loop"))
+    // Edge cut: author where along the edge to cut, and whether it rings the whole
+    // loop or splits just this edge.
+    ImGui::SliderFloat("Cut position", &CutPosition, 0.0f, 1.0f, "%.2f");
+    ImGui::Checkbox("Loop cut", &CutLoop);
+    ImGui::SameLine();
+    ImGui::TextDisabled(CutLoop ? "(full ring)" : "(single edge)");
+    if (ImGui::Button("Insert Cut"))
     {
-        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, {}))
+        MeshEditParams params;
+        params.CutPosition = CutPosition;
+        params.LoopCut = CutLoop;
+        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, params))
         {
             Commands.Execute(std::move(command));
             Selection.ClearMeshElementSelections();
@@ -147,6 +205,9 @@ void MeshEditPanel::OnDraw()
     ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen())
         return;
+
+    DrawGizmoToolbar();
+    ImGui::Separator();
 
     DrawModeToolbar();
     ImGui::Separator();

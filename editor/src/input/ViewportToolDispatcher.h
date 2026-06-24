@@ -28,6 +28,10 @@ private:
     InputConsumed HandlePointerUp(const PointerUpEvent& e, PointerCapture& capture);
     InputConsumed HandleKeyDown(const KeyDownEvent& e, PointerCapture& capture);
 
+    // Resolves the element under the cursor for the active element mode and writes
+    // it (plus an edge's length) to the overlay hover state, for the renderer glow.
+    void UpdateHover(EditorViewport& viewport, ImVec2 pos);
+
     // Reverts any in-flight interaction and drops any tool gesture. (W4.)
     void Abort();
 

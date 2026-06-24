@@ -2,15 +2,15 @@
 
 #include "IManipulator.h"
 
-// Hammer-style AABB resize handles for object mode in the orthographic views:
-// white squares at the selected brush's bounding-box corners and edge-midpoints.
-// Dragging a handle resizes the box (grid-snapped, min-thickness clamped) about
-// the opposite side, scaling the brush's vertices via MeshEditService::ResizeBounds.
-// Applies only in ortho views (where corner drag is unambiguous); the perspective
-// gizmo handles movement. Single-brush selection. (08-select-tool-v2.md P3.)
+// AABB resize handles for object mode: a ball at each of the six face centers, on
+// a dotted axis from the box center. Dragging a ball moves that face along its
+// world axis (grid-snapped, min-thickness clamped) about the opposite side,
+// scaling the brush's vertices via MeshEditService::ResizeBounds. Applies in both
+// ortho and perspective views; single-brush selection. The default gizmo (Resize).
 class BoundsManipulator : public IManipulator
 {
 public:
+    [[nodiscard]] TransformMode Mode() const override { return TransformMode::Resize; }
     [[nodiscard]] bool AppliesTo(const ManipulatorContext& ctx,
                                  const EditorViewport& viewport) const override;
     void BuildVisual(const ManipulatorContext& ctx,

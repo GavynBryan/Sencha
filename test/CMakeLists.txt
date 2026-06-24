@@ -109,6 +109,7 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/overlay/SelectionLabels.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp)

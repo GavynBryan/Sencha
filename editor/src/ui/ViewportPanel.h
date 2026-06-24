@@ -10,11 +10,12 @@
 #include <vector>
 
 struct MarqueeState;
+struct EditorOverlayState;
 
 class ViewportPanel : public IEditorPanel
 {
 public:
-    ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee);
+    ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -31,6 +32,9 @@ private:
     void DrawNode(const LayoutNode& node, ImVec2 size);
     void DrawSingleView(ImVec2 size);
     void DrawViewport(EditorViewport& viewport, ImVec2 size, bool showOrientationSelector = true);
+    // World-anchored overlay (selection dimension labels + active drag readout),
+    // drawn into the viewport's ImGui draw list via screen projection.
+    void DrawOverlay(const EditorViewport& viewport, ImDrawList* drawList);
     void DrawOrientationSelector(EditorViewport& viewport);
     // Fills the panel area NOT covered by a 3D region rect (the splitter gaps + the
     // per-viewport header strips) with the dark panel color, so the bright engine
@@ -39,6 +43,7 @@ private:
 
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
+    const EditorOverlayState& Overlay;
     bool RegionHovered = false;
     // 3D render-region rects collected this frame (the passthrough holes to keep
     // transparent); everything else in the panel gets the dark gap fill.

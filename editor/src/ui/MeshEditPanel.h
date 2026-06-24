@@ -2,7 +2,10 @@
 
 #include "IEditorPanel.h"
 
+#include <functional>
+
 class CommandStack;
+class ManipulatorSession;
 class MeshEditService;
 class SelectionService;
 struct IMeshEditTarget;
@@ -18,13 +21,16 @@ public:
     MeshEditPanel(IMeshEditTarget& target,
                   SelectionService& selection,
                   MeshEditService& meshEdit,
-                  CommandStack& commands);
+                  CommandStack& commands,
+                  ManipulatorSession& manipulators,
+                  std::function<void()> setOriginToPivot);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
 
 private:
+    void DrawGizmoToolbar();
     void DrawModeToolbar();
     void DrawObjectVerbs();
     void DrawFaceVerbs();
@@ -34,6 +40,10 @@ private:
     SelectionService& Selection;
     MeshEditService& MeshEdit;
     CommandStack& Commands;
+    ManipulatorSession& Manipulators;
+    std::function<void()> SetOriginToPivot;
 
     float ExtrudeDistance = 1.0f;
+    float CutPosition = 0.5f; // edge-cut authored position (0..1 along the edge)
+    bool CutLoop = true;      // edge-cut: full loop vs single edge
 };

@@ -2,15 +2,15 @@
 
 #include "IManipulator.h"
 
-// 3-axis translate manipulator. Hit-tests the X/Y/Z axes in screen space and
-// produces an axis-constrained, grid-snapped drag; object mode moves the entity
-// transform, element modes move mesh vertices — both through the ManipulationSink.
-// Draws itself as 3 colored arrows. Stateless: the pivot is derived from context
-// each call. First concrete IManipulator. (08-select-tool-v2.md)
-class TranslateManipulator : public IManipulator
+// 3-axis scale manipulator: a stalk with an end box per world axis plus a center
+// box for uniform scale, drawn screen-constant around the selection pivot.
+// Dragging an axis box scales that axis about the pivot; the center box scales all
+// axes. Object mode scales the entity transform, element modes scale the selected
+// vertices (MeshEditService::ScaleElements), both through the ManipulationSink.
+class ScaleManipulator : public IManipulator
 {
 public:
-    [[nodiscard]] TransformMode Mode() const override { return TransformMode::Move; }
+    [[nodiscard]] TransformMode Mode() const override { return TransformMode::Scale; }
     [[nodiscard]] bool AppliesTo(const ManipulatorContext& ctx,
                                  const EditorViewport& viewport) const override;
     void BuildVisual(const ManipulatorContext& ctx,

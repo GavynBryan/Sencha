@@ -2,11 +2,18 @@
 
 #include "InputRouter.h"
 
+#include "../document/EditorScene.h"
 #include "../editmodes/EditSessionHost.h"
 #include "../interaction/InteractionHost.h"
+#include "../meshedit/MeshEditService.h"
+#include "../meshedit/MeshElements.h"
+#include "../overlay/EditorOverlayState.h"
+#include "../overlay/SelectionLabels.h"
+#include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/EditorViewport.h"
+#include "../viewport/Picking.h"
 #include "../viewport/ViewportLayout.h"
 
 #include <SDL3/SDL_keycode.h>
@@ -88,6 +95,8 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     EditorViewport* vp = Layout.Find(e.Viewport);
     if (vp == nullptr)
     {
+        Context.Overlay.Hover = {}; // cursor left the viewports: drop the hover glow
+        Tools.HoverEnd();           // and any tool's hover preview (e.g. the edge cut)
         // The gesture's viewport vanished mid-drag (e.g. a layout change): abandon it.
         if (capture.HeldBySelf())
         {
@@ -99,9 +108,13 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
 
     const PointerEvent pointer{ .Position = e.Position, .Delta = e.Delta, .Modifiers = e.Modifiers };
 
-    // A live drag (gizmo, marquee, or brush-create) owns the stream.
+    // A live drag (gizmo, marquee, or brush-create) owns the stream; no hover feedback.
     if (Interactions.IsActive())
+    {
+        Context.Overlay.Hover = {};
+        Tools.HoverEnd();
         return Interactions.OnPointerMove(Context, *vp, pointer);
+    }
 
     // Otherwise a press becomes a drag once it crosses the deadzone: ask the active
     // tool for the interaction that runs it, then feed it this first move.
@@ -117,7 +130,42 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
             return Interactions.OnPointerMove(Context, *vp, pointer);
         }
     }
+
+    // The active tool gets first crack at hover (the edge cut drives a live preview);
+    // if it doesn't handle it, fall back to the element-mode selection glow.
+    if (Tools.Hover(*vp, pointer.Position) == InputConsumed::No)
+        UpdateHover(*vp, pointer.Position);
     return InputConsumed::No;
+}
+
+void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
+{
+    const MeshElementKind mode = Context.MeshEdit.GetElementKind();
+    // Match the select tool's lock: in an element mode, only the brush being edited
+    // is hoverable.
+    const SelectionSnapshot selection = Context.Selection.GetSnapshot();
+    const EntityId activeBody = (mode != MeshElementKind::Object && selection.Primary.IsValid())
+        ? selection.Primary.Entity : EntityId{};
+    const SelectableRef hovered = Context.Picking.Pick(
+        viewport, pos, Context.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode), .RestrictTo = activeBody });
+
+    ElementHoverState& hover = Context.Overlay.Hover;
+    hover.Element = hovered;
+    hover.Measure.clear();
+
+    // An edge carries its length, anchored at its midpoint.
+    if (hovered.IsEdge())
+    {
+        const BrushMesh* mesh = Context.Scene.TryGetBrushMesh(hovered.Entity);
+        const Transform3f* transform = Context.Scene.TryGetTransform(hovered.Entity);
+        if (mesh != nullptr && transform != nullptr)
+            if (const std::optional<EdgeElement> edge =
+                    MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))
+            {
+                hover.Measure = FormatUnits((edge->A - edge->B).Magnitude());
+                hover.MeasureAnchor = edge->Mid;
+            }
+    }
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, PointerCapture& capture)
@@ -154,8 +202,12 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, P
     if (gesture == GestureRecognizer::Result::Clicked
         || gesture == GestureRecognizer::Result::DoubleClicked)
     {
+        // Pick at the press position, not the release: a click stays within the drag
+        // deadzone of its press, and the press is where the hover glow was last
+        // resolved, so "if it highlights, the click selects it" holds even for an
+        // edge grabbed at a glancing angle.
         const PointerEvent click{
-            .Position = e.Position,
+            .Position = Recognizer.PressPointer().Position,
             .Modifiers = Recognizer.PressPointer().Modifiers,
         };
         return gesture == GestureRecognizer::Result::DoubleClicked ? Tools.DoubleClick(*vp, click)

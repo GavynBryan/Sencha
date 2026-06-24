@@ -8,6 +8,7 @@
 #include "../meshedit/MeshElementKindTraits.h"
 #include "../meshedit/MeshEditService.h"
 #include "../document/BrushCreationSettings.h"
+#include "../document/EdgeCutSettings.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
 #include "../viewport/GridSettings.h"
@@ -47,11 +48,12 @@ void Divider(float height)
 }
 
 EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid,
-                             BrushCreationSettings& brushCreate)
+                             BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut)
     : Tools(tools)
     , MeshEdit(meshEdit)
     , Grid(grid)
     , BrushCreate(brushCreate)
+    , EdgeCut(edgeCut)
 {
 }
 
@@ -125,6 +127,20 @@ void EditorToolbar::Draw()
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Cylinder sides");
             }
+        }
+
+        // Edge-cut mode (Loop ring vs Single edge): drives EdgeCutSettings. Shows
+        // only while the cut tool is active; Tab toggles it too.
+        if (activeTool != nullptr && activeTool->GetId() == "edgecut")
+        {
+            Divider(buttonSize);
+            if (ToolButton("cutloop", ICON_FA_ROTATE, "Loop cut (whole ring)  [Tab]",
+                           EdgeCut.LoopCut, buttonSize))
+                EdgeCut.LoopCut = true;
+            ImGui::SameLine();
+            if (ToolButton("cutsingle", ICON_FA_GRIP_LINES, "Single edge cut  [Tab]",
+                           !EdgeCut.LoopCut, buttonSize))
+                EdgeCut.LoopCut = false;
         }
 
         Divider(buttonSize);

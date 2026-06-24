@@ -1,11 +1,14 @@
 #include "TranslateManipulator.h"
 
 #include "GizmoMath.h"
+#include "ManipulatorTargets.h"
 #include "SelectionPivot.h"
 #include "../EditorTheme.h"
 #include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../meshedit/MeshElementKindTraits.h"
+#include "../overlay/EditorOverlayState.h"
+#include "../overlay/SelectionLabels.h"
 #include "../tools/ToolContext.h"
 #include "../viewport/EditorViewport.h"
 #include "../viewport/ViewportProjection.h"
@@ -62,13 +65,9 @@ struct ITranslateApply
     virtual ~ITranslateApply() = default;
 };
 
-// One selected entity and its pre-drag transform. Shared by the move and the
-// Shift-drag duplicate of object mode.
-struct ObjectItem
-{
-    EntityId Entity;
-    Transform3f Initial;
-};
+// The move and the Shift-drag duplicate share the object/element gathering with
+// rotate/scale (ManipulatorTargets); only the apply differs.
+using ObjectItem = ObjectTarget;
 
 [[nodiscard]] Transform3f WithDelta(const Transform3f& initial, Vec3d delta)
 {
@@ -254,6 +253,25 @@ private:
     ManipulationSink& Sink;
 };
 
+// Pivot edit: the axis drag moves the transient pivot (Override) instead of the
+// selection. The pivot persists after release and resets when the selection
+// changes; cancel restores the prior override.
+class PivotApply : public ITranslateApply
+{
+public:
+    PivotApply(PivotState& pivot, Vec3d start)
+        : Pivot(pivot), Start(start), Previous(pivot.Override) {}
+
+    void Preview(Vec3d delta) override { Pivot.Override = Start + delta; }
+    void Commit(Vec3d delta) override { Pivot.Override = Start + delta; }
+    void Cancel() override { Pivot.Override = Previous; }
+
+private:
+    PivotState& Pivot;
+    Vec3d Start;
+    std::optional<Vec3d> Previous;
+};
+
 class TranslateDrag : public IInteraction
 {
 public:
@@ -264,16 +282,29 @@ public:
     void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
     {
         if (UpdateDelta(ctx, viewport, pointer.Position))
+        {
             Apply->Preview(LastDelta);
+            // Blue origin->current line + distance moved, shown until release.
+            DragReadout& readout = ctx.Overlay.Readout;
+            readout.From = Pivot;
+            readout.To = Pivot + LastDelta;
+            readout.Text = FormatUnits(LastDelta.Magnitude());
+            readout.Viewport = viewport.Id;
+        }
     }
 
     void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
     {
         UpdateDelta(ctx, viewport, pointer.Position);
         Apply->Commit(LastDelta);
+        ctx.Overlay.Readout.Clear();
     }
 
-    void OnCancel(ToolContext&) override { Apply->Cancel(); }
+    void OnCancel(ToolContext& ctx) override
+    {
+        Apply->Cancel();
+        ctx.Overlay.Readout.Clear();
+    }
 
 private:
     bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
@@ -300,45 +331,10 @@ private:
     std::unique_ptr<ITranslateApply> Apply;
 };
 
-// Picks the entity to edit (primary's if it matches the wanted kind, else the
-// first matching ref) and collects that entity's refs of that kind.
-EntityId GatherModeElements(const SelectionSnapshot& selection, SelectableKind wantKind,
-                            std::vector<SelectableRef>& outElements)
-{
-    EntityId entity = {};
-    if (selection.Primary.IsValid() && selection.Primary.Kind == wantKind)
-        entity = selection.Primary.Entity;
-    else
-    {
-        for (SelectableRef ref : selection.Items)
-            if (ref.IsValid() && ref.Kind == wantKind) { entity = ref.Entity; break; }
-    }
-    if (!entity.IsValid())
-        return {};
-    for (SelectableRef ref : selection.Items)
-        if (ref.IsValid() && ref.Kind == wantKind && ref.Entity == entity)
-            outElements.push_back(ref);
-    return entity;
-}
-
-// Every selected entity that resolves to a transform, with its pre-drag state.
-std::vector<ObjectItem> GatherObjectItems(const ManipulatorContext& ctx)
-{
-    std::vector<ObjectItem> items;
-    for (SelectableRef ref : ctx.Selection.Items)
-    {
-        if (!ref.IsEntity())
-            continue;
-        if (const std::optional<Transform3f> transform = ctx.Sink.ResolveTransform(ref.Entity))
-            items.push_back({ ref.Entity, *transform });
-    }
-    return items;
-}
-
 std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
 {
     // Move every selected entity — one drag, one undo, all of them.
-    std::vector<ObjectItem> items = GatherObjectItems(ctx);
+    std::vector<ObjectItem> items = GatherObjectTargets(ctx);
     if (items.empty())
         return nullptr;
     return std::make_unique<ObjectApply>(std::move(items), ctx.Sink);
@@ -346,37 +342,15 @@ std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
 
 std::unique_ptr<ITranslateApply> MakeDuplicateApply(const ManipulatorContext& ctx)
 {
-    std::vector<ObjectItem> items = GatherObjectItems(ctx);
+    std::vector<ObjectItem> items = GatherObjectTargets(ctx);
     if (items.empty())
         return nullptr;
     return std::make_unique<DuplicateApply>(std::move(items), ctx.Sink);
 }
 
-// Resolves the active-mode element selection to one entity, its mesh, transform,
-// and the refs of that kind. Shared by the element move and the extrude.
-struct ResolvedElements
-{
-    EntityId Entity;
-    BrushMesh Mesh;
-    Transform3f Transform;
-    std::vector<SelectableRef> Elements;
-};
-
-std::optional<ResolvedElements> ResolveElements(const ManipulatorContext& ctx, MeshElementKind kind)
-{
-    std::vector<SelectableRef> elements;
-    const EntityId entity = GatherModeElements(ctx.Selection, Traits(kind).Selectable, elements);
-    if (!entity.IsValid() || elements.empty())
-        return std::nullopt;
-    const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(entity);
-    if (!resolved.has_value() || resolved->Mesh == nullptr)
-        return std::nullopt;
-    return ResolvedElements{ entity, *resolved->Mesh, resolved->Transform, std::move(elements) };
-}
-
 std::unique_ptr<ITranslateApply> MakeElementApply(const ManipulatorContext& ctx, MeshElementKind kind)
 {
-    std::optional<ResolvedElements> r = ResolveElements(ctx, kind);
+    std::optional<ElementTarget> r = ResolveElementTarget(ctx, kind);
     if (!r.has_value())
         return nullptr;
     return std::make_unique<ElementApply>(
@@ -385,7 +359,7 @@ std::unique_ptr<ITranslateApply> MakeElementApply(const ManipulatorContext& ctx,
 
 std::unique_ptr<ITranslateApply> MakeExtrudeApply(const ManipulatorContext& ctx, MeshElementKind kind)
 {
-    std::optional<ResolvedElements> r = ResolveElements(ctx, kind);
+    std::optional<ElementTarget> r = ResolveElementTarget(ctx, kind);
     if (!r.has_value())
         return nullptr;
     return std::make_unique<ExtrudeApply>(
@@ -395,7 +369,7 @@ std::unique_ptr<ITranslateApply> MakeExtrudeApply(const ManipulatorContext& ctx,
 
 bool TranslateManipulator::AppliesTo(const ManipulatorContext& ctx, const EditorViewport&) const
 {
-    return ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind()).has_value();
+    return ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot).has_value();
 }
 
 void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
@@ -404,7 +378,7 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
                                        ManipulatorVisual& out) const
 {
     const std::optional<Vec3d> pivot =
-        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind());
+        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
     if (!pivot.has_value())
         return;
 
@@ -442,7 +416,7 @@ int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
                                   ImVec2 screenPos) const
 {
     const std::optional<Vec3d> pivot =
-        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind());
+        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
     if (!pivot.has_value())
         return 0;
 
@@ -484,7 +458,7 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
         return nullptr;
 
     const MeshElementKind kind = ctx.Service.GetElementKind();
-    const std::optional<Vec3d> pivot = ComputeSelectionPivot(ctx.Sink, ctx.Selection, kind);
+    const std::optional<Vec3d> pivot = ComputeSelectionPivot(ctx.Sink, ctx.Selection, kind, ctx.Pivot);
     if (!pivot.has_value())
         return nullptr;
 
@@ -493,11 +467,14 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     if (!startParam.has_value())
         return nullptr;
 
-    // Shift turns the drag into duplicate (object) or extrude (face/edge); vertex
-    // mode and the plain drag stay a move. Extrude falls back to a move if no
-    // face/edge refs resolve, so Shift never dead-ends the drag.
+    // Pivot edit retargets the drag to the transient pivot. Otherwise Shift turns
+    // the drag into duplicate (object) or extrude (face/edge); vertex mode and the
+    // plain drag stay a move. Extrude falls back to a move if no face/edge refs
+    // resolve, so Shift never dead-ends the drag.
     std::unique_ptr<ITranslateApply> apply;
-    if (kind == MeshElementKind::Object)
+    if (ctx.Pivot.Editing)
+        apply = std::make_unique<PivotApply>(ctx.Pivot, *pivot);
+    else if (kind == MeshElementKind::Object)
         apply = modifiers.Shift ? MakeDuplicateApply(ctx) : MakeObjectApply(ctx);
     else if (modifiers.Shift && (kind == MeshElementKind::Face || kind == MeshElementKind::Edge))
         apply = MakeExtrudeApply(ctx, kind);

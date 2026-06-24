@@ -293,3 +293,78 @@ TEST(BrushOps, MakePrimitiveDispatchesToBox)
     EXPECT_EQ(box.Faces.size(), 6u);
     EXPECT_TRUE(IsClosed(box));
 }
+
+TEST(BrushOps, InsertEdgeLoopCutsAtAuthoredPosition)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    const BrushMesh cut = BrushOps::InsertEdgeLoop(box, a, b, 0.25f);
+    ASSERT_GT(cut.Vertices.size(), box.Vertices.size()); // the loop split some edges
+
+    // A new vertex sits 25% from a toward b on the seed edge.
+    const Vec3d expected = box.Vertices[a].Position * 0.75f + box.Vertices[b].Position * 0.25f;
+    bool found = false;
+    for (std::size_t i = box.Vertices.size(); i < cut.Vertices.size(); ++i)
+        if ((cut.Vertices[i].Position - expected).SqrMagnitude() < 1.0e-8f) { found = true; break; }
+    EXPECT_TRUE(found);
+
+    // The original vertices are untouched.
+    for (std::size_t i = 0; i < box.Vertices.size(); ++i)
+    {
+        EXPECT_FLOAT_EQ(cut.Vertices[i].Position.X, box.Vertices[i].Position.X);
+        EXPECT_FLOAT_EQ(cut.Vertices[i].Position.Y, box.Vertices[i].Position.Y);
+        EXPECT_FLOAT_EQ(cut.Vertices[i].Position.Z, box.Vertices[i].Position.Z);
+    }
+}
+
+TEST(BrushOps, InsertEdgeLoopDefaultStaysMidpoint)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    const BrushMesh cut = BrushOps::InsertEdgeLoop(box, a, b);
+    const Vec3d expectedMid = (box.Vertices[a].Position + box.Vertices[b].Position) * 0.5f;
+    bool found = false;
+    for (std::size_t i = box.Vertices.size(); i < cut.Vertices.size(); ++i)
+        if ((cut.Vertices[i].Position - expectedMid).SqrMagnitude() < 1.0e-8f) { found = true; break; }
+    EXPECT_TRUE(found);
+}
+
+TEST(BrushOps, InsertEdgeCutSplitsOnlyTheSeedFaces)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    BrushMesh cut = BrushOps::InsertEdgeCut(box, a, b, 0.3f);
+    // The seed edge borders two quads; each splits into two (net +2 faces).
+    EXPECT_EQ(cut.Faces.size(), box.Faces.size() + 2);
+
+    const Vec3d expected = box.Vertices[a].Position * 0.7f + box.Vertices[b].Position * 0.3f;
+    bool found = false;
+    for (std::size_t i = box.Vertices.size(); i < cut.Vertices.size(); ++i)
+        if ((cut.Vertices[i].Position - expected).SqrMagnitude() < 1.0e-8f) { found = true; break; }
+    EXPECT_TRUE(found);
+
+    // The open (T-junction) result is still usable after repair, like DeleteFace.
+    const BrushRepairResult repair = BrushValidateAndRepair(cut);
+    EXPECT_TRUE(repair.Ok);
+}
+
+TEST(BrushOps, InsertEdgeCutFaceFilterSplitsOnlyThatFace)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+
+    // Restricted to face 0: only that quad splits (6 -> 7).
+    const BrushMesh oneFace = BrushOps::InsertEdgeCut(box, a, b, 0.5f, /*faceIndex*/ 0);
+    EXPECT_EQ(oneFace.Faces.size(), box.Faces.size() + 1);
+
+    // Default still cuts both adjacent faces (6 -> 8).
+    const BrushMesh bothFaces = BrushOps::InsertEdgeCut(box, a, b, 0.5f);
+    EXPECT_EQ(bothFaces.Faces.size(), box.Faces.size() + 2);
+}

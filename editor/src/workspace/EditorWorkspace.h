@@ -6,8 +6,10 @@
 #include "../editmodes/EditSessionHost.h"
 #include "../editmodes/ManipulatorSession.h"
 #include "../input/ViewportToolDispatcher.h"
+#include "../editmodes/PivotState.h"
 #include "../interaction/InteractionHost.h"
 #include "../meshedit/MeshEditService.h"
+#include "../overlay/EditorOverlayState.h"
 #include "../render/PreviewBuffer.h"
 #include "../selection/SelectionContext.h"
 #include "../selection/SelectionService.h"
@@ -19,6 +21,7 @@
 #include "../viewport/ViewportLayout.h"
 
 #include "../document/BrushCreationSettings.h"
+#include "../document/EdgeCutSettings.h"
 #include "../document/EditorDocument.h"
 
 #include <functional>
@@ -36,6 +39,15 @@ public:
     // Deletes the entity-kind selection as one undoable step (no-op if empty).
     void DeleteSelection();
 
+    // Rebuilds the per-frame overlay labels (selected-brush dimensions) from the
+    // current selection. Cheap; called once per frame before the UI draws. Leaves
+    // the drag readout alone (the active interaction owns it).
+    void UpdateOverlay();
+
+    // Re-origins the primary selected brush to the moved pivot (no-op if the pivot
+    // has not been moved), then clears the transient pivot. One undoable step.
+    void SetSelectedBrushOriginToPivot();
+
     EditorDocument Document;
     ViewportLayout Layout = ViewportLayout::MakeFourWay();
     SelectionContext LevelSelection;
@@ -44,11 +56,17 @@ public:
     MeshEditService MeshEdit;
     GridSettings Grid;
     BrushCreationSettings BrushCreate;
+    EdgeCutSettings EdgeCut;
     MarqueeState Marquee;
+    EditorOverlayState Overlay;
+    PivotState Pivot;
     InteractionHost Interactions;
     PreviewBuffer Preview;
     EditSessionHost Sessions;
     std::unique_ptr<BrushManipulationSink> Sink;
+    // Keeps the deselect observer alive (SelectionService holds it weakly); clears
+    // the transient pivot override whenever the selection changes.
+    std::shared_ptr<SelectionService::ObserverFn> PivotObserver;
     // Non-owning; the EditSessionHost owns the session. Held so the overlay
     // renderer can ask it for manipulator visuals.
     ManipulatorSession* Manipulators = nullptr;

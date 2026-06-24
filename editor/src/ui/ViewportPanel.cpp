@@ -3,12 +3,18 @@
 #include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
+#include "../EditorTheme.h"
+#include "../overlay/EditorOverlayState.h"
+#include "../viewport/EditorViewport.h"
 #include "../viewport/MarqueeState.h"
+#include "../viewport/ViewportProjection.h"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
+#include <optional>
 
 namespace
 {
@@ -19,9 +25,10 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
     | ImGuiWindowFlags_NoBackground;
 }
 
-ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee)
+ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay)
     : Layout(layout)
     , Marquee(marquee)
+    , Overlay(overlay)
 {
 }
 
@@ -185,8 +192,69 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool sho
         drawList->AddRect(lo, hi, ImGui::GetColorU32(EditorUi::AccentHover));
     }
 
+    DrawOverlay(viewport, drawList);
+
     ImGui::EndChild();
     ImGui::EndChild();
+}
+
+void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* drawList)
+{
+    const ViewportProjection projection(viewport);
+    const auto inRegion = [&](ImVec2 px) {
+        return px.x >= viewport.RegionMin.x && px.x <= viewport.RegionMax.x
+            && px.y >= viewport.RegionMin.y && px.y <= viewport.RegionMax.y;
+    };
+    const auto toColor = [](const Vec4& c) {
+        return ImGui::GetColorU32(ImVec4(c.X, c.Y, c.Z, c.W));
+    };
+
+    // An ortho view looks down one world axis; a dimension along that axis is
+    // perpendicular to the screen and can't be read, so hide its label here.
+    int hiddenAxis = -1;
+    if (viewport.Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    {
+        const Vec3d n = viewport.Camera.OrthoAxis;
+        const float ax = std::abs(n.X);
+        const float ay = std::abs(n.Y);
+        const float az = std::abs(n.Z);
+        hiddenAxis = (ax >= ay && ax >= az) ? 0 : (ay >= az ? 1 : 2);
+    }
+
+    // World-anchored dimension labels for the current selection, shown in every
+    // viewport (each view projects the same world points).
+    for (const LabelRequest& label : Overlay.Labels)
+    {
+        if (hiddenAxis >= 0 && label.Axis == hiddenAxis)
+            continue;
+        const std::optional<ProjectedPoint> p = projection.WorldToPixel(label.World);
+        if (!p.has_value() || !inRegion(p->Pixel))
+            continue;
+        drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f), toColor(label.Color), label.Text.c_str());
+    }
+
+    // Hovered edge's length, anchored at its midpoint.
+    if (!Overlay.Hover.Measure.empty())
+    {
+        const std::optional<ProjectedPoint> p = projection.WorldToPixel(Overlay.Hover.MeasureAnchor);
+        if (p.has_value() && inRegion(p->Pixel))
+            drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f),
+                              toColor(EditorTheme::HoverEligible), Overlay.Hover.Measure.c_str());
+    }
+
+    // Active drag's origin->current line + distance, only in the view it started in.
+    if (Overlay.Readout.Active() && Overlay.Readout.Viewport == viewport.Id)
+    {
+        const std::optional<ProjectedPoint> a = projection.WorldToPixel(*Overlay.Readout.From);
+        const std::optional<ProjectedPoint> b = projection.WorldToPixel(*Overlay.Readout.To);
+        if (a.has_value() && b.has_value())
+        {
+            const ImU32 color = toColor(EditorTheme::Readout);
+            drawList->AddLine(a->Pixel, b->Pixel, color, 2.0f);
+            const ImVec2 mid((a->Pixel.x + b->Pixel.x) * 0.5f, (a->Pixel.y + b->Pixel.y) * 0.5f);
+            drawList->AddText(ImVec2(mid.x + 4.0f, mid.y - 6.0f), color, Overlay.Readout.Text.c_str());
+        }
+    }
 }
 
 void ViewportPanel::FillGapsBehindViewports()

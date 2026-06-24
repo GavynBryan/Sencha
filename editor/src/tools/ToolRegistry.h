@@ -33,6 +33,8 @@ public:
     InputConsumed Click(EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed DoubleClick(EditorViewport& viewport, const PointerEvent& pointer);
     std::unique_ptr<IInteraction> BeginDrag(EditorViewport& viewport, const PointerEvent& pressPointer);
+    InputConsumed Hover(EditorViewport& viewport, ImVec2 pos);
+    void HoverEnd();
     InputConsumed OnInput(const InputEvent& event);
 
 private:

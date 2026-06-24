@@ -320,7 +320,9 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     ImGuiContextReady = true;
 
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // No keyboard nav: it reserves Tab/arrows/Enter for widget focus cycling, which
+    // steals viewport hotkeys (the edge-cut Tab toggle most visibly). Text fields
+    // still gate keys via WantTextInput, so typing capture is unaffected.
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     EditorUi::Apply(ImGui::GetStyle());
     EditorUi::LoadFonts(io);

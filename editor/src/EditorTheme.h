@@ -26,6 +26,12 @@ inline constexpr Vec4 VertexHighlight{ 1.0f, 1.0f, 1.0f, 1.0f };
 inline constexpr Vec4 ComponentVisual{ 0.7f, 0.85f, 1.0f, 1.0f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 
+inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
+inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance
+inline constexpr Vec4 SelectedWireframe{ 0.15f, 0.5f, 1.0f, 1.0f }; // selected mesh edges (deep blue)
+inline constexpr Vec4 HoverEligible{ 0.4f, 1.0f, 0.85f, 1.0f };  // element under the cursor (selection-eligible)
+inline constexpr Vec4 VertexHandle{ 0.6f, 0.7f, 0.85f, 1.0f };   // all vertices shown in vertex mode
+
 // Screen-constant sizes (pixels), resolved to world via ViewportProjection.
 inline constexpr float GizmoAxisPixels = 90.0f;
 inline constexpr float VertexDotPixels = 7.0f;

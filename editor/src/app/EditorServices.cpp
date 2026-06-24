@@ -142,6 +142,19 @@ void EditorServices::BuildInput()
     Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { if (Files) Files->Save(); });
     Shortcuts->Register(SDLK_V, { .Shift = true }, [this] { Workspace->MeshEdit.CycleElementKind(); });
 
+    // Gizmo selection (Shift+Q/W/E/R) and element mode (1/2/3/4). Key events reach
+    // shortcuts even while the fly camera holds the pointer, so the gizmo switches
+    // carry Shift to stay off the camera's bare W/A/S/D + Q/E. The UI guard still
+    // blocks them while a text field is focused.
+    Shortcuts->Register(SDLK_Q, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Resize); });
+    Shortcuts->Register(SDLK_W, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Move); });
+    Shortcuts->Register(SDLK_E, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Rotate); });
+    Shortcuts->Register(SDLK_R, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Scale); });
+    Shortcuts->Register(SDLK_1, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); });
+    Shortcuts->Register(SDLK_2, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); });
+    Shortcuts->Register(SDLK_3, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); });
+    Shortcuts->Register(SDLK_4, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); });
+
     Router = std::make_unique<InputRouter>();
     // The UI is the top layer of the input stack: events over an ImGui panel are
     // consumed here before navigation, tools, or shortcuts can act on them. The
@@ -200,6 +213,8 @@ void EditorServices::BuildViewportRendering()
         Workspace->Layout,
         Workspace->Document.GetScene(),
         Workspace->Selection,
+        Workspace->MeshEdit,
+        Workspace->Overlay,
         Workspace->Preview,
         *Workspace->Manipulators,
         Workspace->Grid,
@@ -235,7 +250,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // panels so the work-area space they reserve is subtracted from the full-bleed
     // viewport panel below.
     Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit, Workspace->Grid,
-                                              Workspace->BrushCreate);
+                                              Workspace->BrushCreate, Workspace->EdgeCut);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({
@@ -249,7 +264,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee);
+    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee, Workspace->Overlay);
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
@@ -262,7 +277,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
-        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands));
+        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands, *Workspace->Manipulators,
+        [this] { Workspace->SetSelectedBrushOriginToPivot(); }));
     UiFeature->AddPanel(std::make_unique<MaterialPanel>(
         *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
         *Materials, Workspace->Document));
@@ -326,6 +342,11 @@ void EditorServices::ProcessFrame()
         Files->ProcessPending();
         Files->UpdateTitle();
     }
+
+    // Rebuild the transient viewport overlay (selected-brush dimension labels)
+    // before the UI panel draws it this frame.
+    if (Workspace)
+        Workspace->UpdateOverlay();
 }
 
 void EditorServices::LoadGameModule()
