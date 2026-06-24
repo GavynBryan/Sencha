@@ -61,13 +61,6 @@ behavior.
 - `docs/audio/captions-and-dialogue.md` is the working plan for subtitles,
   closed captions, semantic audio cues, and dialogue-line routing.
 
-## Actor Docs
-
-- `docs/actors/plan.md` is the working plan for the hybrid actor facade: a thin
-  actor+component layer over the ECS for low-count, high-bespoke authored
-  objects (doors, levers, encounters, bosses), with the boundary rule that keeps
-  the uniform bulk on pure data-oriented systems.
-
 ## Requirements
 
 - CMake 3.20+ (3.23+ to use the presets below)
