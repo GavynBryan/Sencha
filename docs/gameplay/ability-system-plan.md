@@ -40,9 +40,10 @@ scrapped). The relevant findings:
 
 What exists and is reused:
 
-- **Gameplay tags module** (`engine/include/core/gameplay_tags/`, landed on this
-  branch): `GameplayTagId` (a `StrongId`), `GameplayTagRegistry` (dot-path
-  hierarchy, auto-parent creation, `IsDescendantOf`, interning),
+- **Gameplay tags module** (landed on this branch at
+  `engine/include/core/gameplay_tags/` — to be relocated to the `framework/`
+  module per D-J): `GameplayTagId` (a `StrongId`), `GameplayTagRegistry`
+  (dot-path hierarchy, auto-parent creation, `IsDescendantOf`, interning),
   `GameplayTagSet` / `CountedGameplayTagSet` (heap-backed; usable as world state,
   **not** as components), and `GameplayTagQuery` (All/Any/None, Exact/Hierarchical
   match). Has unit tests; not yet wired to the ECS.
@@ -219,6 +220,27 @@ An input/AI mapping layer produces activation `Intent`s (a queue resource or a
 small per-entity intent component); `AbilityActivationSystem` consumes them. The
 ability system never reads raw input, so the same system serves player and AI.
 
+### D-J — All GAS code lives in a top-level `framework/` module, not engine core
+
+Gameplay systems are **not** core engine behavior. The engine library
+(`sencha_engine`) stays gameplay-agnostic; the GAS is a consumer that sits on top
+of it. All GAS code — the gameplay tags module, attributes, effects, abilities,
+and their systems — lives in a new top-level `framework/` module
+(`framework/include`, `framework/src`) built as its own target
+(`sencha_framework`, alias `sencha::framework`) that **depends on
+`sencha::engine` and is never depended on by it**. Games and examples link the
+framework; the engine cannot include framework headers, which enforces the
+dependency direction at the build level — consistent with the core-systems-map
+rule that low-level modules must not know about gameplay.
+
+The gameplay tags that currently landed under `engine/.../core/gameplay_tags/`
+are migration debt: relocate them into the framework module (and their tests to
+`test/framework/`) as the first task of Stage 1. Genuine core utilities such as
+`StrongId` stay in the engine; the framework includes them. A lighter fallback —
+a `framework/` subtree inside the existing engine library — is possible if a
+second build target is unwanted, but the separate target is preferred because it
+makes the dependency direction impossible to violate by accident.
+
 ## Frame Ordering
 
 All in `FixedLogic` (deterministic), ordered with `After<>`:
@@ -241,9 +263,11 @@ stubbed. Stages 1–5 are the spine; 6 proves it end to end; 7 is deferred.
 
 ### Stage 1 — Tags in the ECS
 
-POD `GameplayTagContainer` component; `GameplayTagRegistry` as a world resource;
-register both; grant/revoke-with-stacks API; hierarchical queries via the
-registry; name↔id serialization codec.
+First, relocate the gameplay tags module out of `engine/.../core/gameplay_tags/`
+into the new `framework/` module, and move its tests to `test/framework/` (D-J).
+Then: POD `GameplayTagContainer` component; `GameplayTagRegistry` as a world
+resource; register both; grant/revoke-with-stacks API; hierarchical queries via
+the registry; name↔id serialization codec.
 
 Gate: a test grants/revokes/stacks tags on an entity, matches a hierarchical
 `GameplayTagQuery`, and round-trips a scene with tags by name.
@@ -339,3 +363,5 @@ Be suspicious when new code:
 - has ability behavior call physics/animation/render/audio directly instead of
   through a GAS-owned sink
 - makes the heap-backed `GameplayTagSet`/`CountedGameplayTagSet` a component
+- places GAS or other gameplay code in the engine library / `core/`, or makes
+  `sencha_engine` depend on the framework

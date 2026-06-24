@@ -67,8 +67,10 @@ behavior.
   ECS Gameplay Ability System (attributes, effects, abilities, gameplay tags),
   rebuilding Unreal GAS concepts as POD components + data assets + uniform
   systems — no ability-system object, tags for mutual exclusion, events as data.
-- The gameplay tags module lives in `engine/include/core/gameplay_tags/`
-  (registry, sets, hierarchical query); ECS integration is Stage 1 of the plan.
+- The gameplay tags module currently sits in `engine/include/core/gameplay_tags/`
+  (registry, sets, hierarchical query); the plan relocates it — with the rest of
+  the GAS — to a top-level `framework/` module, since gameplay is not core engine
+  behavior. ECS integration plus that move are Stage 1 of the plan.
 
 ## Requirements
 
