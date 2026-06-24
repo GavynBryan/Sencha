@@ -61,6 +61,15 @@ behavior.
 - `docs/audio/captions-and-dialogue.md` is the working plan for subtitles,
   closed captions, semantic audio cues, and dialogue-line routing.
 
+## Gameplay Docs
+
+- `docs/gameplay/ability-system-plan.md` is the working plan for a data-driven
+  ECS Gameplay Ability System (attributes, effects, abilities, gameplay tags),
+  rebuilding Unreal GAS concepts as POD components + data assets + uniform
+  systems — no ability-system object, tags for mutual exclusion, events as data.
+- The gameplay tags module lives in `engine/include/core/gameplay_tags/`
+  (registry, sets, hierarchical query); ECS integration is Stage 1 of the plan.
+
 ## Requirements
 
 - CMake 3.20+ (3.23+ to use the presets below)
