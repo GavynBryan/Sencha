@@ -535,6 +535,13 @@ public:
     }
 
     template <typename T>
+    const T* TryGetResource() const
+    {
+        auto it = Resources.find(std::type_index(typeid(T)));
+        return it != Resources.end() ? static_cast<const T*>(it->second.first) : nullptr;
+    }
+
+    template <typename T>
     bool HasResource() const
     {
         return Resources.count(std::type_index(typeid(T))) > 0;
