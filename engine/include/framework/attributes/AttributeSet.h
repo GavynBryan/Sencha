@@ -36,6 +36,11 @@ struct AttributeSet
     [[nodiscard]] float GetBase(AttributeId id, float fallback = 0.0f) const;
     [[nodiscard]] float GetCurrent(AttributeId id, float fallback = 0.0f) const;
 
+    // Direct slot access for the resolve / effect-fold passes; nullptr if the
+    // attribute is not in this set.
+    [[nodiscard]] float* BasePtr(AttributeId id);
+    [[nodiscard]] float* CurrentPtr(AttributeId id);
+
     void Clear() { Count = 0; }
     [[nodiscard]] std::uint8_t Size() const { return Count; }
     [[nodiscard]] bool Empty() const { return Count == 0; }

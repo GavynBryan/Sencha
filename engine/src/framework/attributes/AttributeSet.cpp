@@ -38,6 +38,18 @@ float AttributeSet::GetCurrent(AttributeId id, float fallback) const
     return (i < Count && Ids[i] == id) ? Current[i] : fallback;
 }
 
+float* AttributeSet::BasePtr(AttributeId id)
+{
+    const int i = LowerBound(Ids, Count, id);
+    return (i < Count && Ids[i] == id) ? &Base[i] : nullptr;
+}
+
+float* AttributeSet::CurrentPtr(AttributeId id)
+{
+    const int i = LowerBound(Ids, Count, id);
+    return (i < Count && Ids[i] == id) ? &Current[i] : nullptr;
+}
+
 bool AttributeSet::SetBase(AttributeId id, float base)
 {
     const int i = LowerBound(Ids, Count, id);
