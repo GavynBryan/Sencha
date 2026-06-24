@@ -42,7 +42,7 @@ What exists and is reused:
 
 - **Gameplay tags module** (landed on this branch at
   `engine/include/core/gameplay_tags/` — to be relocated to the `framework/`
-  module per D-J): `GameplayTagId` (a `StrongId`), `GameplayTagRegistry`
+  area per D-J): `GameplayTagId` (a `StrongId`), `GameplayTagRegistry`
   (dot-path hierarchy, auto-parent creation, `IsDescendantOf`, interning),
   `GameplayTagSet` / `CountedGameplayTagSet` (heap-backed; usable as world state,
   **not** as components), and `GameplayTagQuery` (All/Any/None, Exact/Hierarchical
@@ -220,26 +220,46 @@ An input/AI mapping layer produces activation `Intent`s (a queue resource or a
 small per-entity intent component); `AbilityActivationSystem` consumes them. The
 ability system never reads raw input, so the same system serves player and AI.
 
-### D-J — All GAS code lives in a top-level `framework/` module, not engine core
+### D-J — GAS lives in a delineated `framework/` area, decoupled by rule, not a separate library
 
-Gameplay systems are **not** core engine behavior. The engine library
-(`sencha_engine`) stays gameplay-agnostic; the GAS is a consumer that sits on top
-of it. All GAS code — the gameplay tags module, attributes, effects, abilities,
-and their systems — lives in a new top-level `framework/` module
-(`framework/include`, `framework/src`) built as its own target
-(`sencha_framework`, alias `sencha::framework`) that **depends on
-`sencha::engine` and is never depended on by it**. Games and examples link the
-framework; the engine cannot include framework headers, which enforces the
-dependency direction at the build level — consistent with the core-systems-map
-rule that low-level modules must not know about gameplay.
+Gameplay is not core engine behavior, but the separation that matters is a
+*dependency rule*, not a build target. All GAS code — gameplay tags, attributes,
+effects, abilities, quest/state, and their systems — lives under a delineated
+`framework/` area compiled into the existing `sencha_engine` library
+(`engine/include/framework/…`, `engine/src/framework/…`), kept apart from
+`core/`, `render/`, `graphics/`, and scene serialization by directory and rule.
 
-The gameplay tags that currently landed under `engine/.../core/gameplay_tags/`
-are migration debt: relocate them into the framework module (and their tests to
-`test/framework/`) as the first task of Stage 1. Genuine core utilities such as
-`StrongId` stay in the engine; the framework includes them. A lighter fallback —
-a `framework/` subtree inside the existing engine library — is possible if a
-second build target is unwanted, but the separate target is preferred because it
-makes the dependency direction impossible to violate by accident.
+A separate `sencha_framework` target was considered and rejected for now: it
+would link the whole monolithic engine, so it would **not** prevent framework
+code from including `render/`/`scene` — the decoupling we actually want — while
+only enforcing the reverse (engine ↛ framework), which the engine already handles
+for every module via directory discipline and the dependency rules in
+`core-systems-map.md`. A separate target adds build, export, and
+test/example-linking cost (the bloat we are avoiding) without buying the property
+we care about.
+
+The decoupling is enforced three ways, all cheap:
+
+1. **Dependency rule.** Framework code may include `core/`, `ecs/`, `math/`; it
+   must **never** include `render/`, `graphics/`, or scene-serialization headers.
+   Engine `core/`/`render` must never include `framework/`.
+2. **Thin sinks (D-G).** The framework defines `IImpulseSink`/`IMontageSink`/
+   `IHitQuery`/`ICueSink`; the game (not the framework) wires them to render,
+   audio, physics, and animation — so the framework has no reason to include
+   those backends.
+3. **A guard test.** A small include-grep test (or CI check) fails if a
+   `framework/` file pulls in `render/`/`graphics/`/scene headers, or if any
+   engine module includes `framework/`. This enforces *both* directions directly
+   — something a separate library would not.
+
+Promote to a standalone `sencha_framework` library later only if the engine is
+split into fine-grained modules (so the framework can link a gameplay-safe
+subset), if you want to ship the engine without the framework, or if gameplay
+build times warrant an incremental boundary. None of those hold today.
+
+The tags currently under `engine/.../core/gameplay_tags/` move into the
+`framework/` area as the first task of Stage 1; `StrongId` and real core
+utilities stay in `core/`.
 
 ## Frame Ordering
 
@@ -264,7 +284,7 @@ stubbed. Stages 1–5 are the spine; 6 proves it end to end; 7 is deferred.
 ### Stage 1 — Tags in the ECS
 
 First, relocate the gameplay tags module out of `engine/.../core/gameplay_tags/`
-into the new `framework/` module, and move its tests to `test/framework/` (D-J).
+into the `framework/` area, and move its tests to `test/framework/` (D-J).
 Then: POD `GameplayTagContainer` component; `GameplayTagRegistry` as a world
 resource; register both; grant/revoke-with-stacks API; hierarchical queries via
 the registry; name↔id serialization codec.
@@ -363,5 +383,6 @@ Be suspicious when new code:
 - has ability behavior call physics/animation/render/audio directly instead of
   through a GAS-owned sink
 - makes the heap-backed `GameplayTagSet`/`CountedGameplayTagSet` a component
-- places GAS or other gameplay code in the engine library / `core/`, or makes
-  `sencha_engine` depend on the framework
+- lets `framework/` code include `render/`/`graphics/`/scene headers, or lets
+  engine `core/`/`render` include `framework/` — either direction breaks the
+  decoupling

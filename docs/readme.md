@@ -69,8 +69,9 @@ behavior.
   systems — no ability-system object, tags for mutual exclusion, events as data.
 - The gameplay tags module currently sits in `engine/include/core/gameplay_tags/`
   (registry, sets, hierarchical query); the plan relocates it — with the rest of
-  the GAS — to a top-level `framework/` module, since gameplay is not core engine
-  behavior. ECS integration plus that move are Stage 1 of the plan.
+  the GAS — to a delineated `framework/` area (decoupled from render/scene by
+  rule, not a separate library), since gameplay is not core engine behavior. ECS
+  integration plus that move are Stage 1 of the plan.
 
 ## Requirements
 
