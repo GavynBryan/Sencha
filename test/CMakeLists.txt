@@ -53,6 +53,10 @@ file(GLOB_RECURSE LEVEL_COOK_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/level_cook/*.cpp
 )
 
+file(GLOB_RECURSE FRAMEWORK_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/framework/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -158,6 +162,12 @@ if(LEVEL_COOK_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
 endif()
 
+if(FRAMEWORK_TEST_SOURCES)
+    add_executable(framework_tests ${FRAMEWORK_TEST_SOURCES})
+    target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS framework_tests)
+endif()
+
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
 
 include(GoogleTest)
@@ -201,6 +211,12 @@ endif()
 
 if(TARGET level_cook_tests)
     gtest_discover_tests(level_cook_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET framework_tests)
+    gtest_discover_tests(framework_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

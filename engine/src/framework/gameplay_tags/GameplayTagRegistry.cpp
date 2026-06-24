@@ -1,4 +1,4 @@
-#include <core/gameplay_tags/GameplayTagRegistry.h>
+#include <framework/gameplay_tags/GameplayTagRegistry.h>
 
 #include <cctype>
 

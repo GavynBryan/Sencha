@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/gameplay_tags/GameplayTagId.h>
+#include <framework/gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
 #include <optional>

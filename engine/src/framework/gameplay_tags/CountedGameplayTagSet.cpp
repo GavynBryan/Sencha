@@ -1,6 +1,6 @@
-#include <core/gameplay_tags/CountedGameplayTagSet.h>
+#include <framework/gameplay_tags/CountedGameplayTagSet.h>
 
-#include <core/gameplay_tags/GameplayTagRegistry.h>
+#include <framework/gameplay_tags/GameplayTagRegistry.h>
 
 #include <utility>
 
