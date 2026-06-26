@@ -2,6 +2,7 @@
 
 #include <app/Engine.h>
 #include <app/Game.h>
+#include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 
 #include <memory>
@@ -21,6 +22,7 @@ public:
 
     [[nodiscard]] int Argc() const { return ArgumentCount; }
     [[nodiscard]] char** Argv() const { return ArgumentValues; }
+    [[nodiscard]] const ConsoleStartupScript& StartupCommands() const { return StartupScript; }
 
     Application& WithEngineConfig(EngineConfig engineConfig);
     bool LoadEngineConfigFile(const char* path, EngineConfigError* error = nullptr);
@@ -49,6 +51,7 @@ public:
         game->OnConfigure(configure);
 
         Engine engine(Configuration);
+        engine.SetStartupScript(StartupScript);
         const int result = engine.Run(*game);
         game.reset();
         engine.Shutdown();
@@ -56,7 +59,11 @@ public:
     }
 
 private:
+    void RebuildStartupScriptFromConfig();
+
     int ArgumentCount = 0;
     char** ArgumentValues = nullptr;
     EngineConfig Configuration;
+    ConsoleStartupScript ArgvStartupScript;
+    ConsoleStartupScript StartupScript;
 };

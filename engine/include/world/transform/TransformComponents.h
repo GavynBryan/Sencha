@@ -1,8 +1,10 @@
 #pragma once
 
+#include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
@@ -56,3 +58,19 @@ struct TypeSchema<LocalTransform>
         };
     }
 };
+
+// Structural: paired with the derived WorldTransform, so the editor must not let
+// it be removed (that would orphan the pairing). A transform-less entity is made
+// by never adding one, not by stripping it. (core/metadata/ComponentRemovable.h)
+template <>
+struct ComponentRemovable<LocalTransform>
+{
+    static constexpr bool Value = false;
+};
+
+// WorldTransform and Parent are pure-runtime (never serialized themselves), so
+// they carry no TypeSchema. They still need module-stable identity for the World
+// type→id map — declared explicitly here. (LocalTransform's identity derives from
+// its TypeSchema::Name above.)
+SENCHA_DECLARE_COMPONENT_TYPE(WorldTransform, "sencha.world_transform");
+SENCHA_DECLARE_COMPONENT_TYPE(Parent,         "sencha.parent");

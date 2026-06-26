@@ -13,12 +13,15 @@
 #include <core/assets/AssetSource.h>
 #include <core/logging/Logger.h>
 #include <render/Material.h>
+#include <render/MaterialSetCache.h>
 #include <render/TextureHandle.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
+#include <span>
 #include <string_view>
+#include <vector>
 
 class AnimationClipCache;
 class AudioClipCache;
@@ -49,7 +52,8 @@ public:
                 AudioClipCache& audioClips,
                 SkeletonCache& skeletons,
                 AnimationClipCache& animationClips,
-                SkinnedMeshCache& skinnedMeshes);
+                SkinnedMeshCache& skinnedMeshes,
+                MaterialSetCache& materialSets);
     AssetSystem(LoggingProvider& logging,
                 AssetRegistry& registry,
                 StaticMeshCache* meshes,
@@ -58,7 +62,8 @@ public:
                 AudioClipCache* audioClips = nullptr,
                 SkeletonCache* skeletons = nullptr,
                 AnimationClipCache* animationClips = nullptr,
-                SkinnedMeshCache* skinnedMeshes = nullptr);
+                SkinnedMeshCache* skinnedMeshes = nullptr,
+                MaterialSetCache* materialSets = nullptr);
 
     [[nodiscard]] StaticMeshHandle LoadStaticMesh(std::string_view path);
     [[nodiscard]] SkinnedMeshHandle LoadSkinnedMesh(std::string_view path);
@@ -76,6 +81,14 @@ public:
 
     [[nodiscard]] StaticMeshHandle RegisterProceduralStaticMesh(std::string_view path, MeshGeometry mesh);
     [[nodiscard]] MaterialHandle RegisterProceduralMaterial(std::string_view path, Material material);
+
+    // Per-section material binding (the instance-level material set a
+    // StaticMeshComponent references). Acquire deduplicates by content and
+    // returns an invalid handle when no MaterialSetCache is wired. Get exposes
+    // the ordered members for extraction; Release drops a reference.
+    [[nodiscard]] MaterialSetHandle AcquireMaterialSet(std::span<const MaterialHandle> materials);
+    [[nodiscard]] const std::vector<MaterialHandle>* GetMaterialSet(MaterialSetHandle handle) const;
+    void ReleaseMaterialSet(MaterialSetHandle handle);
 
     [[nodiscard]] std::string_view GetPathForStaticMesh(StaticMeshHandle handle) const;
     [[nodiscard]] std::string_view GetPathForSkinnedMesh(SkinnedMeshHandle handle) const;
@@ -141,6 +154,7 @@ private:
     AssetRegistry& Registry;
     StaticMeshCache* StaticMeshes = nullptr;
     MaterialCache* Materials = nullptr;
+    MaterialSetCache* MaterialSets = nullptr;
     TextureCache* Textures = nullptr;
     AudioClipCache* AudioClips = nullptr;
     SkeletonCache* Skeletons = nullptr;

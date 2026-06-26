@@ -25,6 +25,7 @@ namespace
 void RenderExtractionSystem::Extract(const World& world,
                                      const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
+                                     const MaterialSetCache& materialSets,
                                      const CameraRenderData& camera,
                                      RenderQueue& queue)
 {
@@ -51,9 +52,11 @@ void RenderExtractionSystem::Extract(const World& world,
             const StaticMeshComponent& renderer = renderers[i];
             if (!renderer.Visible) continue;
 
-            const GpuStaticMesh* mesh     = meshes.Get(renderer.Mesh);
-            const Material*      material = materials.Get(renderer.Material);
-            if (mesh == nullptr || material == nullptr) continue;
+            const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
+            const std::vector<MaterialHandle>* sectionMaterials =
+                materialSets.Get(renderer.Materials);
+            if (mesh == nullptr || sectionMaterials == nullptr || sectionMaterials->empty())
+                continue;
 
             const Mat4   worldMatrix  = transforms[i].Value.ToMat4();
             const Aabb3d worldBounds  = TransformBounds(mesh->LocalBounds, worldMatrix);
@@ -75,9 +78,19 @@ void RenderExtractionSystem::Extract(const World& world,
             {
                 if ((renderer.SectionMask & (1u << sectionIndex)) == 0) continue;
 
+                // Map the section to its material via MaterialSlot; a slot past
+                // the bound set falls back to the last member (so an under-bound
+                // set still draws rather than dropping geometry).
+                const uint32_t slot = mesh->Sections[sectionIndex].MaterialSlot;
+                const MaterialHandle materialHandle = slot < sectionMaterials->size()
+                    ? (*sectionMaterials)[slot]
+                    : sectionMaterials->back();
+                const Material* material = materials.Get(materialHandle);
+                if (material == nullptr) continue;
+
                 RenderQueueItem item{};
                 item.Mesh         = renderer.Mesh;
-                item.Material     = renderer.Material;
+                item.Material     = materialHandle;
                 item.SectionIndex = sectionIndex;
                 item.WorldMatrix  = worldMatrix;
                 item.WorldBounds  = worldBounds;

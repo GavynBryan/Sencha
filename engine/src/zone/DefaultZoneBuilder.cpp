@@ -10,20 +10,20 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               ZoneId zone,
                               ZoneParticipation participation,
                               StaticMeshCache* meshes,
-                              MaterialCache* materials,
+                              MaterialSetCache* materialSets,
                               AudioClipCache* audioClips,
                               AudioService* audio,
                               CaptionRuntime* captions)
 {
     Registry& registry = zones.CreateZone(zone);
-    InitializeDefault3DRegistry(registry, meshes, materials, audioClips, audio, captions);
+    InitializeDefault3DRegistry(registry, meshes, materialSets, audioClips, audio, captions);
     zones.SetParticipation(zone, participation);
     return registry;
 }
 
 void InitializeDefault3DRegistry(Registry& registry,
                                  StaticMeshCache* meshes,
-                                 MaterialCache* materials,
+                                 MaterialSetCache* materialSets,
                                  AudioClipCache* audioClips,
                                  AudioService* audio,
                                  CaptionRuntime* captions)
@@ -35,7 +35,7 @@ void InitializeDefault3DRegistry(Registry& registry,
     {
         ComponentStorageTraits<typename decltype(tag)::Type>::Register(registry);
     });
-    registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materials);
+    registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materialSets);
     registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio, captions);
 }
 
@@ -50,7 +50,7 @@ EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
 bool AddDefaultMeshRenderer(Registry& registry,
                             EntityId entity,
                             StaticMeshHandle mesh,
-                            MaterialHandle material)
+                            MaterialSetHandle materials)
 {
     if (!registry.Components.IsAlive(entity)
         || registry.Components.HasComponent<StaticMeshComponent>(entity))
@@ -60,7 +60,7 @@ bool AddDefaultMeshRenderer(Registry& registry,
 
     registry.Components.AddComponent(entity, StaticMeshComponent{
         .Mesh = mesh,
-        .Material = material,
+        .Materials = materials,
     });
     return true;
 }

@@ -1,14 +1,18 @@
 #pragma once
 
+#include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <cstddef>
+#include <cstring>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 namespace SceneComponentSerialization
 {
@@ -78,8 +82,39 @@ class ComponentSerializer final : public IComponentSerializer
     using Traits = ComponentStorageTraits<Component>;
 
 public:
+    ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Component>(); }
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
     std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
+
+    std::span<const RuntimeField> RuntimeFields() const override
+    {
+        return RuntimeFieldsOf<Component>();
+    }
+
+    std::optional<EditorVisual> GetEditorVisual() const override
+    {
+        return ComponentEditorVisual<Component>::Value;
+    }
+
+    bool IsRemovable() const override
+    {
+        return ComponentRemovable<Component>::Value;
+    }
+
+    std::vector<std::byte> DefaultBytes() const override
+    {
+        if constexpr (std::is_empty_v<Component>)
+        {
+            return {};
+        }
+        else
+        {
+            Component value{}; // C++ default member initializers
+            std::vector<std::byte> bytes(sizeof(Component));
+            std::memcpy(bytes.data(), &value, sizeof(Component));
+            return bytes;
+        }
+    }
 
     void RegisterStorage(Registry& registry) const override
     {

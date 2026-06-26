@@ -2,6 +2,7 @@
 
 #include <app/DefaultRenderPipeline.h>
 #include <app/EngineSchedule.h>
+#include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -13,6 +14,7 @@
 class AsyncTaskQueue;
 class AudioService;
 class CaptionRuntime;
+class ConsoleService;
 class DebugService;
 class FrameDriver;
 class Game;
@@ -42,6 +44,7 @@ public:
     void Shutdown();
     int Run(Game& game);
     void RequestExit() { Running = false; }
+    void SetStartupScript(ConsoleStartupScript script) { StartupScript = std::move(script); }
     [[nodiscard]] bool IsInitialized() const { return Initialized; }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
@@ -60,6 +63,8 @@ public:
     [[nodiscard]] const AudioService& Audio() const;
     [[nodiscard]] CaptionRuntime& Captions();
     [[nodiscard]] const CaptionRuntime& Captions() const;
+    [[nodiscard]] ConsoleService& Console();
+    [[nodiscard]] const ConsoleService& Console() const;
 
     // SDL platform services. Present only when the engine runs windowed
     // (GraphicsApi != None); valid between Initialize and Shutdown.
@@ -115,6 +120,7 @@ public:
 
 private:
     void RegisterFramePhases(Game& game);
+    void RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug);
 
     EngineConfig Configuration;
     // Foundation: declared before every service and system so that -- members
@@ -125,6 +131,9 @@ private:
     // after LoggingState (they may log on teardown) and before the SDL/Vulkan
     // groups (they do not depend on those, so they tear down after them).
     std::unique_ptr<DebugService> DebugState;
+    // Console after Debug: its built-in cvars reference DebugState, so it must
+    // tear down (reverse declaration order) before the service it points at.
+    std::unique_ptr<ConsoleService> ConsoleState;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
     // SDL platform group. Declared before the Vulkan group so the window
@@ -138,6 +147,7 @@ private:
     EngineSchedule EngineSystems;
     ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;
+    ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     TimingHistory TimingData;
     // Declared last: destroyed first, so task/worker threads are joined (and

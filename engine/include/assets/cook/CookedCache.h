@@ -69,6 +69,15 @@ public:
     // Inserts or replaces the entry for entry.SourceRelPath.
     void Put(CookedSourceEntry entry);
 
+    // Drops the entry for a source. The caller deletes the artifact files; the
+    // index only tracks them (it never touches the filesystem). No-op if absent.
+    void Erase(std::string_view sourceRelPath);
+
+    [[nodiscard]] const std::unordered_map<std::string, CookedSourceEntry>& Entries() const
+    {
+        return EntriesBySource;
+    }
+
     [[nodiscard]] std::size_t Size() const { return EntriesBySource.size(); }
 
     // JSON round trip. Hashes serialize as 16-digit hex strings — JSON

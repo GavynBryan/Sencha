@@ -67,3 +67,6 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+# Dear ImGui window-layout dump written when running the editor
+imgui.ini

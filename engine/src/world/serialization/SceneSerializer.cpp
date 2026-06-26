@@ -6,6 +6,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
 #include <world/ComponentManifest.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneFormat.h>
 #include <math/MathSchemas.h>
 #include <world/transform/TransformComponents.h>
@@ -21,10 +22,9 @@
 
 namespace
 {
-    std::vector<std::unique_ptr<IComponentSerializer>>& SerializerEntries()
+    const std::vector<std::unique_ptr<IComponentSerializer>>& SerializerEntries()
     {
-        static std::vector<std::unique_ptr<IComponentSerializer>> entries;
-        return entries;
+        return DefaultComponentSerializerRegistry().Entries();
     }
 
     void SetError(SceneSaveError* error, std::string message)
@@ -270,34 +270,26 @@ namespace
 
 void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer)
 {
-    if (!serializer)
-        return;
-
-    auto& entries = SerializerEntries();
-    for (const auto& existing : entries)
-    {
-        const bool sameChunk = existing->BinaryChunkId() == serializer->BinaryChunkId();
-        const bool sameKey = existing->JsonKey() == serializer->JsonKey();
-
-        // Both match: idempotent re-registration (InitSceneSerializer may run
-        // more than once). One matches: a genuine collision between two
-        // different components — never register it half-working.
-        if (sameChunk && sameKey)
-            return;
-        if (sameChunk || sameKey)
-        {
-            assert(false && "Component serializer collision: chunk ID or JSON "
-                            "key already registered by a different component");
-            return;
-        }
-    }
-
-    entries.push_back(std::move(serializer));
+    // Conflict policy lives in ComponentSerializerRegistry; the legacy free
+    // function preserves the historical fail-loud behavior so the death tests
+    // still observe a hard stop on a genuine collision (vs. the loader, which
+    // takes the returned Rejected and refuses the module cleanly).
+    const auto result = DefaultComponentSerializerRegistry().Register(std::move(serializer));
+    assert(result != ComponentSerializerRegistry::RegisterResult::Rejected
+           && "Component serializer collision: ComponentTypeId, chunk ID, or JSON "
+              "key already registered by a different component");
+    (void)result;
 }
 
 void ClearComponentSerializers()
 {
-    SerializerEntries().clear();
+    DefaultComponentSerializerRegistry().Clear();
+}
+
+ComponentSerializerRegistry& DefaultComponentSerializerRegistry()
+{
+    static ComponentSerializerRegistry instance;
+    return instance;
 }
 
 void InitSceneSerializer()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <core/metadata/EditorVisual.h>
 #include <core/metadata/EnumSchema.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
@@ -67,6 +68,15 @@ struct TypeSchema<CameraComponent>
                 .Default(CameraComponent{}.OrthographicHeight),
         };
     }
+};
+
+// The editor draws camera entities as a little camera mesh at their transform.
+// Pure tooling metadata; the runtime ignores it. (core/metadata/EditorVisual.h)
+template <>
+struct ComponentEditorVisual<CameraComponent>
+{
+    static constexpr std::optional<EditorVisual> Value =
+        EditorVisual{ EditorVisual::Kind::Mesh, "camera.glb" };
 };
 
 //=============================================================================

@@ -33,6 +33,9 @@ TEST(EngineConfig, DefaultsDescribeLaunchableEngine)
     EXPECT_EQ(config.Graphics.FramesInFlight, 2u);
     EXPECT_TRUE(config.Debug.ConsoleLogging);
     EXPECT_FALSE(config.Debug.DebugUi);
+    EXPECT_TRUE(config.Console.UiEnabled);
+    EXPECT_FALSE(config.Console.OpenOnStart);
+    EXPECT_EQ(config.Console.HistoryCapacity, 256);
 }
 
 TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
@@ -65,6 +68,16 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
             "console_logging": false,
             "debug_ui": true
         },
+        "console": {
+            "ui_enabled": true,
+            "open_on_start": true,
+            "history_capacity": 64,
+            "cvars": {
+                "r": { "target_fps": 144 },
+                "game": { "player": { "name": "Ada" } }
+            },
+            "exec": [ "autoexec.cfg" ]
+        },
         "audio": {
             "buses": [
                 { "name": "Sfx", "maxVoices": 8, "volume": 0.75 }
@@ -93,6 +106,16 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
     EXPECT_FALSE(loaded->Graphics.EnableValidation);
     EXPECT_FALSE(loaded->Debug.ConsoleLogging);
     EXPECT_TRUE(loaded->Debug.DebugUi);
+    EXPECT_TRUE(loaded->Console.UiEnabled);
+    EXPECT_TRUE(loaded->Console.OpenOnStart);
+    EXPECT_EQ(loaded->Console.HistoryCapacity, 64);
+    ASSERT_EQ(loaded->Console.CVars.size(), 2u);
+    EXPECT_EQ(loaded->Console.CVars[0].Name, "r.target_fps");
+    EXPECT_EQ(loaded->Console.CVars[0].Value, "144");
+    EXPECT_EQ(loaded->Console.CVars[1].Name, "game.player.name");
+    EXPECT_EQ(loaded->Console.CVars[1].Value, "Ada");
+    ASSERT_EQ(loaded->Console.ExecScripts.size(), 1u);
+    EXPECT_EQ(loaded->Console.ExecScripts[0], "autoexec.cfg");
     ASSERT_EQ(loaded->Audio.Buses.size(), 1u);
     EXPECT_EQ(loaded->Audio.Buses[0].Name, "Sfx");
 

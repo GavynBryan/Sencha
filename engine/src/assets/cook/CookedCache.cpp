@@ -71,6 +71,11 @@ void CookedCacheIndex::Put(CookedSourceEntry entry)
     EntriesBySource.insert_or_assign(std::move(key), std::move(entry));
 }
 
+void CookedCacheIndex::Erase(std::string_view sourceRelPath)
+{
+    EntriesBySource.erase(std::string(sourceRelPath));
+}
+
 JsonValue CookedCacheIndex::ToJson() const
 {
     std::vector<const CookedSourceEntry*> ordered;

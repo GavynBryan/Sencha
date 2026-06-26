@@ -78,6 +78,7 @@ private:
     GraphicsServices(LoggingProvider& logging,
                      const VulkanBootstrapPolicy& policy,
                      std::uint32_t framesInFlight,
+                     std::uint64_t scratchBytesPerFrame,
                      SdlWindow& window);
 
     static VulkanBootstrapPolicy BuildPolicy(const EngineConfig& config,

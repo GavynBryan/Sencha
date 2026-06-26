@@ -7,6 +7,7 @@
 #include <audio/AudioClipCache.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialCache.h>
+#include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
@@ -21,9 +22,10 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          AudioClipCache& audioClips,
                          SkeletonCache& skeletons,
                          AnimationClipCache& animationClips,
-                         SkinnedMeshCache& skinnedMeshes)
+                         SkinnedMeshCache& skinnedMeshes,
+                         MaterialSetCache& materialSets)
     : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips,
-                  &skeletons, &animationClips, &skinnedMeshes)
+                  &skeletons, &animationClips, &skinnedMeshes, &materialSets)
 {
 }
 
@@ -35,11 +37,13 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          AudioClipCache* audioClips,
                          SkeletonCache* skeletons,
                          AnimationClipCache* animationClips,
-                         SkinnedMeshCache* skinnedMeshes)
+                         SkinnedMeshCache* skinnedMeshes,
+                         MaterialSetCache* materialSets)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
     , StaticMeshes(meshes)
     , Materials(materials)
+    , MaterialSets(materialSets)
     , Textures(textures)
     , AudioClips(audioClips)
     , Skeletons(skeletons)
@@ -53,6 +57,27 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , AnimLoader(logging, *this, animationClips, skeletons)
     , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
 {
+}
+
+MaterialSetHandle AssetSystem::AcquireMaterialSet(std::span<const MaterialHandle> materials)
+{
+    if (!MaterialSets)
+    {
+        Log.Error("AssetSystem: missing MaterialSetCache for material set acquire");
+        return {};
+    }
+    return MaterialSets->Acquire(materials);
+}
+
+const std::vector<MaterialHandle>* AssetSystem::GetMaterialSet(MaterialSetHandle handle) const
+{
+    return MaterialSets ? MaterialSets->Get(handle) : nullptr;
+}
+
+void AssetSystem::ReleaseMaterialSet(MaterialSetHandle handle)
+{
+    if (MaterialSets)
+        MaterialSets->Release(handle);
 }
 
 StaticMeshHandle AssetSystem::RegisterProceduralStaticMesh(std::string_view path, MeshGeometry mesh)
@@ -258,7 +283,12 @@ StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
 
         return handle;
     }
+    // Generated meshes (the level cook's brush bake, 05-) load byte-for-byte like
+    // File: the record's FilePath points at the .cooked/ artifact and the loader
+    // reads it through the same byte source. The kind differs only in provenance —
+    // a Generated asset is owned by a level source and is the prune pass's to reap.
     case AssetSourceKind::File:
+    case AssetSourceKind::Generated:
     {
         if (!StaticMeshes)
         {
@@ -278,9 +308,6 @@ StaticMeshHandle AssetSystem::LoadStaticMesh(std::string_view path)
 
         return MeshLoader.CommitTyped(std::move(staging));
     }
-    case AssetSourceKind::Generated:
-        Log.Error("AssetSystem: generated static mesh loading not implemented: {}", record->Path);
-        return {};
     case AssetSourceKind::Embedded:
         Log.Error("AssetSystem: embedded static mesh loading not implemented: {}", record->Path);
         return {};

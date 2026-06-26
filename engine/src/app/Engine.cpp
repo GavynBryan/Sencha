@@ -1,16 +1,19 @@
 #include <app/Engine.h>
+#include <app/EngineConsoleBuiltins.h>
 #include <app/EngineFramePhases.h>
 #include <app/Game.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
+#include <core/console/ConsoleService.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/ThreadPoolJobSystem.h>
 #include <runtime/FrameDriver.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
@@ -45,6 +48,10 @@ bool Engine::Initialize()
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     DebugState = std::make_unique<DebugService>(logging, debugLog);
+    ConsoleState = std::make_unique<ConsoleService>();
+    RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
+    if (Configuration.Console.OpenOnStart)
+        DebugState->Open();
     EngineSystems.Register<DefaultRenderPipeline>();
 
     // Audio backend + the system that drives scene AudioSourceComponents
@@ -70,6 +77,7 @@ bool Engine::Initialize()
         PlatformState.reset();
         CaptionState.reset();
         AudioState.reset();
+        ConsoleState.reset();
         DebugState.reset();
         LoggingState.Clear();
         FramePhasesRegistered = false;
@@ -148,6 +156,7 @@ void Engine::Shutdown()
     PlatformState.reset();
     CaptionState.reset();
     AudioState.reset();
+    ConsoleState.reset();
     DebugState.reset();
     LoggingState.Clear();
     FramePhasesRegistered = false;
@@ -189,6 +198,18 @@ const CaptionRuntime& Engine::Captions() const
 {
     assert(CaptionState && "Engine::Captions: valid only between Initialize and Shutdown");
     return *CaptionState;
+}
+
+ConsoleService& Engine::Console()
+{
+    assert(ConsoleState && "Engine::Console: valid only between Initialize and Shutdown");
+    return *ConsoleState;
+}
+
+const ConsoleService& Engine::Console() const
+{
+    assert(ConsoleState && "Engine::Console: valid only between Initialize and Shutdown");
+    return *ConsoleState;
 }
 
 PlatformServices& Engine::Platform()
@@ -289,10 +310,20 @@ int Engine::Run(Game& game)
     // Bind once, before any hook, so lifecycle contexts carry data only.
     game.AttachEngine(*this);
 
+    // Components before content: register the game's serializers (a module game
+    // registers its own here) so the first scene load resolves them. Same hook
+    // the editor calls standalone to edit scenes without running the game.
+    game.OnRegisterComponents(DefaultComponentSerializerRegistry());
+
+    ConsoleService& console = Console();
+    console.AdvancePhase(ConsolePhase::EngineReady);
+
     GameStartupContext startup{
         .Config = Configuration,
     };
     game.OnStart(startup);
+    console.AdvancePhase(ConsolePhase::GameLoaded);
+    (void)console.ExecuteStartupScript(StartupScript);
 
     SystemRegisterContext registerSystems{
         .Config = Configuration,
@@ -300,6 +331,7 @@ int Engine::Run(Game& game)
     };
     game.OnRegisterSystems(registerSystems);
     EngineSystems.Init();
+    console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
     if (FrameDriverInstance != nullptr)
     {
@@ -312,5 +344,21 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
+
+    // Symmetric teardown of OnRegisterComponents above: retract the game's
+    // serializers while the module is still mapped (the host unloads it after Run
+    // returns). A module-owned serializer left in the registry would be freed at
+    // exit, after dlclose, against unmapped code.
+    game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
     return 0;
+}
+
+void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug)
+{
+    ConsoleRegistry& registry = console.Registry();
+    EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
+    EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
+    EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }

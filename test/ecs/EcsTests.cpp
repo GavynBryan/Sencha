@@ -45,6 +45,19 @@ struct ComponentTraits<HookAddsMass>
     }
 };
 
+// Stable identities for the test-only components (no TypeSchema). float/double
+// are used purely as "some unregistered type" by the death tests below.
+SENCHA_DECLARE_COMPONENT_TYPE(Pos,          "test.pos");
+SENCHA_DECLARE_COMPONENT_TYPE(Vel,          "test.vel");
+SENCHA_DECLARE_COMPONENT_TYPE(HP,           "test.hp");
+SENCHA_DECLARE_COMPONENT_TYPE(Mass,         "test.mass");
+SENCHA_DECLARE_COMPONENT_TYPE(TagFrozen,    "test.tag_frozen");
+SENCHA_DECLARE_COMPONENT_TYPE(TagPlayer,    "test.tag_player");
+SENCHA_DECLARE_COMPONENT_TYPE(Tracked,      "test.tracked");
+SENCHA_DECLARE_COMPONENT_TYPE(HookAddsMass, "test.hook_adds_mass");
+SENCHA_DECLARE_COMPONENT_TYPE(float,        "test.float");
+SENCHA_DECLARE_COMPONENT_TYPE(double,       "test.double");
+
 // ─── Fixture: fresh world with standard components registered ─────────────────
 
 class EcsTest : public ::testing::Test

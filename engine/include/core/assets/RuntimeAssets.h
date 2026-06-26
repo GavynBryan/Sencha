@@ -7,6 +7,7 @@
 #include <core/assets/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialCache.h>
+#include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
@@ -26,6 +27,9 @@ struct RuntimeAssets
     AssetRegistry Registry;
     TextureCache Textures;
     MaterialCache Materials;
+    // After Materials so it is destroyed first: a set releases a reference to
+    // each member material on teardown, which must outlive it.
+    MaterialSetCache MaterialSets;
     SkeletonCache Skeletons;
     StaticMeshCache StaticMeshes;
     SkinnedMeshCache SkinnedMeshes;
@@ -41,13 +45,14 @@ struct RuntimeAssets
         : Registry(logging)
         , Textures(logging, images, descriptors, samplers)
         , Materials()
+        , MaterialSets(&Materials)
         , Skeletons()
         , StaticMeshes(logging, buffers)
         , SkinnedMeshes(logging, buffers)
         , AnimationClips()
         , AudioClips(logging)
         , Assets(logging, Registry, StaticMeshes, Materials, Textures, AudioClips,
-                 Skeletons, AnimationClips, SkinnedMeshes)
+                 Skeletons, AnimationClips, SkinnedMeshes, MaterialSets)
     {
     }
 
