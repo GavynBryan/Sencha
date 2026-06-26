@@ -20,6 +20,7 @@
 class EditorUiFeature;
 class EditorConsolePanel;
 class ViewportPanel;
+class EditorRenderFeature;
 class EditorViewportCameraSystem;
 class EditorFrameHook;
 class Engine;
@@ -89,6 +90,9 @@ private:
     void InitAssets();
 
     ViewportPanel* Viewports = nullptr;
+    // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
+    // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
+    EditorRenderFeature* RenderFeature = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;

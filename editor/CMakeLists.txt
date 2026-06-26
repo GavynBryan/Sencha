@@ -56,6 +56,72 @@ sencha_embed_spirv(
 )
 
 sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/editor_wideline.vert.glsl"
+    STAGE      vert
+    OUTPUT_SPV _editor_wideline_vert_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_editor_wideline_vert_spv}"
+    VAR_NAME   kEditorWideLineVertSpv
+    OUT_HEADER _editor_wideline_vert_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/editor_wideline.frag.glsl"
+    STAGE      frag
+    OUTPUT_SPV _editor_wideline_frag_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_editor_wideline_frag_spv}"
+    VAR_NAME   kEditorWideLineFragSpv
+    OUT_HEADER _editor_wideline_frag_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert.glsl"
+    STAGE      vert
+    OUTPUT_SPV _fullscreen_vert_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_fullscreen_vert_spv}"
+    VAR_NAME   kFullscreenVertSpv
+    OUT_HEADER _fullscreen_vert_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_brightpass.frag.glsl"
+    STAGE      frag
+    OUTPUT_SPV _bloom_brightpass_frag_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_bloom_brightpass_frag_spv}"
+    VAR_NAME   kBloomBrightpassFragSpv
+    OUT_HEADER _bloom_brightpass_frag_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_blur.frag.glsl"
+    STAGE      frag
+    OUTPUT_SPV _bloom_blur_frag_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_bloom_blur_frag_spv}"
+    VAR_NAME   kBloomBlurFragSpv
+    OUT_HEADER _bloom_blur_frag_header
+)
+
+sencha_compile_shader(
+    SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_composite.frag.glsl"
+    STAGE      frag
+    OUTPUT_SPV _bloom_composite_frag_spv
+)
+sencha_embed_spirv(
+    SOURCE_SPV "${_bloom_composite_frag_spv}"
+    VAR_NAME   kBloomCompositeFragSpv
+    OUT_HEADER _bloom_composite_frag_header
+)
+
+sencha_compile_shader(
     SOURCE     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/viewport_backdrop.vert.glsl"
     STAGE      vert
     OUTPUT_SPV _viewport_backdrop_vert_spv
@@ -104,6 +170,12 @@ set(SENCHA_EDITOR_GENERATED_HEADERS
     "${_grid_frag_header}"
     "${_editor_line_vert_header}"
     "${_editor_line_frag_header}"
+    "${_editor_wideline_vert_header}"
+    "${_editor_wideline_frag_header}"
+    "${_fullscreen_vert_header}"
+    "${_bloom_brightpass_frag_header}"
+    "${_bloom_blur_frag_header}"
+    "${_bloom_composite_frag_header}"
     "${_editor_solid_vert_header}"
     "${_editor_solid_frag_header}"
     "${_viewport_backdrop_vert_header}"

@@ -8,6 +8,7 @@
 #include "../viewport/EditorViewport.h"
 #include "../viewport/MarqueeState.h"
 #include "../viewport/ViewportProjection.h"
+#include "../render/ViewportTargetCache.h"
 
 #include <imgui.h>
 
@@ -25,10 +26,12 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
     | ImGuiWindowFlags_NoBackground;
 }
 
-ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay)
+ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
+                             ViewportTargetCache& targets)
     : Layout(layout)
     , Marquee(marquee)
     , Overlay(overlay)
+    , Targets(targets)
 {
 }
 
@@ -174,6 +177,23 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool sho
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
     RegionRects.emplace_back(viewport.RegionMin, viewport.RegionMax);
+
+    // Composite this viewport's offscreen render (filled by the Offscreen phase this
+    // frame). Recording the pixel size here also drives the target size next render.
+    const VkExtent2D targetExtent{
+        static_cast<uint32_t>(std::max(0.0f, renderSize.x)),
+        static_cast<uint32_t>(std::max(0.0f, renderSize.y)),
+    };
+    if (const ImTextureID tex = Targets.Display(viewport.Id, targetExtent))
+    {
+        // Snap to integer pixels and display at the texture's exact integer size so the
+        // nearest-sampled copy maps 1:1; a fractional position would resample the texels
+        // against the pixel grid.
+        ImGui::SetCursorScreenPos(ImVec2(std::round(viewport.RegionMin.x),
+                                         std::round(viewport.RegionMin.y)));
+        ImGui::Image(tex, ImVec2(static_cast<float>(targetExtent.width),
+                                 static_cast<float>(targetExtent.height)));
+    }
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImU32 borderColor = viewport.IsActive

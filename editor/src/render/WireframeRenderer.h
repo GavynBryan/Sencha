@@ -4,6 +4,8 @@
 #include "IBrushBodyRenderer.h"
 
 #include "../document/EditorScene.h"
+#include "../overlay/EditorOverlayState.h"
+#include "../selection/SelectionService.h"
 #include "../viewport/EditorViewport.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -16,7 +18,8 @@
 class WireframeRenderer : public IBrushBodyRenderer
 {
 public:
-    WireframeRenderer(EditorScene& scene, EditorLinePipeline& lines);
+    WireframeRenderer(EditorScene& scene, SelectionService& selection,
+                      const EditorOverlayState& overlay, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
     void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport, const Vec4& color);
@@ -28,5 +31,7 @@ private:
                          const Vec4& color) const;
 
     EditorScene& Scene;
+    SelectionService& Selection;
+    const EditorOverlayState& Overlay;
     EditorLinePipeline& Lines;
 };

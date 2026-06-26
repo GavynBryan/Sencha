@@ -166,6 +166,7 @@ void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVe
         ctx.Sink.PreviewMesh(PreviewEntity, Original);
     PreviewEntity = {};
     PendingValid = false;
+    ctx.Overlay.HoverBody = {};
 
     // Ray-pick the face under the cursor: it hits anywhere over a brush, so the
     // preview tracks the nearest edge instead of needing pixel-perfect aim.
@@ -176,6 +177,7 @@ void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVe
         ctx.Overlay.Readout.Clear();
         return;
     }
+    ctx.Overlay.HoverBody = face.Entity; // highlight the affected mesh while hovering
 
     const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(face.Entity);
     if (!resolved.has_value() || resolved->Mesh == nullptr)
@@ -256,6 +258,7 @@ void EdgeCutTool::Commit(ToolContext& ctx)
     PreviewEntity = {};
     PendingValid = false;
     ctx.Overlay.Readout.Clear();
+    ctx.Overlay.HoverBody = {};
 }
 
 void EdgeCutTool::Revert(ToolContext& ctx)
@@ -265,4 +268,5 @@ void EdgeCutTool::Revert(ToolContext& ctx)
     PreviewEntity = {};
     PendingValid = false;
     ctx.Overlay.Readout.Clear();
+    ctx.Overlay.HoverBody = {};
 }

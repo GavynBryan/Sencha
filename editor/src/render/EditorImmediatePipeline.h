@@ -10,6 +10,7 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 
 #include <math/Mat.h>
+#include <math/Vec.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +36,10 @@ struct EditorImmediatePipelineConfig
     VkPrimitiveTopology  Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkCullModeFlags      CullMode = VK_CULL_MODE_NONE;
     bool                 DepthWrite = false;
+    ColorBlendAttachmentDesc Blend{}; // default = opaque (no blend)
+    // Polygon offset applied to the depth-tested slot only (on-top draws ignore depth).
+    float                DepthBiasConstant = 0.0f;
+    float                DepthBiasSlope = 0.0f;
 };
 
 // The shared editor immediate-mode pipeline: uploads a per-frame vertex span to
@@ -114,7 +119,10 @@ public:
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
         const CameraRenderData renderData = viewport.BuildRenderData();
-        const PushConstants push{ .ViewProjection = renderData.ViewProjection.Transposed() };
+        const PushConstants push{
+            .ViewProjection = renderData.ViewProjection.Transposed(),
+            .ViewportPixels = Vec2d{ vpWidth, vpHeight },
+        };
 
         VkBuffer vertexBuffer = Buffers->GetBuffer(allocation.Buffer);
         VkDeviceSize vertexOffset = allocation.Offset;
@@ -166,7 +174,8 @@ public:
 private:
     struct PushConstants
     {
-        Mat4 ViewProjection;
+        Mat4  ViewProjection;
+        Vec2d ViewportPixels; // viewport size in pixels, for screen-space shaders
     };
 
     VkPipeline EnsurePipeline(const FrameContext& frame, bool onTop)
@@ -194,7 +203,10 @@ private:
         desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded
         desc.DepthWrite = Config.DepthWrite;
         desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-        desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+        desc.DepthBiasEnable = !onTop && (Config.DepthBiasConstant != 0.0f || Config.DepthBiasSlope != 0.0f);
+        desc.DepthBiasConstant = Config.DepthBiasConstant;
+        desc.DepthBiasSlope = Config.DepthBiasSlope;
+        desc.ColorBlend = { Config.Blend };
         desc.ColorFormats = { frame.TargetFormat };
         desc.DepthFormat = frame.DepthFormat;
         slot = Pipelines->GetGraphicsPipeline(desc);

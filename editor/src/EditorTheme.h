@@ -28,7 +28,15 @@ inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges ov
 
 inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
 inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance
-inline constexpr Vec4 SelectedWireframe{ 0.15f, 0.5f, 1.0f, 1.0f }; // selected mesh edges (deep blue)
+// The active selection's mesh edges: a vivid blue authored above 1.0 so the bloom pass
+// (editor.bloom.*) extracts the bright excess into a glow. Exceeding 1.0 is intended
+// now: it renders into the RGBA16F viewport target, and only the > threshold part blooms
+// while the displayed core clamps to a saturated blue.
+inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
+// Preview mesh edges: a brush a click would make active (edge-cut hover, or another
+// mesh hovered in an element mode). A dimmer, subdued blue, no glow and no handles,
+// so it stays distinct from (and subordinate to) the active body.
+inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
 inline constexpr Vec4 HoverEligible{ 0.4f, 1.0f, 0.85f, 1.0f };  // element under the cursor (selection-eligible)
 inline constexpr Vec4 VertexHandle{ 0.6f, 0.7f, 0.85f, 1.0f };   // all vertices shown in vertex mode
 
@@ -36,4 +44,10 @@ inline constexpr Vec4 VertexHandle{ 0.6f, 0.7f, 0.85f, 1.0f };   // all vertices
 inline constexpr float GizmoAxisPixels = 90.0f;
 inline constexpr float VertexDotPixels = 7.0f;
 inline constexpr float HandlePixels = 8.0f;
+
+// Overlay line stroke widths (pixels), resolved to a screen-constant width by the
+// wide-line pipeline. The active body reads bolder than the preview/hover strokes.
+inline constexpr float ActiveLinePixels = 2.0f;   // active-body wireframe
+inline constexpr float OverlayLinePixels = 1.5f;  // hover/element highlights, manipulators
+inline constexpr float PreviewLinePixels = 1.0f;  // preview-body wireframe (subordinate)
 } // namespace EditorTheme

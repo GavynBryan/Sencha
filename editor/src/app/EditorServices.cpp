@@ -209,7 +209,42 @@ void EditorServices::BuildViewportRendering()
         .Source = { "editor" },
     });
 
-    engine.Graphics().MainRenderer.AddFeature(std::make_unique<EditorRenderFeature>(
+    // Grid look knobs, read per frame by EditorRenderFeature. Dial these live in the
+    // dev console to tune the grid without recompiling.
+    const auto registerGridFloat = [&](const char* name, double def, const char* help)
+    {
+        console.Registry().RegisterCVar({
+            .Name = name,
+            .Owner = "editor",
+            .Type = CVarType::Double,
+            .DefaultValue = def,
+            .CurrentValue = def,
+            .Flags = CVarFlags::Archive,
+            .Help = help,
+            .Source = { "editor" },
+        });
+    };
+    registerGridFloat("editor.grid.cell_px", 3.0, "Editor grid: target on-screen cell size in px (density; larger = sparser).");
+    registerGridFloat("editor.grid.opacity", 0.6, "Editor grid: line opacity 0..1 (larger = bolder).");
+    registerGridFloat("editor.grid.brightness", 0.62, "Editor grid: line brightness 0..1 (gray level).");
+    registerGridFloat("editor.grid.fade_start", -0.3, "Editor grid: fade start as a signed fraction of reach; negative fades gradually from near the camera (~ -0.3 is a good global falloff).");
+
+    // Selection bloom/glow knobs, read per frame by EditorRenderFeature.
+    console.Registry().RegisterCVar({
+        .Name = "editor.bloom.enable",
+        .Owner = "editor",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        .Flags = CVarFlags::Archive,
+        .Help = "Editor: enable the selection bloom/glow pass.",
+        .Source = { "editor" },
+    });
+    registerGridFloat("editor.bloom.threshold", 1.0, "Editor bloom: per-channel HDR threshold; only color above this glows.");
+    registerGridFloat("editor.bloom.intensity", 1.0, "Editor bloom: additive strength of the glow.");
+    registerGridFloat("editor.bloom.radius", 2.0, "Editor bloom: blur spread (larger = wider, softer glow).");
+
+    auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
         Workspace->Document.GetScene(),
         Workspace->Selection,
@@ -221,7 +256,9 @@ void EditorServices::BuildViewportRendering()
         engine.Logging(),
         console.Registry(),
         Assets ? &Assets->Assets : nullptr,
-        Assets ? &Assets->Registry : nullptr));
+        Assets ? &Assets->Registry : nullptr);
+    RenderFeature = renderFeature.get();
+    engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
 }
 
 void EditorServices::BuildUi(bool consoleOpenOnStart)
@@ -264,7 +301,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee, Workspace->Overlay);
+    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
+                                                         RenderFeature->GetViewportTargets());
     Viewports = viewportPanel.get();
     UiFeature->AddPanel(std::move(viewportPanel));
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);

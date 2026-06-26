@@ -94,6 +94,13 @@ struct GraphicsPipelineDesc
     bool DepthWrite = false;
     VkCompareOp DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
 
+    // Polygon offset. Negative values pull a coincident primitive toward the camera
+    // so it wins the depth test over the surface it traces (e.g. wireframe on solid).
+    // Default off, so pipelines that don't set it are byte-identical to before.
+    bool DepthBiasEnable = false;
+    float DepthBiasConstant = 0.0f;
+    float DepthBiasSlope = 0.0f;
+
     std::vector<ColorBlendAttachmentDesc> ColorBlend;
     std::vector<VkFormat> ColorFormats;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;

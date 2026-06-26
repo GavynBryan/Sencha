@@ -5,7 +5,10 @@
 #include "ComponentVisualRenderer.h"
 #include "EditorLinePipeline.h"
 #include "EditorSolidPipeline.h"
+#include "EditorBloomPass.h"
+#include "EditorWideLinePipeline.h"
 #include "GpuGridRenderer.h"
+#include "ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
 #include "SelectionRenderer.h"
 #include "StaticMeshRenderer.h"
@@ -47,14 +50,30 @@ public:
                         AssetSystem* assets,
                         const AssetRegistry* catalog);
 
-    [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+    // Offscreen: this feature renders each viewport into its own texture before the
+    // swapchain (MainColor) pass opens; the UI then composites those textures.
+    [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
     void Setup(const RendererServices& services) override;
     void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 
+    // The viewport offscreen targets, shared with ViewportPanel (which displays them
+    // via ImGui::Image). Owned here so its GPU resources tear down with this feature.
+    [[nodiscard]] ViewportTargetCache& GetViewportTargets() { return Targets; }
+
 private:
+    // Render one viewport's scene chain into its offscreen color+depth target, with
+    // the surrounding layout transitions and rendering scope.
+    void RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
+                                 const ViewportTargetCache::RenderView& target);
+    // Renders the active wireframe glow source and composites the bloom onto the scene
+    // color (no-op when the viewport has no bloom target). Runs after the scene pass.
+    void RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
+                             const ViewportTargetCache::RenderView& target);
+
     ViewportLayout& Layout;
     const GridSettings&    GridCfg;
+    GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars
     ViewportBackdropRenderer Backdrop;
     GpuGridRenderer        Grid;
     // Declared before the renderers that bind a reference to it at construction.
@@ -68,9 +87,18 @@ private:
     EditorLinePipeline     Lines;
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
+    // Selection feedback strokes draw through the wide-line pipeline (exact pixel
+    // width + analytic AA); declared before Highlight, which binds it by reference.
+    EditorWideLinePipeline WideLines;
     SelectionRenderer      Highlight;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
+    // Per-viewport offscreen targets this feature renders into; the UI composites them.
+    ViewportTargetCache    Targets;
+    EditorBloomPass        Bloom;
+    bool                   BloomEnabled = true;     // editor.bloom.enable
+    BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius
+    RendererServices       Services{};
     // Brush-body strategy per ViewportShading; the draw loop indexes this by the
     // viewport's shading. A new shading mode registers its strategy here — the
     // draw loop never changes.

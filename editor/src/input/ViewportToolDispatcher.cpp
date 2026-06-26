@@ -96,6 +96,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     if (vp == nullptr)
     {
         Context.Overlay.Hover = {}; // cursor left the viewports: drop the hover glow
+        Context.Overlay.HoverBody = {}; // and the preview-body wireframe
         Tools.HoverEnd();           // and any tool's hover preview (e.g. the edge cut)
         // The gesture's viewport vanished mid-drag (e.g. a layout change): abandon it.
         if (capture.HeldBySelf())
@@ -112,6 +113,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     if (Interactions.IsActive())
     {
         Context.Overlay.Hover = {};
+        Context.Overlay.HoverBody = {};
         Tools.HoverEnd();
         return Interactions.OnPointerMove(Context, *vp, pointer);
     }
@@ -141,17 +143,19 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
 void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
 {
     const MeshElementKind mode = Context.MeshEdit.GetElementKind();
-    // Match the select tool's lock: in an element mode, only the brush being edited
-    // is hoverable.
-    const SelectionSnapshot selection = Context.Selection.GetSnapshot();
-    const EntityId activeBody = (mode != MeshElementKind::Object && selection.Primary.IsValid())
-        ? selection.Primary.Entity : EntityId{};
+    // Hover any brush, even in an element mode: hovering another mesh's element
+    // previews it, and a click switches the active body to it.
     const SelectableRef hovered = Context.Picking.Pick(
-        viewport, pos, Context.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode), .RestrictTo = activeBody });
+        viewport, pos, Context.Scene, BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
 
     ElementHoverState& hover = Context.Overlay.Hover;
     hover.Element = hovered;
     hover.Measure.clear();
+
+    // In an element mode, mark the hovered element's brush as the preview body so its
+    // wireframe reads as "a click would select this". Object mode uses the element glow.
+    Context.Overlay.HoverBody = (mode != MeshElementKind::Object && hovered.IsValid())
+        ? hovered.Entity : EntityId{};
 
     // An edge carries its length, anchored at its midpoint.
     if (hovered.IsEdge())

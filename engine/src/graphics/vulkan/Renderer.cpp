@@ -144,6 +144,7 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     Services.Scratch->BeginFrame();
 
     const auto recordStart = RendererClock::now();
+    RecordOffscreenPhase(frame);
     RecordMainColorPhase(frame);
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
@@ -187,6 +188,24 @@ void Renderer::NotifySwapchainRecreated()
 {
     ImageLayouts.assign(Swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
     DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
+{
+    auto& bucket = PhaseBuckets[static_cast<size_t>(RenderPhase::Offscreen)];
+    if (bucket.empty())
+        return; // the runtime registers no offscreen features: nothing to do
+
+    // No swapchain rendering scope is opened here. Each offscreen feature owns its
+    // own render passes, targets, and image barriers.
+    FrameContext ctx;
+    ctx.Cmd = frame.CommandBuffer;
+    ctx.FrameInFlightIndex = frame.FrameIndex;
+    ctx.TargetExtent = frame.SwapchainExtent;
+    ctx.Phase = RenderPhase::Offscreen;
+
+    for (IRenderFeature* feat : bucket)
+        feat->OnDraw(ctx);
 }
 
 void Renderer::RecordMainColorPhase(const VulkanFrame& frame)

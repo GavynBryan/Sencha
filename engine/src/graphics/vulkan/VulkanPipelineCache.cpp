@@ -96,6 +96,9 @@ uint64_t VulkanPipelineCache::HashDesc(const GraphicsPipelineDesc& desc) const
     h.FeedPod(desc.DepthTest);
     h.FeedPod(desc.DepthWrite);
     h.FeedPod(desc.DepthCompare);
+    h.FeedPod(desc.DepthBiasEnable);
+    h.FeedPod(desc.DepthBiasConstant);
+    h.FeedPod(desc.DepthBiasSlope);
 
     const uint32_t blendCount = static_cast<uint32_t>(desc.ColorBlend.size());
     h.FeedPod(blendCount);
@@ -193,6 +196,9 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
     raster.cullMode = desc.CullMode;
     raster.frontFace = desc.FrontFace;
     raster.lineWidth = 1.0f;
+    raster.depthBiasEnable = desc.DepthBiasEnable ? VK_TRUE : VK_FALSE;
+    raster.depthBiasConstantFactor = desc.DepthBiasConstant;
+    raster.depthBiasSlopeFactor = desc.DepthBiasSlope;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;

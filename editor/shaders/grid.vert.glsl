@@ -10,6 +10,7 @@ layout(push_constant) uniform GridPC {
     float subdivSpacing;
     vec3 gridForward;
     float fadeEnd;
+    vec4 style;          // unused here; matches the fragment push-constant layout
 } pc;
 
 layout(location = 0) out vec3 fragWorldPos;

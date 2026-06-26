@@ -56,8 +56,11 @@ class VulkanDepthTarget;
 
 enum class RenderPhase : uint8_t
 {
-    MainColor = 0,
-    // Reserved for: Offscreen, Shadow, Opaque, Transparent, UI, Post...
+    // Features here own their render passes/targets (no swapchain pass is open) and
+    // run before MainColor: e.g. the editor rendering viewports to offscreen textures.
+    Offscreen = 0,
+    MainColor = 1,
+    // Reserved for: Shadow, Opaque, Transparent, UI, Post...
     Count
 };
 
@@ -210,5 +213,6 @@ private:
     // Returns the raw pointer on success, nullptr on failure.
     IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
 
+    void RecordOffscreenPhase(const VulkanFrame& frame);
     void RecordMainColorPhase(const VulkanFrame& frame);
 };

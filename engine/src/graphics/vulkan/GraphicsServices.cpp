@@ -32,13 +32,15 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
                                    const EngineConfig& config,
                                    SdlWindow& window,
                                    SdlWindowService& windows)
-    : GraphicsServices(logging, BuildPolicy(config, windows), ResolveFramesInFlight(config), window)
+    : GraphicsServices(logging, BuildPolicy(config, windows), ResolveFramesInFlight(config),
+                       config.Graphics.FrameScratchBytesPerFrame, window)
 {
 }
 
 GraphicsServices::GraphicsServices(LoggingProvider& logging,
                                    const VulkanBootstrapPolicy& policy,
                                    std::uint32_t framesInFlight,
+                                   std::uint64_t scratchBytesPerFrame,
                                    SdlWindow& window)
     : Instance(logging, policy)
     , Surface(logging, Instance, window)
@@ -55,7 +57,8 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
     , Pipelines(logging, Device, Shaders)
     , Descriptors(logging, Device, Buffers, Images)
     , Scratch(logging, Device, PhysicalDevice, Buffers,
-              VulkanFrameScratch::Config{ .FramesInFlight = framesInFlight })
+              VulkanFrameScratch::Config{ .FramesInFlight = framesInFlight,
+                                          .BytesPerFrame = scratchBytesPerFrame })
     , Swapchain(logging, Device, PhysicalDevice, Surface, Queues, window.GetExtent())
     , Frames(logging, Device, Queues, Swapchain, DeletionQueue, framesInFlight)
     , MainRenderer(logging, Device, PhysicalDevice, Queues, Swapchain, Frames, Allocator,

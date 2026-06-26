@@ -24,16 +24,10 @@ struct GridPushConstants
     float SubdivSpacing;   //  4 bytes
     Vec3d GridForward;     // 12 bytes — camera heading projected onto the plane
     float FadeEnd;         //  4 bytes
-    // Total = 128 bytes
+    Vec4  Style;           // 16 bytes — cvar look knobs: cellPx, opacity, brightness, fadeStart
+    // Total = 144 bytes
 };
-static_assert(sizeof(GridPushConstants) == 128, "GridPushConstants must be exactly 128 bytes");
-
-// Perspective distance-fade reach, in multiples of the camera's height above the
-// plane (so it tracks zoom) and deliberately independent of grid spacing — coupling
-// it to spacing is what made the fade boundary resize when the grid size changed.
-// The grid is full strength to half this distance ahead and gone by this distance.
-constexpr float kFadeReachInHeights = 80.0f;
-constexpr float kMinFadeReach       = 50.0f;  // world-unit floor for a near-ground camera
+static_assert(sizeof(GridPushConstants) == 144, "GridPushConstants must be exactly 144 bytes");
 
 // Below this in-plane heading length the camera looks essentially straight down the
 // plane normal: no horizon to fade toward, so the heading is left zero (uniform grid).
@@ -65,6 +59,7 @@ void GpuGridRenderer::Setup(const RendererServices& services)
 void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
                                    const EditorViewport& viewport,
                                    const GridSettings& gridSettings,
+                                   const GridStyle& style,
                                    VkExtent2D targetExtent,
                                    VkFormat colorFormat,
                                    VkFormat depthFormat)
@@ -155,8 +150,12 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
     // along it so the fade front stays parallel to the horizon instead of curving into
     // a bowl. Left zero in ortho / looking straight down, where there is no horizon —
     // the shader then leaves the grid uniform (its fade metric collapses to zero).
+    // The grid fades out toward the far plane (its quad already spans the camera's Far),
+    // so the visible reach tracks how far the camera can see rather than its height above
+    // the plane: a low, grazing view is exactly when you want to see far. Ortho leaves
+    // metric at 0, so the grid stays uniform and unfaded.
     Vec3d gridForward{};
-    float fadeEnd = viewport.Camera.Far;   // ortho: metric is 0, so this is never reached
+    const float fadeEnd = viewport.Camera.Far;
     if (perspective)
     {
         const Vec3d planeNormal = grid.AxisU.Cross(grid.AxisV).Normalized();
@@ -164,9 +163,6 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
         const Vec3d inPlane     = forward - planeNormal * forward.Dot(planeNormal);
         if (inPlane.Magnitude() > kMinHeadingLen)
             gridForward = inPlane.Normalized();
-
-        const float height = (renderData.Position - gridCenter).Magnitude();
-        fadeEnd = std::max(kMinFadeReach, height * kFadeReachInHeights);
     }
 
     GridPushConstants push{};
@@ -179,6 +175,7 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
     push.SubdivSpacing = subdivSpacing;
     push.GridForward   = gridForward;
     push.FadeEnd       = fadeEnd;
+    push.Style         = Vec4{ style.CellPx, style.Opacity, style.Brightness, style.FadeStart };
 
     // --- record draw ----------------------------------------------------------
 

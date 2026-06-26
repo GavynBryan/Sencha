@@ -11,11 +11,13 @@
 
 struct MarqueeState;
 struct EditorOverlayState;
+class ViewportTargetCache;
 
 class ViewportPanel : public IEditorPanel
 {
 public:
-    ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay);
+    ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
+                  ViewportTargetCache& targets);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -44,6 +46,7 @@ private:
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
     const EditorOverlayState& Overlay;
+    ViewportTargetCache& Targets;
     bool RegionHovered = false;
     // 3D render-region rects collected this frame (the passthrough holes to keep
     // transparent); everything else in the panel gets the dark gap fill.

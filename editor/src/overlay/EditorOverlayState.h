@@ -3,6 +3,7 @@
 #include "../selection/SelectableRef.h"
 #include "../viewport/ViewportId.h"
 
+#include <ecs/EntityId.h>
 #include <math/Vec.h>
 
 #include <optional>
@@ -61,4 +62,9 @@ struct EditorOverlayState
     std::vector<LabelRequest> Labels;
     DragReadout Readout;
     ElementHoverState Hover;
+    // A whole brush to highlight as a selected body while hovering, even when it is
+    // not in the selection. The edge-cut tool sets it to the brush under the cursor
+    // so the mesh the cut will affect (and then select) reads as selected. Invalid
+    // when unused.
+    EntityId HoverBody = {};
 };

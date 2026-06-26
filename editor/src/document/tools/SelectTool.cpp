@@ -76,32 +76,33 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
     const bool altLoop = pointer.Modifiers.Alt
         && (mode == MeshElementKind::Edge || mode == MeshElementKind::Face);
 
-    // Element modes lock picking to the brush being edited (the primary's entity):
-    // another brush's elements are unreachable without returning to object/select.
+    // Pick any brush, even in an element mode: a click on another mesh's element
+    // selects it and switches the active body. (Was locked to the primary's brush.)
     const SelectionSnapshot current = ctx.Selection.GetSnapshot();
-    const bool locked = mode != MeshElementKind::Object && current.Primary.IsValid();
-    const EntityId activeBody = locked ? current.Primary.Entity : EntityId{};
+    const bool elementMode = mode != MeshElementKind::Object;
 
     // Plain pick (skipped for an explicit Alt-loop, which seeds from an edge).
     SelectableRef picked;
     if (!altLoop)
         picked = ctx.Picking.Pick(viewport, pointer.Position, ctx.Scene,
-            BrushPickRequest{ .Mode = PickModeForElementKind(mode), .RestrictTo = activeBody });
+            BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
 
     // Re-clicking the already-primary edge/face completes its loop (the "click the
     // last highlighted element again" gesture), like Alt-click or a double-click.
     const bool reclickLoop = !add && !remove && picked.IsValid() && picked == current.Primary
         && (mode == MeshElementKind::Edge || mode == MeshElementKind::Face);
 
+    // A loop stays within the brush under the cursor: the picked element's, or the
+    // Alt-loop seed's (left empty so PickLoopSeedEdge finds it on any brush).
     std::vector<SelectableRef> gathered;
     if (altLoop || reclickLoop)
-        gathered = GatherLoop(ctx, viewport, pointer.Position, mode, activeBody);
+        gathered = GatherLoop(ctx, viewport, pointer.Position, mode, picked.IsValid() ? picked.Entity : EntityId{});
     else if (picked.IsValid())
         gathered.push_back(picked);
 
-    // Locked and the click hit nothing on the active body: keep the selection (don't
-    // clear it or jump to another brush).
-    if (locked && gathered.empty())
+    // Element mode: a click that hit nothing keeps the current selection (don't drop
+    // the edit context on a stray click). Object mode clears.
+    if (elementMode && gathered.empty())
         return InputConsumed::Yes;
 
     SelectionSnapshot snapshot = SelectionFold::Apply(current, gathered, add, remove);
@@ -116,24 +117,23 @@ InputConsumed SelectTool::OnDoubleClick(ToolContext& ctx, EditorViewport& viewpo
         return OnClick(ctx, viewport, pointer);
 
     const SelectionSnapshot current = ctx.Selection.GetSnapshot();
-    const EntityId activeBody = current.Primary.IsValid() ? current.Primary.Entity : EntityId{};
 
     std::vector<SelectableRef> gathered;
     if (mode == MeshElementKind::Edge)
     {
-        gathered = GatherLoop(ctx, viewport, pointer.Position, mode, activeBody);
+        gathered = GatherLoop(ctx, viewport, pointer.Position, mode, EntityId{}); // any brush
     }
     else // Face or Vertex
     {
         const SelectableRef picked = ctx.Picking.Pick(viewport, pointer.Position, ctx.Scene,
-            BrushPickRequest{ .Mode = PickModeForElementKind(mode), .RestrictTo = activeBody });
+            BrushPickRequest{ .Mode = PickModeForElementKind(mode) });
         if (picked.IsValid())
         {
             // A face already selected double-clicks to its loop (the "two consecutive
             // then the last again" gesture); a fresh face, or any vertex, selects the
             // whole mesh.
             if (mode == MeshElementKind::Face && ctx.Selection.Contains(picked))
-                gathered = GatherLoop(ctx, viewport, pointer.Position, mode, activeBody);
+                gathered = GatherLoop(ctx, viewport, pointer.Position, mode, picked.Entity);
             else
                 gathered = AllElementsOf(ctx.Scene, picked.Entity, mode);
         }
