@@ -1,8 +1,9 @@
-#include <core/gameplay_tags/GameplayTagQuery.h>
+#include <framework/gameplay_tags/GameplayTagQuery.h>
 
-#include <core/gameplay_tags/CountedGameplayTagSet.h>
-#include <core/gameplay_tags/GameplayTagRegistry.h>
-#include <core/gameplay_tags/GameplayTagSet.h>
+#include <framework/gameplay_tags/CountedGameplayTagSet.h>
+#include <framework/gameplay_tags/GameplayTagContainer.h>
+#include <framework/gameplay_tags/GameplayTagRegistry.h>
+#include <framework/gameplay_tags/GameplayTagSet.h>
 
 namespace
 {
@@ -81,6 +82,12 @@ bool GameplayTagQuery::Matches(const GameplayTagSet& tags,
 }
 
 bool GameplayTagQuery::Matches(const CountedGameplayTagSet& tags,
+                               const GameplayTagRegistry& registry) const
+{
+    return MatchesQuery(tags, registry, All, Any, None);
+}
+
+bool GameplayTagQuery::Matches(const GameplayTagContainer& tags,
                                const GameplayTagRegistry& registry) const
 {
     return MatchesQuery(tags, registry, All, Any, None);

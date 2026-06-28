@@ -40,6 +40,13 @@ enable_testing()
 # install rules and the engine's INSTALL_INTERFACE include dir agree on layout.
 include(GNUInstallDirs)
 
+# Gameplay-framework dependency guard (D-J): framework code must not include
+# render/scene, and engine code must not include framework. Implemented as a
+# standalone CMake script so it runs under ctest without needing the engine
+# (or Vulkan) to build.
+add_test(NAME framework_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckFrameworkIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

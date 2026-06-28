@@ -61,6 +61,17 @@ behavior.
 - `docs/audio/captions-and-dialogue.md` is the working plan for subtitles,
   closed captions, semantic audio cues, and dialogue-line routing.
 
+## Gameplay Docs
+
+- `docs/gameplay/abilitykit.md` is the working plan for **AbilityKit**, Sencha's
+  data-driven gameplay framework: tags, attributes, effects, and abilities as POD
+  components + data + uniform systems — no per-entity behavior object, tags for
+  mutual exclusion, events as data. Public entry point:
+  `engine/include/framework/AbilityKit.h`.
+- AbilityKit lives under `engine/.../framework/`, kept decoupled from the renderer
+  and scene data by the `framework_isolation` check
+  (`cmake/CheckFrameworkIsolation.cmake`).
+
 ## Requirements
 
 - CMake 3.20+ (3.23+ to use the presets below)
