@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
 #include <framework/abilities/AbilityId.h>
 
 #include <cstdint>
@@ -29,3 +30,5 @@ struct AbilitySet
 
 static_assert(std::is_trivially_copyable_v<AbilitySet>,
               "AbilitySet must be trivially copyable to live in ECS chunks");
+
+SENCHA_DECLARE_COMPONENT_TYPE(AbilitySet, "sencha.ability_set");

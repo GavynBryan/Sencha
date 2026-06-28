@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <framework/effects/EffectId.h>
 
@@ -27,3 +28,5 @@ struct ActiveEffect
 
 static_assert(std::is_trivially_copyable_v<ActiveEffect>,
               "ActiveEffect must be trivially copyable to live in ECS chunks");
+
+SENCHA_DECLARE_COMPONENT_TYPE(ActiveEffect, "sencha.active_effect");

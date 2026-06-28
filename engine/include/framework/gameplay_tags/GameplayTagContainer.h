@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
 #include <framework/gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
@@ -56,3 +57,8 @@ struct GameplayTagContainer
 
 static_assert(std::is_trivially_copyable_v<GameplayTagContainer>,
               "GameplayTagContainer must be trivially copyable to live in ECS chunks");
+
+// Runtime-only ECS identity: scene persistence goes through the framework's
+// IComponentSerializer (GameplayTagContainerSerializer), not a TypeSchema, so an
+// explicit key supplies the stable component identity the World resolves.
+SENCHA_DECLARE_COMPONENT_TYPE(GameplayTagContainer, "sencha.gameplay_tag_container");

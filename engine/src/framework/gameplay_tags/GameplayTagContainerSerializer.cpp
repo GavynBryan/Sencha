@@ -5,9 +5,14 @@
 #include <framework/gameplay_tags/GameplayTagSerialization.h>
 
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTypeId.h>
 #include <world/serialization/IComponentSerializer.h>
 
+#include <cstddef>
+#include <cstring>
 #include <memory>
+#include <span>
+#include <vector>
 
 // Declared in <world/serialization/SceneSerializer.h>. Forward-declared here so
 // framework code does not include that header, which pulls ComponentSerializer ->
@@ -20,8 +25,22 @@ namespace
     class GameplayTagContainerSerializer final : public IComponentSerializer
     {
     public:
+        ComponentTypeId TypeId() const override { return ResolveComponentTypeId<GameplayTagContainer>(); }
         std::string_view JsonKey() const override { return "GameplayTags"; }
         std::uint32_t BinaryChunkId() const override { return MakeFourCC('G', 'T', 'A', 'G'); }
+
+        // No flat scalar leaves to expose: tags are a dynamic id/stack array, not
+        // a fixed set of editable fields, and the framework does not carry a
+        // TypeSchema. The inspector simply shows no leaf fields for this component.
+        std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+
+        std::vector<std::byte> DefaultBytes() const override
+        {
+            GameplayTagContainer value{};
+            std::vector<std::byte> bytes(sizeof(GameplayTagContainer));
+            std::memcpy(bytes.data(), &value, sizeof(GameplayTagContainer));
+            return bytes;
+        }
 
         void RegisterStorage(Registry& registry) const override
         {
