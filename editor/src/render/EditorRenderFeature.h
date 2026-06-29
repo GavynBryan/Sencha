@@ -10,6 +10,8 @@
 #include "GpuGridRenderer.h"
 #include "ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
+#include "SceneRenderQueueBuilder.h"
+#include "SceneSolidRenderer.h"
 #include "SelectionRenderer.h"
 #include "StaticMeshRenderer.h"
 #include "ViewportBackdropRenderer.h"
@@ -18,10 +20,13 @@
 #include "../viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <render/MeshForwardPass.h>
 
 #include <array>
+#include <optional>
 
 class EditorScene;
+class EditorDocument;
 class ManipulatorSession;
 class MeshEditService;
 class PreviewBuffer;
@@ -31,8 +36,11 @@ class AssetSystem;
 class AssetRegistry;
 class LoggingProvider;
 class ConsoleRegistry;
+class StaticMeshCache;
+class MaterialCache;
 struct GridSettings;
 struct EditorOverlayState;
+struct RuntimeAssets;
 
 class EditorRenderFeature : public IRenderFeature
 {
@@ -48,7 +56,9 @@ public:
                         LoggingProvider& logging,
                         const ConsoleRegistry& console,
                         AssetSystem* assets,
-                        const AssetRegistry* catalog);
+                        const AssetRegistry* catalog,
+                        RuntimeAssets* runtimeAssets,
+                        const EditorDocument& document);
 
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
@@ -60,6 +70,12 @@ public:
     // The viewport offscreen targets, shared with ViewportPanel (which displays them
     // via ImGui::Image). Owned here so its GPU resources tear down with this feature.
     [[nodiscard]] ViewportTargetCache& GetViewportTargets() { return Targets; }
+
+    // Release the scene queues' GPU brush meshes + material refs. The feature itself
+    // tears down later in ~Renderer (after the engine frees graphics), but these handles
+    // borrow the asset caches, so EditorServices calls this before it resets the asset
+    // system, mirroring how the document's StaticMeshComponents release first.
+    void ReleaseSceneResources();
 
 private:
     // Render one viewport's scene chain into its offscreen color+depth target, with
@@ -82,6 +98,16 @@ private:
     BrushSolidRenderer     BrushSolid;
     // Solid preview of placed static meshes; shares the one Solid pipeline above.
     StaticMeshRenderer     Meshes;
+    // WYSIWYG material path: drives the runtime forward pass with the scene's real
+    // materials. Active whenever an asset environment is present (essentially always);
+    // BrushSolid/Meshes above are the procedural-checker fallback, kept until the
+    // owner's pixel-diff confirms the editor composite is gamma-correct (then removed).
+    MeshForwardPass        Forward;
+    std::optional<SceneRenderQueueBuilder> QueueBuilder;
+    std::optional<SceneSolidRenderer>      SceneSolid;
+    StaticMeshCache*       MeshCache = nullptr;        // for the unconditional MeshQueue draw
+    MaterialCache*         MaterialStore = nullptr;
+    bool                   MaterialPath = false;
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)
     EditorLinePipeline     Lines;

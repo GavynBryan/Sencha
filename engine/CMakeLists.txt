@@ -242,6 +242,32 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 target_include_directories(sencha_engine SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 
+# Jolt physics: the runtime physics backend, compiled into the engine .so. Linked
+# PRIVATE and firewalled behind the engine's physics facade (PIMPL), so no JPH
+# header leaks through a public engine header and the FetchContent target stays
+# out of the SDK export -- the glslang/VMA discipline above. Default float build:
+# reproducible on one build, no CROSS_PLATFORM_DETERMINISTIC cost. The sample,
+# viewer, and test apps are off (library only); OVERRIDE_CXX_FLAGS/ENABLE_ALL_WARNINGS
+# off so Jolt does not clobber our flags or fail our build on its own warnings.
+set(TARGET_UNIT_TESTS            OFF CACHE BOOL "" FORCE)
+set(TARGET_HELLO_WORLD           OFF CACHE BOOL "" FORCE)
+set(TARGET_PERFORMANCE_TEST      OFF CACHE BOOL "" FORCE)
+set(TARGET_SAMPLES               OFF CACHE BOOL "" FORCE)
+set(TARGET_VIEWER                OFF CACHE BOOL "" FORCE)
+set(OVERRIDE_CXX_FLAGS           OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS          OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(CROSS_PLATFORM_DETERMINISTIC OFF CACHE BOOL "" FORCE)
+set(DOUBLE_PRECISION             OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG        v5.5.0
+    SOURCE_SUBDIR  Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+target_link_libraries(sencha_engine PRIVATE Jolt)
+
 if(SENCHA_ENABLE_VULKAN)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)
 

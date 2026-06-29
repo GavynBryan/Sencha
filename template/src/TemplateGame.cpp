@@ -16,6 +16,13 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <physics/CollisionShapeCache.h>
+#include <physics/PhysicsRegistration.h>
+#include <physics/PhysicsStepSystem.h>
+#include <physics/ZoneCollisionLoader.h>
+#include <physics/components/CharacterController.h>
+#include <physics/components/Collider.h>
+#include <physics/components/RigidBody.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
@@ -99,9 +106,14 @@ namespace
         FreeCamera& FreeCam;
     };
 
-    struct FreeCameraMovementSystem
+    // First-person character movement: turn WASD (relative to the look yaw) into
+    // the player's CharacterController DesiredVelocity. The engine's
+    // CharacterControllerSystem then moves the capsule against world collision;
+    // FreeCameraLookSystem still owns the camera's rotation. Vertical motion
+    // (gravity) is the mover's job, so this only sets the planar intent.
+    struct PlayerMovementSystem
     {
-        FreeCameraMovementSystem(Registry*& registry, FreeCamera& freeCamera)
+        PlayerMovementSystem(Registry*& registry, FreeCamera& freeCamera)
             : RegistryInstance(registry)
             , FreeCam(freeCamera)
         {
@@ -111,8 +123,26 @@ namespace
         {
             if (RegistryInstance == nullptr)
                 return;
-            FreeCam.TickFixed(
-                ctx.Input, RegistryInstance->Components, static_cast<float>(ctx.Time.DeltaSeconds));
+            World& world = RegistryInstance->Components;
+            CharacterController* controller = world.TryGet<CharacterController>(FreeCam.Entity);
+            if (controller == nullptr)
+                return;
+
+            Vec3d move = Vec3d::Zero();
+            if (ctx.Input.IsKeyDown(SDL_SCANCODE_W)) move += Vec3d::Forward();
+            if (ctx.Input.IsKeyDown(SDL_SCANCODE_S)) move += Vec3d::Backward();
+            if (ctx.Input.IsKeyDown(SDL_SCANCODE_D)) move += Vec3d::Right();
+            if (ctx.Input.IsKeyDown(SDL_SCANCODE_A)) move += Vec3d::Left();
+
+            Vec3d desired = Vec3d::Zero();
+            if (move.SqrMagnitude() > 0.0f)
+            {
+                const Quatf yaw = Quatf::FromAxisAngle(Vec3d::Up(), FreeCam.Yaw);
+                const float speed = FreeCam.MoveSpeed
+                    * (ctx.Input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FreeCam.FastMultiplier : 1.0f);
+                desired = yaw.RotateVector(move.Normalized()) * speed;
+            }
+            controller->DesiredVelocity = desired;
         }
 
         Registry*& RegistryInstance;
@@ -181,9 +211,12 @@ void TemplateGame::OnStart(GameStartupContext&)
     Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins).
+    // Mount: authored assets, then the cooked overlay (cooked wins). The cooked
+    // index adds artifacts the physical scan cannot key, notably cooked textures
+    // (asset://...png serving cooked .stex bytes).
     ScanAssetsDirectory(std::string(kAuthoredRoot), runtimeAssets.Registry);
     ScanAssetsDirectory(std::string(kCookedScanRoot), runtimeAssets.Registry);
+    RegisterCookedAssets(std::string(kAuthoredRoot), runtimeAssets.Registry);
 
     {
         AssetIdMap idMap;
@@ -227,6 +260,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     const std::string base = std::string(kCookedScanRoot) + "/" + std::string(mapName);
     const std::string scenePath = base + ".cooked.json";
     const std::string manifestPath = base + ".manifest.json";
+    const std::string collisionSidecar = base + ".collision.json";
 
     // Re-map: drop the in-flight load or the committed zone before loading anew.
     if (ZoneLoader)
@@ -258,9 +292,14 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
         kPlayZone,
         [parsed, meshes, materialSets, scenePath](Registry& registry) {
             InitializeDefault3DRegistry(registry, meshes, materialSets);
+            // Physics components must be registered before any entity is created
+            // in this zone's World (build runs before finalize spawns entities).
+            // The helper also registers the runtime link components the bridges
+            // add at reconcile time, so they cannot be forgotten.
+            RegisterPhysicsComponents(registry.Components);
             *parsed = ParseSceneFile(scenePath);
         },
-        [this, parsed, &logging](Registry& registry) {
+        [this, parsed, &logging, collisionSidecar](Registry& registry) {
             Logger& finalizeLog = logging.GetLogger<TemplateGame>();
             if (!parsed->Json)
             {
@@ -282,7 +321,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             if (!camera.IsValid())
             {
                 Transform3f start;
-                start.Position = Vec3d{ 0.0f, 3.0f, 10.0f };
+                start.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
                 camera = CreateDefaultEntity(registry, start);
                 AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
             }
@@ -293,10 +332,21 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 
             FreeCam = FreeCamera{};
             FreeCam.Entity = camera;
+
+            // First-person character: drive the active camera as a kinematic
+            // capsule. CharacterControllerSystem moves it against world collision.
+            registry.Components.AddComponent<CharacterController>(camera, CharacterController{});
+
+            // Load the level's cooked brush collision: spawns the static colliders
+            // the character walks on. No collision authoring; it rode the cook.
+            if (PhysicsShapes)
+                LoadZoneCollision(registry.Components, *PhysicsShapes, collisionSidecar,
+                                  std::string(kCookedScanRoot));
+
             ActiveZoneRegistry = &registry;
             ZoneActive = true;
         },
-        ZoneParticipation{ .Visible = true, .Logic = true, .Audio = true },
+        ZoneParticipation{ .Visible = true, .Physics = true, .Logic = true, .Audio = true },
         std::move(preload));
 
     ConsoleResult result;
@@ -306,8 +356,13 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 
 void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
+    RegisterPhysics(ctx.Schedule);
+    // The physics step system owns the shared collision cache; grab it so map
+    // load can fill it with the level's cooked brush collision.
+    if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
+        PhysicsShapes = &step->GetShapeCache();
     ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
-    ctx.Schedule.Register<FreeCameraMovementSystem>(ActiveZoneRegistry, FreeCam);
+    ctx.Schedule.Register<PlayerMovementSystem>(ActiveZoneRegistry, FreeCam);
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }
 
@@ -336,6 +391,15 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
 
     GetEngine().Zones().DestroyZone(kPlayZone);
     ActiveZoneRegistry = nullptr;
+
+    // Release the GPU-backed asset caches here, while OnShutdown still runs with
+    // the engine (device, allocators, descriptor pools) up. DestroyZone above
+    // already returned the zone's mesh/texture handles to these caches. Left to
+    // the module-static Game's own destruction, they would free at process exit
+    // after the device is gone, corrupting the heap on a clean window close (PIE
+    // never hit this: Stop kills the process, so no exit handlers run).
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& TemplateGame::RuntimeAssetState()

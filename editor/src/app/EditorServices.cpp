@@ -25,6 +25,9 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
+#include <assets/cook/AssetImporter.h>
+#include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/TextureCook.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
@@ -83,7 +86,11 @@ EditorServices::~EditorServices()
     Navigation.reset();
     Shortcuts.reset();
     // After Workspace: the document's StaticMeshComponents release into these caches
-    // on teardown. Before the engine frees the graphics services the caches borrow.
+    // on teardown. The render feature's scene queues also hold StaticMeshCache handles +
+    // material refs and tear down later (in ~Renderer), so release them here too.
+    // Before the engine frees the graphics services the caches borrow.
+    if (RenderFeature != nullptr)
+        RenderFeature->ReleaseSceneResources();
     Assets.reset();
     // Toolbar, StatusBar, Materials, and the project/module state release with the
     // object in reverse declaration order; none touch the subsystems reset above.
@@ -256,7 +263,9 @@ void EditorServices::BuildViewportRendering()
         engine.Logging(),
         console.Registry(),
         Assets ? &Assets->Assets : nullptr,
-        Assets ? &Assets->Registry : nullptr);
+        Assets ? &Assets->Registry : nullptr,
+        Assets ? &*Assets : nullptr,
+        Workspace->Document);
     RenderFeature = renderFeature.get();
     engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
 }
@@ -452,6 +461,18 @@ void EditorServices::InitAssets()
     {
         ScanAssetsDirectory(root, Assets->Registry);
         ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(), Assets->Registry);
+
+        // Cook source textures on demand (.png -> .stex) and register the cooked
+        // overlay, so a material's asset://...png resolves to its cooked .stex with a
+        // bindless slot: the same resolve the runtime uses, which is what makes the
+        // Solid viewport WYSIWYG. Editor is cook-enabled; cooked wins over the scan.
+        {
+            PngTextureImporter textureImporter;
+            AssetImporterRegistry importers;
+            importers.Register(textureImporter);
+            (void)ImportAssetsOnDemand(root, importers, Assets->Registry, logging);
+        }
+        RegisterCookedAssets(root, Assets->Registry);
 
         AssetIdMap idMap;
         std::string idMapError;
