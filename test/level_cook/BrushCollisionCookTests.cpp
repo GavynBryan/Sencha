@@ -8,12 +8,14 @@
 #include "document/EditorDocument.h"
 
 #include <core/assets/AssetRef.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
+#include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsScene.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/ZoneCollisionLoader.h>
@@ -32,6 +34,18 @@
 namespace
 {
 namespace fs = std::filesystem;
+
+// 16x16 grayscale checker PNG (the CubeDemo fixture, embedded).
+constexpr uint8_t kCheckerPng[] = {
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x91, 0x68, 0x36, 0x00, 0x00, 0x00,
+    0x20, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0xF8, 0x8F, 0x04, 0x16,
+    0x20, 0x01, 0x5C, 0xE2, 0x0C, 0x83, 0x50, 0x03, 0x31, 0x8A, 0x90, 0xC5,
+    0x07, 0xA3, 0x86, 0xD1, 0x78, 0x18, 0x14, 0x1A, 0x00, 0x6E, 0xE7, 0x6E,
+    0x9F, 0x05, 0xEC, 0xA4, 0x18, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
+};
 
 class BrushCollisionCookTest : public ::testing::Test
 {
@@ -96,8 +110,7 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
 
     World ecs;
     ecs.RegisterComponent<LocalTransform>();
-    ecs.RegisterComponent<Collider>();
-    ecs.RegisterComponent<RigidBody>();
+    RegisterPhysicsComponents(ecs);
 
     const int loaded = LoadZoneCollision(
         ecs, cache, sidecarPath.generic_string(), (Root / ".cooked").generic_string());
@@ -112,4 +125,47 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
     PhysicsQueries queries(world);
     const RaycastHit hit = queries.Raycast(Vec3d(0.0f, 50.0f, 0.0f), Vec3d(0.0f, -1.0f, 0.0f), 100.0f);
     EXPECT_TRUE(hit.Hit); // the cooked brush collision is solid and positioned
+}
+
+// A material that references a source PNG: the cook must produce a runtime .stex
+// and the COOK=OFF registration must bind it under the source virtual path so the
+// material's asset://...png reference resolves at load.
+TEST_F(BrushCollisionCookTest, MaterialTextureCooksAndRegistersUnderSourcePath)
+{
+    const fs::path checkerMat = Root / "materials/dev/checker.smat";
+    std::ofstream(checkerMat, std::ios::trunc)
+        << R"({"version":1,"base_color_texture":"asset://textures/dev/checker.png"})";
+    const fs::path checkerPng = Root / "textures/dev/checker.png";
+    fs::create_directories(checkerPng.parent_path());
+    {
+        std::ofstream png(checkerPng, std::ios::binary | std::ios::trunc);
+        png.write(reinterpret_cast<const char*>(kCheckerPng), sizeof(kCheckerPng));
+    }
+
+    EditorDocument doc(Logging);
+    doc.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/dev/checker.smat" });
+    doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    const fs::path levelPath = Root / "levels/textured.json";
+    fs::create_directories(levelPath.parent_path());
+    ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
+
+    const DocumentCookResult result = CookDocument(levelPath, Root, /*cellSize*/ 16.0);
+    ASSERT_TRUE(result.Success) << result.Error;
+
+    // The cook cooked the source PNG into a runtime .stex under .cooked/ (the
+    // artifact keeps the source path and appends .stex; the virtual path stays
+    // asset://...png).
+    EXPECT_TRUE(fs::exists(Root / ".cooked/textures/dev/checker.png.stex"));
+
+    // A COOK=OFF player mounts cooked content: the physical scan keys the meshes,
+    // RegisterCookedAssets adds the texture under its source virtual path.
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ScanAssetsDirectory((Root / ".cooked").generic_string(), registry);
+    EXPECT_GE(RegisterCookedAssets(Root.generic_string(), registry), 1);
+
+    const AssetRecord* texture = registry.FindByPath("asset://textures/dev/checker.png");
+    ASSERT_NE(texture, nullptr);
+    EXPECT_EQ(texture->Type, AssetType::Texture);
+    EXPECT_TRUE(fs::exists(texture->FilePath));
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <unordered_map>
-#include <unordered_set>
+#include <memory>
+#include <vector>
 
 #include <ecs/EntityId.h>
 #include <physics/PhysicsTypes.h>
@@ -38,11 +38,15 @@ inline EntityId UnpackEntity(uint64_t value)
 // PhysicsScenes) is destroyed before EngineSchedule (the PhysicsStepSystem that
 // owns the world). No refcounting.
 //
-// Body lifetime is reconciled from component presence rather than driven by
-// ComponentTraits hooks: a collider can exist before this resource does (zone
-// attach runs before the first physics step) and zone unload destroys entities
-// without firing OnRemove, so a hook-only scheme would miss both. Reconcile
-// covers every path; see the physics plan.
+// Steady-state cost is proportional to what moved, not what exists. The body
+// handle lives in a per-entity PhysicsBodyLink component, so the per-frame
+// transform sync is a contiguous column walk with no hashing. Body topology is
+// reconciled only when the World's structural version changes (an entity or
+// component was created/destroyed/added/removed); a steady frame is a single
+// integer compare. The dense Owned vector is the physics-side record that makes
+// destroy-detection possible: DestroyEntity fires no hook and the entity's
+// PhysicsBodyLink vanishes with it, so nothing in the ECS can report the dead
+// body. Reconcile sweeps Owned for dead or collider-less entities.
 //=============================================================================
 class PhysicsScene
 {
@@ -53,17 +57,36 @@ public:
     PhysicsScene(const PhysicsScene&) = delete;
     PhysicsScene& operator=(const PhysicsScene&) = delete;
 
-    // Pre-step: create bodies for new colliders, drop bodies whose collider is
-    // gone, and push kinematic transforms into the simulation.
+    // Pre-step: reconcile body topology (gated on the structural version), then
+    // push kinematic transforms into the simulation.
     void SyncToPhysics(World& world);
 
     // Post-step: write dynamic bodies' resolved transforms back to LocalTransform.
     void SyncFromPhysics(World& world);
 
-    [[nodiscard]] size_t BodyCount() const { return Bodies.size(); }
+    [[nodiscard]] size_t BodyCount() const { return Owned.size(); }
+
+    // Times the topology reconcile pass has run. A steady frame (no structural
+    // change in this zone) does not advance it; tests and profiling use it to
+    // confirm the gate holds.
+    [[nodiscard]] uint64_t ReconcilePasses() const { return ReconcileCount; }
 
 private:
-    PhysicsWorld* Simulation; // not owned; outlives this scene (see above)
-    std::unordered_map<EntityIndex, PhysicsBodyId> Bodies;
-    std::unordered_set<EntityIndex> Seen;
+    struct BodyRecord
+    {
+        EntityId      Entity;
+        PhysicsBodyId Body;
+    };
+
+    struct SceneState; // PIMPL: cached queries + reusable command buffer (ECS-side)
+
+    bool        Ready(const World& world) const;
+    SceneState& EnsureState(World& world);
+    void        Reconcile(World& world, SceneState& state);
+
+    PhysicsWorld*               Simulation; // not owned; outlives this scene (see above)
+    std::vector<BodyRecord>     Owned;
+    std::unique_ptr<SceneState> State;
+    uint64_t                    LastStructuralVersion = 0;
+    uint64_t                    ReconcileCount = 0;
 };

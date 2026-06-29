@@ -1,8 +1,13 @@
 #include <core/assets/AssetRegistry.h>
 
 #include <core/hash/ContentHash.h>
+#include <core/json/JsonParser.h>
+#include <core/json/JsonValue.h>
 
 #include <filesystem>
+#include <fstream>
+#include <optional>
+#include <sstream>
 
 namespace
 {
@@ -252,4 +257,64 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
         registered,
         ok ? "" : ", with errors");
     return ok;
+}
+
+int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry)
+{
+    const std::filesystem::path indexPath =
+        std::filesystem::path(std::string(assetsRoot)) / kCookedCacheDirName / "index.json";
+
+    std::ifstream file(indexPath);
+    if (!file.is_open())
+        return 0; // no cooked index: physical scan still covers loose runtime files
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const std::optional<JsonValue> json = JsonParse(buffer.str());
+    if (!json || !json->IsObject())
+        return 0;
+
+    const JsonValue* sources = json->Find("sources");
+    if (sources == nullptr || !sources->IsArray())
+        return 0;
+
+    int registered = 0;
+    for (const JsonValue& source : sources->AsArray())
+    {
+        const JsonValue* artifacts = source.IsObject() ? source.Find("artifacts") : nullptr;
+        if (artifacts == nullptr || !artifacts->IsArray())
+            continue;
+
+        for (const JsonValue& artifact : artifacts->AsArray())
+        {
+            if (!artifact.IsObject())
+                continue;
+            const JsonValue* path = artifact.Find("path");
+            const JsonValue* fileRel = artifact.Find("file");
+            const JsonValue* typeName = artifact.Find("type");
+            if (path == nullptr || !path->IsString() || fileRel == nullptr || !fileRel->IsString()
+                || typeName == nullptr || !typeName->IsString())
+                continue;
+
+            // The physical scan already keyed cooked runtime files (.smesh, ...)
+            // by location; this only needs to add the ones it cannot key.
+            if (registry.Contains(path->AsString()))
+                continue;
+
+            AssetType type = AssetType::Unknown;
+            if (!AssetTypeFromString(typeName->AsString(), type))
+                continue;
+
+            AssetRecord record;
+            record.Type = type;
+            record.SourceKind = AssetSourceKind::File;
+            record.Path = path->AsString();
+            record.FilePath =
+                (std::filesystem::path(std::string(assetsRoot)) / fileRel->AsString()).generic_string();
+            if (registry.Register(record))
+                ++registered;
+        }
+    }
+
+    return registered;
 }

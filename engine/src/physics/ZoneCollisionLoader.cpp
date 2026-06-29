@@ -1,14 +1,15 @@
 #include <physics/ZoneCollisionLoader.h>
 
 #include <cstddef>
-#include <cstring>
 #include <fstream>
+#include <ios>
 #include <optional>
 #include <sstream>
 #include <vector>
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
+#include <ecs/ArchetypeSignature.h>
 #include <ecs/World.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <physics/CollisionShapeCache.h>
@@ -17,16 +18,20 @@
 
 namespace
 {
+// One allocation, one read: size the buffer from the file length and read into
+// it directly, rather than streaming through an ostringstream and a string.
 std::vector<std::byte> ReadFileBytes(const std::string& path)
 {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open())
         return {};
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    const std::string text = buffer.str();
-    std::vector<std::byte> bytes(text.size());
-    std::memcpy(bytes.data(), text.data(), text.size());
+    const std::streamsize size = file.tellg();
+    if (size <= 0)
+        return {};
+    file.seekg(0, std::ios::beg);
+    std::vector<std::byte> bytes(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), size))
+        return {};
     return bytes;
 }
 
@@ -60,6 +65,14 @@ int LoadZoneCollision(World& world,
     if (!json || !json->IsArray())
         return 0;
 
+    // Create collider entities directly in their final {LocalTransform, Collider}
+    // archetype: one row allocation each, instead of an empty create plus two
+    // add-component archetype moves per cell. The physics reconcile adds the
+    // runtime PhysicsBodyLink later; the loader stays out of body lifetime.
+    ArchetypeSignature colliderSig;
+    colliderSig.set(world.GetComponentId<LocalTransform>());
+    colliderSig.set(world.GetComponentId<Collider>());
+
     int loaded = 0;
     for (const JsonValue& entry : json->AsArray())
     {
@@ -79,11 +92,11 @@ int LoadZoneCollision(World& world,
         Transform3f transform;
         transform.Position = ReadOrigin(entry);
 
-        const EntityId entity = world.CreateEntity();
-        world.AddComponent<LocalTransform>(entity, LocalTransform{ transform });
+        const EntityId entity = world.CreateEntityWithSignature(colliderSig);
+        *world.TryGet<LocalTransform>(entity) = LocalTransform{ transform };
         Collider collider;
         collider.Mesh = handle;
-        world.AddComponent<Collider>(entity, collider);
+        *world.TryGet<Collider>(entity) = collider;
         ++loaded;
     }
     return loaded;

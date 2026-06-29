@@ -1,37 +1,14 @@
 #pragma once
 
-#include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanShaderCache.h>
-#include <render/Camera.h>
-#include <render/MaterialCache.h>
-#include <render/RenderQueue.h>
-#include <render/static_mesh/StaticMeshCache.h>
-
-#include <cstdint>
-
-// Per-frame uniform data uploaded to set 0, binding 0 each draw call.
-struct MeshFrameUniforms
-{
-    Mat4 ViewProjection;
-    Vec4 ViewPositionTime;
-};
-
-// Per-draw push constants: world matrix and base-color material inputs.
-struct MeshPushConstants
-{
-    Mat4 World;
-    Vec4 BaseColor;
-    uint32_t BaseColorTextureIndex = UINT32_MAX;
-};
+#include <render/MeshForwardPass.h>
 
 //=============================================================================
 // MeshRenderFeature
 //
 // IRenderFeature that draws all opaque meshes in the RenderQueue using the
-// mesh_forward shader. Runs in RenderPhase::MainColor.
-//
-// The pipeline is lazily created (or recreated) on the first OnDraw() call
-// and whenever the swapchain color or depth format changes.
+// mesh_forward shader. Runs in RenderPhase::MainColor. A thin wrapper that
+// holds the game's queue/caches/camera and drives a MeshForwardPass; the draw
+// itself lives in the pass so the editor can reuse it.
 //=============================================================================
 class MeshRenderFeature : public IRenderFeature
 {
@@ -51,18 +28,5 @@ private:
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     const CameraRenderData* Camera = nullptr;
-
-    VulkanBufferService* Buffers = nullptr;
-    VulkanDescriptorCache* Descriptors = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
-    VulkanPipelineCache* Pipelines = nullptr;
-    VulkanShaderCache* Shaders = nullptr;
-    VkDevice Device = VK_NULL_HANDLE;
-
-    ShaderHandle VertexShader;
-    ShaderHandle FragmentShader;
-    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline Pipeline = VK_NULL_HANDLE;
-    VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
-    VkFormat CachedDepthFormat = VK_FORMAT_UNDEFINED;
+    MeshForwardPass Pass;
 };

@@ -2,7 +2,7 @@
 
 #include "PhysicsWorldImpl.h"
 
-#include <unordered_set>
+#include <algorithm>
 
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
@@ -107,11 +107,15 @@ void PhysicsQueries::OverlapShape(
     JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
     query.CollideShape(jShape, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector);
 
-    std::unordered_set<uint32_t> seen;
+    // Dedup in place using the caller's vector: gather every hit's entity, then
+    // sort + unique. One body maps to one entity, so this matches a by-body dedup
+    // without a per-call hash set. Order is unspecified by the contract.
     for (const JPH::CollideShapeResult& result : collector.mHits)
-    {
-        if (!seen.insert(result.mBodyID2.GetIndexAndSequenceNumber()).second)
-            continue;
         out.push_back(EntityOf(system, result.mBodyID2));
-    }
+
+    std::sort(out.begin(), out.end(), [](EntityId a, EntityId b)
+    {
+        return a.Index != b.Index ? a.Index < b.Index : a.Generation < b.Generation;
+    });
+    out.erase(std::unique(out.begin(), out.end()), out.end());
 }

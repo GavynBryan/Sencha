@@ -6,6 +6,7 @@
 #include "../viewport/ViewportLayout.h"
 #include "../viewport/ViewportShading.h"
 
+#include <core/assets/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 
@@ -26,7 +27,9 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          LoggingProvider& logging,
                                          const ConsoleRegistry& console,
                                          AssetSystem* assets,
-                                         const AssetRegistry* catalog)
+                                         const AssetRegistry* catalog,
+                                         RuntimeAssets* runtimeAssets,
+                                         const EditorDocument& document)
     : Layout(viewportLayout)
     , GridCfg(grid)
     , BrushSolid(scene, Solid)
@@ -38,7 +41,27 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Console(&console)
 {
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &Wireframe;
-    BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
+
+    // Real-material WYSIWYG path when an asset environment is present (the editor
+    // always has one). The builder + SceneSolidRenderer replace BrushSolid for the
+    // Solid body, and the placed-mesh queue replaces the StaticMeshRenderer draw.
+    // The IBrushBodyRenderer seam stays at two implementations (Wireframe + SceneSolid).
+    if (runtimeAssets != nullptr)
+    {
+        MeshCache = &runtimeAssets->StaticMeshes;
+        MaterialStore = &runtimeAssets->Materials;
+        QueueBuilder.emplace(document, runtimeAssets->Assets, runtimeAssets->StaticMeshes,
+                             runtimeAssets->MaterialSets, logging);
+        SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
+                           runtimeAssets->Materials);
+        MaterialPath = true;
+        BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &*SceneSolid;
+    }
+    else
+    {
+        // No asset environment (brush-only/headless): fall back to the procedural checker.
+        BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
+    }
 }
 
 void EditorRenderFeature::Setup(const RendererServices& services)
@@ -48,6 +71,7 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Backdrop.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
+    Forward.Setup(services);
     Lines.Setup(services);
     WideLines.Setup(services);
     Targets.Setup(services);
@@ -94,6 +118,12 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     BloomParamsCache.Radius    = readFloatCvar("editor.bloom.radius", 2.0f);
 
     Targets.BeginFrame(frame.FrameInFlightIndex);
+
+    // Build the scene draw queues once per frame; the per-viewport camera is applied at
+    // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush
+    // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
+    if (MaterialPath)
+        QueueBuilder->Build();
 
     // Render only what the panel lays out: every leaf in quad mode, just the active
     // viewport in single mode (the others hold stale screen rects).
@@ -215,8 +245,12 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
         body->DrawViewport(local, viewport);
-    // Meshes draw solid in every viewport so a placed mesh reads regardless of shading.
-    Meshes.DrawViewport(local, viewport);
+    // Placed meshes draw in every viewport so they read regardless of shading: through
+    // the real-material queue when active, else the procedural-checker fallback.
+    if (MaterialPath)
+        Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
+    else
+        Meshes.DrawViewport(local, viewport);
     Visuals.DrawViewport(local, viewport);
     Highlight.DrawViewport(local, viewport);
     Preview.DrawViewport(local, viewport);
@@ -320,11 +354,24 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
     viewport.RegionMax = savedMax;
 }
 
+void EditorRenderFeature::ReleaseSceneResources()
+{
+    // Point the Solid body back at the checker so nothing dereferences the released
+    // builder, then drop the brush GPU meshes + material refs while the caches live.
+    BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
+    MaterialPath = false;
+    SceneSolid.reset();
+    QueueBuilder.reset();
+    MeshCache = nullptr;
+    MaterialStore = nullptr;
+}
+
 void EditorRenderFeature::Teardown()
 {
     Backdrop.Teardown();
     Grid.Teardown();
     Solid.Teardown();
+    Forward.Teardown();
     Lines.Teardown();
     WideLines.Teardown();
     Targets.Teardown();

@@ -16,6 +16,7 @@
 #include <ecs/World.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
+#include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsScene.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/Collider.h>
@@ -79,8 +80,7 @@ TEST(CollisionCook, DynamicBodyRestsOnCookedFloorThroughScene)
 
     World ecs;
     ecs.RegisterComponent<LocalTransform>();
-    ecs.RegisterComponent<Collider>();
-    ecs.RegisterComponent<RigidBody>();
+    RegisterPhysicsComponents(ecs);
     PhysicsScene scene(world);
 
     // Static floor entity carrying the cooked mesh shape (as a cooked scene would).

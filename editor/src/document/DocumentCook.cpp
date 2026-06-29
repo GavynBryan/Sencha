@@ -7,9 +7,12 @@
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
+#include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/SceneCookOutput.h>
+#include <assets/cook/TextureCook.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 #include <core/assets/RuntimeAssets.h>
@@ -280,6 +283,19 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     {
         result.Error = "CookDocument: " + cookError;
         return result;
+    }
+
+    // Cook source textures the level's materials reference (.png -> .stex) into
+    // .cooked/ so the COOK=OFF player can load them. The import driver maintains
+    // the cooked index keyed by source path; the index.Put below loads that
+    // updated index and adds the level entry, so both survive. Idempotent:
+    // unchanged sources are served from the cooked cache.
+    {
+        PngTextureImporter textureImporter;
+        AssetImporterRegistry importers;
+        importers.Register(textureImporter);
+        AssetRegistry scratch(logging); // we want the on-disk artifacts + index, not a live registry
+        (void)ImportAssetsOnDemand(assetsRoot.generic_string(), importers, scratch, logging);
     }
 
     // Record source -> artifacts (source key = caller-supplied rel path, hash key

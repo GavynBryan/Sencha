@@ -211,9 +211,12 @@ void TemplateGame::OnStart(GameStartupContext&)
     Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins).
+    // Mount: authored assets, then the cooked overlay (cooked wins). The cooked
+    // index adds artifacts the physical scan cannot key, notably cooked textures
+    // (asset://...png serving cooked .stex bytes).
     ScanAssetsDirectory(std::string(kAuthoredRoot), runtimeAssets.Registry);
     ScanAssetsDirectory(std::string(kCookedScanRoot), runtimeAssets.Registry);
+    RegisterCookedAssets(std::string(kAuthoredRoot), runtimeAssets.Registry);
 
     {
         AssetIdMap idMap;
@@ -291,9 +294,9 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             InitializeDefault3DRegistry(registry, meshes, materialSets);
             // Physics components must be registered before any entity is created
             // in this zone's World (build runs before finalize spawns entities).
-            registry.Components.RegisterComponent<Collider>();
-            registry.Components.RegisterComponent<RigidBody>();
-            registry.Components.RegisterComponent<CharacterController>();
+            // The helper also registers the runtime link components the bridges
+            // add at reconcile time, so they cannot be forgotten.
+            RegisterPhysicsComponents(registry.Components);
             *parsed = ParseSceneFile(scenePath);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
@@ -388,6 +391,15 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
 
     GetEngine().Zones().DestroyZone(kPlayZone);
     ActiveZoneRegistry = nullptr;
+
+    // Release the GPU-backed asset caches here, while OnShutdown still runs with
+    // the engine (device, allocators, descriptor pools) up. DestroyZone above
+    // already returned the zone's mesh/texture handles to these caches. Left to
+    // the module-static Game's own destruction, they would free at process exit
+    // after the device is gone, corrupting the heap on a clean window close (PIE
+    // never hit this: Stop kills the process, so no exit handlers run).
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& TemplateGame::RuntimeAssetState()
