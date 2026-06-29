@@ -12,6 +12,7 @@
 #include <string_view>
 
 class Registry;
+class CollisionShapeCache;
 
 //=============================================================================
 // TemplateGame
@@ -43,4 +44,8 @@ private:
     std::optional<AssetPreloader> Preloader;
     std::optional<AsyncZoneLoader> ZoneLoader;
     FreeCamera FreeCam;
+    // Cooked-collision cache owned (by value) by the engine's PhysicsStepSystem;
+    // grabbed at system registration so map load can fill it (LoadZoneCollision).
+    // Not owned: the step system outlives the game's map loads.
+    CollisionShapeCache* PhysicsShapes = nullptr;
 };

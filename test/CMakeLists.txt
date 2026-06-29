@@ -45,6 +45,10 @@ file(GLOB_RECURSE JOBS_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/jobs/*.cpp
 )
 
+file(GLOB_RECURSE PHYSICS_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/physics/*.cpp
+)
+
 file(GLOB_RECURSE BRUSH_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/brush/*.cpp
 )
@@ -128,6 +132,14 @@ if(JOBS_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS jobs_tests)
 endif()
 
+# Physics tests link only the engine: the Jolt backend is firewalled inside
+# sencha_engine, so the tests see engine physics types and never a JPH header.
+if(PHYSICS_TEST_SOURCES)
+    add_executable(physics_tests ${PHYSICS_TEST_SOURCES})
+    target_link_libraries(physics_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS physics_tests)
+endif()
+
 # The level cook is editor-side (it consumes editor brush/level types) but the
 # relevant sources are UI/Vulkan-free, so the tests compile them directly and
 # link only the engine (same discipline as brush_tests).
@@ -199,6 +211,12 @@ endif()
 
 if(TARGET jobs_tests)
     gtest_discover_tests(jobs_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET physics_tests)
+    gtest_discover_tests(physics_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

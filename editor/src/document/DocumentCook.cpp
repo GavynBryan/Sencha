@@ -5,10 +5,13 @@
 
 #include <assets/cook/BrushClustering.h>
 #include <assets/cook/BrushGeometryCook.h>
+#include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
+#include <core/json/JsonStringify.h>
+#include <core/json/JsonValue.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
@@ -17,6 +20,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <span>
@@ -44,11 +48,35 @@ namespace
         return h;
     }
 
-    std::string CellName(const Vec3i& coord)
+    std::string CellBase(const Vec3i& coord)
     {
         return "cell_" + std::to_string(coord.X) + "_" + std::to_string(coord.Y)
-            + "_" + std::to_string(coord.Z) + ".smesh";
+            + "_" + std::to_string(coord.Z);
     }
+
+    std::string CellName(const Vec3i& coord) { return CellBase(coord) + ".smesh"; }
+
+    // Flatten a cell's already-triangulated faces into a position/index soup for
+    // the collision bake (cell-local, the same triangles the render mesh uses).
+    void CollectCellTriangles(const std::vector<CookFace>& faces,
+                              std::vector<Vec3d>& positions,
+                              std::vector<uint32_t>& indices)
+    {
+        for (const CookFace& face : faces)
+            for (const StaticMeshVertex& vertex : face.Triangles)
+            {
+                indices.push_back(static_cast<uint32_t>(positions.size()));
+                positions.push_back(vertex.Position);
+            }
+    }
+
+    // One cell's cooked collision: the blob's path (relative to the cooked root)
+    // and the cell origin the runtime places the static collider at.
+    struct CollisionEntry
+    {
+        std::string BlobRelPath;
+        Vec3d Origin;
+    };
 } // namespace
 
 JsonValue BuildCellEntity(const Vec3d& origin,
@@ -118,6 +146,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     std::vector<std::string> materialRefs; // distinct face materials, in cook order
     std::unordered_set<std::string> seenMaterial;
     std::unordered_set<std::string> generatedMeshPaths;
+    std::vector<CollisionEntry> collisionEntries;
 
     for (const BrushCell& cell : cells)
     {
@@ -151,6 +180,29 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         for (const AssetRef& material : order)
             if (seenMaterial.insert(material.Path).second)
                 materialRefs.push_back(material.Path);
+
+        // Collision: bake the same cell triangles into a pre-baked Jolt blob, a
+        // sibling of the cell mesh. Authored brushes become collidable with no
+        // collider authoring; the runtime loads these from the sidecar at map load.
+        std::vector<Vec3d> collisionPositions;
+        std::vector<uint32_t> collisionIndices;
+        CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
+        const std::vector<std::byte> collisionBlob =
+            BakeCollisionBlob(collisionPositions, collisionIndices);
+        if (!collisionBlob.empty())
+        {
+            const std::string colRel = "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
+            const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
+            std::ofstream colFile(colPhysical, std::ios::binary);
+            colFile.write(reinterpret_cast<const char*>(collisionBlob.data()),
+                          static_cast<std::streamsize>(collisionBlob.size()));
+            if (colFile.good())
+            {
+                collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
+                artifacts.push_back(
+                    CookedArtifact{ "asset://" + colRel, ".cooked/" + colRel, AssetType::Collision });
+            }
+        }
     }
 
     // Drop the brush entities so SaveSceneJson emits only passthrough game
@@ -193,6 +245,23 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     std::filesystem::create_directories(cookedDir, ec);
     const std::filesystem::path cookedScenePath = cookedDir / (stemStr + ".cooked.json");
     const std::filesystem::path manifestPath = cookedDir / (stemStr + ".manifest.json");
+
+    // Collision sidecar: the runtime loads this at map load (LoadZoneCollision)
+    // to spawn the level's static brush colliders. Empty array if no brushes.
+    {
+        JsonValue::Array sidecar;
+        sidecar.reserve(collisionEntries.size());
+        for (const CollisionEntry& entry : collisionEntries)
+            sidecar.push_back(JsonValue(JsonValue::Object{
+                { "blob", JsonValue(entry.BlobRelPath) },
+                { "origin", JsonValue(JsonValue::Array{
+                    JsonValue(static_cast<double>(entry.Origin.X)),
+                    JsonValue(static_cast<double>(entry.Origin.Y)),
+                    JsonValue(static_cast<double>(entry.Origin.Z)) }) },
+            }));
+        std::ofstream sidecarFile(cookedDir / (stemStr + ".collision.json"));
+        sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
+    }
 
     // asset:// resolution: Generated cell meshes live under .cooked/; every other
     // ref (materials, their textures) is an authored asset under the root.
