@@ -1,30 +1,44 @@
 # Enforces the D-J dependency rule for the gameplay framework:
-#   - framework code must NOT include the renderer, graphics, audio, or the
-#     render/audio-pulling scene codecs (gameplay is decoupled from render/scene)
+#   - framework code may depend ONLY on core/, ecs/, math/, other framework/, the
+#     standard library, and the one serializer seam it needs
+#     (world/serialization/IComponentSerializer.h). Anything else (render/,
+#     graphics/, audio/, world/ internals, scene codecs, physics/, editor/,
+#     assets/, app/, runtime/, zone/, ...) is forbidden: gameplay stays decoupled
+#     from render/scene/backend, and reaches the world only through the thin sinks
+#     the framework itself owns (D-G).
 #   - engine code outside framework/ must NOT include framework/ (engine never
-#     depends on gameplay)
+#     depends on gameplay).
+#
+# Direction 1 is a strict allowlist (default-deny), not a list of banned names.
+# A blocklist only catches the leaks you thought to name; the moment a framework
+# file reaches for world/ internals or physics/ the way to find out should be a
+# red test, not a code review. Adding a new allowed dependency is a conscious edit
+# to ALLOWED_PREFIXES below, on the record.
 #
 # Run standalone (no build/Vulkan needed):
 #   cmake -P cmake/CheckFrameworkIsolation.cmake
-# Or via the check_framework_isolation target once configured.
 
 cmake_minimum_required(VERSION 3.20)
 
 get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
-# Includes a framework/ file may never pull (substrings matched after "#include <").
-set(FRAMEWORK_FORBIDDEN
-    "render/"
-    "graphics/"
-    "audio/"
-    "world/serialization/SceneFieldCodec.h"
-    "world/serialization/ComponentSerializer.h"
-    "world/serialization/SceneSerializer.h"
+# Include-path prefixes a framework/ file may pull. A bare stdlib header (no '/')
+# is always allowed. Everything else is a violation.
+set(ALLOWED_PREFIXES
+    "core/"
+    "ecs/"
+    "math/"
+    "framework/"
+)
+# Specific non-prefix headers a framework file may include. Kept exact so the
+# framework gets the serializer interface without the render/audio-pulling codecs.
+set(ALLOWED_EXACT
+    "world/serialization/IComponentSerializer.h"
 )
 
 set(VIOLATIONS "")
 
-# 1. framework/ must not reach into render/scene.
+# 1. framework/ may depend only on the allowlist.
 file(GLOB_RECURSE FRAMEWORK_FILES
     "${REPO}/engine/include/framework/*"
     "${REPO}/engine/src/framework/*"
@@ -32,10 +46,29 @@ file(GLOB_RECURSE FRAMEWORK_FILES
 foreach(file ${FRAMEWORK_FILES})
     file(READ "${file}" content)
     file(RELATIVE_PATH rel "${REPO}" "${file}")
-    foreach(bad ${FRAMEWORK_FORBIDDEN})
-        string(REGEX MATCH "#[ \t]*include[ \t]*[<\"]${bad}" hit "${content}")
-        if(hit)
-            list(APPEND VIOLATIONS "${rel} includes '${bad}' (framework must not depend on render/scene)")
+    string(REGEX MATCHALL "#[ \t]*include[ \t]*[<\"][^>\"]+[>\"]" includes "${content}")
+    foreach(directive ${includes})
+        string(REGEX REPLACE "#[ \t]*include[ \t]*[<\"]([^>\"]+)[>\"]" "\\1" path "${directive}")
+        if(NOT path MATCHES "/")
+            continue() # stdlib header
+        endif()
+        set(ok FALSE)
+        foreach(prefix ${ALLOWED_PREFIXES})
+            if(path MATCHES "^${prefix}")
+                set(ok TRUE)
+                break()
+            endif()
+        endforeach()
+        if(NOT ok)
+            foreach(exact ${ALLOWED_EXACT})
+                if(path STREQUAL "${exact}")
+                    set(ok TRUE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+        if(NOT ok)
+            list(APPEND VIOLATIONS "${rel} includes '${path}' (framework may depend only on core/, ecs/, math/, framework/, and the serializer seam)")
         endif()
     endforeach()
 endforeach()

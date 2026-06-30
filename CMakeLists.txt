@@ -47,6 +47,12 @@ include(GNUInstallDirs)
 add_test(NAME framework_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckFrameworkIsolation.cmake")
 
+# Physics backend firewall: Jolt must stay behind engine/src/physics/ (plus the
+# dev-only collision cook). Same standalone-script form as the framework guard so
+# it runs under ctest without building the engine or Jolt.
+add_test(NAME physics_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckPhysicsIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

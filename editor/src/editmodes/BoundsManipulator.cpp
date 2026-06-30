@@ -164,12 +164,16 @@ private:
         if (!s.has_value())
             return std::nullopt;
 
-        double coord = AxisGet(H.Center, H.Axis) + *s;
+        const double pivot = AxisGet(H.Center, H.Axis);
+        double coord = pivot + *s;
         const GridPlane grid = viewport.GetGrid(ctx.Grid);
         if (grid.SnapEnabled && grid.Spacing > 0.0f)
         {
             const double origin = AxisGet(grid.Origin, H.Axis);
-            coord = origin + std::round((coord - origin) / grid.Spacing) * grid.Spacing;
+            // Absolute snap through the shared kernel. This was an inline copy of
+            // the same formula; routing it through GizmoMath::SnapAxisOffset means
+            // the one snap implementation (and its test) covers bounds too.
+            coord = pivot + GizmoMath::SnapAxisOffset(*s, pivot, origin, grid.Spacing);
         }
 
         Vec3d newMin = OldMin;

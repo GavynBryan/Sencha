@@ -39,6 +39,16 @@ InputConsumed InteractionHost::OnPointerUp(ToolContext& ctx, EditorViewport& vie
         return InputConsumed::No;
 
     auto interaction = std::move(Active);
-    interaction->OnPointerUp(ctx, viewport, pointer);
+    try
+    {
+        interaction->OnPointerUp(ctx, viewport, pointer); // commit
+    }
+    catch (...)
+    {
+        // Commit threw: revert the live preview so an interrupted commit can't
+        // strand uncommitted scene state, then propagate.
+        interaction->OnCancel(ctx);
+        throw;
+    }
     return InputConsumed::Yes;
 }

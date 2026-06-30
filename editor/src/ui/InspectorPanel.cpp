@@ -107,7 +107,18 @@ std::string_view InspectorPanel::GetTitle() const
 
 void InspectorPanel::ResetEditState()
 {
+    // An edit interrupted before its commit (selection change, panel switch) has
+    // already written this frame's preview bytes into the live component. Restore
+    // the pre-edit snapshot so an abandoned edit cannot strand an un-undoable
+    // mutation.
+    if (EditActive && EditingComponent != InvalidComponentId && !EditBefore.empty())
+    {
+        World& world = Scene.GetRegistry().Components;
+        if (void* live = world.GetComponentRaw(EditingEntity, EditingComponent))
+            std::memcpy(live, EditBefore.data(), EditBefore.size());
+    }
     EditActive = false;
+    EditingEntity = {};
     EditingComponent = InvalidComponentId;
     EditBefore.clear();
 }
@@ -193,6 +204,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     if (activated)
     {
         EditActive = true;
+        EditingEntity = entity;
         EditingComponent = id;
         EditBefore = frameStart;
     }
