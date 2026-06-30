@@ -61,6 +61,10 @@ file(GLOB_RECURSE FRAMEWORK_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/framework/*.cpp
 )
 
+file(GLOB_RECURSE EDITOR_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 
@@ -180,6 +184,17 @@ if(FRAMEWORK_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS framework_tests)
 endif()
 
+# Editor headless tests. Editor code that is GUI/Vulkan-free (the pure gizmo and
+# selection math) is compiled and tested directly, linking only the engine for
+# its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
+# render passes) is out of scope for headless tests by construction.
+if(EDITOR_TEST_SOURCES)
+    add_executable(editor_tests ${EDITOR_TEST_SOURCES})
+    target_include_directories(editor_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
+    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS editor_tests)
+endif()
+
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
 
 include(GoogleTest)
@@ -227,6 +242,12 @@ if(TARGET brush_tests)
     )
 endif()
 
+if(TARGET editor_tests)
+    gtest_discover_tests(editor_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
 if(TARGET level_cook_tests)
     gtest_discover_tests(level_cook_tests
         DISCOVERY_TIMEOUT 30
@@ -253,5 +274,9 @@ if(NOT WIN32)
     add_test(
         NAME ui_color_discipline
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_ui_colors.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
+        NAME editor_layering_directions
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_editor_layering.sh ${CMAKE_SOURCE_DIR}
     )
 endif()

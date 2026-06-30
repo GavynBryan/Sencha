@@ -49,7 +49,9 @@ private:
 
     // A single in-flight edit (only one widget drags at a time). Captured on
     // widget activation (pre-edit bytes), committed to a RawComponentEditCommand
-    // when the drag finishes.
+    // when the drag finishes. EditingEntity is the entity those bytes belong to,
+    // so an interrupted edit can be reverted to them (see ResetEditState).
+    EntityId               EditingEntity = {};
     ComponentId            EditingComponent = InvalidComponentId;
     std::vector<std::byte> EditBefore;
     bool                   EditActive = false;
