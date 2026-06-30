@@ -67,6 +67,22 @@ template <> struct TypeSchema<AssetComp>
     }
 };
 
+// A color-tagged Vec3 collapses to one Color3 leaf; an untagged Vec3 still
+// flattens to x/y/z. Tint stands in for a non-color trailing scalar.
+struct ColorComp { Vec<3> Color; Vec<3> Plain; float Tint = 0.f; };
+template <> struct TypeSchema<ColorComp>
+{
+    static constexpr std::string_view Name = "test.color";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("color", &ColorComp::Color).AsColor(),
+            MakeField("plain", &ColorComp::Plain),
+            MakeField("tint",  &ColorComp::Tint),
+        };
+    }
+};
+
 namespace
 {
     const RuntimeField* Find(const std::vector<RuntimeField>& fields, std::string_view name)
@@ -75,6 +91,32 @@ namespace
             if (f.Name == name) return &f;
         return nullptr;
     }
+}
+
+TEST(RuntimeSchema, ColorTaggedVec3CollapsesToOneColor3Leaf)
+{
+    const auto& fields = RuntimeFieldsOf<ColorComp>();
+    // color -> 1 Color3 leaf; plain -> x,y,z; tint -> 1. = 5 leaves.
+    ASSERT_EQ(fields.size(), 5u);
+
+    const RuntimeField* color = Find(fields, "color");
+    ASSERT_NE(color, nullptr);
+    EXPECT_EQ(color->Scalar, FieldScalar::Color3);
+    EXPECT_EQ(color->Size, 3 * sizeof(float));
+    EXPECT_EQ(color->Asset, AssetType::Unknown);
+
+    // The untagged Vec3 still flattens to its three scalar components.
+    EXPECT_EQ(Find(fields, "color.x"), nullptr);
+    ASSERT_NE(Find(fields, "plain.x"), nullptr);
+    ASSERT_NE(Find(fields, "plain.z"), nullptr);
+    EXPECT_EQ(Find(fields, "plain.y")->Scalar, FieldScalar::Float);
+
+    // The Color3 leaf addresses the real bytes: writing channel 1 hits Color.Y.
+    ColorComp c{};
+    auto* base = reinterpret_cast<std::byte*>(&c);
+    const float green = 0.5f;
+    std::memcpy(base + color->Offset + sizeof(float), &green, sizeof(float));
+    EXPECT_FLOAT_EQ(c.Color.Y, 0.5f);
 }
 
 TEST(RuntimeSchema, AssetTaggedFieldsCarryTheirAssetType)

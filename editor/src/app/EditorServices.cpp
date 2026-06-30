@@ -251,6 +251,15 @@ void EditorServices::BuildViewportRendering()
     registerGridFloat("editor.bloom.intensity", 1.0, "Editor bloom: additive strength of the glow.");
     registerGridFloat("editor.bloom.radius", 2.0, "Editor bloom: blur spread (larger = wider, softer glow).");
 
+    // Hemispheric ambient (the no-bake indirect fill), read per frame by
+    // EditorRenderFeature. Linear RGB: sky tint above, ground tint below.
+    registerGridFloat("render.ambient.sky_r", 0.10, "Ambient sky tint (linear) red.");
+    registerGridFloat("render.ambient.sky_g", 0.12, "Ambient sky tint (linear) green.");
+    registerGridFloat("render.ambient.sky_b", 0.15, "Ambient sky tint (linear) blue.");
+    registerGridFloat("render.ambient.ground_r", 0.04, "Ambient ground tint (linear) red.");
+    registerGridFloat("render.ambient.ground_g", 0.03, "Ambient ground tint (linear) green.");
+    registerGridFloat("render.ambient.ground_b", 0.02, "Ambient ground tint (linear) blue.");
+
     auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
         Workspace->Document.GetScene(),

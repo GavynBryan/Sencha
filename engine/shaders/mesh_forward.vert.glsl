@@ -19,11 +19,13 @@ layout(push_constant) uniform MeshPush
 
 layout(location = 0) out vec3 outWorldNormal;
 layout(location = 1) out vec2 outUv0;
+layout(location = 2) out vec3 outWorldPos;
 
 void main()
 {
     vec4 worldPosition = pushData.World * vec4(inPosition, 1.0);
     outWorldNormal = mat3(pushData.World) * inNormal;
     outUv0 = inUv0;
+    outWorldPos = worldPosition.xyz;
     gl_Position = frame.ViewProjection * worldPosition;
 }

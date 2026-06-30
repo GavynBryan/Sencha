@@ -1,6 +1,7 @@
 #pragma once
 
 #include <render/MaterialCache.h>   // MaterialHandle
+#include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
@@ -54,6 +55,8 @@ public:
 
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
+    [[nodiscard]] const RenderLightSet& Lights() const { return SceneLights; }
+    [[nodiscard]] RenderLightSet& Lights() { return SceneLights; }
 
 private:
     // One cooked brush's GPU mesh, owned here (Create/Destroy), plus the material
@@ -67,6 +70,7 @@ private:
     void RebuildBrushMeshes();
     void EmitBrushQueue();
     void BuildMeshQueue();
+    void BuildLights();
     void ReleaseBrushMeshes();
 
     const EditorDocument& Document;
@@ -82,4 +86,5 @@ private:
 
     RenderQueue Brushes;
     RenderQueue PlacedMeshes;
+    RenderLightSet SceneLights;
 };

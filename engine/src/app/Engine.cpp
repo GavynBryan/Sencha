@@ -52,7 +52,7 @@ bool Engine::Initialize()
     RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
     if (Configuration.Console.OpenOnStart)
         DebugState->Open();
-    EngineSystems.Register<DefaultRenderPipeline>();
+    EngineSystems.Register<DefaultRenderPipeline>(&LoggingState);
 
     // Audio backend + the system that drives scene AudioSourceComponents
     // (docs/audio/runtime.md). An invalid service (no device — CI, headless)

@@ -80,6 +80,9 @@ namespace
 
         if (field.Scalar == FieldScalar::Bool)
             ImGui::Checkbox(id.c_str(), reinterpret_cast<bool*>(ptr));
+        else if (field.Scalar == FieldScalar::Color3)
+            ImGui::ColorEdit3(id.c_str(), reinterpret_cast<float*>(ptr),
+                              ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         else
             ImGui::DragScalar(id.c_str(), DataTypeFor(field), ptr, 0.05f);
 

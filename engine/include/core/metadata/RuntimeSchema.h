@@ -32,6 +32,7 @@ enum class FieldScalar : std::uint8_t
     UInt32,
     Float,
     Double,
+    Color3,      // three contiguous floats edited as one RGB swatch (field tagged AsColor)
     Unsupported, // a leaf the descriptor cannot safely express (handle, string, …)
 };
 
@@ -92,6 +93,22 @@ namespace RuntimeSchemaDetail
                                : Prefix + "." + std::string(field.Name);
 
             using MemberType = std::remove_cvref_t<M>;
+            // A field tagged AsColor() that is exactly three floats stops the
+            // recursion and becomes one Color3 leaf, so the editor draws a single
+            // swatch instead of x/y/z drags. The sizeof guard keeps the leaf's
+            // reinterpret to float[3] safe; serialization still uses the member's
+            // own schema (AsColor is editor-only).
+            if constexpr (sizeof(MemberType) == 3 * sizeof(float))
+            {
+                if (field.IsColor)
+                {
+                    Out.push_back(RuntimeField{
+                        std::move(name), offset, 3 * sizeof(float),
+                        FieldScalar::Color3, AssetType::Unknown, AssetArity::Single });
+                    return;
+                }
+            }
+
             if constexpr (HasTypeSchema<MemberType>)
             {
                 Collector<Root> sub{ Out, Base, name };

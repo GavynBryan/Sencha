@@ -83,10 +83,17 @@ endif()
 # A hash of the module-facing ABI headers, embedded in both the engine and every
 # game module (both include the generated header below). A module built against
 # different ABI headers carries a different fingerprint, so the loader refuses it
-# with a clear message instead of crashing on a skewed vtable. Deliberately
-# over-sensitive: editing any header in these dirs reconfigures and bumps the
-# fingerprint, forcing a module rebuild — a false positive is a harmless rebuild,
-# a false negative is the segfault we are eliminating.
+# with a clear message instead of crashing on a skewed vtable.
+#
+# We hash the SEMANTIC content, not the raw bytes: comments are stripped and
+# whitespace runs are collapsed to a single space before hashing, so editing a
+# comment or reflowing a header in these dirs does NOT bump the fingerprint (and
+# does not force every game module to rebuild). Any token change — a new member,
+# a renamed type, a changed signature — still does. Whitespace is collapsed, not
+# removed, so two distinct token streams can never normalize to the same string;
+# and no ABI header here embeds a comment-introducer (// or /*) inside a string
+# literal, so comment stripping never deletes a real token. Keep both true: it is
+# what makes this safe (a false negative is the segfault we are eliminating).
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
@@ -97,7 +104,12 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
 list(SORT SENCHA_ABI_FINGERPRINT_HEADERS)
 set(_sencha_abi_accum "")
 foreach(_abi_hdr ${SENCHA_ABI_FINGERPRINT_HEADERS})
-    file(SHA256 "${_abi_hdr}" _abi_hdr_hash)
+    file(READ "${_abi_hdr}" _abi_hdr_text)
+    string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " _abi_hdr_text "${_abi_hdr_text}") # block comments
+    string(REGEX REPLACE "//[^\n]*" "" _abi_hdr_text "${_abi_hdr_text}")                    # line comments
+    string(REGEX REPLACE "[ \t\r\n]+" " " _abi_hdr_text "${_abi_hdr_text}")                 # collapse whitespace
+    string(STRIP "${_abi_hdr_text}" _abi_hdr_text)
+    string(SHA256 _abi_hdr_hash "${_abi_hdr_text}")
     string(APPEND _sencha_abi_accum "${_abi_hdr_hash}")
 endforeach()
 string(SHA256 _sencha_abi_full "${_sencha_abi_accum}")

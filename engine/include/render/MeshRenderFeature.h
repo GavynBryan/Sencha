@@ -16,7 +16,8 @@ public:
     MeshRenderFeature(RenderQueue& queue,
                       StaticMeshCache& meshes,
                       MaterialCache& materials,
-                      const CameraRenderData& camera);
+                      const CameraRenderData& camera,
+                      const RenderLightSet& lights);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     void Setup(const RendererServices& services) override;
@@ -28,5 +29,6 @@ private:
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     const CameraRenderData* Camera = nullptr;
+    const RenderLightSet* Lights = nullptr;
     MeshForwardPass Pass;
 };

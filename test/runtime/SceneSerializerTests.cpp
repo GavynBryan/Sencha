@@ -14,6 +14,7 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
+#include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
@@ -77,6 +78,7 @@ namespace
         registry.Components.RegisterComponent<WorldTransform>();
         registry.Components.RegisterComponent<Parent>();
         registry.Components.RegisterComponent<StaticMeshComponent>();
+        registry.Components.RegisterComponent<PointLightComponent>();
         registry.Components.RegisterComponent<CameraComponent>();
         registry.Components.RegisterComponent<AudioSourceComponent>();
         registry.Components.RegisterComponent<AudioCaptionComponent>();
@@ -235,6 +237,42 @@ TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
     ASSERT_NE(loadedTransform, nullptr);
     EXPECT_EQ(loadedTransform->Value.Position, Vec3d(2.0f, 3.0f, 4.0f));
     EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+}
+
+TEST(SceneSerializer, PointLightRoundTripsThroughJson)
+{
+    ResetSceneSerializers();
+    Registry source = MakeSceneRegistry();
+    EntityId entity = source.Entities.Create();
+    AddTransform(source, entity, MakeTransform(0.0f, 0.0f, 0.0f));
+
+    PointLightComponent light{};
+    light.Color = Vec<3>(0.2f, 0.4f, 0.6f);
+    light.Intensity = 2.5f;
+    light.Range = 15.0f;
+    light.Enabled = false;
+    source.Components.AddComponent(entity, light);
+
+    JsonValue json = SaveSceneJson(source);
+    auto parsed = JsonParse(JsonStringify(json, true));
+    ASSERT_TRUE(parsed.has_value());
+
+    Registry loaded;
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+
+    ASSERT_EQ(loaded.Components.CountComponents<PointLightComponent>(), 1u);
+    const PointLightComponent* out = nullptr;
+    loaded.Components.ForEachComponent<PointLightComponent>([&](EntityId, const PointLightComponent& c)
+    {
+        out = &c;
+    });
+    ASSERT_NE(out, nullptr);
+    EXPECT_FLOAT_EQ(out->Color.X, 0.2f);
+    EXPECT_FLOAT_EQ(out->Color.Y, 0.4f);
+    EXPECT_FLOAT_EQ(out->Color.Z, 0.6f);
+    EXPECT_FLOAT_EQ(out->Intensity, 2.5f);
+    EXPECT_FLOAT_EQ(out->Range, 15.0f);
+    EXPECT_FALSE(out->Enabled);
 }
 
 TEST(SceneSerializer, LoadsHandAuthoredJson)

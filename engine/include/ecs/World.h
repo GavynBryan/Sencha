@@ -462,8 +462,8 @@ public:
 
     // ── Query scope guard ────────────────────────────────────────────────────
 
-    void PushQueryScope()         { ++QueryDepth; }
-    void PopQueryScope()          { assert(QueryDepth > 0); --QueryDepth; }
+    void PushQueryScope()   const { ++QueryDepth; }
+    void PopQueryScope()    const { assert(QueryDepth > 0); --QueryDepth; }
     bool InQueryScope()     const { return QueryDepth > 0; }
 
     // ── Frame counter ────────────────────────────────────────────────────────
@@ -862,7 +862,7 @@ private:
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> LegacyStores;
 
-    uint32_t QueryDepth   = 0;
+    mutable uint32_t QueryDepth = 0;
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;

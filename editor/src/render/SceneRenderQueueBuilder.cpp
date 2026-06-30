@@ -11,6 +11,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <render/MaterialSetCache.h>
+#include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
@@ -95,6 +96,7 @@ void SceneRenderQueueBuilder::Build()
     RebuildBrushMeshes();
     EmitBrushQueue();
     BuildMeshQueue();
+    BuildLights();
 }
 
 void SceneRenderQueueBuilder::RebuildBrushMeshes()
@@ -229,6 +231,30 @@ void SceneRenderQueueBuilder::BuildMeshQueue()
         }
     }
     PlacedMeshes.SortOpaque();
+}
+
+void SceneRenderQueueBuilder::BuildLights()
+{
+    // Reset() clears only the light count; the ambient tints are owned by the
+    // caller (EditorRenderFeature sets them from render.ambient.* cvars), so we
+    // leave them untouched here.
+    SceneLights.Reset();
+
+    const EditorScene& scene = Document.GetScene();
+    const World& world = scene.GetRegistry().Components;
+    for (const EntityId entity : scene.GetAllEntities())
+    {
+        if (!scene.IsEntityVisible(entity))
+            continue;
+        const PointLightComponent* light = world.TryGet<PointLightComponent>(entity);
+        if (light == nullptr || !light->Enabled)
+            continue;
+        const Transform3f* transform = scene.TryGetTransform(entity);
+        if (transform == nullptr)
+            continue;
+
+        SceneLights.AddPoint(transform->Position, *light);
+    }
 }
 
 void SceneRenderQueueBuilder::ReleaseBrushMeshes()
