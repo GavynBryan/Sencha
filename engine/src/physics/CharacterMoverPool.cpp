@@ -151,6 +151,11 @@ void CharacterMoverPool::Drive(World& world, float dt, const Vec3d& gravity)
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
             CharacterMover& mover = *state.Slots[links[i].MoverSlot].Mover;
+            // Jump is a one-shot request: only from the ground, then cleared so a
+            // stale request cannot fire later. The mover owns the vertical impulse.
+            if (controllers[i].PendingJumpSpeed > 0.0f && mover.IsGrounded())
+                mover.Jump(controllers[i].PendingJumpSpeed);
+            controllers[i].PendingJumpSpeed = 0.0f;
             mover.Move(
                 Vec3d(controllers[i].DesiredVelocity.X, 0.0f, controllers[i].DesiredVelocity.Z),
                 dt, gravity);

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "FreeCamera.h"
-
 #include <app/Game.h>
 #include <core/assets/AssetPreloader.h>
 #include <core/assets/RuntimeAssets.h>
@@ -43,7 +41,6 @@ private:
     std::optional<RuntimeAssets> Assets;
     std::optional<AssetPreloader> Preloader;
     std::optional<AsyncZoneLoader> ZoneLoader;
-    FreeCamera FreeCam;
     // Cooked-collision cache owned (by value) by the engine's PhysicsStepSystem;
     // grabbed at system registration so map load can fill it (LoadZoneCollision).
     // Not owned: the step system outlives the game's map loads.

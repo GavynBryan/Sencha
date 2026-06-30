@@ -13,6 +13,13 @@
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/ComponentTypeId.h>
+#include <framework/camera/CameraRig.h>
+#include <framework/gameplay_tags/GameplayTagContainer.h>
+#include <framework/movement/MovementIntent.h>
+#include <framework/movement/MovementProfile.h>
+#include <framework/movement/MovementState.h>
+#include <framework/movement/MovementSystems.h>
+#include <framework/movement/MovementTags.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -34,7 +41,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
@@ -86,36 +96,13 @@ namespace
         return EntityId{};
     }
 
-    struct FreeCameraLookSystem
+    // Player input -> MovementIntent for the controlled pawn(s). Reads the active
+    // camera rig's yaw so WASD is camera-relative; the movement framework then
+    // consumes the world-space intent, decoupled from input and the camera.
+    struct CharacterInputSystem
     {
-        FreeCameraLookSystem(Registry*& registry, FreeCamera& freeCamera)
+        explicit CharacterInputSystem(Registry*& registry)
             : RegistryInstance(registry)
-            , FreeCam(freeCamera)
-        {
-        }
-
-        void FrameUpdate(FrameUpdateContext& ctx)
-        {
-            if (RegistryInstance == nullptr)
-                return;
-            FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(RegistryInstance->Components);
-        }
-
-        Registry*& RegistryInstance;
-        FreeCamera& FreeCam;
-    };
-
-    // First-person character movement: turn WASD (relative to the look yaw) into
-    // the player's CharacterController DesiredVelocity. The engine's
-    // CharacterControllerSystem then moves the capsule against world collision;
-    // FreeCameraLookSystem still owns the camera's rotation. Vertical motion
-    // (gravity) is the mover's job, so this only sets the planar intent.
-    struct PlayerMovementSystem
-    {
-        PlayerMovementSystem(Registry*& registry, FreeCamera& freeCamera)
-            : RegistryInstance(registry)
-            , FreeCam(freeCamera)
         {
         }
 
@@ -124,29 +111,143 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
             World& world = RegistryInstance->Components;
-            CharacterController* controller = world.TryGet<CharacterController>(FreeCam.Entity);
-            if (controller == nullptr)
+            if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
+                return;
+            const MovementTags* ids = world.TryGetResource<MovementTags>();
+            if (ids == nullptr)
                 return;
 
-            Vec3d move = Vec3d::Zero();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_W)) move += Vec3d::Forward();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_S)) move += Vec3d::Backward();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_D)) move += Vec3d::Right();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_A)) move += Vec3d::Left();
+            const InputFrame& input = ctx.Input;
+            const float forward = (input.IsKeyDown(SDL_SCANCODE_W) ? 1.0f : 0.0f)
+                                - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
+            const float strafe = (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
+                               - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
+            const bool sprint = input.IsKeyDown(SDL_SCANCODE_LSHIFT);
+            bool jump = false;
+            for (std::uint32_t scancode : input.KeysPressed)
+                if (scancode == SDL_SCANCODE_SPACE)
+                {
+                    jump = true;
+                    break;
+                }
 
-            Vec3d desired = Vec3d::Zero();
-            if (move.SqrMagnitude() > 0.0f)
+            float yaw = 0.0f;
+            if (const ActiveCameraService* cameraService =
+                    RegistryInstance->Resources.TryGet<ActiveCameraService>())
+                if (cameraService->HasActive() && world.IsRegistered<CameraRig>())
+                    if (const CameraRig* rig = world.TryGet<CameraRig>(cameraService->GetActive()))
+                        yaw = rig->Yaw;
+
+            const Quatf frame = Quatf::FromAxisAngle(Vec3d::Up(), yaw);
+            Vec3d wish = frame.RotateVector(Vec3d::Forward()) * forward
+                       + frame.RotateVector(Vec3d::Right()) * strafe;
+            wish.Y = 0.0f;
+            const float sqr = wish.SqrMagnitude();
+            if (sqr > 1.0f)
+                wish = wish * (1.0f / std::sqrt(sqr));
+
+            world.ForEachComponent<MovementIntent>([&](EntityId entity, MovementIntent& intent)
             {
-                const Quatf yaw = Quatf::FromAxisAngle(Vec3d::Up(), FreeCam.Yaw);
-                const float speed = FreeCam.MoveSpeed
-                    * (ctx.Input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FreeCam.FastMultiplier : 1.0f);
-                desired = yaw.RotateVector(move.Normalized()) * speed;
-            }
-            controller->DesiredVelocity = desired;
+                const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(entity);
+                if (tags == nullptr || !tags->HasExact(ids->Controlled))
+                    return;
+                intent.WishDir = wish;
+                intent.Sprint = sprint;
+                if (jump)
+                    intent.JumpQueued = true;
+            });
         }
 
         Registry*& RegistryInstance;
-        FreeCamera& FreeCam;
+    };
+
+    // Bridge between the physics character controller and the movement framework:
+    // feed contact state in, tick the framework, push the resolved planar velocity
+    // and jump request back out. The framework never sees the controller itself.
+    struct CharacterMovementSystem
+    {
+        explicit CharacterMovementSystem(Registry*& registry)
+            : RegistryInstance(registry)
+        {
+        }
+
+        void FixedLogic(FixedLogicContext& ctx)
+        {
+            if (RegistryInstance == nullptr)
+                return;
+            World& world = RegistryInstance->Components;
+            if (!world.IsRegistered<MovementState>() || !world.IsRegistered<CharacterController>())
+                return;
+
+            world.ForEachComponent<MovementState>([&](EntityId entity, MovementState& state)
+            {
+                if (const CharacterController* controller = world.TryGet<CharacterController>(entity))
+                    state.Grounded = controller->Grounded;
+            });
+
+            TickMovement(world, static_cast<float>(ctx.Time.DeltaSeconds));
+
+            world.ForEachComponent<MovementState>([&](EntityId entity, MovementState& state)
+            {
+                CharacterController* controller = world.TryGet<CharacterController>(entity);
+                if (controller == nullptr)
+                    return;
+                controller->DesiredVelocity = state.PlanarVelocity;
+                if (state.JumpRequest > 0.0f)
+                {
+                    controller->PendingJumpSpeed = state.JumpRequest;
+                    state.JumpRequest = 0.0f;
+                }
+            });
+        }
+
+        Registry*& RegistryInstance;
+    };
+
+    // Places the active camera from its rig each frame (first/third/fixed selected
+    // by the rig's mode), following the pawn. FrameUpdate so look stays smooth and
+    // lands before the extract phase rebuilds world transforms.
+    struct CameraFollowSystem
+    {
+        explicit CameraFollowSystem(Registry*& registry)
+            : RegistryInstance(registry)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            if (RegistryInstance == nullptr)
+                return;
+            World& world = RegistryInstance->Components;
+            if (!world.IsRegistered<CameraRig>())
+                return;
+            const ActiveCameraService* cameraService =
+                RegistryInstance->Resources.TryGet<ActiveCameraService>();
+            if (cameraService == nullptr || !cameraService->HasActive())
+                return;
+
+            const EntityId cameraEntity = cameraService->GetActive();
+            CameraRig* rig = world.TryGet<CameraRig>(cameraEntity);
+            LocalTransform* cameraTransform = world.TryGet<LocalTransform>(cameraEntity);
+            if (rig == nullptr || cameraTransform == nullptr)
+                return;
+
+            rig->Yaw -= ctx.Input.MouseDeltaX * rig->Sensitivity;
+            rig->Pitch -= ctx.Input.MouseDeltaY * rig->Sensitivity;
+            rig->Pitch = std::clamp(rig->Pitch, rig->MinPitch, rig->MaxPitch);
+
+            Vec3d targetPosition = Vec3d::Zero();
+            if (const WorldTransform* target = world.TryGet<WorldTransform>(rig->Target))
+                targetPosition = target->Value.Position;
+
+            const CameraPose pose = ComputeCameraPose(*rig, targetPosition);
+            if (!pose.Override)
+                return;
+            cameraTransform->Value.Position = pose.Position;
+            cameraTransform->Value.Rotation = pose.Rotation;
+        }
+
+        Registry*& RegistryInstance;
     };
 
     // A game system: rotates every entity carrying a SpinComponent. The example
@@ -297,6 +398,12 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             // The helper also registers the runtime link components the bridges
             // add at reconcile time, so they cannot be forgotten.
             RegisterPhysicsComponents(registry.Components);
+            // Movement and camera components plus the movement.* tag hierarchy,
+            // registered here for the same reason: storage must exist before the
+            // finalize pass spawns the pawn and camera entities.
+            InitializeMovementRegistry(registry.Components);
+            if (!registry.Components.IsRegistered<CameraRig>())
+                registry.Components.RegisterComponent<CameraRig>();
             *parsed = ParseSceneFile(scenePath);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
@@ -316,13 +423,13 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             }
 
             // Use the scene's camera if it authored one; a cooked level is pure
-            // geometry, so spawn a fly-cam to make it viewable.
+            // geometry, so spawn one to make it viewable.
             EntityId camera = FindFirstCamera(registry);
             if (!camera.IsValid())
             {
-                Transform3f start;
-                start.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
-                camera = CreateDefaultEntity(registry, start);
+                Transform3f cameraStart;
+                cameraStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
+                camera = CreateDefaultEntity(registry, cameraStart);
                 AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
             }
             else
@@ -330,12 +437,29 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 registry.Resources.Get<ActiveCameraService>().SetActive(camera);
             }
 
-            FreeCam = FreeCamera{};
-            FreeCam.Entity = camera;
+            // The player is a kinematic capsule the camera follows, a separate
+            // entity from the camera. Movement runs through the framework
+            // controller (intent -> state tags -> planar DesiredVelocity); the
+            // engine's CharacterControllerSystem resolves it against collision.
+            Transform3f pawnStart;
+            pawnStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
+            const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
+            registry.Components.AddComponent<CharacterController>(pawn, CharacterController{});
+            registry.Components.AddComponent<MovementProfile>(pawn, MovementProfile{});
+            registry.Components.AddComponent<MovementState>(pawn, MovementState{});
+            registry.Components.AddComponent<MovementIntent>(pawn, MovementIntent{});
 
-            // First-person character: drive the active camera as a kinematic
-            // capsule. CharacterControllerSystem moves it against world collision.
-            registry.Components.AddComponent<CharacterController>(camera, CharacterController{});
+            GameplayTagContainer pawnTags{};
+            if (const MovementTags* movementTags = registry.Components.TryGetResource<MovementTags>())
+                pawnTags.Grant(movementTags->Controlled);
+            registry.Components.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+
+            // Point the camera at the pawn. Mode is data: first-person here, but
+            // third-person and fixed are the same system on a different value.
+            CameraRig rig{};
+            rig.Target = pawn;
+            rig.Mode = CameraRigMode::FirstPerson;
+            registry.Components.AddComponent<CameraRig>(camera, rig);
 
             // Load the level's cooked brush collision: spawns the static colliders
             // the character walks on. No collision authoring; it rode the cook.
@@ -361,8 +485,10 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // load can fill it with the level's cooked brush collision.
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         PhysicsShapes = &step->GetShapeCache();
-    ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
-    ctx.Schedule.Register<PlayerMovementSystem>(ActiveZoneRegistry, FreeCam);
+    ctx.Schedule.Register<CharacterInputSystem>(ActiveZoneRegistry);
+    ctx.Schedule.Register<CharacterMovementSystem>(ActiveZoneRegistry);
+    ctx.Schedule.After<CharacterMovementSystem, CharacterInputSystem>();
+    ctx.Schedule.Register<CameraFollowSystem>(ActiveZoneRegistry);
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }
 
