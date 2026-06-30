@@ -16,6 +16,21 @@ static_assert(offsetof(MeshPushConstants, World) == 0);
 static_assert(offsetof(MeshPushConstants, BaseColor) == 64);
 static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 80);
 
+// std140 layout the mesh_forward shaders assume for set 0, binding 0.
+static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
+static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
+static_assert(offsetof(MeshFrameUniforms, AmbientSky) == 80);
+static_assert(offsetof(MeshFrameUniforms, AmbientGround) == 96);
+static_assert(offsetof(MeshFrameUniforms, LightCount) == 112);
+static_assert(offsetof(MeshFrameUniforms, Lights) == 128);
+static_assert(offsetof(GpuLight, PositionRange) == 0);
+static_assert(offsetof(GpuLight, DirectionCone) == 16);
+static_assert(offsetof(GpuLight, ColorIntensity) == 32);
+static_assert(offsetof(GpuLight, Type) == 48);
+static_assert(offsetof(GpuLight, ShadowIndex) == 52);
+static_assert(offsetof(GpuLight, Pad0) == 56);
+static_assert(offsetof(GpuLight, Pad1) == 60);
+
 void MeshForwardPass::Setup(const RendererServices& services)
 {
     Buffers = services.Buffers;
@@ -40,6 +55,7 @@ void MeshForwardPass::Setup(const RendererServices& services)
 
 void MeshForwardPass::Draw(const FrameContext& frame,
                            const CameraRenderData& camera,
+                           const RenderLightSet& lights,
                            const RenderQueue& queue,
                            StaticMeshCache& meshes,
                            MaterialCache& materials)
@@ -87,6 +103,12 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     MeshFrameUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();  // GLSL expects column-major
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
+    uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
+    uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
+
+    const std::uint32_t lightCount = lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
+    uniforms.LightCount = lightCount;
+    std::memcpy(uniforms.Lights, lights.Lights, sizeof(GpuLight) * lightCount);
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
     if (!allocation.IsValid()) return;

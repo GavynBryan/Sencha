@@ -123,7 +123,21 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush
     // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
     if (MaterialPath)
+    {
         QueueBuilder->Build();
+        // Hemispheric ambient is live-tunable in the dev console, same path as the
+        // grid/bloom knobs above. BuildLights() leaves the tints alone, so set them
+        // after. Defaults match RenderLightSet's neutral cool fill.
+        const float skyR    = readFloatCvar("render.ambient.sky_r", 0.10f);
+        const float skyG    = readFloatCvar("render.ambient.sky_g", 0.12f);
+        const float skyB    = readFloatCvar("render.ambient.sky_b", 0.15f);
+        const float groundR = readFloatCvar("render.ambient.ground_r", 0.04f);
+        const float groundG = readFloatCvar("render.ambient.ground_g", 0.03f);
+        const float groundB = readFloatCvar("render.ambient.ground_b", 0.02f);
+        RenderLightSet& lights = QueueBuilder->Lights();
+        lights.AmbientSky    = Vec<3>(skyR, skyG, skyB);
+        lights.AmbientGround = Vec<3>(groundR, groundG, groundB);
+    }
 
     // Render only what the panel lays out: every leaf in quad mode, just the active
     // viewport in single mode (the others hold stale screen rects).
@@ -248,7 +262,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)
-        Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
+        Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                     QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
     else
         Meshes.DrawViewport(local, viewport);
     Visuals.DrawViewport(local, viewport);

@@ -1,6 +1,5 @@
 #include <app/DefaultRenderPipeline.h>
 
-#include <render/RenderExtractionSystem.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -13,6 +12,10 @@
 
 #include <memory>
 #include <unordered_set>
+
+DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging)
+    : Log(logging ? &logging->GetLogger<DefaultRenderPipeline>() : nullptr)
+{}
 
 void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
@@ -31,7 +34,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 
     Swapchain = &graphics.Swapchain;
     return graphics.MainRenderer.AddFeature(
-        std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera)) != nullptr;
+        std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera, Lights)) != nullptr;
 #else
     (void)graphics;
     return false;
@@ -91,10 +94,31 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             || !registry->Components.IsRegistered<StaticMeshComponent>())
             continue;
 
-        RenderExtractionSystem::Extract(registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
+        RenderExtractor.Extract(registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
     }
 
     Queue.SortOpaque();
+
+    Lights.Reset();
+    for (Registry* registry : ctx.ActiveRegistries)
+    {
+        if (registry == nullptr)
+            continue;
+        LightExtractor.Extract(registry->Components, Lights);
+    }
+
+    if (Log != nullptr)
+    {
+        if (Lights.Count == kMaxForwardLights && !LightCapWarned)
+        {
+            Log->Warn("Light cap ({}) reached; lights beyond cap dropped this frame", kMaxForwardLights);
+            LightCapWarned = true;
+        }
+        else if (Lights.Count < kMaxForwardLights)
+        {
+            LightCapWarned = false;
+        }
+    }
 
     ctx.PacketWrite.Camera = Camera;
     ctx.PacketWrite.HasCamera = true;

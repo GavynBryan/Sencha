@@ -93,7 +93,7 @@ class Query
 public:
     static constexpr size_t NAcc = sizeof...(Accessors);
 
-    explicit Query(World& world) : W(&world)
+    explicit Query(const World& world) : W(&world)
     {
         BuildSignatures();
         RebuildMatchingArchetypes();
@@ -158,7 +158,7 @@ public:
     }
 
 private:
-    World* W;
+    const World* W;
 
     ArchetypeSignature RequiredSig;
     ArchetypeSignature ExcludedSig;

@@ -75,4 +75,13 @@ add_subdirectory(engine)
 add_subdirectory(app)
 add_subdirectory(editor)
 add_subdirectory(example)
+
+# The template game module, built in-tree against the engine so it always shares
+# the host's ABI fingerprint during engine development (template/CMakeLists.txt
+# detects in-tree vs standalone-SDK use). Vulkan-gated because you run it through
+# the editor/app, which require it.
+if(SENCHA_ENABLE_VULKAN AND SENCHA_BUILD_TEMPLATE)
+    add_subdirectory(template)
+endif()
+
 add_subdirectory(test)

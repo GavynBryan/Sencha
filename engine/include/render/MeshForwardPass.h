@@ -4,16 +4,27 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
+#include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
+#include <cstddef>
 #include <cstdint>
 
-// Per-frame uniform data uploaded to set 0, binding 0 each draw call.
+// Per-frame uniform data uploaded to set 0, binding 0 each draw call. Layout is
+// std140 (the GLSL side mirrors it field for field); the static_asserts in the
+// .cpp lock the offsets the shader assumes.
 struct MeshFrameUniforms
 {
     Mat4 ViewProjection;
     Vec4 ViewPositionTime;
+    Vec4 AmbientSky;     // rgb sky tint, w unused
+    Vec4 AmbientGround;  // rgb ground tint, w unused
+    std::uint32_t LightCount = 0;
+    std::uint32_t Pad0 = 0;
+    std::uint32_t Pad1 = 0;
+    std::uint32_t Pad2 = 0;
+    GpuLight Lights[kMaxForwardLights];
 };
 
 // Per-draw push constants: world matrix and base-color material inputs.
@@ -45,6 +56,7 @@ public:
     void Setup(const RendererServices& services);
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
+              const RenderLightSet& lights,
               const RenderQueue& queue,
               StaticMeshCache& meshes,
               MaterialCache& materials);

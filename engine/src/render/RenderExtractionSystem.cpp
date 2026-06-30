@@ -1,8 +1,5 @@
 #include <render/RenderExtractionSystem.h>
 
-#include <ecs/Query.h>
-#include <world/transform/TransformComponents.h>
-
 namespace
 {
     Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
@@ -40,8 +37,13 @@ void RenderExtractionSystem::Extract(const World& world,
     // Items are copied into RenderQueueItem (not pointer-into-chunk) per the
     // ECS migration decision: copied data decouples extraction from
     // submission and tolerates any structural change between extract and draw.
-    Query<Read<WorldTransform>, Read<StaticMeshComponent>> query(const_cast<World&>(world));
-    query.ForEachChunk([&](auto& view)
+    if (LastWorld != &world || !CachedQuery.has_value())
+    {
+        CachedQuery.emplace(world);
+        LastWorld = &world;
+    }
+
+    CachedQuery->ForEachChunk([&](auto& view)
     {
         const auto transforms  = view.template Read<WorldTransform>();
         const auto renderers   = view.template Read<StaticMeshComponent>();

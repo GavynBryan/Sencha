@@ -3,6 +3,7 @@
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <render/Camera.h>
+#include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>
 
@@ -33,6 +34,7 @@ using EngineSceneComponents = std::tuple<
     LocalTransform,
     CameraComponent,
     StaticMeshComponent,
+    PointLightComponent,
     AudioSourceComponent,
     AudioCaptionComponent>;
 

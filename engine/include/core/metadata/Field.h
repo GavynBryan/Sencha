@@ -38,6 +38,10 @@ struct Field
     // here gets it.
     AssetType  Asset = AssetType::Unknown;
     AssetArity Arity = AssetArity::Single;
+    // Editor hint: a 3-float member tagged here is an RGB color, so the inspector
+    // shows a swatch + picker instead of three drag fields. View-only: the
+    // serialized form is unchanged (still the member's own [x,y,z] schema).
+    bool IsColor = false;
 
     Field& Optional()
     {
@@ -56,6 +60,12 @@ struct Field
     {
         Asset = type;
         Arity = arity;
+        return *this;
+    }
+
+    Field& AsColor()
+    {
+        IsColor = true;
         return *this;
     }
 };
