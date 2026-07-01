@@ -9,17 +9,16 @@
 // MovementIntent
 //
 // One tick of planar move request for a character, written by a producer (player
-// input mapping, an AI controller) and read by the movement systems. Separating
-// the request from its resolution is what lets input, AI, and the mover vary
-// independently. WishDir is world-space and planar (the producer has already
-// resolved any camera-relative framing); its magnitude in [0, 1] carries input
-// strength. JumpQueued is a one-shot consumed by MovementSystem each tick.
+// input mapping, an AI controller) and read by the locomotion operations.
+// Separating the request from its resolution is what lets input, AI, and the
+// mover vary independently. WishDir is world-space and planar (the producer has
+// already resolved any camera-relative framing); its magnitude in [0, 1] carries
+// input strength. Discrete actions (jump, sprint, dash) are not intent flags:
+// they are ability activations, gated by tags/cost/cooldown through AbilityKit.
 //=============================================================================
 struct MovementIntent
 {
     Vec3d WishDir = Vec3d::Zero();
-    bool Sprint = false;
-    bool JumpQueued = false;
 };
 
 static_assert(std::is_trivially_copyable_v<MovementIntent>,

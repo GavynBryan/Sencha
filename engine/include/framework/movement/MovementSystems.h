@@ -1,47 +1,52 @@
 #pragma once
 
 class World;
-struct GameplayTagContainer;
-struct MovementIntent;
-struct MovementProfile;
-struct MovementState;
-struct MovementTags;
 
 //=============================================================================
-// Movement operations
+// Locomotion operations
 //
-// The reusable, backend-free core of the character controller: free functions on
-// framework data, the same shape as EffectSystem/AbilitySystem. Gameplay stays
-// decoupled from the render/physics backends (the framework isolation rule), so
-// these never touch a CharacterController or a camera. A consumer feeds contact
-// state into MovementState.Grounded, calls TickMovement, and reads back the
-// resolved planar velocity and jump request (the thin in/out seam, D-G).
+// An ECS-native, extensible locomotion state machine plus the jump bridge, as
+// free functions on framework data (the same shape as EffectSystem /
+// AbilitySystem). Mode is archetype membership (OnGround / InAir markers), so a
+// new mode is a new operation, not a new branch. The framework reads the physics
+// CharacterController POD directly (contact in, desired velocity + jump impulse
+// out); it never touches the physics simulation.
+//
+// A composition-layer runner calls these each fixed tick, in order:
+//   ProcessAbilityActivations  (AbilityKit: turn queued jumps into effects/tags)
+//   TickJumpExecution          (consume the request tag -> PendingJumpSpeed)
+//   TickLocomotionTransitions  (contact -> mode marker + tag projection)
+//   ResolveAttributesWithEffects (AbilityKit: MoveSpeed.Current)
+//   TickGroundLocomotion / TickAirLocomotion (per-mode planar velocity)
+//   TickEffects                (AbilityKit: advance cooldowns)
 //=============================================================================
 
-// Advance one character. Integrates PlanarVelocity toward the intent (reduced
-// authority in air), applies ground friction when idle, updates coyote grace, and
-// turns a queued jump into JumpRequest when grounded or within grace. Reads
-// state.Grounded; writes PlanarVelocity, CoyoteTimer, JumpRequest; clears
-// intent.JumpQueued.
-void StepMovement(MovementState& state,
-                  MovementIntent& intent,
-                  const MovementProfile& profile,
-                  float dt);
+// Single writer of locomotion mode. Reads CharacterController.Grounded, advances
+// coyote grace, and on a mode edge swaps the OnGround/InAir marker (through a
+// CommandBuffer) and updates the movement.grounded{.idle,.walking}/airborne tag
+// projection other systems (abilities, animation) query. Settled characters cost
+// nothing: no marker churn, tags touched only on a change.
+void TickLocomotionTransitions(World& world, float dt);
 
-// Grant/revoke the grounded/airborne branch and the grounded substate
-// (idle/walking/sprinting) so locomotion state is queryable as hierarchical tags.
-// Sole owner of these tags, so it holds each at a stack count of zero or one.
-void ResolveMovementTags(GameplayTagContainer& tags,
-                         const MovementTags& ids,
-                         bool grounded,
-                         const MovementIntent& intent);
+// Ground locomotion: for each OnGround character, accelerate PlanarVelocity toward
+// WishDir * MoveSpeed (the attribute Current) with ground acceleration, decaying
+// to rest with friction when there is no input, and write the result to
+// CharacterController.DesiredVelocity.
+void TickGroundLocomotion(World& world, float dt);
 
-// Advance every character in the world: StepMovement plus ResolveMovementTags per
-// entity carrying a MovementState (with MovementIntent and MovementProfile).
-// Resolves the MovementTags resource once. Grounded must already be fed in.
-void TickMovement(World& world, float dt);
+// Air locomotion: for each InAir character, the same steer at reduced authority
+// (AirControl) and no friction; writes CharacterController.DesiredVelocity. The
+// mover owns the vertical component.
+void TickAirLocomotion(World& world, float dt);
 
-// Register the movement components and the movement.* tag hierarchy (storing the
-// resolved MovementTags resource) on a zone World. Call before entities are
-// created in that World.
+// Turn an activated jump into a physics impulse: for each character holding the
+// movement.jump.requested tag, set CharacterController.PendingJumpSpeed from the
+// profile and revoke the tag (single fire). Gating (grounded, cooldown, cost)
+// already ran in the ability activation that granted the tag.
+void TickJumpExecution(World& world);
+
+// Register the movement components and markers, the movement.* tag hierarchy, the
+// MoveSpeed attribute, and the Jump ability, plus the AbilityKit resources they
+// depend on (tag/attribute/effect/ability registries and the activation queue).
+// Idempotent. Call before entities are created in that World.
 void InitializeMovementRegistry(World& world);

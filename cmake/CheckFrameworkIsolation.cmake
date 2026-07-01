@@ -1,11 +1,14 @@
 # Enforces the D-J dependency rule for the gameplay framework:
 #   - framework code may depend ONLY on core/, ecs/, math/, other framework/, the
-#     standard library, and the one serializer seam it needs
-#     (world/serialization/IComponentSerializer.h). Anything else (render/,
-#     graphics/, audio/, world/ internals, scene codecs, physics/, editor/,
-#     assets/, app/, runtime/, zone/, ...) is forbidden: gameplay stays decoupled
-#     from render/scene/backend, and reaches the world only through the thin sinks
-#     the framework itself owns (D-G).
+#     physics DATA components (physics/components/, e.g. CharacterController: a
+#     Jolt-free POD gameplay reads/writes directly), the standard library, and the
+#     one serializer seam it needs (world/serialization/IComponentSerializer.h).
+#     Everything else (render/, graphics/, audio/, world/ internals, scene codecs,
+#     the physics SIMULATION (physics/ outside components/, PhysicsWorld,
+#     CharacterMover, Jolt), editor/, assets/, app/, runtime/, zone/, ...) is
+#     forbidden: gameplay stays decoupled from render/scene/backend. The physics
+#     backend boundary is still hard (CheckPhysicsIsolation keeps Jolt behind
+#     engine/src/physics/); framework touches physics data, never the simulation.
 #   - engine code outside framework/ must NOT include framework/ (engine never
 #     depends on gameplay).
 #
@@ -29,6 +32,7 @@ set(ALLOWED_PREFIXES
     "ecs/"
     "math/"
     "framework/"
+    "physics/components/"
 )
 # Specific non-prefix headers a framework file may include. Kept exact so the
 # framework gets the serializer interface without the render/audio-pulling codecs.
@@ -68,7 +72,7 @@ foreach(file ${FRAMEWORK_FILES})
             endforeach()
         endif()
         if(NOT ok)
-            list(APPEND VIOLATIONS "${rel} includes '${path}' (framework may depend only on core/, ecs/, math/, framework/, and the serializer seam)")
+            list(APPEND VIOLATIONS "${rel} includes '${path}' (framework may depend only on core/, ecs/, math/, framework/, physics/components/, and the serializer seam)")
         endif()
     endforeach()
 endforeach()

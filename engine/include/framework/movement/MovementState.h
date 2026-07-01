@@ -8,20 +8,19 @@
 //=============================================================================
 // MovementState
 //
-// Runtime kinematic state the movement systems own for a character. PlanarVelocity
-// is the smoothed planar velocity carried between ticks (acceleration and friction
-// integrate over it) and is the value a backend reads as the desired velocity.
-// CoyoteTimer is the jump grace remaining just after leaving the ground. Grounded
-// and JumpRequest are the seam to a locomotion backend (the physics character
-// controller in this engine, but the framework stays backend-free): a bridge feeds
-// Grounded in from contacts before the tick, and reads JumpRequest out after it.
+// Runtime kinematic state the locomotion operations own for a character.
+// PlanarVelocity is the smoothed planar velocity carried between ticks
+// (acceleration and friction integrate over it) and is written out to the
+// character controller as the desired velocity. CoyoteTimer is the jump grace
+// remaining just after leaving the ground; the transition system holds the
+// movement.grounded tag alive while it counts down so a jump stays available.
+// Contact state and the jump impulse are read/written directly on the physics
+// CharacterController now, not mirrored here.
 //=============================================================================
 struct MovementState
 {
     Vec3d PlanarVelocity = Vec3d::Zero();
     float CoyoteTimer = 0.0f;
-    float JumpRequest = 0.0f;
-    bool Grounded = false;
 };
 
 static_assert(std::is_trivially_copyable_v<MovementState>,

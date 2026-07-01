@@ -13,9 +13,11 @@
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/ComponentTypeId.h>
+#include <framework/AbilityKit.h>
 #include <framework/camera/CameraRig.h>
-#include <framework/gameplay_tags/GameplayTagContainer.h>
+#include <framework/movement/MovementDefs.h>
 #include <framework/movement/MovementIntent.h>
+#include <framework/movement/MovementModes.h>
 #include <framework/movement/MovementProfile.h>
 #include <framework/movement/MovementState.h>
 #include <framework/movement/MovementSystems.h>
@@ -96,9 +98,11 @@ namespace
         return EntityId{};
     }
 
-    // Player input -> MovementIntent for the controlled pawn(s). Reads the active
-    // camera rig's yaw so WASD is camera-relative; the movement framework then
-    // consumes the world-space intent, decoupled from input and the camera.
+    // Player input -> MovementIntent + ability activations for the controlled
+    // pawn(s). Reads the active camera rig's yaw so WASD is camera-relative; the
+    // locomotion operations then consume the world-space intent, decoupled from
+    // input and the camera. Discrete actions (jump) are queued as ability
+    // activations, gated downstream by AbilityKit (grounded, cooldown), not here.
     struct CharacterInputSystem
     {
         explicit CharacterInputSystem(Registry*& registry)
@@ -114,7 +118,9 @@ namespace
             if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
                 return;
             const MovementTags* ids = world.TryGetResource<MovementTags>();
-            if (ids == nullptr)
+            const MovementDefs* defs = world.TryGetResource<MovementDefs>();
+            AbilityActivationQueue* activations = world.TryGetResource<AbilityActivationQueue>();
+            if (ids == nullptr || defs == nullptr)
                 return;
 
             const InputFrame& input = ctx.Input;
@@ -122,7 +128,6 @@ namespace
                                 - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
             const float strafe = (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
                                - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
-            const bool sprint = input.IsKeyDown(SDL_SCANCODE_LSHIFT);
             bool jump = false;
             for (std::uint32_t scancode : input.KeysPressed)
                 if (scancode == SDL_SCANCODE_SPACE)
@@ -152,21 +157,22 @@ namespace
                 if (tags == nullptr || !tags->HasExact(ids->Controlled))
                     return;
                 intent.WishDir = wish;
-                intent.Sprint = sprint;
-                if (jump)
-                    intent.JumpQueued = true;
+                if (jump && activations != nullptr)
+                    activations->Pending.push_back({ entity, defs->Jump });
             });
         }
 
         Registry*& RegistryInstance;
     };
 
-    // Bridge between the physics character controller and the movement framework:
-    // feed contact state in, tick the framework, push the resolved planar velocity
-    // and jump request back out. The framework never sees the controller itself.
-    struct CharacterMovementSystem
+    // Fixed-tick pump for the registered gameplay framework on the active logic
+    // registry. The per-mode logic lives in the framework; the composition layer
+    // owns only the tick order: activations -> jump execution -> mode transitions
+    // -> attribute resolve -> per-mode locomotion -> effect aging. Physics runs
+    // later in its own phase, consuming DesiredVelocity and PendingJumpSpeed.
+    struct GameplayRunnerSystem
     {
-        explicit CharacterMovementSystem(Registry*& registry)
+        explicit GameplayRunnerSystem(Registry*& registry)
             : RegistryInstance(registry)
         {
         }
@@ -176,29 +182,17 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
             World& world = RegistryInstance->Components;
-            if (!world.IsRegistered<MovementState>() || !world.IsRegistered<CharacterController>())
+            if (!world.IsRegistered<MovementState>())
                 return;
 
-            world.ForEachComponent<MovementState>([&](EntityId entity, MovementState& state)
-            {
-                if (const CharacterController* controller = world.TryGet<CharacterController>(entity))
-                    state.Grounded = controller->Grounded;
-            });
-
-            TickMovement(world, static_cast<float>(ctx.Time.DeltaSeconds));
-
-            world.ForEachComponent<MovementState>([&](EntityId entity, MovementState& state)
-            {
-                CharacterController* controller = world.TryGet<CharacterController>(entity);
-                if (controller == nullptr)
-                    return;
-                controller->DesiredVelocity = state.PlanarVelocity;
-                if (state.JumpRequest > 0.0f)
-                {
-                    controller->PendingJumpSpeed = state.JumpRequest;
-                    state.JumpRequest = 0.0f;
-                }
-            });
+            const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
+            ProcessAbilityActivations(world);
+            TickJumpExecution(world);
+            TickLocomotionTransitions(world, dt);
+            ResolveAttributesWithEffects(world);
+            TickGroundLocomotion(world, dt);
+            TickAirLocomotion(world, dt);
+            TickEffects(world, dt);
         }
 
         Registry*& RegistryInstance;
@@ -348,7 +342,7 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
-    std::printf("  Right mouse: look | WASD: move | Q/E: down/up | Shift: fast | Escape: quit\n");
+    std::printf("  Right mouse: look | WASD: move | Space: jump | Escape: quit\n");
 }
 
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
@@ -428,7 +422,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             if (!camera.IsValid())
             {
                 Transform3f cameraStart;
-                cameraStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
+                cameraStart.Position = Vec3d{ 0.0f, 2.0, 0.0f };
                 camera = CreateDefaultEntity(registry, cameraStart);
                 AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
             }
@@ -438,21 +432,37 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             }
 
             // The player is a kinematic capsule the camera follows, a separate
-            // entity from the camera. Movement runs through the framework
-            // controller (intent -> state tags -> planar DesiredVelocity); the
-            // engine's CharacterControllerSystem resolves it against collision.
+            // entity from the camera. Locomotion is data on the pawn: intent +
+            // profile + a mode marker, top speed as the MoveSpeed attribute, jump
+            // as a granted ability. The framework resolves intent to a planar
+            // DesiredVelocity; the engine's CharacterControllerSystem resolves that
+            // against collision.
+            World& pawnWorld = registry.Components;
             Transform3f pawnStart;
             pawnStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
             const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
-            registry.Components.AddComponent<CharacterController>(pawn, CharacterController{});
-            registry.Components.AddComponent<MovementProfile>(pawn, MovementProfile{});
-            registry.Components.AddComponent<MovementState>(pawn, MovementState{});
-            registry.Components.AddComponent<MovementIntent>(pawn, MovementIntent{});
+            pawnWorld.AddComponent<CharacterController>(pawn, CharacterController{});
+            pawnWorld.AddComponent<MovementProfile>(pawn, MovementProfile{});
+            pawnWorld.AddComponent<MovementState>(pawn, MovementState{});
+            pawnWorld.AddComponent<MovementIntent>(pawn, MovementIntent{});
+            pawnWorld.AddComponent<OnGround>(pawn, OnGround{});
+
+            const MovementDefs* movementDefs = pawnWorld.TryGetResource<MovementDefs>();
 
             GameplayTagContainer pawnTags{};
-            if (const MovementTags* movementTags = registry.Components.TryGetResource<MovementTags>())
+            if (const MovementTags* movementTags = pawnWorld.TryGetResource<MovementTags>())
                 pawnTags.Grant(movementTags->Controlled);
-            registry.Components.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+            pawnWorld.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+
+            AttributeSet pawnAttributes{};
+            if (movementDefs != nullptr)
+                pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
+            pawnWorld.AddComponent<AttributeSet>(pawn, pawnAttributes);
+
+            AbilitySet pawnAbilities{};
+            if (movementDefs != nullptr)
+                pawnAbilities.Grant(movementDefs->Jump);
+            pawnWorld.AddComponent<AbilitySet>(pawn, pawnAbilities);
 
             // Point the camera at the pawn. Mode is data: first-person here, but
             // third-person and fixed are the same system on a different value.
@@ -486,8 +496,8 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         PhysicsShapes = &step->GetShapeCache();
     ctx.Schedule.Register<CharacterInputSystem>(ActiveZoneRegistry);
-    ctx.Schedule.Register<CharacterMovementSystem>(ActiveZoneRegistry);
-    ctx.Schedule.After<CharacterMovementSystem, CharacterInputSystem>();
+    ctx.Schedule.Register<GameplayRunnerSystem>(ActiveZoneRegistry);
+    ctx.Schedule.After<GameplayRunnerSystem, CharacterInputSystem>();
     ctx.Schedule.Register<CameraFollowSystem>(ActiveZoneRegistry);
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }

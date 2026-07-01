@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <ecs/World.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
@@ -67,6 +69,40 @@ TEST(CharacterMoverPool, CreatesLinkAndDrivesMoverOntoFloor)
     ASSERT_NE(rest, nullptr);
     // Floor top 0.5 + capsule half height 0.9 (Height 1.8) = 1.4.
     EXPECT_NEAR(rest->Value.Position.Y, 1.4f, 0.05f);
+}
+
+TEST(CharacterMoverPool, PendingJumpSpeedLaunchesMoverUpward)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+
+    const EntityId player = SpawnCharacter(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+
+    // Settle onto the floor (rest at y = 1.4).
+    for (int i = 0; i < 240; ++i)
+    {
+        pool.Reconcile(ecs);
+        pool.Drive(ecs, kFixedDt, kGravity);
+    }
+    const float restY = ecs.TryGet<LocalTransform>(player)->Value.Position.Y;
+    ASSERT_TRUE(ecs.TryGet<CharacterController>(player)->Grounded);
+
+    // A one-shot jump request: the pool consumes it (grounded) and clears it.
+    ecs.TryGet<CharacterController>(player)->PendingJumpSpeed = 5.0f;
+    pool.Drive(ecs, kFixedDt, kGravity);
+    EXPECT_FLOAT_EQ(ecs.TryGet<CharacterController>(player)->PendingJumpSpeed, 0.0f);
+
+    float peakY = restY;
+    for (int i = 0; i < 30; ++i)
+    {
+        pool.Drive(ecs, kFixedDt, kGravity);
+        peakY = std::max(peakY, ecs.TryGet<LocalTransform>(player)->Value.Position.Y);
+    }
+    EXPECT_GT(peakY, restY + 0.1f); // the character left the ground
 }
 
 TEST(CharacterMoverPool, ReconcileGateHoldsWhenNothingStructuralChanged)

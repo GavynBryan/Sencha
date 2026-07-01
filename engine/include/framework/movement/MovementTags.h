@@ -22,6 +22,8 @@ struct MovementTags
     GameplayTagId GroundedWalking;
     GameplayTagId GroundedSprinting;
     GameplayTagId Airborne;
+    GameplayTagId JumpRequested; // one-tick: granted on jump activation, consumed by TickJumpExecution
+    GameplayTagId JumpCooldown;  // blocks the Jump ability until its cooldown effect expires
 };
 
 // Register the movement.* tag hierarchy and return the resolved ids. Idempotent:

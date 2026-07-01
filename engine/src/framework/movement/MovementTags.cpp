@@ -11,5 +11,7 @@ MovementTags RegisterMovementTags(GameplayTagRegistry& registry)
     tags.GroundedWalking   = registry.RegisterTag("movement.grounded.walking").value_or(GameplayTagId{});
     tags.GroundedSprinting = registry.RegisterTag("movement.grounded.sprinting").value_or(GameplayTagId{});
     tags.Airborne          = registry.RegisterTag("movement.airborne").value_or(GameplayTagId{});
+    tags.JumpRequested     = registry.RegisterTag("movement.jump.requested").value_or(GameplayTagId{});
+    tags.JumpCooldown      = registry.RegisterTag("movement.jump.cooldown").value_or(GameplayTagId{});
     return tags;
 }

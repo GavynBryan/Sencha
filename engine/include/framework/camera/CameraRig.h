@@ -33,7 +33,7 @@ struct CameraRig
 {
     EntityId Target;
     CameraRigMode Mode = CameraRigMode::FirstPerson;
-    Vec3d PivotOffset = Vec3d(0.0f, 1.6f, 0.0f);
+    Vec3d PivotOffset = Vec3d(0.0f, 0.7f, 0.0f);
     float Distance = 4.0f;
     float Yaw = 0.0f;
     float Pitch = 0.0f;
