@@ -1,6 +1,6 @@
-#include <framework/gameplay_tags/GameplayTagContainer.h>
-#include <framework/gameplay_tags/GameplayTagRegistry.h>
-#include <framework/gameplay_tags/GameplayTagSerialization.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <gameplay_tags/GameplayTagSerialization.h>
 #include <core/serialization/JsonArchive.h>
 
 #include <gtest/gtest.h>

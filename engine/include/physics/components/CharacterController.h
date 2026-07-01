@@ -10,7 +10,9 @@
 // and slope limit are authored; DesiredVelocity is the planar move intent that
 // gameplay (fixed logic) writes each tick; Grounded is written back by the
 // CharacterControllerSystem. The persistent vertical velocity lives in the
-// system's CharacterMover, not here.
+// system's CharacterMover, not here. PendingJumpSpeed is a one-shot jump request
+// in the same in/out shape as DesiredVelocity: gameplay sets it, the system
+// consumes it (when grounded) and resets it to zero.
 //=============================================================================
 struct CharacterController
 {
@@ -18,6 +20,7 @@ struct CharacterController
     float Height = 1.8f;
     float SlopeLimitDegrees = 50.0f;
     Vec3d DesiredVelocity = Vec3d::Zero();
+    float PendingJumpSpeed = 0.0f;
     bool Grounded = false;
 };
 

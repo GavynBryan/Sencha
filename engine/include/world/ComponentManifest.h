@@ -2,7 +2,7 @@
 
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
-#include <render/Camera.h>
+#include <components/CameraComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>

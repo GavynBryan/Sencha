@@ -13,6 +13,17 @@
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/ComponentTypeId.h>
+#include <abilities/AbilityKit.h>
+#include <camera/CameraRegistration.h>
+#include <camera/CameraRig.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementDefs.h>
+#include <movement/MovementIntent.h>
+#include <movement/MovementModes.h>
+#include <movement/MovementProfile.h>
+#include <movement/MovementState.h>
+#include <movement/MovementTags.h>
+#include <movement/MovementRegistration.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -34,7 +45,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
@@ -86,36 +100,15 @@ namespace
         return EntityId{};
     }
 
-    struct FreeCameraLookSystem
+    // Player input -> MovementIntent + ability activations for the controlled
+    // pawn(s). Reads the active camera rig's yaw so WASD is camera-relative; the
+    // locomotion operations then consume the world-space intent, decoupled from
+    // input and the camera. Discrete actions (jump) are queued as ability
+    // activations, gated downstream by AbilityKit (grounded, cooldown), not here.
+    struct CharacterInputSystem
     {
-        FreeCameraLookSystem(Registry*& registry, FreeCamera& freeCamera)
+        explicit CharacterInputSystem(Registry*& registry)
             : RegistryInstance(registry)
-            , FreeCam(freeCamera)
-        {
-        }
-
-        void FrameUpdate(FrameUpdateContext& ctx)
-        {
-            if (RegistryInstance == nullptr)
-                return;
-            FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(RegistryInstance->Components);
-        }
-
-        Registry*& RegistryInstance;
-        FreeCamera& FreeCam;
-    };
-
-    // First-person character movement: turn WASD (relative to the look yaw) into
-    // the player's CharacterController DesiredVelocity. The engine's
-    // CharacterControllerSystem then moves the capsule against world collision;
-    // FreeCameraLookSystem still owns the camera's rotation. Vertical motion
-    // (gravity) is the mover's job, so this only sets the planar intent.
-    struct PlayerMovementSystem
-    {
-        PlayerMovementSystem(Registry*& registry, FreeCamera& freeCamera)
-            : RegistryInstance(registry)
-            , FreeCam(freeCamera)
         {
         }
 
@@ -124,29 +117,54 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
             World& world = RegistryInstance->Components;
-            CharacterController* controller = world.TryGet<CharacterController>(FreeCam.Entity);
-            if (controller == nullptr)
+            if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
+                return;
+            const MovementTags* ids = world.TryGetResource<MovementTags>();
+            const MovementDefs* defs = world.TryGetResource<MovementDefs>();
+            AbilityActivationQueue* activations = world.TryGetResource<AbilityActivationQueue>();
+            if (ids == nullptr || defs == nullptr)
                 return;
 
-            Vec3d move = Vec3d::Zero();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_W)) move += Vec3d::Forward();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_S)) move += Vec3d::Backward();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_D)) move += Vec3d::Right();
-            if (ctx.Input.IsKeyDown(SDL_SCANCODE_A)) move += Vec3d::Left();
+            const InputFrame& input = ctx.Input;
+            const float forward = (input.IsKeyDown(SDL_SCANCODE_W) ? 1.0f : 0.0f)
+                                - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
+            const float strafe = (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
+                               - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
+            bool jump = false;
+            for (std::uint32_t scancode : input.KeysPressed)
+                if (scancode == SDL_SCANCODE_SPACE)
+                {
+                    jump = true;
+                    break;
+                }
 
-            Vec3d desired = Vec3d::Zero();
-            if (move.SqrMagnitude() > 0.0f)
+            float yaw = 0.0f;
+            if (const ActiveCameraService* cameraService =
+                    RegistryInstance->Resources.TryGet<ActiveCameraService>())
+                if (cameraService->HasActive() && world.IsRegistered<CameraRig>())
+                    if (const CameraRig* rig = world.TryGet<CameraRig>(cameraService->GetActive()))
+                        yaw = rig->Yaw;
+
+            const Quatf frame = Quatf::FromAxisAngle(Vec3d::Up(), yaw);
+            Vec3d wish = frame.RotateVector(Vec3d::Forward()) * forward
+                       + frame.RotateVector(Vec3d::Right()) * strafe;
+            wish.Y = 0.0f;
+            const float sqr = wish.SqrMagnitude();
+            if (sqr > 1.0f)
+                wish = wish * (1.0f / std::sqrt(sqr));
+
+            world.ForEachComponent<MovementIntent>([&](EntityId entity, MovementIntent& intent)
             {
-                const Quatf yaw = Quatf::FromAxisAngle(Vec3d::Up(), FreeCam.Yaw);
-                const float speed = FreeCam.MoveSpeed
-                    * (ctx.Input.IsKeyDown(SDL_SCANCODE_LSHIFT) ? FreeCam.FastMultiplier : 1.0f);
-                desired = yaw.RotateVector(move.Normalized()) * speed;
-            }
-            controller->DesiredVelocity = desired;
+                const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(entity);
+                if (tags == nullptr || !tags->HasExact(ids->Controlled))
+                    return;
+                intent.WishDir = wish;
+                if (jump && activations != nullptr)
+                    activations->Pending.push_back({ entity, defs->Jump });
+            });
         }
 
         Registry*& RegistryInstance;
-        FreeCamera& FreeCam;
     };
 
     // A game system: rotates every entity carrying a SpinComponent. The example
@@ -247,7 +265,7 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
-    std::printf("  Right mouse: look | WASD: move | Q/E: down/up | Shift: fast | Escape: quit\n");
+    std::printf("  Right mouse: look | WASD: move | Space: jump | Escape: quit\n");
 }
 
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
@@ -297,6 +315,11 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             // The helper also registers the runtime link components the bridges
             // add at reconcile time, so they cannot be forgotten.
             RegisterPhysicsComponents(registry.Components);
+            // Gameplay components (movement, tags, attributes, abilities, camera
+            // rig) plus their resources, registered here for the same reason:
+            // storage must exist before the finalize pass spawns entities.
+            RegisterMovement(registry.Components);
+            RegisterCameraComponents(registry.Components);
             *parsed = ParseSceneFile(scenePath);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
@@ -316,13 +339,13 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             }
 
             // Use the scene's camera if it authored one; a cooked level is pure
-            // geometry, so spawn a fly-cam to make it viewable.
+            // geometry, so spawn one to make it viewable.
             EntityId camera = FindFirstCamera(registry);
             if (!camera.IsValid())
             {
-                Transform3f start;
-                start.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
-                camera = CreateDefaultEntity(registry, start);
+                Transform3f cameraStart;
+                cameraStart.Position = Vec3d{ 0.0f, 2.0, 0.0f };
+                camera = CreateDefaultEntity(registry, cameraStart);
                 AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
             }
             else
@@ -330,12 +353,49 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 registry.Resources.Get<ActiveCameraService>().SetActive(camera);
             }
 
-            FreeCam = FreeCamera{};
-            FreeCam.Entity = camera;
+            // The player is a kinematic capsule the camera follows, a separate
+            // entity from the camera. Locomotion is data on the pawn: intent +
+            // profile + a mode marker, top speed as the MoveSpeed attribute, jump
+            // as a granted ability. The framework resolves intent to a planar
+            // DesiredVelocity; the engine's CharacterControllerSystem resolves that
+            // against collision.
+            World& pawnWorld = registry.Components;
+            Transform3f pawnStart;
+            pawnStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
+            const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
+            pawnWorld.AddComponent<CharacterController>(pawn, CharacterController{});
+            pawnWorld.AddComponent<MovementProfile>(pawn, MovementProfile{});
+            pawnWorld.AddComponent<MovementState>(pawn, MovementState{});
+            pawnWorld.AddComponent<MovementIntent>(pawn, MovementIntent{});
+            pawnWorld.AddComponent<OnGround>(pawn, OnGround{});
+            // The mode arbiter projects movement.grounded (which gates the jump
+            // ability) only for pawns carrying a mode request. Without it the pawn
+            // walks (that only needs the OnGround marker) but can never jump.
+            pawnWorld.AddComponent<LocomotionModeRequest>(pawn, LocomotionModeRequest{});
 
-            // First-person character: drive the active camera as a kinematic
-            // capsule. CharacterControllerSystem moves it against world collision.
-            registry.Components.AddComponent<CharacterController>(camera, CharacterController{});
+            const MovementDefs* movementDefs = pawnWorld.TryGetResource<MovementDefs>();
+
+            GameplayTagContainer pawnTags{};
+            if (const MovementTags* movementTags = pawnWorld.TryGetResource<MovementTags>())
+                pawnTags.Grant(movementTags->Controlled);
+            pawnWorld.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+
+            AttributeSet pawnAttributes{};
+            if (movementDefs != nullptr)
+                pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
+            pawnWorld.AddComponent<AttributeSet>(pawn, pawnAttributes);
+
+            AbilitySet pawnAbilities{};
+            if (movementDefs != nullptr)
+                pawnAbilities.Grant(movementDefs->Jump);
+            pawnWorld.AddComponent<AbilitySet>(pawn, pawnAbilities);
+
+            // Point the camera at the pawn. Mode is data: first-person here, but
+            // third-person and fixed are the same system on a different value.
+            CameraRig rig{};
+            rig.Target = pawn;
+            rig.Mode = CameraRigMode::FirstPerson;
+            registry.Components.AddComponent<CameraRig>(camera, rig);
 
             // Load the level's cooked brush collision: spawns the static colliders
             // the character walks on. No collision authoring; it rode the cook.
@@ -361,8 +421,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // load can fill it with the level's cooked brush collision.
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         PhysicsShapes = &step->GetShapeCache();
-    ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
-    ctx.Schedule.Register<PlayerMovementSystem>(ActiveZoneRegistry, FreeCam);
+    // Engine-provided gameplay: the ability kit and movement systems drive the sim
+    // over active registries, and camera follow places the view. The template only
+    // wires input in and orders it ahead of the sim so intent lands the same tick.
+    RegisterAbilityKitSystems(ctx.Schedule);
+    RegisterMovementSystems(ctx.Schedule);
+    RegisterCameraSystem(ctx.Schedule);
+    ctx.Schedule.Register<CharacterInputSystem>(ActiveZoneRegistry);
+    OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }
 

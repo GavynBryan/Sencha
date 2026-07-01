@@ -1,6 +1,6 @@
-#include <framework/attributes/AttributeRegistry.h>
-#include <framework/attributes/AttributeResolve.h>
-#include <framework/attributes/AttributeSet.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeResolve.h>
+#include <attributes/AttributeSet.h>
 #include <ecs/World.h>
 
 #include <gtest/gtest.h>

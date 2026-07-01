@@ -1,6 +1,6 @@
-#include <framework/attributes/AttributeRegistry.h>
-#include <framework/attributes/AttributeSerialization.h>
-#include <framework/attributes/AttributeSet.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSerialization.h>
+#include <attributes/AttributeSet.h>
 #include <core/serialization/JsonArchive.h>
 
 #include <gtest/gtest.h>
