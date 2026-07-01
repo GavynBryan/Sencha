@@ -1,10 +1,10 @@
-#include <framework/attributes/AttributeRegistry.h>
-#include <framework/attributes/AttributeSet.h>
-#include <framework/effects/ActiveEffect.h>
-#include <framework/effects/EffectRegistry.h>
-#include <framework/effects/EffectSystem.h>
-#include <framework/gameplay_tags/GameplayTagContainer.h>
-#include <framework/gameplay_tags/GameplayTagRegistry.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+#include <effects/ActiveEffect.h>
+#include <effects/EffectRegistry.h>
+#include <effects/EffectSystem.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <ecs/World.h>
 
 #include <gtest/gtest.h>

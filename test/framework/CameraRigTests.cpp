@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <framework/camera/CameraRig.h>
+#include <camera/CameraRig.h>
 
 TEST(CameraPose, FirstPersonSitsAtPivot)
 {

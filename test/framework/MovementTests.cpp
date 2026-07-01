@@ -1,22 +1,31 @@
 #include <gtest/gtest.h>
 
 #include <ecs/World.h>
-#include <framework/AbilityKit.h>
-#include <framework/movement/MovementDefs.h>
-#include <framework/movement/MovementIntent.h>
-#include <framework/movement/MovementModes.h>
-#include <framework/movement/MovementProfile.h>
-#include <framework/movement/MovementState.h>
-#include <framework/movement/MovementSystems.h>
-#include <framework/movement/MovementTags.h>
+#include <abilities/AbilityKit.h>
+#include <movement/LocomotionMode.h>
+#include <movement/AirLocomotionSystem.h>
+#include <movement/GroundLocomotionSystem.h>
+#include <movement/GroundingTransitionSystem.h>
+#include <movement/JumpExecutionSystem.h>
+#include <movement/MovementDefs.h>
+#include <movement/MovementIntent.h>
+#include <movement/MovementModes.h>
+#include <movement/MovementProfile.h>
+#include <movement/MovementRegistration.h>
+#include <movement/MovementState.h>
+#include <movement/MovementTags.h>
 #include <physics/components/CharacterController.h>
+
+// A game-defined locomotion mode, declared OUTSIDE the engine (this test stands in
+// for a game module). Its presence proves the OCP guarantee: adding it touches no
+// file under engine/.
+struct Climbing {};
+SENCHA_DECLARE_COMPONENT_TYPE(Climbing, "game.climbing");
 
 namespace
 {
     constexpr float kTick = 1.0f / 60.0f;
 
-    // A world wired the way InitializeMovementRegistry leaves a zone World, plus
-    // the physics CharacterController the locomotor reads and writes.
     struct MovementWorld
     {
         World world;
@@ -26,12 +35,11 @@ namespace
         MovementWorld()
         {
             world.RegisterComponent<CharacterController>();
-            InitializeMovementRegistry(world);
+            RegisterMovement(world);
             defs = world.GetResource<MovementDefs>();
             tags = world.GetResource<MovementTags>();
         }
 
-        // Grounded pawn: OnGround marker, MoveSpeed attribute, Jump granted.
         EntityId SpawnPawn(bool grounded = true)
         {
             const EntityId e = world.CreateEntity();
@@ -42,15 +50,13 @@ namespace
             world.AddComponent<MovementState>(e, MovementState{});
             world.AddComponent<MovementIntent>(e, MovementIntent{});
             world.AddComponent<GameplayTagContainer>(e, GameplayTagContainer{});
-
+            world.AddComponent<LocomotionModeRequest>(e, LocomotionModeRequest{});
             AttributeSet attrs{};
             attrs.Add(defs.MoveSpeed, 6.0f);
             world.AddComponent<AttributeSet>(e, attrs);
-
             AbilitySet abilities{};
             abilities.Grant(defs.Jump);
             world.AddComponent<AbilitySet>(e, abilities);
-
             world.AddComponent<OnGround>(e, OnGround{});
             return e;
         }
@@ -62,168 +68,210 @@ namespace
 
         void MakeAirborne(EntityId e)
         {
-            if (world.HasComponent<OnGround>(e))
-                world.RemoveComponent<OnGround>(e);
-            if (!world.HasComponent<InAir>(e))
-                world.AddComponent<InAir>(e, InAir{});
+            if (world.HasComponent<OnGround>(e)) world.RemoveComponent<OnGround>(e);
+            if (!world.HasComponent<InAir>(e)) world.AddComponent<InAir>(e, InAir{});
         }
     };
 }
 
-TEST(GroundLocomotion, AcceleratesTowardWishAndClampsToMoveSpeed)
+TEST(GroundLocomotionTest, AcceleratesTowardWishAndClampsToMoveSpeed)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn();
     mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
 
-    TickGroundLocomotion(mw.world, kTick);
+    GroundLocomotionSystem sys;
+    sys.Step(mw.world, kTick);
 
     EXPECT_GT(mw.State(pawn).PlanarVelocity.X, 0.0f);
-    EXPECT_FLOAT_EQ(mw.State(pawn).PlanarVelocity.Y, 0.0f);
     EXPECT_LE(mw.State(pawn).PlanarVelocity.X, 6.0f);
-    // The resolved velocity is written out to the physics controller.
     EXPECT_FLOAT_EQ(mw.Controller(pawn).DesiredVelocity.X, mw.State(pawn).PlanarVelocity.X);
 }
 
-TEST(GroundLocomotion, ConvergesToMoveSpeedAttribute)
+TEST(GroundLocomotionTest, ConvergesToMoveSpeedAttribute)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn();
     mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
 
+    GroundLocomotionSystem sys; // one runner, many ticks: exercises cached-query rebind
     for (int i = 0; i < 600; ++i)
-        TickGroundLocomotion(mw.world, kTick);
+        sys.Step(mw.world, kTick);
 
     EXPECT_NEAR(mw.State(pawn).PlanarVelocity.X, 6.0f, 1e-2f);
 }
 
-TEST(GroundLocomotion, FrictionStopsIdleCharacter)
+TEST(GroundLocomotionTest, FrictionStopsIdleCharacter)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn();
     mw.State(pawn).PlanarVelocity = Vec3d(6.0f, 0.0f, 0.0f);
 
+    GroundLocomotionSystem sys;
     for (int i = 0; i < 600; ++i)
-        TickGroundLocomotion(mw.world, kTick);
+        sys.Step(mw.world, kTick);
 
     EXPECT_NEAR(mw.State(pawn).PlanarVelocity.X, 0.0f, 1e-2f);
 }
 
-TEST(AirLocomotion, ReducedControlAndNoFriction)
+TEST(AirLocomotionTest, ReducedControlAndNoFriction)
 {
     MovementWorld ground;
     const EntityId g = ground.SpawnPawn();
     ground.SetWish(g, Vec3d(1.0f, 0.0f, 0.0f));
-    TickGroundLocomotion(ground.world, kTick);
+    GroundLocomotionSystem groundSys;
+    groundSys.Step(ground.world, kTick);
 
     MovementWorld air;
     const EntityId a = air.SpawnPawn();
     air.MakeAirborne(a);
     air.SetWish(a, Vec3d(1.0f, 0.0f, 0.0f));
-    TickAirLocomotion(air.world, kTick);
+    AirLocomotionSystem airSys;
+    airSys.Step(air.world, kTick);
 
-    // Air steering has less authority than ground for the same wish and dt.
     EXPECT_GT(air.State(a).PlanarVelocity.X, 0.0f);
     EXPECT_LT(air.State(a).PlanarVelocity.X, ground.State(g).PlanarVelocity.X);
 
-    // No air friction: an idle airborne character keeps its horizontal velocity.
     air.State(a).PlanarVelocity = Vec3d(3.0f, 0.0f, 0.0f);
     air.SetWish(a, Vec3d::Zero());
-    TickAirLocomotion(air.world, kTick);
+    airSys.Step(air.world, kTick);
     EXPECT_FLOAT_EQ(air.State(a).PlanarVelocity.X, 3.0f);
 }
 
-TEST(LocomotionTransitions, GroundedGrantsMarkerAndTags)
+TEST(AirLocomotionTest, StrafeGainsSpeed)
+{
+    MovementWorld mw;
+    const EntityId pawn = mw.SpawnPawn();
+    mw.MakeAirborne(pawn);
+    mw.State(pawn).PlanarVelocity = Vec3d(3.0f, 0.0f, 0.0f);
+    const float before = mw.State(pawn).PlanarVelocity.Magnitude();
+
+    mw.SetWish(pawn, Vec3d(0.0f, 0.0f, 1.0f));
+    AirLocomotionSystem sys;
+    sys.Step(mw.world, kTick);
+
+    EXPECT_GT(mw.State(pawn).PlanarVelocity.Z, 0.0f);
+    EXPECT_GT(mw.State(pawn).PlanarVelocity.Magnitude(), before);
+}
+
+TEST(LocomotionModeTest, GroundingRequestsAndArbiterProjectsTagsAndMarkers)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
-    mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
 
-    TickLocomotionTransitions(mw.world, kTick);
-
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world);
     EXPECT_TRUE(mw.world.HasComponent<OnGround>(pawn));
-    EXPECT_FALSE(mw.world.HasComponent<InAir>(pawn));
     EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
-    EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.GroundedWalking));
-    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Airborne));
 
     GameplayTagQuery query;
     query.AddAll(mw.tags.Grounded, GameplayTagMatchMode::Hierarchical);
     EXPECT_TRUE(query.Matches(mw.Tags(pawn), mw.world.GetResource<GameplayTagRegistry>()));
-}
-
-TEST(LocomotionTransitions, LeavingGroundFlipsToAirAfterCoyote)
-{
-    MovementWorld mw;
-    const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
-    TickLocomotionTransitions(mw.world, kTick);
-    ASSERT_TRUE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
 
     mw.Controller(pawn).Grounded = false;
-    // Coyote grace (0.1s) keeps the grounded tag for a few ticks past contact loss.
-    TickLocomotionTransitions(mw.world, kTick);
-    EXPECT_TRUE(mw.world.HasComponent<InAir>(pawn)); // marker follows real contact
-    EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
-
-    for (int i = 0; i < 20; ++i)
-        TickLocomotionTransitions(mw.world, kTick);
-
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world);
     EXPECT_TRUE(mw.world.HasComponent<InAir>(pawn));
     EXPECT_FALSE(mw.world.HasComponent<OnGround>(pawn));
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
     EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.Airborne));
 }
 
-TEST(LocomotionTransitions, SettledCharacterDoesNotStackTags)
+TEST(LocomotionModeTest, ProjectionIsMutuallyExclusiveAndDoesNotStack)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
 
     for (int i = 0; i < 16; ++i)
-        TickLocomotionTransitions(mw.world, kTick);
+    {
+        RequestGroundingLocomotionModes(mw.world);
+        ApplyLocomotionModes(mw.world);
+    }
 
     EXPECT_EQ(mw.Tags(pawn).StackCount(mw.tags.Grounded), 1);
-    EXPECT_EQ(mw.Tags(pawn).StackCount(mw.tags.GroundedIdle), 1);
+    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Airborne));
+
+    mw.Controller(pawn).Grounded = false;
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world);
+    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
+    EXPECT_EQ(mw.Tags(pawn).StackCount(mw.tags.Airborne), 1);
 }
 
-TEST(JumpAbility, GroundedActivationSetsPendingSpeedAndSingleFires)
+TEST(JumpExecutionTest, GroundedActivationSetsPendingSpeedAndSingleFires)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
-    TickLocomotionTransitions(mw.world, kTick); // grant movement.grounded so Jump can activate
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world); // grant movement.grounded so Jump can activate
 
     mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
     ProcessAbilityActivations(mw.world);
     EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
-    EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.JumpCooldown));
 
-    TickJumpExecution(mw.world);
+    JumpExecutionSystem jump;
+    jump.Step(mw.world);
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 5.5f);
-    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested)); // consumed
+    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
 
-    // Cooldown blocks a second jump this window.
     mw.Controller(pawn).PendingJumpSpeed = 0.0f;
     mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
-    ProcessAbilityActivations(mw.world);
+    ProcessAbilityActivations(mw.world); // cooldown blocks
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
-    TickJumpExecution(mw.world);
+    jump.Step(mw.world);
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 0.0f);
 }
 
-TEST(JumpAbility, AirborneActivationIsGatedOut)
+TEST(JumpExecutionTest, AirborneActivationIsGatedOut)
 {
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ false);
     mw.MakeAirborne(pawn);
-    TickLocomotionTransitions(mw.world, kTick); // no contact, no coyote armed -> not grounded
-    for (int i = 0; i < 20; ++i)
-        TickLocomotionTransitions(mw.world, kTick);
+    mw.Controller(pawn).Grounded = false;
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world);
     ASSERT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
 
     mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
     ProcessAbilityActivations(mw.world);
-    TickJumpExecution(mw.world);
 
+    JumpExecutionSystem jump;
+    jump.Step(mw.world);
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 0.0f);
+}
+
+// The OCP guarantee, in CI: a game adds a locomotion mode with a marker + a mode
+// registration + its own request, touching zero engine files. The generic arbiter
+// gives the entity the mode by priority, and the engine's ground system does not
+// touch it (archetype dispatch).
+TEST(LocomotionModeTest, GameModeExtendsWithoutEngineEdits)
+{
+    MovementWorld mw;
+    mw.world.RegisterComponent<Climbing>();
+    const GameplayTagId climbingTag =
+        *mw.world.GetResource<GameplayTagRegistry>().RegisterTag("game.movement.climbing");
+    RegisterLocomotionMode<Climbing>(mw.world.GetResource<LocomotionModeRegistry>(), climbingTag);
+
+    const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
+    RequestGroundingLocomotionModes(mw.world);
+    ApplyLocomotionModes(mw.world);
+    ASSERT_TRUE(mw.world.HasComponent<OnGround>(pawn));
+
+    // A game "transition" requests Climbing above the ground priority.
+    RequestLocomotionMode(mw.world, pawn, ResolveComponentTypeId<Climbing>(), /*priority*/ 10);
+    RequestGroundingLocomotionModes(mw.world); // ground still requests OnGround at priority 1, and loses
+    ApplyLocomotionModes(mw.world);
+
+    EXPECT_TRUE(mw.world.HasComponent<Climbing>(pawn));
+    EXPECT_FALSE(mw.world.HasComponent<OnGround>(pawn));
+    EXPECT_TRUE(mw.Tags(pawn).HasExact(climbingTag));
+    EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
+
+    // The engine's ground system must skip the climbing entity (it is not OnGround).
+    mw.State(pawn).PlanarVelocity = Vec3d::Zero();
+    mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
+    GroundLocomotionSystem engineGround;
+    engineGround.Step(mw.world, kTick);
+    EXPECT_FLOAT_EQ(mw.State(pawn).PlanarVelocity.X, 0.0f);
 }

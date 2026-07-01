@@ -1,7 +1,8 @@
 #pragma once
 
+#include <components/ActiveCameraService.h>
+#include <components/CameraComponent.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
 #include <render/MaterialSetCache.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>

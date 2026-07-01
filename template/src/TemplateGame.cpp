@@ -13,15 +13,17 @@
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/ComponentTypeId.h>
-#include <framework/AbilityKit.h>
-#include <framework/camera/CameraRig.h>
-#include <framework/movement/MovementDefs.h>
-#include <framework/movement/MovementIntent.h>
-#include <framework/movement/MovementModes.h>
-#include <framework/movement/MovementProfile.h>
-#include <framework/movement/MovementState.h>
-#include <framework/movement/MovementSystems.h>
-#include <framework/movement/MovementTags.h>
+#include <abilities/AbilityKit.h>
+#include <camera/CameraRegistration.h>
+#include <camera/CameraRig.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementDefs.h>
+#include <movement/MovementIntent.h>
+#include <movement/MovementModes.h>
+#include <movement/MovementProfile.h>
+#include <movement/MovementState.h>
+#include <movement/MovementTags.h>
+#include <movement/MovementRegistration.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -160,85 +162,6 @@ namespace
                 if (jump && activations != nullptr)
                     activations->Pending.push_back({ entity, defs->Jump });
             });
-        }
-
-        Registry*& RegistryInstance;
-    };
-
-    // Fixed-tick pump for the registered gameplay framework on the active logic
-    // registry. The per-mode logic lives in the framework; the composition layer
-    // owns only the tick order: activations -> jump execution -> mode transitions
-    // -> attribute resolve -> per-mode locomotion -> effect aging. Physics runs
-    // later in its own phase, consuming DesiredVelocity and PendingJumpSpeed.
-    struct GameplayRunnerSystem
-    {
-        explicit GameplayRunnerSystem(Registry*& registry)
-            : RegistryInstance(registry)
-        {
-        }
-
-        void FixedLogic(FixedLogicContext& ctx)
-        {
-            if (RegistryInstance == nullptr)
-                return;
-            World& world = RegistryInstance->Components;
-            if (!world.IsRegistered<MovementState>())
-                return;
-
-            const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
-            ProcessAbilityActivations(world);
-            TickJumpExecution(world);
-            TickLocomotionTransitions(world, dt);
-            ResolveAttributesWithEffects(world);
-            TickGroundLocomotion(world, dt);
-            TickAirLocomotion(world, dt);
-            TickEffects(world, dt);
-        }
-
-        Registry*& RegistryInstance;
-    };
-
-    // Places the active camera from its rig each frame (first/third/fixed selected
-    // by the rig's mode), following the pawn. FrameUpdate so look stays smooth and
-    // lands before the extract phase rebuilds world transforms.
-    struct CameraFollowSystem
-    {
-        explicit CameraFollowSystem(Registry*& registry)
-            : RegistryInstance(registry)
-        {
-        }
-
-        void FrameUpdate(FrameUpdateContext& ctx)
-        {
-            if (RegistryInstance == nullptr)
-                return;
-            World& world = RegistryInstance->Components;
-            if (!world.IsRegistered<CameraRig>())
-                return;
-            const ActiveCameraService* cameraService =
-                RegistryInstance->Resources.TryGet<ActiveCameraService>();
-            if (cameraService == nullptr || !cameraService->HasActive())
-                return;
-
-            const EntityId cameraEntity = cameraService->GetActive();
-            CameraRig* rig = world.TryGet<CameraRig>(cameraEntity);
-            LocalTransform* cameraTransform = world.TryGet<LocalTransform>(cameraEntity);
-            if (rig == nullptr || cameraTransform == nullptr)
-                return;
-
-            rig->Yaw -= ctx.Input.MouseDeltaX * rig->Sensitivity;
-            rig->Pitch -= ctx.Input.MouseDeltaY * rig->Sensitivity;
-            rig->Pitch = std::clamp(rig->Pitch, rig->MinPitch, rig->MaxPitch);
-
-            Vec3d targetPosition = Vec3d::Zero();
-            if (const WorldTransform* target = world.TryGet<WorldTransform>(rig->Target))
-                targetPosition = target->Value.Position;
-
-            const CameraPose pose = ComputeCameraPose(*rig, targetPosition);
-            if (!pose.Override)
-                return;
-            cameraTransform->Value.Position = pose.Position;
-            cameraTransform->Value.Rotation = pose.Rotation;
         }
 
         Registry*& RegistryInstance;
@@ -392,12 +315,11 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             // The helper also registers the runtime link components the bridges
             // add at reconcile time, so they cannot be forgotten.
             RegisterPhysicsComponents(registry.Components);
-            // Movement and camera components plus the movement.* tag hierarchy,
-            // registered here for the same reason: storage must exist before the
-            // finalize pass spawns the pawn and camera entities.
-            InitializeMovementRegistry(registry.Components);
-            if (!registry.Components.IsRegistered<CameraRig>())
-                registry.Components.RegisterComponent<CameraRig>();
+            // Gameplay components (movement, tags, attributes, abilities, camera
+            // rig) plus their resources, registered here for the same reason:
+            // storage must exist before the finalize pass spawns entities.
+            RegisterMovement(registry.Components);
+            RegisterCameraComponents(registry.Components);
             *parsed = ParseSceneFile(scenePath);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
@@ -446,6 +368,10 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             pawnWorld.AddComponent<MovementState>(pawn, MovementState{});
             pawnWorld.AddComponent<MovementIntent>(pawn, MovementIntent{});
             pawnWorld.AddComponent<OnGround>(pawn, OnGround{});
+            // The mode arbiter projects movement.grounded (which gates the jump
+            // ability) only for pawns carrying a mode request. Without it the pawn
+            // walks (that only needs the OnGround marker) but can never jump.
+            pawnWorld.AddComponent<LocomotionModeRequest>(pawn, LocomotionModeRequest{});
 
             const MovementDefs* movementDefs = pawnWorld.TryGetResource<MovementDefs>();
 
@@ -495,10 +421,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // load can fill it with the level's cooked brush collision.
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         PhysicsShapes = &step->GetShapeCache();
+    // Engine-provided gameplay: the ability kit and movement systems drive the sim
+    // over active registries, and camera follow places the view. The template only
+    // wires input in and orders it ahead of the sim so intent lands the same tick.
+    RegisterAbilityKitSystems(ctx.Schedule);
+    RegisterMovementSystems(ctx.Schedule);
+    RegisterCameraSystem(ctx.Schedule);
     ctx.Schedule.Register<CharacterInputSystem>(ActiveZoneRegistry);
-    ctx.Schedule.Register<GameplayRunnerSystem>(ActiveZoneRegistry);
-    ctx.Schedule.After<GameplayRunnerSystem, CharacterInputSystem>();
-    ctx.Schedule.Register<CameraFollowSystem>(ActiveZoneRegistry);
+    OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
 }
 

@@ -1,7 +1,7 @@
-#include <framework/gameplay_tags/CountedGameplayTagSet.h>
-#include <framework/gameplay_tags/GameplayTagQuery.h>
-#include <framework/gameplay_tags/GameplayTagRegistry.h>
-#include <framework/gameplay_tags/GameplayTagSet.h>
+#include <gameplay_tags/CountedGameplayTagSet.h>
+#include <gameplay_tags/GameplayTagQuery.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <gameplay_tags/GameplayTagSet.h>
 
 #include <gtest/gtest.h>
 
