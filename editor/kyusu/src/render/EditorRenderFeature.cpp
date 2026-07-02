@@ -260,10 +260,36 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     local.DepthFormat = Services.DepthFormat;
     local.Phase = RenderPhase::Offscreen;
 
-    const EditorScene& scene = World.FocusDocument().GetScene();
+    EditorDocument& focusDocument = World.FocusDocument();
+    const EditorScene& scene = focusDocument.GetScene();
 
     Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
     Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+
+    // Context zones (open, visible, not the focus) render dimmed and reduced:
+    // solid-preview or wireframe body plus component visuals, modulated by the
+    // theme dim constant. No real-material pass, no selection highlight, no
+    // hover glow; picking never sees them, so they read as present but inert.
+    World.VisitOpenZones(
+        [&](ZoneId, EditorDocument& document, const ZoneViewState& view)
+        {
+            if (&document == &focusDocument || !view.VisibleInEditor)
+                return;
+            const EditorScene& contextScene = document.GetScene();
+            if (viewport.Shading == ViewportShading::Solid)
+            {
+                BrushSolid.DrawViewportTinted(local, viewport, contextScene,
+                                              EditorTheme::ContextZoneDim);
+            }
+            else
+            {
+                const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
+                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
+            }
+            Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
+        });
+
+    // The focus zone renders exactly as a single document does.
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
         body->DrawViewport(local, viewport, scene);
     // Placed meshes draw in every viewport so they read regardless of shading: through
@@ -273,7 +299,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                      QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
     else
         Meshes.DrawViewport(local, viewport, scene);
-    Visuals.DrawViewport(local, viewport, scene);
+    Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     Highlight.DrawViewport(local, viewport, scene, *Session());
     Preview.DrawViewport(local, viewport);
 

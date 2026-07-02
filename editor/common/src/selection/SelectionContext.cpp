@@ -1,6 +1,7 @@
 #include "SelectionContext.h"
 
 #include <algorithm>
+#include <cassert>
 
 std::span<const SelectableRef> SelectionContext::GetSelection() const
 {
@@ -34,6 +35,8 @@ void SelectionContext::SetSnapshot(SelectionSnapshot snapshot)
     {
         if (!ref.IsValid() || Contains(ref))
             continue;
+        assert((!ExpectedRegistry.IsValid() || ref.Registry == ExpectedRegistry)
+               && "SelectionContext: ref from a non-focus registry; only the focus document is selectable");
         Selection.push_back(ref);
     }
 

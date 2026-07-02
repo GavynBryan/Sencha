@@ -23,8 +23,10 @@ class ComponentVisualRenderer
 public:
     explicit ComponentVisualRenderer(EditorLinePipeline& lines);
 
+    // tint modulates the visual color (context-zone dimming); pass white for
+    // the focus zone.
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
-                      const EditorScene& scene);
+                      const EditorScene& scene, const Vec4& tint);
 
 private:
     // A mesh asset reduced to unique undirected edges in local space.

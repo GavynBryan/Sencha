@@ -23,11 +23,15 @@ public:
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                       const EditorScene& scene) override;
+    // Same path with every per-material tint modulated (context-zone dimming).
+    void DrawViewportTinted(const FrameContext& frame, const EditorViewport& viewport,
+                            const EditorScene& scene, const Vec4& tint);
 
 private:
     void AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,
                          const BrushMesh& mesh,
-                         const Transform3f& transform) const;
+                         const Transform3f& transform,
+                         const Vec4& tint) const;
 
     EditorSolidPipeline& Solid;
 };

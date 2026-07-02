@@ -82,8 +82,12 @@ const ComponentVisualRenderer::MeshEdges& ComponentVisualRenderer::EdgesFor(std:
 }
 
 void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
-                                           const EditorScene& scene)
+                                           const EditorScene& scene, const Vec4& tint)
 {
+    const Vec4 color(EditorTheme::ComponentVisual.X * tint.X,
+                     EditorTheme::ComponentVisual.Y * tint.Y,
+                     EditorTheme::ComponentVisual.Z * tint.Z,
+                     EditorTheme::ComponentVisual.W * tint.W);
     const Registry& registry = scene.GetRegistry();
     const auto& serializers = GetComponentSerializerEntries();
 
@@ -108,8 +112,8 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
             const MeshEdges& edges = EdgesFor(visual->AssetPath);
             for (const auto& [a, b] : edges.Edges)
             {
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = EditorTheme::ComponentVisual });
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = EditorTheme::ComponentVisual });
+                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = color });
+                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = color });
             }
         }
     }

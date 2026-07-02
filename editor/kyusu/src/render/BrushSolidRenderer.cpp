@@ -40,26 +40,35 @@ BrushSolidRenderer::BrushSolidRenderer(EditorSolidPipeline& solid)
 void BrushSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                                       const EditorScene& scene)
 {
+    DrawViewportTinted(frame, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+}
+
+void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const EditorViewport& viewport,
+                                            const EditorScene& scene, const Vec4& tint)
+{
     std::vector<EditorSolidVertex> vertices;
     vertices.reserve(scene.GetEntityCount() * 36);
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
-        { AppendBrushMesh(vertices, mesh, transform); });
+        { AppendBrushMesh(vertices, mesh, transform, tint); });
 
     Solid.Submit(frame, viewport, vertices);
 }
 
 void BrushSolidRenderer::AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,
                                          const BrushMesh& mesh,
-                                         const Transform3f& transform) const
+                                         const Transform3f& transform,
+                                         const Vec4& tint) const
 {
     // The kernel produces the triangles (positions/normals/UVs); the renderer only
     // adds the per-material tint and packs them into GPU vertices.
     BrushTessellate(mesh, transform,
         [&](const FaceMaterial& material, std::span<const BrushTriVertex> triangles) {
-            const Vec4 tint = TintForMaterial(material.Material);
+            const Vec4 base = TintForMaterial(material.Material);
+            const Vec4 modulated(base.X * tint.X, base.Y * tint.Y, base.Z * tint.Z,
+                                 base.W * tint.W);
             for (const BrushTriVertex& v : triangles)
                 vertices.push_back(EditorSolidVertex{
-                    .Position = v.Position, .Normal = v.Normal, .Uv = v.Uv, .Tint = tint });
+                    .Position = v.Position, .Normal = v.Normal, .Uv = v.Uv, .Tint = modulated });
         });
 }

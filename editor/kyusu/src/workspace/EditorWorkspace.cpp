@@ -41,6 +41,11 @@ void EditorWorkspace::BuildInteractionState()
 {
     EditorDocument& document = ActiveDocument();
 
+    // Only the focus document is selectable (context zones are unpickable by
+    // construction); the guard turns any stray cross-registry ref into a loud
+    // debug failure instead of a silent stale selection.
+    LevelSelection.SetExpectedRegistry(document.GetRegistry().Id);
+
     // All scene mutation during manipulation goes through this one sink; the
     // session, manipulators, and the edge-cut tool stay scene-agnostic. Built first
     // so the tool context can hold it.
