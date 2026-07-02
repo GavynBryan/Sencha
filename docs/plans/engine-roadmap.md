@@ -633,6 +633,7 @@ the specialist doc wins.
 | `docs/plans/sencha-level-editor/*` | Shipped-branch record plus execution detail for the editor substrate Track D builds on. |
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
+| `docs/plans/world-partition-authoring.md` | Proposed execution spec for Track C item 3 and the partition authoring work in Track D. Its Section 13 lists the version moves awaiting ratification here. |
 
 ---
 
