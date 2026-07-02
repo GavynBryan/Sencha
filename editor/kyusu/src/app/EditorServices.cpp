@@ -32,6 +32,10 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
+#include <assets/cook/AssetImporter.h>
+#include <assets/cook/TextureCook.h>
+#include <assets/hotreload/AssetHotReloader.h>
+#include <assets/hotreload/AssetSourceWatcher.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -45,6 +49,7 @@
 #include <platform/SdlWindow.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -73,6 +78,7 @@ EditorServices::EditorServices(Engine& engine,
     // Build the asset system and mount the project content (needs the project from
     // LoadGameModule). The document then serializes through it.
     InitAssets();
+    BuildSourceWatch();
 
     BuildDocument();
     BuildPlayLoop();
@@ -103,6 +109,7 @@ EditorServices::~EditorServices()
     // Before the engine frees the graphics services the caches borrow.
     if (RenderFeature != nullptr)
         RenderFeature->ReleaseSceneResources();
+    SourceWatch.reset();
     Assets.reset();
     // Toolbar, StatusBar, Materials, and the project/module state release with the
     // object in reverse declaration order; none touch the subsystems reset above.
@@ -134,8 +141,16 @@ void EditorServices::BuildFileActions()
 {
     Engine& engine = *EnginePtr;
     Materials = std::make_unique<MaterialLibrary>(engine.Logging());
+    std::vector<std::string> contentRoots;
+    if (Project)
+        contentRoots = Project->ContentRoots;
+    // Populate the material list up front (not just after Open/SaveAs): with a
+    // project the pickable set is the project's, independent of any level.
+    if (!contentRoots.empty())
+        Materials->Rescan(contentRoots);
     Files = std::make_unique<DocumentFileActions>(
-        *Window, Workspace->Document, *Commands, Workspace->Selection, *Materials);
+        *Window, Workspace->Document, *Commands, Workspace->Selection, *Materials,
+        std::move(contentRoots));
 }
 
 void EditorServices::BuildInput()
@@ -504,12 +519,70 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
     }
 }
 
+//=============================================================================
+// Source hot reload: AssetSourceWatcher detects content changes to authored
+// .smat/.png under each content root; AssetHotReloader re-cooks (textures) or
+// re-parses (materials) and swaps the resident cache slot in place at the
+// engine's async drain point. Live handles never change, so the viewport just
+// shows the new data on its next frame.
+//=============================================================================
+struct EditorServices::SourceWatchState
+{
+    struct RootWatch
+    {
+        AssetSourceWatcher Watcher;
+        AssetHotReloader Reloader;
+    };
+
+    PngTextureImporter TextureImporter;
+    AssetImporterRegistry Importers;
+    std::vector<std::unique_ptr<RootWatch>> Roots;
+    std::chrono::steady_clock::time_point NextPoll{};
+};
+
+void EditorServices::BuildSourceWatch()
+{
+    if (!Project || !Assets || Project->ContentRoots.empty())
+        return;
+
+    Engine& engine = *EnginePtr;
+    SourceWatch = std::make_unique<SourceWatchState>();
+    SourceWatch->Importers.Register(SourceWatch->TextureImporter);
+    for (const std::string& root : Project->ContentRoots)
+    {
+        auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
+            AssetSourceWatcher(engine.Logging(), root, { ".smat", ".png" }),
+            AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
+                             SourceWatch->Importers, engine.Tasks(), root),
+        });
+        watch->Watcher.Initialize();
+        SourceWatch->Roots.push_back(std::move(watch));
+    }
+}
+
 void EditorServices::ProcessFrame()
 {
     if (Files)
     {
         Files->ProcessPending();
         Files->UpdateTitle();
+    }
+
+    // Poll watched sources on an interval, not per frame: the watcher is a
+    // content-hash-confirmed mtime scan over the content roots. A save from
+    // the material editor or a text editor lands in the viewport within ~0.5s.
+    // Files created after startup are not watched (Decision H); the material
+    // panel's Rescan refreshes the pickable list for those.
+    if (SourceWatch)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= SourceWatch->NextPoll)
+        {
+            SourceWatch->NextPoll = now + std::chrono::milliseconds(500);
+            for (auto& root : SourceWatch->Roots)
+                for (const std::string& changed : root->Watcher.PollChanged())
+                    root->Reloader.ReloadSource(changed);
+        }
     }
 
     // Rebuild the transient viewport overlay (selected-brush dimension labels)

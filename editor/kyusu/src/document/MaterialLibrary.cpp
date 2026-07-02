@@ -27,26 +27,40 @@ MaterialLibrary::MaterialLibrary(LoggingProvider& logging)
 void MaterialLibrary::Clear()
 {
     Entries.clear();
-    ScannedRoot.clear();
+    ScannedRoots.clear();
 }
 
-void MaterialLibrary::Rescan(std::string_view rootDirectory)
+void MaterialLibrary::Rescan(std::span<const std::string> roots)
 {
+    // Copy first: callers may pass the previously scanned roots (Roots()),
+    // which alias the vector this replaces.
+    std::vector<std::string> scanned(roots.begin(), roots.end());
     Entries.clear();
-    ScannedRoot.assign(rootDirectory);
-    if (rootDirectory.empty())
-        return;
+    ScannedRoots = std::move(scanned);
 
-    AssetRegistry registry(Logging);
-    ScanAssetsDirectory(rootDirectory, registry);
-
-    for (const auto& [path, record] : registry.Records())
+    for (const std::string& root : ScannedRoots)
     {
-        if (record.Type != AssetType::Material)
+        if (root.empty())
             continue;
-        Entries.push_back(MaterialAsset{ record.Path, FriendlyName(record.Path) });
+
+        AssetRegistry registry(Logging);
+        ScanAssetsDirectory(root, registry);
+
+        for (const auto& [path, record] : registry.Records())
+        {
+            if (record.Type != AssetType::Material)
+                continue;
+            Entries.push_back(MaterialAsset{ record.Path, FriendlyName(record.Path) });
+        }
     }
 
     std::sort(Entries.begin(), Entries.end(),
               [](const MaterialAsset& a, const MaterialAsset& b) { return a.Path < b.Path; });
+    // Two roots carrying the same root-relative path resolve to one asset://
+    // ref at load time; list it once.
+    Entries.erase(std::unique(Entries.begin(), Entries.end(),
+                              [](const MaterialAsset& a, const MaterialAsset& b) {
+                                  return a.Path == b.Path;
+                              }),
+                  Entries.end());
 }

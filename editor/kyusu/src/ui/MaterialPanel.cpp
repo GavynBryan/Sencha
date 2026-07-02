@@ -354,7 +354,7 @@ void MaterialPanel::OnDraw()
     }
 
     if (ImGui::Button("Rescan materials"))
-        Materials.Rescan(Materials.Root());
+        Materials.Rescan(Materials.Roots());
     ImGui::SameLine();
     ImGui::TextDisabled("%zu found", Materials.Materials().size());
 
