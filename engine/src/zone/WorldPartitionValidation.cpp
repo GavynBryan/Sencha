@@ -1,0 +1,289 @@
+#include <zone/WorldPartitionValidation.h>
+
+#include <algorithm>
+#include <format>
+#include <unordered_set>
+
+namespace
+{
+
+std::string Hex(uint64_t value)
+{
+    return std::format("{:016x}", value);
+}
+
+void AppendSortedBySourceId(std::vector<ContentRiskRecord>& records,
+                            std::vector<ContentRiskRecord> ruleRecords)
+{
+    std::sort(ruleRecords.begin(), ruleRecords.end(),
+              [](const ContentRiskRecord& a, const ContentRiskRecord& b)
+              { return a.SourceId < b.SourceId; });
+    for (ContentRiskRecord& record : ruleRecords)
+        records.push_back(std::move(record));
+}
+
+void AppendDuplicateIds(std::vector<ContentRiskRecord>& records,
+                        std::vector<uint64_t> ids,
+                        ContentRiskSourceKind kind,
+                        const char* typeName)
+{
+    std::sort(ids.begin(), ids.end());
+    for (size_t i = 1; i < ids.size(); ++i)
+    {
+        if (ids[i] != ids[i - 1])
+            continue;
+        records.push_back({
+            .Severity = ContentRiskSeverity::Error,
+            .Kind = kind,
+            .SourceId = ids[i],
+            .RuleId = "partition.id.duplicate",
+            .Message = std::format("duplicate {} id {}", typeName, Hex(ids[i])),
+        });
+        // Skip further copies of the same value: one record per duplicated id.
+        while (i + 1 < ids.size() && ids[i + 1] == ids[i])
+            ++i;
+    }
+}
+
+} // namespace
+
+std::vector<ContentRiskRecord>
+ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
+                               const WorldPartitionIndex& index)
+{
+    std::vector<ContentRiskRecord> records;
+
+    // partition.id.duplicate
+    {
+        std::vector<uint64_t> ids;
+        for (const RegionRecord& region : manifest.Regions)
+            ids.push_back(region.Id.Value);
+        AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Region, "region");
+
+        ids = {};
+        for (const ZoneHeader& zone : manifest.Zones)
+            ids.push_back(zone.Id.Value);
+        AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Zone, "zone");
+
+        ids = {};
+        for (const TransitionRecord& transition : manifest.Transitions)
+            ids.push_back(transition.Id.Value);
+        AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Transition, "transition");
+    }
+
+    // partition.zone.region_missing
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            const bool known = std::any_of(
+                manifest.Regions.begin(), manifest.Regions.end(),
+                [&](const RegionRecord& region) { return region.Id == zone.Region; });
+            if (known)
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Zone,
+                .SourceId = zone.Id.Value,
+                .RuleId = "partition.zone.region_missing",
+                .Message = std::format("zone {} references missing region {}",
+                                       Hex(zone.Id.Value), Hex(zone.Region.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.transition.endpoint_missing
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const TransitionRecord& transition : manifest.Transitions)
+        {
+            if (index.ContainsZone(transition.From) && index.ContainsZone(transition.To))
+                continue;
+            const ZoneId missing =
+                index.ContainsZone(transition.From) ? transition.To : transition.From;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Transition,
+                .SourceId = transition.Id.Value,
+                .RuleId = "partition.transition.endpoint_missing",
+                .Message = std::format("transition {} endpoint {} names no zone",
+                                       Hex(transition.Id.Value), Hex(missing.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.transition.self_loop
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const TransitionRecord& transition : manifest.Transitions)
+        {
+            if (transition.From != transition.To)
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Transition,
+                .SourceId = transition.Id.Value,
+                .RuleId = "partition.transition.self_loop",
+                .Message = std::format("transition {} connects zone {} to itself",
+                                       Hex(transition.Id.Value), Hex(transition.From.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.transition.unpaired
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const TransitionRecord& transition : manifest.Transitions)
+        {
+            if (transition.Flags.OneWay || transition.Topology == TransitionTopology::Teleport)
+                continue;
+            const bool paired = std::any_of(
+                manifest.Transitions.begin(), manifest.Transitions.end(),
+                [&](const TransitionRecord& other)
+                { return other.From == transition.To && other.To == transition.From; });
+            if (paired)
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Warning,
+                .Kind = ContentRiskSourceKind::Transition,
+                .SourceId = transition.Id.Value,
+                .RuleId = "partition.transition.unpaired",
+                .Message = std::format("transition {} ({} to {}) has no reverse edge",
+                                       Hex(transition.Id.Value), Hex(transition.From.Value),
+                                       Hex(transition.To.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.zone.scene_missing
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            if (!zone.SceneRef.empty())
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Zone,
+                .SourceId = zone.Id.Value,
+                .RuleId = "partition.zone.scene_missing",
+                .Message = std::format("zone {} has no scene reference", Hex(zone.Id.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.zone.bounds_invalid
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            if (zone.Bounds.IsValid())
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Zone,
+                .SourceId = zone.Id.Value,
+                .RuleId = "partition.zone.bounds_invalid",
+                .Message = std::format("zone {} bounds are invalid", Hex(zone.Id.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.bounds.overlap: one record per unordered pair, source id is the
+    // lower zone id. Invalid bounds are excluded (bounds_invalid already fired).
+    {
+        std::vector<const ZoneHeader*> zones;
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            if (zone.Bounds.IsValid())
+                zones.push_back(&zone);
+        }
+        std::sort(zones.begin(), zones.end(),
+                  [](const ZoneHeader* a, const ZoneHeader* b)
+                  { return a->Id.Value < b->Id.Value; });
+
+        std::vector<ContentRiskRecord> rule;
+        for (size_t a = 0; a < zones.size(); ++a)
+        {
+            for (size_t b = a + 1; b < zones.size(); ++b)
+            {
+                if (zones[a]->Id == zones[b]->Id)
+                    continue;
+                if (!zones[a]->Bounds.Intersects(zones[b]->Bounds))
+                    continue;
+                rule.push_back({
+                    .Severity = ContentRiskSeverity::Warning,
+                    .Kind = ContentRiskSourceKind::Zone,
+                    .SourceId = zones[a]->Id.Value,
+                    .RuleId = "partition.bounds.overlap",
+                    .Message = std::format("zone {} bounds overlap zone {}",
+                                           Hex(zones[a]->Id.Value), Hex(zones[b]->Id.Value)),
+                });
+            }
+        }
+        records.insert(records.end(), rule.begin(), rule.end());
+    }
+
+    // partition.graph.unreachable, suppressed entirely when no_start_zone fires.
+    const bool startZoneKnown =
+        manifest.StartZone.IsValid() && index.ContainsZone(manifest.StartZone);
+    if (startZoneKnown)
+    {
+        std::unordered_set<uint64_t> reached;
+        std::vector<ZoneId> frontier{ manifest.StartZone };
+        reached.insert(manifest.StartZone.Value);
+        while (!frontier.empty())
+        {
+            const ZoneId zone = frontier.back();
+            frontier.pop_back();
+            for (const uint32_t edge : index.Outgoing(zone))
+            {
+                const ZoneId next = manifest.Transitions[edge].To;
+                if (reached.insert(next.Value).second)
+                    frontier.push_back(next);
+            }
+            for (const uint32_t edge : index.Incoming(zone))
+            {
+                const TransitionRecord& transition = manifest.Transitions[edge];
+                if (transition.Flags.OneWay)
+                    continue;
+                if (reached.insert(transition.From.Value).second)
+                    frontier.push_back(transition.From);
+            }
+        }
+
+        std::vector<ContentRiskRecord> rule;
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            if (reached.contains(zone.Id.Value))
+                continue;
+            rule.push_back({
+                .Severity = ContentRiskSeverity::Warning,
+                .Kind = ContentRiskSourceKind::Zone,
+                .SourceId = zone.Id.Value,
+                .RuleId = "partition.graph.unreachable",
+                .Message = std::format("zone {} is not reachable from the start zone",
+                                       Hex(zone.Id.Value)),
+            });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+    else
+    {
+        records.push_back({
+            .Severity = ContentRiskSeverity::Warning,
+            .Kind = ContentRiskSourceKind::World,
+            .SourceId = 0,
+            .RuleId = "partition.world.no_start_zone",
+            .Message = "world start zone is not designated or names no zone",
+        });
+    }
+
+    return records;
+}
