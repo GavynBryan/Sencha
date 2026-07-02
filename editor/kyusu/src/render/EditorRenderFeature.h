@@ -17,6 +17,7 @@
 #include "StaticMeshRenderer.h"
 #include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
+#include "ZoneBoundsRenderer.h"
 
 #include "viewport/ViewportShading.h"
 
@@ -39,6 +40,7 @@ class AssetSystem;
 class AssetRegistry;
 class LoggingProvider;
 class ConsoleRegistry;
+struct WorldViewSettings;
 class StaticMeshCache;
 class MaterialCache;
 struct GridSettings;
@@ -61,6 +63,7 @@ public:
                         PreviewBuffer& preview,
                         std::function<const ManipulatorSession*()> session,
                         const GridSettings& grid,
+                        const WorldViewSettings& worldView,
                         LoggingProvider& logging,
                         const ConsoleRegistry& console,
                         AssetSystem* assets,
@@ -98,6 +101,7 @@ private:
     std::function<const ManipulatorSession*()> Session;
     ViewportLayout& Layout;
     const GridSettings&    GridCfg;
+    const WorldViewSettings& WorldView;
     GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars
     ViewportBackdropRenderer Backdrop;
     GpuGridRenderer        Grid;
@@ -128,6 +132,7 @@ private:
     EditorWideLinePipeline WideLines;
     EditorFillPipeline     Fills;
     SelectionRenderer      Highlight;
+    ZoneBoundsRenderer     ZoneBounds;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.

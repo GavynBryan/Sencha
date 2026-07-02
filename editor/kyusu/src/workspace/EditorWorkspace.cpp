@@ -35,6 +35,7 @@ EditorWorkspace::EditorWorkspace(LoggingProvider& logging)
     , Selection(LevelSelection)
     , MeshEdit(logging)
 {
+    World.BindViewSettings(&WorldView);
 }
 
 void EditorWorkspace::BuildInteractionState()
@@ -474,6 +475,24 @@ void EditorWorkspace::UpdateOverlay()
 
     if (bounds.IsValid())
         Overlay.Labels = SelectionDimensionLabels(bounds, EditorTheme::DimensionLabel);
+
+    // Zone name labels ride the same per-frame label rebuild as the dimension
+    // text, anchored at each zone box's top center.
+    if (World.IsWorld() && WorldView.ShowZoneBounds)
+    {
+        for (const ZoneHeader& zone : World.Manifest().Zones)
+        {
+            if (!zone.Bounds.IsValid())
+                continue;
+            const Vec3d center = zone.Bounds.Center();
+            LabelRequest label;
+            label.World = Vec3d(center.X, zone.Bounds.Max.Y, center.Z);
+            label.Color = World.FocusZone() == zone.Id ? EditorTheme::Selection
+                                                       : EditorTheme::BoundsBox;
+            label.Text = zone.Name;
+            Overlay.Labels.push_back(std::move(label));
+        }
+    }
 }
 
 void EditorWorkspace::SetSelectedBrushOriginToPivot()

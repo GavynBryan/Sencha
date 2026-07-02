@@ -2,6 +2,7 @@
 
 #include "document/DocumentSerialization.h"
 #include "document/WorldDocument.h"
+#include "document/ZoneBounds.h"
 
 #include <core/logging/LoggingProvider.h>
 
@@ -301,4 +302,42 @@ TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)
         EXPECT_EQ(record.SourceId, second.Value);
     }
     EXPECT_TRUE(fired);
+}
+
+TEST_F(WorldDocumentTest, ComputeZoneBoundsUnionsEntities)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    EditorScene& scene = world.FocusDocument().GetScene();
+    scene.CreateBrush(Vec3d{ 0, 0, 0 }, Vec3d{ 1, 1, 1 });
+    scene.CreateBrush(Vec3d{ 10, 0, 0 }, Vec3d{ 2, 2, 2 });
+
+    const auto bounds = ComputeZoneBounds(scene);
+
+    ASSERT_TRUE(bounds.has_value());
+    EXPECT_EQ(bounds->Min, (Vec3d{ -1.0f, -2.0f, -2.0f }));
+    EXPECT_EQ(bounds->Max, (Vec3d{ 12.0f, 2.0f, 2.0f }));
+
+    EditorDocument empty(Logging);
+    EXPECT_FALSE(ComputeZoneBounds(empty.GetScene()).has_value());
+}
+
+TEST_F(WorldDocumentTest, ComputeZoneBoundsRespectsOverrideFlag)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId zone = world.Manifest().Zones[0].Id;
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 }, Vec3d{ 4, 4, 4 });
+
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    EXPECT_EQ(world.Manifest().Zones[0].Bounds.Max, (Vec3d{ 4.0f, 4.0f, 4.0f }));
+
+    // Designer-set bounds survive the save-time recompute.
+    const Aabb3d authored{ { -100.0f, 0.0f, -100.0f }, { 100.0f, 10.0f, 100.0f } };
+    world.Manifest().Zones[0].Bounds = authored;
+    world.Manifest().Zones[0].BoundsOverridden = true;
+    ASSERT_TRUE(world.SaveWorld());
+
+    EXPECT_EQ(world.Manifest().Zones[0].Bounds, authored);
+    EXPECT_EQ(world.Manifest().Zones[0].Id, zone);
 }

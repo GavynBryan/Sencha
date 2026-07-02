@@ -14,6 +14,7 @@
 #include "tools/ITool.h"
 #include "tools/ToolRegistry.h"
 #include "viewport/GridSettings.h"
+#include "viewport/WorldViewSettings.h"
 
 #include <algorithm>
 #include <array>
@@ -52,11 +53,13 @@ void Divider(float height)
 EditorToolbar::EditorToolbar(std::function<ToolRegistry*()> tools,
                              std::function<ManipulatorSession*()> session,
                              MeshEditService& meshEdit, GridSettings& grid,
+                             WorldViewSettings& worldView,
                              BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut)
     : ToolsResolver(std::move(tools))
     , SessionResolver(std::move(session))
     , MeshEdit(meshEdit)
     , Grid(grid)
+    , WorldView(worldView)
     , BrushCreate(brushCreate)
     , EdgeCut(edgeCut)
 {
@@ -278,6 +281,12 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
                    Grid.SnapEnabled ? "Grid snap: on" : "Grid snap: off",
                    Grid.SnapEnabled, buttonSize))
         Grid.SnapEnabled = !Grid.SnapEnabled;
+
+    ImGui::SameLine();
+    if (ToolButton("zonebounds", ICON_FA_VECTOR_SQUARE,
+                   WorldView.ShowZoneBounds ? "Zone bounds: on" : "Zone bounds: off",
+                   WorldView.ShowZoneBounds, buttonSize))
+        WorldView.ShowZoneBounds = !WorldView.ShowZoneBounds;
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(96.0f);

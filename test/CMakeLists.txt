@@ -208,6 +208,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp

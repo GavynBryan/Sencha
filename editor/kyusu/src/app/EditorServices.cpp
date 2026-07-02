@@ -329,6 +329,7 @@ void EditorServices::BuildViewportRendering()
         Workspace->Preview,
         [this]() -> const ManipulatorSession* { return Workspace->Manipulators; },
         Workspace->Grid,
+        Workspace->WorldView,
         engine.Logging(),
         console.Registry(),
         Assets ? &Assets->Assets : nullptr,
@@ -373,7 +374,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Toolbar = std::make_unique<EditorToolbar>(
         [this] { return Workspace->Tools.get(); },
         [this] { return Workspace->Manipulators; },
-        Workspace->MeshEdit, Workspace->Grid, Workspace->BrushCreate, Workspace->EdgeCut);
+        Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView,
+        Workspace->BrushCreate, Workspace->EdgeCut);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({

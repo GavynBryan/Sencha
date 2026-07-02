@@ -1,5 +1,7 @@
 #include "WorldDocument.h"
 
+#include "ZoneBounds.h"
+
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
@@ -137,7 +139,7 @@ bool WorldDocument::SaveWorld()
     AssignSceneRefsForNewZones();
 
     namespace fs = std::filesystem;
-    for (const ZoneHeader& header : Manifest_.Zones)
+    for (ZoneHeader& header : Manifest_.Zones)
     {
         const std::string scenePath = ResolveScenePath(header.SceneRef);
         std::error_code ec;
@@ -147,6 +149,14 @@ bool WorldDocument::SaveWorld()
         if (it != OpenZones_.end())
         {
             EditorDocument& document = *it->second.Document;
+            // Derived bounds ride every zone save; designer-set bounds stay
+            // authored and are never recomputed. A zone with nothing boundable
+            // keeps its previous bounds.
+            if (!header.BoundsOverridden)
+            {
+                if (const auto bounds = ComputeZoneBounds(document.GetScene()))
+                    header.Bounds = *bounds;
+            }
             if (!document.HasFilePath())
             {
                 if (!document.SaveAs(scenePath))
@@ -579,6 +589,8 @@ void WorldDocument::WriteUserSidecar() const
     JsonValue::Object root;
     if (FocusZone_.IsValid())
         root.emplace_back("focus_zone", JsonValue{ ZoneIdToString(FocusZone_) });
+    if (ViewSettings_ != nullptr)
+        root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
 
     JsonValue::Array zones;
     for (const ZoneHeader& header : Manifest_.Zones)
@@ -634,6 +646,10 @@ ZoneId WorldDocument::ApplyUserSidecar()
                 SetZoneVisible(*zone, visible->AsBool());
         }
     }
+
+    if (const JsonValue* show = root->Find("show_zone_bounds");
+        show != nullptr && show->IsBool() && ViewSettings_ != nullptr)
+        ViewSettings_->ShowZoneBounds = show->AsBool();
 
     if (const JsonValue* focus = root->Find("focus_zone"); focus != nullptr && focus->IsString())
     {

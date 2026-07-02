@@ -16,6 +16,7 @@
 #include "tools/ToolContext.h"
 #include "tools/ToolRegistry.h"
 #include "viewport/GridSettings.h"
+#include "viewport/WorldViewSettings.h"
 #include "viewport/MarqueeState.h"
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
@@ -105,6 +106,7 @@ public:
     void SetSelectedBrushOriginToPivot();
 
     WorldDocument World;
+    WorldViewSettings WorldView;
     ViewportLayout Layout = ViewportLayout::MakeFourWay();
     SelectionContext LevelSelection;
     SelectionService Selection;

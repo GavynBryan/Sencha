@@ -8,6 +8,7 @@ class MeshEditService;
 struct GridSettings;
 struct BrushCreationSettings;
 struct EdgeCutSettings;
+struct WorldViewSettings;
 
 // The top icon toolbar (fixed app chrome, not a dockable panel). Backed control
 // groups, each with an active-state highlight:
@@ -62,6 +63,7 @@ public:
     EditorToolbar(std::function<ToolRegistry*()> tools,
                   std::function<ManipulatorSession*()> session,
                   MeshEditService& meshEdit, GridSettings& grid,
+                  WorldViewSettings& worldView,
                   BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut);
 
     void SetPlayControls(PlayControls controls) { Play = std::move(controls); }
@@ -84,6 +86,7 @@ private:
     std::function<ManipulatorSession*()> SessionResolver;
     MeshEditService& MeshEdit;
     GridSettings& Grid;
+    WorldViewSettings& WorldView;
     BrushCreationSettings& BrushCreate;
     EdgeCutSettings& EdgeCut;
     PlayControls Play;

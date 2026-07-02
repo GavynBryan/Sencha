@@ -7,6 +7,7 @@
 
 #include "EditorTheme.h"
 #include "viewport/ViewportLayout.h"
+#include "viewport/WorldViewSettings.h"
 #include "viewport/ViewportShading.h"
 
 #include <core/assets/RuntimeAssets.h>
@@ -27,6 +28,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          PreviewBuffer& preview,
                                          std::function<const ManipulatorSession*()> session,
                                          const GridSettings& grid,
+                                         const WorldViewSettings& worldView,
                                          LoggingProvider& logging,
                                          const ConsoleRegistry& console,
                                          AssetSystem* assets,
@@ -36,11 +38,13 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Session(std::move(session))
     , Layout(viewportLayout)
     , GridCfg(grid)
+    , WorldView(worldView)
     , BrushSolid(Solid)
     , Meshes(Solid, logging, assets, catalog)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
+    , ZoneBounds(WideLines)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -301,6 +305,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         Meshes.DrawViewport(local, viewport, scene);
     Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     Highlight.DrawViewport(local, viewport, scene, *Session());
+    if (WorldView.ShowZoneBounds)
+        ZoneBounds.DrawViewport(local, viewport, World);
     Preview.DrawViewport(local, viewport);
 
     vkCmdEndRendering(frame.Cmd);

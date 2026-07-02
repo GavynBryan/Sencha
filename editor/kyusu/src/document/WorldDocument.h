@@ -2,6 +2,8 @@
 
 #include "EditorDocument.h"
 
+#include "viewport/WorldViewSettings.h"
+
 #include <zone/ContentRiskRecord.h>
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
@@ -36,6 +38,10 @@ public:
 
     // Forwarded to every zone document, present and future.
     void SetAssetEnvironment(RuntimeAssets& assets);
+
+    // Non-owning; the workspace's world view state rides the user sidecar with
+    // the zone view states, so it persists per user alongside them.
+    void BindViewSettings(WorldViewSettings* settings) { ViewSettings_ = settings; }
 
     // Mode and files.
     [[nodiscard]] bool IsWorld() const { return WorldMode_; }
@@ -158,6 +164,7 @@ private:
     std::vector<ContentRiskRecord> ValidationRecords_;
 
     ZoneId FocusZone_;
+    WorldViewSettings* ViewSettings_ = nullptr;
     std::unordered_map<ZoneId, OpenZone> OpenZones_;
     std::unique_ptr<EditorDocument> LegacyDocument_;
     ZoneViewState LegacyView_;
