@@ -18,8 +18,7 @@ Sencha v1.0 is the release where an indie team ships a real 3D action-adventure 
 installed Sencha binaries and never touches engine source. Measured against shipping the
 same game on a general-purpose commercial engine, the reasons to choose Sencha are the
 workflow: the brush-to-cook-to-play loop, gameplay authored as data over uniform systems,
-scripting for content logic, and streaming that does not hitch. The bar is that a team
-nine months into a comparable engine sees v1.0 and regrets not waiting.
+scripting for content logic, and streaming that does not hitch.
 
 Sencha v2.0 is the release where a small studio ships a bigger and prettier game and
 iterates fast enough that the tooling disappears from their critical path.
