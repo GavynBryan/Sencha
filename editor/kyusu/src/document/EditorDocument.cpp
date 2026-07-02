@@ -107,6 +107,14 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
         world.AddResource<StaticMeshComponentAssets>(&assets.StaticMeshes, &assets.MaterialSets);
 }
 
+void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)
+{
+    assert(Registry_.Components.EntityCount() == 0
+           && "SetRegistryIdentity: document must be empty");
+    Registry_.Id = id;
+    Registry_.Zone = zone;
+}
+
 std::string_view EditorDocument::GetDisplayName() const
 {
     return FilePath.empty() ? std::string_view("Untitled") : std::string_view(FilePath);

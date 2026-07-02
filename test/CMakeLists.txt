@@ -203,6 +203,20 @@ if(EDITOR_TEST_SOURCES)
     # not its runtime), so imgui_support rides along for the headers.
     add_executable(editor_tests
         ${EDITOR_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp

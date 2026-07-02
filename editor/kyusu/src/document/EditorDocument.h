@@ -38,6 +38,12 @@ public:
     [[nodiscard]] AssetSystem* GetAssetSystem() const { return Assets; }
     [[nodiscard]] const AssetRegistry* GetAssetCatalog() const { return Catalog; }
 
+    // Hands the document its registry identity (WorldDocument assigns each open
+    // zone document a unique, never-reused RegistryId so a stale SelectableRef
+    // cannot alias a later-opened zone). Callable only while the document is
+    // empty: entities already created would carry the old identity.
+    void SetRegistryIdentity(RegistryId id, ZoneId zone);
+
     [[nodiscard]] std::string_view GetDisplayName() const;
     [[nodiscard]] bool IsDirty() const;
     bool Save();
