@@ -65,7 +65,7 @@ void LauncherServices::BuildUi()
         "kettle.imgui.ini");
     UiFeature = uiFeature.get();
 
-    UiFeature->AddPanel(std::make_unique<ProjectBrowserPanel>(
+    auto browserPanel = std::make_unique<ProjectBrowserPanel>(
         Catalog,
         ProjectBrowserPanel::Actions{
             .OpenLevelEditor = [this](const std::string& path) { LaunchEditor("kyusu", path); },
@@ -75,8 +75,19 @@ void LauncherServices::BuildUi()
             { CreateProject(dir, name); },
             .RemoveEntry = [this](const std::string& path) { RemoveCatalogEntry(path); },
             .SettingsSaved = [this](const ProjectDescriptor& descriptor, const std::string& path)
-            { Catalog.Touch(path, descriptor.Name); SaveCatalog(); },
-        }));
+            { TouchCatalog(path); (void)descriptor; },
+        });
+
+    // File menu: New = the create-project modal, Open = browse for a
+    // .senchaproj. Save/SaveAs stay unset (nothing document-like to save).
+    ProjectBrowserPanel* browser = browserPanel.get();
+    UiFeature->SetFileActions(
+        [browser]() { browser->RequestCreateProject(); },
+        [this]() { BrowseForProject(); },
+        {},
+        {});
+
+    UiFeature->AddPanel(std::move(browserPanel));
 
     engine.Graphics().MainRenderer.AddFeature(std::move(uiFeature));
 }
@@ -191,14 +202,19 @@ void LauncherServices::CreateProject(const std::string& directory, const std::st
 
 void LauncherServices::TouchCatalog(const std::string& projectPath)
 {
+    // One canonical form per project so a relative and an absolute spelling of
+    // the same path cannot produce two rows.
+    const std::string canonical =
+        std::filesystem::absolute(std::filesystem::path(projectPath)).lexically_normal().string();
+
     // Read the descriptor for a display name; an unreadable file still lands in
     // the list (badged missing/broken in the UI) rather than vanishing.
     ProjectDescriptor descriptor;
     std::string error;
     std::string name;
-    if (ProjectDescriptor::Load(projectPath, descriptor, &error))
+    if (ProjectDescriptor::Load(canonical, descriptor, &error))
         name = descriptor.Name;
-    Catalog.Touch(projectPath, name);
+    Catalog.Touch(canonical, name);
     SaveCatalog();
 }
 

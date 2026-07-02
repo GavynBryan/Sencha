@@ -33,9 +33,12 @@ public:
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
     void OnDraw() override;
 
+    // Opens the create-project modal on the next draw (File > New routes here).
+    void RequestCreateProject() { CreatePopupRequested = true; }
+
 private:
     void DrawRecentList();
-    void DrawCreateSection();
+    void DrawCreatePopup();
     void DrawSettingsSection();
     void SelectProject(const std::string& path);
 
@@ -51,6 +54,7 @@ private:
     char NewRootBuffer[512] = "";
 
     // Create form state.
+    bool CreatePopupRequested = false;
     char CreateDirBuffer[512] = "";
     char CreateNameBuffer[128] = "";
 };

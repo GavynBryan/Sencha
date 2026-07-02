@@ -7,7 +7,34 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cfloat>
+#include <string_view>
+
+namespace
+{
+    bool ContainsCaseInsensitive(std::string_view haystack, std::string_view needle)
+    {
+        if (needle.empty())
+            return true;
+        const auto it = std::search(
+            haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+            [](char a, char b)
+            { return std::tolower(static_cast<unsigned char>(a))
+                  == std::tolower(static_cast<unsigned char>(b)); });
+        return it != haystack.end();
+    }
+
+    // "materials/dev/gray" -> {"materials/dev", "gray"}
+    std::pair<std::string_view, std::string_view> SplitFolder(std::string_view displayName)
+    {
+        const std::size_t slash = displayName.rfind('/');
+        if (slash == std::string_view::npos)
+            return { std::string_view{}, displayName };
+        return { displayName.substr(0, slash), displayName.substr(slash + 1) };
+    }
+}
 
 MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
                                            const MaterialEditSession& session,
@@ -48,14 +75,63 @@ void MaterialBrowserPanel::OnDraw()
     ImGui::SetItemTooltip("New writes a default material; Duplicate copies the open one. Both land in materials/<name>.smat under the first content root.");
 
     ImGui::Separator();
-    if (ImGui::BeginListBox("##materials", ImVec2(-FLT_MIN, -FLT_MIN)))
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##filter", "filter materials", FilterBuffer, sizeof(FilterBuffer));
+
+    if (ImGui::BeginChild("##materials"))
+        DrawMaterialList();
+    ImGui::EndChild();
+}
+
+void MaterialBrowserPanel::DrawMaterialList()
+{
+    const std::string_view filter = FilterBuffer;
+
+    // Filtering flattens: matches show with their full path, no tree to dig
+    // through. Without a filter the list groups by folder (entries are sorted
+    // by path, so folders are contiguous runs).
+    if (!filter.empty())
     {
         for (const MaterialAsset& material : Materials.Materials())
         {
+            if (!ContainsCaseInsensitive(material.DisplayName, filter))
+                continue;
             const bool selected = Session.HasOpen() && Session.VirtualPath() == material.Path;
             if (ImGui::Selectable(material.DisplayName.c_str(), selected) && Act.Open)
                 Act.Open(material.Path);
         }
-        ImGui::EndListBox();
+        return;
     }
+
+    std::string_view openFolder;
+    bool folderVisible = true;
+    bool folderStarted = false;
+    for (const MaterialAsset& material : Materials.Materials())
+    {
+        const auto [folder, leaf] = SplitFolder(material.DisplayName);
+        if (!folderStarted || folder != openFolder)
+        {
+            if (folderStarted && folderVisible && !openFolder.empty())
+                ImGui::TreePop();
+            openFolder = folder;
+            folderStarted = true;
+            if (folder.empty())
+                folderVisible = true;
+            else
+                folderVisible = ImGui::TreeNodeEx(std::string(folder).c_str(),
+                                                  ImGuiTreeNodeFlags_DefaultOpen
+                                                      | ImGuiTreeNodeFlags_SpanAvailWidth);
+        }
+        if (!folderVisible)
+            continue;
+
+        const bool selected = Session.HasOpen() && Session.VirtualPath() == material.Path;
+        // ID from the full path: two folders may both hold e.g. "wall".
+        ImGui::PushID(material.Path.c_str());
+        if (ImGui::Selectable(std::string(leaf).c_str(), selected) && Act.Open)
+            Act.Open(material.Path);
+        ImGui::PopID();
+    }
+    if (folderStarted && folderVisible && !openFolder.empty())
+        ImGui::TreePop();
 }

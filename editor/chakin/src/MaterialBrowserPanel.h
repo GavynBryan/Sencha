@@ -31,8 +31,11 @@ public:
     void OnDraw() override;
 
 private:
+    void DrawMaterialList();
+
     MaterialLibrary& Materials;
     const MaterialEditSession& Session;
     Actions Act;
     char NameBuffer[128] = "new_material";
+    char FilterBuffer[128] = "";
 };

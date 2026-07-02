@@ -31,9 +31,11 @@ public:
     bool Load(const std::filesystem::path& file, std::string* error = nullptr);
     bool Save(const std::filesystem::path& file, std::string* error = nullptr) const;
 
-    // Inserts or moves the project to the front and refreshes its name.
-    void Touch(const std::string& path, const std::string& name);
-    void Remove(const std::string& path);
+    // Inserts or moves the project to the front and refreshes its name. Takes
+    // copies on purpose: callers routinely pass references into Entries()
+    // (e.g. a clicked row's own Path), which the erase below would invalidate.
+    void Touch(std::string path, std::string name);
+    void Remove(std::string path);
 
     [[nodiscard]] const std::vector<ProjectCatalogEntry>& Entries() const { return List; }
 

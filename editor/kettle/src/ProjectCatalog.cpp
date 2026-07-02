@@ -104,17 +104,17 @@ bool ProjectCatalog::Save(const std::filesystem::path& file, std::string* error)
     return true;
 }
 
-void ProjectCatalog::Touch(const std::string& path, const std::string& name)
+void ProjectCatalog::Touch(std::string path, std::string name)
 {
     List.erase(std::remove_if(List.begin(), List.end(),
                               [&](const ProjectCatalogEntry& e) { return e.Path == path; }),
                List.end());
-    List.insert(List.begin(), ProjectCatalogEntry{ path, name });
+    List.insert(List.begin(), ProjectCatalogEntry{ std::move(path), std::move(name) });
     if (List.size() > kMaxEntries)
         List.resize(kMaxEntries);
 }
 
-void ProjectCatalog::Remove(const std::string& path)
+void ProjectCatalog::Remove(std::string path)
 {
     List.erase(std::remove_if(List.begin(), List.end(),
                               [&](const ProjectCatalogEntry& e) { return e.Path == path; }),
