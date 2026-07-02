@@ -23,6 +23,7 @@
 #include "ui/MaterialPanel.h"
 #include "ui/MeshEditPanel.h"
 #include "ui/SceneHierarchyPanel.h"
+#include "ui/WorldPartitionPanel.h"
 #include "ui/ViewportPanel.h"
 
 #include <SDL3/SDL.h>
@@ -412,6 +413,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsolePanel = editorConsole.get();
     ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
+    UiFeature->AddPanel(std::make_unique<WorldPartitionPanel>(Workspace->World));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(

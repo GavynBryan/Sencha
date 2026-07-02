@@ -2,6 +2,8 @@
 
 #include "ui/IEditorPanel.h"
 
+#include <string>
+
 class CommandStack;
 class WorldDocument;
 class SelectionService;
@@ -20,4 +22,7 @@ private:
     WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
+    // GetTitle is const and the title varies with the focus zone; the ### suffix
+    // keeps the ImGui window identity stable while the visible text changes.
+    mutable std::string TitleCache;
 };

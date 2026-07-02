@@ -31,7 +31,21 @@ SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
 
 std::string_view SceneHierarchyPanel::GetTitle() const
 {
-    return "Hierarchy";
+    TitleCache = "Hierarchy";
+    if (WorldDoc.IsWorld())
+    {
+        const ZoneId focus = WorldDoc.FocusZone();
+        for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+        {
+            if (zone.Id != focus)
+                continue;
+            TitleCache += " - ";
+            TitleCache += zone.Name;
+            break;
+        }
+    }
+    TitleCache += "###Hierarchy";
+    return TitleCache;
 }
 
 void SceneHierarchyPanel::OnDraw()
