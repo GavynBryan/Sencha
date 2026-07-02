@@ -2,22 +2,27 @@
 
 #include "EditorFrameHook.h"
 #include "../viewport/EditorViewportCameraSystem.h"
+#include "../input/KeymapFile.h"
 #include "../input/SdlEventTranslation.h"
 #include "../input/UiInputGuard.h"
+#include "../commands/CompositeCommand.h"
+#include "../document/BrushBake.h"
 #include "../document/DocumentFileActions.h"
 #include "../document/DocumentSerialization.h"
 #include "../document/MaterialLibrary.h"
+#include "../document/commands/BakeBrushToMeshCommand.h"
+#include "../export/GltfMeshExport.h"
 #include "../project/PieDriver.h"
 #include "../render/EditorRenderFeature.h"
 #include "../ui/EditorConsolePanel.h"
 #include "../ui/EditorStatusBar.h"
+#include "../ui/EditorThemeFile.h"
 #include "../ui/EditorToolbar.h"
 #include "../ui/EditorUiFeature.h"
 #include "../ui/InspectorPanel.h"
 #include "../ui/MaterialPanel.h"
 #include "../ui/MeshEditPanel.h"
 #include "../ui/SceneHierarchyPanel.h"
-#include "../ui/ToolPalettePanel.h"
 #include "../ui/ViewportPanel.h"
 
 #include <SDL3/SDL.h>
@@ -48,6 +53,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
+
+#ifndef SENCHA_EDITOR_THEME_DIR
+#define SENCHA_EDITOR_THEME_DIR "."
+#endif
 
 EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineConfig& config)
 {
@@ -140,27 +150,63 @@ void EditorServices::BuildInput()
         });
 
     Shortcuts = std::make_unique<ShortcutRegistry>();
-    Shortcuts->Register(SDLK_Z, { .Ctrl = true }, [this] { Commands->Undo(); });
-    Shortcuts->Register(SDLK_Z, { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); });
-    Shortcuts->Register(SDLK_Y, { .Ctrl = true }, [this] { Commands->Redo(); });
-    Shortcuts->Register(SDLK_DELETE, {}, [this] { Workspace->DeleteSelection(); });
-    Shortcuts->Register(SDLK_N, { .Ctrl = true }, [this] { if (Files) Files->New(); });
-    Shortcuts->Register(SDLK_O, { .Ctrl = true }, [this] { if (Files) Files->RequestOpen(); });
-    Shortcuts->Register(SDLK_S, { .Ctrl = true }, [this] { if (Files) Files->Save(); });
-    Shortcuts->Register(SDLK_V, { .Shift = true }, [this] { Workspace->MeshEdit.CycleElementKind(); });
 
-    // Gizmo selection (Shift+Q/W/E/R) and element mode (1/2/3/4). Key events reach
-    // shortcuts even while the fly camera holds the pointer, so the gizmo switches
-    // carry Shift to stay off the camera's bare W/A/S/D + Q/E. The UI guard still
-    // blocks them while a text field is focused.
-    Shortcuts->Register(SDLK_Q, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Resize); });
-    Shortcuts->Register(SDLK_W, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Move); });
-    Shortcuts->Register(SDLK_E, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Rotate); });
-    Shortcuts->Register(SDLK_R, { .Shift = true }, [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Scale); });
-    Shortcuts->Register(SDLK_1, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); });
-    Shortcuts->Register(SDLK_2, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); });
-    Shortcuts->Register(SDLK_3, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); });
-    Shortcuts->Register(SDLK_4, {}, [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); });
+    // The editor keymap, as one table. Notes on the choices:
+    // - Gizmo switches (Shift+Q/W/E/R) carry Shift to stay off the fly camera's
+    //   bare W/A/S/D + Q/E; key events reach shortcuts even while the camera holds
+    //   the pointer. The UI guard still blocks them while a text field is focused.
+    // - Escape lands here only when no drag is in flight (the viewport dispatcher
+    //   ahead in the chain consumes it to cancel an active interaction), so it
+    //   climbs the editing context one level per press.
+    struct KeyBinding
+    {
+        std::string_view Action;
+        SDL_Keycode Key;
+        ModifierFlags Mods;
+        std::function<void()> Callback;
+    };
+    const KeyBinding bindings[] = {
+        { "edit.undo",             SDLK_Z,      { .Ctrl = true },                [this] { Commands->Undo(); } },
+        { "edit.redo",             SDLK_Z,      { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); } },
+        { "edit.redo",             SDLK_Y,      { .Ctrl = true },                [this] { Commands->Redo(); } },
+        { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
+        { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
+        { "edit.duplicate",        SDLK_D,      { .Ctrl = true },                [this] { Workspace->DuplicateSelection(/*asInstance*/ false); } },
+        { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->DuplicateSelection(/*asInstance*/ true); } },
+        { "edit.escape",           SDLK_ESCAPE, {},                              [this] { Workspace->EscapeStep(); } },
+        { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { if (Files) Files->New(); } },
+        { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { if (Files) Files->RequestOpen(); } },
+        { "file.save",             SDLK_S,      { .Ctrl = true },                [this] { if (Files) Files->Save(); } },
+        { "mode.cycle",            SDLK_V,      { .Shift = true },               [this] { Workspace->MeshEdit.CycleElementKind(); } },
+        { "mode.object",           SDLK_1,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
+        { "mode.vertex",           SDLK_2,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },
+        { "mode.edge",             SDLK_3,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); } },
+        { "mode.face",             SDLK_4,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); } },
+        { "gizmo.resize",          SDLK_Q,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Resize); } },
+        { "gizmo.move",            SDLK_W,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Move); } },
+        { "gizmo.rotate",          SDLK_E,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Rotate); } },
+        { "gizmo.scale",           SDLK_R,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Scale); } },
+        { "gizmo.space",           SDLK_T,      { .Shift = true },               [this] { Workspace->Manipulators->CycleTransformSpace(); } },
+        { "grid.origin_selection", SDLK_G,      { .Shift = true },               [this] { Workspace->SetGridOriginToSelection(); } },
+        { "grid.align_face",       SDLK_G,      { .Alt = true },                 [this] { Workspace->AlignGridToSelectedFace(); } },
+        { "grid.reset",            SDLK_G,      { .Ctrl = true, .Shift = true }, [this] { Workspace->ResetGrid(); } },
+        { "material.copy_proj",    SDLK_C,      { .Ctrl = true, .Shift = true }, [this] { if (MaterialsPanel) MaterialsPanel->CopyProjection(); } },
+        { "material.paste_proj",   SDLK_V,      { .Ctrl = true, .Shift = true }, [this] { if (MaterialsPanel) MaterialsPanel->PasteProjection(); } },
+    };
+    // User keymap overrides ride on the action names: a keybinds.json in the
+    // working directory rebinds any table entry without a recompile.
+    std::string keymapError;
+    const auto overrides = LoadKeymapOverrides("keybinds.json", &keymapError);
+    if (!keymapError.empty())
+        std::fprintf(stderr, "[editor] %s\n", keymapError.c_str());
+    for (const KeyBinding& binding : bindings)
+    {
+        const auto it = overrides.find(std::string(binding.Action));
+        if (it != overrides.end())
+            Shortcuts->Register(binding.Action, it->second.Key, it->second.Mods, binding.Callback);
+        else
+            Shortcuts->Register(binding.Action, binding.Key, binding.Mods, binding.Callback);
+    }
 
     Router = std::make_unique<InputRouter>();
     // The UI is the top layer of the input stack: events over an ImGui panel are
@@ -284,6 +330,35 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
     DebugService& debug = engine.Debug();
+
+    // Chrome theme (directive: behavior from data). A theme name resolves under
+    // the bundled themes/ directory; a path is used as-is. Empty keeps the
+    // built-in palette. Loaded BEFORE the UI feature applies the ImGui style.
+    console.Registry().RegisterCVar({
+        .Name = "editor.ui.theme",
+        .Owner = "editor",
+        .Type = CVarType::String,
+        .DefaultValue = std::string{},
+        .CurrentValue = std::string{},
+        .Flags = CVarFlags::Archive,
+        .Help = "Editor chrome theme: a name under the bundled themes/ dir or a path to a theme JSON. Empty = built-in. Applied at startup.",
+        .Source = { "editor" },
+    });
+    if (const CVarMetadata* themeVar = console.Registry().FindCVar("editor.ui.theme"))
+    {
+        if (const std::string* name = std::get_if<std::string>(&themeVar->CurrentValue);
+            name != nullptr && !name->empty())
+        {
+            std::filesystem::path themePath(*name);
+            std::error_code ec;
+            if (!std::filesystem::exists(themePath, ec))
+                themePath = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / (*name + ".json");
+            std::string themeError;
+            if (!LoadEditorTheme(themePath, &themeError) || !themeError.empty())
+                std::fprintf(stderr, "[editor] %s\n", themeError.c_str());
+        }
+    }
+
     auto& instance = engine.Graphics().Instance;
     auto& frames = engine.Graphics().Frames;
     Renderer& renderer = engine.Graphics().MainRenderer;
@@ -314,10 +389,27 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .Stop = [this] { if (Pie) Pie->Stop(); },
         .IsPlaying = [this] { return Pie != nullptr && Pie->IsPlaying(); },
     });
+    Toolbar->SetGridFrameControls({
+        .OriginToSelection = [this] { Workspace->SetGridOriginToSelection(); },
+        .AlignToFace = [this] { Workspace->AlignGridToSelectedFace(); },
+        .RotateInPlane = [this] { Workspace->RotateGridInPlane(90.0f); },
+        .Reset = [this] { Workspace->ResetGrid(); },
+        .ToggleMoveOrigin = [this]
+        { Workspace->Manipulators->SetEditingGridOrigin(!Workspace->Manipulators->IsEditingGridOrigin()); },
+        .IsMovingOrigin = [this] { return Workspace->Manipulators->IsEditingGridOrigin(); },
+    });
+    Toolbar->SetTransformControls({
+        .Session = Workspace->Manipulators,
+        .SetOriginToPivot = [this] { Workspace->SetSelectedBrushOriginToPivot(); },
+        .HasSelection = [this] { return !Workspace->Selection.GetSelection().empty(); },
+    });
     StatusBar = std::make_unique<EditorStatusBar>(
-        *Workspace->Tools, Workspace->Layout, Workspace->Selection, Workspace->Grid);
+        *Workspace->Tools, Workspace->Layout, Workspace->Selection, Workspace->Grid,
+        Workspace->MeshEdit, *Workspace->Manipulators);
+    ToolSidebar = std::make_unique<EditorToolSidebar>(*Workspace->Tools);
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
+    UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
 
     auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
                                                          RenderFeature->GetViewportTargets());
@@ -327,17 +419,36 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsolePanel = editorConsole.get();
     ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
-    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>(*Workspace->Tools));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
-        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands, *Workspace->Manipulators,
-        [this] { Workspace->SetSelectedBrushOriginToPivot(); }));
-    UiFeature->AddPanel(std::make_unique<MaterialPanel>(
         *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
-        *Materials, Workspace->Document));
+        MeshEditPanel::ObjectActions{
+            .Duplicate = [this] { Workspace->DuplicateSelection(/*asInstance*/ false); },
+            .Instance = [this] { Workspace->DuplicateSelection(/*asInstance*/ true); },
+            .MakeUnique = [this] { Workspace->MakeSelectedBrushesUnique(); },
+            .Merge = [this] { Workspace->MergeSelectedBrushes(); },
+            .SeparateFaces = [this] { Workspace->SeparateSelectedFaces(); },
+            .Bake = [this] { BakeSelectedBrushes(); },
+            .Revert = [this] { RevertSelectedBakedBrushes(); },
+            .ExportGlb = [this] { ExportSelectionGlb(); },
+            .HasBakedSelection = [this] { return SelectionHasBakedBrush(); },
+            .HasInstancedSelection = [this]
+            {
+                const EditorScene& scene = Workspace->Document.GetScene();
+                for (const SelectableRef& ref : Workspace->Selection.GetSelection())
+                    if (ref.IsEntity() && scene.IsBrushInstanced(ref.Entity))
+                        return true;
+                return false;
+            },
+        }));
+    auto materialPanel = std::make_unique<MaterialPanel>(
+        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
+        *Materials, Workspace->Document);
+    MaterialsPanel = materialPanel.get();
+    UiFeature->AddPanel(std::move(materialPanel));
 
     renderer.AddFeature(std::move(uiFeature));
 }
@@ -400,9 +511,153 @@ void EditorServices::ProcessFrame()
     }
 
     // Rebuild the transient viewport overlay (selected-brush dimension labels)
-    // before the UI panel draws it this frame.
+    // before the UI panel draws it this frame, and keep the ortho views aligned
+    // to the (possibly gizmo-dragged) grid frame.
     if (Workspace)
+    {
         Workspace->UpdateOverlay();
+        Workspace->SyncOrthoViewsToGridFrame();
+    }
+}
+
+namespace
+{
+// Self-contained export payload handed to the async save dialog: the callback
+// owns it and touches no editor state.
+struct GlbExportPayload
+{
+    MeshGeometry Geometry;
+    std::vector<AssetRef> Materials;
+};
+}
+
+void EditorServices::BakeSelectedBrushes()
+{
+    if (!Assets || !Project || Project->ContentRoots.empty())
+    {
+        std::fprintf(stderr, "[editor] bake needs an open project (SENCHA_PROJECT) with a content root\n");
+        return;
+    }
+
+    Engine& engine = *EnginePtr;
+    const std::filesystem::path contentRoot(Project->ContentRoots.front());
+    EditorScene& scene = Workspace->Document.GetScene();
+
+    // Snapshot the entity list first: executing a command must not invalidate the
+    // selection span being walked.
+    std::vector<EntityId> targets;
+    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
+        if (ref.IsEntity() && scene.TryGetBrush(ref.Entity) != nullptr)
+            targets.push_back(ref.Entity);
+
+    std::vector<std::unique_ptr<ICommand>> commands;
+    for (EntityId entity : targets)
+        if (auto command = MakeBakeBrushToMeshCommand(scene, Workspace->Document, Assets->Assets,
+                                                      Assets->Registry, engine.Logging(),
+                                                      entity, contentRoot))
+            commands.push_back(std::move(command));
+
+    if (commands.empty())
+        return;
+    if (commands.size() == 1)
+        Commands->Execute(std::move(commands.front()));
+    else
+        Commands->Execute(std::make_unique<CompositeCommand>(std::move(commands)));
+}
+
+void EditorServices::RevertSelectedBakedBrushes()
+{
+    if (!Assets)
+        return;
+
+    EditorScene& scene = Workspace->Document.GetScene();
+    std::vector<EntityId> targets;
+    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
+        if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
+            targets.push_back(ref.Entity);
+
+    std::vector<std::unique_ptr<ICommand>> commands;
+    for (EntityId entity : targets)
+        if (auto command = MakeRevertBakedBrushCommand(scene, Workspace->Document, Assets->Assets, entity))
+            commands.push_back(std::move(command));
+
+    if (commands.empty())
+        return;
+    if (commands.size() == 1)
+        Commands->Execute(std::move(commands.front()));
+    else
+        Commands->Execute(std::make_unique<CompositeCommand>(std::move(commands)));
+}
+
+bool EditorServices::SelectionHasBakedBrush() const
+{
+    if (!Workspace)
+        return false;
+    const EditorScene& scene = Workspace->Document.GetScene();
+    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
+        if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
+            return true;
+    return false;
+}
+
+void EditorServices::ExportSelectionGlb()
+{
+    if (Window == nullptr || Window->GetHandle() == nullptr)
+        return;
+
+    const EditorScene& scene = Workspace->Document.GetScene();
+
+    // First selected entity with a live or dormant brush mesh supplies the
+    // geometry, baked in local space through the same kernel as the level cook.
+    const BrushMesh* mesh = nullptr;
+    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
+    {
+        if (!ref.IsEntity())
+            continue;
+        mesh = scene.TryGetBrushMesh(ref.Entity);
+        if (mesh == nullptr)
+            mesh = scene.TryGetDormantBrushMesh(ref.Entity);
+        if (mesh != nullptr)
+            break;
+    }
+    if (mesh == nullptr)
+    {
+        std::fprintf(stderr, "[editor] export: select a brush or baked brush first\n");
+        return;
+    }
+
+    auto payload = std::make_unique<GlbExportPayload>();
+    std::string error;
+    if (!BakeBrushToGeometry(*mesh, Workspace->Document.GetDefaultMaterial(),
+                             payload->Geometry, payload->Materials, &error))
+    {
+        std::fprintf(stderr, "[editor] export: %s\n", error.c_str());
+        return;
+    }
+
+    static constexpr SDL_DialogFileFilter kGlbFilters[] = { { "Binary glTF", "glb" } };
+    SDL_ShowSaveFileDialog(
+        [](void* userdata, const char* const* filelist, int)
+        {
+            // The dialog callback may run off the main thread; the payload is
+            // self-contained (no editor state), so writing here is safe.
+            std::unique_ptr<GlbExportPayload> payload(static_cast<GlbExportPayload*>(userdata));
+            if (filelist == nullptr || filelist[0] == nullptr)
+                return;
+            std::filesystem::path path(filelist[0]);
+            if (path.extension() != ".glb")
+                path += ".glb";
+            std::string writeError;
+            if (!WriteGlbFile(payload->Geometry, payload->Materials, path, &writeError))
+                std::fprintf(stderr, "[editor] export: %s\n", writeError.c_str());
+            else
+                std::fprintf(stderr, "[editor] exported '%s'\n", path.string().c_str());
+        },
+        payload.release(),
+        Window->GetHandle(),
+        kGlbFilters,
+        static_cast<int>(std::size(kGlbFilters)),
+        nullptr);
 }
 
 void EditorServices::LoadGameModule()

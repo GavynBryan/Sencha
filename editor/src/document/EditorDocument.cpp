@@ -85,6 +85,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     World& world = Registry_.Components;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<BrushComponent>();
+    world.RegisterComponent<BakedBrushComponent>();
     world.RegisterComponent<CameraComponent>();
 
     // Register storage for every serializer the registry knows — engine, editor,
@@ -180,11 +181,18 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
     snapshot.Components = JsonValue(std::move(components));
 
     // The brush mesh lives in the sidecar store, not the registry, so capture it
-    // separately along with the id the brush component serialized.
+    // separately along with the id the brush component serialized. A baked brush
+    // keeps its dormant source mesh under BakedBrushComponent instead.
     if (const BrushComponent* brush = Scene.TryGetBrush(entity))
     {
         snapshot.MeshId = brush->Id;
         if (const BrushMesh* mesh = Scene.TryGetBrushMesh(entity))
+            snapshot.Mesh = *mesh;
+    }
+    else if (const BakedBrushComponent* baked = Scene.TryGetBakedBrush(entity))
+    {
+        snapshot.MeshId = baked->Source;
+        if (const BrushMesh* mesh = Scene.TryGetDormantBrushMesh(entity))
             snapshot.Mesh = *mesh;
     }
 
@@ -225,14 +233,22 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
         if (freshMesh)
         {
             // Source is still alive and owns snapshot.MeshId: give the copy its own
-            // mesh and repoint its brush component, so the two are independent.
+            // mesh and repoint whichever component carries it (brush, or the baked
+            // dormant source), so the two entities are independent.
             const BrushId id = Scene.GetBrushMeshStore().Create(*snapshot.Mesh);
-            Scene.SetComponent(entity, BrushComponent{ id });
+            if (Scene.TryGetBrush(entity) != nullptr)
+                Scene.SetComponent(entity, BrushComponent{ id });
+            else if (Scene.TryGetBakedBrush(entity) != nullptr)
+                Scene.SetComponent(entity, BakedBrushComponent{ id });
         }
-        else
+        else if (Scene.GetBrushMeshStore().Find(snapshot.MeshId) == nullptr)
         {
-            // Re-seat at the original id. BrushMeshStore::NextId is monotonic and
-            // never reuses a freed id, so this cannot collide with a Create.
+            // Re-seat at the original id (the delete-undo case; the id is free
+            // because destroy released it). BrushMeshStore::NextId is monotonic
+            // and never reuses a freed id, so this cannot collide with a Create.
+            // When the id is still LIVE the restore is an instance of an alive
+            // mesh: leave the store alone so the shared mesh keeps any edits
+            // made since the snapshot.
             Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Mesh);
         }
     }

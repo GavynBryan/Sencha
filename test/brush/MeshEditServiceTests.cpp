@@ -606,6 +606,13 @@ TEST(BrushOps, TraceAbsentSeedReturnsEmpty)
     EXPECT_TRUE(BrushOps::TraceEdgeRing(box, 0, 6).StripFaces.empty());
 }
 
+namespace
+{
+constexpr std::array<Vec3d, 3> kWorldFrame = {
+    Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f }
+};
+}
+
 TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }); // verts at +/-1
@@ -613,7 +620,7 @@ TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
 
     // Stretch +X to 2 (anchor the -X face), leave Y/Z alone.
     const std::optional<BrushMesh> after = service.ResizeBounds(
-        box, Transform3f::Identity(),
+        box, Transform3f::Identity(), kWorldFrame,
         Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(1.0f, 1.0f, 1.0f),
         Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(2.0f, 1.0f, 1.0f),
         true);
@@ -627,6 +634,38 @@ TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.X, expectedX);
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.Y, box.Vertices[i].Position.Y);
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.Z, box.Vertices[i].Position.Z);
+    }
+}
+
+TEST(MeshEditService, ResizeBoundsHonorsARotatedFrame)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    // Frame rotated 45 degrees about Y: U = (1,0,-1)/sqrt2, W = (1,0,1)/sqrt2.
+    const float inv = 1.0f / std::sqrt(2.0f);
+    const std::array<Vec3d, 3> frame = {
+        Vec3d{ inv, 0.0f, -inv }, Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ inv, 0.0f, inv }
+    };
+
+    // The box's frame bounds: corner (+/-1, y, +/-1) projects onto U in
+    // [-sqrt2, sqrt2]. Double the frame-U extent about its center.
+    const float s2 = std::sqrt(2.0f);
+    const std::optional<BrushMesh> after = service.ResizeBounds(
+        box, Transform3f::Identity(), frame,
+        Vec3d(-s2, -1.0f, -s2), Vec3d(s2, 1.0f, s2),
+        Vec3d(-2.0f * s2, -1.0f, -s2), Vec3d(2.0f * s2, 1.0f, s2),
+        true);
+
+    ASSERT_TRUE(after.has_value());
+    for (std::size_t i = 0; i < box.Vertices.size(); ++i)
+    {
+        // Frame coordinates: U doubles, N and V unchanged.
+        const Vec3d before = box.Vertices[i].Position;
+        const Vec3d now = after->Vertices[i].Position;
+        EXPECT_NEAR(now.Dot(frame[0]), before.Dot(frame[0]) * 2.0f, 1e-4f);
+        EXPECT_NEAR(now.Dot(frame[1]), before.Dot(frame[1]), 1e-4f);
+        EXPECT_NEAR(now.Dot(frame[2]), before.Dot(frame[2]), 1e-4f);
     }
 }
 
@@ -884,4 +923,20 @@ TEST(MeshEditService, EdgeExtrudeUpContinuesFloorSurface)
         EXPECT_TRUE(FacesContinueSurface(after->Mesh, floorFace, i));
     }
     EXPECT_EQ(walls, 4);
+}
+
+TEST(MeshEditService, ElementKindObserverFiresOnRealChangesOnly)
+{
+    MeshEditService service;
+    std::vector<MeshElementKind> seen;
+    service.SetElementKindObserver([&](MeshElementKind next) { seen.push_back(next); });
+
+    service.SetElementKind(MeshElementKind::Object); // already Object: no fire
+    service.SetElementKind(MeshElementKind::Face);
+    service.SetElementKind(MeshElementKind::Face);   // no change: no fire
+    service.CycleElementKind();                       // Face -> next kind: fires
+
+    ASSERT_EQ(seen.size(), 2u);
+    EXPECT_EQ(seen[0], MeshElementKind::Face);
+    EXPECT_EQ(seen[1], service.GetElementKind());
 }

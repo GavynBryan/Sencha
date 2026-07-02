@@ -272,7 +272,12 @@ BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, 
         wall.Loop = { baseLoop[i], baseLoop[j], topLoop[j], topLoop[i] };
         wall.Material.Material = sourceMaterial.Material;
         wall.Material.Uv = UvProjectionForNormal(wallNormal, sourceMaterial.Uv.WorldAligned);
-        wall.Material.Uv.Scale = sourceMaterial.Uv.Scale; // match cap texel density
+        // Carry the cap's texel density, offset, and rotation so the texture
+        // continues across the shared edge instead of resetting phase (a
+        // world-aligned wall shares one projection axis with its cap).
+        wall.Material.Uv.Scale = sourceMaterial.Uv.Scale;
+        wall.Material.Uv.Offset = sourceMaterial.Uv.Offset;
+        wall.Material.Uv.Rotation = sourceMaterial.Uv.Rotation;
         out.Faces.push_back(std::move(wall));
     }
 
@@ -280,7 +285,8 @@ BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, 
     return out;
 }
 
-BrushMesh BrushOps::ExtrudeEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b, Vec3d offset)
+BrushMesh BrushOps::ExtrudeEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b, Vec3d offset,
+                                const FaceMaterial* inherit)
 {
     BrushMesh out = mesh;
     if (a >= out.Vertices.size() || b >= out.Vertices.size() || a == b)
@@ -296,7 +302,18 @@ BrushMesh BrushOps::ExtrudeEdge(const BrushMesh& mesh, std::uint32_t a, std::uin
 
     BrushFace strip;
     strip.Loop = { a, b, b2, a2 };
-    strip.Material.Uv = UvProjectionForNormal((posB - posA).Cross(offset), /*worldAligned*/ true);
+    // The strip projects from its own normal; the seed face (when given) supplies
+    // material, alignment, texel density, offset, and rotation so the texture
+    // continues off the edge it was pulled from instead of resetting to defaults.
+    const bool worldAligned = inherit == nullptr || inherit->Uv.WorldAligned;
+    strip.Material.Uv = UvProjectionForNormal((posB - posA).Cross(offset), worldAligned);
+    if (inherit != nullptr)
+    {
+        strip.Material.Material = inherit->Material;
+        strip.Material.Uv.Scale = inherit->Uv.Scale;
+        strip.Material.Uv.Offset = inherit->Uv.Offset;
+        strip.Material.Uv.Rotation = inherit->Uv.Rotation;
+    }
     out.Faces.push_back(std::move(strip));
 
     // Validation is the caller's (see header), so composed extrudes share base
@@ -806,5 +823,193 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
 
     BrushValidateAndRepair(out);
     BrushOrientFacesOutward(out); // freshly rebuilt mesh: orient the cut cap + pieces
+    return out;
+}
+
+namespace
+{
+    // Carve tolerances. Shape checks are relative (dimensionless); snap is twice
+    // the weld tolerance so a snapped-but-not-flush gap can never weld into a
+    // sliver (BrushWeldVertices compares inclusively at 1e-4).
+    constexpr float kCarveShapeTol = 1e-3f;
+    constexpr float kCarveSnapTol = 2e-4f;
+}
+
+std::optional<BrushOps::BrushRectFaceFrame> BrushOps::RectFaceFrame(const BrushMesh& mesh,
+                                                                    std::uint32_t face)
+{
+    if (face >= mesh.Faces.size() || mesh.Faces[face].Loop.size() != 4)
+        return std::nullopt;
+
+    const std::vector<std::uint32_t>& loop = mesh.Faces[face].Loop;
+    const Vec3d p0 = mesh.Vertices[loop[0]].Position;
+    const Vec3d p1 = mesh.Vertices[loop[1]].Position;
+    const Vec3d p2 = mesh.Vertices[loop[2]].Position;
+    const Vec3d p3 = mesh.Vertices[loop[3]].Position;
+
+    const Vec3d e0 = p1 - p0;
+    const Vec3d e2 = p3 - p2;
+    const Vec3d d = p3 - p0;
+    const float width = e0.Magnitude();
+    const float height = d.Magnitude();
+    if (width < 4.0f * kCarveSnapTol || height < 4.0f * kCarveSnapTol)
+        return std::nullopt;
+
+    // Parallelogram (opposite edges cancel), which also implies planarity; then
+    // a right angle between the two frame axes makes it a rectangle.
+    if ((e0 + e2).Magnitude() > kCarveShapeTol * std::max(width, height))
+        return std::nullopt;
+    const Vec3d u = e0 * (1.0f / width);
+    const Vec3d v = d * (1.0f / height);
+    if (std::abs(u.Dot(v)) > kCarveShapeTol)
+        return std::nullopt;
+
+    return BrushRectFaceFrame{ .Origin = p0, .AxisU = u, .AxisV = v, .Width = width, .Height = height };
+}
+
+BrushMesh BrushOps::CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
+                                  Vec2d rectMin, Vec2d rectMax)
+{
+    const std::optional<BrushRectFaceFrame> frame = RectFaceFrame(mesh, face);
+    if (!frame.has_value())
+        return mesh;
+    const float width = frame->Width;
+    const float height = frame->Height;
+
+    // Canonicalize: order, clamp to the face, snap flush within tolerance.
+    float u0 = std::clamp(std::min(rectMin.X, rectMax.X), 0.0f, width);
+    float u1 = std::clamp(std::max(rectMin.X, rectMax.X), 0.0f, width);
+    float v0 = std::clamp(std::min(rectMin.Y, rectMax.Y), 0.0f, height);
+    float v1 = std::clamp(std::max(rectMin.Y, rectMax.Y), 0.0f, height);
+    const auto snap = [](float& x, float limit)
+    {
+        if (x <= kCarveSnapTol)
+            x = 0.0f;
+        if (x >= limit - kCarveSnapTol)
+            x = limit;
+    };
+    snap(u0, width);
+    snap(u1, width);
+    snap(v0, height);
+    snap(v1, height);
+
+    if (u1 - u0 <= kCarveSnapTol || v1 - v0 <= kCarveSnapTol)
+        return mesh; // zero-size or sliver rect (covers a rect entirely off the face too)
+
+    // Flush flags per host side, CCW from the bottom edge h0-h1.
+    const bool flush[4] = { v0 == 0.0f, u1 == width, v1 == height, u0 == 0.0f };
+    if (flush[0] && flush[1] && flush[2] && flush[3])
+        return mesh; // rect covers the face: no-op per spec
+
+    BrushMesh out = mesh;
+    const std::array<std::uint32_t, 4> host = {
+        mesh.Faces[face].Loop[0], mesh.Faces[face].Loop[1],
+        mesh.Faces[face].Loop[2], mesh.Faces[face].Loop[3],
+    };
+
+    // Rect corners S0..S3, CCW matching the host corners. A corner flush in BOTH
+    // coordinates reuses the host corner index (never mint a duplicate there: it
+    // would weld into a degenerate repeated-index loop).
+    const Vec2d cornerUv[4] = { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } };
+    const bool atHostCorner[4] = {
+        flush[3] && flush[0], // S0 at h0: left + bottom
+        flush[1] && flush[0], // S1 at h1: right + bottom
+        flush[1] && flush[2], // S2 at h2: right + top
+        flush[3] && flush[2], // S3 at h3: left + top
+    };
+    std::array<std::uint32_t, 4> rectIdx{};
+    for (int k = 0; k < 4; ++k)
+    {
+        if (atHostCorner[k])
+        {
+            rectIdx[k] = host[static_cast<std::size_t>(k)];
+            continue;
+        }
+        rectIdx[k] = static_cast<std::uint32_t>(out.Vertices.size());
+        out.Vertices.push_back(BrushVertex{
+            frame->Origin + frame->AxisU * cornerUv[k].X + frame->AxisV * cornerUv[k].Y });
+    }
+
+    // Shared split vertices for the flush sides: every OTHER face bordering the
+    // flush host edge gains the newly minted corner(s) in its loop, ordered by
+    // parameter along that face's own traversal of the edge, so the mesh stays
+    // closed and the neighbor loop stays simple regardless of its winding. The
+    // neighbor's current loop is rescanned per side because an earlier side may
+    // already have inserted into the same face.
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    for (int k = 0; k < 4; ++k)
+    {
+        if (!flush[k])
+            continue;
+        const std::uint32_t a = host[static_cast<std::size_t>(k)];
+        const std::uint32_t b = host[static_cast<std::size_t>((k + 1) % 4)];
+
+        // (index, parameter along the DIRECTED host edge a -> b) per minted point.
+        std::vector<std::pair<std::uint32_t, float>> points;
+        const auto paramOf = [&](int corner)
+        {
+            switch (k)
+            {
+            case 0: return cornerUv[corner].X / width;             // bottom: by u
+            case 1: return cornerUv[corner].Y / height;            // right: by v
+            case 2: return (width - cornerUv[corner].X) / width;   // top: by W-u
+            default: return (height - cornerUv[corner].Y) / height; // left: by H-v
+            }
+        };
+        if (!atHostCorner[k])
+            points.emplace_back(rectIdx[static_cast<std::size_t>(k)], paramOf(k));
+        if (!atHostCorner[(k + 1) % 4])
+            points.emplace_back(rectIdx[static_cast<std::size_t>((k + 1) % 4)], paramOf((k + 1) % 4));
+        if (points.empty())
+            continue;
+
+        const auto it = edgeFaces.find(UndirectedEdge(a, b));
+        if (it == edgeFaces.end())
+            continue;
+        for (const auto& [neighborFace, unusedEdgeIndex] : it->second)
+        {
+            if (neighborFace == face)
+                continue;
+            std::vector<std::uint32_t>& loop = out.Faces[neighborFace].Loop;
+            for (std::size_t j = 0; j < loop.size(); ++j)
+            {
+                const std::uint32_t x = loop[j];
+                const std::uint32_t y = loop[(j + 1) % loop.size()];
+                if (!((x == a && y == b) || (x == b && y == a)))
+                    continue;
+                std::vector<std::pair<std::uint32_t, float>> ordered = points;
+                std::sort(ordered.begin(), ordered.end(),
+                          [ascending = (x == a)](const auto& l, const auto& r)
+                          { return ascending ? l.second < r.second : l.second > r.second; });
+                for (std::size_t p = 0; p < ordered.size(); ++p)
+                    loop.insert(loop.begin() + static_cast<std::ptrdiff_t>(j + 1 + p),
+                                ordered[p].first);
+                break;
+            }
+        }
+    }
+
+    // Rebuild: the host face is replaced by the ring quads (one per non-flush
+    // side) and the center rectangle, appended LAST. Every loop is CCW in the
+    // frame, so with AxisU x AxisV = host normal no winding repair is needed
+    // (and none exists: repair recomputes normals but never re-winds).
+    const FaceMaterial material = mesh.Faces[face].Material;
+    const Vec3d normal = mesh.Faces[face].Normal;
+    out.Faces.erase(out.Faces.begin() + face);
+
+    const auto appendFace = [&](std::array<std::uint32_t, 4> loop)
+    {
+        BrushFace piece;
+        piece.Loop.assign(loop.begin(), loop.end());
+        piece.Material = material;
+        piece.Normal = normal;
+        out.Faces.push_back(std::move(piece));
+    };
+    for (int k = 0; k < 4; ++k)
+        if (!flush[k])
+            appendFace({ host[static_cast<std::size_t>(k)], host[static_cast<std::size_t>((k + 1) % 4)],
+                         rectIdx[static_cast<std::size_t>((k + 1) % 4)], rectIdx[static_cast<std::size_t>(k)] });
+    appendFace({ rectIdx[0], rectIdx[1], rectIdx[2], rectIdx[3] });
+
     return out;
 }

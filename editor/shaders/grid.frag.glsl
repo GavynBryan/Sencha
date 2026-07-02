@@ -10,6 +10,8 @@ layout(push_constant) uniform GridPC {
     float subdivSpacing; // unused by the adaptive grid; kept for push-constant layout
     vec3 gridForward;
     float fadeEnd;
+    vec3 gridOrigin;     // grid frame origin: lattice phase + axis-line anchor
+    float pad0;
     vec4 style;          // x = cell px (density), y = opacity, z = brightness, w = fade start fraction
 } pc;
 
@@ -45,8 +47,11 @@ vec3 axisColor(vec3 axis)
 
 void main()
 {
-    float u = dot(fragWorldPos, pc.axisU);
-    float v = dot(fragWorldPos, pc.axisV);
+    // Coordinates relative to the grid frame origin: the lattice phase and the
+    // colored axis lines follow the frame, so moving/rotating the working grid
+    // is visible (the axis cross marks the origin).
+    float u = dot(fragWorldPos - pc.gridOrigin, pc.axisU);
+    float v = dot(fragWorldPos - pc.gridOrigin, pc.axisV);
     float fwu = max(fwidth(u), 1e-8);
     float fwv = max(fwidth(v), 1e-8);
     float fw  = max(fwu, fwv);

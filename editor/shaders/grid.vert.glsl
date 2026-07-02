@@ -10,6 +10,8 @@ layout(push_constant) uniform GridPC {
     float subdivSpacing;
     vec3 gridForward;
     float fadeEnd;
+    vec3 gridOrigin;     // unused here; matches the fragment push-constant layout
+    float pad0;
     vec4 style;          // unused here; matches the fragment push-constant layout
 } pc;
 

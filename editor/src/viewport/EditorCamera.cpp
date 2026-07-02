@@ -13,12 +13,16 @@ constexpr float kOrthoZoomStep = 0.9f;
 constexpr float kMinOrthoHeight = 0.25f;
 constexpr float kMaxOrthoHeight = 10000.0f;
 
-void GetOrthoBasis(const Vec3d& orthoAxis, Vec3d& right, Vec3d& up)
+void GetOrthoBasis(const Vec3d& orthoAxis, const Vec3d& upHint, Vec3d& right, Vec3d& up)
 {
     const Vec3d forward = (-orthoAxis).Normalized();
-    Vec3d viewUp = Vec3d::Up();
-    if (std::abs(orthoAxis.Dot(viewUp)) > 0.999f)
-        viewUp = Vec3d::Forward();
+    Vec3d viewUp = upHint;
+    if (viewUp.SqrMagnitude() < 1e-8f)
+    {
+        viewUp = Vec3d::Up();
+        if (std::abs(orthoAxis.Dot(viewUp)) > 0.999f)
+            viewUp = Vec3d::Forward();
+    }
 
     right = forward.Cross(viewUp).Normalized();
     up = right.Cross(forward).Normalized();
@@ -71,9 +75,10 @@ CameraRenderData EditorCamera::BuildRenderData(float aspectRatio) const
     else
     {
         const Vec3d eye = OrthoCenter + OrthoAxis * 100.0f;
-        Vec3d up = Vec3d::Up();
-        if (std::abs(OrthoAxis.Dot(up)) > 0.999f)
-            up = Vec3d::Forward();
+        Vec3d right;
+        Vec3d up;
+        GetOrthoBasis(OrthoAxis, OrthoUpHint, right, up);
+        (void)right;
 
         const float halfHeight = OrthoHeight * 0.5f;
         const float halfWidth = halfHeight * aspectRatio;
@@ -111,7 +116,7 @@ Vec3d EditorCamera::GetOrthoRightVector() const
 {
     Vec3d right;
     Vec3d up;
-    GetOrthoBasis(OrthoAxis, right, up);
+    GetOrthoBasis(OrthoAxis, OrthoUpHint, right, up);
     return right;
 }
 
@@ -119,7 +124,7 @@ Vec3d EditorCamera::GetOrthoUpVector() const
 {
     Vec3d right;
     Vec3d up;
-    GetOrthoBasis(OrthoAxis, right, up);
+    GetOrthoBasis(OrthoAxis, OrthoUpHint, right, up);
     return up;
 }
 

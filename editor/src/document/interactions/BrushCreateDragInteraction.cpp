@@ -40,7 +40,8 @@ namespace
     // The mesh the drag will both preview and commit, plus the transform placing
     // it. One MakePrimitive call feeds both so they never diverge.
     std::pair<Transform3f, BrushMesh> BuildPrimitive(const BrushCreationSettings& settings,
-                                                     int depthAxis, Vec3d center, Vec3d halfExtents)
+                                                     int depthAxis, Vec3d center, Vec3d halfExtents,
+                                                     Quatf rotation = Quatf::Identity())
     {
         BrushPrimitiveParams params{};
         params.HalfExtents = halfExtents;
@@ -49,17 +50,50 @@ namespace
 
         Transform3f transform = Transform3f::Identity();
         transform.Position = center;
+        transform.Rotation = rotation;
         return { transform, BrushOps::MakePrimitive(settings.ActivePrimitive, params) };
     }
 }
 
 void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
 {
+    const float spacing = ctx.Grid.Spacing;
+    const float minHalf = spacing * 0.5f;
+
+    if (!Plane.FrameAligned)
+    {
+        // Custom grid frame: measure the drag in plane UV space and rotate the
+        // brush onto the frame so it aligns with the working grid. Depth runs on
+        // local Y, which the rotation maps onto the frame normal.
+        const Vec3d u = Plane.Plane.AxisU;
+        const Vec3d v = Plane.Plane.AxisV;
+        const Vec3d drag = snapped - Plane.Anchor;
+        const float du = drag.Dot(u);
+        const float dv = drag.Dot(v);
+
+        Vec3d halfExtents{};
+        halfExtents.X = std::max(std::abs(du) * 0.5f, minHalf);
+        halfExtents.Y = Plane.DepthHalf;
+        halfExtents.Z = std::max(std::abs(dv) * 0.5f, minHalf);
+
+        const Vec3d center = Plane.Anchor + u * (du * 0.5f) + v * (dv * 0.5f)
+                           + Plane.DepthDir * (Plane.DepthCenter - Plane.Anchor.Dot(Plane.DepthDir));
+
+        HasValidSize = (std::abs(du) >= spacing || std::abs(dv) >= spacing);
+        LastCenter = center;
+        LastHalfExtents = halfExtents;
+        // Local X -> U, local Z -> V; local Y -> V x U completes the right-handed
+        // basis (the depth extent is symmetric, so its sign is irrelevant).
+        LastRotation = Quatf::FromBasis(u, v.Cross(u), v);
+
+        auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, /*depthAxis*/ 1, center, halfExtents, LastRotation);
+        ctx.Preview.SetMesh(transform, std::move(mesh));
+        return;
+    }
+
     const int uIdx = AxisIndex(Plane.Plane.AxisU);
     const int vIdx = AxisIndex(Plane.Plane.AxisV);
     const int dIdx = Plane.DepthAxis;
-    const float spacing = ctx.Grid.Spacing;
-    const float minHalf = spacing * 0.5f;
 
     Vec3d halfExtents{};
     halfExtents[uIdx] = std::max(std::abs(snapped[uIdx] - Plane.Anchor[uIdx]) * 0.5f, minHalf);
@@ -77,6 +111,7 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
 
     LastCenter = center;
     LastHalfExtents = halfExtents;
+    LastRotation = Quatf::Identity();
 
     auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, Plane.DepthAxis, center, halfExtents);
     ctx.Preview.SetMesh(transform, std::move(mesh));
@@ -108,7 +143,9 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     if (!HasValidSize)
         return;
 
-    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, Plane.DepthAxis, LastCenter, LastHalfExtents);
+    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate,
+                                            Plane.FrameAligned ? Plane.DepthAxis : 1,
+                                            LastCenter, LastHalfExtents, LastRotation);
     auto cmd = MakeCreateBrushMeshCommand(transform, std::move(mesh), Scene, Document);
     CreateEntityCommand* rawCmd = cmd.get();
     ctx.Commands.Execute(std::move(cmd));

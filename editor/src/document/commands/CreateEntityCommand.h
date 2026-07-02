@@ -61,13 +61,6 @@ private:
         { return scene.CreateBrushFromMesh(transform, mesh); }, scene, document);
 }
 
-[[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreateCameraCommand(
-    Vec3d position, EditorScene& scene, EditorDocument& document)
-{
-    return std::make_unique<CreateEntityCommand>(
-        [&scene, position] { return scene.CreateCamera(position); }, scene, document);
-}
-
 [[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreateEntityCommand(
     Vec3d position, EditorScene& scene, EditorDocument& document)
 {

@@ -94,7 +94,7 @@ void SceneHierarchyPanel::OnDraw()
         ImGui::SameLine();
 
         // Hidden rows read dimmed; locked rows still select (lock only blocks
-        // viewport picking, matching Hammer).
+        // viewport picking).
         const bool isSelected = current.IsValid() && current.Entity == entity;
         if (!visible)
             ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);

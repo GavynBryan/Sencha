@@ -22,6 +22,10 @@ struct EditorCamera
     float OrthoHeight = 20.0f;
     Vec3d OrthoCenter = {};
     Vec3d OrthoAxis = { 0.0f, 1.0f, 0.0f };
+    // Explicit view-up for the ortho basis. Zero keeps the world-up heuristic;
+    // the workspace sets it from the grid frame so ortho views stay aligned to
+    // a moved/rotated working grid (the grid is never diagonal on screen).
+    Vec3d OrthoUpHint = {};
 
     float Near = 0.01f;
     float Far = 10000.0f;

@@ -24,10 +24,12 @@ struct GridPushConstants
     float SubdivSpacing;   //  4 bytes
     Vec3d GridForward;     // 12 bytes — camera heading projected onto the plane
     float FadeEnd;         //  4 bytes
+    Vec3d GridOrigin;      // 12 bytes — lattice phase + axis-line anchor (the grid frame origin)
+    float Pad0;            //  4 bytes
     Vec4  Style;           // 16 bytes — cvar look knobs: cellPx, opacity, brightness, fadeStart
-    // Total = 144 bytes
+    // Total = 160 bytes
 };
-static_assert(sizeof(GridPushConstants) == 144, "GridPushConstants must be exactly 144 bytes");
+static_assert(sizeof(GridPushConstants) == 160, "GridPushConstants must be exactly 160 bytes");
 
 // Below this in-plane heading length the camera looks essentially straight down the
 // plane normal: no horizon to fade toward, so the heading is left zero (uniform grid).
@@ -175,6 +177,7 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
     push.SubdivSpacing = subdivSpacing;
     push.GridForward   = gridForward;
     push.FadeEnd       = fadeEnd;
+    push.GridOrigin    = grid.Origin;
     push.Style         = Vec4{ style.CellPx, style.Opacity, style.Brightness, style.FadeStart };
 
     // --- record draw ----------------------------------------------------------

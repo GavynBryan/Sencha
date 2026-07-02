@@ -210,13 +210,19 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
     // Drop the brush entities so SaveSceneJson emits only passthrough game
     // components (the cook is the one and only StaticMeshComponent emitter), then
-    // append the cell entities.
+    // append the cell entities. Baked entities pass through as ordinary props,
+    // but their editor-only dormant-source annotation is stripped: the cooked
+    // scene never carries editor data.
     {
         EditorScene& scene = doc.GetScene();
         std::vector<EntityId> brushEntities;
         for (EntityId entity : scene.GetAllEntities())
+        {
             if (scene.TryGetBrush(entity) != nullptr)
                 brushEntities.push_back(entity);
+            else if (scene.TryGetBakedBrush(entity) != nullptr)
+                scene.GetRegistry().Components.RemoveComponent<BakedBrushComponent>(entity);
+        }
         for (EntityId entity : brushEntities)
             scene.DestroyEntity(entity);
     }

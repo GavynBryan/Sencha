@@ -4,7 +4,6 @@
 #include "ScopedPanel.h"
 
 #include "../commands/CommandStack.h"
-#include "../editmodes/ManipulatorSession.h"
 #include "../meshedit/IMeshEditTarget.h"
 #include "../meshedit/MeshEditService.h"
 #include "../selection/SelectionService.h"
@@ -17,14 +16,12 @@ MeshEditPanel::MeshEditPanel(IMeshEditTarget& target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
                              CommandStack& commands,
-                             ManipulatorSession& manipulators,
-                             std::function<void()> setOriginToPivot)
+                             ObjectActions objectActions)
     : Target(target)
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
-    , Manipulators(manipulators)
-    , SetOriginToPivot(std::move(setOriginToPivot))
+    , Objects(std::move(objectActions))
 {
 }
 
@@ -33,94 +30,76 @@ std::string_view MeshEditPanel::GetTitle() const
     return "Mesh Edit";
 }
 
-void MeshEditPanel::DrawGizmoToolbar()
-{
-    const auto gizmoButton = [&](const char* label, TransformMode mode)
-    {
-        const bool active = Manipulators.GetTransformMode() == mode;
-        if (active)
-            ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
-        if (ImGui::Button(label))
-            Manipulators.SetTransformMode(mode);
-        if (active)
-            ImGui::PopStyleColor();
-    };
-
-    gizmoButton("Resize", TransformMode::Resize);
-    ImGui::SameLine();
-    gizmoButton("Move", TransformMode::Move);
-    ImGui::SameLine();
-    gizmoButton("Rotate", TransformMode::Rotate);
-    ImGui::SameLine();
-    gizmoButton("Scale", TransformMode::Scale);
-
-    // Pivot edit: the Move gizmo moves the transient rotate/scale center instead of
-    // the selection. Persists until the selection changes.
-    const bool editingPivot = Manipulators.IsEditingPivot();
-    if (editingPivot)
-        ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
-    if (ImGui::Button(editingPivot ? "Pivot: editing" : "Edit Pivot"))
-        Manipulators.SetEditingPivot(!editingPivot);
-    if (editingPivot)
-        ImGui::PopStyleColor();
-
-    // Bake the moved pivot into the brush's origin (only meaningful once moved).
-    ImGui::SameLine();
-    const bool hasPivot = Manipulators.HasPivotOverride();
-    if (!hasPivot)
-        ImGui::BeginDisabled();
-    if (ImGui::Button("Set Origin to Pivot") && SetOriginToPivot)
-        SetOriginToPivot();
-    if (!hasPivot)
-        ImGui::EndDisabled();
-
-    ImGui::TextDisabled("Q/W/E/R switch gizmos");
-}
-
-void MeshEditPanel::DrawModeToolbar()
-{
-    const auto modeButton = [&](const char* label, MeshElementKind kind)
-    {
-        const bool active = MeshEdit.GetElementKind() == kind;
-        if (active)
-            ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
-        if (ImGui::Button(label))
-            MeshEdit.SetElementKind(kind);
-        if (active)
-            ImGui::PopStyleColor();
-    };
-
-    modeButton("Object", MeshElementKind::Object);
-    ImGui::SameLine();
-    modeButton("Vertex", MeshElementKind::Vertex);
-    ImGui::SameLine();
-    modeButton("Edge", MeshElementKind::Edge);
-    ImGui::SameLine();
-    modeButton("Face", MeshElementKind::Face);
-
-    ImGui::TextDisabled("Shift+V cycles modes");
-}
-
 void MeshEditPanel::DrawObjectVerbs()
 {
     int selectedBrushes = 0;
     for (const SelectableRef& ref : Selection.GetSelection())
-        if (ref.IsEntity())
+        if (ref.IsEntity() && Target.Resolve(ref.Entity).has_value())
             ++selectedBrushes;
+    const bool hasBaked = Objects.HasBakedSelection && Objects.HasBakedSelection();
 
-    if (selectedBrushes == 0)
+    if (selectedBrushes == 0 && !hasBaked)
     {
         ImGui::TextDisabled("Select a brush to edit it");
         return;
     }
 
-    if (ImGui::Button("Recalculate Normals"))
+    if (selectedBrushes > 0)
     {
-        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(),
-                                              MeshEditVerb::RecalculateNormals, {}))
-            Commands.Execute(std::move(command));
+        if (ImGui::Button("Recalculate Normals"))
+        {
+            if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(),
+                                                  MeshEditVerb::RecalculateNormals, {}))
+                Commands.Execute(std::move(command));
+        }
+        ImGui::TextDisabled("Re-orients every face outward (concave-safe)");
+
+        if (Objects.Duplicate && ImGui::Button("Duplicate"))
+            Objects.Duplicate();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Independent copies  [Ctrl+D]");
+        ImGui::SameLine();
+        if (Objects.Instance && ImGui::Button("Make Instance"))
+            Objects.Instance();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Copies sharing this brush's mesh: editing any instance\n"
+                              "edits them all, and baking shares one mesh asset.  [Alt+D]");
+
+        if (Objects.HasInstancedSelection && Objects.HasInstancedSelection())
+        {
+            ImGui::SameLine();
+            if (Objects.MakeUnique && ImGui::Button("Make Unique"))
+                Objects.MakeUnique();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Break from the instance group, keeping all instanced edits.");
+        }
+
+        if (selectedBrushes >= 2 && Objects.Merge && ImGui::Button("Merge"))
+            Objects.Merge();
+        if (selectedBrushes >= 2 && ImGui::IsItemHovered())
+            ImGui::SetTooltip("Join the selected brushes into the primary one\n"
+                              "(textures keep their placement; no volume boolean).");
+
+        if (Objects.Bake && ImGui::Button("Bake to Static Mesh"))
+            Objects.Bake();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Writes a .smesh asset and swaps the brush for a placed mesh.\n"
+                              "Duplicates of a baked entity share the asset (instances).\n"
+                              "Reversible: the source brush stays in the level file.");
     }
-    ImGui::TextDisabled("Re-orients every face outward (concave-safe)");
+
+    if (hasBaked && Objects.Revert)
+    {
+        if (ImGui::Button("Revert to Brush"))
+            Objects.Revert();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Restores the baked entity's editable source brush.");
+    }
+
+    if (Objects.ExportGlb && ImGui::Button("Export .glb..."))
+        Objects.ExportGlb();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Exports the selection's baked geometry as binary glTF.");
 }
 
 void MeshEditPanel::DrawFaceVerbs()
@@ -163,6 +142,11 @@ void MeshEditPanel::DrawFaceVerbs()
     ImGui::SameLine();
     if (ImGui::Button("Flip Normals"))
         applyVerb(MeshEditVerb::FlipFaceNormal, {});
+    ImGui::SameLine();
+    if (Objects.SeparateFaces && ImGui::Button("Separate"))
+        Objects.SeparateFaces();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Split these faces into a new brush (the source opens where they were).");
 }
 
 void MeshEditPanel::DrawEdgeVerbs()
@@ -205,12 +189,6 @@ void MeshEditPanel::OnDraw()
     ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen())
         return;
-
-    DrawGizmoToolbar();
-    ImGui::Separator();
-
-    DrawModeToolbar();
-    ImGui::Separator();
 
     switch (MeshEdit.GetElementKind())
     {

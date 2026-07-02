@@ -12,9 +12,8 @@
 #include <cstddef>
 #include <cstring>
 
-static_assert(offsetof(MeshPushConstants, World) == 0);
-static_assert(offsetof(MeshPushConstants, BaseColor) == 64);
-static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 80);
+static_assert(offsetof(MeshPushConstants, BaseColor) == 0);
+static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 16);
 
 // std140 layout the mesh_forward shaders assume for set 0, binding 0.
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
@@ -53,53 +52,55 @@ void MeshForwardPass::Setup(const RendererServices& services)
     Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
 }
 
-void MeshForwardPass::Draw(const FrameContext& frame,
-                           const CameraRenderData& camera,
-                           const RenderLightSet& lights,
-                           const RenderQueue& queue,
-                           StaticMeshCache& meshes,
-                           MaterialCache& materials)
+bool MeshForwardPass::EnsurePipeline(const FrameContext& frame)
 {
-    if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
-    {
-        return;
-    }
+    if (Pipeline != VK_NULL_HANDLE
+        && CachedColorFormat == frame.TargetFormat
+        && CachedDepthFormat == frame.DepthFormat)
+        return true;
 
-    if (Pipeline == VK_NULL_HANDLE
-        || CachedColorFormat != frame.TargetFormat
-        || CachedDepthFormat != frame.DepthFormat)
-    {
-        GraphicsPipelineDesc desc{};
-        desc.VertexShader = VertexShader;
-        desc.FragmentShader = FragmentShader;
-        desc.Layout = PipelineLayout;
-        desc.VertexBindings = {
-            { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        };
-        desc.VertexAttributes = {
-            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
-            { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
-            { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-            // Tangents (Decision M) ride the vertex via the binding stride
-            // but get no attribute until a shader consumes them (normal
-            // mapping is render-ladder work) — the validation layer warns
-            // on attributes the shader ignores.
-        };
-        desc.CullMode = VK_CULL_MODE_BACK_BIT;
-        desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        desc.DepthTest = true;
-        desc.DepthWrite = true;
-        desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-        desc.ColorBlend = { ColorBlendAttachmentDesc{} };
-        desc.ColorFormats = { frame.TargetFormat };
-        desc.DepthFormat = frame.DepthFormat;
-        Pipeline = Pipelines->GetGraphicsPipeline(desc);
-        CachedColorFormat = frame.TargetFormat;
-        CachedDepthFormat = frame.DepthFormat;
-    }
+    GraphicsPipelineDesc desc{};
+    desc.VertexShader = VertexShader;
+    desc.FragmentShader = FragmentShader;
+    desc.Layout = PipelineLayout;
+    desc.VertexBindings = {
+        { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
+        // Binding 1: the per-instance world matrix stream, written into the
+        // frame scratch each Draw in draw order. Instancing via a vertex
+        // stream keeps the global descriptor layouts untouched.
+        { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
+    };
+    desc.VertexAttributes = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
+        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
+        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
+        // Tangents (Decision M) ride the vertex via the binding stride
+        // but get no attribute until a shader consumes them (normal
+        // mapping is render-ladder work) — the validation layer warns
+        // on attributes the shader ignores.
+        // World matrix columns (locations 3-6, one vec4 each).
+        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
+        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
+        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
+        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+    };
+    desc.CullMode = VK_CULL_MODE_BACK_BIT;
+    desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    desc.DepthTest = true;
+    desc.DepthWrite = true;
+    desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+    desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+    desc.ColorFormats = { frame.TargetFormat };
+    desc.DepthFormat = frame.DepthFormat;
+    Pipeline = Pipelines->GetGraphicsPipeline(desc);
+    CachedColorFormat = frame.TargetFormat;
+    CachedDepthFormat = frame.DepthFormat;
+    return Pipeline != VK_NULL_HANDLE;
+}
 
-    if (Pipeline == VK_NULL_HANDLE) return;
-
+std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRenderData& camera,
+                                                                 const RenderLightSet& lights)
+{
     MeshFrameUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();  // GLSL expects column-major
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
@@ -111,9 +112,35 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     std::memcpy(uniforms.Lights, lights.Lights, sizeof(GpuLight) * lightCount);
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
-    if (!allocation.IsValid()) return;
+    if (!allocation.IsValid())
+        return std::nullopt;
     std::memcpy(allocation.Mapped, &uniforms, sizeof(uniforms));
+    return allocation.Offset;
+}
 
+bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const RenderQueue& queue)
+{
+    // Per-instance world matrices, written once in draw order: instance N of
+    // the frame is OpaqueOrder()[N], so a run draws instances [First, First +
+    // Count) with plain firstInstance addressing and no per-draw upload.
+    const std::vector<RenderQueueItem>& items = queue.Opaque();
+    const std::vector<uint32_t>& order = queue.OpaqueOrder();
+
+    auto stream = Scratch->AllocateVertex(order.size() * sizeof(Mat4));
+    if (!stream.IsValid())
+        return false;
+
+    Mat4* transforms = static_cast<Mat4*>(stream.Mapped);
+    for (size_t i = 0; i < order.size(); ++i)
+        transforms[i] = items[order[i]].WorldMatrix.Transposed(); // GLSL column-major
+
+    VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Buffer);
+    vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Offset);
+    return true;
+}
+
+void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset)
+{
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -130,23 +157,29 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
     vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
 
-    const uint32_t dynamicOffset = static_cast<uint32_t>(allocation.Offset);
+    const uint32_t dynamicOffset = static_cast<uint32_t>(uniformOffset);
     VkDescriptorSet frameSet = Descriptors->GetFrameSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             0, 1, &frameSet, 1, &dynamicOffset);
     VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             1, 1, &bindlessSet, 0, nullptr);
+}
 
-    // Walk the sorted order (indices into Opaque()) rather than the items in
-    // insertion order. Track the last-bound buffers so the back-to-back sections
-    // of a mesh — adjacent after the sort — don't rebind identical buffers.
+void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
+                               StaticMeshCache& meshes, MaterialCache& materials)
+{
+    // Walk the instanced runs (consecutive order entries sharing mesh, section,
+    // and material collapse into one draw; a run of one is the ordinary case).
+    // Track the last-bound buffers so back-to-back runs on one mesh don't
+    // rebind identical buffers.
     const std::vector<RenderQueueItem>& items = queue.Opaque();
+    const std::vector<uint32_t>& order = queue.OpaqueOrder();
     VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
-    for (const uint32_t itemIndex : queue.OpaqueOrder())
+    for (const RenderQueueRun& run : queue.OpaqueRuns())
     {
-        const RenderQueueItem& item = items[itemIndex];
+        const RenderQueueItem& item = items[order[run.First]];
         const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
         const Material* material = materials.Get(item.Material);
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
@@ -159,7 +192,6 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
 
         MeshPushConstants push{};
-        push.World = item.WorldMatrix.Transposed();
         push.BaseColor = material->BaseColor;
         push.BaseColorTextureIndex = material->BaseColorTextureIndex;
 
@@ -180,8 +212,35 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         // MeshGeometry v1 uses global indices into the shared vertex buffer.
         // section.VertexOffset is metadata only in this phase. Do not pass it as
         // Vulkan vertexOffset unless sections are converted to local-index ranges.
-        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1, section.IndexOffset, 0, 0);
+        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count, section.IndexOffset, 0, run.First);
+        ++LastStats.DrawCalls;
     }
+}
+
+void MeshForwardPass::Draw(const FrameContext& frame,
+                           const CameraRenderData& camera,
+                           const RenderLightSet& lights,
+                           const RenderQueue& queue,
+                           StaticMeshCache& meshes,
+                           MaterialCache& materials)
+{
+    LastStats = DrawStats{ .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()), .DrawCalls = 0 };
+
+    if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
+        return;
+    if (queue.OpaqueOrder().empty())
+        return;
+    if (!EnsurePipeline(frame))
+        return;
+
+    const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
+    if (!uniformOffset.has_value())
+        return;
+    if (!BindInstanceStream(frame, queue))
+        return;
+
+    BindFrameState(frame, *uniformOffset);
+    DrawRuns(frame, queue, meshes, materials);
 }
 
 void MeshForwardPass::Teardown()

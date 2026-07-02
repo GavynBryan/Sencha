@@ -9,12 +9,14 @@
 DuplicateEntitiesCommand::DuplicateEntitiesCommand(std::span<const EntityId> sources,
                                                    std::span<const Transform3f> transforms,
                                                    EditorScene& scene, EditorDocument& document,
-                                                   SelectionService& selection)
+                                                   SelectionService& selection,
+                                                   bool asInstance)
     : Scene(scene)
     , Document(document)
     , Selection(selection)
     , Sources(sources.begin(), sources.end())
     , Transforms(transforms.begin(), transforms.end())
+    , AsInstance(asInstance)
 {
 }
 
@@ -38,7 +40,7 @@ void DuplicateEntitiesCommand::Execute()
     const RegistryId registry = Scene.GetRegistry().Id;
     for (std::size_t i = 0; i < Snapshots.size(); ++i)
     {
-        const EntityId copy = Document.RestoreEntity(Snapshots[i], /*freshMesh*/ true);
+        const EntityId copy = Document.RestoreEntity(Snapshots[i], /*freshMesh*/ !AsInstance);
         if (i < Transforms.size())
             Scene.SetTransform(copy, Transforms[i]);
         Created.push_back(copy);

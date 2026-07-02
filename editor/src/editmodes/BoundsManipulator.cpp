@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <optional>
 #include <vector>
@@ -27,8 +28,23 @@ constexpr double kMinThickness = 0.05;
 double AxisGet(const Vec3d& v, int a) { return a == 0 ? v.X : (a == 1 ? v.Y : v.Z); }
 void AxisSet(Vec3d& v, int a, double x) { (a == 0 ? v.X : (a == 1 ? v.Y : v.Z)) = static_cast<float>(x); }
 
-Vec3d AxisDir(int a) { return Vec3d(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 Vec4 AxisColor(int a) { return a == 0 ? EditorTheme::AxisX : (a == 1 ? EditorTheme::AxisY : EditorTheme::AxisZ); }
+
+// The box lives in the gizmo frame (ctx.Axes: world, grid, or local space):
+// coordinates are dot products with the frame axes, world points reconstruct as
+// the axis-weighted sum (the axes are orthonormal). The world frame reproduces
+// the historical world-AABB behavior exactly.
+using Frame = std::array<Vec3d, 3>;
+
+Vec3d FrameCoords(const Frame& axes, Vec3d world)
+{
+    return Vec3d(world.Dot(axes[0]), world.Dot(axes[1]), world.Dot(axes[2]));
+}
+
+Vec3d FramePoint(const Frame& axes, Vec3d coords)
+{
+    return axes[0] * coords.X + axes[1] * coords.Y + axes[2] * coords.Z;
+}
 
 EntityId PickObjectEntity(const SelectionSnapshot& selection)
 {
@@ -40,7 +56,8 @@ EntityId PickObjectEntity(const SelectionSnapshot& selection)
     return {};
 }
 
-// One face-center handle: which world axis it drives and which side (min/max).
+// One face-center handle: which frame axis it drives and which side (min/max).
+// Center is in FRAME coordinates; map through FramePoint for world.
 struct FaceHandle
 {
     Vec3d Center;
@@ -93,8 +110,9 @@ void AppendDashed(ManipulatorVisual& out, Vec3d a, Vec3d b, const Vec4& color, f
     }
 }
 
-// Resolves the single selected brush in object mode and its world AABB. Applies in
-// any view (ortho or perspective). Returns false when the manipulator does not apply.
+// Resolves the single selected brush in object mode and its oriented bounds in
+// the gizmo frame (Min/Max are frame coordinates). Applies in any view.
+// Returns false when the manipulator does not apply.
 struct Resolved
 {
     EntityId Entity;
@@ -117,26 +135,33 @@ bool Resolve(const ManipulatorContext& ctx, Resolved& out)
     if (!resolved.has_value() || resolved->Mesh == nullptr || resolved->Mesh->Vertices.empty())
         return false;
 
-    const Aabb3d bounds = BrushWorldBounds(*resolved->Mesh, resolved->Transform);
-    if (!bounds.IsValid())
+    Vec3d mn(FLT_MAX, FLT_MAX, FLT_MAX);
+    Vec3d mx(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (const BrushVertex& vertex : resolved->Mesh->Vertices)
+    {
+        const Vec3d c = FrameCoords(ctx.Axes, resolved->Transform.TransformPoint(vertex.Position));
+        mn.X = std::min(mn.X, c.X); mn.Y = std::min(mn.Y, c.Y); mn.Z = std::min(mn.Z, c.Z);
+        mx.X = std::max(mx.X, c.X); mx.Y = std::max(mx.Y, c.Y); mx.Z = std::max(mx.Z, c.Z);
+    }
+    if (!(mn.X <= mx.X && mn.Y <= mx.Y && mn.Z <= mx.Z))
         return false;
 
     out.Entity = entity;
     out.Mesh = *resolved->Mesh;
     out.Transform = resolved->Transform;
-    out.Min = bounds.Min;
-    out.Max = bounds.Max;
+    out.Min = mn;
+    out.Max = mx;
     return true;
 }
 
-// Drags one face handle along its world axis, resizing that side (grid-snapped,
+// Drags one face handle along its frame axis, resizing that side (grid-snapped,
 // min-thickness clamped) about the opposite side via MeshEditService::ResizeBounds.
 class BoundsDrag : public IInteraction
 {
 public:
-    BoundsDrag(EntityId entity, BrushMesh base, Transform3f transform,
+    BoundsDrag(EntityId entity, BrushMesh base, Transform3f transform, Frame axes,
                Vec3d mn, Vec3d mx, FaceHandle handle, MeshEditService& service, ManipulationSink& sink)
-        : Entity(entity), Base(std::move(base)), Transform(transform)
+        : Entity(entity), Base(std::move(base)), Transform(transform), Axes(axes)
         , OldMin(mn), OldMax(mx), H(handle), Service(service), Sink(sink) {}
 
     void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
@@ -160,7 +185,9 @@ private:
                                      const PointerEvent& pointer, bool validate) const
     {
         const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(pointer.Position);
-        const std::optional<double> s = GizmoMath::ClosestAxisParam(H.Center, AxisDir(H.Axis), ray);
+        const Vec3d axisDir = Axes[static_cast<std::size_t>(H.Axis)];
+        const std::optional<double> s =
+            GizmoMath::ClosestAxisParam(FramePoint(Axes, H.Center), axisDir, ray);
         if (!s.has_value())
             return std::nullopt;
 
@@ -169,10 +196,9 @@ private:
         const GridPlane grid = viewport.GetGrid(ctx.Grid);
         if (grid.SnapEnabled && grid.Spacing > 0.0f)
         {
-            const double origin = AxisGet(grid.Origin, H.Axis);
-            // Absolute snap through the shared kernel. This was an inline copy of
-            // the same formula; routing it through GizmoMath::SnapAxisOffset means
-            // the one snap implementation (and its test) covers bounds too.
+            // Absolute snap through the shared kernel, in frame coordinates
+            // (the lattice anchor is the grid origin's coordinate on this axis).
+            const double origin = grid.Origin.Dot(axisDir);
             coord = pivot + GizmoMath::SnapAxisOffset(*s, pivot, origin, grid.Spacing);
         }
 
@@ -183,12 +209,13 @@ private:
         else
             AxisSet(newMin, H.Axis, std::min(coord, AxisGet(OldMax, H.Axis) - kMinThickness));
 
-        return Service.ResizeBounds(Base, Transform, OldMin, OldMax, newMin, newMax, validate);
+        return Service.ResizeBounds(Base, Transform, Axes, OldMin, OldMax, newMin, newMax, validate);
     }
 
     EntityId Entity;
     BrushMesh Base;
     Transform3f Transform;
+    Frame Axes;
     Vec3d OldMin;
     Vec3d OldMax;
     FaceHandle H;
@@ -212,9 +239,10 @@ void BoundsManipulator::BuildVisual(const ManipulatorContext& ctx,
     if (!Resolve(ctx, r))
         return;
 
-    // Faint world AABB box edges.
+    // Faint oriented box edges (frame corners mapped to world).
     const auto corner = [&](bool xMax, bool yMax, bool zMax) {
-        return Vec3d(xMax ? r.Max.X : r.Min.X, yMax ? r.Max.Y : r.Min.Y, zMax ? r.Max.Z : r.Min.Z);
+        return FramePoint(ctx.Axes,
+                          Vec3d(xMax ? r.Max.X : r.Min.X, yMax ? r.Max.Y : r.Min.Y, zMax ? r.Max.Z : r.Min.Z));
     };
     const Vec3d c[8] = {
         corner(false, false, false), corner(true, false, false),
@@ -227,7 +255,7 @@ void BoundsManipulator::BuildVisual(const ManipulatorContext& ctx,
         out.Lines.push_back({ .A = c[e[0]], .B = c[e[1]], .Color = EditorTheme::BoundsBox });
 
     const ViewportProjection projection(viewport);
-    const Vec3d center = (r.Min + r.Max) * 0.5f;
+    const Vec3d center = FramePoint(ctx.Axes, (r.Min + r.Max) * 0.5f);
     const float dash = projection.WorldSizeForPixels(center, kDashPixels);
 
     // Center marker, then a dotted axis to each face handle with a ball at its end.
@@ -236,9 +264,10 @@ void BoundsManipulator::BuildVisual(const ManipulatorContext& ctx,
     for (std::size_t i = 0; i < handles.size(); ++i)
     {
         const FaceHandle& h = handles[i];
+        const Vec3d handleWorld = FramePoint(ctx.Axes, h.Center);
         const Vec4 color = (static_cast<int>(i) + 1 == hoveredPart) ? EditorTheme::Hover : AxisColor(h.Axis);
-        AppendDashed(out, center, h.Center, color, dash);
-        AppendBox(out, h.Center, projection.WorldSizeForPixels(h.Center, kBallPixels) * 0.5f, color);
+        AppendDashed(out, center, handleWorld, color, dash);
+        AppendBox(out, handleWorld, projection.WorldSizeForPixels(handleWorld, kBallPixels) * 0.5f, color);
     }
 }
 
@@ -257,7 +286,7 @@ int BoundsManipulator::HitTest(const ManipulatorContext& ctx,
     float bestPixels = kHandleHitPixels;
     for (std::size_t i = 0; i < handles.size(); ++i)
     {
-        const std::optional<ProjectedPoint> p = projection.WorldToPixel(handles[i].Center);
+        const std::optional<ProjectedPoint> p = projection.WorldToPixel(FramePoint(ctx.Axes, handles[i].Center));
         if (!p.has_value())
             continue;
         const float dx = screenPos.x - p->Pixel.x;
@@ -288,6 +317,6 @@ std::unique_ptr<IInteraction> BoundsManipulator::BeginDrag(
         return nullptr;
 
     return std::make_unique<BoundsDrag>(
-        r.Entity, std::move(r.Mesh), r.Transform, r.Min, r.Max,
+        r.Entity, std::move(r.Mesh), r.Transform, ctx.Axes, r.Min, r.Max,
         handles[static_cast<std::size_t>(part - 1)], ctx.Service, ctx.Sink);
 }

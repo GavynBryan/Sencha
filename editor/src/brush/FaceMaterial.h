@@ -2,6 +2,7 @@
 
 #include <core/assets/AssetRef.h>
 #include <math/Vec.h>
+#include <math/geometry/3d/Transform3d.h>
 
 #include <span>
 
@@ -22,7 +23,7 @@
 struct UvProjection
 {
     // Texture axes in brush-local space. For world-aligned textures these come
-    // from the face normal's dominant axis (Hammer's default); for face-aligned
+    // from the face normal's dominant axis (box mapping); for face-aligned
     // they lie in the face plane. Stored explicitly so a designer can rotate and
     // justify freely. Not assumed orthonormal — Scale carries texel density.
     Vec3d AxisU = { 1.0f, 0.0f, 0.0f }; // +U direction in brush-local space
@@ -53,7 +54,7 @@ struct FaceMaterial
 
 // Standard projection axes for a face with the given (brush-local) normal.
 // World-aligned: U/V are the two world axes orthogonal to the dominant normal
-// axis (Hammer's box mapping — adjacent coplanar brushes tile seamlessly).
+// axis (box mapping: adjacent coplanar brushes tile seamlessly).
 // Face-aligned: U/V span the face plane itself, so they follow it as it rotates.
 [[nodiscard]] UvProjection UvProjectionForNormal(Vec3d normal, bool worldAligned);
 
@@ -64,3 +65,41 @@ struct FaceMaterial
 [[nodiscard]] UvProjection UvProjectionFit(const UvProjection& p, std::span<const Vec3d> localPositions);
 // Center: offset so the points' bounds center maps to (0.5, 0.5); scale kept.
 [[nodiscard]] UvProjection UvProjectionCenter(const UvProjection& p, std::span<const Vec3d> localPositions);
+
+// A projection expressed in WORLD space: the bridge for cross-brush UV work.
+// Brush-local UvProjections convert to and from this, so ONE mapping can span
+// faces of entities with different transforms (justify a multi-brush selection
+// as a single unit, copy a projection from one brush's face to another's) and
+// the texture flows continuously across the seams. Rotation is folded into the
+// axes; there is no separate rotation field.
+struct WorldUvProjection
+{
+    Vec3d AxisU = { 1.0f, 0.0f, 0.0f };
+    Vec3d AxisV = { 0.0f, 0.0f, 1.0f };
+    Vec2d Scale = { 1.0f, 1.0f };
+    Vec2d Offset = { 0.0f, 0.0f };
+};
+
+// UV of a world-space point under a world projection (the world analog of
+// ProjectUv).
+[[nodiscard]] Vec2d ProjectWorldUv(const WorldUvProjection& p, Vec3d worldPos);
+
+// Express `local` under localToWorld: for every local point x,
+// ProjectWorldUv(result, localToWorld(x)) == ProjectUv(local, x).
+// Rotation folds into the returned axes. Zero scale components are treated as 1
+// (a degenerate transform cannot be inverted; the result is still total).
+[[nodiscard]] WorldUvProjection UvProjectionToWorld(const UvProjection& local,
+                                                    const Transform3f& localToWorld);
+
+// Inverse bridge: bake a world projection into a brush's local frame, so the
+// face renders the same texture the world projection describes. The result has
+// Rotation == 0 (folded into the axes) and is marked WorldAligned (the mapping
+// is anchored in world space by construction).
+[[nodiscard]] UvProjection UvProjectionToLocal(const WorldUvProjection& world,
+                                               const Transform3f& localToWorld);
+
+// Justify presets against WORLD positions: the multi-face, multi-brush fit.
+[[nodiscard]] WorldUvProjection WorldUvProjectionFit(const WorldUvProjection& p,
+                                                     std::span<const Vec3d> worldPositions);
+[[nodiscard]] WorldUvProjection WorldUvProjectionCenter(const WorldUvProjection& p,
+                                                        std::span<const Vec3d> worldPositions);

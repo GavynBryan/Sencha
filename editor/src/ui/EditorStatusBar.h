@@ -1,19 +1,22 @@
 #pragma once
 
+class ManipulatorSession;
+class MeshEditService;
 class ToolRegistry;
 class ViewportLayout;
 class SelectionService;
 struct GridSettings;
 
 // The bottom status bar (fixed app chrome). Read-only, all values backed by live
-// editor state: active tool, active viewport orientation + grid spacing, selection
-// count, and a wall clock. No toggles — controls that imply state we don't have
-// yet (snap-enable, angle snap) are deliberately omitted rather than faked.
+// editor state: active tool, element mode, effective gizmo + space, selection
+// count, active viewport, grid spacing/frame, and a wall clock. No toggles:
+// every control lives in the toolbar; this bar only reports.
 class EditorStatusBar
 {
 public:
     EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection,
-                    const GridSettings& grid);
+                    const GridSettings& grid, MeshEditService& meshEdit,
+                    const ManipulatorSession& manipulators);
 
     void Draw();
 
@@ -22,4 +25,6 @@ private:
     ViewportLayout& Layout;
     SelectionService& Selection;
     const GridSettings& Grid;
+    MeshEditService& MeshEdit;
+    const ManipulatorSession& Manipulators;
 };

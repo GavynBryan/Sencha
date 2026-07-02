@@ -31,14 +31,17 @@ namespace
         bool  Valid = false;
     };
 
-    RawBounds ComputeRawBounds(const UvProjection& p, std::span<const Vec3d> positions)
+    // Bounds of the points' raw (unscaled, unoffset) UV coordinates, generic over
+    // the projector so the local and world justify presets share one kernel.
+    template <typename ProjectFn>
+    RawBounds ComputeRawBoundsWith(ProjectFn&& project, std::span<const Vec3d> positions)
     {
         RawBounds b;
         b.Min = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
         b.Max = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
         for (Vec3d pos : positions)
         {
-            const Vec2d c = RawUv(p, pos);
+            const Vec2d c = project(pos);
             b.Min.X = std::min(b.Min.X, c.X);
             b.Min.Y = std::min(b.Min.Y, c.Y);
             b.Max.X = std::max(b.Max.X, c.X);
@@ -46,6 +49,53 @@ namespace
             b.Valid = true;
         }
         return b;
+    }
+
+    RawBounds ComputeRawBounds(const UvProjection& p, std::span<const Vec3d> positions)
+    {
+        return ComputeRawBoundsWith([&](Vec3d pos) { return RawUv(p, pos); }, positions);
+    }
+
+    // The justify math shared by the local and world presets: given raw-coordinate
+    // bounds, fit rescales so the span is one tile, center re-offsets the midpoint
+    // to (0.5, 0.5) at the kept scale.
+    void ApplyFitFromBounds(const RawBounds& b, Vec2d& scale, Vec2d& offset)
+    {
+        const float spanU = b.Max.X - b.Min.X;
+        const float spanV = b.Max.Y - b.Min.Y;
+        if (spanU > 1e-5f) { scale.X = spanU; offset.X = -b.Min.X / spanU; }
+        if (spanV > 1e-5f) { scale.Y = spanV; offset.Y = -b.Min.Y / spanV; }
+    }
+
+    void ApplyCenterFromBounds(const RawBounds& b, const Vec2d& scale, Vec2d& offset)
+    {
+        const float midU = (b.Min.X + b.Max.X) * 0.5f;
+        const float midV = (b.Min.Y + b.Max.Y) * 0.5f;
+        if (std::abs(scale.X) > 1e-6f) offset.X = 0.5f - midU / scale.X;
+        if (std::abs(scale.Y) > 1e-6f) offset.Y = 0.5f - midV / scale.Y;
+    }
+
+    // The local projection's axes with its Rotation folded in: the exact basis
+    // ProjectUv dots against.
+    void RotatedAxes(const UvProjection& p, Vec3d& u, Vec3d& v)
+    {
+        const float theta = p.Rotation * (3.14159265358979323846f / 180.0f);
+        const float c = std::cos(theta);
+        const float s = std::sin(theta);
+        u = p.AxisU * c + p.AxisV * s;
+        v = p.AxisV * c - p.AxisU * s;
+    }
+
+    // Componentwise transform-scale application with zero components treated as 1,
+    // so the world bridge stays total on degenerate transforms.
+    Vec3d MulScale(Vec3d a, Vec3d s)
+    {
+        return { a.X * SafeScale(s.X), a.Y * SafeScale(s.Y), a.Z * SafeScale(s.Z) };
+    }
+
+    Vec3d DivScale(Vec3d a, Vec3d s)
+    {
+        return { a.X / SafeScale(s.X), a.Y / SafeScale(s.Y), a.Z / SafeScale(s.Z) };
     }
 }
 
@@ -77,8 +127,8 @@ UvProjection UvProjectionForNormal(Vec3d normal, bool worldAligned)
 
     if (worldAligned)
     {
-        // Dominant world axis of the normal picks the box-mapping plane (Hammer's
-        // table). U/V are the other two world axes, chosen so the basis reads
+        // Dominant world axis of the normal picks the box-mapping plane.
+        // U/V are the other two world axes, chosen so the basis reads
         // upright in the perspective view.
         const float ax = std::abs(normal.X);
         const float ay = std::abs(normal.Y);
@@ -125,13 +175,8 @@ UvProjection UvProjectionFit(const UvProjection& p, std::span<const Vec3d> local
 {
     UvProjection out = p;
     const RawBounds b = ComputeRawBounds(p, localPositions);
-    if (!b.Valid)
-        return out;
-
-    const float spanU = b.Max.X - b.Min.X;
-    const float spanV = b.Max.Y - b.Min.Y;
-    if (spanU > 1e-5f) { out.Scale.X = spanU; out.Offset.X = -b.Min.X / spanU; }
-    if (spanV > 1e-5f) { out.Scale.Y = spanV; out.Offset.Y = -b.Min.Y / spanV; }
+    if (b.Valid)
+        ApplyFitFromBounds(b, out.Scale, out.Offset);
     return out;
 }
 
@@ -139,12 +184,79 @@ UvProjection UvProjectionCenter(const UvProjection& p, std::span<const Vec3d> lo
 {
     UvProjection out = p;
     const RawBounds b = ComputeRawBounds(p, localPositions);
-    if (!b.Valid)
-        return out;
+    if (b.Valid)
+        ApplyCenterFromBounds(b, out.Scale, out.Offset);
+    return out;
+}
 
-    const float midU = (b.Min.X + b.Max.X) * 0.5f;
-    const float midV = (b.Min.Y + b.Max.Y) * 0.5f;
-    if (std::abs(out.Scale.X) > 1e-6f) out.Offset.X = 0.5f - midU / out.Scale.X;
-    if (std::abs(out.Scale.Y) > 1e-6f) out.Offset.Y = 0.5f - midV / out.Scale.Y;
+Vec2d ProjectWorldUv(const WorldUvProjection& p, Vec3d worldPos)
+{
+    return Vec2d{
+        worldPos.Dot(p.AxisU) / SafeScale(p.Scale.X) + p.Offset.X,
+        worldPos.Dot(p.AxisV) / SafeScale(p.Scale.Y) + p.Offset.Y,
+    };
+}
+
+WorldUvProjection UvProjectionToWorld(const UvProjection& local, const Transform3f& localToWorld)
+{
+    Vec3d uRot;
+    Vec3d vRot;
+    RotatedAxes(local, uRot, vRot);
+
+    // With linear part M = R * S (TRS), dot(M x + t, Aw) = dot(x, M^T Aw) + dot(t, Aw).
+    // Choosing Aw = M^-T u = R(u / S) makes the x term match the local projection
+    // exactly; the constant dot(t, Aw) folds into the offset.
+    WorldUvProjection out;
+    out.AxisU = localToWorld.Rotation.RotateVector(DivScale(uRot, localToWorld.Scale));
+    out.AxisV = localToWorld.Rotation.RotateVector(DivScale(vRot, localToWorld.Scale));
+    out.Scale = local.Scale;
+    out.Offset = Vec2d{
+        local.Offset.X - localToWorld.Position.Dot(out.AxisU) / SafeScale(local.Scale.X),
+        local.Offset.Y - localToWorld.Position.Dot(out.AxisV) / SafeScale(local.Scale.Y),
+    };
+    return out;
+}
+
+UvProjection UvProjectionToLocal(const WorldUvProjection& world, const Transform3f& localToWorld)
+{
+    // The local axis equivalent to a world axis is M^T Aw = S * R^-1(Aw): the
+    // exact adjoint of the ToWorld mapping, so the round trip is identity.
+    const Quatf inverseRotation = localToWorld.Rotation.Inverse();
+    UvProjection out;
+    out.AxisU = MulScale(inverseRotation.RotateVector(world.AxisU), localToWorld.Scale);
+    out.AxisV = MulScale(inverseRotation.RotateVector(world.AxisV), localToWorld.Scale);
+    out.Scale = world.Scale;
+    out.Rotation = 0.0f;
+    out.WorldAligned = true;
+    out.Offset = Vec2d{
+        world.Offset.X + localToWorld.Position.Dot(world.AxisU) / SafeScale(world.Scale.X),
+        world.Offset.Y + localToWorld.Position.Dot(world.AxisV) / SafeScale(world.Scale.Y),
+    };
+    return out;
+}
+
+WorldUvProjection WorldUvProjectionFit(const WorldUvProjection& p, std::span<const Vec3d> worldPositions)
+{
+    WorldUvProjection out = p;
+    WorldUvProjection raw = p;
+    raw.Scale = { 1.0f, 1.0f };
+    raw.Offset = { 0.0f, 0.0f };
+    const RawBounds b = ComputeRawBoundsWith(
+        [&](Vec3d pos) { return ProjectWorldUv(raw, pos); }, worldPositions);
+    if (b.Valid)
+        ApplyFitFromBounds(b, out.Scale, out.Offset);
+    return out;
+}
+
+WorldUvProjection WorldUvProjectionCenter(const WorldUvProjection& p, std::span<const Vec3d> worldPositions)
+{
+    WorldUvProjection out = p;
+    WorldUvProjection raw = p;
+    raw.Scale = { 1.0f, 1.0f };
+    raw.Offset = { 0.0f, 0.0f };
+    const RawBounds b = ComputeRawBoundsWith(
+        [&](Vec3d pos) { return ProjectWorldUv(raw, pos); }, worldPositions);
+    if (b.Valid)
+        ApplyCenterFromBounds(b, out.Scale, out.Offset);
     return out;
 }

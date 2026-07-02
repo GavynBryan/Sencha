@@ -4,6 +4,9 @@
 #include "EditorUiStyle.h"
 #include "fonts/IconsFontAwesome6.h"
 
+#include "../editmodes/ManipulatorSession.h"
+#include "../meshedit/MeshEditService.h"
+#include "../meshedit/MeshElementKindTraits.h"
 #include "../selection/SelectionService.h"
 #include "../tools/ITool.h"
 #include "../tools/ToolRegistry.h"
@@ -17,12 +20,30 @@
 #include <ctime>
 
 EditorStatusBar::EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection,
-                                 const GridSettings& grid)
+                                 const GridSettings& grid, MeshEditService& meshEdit,
+                                 const ManipulatorSession& manipulators)
     : Tools(tools)
     , Layout(layout)
     , Selection(selection)
     , Grid(grid)
+    , MeshEdit(meshEdit)
+    , Manipulators(manipulators)
 {
+}
+
+namespace
+{
+const char* TransformModeLabel(TransformMode mode)
+{
+    switch (mode)
+    {
+    case TransformMode::Resize: return "Resize";
+    case TransformMode::Move:   return "Move";
+    case TransformMode::Rotate: return "Rotate";
+    case TransformMode::Scale:  return "Scale";
+    }
+    return "?";
+}
 }
 
 void EditorStatusBar::Draw()
@@ -45,6 +66,15 @@ void EditorStatusBar::Draw()
             const ITool* tool = Tools.GetActiveTool();
             ImGui::Text(ICON_FA_ARROW_POINTER "  %s", tool ? tool->GetDisplayName().data() : "—");
 
+            // Element mode + the gizmo actually shown and the frame it drags in,
+            // so "why can't I resize this" is always answered at a glance.
+            ImGui::Separator();
+            ImGui::Text("%s", Traits(MeshEdit.GetElementKind()).Label);
+            ImGui::Separator();
+            ImGui::Text(ICON_FA_UP_DOWN_LEFT_RIGHT "  %s (%s)",
+                        TransformModeLabel(Manipulators.EffectiveMode()),
+                        TransformSpaceLabel(Manipulators.GetTransformSpace()));
+
             ImGui::Separator();
             const std::size_t count = Selection.GetSelection().size();
             ImGui::Text("%zu selected", count);
@@ -55,8 +85,9 @@ void EditorStatusBar::Draw()
                 ImGui::Text("%s", active->GetDisplayLabel());
             }
             ImGui::Separator();
-            ImGui::Text(ICON_FA_BORDER_ALL "  grid %g%s",
-                        Grid.Spacing, Grid.SnapEnabled ? "" : " (snap off)");
+            ImGui::Text(ICON_FA_BORDER_ALL "  grid %g%s%s",
+                        Grid.Spacing, Grid.SnapEnabled ? "" : " (snap off)",
+                        Grid.HasCustomFrame() ? " [custom]" : "");
 
             // Wall clock, right-aligned.
             std::time_t now = std::time(nullptr);

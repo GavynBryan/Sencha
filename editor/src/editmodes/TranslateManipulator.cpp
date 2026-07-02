@@ -30,15 +30,22 @@ constexpr int kAxisX = 1;
 constexpr int kAxisY = 2;
 constexpr int kAxisZ = 3;
 
-Vec3d AxisDirection(int axis)
+// Axis directions come from the session-resolved gizmo frame (world, grid, or
+// local space); the part id indexes into it.
+Vec3d AxisDirection(const ManipulatorContext& ctx, int axis)
 {
-    switch (axis)
-    {
-    case kAxisX: return Vec3d(1.0f, 0.0f, 0.0f);
-    case kAxisY: return Vec3d(0.0f, 1.0f, 0.0f);
-    case kAxisZ: return Vec3d(0.0f, 0.0f, 1.0f);
-    default:     return Vec3d(0.0f, 0.0f, 0.0f);
-    }
+    if (axis < kAxisX || axis > kAxisZ)
+        return Vec3d(0.0f, 0.0f, 0.0f);
+    return ctx.Axes[static_cast<std::size_t>(axis - kAxisX)];
+}
+
+// The point the gizmo sits on: the grid origin while grid-origin editing,
+// otherwise the selection pivot.
+std::optional<Vec3d> GizmoPivot(const ManipulatorContext& ctx)
+{
+    if (ctx.EditGridOrigin)
+        return ctx.Grid.Origin;
+    return ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
 }
 
 float AxisLength(const EditorViewport& viewport, Vec3d pivot)
@@ -272,6 +279,23 @@ private:
     std::optional<Vec3d> Previous;
 };
 
+// Grid-origin edit: the axis drag moves the workspace grid origin (view state,
+// so no undo step); cancel restores the prior origin.
+class GridOriginApply : public ITranslateApply
+{
+public:
+    explicit GridOriginApply(GridSettings& grid)
+        : Grid(grid), Start(grid.Origin) {}
+
+    void Preview(Vec3d delta) override { Grid.Origin = Start + delta; }
+    void Commit(Vec3d delta) override { Grid.Origin = Start + delta; }
+    void Cancel() override { Grid.Origin = Start; }
+
+private:
+    GridSettings& Grid;
+    Vec3d Start;
+};
+
 class TranslateDrag : public IInteraction
 {
 public:
@@ -369,7 +393,7 @@ std::unique_ptr<ITranslateApply> MakeExtrudeApply(const ManipulatorContext& ctx,
 
 bool TranslateManipulator::AppliesTo(const ManipulatorContext& ctx, const EditorViewport&) const
 {
-    return ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot).has_value();
+    return GizmoPivot(ctx).has_value();
 }
 
 void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
@@ -377,8 +401,7 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
                                        int hoveredPart,
                                        ManipulatorVisual& out) const
 {
-    const std::optional<Vec3d> pivot =
-        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
+    const std::optional<Vec3d> pivot = GizmoPivot(ctx);
     if (!pivot.has_value())
         return;
 
@@ -391,7 +414,7 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
 
     for (std::size_t i = 0; i < axes.size(); ++i)
     {
-        const Vec3d dir = AxisDirection(axes[i]);
+        const Vec3d dir = AxisDirection(ctx, axes[i]);
         const Vec4 color = (axes[i] == hoveredPart) ? EditorTheme::Hover : colors[i];
         const Vec3d tip = *pivot + dir * length;
         const Vec3d base = tip - dir * headLength;
@@ -415,8 +438,7 @@ int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
                                   const EditorViewport& viewport,
                                   ImVec2 screenPos) const
 {
-    const std::optional<Vec3d> pivot =
-        ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
+    const std::optional<Vec3d> pivot = GizmoPivot(ctx);
     if (!pivot.has_value())
         return 0;
 
@@ -432,7 +454,7 @@ int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
     for (const int axis : { kAxisX, kAxisY, kAxisZ })
     {
         const std::optional<ProjectedPoint> end =
-            projection.WorldToPixel(*pivot + AxisDirection(axis) * length);
+            projection.WorldToPixel(*pivot + AxisDirection(ctx, axis) * length);
         if (!end.has_value())
             continue;
         const float pixels =
@@ -453,12 +475,12 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     ImVec2 screenPos,
     ModifierFlags modifiers) const
 {
-    const Vec3d axisDir = AxisDirection(part);
+    const Vec3d axisDir = AxisDirection(ctx, part);
     if (part == 0 || axisDir.SqrMagnitude() == 0.0f)
         return nullptr;
 
     const MeshElementKind kind = ctx.Service.GetElementKind();
-    const std::optional<Vec3d> pivot = ComputeSelectionPivot(ctx.Sink, ctx.Selection, kind, ctx.Pivot);
+    const std::optional<Vec3d> pivot = GizmoPivot(ctx);
     if (!pivot.has_value())
         return nullptr;
 
@@ -467,12 +489,14 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     if (!startParam.has_value())
         return nullptr;
 
-    // Pivot edit retargets the drag to the transient pivot. Otherwise Shift turns
-    // the drag into duplicate (object) or extrude (face/edge); vertex mode and the
-    // plain drag stay a move. Extrude falls back to a move if no face/edge refs
-    // resolve, so Shift never dead-ends the drag.
+    // Grid-origin and pivot edit retarget the drag off the selection. Otherwise
+    // Shift turns the drag into duplicate (object) or extrude (face/edge); vertex
+    // mode and the plain drag stay a move. Extrude falls back to a move if no
+    // face/edge refs resolve, so Shift never dead-ends the drag.
     std::unique_ptr<ITranslateApply> apply;
-    if (ctx.Pivot.Editing)
+    if (ctx.EditGridOrigin)
+        apply = std::make_unique<GridOriginApply>(ctx.Grid);
+    else if (ctx.Pivot.Editing)
         apply = std::make_unique<PivotApply>(ctx.Pivot, *pivot);
     else if (kind == MeshElementKind::Object)
         apply = modifiers.Shift ? MakeDuplicateApply(ctx) : MakeObjectApply(ctx);

@@ -36,30 +36,32 @@ inline ImVec4 Srgb(float r, float g, float b, float a = 1.0f)
 }
 }
 
-// Palette — exact hex values supplied by the user (dark teal-black sci-fi with a
-// glowing teal primary accent and a purple secondary). Single source of truth; the
-// EditorUiSkin draw-list/texture layer and EditorUiStyle::Apply both pull from here.
-inline const ImVec4 WindowBg       = detail::Hex(0x0A0D0F);                 // #0A0D0F
-inline const ImVec4 PanelBg        = detail::Hex(0x0A0D0F);                 // #0A0D0F (window/child/popup)
-inline const ImVec4 HeaderBg       = detail::Hex(0x0F1A1C);                 // #0F1A1C (title/menu)
-inline const ImVec4 FrameBg        = detail::Hex(0x0D1214);                 // #0D1214 (inset wells)
-inline const ImVec4 FrameBgHovered = detail::Hex(0x1A3535);                 // #1A3535
-inline const ImVec4 FrameBgActive  = detail::Hex(0x003D35);                 // #003D35
-inline const ImVec4 Border         = detail::Hex(0x1C3A3A);                 // #1C3A3A
-inline const ImVec4 Accent         = detail::Hex(0x00E5CC);                 // #00E5CC teal
-inline const ImVec4 AccentHover    = detail::Srgb(0.3000f, 1.0000f, 0.9200f); // brightened teal
-inline const ImVec4 AccentDim      = detail::Hex(0x003D35);                 // #003D35 teal-dark
-inline const ImVec4 Selected       = detail::Hex(0x003D35);                 // #003D35 selection
-inline const ImVec4 Secondary      = detail::Hex(0x7B2FBE);                 // #7B2FBE purple
-inline const ImVec4 SecondaryHover = detail::Srgb(0.6157f, 0.3725f, 0.8392f); // brightened purple
-inline const ImVec4 ButtonBg       = detail::Hex(0x112022);                 // #112022
-inline const ImVec4 ButtonHovered  = detail::Hex(0x1A3535);                 // #1A3535
-inline const ImVec4 Warning        = detail::Srgb(0.9290f, 0.6160f, 0.1490f); // amber
-inline const ImVec4 Danger         = detail::Srgb(0.8700f, 0.2550f, 0.2000f); // red
-inline const ImVec4 Critical       = detail::Srgb(0.9570f, 0.1960f, 0.5530f); // magenta
-inline const ImVec4 Success        = detail::Hex(0x00E5CC);                 // teal (use accent)
-inline const ImVec4 TextPrimary    = detail::Hex(0xC8F0EC);                 // #C8F0EC
-inline const ImVec4 TextDim        = detail::Hex(0x3A6060);                 // #3A6060
+// Palette: the default dark teal-black sci-fi look (glowing teal primary
+// accent, purple secondary). Single source of truth; the EditorUiSkin
+// draw-list/texture layer and EditorUiStyle::Apply both pull from here.
+// Mutable: EditorThemeFile overwrites entries from a user theme JSON at
+// startup (data-driven chrome); these initializers are the built-in default.
+inline ImVec4 WindowBg       = detail::Hex(0x0A0D0F);                 // #0A0D0F
+inline ImVec4 PanelBg        = detail::Hex(0x0A0D0F);                 // #0A0D0F (window/child/popup)
+inline ImVec4 HeaderBg       = detail::Hex(0x0F1A1C);                 // #0F1A1C (title/menu)
+inline ImVec4 FrameBg        = detail::Hex(0x0D1214);                 // #0D1214 (inset wells)
+inline ImVec4 FrameBgHovered = detail::Hex(0x1A3535);                 // #1A3535
+inline ImVec4 FrameBgActive  = detail::Hex(0x003D35);                 // #003D35
+inline ImVec4 Border         = detail::Hex(0x1C3A3A);                 // #1C3A3A
+inline ImVec4 Accent         = detail::Hex(0x00E5CC);                 // #00E5CC teal
+inline ImVec4 AccentHover    = detail::Srgb(0.3000f, 1.0000f, 0.9200f); // brightened teal
+inline ImVec4 AccentDim      = detail::Hex(0x003D35);                 // #003D35 teal-dark
+inline ImVec4 Selected       = detail::Hex(0x003D35);                 // #003D35 selection
+inline ImVec4 Secondary      = detail::Hex(0x7B2FBE);                 // #7B2FBE purple
+inline ImVec4 SecondaryHover = detail::Srgb(0.6157f, 0.3725f, 0.8392f); // brightened purple
+inline ImVec4 ButtonBg       = detail::Hex(0x112022);                 // #112022
+inline ImVec4 ButtonHovered  = detail::Hex(0x1A3535);                 // #1A3535
+inline ImVec4 Warning        = detail::Srgb(0.9290f, 0.6160f, 0.1490f); // amber
+inline ImVec4 Danger         = detail::Srgb(0.8700f, 0.2550f, 0.2000f); // red
+inline ImVec4 Critical       = detail::Srgb(0.9570f, 0.1960f, 0.5530f); // magenta
+inline ImVec4 Success        = detail::Hex(0x00E5CC);                 // teal (use accent)
+inline ImVec4 TextPrimary    = detail::Hex(0xC8F0EC);                 // #C8F0EC
+inline ImVec4 TextDim        = detail::Hex(0x3A6060);                 // #3A6060
 
 // Applies the palette + metrics onto the ImGui style (seeded from StyleColorsDark
 // so no entry is left uninitialized).

@@ -3,6 +3,8 @@
 #include "ElementGeometry.h"
 #include "MeshElementKindTraits.h"
 #include "MeshElements.h"
+
+#include "../brush/BrushTransform.h"
 #include "../brush/BrushHalfEdge.h"
 #include "../brush/BrushOps.h"
 #include "../brush/BrushValidation.h"
@@ -269,13 +271,22 @@ MeshElementKind MeshEditService::GetElementKind() const
 
 void MeshEditService::SetElementKind(MeshElementKind kind)
 {
+    if (kind == ElementKind)
+        return;
     ElementKind = kind;
+    if (ElementKindObserver)
+        ElementKindObserver(ElementKind);
 }
 
 MeshElementKind MeshEditService::CycleElementKind()
 {
-    ElementKind = Traits(ElementKind).Next;
+    SetElementKind(Traits(ElementKind).Next);
     return ElementKind;
+}
+
+void MeshEditService::SetElementKindObserver(std::function<void(MeshElementKind)> observer)
+{
+    ElementKindObserver = std::move(observer);
 }
 
 std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
@@ -375,6 +386,25 @@ EdgeSourceWinding(const BrushMesh& mesh)
     }
     return directed;
 }
+
+// The material of a face whose loop contains the undirected edge (a, b): the
+// texture an edge extrude continues. First bordering face wins (an interior
+// edge has two; either is a reasonable continuation).
+const FaceMaterial* FaceMaterialForEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const std::uint32_t u = face.Loop[i];
+            const std::uint32_t v = face.Loop[(i + 1) % n];
+            if ((u == a && v == b) || (u == b && v == a))
+                return &face.Material;
+        }
+    }
+    return nullptr;
+}
 }
 
 std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
@@ -466,7 +496,8 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
                 }
                 const Vec3d a = base.Vertices[va].Position;
                 const Vec3d b = base.Vertices[vb].Position;
-                after = BrushOps::ExtrudeEdge(after, va, vb, offset);
+                after = BrushOps::ExtrudeEdge(after, va, vb, offset,
+                                              FaceMaterialForEdge(base, va, vb));
                 newEdges.emplace_back(a + offset, b + offset);
                 ++applied;
             }
@@ -496,21 +527,11 @@ void AxisSet(Vec3d& v, int a, double x)
 {
     (a == 0 ? v.X : (a == 1 ? v.Y : v.Z)) = static_cast<float>(x);
 }
-
-// world -> local: undo the transform's translation, rotation, then scale.
-Vec3d InverseTransformPoint(const Transform3f& t, Vec3d world)
-{
-    const Vec3d rel = world - t.Position;
-    const Vec3d unrotated = t.Rotation.Conjugate().RotateVector(rel);
-    return Vec3d(
-        t.Scale.X != 0.0f ? unrotated.X / t.Scale.X : unrotated.X,
-        t.Scale.Y != 0.0f ? unrotated.Y / t.Scale.Y : unrotated.Y,
-        t.Scale.Z != 0.0f ? unrotated.Z / t.Scale.Z : unrotated.Z);
-}
 }
 
 std::optional<BrushMesh> MeshEditService::ResizeBounds(const BrushMesh& base,
                                                        const Transform3f& transform,
+                                                       const std::array<Vec3d, 3>& axes,
                                                        Vec3d oldMin, Vec3d oldMax,
                                                        Vec3d newMin, Vec3d newMax,
                                                        bool validate) const
@@ -519,18 +540,23 @@ std::optional<BrushMesh> MeshEditService::ResizeBounds(const BrushMesh& base,
     BrushMesh after = base;
     for (BrushVertex& vertex : after.Vertices)
     {
-        Vec3d world = transform.TransformPoint(vertex.Position);
+        const Vec3d world = transform.TransformPoint(vertex.Position);
+        // Coordinates in the frame (axes are orthonormal, so the frame point
+        // reconstructs as the axis-weighted sum). The world frame is the
+        // identity basis, reproducing the historical world-AABB remap exactly.
+        Vec3d coords{ world.Dot(axes[0]), world.Dot(axes[1]), world.Dot(axes[2]) };
         for (int axis = 0; axis < 3; ++axis)
         {
             const double oldExtent = AxisGet(oldMax, axis) - AxisGet(oldMin, axis);
             const double newExtent = AxisGet(newMax, axis) - AxisGet(newMin, axis);
             // Degenerate source axis: leave the coordinate where it is.
             const double t = oldExtent > kEps
-                ? (AxisGet(world, axis) - AxisGet(oldMin, axis)) / oldExtent
+                ? (AxisGet(coords, axis) - AxisGet(oldMin, axis)) / oldExtent
                 : 0.0;
-            AxisSet(world, axis, AxisGet(newMin, axis) + t * newExtent);
+            AxisSet(coords, axis, AxisGet(newMin, axis) + t * newExtent);
         }
-        vertex.Position = InverseTransformPoint(transform, world);
+        const Vec3d remapped = axes[0] * coords.X + axes[1] * coords.Y + axes[2] * coords.Z;
+        vertex.Position = InverseTransformPoint(transform, remapped);
     }
 
     if (validate)
