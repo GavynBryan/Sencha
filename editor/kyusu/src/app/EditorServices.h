@@ -9,7 +9,7 @@
 #include "input/ShortcutRegistry.h"
 #include "input/ViewportNavigation.h"
 #include "workspace/EditorWorkspace.h"
-#include "document/MaterialLibrary.h"
+#include "project/MaterialLibrary.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
 #include "ui/EditorToolSidebar.h"

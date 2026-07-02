@@ -5,7 +5,7 @@
 
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
-#include "document/MaterialLibrary.h"
+#include "project/MaterialLibrary.h"
 #include "brush/BrushMesh.h"
 #include "brush/FaceMaterial.h"
 #include "meshedit/IMeshEditTarget.h"

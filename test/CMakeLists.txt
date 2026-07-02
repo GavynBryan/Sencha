@@ -204,13 +204,16 @@ if(EDITOR_TEST_SOURCES)
     add_executable(editor_tests
         ${EDITOR_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/MaterialLibrary.cpp)
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialEditSession.cpp
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/PreviewPrimitives.cpp)
     target_include_directories(editor_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src
-        ${CMAKE_SOURCE_DIR}/editor/common/src)
+        ${CMAKE_SOURCE_DIR}/editor/common/src
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src)
     target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
