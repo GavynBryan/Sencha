@@ -31,9 +31,8 @@ std::vector<std::byte> ReadFileBytes(const std::string& path)
 }
 }
 
-ComponentVisualRenderer::ComponentVisualRenderer(EditorScene& scene, EditorLinePipeline& lines)
-    : Scene(scene)
-    , Lines(lines)
+ComponentVisualRenderer::ComponentVisualRenderer(EditorLinePipeline& lines)
+    : Lines(lines)
 {
 }
 
@@ -82,18 +81,19 @@ const ComponentVisualRenderer::MeshEdges& ComponentVisualRenderer::EdgesFor(std:
     return Cache.emplace(key, std::move(edges)).first->second;
 }
 
-void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                           const EditorScene& scene)
 {
-    const Registry& registry = Scene.GetRegistry();
+    const Registry& registry = scene.GetRegistry();
     const auto& serializers = GetComponentSerializerEntries();
 
     std::vector<EditorLineVertex> vertices;
-    for (EntityId entity : Scene.GetAllEntities())
+    for (EntityId entity : scene.GetAllEntities())
     {
-        if (!Scene.IsEntityVisible(entity))
+        if (!scene.IsEntityVisible(entity))
             continue;
 
-        const Transform3f* transform = Scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetTransform(entity);
         if (transform == nullptr)
             continue;
 

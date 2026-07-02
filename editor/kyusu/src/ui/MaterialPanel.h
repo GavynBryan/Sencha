@@ -8,7 +8,7 @@
 #include <optional>
 
 class CommandStack;
-class EditorDocument;
+class WorldDocument;
 class MaterialLibrary;
 class MeshEditService;
 class SelectionService;
@@ -24,12 +24,14 @@ struct IMeshEditTarget;
 class MaterialPanel : public IEditorPanel
 {
 public:
-    MaterialPanel(IMeshEditTarget& target,
+    // The edit target (the workspace's manipulation sink) is rebuilt on focus
+    // change, so the composition root injects a resolver instead of a reference.
+    MaterialPanel(WorldDocument& world,
+                  std::function<IMeshEditTarget*()> target,
                   SelectionService& selection,
                   MeshEditService& meshEdit,
                   CommandStack& commands,
-                  MaterialLibrary& materials,
-                  EditorDocument& document);
+                  MaterialLibrary& materials);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -65,12 +67,14 @@ private:
     void DrawMaterialPicker();
     void DrawUvControls(const UvProjection& current);
 
-    IMeshEditTarget& Target;
+    [[nodiscard]] IMeshEditTarget& Target() const;
+
+    WorldDocument& World;
+    std::function<IMeshEditTarget*()> TargetResolver;
     SelectionService& Selection;
     MeshEditService& MeshEdit;
     CommandStack& Commands;
     MaterialLibrary& Materials;
-    EditorDocument& Document;
 
     // In-progress UV drag. A drag mutates this buffer (so it accumulates instead
     // of being reset to the scene value each frame) and commits one command when

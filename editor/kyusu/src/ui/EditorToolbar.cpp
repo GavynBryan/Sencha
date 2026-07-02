@@ -49,14 +49,27 @@ void Divider(float height)
 }
 }
 
-EditorToolbar::EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid,
+EditorToolbar::EditorToolbar(std::function<ToolRegistry*()> tools,
+                             std::function<ManipulatorSession*()> session,
+                             MeshEditService& meshEdit, GridSettings& grid,
                              BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut)
-    : Tools(tools)
+    : ToolsResolver(std::move(tools))
+    , SessionResolver(std::move(session))
     , MeshEdit(meshEdit)
     , Grid(grid)
     , BrushCreate(brushCreate)
     , EdgeCut(edgeCut)
 {
+}
+
+ToolRegistry& EditorToolbar::Tools() const
+{
+    return *ToolsResolver();
+}
+
+ManipulatorSession* EditorToolbar::Session() const
+{
+    return SessionResolver();
 }
 
 void EditorToolbar::Draw()
@@ -81,7 +94,7 @@ void EditorToolbar::Draw()
         // Tools themselves live on the left sidebar; the toolbar hosts the
         // active tool's contextual controls and the shared editing groups.
         DrawToolContextGroup(buttonSize);
-        const ITool* activeTool = Tools.GetActiveTool();
+        const ITool* activeTool = Tools().GetActiveTool();
         if (activeTool != nullptr && activeTool->GetId() == "select")
         {
             // Element modes only mean something to selection; the brush tool
@@ -102,7 +115,7 @@ void EditorToolbar::DrawToolContextGroup(float buttonSize)
 {
     // Brush create sub-mode (Cube/Plane/Cylinder): drives BrushCreationSettings.
     // Only meaningful while the Brush tool is active, so it shows only then.
-    const ITool* activeTool = Tools.GetActiveTool();
+    const ITool* activeTool = Tools().GetActiveTool();
     if (activeTool != nullptr && activeTool->GetId() == "brush")
     {
         struct PrimitiveButton { BrushPrimitive Kind; const char* Icon; const char* Label; };
@@ -158,10 +171,10 @@ void EditorToolbar::DrawToolContextGroup(float buttonSize)
         if (!pending)
             ImGui::BeginDisabled();
         if (ToolButton("carveapply", ICON_FA_CHECK, "Apply carve  [Enter]", false, buttonSize))
-            Tools.OnInput(InputEvent{ KeyDownEvent{ SDLK_RETURN, {} } });
+            Tools().OnInput(InputEvent{ KeyDownEvent{ SDLK_RETURN, {} } });
         ImGui::SameLine();
         if (ToolButton("carvecancel", ICON_FA_XMARK, "Cancel carve  [Esc]", false, buttonSize))
-            Tools.OnInput(InputEvent{ KeyDownEvent{ SDLK_ESCAPE, {} } });
+            Tools().OnInput(InputEvent{ KeyDownEvent{ SDLK_ESCAPE, {} } });
         if (!pending)
             ImGui::EndDisabled();
         Divider(buttonSize);
@@ -194,9 +207,9 @@ void EditorToolbar::DrawModeGroup(float buttonSize)
 
 void EditorToolbar::DrawTransformGroup(float buttonSize)
 {
-    if (Transform.Session == nullptr)
+    if (Session() == nullptr)
         return;
-    ManipulatorSession& session = *Transform.Session;
+    ManipulatorSession& session = *Session();
 
     // The gizmo (Shift+Q/W/E/R). Highlights the EFFECTIVE mode: with Resize
     // chosen but nothing resizable selected, Move is what the user is driving.

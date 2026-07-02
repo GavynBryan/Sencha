@@ -24,10 +24,12 @@
 #include <render/MeshForwardPass.h>
 
 #include <array>
+#include <functional>
 #include <optional>
 
 class EditorScene;
 class EditorDocument;
+class WorldDocument;
 class ManipulatorSession;
 class MeshEditService;
 class PreviewBuffer;
@@ -46,20 +48,24 @@ struct RuntimeAssets;
 class EditorRenderFeature : public IRenderFeature
 {
 public:
+    // The focus document and the manipulator session are rebuilt when the
+    // workspace resets interaction state, so both are resolved per frame: the
+    // document through the world document, the session through an injected
+    // resolver. Stable workspace value members (layout, selection, mesh edit,
+    // overlay, preview, grid) are bound as plain references.
     EditorRenderFeature(ViewportLayout& viewportLayout,
-                        EditorScene& scene,
+                        WorldDocument& world,
                         SelectionService& selection,
                         MeshEditService& meshEdit,
                         const EditorOverlayState& overlay,
                         PreviewBuffer& preview,
-                        ManipulatorSession& session,
+                        std::function<const ManipulatorSession*()> session,
                         const GridSettings& grid,
                         LoggingProvider& logging,
                         const ConsoleRegistry& console,
                         AssetSystem* assets,
                         const AssetRegistry* catalog,
-                        RuntimeAssets* runtimeAssets,
-                        const EditorDocument& document);
+                        RuntimeAssets* runtimeAssets);
 
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
@@ -88,6 +94,8 @@ private:
     void RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
                              const ViewportTargetCache::RenderView& target);
 
+    WorldDocument&         World;
+    std::function<const ManipulatorSession*()> Session;
     ViewportLayout& Layout;
     const GridSettings&    GridCfg;
     GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars

@@ -3,6 +3,7 @@
 #include "project/Project.h"
 #include "document/DocumentCook.h"
 #include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
 
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
@@ -16,9 +17,9 @@
 #include <span>
 #include <variant>
 
-PieDriver::PieDriver(Engine& engine, EditorDocument& document, ProjectDescriptor* project, RuntimeAssets* assets)
+PieDriver::PieDriver(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets)
     : Engine_(engine)
-    , Document_(document)
+    , World_(world)
     , Project_(project)
     , Assets_(assets)
 {
@@ -38,8 +39,8 @@ std::string PieDriver::Cook(const std::string& levelName)
     std::string name = levelName;
     if (name.empty())
     {
-        const std::filesystem::path docPath(Document_.GetDisplayName());
-        name = Document_.HasFilePath() ? docPath.stem().string() : "untitled";
+        const std::filesystem::path docPath(World_.FocusDocument().GetDisplayName());
+        name = World_.FocusDocument().HasFilePath() ? docPath.stem().string() : "untitled";
     }
 
     double cellSize = 16.0;
@@ -55,7 +56,7 @@ std::string PieDriver::Cook(const std::string& levelName)
 
     const std::filesystem::path assetsRoot = std::filesystem::path(Project_->Directory) / "assets";
     const DocumentCookResult cooked =
-        CookDocument(Document_, name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
+        CookDocument(World_.FocusDocument(), name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
     if (!cooked.Success)
     {
         log.Error("cook failed: " + cooked.Error);

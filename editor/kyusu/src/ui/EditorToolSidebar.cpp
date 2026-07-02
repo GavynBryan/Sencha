@@ -11,9 +11,14 @@
 
 #include <string>
 
-EditorToolSidebar::EditorToolSidebar(ToolRegistry& tools)
-    : Tools(tools)
+EditorToolSidebar::EditorToolSidebar(std::function<ToolRegistry*()> tools)
+    : ToolsResolver(std::move(tools))
 {
+}
+
+ToolRegistry& EditorToolSidebar::Tools() const
+{
+    return *ToolsResolver();
 }
 
 void EditorToolSidebar::Draw()
@@ -34,7 +39,7 @@ void EditorToolSidebar::Draw()
                                   ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
                            EditorUi::HeaderBg);
 
-        const auto& tools = Tools.GetTools();
+        const auto& tools = Tools().GetTools();
         for (std::size_t i = 0; i < tools.size(); ++i)
         {
             const ITool* tool = tools[i].get();
@@ -43,10 +48,10 @@ void EditorToolSidebar::Draw()
 
             const std::string_view iconView = tool->GetIcon();
             const std::string icon(iconView.empty() ? tool->GetDisplayName() : iconView);
-            const bool active = Tools.GetActiveIndex() == static_cast<int>(i);
+            const bool active = Tools().GetActiveIndex() == static_cast<int>(i);
             if (EditorUiSkin::Button(tool->GetId().data(), icon.c_str(),
                                      ImVec2(buttonSize, buttonSize), active))
-                Tools.Activate(i);
+                Tools().Activate(i);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", tool->GetDisplayName().data());
         }

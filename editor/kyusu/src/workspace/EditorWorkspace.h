@@ -22,7 +22,7 @@
 
 #include "document/BrushCreationSettings.h"
 #include "document/EdgeCutSettings.h"
-#include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
 
 #include <functional>
 #include <memory>
@@ -35,6 +35,19 @@ public:
     explicit EditorWorkspace(LoggingProvider& logging);
 
     void Init(CommandStack& commands);
+
+    // The document all editing binds: the focus zone's document in world mode,
+    // the single anonymous document in legacy mode. Long-lived objects resolve
+    // through here at each use instead of holding EditorDocument&/EditorScene&
+    // members, so a focus change cannot leave them stale.
+    [[nodiscard]] EditorDocument& ActiveDocument() { return World.FocusDocument(); }
+    [[nodiscard]] const EditorDocument& ActiveDocument() const { return World.FocusDocument(); }
+
+    // Tears down and rebuilds everything that binds the active document (tool
+    // context, manipulation sink, session, transient interaction state) and
+    // clears the selection and the undo stack. Document open and focus change
+    // both swap the edited document, so both reset through this one path.
+    void ResetInteractionState();
 
     // Deletes the entity-kind selection as one undoable step (no-op if empty).
     void DeleteSelection();
@@ -91,7 +104,7 @@ public:
     // has not been moved), then clears the transient pivot. One undoable step.
     void SetSelectedBrushOriginToPivot();
 
-    EditorDocument Document;
+    WorldDocument World;
     ViewportLayout Layout = ViewportLayout::MakeFourWay();
     SelectionContext LevelSelection;
     SelectionService Selection;
@@ -123,4 +136,10 @@ public:
     // Non-owning; the command stack passed to Init (owned by EditorServices), held
     // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;
+
+private:
+    // Builds the document-bound editing stack (sink, tool context, tools,
+    // dispatcher, manipulator session) against the active document. Init and
+    // ResetInteractionState share it.
+    void BuildInteractionState();
 };

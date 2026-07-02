@@ -11,7 +11,7 @@
 #include <vector>
 
 class CommandStack;
-class EditorDocument;
+class WorldDocument;
 class SelectionService;
 struct IComponentSerializer;
 struct RuntimeField;
@@ -24,8 +24,7 @@ struct RuntimeField;
 class InspectorPanel : public IEditorPanel
 {
 public:
-    InspectorPanel(EditorScene& scene,
-                   EditorDocument& document,
+    InspectorPanel(WorldDocument& world,
                    SelectionService& selection,
                    CommandStack& commands);
 
@@ -42,8 +41,7 @@ private:
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 
-    EditorScene& Scene;
-    EditorDocument& Document;
+    WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
 

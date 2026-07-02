@@ -1,5 +1,6 @@
 #pragma once
 
+class EditorScene;
 struct FrameContext;
 struct EditorViewport;
 
@@ -10,6 +11,9 @@ struct EditorViewport;
 // not an edit to the existing renderers. (OCP)
 struct IBrushBodyRenderer
 {
-    virtual void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) = 0;
+    // The scene is per-call: renderers hold no document references, so the
+    // workspace can swap the edited document without touching the render stack.
+    virtual void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                              const EditorScene& scene) = 0;
     virtual ~IBrushBodyRenderer() = default;
 };

@@ -1,10 +1,9 @@
 #include "DocumentFileActions.h"
 
 #include "EditorDocument.h"
+#include "WorldDocument.h"
 #include "project/MaterialLibrary.h"
 #include "SceneBrushWalk.h"
-#include "commands/CommandStack.h"
-#include "selection/SelectionService.h"
 
 #include <platform/SdlWindow.h>
 
@@ -24,13 +23,13 @@ constexpr SDL_DialogFileFilter kDocumentFileFilters[] = {
 };
 } // namespace
 
-DocumentFileActions::DocumentFileActions(SdlWindow& window, EditorDocument& document, CommandStack& commands,
-                                         SelectionService& selection, MaterialLibrary& materials,
+DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world,
+                                         std::function<void()> resetInteraction,
+                                         MaterialLibrary& materials,
                                          std::vector<std::string> contentRoots)
     : Window(window)
-    , Document(document)
-    , Commands(commands)
-    , Selection(selection)
+    , World(world)
+    , ResetInteraction(std::move(resetInteraction))
     , Materials(materials)
     , ContentRoots(std::move(contentRoots))
 {
@@ -38,19 +37,19 @@ DocumentFileActions::DocumentFileActions(SdlWindow& window, EditorDocument& docu
 
 void DocumentFileActions::New()
 {
-    Document.New();
-    ResetEditorState();
+    World.New();
+    ResetInteraction();
 }
 
 void DocumentFileActions::Save()
 {
-    if (!Document.HasFilePath())
+    if (!World.FocusDocument().HasFilePath())
     {
         RequestSaveAs();
         return;
     }
 
-    Document.Save();
+    World.Save();
 }
 
 void DocumentFileActions::RequestOpen()
@@ -111,15 +110,15 @@ void DocumentFileActions::ProcessPending()
         switch (action.Kind)
         {
         case FileActionKind::Open:
-            if (Document.Load(action.Path))
+            if (World.Load(action.Path))
             {
-                ResetEditorState();
+                ResetInteraction();
                 RescanMaterials(action.Path);
                 LogUnresolvedFaceMaterials(action.Path);
             }
             break;
         case FileActionKind::SaveAs:
-            Document.SaveAs(action.Path);
+            World.SaveAs(action.Path);
             RescanMaterials(action.Path);
             break;
         }
@@ -149,7 +148,7 @@ void DocumentFileActions::LogUnresolvedFaceMaterials(const std::string& levelPat
     // name each one (with a count) so the author knows what to reassign after a
     // level moves between projects.
     std::map<std::string, int> unresolved;
-    ForEachVisibleBrush(Document.GetScene(), /*skipLocked*/ false,
+    ForEachVisibleBrush(World.FocusDocument().GetScene(), /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f&)
         {
             for (const BrushFace& face : mesh.Faces)
@@ -170,17 +169,12 @@ void DocumentFileActions::LogUnresolvedFaceMaterials(const std::string& levelPat
                      levelPath.c_str(), path.c_str(), count);
 }
 
-void DocumentFileActions::ResetEditorState()
-{
-    Commands.Clear();
-    Selection.ClearSelection();
-}
-
 void DocumentFileActions::UpdateTitle()
 {
+    const EditorDocument& document = World.FocusDocument();
     std::string title = "Kyusu - Level Editor - ";
-    title += Document.GetDisplayName();
-    if (Document.IsDirty())
+    title += document.GetDisplayName();
+    if (document.IsDirty())
         title += " *";
 
     if (title != LastWindowTitle)

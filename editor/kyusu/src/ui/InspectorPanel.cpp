@@ -11,6 +11,7 @@
 #include "document/commands/RawComponentAddCommand.h"
 #include "document/commands/RawComponentRemoveCommand.h"
 #include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
 #include "selection/SelectionService.h"
 
 #include <core/assets/AssetRegistry.h>
@@ -92,12 +93,10 @@ namespace
     }
 }
 
-InspectorPanel::InspectorPanel(EditorScene& scene,
-                               EditorDocument& document,
+InspectorPanel::InspectorPanel(WorldDocument& world,
                                SelectionService& selection,
                                CommandStack& commands)
-    : Scene(scene)
-    , Document(document)
+    : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
 {
@@ -116,7 +115,7 @@ void InspectorPanel::ResetEditState()
     // mutation.
     if (EditActive && EditingComponent != InvalidComponentId && !EditBefore.empty())
     {
-        World& world = Scene.GetRegistry().Components;
+        World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
         if (void* live = world.GetComponentRaw(EditingEntity, EditingComponent))
             std::memcpy(live, EditBefore.data(), EditBefore.size());
     }
@@ -128,7 +127,7 @@ void InspectorPanel::ResetEditState()
 
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
 {
-    World& world = Scene.GetRegistry().Components;
+    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
     const ComponentId id = world.GetComponentIdByType(serializer.TypeId());
     if (id == InvalidComponentId)
         return;
@@ -223,7 +222,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     if (committed && EditActive && EditingComponent == id)
     {
         Commands.Execute(std::make_unique<RawComponentEditCommand>(
-            entity, id, EditBefore, working, Scene, Document));
+            entity, id, EditBefore, working, WorldDoc.FocusDocument().GetScene(), WorldDoc.FocusDocument()));
         EditActive = false;
         EditingComponent = InvalidComponentId;
     }
@@ -280,8 +279,8 @@ namespace
 void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
                                     ComponentId component, float labelWidth)
 {
-    AssetSystem* assets = Document.GetAssetSystem();
-    const AssetRegistry* catalog = Document.GetAssetCatalog();
+    AssetSystem* assets = WorldDoc.FocusDocument().GetAssetSystem();
+    const AssetRegistry* catalog = WorldDoc.FocusDocument().GetAssetCatalog();
     if (assets == nullptr || catalog == nullptr)
     {
         ImGui::AlignTextToFramePadding();
@@ -291,7 +290,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
         return;
     }
 
-    World& world = Scene.GetRegistry().Components;
+    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
     const void* base = world.GetComponentRaw(entity, component);
     if (base == nullptr)
         return;
@@ -304,7 +303,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     const auto apply = [&](AssetFieldValue next) {
         Commands.Execute(std::make_unique<AssetFieldEditCommand>(
             entity, component, field.Offset, field.Asset, field.Arity,
-            current, std::move(next), Scene, Document, *assets));
+            current, std::move(next), WorldDoc.FocusDocument().GetScene(), WorldDoc.FocusDocument(), *assets));
     };
 
     if (field.Arity != AssetArity::List)
@@ -371,7 +370,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
 void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 {
-    World& world = Scene.GetRegistry().Components;
+    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
 
     // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
     // the popup before a selection can be made.
@@ -392,7 +391,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
             if (ImGui::Selectable(label.c_str()))
             {
                 Commands.Execute(std::make_unique<RawComponentAddCommand>(
-                    entity, id, serializer->DefaultBytes(), Scene, Document));
+                    entity, id, serializer->DefaultBytes(), WorldDoc.FocusDocument().GetScene(), WorldDoc.FocusDocument()));
             }
         }
 
@@ -412,7 +411,7 @@ void InspectorPanel::OnDraw()
     const SelectableRef selection = Selection.GetPrimarySelection();
     const EntityId entity = selection.Entity;
 
-    if (!selection.IsValid() || !Scene.HasEntity(entity))
+    if (!selection.IsValid() || !WorldDoc.FocusDocument().GetScene().HasEntity(entity))
     {
         ImGui::TextDisabled("No selection");
         ResetEditState();
@@ -436,7 +435,7 @@ void InspectorPanel::OnDraw()
 
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.
-    World& world = Scene.GetRegistry().Components;
+    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
     for (const auto& serializer : GetComponentSerializerEntries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
@@ -449,7 +448,7 @@ void InspectorPanel::OnDraw()
     if (PendingRemoval != nullptr)
     {
         Commands.Execute(std::make_unique<RawComponentRemoveCommand>(
-            entity, *PendingRemoval, Scene, Document));
+            entity, *PendingRemoval, WorldDoc.FocusDocument().GetScene(), WorldDoc.FocusDocument()));
         PendingRemoval = nullptr;
         ResetEditState();
     }

@@ -2,6 +2,9 @@
 
 #include "PreviewBuffer.h"
 
+#include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
+
 #include "EditorTheme.h"
 #include "viewport/ViewportLayout.h"
 #include "viewport/ViewportShading.h"
@@ -17,26 +20,27 @@
 #include <vector>
 
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
-                                         EditorScene& scene,
+                                         WorldDocument& world,
                                          SelectionService& selection,
                                          MeshEditService& meshEdit,
                                          const EditorOverlayState& overlay,
                                          PreviewBuffer& preview,
-                                         ManipulatorSession& session,
+                                         std::function<const ManipulatorSession*()> session,
                                          const GridSettings& grid,
                                          LoggingProvider& logging,
                                          const ConsoleRegistry& console,
                                          AssetSystem* assets,
                                          const AssetRegistry* catalog,
-                                         RuntimeAssets* runtimeAssets,
-                                         const EditorDocument& document)
-    : Layout(viewportLayout)
+                                         RuntimeAssets* runtimeAssets)
+    : World(world)
+    , Session(std::move(session))
+    , Layout(viewportLayout)
     , GridCfg(grid)
-    , BrushSolid(scene, Solid)
-    , Meshes(scene, Solid, logging, assets, catalog)
-    , Wireframe(scene, selection, overlay, Lines)
-    , Visuals(scene, Lines)
-    , Highlight(scene, selection, meshEdit, overlay, session, WideLines, Fills)
+    , BrushSolid(Solid)
+    , Meshes(Solid, logging, assets, catalog)
+    , Wireframe(selection, overlay, Lines)
+    , Visuals(Lines)
+    , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -50,7 +54,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     {
         MeshCache = &runtimeAssets->StaticMeshes;
         MaterialStore = &runtimeAssets->Materials;
-        QueueBuilder.emplace(document, runtimeAssets->Assets, runtimeAssets->StaticMeshes,
+        QueueBuilder.emplace(runtimeAssets->Assets, runtimeAssets->StaticMeshes,
                              runtimeAssets->MaterialSets, logging);
         SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
@@ -125,7 +129,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
     if (MaterialPath)
     {
-        QueueBuilder->Build();
+        QueueBuilder->Build(World.FocusDocument());
         // Hemispheric ambient is live-tunable in the dev console, same path as the
         // grid/bloom knobs above. BuildLights() leaves the tints alone, so set them
         // after. Defaults match RenderLightSet's neutral cool fill.
@@ -256,19 +260,21 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     local.DepthFormat = Services.DepthFormat;
     local.Phase = RenderPhase::Offscreen;
 
+    const EditorScene& scene = World.FocusDocument().GetScene();
+
     Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
     Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
-        body->DrawViewport(local, viewport);
+        body->DrawViewport(local, viewport, scene);
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)
         Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
                      QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
     else
-        Meshes.DrawViewport(local, viewport);
-    Visuals.DrawViewport(local, viewport);
-    Highlight.DrawViewport(local, viewport);
+        Meshes.DrawViewport(local, viewport, scene);
+    Visuals.DrawViewport(local, viewport, scene);
+    Highlight.DrawViewport(local, viewport, scene, *Session());
     Preview.DrawViewport(local, viewport);
 
     vkCmdEndRendering(frame.Cmd);
@@ -348,7 +354,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
     glowCtx.DepthView = target.DepthView;
     glowCtx.DepthFormat = Services.DepthFormat;
     glowCtx.Phase = RenderPhase::Offscreen;
-    Highlight.SubmitActiveGlowSource(glowCtx, viewport);
+    Highlight.SubmitActiveGlowSource(glowCtx, viewport, World.FocusDocument().GetScene());
 
     vkCmdEndRendering(frame.Cmd);
 

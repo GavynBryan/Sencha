@@ -34,7 +34,9 @@ public:
         std::function<bool()> HasInstancedSelection; // any selected instanced brush
     };
 
-    MeshEditPanel(IMeshEditTarget& target,
+    // The edit target (the workspace's manipulation sink) is rebuilt on focus
+    // change, so the composition root injects a resolver instead of a reference.
+    MeshEditPanel(std::function<IMeshEditTarget*()> target,
                   SelectionService& selection,
                   MeshEditService& meshEdit,
                   CommandStack& commands,
@@ -49,7 +51,9 @@ private:
     void DrawFaceVerbs();
     void DrawEdgeVerbs();
 
-    IMeshEditTarget& Target;
+    [[nodiscard]] IMeshEditTarget& Target() const;
+
+    std::function<IMeshEditTarget*()> TargetResolver;
     SelectionService& Selection;
     MeshEditService& MeshEdit;
     CommandStack& Commands;

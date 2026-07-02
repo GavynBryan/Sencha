@@ -73,13 +73,11 @@ namespace
     }
 }
 
-SceneRenderQueueBuilder::SceneRenderQueueBuilder(const EditorDocument& document,
-                                                 AssetSystem& assets,
+SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  StaticMeshCache& meshes,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging)
-    : Document(document)
-    , Assets(assets)
+    : Assets(assets)
     , Meshes(meshes)
     , MaterialSets(materialSets)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
@@ -91,19 +89,19 @@ SceneRenderQueueBuilder::~SceneRenderQueueBuilder()
     ReleaseBrushMeshes();
 }
 
-void SceneRenderQueueBuilder::Build()
+void SceneRenderQueueBuilder::Build(const EditorDocument& document)
 {
-    RebuildBrushMeshes();
+    RebuildBrushMeshes(document);
     EmitBrushQueue();
-    BuildMeshQueue();
-    BuildLights();
+    BuildMeshQueue(document);
+    BuildLights(document);
 }
 
-void SceneRenderQueueBuilder::RebuildBrushMeshes()
+void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
 {
     // Same kernel the cook and PIE use, so the preview is the cooked geometry.
     std::vector<CookBrushGeometry> brushes =
-        CollectCookBrushes(Document.GetScene(), Document.GetDefaultMaterial());
+        CollectCookBrushes(document.GetScene(), document.GetDefaultMaterial());
 
     const uint64_t hash = HashBrushes(brushes);
     if (HasBaked && hash == BrushHash)
@@ -181,11 +179,11 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
     Brushes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildMeshQueue()
+void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
 {
     PlacedMeshes.Reset();
 
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
@@ -233,14 +231,14 @@ void SceneRenderQueueBuilder::BuildMeshQueue()
     PlacedMeshes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildLights()
+void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
 {
     // Reset() clears only the light count; the ambient tints are owned by the
     // caller (EditorRenderFeature sets them from render.ambient.* cvars), so we
     // leave them untouched here.
     SceneLights.Reset();
 
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
     for (const EntityId entity : scene.GetAllEntities())
     {

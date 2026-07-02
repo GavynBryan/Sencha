@@ -24,16 +24,20 @@ struct EditorOverlayState;
 class SelectionRenderer
 {
 public:
-    SelectionRenderer(EditorScene& scene, SelectionService& selection, MeshEditService& meshEdit,
-                      const EditorOverlayState& overlay, ManipulatorSession& session,
+    SelectionRenderer(SelectionService& selection, MeshEditService& meshEdit,
+                      const EditorOverlayState& overlay,
                       EditorWideLinePipeline& lines, EditorFillPipeline& fill);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    // Scene and session are per-call: both are rebuilt when the workspace swaps
+    // the edited document, so the renderer holds neither.
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene& scene, const ManipulatorSession& session);
 
     // Submits just the active-body wireframe, bright and on-top (no depth test), into
     // the current render pass. Used as the bloom glow source so the glow comes from the
     // full, unclipped line rather than the depth-tested (and self-clipped) scene copy.
-    void SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport);
+    void SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport,
+                                const EditorScene& scene);
 
 private:
     // Every edge of the mesh, for the selected/preview-mesh wireframe overlay.
@@ -62,16 +66,16 @@ private:
                             float widthPx) const;
     // Entities referenced by the current selection (as objects or via element refs):
     // selecting any element makes the whole mesh the active body.
-    [[nodiscard]] std::vector<EntityId> GatherActiveBodies() const;
-    void AppendHover(std::vector<EditorLineSegment>& segments, const EditorViewport& viewport) const;
+    [[nodiscard]] std::vector<EntityId> GatherActiveBodies(const EditorScene& scene) const;
+    void AppendHover(std::vector<EditorLineSegment>& segments, const EditorViewport& viewport,
+                     const EditorScene& scene) const;
     void AppendManipulators(std::vector<EditorLineSegment>& segments,
-                            const EditorViewport& viewport) const;
+                            const EditorViewport& viewport,
+                            const ManipulatorSession& session) const;
 
-    EditorScene& Scene;
     SelectionService& Selection;
     MeshEditService& MeshEdit;
     const EditorOverlayState& Overlay;
-    ManipulatorSession& Session;
     EditorWideLinePipeline& Lines;
     EditorFillPipeline& Fill;
 };

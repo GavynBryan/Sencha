@@ -19,16 +19,27 @@
 
 #include <ctime>
 
-EditorStatusBar::EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection,
-                                 const GridSettings& grid, MeshEditService& meshEdit,
-                                 const ManipulatorSession& manipulators)
-    : Tools(tools)
+EditorStatusBar::EditorStatusBar(std::function<ToolRegistry*()> tools,
+                                 std::function<const ManipulatorSession*()> manipulators,
+                                 ViewportLayout& layout, SelectionService& selection,
+                                 const GridSettings& grid, MeshEditService& meshEdit)
+    : ToolsResolver(std::move(tools))
+    , ManipulatorsResolver(std::move(manipulators))
     , Layout(layout)
     , Selection(selection)
     , Grid(grid)
     , MeshEdit(meshEdit)
-    , Manipulators(manipulators)
 {
+}
+
+ToolRegistry& EditorStatusBar::Tools() const
+{
+    return *ToolsResolver();
+}
+
+const ManipulatorSession& EditorStatusBar::Manipulators() const
+{
+    return *ManipulatorsResolver();
 }
 
 namespace
@@ -63,7 +74,7 @@ void EditorStatusBar::Draw()
                            EditorUi::HeaderBg);
         if (ImGui::BeginMenuBar())
         {
-            const ITool* tool = Tools.GetActiveTool();
+            const ITool* tool = Tools().GetActiveTool();
             ImGui::Text(ICON_FA_ARROW_POINTER "  %s", tool ? tool->GetDisplayName().data() : "—");
 
             // Element mode + the gizmo actually shown and the frame it drags in,
@@ -72,8 +83,8 @@ void EditorStatusBar::Draw()
             ImGui::Text("%s", Traits(MeshEdit.GetElementKind()).Label);
             ImGui::Separator();
             ImGui::Text(ICON_FA_UP_DOWN_LEFT_RIGHT "  %s (%s)",
-                        TransformModeLabel(Manipulators.EffectiveMode()),
-                        TransformSpaceLabel(Manipulators.GetTransformSpace()));
+                        TransformModeLabel(Manipulators().EffectiveMode()),
+                        TransformSpaceLabel(Manipulators().GetTransformSpace()));
 
             ImGui::Separator();
             const std::size_t count = Selection.GetSelection().size();

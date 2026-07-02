@@ -25,13 +25,13 @@ class LoggingProvider;
 class StaticMeshRenderer
 {
 public:
-    StaticMeshRenderer(EditorScene& scene,
-                       EditorSolidPipeline& solid,
+    StaticMeshRenderer(EditorSolidPipeline& solid,
                        LoggingProvider& logging,
                        AssetSystem* assets,
                        const AssetRegistry* catalog);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene& scene);
 
 private:
     // CPU geometry for an asset:// mesh path, read from its file once. An empty
@@ -41,7 +41,6 @@ private:
     // session on a large project pushes memory.
     const MeshGeometry* GeometryFor(const std::string& assetPath);
 
-    EditorScene& Scene;
     EditorSolidPipeline& Solid;
     MeshLoader Loader;
     AssetSystem* Assets = nullptr;

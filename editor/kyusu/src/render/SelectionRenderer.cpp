@@ -31,23 +31,22 @@ void ViewBasis(const EditorViewport& viewport, Vec3d& right, Vec3d& up)
 }
 }
 
-SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection, MeshEditService& meshEdit,
-                                     const EditorOverlayState& overlay, ManipulatorSession& session,
+SelectionRenderer::SelectionRenderer(SelectionService& selection, MeshEditService& meshEdit,
+                                     const EditorOverlayState& overlay,
                                      EditorWideLinePipeline& lines, EditorFillPipeline& fill)
-    : Scene(scene)
-    , Selection(selection)
+    : Selection(selection)
     , MeshEdit(meshEdit)
     , Overlay(overlay)
-    , Session(session)
     , Lines(lines)
     , Fill(fill)
 {
 }
 
-void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                     const EditorScene& scene, const ManipulatorSession& session)
 {
     const std::span<const SelectableRef> selection = Selection.GetSelection();
-    const std::vector<EntityId> bodies = GatherActiveBodies();
+    const std::vector<EntityId> bodies = GatherActiveBodies(scene);
     const bool vertexMode = MeshEdit.GetElementKind() == MeshElementKind::Vertex;
 
     // The body wireframe and vertex handles are occluded by solid geometry so back
@@ -65,8 +64,8 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // a bloom/glow pass hooks onto) plus, in vertex mode, the grabbable handles.
     for (EntityId entity : bodies)
     {
-        const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = Scene.TryGetTransform(entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+        const Transform3f* transform = scene.TryGetTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(bodyLines, *mesh, *transform, EditorTheme::ActiveWireframe, EditorTheme::ActiveLinePixels);
@@ -79,11 +78,11 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // Preview body: the brush under the cursor a click would make active (edge-cut
     // hover, or another mesh hovered in an element mode). Thin wireframe, no glow and
     // no handles, so it reads as "would be selected" distinct from the active body.
-    if (Overlay.HoverBody.IsValid() && Scene.IsEntityVisible(Overlay.HoverBody)
+    if (Overlay.HoverBody.IsValid() && scene.IsEntityVisible(Overlay.HoverBody)
         && std::find(bodies.begin(), bodies.end(), Overlay.HoverBody) == bodies.end())
     {
-        const BrushMesh* mesh = Scene.TryGetBrushMesh(Overlay.HoverBody);
-        const Transform3f* transform = Scene.TryGetTransform(Overlay.HoverBody);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(Overlay.HoverBody);
+        const Transform3f* transform = scene.TryGetTransform(Overlay.HoverBody);
         if (mesh != nullptr && transform != nullptr)
             AppendWireframe(bodyLines, *mesh, *transform, EditorTheme::PreviewWireframe,
                             EditorTheme::PreviewLinePixels);
@@ -93,13 +92,13 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // selection and manipulators read through geometry.
     for (SelectableRef selected : selection)
     {
-        if (!selected.IsValid() || selected.Registry != Scene.GetRegistry().Id)
+        if (!selected.IsValid() || selected.Registry != scene.GetRegistry().Id)
             continue;
-        if (!Scene.IsEntityVisible(selected.Entity))
+        if (!scene.IsEntityVisible(selected.Entity))
             continue;
 
-        const BrushMesh* mesh = Scene.TryGetBrushMesh(selected.Entity);
-        const Transform3f* transform = Scene.TryGetTransform(selected.Entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(selected.Entity);
+        const Transform3f* transform = scene.TryGetTransform(selected.Entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
 
@@ -125,11 +124,11 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         // object: the active-body wireframe above already covers it.
     }
 
-    AppendHover(onTop, viewport);
+    AppendHover(onTop, viewport, scene);
 
     // Manipulators draw themselves; the renderer just converts their line list and
     // never assumes a gizmo shape.
-    AppendManipulators(onTop, viewport);
+    AppendManipulators(onTop, viewport, session);
 
     // Body wireframe/handles depth-test against the scene (back ones cull); selection
     // feedback and gizmos draw on top. The face fill goes down before the on-top
@@ -141,13 +140,14 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     Lines.Submit(frame, viewport, onTop, /*onTop*/ true);
 }
 
-void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport)
+void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport,
+                                               const EditorScene& scene)
 {
     std::vector<EditorLineSegment> segments;
-    for (EntityId entity : GatherActiveBodies())
+    for (EntityId entity : GatherActiveBodies(scene))
     {
-        const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = Scene.TryGetTransform(entity);
+        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+        const Transform3f* transform = scene.TryGetTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(segments, *mesh, *transform, EditorTheme::ActiveWireframe, EditorTheme::ActiveLinePixels);
@@ -156,14 +156,14 @@ void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const 
         Lines.Submit(frame, viewport, segments, /*onTop*/ true);
 }
 
-std::vector<EntityId> SelectionRenderer::GatherActiveBodies() const
+std::vector<EntityId> SelectionRenderer::GatherActiveBodies(const EditorScene& scene) const
 {
     std::vector<EntityId> bodies;
     for (SelectableRef ref : Selection.GetSelection())
     {
-        if (!ref.IsValid() || ref.Registry != Scene.GetRegistry().Id || !ref.Entity.IsValid())
+        if (!ref.IsValid() || ref.Registry != scene.GetRegistry().Id || !ref.Entity.IsValid())
             continue;
-        if (!Scene.IsEntityVisible(ref.Entity))
+        if (!scene.IsEntityVisible(ref.Entity))
             continue;
         if (std::find(bodies.begin(), bodies.end(), ref.Entity) == bodies.end())
             bodies.push_back(ref.Entity);
@@ -236,12 +236,13 @@ void SelectionRenderer::AppendVertexSquare(std::vector<EditorLineSegment>& segme
         segments.push_back(EditorLineSegment{ corners[i], corners[(i + 1) % corners.size()], color, widthPx });
 }
 
-void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, const EditorViewport& viewport) const
+void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, const EditorViewport& viewport,
+                                    const EditorScene& scene) const
 {
     const SelectableRef hovered = Overlay.Hover.Element;
-    if (!hovered.IsValid() || hovered.Registry != Scene.GetRegistry().Id)
+    if (!hovered.IsValid() || hovered.Registry != scene.GetRegistry().Id)
         return;
-    if (!Scene.IsEntityVisible(hovered.Entity))
+    if (!scene.IsEntityVisible(hovered.Entity))
         return;
 
     // An already-selected element keeps its selection color; painting the hover
@@ -250,8 +251,8 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     if (std::find(selection.begin(), selection.end(), hovered) != selection.end())
         return;
 
-    const BrushMesh* mesh = Scene.TryGetBrushMesh(hovered.Entity);
-    const Transform3f* transform = Scene.TryGetTransform(hovered.Entity);
+    const BrushMesh* mesh = scene.TryGetBrushMesh(hovered.Entity);
+    const Transform3f* transform = scene.TryGetTransform(hovered.Entity);
     if (mesh == nullptr || transform == nullptr)
         return;
 
@@ -279,10 +280,11 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
 }
 
 void SelectionRenderer::AppendManipulators(std::vector<EditorLineSegment>& segments,
-                                           const EditorViewport& viewport) const
+                                           const EditorViewport& viewport,
+                                           const ManipulatorSession& session) const
 {
     ManipulatorVisual visual;
-    Session.BuildVisuals(viewport, visual);
+    session.BuildVisuals(viewport, visual);
     for (const ManipulatorVisual::Line& line : visual.Lines)
         segments.push_back(EditorLineSegment{ line.A, line.B, line.Color, EditorTheme::OverlayLinePixels });
 }

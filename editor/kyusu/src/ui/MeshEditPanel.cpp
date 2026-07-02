@@ -12,17 +12,22 @@
 
 #include <memory>
 
-MeshEditPanel::MeshEditPanel(IMeshEditTarget& target,
+MeshEditPanel::MeshEditPanel(std::function<IMeshEditTarget*()> target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
                              CommandStack& commands,
                              ObjectActions objectActions)
-    : Target(target)
+    : TargetResolver(std::move(target))
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
     , Objects(std::move(objectActions))
 {
+}
+
+IMeshEditTarget& MeshEditPanel::Target() const
+{
+    return *TargetResolver();
 }
 
 std::string_view MeshEditPanel::GetTitle() const
@@ -34,7 +39,7 @@ void MeshEditPanel::DrawObjectVerbs()
 {
     int selectedBrushes = 0;
     for (const SelectableRef& ref : Selection.GetSelection())
-        if (ref.IsEntity() && Target.Resolve(ref.Entity).has_value())
+        if (ref.IsEntity() && Target().Resolve(ref.Entity).has_value())
             ++selectedBrushes;
     const bool hasBaked = Objects.HasBakedSelection && Objects.HasBakedSelection();
 
@@ -48,7 +53,7 @@ void MeshEditPanel::DrawObjectVerbs()
     {
         if (ImGui::Button("Recalculate Normals"))
         {
-            if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(),
+            if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(),
                                                   MeshEditVerb::RecalculateNormals, {}))
                 Commands.Execute(std::move(command));
         }
@@ -120,7 +125,7 @@ void MeshEditPanel::DrawFaceVerbs()
 
     const auto applyVerb = [&](MeshEditVerb verb, const MeshEditParams& params)
     {
-        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), verb, params))
+        if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), verb, params))
         {
             Commands.Execute(std::move(command));
             // The verb rebuilt the brush: element indices have shifted/reindexed,
@@ -176,7 +181,7 @@ void MeshEditPanel::DrawEdgeVerbs()
         MeshEditParams params;
         params.CutPosition = CutPosition;
         params.LoopCut = CutLoop;
-        if (auto command = MeshEdit.ApplyVerb(Target, Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, params))
+        if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, params))
         {
             Commands.Execute(std::move(command));
             Selection.ClearMeshElementSelections();

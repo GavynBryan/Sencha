@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 class ManipulatorSession;
 class MeshEditService;
 class ToolRegistry;
@@ -14,17 +16,24 @@ struct GridSettings;
 class EditorStatusBar
 {
 public:
-    EditorStatusBar(ToolRegistry& tools, ViewportLayout& layout, SelectionService& selection,
-                    const GridSettings& grid, MeshEditService& meshEdit,
-                    const ManipulatorSession& manipulators);
+    // The tool registry and manipulator session are rebuilt when the workspace
+    // resets interaction state, so the composition root injects resolvers
+    // instead of references.
+    EditorStatusBar(std::function<ToolRegistry*()> tools,
+                    std::function<const ManipulatorSession*()> manipulators,
+                    ViewportLayout& layout, SelectionService& selection,
+                    const GridSettings& grid, MeshEditService& meshEdit);
 
     void Draw();
 
 private:
-    ToolRegistry& Tools;
+    [[nodiscard]] ToolRegistry& Tools() const;
+    [[nodiscard]] const ManipulatorSession& Manipulators() const;
+
+    std::function<ToolRegistry*()> ToolsResolver;
+    std::function<const ManipulatorSession*()> ManipulatorsResolver;
     ViewportLayout& Layout;
     SelectionService& Selection;
     const GridSettings& Grid;
     MeshEditService& MeshEdit;
-    const ManipulatorSession& Manipulators;
 };

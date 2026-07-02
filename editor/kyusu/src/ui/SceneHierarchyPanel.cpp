@@ -8,6 +8,7 @@
 #include "document/commands/CreateEntityCommand.h"
 #include "document/commands/DeleteEntityCommand.h"
 #include "document/EditorScene.h"
+#include "document/WorldDocument.h"
 #include "selection/commands/SelectCommand.h"
 #include "selection/SelectionService.h"
 
@@ -20,10 +21,9 @@
 #include <span>
 #include <string>
 
-SceneHierarchyPanel::SceneHierarchyPanel(EditorScene& scene, EditorDocument& document,
+SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
                                          SelectionService& selection, CommandStack& commands)
-    : Scene(scene)
-    , Document(document)
+    : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
 {
@@ -40,15 +40,17 @@ void SceneHierarchyPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
+    EditorDocument& document = WorldDoc.FocusDocument();
+    EditorScene& scene = document.GetScene();
     const SelectableRef current = Selection.GetPrimarySelection();
-    const RegistryId registryId = Scene.GetRegistry().Id;
-    const World& world = Scene.GetRegistry().Components;
+    const RegistryId registryId = scene.GetRegistry().Id;
+    const World& world = scene.GetRegistry().Components;
 
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.
     if (ImGui::Button(ICON_FA_PLUS "  New Entity"))
     {
-        auto create = MakeCreateEntityCommand(Vec3d::Zero(), Scene, Document);
+        auto create = MakeCreateEntityCommand(Vec3d::Zero(), scene, document);
         CreateEntityCommand* cmd = create.get();
         Commands.Execute(std::move(create));
         Commands.Execute(std::make_unique<SelectCommand>(
@@ -60,7 +62,7 @@ void SceneHierarchyPanel::OnDraw()
     // mutate the vector this loop iterates.
     EntityId toDelete = {};
 
-    for (EntityId entity : Scene.GetAllEntities())
+    for (EntityId entity : scene.GetAllEntities())
     {
         // Registry-driven summary: the components present on this entity, named
         // by the serializer registry — no hard-coded component list.
@@ -84,13 +86,13 @@ void SceneHierarchyPanel::OnDraw()
         ImGui::PushID(static_cast<int>(entity.Index));
 
         // Per-row visibility / lock toggles (editor view flags on the scene).
-        const bool visible = Scene.IsEntityVisible(entity);
-        const bool locked = Scene.IsEntityLocked(entity);
+        const bool visible = scene.IsEntityVisible(entity);
+        const bool locked = scene.IsEntityLocked(entity);
         if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
-            Scene.SetEntityVisible(entity, !visible);
+            scene.SetEntityVisible(entity, !visible);
         ImGui::SameLine();
         if (ImGui::SmallButton(locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN))
-            Scene.SetEntityLocked(entity, !locked);
+            scene.SetEntityLocked(entity, !locked);
         ImGui::SameLine();
 
         // Hidden rows read dimmed; locked rows still select (lock only blocks
@@ -120,5 +122,5 @@ void SceneHierarchyPanel::OnDraw()
 
     if (toDelete.IsValid())
         Commands.Execute(MakeDeleteEntitiesCommand(
-            std::span<const EntityId>(&toDelete, 1), Scene, Document, Selection));
+            std::span<const EntityId>(&toDelete, 1), scene, document, Selection));
 }

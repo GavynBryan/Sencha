@@ -32,17 +32,17 @@ namespace
     }
 }
 
-BrushSolidRenderer::BrushSolidRenderer(EditorScene& scene, EditorSolidPipeline& solid)
-    : Scene(scene)
-    , Solid(solid)
+BrushSolidRenderer::BrushSolidRenderer(EditorSolidPipeline& solid)
+    : Solid(solid)
 {
 }
 
-void BrushSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void BrushSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const EditorScene& scene)
 {
     std::vector<EditorSolidVertex> vertices;
-    vertices.reserve(Scene.GetEntityCount() * 36);
-    ForEachVisibleBrush(Scene, /*skipLocked*/ false,
+    vertices.reserve(scene.GetEntityCount() * 36);
+    ForEachVisibleBrush(scene, /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         { AppendBrushMesh(vertices, mesh, transform); });
 

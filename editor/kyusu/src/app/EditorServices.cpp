@@ -117,7 +117,7 @@ void EditorServices::BuildDocument()
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<EditorWorkspace>(engine.Logging());
     if (Assets)
-        Workspace->Document.SetAssetEnvironment(*Assets);
+        Workspace->World.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
     Workspace->Init(*Commands);
 }
@@ -127,7 +127,7 @@ void EditorServices::BuildPlayLoop()
     // The author -> cook -> play loop: cook the live document, launch/stop PIE, and
     // the cook/play/stop/project console commands all run through here.
     Engine& engine = *EnginePtr;
-    Pie = std::make_unique<PieDriver>(engine, Workspace->Document,
+    Pie = std::make_unique<PieDriver>(engine, Workspace->World,
                                       Project ? &*Project : nullptr,
                                       Assets ? &*Assets : nullptr);
     Pie->RegisterCommands(engine.Console().Registry());
@@ -145,8 +145,8 @@ void EditorServices::BuildFileActions()
     if (!contentRoots.empty())
         Materials->Rescan(contentRoots);
     Files = std::make_unique<DocumentFileActions>(
-        *Window, Workspace->Document, *Commands, Workspace->Selection, *Materials,
-        std::move(contentRoots));
+        *Window, Workspace->World, [this] { Workspace->ResetInteractionState(); },
+        *Materials, std::move(contentRoots));
 }
 
 void EditorServices::BuildInput()
@@ -321,19 +321,18 @@ void EditorServices::BuildViewportRendering()
 
     auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
-        Workspace->Document.GetScene(),
+        Workspace->World,
         Workspace->Selection,
         Workspace->MeshEdit,
         Workspace->Overlay,
         Workspace->Preview,
-        *Workspace->Manipulators,
+        [this]() -> const ManipulatorSession* { return Workspace->Manipulators; },
         Workspace->Grid,
         engine.Logging(),
         console.Registry(),
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
-        Assets ? &*Assets : nullptr,
-        Workspace->Document);
+        Assets ? &*Assets : nullptr);
     RenderFeature = renderFeature.get();
     engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
 }
@@ -369,8 +368,10 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // Fixed app chrome: top toolbar + bottom status bar. Registered before the
     // panels so the work-area space they reserve is subtracted from the full-bleed
     // viewport panel below.
-    Toolbar = std::make_unique<EditorToolbar>(*Workspace->Tools, Workspace->MeshEdit, Workspace->Grid,
-                                              Workspace->BrushCreate, Workspace->EdgeCut);
+    Toolbar = std::make_unique<EditorToolbar>(
+        [this] { return Workspace->Tools.get(); },
+        [this] { return Workspace->Manipulators; },
+        Workspace->MeshEdit, Workspace->Grid, Workspace->BrushCreate, Workspace->EdgeCut);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({
@@ -389,14 +390,15 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .IsMovingOrigin = [this] { return Workspace->Manipulators->IsEditingGridOrigin(); },
     });
     Toolbar->SetTransformControls({
-        .Session = Workspace->Manipulators,
         .SetOriginToPivot = [this] { Workspace->SetSelectedBrushOriginToPivot(); },
         .HasSelection = [this] { return !Workspace->Selection.GetSelection().empty(); },
     });
     StatusBar = std::make_unique<EditorStatusBar>(
-        *Workspace->Tools, Workspace->Layout, Workspace->Selection, Workspace->Grid,
-        Workspace->MeshEdit, *Workspace->Manipulators);
-    ToolSidebar = std::make_unique<EditorToolSidebar>(*Workspace->Tools);
+        [this] { return Workspace->Tools.get(); },
+        [this]() -> const ManipulatorSession* { return Workspace->Manipulators; },
+        Workspace->Layout, Workspace->Selection, Workspace->Grid,
+        Workspace->MeshEdit);
+    ToolSidebar = std::make_unique<EditorToolSidebar>([this] { return Workspace->Tools.get(); });
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
     UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
@@ -410,11 +412,12 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
-        Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
-        Workspace->Document.GetScene(), Workspace->Document, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
-        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
+        [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
+        Workspace->Selection, Workspace->MeshEdit, *Commands,
         MeshEditPanel::ObjectActions{
             .Duplicate = [this] { Workspace->DuplicateSelection(/*asInstance*/ false); },
             .Instance = [this] { Workspace->DuplicateSelection(/*asInstance*/ true); },
@@ -427,7 +430,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             .HasBakedSelection = [this] { return SelectionHasBakedBrush(); },
             .HasInstancedSelection = [this]
             {
-                const EditorScene& scene = Workspace->Document.GetScene();
+                const EditorScene& scene = Workspace->ActiveDocument().GetScene();
                 for (const SelectableRef& ref : Workspace->Selection.GetSelection())
                     if (ref.IsEntity() && scene.IsBrushInstanced(ref.Entity))
                         return true;
@@ -435,8 +438,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             },
         }));
     auto materialPanel = std::make_unique<MaterialPanel>(
-        *Workspace->Sink, Workspace->Selection, Workspace->MeshEdit, *Commands,
-        *Materials, Workspace->Document);
+        Workspace->World, [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
+        Workspace->Selection, Workspace->MeshEdit, *Commands, *Materials);
     MaterialsPanel = materialPanel.get();
     UiFeature->AddPanel(std::move(materialPanel));
 
@@ -595,7 +598,7 @@ void EditorServices::BakeSelectedBrushes()
 
     Engine& engine = *EnginePtr;
     const std::filesystem::path contentRoot(Project->ContentRoots.front());
-    EditorScene& scene = Workspace->Document.GetScene();
+    EditorScene& scene = Workspace->ActiveDocument().GetScene();
 
     // Snapshot the entity list first: executing a command must not invalidate the
     // selection span being walked.
@@ -606,7 +609,7 @@ void EditorServices::BakeSelectedBrushes()
 
     std::vector<std::unique_ptr<ICommand>> commands;
     for (EntityId entity : targets)
-        if (auto command = MakeBakeBrushToMeshCommand(scene, Workspace->Document, Assets->Assets,
+        if (auto command = MakeBakeBrushToMeshCommand(scene, Workspace->ActiveDocument(), Assets->Assets,
                                                       Assets->Registry, engine.Logging(),
                                                       entity, contentRoot))
             commands.push_back(std::move(command));
@@ -624,7 +627,7 @@ void EditorServices::RevertSelectedBakedBrushes()
     if (!Assets)
         return;
 
-    EditorScene& scene = Workspace->Document.GetScene();
+    EditorScene& scene = Workspace->ActiveDocument().GetScene();
     std::vector<EntityId> targets;
     for (const SelectableRef& ref : Workspace->Selection.GetSelection())
         if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
@@ -632,7 +635,7 @@ void EditorServices::RevertSelectedBakedBrushes()
 
     std::vector<std::unique_ptr<ICommand>> commands;
     for (EntityId entity : targets)
-        if (auto command = MakeRevertBakedBrushCommand(scene, Workspace->Document, Assets->Assets, entity))
+        if (auto command = MakeRevertBakedBrushCommand(scene, Workspace->ActiveDocument(), Assets->Assets, entity))
             commands.push_back(std::move(command));
 
     if (commands.empty())
@@ -647,7 +650,7 @@ bool EditorServices::SelectionHasBakedBrush() const
 {
     if (!Workspace)
         return false;
-    const EditorScene& scene = Workspace->Document.GetScene();
+    const EditorScene& scene = Workspace->ActiveDocument().GetScene();
     for (const SelectableRef& ref : Workspace->Selection.GetSelection())
         if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
             return true;
@@ -659,7 +662,7 @@ void EditorServices::ExportSelectionGlb()
     if (Window == nullptr || Window->GetHandle() == nullptr)
         return;
 
-    const EditorScene& scene = Workspace->Document.GetScene();
+    const EditorScene& scene = Workspace->ActiveDocument().GetScene();
 
     // First selected entity with a live or dormant brush mesh supplies the
     // geometry, baked in local space through the same kernel as the level cook.
@@ -682,7 +685,7 @@ void EditorServices::ExportSelectionGlb()
 
     auto payload = std::make_unique<GlbExportPayload>();
     std::string error;
-    if (!BakeBrushToGeometry(*mesh, Workspace->Document.GetDefaultMaterial(),
+    if (!BakeBrushToGeometry(*mesh, Workspace->ActiveDocument().GetDefaultMaterial(),
                              payload->Geometry, payload->Materials, &error))
     {
         std::fprintf(stderr, "[editor] export: %s\n", error.c_str());

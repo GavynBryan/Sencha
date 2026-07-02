@@ -36,8 +36,7 @@ class Logger;
 class SceneRenderQueueBuilder
 {
 public:
-    SceneRenderQueueBuilder(const EditorDocument& document,
-                            AssetSystem& assets,
+    SceneRenderQueueBuilder(AssetSystem& assets,
                             StaticMeshCache& meshes,
                             MaterialSetCache& materialSets,
                             LoggingProvider& logging);
@@ -46,12 +45,13 @@ public:
     SceneRenderQueueBuilder(const SceneRenderQueueBuilder&) = delete;
     SceneRenderQueueBuilder& operator=(const SceneRenderQueueBuilder&) = delete;
 
-    // Rebuild both queues from the current document. Brush geometry is re-baked
-    // and re-uploaded only when the scene's brushes changed since the last call
-    // (whole-scene content hash, so an idle frame uploads nothing); placed-mesh
-    // items are re-emitted each call (their GPU meshes are owned by the asset
-    // system, not here).
-    void Build();
+    // Rebuild both queues from the given document (per-call so the workspace can
+    // swap the edited document without touching this builder). Brush geometry is
+    // re-baked and re-uploaded only when the scene's brushes changed since the
+    // last call (whole-scene content hash, so an idle frame uploads nothing);
+    // placed-mesh items are re-emitted each call (their GPU meshes are owned by
+    // the asset system, not here).
+    void Build(const EditorDocument& document);
 
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
@@ -67,13 +67,12 @@ private:
         std::vector<MaterialHandle> SlotMaterials;
     };
 
-    void RebuildBrushMeshes();
+    void RebuildBrushMeshes(const EditorDocument& document);
     void EmitBrushQueue();
-    void BuildMeshQueue();
-    void BuildLights();
+    void BuildMeshQueue(const EditorDocument& document);
+    void BuildLights(const EditorDocument& document);
     void ReleaseBrushMeshes();
 
-    const EditorDocument& Document;
     AssetSystem& Assets;
     StaticMeshCache& Meshes;
     MaterialSetCache& MaterialSets;

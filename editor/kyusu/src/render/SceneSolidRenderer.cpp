@@ -15,7 +15,8 @@ SceneSolidRenderer::SceneSolidRenderer(MeshForwardPass& pass,
 {
 }
 
-void SceneSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void SceneSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const EditorScene&)
 {
     Pass.Draw(frame, viewport.BuildRenderData(), Queues.Lights(), Queues.BrushQueue(), Meshes, Materials);
 }

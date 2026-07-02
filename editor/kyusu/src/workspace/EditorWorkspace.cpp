@@ -31,27 +31,27 @@
 #include <vector>
 
 EditorWorkspace::EditorWorkspace(LoggingProvider& logging)
-    : Document(logging)
+    : World(logging)
     , Selection(LevelSelection)
     , MeshEdit(logging)
 {
 }
 
-void EditorWorkspace::Init(CommandStack& commands)
+void EditorWorkspace::BuildInteractionState()
 {
-    Commands = &commands;
+    EditorDocument& document = ActiveDocument();
 
     // All scene mutation during manipulation goes through this one sink; the
     // session, manipulators, and the edge-cut tool stay scene-agnostic. Built first
     // so the tool context can hold it.
-    Sink = std::make_unique<BrushManipulationSink>(Document.GetScene(), Document, commands, Selection);
+    Sink = std::make_unique<BrushManipulationSink>(document.GetScene(), document, *Commands, Selection);
 
     ActiveToolContext = std::make_unique<ToolContext>(
-        commands,
+        *Commands,
         Selection,
         Picking,
-        Document.GetScene(),
-        Document,
+        document.GetScene(),
+        document,
         Interactions,
         Preview,
         MeshEdit,
@@ -86,6 +86,46 @@ void EditorWorkspace::Init(CommandStack& commands)
     Manipulators = session.get();
     Sessions.SetSession(std::move(session));
 
+    // Resize quietly yields to Move while the selection has nothing resizable.
+    Manipulators->SetResizableQuery(
+        [this]
+        {
+            const EditorScene& scene = ActiveDocument().GetScene();
+            for (const SelectableRef& ref : Selection.GetSelection())
+                if (ref.IsEntity() && scene.TryGetBrushMesh(ref.Entity) != nullptr)
+                    return true;
+            return false;
+        });
+}
+
+void EditorWorkspace::ResetInteractionState()
+{
+    if (Commands != nullptr)
+        Commands->Clear();
+    Selection.ClearSelection();
+
+    // Transient view/interaction state that may reference the outgoing document.
+    Marquee = {};
+    Pivot = {};
+    Overlay.Labels.clear();
+    Overlay.Readout.Clear();
+    Overlay.Hover = {};
+    Overlay.HoverBody = {};
+    Preview.Clear();
+
+    BuildInteractionState();
+}
+
+void EditorWorkspace::Init(CommandStack& commands)
+{
+    Commands = &commands;
+
+    BuildInteractionState();
+
+    // A focus change swaps the edited document: reset exactly as document open
+    // does. In legacy mode focus never changes, so this never fires.
+    World.OnFocusChanged = [this] { ResetInteractionState(); };
+
     // The transient pivot is per-selection: any selection change resets it to
     // the computed center AND leaves pivot-editing (clicking another object
     // means the user is done placing this pivot).
@@ -105,25 +145,16 @@ void EditorWorkspace::Init(CommandStack& commands)
         {
             if (snapshot.Items.empty() || MeshEdit.GetElementKind() == MeshElementKind::Object)
                 return;
-            const EditorScene& scene = Document.GetScene();
+            const EditorScene& scene = ActiveDocument().GetScene();
             for (const SelectableRef& ref : snapshot.Items)
                 if (ref.IsMeshElement() || (ref.IsEntity() && scene.TryGetBrushMesh(ref.Entity) != nullptr))
                     return;
             MeshEdit.SetElementKind(MeshElementKind::Object);
         });
 
-    // Element-kind changes restore the gizmo last used in the entered context, and
-    // Resize quietly yields to Move while the selection has nothing resizable.
+    // Element-kind changes restore the gizmo last used in the entered context.
+    // Resolves this->Manipulators at fire time, so it survives session rebuilds.
     MeshEdit.SetElementKindObserver([this](MeshElementKind next) { Manipulators->OnElementKindChanged(next); });
-    Manipulators->SetResizableQuery(
-        [this]
-        {
-            const EditorScene& scene = Document.GetScene();
-            for (const SelectableRef& ref : Selection.GetSelection())
-                if (ref.IsEntity() && scene.TryGetBrushMesh(ref.Entity) != nullptr)
-                    return true;
-            return false;
-        });
 }
 
 void EditorWorkspace::SelectAll()
@@ -131,7 +162,7 @@ void EditorWorkspace::SelectAll()
     if (Commands == nullptr)
         return;
 
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = ActiveDocument().GetScene();
     const MeshElementKind kind = MeshEdit.GetElementKind();
     const RegistryId registry = scene.GetRegistry().Id;
 
@@ -173,7 +204,7 @@ void EditorWorkspace::DuplicateSelection(bool asInstance)
     if (Commands == nullptr)
         return;
 
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = ActiveDocument().GetScene();
     std::vector<EntityId> sources;
     std::vector<Transform3f> transforms;
     for (const SelectableRef& ref : Selection.GetSelection())
@@ -188,7 +219,7 @@ void EditorWorkspace::DuplicateSelection(bool asInstance)
         return;
 
     Commands->Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, Document.GetScene(), Document, Selection, asInstance));
+        sources, transforms, ActiveDocument().GetScene(), ActiveDocument(), Selection, asInstance));
 }
 
 void EditorWorkspace::MakeSelectedBrushesUnique()
@@ -196,11 +227,11 @@ void EditorWorkspace::MakeSelectedBrushesUnique()
     if (Commands == nullptr)
         return;
 
-    EditorScene& scene = Document.GetScene();
+    EditorScene& scene = ActiveDocument().GetScene();
     std::vector<std::unique_ptr<ICommand>> commands;
     for (const SelectableRef& ref : Selection.GetSelection())
         if (ref.IsEntity())
-            if (auto command = MakeBreakInstanceCommand(scene, Document, ref.Entity))
+            if (auto command = MakeBreakInstanceCommand(scene, ActiveDocument(), ref.Entity))
                 commands.push_back(std::move(command));
 
     if (commands.empty())
@@ -216,7 +247,7 @@ void EditorWorkspace::MergeSelectedBrushes()
     if (Commands == nullptr)
         return;
 
-    EditorScene& scene = Document.GetScene();
+    EditorScene& scene = ActiveDocument().GetScene();
     const SelectableRef primary = Selection.GetPrimarySelection();
     EntityId target = primary.IsEntity() && scene.TryGetBrushMesh(primary.Entity) != nullptr
         ? primary.Entity
@@ -235,7 +266,7 @@ void EditorWorkspace::MergeSelectedBrushes()
             sources.push_back(ref.Entity);
     }
 
-    if (auto command = MakeMergeBrushesCommand(target, sources, scene, Document, Selection))
+    if (auto command = MakeMergeBrushesCommand(target, sources, scene, ActiveDocument(), Selection))
         Commands->Execute(std::move(command));
 }
 
@@ -258,7 +289,7 @@ void EditorWorkspace::SeparateSelectedFaces()
             faces.push_back(ref.ElementId);
     }
 
-    if (auto command = MakeSeparateFacesCommand(source, faces, Document.GetScene(), Document, Selection))
+    if (auto command = MakeSeparateFacesCommand(source, faces, ActiveDocument().GetScene(), ActiveDocument(), Selection))
     {
         Commands->Execute(std::move(command));
         // The face indices no longer resolve on the reshaped source.
@@ -290,7 +321,7 @@ void EditorWorkspace::SyncOrthoViewsToGridFrame()
 
 void EditorWorkspace::SetGridOriginToSelection()
 {
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = ActiveDocument().GetScene();
 
     // A single selected vertex is the exact intent; use its world position.
     const SelectableRef* vertexRef = nullptr;
@@ -333,7 +364,7 @@ void EditorWorkspace::SetGridOriginToSelection()
 
 void EditorWorkspace::AlignGridToSelectedFace()
 {
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = ActiveDocument().GetScene();
 
     SelectableRef faceRef = Selection.GetPrimarySelection();
     if (!faceRef.IsFace())
@@ -421,7 +452,7 @@ void EditorWorkspace::UpdateOverlay()
 
     // Union the world bounds of every selected brush, so the dimension labels
     // describe the selection's extents as one box.
-    const EditorScene& scene = Document.GetScene();
+    const EditorScene& scene = ActiveDocument().GetScene();
     Aabb3d bounds = Aabb3d::Empty();
     for (const SelectableRef& ref : Selection.GetSelection())
     {
@@ -449,7 +480,7 @@ void EditorWorkspace::SetSelectedBrushOriginToPivot()
     if (!primary.IsEntity())
         return;
 
-    if (auto command = MakeSetBrushOriginCommand(Document.GetScene(), primary.Entity, *Pivot.Override))
+    if (auto command = MakeSetBrushOriginCommand(ActiveDocument().GetScene(), primary.Entity, *Pivot.Override))
     {
         Commands->Execute(std::move(command));
         Pivot.Override.reset(); // the origin is now the pivot; drop the transient
@@ -470,5 +501,5 @@ void EditorWorkspace::DeleteSelection()
     if (entities.empty())
         return;
 
-    Commands->Execute(MakeDeleteEntitiesCommand(entities, Document.GetScene(), Document, Selection));
+    Commands->Execute(MakeDeleteEntitiesCommand(entities, ActiveDocument().GetScene(), ActiveDocument(), Selection));
 }

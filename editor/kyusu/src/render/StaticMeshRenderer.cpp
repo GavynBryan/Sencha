@@ -11,13 +11,11 @@
 #include <utility>
 #include <vector>
 
-StaticMeshRenderer::StaticMeshRenderer(EditorScene& scene,
-                                       EditorSolidPipeline& solid,
+StaticMeshRenderer::StaticMeshRenderer(EditorSolidPipeline& solid,
                                        LoggingProvider& logging,
                                        AssetSystem* assets,
                                        const AssetRegistry* catalog)
-    : Scene(scene)
-    , Solid(solid)
+    : Solid(solid)
     , Loader(logging)
     , Assets(assets)
     , Catalog(catalog)
@@ -39,18 +37,19 @@ const MeshGeometry* StaticMeshRenderer::GeometryFor(const std::string& assetPath
     return stored.Vertices.empty() ? nullptr : &stored;
 }
 
-void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const EditorScene& scene)
 {
     if (Assets == nullptr)
         return;
 
     // const access: reading components for draw must not churn change tracking.
-    const World& world = std::as_const(Scene).GetRegistry().Components;
+    const World& world = scene.GetRegistry().Components;
 
     std::vector<EditorSolidVertex> vertices;
-    for (EntityId entity : Scene.GetAllEntities())
+    for (EntityId entity : scene.GetAllEntities())
     {
-        if (!Scene.IsEntityVisible(entity))
+        if (!scene.IsEntityVisible(entity))
             continue;
         const StaticMeshComponent* mesh = world.TryGet<StaticMeshComponent>(entity);
         if (mesh == nullptr)
@@ -62,7 +61,7 @@ void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         const MeshGeometry* geometry = GeometryFor(path);
         if (geometry == nullptr)
             continue;
-        const Transform3f* transform = Scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetTransform(entity);
         if (transform == nullptr)
             continue;
 

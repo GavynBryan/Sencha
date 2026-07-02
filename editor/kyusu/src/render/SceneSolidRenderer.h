@@ -25,7 +25,8 @@ public:
                        StaticMeshCache& meshes,
                        MaterialCache& materials);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene&) override;
 
 private:
     MeshForwardPass& Pass;

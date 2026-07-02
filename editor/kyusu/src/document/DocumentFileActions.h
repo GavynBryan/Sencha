@@ -1,13 +1,13 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
 
 class SdlWindow;
+class WorldDocument;
 class EditorDocument;
-class CommandStack;
-class SelectionService;
 class MaterialLibrary;
 
 // The document's file I/O surface: New/Open/Save/SaveAs (open and save-as go
@@ -18,10 +18,12 @@ class DocumentFileActions
 {
 public:
     // contentRoots are the project's content roots; empty when no project is
-    // loaded (materials then scan next to the level file).
-    DocumentFileActions(SdlWindow& window, EditorDocument& document, CommandStack& commands,
-                        SelectionService& selection, MaterialLibrary& materials,
-                        std::vector<std::string> contentRoots);
+    // loaded (materials then scan next to the level file). resetInteraction is
+    // the workspace's interaction reset, injected by the composition root: New
+    // and Open swap the edited document, so both run it after the file action.
+    DocumentFileActions(SdlWindow& window, WorldDocument& world,
+                        std::function<void()> resetInteraction,
+                        MaterialLibrary& materials, std::vector<std::string> contentRoots);
 
     void New();
     void Save();
@@ -51,12 +53,10 @@ private:
     // Logs each face material ref the scanned roots cannot resolve (they render
     // as the level default), so cross-project level moves are diagnosable.
     void LogUnresolvedFaceMaterials(const std::string& levelPath);
-    void ResetEditorState();
 
     SdlWindow&        Window;
-    EditorDocument&    Document;
-    CommandStack&     Commands;
-    SelectionService& Selection;
+    WorldDocument&    World;
+    std::function<void()> ResetInteraction;
     MaterialLibrary&  Materials;
     std::vector<std::string> ContentRoots;
 

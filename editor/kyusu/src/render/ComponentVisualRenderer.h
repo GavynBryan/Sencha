@@ -21,9 +21,10 @@
 class ComponentVisualRenderer
 {
 public:
-    ComponentVisualRenderer(EditorScene& scene, EditorLinePipeline& lines);
+    explicit ComponentVisualRenderer(EditorLinePipeline& lines);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene& scene);
 
 private:
     // A mesh asset reduced to unique undirected edges in local space.
@@ -35,7 +36,6 @@ private:
 
     const MeshEdges& EdgesFor(std::string_view assetPath);
 
-    EditorScene& Scene;
     EditorLinePipeline& Lines;
     std::unordered_map<std::string, MeshEdges> Cache;
 };

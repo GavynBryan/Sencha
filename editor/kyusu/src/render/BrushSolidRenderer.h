@@ -19,15 +19,15 @@
 class BrushSolidRenderer : public IBrushBodyRenderer
 {
 public:
-    BrushSolidRenderer(EditorScene& scene, EditorSolidPipeline& solid);
+    explicit BrushSolidRenderer(EditorSolidPipeline& solid);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene& scene) override;
 
 private:
     void AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,
                          const BrushMesh& mesh,
                          const Transform3f& transform) const;
 
-    EditorScene& Scene;
     EditorSolidPipeline& Solid;
 };

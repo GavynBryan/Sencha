@@ -18,11 +18,13 @@
 class WireframeRenderer : public IBrushBodyRenderer
 {
 public:
-    WireframeRenderer(EditorScene& scene, SelectionService& selection,
+    WireframeRenderer(SelectionService& selection,
                       const EditorOverlayState& overlay, EditorLinePipeline& lines);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport) override;
-    void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport, const Vec4& color);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const EditorScene& scene) override;
+    void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport,
+                       const EditorScene& scene, const Vec4& color);
 
 private:
     void AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
@@ -30,7 +32,6 @@ private:
                          const Transform3f& transform,
                          const Vec4& color) const;
 
-    EditorScene& Scene;
     SelectionService& Selection;
     const EditorOverlayState& Overlay;
     EditorLinePipeline& Lines;

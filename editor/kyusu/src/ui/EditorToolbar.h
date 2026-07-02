@@ -51,12 +51,17 @@ public:
     // primary brush's origin; HasSelection gates the pivot pair's visibility.
     struct TransformControls
     {
-        ManipulatorSession* Session = nullptr;
+
         std::function<void()> SetOriginToPivot;
         std::function<bool()> HasSelection;
     };
 
-    EditorToolbar(ToolRegistry& tools, MeshEditService& meshEdit, GridSettings& grid,
+    // The tool registry and manipulator session are rebuilt when the workspace
+    // resets interaction state, so the composition root injects resolvers
+    // instead of references.
+    EditorToolbar(std::function<ToolRegistry*()> tools,
+                  std::function<ManipulatorSession*()> session,
+                  MeshEditService& meshEdit, GridSettings& grid,
                   BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut);
 
     void SetPlayControls(PlayControls controls) { Play = std::move(controls); }
@@ -72,7 +77,11 @@ private:
     void DrawGridGroup(float buttonSize);
     void DrawPlayGroup(float buttonSize);
 
-    ToolRegistry& Tools;
+    [[nodiscard]] ToolRegistry& Tools() const;
+    [[nodiscard]] ManipulatorSession* Session() const;
+
+    std::function<ToolRegistry*()> ToolsResolver;
+    std::function<ManipulatorSession*()> SessionResolver;
     MeshEditService& MeshEdit;
     GridSettings& Grid;
     BrushCreationSettings& BrushCreate;

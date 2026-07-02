@@ -5,6 +5,7 @@
 
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
 #include "project/MaterialLibrary.h"
 #include "brush/BrushMesh.h"
 #include "brush/FaceMaterial.h"
@@ -54,19 +55,24 @@ namespace
     }
 }
 
-MaterialPanel::MaterialPanel(IMeshEditTarget& target,
+MaterialPanel::MaterialPanel(WorldDocument& world,
+                             std::function<IMeshEditTarget*()> target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
                              CommandStack& commands,
-                             MaterialLibrary& materials,
-                             EditorDocument& document)
-    : Target(target)
+                             MaterialLibrary& materials)
+    : World(world)
+    , TargetResolver(std::move(target))
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
     , Materials(materials)
-    , Document(document)
 {
+}
+
+IMeshEditTarget& MaterialPanel::Target() const
+{
+    return *TargetResolver();
 }
 
 std::string_view MaterialPanel::GetTitle() const
@@ -80,7 +86,7 @@ std::optional<UvProjection> MaterialPanel::RepresentativeUv() const
     {
         if (!ref.IsFace())
             continue;
-        const std::optional<MeshEditTargetMesh> resolved = Target.Resolve(ref.Entity);
+        const std::optional<MeshEditTargetMesh> resolved = Target().Resolve(ref.Entity);
         if (resolved && resolved->Mesh && ref.ElementId < resolved->Mesh->Faces.size())
             return resolved->Mesh->Faces[ref.ElementId].Material.Uv;
     }
@@ -107,7 +113,7 @@ void MaterialPanel::EditSelectedFaces(
 
     for (auto& [entity, faces] : byEntity)
     {
-        const std::optional<MeshEditTargetMesh> resolved = Target.Resolve(entity);
+        const std::optional<MeshEditTargetMesh> resolved = Target().Resolve(entity);
         if (!resolved || !resolved->Mesh)
             continue;
 
@@ -124,7 +130,7 @@ void MaterialPanel::EditSelectedFaces(
         }
         if (changed)
         {
-            if (auto command = Target.MakeEditCommand(entity, std::move(before), std::move(after)))
+            if (auto command = Target().MakeEditCommand(entity, std::move(before), std::move(after)))
                 Commands.Execute(std::move(command));
         }
     }
@@ -141,7 +147,7 @@ void MaterialPanel::JustifySelectionAsOne(bool fit)
     {
         if (!ref.IsFace())
             continue;
-        const std::optional<MeshEditTargetMesh> resolved = Target.Resolve(ref.Entity);
+        const std::optional<MeshEditTargetMesh> resolved = Target().Resolve(ref.Entity);
         if (!resolved || !resolved->Mesh || ref.ElementId >= resolved->Mesh->Faces.size())
             continue;
         const BrushFace& face = resolved->Mesh->Faces[ref.ElementId];
@@ -192,7 +198,7 @@ void MaterialPanel::CopyProjection()
     if (!source.IsValid())
         return;
 
-    const std::optional<MeshEditTargetMesh> resolved = Target.Resolve(source.Entity);
+    const std::optional<MeshEditTargetMesh> resolved = Target().Resolve(source.Entity);
     if (!resolved || !resolved->Mesh || source.ElementId >= resolved->Mesh->Faces.size())
         return;
 
@@ -242,7 +248,7 @@ void MaterialPanel::DrawMaterialPicker()
     if (ImGui::Button("Clear (use level default)"))
         EditSelectedFaces([](const BrushMesh&, const Transform3f&, BrushFace& face) { face.Material.Material = {}; });
 
-    ImGui::TextDisabled("Level default: %s", Document.GetDefaultMaterial().Path.c_str());
+    ImGui::TextDisabled("Level default: %s", World.FocusDocument().GetDefaultMaterial().Path.c_str());
 }
 
 void MaterialPanel::DrawUvControls(const UvProjection& current)

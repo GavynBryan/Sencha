@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 class ToolRegistry;
 
 // The left tool strip (fixed app chrome, not a dockable panel): one icon button
@@ -9,10 +11,14 @@ class ToolRegistry;
 class EditorToolSidebar
 {
 public:
-    explicit EditorToolSidebar(ToolRegistry& tools);
+    // The tool registry is rebuilt when the workspace resets interaction
+    // state, so the composition root injects a resolver instead of a reference.
+    explicit EditorToolSidebar(std::function<ToolRegistry*()> tools);
 
     void Draw();
 
 private:
-    ToolRegistry& Tools;
+    [[nodiscard]] ToolRegistry& Tools() const;
+
+    std::function<ToolRegistry*()> ToolsResolver;
 };
