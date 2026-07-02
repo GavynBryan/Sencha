@@ -1,11 +1,12 @@
 #include "PieSession.h"
 
+#include "project/ProcessLaunch.h"
+
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <csignal>
 #include <sys/wait.h>
-#include <unistd.h>
 #endif
 
 PieSession::~PieSession()
@@ -19,57 +20,28 @@ bool PieSession::Launch(const std::string& appPath,
                         const std::string& map,
                         std::string* error)
 {
-    const auto fail = [error](std::string message) {
-        if (error != nullptr)
-            *error = std::move(message);
-        return false;
-    };
-
     if (IsRunning())
-        return fail("a play session is already running");
-
-#if defined(__unix__) || defined(__APPLE__)
-    const pid_t pid = fork();
-    if (pid < 0)
-        return fail("fork failed");
-
-    if (pid == 0)
     {
-        // Child: between fork and exec only async-signal-safe calls (the editor is
-        // multithreaded; malloc/stdio locks could be held by another thread at fork).
-        // Failures here are otherwise invisible, so report them with write(2).
-        const auto childFail = [](const char* message) {
-            (void)write(STDERR_FILENO, message, std::char_traits<char>::length(message));
-            _exit(127);
-        };
-
-        // Run in the project directory so the game's content roots ("assets",
-        // "assets/.cooked") resolve relative to CWD, exactly as a shipped game does.
-        if (!workingDir.empty() && chdir(workingDir.c_str()) != 0)
-            childFail("[pie:child] chdir to project directory failed\n");
-
-        std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(appPath.c_str()));
-        argv.push_back(const_cast<char*>("--game"));
-        argv.push_back(const_cast<char*>(gameModulePath.c_str()));
-        std::string mapArg;
-        if (!map.empty())
-        {
-            mapArg = "+map";
-            argv.push_back(const_cast<char*>(mapArg.c_str()));
-            argv.push_back(const_cast<char*>(map.c_str()));
-        }
-        argv.push_back(nullptr);
-
-        execv(appPath.c_str(), argv.data());
-        childFail("[pie:child] execv failed: host app not found or not executable\n");
+        if (error != nullptr)
+            *error = "a play session is already running";
+        return false;
     }
+
+    // Run in the project directory so the game's content roots ("assets",
+    // "assets/.cooked") resolve relative to CWD, exactly as a shipped game does.
+    std::vector<std::string> args{"--game", gameModulePath};
+    if (!map.empty())
+    {
+        args.push_back("+map");
+        args.push_back(map);
+    }
+
+    long pid = -1;
+    if (!SpawnProcess(appPath, args, workingDir, pid, error))
+        return false;
 
     ChildPid = pid;
     return true;
-#else
-    return fail("PIE launch is only implemented on POSIX hosts");
-#endif
 }
 
 void PieSession::Stop()

@@ -52,8 +52,12 @@ class EditorServices
 public:
     // Builds and wires every subsystem. Defined out of line so the .cpp sees the
     // complete PieDriver / DocumentFileActions the unique_ptr members forward-
-    // declare. config supplies startup-only settings (console open-on-start).
-    EditorServices(Engine& engine, SdlWindow& window, const EngineConfig& config);
+    // declare. config supplies startup-only settings (console open-on-start);
+    // projectPath is the resolved .senchaproj path (ResolveProjectPath), if any.
+    EditorServices(Engine& engine,
+                   SdlWindow& window,
+                   const EngineConfig& config,
+                   std::optional<std::string> projectPath);
     ~EditorServices();
 
     EditorServices(const EditorServices&) = delete;
@@ -132,6 +136,7 @@ private:
     GameModuleLoader ModuleLoader;
     LoadedModule     GameModule;
 
+    std::optional<std::string> ProjectPath;
     std::optional<ProjectDescriptor> Project;
 
     // Declared last so they are torn down before the state they reference: Pie

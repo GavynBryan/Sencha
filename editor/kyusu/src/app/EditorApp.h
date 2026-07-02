@@ -3,6 +3,8 @@
 #include <app/Game.h>
 
 #include <memory>
+#include <optional>
+#include <string>
 
 class EditorServices;
 
@@ -13,8 +15,9 @@ class EditorApp : public Game
 {
 public:
     // Defined out of line so the .cpp sees the complete EditorServices the
-    // unique_ptr member forward-declares.
-    EditorApp();
+    // unique_ptr member forward-declares. projectPath is the resolved
+    // .senchaproj path (ResolveProjectPath), if any.
+    explicit EditorApp(std::optional<std::string> projectPath);
     ~EditorApp() override;
 
     void OnConfigure(GameConfigureContext& ctx) override;
@@ -24,5 +27,6 @@ public:
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:
+    std::optional<std::string> ProjectPath;
     std::unique_ptr<EditorServices> Services;
 };
