@@ -313,6 +313,11 @@ void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
     SaveAllAction = std::move(saveAllAction);
 }
 
+void EditorUiFeature::SetNewWorldAction(std::function<void()> newWorldAction)
+{
+    NewWorldAction = std::move(newWorldAction);
+}
+
 bool EditorUiFeature::InitImGui(const RendererServices& services)
 {
     if (!services.Device || !services.PhysicalDevice || !services.Queues || !services.Swapchain)
@@ -467,6 +472,8 @@ void EditorUiFeature::DrawMainMenuBar()
     {
         if (ImGui::MenuItem("New", "Ctrl+N", false, NewAction != nullptr) && NewAction)
             NewAction();
+        if (NewWorldAction && ImGui::MenuItem("New World"))
+            NewWorldAction();
         if (ImGui::MenuItem("Open", "Ctrl+O", false, OpenAction != nullptr) && OpenAction)
             OpenAction();
         if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveAction != nullptr) && SaveAction)

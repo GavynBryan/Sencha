@@ -19,8 +19,16 @@ namespace
 {
 constexpr SDL_DialogFileFilter kDocumentFileFilters[] = {
     { "Sencha Level", "json" },
+    { "Sencha World", "sworld" },
     { "All files", "*" },
 };
+
+bool IsWorldPath(std::string_view path)
+{
+    constexpr std::string_view kExtension = ".sworld";
+    return path.size() >= kExtension.size()
+        && path.substr(path.size() - kExtension.size()) == kExtension;
+}
 } // namespace
 
 DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world,
@@ -41,9 +49,15 @@ void DocumentFileActions::New()
     ResetInteraction();
 }
 
+void DocumentFileActions::NewWorld()
+{
+    World.NewWorld("Untitled World");
+    ResetInteraction();
+}
+
 void DocumentFileActions::Save()
 {
-    if (!World.FocusDocument().HasFilePath())
+    if (!World.HasSaveTarget())
     {
         RequestSaveAs();
         return;
@@ -110,13 +124,18 @@ void DocumentFileActions::ProcessPending()
         switch (action.Kind)
         {
         case FileActionKind::Open:
-            if (World.Load(action.Path))
+        {
+            const bool loaded = IsWorldPath(action.Path)
+                ? World.LoadWorld(action.Path)
+                : World.Load(action.Path);
+            if (loaded)
             {
                 ResetInteraction();
                 RescanMaterials(action.Path);
                 LogUnresolvedFaceMaterials(action.Path);
             }
             break;
+        }
         case FileActionKind::SaveAs:
             World.SaveAs(action.Path);
             RescanMaterials(action.Path);
@@ -171,11 +190,29 @@ void DocumentFileActions::LogUnresolvedFaceMaterials(const std::string& levelPat
 
 void DocumentFileActions::UpdateTitle()
 {
-    const EditorDocument& document = World.FocusDocument();
     std::string title = "Kyusu - Level Editor - ";
-    title += document.GetDisplayName();
-    if (document.IsDirty())
-        title += " *";
+    if (World.IsWorld())
+    {
+        title += World.Manifest().Name;
+        const ZoneId focus = World.FocusZone();
+        for (const ZoneHeader& zone : World.Manifest().Zones)
+        {
+            if (zone.Id != focus)
+                continue;
+            title += " : ";
+            title += zone.Name;
+            break;
+        }
+        if (World.IsDirty())
+            title += " *";
+    }
+    else
+    {
+        const EditorDocument& document = World.FocusDocument();
+        title += document.GetDisplayName();
+        if (document.IsDirty())
+            title += " *";
+    }
 
     if (title != LastWindowTitle)
     {

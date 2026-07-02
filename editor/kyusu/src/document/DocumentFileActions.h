@@ -26,6 +26,7 @@ public:
                         MaterialLibrary& materials, std::vector<std::string> contentRoots);
 
     void New();
+    void NewWorld();
     void Save();
     void RequestOpen();
     void RequestSaveAs();

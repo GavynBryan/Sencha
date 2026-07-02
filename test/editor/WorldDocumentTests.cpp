@@ -224,3 +224,81 @@ TEST_F(WorldDocumentTest, VisitOpenZonesFollowsManifestOrder)
     EXPECT_EQ(visited[1], second);
     EXPECT_EQ(visited[2], third);
 }
+
+TEST_F(WorldDocumentTest, UserSidecarRoundTripsFocusAndZoneStates)
+{
+    const ZoneId first = [&]
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        const ZoneId zoneOne = world.Manifest().Zones[0].Id;
+        const ZoneId zoneTwo = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        EXPECT_TRUE(world.SaveWorldAs(WorldPath()));
+        EXPECT_TRUE(world.SetFocusZone(zoneTwo));
+        EXPECT_TRUE(world.SetZoneVisible(zoneOne, false));
+        EXPECT_TRUE(world.SaveWorld());
+        return zoneOne;
+    }();
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    EXPECT_EQ(reloaded.FocusZone(), reloaded.Manifest().Zones[1].Id);
+    EXPECT_TRUE(reloaded.IsZoneOpen(first));
+
+    bool firstVisible = true;
+    reloaded.VisitOpenZones([&](ZoneId zone, EditorDocument&, const ZoneViewState& view)
+                            {
+                                if (zone == first)
+                                    firstVisible = view.VisibleInEditor;
+                            });
+    EXPECT_FALSE(firstVisible);
+}
+
+TEST_F(WorldDocumentTest, MissingSidecarYieldsDefaults)
+{
+    ZoneId second{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        ASSERT_TRUE(world.SetFocusZone(second));
+        ASSERT_TRUE(world.SaveWorld());
+    }
+    fs::remove(WorldPath() + ".user.json");
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    // Defaults: the start zone focused, nothing else open.
+    EXPECT_EQ(reloaded.FocusZone(), reloaded.Manifest().StartZone);
+    EXPECT_FALSE(reloaded.IsZoneOpen(second));
+}
+
+TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)
+{
+    ZoneId second{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    }
+    fs::remove(Root / "levels/second.level.json");
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    bool fired = false;
+    for (const ContentRiskRecord& record : reloaded.ValidationRecords())
+    {
+        if (record.RuleId != "partition.zone.scene_unresolved")
+            continue;
+        fired = true;
+        EXPECT_EQ(record.Severity, ContentRiskSeverity::Error);
+        EXPECT_EQ(record.Kind, ContentRiskSourceKind::Zone);
+        EXPECT_EQ(record.SourceId, second.Value);
+    }
+    EXPECT_TRUE(fired);
+}

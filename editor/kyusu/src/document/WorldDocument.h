@@ -2,6 +2,7 @@
 
 #include "EditorDocument.h"
 
+#include <zone/ContentRiskRecord.h>
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 
@@ -9,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -30,23 +32,36 @@ class WorldDocument
 {
 public:
     explicit WorldDocument(LoggingProvider& logging);
+    ~WorldDocument();   // writes the user sidecar so view state survives exit
 
     // Forwarded to every zone document, present and future.
     void SetAssetEnvironment(RuntimeAssets& assets);
 
     // Mode and files.
     [[nodiscard]] bool IsWorld() const { return WorldMode_; }
-    bool LoadWorld(std::string_view path);          // parses .sworld, loads start zone as focus
-    bool SaveWorld();                                // world file + every dirty zone document
+    bool LoadWorld(std::string_view path);          // parses .sworld; sidecar or start zone picks focus
+    bool SaveWorld();                                // world file + every dirty zone document + sidecar
     bool SaveWorldAs(std::string_view path);
     void NewWorld(std::string_view name);            // one minted region and zone, focus on it
 
-    // Legacy passthroughs to the single zone document (world mode routes file
-    // actions through LoadWorld/SaveWorld instead).
+    // True when Save can write without asking for a path: the world file in
+    // world mode, the focus document's file otherwise.
+    [[nodiscard]] bool HasSaveTarget() const;
+
+    // Legacy single-document file actions. Called in world mode they close the
+    // world (persisting its sidecar) and drop back to legacy mode first.
     void New();
     bool Load(std::string_view path);
     bool Save();
     bool SaveAs(std::string_view path);
+
+    // Manifest validation plus the editor-side scene-resolvability check, rerun
+    // on world load, save, and every manifest verb. Errors are logged as they
+    // are produced; the records stay here for the partition panel to display.
+    [[nodiscard]] std::span<const ContentRiskRecord> ValidationRecords() const
+    {
+        return ValidationRecords_;
+    }
 
     [[nodiscard]] WorldPartitionManifest& Manifest();          // World mode only (asserts)
     [[nodiscard]] const WorldPartitionIndex& Index() const;    // rebuilt on manifest edits
@@ -121,6 +136,15 @@ private:
     [[nodiscard]] uint64_t MintRawId();
     void MarkManifestEdited();
     void AssignSceneRefsForNewZones();
+    void RunValidation();
+    [[nodiscard]] std::string UserSidecarPath() const;
+    void WriteUserSidecar() const;
+    // Opens the zones the sidecar recorded and applies their visibility;
+    // returns the recorded focus zone (invalid when absent or malformed).
+    ZoneId ApplyUserSidecar();
+    // Persists the outgoing world's sidecar and returns to legacy mode with a
+    // fresh single document.
+    void CloseWorldToLegacy();
 
     LoggingProvider& Logging_;
     RuntimeAssets* Assets_ = nullptr;
@@ -131,6 +155,7 @@ private:
     mutable WorldPartitionIndex Index_;
     mutable bool IndexDirty_ = true;
     bool WorldDirty_ = false;
+    std::vector<ContentRiskRecord> ValidationRecords_;
 
     ZoneId FocusZone_;
     std::unordered_map<ZoneId, OpenZone> OpenZones_;

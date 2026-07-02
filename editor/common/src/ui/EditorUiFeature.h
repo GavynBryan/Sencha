@@ -79,6 +79,8 @@ public:
                         std::function<void()> saveAction,
                         std::function<void()> saveAsAction);
     void SetSaveAllAction(std::function<void()> saveAllAction);
+    // Shown only when set (applications without world documents never see it).
+    void SetNewWorldAction(std::function<void()> newWorldAction);
 
 private:
     bool InitImGui(const RendererServices& services);
@@ -111,6 +113,7 @@ private:
     std::function<void()> SaveAction;
     std::function<void()> SaveAsAction;
     std::function<void()> SaveAllAction;
+    std::function<void()> NewWorldAction;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;

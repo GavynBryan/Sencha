@@ -364,6 +364,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this]() { if (Files) Files->RequestOpen(); },
         [this]() { if (Files) Files->Save(); },
         [this]() { if (Files) Files->RequestSaveAs(); });
+    UiFeature->SetNewWorldAction([this]() { if (Files) Files->NewWorld(); });
 
     // Fixed app chrome: top toolbar + bottom status bar. Registered before the
     // panels so the work-area space they reserve is subtracted from the full-bleed

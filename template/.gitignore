@@ -4,3 +4,6 @@
 # Cook output: regenerated from authored content by the editor Cook / cook path.
 /assets/.cooked/
 /assets/asset_ids.json
+
+# Per-user editor view state (world focus/open/visible), never content.
+*.sworld.user.json

@@ -4,10 +4,12 @@
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <zone/WorldPartitionValidation.h>
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <utility>
@@ -44,6 +46,11 @@ WorldDocument::WorldDocument(LoggingProvider& logging)
     , LegacyDocument_(std::make_unique<EditorDocument>(logging))
     , Rng_(std::random_device{}())
 {
+}
+
+WorldDocument::~WorldDocument()
+{
+    WriteUserSidecar();
 }
 
 void WorldDocument::SetAssetEnvironment(RuntimeAssets& assets)
@@ -85,6 +92,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
         return false;
     }
 
+    WriteUserSidecar();
     WorldMode_ = true;
     LegacyDocument_.reset();
     OpenZones_.clear();
@@ -94,7 +102,9 @@ bool WorldDocument::LoadWorld(std::string_view path)
     IndexDirty_ = true;
     WorldDirty_ = false;
 
-    ZoneId focus = Manifest_.StartZone;
+    ZoneId focus = ApplyUserSidecar();
+    if (!focus.IsValid() || FindZoneHeader(focus) == nullptr)
+        focus = Manifest_.StartZone;
     if (!focus.IsValid() || FindZoneHeader(focus) == nullptr)
         focus = Manifest_.Zones.empty() ? ZoneId{} : Manifest_.Zones.front().Id;
 
@@ -113,6 +123,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
             LegacyDocument_->SetAssetEnvironment(*Assets_);
         return false;
     }
+    RunValidation();
     return true;
 }
 
@@ -175,6 +186,8 @@ bool WorldDocument::SaveWorld()
         return false;
 
     WorldDirty_ = false;
+    WriteUserSidecar();
+    RunValidation();
     return true;
 }
 
@@ -188,6 +201,7 @@ bool WorldDocument::SaveWorldAs(std::string_view path)
 
 void WorldDocument::NewWorld(std::string_view name)
 {
+    WriteUserSidecar();
     WorldMode_ = true;
     LegacyDocument_.reset();
     OpenZones_.clear();
@@ -204,15 +218,24 @@ void WorldDocument::NewWorld(std::string_view name)
     SetFocusZone(zone);
 }
 
+bool WorldDocument::HasSaveTarget() const
+{
+    if (WorldMode_)
+        return !WorldPath_.empty();
+    return LegacyDocument_->HasFilePath();
+}
+
 void WorldDocument::New()
 {
-    assert(!WorldMode_ && "New: legacy passthrough, world mode uses NewWorld");
+    if (WorldMode_)
+        CloseWorldToLegacy();
     LegacyDocument_->New();
 }
 
 bool WorldDocument::Load(std::string_view path)
 {
-    assert(!WorldMode_ && "Load: legacy passthrough, world mode uses LoadWorld");
+    if (WorldMode_)
+        CloseWorldToLegacy();
     return LegacyDocument_->Load(path);
 }
 
@@ -388,6 +411,7 @@ ZoneId WorldDocument::AddZone(RegionId region, std::string name)
     header.Region = region;
     Manifest_.Zones.push_back(std::move(header));
     MarkManifestEdited();
+    RunValidation();
     return Manifest_.Zones.back().Id;
 }
 
@@ -399,6 +423,7 @@ RegionId WorldDocument::AddRegion(std::string name)
     record.Name = std::move(name);
     Manifest_.Regions.push_back(std::move(record));
     MarkManifestEdited();
+    RunValidation();
     return Manifest_.Regions.back().Id;
 }
 
@@ -410,6 +435,7 @@ bool WorldDocument::RenameZone(ZoneId zone, std::string name)
             continue;
         header.Name = std::move(name);
         MarkManifestEdited();
+        RunValidation();
         return true;
     }
     return false;
@@ -423,6 +449,7 @@ bool WorldDocument::RenameRegion(RegionId region, std::string name)
             continue;
         record.Name = std::move(name);
         MarkManifestEdited();
+        RunValidation();
         return true;
     }
     return false;
@@ -496,4 +523,138 @@ void WorldDocument::AssignSceneRefsForNewZones()
         header.SceneRef = std::move(candidate);
         MarkManifestEdited();
     }
+}
+
+void WorldDocument::RunValidation()
+{
+    ValidationRecords_.clear();
+    if (!WorldMode_)
+        return;
+
+    ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
+
+    // The pure layer takes no filesystem; resolvability of nonempty scene refs
+    // is the editor's half, reported through the same record type.
+    std::vector<ContentRiskRecord> unresolved;
+    for (const ZoneHeader& zone : Manifest_.Zones)
+    {
+        if (zone.SceneRef.empty())
+            continue;
+        std::error_code ec;
+        if (std::filesystem::exists(ResolveScenePath(zone.SceneRef), ec))
+            continue;
+        unresolved.push_back({
+            .Severity = ContentRiskSeverity::Error,
+            .Kind = ContentRiskSourceKind::Zone,
+            .SourceId = zone.Id.Value,
+            .RuleId = "partition.zone.scene_unresolved",
+            .Message = std::format("zone {} scene '{}' resolves to no file",
+                                   ZoneIdToString(zone.Id), zone.SceneRef),
+        });
+    }
+    std::sort(unresolved.begin(), unresolved.end(),
+              [](const ContentRiskRecord& a, const ContentRiskRecord& b)
+              { return a.SourceId < b.SourceId; });
+    for (ContentRiskRecord& record : unresolved)
+        ValidationRecords_.push_back(std::move(record));
+
+    auto& log = Logging_.GetLogger<WorldDocument>();
+    for (const ContentRiskRecord& record : ValidationRecords_)
+    {
+        if (record.Severity == ContentRiskSeverity::Error)
+            log.Error("{}: {}", record.RuleId, record.Message);
+    }
+}
+
+std::string WorldDocument::UserSidecarPath() const
+{
+    return WorldPath_ + ".user.json";
+}
+
+void WorldDocument::WriteUserSidecar() const
+{
+    if (!WorldMode_ || WorldPath_.empty())
+        return;
+
+    JsonValue::Object root;
+    if (FocusZone_.IsValid())
+        root.emplace_back("focus_zone", JsonValue{ ZoneIdToString(FocusZone_) });
+
+    JsonValue::Array zones;
+    for (const ZoneHeader& header : Manifest_.Zones)
+    {
+        const auto it = OpenZones_.find(header.Id);
+        if (it == OpenZones_.end())
+            continue;
+        JsonValue::Object entry;
+        entry.emplace_back("id", JsonValue{ ZoneIdToString(header.Id) });
+        entry.emplace_back("open", JsonValue{ true });
+        entry.emplace_back("visible", JsonValue{ it->second.View.VisibleInEditor });
+        zones.emplace_back(JsonValue{ std::move(entry) });
+    }
+    root.emplace_back("zones", JsonValue{ std::move(zones) });
+
+    std::ofstream file(UserSidecarPath(), std::ios::binary | std::ios::trunc);
+    if (file.is_open())
+        file << JsonStringify(JsonValue{ std::move(root) }, /*pretty*/ true);
+}
+
+ZoneId WorldDocument::ApplyUserSidecar()
+{
+    std::ifstream file(UserSidecarPath(), std::ios::binary);
+    if (!file.is_open())
+        return ZoneId{};
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+
+    // A malformed or missing sidecar is silently ignored: it is per-user view
+    // state, never content, so the defaults (start zone focused, nothing else
+    // open) are always an acceptable outcome.
+    const std::optional<JsonValue> root = JsonParse(buffer.str());
+    if (!root.has_value() || !root->IsObject())
+        return ZoneId{};
+
+    if (const JsonValue* zones = root->Find("zones"); zones != nullptr && zones->IsArray())
+    {
+        for (const JsonValue& entry : zones->AsArray())
+        {
+            const JsonValue* id = entry.Find("id");
+            if (id == nullptr || !id->IsString())
+                continue;
+            const auto zone = ZoneIdFromString(id->AsString());
+            if (!zone.has_value() || FindZoneHeader(*zone) == nullptr)
+                continue;
+            const JsonValue* open = entry.Find("open");
+            if (open == nullptr || !open->IsBool() || !open->AsBool())
+                continue;
+            if (!LoadZone(*zone))
+                continue;
+            if (const JsonValue* visible = entry.Find("visible");
+                visible != nullptr && visible->IsBool())
+                SetZoneVisible(*zone, visible->AsBool());
+        }
+    }
+
+    if (const JsonValue* focus = root->Find("focus_zone"); focus != nullptr && focus->IsString())
+    {
+        if (const auto zone = ZoneIdFromString(focus->AsString()); zone.has_value())
+            return *zone;
+    }
+    return ZoneId{};
+}
+
+void WorldDocument::CloseWorldToLegacy()
+{
+    WriteUserSidecar();
+    WorldMode_ = false;
+    WorldPath_.clear();
+    Manifest_ = {};
+    IndexDirty_ = true;
+    WorldDirty_ = false;
+    FocusZone_ = ZoneId{};
+    OpenZones_.clear();
+    ValidationRecords_.clear();
+    LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
+    if (Assets_)
+        LegacyDocument_->SetAssetEnvironment(*Assets_);
 }
