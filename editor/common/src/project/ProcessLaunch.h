@@ -14,3 +14,7 @@ bool SpawnProcess(const std::string& executablePath,
                   const std::string& workingDir,
                   long& outPid,
                   std::string* error);
+
+// Non-blocking exit check for a pid this process spawned; reaps the child
+// when it has exited. An unknown/already-reaped pid reports exited.
+bool HasProcessExited(long pid);

@@ -1,6 +1,7 @@
 #include "project/ProcessLaunch.h"
 
 #if defined(__unix__) || defined(__APPLE__)
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -50,5 +51,21 @@ bool SpawnProcess(const std::string& executablePath,
     return true;
 #else
     return fail("process launch is only implemented on POSIX hosts");
+#endif
+}
+
+bool HasProcessExited(long pid)
+{
+#if defined(__unix__) || defined(__APPLE__)
+    if (pid <= 0)
+        return true;
+    const pid_t result = waitpid(static_cast<pid_t>(pid), nullptr, WNOHANG);
+    if (result == 0)
+        return false;
+    // Reaped, or not our child (already reaped elsewhere): gone either way.
+    return true;
+#else
+    (void)pid;
+    return true;
 #endif
 }
