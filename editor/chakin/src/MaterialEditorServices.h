@@ -1,14 +1,13 @@
 #pragma once
 
-#include "MaterialEditSession.h"
+#include "MaterialTabSet.h"
 
-#include "commands/CommandStack.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 
 #include <core/assets/RuntimeAssets.h>
 
-#include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,10 +24,10 @@ struct EngineConfig;
 // MaterialEditorServices
 //
 // The material editor's composition root: mounts the project's content,
-// builds the browse/inspect/preview panels over one MaterialEditSession, and
-// pushes the session's working description into the resident material after
-// every change so the preview (and, through the saved file, a running level
-// editor) is always live.
+// builds the browse/inspect/preview panels over a MaterialTabSet (one edit
+// session + undo history per open material), and pushes each tab's working
+// description into its resident material after every change so the preview
+// (and, through the saved file, a running level editor) is always live.
 //=============================================================================
 class MaterialEditorServices
 {
@@ -51,16 +50,22 @@ private:
     void BuildUi();
     void ProcessFrame();
 
-    // Browser actions. New/Duplicate write materials/<name>.smat under the
+    // Browser/tab actions. New/Duplicate write materials/<name>.smat under the
     // first content root, re-register it, and open it.
     void OpenMaterial(const std::string& virtualPath);
-    void SaveOpenMaterial();
+    void CloseTab(std::size_t index);
+    void SaveActiveMaterial();
+    void SaveAllMaterials();
     void CreateMaterial(const std::string& name, bool duplicateOpen);
+    // Moves the .smat on disk to content-root-relative newRelPath (".smat"
+    // appended when missing) and re-points any open tab. Refs in levels are
+    // not rewritten; they fall back to the level default until reassigned.
+    void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
     void RescanMaterials();
 
-    // Pushes the session's working description into the resident material
-    // (in-place swap; live handles keep working).
-    void ApplyWorkingToResident();
+    // Pushes a tab's working description into its resident material (in-place
+    // swap; live handles keep working).
+    void ApplyWorkingToResident(MaterialEditTab& tab);
     void UpdateTitle();
 
     Engine* EnginePtr = nullptr;
@@ -70,12 +75,9 @@ private:
 
     std::optional<RuntimeAssets> Assets;
     std::unique_ptr<MaterialLibrary> Materials;
-    CommandStack Commands;
-    MaterialEditSession Session;
-    uint64_t AppliedSessionVersion = 0;
+    MaterialTabSet Tabs;
 
     EditorUiFeature* UiFeature = nullptr;
     MaterialPreviewRenderFeature* Preview = nullptr;
-    MaterialHandle OpenMaterialHandle{};
     std::string LastWindowTitle;
 };

@@ -127,26 +127,28 @@ UvProjection UvProjectionForNormal(Vec3d normal, bool worldAligned)
 
     if (worldAligned)
     {
-        // Dominant world axis of the normal picks the box-mapping plane.
-        // U/V are the other two world axes, chosen so the basis reads
-        // upright in the perspective view.
+        // Dominant world axis of the normal picks the box-mapping plane. The
+        // world is Y-up, so every wall maps V to world up and floors/ceilings
+        // box-map the ground plane; if wall axes disagreed on which way is up,
+        // a texture pulled around a corner would rotate 90 degrees between the
+        // X- and Z-facing walls.
         const float ax = std::abs(normal.X);
         const float ay = std::abs(normal.Y);
         const float az = std::abs(normal.Z);
-        if (az >= ax && az >= ay) // facing ±Z: floor/ceiling
+        if (ay >= ax && ay >= az) // facing ±Y: floor/ceiling
+        {
+            p.AxisU = { 1.0f, 0.0f, 0.0f };
+            p.AxisV = { 0.0f, 0.0f, 1.0f };
+        }
+        else if (ax >= az) // facing ±X: wall
+        {
+            p.AxisU = { 0.0f, 0.0f, 1.0f };
+            p.AxisV = { 0.0f, 1.0f, 0.0f };
+        }
+        else // facing ±Z: wall
         {
             p.AxisU = { 1.0f, 0.0f, 0.0f };
             p.AxisV = { 0.0f, 1.0f, 0.0f };
-        }
-        else if (ax >= ay) // facing ±X: wall
-        {
-            p.AxisU = { 0.0f, 1.0f, 0.0f };
-            p.AxisV = { 0.0f, 0.0f, 1.0f };
-        }
-        else // facing ±Y: wall
-        {
-            p.AxisU = { 1.0f, 0.0f, 0.0f };
-            p.AxisV = { 0.0f, 0.0f, 1.0f };
         }
         return p;
     }

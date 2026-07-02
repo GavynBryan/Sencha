@@ -940,3 +940,31 @@ TEST(MeshEditService, ElementKindObserverFiresOnRealChangesOnly)
     EXPECT_EQ(seen[0], MeshElementKind::Face);
     EXPECT_EQ(seen[1], service.GetElementKind());
 }
+
+TEST(MeshEditService, FaceExtrudeCarriesSourceMaterialOntoWalls)
+{
+    // Pulling a textured face out (walls + moved cap) keeps the source texture
+    // on every new face; only the projection is re-derived per wall normal.
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t face = 0;
+    box.Faces[face].Material.Material =
+        AssetRef{ AssetType::Material, "asset://materials/dev/red.smat" };
+
+    const Vec3d worldDelta = box.Faces[face].Normal * 1.0f;
+    const SelectableRef ref =
+        SelectableRef::FaceSelection(RegistryId::Global(), EntityId{ 1, 1 }, face);
+
+    MeshEditService service;
+    const auto result = service.ExtrudeElements(
+        box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Face,
+        worldDelta, true);
+    ASSERT_TRUE(result.has_value());
+
+    int carrying = 0;
+    for (const BrushFace& f : result->Mesh.Faces)
+        if (f.Material.Material.Path == "asset://materials/dev/red.smat")
+            ++carrying;
+    // The moved cap plus the four new walls.
+    EXPECT_EQ(carrying, 5);
+    EXPECT_EQ(result->Mesh.Faces.size(), 10u);
+}

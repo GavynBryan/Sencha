@@ -203,12 +203,14 @@ if(EDITOR_TEST_SOURCES)
     # not its runtime), so imgui_support rides along for the headers.
     add_executable(editor_tests
         ${EDITOR_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialEditSession.cpp
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialTabSet.cpp
         ${CMAKE_SOURCE_DIR}/editor/chakin/src/PreviewPrimitives.cpp
         ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
     target_include_directories(editor_tests PRIVATE
