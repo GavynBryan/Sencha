@@ -117,11 +117,13 @@ bool IsEditorUiInputEvent(const SDL_Event& event)
 EditorUiFeature::EditorUiFeature(Engine& engine,
                                  SdlWindow& window,
                                  VulkanInstanceService& instance,
-                                 VulkanFrameService& frames)
+                                 VulkanFrameService& frames,
+                                 std::string iniFileName)
     : EngineInstance(engine)
     , Window(window)
     , Instance(instance)
     , Frames(frames)
+    , IniFileName(std::move(iniFileName))
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
 }
@@ -332,6 +334,10 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     // steals viewport hotkeys (the edge-cut Tab toggle most visibly). Text fields
     // still gate keys via WantTextInput, so typing capture is unaffected.
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // Per-application layout file: the editor family would otherwise fight
+    // over one ./imgui.ini. Points at the member so it outlives the context.
+    if (!IniFileName.empty())
+        io.IniFilename = IniFileName.c_str();
     EditorUi::Apply(ImGui::GetStyle());
     EditorUi::LoadFonts(io);
 
