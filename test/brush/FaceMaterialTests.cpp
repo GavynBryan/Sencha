@@ -198,14 +198,16 @@ namespace
     }
 }
 
-TEST(FaceMaterialSurvivesEdits, ExtrudeKeepsCapAndPropagatesToWalls)
+TEST(FaceMaterialSurvivesEdits, ExtrudeKeepsCapMaterialAndWallsContinueNeighbors)
 {
     BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
     box.Faces[0].Material.Material = AssetRef{ AssetType::Material, "mat_a" };
 
     const BrushMesh out = BrushOps::ExtrudeFace(box, 0, 1.0f);
-    // The cap (face 0) keeps mat_a; the four new walls inherit it: 5 faces total.
-    EXPECT_GE(CountWithMaterial(out, "mat_a"), 5);
+    // The moved cap keeps mat_a; each wall continues the face across its base
+    // edge (all default here), never the cap's texture stamped sideways.
+    EXPECT_EQ(CountWithMaterial(out, "mat_a"), 1);
+    EXPECT_EQ(out.Faces.size(), 10u);
 }
 
 TEST(FaceMaterialSurvivesEdits, TranslatePreservesAllMaterials)
@@ -429,29 +431,40 @@ TEST(WorldUvProjection, DegenerateTransformScaleStaysTotal)
     EXPECT_TRUE(std::isfinite(uv.Y));
 }
 
-TEST(FaceMaterialSurvivesEdits, ExtrudeWallsCarryOffsetAndRotation)
+TEST(FaceMaterialSurvivesEdits, ExtrudeWallsContinueNeighborDensityAndPhase)
 {
+    // Texture the TOP with distinct density and phase, then pull a SIDE face
+    // out: the extension's new top strip continues the top's texture exactly
+    // (material, density, phase) so nothing resets at the shared edge.
     BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
-    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, "mat_a" };
-    box.Faces[0].Material.Uv.Scale = { 2.0f, 2.0f };
-    box.Faces[0].Material.Uv.Offset = { 0.25f, -0.5f };
-    box.Faces[0].Material.Uv.Rotation = 15.0f;
+    std::uint32_t top = 0;
+    std::uint32_t side = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+    {
+        if (box.Faces[i].Normal.Y > 0.9f)
+            top = i;
+        if (box.Faces[i].Normal.X > 0.9f)
+            side = i;
+    }
+    box.Faces[top].Material.Material = AssetRef{ AssetType::Material, "mat_a" };
+    box.Faces[top].Material.Uv.Scale = { 2.0f, 2.0f };
+    box.Faces[top].Material.Uv.Offset = { 0.25f, -0.5f };
+    box.Faces[top].Material.Uv.Rotation = 15.0f;
 
-    const BrushMesh out = BrushOps::ExtrudeFace(box, 0, 1.0f);
-    // The walls continue the cap's texture: density AND phase carry over so the
-    // texture does not reset at the shared edge.
-    int walls = 0;
+    const BrushMesh out = BrushOps::ExtrudeFace(box, side, 1.0f);
+    int upFacing = 0;
     for (const BrushFace& f : out.Faces)
     {
         if (f.Material.Material.Path != "mat_a")
             continue;
+        EXPECT_GT(f.Normal.Y, 0.9f);
         EXPECT_FLOAT_EQ(f.Material.Uv.Scale.X, 2.0f);
         EXPECT_FLOAT_EQ(f.Material.Uv.Offset.X, 0.25f);
         EXPECT_FLOAT_EQ(f.Material.Uv.Offset.Y, -0.5f);
         EXPECT_FLOAT_EQ(f.Material.Uv.Rotation, 15.0f);
-        ++walls;
+        ++upFacing;
     }
-    EXPECT_GE(walls, 5); // cap + four walls
+    EXPECT_EQ(upFacing, 2); // the original top + the extension's top strip
 }
 
 TEST(FaceMaterialSurvivesEdits, EdgeExtrudeInheritsSeedFaceMaterial)

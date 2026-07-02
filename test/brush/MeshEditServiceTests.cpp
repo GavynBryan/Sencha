@@ -941,32 +941,63 @@ TEST(MeshEditService, ElementKindObserverFiresOnRealChangesOnly)
     EXPECT_EQ(seen[1], service.GetElementKind());
 }
 
-TEST(MeshEditService, FaceExtrudeCarriesSourceMaterialOntoWalls)
+namespace
 {
-    // Pulling a textured face out (walls + moved cap) keeps the source texture
-    // on every new face; only the projection is re-derived per wall normal.
+    std::uint32_t FaceWithNormal(const BrushMesh& mesh, Vec3d direction)
+    {
+        for (std::uint32_t i = 0; i < mesh.Faces.size(); ++i)
+            if (mesh.Faces[i].Normal.Normalized().Dot(direction.Normalized()) > 0.9f)
+                return i;
+        ADD_FAILURE() << "no face facing the requested direction";
+        return 0;
+    }
+}
+
+TEST(MeshEditService, FaceExtrudeWallsContinueTheirNeighborFaces)
+{
+    // The user workflow: texture a box's top, extrude a SIDE face outward. The
+    // extension's new top strip continues the top's texture (each wall inherits
+    // the face across its base edge), and the moved side face keeps its own.
     BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
-    const std::uint32_t face = 0;
-    box.Faces[face].Material.Material =
+    const std::uint32_t top = FaceWithNormal(box, { 0.0f, 1.0f, 0.0f });
+    const std::uint32_t side = FaceWithNormal(box, { 1.0f, 0.0f, 0.0f });
+    box.Faces[top].Material.Material =
         AssetRef{ AssetType::Material, "asset://materials/dev/red.smat" };
+    box.Faces[side].Material.Material =
+        AssetRef{ AssetType::Material, "asset://materials/dev/blue.smat" };
 
-    const Vec3d worldDelta = box.Faces[face].Normal * 1.0f;
     const SelectableRef ref =
-        SelectableRef::FaceSelection(RegistryId::Global(), EntityId{ 1, 1 }, face);
-
+        SelectableRef::FaceSelection(RegistryId::Global(), EntityId{ 1, 1 }, side);
     MeshEditService service;
     const auto result = service.ExtrudeElements(
         box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Face,
-        worldDelta, true);
+        Vec3d{ 1.0f, 0.0f, 0.0f }, true);
     ASSERT_TRUE(result.has_value());
+    const BrushMesh& after = result->Mesh;
+    ASSERT_EQ(after.Faces.size(), 10u);
 
-    int carrying = 0;
-    for (const BrushFace& f : result->Mesh.Faces)
+    // Two red top surfaces now: the original top and the extension's top strip,
+    // and the strip continues the SAME projection (no seam at the shared edge).
+    std::vector<const BrushFace*> redTops;
+    for (const BrushFace& f : after.Faces)
         if (f.Material.Material.Path == "asset://materials/dev/red.smat")
-            ++carrying;
-    // The moved cap plus the four new walls.
-    EXPECT_EQ(carrying, 5);
-    EXPECT_EQ(result->Mesh.Faces.size(), 10u);
+        {
+            EXPECT_GT(f.Normal.Y, 0.9f) << "red must only appear on up-facing faces";
+            redTops.push_back(&f);
+        }
+    ASSERT_EQ(redTops.size(), 2u);
+    EXPECT_FLOAT_EQ(redTops[0]->Material.Uv.AxisU.Dot(redTops[1]->Material.Uv.AxisU), 1.0f);
+    EXPECT_FLOAT_EQ(redTops[0]->Material.Uv.AxisV.Dot(redTops[1]->Material.Uv.AxisV), 1.0f);
+
+    // The pulled side face (now the far cap) keeps its own texture.
+    int blue = 0;
+    for (const BrushFace& f : after.Faces)
+        if (f.Material.Material.Path == "asset://materials/dev/blue.smat")
+        {
+            EXPECT_GT(f.Normal.X, 0.9f);
+            ++blue;
+        }
+    EXPECT_EQ(blue, 1);
 }
 
 namespace
@@ -984,9 +1015,11 @@ namespace
     constexpr const char* kRed = "asset://materials/dev/red.smat";
 }
 
-TEST(MeshEditService, PanelExtrudeVerbCarriesSourceMaterialOntoWalls)
+TEST(MeshEditService, PanelExtrudeVerbKeepsCapAndContinuesNeighbors)
 {
-    // The MeshEditPanel Extrude button path (ApplyVerb -> BrushOps::ExtrudeFace).
+    // The MeshEditPanel Extrude button path (ApplyVerb -> BrushOps::ExtrudeFace):
+    // the moved cap keeps its texture; the walls continue their base-edge
+    // neighbors (all default here), never the cap's.
     BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
     box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
     StubMeshEditTarget target(std::move(box));
@@ -1000,7 +1033,8 @@ TEST(MeshEditService, PanelExtrudeVerbCarriesSourceMaterialOntoWalls)
     const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
     ASSERT_NE(captured, nullptr);
 
-    EXPECT_EQ(CountFacesWithMaterial(captured->After, kRed), 5); // cap + 4 walls
+    EXPECT_EQ(CountFacesWithMaterial(captured->After, kRed), 1);
+    EXPECT_EQ(captured->After.Faces.size(), 10u);
 }
 
 TEST(BrushOps, CarveFaceRectKeepsMaterialOnEveryPiece)

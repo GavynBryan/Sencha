@@ -47,31 +47,19 @@ namespace
 }
 
 MaterialInspectorPanel::MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
-                                               ApplyImportSettingsFn applyImportSettings)
+                                               ImportSettingsHooks importSettings)
     : Tabs(tabs)
     , Registry(registry)
-    , ApplyImportSettings(std::move(applyImportSettings))
+    , ImportSettings(std::move(importSettings))
 {
 }
 
 void MaterialInspectorPanel::RequestImportSettings(const std::string& virtualPath)
 {
     ImportTarget = virtualPath;
-    ImportDraft = TextureImportSettings{};
-
-    // Seed the draft from the existing sidecar; a missing or unreadable one
-    // is the defaults.
-    if (const AssetRecord* record = Registry.FindByPath(virtualPath);
-        record != nullptr && !record->FilePath.empty())
-    {
-        std::ifstream file(record->FilePath + std::string(kImportSettingsSuffix), std::ios::binary);
-        if (file.is_open())
-        {
-            const std::string text((std::istreambuf_iterator<char>(file)), {});
-            (void)ParseTextureImportSettings(
-                std::as_bytes(std::span(text.data(), text.size())), ImportDraft, nullptr);
-        }
-    }
+    // Seed the draft from the existing sidecar (defaults when absent).
+    ImportDraft = ImportSettings.Load ? ImportSettings.Load(virtualPath)
+                                      : TextureImportSettings{};
     ImportPopupPending = true;
 }
 
@@ -110,8 +98,8 @@ void MaterialInspectorPanel::DrawImportSettingsPopup()
 
     if (ImGui::Button("Apply"))
     {
-        if (ApplyImportSettings)
-            ApplyImportSettings(ImportTarget, ImportDraft);
+        if (ImportSettings.Apply)
+            ImportSettings.Apply(ImportTarget, ImportDraft);
         ImportTarget.clear();
         ImGui::CloseCurrentPopup();
     }

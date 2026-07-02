@@ -19,11 +19,16 @@ class AssetRegistry;
 class MaterialInspectorPanel final : public IEditorPanel
 {
 public:
-    using ApplyImportSettingsFn =
-        std::function<void(const std::string& virtualPath, const TextureImportSettings&)>;
+    // Both hooks resolve the texture's SOURCE file from the virtual path (the
+    // registry record points at the cooked overlay, where settings never live).
+    struct ImportSettingsHooks
+    {
+        std::function<TextureImportSettings(const std::string& virtualPath)> Load;
+        std::function<void(const std::string& virtualPath, const TextureImportSettings&)> Apply;
+    };
 
     MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
-                           ApplyImportSettingsFn applyImportSettings);
+                           ImportSettingsHooks importSettings);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Inspector"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Right; }
@@ -43,7 +48,7 @@ private:
 
     MaterialTabSet& Tabs;
     const AssetRegistry& Registry;
-    ApplyImportSettingsFn ApplyImportSettings;
+    ImportSettingsHooks ImportSettings;
 
     // Working-state snapshot at widget activation: the undo command's "before".
     MaterialDescription EditBaseline;

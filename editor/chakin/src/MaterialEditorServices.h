@@ -5,6 +5,7 @@
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 
+#include <assets/cook/TextureImportSettings.h>
 #include <core/assets/RuntimeAssets.h>
 
 #include <cstddef>
@@ -19,7 +20,6 @@ class EditorUiFeature;
 class MaterialPreviewRenderFeature;
 struct PlatformEventContext;
 struct EngineConfig;
-struct TextureImportSettings;
 
 //=============================================================================
 // MaterialEditorServices
@@ -63,6 +63,22 @@ private:
     // not rewritten; they fall back to the level default until reassigned.
     void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
     void RescanMaterials();
+
+    // Resolves the SOURCE file of a virtual path against the content roots:
+    // "asset://<rel>" -> {root, rel} where <root>/<rel> exists. The registry
+    // record cannot serve here: the cooked overlay repoints its FilePath at
+    // .cooked/, and import settings belong beside the source.
+    struct SourceLocation
+    {
+        std::string Root;
+        std::string RelPath;
+    };
+    [[nodiscard]] std::optional<SourceLocation> ResolveSourceFile(
+        const std::string& virtualPath) const;
+
+    // Reads the texture's import-settings sidecar (defaults when absent).
+    [[nodiscard]] TextureImportSettings LoadTextureImportSettings(
+        const std::string& virtualPath) const;
 
     // Writes the texture's import-settings sidecar ("<source>.meta"), recooks
     // the source, and swaps the resident texture in place so the preview (and

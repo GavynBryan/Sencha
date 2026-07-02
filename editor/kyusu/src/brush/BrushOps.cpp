@@ -242,8 +242,41 @@ BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, 
         return out;
 
     const std::vector<std::uint32_t> baseLoop = out.Faces[face].Loop;
-    const FaceMaterial sourceMaterial = out.Faces[face].Material; // walls keep its texture
+    const FaceMaterial sourceMaterial = out.Faces[face].Material;
     const std::size_t n = baseLoop.size();
+
+    // Each wall continues the face on the far side of its base edge: growing a
+    // box sideways must extend the top's texture onto the new top strip, not
+    // stamp the pulled side's texture around the extrusion. Resolve neighbors
+    // against the pre-extrude topology, by value (the face array reallocates).
+    struct WallSeed
+    {
+        FaceMaterial Material;
+        Vec3d Normal;
+    };
+    std::vector<std::optional<WallSeed>> seeds(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const std::uint32_t a = baseLoop[i];
+        const std::uint32_t b = baseLoop[(i + 1) % n];
+        for (std::uint32_t f = 0; f < out.Faces.size() && !seeds[i]; ++f)
+        {
+            if (f == face)
+                continue;
+            const std::vector<std::uint32_t>& loop = out.Faces[f].Loop;
+            for (std::size_t k = 0; k < loop.size(); ++k)
+            {
+                const std::uint32_t x = loop[k];
+                const std::uint32_t y = loop[(k + 1) % loop.size()];
+                if ((x == a && y == b) || (x == b && y == a))
+                {
+                    seeds[i] = WallSeed{ out.Faces[f].Material,
+                                         BrushComputeFaceNormal(out, out.Faces[f]) };
+                    break;
+                }
+            }
+        }
+    }
 
     // New (extruded) ring of vertices.
     std::vector<std::uint32_t> topLoop(n);
@@ -258,10 +291,8 @@ BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, 
     // stays pinned).
     out.Faces[face].Loop = topLoop;
 
-    // Side wall per original edge (winding fixed up by repair). The wall keeps the
-    // source texture but gets a projection for its OWN normal: inheriting the cap's
-    // projection (chosen for the cap normal) would point a UV axis along the wall
-    // normal and stretch the texture edge-on.
+    // Side wall per original edge (winding fixed up by repair). Open-mesh edges
+    // with no neighbor fall back to the pulled face's texture.
     for (std::size_t i = 0; i < n; ++i)
     {
         const std::size_t j = (i + 1) % n;
@@ -270,14 +301,30 @@ BrushMesh BrushOps::ExtrudeFaceAlong(const BrushMesh& mesh, std::uint32_t face, 
 
         BrushFace wall;
         wall.Loop = { baseLoop[i], baseLoop[j], topLoop[j], topLoop[i] };
-        wall.Material.Material = sourceMaterial.Material;
-        wall.Material.Uv = UvProjectionForNormal(wallNormal, sourceMaterial.Uv.WorldAligned);
-        // Carry the cap's texel density, offset, and rotation so the texture
-        // continues across the shared edge instead of resetting phase (a
-        // world-aligned wall shares one projection axis with its cap).
-        wall.Material.Uv.Scale = sourceMaterial.Uv.Scale;
-        wall.Material.Uv.Offset = sourceMaterial.Uv.Offset;
-        wall.Material.Uv.Rotation = sourceMaterial.Uv.Rotation;
+
+        const FaceMaterial& seed = seeds[i] ? seeds[i]->Material : sourceMaterial;
+        wall.Material.Material = seed.Material;
+
+        // A wall coplanar with its neighbor continues that surface exactly, so
+        // copy the projection whole (an axis-aligned extrude: the new top strip
+        // IS more top). Otherwise re-derive axes for the wall's own normal
+        // (inheriting axes chosen for a different plane would stretch the
+        // texture edge-on), keeping the seed's alignment, density, and phase.
+        const bool coplanar = seeds[i].has_value()
+            && wallNormal.SqrMagnitude() > 0.0f
+            && seeds[i]->Normal.SqrMagnitude() > 0.0f
+            && std::abs(wallNormal.Normalized().Dot(seeds[i]->Normal.Normalized())) > 0.999f;
+        if (coplanar)
+        {
+            wall.Material.Uv = seed.Uv;
+        }
+        else
+        {
+            wall.Material.Uv = UvProjectionForNormal(wallNormal, seed.Uv.WorldAligned);
+            wall.Material.Uv.Scale = seed.Uv.Scale;
+            wall.Material.Uv.Offset = seed.Uv.Offset;
+            wall.Material.Uv.Rotation = seed.Uv.Rotation;
+        }
         out.Faces.push_back(std::move(wall));
     }
 

@@ -26,7 +26,11 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
+#include <span>
+#include <string_view>
 #include <utility>
 
 namespace
@@ -169,8 +173,12 @@ void MaterialEditorServices::BuildUi()
         }));
     UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(
         Tabs, Assets->Registry,
-        [this](const std::string& virtualPath, const TextureImportSettings& settings)
-        { ApplyTextureImportSettings(virtualPath, settings); }));
+        MaterialInspectorPanel::ImportSettingsHooks{
+            .Load = [this](const std::string& virtualPath)
+            { return LoadTextureImportSettings(virtualPath); },
+            .Apply = [this](const std::string& virtualPath, const TextureImportSettings& settings)
+            { ApplyTextureImportSettings(virtualPath, settings); },
+        }));
     UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
         *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
 
@@ -393,41 +401,59 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     }
 }
 
+std::optional<MaterialEditorServices::SourceLocation> MaterialEditorServices::ResolveSourceFile(
+    const std::string& virtualPath) const
+{
+    constexpr std::string_view scheme = "asset://";
+    if (!Project || !virtualPath.starts_with(scheme))
+        return std::nullopt;
+    const std::string rel = virtualPath.substr(scheme.size());
+    for (const std::string& root : Project->ContentRoots)
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(std::filesystem::path(root) / rel, ec))
+            return SourceLocation{ root, rel };
+    }
+    return std::nullopt;
+}
+
+TextureImportSettings MaterialEditorServices::LoadTextureImportSettings(
+    const std::string& virtualPath) const
+{
+    TextureImportSettings settings;
+    const auto source = ResolveSourceFile(virtualPath);
+    if (!source)
+        return settings;
+
+    const std::filesystem::path metaPath =
+        std::filesystem::path(source->Root) / (source->RelPath + std::string(kImportSettingsSuffix));
+    std::ifstream file(metaPath, std::ios::binary);
+    if (!file.is_open())
+        return settings;
+    const std::string text((std::istreambuf_iterator<char>(file)), {});
+    std::string error;
+    if (!ParseTextureImportSettings(std::as_bytes(std::span(text.data(), text.size())),
+                                    settings, &error))
+        std::fprintf(stderr, "[chakin] '%s': %s (showing defaults)\n",
+                     metaPath.string().c_str(), error.c_str());
+    return settings;
+}
+
 void MaterialEditorServices::ApplyTextureImportSettings(const std::string& virtualPath,
                                                         const TextureImportSettings& settings)
 {
-    if (!Assets || !Project)
-        return;
-    const AssetRecord* record = Assets->Registry.FindByPath(virtualPath);
-    if (record == nullptr || record->FilePath.empty())
+    const auto source = ResolveSourceFile(virtualPath);
+    if (!source)
     {
-        std::fprintf(stderr, "[chakin] '%s' has no source file for import settings\n",
+        std::fprintf(stderr, "[chakin] '%s' has no source file under a content root\n",
                      virtualPath.c_str());
         return;
     }
 
-    const std::filesystem::path sourceFile(record->FilePath);
-    std::string owningRoot;
-    std::string sourceRel;
-    for (const std::string& root : Project->ContentRoots)
-    {
-        const auto rel = sourceFile.lexically_relative(root);
-        if (!rel.empty() && rel.native().rfind("..", 0) != 0)
-        {
-            owningRoot = root;
-            sourceRel = rel.generic_string();
-            break;
-        }
-    }
-    if (owningRoot.empty())
-    {
-        std::fprintf(stderr, "[chakin] '%s' is outside every content root\n",
-                     record->FilePath.c_str());
-        return;
-    }
-
     std::string error;
-    const std::string metaPath = record->FilePath + std::string(kImportSettingsSuffix);
+    const std::string metaPath =
+        (std::filesystem::path(source->Root)
+         / (source->RelPath + std::string(kImportSettingsSuffix))).string();
     if (!SaveTextureImportSettingsFile(metaPath, settings, &error))
     {
         std::fprintf(stderr, "[chakin] %s\n", error.c_str());
@@ -438,9 +464,9 @@ void MaterialEditorServices::ApplyTextureImportSettings(const std::string& virtu
     // repointed, so every material sampling it follows without a reload.
     if (TextureRecook)
         for (const auto& entry : TextureRecook->Roots)
-            if (entry->Root == owningRoot)
+            if (entry->Root == source->Root)
             {
-                entry->Reloader.ReloadSource(sourceRel);
+                entry->Reloader.ReloadSource(source->RelPath);
                 std::fprintf(stderr, "[chakin] import settings applied to '%s'\n",
                              virtualPath.c_str());
                 return;
