@@ -1,8 +1,11 @@
 # T: the Sencha gameplay scripting language (v1.0 design)
 
 Status: design accepted, not yet implemented. This document is the evaluation and
-the v1.0 specification baseline for Sencha's scripting layer. The roadmap entry
-lives in `real-engine-roadmap.md` (Phase 2.5).
+the v1.0 design baseline for Sencha's scripting layer. The roadmap entry lives
+in `real-engine-roadmap.md` (Phase 2.5). The implementation spec (frozen
+instruction set, `.tbc` container layout, host API table, semantics appendix,
+milestone checklists) is `t-language-v1-spec.md`; where the two documents
+disagree, the spec is normative.
 
 The language is named T (pronounced "Tea"; it rhymes with C). Source files are
 `.t`, cooked bytecode is `.tbc`. Engine-side identifiers do not use a `T` prefix:
@@ -190,14 +193,21 @@ familiarity win from options A-C.
     through a non-template `ScriptComponentSerializer : IComponentSerializer`,
     so script components appear in the inspector and participate in save, cook,
     and hot reload exactly like native components.
-17. **Hot reload state migration?** Because persistent state is only component
-    data plus a state name, migration is mechanical. Schema hash unchanged:
-    keep component bytes as-is. Schema changed: match fields by name and type
-    (keep matches, default new fields, drop removed ones). Active state
-    machines re-enter by state name; a state that no longer exists
-    deterministically cancels that ability or behavior instance. The bytecode
-    itself swaps via the existing `ReloadInPlace` slot swap: handles never
-    change.
+17. **Hot reload state migration?** Two cases, split by the component schema
+    hash. Same-layout edits (logic, constants, defaults, states): the bytecode
+    swaps live via the existing `ReloadInPlace` slot swap (handles never
+    change), component bytes are kept as-is, active state machines re-enter by
+    state name, and a state that no longer exists deterministically cancels
+    that ability or behavior instance. Layout-changing edits (field add,
+    remove, or retype): a live World cannot re-register a component with a
+    different size or alignment (`World::RegisterComponent` asserts on a
+    layout mismatch for the same `ComponentTypeId`, and ComponentIds are dense
+    with no unregistration), so a layout change triggers a PIE world reload
+    instead. During that reload, component data migrates through the save/load
+    path by field name and type: matches keep their values, new fields take
+    their declared defaults, removed fields drop. The editor message names the
+    edited component so authors know why the world restarted rather than
+    hot-swapping.
 18. **Runtime errors in PIE?** A trap (missing component, dead entity, index
     out of bounds, budget exhausted, bad host argument) deterministically
     aborts the callback with cancel semantics, logs one structured error with
@@ -473,7 +483,9 @@ loads.
 
 ### Instruction set shape
 
-Fixed-width 32-bit instructions, register-based, on the order of 48 opcodes:
+Fixed-width 32-bit instructions (two words for four extended forms),
+register-based, 61 opcodes in bytecode v0 (the normative table is in
+`t-language-v1-spec.md`, section A):
 
 - moves and constant loads (constant-pool indexed),
 - `i32`/`i64` and `f32`/`f64` arithmetic and conversions,
@@ -484,8 +496,10 @@ Fixed-width 32-bit instructions, register-based, on the order of 48 opcodes:
 - tag ops (`tag_has`, `tag_add`, `tag_remove` against the bind table),
 - `host_call` (import-table index, arguments in a contiguous register window),
 - record init (component literal construction into a scratch frame),
-- `enter_state`, `return`,
-- a budget tick fused into back-branches and calls.
+- `enter_state`, `return`.
+
+The execution budget decrements once per executed instruction (simpler than
+fusing ticks into back-branches, and equally deterministic).
 
 Registers are untagged 64-bit slots. Type safety is established statically by
 the compiler and re-checked at load by `ScriptBytecodeValidator`: jump targets,
@@ -522,7 +536,7 @@ surprise.
 ### Budgets
 
 Per-callback instruction budget (cvar `script.budget`, default on the order of
-100k), decremented on back-branches and calls; exhaustion traps. VM execution
+100k), decremented once per executed instruction; exhaustion traps. VM execution
 is serial inside the invoking system. This is deliberate: scripts are entity
 glue and sit far under the roughly 1ms chunk-parallel profile gate. Parallel VM
 execution is deferred and would require the same serial-reference-identical
@@ -699,16 +713,29 @@ documented "adding a new asset type" exercise in `docs/assets/architecture.md`
 (cache member in `RuntimeAssets`, loader owned by `AssetSystem`,
 `LoaderFor(type)` case, extension mapping).
 
+Component registration timing is a hard constraint, not a convention:
+`World::RegisterComponent` forbids registration after the first entity exists
+(asserted; UB in release). Script assets are therefore manifest-listed and
+load in the zone pre-population wave, so every script-defined component
+registers during world build, before any entity is created. `CommitTyped`
+registers components only inside that window. A script asset arriving after
+world population is a load error naming the script and the window it missed,
+never a lazy registration.
+
 Hot reload: `AssetSourceWatcher` learns the `.t` extension;
-`AssetHotReloader::ReloadSource` re-runs the importer; the loader's
-`CommitReload` swaps the module in the existing cache slot via `ReloadInPlace`
-(slot index, generation, and refcount preserved: every live handle sees the new
-module with no invalidation protocol, exactly the material/audio pattern).
-After the swap: relink bind tables, migrate component instances (answer 17),
-re-enter active state machines by name, cancel instances whose state vanished.
-A failed compile logs and leaves the live module untouched (best-effort, same
-policy as every other asset type). The compiler ships in dev builds only
-(`SENCHA_ENABLE_COOK`, the glslang pattern); shipping builds load `.tbc` only.
+`AssetHotReloader::ReloadSource` re-runs the importer; then the reaction
+splits on the component schema hash (answer 17). Same-layout edits: the
+loader's `CommitReload` swaps the module in the existing cache slot via
+`ReloadInPlace` (slot index, generation, and refcount preserved: every live
+handle sees the new module with no invalidation protocol, exactly the
+material/audio pattern), then relinks bind tables, re-enters active state
+machines by name, and cancels instances whose state vanished. Layout-changing
+edits: the new module cannot re-register its components in the live World, so
+the editor performs a PIE world reload, migrating component data through the
+save/load path by field name and type. A failed compile logs and leaves the
+live module untouched (best-effort, same policy as every other asset type).
+The compiler ships in dev builds only (`SENCHA_ENABLE_COOK`, the glslang
+pattern); shipping builds load `.tbc` only.
 
 ## Debugging and error reporting
 
@@ -738,8 +765,10 @@ mirroring `jobs_tests`):
   right diagnostic,
 - trap tests: each trap kind fires deterministically at the same instruction,
 - budget tests: exhaustion traps; budget cvar respected,
-- hot-reload migration tests: field add/remove/retype, state rename, state
-  removal,
+- hot-reload tests: same-layout swap preserves state; state rename and state
+  removal behave per answer 17; a layout change is detected (schema hash) and
+  routes to the world-reload path, where field add/remove/retype migrate
+  through save/load,
 - determinism differential tests: scripted scenario, N ticks, run-vs-run and
   serial-vs-parallel engine config, per-tick component hash equality,
 - schedule integration tests following `test/core/EngineScheduleTests.cpp`.
@@ -805,7 +834,9 @@ integration.
    Gate: the five example scripts compile to validated bytecode.
 4. **Asset, cook, and hot-reload integration**: importer, loader, cache,
    watcher extension, migration.
-   Gate: edit hookshot.t, PIE picks it up without restart, state migrates.
+   Gate: a logic edit to hookshot.t hot-swaps in PIE without a restart with
+   state preserved; a field edit to HookshotState routes to the world-reload
+   path and migrates data by name and type.
 5. **Bridges plus prerequisite engine work**: raw component registration,
    type-erased CommandBuffer ops, `core/random`, the ability bridge first
    (AbilityKit exists today), then `ScriptBehaviorSystem`, then the new
