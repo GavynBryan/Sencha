@@ -224,9 +224,12 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    data-authored locomotion graph drives a skinned character on a cooked level, and the
    serial and parallel paths produce bit-identical poses.
 
-3. **Scripting runtime (v1.0; owner decision 2026-07-02, recorded in Section 11).** An
-   embedded Lua-family VM hosted as an engine service. The design constraints that keep
-   it inside the invariants:
+3. **Scripting runtime (v1.0; owner decision 2026-07-02, recorded in Section 11).** T, a
+   Sencha-owned gameplay language: small, statically typed, non-OO, compiled at cook to
+   deterministic register bytecode and interpreted inside scheduled fixed-tick systems.
+   This supersedes the earlier recommendation of an embedded Lua-family VM. The full
+   design lives in `docs/plans/t-language.md`. The constraints that keep it inside the
+   invariants:
 
    - Scripts are assets: they flow through the `IAssetLoader` staged-load contract and
      the cooked cache, and they hot-reload like materials do. Script iteration is the
@@ -248,8 +251,9 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    express still lands as data. Guardrails ship as roadmap items alongside the runtime:
    a fitness ctest asserting the script API surface exposes only the seams above, and
    the determinism gate (Track E) extended over script-driven fixed-tick systems. The
-   track's first task is a recorded design task: VM selection (recommendation: Lua
-   through a minimal binding layer owned by the engine, no framework dependency).
+   VM-selection design task is closed: T is built (compiler front end, bytecode, module
+   container, validator, VM, intrinsics, and the world-side host), owned by the engine
+   with no framework dependency.
    Gate: the template game's entity behavior is authored in a script asset, edits
    hot-reload in PIE without a restart, and the determinism gate passes with scripts
    in the loop.
@@ -587,7 +591,9 @@ is v2.0. Every batch-2 tool states its restricted domain up front, the way
 The repo's deferral pattern: every deferral records the concrete trigger that revives it.
 
 - **Scripting: in v1.0, by owner decision (2026-07-02).** This supersedes the earlier
-  no-VM stance. The tension with directive 3 (a VM is a second behavior-entry channel
+  no-VM stance, and the runtime is T (Sencha-owned language, design in
+  `docs/plans/t-language.md`) rather than an embedded Lua-family VM. The tension with
+  directive 3 (a VM is a second behavior-entry channel
   beside the data path) is real and is contained structurally: the script API exposes
   only existing seams (Track A item 3), a fitness test enforces that surface, and
   requests expressible as data vocabulary still land as data. Scripts are for entity
@@ -628,6 +634,7 @@ the specialist doc wins.
 | --- | --- |
 | `docs/action-adventure-core-runtime.md` | Execution spec for Track C; its stages map to Track C items as listed. |
 | `docs/gameplay/abilitykit.md` | Execution spec for Track A items 1, 4, and 7. |
+| `docs/plans/t-language.md` | Design and v1.0 spec for the T scripting language (Track A item 3). |
 | `docs/architecture/hardening-and-consolidation.md` | Execution spec for Track D item 11 and Track F item 7. |
 | `docs/plans/sencha-level-editor/*` | Shipped-branch record plus execution detail for the editor substrate Track D builds on. |
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
