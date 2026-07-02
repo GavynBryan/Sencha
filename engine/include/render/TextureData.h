@@ -43,6 +43,15 @@ enum class TextureUsage : uint16_t
     LinearData = 5,  // linear; masks, misc. data
 };
 
+// How the texture asks to be sampled. Authored per source (import settings)
+// and carried through the .stex so the runtime picks the sampler from data;
+// Nearest is the pixel-art path (point-filtered at every stage).
+enum class TextureFilter : uint16_t
+{
+    Linear = 0,
+    Nearest = 1,
+};
+
 struct TextureMipLevel
 {
     uint32_t Width = 0;
@@ -57,6 +66,7 @@ struct TextureData
 {
     TexturePixelFormat Format = TexturePixelFormat::Unknown;
     TextureUsage Usage = TextureUsage::Unknown;
+    TextureFilter Filter = TextureFilter::Linear;
 
     // Mip 0 extent. Mips[0] must agree.
     uint32_t Width = 0;

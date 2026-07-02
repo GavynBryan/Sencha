@@ -15,6 +15,8 @@ namespace
         StexFileHeader header{};
         std::memcpy(header.Magic, kStexMagic, sizeof(header.Magic));
         header.Version = kStexVersion;
+        if (texture.Filter == TextureFilter::Nearest)
+            header.Flags |= kStexFlagNearestFilter;
         header.Format = texture.Format;
         header.Usage = texture.Usage;
         header.Width = texture.Width;

@@ -32,7 +32,7 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
-#include <assets/cook/AssetImporter.h>
+#include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
 #include <assets/cook/TextureCook.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
@@ -524,7 +524,7 @@ void EditorServices::BuildSourceWatch()
     for (const std::string& root : Project->ContentRoots)
     {
         auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
-            AssetSourceWatcher(engine.Logging(), root, { ".smat", ".png" }),
+            AssetSourceWatcher(engine.Logging(), root, { ".smat", ".png", ".meta" }),
             AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
                              SourceWatch->Importers, engine.Tasks(), root),
         });
@@ -554,7 +554,13 @@ void EditorServices::ProcessFrame()
             SourceWatch->NextPoll = now + std::chrono::milliseconds(500);
             for (auto& root : SourceWatch->Roots)
                 for (const std::string& changed : root->Watcher.PollChanged())
-                    root->Reloader.ReloadSource(changed);
+                {
+                    // An import-settings sidecar edit recooks its source.
+                    std::string_view source = changed;
+                    if (source.ends_with(kImportSettingsSuffix))
+                        source.remove_suffix(kImportSettingsSuffix.size());
+                    root->Reloader.ReloadSource(source);
+                }
         }
     }
 

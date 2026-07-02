@@ -105,6 +105,8 @@ namespace
         ImportResult Import(const ImportInput& input, ICookOutputWriter& output) override
         {
             ++ImportCount;
+            LastMeta.assign(reinterpret_cast<const char*>(input.MetaBytes.data()),
+                            input.MetaBytes.size());
             if (FailWith.has_value())
                 return ImportResult{ .Error = *FailWith };
 
@@ -128,6 +130,7 @@ namespace
         }
 
         int ImportCount = 0;
+        std::string LastMeta;
         std::optional<std::string> FailWith;
         bool EscapeCookedDir = false;
     };
@@ -382,3 +385,42 @@ TEST(ImportOnDemand, RegistryRejectsDuplicateExtensionClaims)
 }
 
 #endif // SENCHA_ENABLE_COOK
+
+TEST(ImportOnDemand, EditedImportSettingsSidecarRecooks)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+    }
+    ASSERT_EQ(importer.ImportCount, 1);
+    EXPECT_TRUE(importer.LastMeta.empty());
+
+    // Writing the sidecar changes the freshness hash: same source recooks and
+    // the importer receives the sidecar bytes.
+    root.WriteFile("meshes/rock.src.meta", R"({"version": 1})");
+    {
+        AssetRegistry registry(logging);
+        ImportOnDemandStats stats;
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+        EXPECT_EQ(stats.Imported, 1u);
+    }
+    EXPECT_EQ(importer.ImportCount, 2);
+    EXPECT_EQ(importer.LastMeta, R"({"version": 1})");
+
+    // Unchanged source + sidecar pair is fresh again.
+    {
+        AssetRegistry registry(logging);
+        ImportOnDemandStats stats;
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+        EXPECT_EQ(stats.CookedFresh, 1u);
+    }
+    EXPECT_EQ(importer.ImportCount, 2);
+}

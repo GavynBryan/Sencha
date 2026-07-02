@@ -14,6 +14,10 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
+#include <assets/cook/AssetImporter.h>
+#include <assets/cook/TextureCook.h>
+#include <assets/cook/TextureImportSettings.h>
+#include <assets/hotreload/AssetHotReloader.h>
 #include <assets/material/MaterialAssetLoader.h>
 #include <core/assets/AssetRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
@@ -40,6 +44,19 @@ namespace
     };
 }
 
+struct MaterialEditorServices::TextureRecookState
+{
+    struct RootReloader
+    {
+        std::string Root;
+        AssetHotReloader Reloader;
+    };
+
+    PngTextureImporter TextureImporter;
+    AssetImporterRegistry Importers;
+    std::vector<std::unique_ptr<RootReloader>> Roots;
+};
+
 MaterialEditorServices::MaterialEditorServices(Engine& engine,
                                                SdlWindow& window,
                                                const EngineConfig&,
@@ -64,6 +81,7 @@ MaterialEditorServices::~MaterialEditorServices()
         for (const auto& tab : Tabs.Tabs())
             if (tab->Handle.IsValid())
                 Assets->Assets.ReleaseMaterial(tab->Handle);
+    TextureRecook.reset();
     Assets.reset();
 }
 
@@ -101,6 +119,16 @@ void MaterialEditorServices::InitAssets()
 
     MountProjectContent(*Project, *Assets, engine.Logging());
     Materials->Rescan(Project->ContentRoots);
+
+    TextureRecook = std::make_unique<TextureRecookState>();
+    TextureRecook->Importers.Register(TextureRecook->TextureImporter);
+    for (const std::string& root : Project->ContentRoots)
+        TextureRecook->Roots.push_back(std::unique_ptr<TextureRecookState::RootReloader>(
+            new TextureRecookState::RootReloader{
+                root,
+                AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
+                                 TextureRecook->Importers, engine.Tasks(), root),
+            }));
 }
 
 void MaterialEditorServices::BuildUi()
@@ -139,7 +167,10 @@ void MaterialEditorServices::BuildUi()
             { RenameMaterial(path, newRelPath); },
             .Rescan = [this]() { RescanMaterials(); },
         }));
-    UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(Tabs, Assets->Registry));
+    UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(
+        Tabs, Assets->Registry,
+        [this](const std::string& virtualPath, const TextureImportSettings& settings)
+        { ApplyTextureImportSettings(virtualPath, settings); }));
     UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
         *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
 
@@ -360,6 +391,60 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
         // Force a re-apply so an unsaved working state survives the move.
         tab->AppliedVersion = 0;
     }
+}
+
+void MaterialEditorServices::ApplyTextureImportSettings(const std::string& virtualPath,
+                                                        const TextureImportSettings& settings)
+{
+    if (!Assets || !Project)
+        return;
+    const AssetRecord* record = Assets->Registry.FindByPath(virtualPath);
+    if (record == nullptr || record->FilePath.empty())
+    {
+        std::fprintf(stderr, "[chakin] '%s' has no source file for import settings\n",
+                     virtualPath.c_str());
+        return;
+    }
+
+    const std::filesystem::path sourceFile(record->FilePath);
+    std::string owningRoot;
+    std::string sourceRel;
+    for (const std::string& root : Project->ContentRoots)
+    {
+        const auto rel = sourceFile.lexically_relative(root);
+        if (!rel.empty() && rel.native().rfind("..", 0) != 0)
+        {
+            owningRoot = root;
+            sourceRel = rel.generic_string();
+            break;
+        }
+    }
+    if (owningRoot.empty())
+    {
+        std::fprintf(stderr, "[chakin] '%s' is outside every content root\n",
+                     record->FilePath.c_str());
+        return;
+    }
+
+    std::string error;
+    const std::string metaPath = record->FilePath + std::string(kImportSettingsSuffix);
+    if (!SaveTextureImportSettingsFile(metaPath, settings, &error))
+    {
+        std::fprintf(stderr, "[chakin] %s\n", error.c_str());
+        return;
+    }
+
+    // Recook and swap the resident texture in place; the bindless slot is
+    // repointed, so every material sampling it follows without a reload.
+    if (TextureRecook)
+        for (const auto& entry : TextureRecook->Roots)
+            if (entry->Root == owningRoot)
+            {
+                entry->Reloader.ReloadSource(sourceRel);
+                std::fprintf(stderr, "[chakin] import settings applied to '%s'\n",
+                             virtualPath.c_str());
+                return;
+            }
 }
 
 void MaterialEditorServices::RescanMaterials()
