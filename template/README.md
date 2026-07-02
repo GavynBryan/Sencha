@@ -33,9 +33,21 @@ the engine.
 
 ## Open it in the editor
 
+Through the launcher (which remembers recent projects and can also open the
+material editor):
+
 ```sh
-SENCHA_PROJECT=$PWD/project.senchaproj /path/to/sencha-sdk/bin/sencha_editor
+/path/to/sencha-sdk/bin/kettle
 ```
+
+Or launch the level editor directly:
+
+```sh
+/path/to/sencha-sdk/bin/kyusu --project $PWD/project.senchaproj
+```
+
+(`SENCHA_PROJECT=$PWD/project.senchaproj` still works as a fallback; the
+material editor is `bin/chakin` with the same flags.)
 
 The editor reads the descriptor and loads `game.so` for its component
 serializers (so it can edit scenes containing the game's components). The

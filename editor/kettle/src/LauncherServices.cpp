@@ -61,7 +61,8 @@ void LauncherServices::BuildUi()
     ApplyEditorThemeFromConsole(engine.Console());
 
     auto uiFeature = std::make_unique<EditorUiFeature>(
-        engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames);
+        engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames,
+        "kettle.imgui.ini");
     UiFeature = uiFeature.get();
 
     UiFeature->AddPanel(std::make_unique<ProjectBrowserPanel>(

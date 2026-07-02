@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 union SDL_Event;
@@ -21,10 +22,13 @@ struct IEditorPanel;
 class EditorUiFeature : public IRenderFeature
 {
 public:
+    // iniFileName is the application's ImGui layout file (e.g. "kyusu.imgui.ini");
+    // each editor application names its own so their layouts never collide.
     EditorUiFeature(Engine& engine,
                     SdlWindow& window,
                     VulkanInstanceService& instance,
-                    VulkanFrameService& frames);
+                    VulkanFrameService& frames,
+                    std::string iniFileName);
     ~EditorUiFeature() override;
 
     EditorUiFeature(const EditorUiFeature&) = delete;
@@ -84,6 +88,7 @@ private:
     SdlWindow& Window;
     VulkanInstanceService& Instance;
     VulkanFrameService& Frames;
+    std::string IniFileName;
 
     Logger* Log = nullptr;
     VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;

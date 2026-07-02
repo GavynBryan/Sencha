@@ -352,7 +352,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     auto& frames = engine.Graphics().Frames;
     Renderer& renderer = engine.Graphics().MainRenderer;
 
-    auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames);
+    auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
+                                                       "kyusu.imgui.ini");
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },

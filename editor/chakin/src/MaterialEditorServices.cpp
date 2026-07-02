@@ -112,7 +112,8 @@ void MaterialEditorServices::BuildUi()
     Preview = renderer.AddFeature(std::move(preview));
 
     auto uiFeature = std::make_unique<EditorUiFeature>(
-        engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames);
+        engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames,
+        "chakin.imgui.ini");
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { Commands.Undo(); },
