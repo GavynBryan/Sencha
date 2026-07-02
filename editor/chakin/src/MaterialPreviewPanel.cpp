@@ -33,9 +33,11 @@ void MaterialPreviewPanel::OnDraw()
                        ImGuiSliderFlags_Logarithmic);
 
     const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 8.0f || avail.y < 8.0f)
+        return;
     const VkExtent2D extent{
-        static_cast<uint32_t>(std::max(avail.x, 16.0f)),
-        static_cast<uint32_t>(std::max(avail.y, 16.0f)),
+        static_cast<uint32_t>(avail.x),
+        static_cast<uint32_t>(avail.y),
     };
 
     const ImTextureID texture = Preview.Display(extent);
@@ -45,9 +47,13 @@ void MaterialPreviewPanel::OnDraw()
         return;
     }
 
+    // An Image is never an active item, so the input surface is an invisible
+    // button laid over it: that is what makes drag-to-orbit register.
+    const ImVec2 imagePos = ImGui::GetCursorScreenPos();
     ImGui::Image(texture, avail);
+    ImGui::SetCursorScreenPos(imagePos);
+    ImGui::InvisibleButton("##orbit", avail, ImGuiButtonFlags_MouseButtonLeft);
 
-    // Orbit while dragging over the image; wheel zooms when hovered.
     if (ImGui::IsItemHovered())
     {
         const float wheel = ImGui::GetIO().MouseWheel;
@@ -56,7 +62,8 @@ void MaterialPreviewPanel::OnDraw()
     }
     if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
     {
+        // Turntable feel: drag right orbits right, drag up orbits above.
         const ImVec2 delta = ImGui::GetIO().MouseDelta;
-        Preview.Orbit(delta.x * 0.01f, delta.y * 0.01f);
+        Preview.Orbit(delta.x * 0.01f, -delta.y * 0.01f);
     }
 }

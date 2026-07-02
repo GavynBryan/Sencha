@@ -63,3 +63,28 @@ TEST(PreviewPrimitives, PlaneIsWellFormed)
     EXPECT_EQ(plane.Vertices.size(), 4u);
     EXPECT_EQ(plane.Indices.size(), 6u);
 }
+
+TEST(PreviewPrimitives, TriangleWindingMatchesVertexNormals)
+{
+    // Every triangle's geometric normal must agree with its vertex normals;
+    // an inverted quad renders inside-out (culling shows the far faces, whose
+    // normals face away from the light, so lighting looks dead).
+    for (const PreviewPrimitive kind :
+         { PreviewPrimitive::Sphere, PreviewPrimitive::Cube, PreviewPrimitive::Plane })
+    {
+        const MeshGeometry geometry = BuildPreviewPrimitive(kind);
+        for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+        {
+            const StaticMeshVertex& a = geometry.Vertices[geometry.Indices[i]];
+            const StaticMeshVertex& b = geometry.Vertices[geometry.Indices[i + 1]];
+            const StaticMeshVertex& c = geometry.Vertices[geometry.Indices[i + 2]];
+
+            const Vec3d geometric = (b.Position - a.Position).Cross(c.Position - a.Position);
+            if (geometric.SqrMagnitude() <= 1e-8f)
+                continue; // degenerate sliver at a sphere pole
+            const Vec3d averaged = (a.Normal + b.Normal + c.Normal).Normalized();
+            EXPECT_GT(geometric.Normalized().Dot(averaged), 0.0f)
+                << PreviewPrimitiveName(kind) << " triangle " << i / 3 << " winds against its normals";
+        }
+    }
+}

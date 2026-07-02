@@ -98,3 +98,22 @@ TEST_F(ProjectCatalogTest, CapsTheListLength)
     EXPECT_EQ(catalog.Entries().size(), 20u);
     EXPECT_EQ(catalog.Entries()[0].Path, "/p/29.senchaproj");
 }
+
+TEST_F(ProjectCatalogTest, TouchWithAReferenceIntoItsOwnEntriesIsSafe)
+{
+    // The launch buttons pass the clicked row's own Path; Touch erases that
+    // element, so it must copy before mutating (this corrupted real catalogs).
+    ProjectCatalog catalog;
+    catalog.Touch("/p/a.senchaproj", "A");
+    catalog.Touch("/p/b.senchaproj", "B");
+
+    catalog.Touch(catalog.Entries()[1].Path, catalog.Entries()[1].Name);
+    ASSERT_EQ(catalog.Entries().size(), 2u);
+    EXPECT_EQ(catalog.Entries()[0].Path, "/p/a.senchaproj");
+    EXPECT_EQ(catalog.Entries()[0].Name, "A");
+    EXPECT_EQ(catalog.Entries()[1].Path, "/p/b.senchaproj");
+
+    catalog.Remove(catalog.Entries()[0].Path);
+    ASSERT_EQ(catalog.Entries().size(), 1u);
+    EXPECT_EQ(catalog.Entries()[0].Path, "/p/b.senchaproj");
+}

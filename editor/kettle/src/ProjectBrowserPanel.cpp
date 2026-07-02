@@ -46,6 +46,9 @@ void ProjectBrowserPanel::DrawRecentList()
 {
     ImGui::SeparatorText("Recent Projects");
 
+    if (ImGui::Button("New Project..."))
+        RequestCreateProject();
+    ImGui::SameLine();
     if (ImGui::Button("Browse...") && Act.BrowseForProject)
         Act.BrowseForProject();
 
@@ -105,19 +108,36 @@ void ProjectBrowserPanel::DrawRecentList()
     ImGui::EndTable();
 }
 
-void ProjectBrowserPanel::DrawCreateSection()
+void ProjectBrowserPanel::DrawCreatePopup()
 {
-    ImGui::SeparatorText("Create Project");
+    if (CreatePopupRequested)
+    {
+        ImGui::OpenPopup("Create Project");
+        CreatePopupRequested = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Create Project", nullptr,
+                                ImGuiWindowFlags_AlwaysAutoResize))
+        return;
 
     ImGui::InputTextWithHint("Directory", "/path/to/new/project", CreateDirBuffer,
                              sizeof(CreateDirBuffer));
     ImGui::InputTextWithHint("Name", "defaults to the directory name", CreateNameBuffer,
                              sizeof(CreateNameBuffer));
+    ImGui::TextDisabled("Writes <directory>/project.senchaproj with a default game\nmodule path and an assets/ content root.");
+
     ImGui::BeginDisabled(CreateDirBuffer[0] == '\0');
-    if (ImGui::Button("Create") && Act.CreateProject)
-        Act.CreateProject(CreateDirBuffer, CreateNameBuffer);
+    if (ImGui::Button("Create"))
+    {
+        if (Act.CreateProject)
+            Act.CreateProject(CreateDirBuffer, CreateNameBuffer);
+        ImGui::CloseCurrentPopup();
+    }
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Writes <directory>/project.senchaproj with a default game module path and an assets/ content root.");
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 void ProjectBrowserPanel::DrawSettingsSection()
@@ -198,7 +218,6 @@ void ProjectBrowserPanel::OnDraw()
 
     DrawRecentList();
     ImGui::Spacing();
-    DrawCreateSection();
-    ImGui::Spacing();
     DrawSettingsSection();
+    DrawCreatePopup();
 }

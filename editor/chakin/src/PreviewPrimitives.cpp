@@ -60,7 +60,9 @@ namespace
             {
                 const uint32_t a = ring * stride + segment;
                 const uint32_t b = a + stride;
-                geometry.Indices.insert(geometry.Indices.end(), { a, b, a + 1, a + 1, b, b + 1 });
+                // Outward CCW (the engine convention: geometric normal agrees
+                // with the vertex normal; see the winding test).
+                geometry.Indices.insert(geometry.Indices.end(), { a, a + 1, b, b, a + 1, b + 1 });
             }
         }
 
@@ -86,7 +88,7 @@ namespace
             geometry.Vertices.push_back(vertex);
         }
         geometry.Indices.insert(geometry.Indices.end(),
-                                { base, base + 2, base + 1, base, base + 3, base + 2 });
+                                { base, base + 1, base + 2, base, base + 2, base + 3 });
     }
 
     MeshGeometry BuildCube()

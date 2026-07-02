@@ -26,7 +26,10 @@ private:
     // Tracks activate/deactivate around one widget: call after each widget with
     // the (possibly edited) copy; pushes the undo command on deactivation.
     void CommitWidgetEdit(MaterialDescription& edited);
-    void DrawTextureSlot(const char* label, AssetRef& slot, MaterialDescription& edited);
+    // id must be unique across the whole panel (CollapsingHeader does not push
+    // an ID scope, so a repeated label alone collides).
+    void DrawTextureSlot(const char* id, const char* label, AssetRef& slot,
+                         MaterialDescription& edited);
 
     MaterialEditSession& Session;
     CommandStack& Commands;

@@ -42,10 +42,10 @@ void MaterialInspectorPanel::CommitWidgetEdit(MaterialDescription& edited)
     }
 }
 
-void MaterialInspectorPanel::DrawTextureSlot(const char* label, AssetRef& slot,
+void MaterialInspectorPanel::DrawTextureSlot(const char* id, const char* label, AssetRef& slot,
                                              MaterialDescription& edited)
 {
-    ImGui::PushID(label);
+    ImGui::PushID(id);
     ImGui::TextUnformatted(label);
     ImGui::SameLine(140.0f);
 
@@ -115,7 +115,7 @@ void MaterialInspectorPanel::OnDraw()
         ImGui::ColorEdit4("Factor", color, ImGuiColorEditFlags_Float);
         edited.BaseColorFactor = Vec4(color[0], color[1], color[2], color[3]);
         CommitWidgetEdit(edited);
-        DrawTextureSlot("Texture", edited.BaseColorTexture, edited);
+        DrawTextureSlot("base_color_texture", "Texture", edited.BaseColorTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Surface", ImGuiTreeNodeFlags_DefaultOpen))
@@ -124,12 +124,12 @@ void MaterialInspectorPanel::OnDraw()
         CommitWidgetEdit(edited);
         ImGui::SliderFloat("Metallic", &edited.MetallicFactor, 0.0f, 1.0f);
         CommitWidgetEdit(edited);
-        DrawTextureSlot("ORM Texture", edited.OrmTexture, edited);
+        DrawTextureSlot("orm_texture", "ORM Texture", edited.OrmTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Normal", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        DrawTextureSlot("Texture", edited.NormalTexture, edited);
+        DrawTextureSlot("normal_texture", "Texture", edited.NormalTexture, edited);
         ImGui::SliderFloat("Scale", &edited.NormalScale, 0.0f, 2.0f);
         CommitWidgetEdit(edited);
     }
@@ -142,7 +142,7 @@ void MaterialInspectorPanel::OnDraw()
                           ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         edited.EmissiveFactor = Vec4(emissive[0], emissive[1], emissive[2], 0.0f);
         CommitWidgetEdit(edited);
-        DrawTextureSlot("Texture##emissive", edited.EmissiveTexture, edited);
+        DrawTextureSlot("emissive_texture", "Texture", edited.EmissiveTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Alpha", ImGuiTreeNodeFlags_DefaultOpen))
