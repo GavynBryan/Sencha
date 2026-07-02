@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorFillPipeline.h"
 #include "EditorWideLinePipeline.h"
 
 #include "../editmodes/IManipulator.h"
@@ -25,7 +26,7 @@ class SelectionRenderer
 public:
     SelectionRenderer(EditorScene& scene, SelectionService& selection, MeshEditService& meshEdit,
                       const EditorOverlayState& overlay, ManipulatorSession& session,
-                      EditorWideLinePipeline& lines);
+                      EditorWideLinePipeline& lines, EditorFillPipeline& fill);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
 
@@ -45,6 +46,10 @@ private:
                     const FaceElement& face,
                     const Vec4& color,
                     float widthPx) const;
+    // Fan-triangulates the (convex) face into translucent fill triangles.
+    void AppendFaceFill(std::vector<EditorLineVertex>& triangles,
+                        const FaceElement& face,
+                        const Vec4& color) const;
     void AppendEdge(std::vector<EditorLineSegment>& segments,
                     const EdgeElement& edge,
                     const Vec4& color,
@@ -68,4 +73,5 @@ private:
     const EditorOverlayState& Overlay;
     ManipulatorSession& Session;
     EditorWideLinePipeline& Lines;
+    EditorFillPipeline& Fill;
 };

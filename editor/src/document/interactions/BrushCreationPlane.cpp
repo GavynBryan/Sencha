@@ -27,6 +27,22 @@ Vec3d UnitAxis(int axis)
 {
     return Vec3d(axis == 0 ? 1.0f : 0.0f, axis == 1 ? 1.0f : 0.0f, axis == 2 ? 1.0f : 0.0f);
 }
+
+bool IsSignedWorldAxis(const Vec3d& v)
+{
+    constexpr float kEps = 1e-5f;
+    int units = 0;
+    int zeros = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        const float a = std::abs(v[i]);
+        if (std::abs(a - 1.0f) <= kEps)
+            ++units;
+        else if (a <= kEps)
+            ++zeros;
+    }
+    return units == 1 && zeros == 2;
+}
 }
 
 std::optional<BrushCreationPlane>
@@ -62,10 +78,22 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     if (!anchor.has_value())
         return std::nullopt;
 
-    // 2. Depth extent: match a selected brush (ortho QoL) > rest on the hit
-    //    surface (perspective) > rest on the grid toward the camera.
+    // A plane whose axes are all signed world axes takes the identity-transform
+    // path (world-component extents, exactly the pre-frame behavior); a custom
+    // grid frame takes the rotated path with depth along the plane normal.
+    const bool frameAligned = IsSignedWorldAxis(plane.AxisU) && IsSignedWorldAxis(plane.AxisV);
+    Vec3d depthDir = UnitAxis(depthAxis);
+    if (!frameAligned)
+    {
+        const Vec3d normal = plane.AxisU.Cross(plane.AxisV);
+        depthDir = normal.SqrMagnitude() > 0.0f ? normal.Normalized() : UnitAxis(depthAxis);
+    }
+
+    // 2. Depth extent: match a selected brush (ortho QoL, world-aligned only:
+    //    an AABB has no extent along a rotated normal) > rest on the hit surface
+    //    (perspective) > rest on the grid toward the camera.
     std::optional<Aabb3d> selectedBounds;
-    if (!perspective)
+    if (!perspective && frameAligned)
     {
         const SelectableRef sel = ctx.Selection.GetPrimarySelection();
         if (sel.IsEntity() && ctx.Scene.TryGetBrush(sel.Entity) != nullptr)
@@ -81,18 +109,28 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     {
         depth = RestOnSurfaceDepth(surface->Point[depthAxis], ctx.Grid.Spacing, surface->Normal[depthAxis]);
     }
-    else
+    else if (frameAligned)
     {
         const float toward = perspective ? (viewport.Camera.Position[depthAxis] - plane.Origin[depthAxis])
                                          : traits.OrthoAxis[depthAxis];
         depth = RestOnGridDepth(plane.Origin[depthAxis], ctx.Grid.Spacing, toward);
+    }
+    else
+    {
+        // Same rest-on-grid rule, measured along the frame normal instead of a
+        // world axis: coordinates are dot products with depthDir.
+        const float toward = perspective ? (viewport.Camera.Position - plane.Origin).Dot(depthDir)
+                                         : traits.OrthoAxis.Dot(depthDir);
+        depth = RestOnGridDepth(plane.Origin.Dot(depthDir), ctx.Grid.Spacing, toward);
     }
 
     return BrushCreationPlane{
         .Plane = plane,
         .Anchor = *anchor,
         .DepthAxis = depthAxis,
+        .DepthDir = depthDir,
         .DepthCenter = depth.Center,
         .DepthHalf = depth.Half,
+        .FrameAligned = frameAligned,
     };
 }

@@ -123,6 +123,7 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/overlay/SelectionLabels.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionFold.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp)
     target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
@@ -151,12 +152,17 @@ if(LEVEL_COOK_TEST_SOURCES)
     add_executable(level_cook_tests
         ${LEVEL_COOK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/src/document/AssetFieldIo.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/BrushBake.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/EditorDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/BrushCookInput.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/document/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/commands/DuplicateEntitiesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/commands/MergeBrushesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/document/commands/SeparateFacesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/export/GltfMeshExport.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp
@@ -189,9 +195,14 @@ endif()
 # its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
 # render passes) is out of scope for headless tests by construction.
 if(EDITOR_TEST_SOURCES)
-    add_executable(editor_tests ${EDITOR_TEST_SOURCES})
+    # EditorThemeFile is UI-adjacent but headless (it needs ImGui's ImVec4 type,
+    # not its runtime), so imgui_support rides along for the headers.
+    add_executable(editor_tests
+        ${EDITOR_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/src/ui/EditorThemeFile.cpp)
     target_include_directories(editor_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
-    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

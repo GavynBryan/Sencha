@@ -5,6 +5,7 @@
 #include "ScaleManipulator.h"
 #include "TranslateManipulator.h"
 #include "../interaction/InteractionHost.h"
+#include "../meshedit/ManipulationSink.h"
 #include "../meshedit/MeshEditService.h"
 #include "../selection/SelectionService.h"
 #include "../tools/ToolContext.h"
@@ -17,7 +18,7 @@
 ManipulatorSession::ManipulatorSession(SelectionService& selection,
                                        MeshEditService& service,
                                        ManipulationSink& sink,
-                                       const GridSettings& grid,
+                                       GridSettings& grid,
                                        PivotState& pivot)
     : Selection(selection)
     , Service(service)
@@ -34,9 +35,78 @@ ManipulatorSession::ManipulatorSession(SelectionService& selection,
     Manipulators.push_back(std::make_unique<ScaleManipulator>());
 }
 
+void ManipulatorSession::SetTransformMode(TransformMode mode)
+{
+    ActiveMode = mode;
+    Memory.Record(Service.GetElementKind() != MeshElementKind::Object, mode);
+}
+
+void ManipulatorSession::OnElementKindChanged(MeshElementKind next)
+{
+    ActiveMode = Memory.ModeFor(next != MeshElementKind::Object);
+}
+
+std::array<Vec3d, 3> ManipulatorSession::GizmoAxes() const
+{
+    constexpr std::array<Vec3d, 3> kWorld = { Vec3d{ 1, 0, 0 }, Vec3d{ 0, 1, 0 }, Vec3d{ 0, 0, 1 } };
+    switch (Space)
+    {
+    case TransformSpace::World:
+        return kWorld;
+
+    case TransformSpace::Grid:
+    {
+        // (U, V x U, V) is right-handed for any orthonormal U, V; for the default
+        // frame it is exactly the world axes.
+        const Vec3d normal = Grid.AxisV.Cross(Grid.AxisU);
+        if (normal.SqrMagnitude() < 1e-12f)
+            return kWorld;
+        return { Grid.AxisU, normal.Normalized(), Grid.AxisV };
+    }
+
+    case TransformSpace::Local:
+    {
+        const SelectableRef primary = Selection.GetPrimarySelection();
+        if (!primary.Entity.IsValid())
+            return kWorld;
+        const std::optional<Transform3f> transform = Sink.ResolveTransform(primary.Entity);
+        if (!transform.has_value())
+            return kWorld;
+        return {
+            transform->Rotation.RotateVector(Vec3d{ 1, 0, 0 }),
+            transform->Rotation.RotateVector(Vec3d{ 0, 1, 0 }),
+            transform->Rotation.RotateVector(Vec3d{ 0, 0, 1 }),
+        };
+    }
+    }
+    return kWorld;
+}
+
+ManipulatorContext ManipulatorSession::MakeContext(const SelectionSnapshot& snapshot) const
+{
+    return ManipulatorContext{
+        .Selection = snapshot,
+        .Service = Service,
+        .Sink = Sink,
+        .Grid = Grid,
+        .Pivot = Pivot,
+        .Axes = GizmoAxes(),
+        .EditGridOrigin = GridOriginEditing,
+    };
+}
+
 TransformMode ManipulatorSession::EffectiveMode() const
 {
-    if (ActiveMode == TransformMode::Resize && Service.GetElementKind() != MeshElementKind::Object)
+    // Grid editing drives the frame with Move (origin) or Rotate (axes); the
+    // other gizmos have no grid meaning and yield to Move.
+    if (GridOriginEditing
+        && ActiveMode != TransformMode::Move && ActiveMode != TransformMode::Rotate)
+        return TransformMode::Move;
+    if (ActiveMode != TransformMode::Resize)
+        return ActiveMode;
+    if (Service.GetElementKind() != MeshElementKind::Object)
+        return TransformMode::Move;
+    if (ResizableQuery && !ResizableQuery())
         return TransformMode::Move;
     return ActiveMode;
 }
@@ -45,7 +115,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 {
     const ImVec2 pos = pointer.Position;
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
-    const ManipulatorContext mctx{ snapshot, Service, Sink, Grid, Pivot };
+    const ManipulatorContext mctx = MakeContext(snapshot);
     const TransformMode mode = EffectiveMode();
 
     for (const std::unique_ptr<IManipulator>& manipulator : Manipulators)
@@ -70,7 +140,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 void ManipulatorSession::BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const
 {
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
-    const ManipulatorContext mctx{ snapshot, Service, Sink, Grid, Pivot };
+    const ManipulatorContext mctx = MakeContext(snapshot);
     const TransformMode mode = EffectiveMode();
 
     // Hover: when the cursor is over this viewport, find the part it would grab —

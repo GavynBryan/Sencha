@@ -55,6 +55,26 @@ struct ComponentStorageTraits<BrushComponent>
     }
 };
 
+template <>
+struct ComponentStorageTraits<BakedBrushComponent>
+{
+    static constexpr std::uint32_t BinaryChunkId = MakeFourCC('B', 'K', 'B', 'R');
+
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<BakedBrushComponent>())
+            registry.Components.RegisterComponent<BakedBrushComponent>();
+    }
+
+    static bool Add(Registry& registry, EntityId entity, BakedBrushComponent component)
+    {
+        if (registry.Components.HasComponent<BakedBrushComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
+        return true;
+    }
+};
+
 #include <world/serialization/SceneSerializer.h>
 
 
@@ -70,4 +90,5 @@ void RegisterDocumentSerializers()
 
     // Editor-only components.
     RegisterComponent<BrushComponent>();
+    RegisterComponent<BakedBrushComponent>();
 }

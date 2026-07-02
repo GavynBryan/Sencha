@@ -43,6 +43,30 @@ struct TypeSchema<BrushComponent>
     }
 };
 
+// The dormant source of a brush baked to a StaticMesh: the entity swapped its
+// BrushComponent for a StaticMeshComponent, but its polygon mesh stays in the
+// BrushMeshStore under this id so the bake can be reverted (and the entity
+// stays pickable through its source shape). Editor-only, like BrushComponent;
+// the level cook strips it from the passthrough scene, so it never reaches the
+// runtime.
+struct BakedBrushComponent
+{
+    BrushId Source;
+};
+
+template <>
+struct TypeSchema<BakedBrushComponent>
+{
+    static constexpr std::string_view Name = "baked_brush";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("source", &BakedBrushComponent::Source),
+        };
+    }
+};
+
 class EditorScene
 {
 public:
@@ -90,6 +114,15 @@ public:
     [[nodiscard]] const Transform3f* TryGetTransform(EntityId entity) const;
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
+    // The dormant source mesh of a baked brush (see BakedBrushComponent).
+    // Deliberately separate from TryGetBrushMesh: the mesh-edit paths must not
+    // treat a baked entity as editable brush geometry; picking and bounds use
+    // this to keep the entity clickable through its source shape.
+    [[nodiscard]] const BakedBrushComponent* TryGetBakedBrush(EntityId entity) const;
+    [[nodiscard]] const BrushMesh* TryGetDormantBrushMesh(EntityId entity) const;
+    // True when another entity shares this entity's brush mesh (live or dormant):
+    // the entity is one placement of an instance group.
+    [[nodiscard]] bool IsBrushInstanced(EntityId entity) const;
     [[nodiscard]] const CameraComponent* TryGetCamera(EntityId entity) const;
     // World AABB of a brush entity (offset-aware): nullopt when it has no brush
     // mesh/transform or the mesh is empty. Shared by the selection box, the

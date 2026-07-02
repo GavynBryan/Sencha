@@ -3,6 +3,7 @@
 #include "BrushPreviewRenderer.h"
 #include "BrushSolidRenderer.h"
 #include "ComponentVisualRenderer.h"
+#include "EditorFillPipeline.h"
 #include "EditorLinePipeline.h"
 #include "EditorSolidPipeline.h"
 #include "EditorBloomPass.h"
@@ -114,8 +115,10 @@ private:
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
     // Selection feedback strokes draw through the wide-line pipeline (exact pixel
-    // width + analytic AA); declared before Highlight, which binds it by reference.
+    // width + analytic AA); face fills through the blended triangle pipeline. Both
+    // declared before Highlight, which binds them by reference.
     EditorWideLinePipeline WideLines;
+    EditorFillPipeline     Fills;
     SelectionRenderer      Highlight;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;

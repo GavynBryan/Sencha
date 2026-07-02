@@ -64,10 +64,33 @@ void EditorScene::DestroyEntity(EntityId entity)
     if (!world.IsAlive(entity))
         return;
 
-    // Free the brush's sidecar mesh; nothing else references it once the entity
-    // is gone (DestroyEntity is the single destruction path, including undo).
+    // Free the brush's sidecar mesh, unless another entity still shares it (an
+    // instanced brush: several entities carry the same BrushId, live or dormant).
+    // DestroyEntity is the single destruction path, including undo.
+    const auto sharedElsewhere = [&](BrushId id)
+    {
+        for (EntityId other : Entities)
+        {
+            if (other == entity)
+                continue;
+            if (const BrushComponent* b = world.TryGet<BrushComponent>(other); b != nullptr && b->Id == id)
+                return true;
+            if (const BakedBrushComponent* bb = world.TryGet<BakedBrushComponent>(other);
+                bb != nullptr && bb->Source == id)
+                return true;
+        }
+        return false;
+    };
     if (const BrushComponent* brush = world.TryGet<BrushComponent>(entity))
-        BrushMeshes.Destroy(brush->Id);
+    {
+        if (!sharedElsewhere(brush->Id))
+            BrushMeshes.Destroy(brush->Id);
+    }
+    if (const BakedBrushComponent* baked = world.TryGet<BakedBrushComponent>(entity))
+    {
+        if (!sharedElsewhere(baked->Source))
+            BrushMeshes.Destroy(baked->Source);
+    }
 
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
@@ -151,6 +174,42 @@ const BrushMesh* EditorScene::TryGetBrushMesh(EntityId entity) const
     return brush != nullptr ? BrushMeshes.Find(brush->Id) : nullptr;
 }
 
+const BakedBrushComponent* EditorScene::TryGetBakedBrush(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    return world.TryGet<BakedBrushComponent>(entity);
+}
+
+const BrushMesh* EditorScene::TryGetDormantBrushMesh(EntityId entity) const
+{
+    const BakedBrushComponent* baked = TryGetBakedBrush(entity);
+    return baked != nullptr ? BrushMeshes.Find(baked->Source) : nullptr;
+}
+
+bool EditorScene::IsBrushInstanced(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    BrushId id{};
+    if (const BrushComponent* brush = world.TryGet<BrushComponent>(entity))
+        id = brush->Id;
+    else if (const BakedBrushComponent* baked = world.TryGet<BakedBrushComponent>(entity))
+        id = baked->Source;
+    else
+        return false;
+
+    for (EntityId other : Entities)
+    {
+        if (other == entity)
+            continue;
+        if (const BrushComponent* b = world.TryGet<BrushComponent>(other); b != nullptr && b->Id == id)
+            return true;
+        if (const BakedBrushComponent* bb = world.TryGet<BakedBrushComponent>(other);
+            bb != nullptr && bb->Source == id)
+            return true;
+    }
+    return false;
+}
+
 const CameraComponent* EditorScene::TryGetCamera(EntityId entity) const
 {
     const World& world = Registry_.Components;
@@ -160,6 +219,8 @@ const CameraComponent* EditorScene::TryGetCamera(EntityId entity) const
 std::optional<Aabb3d> EditorScene::TryGetWorldBounds(EntityId entity) const
 {
     const BrushMesh* mesh = TryGetBrushMesh(entity);
+    if (mesh == nullptr)
+        mesh = TryGetDormantBrushMesh(entity); // a baked brush keeps its shape
     const Transform3f* transform = TryGetTransform(entity);
     if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
         return std::nullopt;

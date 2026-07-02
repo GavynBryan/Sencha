@@ -33,13 +33,14 @@ void ViewBasis(const EditorViewport& viewport, Vec3d& right, Vec3d& up)
 
 SelectionRenderer::SelectionRenderer(EditorScene& scene, SelectionService& selection, MeshEditService& meshEdit,
                                      const EditorOverlayState& overlay, ManipulatorSession& session,
-                                     EditorWideLinePipeline& lines)
+                                     EditorWideLinePipeline& lines, EditorFillPipeline& fill)
     : Scene(scene)
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Overlay(overlay)
     , Session(session)
     , Lines(lines)
+    , Fill(fill)
 {
 }
 
@@ -56,6 +57,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     const bool occludeBody = viewport.Shading == ViewportShading::Solid;
     std::vector<EditorLineSegment> occluded;
     std::vector<EditorLineSegment> onTop;
+    std::vector<EditorLineVertex> faceFill;
     onTop.reserve(selection.size() * 16 + 32);
     std::vector<EditorLineSegment>& bodyLines = occludeBody ? occluded : onTop;
 
@@ -104,7 +106,10 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         if (selected.IsFace())
         {
             if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, selected.ElementId))
+            {
+                AppendFaceFill(faceFill, *face, EditorTheme::FaceFill);
                 AppendFace(onTop, *face, EditorTheme::FaceHighlight, EditorTheme::OverlayLinePixels);
+            }
         }
         else if (selected.IsEdge())
         {
@@ -127,9 +132,12 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     AppendManipulators(onTop, viewport);
 
     // Body wireframe/handles depth-test against the scene (back ones cull); selection
-    // feedback and gizmos draw on top.
+    // feedback and gizmos draw on top. The face fill goes down before the on-top
+    // strokes so outlines and gizmos read over the translucent quad.
     if (!occluded.empty())
         Lines.Submit(frame, viewport, occluded, /*onTop*/ false);
+    if (!faceFill.empty())
+        Fill.Submit(frame, viewport, faceFill, /*onTop*/ true);
     Lines.Submit(frame, viewport, onTop, /*onTop*/ true);
 }
 
@@ -186,6 +194,19 @@ void SelectionRenderer::AppendFace(std::vector<EditorLineSegment>& segments,
     }
 }
 
+void SelectionRenderer::AppendFaceFill(std::vector<EditorLineVertex>& triangles,
+                                       const FaceElement& face,
+                                       const Vec4& color) const
+{
+    // Brush faces are convex, so a fan from the first corner covers the polygon.
+    for (size_t i = 1; i + 1 < face.Corners.size(); ++i)
+    {
+        triangles.push_back(EditorLineVertex{ face.Corners[0], color });
+        triangles.push_back(EditorLineVertex{ face.Corners[i], color });
+        triangles.push_back(EditorLineVertex{ face.Corners[i + 1], color });
+    }
+}
+
 void SelectionRenderer::AppendEdge(std::vector<EditorLineSegment>& segments,
                                    const EdgeElement& edge,
                                    const Vec4& color,
@@ -221,6 +242,12 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     if (!hovered.IsValid() || hovered.Registry != Scene.GetRegistry().Id)
         return;
     if (!Scene.IsEntityVisible(hovered.Entity))
+        return;
+
+    // An already-selected element keeps its selection color; painting the hover
+    // tint over it would mask the selected state under the cursor.
+    const std::span<const SelectableRef> selection = Selection.GetSelection();
+    if (std::find(selection.begin(), selection.end(), hovered) != selection.end())
         return;
 
     const BrushMesh* mesh = Scene.TryGetBrushMesh(hovered.Entity);

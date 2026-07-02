@@ -163,3 +163,33 @@ std::optional<VertexElement> MeshElements::TryGetVertex(const BrushMesh& mesh,
         .Position = transform.TransformPoint(mesh.Vertices[index].Position),
     };
 }
+
+std::vector<SelectableRef> MeshElements::AllRefs(const BrushMesh& mesh,
+                                                 const Transform3f& transform,
+                                                 RegistryId registry,
+                                                 EntityId entity,
+                                                 MeshElementKind kind)
+{
+    std::vector<SelectableRef> refs;
+    switch (kind)
+    {
+    case MeshElementKind::Object:
+        refs.push_back(SelectableRef::EntitySelection(registry, entity));
+        break;
+    case MeshElementKind::Vertex:
+        refs.reserve(mesh.Vertices.size());
+        for (const VertexElement& vertex : Vertices(mesh, transform))
+            refs.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
+        break;
+    case MeshElementKind::Edge:
+        for (const EdgeElement& edge : Edges(mesh, transform))
+            refs.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
+        break;
+    case MeshElementKind::Face:
+        refs.reserve(mesh.Faces.size());
+        for (const FaceElement& face : Faces(mesh, transform))
+            refs.push_back(SelectableRef::FaceSelection(registry, entity, face.Index));
+        break;
+    }
+    return refs;
+}

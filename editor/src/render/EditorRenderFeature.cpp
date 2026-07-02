@@ -36,7 +36,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Meshes(scene, Solid, logging, assets, catalog)
     , Wireframe(scene, selection, overlay, Lines)
     , Visuals(scene, Lines)
-    , Highlight(scene, selection, meshEdit, overlay, session, WideLines)
+    , Highlight(scene, selection, meshEdit, overlay, session, WideLines, Fills)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -74,6 +74,7 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Forward.Setup(services);
     Lines.Setup(services);
     WideLines.Setup(services);
+    Fills.Setup(services);
     Targets.Setup(services);
     Bloom.Setup(services);
     if (Log != nullptr)
@@ -389,6 +390,7 @@ void EditorRenderFeature::Teardown()
     Forward.Teardown();
     Lines.Teardown();
     WideLines.Teardown();
+    Fills.Teardown();
     Targets.Teardown();
     Bloom.Teardown();
 }

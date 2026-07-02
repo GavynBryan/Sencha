@@ -3,6 +3,7 @@
 #include "../../interaction/IInteraction.h"
 #include "BrushCreationPlane.h"
 
+#include <math/Quat.h>
 #include <math/Vec.h>
 
 class EditorDocument;
@@ -24,6 +25,7 @@ private:
     BrushCreationPlane Plane;
     Vec3d LastCenter;
     Vec3d LastHalfExtents;
+    Quatf LastRotation = Quatf::Identity();
     bool HasValidSize = false;
     EditorScene& Scene;
     EditorDocument& Document;

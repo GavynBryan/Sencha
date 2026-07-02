@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 // Creation sub-modes for the Brush tool. A primitive is just a BrushMesh built
@@ -72,8 +73,12 @@ struct BrushOps
     // tolerates that, as with DeleteFace. Pure append (like SplitEdge): leaves
     // validation to the caller so several edge extrudes compose on stable base
     // indices before a single repair. No-op if a == b or either index is absent.
+    // `inherit` (usually a face adjacent to the seed edge) supplies the strip's
+    // material and UV scale/offset/rotation so the texture continues off the
+    // edge; null keeps the previous default (level-default material, unit UVs).
     [[nodiscard]] static BrushMesh ExtrudeEdge(const BrushMesh& mesh,
-                                               std::uint32_t a, std::uint32_t b, Vec3d offset);
+                                               std::uint32_t a, std::uint32_t b, Vec3d offset,
+                                               const FaceMaterial* inherit = nullptr);
 
     // Remove a face, opening the solid (allowed during authoring).
     [[nodiscard]] static BrushMesh DeleteFace(const BrushMesh& mesh, std::uint32_t face);
@@ -132,7 +137,40 @@ struct BrushOps
                                                  std::uint32_t faceIndex = kAllAdjacentFaces);
 
     // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
-    // the half-space the plane normal points into. (The Hammer clip tool.)
+    // the half-space the plane normal points into. (The classic clip tool.)
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
                                         bool keepPositiveSide);
+
+    // The orthonormal in-plane frame of a flat rectangular quad face, or nullopt
+    // when the face is not one (non-quad, degenerate, sheared, non-planar).
+    // Origin is Loop[0]; AxisU runs Loop[0] -> Loop[1]; AxisV runs
+    // Loop[0] -> Loop[3]. For a CCW outward loop, AxisU x AxisV is the outward
+    // normal (the carve builds its winding on this).
+    struct BrushRectFaceFrame
+    {
+        Vec3d Origin;
+        Vec3d AxisU;
+        Vec3d AxisV;
+        float Width = 0.0f;  // extent along AxisU
+        float Height = 0.0f; // extent along AxisV
+    };
+    [[nodiscard]] static std::optional<BrushRectFaceFrame> RectFaceFrame(const BrushMesh& mesh,
+                                                                         std::uint32_t face);
+
+    // Re-topologize a flat rectangular quad face around an inset rectangle given
+    // in RectFaceFrame coordinates (rectMin/rectMax are (u,v) pairs, any corner
+    // order, unclamped). The rectangle becomes its own face, appended LAST (the
+    // caller's handle to it: Faces.back(); success is a grown face count); the
+    // surround decomposes into one convex trapezoid ring quad per non-flush side
+    // via corner-diagonal edges. A rect side within snap tolerance of a host
+    // side clamps flush: that ring quad is omitted and the flush rect corners
+    // become split vertices ON the host edge, inserted as SHARED vertices into
+    // every other face bordering it (the neighbor gains collinear loop vertices
+    // and may become a hexagon: legal). All produced faces are quads carrying
+    // the host's FaceMaterial verbatim (coplanar + projective UVs = exact
+    // texture continuity). Pure topology like InsertEdgeLoop: validation is the
+    // caller's. Returns the mesh unchanged when the face is not a rectangular
+    // quad, the rect is empty after clamping, or the rect covers the whole face.
+    [[nodiscard]] static BrushMesh CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
+                                                 Vec2d rectMin, Vec2d rectMax);
 };

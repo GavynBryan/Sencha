@@ -37,19 +37,11 @@ std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport
 // Every face or vertex of one brush (for double-click-selects-the-whole-mesh).
 std::vector<SelectableRef> AllElementsOf(const EditorScene& scene, EntityId entity, MeshElementKind mode)
 {
-    std::vector<SelectableRef> refs;
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
     const Transform3f* transform = scene.TryGetTransform(entity);
     if (mesh == nullptr || transform == nullptr)
-        return refs;
-    const RegistryId registry = scene.GetRegistry().Id;
-    if (mode == MeshElementKind::Face)
-        for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
-            refs.push_back(SelectableRef::FaceSelection(registry, entity, face.Index));
-    else if (mode == MeshElementKind::Vertex)
-        for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
-            refs.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
-    return refs;
+        return {};
+    return MeshElements::AllRefs(*mesh, *transform, scene.GetRegistry().Id, entity, mode);
 }
 }
 
@@ -71,8 +63,7 @@ std::string_view SelectTool::GetIcon() const
 InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     const MeshElementKind mode = ctx.MeshEdit.GetElementKind();
-    const bool add = pointer.Modifiers.Shift;
-    const bool remove = pointer.Modifiers.Ctrl;
+    const bool plainClick = !pointer.Modifiers.Shift && !pointer.Modifiers.Ctrl;
     const bool altLoop = pointer.Modifiers.Alt
         && (mode == MeshElementKind::Edge || mode == MeshElementKind::Face);
 
@@ -89,7 +80,7 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
 
     // Re-clicking the already-primary edge/face completes its loop (the "click the
     // last highlighted element again" gesture), like Alt-click or a double-click.
-    const bool reclickLoop = !add && !remove && picked.IsValid() && picked == current.Primary
+    const bool reclickLoop = plainClick && picked.IsValid() && picked == current.Primary
         && (mode == MeshElementKind::Edge || mode == MeshElementKind::Face);
 
     // A loop stays within the brush under the cursor: the picked element's, or the
@@ -105,7 +96,12 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
     if (elementMode && gathered.empty())
         return InputConsumed::Yes;
 
-    SelectionSnapshot snapshot = SelectionFold::Apply(current, gathered, add, remove);
+    // Loop gathers fold with the bulk decode (Ctrl removes the loop); a single
+    // pick folds with the click decode (Ctrl toggles it).
+    const SelectionFold::Op op = (altLoop || reclickLoop)
+        ? SelectionFold::OpForBulk(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift)
+        : SelectionFold::OpForClick(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift);
+    SelectionSnapshot snapshot = SelectionFold::Apply(current, gathered, op);
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
     return InputConsumed::Yes;
 }
@@ -142,7 +138,8 @@ InputConsumed SelectTool::OnDoubleClick(ToolContext& ctx, EditorViewport& viewpo
     if (gathered.empty())
         return InputConsumed::Yes;
 
-    SelectionSnapshot snapshot = SelectionFold::Apply(current, gathered, pointer.Modifiers.Shift, pointer.Modifiers.Ctrl);
+    SelectionSnapshot snapshot = SelectionFold::Apply(
+        current, gathered, SelectionFold::OpForBulk(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift));
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
     return InputConsumed::Yes;
 }

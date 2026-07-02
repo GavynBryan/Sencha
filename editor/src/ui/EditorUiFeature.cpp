@@ -6,6 +6,7 @@
 #include "IEditorPanel.h"
 
 #include <app/Engine.h>
+#include <core/console/ConsoleService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
@@ -23,6 +24,10 @@
 #include <array>
 #include <string>
 #include <vector>
+
+#ifndef SENCHA_EDITOR_THEME_DIR
+#define SENCHA_EDITOR_THEME_DIR "."
+#endif
 
 namespace
 {
@@ -117,6 +122,7 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
     , Window(window)
     , Instance(instance)
     , Frames(frames)
+    , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
 }
 
@@ -195,6 +201,8 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
         if (panel != nullptr && panel->IsVisible())
             panel->OnDraw();
     }
+
+    ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
@@ -486,6 +494,16 @@ void EditorUiFeature::DrawMainMenuBar()
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Layout"))
             LayoutDirty = true;
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Preferences"))
+        {
+            if (ImGui::BeginMenu("Theme"))
+            {
+                ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
 

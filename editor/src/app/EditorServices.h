@@ -12,6 +12,7 @@
 #include "../document/MaterialLibrary.h"
 #include "../project/Project.h"
 #include "../ui/EditorStatusBar.h"
+#include "../ui/EditorToolSidebar.h"
 #include "../ui/EditorToolbar.h"
 
 #include <memory>
@@ -19,6 +20,7 @@
 
 class EditorUiFeature;
 class EditorConsolePanel;
+class MaterialPanel;
 class ViewportPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
@@ -89,11 +91,20 @@ private:
     // they do at runtime. No-op without a project.
     void InitAssets();
 
+    // Bake-to-static-mesh actions behind the MeshEditPanel buttons. All need a
+    // mounted project (the .smesh is written under its first content root).
+    void BakeSelectedBrushes();
+    void RevertSelectedBakedBrushes();
+    void ExportSelectionGlb();
+    [[nodiscard]] bool SelectionHasBakedBrush() const;
+
     ViewportPanel* Viewports = nullptr;
     // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
     // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
     EditorRenderFeature* RenderFeature = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
+    // Held for the copy/paste-projection shortcuts (the panel owns the stash).
+    MaterialPanel* MaterialsPanel = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;
     EditorFrameHook* FrameHook = nullptr;
@@ -114,6 +125,7 @@ private:
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
+    std::unique_ptr<EditorToolSidebar> ToolSidebar;
     std::unique_ptr<EditorStatusBar> StatusBar;
     std::unique_ptr<MaterialLibrary> Materials;
 

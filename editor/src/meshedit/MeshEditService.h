@@ -8,7 +8,9 @@
 #include <math/geometry/3d/Plane.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -50,6 +52,11 @@ public:
     [[nodiscard]] MeshElementKind GetElementKind() const;
     void SetElementKind(MeshElementKind kind);
     MeshElementKind CycleElementKind();
+
+    // Invoked after the element kind actually changes (Set and Cycle both route
+    // through it), so dependent state (the transform-gizmo context) can follow.
+    // One observer: the workspace wires it at composition.
+    void SetElementKindObserver(std::function<void(MeshElementKind next)> observer);
 
     [[nodiscard]] std::unique_ptr<ICommand> ApplyVerb(IMeshEditTarget& target,
                                                       const SelectionSnapshot& selection,
@@ -121,18 +128,22 @@ public:
                                                                Vec3d worldDelta,
                                                                bool validate) const;
 
-    // Remaps every vertex from the world AABB [oldMin,oldMax] to [newMin,newMax]
-    // per axis (affine), so resizing the bounds scales the brush about the fixed
-    // anchor. Degenerate (zero-extent) axes are left untouched. Vertices are
-    // converted back to local through `transform`. `validate` as in
-    // TranslateElements. The object-mode bounds-resize handles use this.
+    // Remaps every vertex from the oriented box [oldMin,oldMax] to
+    // [newMin,newMax] per axis (affine), where min/max are coordinates in the
+    // orthonormal frame `axes` (the gizmo frame: world, grid, or local space).
+    // Resizing the bounds scales the brush about the fixed anchor; degenerate
+    // (zero-extent) axes are left untouched. Vertices are converted back to
+    // local through `transform`. `validate` as in TranslateElements. The
+    // object-mode bounds-resize handles use this.
     [[nodiscard]] std::optional<BrushMesh> ResizeBounds(const BrushMesh& base,
                                                         const Transform3f& transform,
+                                                        const std::array<Vec3d, 3>& axes,
                                                         Vec3d oldMin, Vec3d oldMax,
                                                         Vec3d newMin, Vec3d newMax,
                                                         bool validate) const;
 
 private:
     MeshElementKind ElementKind = MeshElementKind::Object;
+    std::function<void(MeshElementKind)> ElementKindObserver;
     LoggingProvider* Logging = nullptr;
 };

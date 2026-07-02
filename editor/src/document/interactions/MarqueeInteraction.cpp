@@ -32,7 +32,8 @@ void MarqueeInteraction::OnPointerUp(ToolContext& ctx, EditorViewport& viewport,
     // Modifiers captured at press (gesture intent): a drag begun with Shift adds
     // regardless of what's held at release.
     SelectionSnapshot snapshot = SelectionFold::Apply(
-        ctx.Selection.GetSnapshot(), gathered, PressModifiers.Shift, PressModifiers.Ctrl);
+        ctx.Selection.GetSnapshot(), gathered,
+        SelectionFold::OpForBulk(PressModifiers.Ctrl, PressModifiers.Shift));
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
 }
 

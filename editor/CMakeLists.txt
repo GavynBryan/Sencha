@@ -202,6 +202,7 @@ target_compile_definitions(sencha_editor PRIVATE
     SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
     SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fonts"
     SENCHA_EDITOR_SKIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/skin"
+    SENCHA_EDITOR_THEME_DIR="${CMAKE_CURRENT_SOURCE_DIR}/themes"
 )
 
 # Install the prebuilt editor into the SDK (real-engine-roadmap.md Phase 0). The

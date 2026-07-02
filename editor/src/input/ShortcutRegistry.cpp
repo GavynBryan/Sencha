@@ -1,8 +1,9 @@
 #include "ShortcutRegistry.h"
 
-void ShortcutRegistry::Register(SDL_Keycode key, ModifierFlags modifiers, std::function<void()> action)
+void ShortcutRegistry::Register(std::string_view action, SDL_Keycode key, ModifierFlags modifiers,
+                                std::function<void()> callback)
 {
-    Shortcuts.push_back({ key, modifiers, std::move(action) });
+    Shortcuts.push_back({ action, key, modifiers, std::move(callback) });
 }
 
 InputConsumed ShortcutRegistry::OnInput(const InputEvent& event)
@@ -22,7 +23,7 @@ InputConsumed ShortcutRegistry::OnInput(const InputEvent& event)
         if (shortcut.Modifiers.Alt != keyEvent->Modifiers.Alt)
             continue;
 
-        shortcut.Action();
+        shortcut.Callback();
         return InputConsumed::Yes;
     }
 

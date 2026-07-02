@@ -258,6 +258,8 @@ std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandid
 {
     const Transform3f* transform = scene.TryGetTransform(entity);
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
+    if (mesh == nullptr)
+        mesh = scene.TryGetDormantBrushMesh(entity); // baked brushes stay clickable
     if (transform == nullptr || mesh == nullptr)
         return std::nullopt;
 

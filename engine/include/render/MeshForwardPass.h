@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 // Per-frame uniform data uploaded to set 0, binding 0 each draw call. Layout is
 // std140 (the GLSL side mirrors it field for field); the static_asserts in the
@@ -27,10 +28,10 @@ struct MeshFrameUniforms
     GpuLight Lights[kMaxForwardLights];
 };
 
-// Per-draw push constants: world matrix and base-color material inputs.
+// Per-run push constants: base-color material inputs. The world matrix rides a
+// per-instance vertex stream (see Draw), so one push covers an instanced run.
 struct MeshPushConstants
 {
-    Mat4 World;
     Vec4 BaseColor;
     uint32_t BaseColorTextureIndex = UINT32_MAX;
 };
@@ -62,7 +63,27 @@ public:
               MaterialCache& materials);
     void Teardown();
 
+    // Last Draw()'s measurements: queue items in vs instanced draw calls out
+    // (the draw-call reduction instancing bought). For profiling and tests.
+    struct DrawStats
+    {
+        uint32_t QueueItems = 0;
+        uint32_t DrawCalls = 0;
+    };
+    [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
+
 private:
+    // Draw() stages, in call order: (re)build the pipeline for the target
+    // formats, upload the per-frame uniform block, write + bind the per-instance
+    // world-matrix stream in draw order, then record the per-run draws.
+    [[nodiscard]] bool EnsurePipeline(const FrameContext& frame);
+    [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(const CameraRenderData& camera,
+                                                                  const RenderLightSet& lights);
+    [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
+    void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
+    void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
+                  StaticMeshCache& meshes, MaterialCache& materials);
+
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
     VulkanFrameScratch* Scratch = nullptr;
@@ -76,4 +97,5 @@ private:
     VkPipeline Pipeline = VK_NULL_HANDLE;
     VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat CachedDepthFormat = VK_FORMAT_UNDEFINED;
+    DrawStats LastStats;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../input/UiInputCapture.h"
+#include "ThemePreferences.h"
 
 #include <graphics/vulkan/Renderer.h>
 
@@ -106,6 +107,8 @@ private:
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;
+    // View > Preferences > Theme: theme selection plus the palette override window.
+    ThemePreferences ThemePrefs;
     // Forces a default-layout rebuild on the next frame (first run / View>Reset).
     bool LayoutDirty = false;
     // 9-slice texture skin (owned here; released before the ImGui backend shuts
