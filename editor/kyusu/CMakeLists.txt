@@ -62,7 +62,7 @@ target_compile_definitions(kyusu PRIVATE
     SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
 )
 
-# Install into the SDK (real-engine-roadmap.md Phase 0). RPATH matches the
+# Install into the SDK (engine-roadmap.md: SDK boundary, shipped). RPATH matches the
 # app's bin/ + lib/ layout.
 set_target_properties(kyusu PROPERTIES
     INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
