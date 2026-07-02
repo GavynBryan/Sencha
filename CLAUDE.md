@@ -199,6 +199,12 @@ Do not leave new half-wired strategies or "for future use" interfaces behind you
 ## Comments and style
 
 - Comments explain why, not what. The code says what it does. If a comment restates the line below it, delete the comment.
+- Write for a reader with no session context. A comment must make sense to someone opening the file cold, with no knowledge of the conversation, plan, or request that produced the code. If a comment only makes sense to someone who watched the change happen, delete it.
+- What comments are for: a summary on a struct or type stating what it holds and its invariants, and a hint on a variable whose meaning or units are not obvious from its name and type. Beyond that, only genuine why-constraints (ordering requirements, non-obvious ownership, a workaround with its reason).
+- No references to other engines, games, or products as behavior descriptions. Not "more like Source 2 Hammer," not "quake-like movement." Describe the mechanism itself: the acceleration model, the snapping rule, the projection behavior.
+- No references to plan documents, task numbers, conversation phases, or requests. Not "satisfied planB.md part 1.3a." The comment states what the code does or why; provenance goes in the commit message if anywhere.
+- No apophatic comments: do not document what code does not do ("this function does not reach for backend render code"). Absences are enforced by layering rules and review, not narrated in comments. The exception is a real trap: a warning that a plausible-looking use is wrong ("not safe to call during archetype iteration") is a why-constraint, not narration.
+- No editorializing about the code being replaced. Not "removing the old hack," not internal slang for bad code. The diff shows what was removed; the comment describes only what is there now.
 - No em dashes anywhere (code, comments, docs, commit messages). Use periods, colons, or parentheses.
 - No filler, no marketing voice, no "elegant" or "robust" or "powerful" self-description in comments. State the constraint or the reason and stop.
 
