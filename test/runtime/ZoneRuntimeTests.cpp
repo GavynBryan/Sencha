@@ -9,7 +9,7 @@ TEST(ZoneId, DefaultIsInvalid)
     ZoneId id;
 
     EXPECT_FALSE(id.IsValid());
-    EXPECT_EQ(id, ZoneId::Invalid());
+    EXPECT_EQ(id, ZoneId{});
 }
 
 TEST(ZoneId, Equality)
@@ -65,7 +65,7 @@ TEST(ZoneRuntime, CreateZoneInvalidZoneIdAsserts)
 {
     ZoneRuntime runtime;
 
-    EXPECT_DEATH(runtime.CreateZone(ZoneId::Invalid()), "zone id must be valid");
+    EXPECT_DEATH(runtime.CreateZone(ZoneId{}), "zone id must be valid");
 }
 #endif
 
@@ -339,6 +339,6 @@ TEST(Registry, MakeGlobalRegistryNonGlobalIdAsserts)
 
 TEST(Registry, MakeZoneRegistryInvalidZoneIdAsserts)
 {
-    EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId::Invalid()), "valid ZoneId");
+    EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{}), "valid ZoneId");
 }
 #endif

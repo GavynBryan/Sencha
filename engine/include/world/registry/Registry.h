@@ -85,7 +85,7 @@ inline Registry MakeGlobalRegistry(RegistryId id = RegistryId::Global())
     Registry registry;
     registry.Id = id;
     registry.Kind = RegistryKind::Global;
-    registry.Zone = ZoneId::Invalid();
+    registry.Zone = ZoneId{};
 
     assert(!registry.Zone.IsValid() && "Global registry must not have a ZoneId");
     return registry;

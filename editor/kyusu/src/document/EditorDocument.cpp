@@ -77,7 +77,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
 {
     Registry_.Id = { 2, 1 };
     Registry_.Kind = RegistryKind::Transient;
-    Registry_.Zone = ZoneId::Invalid();
+    Registry_.Zone = ZoneId{};
 
     Registry_.Resources.Register<ActiveCameraService>();
 
