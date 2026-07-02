@@ -27,13 +27,11 @@
 
 #include <SDL3/SDL.h>
 
+#include "project/ProjectContentMount.h"
+
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
-#include <assets/cook/AssetImporter.h>
-#include <assets/cook/ImportOnDemand.h>
-#include <assets/cook/TextureCook.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -59,7 +57,11 @@
 #define SENCHA_EDITOR_THEME_DIR "."
 #endif
 
-EditorServices::EditorServices(Engine& engine, SdlWindow& window, const EngineConfig& config)
+EditorServices::EditorServices(Engine& engine,
+                               SdlWindow& window,
+                               const EngineConfig& config,
+                               std::optional<std::string> projectPath)
+    : ProjectPath(std::move(projectPath))
 {
     EnginePtr = &engine;
     Window = &window;
@@ -662,24 +664,24 @@ void EditorServices::ExportSelectionGlb()
 
 void EditorServices::LoadGameModule()
 {
-    // Prefer a project descriptor (SENCHA_PROJECT); fall back to a bare module
-    // path (SENCHA_GAME_MODULE) so the pre-project workflow still works.
+    // Prefer a project descriptor (--project / SENCHA_PROJECT, resolved by the
+    // caller); fall back to a bare module path (SENCHA_GAME_MODULE) so the
+    // pre-project workflow still works.
     std::string modulePath;
-    if (const char* projectPath = std::getenv("SENCHA_PROJECT");
-        projectPath != nullptr && projectPath[0] != '\0')
+    if (ProjectPath)
     {
         ProjectDescriptor descriptor;
         std::string error;
-        if (!ProjectDescriptor::Load(projectPath, descriptor, &error))
+        if (!ProjectDescriptor::Load(*ProjectPath, descriptor, &error))
         {
             std::fprintf(stderr, "[editor] failed to open project '%s': %s\n",
-                         projectPath, error.c_str());
+                         ProjectPath->c_str(), error.c_str());
             return;
         }
         Project = std::move(descriptor);
         modulePath = Project->GameModulePath;
         std::fprintf(stderr, "[editor] opened project '%s' (%s)\n",
-                     Project->Name.c_str(), projectPath);
+                     Project->Name.c_str(), ProjectPath->c_str());
     }
     else if (const char* envPath = std::getenv("SENCHA_GAME_MODULE");
              envPath != nullptr && envPath[0] != '\0')
@@ -717,34 +719,7 @@ void EditorServices::InitAssets()
     if (!Project)
         return;
 
-    // Mount each content root and its cooked overlay, then apply that root's asset
-    // id map. The same resolution the runtime uses, so an authored ref the editor
-    // resolves is the one the cook stamps and the runtime loads.
-    Logger& log = logging.GetLogger<EditorServices>();
-    for (const std::string& root : Project->ContentRoots)
-    {
-        ScanAssetsDirectory(root, Assets->Registry);
-        ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(), Assets->Registry);
-
-        // Cook source textures on demand (.png -> .stex) and register the cooked
-        // overlay, so a material's asset://...png resolves to its cooked .stex with a
-        // bindless slot: the same resolve the runtime uses, which is what makes the
-        // Solid viewport WYSIWYG. Editor is cook-enabled; cooked wins over the scan.
-        {
-            PngTextureImporter textureImporter;
-            AssetImporterRegistry importers;
-            importers.Register(textureImporter);
-            (void)ImportAssetsOnDemand(root, importers, Assets->Registry, logging);
-        }
-        RegisterCookedAssets(root, Assets->Registry);
-
-        AssetIdMap idMap;
-        std::string idMapError;
-        const std::string idMapPath = (std::filesystem::path(root) / kAssetIdMapFileName).string();
-        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
-            ApplyAssetIds(idMap, Assets->Registry);
-    }
-    log.Info("assets: mounted {} content root(s)", Project->ContentRoots.size());
+    MountProjectContent(*Project, *Assets, logging);
 }
 
 void EditorServices::UnloadGameModule()

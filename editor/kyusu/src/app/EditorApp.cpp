@@ -8,7 +8,11 @@
 
 #include <memory>
 
-EditorApp::EditorApp() = default;
+EditorApp::EditorApp(std::optional<std::string> projectPath)
+    : ProjectPath(std::move(projectPath))
+{
+}
+
 EditorApp::~EditorApp() = default;
 
 void EditorApp::OnConfigure(GameConfigureContext& ctx)
@@ -28,7 +32,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     if (window == nullptr)
         return;
 
-    Services = std::make_unique<EditorServices>(engine, *window, ctx.Config);
+    Services = std::make_unique<EditorServices>(engine, *window, ctx.Config, std::move(ProjectPath));
 }
 
 void EditorApp::OnRegisterSystems(SystemRegisterContext& ctx)

@@ -204,6 +204,8 @@ if(EDITOR_TEST_SOURCES)
     add_executable(editor_tests
         ${EDITOR_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp)
     target_include_directories(editor_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src
