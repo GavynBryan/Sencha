@@ -19,6 +19,7 @@ class EditorUiFeature;
 class MaterialPreviewRenderFeature;
 struct PlatformEventContext;
 struct EngineConfig;
+struct TextureImportSettings;
 
 //=============================================================================
 // MaterialEditorServices
@@ -63,6 +64,12 @@ private:
     void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
     void RescanMaterials();
 
+    // Writes the texture's import-settings sidecar ("<source>.meta"), recooks
+    // the source, and swaps the resident texture in place so the preview (and
+    // every material sampling it) shows the new cook immediately.
+    void ApplyTextureImportSettings(const std::string& virtualPath,
+                                    const TextureImportSettings& settings);
+
     // Pushes a tab's working description into its resident material (in-place
     // swap; live handles keep working).
     void ApplyWorkingToResident(MaterialEditTab& tab);
@@ -74,6 +81,15 @@ private:
     std::optional<ProjectDescriptor> Project;
 
     std::optional<RuntimeAssets> Assets;
+
+    // Per-content-root recook machinery for import-settings changes. Owned
+    // here (not stack-local) because AssetHotReloader stages its commit on
+    // the async task queue and must outlive the drain. Definition in the
+    // .cpp keeps the cook/hotreload headers out of this one. References
+    // Assets; reset before it.
+    struct TextureRecookState;
+    std::unique_ptr<TextureRecookState> TextureRecook;
+
     std::unique_ptr<MaterialLibrary> Materials;
     MaterialTabSet Tabs;
 

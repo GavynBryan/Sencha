@@ -158,7 +158,8 @@ bool TextureCache::ReloadInPlace(std::string_view path, const TextureData& textu
     ImageHandle gpuImage = UploadGpuImage(texture, path);
     if (!gpuImage.IsValid())
         return false;
-    return ReloadEntryImage(path, gpuImage, { texture.Width, texture.Height });
+    const SamplerDesc sampler = SamplerForTextureData(texture);
+    return ReloadEntryImage(path, gpuImage, { texture.Width, texture.Height }, &sampler);
 }
 
 bool TextureCache::ReloadInPlace(std::string_view path, const Image& image)
@@ -174,7 +175,8 @@ bool TextureCache::ReloadInPlace(std::string_view path, const Image& image)
     return ReloadEntryImage(path, gpuImage, { image.Width, image.Height });
 }
 
-bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, VkExtent2D extent)
+bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, VkExtent2D extent,
+                                    const SamplerDesc* newSampler)
 {
     TextureEntry* entry = Resolve(FindRegisteredHandle(path));
     if (entry == nullptr)
@@ -183,6 +185,9 @@ bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage,
         Images->Destroy(newImage);
         return false;
     }
+
+    if (newSampler != nullptr)
+        entry->Sampler = *newSampler;
 
     // Repoint the existing bindless slot at the new image (same index, so
     // materials are unaffected), then retire the old image through the
@@ -194,6 +199,19 @@ bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage,
     entry->GpuImage = newImage;
     entry->Extent = extent;
     return true;
+}
+
+SamplerDesc TextureCache::SamplerForTextureData(const TextureData& texture)
+{
+    SamplerDesc sampler;
+    if (texture.Filter == TextureFilter::Nearest)
+    {
+        sampler.MinFilter = VK_FILTER_NEAREST;
+        sampler.MagFilter = VK_FILTER_NEAREST;
+        sampler.MipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler.MaxAnisotropy = 0.0f;
+    }
+    return sampler;
 }
 
 // -- Accessors ----------------------------------------------------------------

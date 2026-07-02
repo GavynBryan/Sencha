@@ -50,6 +50,23 @@ class LoggingProvider;
                                       TextureData& out,
                                       std::string* error = nullptr);
 
+// The full-control form behind the usage-only overload, driven by the
+// source's import settings. Compress=false keeps the colorspace-correct
+// RGBA8/RGBA8_SRGB chain uncompressed (pixel art: BC blocks smear crisp
+// texels); GenerateMips=false emits mip 0 only; Filter rides into the
+// TextureData so the runtime samples per the author's choice.
+struct TextureCookParams
+{
+    TextureUsage Usage = TextureUsage::BaseColor;
+    TextureFilter Filter = TextureFilter::Linear;
+    bool Compress = true;
+    bool GenerateMips = true;
+};
+[[nodiscard]] bool CookImageToTexture(const Image& image,
+                                      const TextureCookParams& params,
+                                      TextureData& out,
+                                      std::string* error = nullptr);
+
 //=============================================================================
 // PngTextureImporter — .png → cooked .stex.
 //

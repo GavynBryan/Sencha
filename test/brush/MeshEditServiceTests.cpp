@@ -968,3 +968,76 @@ TEST(MeshEditService, FaceExtrudeCarriesSourceMaterialOntoWalls)
     EXPECT_EQ(carrying, 5);
     EXPECT_EQ(result->Mesh.Faces.size(), 10u);
 }
+
+namespace
+{
+    // Faces whose material ref matches `path`.
+    int CountFacesWithMaterial(const BrushMesh& mesh, std::string_view path)
+    {
+        int count = 0;
+        for (const BrushFace& face : mesh.Faces)
+            if (face.Material.Material.Path == path)
+                ++count;
+        return count;
+    }
+
+    constexpr const char* kRed = "asset://materials/dev/red.smat";
+}
+
+TEST(MeshEditService, PanelExtrudeVerbCarriesSourceMaterialOntoWalls)
+{
+    // The MeshEditPanel Extrude button path (ApplyVerb -> BrushOps::ExtrudeFace).
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
+    StubMeshEditTarget target(std::move(box));
+
+    MeshEditService service;
+    MeshEditParams params;
+    params.Distance = 1.0f;
+    std::unique_ptr<ICommand> command = service.ApplyVerb(
+        target, FaceSelection(target.Entity, 0), MeshEditVerb::Extrude, params);
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+
+    EXPECT_EQ(CountFacesWithMaterial(captured->After, kRed), 5); // cap + 4 walls
+}
+
+TEST(BrushOps, CarveFaceRectKeepsMaterialOnEveryPiece)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
+
+    ASSERT_TRUE(BrushOps::RectFaceFrame(box, 0).has_value());
+    const BrushMesh carved = BrushOps::CarveFaceRect(
+        box, 0, Vec2d{ 0.5f, 0.5f }, Vec2d{ 1.5f, 1.5f });
+
+    // Host face decomposed into ring quads + the center rectangle; every piece
+    // keeps the host's texture (this is the carve-then-extrude wall workflow).
+    EXPECT_GT(carved.Faces.size(), box.Faces.size());
+    EXPECT_EQ(CountFacesWithMaterial(carved, kRed),
+              static_cast<int>(carved.Faces.size() - 5));
+}
+
+TEST(MeshEditService, EdgeExtrudeInheritsTheAdjacentFaceMaterial)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    for (BrushFace& face : box.Faces)
+        face.Material.Material = AssetRef{ AssetType::Material, kRed };
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const SelectableRef ref =
+        SelectableRef::EdgeSelection(RegistryId::Global(), EntityId{ 1, 1 }, edges[0].Index);
+
+    // Pull the edge away along the average of its two face normals so the flap
+    // is a real face (not coplanar with either neighbor).
+    const Vec3d delta = (edges[0].B - edges[0].A).Cross(Vec3d{ 0.3f, 0.9f, 0.2f }).Normalized();
+
+    MeshEditService service;
+    const auto result = service.ExtrudeElements(
+        box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Edge, delta, true);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(CountFacesWithMaterial(result->Mesh, kRed),
+              static_cast<int>(result->Mesh.Faces.size()));
+}

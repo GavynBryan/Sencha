@@ -11,7 +11,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
+#include <fstream>
+#include <iterator>
 #include <memory>
+#include <span>
 #include <string_view>
 
 namespace
@@ -43,10 +46,82 @@ namespace
     }
 }
 
-MaterialInspectorPanel::MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry)
+MaterialInspectorPanel::MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
+                                               ApplyImportSettingsFn applyImportSettings)
     : Tabs(tabs)
     , Registry(registry)
+    , ApplyImportSettings(std::move(applyImportSettings))
 {
+}
+
+void MaterialInspectorPanel::RequestImportSettings(const std::string& virtualPath)
+{
+    ImportTarget = virtualPath;
+    ImportDraft = TextureImportSettings{};
+
+    // Seed the draft from the existing sidecar; a missing or unreadable one
+    // is the defaults.
+    if (const AssetRecord* record = Registry.FindByPath(virtualPath);
+        record != nullptr && !record->FilePath.empty())
+    {
+        std::ifstream file(record->FilePath + std::string(kImportSettingsSuffix), std::ios::binary);
+        if (file.is_open())
+        {
+            const std::string text((std::istreambuf_iterator<char>(file)), {});
+            (void)ParseTextureImportSettings(
+                std::as_bytes(std::span(text.data(), text.size())), ImportDraft, nullptr);
+        }
+    }
+    ImportPopupPending = true;
+}
+
+void MaterialInspectorPanel::DrawImportSettingsPopup()
+{
+    if (ImportPopupPending)
+    {
+        ImGui::OpenPopup("Texture Import Settings");
+        ImportPopupPending = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Texture Import Settings", nullptr,
+                                ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    ImGui::TextDisabled("%s", ImportTarget.c_str());
+
+    static constexpr const char* kUsages[] = {
+        "auto (from name)", "base_color", "normal", "orm", "emissive", "linear_data"
+    };
+    int usage = static_cast<int>(ImportDraft.Usage);
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::Combo("Usage", &usage, kUsages, 6))
+        ImportDraft.Usage = static_cast<TextureUsage>(usage);
+
+    static constexpr const char* kFilters[] = { "linear", "nearest" };
+    int filter = static_cast<int>(ImportDraft.Filter);
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::Combo("Filter", &filter, kFilters, 2))
+        ImportDraft.Filter = static_cast<TextureFilter>(filter);
+    ImGui::SetItemTooltip("nearest = point sampling (pixel art)");
+
+    ImGui::Checkbox("Block compress (BC)", &ImportDraft.Compress);
+    ImGui::SetItemTooltip("Off keeps uncompressed RGBA8: BC blocks smear crisp pixel-art texels.");
+    ImGui::Checkbox("Generate mips", &ImportDraft.GenerateMips);
+
+    if (ImGui::Button("Apply"))
+    {
+        if (ApplyImportSettings)
+            ApplyImportSettings(ImportTarget, ImportDraft);
+        ImportTarget.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+    {
+        ImportTarget.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 void MaterialInspectorPanel::CommitWidgetEdit(MaterialEditTab& tab, MaterialDescription& edited)
@@ -81,8 +156,14 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
     const char* current = slot.Path.empty() ? "(none)" : slot.Path.c_str();
     if (ImGui::Button(current, ImVec2(-FLT_MIN, 0.0f)))
     {
-        TextureFilter[0] = '\0';
+        TextureFilterText[0] = '\0';
         ImGui::OpenPopup("texture_picker");
+    }
+    if (!slot.Path.empty() && ImGui::BeginPopupContextItem("slot_context"))
+    {
+        if (ImGui::MenuItem("Import Settings..."))
+            RequestImportSettings(slot.Path);
+        ImGui::EndPopup();
     }
 
     if (ImGui::BeginPopup("texture_picker"))
@@ -104,8 +185,8 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
         if (ImGui::IsWindowAppearing())
             ImGui::SetKeyboardFocusHere();
         ImGui::SetNextItemWidth(320.0f);
-        ImGui::InputTextWithHint("##texfilter", "filter textures", TextureFilter,
-                                 sizeof(TextureFilter));
+        ImGui::InputTextWithHint("##texfilter", "filter textures", TextureFilterText,
+                                 sizeof(TextureFilterText));
 
         if (ImGui::Selectable("(none)"))
             apply(std::string{});
@@ -115,7 +196,7 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
         // the filter, never a screen-tall popup.
         if (ImGui::BeginChild("##texlist", ImVec2(320.0f, 300.0f)))
         {
-            const std::string_view filter = TextureFilter;
+            const std::string_view filter = TextureFilterText;
             int shown = 0;
             for (const auto& [path, record] : Registry.Records())
             {
@@ -124,8 +205,19 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
                 if (!ContainsCaseInsensitive(record.Path, filter))
                     continue;
                 ++shown;
+                ImGui::PushID(record.Path.c_str());
                 if (ImGui::Selectable(record.Path.c_str(), record.Path == slot.Path))
                     apply(record.Path);
+                if (ImGui::BeginPopupContextItem("row_context"))
+                {
+                    if (ImGui::MenuItem("Import Settings..."))
+                    {
+                        RequestImportSettings(record.Path);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::PopID();
             }
             if (shown == 0)
                 ImGui::TextDisabled("no textures match");
@@ -217,4 +309,6 @@ void MaterialInspectorPanel::OnDraw()
             CommitWidgetEdit(*tab, edited);
         }
     }
+
+    DrawImportSettingsPopup();
 }
