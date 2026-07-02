@@ -6,6 +6,10 @@ Status: proposed design (2026-07-02). Candidate execution spec for Track C item 
 version moves this document asks the roadmap to ratify. Where this document assigns a
 version, read it as a proposal until the roadmap records it.
 
+Implementation detail lives in the execution suite `docs/plans/world-partition/` (start
+with `00-execution-overview.md`). Where that suite pins a mechanism decision, it wins,
+per the roadmap's specialist-doc rule; this document owns the model.
+
 Audience: whoever implements any item here (human or agent), and reviewers. This document
 consolidates the partition model evaluation (zones, regions, portals, streaming,
 loaded-but-inactive editing, multi-space worlds) into one plan grounded in the seams that
@@ -260,7 +264,8 @@ struct TransitionRecord
     TransitionTopology Topology;     // Seam, Doorway, Teleport (v1.0 set; grows by data)
     TransitionFlags    Flags;        // OneWay is the only v1.0 flag
     StreamingHint      Hint;         // preload priority for To when From is the focus zone
-    std::optional<EntityRef> Portal; // portal entity in From's content, if any
+    // No portal field: the portal entity in From's content stores this TransitionId
+    // (one-directional linkage, content to manifest; Section 5).
     // v2.0, with spaces: Transform Warp; identity is implied absent.
 };
 ```
@@ -283,16 +288,17 @@ Everything per-entity (components, brush meshes, portal geometry detail, entity 
 lives in zone content.
 
 The enforcement rule: **the manifest is O(zones + transitions), never O(entities)**.
-Any proposed header field that scales with entity count is content. The one narrow
-exception is the `Portal` entity ref on a transition: a single stable id into content,
-carried so validation and the tree can name the portal without loading the zone. When
+Any proposed header field that scales with entity count is content, and the manifest
+never references an entity at all. Portal linkage runs the other way: the portal entity
+in a zone's content stores the `TransitionId` it realizes, so validation resolves the
+link when that zone is loaded and reports unverifiable-until-loaded otherwise. When
 see-through portal rendering needs shape and frame data header-side (v2.0), a
 `PortalRecord` is added then, not before.
 
-Stable entity references across the loaded/unloaded boundary use the serialized entity
-identity that the scene serializer and the coming `ZoneStateRecord` work already require;
-this plan adopts whatever identity Track C item 5 lands rather than minting a parallel
-scheme.
+A consequence worth stating: no v1.0 partition phase depends on a stable entity
+identity scheme. When a future partition record genuinely needs to name an entity
+across the loaded/unloaded boundary, it adopts whatever identity Track C item 5
+(`ZoneStateRecord`) lands rather than minting a parallel scheme.
 
 ---
 
@@ -366,7 +372,8 @@ traversal-hitch harness, and no game code names a `ZoneId` except through transi
 
 ## 5. Transitions and portals
 
-Two records, one optional link, exactly as proposed:
+Two records, linked one-directionally from content to manifest (the portal stores its
+transition's id, never the reverse):
 
 - **Transition**: the logical directed edge (Section 3.2). It exists without geometry:
   a contiguous seam, an elevator, a scripted teleport. It carries topology, flags, and
@@ -624,14 +631,15 @@ v1.0 set, structural:
 1. Ids are nonzero and unique per record type across the manifest.
 2. Every zone names exactly one existing region.
 3. Every transition's `From` and `To` name existing zones and differ.
-4. A transition's `Portal` ref, when present, resolves to a portal entity in `From`'s
-   content whose linked transition is this one (checked when `From` is loaded; recorded
-   as unverifiable-until-loaded otherwise, which is itself a visible state, not silence).
+4. A Doorway transition has exactly one portal entity in `From`'s content whose linked
+   `TransitionId` names it, and a portal's linked transition has that portal's zone as
+   its `From` (checked when `From` is loaded; recorded as unverifiable-until-loaded
+   otherwise, which is itself a visible state, not silence).
 5. Portal frame normal agrees with transition direction (points out of `From` through
    the opening).
 6. A non-OneWay doorway or seam has a reverse edge (derived pairing: matching swapped
-   endpoints and portal linkage; an explicit pairing field is deferred until warps make
-   derivation ambiguous).
+   endpoints; an explicit pairing field is deferred until warps make derivation
+   ambiguous).
 7. Zone `SceneRef` resolves; cooked hash matches (stale cook warning).
 8. Zone bounds contain owned entities, warning-level, unless `BoundsOverridden`.
 9. Overlapping zone bounds within one space: warning (legitimate for vertical layering,
@@ -737,7 +745,8 @@ content, not slice scope.
    Also two of the proposal's rules dissolve structurally rather than being checked.
 7. **Headers versus content?** The size rule: manifest is O(zones + transitions), never
    O(entities); headers carry identity, grouping, refs, bounds, cook status, edges;
-   the sole content-pointing exception is the portal entity ref (Section 3.3).
+   the manifest never references entities, and portal linkage is content-side
+   (Sections 3.3 and 5).
 8. **How does kyusu show different-space zones without implying distance?** By never
    composing spaces into one coordinate system implicitly: per-space solo, explicit
    labeled preview offsets as view state, distinct cross-space edge styling, and
