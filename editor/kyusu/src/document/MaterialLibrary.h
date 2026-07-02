@@ -1,18 +1,19 @@
 #pragma once
 
+#include <span>
 #include <string>
-#include <string_view>
 #include <vector>
 
 class LoggingProvider;
 
 //=============================================================================
-// MaterialLibrary — the editor's list of pickable materials. (04-§3)
+// MaterialLibrary: the editor's list of pickable materials. (04-§3)
 //
-// Minimum-viable material browser: scans a project asset root for `.smat` via
-// the engine's ScanAssetsDirectory, so the editor and runtime agree on every
-// asset:// path (no parallel editor asset-discovery path). The list is the seed
-// of a general asset browser; for now it is material-scoped on purpose.
+// Minimum-viable material browser: scans the project's content roots for
+// `.smat` via the engine's ScanAssetsDirectory, so the editor and runtime
+// agree on every asset:// path (no parallel editor asset-discovery path). The
+// list is the seed of a general asset browser; for now it is material-scoped
+// on purpose.
 //=============================================================================
 
 struct MaterialAsset
@@ -26,16 +27,17 @@ class MaterialLibrary
 public:
     explicit MaterialLibrary(LoggingProvider& logging);
 
-    // Rebuilds the list from a fresh scan of the given root directory. A missing
-    // or empty root clears the list (no fabricated entries).
-    void Rescan(std::string_view rootDirectory);
+    // Rebuilds the list from a fresh scan of the given roots (the project's
+    // content roots; the union matches what the asset system mounts). Missing
+    // or empty roots contribute nothing.
+    void Rescan(std::span<const std::string> roots);
     void Clear();
 
     [[nodiscard]] const std::vector<MaterialAsset>& Materials() const { return Entries; }
-    [[nodiscard]] std::string_view Root() const { return ScannedRoot; }
+    [[nodiscard]] std::span<const std::string> Roots() const { return ScannedRoots; }
 
 private:
     LoggingProvider& Logging;
     std::vector<MaterialAsset> Entries;
-    std::string ScannedRoot;
+    std::vector<std::string> ScannedRoots;
 };

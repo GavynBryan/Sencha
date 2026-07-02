@@ -17,8 +17,11 @@ class MaterialLibrary;
 class DocumentFileActions
 {
 public:
+    // contentRoots are the project's content roots; empty when no project is
+    // loaded (materials then scan next to the level file).
     DocumentFileActions(SdlWindow& window, EditorDocument& document, CommandStack& commands,
-                        SelectionService& selection, MaterialLibrary& materials);
+                        SelectionService& selection, MaterialLibrary& materials,
+                        std::vector<std::string> contentRoots);
 
     void New();
     void Save();
@@ -45,6 +48,9 @@ private:
 
     void EnqueueFileAction(FileActionKind kind, std::string path);
     void RescanMaterials(const std::string& levelPath);
+    // Logs each face material ref the scanned roots cannot resolve (they render
+    // as the level default), so cross-project level moves are diagnosable.
+    void LogUnresolvedFaceMaterials(const std::string& levelPath);
     void ResetEditorState();
 
     SdlWindow&        Window;
@@ -52,6 +58,7 @@ private:
     CommandStack&     Commands;
     SelectionService& Selection;
     MaterialLibrary&  Materials;
+    std::vector<std::string> ContentRoots;
 
     std::mutex                     PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;

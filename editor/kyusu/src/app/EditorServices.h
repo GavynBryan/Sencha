@@ -95,6 +95,12 @@ private:
     // they do at runtime. No-op without a project.
     void InitAssets();
 
+    // Watches project .smat/.png sources and hot-reloads resident assets in
+    // place (detection: AssetSourceWatcher; reaction: AssetHotReloader), so a
+    // save from the material editor or a text editor shows up live. No-op
+    // without a mounted project.
+    void BuildSourceWatch();
+
     // Bake-to-static-mesh actions behind the MeshEditPanel buttons. All need a
     // mounted project (the .smesh is written under its first content root).
     void BakeSelectedBrushes();
@@ -120,6 +126,11 @@ private:
     // document whose StaticMeshComponents hold handles into its caches. Reset in
     // the destructor before the engine frees the graphics services it borrows.
     std::optional<RuntimeAssets> Assets;
+
+    // Source watch state (definition in the .cpp keeps the cook/hotreload
+    // headers out of this one). References Assets; reset before it.
+    struct SourceWatchState;
+    std::unique_ptr<SourceWatchState> SourceWatch;
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
