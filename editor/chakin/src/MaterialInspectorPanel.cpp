@@ -11,10 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
-#include <fstream>
-#include <iterator>
 #include <memory>
-#include <span>
 #include <string_view>
 
 namespace
@@ -46,70 +43,13 @@ namespace
     }
 }
 
-MaterialInspectorPanel::MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
-                                               ImportSettingsHooks importSettings)
+MaterialInspectorPanel::MaterialInspectorPanel(
+    MaterialTabSet& tabs, const AssetRegistry& registry,
+    std::function<void(const std::string&)> openTextureSettings)
     : Tabs(tabs)
     , Registry(registry)
-    , ImportSettings(std::move(importSettings))
+    , OpenTextureSettings(std::move(openTextureSettings))
 {
-}
-
-void MaterialInspectorPanel::RequestImportSettings(const std::string& virtualPath)
-{
-    ImportTarget = virtualPath;
-    // Seed the draft from the existing sidecar (defaults when absent).
-    ImportDraft = ImportSettings.Load ? ImportSettings.Load(virtualPath)
-                                      : TextureImportSettings{};
-    ImportPopupPending = true;
-}
-
-void MaterialInspectorPanel::DrawImportSettingsPopup()
-{
-    if (ImportPopupPending)
-    {
-        ImGui::OpenPopup("Texture Import Settings");
-        ImportPopupPending = false;
-    }
-
-    if (!ImGui::BeginPopupModal("Texture Import Settings", nullptr,
-                                ImGuiWindowFlags_AlwaysAutoResize))
-        return;
-
-    ImGui::TextDisabled("%s", ImportTarget.c_str());
-
-    static constexpr const char* kUsages[] = {
-        "auto (from name)", "base_color", "normal", "orm", "emissive", "linear_data"
-    };
-    int usage = static_cast<int>(ImportDraft.Usage);
-    ImGui::SetNextItemWidth(220.0f);
-    if (ImGui::Combo("Usage", &usage, kUsages, 6))
-        ImportDraft.Usage = static_cast<TextureUsage>(usage);
-
-    static constexpr const char* kFilters[] = { "linear", "nearest" };
-    int filter = static_cast<int>(ImportDraft.Filter);
-    ImGui::SetNextItemWidth(220.0f);
-    if (ImGui::Combo("Filter", &filter, kFilters, 2))
-        ImportDraft.Filter = static_cast<TextureFilter>(filter);
-    ImGui::SetItemTooltip("nearest = point sampling (pixel art)");
-
-    ImGui::Checkbox("Block compress (BC)", &ImportDraft.Compress);
-    ImGui::SetItemTooltip("Off keeps uncompressed RGBA8: BC blocks smear crisp pixel-art texels.");
-    ImGui::Checkbox("Generate mips", &ImportDraft.GenerateMips);
-
-    if (ImGui::Button("Apply"))
-    {
-        if (ImportSettings.Apply)
-            ImportSettings.Apply(ImportTarget, ImportDraft);
-        ImportTarget.clear();
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel"))
-    {
-        ImportTarget.clear();
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
 }
 
 void MaterialInspectorPanel::CommitWidgetEdit(MaterialEditTab& tab, MaterialDescription& edited)
@@ -149,8 +89,8 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
     }
     if (!slot.Path.empty() && ImGui::BeginPopupContextItem("slot_context"))
     {
-        if (ImGui::MenuItem("Import Settings..."))
-            RequestImportSettings(slot.Path);
+        if (ImGui::MenuItem("Import Settings...") && OpenTextureSettings)
+            OpenTextureSettings(slot.Path);
         ImGui::EndPopup();
     }
 
@@ -200,7 +140,8 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
                 {
                     if (ImGui::MenuItem("Import Settings..."))
                     {
-                        RequestImportSettings(record.Path);
+                        if (OpenTextureSettings)
+                            OpenTextureSettings(record.Path);
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::EndPopup();
@@ -298,5 +239,4 @@ void MaterialInspectorPanel::OnDraw()
         }
     }
 
-    DrawImportSettingsPopup();
 }

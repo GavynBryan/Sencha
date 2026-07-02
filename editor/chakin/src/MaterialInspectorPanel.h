@@ -4,8 +4,6 @@
 
 #include "ui/IEditorPanel.h"
 
-#include <assets/cook/TextureImportSettings.h>
-
 #include <functional>
 
 class AssetRegistry;
@@ -13,22 +11,13 @@ class AssetRegistry;
 // Property editing over the active tab's working description. Widget edits
 // apply to the session live (the preview follows every drag); when a widget
 // deactivates after an edit, the activation-time snapshot and the final value
-// become one EditMaterialCommand on that tab's undo stack. Texture rows also
-// host the per-source import settings (usage/filter/compression/mips), applied
-// through the composition root which recooks and hot-swaps the texture.
+// become one EditMaterialCommand on that tab's undo stack. Texture rows link
+// to the Textures panel (the import-settings surface) via openTextureSettings.
 class MaterialInspectorPanel final : public IEditorPanel
 {
 public:
-    // Both hooks resolve the texture's SOURCE file from the virtual path (the
-    // registry record points at the cooked overlay, where settings never live).
-    struct ImportSettingsHooks
-    {
-        std::function<TextureImportSettings(const std::string& virtualPath)> Load;
-        std::function<void(const std::string& virtualPath, const TextureImportSettings&)> Apply;
-    };
-
     MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
-                           ImportSettingsHooks importSettings);
+                           std::function<void(const std::string& virtualPath)> openTextureSettings);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Inspector"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Right; }
@@ -43,20 +32,12 @@ private:
     void DrawTextureSlot(MaterialEditTab& tab, const char* id, const char* label,
                          AssetRef& slot, MaterialDescription& edited);
 
-    void DrawImportSettingsPopup();
-    void RequestImportSettings(const std::string& virtualPath);
-
     MaterialTabSet& Tabs;
     const AssetRegistry& Registry;
-    ImportSettingsHooks ImportSettings;
+    std::function<void(const std::string&)> OpenTextureSettings;
 
     // Working-state snapshot at widget activation: the undo command's "before".
     MaterialDescription EditBaseline;
     bool BaselineCaptured = false;
     char TextureFilterText[128] = "";
-
-    // Import-settings popup state (opened from a picker row's context menu).
-    std::string ImportTarget; // virtual path; empty = closed
-    bool ImportPopupPending = false;
-    TextureImportSettings ImportDraft;
 };

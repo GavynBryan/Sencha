@@ -4,6 +4,7 @@
 #include "MaterialInspectorPanel.h"
 #include "MaterialPreviewPanel.h"
 #include "MaterialPreviewRenderFeature.h"
+#include "TexturesPanel.h"
 
 #include "project/ProjectContentMount.h"
 #include "ui/EditorThemeStartup.h"
@@ -173,12 +174,16 @@ void MaterialEditorServices::BuildUi()
         }));
     UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(
         Tabs, Assets->Registry,
-        MaterialInspectorPanel::ImportSettingsHooks{
-            .Load = [this](const std::string& virtualPath)
-            { return LoadTextureImportSettings(virtualPath); },
-            .Apply = [this](const std::string& virtualPath, const TextureImportSettings& settings)
-            { ApplyTextureImportSettings(virtualPath, settings); },
-        }));
+        [this](const std::string& virtualPath)
+        { if (Textures != nullptr) Textures->SelectTexture(virtualPath); }));
+
+    auto texturesPanel = std::make_unique<TexturesPanel>(
+        Assets->Registry,
+        Project ? Project->ContentRoots : std::vector<std::string>{},
+        [this](const TextureSourceLocation& source, std::string* error)
+        { return RecookTexture(source, error); });
+    Textures = texturesPanel.get();
+    UiFeature->AddPanel(std::move(texturesPanel));
     UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
         *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
 
@@ -401,76 +406,27 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     }
 }
 
-std::optional<MaterialEditorServices::SourceLocation> MaterialEditorServices::ResolveSourceFile(
-    const std::string& virtualPath) const
+bool MaterialEditorServices::RecookTexture(const TextureSourceLocation& source, std::string* error)
 {
-    constexpr std::string_view scheme = "asset://";
-    if (!Project || !virtualPath.starts_with(scheme))
-        return std::nullopt;
-    const std::string rel = virtualPath.substr(scheme.size());
-    for (const std::string& root : Project->ContentRoots)
+    if (!TextureRecook)
     {
-        std::error_code ec;
-        if (std::filesystem::exists(std::filesystem::path(root) / rel, ec))
-            return SourceLocation{ root, rel };
+        if (error != nullptr)
+            *error = "no project mounted";
+        return false;
     }
-    return std::nullopt;
-}
-
-TextureImportSettings MaterialEditorServices::LoadTextureImportSettings(
-    const std::string& virtualPath) const
-{
-    TextureImportSettings settings;
-    const auto source = ResolveSourceFile(virtualPath);
-    if (!source)
-        return settings;
-
-    const std::filesystem::path metaPath =
-        std::filesystem::path(source->Root) / (source->RelPath + std::string(kImportSettingsSuffix));
-    std::ifstream file(metaPath, std::ios::binary);
-    if (!file.is_open())
-        return settings;
-    const std::string text((std::istreambuf_iterator<char>(file)), {});
-    std::string error;
-    if (!ParseTextureImportSettings(std::as_bytes(std::span(text.data(), text.size())),
-                                    settings, &error))
-        std::fprintf(stderr, "[chakin] '%s': %s (showing defaults)\n",
-                     metaPath.string().c_str(), error.c_str());
-    return settings;
-}
-
-void MaterialEditorServices::ApplyTextureImportSettings(const std::string& virtualPath,
-                                                        const TextureImportSettings& settings)
-{
-    const auto source = ResolveSourceFile(virtualPath);
-    if (!source)
+    for (const auto& entry : TextureRecook->Roots)
     {
-        std::fprintf(stderr, "[chakin] '%s' has no source file under a content root\n",
-                     virtualPath.c_str());
-        return;
+        if (entry->Root != source.Root)
+            continue;
+        // Recook is synchronous; the resident swap commits at the engine's
+        // async drain (the bindless slot repoints, so every material sampling
+        // the texture follows within a frame).
+        entry->Reloader.ReloadSource(source.RelPath);
+        return true;
     }
-
-    std::string error;
-    const std::string metaPath =
-        (std::filesystem::path(source->Root)
-         / (source->RelPath + std::string(kImportSettingsSuffix))).string();
-    if (!SaveTextureImportSettingsFile(metaPath, settings, &error))
-    {
-        std::fprintf(stderr, "[chakin] %s\n", error.c_str());
-        return;
-    }
-
-    // Recook and swap the resident texture in place; the bindless slot is
-    // repointed, so every material sampling it follows without a reload.
-    if (TextureRecook)
-        for (const auto& entry : TextureRecook->Roots)
-            if (entry->Root == source->Root)
-            {
-                entry->Reloader.ReloadSource(source->RelPath);
-                std::fprintf(stderr, "[chakin] import settings applied to '%s'\n",
-                             virtualPath.c_str());
-                return;
-            }
+    if (error != nullptr)
+        *error = "'" + source.Root + "' is not a mounted content root";
+    return false;
 }
 
 void MaterialEditorServices::RescanMaterials()

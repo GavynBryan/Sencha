@@ -208,6 +208,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/TextureImportStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialEditSession.cpp
         ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialTabSet.cpp

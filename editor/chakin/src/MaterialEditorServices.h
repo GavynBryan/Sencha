@@ -5,7 +5,8 @@
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 
-#include <assets/cook/TextureImportSettings.h>
+#include "project/TextureImportStore.h"
+
 #include <core/assets/RuntimeAssets.h>
 
 #include <cstddef>
@@ -18,6 +19,7 @@ class EngineSchedule;
 class SdlWindow;
 class EditorUiFeature;
 class MaterialPreviewRenderFeature;
+class TexturesPanel;
 struct PlatformEventContext;
 struct EngineConfig;
 
@@ -64,27 +66,10 @@ private:
     void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
     void RescanMaterials();
 
-    // Resolves the SOURCE file of a virtual path against the content roots:
-    // "asset://<rel>" -> {root, rel} where <root>/<rel> exists. The registry
-    // record cannot serve here: the cooked overlay repoints its FilePath at
-    // .cooked/, and import settings belong beside the source.
-    struct SourceLocation
-    {
-        std::string Root;
-        std::string RelPath;
-    };
-    [[nodiscard]] std::optional<SourceLocation> ResolveSourceFile(
-        const std::string& virtualPath) const;
-
-    // Reads the texture's import-settings sidecar (defaults when absent).
-    [[nodiscard]] TextureImportSettings LoadTextureImportSettings(
-        const std::string& virtualPath) const;
-
-    // Writes the texture's import-settings sidecar ("<source>.meta"), recooks
-    // the source, and swaps the resident texture in place so the preview (and
-    // every material sampling it) shows the new cook immediately.
-    void ApplyTextureImportSettings(const std::string& virtualPath,
-                                    const TextureImportSettings& settings);
+    // Recooks a texture source and swaps the resident texture in place so the
+    // preview (and every material sampling it) shows the new cook immediately.
+    // The Textures panel calls this after writing the settings sidecar.
+    bool RecookTexture(const TextureSourceLocation& source, std::string* error);
 
     // Pushes a tab's working description into its resident material (in-place
     // swap; live handles keep working).
@@ -111,5 +96,6 @@ private:
 
     EditorUiFeature* UiFeature = nullptr;
     MaterialPreviewRenderFeature* Preview = nullptr;
+    TexturesPanel* Textures = nullptr;
     std::string LastWindowTitle;
 };
