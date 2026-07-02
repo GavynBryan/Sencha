@@ -1,6 +1,6 @@
 # Sencha Action-Adventure Core Runtime Plan
 
-Status: **proposed working plan** (2026-06-12).
+Status: **proposed working plan** (2026-06-12). Version assignments and gates live in `docs/plans/engine-roadmap.md` (Track C).
 
 This document captures the core-engine work that would make Sencha feel
 purpose-built for large authored action-adventure games: interconnected worlds,

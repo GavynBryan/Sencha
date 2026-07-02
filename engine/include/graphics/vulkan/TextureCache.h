@@ -118,6 +118,12 @@ public:
     [[nodiscard]] BindlessImageIndex GetBindlessIndex(TextureHandle handle) const;
     [[nodiscard]] VkExtent2D         GetExtent(TextureHandle handle) const;
 
+    // The sampler a cooked texture asks for (the TextureData -> Vulkan mapping
+    // lives here by design): Nearest-filtered textures (pixel art) sample
+    // point-filtered at every stage with anisotropy off; everything else keeps
+    // the default linear/repeat.
+    [[nodiscard]] static SamplerDesc SamplerForTextureData(const TextureData& texture);
+
 private:
     friend class AssetCache<TextureCache, TextureHandle, TextureEntry>;
 
@@ -140,9 +146,12 @@ private:
 
     // Reload body: swaps `newImage` into the resident entry for `path`,
     // repointing its bindless slot and deferring the old image. Destroys
-    // `newImage` and returns false if `path` is not resident.
+    // `newImage` and returns false if `path` is not resident. A non-null
+    // `newSampler` replaces the entry's sampler in the same descriptor write
+    // (a recook may change the authored filter).
     [[nodiscard]] bool ReloadEntryImage(std::string_view path, ImageHandle newImage,
-                                        VkExtent2D extent);
+                                        VkExtent2D extent,
+                                        const SamplerDesc* newSampler = nullptr);
 
     Logger&                Log;
     VulkanImageService*    Images      = nullptr;

@@ -9,7 +9,7 @@ FetchContent_Declare(
 # Prevent GoogleTest from overriding compiler/linker options on Windows.
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-# Keep GoogleTest out of the SDK install (real-engine-roadmap.md Phase 0): it is
+# Keep GoogleTest out of the SDK install (engine-roadmap.md: SDK boundary, shipped): it is
 # a test-only dependency, not part of the published engine product.
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
@@ -109,23 +109,26 @@ if(BRUSH_TEST_SOURCES)
     # its sources directly and link only the engine — no editor/Vulkan/ImGui deps.
     add_executable(brush_tests
         ${BRUSH_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/overlay/SelectionLabels.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp)
-    target_include_directories(brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/overlay/SelectionLabels.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionFold.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp)
+    target_include_directories(brush_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
+        ${CMAKE_SOURCE_DIR}/editor/common/src)
     target_link_libraries(brush_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS brush_tests)
 endif()
@@ -150,30 +153,37 @@ endif()
 if(LEVEL_COOK_TEST_SOURCES)
     add_executable(level_cook_tests
         ${LEVEL_COOK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/src/document/AssetFieldIo.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/EditorDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/EditorScene.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/DocumentSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/BrushCookInput.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/document/commands/DeleteEntityCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/selection/commands/SelectCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/brush/BrushBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/src/meshedit/ElementGeometry.cpp)
-    target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushBake.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DuplicateEntitiesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MergeBrushesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/SeparateFacesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/export/GltfMeshExport.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp)
+    target_include_directories(level_cook_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
+        ${CMAKE_SOURCE_DIR}/editor/common/src)
     target_link_libraries(level_cook_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
 endif()
@@ -189,9 +199,26 @@ endif()
 # its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
 # render passes) is out of scope for headless tests by construction.
 if(EDITOR_TEST_SOURCES)
-    add_executable(editor_tests ${EDITOR_TEST_SOURCES})
-    target_include_directories(editor_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor/src)
-    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
+    # EditorThemeFile is UI-adjacent but headless (it needs ImGui's ImVec4 type,
+    # not its runtime), so imgui_support rides along for the headers.
+    add_executable(editor_tests
+        ${EDITOR_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialEditSession.cpp
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialTabSet.cpp
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src/PreviewPrimitives.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
+    target_include_directories(editor_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
+        ${CMAKE_SOURCE_DIR}/editor/common/src
+        ${CMAKE_SOURCE_DIR}/editor/chakin/src
+        ${CMAKE_SOURCE_DIR}/editor/kettle/src)
+    target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

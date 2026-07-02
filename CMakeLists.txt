@@ -36,7 +36,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json" F
 enable_testing()
 
 # Standard bin/lib/include destinations for the install/export of the SDK
-# (real-engine-roadmap.md Phase 0). Included at the root so every subdirectory's
+# (engine-roadmap.md: SDK boundary, shipped). Included at the root so every subdirectory's
 # install rules and the engine's INSTALL_INTERFACE include dir agree on layout.
 include(GNUInstallDirs)
 

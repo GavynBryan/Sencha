@@ -1,4 +1,5 @@
 #include <assets/material/MaterialLoader.h>
+#include <assets/material/MaterialWriter.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <core/handle/ILifetimeOwner.h>
@@ -338,4 +339,86 @@ TEST(AssetSystemMaterial, MalformedSmatFailsCleanly)
         MakeFileMaterialRecord(file.Path, "asset://materials/dev/bad.smat")));
 
     EXPECT_FALSE(assets.LoadMaterial("asset://materials/dev/bad.smat").IsValid());
+}
+
+// -- MaterialWriter -------------------------------------------------------------
+
+TEST(MaterialWriter, FullDescriptionRoundTrips)
+{
+    MaterialDescription desc;
+    desc.BaseColorFactor = Vec4(0.5f, 0.25f, 0.75f, 0.9f);
+    desc.BaseColorTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/base.png" };
+    desc.NormalTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/normal.png" };
+    desc.NormalScale = 0.8f;
+    desc.OrmTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/orm.png" };
+    desc.RoughnessFactor = 0.4f;
+    desc.MetallicFactor = 0.9f;
+    desc.EmissiveFactor = Vec4(0.1f, 0.2f, 0.3f, 0.0f);
+    desc.EmissiveTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/glow.png" };
+    desc.AlphaMode = MaterialAlphaMode::Mask;
+    desc.AlphaCutoff = 0.35f;
+
+    MaterialDescription parsed;
+    MaterialParseError error;
+    ASSERT_TRUE(ParseMaterialJson(WriteMaterialJson(desc), parsed, &error)) << error.Message;
+
+    EXPECT_FLOAT_EQ(parsed.BaseColorFactor.X, 0.5f);
+    EXPECT_FLOAT_EQ(parsed.BaseColorFactor.W, 0.9f);
+    EXPECT_EQ(parsed.BaseColorTexture.Path, desc.BaseColorTexture.Path);
+    EXPECT_EQ(parsed.BaseColorTexture.Type, AssetType::Texture);
+    EXPECT_EQ(parsed.NormalTexture.Path, desc.NormalTexture.Path);
+    EXPECT_FLOAT_EQ(parsed.NormalScale, 0.8f);
+    EXPECT_EQ(parsed.OrmTexture.Path, desc.OrmTexture.Path);
+    EXPECT_FLOAT_EQ(parsed.RoughnessFactor, 0.4f);
+    EXPECT_FLOAT_EQ(parsed.MetallicFactor, 0.9f);
+    EXPECT_FLOAT_EQ(parsed.EmissiveFactor.X, 0.1f);
+    EXPECT_FLOAT_EQ(parsed.EmissiveFactor.Z, 0.3f);
+    EXPECT_EQ(parsed.EmissiveTexture.Path, desc.EmissiveTexture.Path);
+    EXPECT_EQ(parsed.AlphaMode, MaterialAlphaMode::Mask);
+    EXPECT_FLOAT_EQ(parsed.AlphaCutoff, 0.35f);
+}
+
+TEST(MaterialWriter, DefaultDescriptionWritesOnlyVersion)
+{
+    const JsonValue json = WriteMaterialJson(MaterialDescription{});
+    ASSERT_TRUE(json.IsObject());
+    ASSERT_EQ(json.AsObject().size(), 1u);
+    EXPECT_EQ(json.AsObject()[0].first, "version");
+
+    // And that minimal form still parses back to the defaults.
+    MaterialDescription parsed;
+    MaterialParseError error;
+    ASSERT_TRUE(ParseMaterialJson(json, parsed, &error)) << error.Message;
+    EXPECT_FLOAT_EQ(parsed.BaseColorFactor.X, 1.0f);
+    EXPECT_TRUE(parsed.BaseColorTexture.Path.empty());
+    EXPECT_EQ(parsed.AlphaMode, MaterialAlphaMode::Opaque);
+}
+
+TEST(MaterialWriter, SaveMaterialFileRoundTripsThroughDisk)
+{
+    MaterialDescription desc;
+    desc.BaseColorFactor = Vec4(0.2f, 0.45f, 1.0f, 1.0f);
+    desc.RoughnessFactor = 0.7f;
+
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "sencha_material_writer_roundtrip.smat";
+    std::string error;
+    ASSERT_TRUE(SaveMaterialFile(path.string(), desc, &error)) << error;
+
+    MaterialDescription loaded;
+    MaterialParseError parseError;
+    ASSERT_TRUE(LoadMaterialFromFile(path.string(), loaded, &parseError)) << parseError.Message;
+    EXPECT_FLOAT_EQ(loaded.BaseColorFactor.Y, 0.45f);
+    EXPECT_FLOAT_EQ(loaded.RoughnessFactor, 0.7f);
+    EXPECT_FLOAT_EQ(loaded.MetallicFactor, 0.0f);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+TEST(MaterialWriter, SaveFailsCleanlyOnUnwritablePath)
+{
+    std::string error;
+    EXPECT_FALSE(SaveMaterialFile("/nonexistent_dir/x.smat", MaterialDescription{}, &error));
+    EXPECT_FALSE(error.empty());
 }

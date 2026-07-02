@@ -86,13 +86,16 @@ TEST(ProjectUv, ResizeKeepsConstantDensity)
 
 TEST(UvProjectionForNormal, WorldAlignedPicksBoxPlaneByDominantAxis)
 {
-    const UvProjection up = UvProjectionForNormal(Vec3d{ 0.0f, 0.0f, 1.0f }, true);
-    EXPECT_FLOAT_EQ(up.AxisU.X, 1.0f);
-    EXPECT_FLOAT_EQ(up.AxisV.Y, 1.0f);
+    // Y-up: a Z-facing wall maps U along X, V up.
+    const UvProjection wall = UvProjectionForNormal(Vec3d{ 0.0f, 0.0f, 1.0f }, true);
+    EXPECT_FLOAT_EQ(wall.AxisU.X, 1.0f);
+    EXPECT_FLOAT_EQ(wall.AxisV.Y, 1.0f);
 
+    // An X-facing wall maps U along Z, V up (the pre-fix U=Y rotated its
+    // texture 90 degrees relative to Z-facing walls).
     const UvProjection side = UvProjectionForNormal(Vec3d{ 1.0f, 0.0f, 0.0f }, true);
-    EXPECT_FLOAT_EQ(side.AxisU.Y, 1.0f);
-    EXPECT_FLOAT_EQ(side.AxisV.Z, 1.0f);
+    EXPECT_FLOAT_EQ(side.AxisU.Z, 1.0f);
+    EXPECT_FLOAT_EQ(side.AxisV.Y, 1.0f);
 }
 
 TEST(UvProjectionForNormal, FaceAlignedBasisIsOrthonormalAndInPlane)
@@ -286,4 +289,218 @@ TEST(BrushMeshSerialization, LoadsPreTexturingBareArrayFaces)
     ASSERT_EQ(mesh.Faces.size(), 1u);
     EXPECT_EQ(mesh.Faces[0].Loop.size(), 4u);
     EXPECT_TRUE(mesh.Faces[0].Material.Material.Path.empty());
+}
+
+//=============================================================================
+// WorldUvProjection: the cross-brush bridge. The load-bearing property is the
+// round trip: ToWorld then evaluating at the transformed point must equal the
+// local projection at the local point, and ToLocal must invert ToWorld.
+//=============================================================================
+
+namespace
+{
+    Transform3f AwkwardTransform()
+    {
+        Transform3f t;
+        t.Position = { 3.0f, -2.0f, 7.5f };
+        t.Rotation = Quatf::FromAxisAngle(Vec3d{ 0.3f, 0.8f, -0.5f }.Normalized(), 1.1f);
+        t.Scale = { 2.0f, 0.5f, 1.5f }; // nonuniform on purpose
+        return t;
+    }
+
+    UvProjection AwkwardUv()
+    {
+        UvProjection p;
+        p.AxisU = Vec3d{ 0.9f, 0.1f, 0.0f };
+        p.AxisV = Vec3d{ 0.0f, 0.2f, 1.1f }; // deliberately not orthonormal
+        p.Scale = { 2.0f, 0.25f };
+        p.Offset = { 0.4f, -1.3f };
+        p.Rotation = 33.0f;
+        return p;
+    }
+}
+
+TEST(WorldUvProjection, ToWorldMatchesLocalProjectionAtTransformedPoints)
+{
+    const Transform3f t = AwkwardTransform();
+    const UvProjection local = AwkwardUv();
+    const WorldUvProjection world = UvProjectionToWorld(local, t);
+
+    const Vec3d samples[] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 1.0f, 2.0f, 3.0f },
+        { -4.5f, 0.25f, 9.0f },
+    };
+    for (Vec3d p : samples)
+    {
+        const Vec2d localUv = ProjectUv(local, p);
+        const Vec2d worldUv = ProjectWorldUv(world, t.TransformPoint(p));
+        EXPECT_NEAR(localUv.X, worldUv.X, 1e-3f);
+        EXPECT_NEAR(localUv.Y, worldUv.Y, 1e-3f);
+    }
+}
+
+TEST(WorldUvProjection, ToLocalInvertsToWorld)
+{
+    const Transform3f t = AwkwardTransform();
+    const UvProjection original = AwkwardUv();
+    const UvProjection roundTripped = UvProjectionToLocal(UvProjectionToWorld(original, t), t);
+
+    // Rotation folds into the axes, so compare by evaluation, not fields.
+    const Vec3d samples[] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 1.0f, 2.0f, 3.0f },
+        { -4.5f, 0.25f, 9.0f },
+    };
+    for (Vec3d p : samples)
+    {
+        const Vec2d a = ProjectUv(original, p);
+        const Vec2d b = ProjectUv(roundTripped, p);
+        EXPECT_NEAR(a.X, b.X, 1e-3f);
+        EXPECT_NEAR(a.Y, b.Y, 1e-3f);
+    }
+    EXPECT_FLOAT_EQ(roundTripped.Rotation, 0.0f);
+}
+
+TEST(WorldUvProjection, SharedWorldMappingIsContinuousAcrossTwoBrushes)
+{
+    // Two abutting boxes with different transforms; one world projection baked
+    // into each local frame must give identical UVs at the shared world point.
+    Transform3f left;
+    left.Position = { -1.0f, 0.0f, 0.0f };
+    Transform3f right;
+    right.Position = { 1.0f, 0.0f, 0.0f };
+    right.Rotation = Quatf::FromAxisAngle({ 0.0f, 1.0f, 0.0f }, 3.14159265f); // yawed 180
+    right.Scale = { 2.0f, 1.0f, 1.0f };
+
+    WorldUvProjection world;
+    world.AxisU = { 1.0f, 0.0f, 0.0f };
+    world.AxisV = { 0.0f, 0.0f, 1.0f };
+    world.Scale = { 2.0f, 2.0f };
+    world.Offset = { 0.25f, 0.0f };
+
+    const UvProjection localLeft = UvProjectionToLocal(world, left);
+    const UvProjection localRight = UvProjectionToLocal(world, right);
+
+    const Vec3d seamWorld = { 0.0f, 0.0f, 0.5f };
+    // The same world point expressed in each brush's local frame.
+    const auto worldToLocal = [](const Transform3f& t, Vec3d w)
+    {
+        const Vec3d unrotated = t.Rotation.Inverse().RotateVector(w - t.Position);
+        return Vec3d{ unrotated.X / t.Scale.X, unrotated.Y / t.Scale.Y, unrotated.Z / t.Scale.Z };
+    };
+    const Vec2d uvLeft = ProjectUv(localLeft, worldToLocal(left, seamWorld));
+    const Vec2d uvRight = ProjectUv(localRight, worldToLocal(right, seamWorld));
+    EXPECT_NEAR(uvLeft.X, uvRight.X, 1e-4f);
+    EXPECT_NEAR(uvLeft.Y, uvRight.Y, 1e-4f);
+    // And both match the world mapping directly.
+    const Vec2d uvWorld = ProjectWorldUv(world, seamWorld);
+    EXPECT_NEAR(uvLeft.X, uvWorld.X, 1e-4f);
+    EXPECT_NEAR(uvLeft.Y, uvWorld.Y, 1e-4f);
+}
+
+TEST(WorldUvProjection, WorldFitSpansUnitTileAcrossUnionOfPoints)
+{
+    WorldUvProjection p;
+    const Vec3d points[] = {
+        { -3.0f, 0.0f, 1.0f }, // one brush's face
+        { 1.0f, 0.0f, 2.0f },
+        { 5.0f, 0.0f, 4.0f },  // another brush's face
+    };
+    const WorldUvProjection fit = WorldUvProjectionFit(p, points);
+    const Vec2d atMin = ProjectWorldUv(fit, { -3.0f, 0.0f, 1.0f });
+    const Vec2d atMax = ProjectWorldUv(fit, { 5.0f, 0.0f, 4.0f });
+    EXPECT_NEAR(atMin.X, 0.0f, 1e-4f);
+    EXPECT_NEAR(atMin.Y, 0.0f, 1e-4f);
+    EXPECT_NEAR(atMax.X, 1.0f, 1e-4f);
+    EXPECT_NEAR(atMax.Y, 1.0f, 1e-4f);
+}
+
+TEST(WorldUvProjection, DegenerateTransformScaleStaysTotal)
+{
+    Transform3f t;
+    t.Scale = { 0.0f, 1.0f, 1.0f }; // collapsed axis
+    const UvProjection local = DefaultUv();
+    const WorldUvProjection world = UvProjectionToWorld(local, t);
+    const UvProjection back = UvProjectionToLocal(world, t);
+    // No NaNs/infs; evaluation stays finite.
+    const Vec2d uv = ProjectUv(back, { 1.0f, 2.0f, 3.0f });
+    EXPECT_TRUE(std::isfinite(uv.X));
+    EXPECT_TRUE(std::isfinite(uv.Y));
+}
+
+TEST(FaceMaterialSurvivesEdits, ExtrudeWallsCarryOffsetAndRotation)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, "mat_a" };
+    box.Faces[0].Material.Uv.Scale = { 2.0f, 2.0f };
+    box.Faces[0].Material.Uv.Offset = { 0.25f, -0.5f };
+    box.Faces[0].Material.Uv.Rotation = 15.0f;
+
+    const BrushMesh out = BrushOps::ExtrudeFace(box, 0, 1.0f);
+    // The walls continue the cap's texture: density AND phase carry over so the
+    // texture does not reset at the shared edge.
+    int walls = 0;
+    for (const BrushFace& f : out.Faces)
+    {
+        if (f.Material.Material.Path != "mat_a")
+            continue;
+        EXPECT_FLOAT_EQ(f.Material.Uv.Scale.X, 2.0f);
+        EXPECT_FLOAT_EQ(f.Material.Uv.Offset.X, 0.25f);
+        EXPECT_FLOAT_EQ(f.Material.Uv.Offset.Y, -0.5f);
+        EXPECT_FLOAT_EQ(f.Material.Uv.Rotation, 15.0f);
+        ++walls;
+    }
+    EXPECT_GE(walls, 5); // cap + four walls
+}
+
+TEST(FaceMaterialSurvivesEdits, EdgeExtrudeInheritsSeedFaceMaterial)
+{
+    BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, 1);
+    plane.Faces[0].Material.Material = AssetRef{ AssetType::Material, "floor" };
+    plane.Faces[0].Material.Uv.Scale = { 4.0f, 4.0f };
+    plane.Faces[0].Material.Uv.Offset = { 0.1f, 0.2f };
+
+    const std::uint32_t a = plane.Faces[0].Loop[0];
+    const std::uint32_t b = plane.Faces[0].Loop[1];
+    const BrushMesh out = BrushOps::ExtrudeEdge(plane, a, b, { 0.0f, 1.0f, 0.0f },
+                                                &plane.Faces[0].Material);
+
+    const BrushFace& strip = out.Faces.back();
+    EXPECT_EQ(strip.Material.Material.Path, "floor");
+    EXPECT_FLOAT_EQ(strip.Material.Uv.Scale.X, 4.0f);
+    EXPECT_FLOAT_EQ(strip.Material.Uv.Offset.X, 0.1f);
+    EXPECT_FLOAT_EQ(strip.Material.Uv.Offset.Y, 0.2f);
+}
+
+TEST(FaceMaterialSurvivesEdits, EdgeExtrudeWithoutSeedKeepsDefaults)
+{
+    BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, 1);
+    const std::uint32_t a = plane.Faces[0].Loop[0];
+    const std::uint32_t b = plane.Faces[0].Loop[1];
+    const BrushMesh out = BrushOps::ExtrudeEdge(plane, a, b, { 0.0f, 1.0f, 0.0f });
+    EXPECT_TRUE(out.Faces.back().Material.Material.Path.empty());
+}
+
+TEST(UvProjectionForNormal, WorldAlignedWallsAgreeOnWhichWayIsUp)
+{
+    // Y-up world: every wall (±X and ±Z facing) must map V to world up, or a
+    // texture pulled around a corner rotates 90 degrees between wall axes.
+    for (const Vec3d normal : { Vec3d{ 1, 0, 0 }, Vec3d{ -1, 0, 0 },
+                                Vec3d{ 0, 0, 1 }, Vec3d{ 0, 0, -1 } })
+    {
+        const UvProjection wall = UvProjectionForNormal(normal, true);
+        EXPECT_FLOAT_EQ(wall.AxisV.X, 0.0f);
+        EXPECT_FLOAT_EQ(wall.AxisV.Y, 1.0f);
+        EXPECT_FLOAT_EQ(wall.AxisV.Z, 0.0f);
+        EXPECT_FLOAT_EQ(wall.AxisU.Y, 0.0f);
+    }
+
+    // Floors/ceilings (±Y) box-map the ground plane.
+    for (const Vec3d normal : { Vec3d{ 0, 1, 0 }, Vec3d{ 0, -1, 0 } })
+    {
+        const UvProjection floor = UvProjectionForNormal(normal, true);
+        EXPECT_FLOAT_EQ(floor.AxisU.X, 1.0f);
+        EXPECT_FLOAT_EQ(floor.AxisV.Z, 1.0f);
+    }
 }

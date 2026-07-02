@@ -1,4 +1,5 @@
 #include <assets/cook/TextureCook.h>
+#include <assets/cook/TextureImportSettings.h>
 
 #include <assets/texture/TextureSerializer.h>
 #include <render/Image.h>
@@ -330,11 +331,33 @@ TexturePixelFormat CookedFormatForUsage(TextureUsage usage)
 
 bool CookImageToTexture(const Image& image, TextureUsage usage, TextureData& out, std::string* error)
 {
+    return CookImageToTexture(image, TextureCookParams{ .Usage = usage }, out, error);
+}
+
+bool CookImageToTexture(const Image& image,
+                        const TextureCookParams& params,
+                        TextureData& out,
+                        std::string* error)
+{
     TextureData rgba;
-    if (!BuildTextureMipChainRgba8(image, usage, rgba, error))
+    if (!BuildTextureMipChainRgba8(image, params.Usage, rgba, error))
         return false;
 
-    const TexturePixelFormat format = CookedFormatForUsage(usage);
+    if (!params.GenerateMips)
+    {
+        rgba.Mips.resize(1);
+        rgba.Blob.resize(rgba.Mips[0].ByteSize);
+    }
+
+    if (!params.Compress)
+    {
+        // Keep the colorspace-correct RGBA8/RGBA8_SRGB chain as-is.
+        rgba.Filter = params.Filter;
+        out = std::move(rgba);
+        return true;
+    }
+
+    const TexturePixelFormat format = CookedFormatForUsage(params.Usage);
     if (format == TexturePixelFormat::Unknown)
     {
         if (error)
@@ -350,6 +373,7 @@ bool CookImageToTexture(const Image& image, TextureUsage usage, TextureData& out
         return false;
     }
 
+    encoded.Filter = params.Filter;
     out = std::move(encoded);
     return true;
 }
@@ -368,11 +392,25 @@ ImportResult PngTextureImporter::Import(const ImportInput& input, ICookOutputWri
     if (!image)
         return ImportResult{ .Error = "png import: decode failed" };
 
-    const TextureUsage usage = InferTextureUsageFromName(input.SourceRelPath);
+    // Sidecar import settings (the driver reads the file); a malformed
+    // sidecar fails the import rather than silently cooking with defaults.
+    TextureImportSettings settings;
+    std::string settingsError;
+    if (!ParseTextureImportSettings(input.MetaBytes, settings, &settingsError))
+        return ImportResult{ .Error = "png import: " + settingsError };
+
+    const TextureCookParams params{
+        .Usage = settings.Usage != TextureUsage::Unknown
+                     ? settings.Usage
+                     : InferTextureUsageFromName(input.SourceRelPath),
+        .Filter = settings.Filter,
+        .Compress = settings.Compress,
+        .GenerateMips = settings.GenerateMips,
+    };
 
     TextureData texture;
     std::string cookError;
-    if (!CookImageToTexture(*image, usage, texture, &cookError))
+    if (!CookImageToTexture(*image, params, texture, &cookError))
         return ImportResult{ .Error = cookError };
 
     std::vector<std::byte> stexBytes;

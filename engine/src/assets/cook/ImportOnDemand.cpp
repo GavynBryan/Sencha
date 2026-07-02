@@ -66,6 +66,29 @@ namespace
         return file.good() || size == 0;
     }
 
+    // Source freshness = hash of the source bytes plus, when present, its
+    // import-settings sidecar ("<source>.meta"): editing settings must recook.
+    // An absent or empty sidecar leaves the plain source hash, so cooked
+    // caches from before sidecars existed stay fresh.
+    uint64_t HashSourceWithMeta(const std::filesystem::path& sourcePath,
+                                std::span<const std::byte> sourceBytes,
+                                std::vector<std::byte>& outMetaBytes)
+    {
+        outMetaBytes.clear();
+        uint64_t hash = HashBytes64(sourceBytes);
+
+        std::filesystem::path metaPath = sourcePath;
+        metaPath += std::string(kImportSettingsSuffix);
+        std::error_code ec;
+        if (std::filesystem::exists(metaPath, ec) && ReadFileBytes(metaPath, outMetaBytes)
+            && !outMetaBytes.empty())
+        {
+            const uint64_t metaHash = HashBytes64(std::span<const std::byte>(outMetaBytes));
+            hash ^= metaHash + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
+        }
+        return hash;
+    }
+
     bool ArtifactsAreValid(const std::vector<CookedArtifact>& artifacts, std::string& whyNot)
     {
         if (artifacts.empty())
@@ -202,7 +225,8 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
             ok = false;
             continue;
         }
-        const uint64_t sourceHash = HashBytes64(bytes);
+        std::vector<std::byte> metaBytes;
+        const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
 
         if (const CookedSourceEntry* cached = index.Find(sourceRel);
             cached != nullptr && cached->SourceHash == sourceHash
@@ -213,7 +237,7 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
             continue;
         }
 
-        ImportResult result = importer->Import(ImportInput{ sourceRel, bytes }, writer);
+        ImportResult result = importer->Import(ImportInput{ sourceRel, bytes, metaBytes }, writer);
         std::string whyNot = result.Error;
         if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
         {
@@ -278,10 +302,11 @@ bool ReimportOneSource(std::string_view rootDirectory,
         log.Warn("ReimportOneSource: could not read source '{}'", sourceRelPath);
         return false;
     }
-    const uint64_t sourceHash = HashBytes64(bytes);
+    std::vector<std::byte> metaBytes;
+    const uint64_t sourceHash = HashSourceWithMeta(sourcePath, bytes, metaBytes);
 
     FileCookOutputWriter writer(root);
-    ImportResult result = importer->Import(ImportInput{ sourceRelPath, bytes }, writer);
+    ImportResult result = importer->Import(ImportInput{ sourceRelPath, bytes, metaBytes }, writer);
     std::string whyNot = result.Error;
     if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
     {

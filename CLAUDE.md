@@ -25,7 +25,7 @@ These four pull against each other on purpose. Be modular and SOLID (directives 
 
 - Dependency direction flows one way. Engine / ServiceHost / FrameDriver host the frame; Renderer, World, Registry, ZoneRuntime sit under them. Lower layers do not reference higher ones.
 - `World` owns `Registry` owns archetype storage; `ZoneRuntime` sits over the partition. Respect this containment; do not reach across it.
-- The editor (`sencha_editor`) is a separate executable with its own Registry. Editor-only and cook-only code never links into the runtime. Cook paths stay gated behind `SENCHA_ENABLE_COOK` and are dev-only.
+- The editors are separate executables with their own Registry: `kyusu` (level editor), `chakin` (material editor), and `kettle` (project launcher), all over the `editor_common` shell library. Product names stay on executables and window titles only; internal types are mechanically named. Editor-only and cook-only code never links into the runtime. Cook paths stay gated behind `SENCHA_ENABLE_COOK` and are dev-only.
 
 ## ECS rules
 
