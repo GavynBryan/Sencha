@@ -1,7 +1,7 @@
 #include "DocumentFileActions.h"
 
 #include "EditorDocument.h"
-#include "MaterialLibrary.h"
+#include "project/MaterialLibrary.h"
 #include "SceneBrushWalk.h"
 #include "commands/CommandStack.h"
 #include "selection/SelectionService.h"

@@ -9,14 +9,14 @@
 #include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
 #include "document/DocumentSerialization.h"
-#include "document/MaterialLibrary.h"
+#include "project/MaterialLibrary.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
 #include "export/GltfMeshExport.h"
 #include "project/PieDriver.h"
 #include "render/EditorRenderFeature.h"
 #include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
-#include "ui/EditorThemeFile.h"
+#include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/InspectorPanel.h"
@@ -57,10 +57,6 @@
 #include <optional>
 #include <string>
 #include <variant>
-
-#ifndef SENCHA_EDITOR_THEME_DIR
-#define SENCHA_EDITOR_THEME_DIR "."
-#endif
 
 EditorServices::EditorServices(Engine& engine,
                                SdlWindow& window,
@@ -348,33 +344,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsoleService& console = engine.Console();
     DebugService& debug = engine.Debug();
 
-    // Chrome theme (directive: behavior from data). A theme name resolves under
-    // the bundled themes/ directory; a path is used as-is. Empty keeps the
-    // built-in palette. Loaded BEFORE the UI feature applies the ImGui style.
-    console.Registry().RegisterCVar({
-        .Name = "editor.ui.theme",
-        .Owner = "editor",
-        .Type = CVarType::String,
-        .DefaultValue = std::string{},
-        .CurrentValue = std::string{},
-        .Flags = CVarFlags::Archive,
-        .Help = "Editor chrome theme: a name under the bundled themes/ dir or a path to a theme JSON. Empty = built-in. Applied at startup.",
-        .Source = { "editor" },
-    });
-    if (const CVarMetadata* themeVar = console.Registry().FindCVar("editor.ui.theme"))
-    {
-        if (const std::string* name = std::get_if<std::string>(&themeVar->CurrentValue);
-            name != nullptr && !name->empty())
-        {
-            std::filesystem::path themePath(*name);
-            std::error_code ec;
-            if (!std::filesystem::exists(themePath, ec))
-                themePath = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / (*name + ".json");
-            std::string themeError;
-            if (!LoadEditorTheme(themePath, &themeError) || !themeError.empty())
-                std::fprintf(stderr, "[editor] %s\n", themeError.c_str());
-        }
-    }
+    // Chrome theme (directive: behavior from data), loaded BEFORE the UI
+    // feature applies the ImGui style.
+    ApplyEditorThemeFromConsole(console);
 
     auto& instance = engine.Graphics().Instance;
     auto& frames = engine.Graphics().Frames;

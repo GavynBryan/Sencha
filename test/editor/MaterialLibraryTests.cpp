@@ -1,4 +1,4 @@
-#include "document/MaterialLibrary.h"
+#include "project/MaterialLibrary.h"
 
 #include <core/logging/LoggingProvider.h>
 
