@@ -1,7 +1,5 @@
 #include "MaterialBrowserPanel.h"
 
-#include "MaterialEditSession.h"
-
 #include "project/MaterialLibrary.h"
 #include "ui/ScopedPanel.h"
 
@@ -10,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
+#include <cstdio>
 #include <string_view>
 
 namespace
@@ -37,10 +36,10 @@ namespace
 }
 
 MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
-                                           const MaterialEditSession& session,
+                                           MaterialTabSet& tabs,
                                            Actions actions)
     : Materials(materials)
-    , Session(session)
+    , Tabs(tabs)
     , Act(std::move(actions))
 {
 }
@@ -50,7 +49,7 @@ void MaterialBrowserPanel::OnDraw()
     if (!IsVisible())
         return;
 
-    ScopedPanel panel(GetTitle().data(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen())
         return;
 
@@ -63,16 +62,17 @@ void MaterialBrowserPanel::OnDraw()
     ImGui::InputText("##name", NameBuffer, sizeof(NameBuffer));
     ImGui::SameLine();
     const bool nameValid = NameBuffer[0] != '\0';
+    const MaterialEditTab* active = Tabs.Active();
     ImGui::BeginDisabled(!nameValid);
     if (ImGui::Button("New") && Act.CreateNew)
         Act.CreateNew(NameBuffer);
     ImGui::SameLine();
-    ImGui::BeginDisabled(!Session.HasOpen());
+    ImGui::BeginDisabled(active == nullptr || !active->Session.HasOpen());
     if (ImGui::Button("Duplicate") && Act.Duplicate)
         Act.Duplicate(NameBuffer);
     ImGui::EndDisabled();
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("New writes a default material; Duplicate copies the open one. Both land in materials/<name>.smat under the first content root.");
+    ImGui::SetItemTooltip("New writes a default material; Duplicate copies the active tab. Both land in materials/<name>.smat under the first content root.");
 
     ImGui::Separator();
     ImGui::SetNextItemWidth(-FLT_MIN);
@@ -81,6 +81,28 @@ void MaterialBrowserPanel::OnDraw()
     if (ImGui::BeginChild("##materials"))
         DrawMaterialList();
     ImGui::EndChild();
+
+    DrawRenamePopup();
+}
+
+void MaterialBrowserPanel::DrawMaterialRow(const char* label, const std::string& virtualPath,
+                                           const std::string& displayName)
+{
+    const bool selected = Tabs.Find(virtualPath) != nullptr;
+    ImGui::PushID(virtualPath.c_str());
+    if (ImGui::Selectable(label, selected) && Act.Open)
+        Act.Open(virtualPath);
+    if (ImGui::BeginPopupContextItem("row_context"))
+    {
+        if (ImGui::MenuItem("Rename / Move..."))
+        {
+            RenameTarget = virtualPath;
+            std::snprintf(RenameBuffer, sizeof(RenameBuffer), "%s", displayName.c_str());
+            RenamePopupPending = true;
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
 }
 
 void MaterialBrowserPanel::DrawMaterialList()
@@ -96,9 +118,7 @@ void MaterialBrowserPanel::DrawMaterialList()
         {
             if (!ContainsCaseInsensitive(material.DisplayName, filter))
                 continue;
-            const bool selected = Session.HasOpen() && Session.VirtualPath() == material.Path;
-            if (ImGui::Selectable(material.DisplayName.c_str(), selected) && Act.Open)
-                Act.Open(material.Path);
+            DrawMaterialRow(material.DisplayName.c_str(), material.Path, material.DisplayName);
         }
         return;
     }
@@ -125,13 +145,42 @@ void MaterialBrowserPanel::DrawMaterialList()
         if (!folderVisible)
             continue;
 
-        const bool selected = Session.HasOpen() && Session.VirtualPath() == material.Path;
-        // ID from the full path: two folders may both hold e.g. "wall".
-        ImGui::PushID(material.Path.c_str());
-        if (ImGui::Selectable(std::string(leaf).c_str(), selected) && Act.Open)
-            Act.Open(material.Path);
-        ImGui::PopID();
+        DrawMaterialRow(std::string(leaf).c_str(), material.Path, material.DisplayName);
     }
     if (folderStarted && folderVisible && !openFolder.empty())
         ImGui::TreePop();
+}
+
+void MaterialBrowserPanel::DrawRenamePopup()
+{
+    if (RenamePopupPending)
+    {
+        ImGui::OpenPopup("Rename Material");
+        RenamePopupPending = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Rename Material", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    ImGui::TextDisabled("%s", RenameTarget.c_str());
+    ImGui::InputTextWithHint("New path", "materials/walls/brick", RenameBuffer,
+                             sizeof(RenameBuffer));
+    ImGui::TextDisabled("Content-root-relative; folders are created as needed.\nLevels referencing the old path fall back to the level default.");
+
+    ImGui::BeginDisabled(RenameBuffer[0] == '\0');
+    if (ImGui::Button("Rename"))
+    {
+        if (Act.Rename)
+            Act.Rename(RenameTarget, RenameBuffer);
+        RenameTarget.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+    {
+        RenameTarget.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }

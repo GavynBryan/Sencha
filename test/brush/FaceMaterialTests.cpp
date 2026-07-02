@@ -86,13 +86,16 @@ TEST(ProjectUv, ResizeKeepsConstantDensity)
 
 TEST(UvProjectionForNormal, WorldAlignedPicksBoxPlaneByDominantAxis)
 {
-    const UvProjection up = UvProjectionForNormal(Vec3d{ 0.0f, 0.0f, 1.0f }, true);
-    EXPECT_FLOAT_EQ(up.AxisU.X, 1.0f);
-    EXPECT_FLOAT_EQ(up.AxisV.Y, 1.0f);
+    // Y-up: a Z-facing wall maps U along X, V up.
+    const UvProjection wall = UvProjectionForNormal(Vec3d{ 0.0f, 0.0f, 1.0f }, true);
+    EXPECT_FLOAT_EQ(wall.AxisU.X, 1.0f);
+    EXPECT_FLOAT_EQ(wall.AxisV.Y, 1.0f);
 
+    // An X-facing wall maps U along Z, V up (the pre-fix U=Y rotated its
+    // texture 90 degrees relative to Z-facing walls).
     const UvProjection side = UvProjectionForNormal(Vec3d{ 1.0f, 0.0f, 0.0f }, true);
-    EXPECT_FLOAT_EQ(side.AxisU.Y, 1.0f);
-    EXPECT_FLOAT_EQ(side.AxisV.Z, 1.0f);
+    EXPECT_FLOAT_EQ(side.AxisU.Z, 1.0f);
+    EXPECT_FLOAT_EQ(side.AxisV.Y, 1.0f);
 }
 
 TEST(UvProjectionForNormal, FaceAlignedBasisIsOrthonormalAndInPlane)
@@ -477,4 +480,27 @@ TEST(FaceMaterialSurvivesEdits, EdgeExtrudeWithoutSeedKeepsDefaults)
     const std::uint32_t b = plane.Faces[0].Loop[1];
     const BrushMesh out = BrushOps::ExtrudeEdge(plane, a, b, { 0.0f, 1.0f, 0.0f });
     EXPECT_TRUE(out.Faces.back().Material.Material.Path.empty());
+}
+
+TEST(UvProjectionForNormal, WorldAlignedWallsAgreeOnWhichWayIsUp)
+{
+    // Y-up world: every wall (±X and ±Z facing) must map V to world up, or a
+    // texture pulled around a corner rotates 90 degrees between wall axes.
+    for (const Vec3d normal : { Vec3d{ 1, 0, 0 }, Vec3d{ -1, 0, 0 },
+                                Vec3d{ 0, 0, 1 }, Vec3d{ 0, 0, -1 } })
+    {
+        const UvProjection wall = UvProjectionForNormal(normal, true);
+        EXPECT_FLOAT_EQ(wall.AxisV.X, 0.0f);
+        EXPECT_FLOAT_EQ(wall.AxisV.Y, 1.0f);
+        EXPECT_FLOAT_EQ(wall.AxisV.Z, 0.0f);
+        EXPECT_FLOAT_EQ(wall.AxisU.Y, 0.0f);
+    }
+
+    // Floors/ceilings (±Y) box-map the ground plane.
+    for (const Vec3d normal : { Vec3d{ 0, 1, 0 }, Vec3d{ 0, -1, 0 } })
+    {
+        const UvProjection floor = UvProjectionForNormal(normal, true);
+        EXPECT_FLOAT_EQ(floor.AxisU.X, 1.0f);
+        EXPECT_FLOAT_EQ(floor.AxisV.Z, 1.0f);
+    }
 }

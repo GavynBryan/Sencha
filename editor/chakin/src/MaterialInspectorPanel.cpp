@@ -2,47 +2,76 @@
 
 #include "EditMaterialCommand.h"
 
-#include "commands/CommandStack.h"
 #include "ui/ScopedPanel.h"
 
 #include <core/assets/AssetRegistry.h>
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <memory>
+#include <string_view>
 
-MaterialInspectorPanel::MaterialInspectorPanel(MaterialEditSession& session,
-                                               CommandStack& commands,
-                                               const AssetRegistry& registry)
-    : Session(session)
-    , Commands(commands)
+namespace
+{
+    bool ContainsCaseInsensitive(std::string_view haystack, std::string_view needle)
+    {
+        if (needle.empty())
+            return true;
+        const auto it = std::search(
+            haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+            [](char a, char b)
+            { return std::tolower(static_cast<unsigned char>(a))
+                  == std::tolower(static_cast<unsigned char>(b)); });
+        return it != haystack.end();
+    }
+
+    // Source textures only. The registry also holds the physical cooked
+    // artifacts (asset://...png.stex from the .cooked scan); materials must
+    // reference the SOURCE path, which the asset system serves cooked bytes
+    // for, so the cooked spellings never belong in the picker.
+    bool IsPickableTexture(const AssetRecord& record)
+    {
+        if (record.Type != AssetType::Texture)
+            return false;
+        constexpr std::string_view cooked = ".stex";
+        const std::string_view path = record.Path;
+        return path.size() < cooked.size()
+            || path.substr(path.size() - cooked.size()) != cooked;
+    }
+}
+
+MaterialInspectorPanel::MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry)
+    : Tabs(tabs)
     , Registry(registry)
 {
 }
 
-void MaterialInspectorPanel::CommitWidgetEdit(MaterialDescription& edited)
+void MaterialInspectorPanel::CommitWidgetEdit(MaterialEditTab& tab, MaterialDescription& edited)
 {
     if (ImGui::IsItemActivated())
     {
-        EditBaseline = Session.Working();
+        EditBaseline = tab.Session.Working();
         BaselineCaptured = true;
     }
 
     // Live-apply during the drag so the preview tracks the widget.
-    if (!SameMaterialDescription(edited, Session.Working()))
-        Session.SetWorking(edited);
+    if (!SameMaterialDescription(edited, tab.Session.Working()))
+        tab.Session.SetWorking(edited);
 
     if (ImGui::IsItemDeactivatedAfterEdit() && BaselineCaptured)
     {
-        if (!SameMaterialDescription(EditBaseline, Session.Working()))
-            Commands.Execute(std::make_unique<EditMaterialCommand>(
-                Session, EditBaseline, Session.Working()));
+        if (!SameMaterialDescription(EditBaseline, tab.Session.Working()))
+            tab.Commands.Execute(std::make_unique<EditMaterialCommand>(
+                tab.Session, EditBaseline, tab.Session.Working()));
         BaselineCaptured = false;
     }
 }
 
-void MaterialInspectorPanel::DrawTextureSlot(const char* id, const char* label, AssetRef& slot,
+void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* id,
+                                             const char* label, AssetRef& slot,
                                              MaterialDescription& edited)
 {
     ImGui::PushID(id);
@@ -51,7 +80,10 @@ void MaterialInspectorPanel::DrawTextureSlot(const char* id, const char* label, 
 
     const char* current = slot.Path.empty() ? "(none)" : slot.Path.c_str();
     if (ImGui::Button(current, ImVec2(-FLT_MIN, 0.0f)))
+    {
+        TextureFilter[0] = '\0';
         ImGui::OpenPopup("texture_picker");
+    }
 
     if (ImGui::BeginPopup("texture_picker"))
     {
@@ -59,25 +91,46 @@ void MaterialInspectorPanel::DrawTextureSlot(const char* id, const char* label, 
         // snapshot, apply, push the command in one step.
         const auto apply = [&](const std::string& path)
         {
-            const MaterialDescription before = Session.Working();
+            const MaterialDescription before = tab.Session.Working();
             slot.Type = AssetType::Texture;
             slot.Path = path;
-            Session.SetWorking(edited);
-            if (!SameMaterialDescription(before, Session.Working()))
-                Commands.Execute(std::make_unique<EditMaterialCommand>(
-                    Session, before, Session.Working()));
+            tab.Session.SetWorking(edited);
+            if (!SameMaterialDescription(before, tab.Session.Working()))
+                tab.Commands.Execute(std::make_unique<EditMaterialCommand>(
+                    tab.Session, before, tab.Session.Working()));
+            ImGui::CloseCurrentPopup();
         };
+
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(320.0f);
+        ImGui::InputTextWithHint("##texfilter", "filter textures", TextureFilter,
+                                 sizeof(TextureFilter));
 
         if (ImGui::Selectable("(none)"))
             apply(std::string{});
         ImGui::Separator();
-        for (const auto& [path, record] : Registry.Records())
+
+        // A game ships hundreds of textures: fixed-height scrolling list under
+        // the filter, never a screen-tall popup.
+        if (ImGui::BeginChild("##texlist", ImVec2(320.0f, 300.0f)))
         {
-            if (record.Type != AssetType::Texture)
-                continue;
-            if (ImGui::Selectable(record.Path.c_str()))
-                apply(record.Path);
+            const std::string_view filter = TextureFilter;
+            int shown = 0;
+            for (const auto& [path, record] : Registry.Records())
+            {
+                if (!IsPickableTexture(record))
+                    continue;
+                if (!ContainsCaseInsensitive(record.Path, filter))
+                    continue;
+                ++shown;
+                if (ImGui::Selectable(record.Path.c_str(), record.Path == slot.Path))
+                    apply(record.Path);
+            }
+            if (shown == 0)
+                ImGui::TextDisabled("no textures match");
         }
+        ImGui::EndChild();
         ImGui::EndPopup();
     }
     ImGui::PopID();
@@ -92,21 +145,22 @@ void MaterialInspectorPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    if (!Session.HasOpen())
+    MaterialEditTab* tab = Tabs.Active();
+    if (tab == nullptr || !tab->Session.HasOpen())
     {
         ImGui::TextDisabled("Open a material from the Materials panel.");
         return;
     }
 
-    ImGui::TextUnformatted(Session.VirtualPath().c_str());
-    if (Session.IsDirty())
+    ImGui::TextUnformatted(tab->Session.VirtualPath().c_str());
+    if (tab->Session.IsDirty())
     {
         ImGui::SameLine();
         ImGui::TextDisabled("(modified)");
     }
     ImGui::Separator();
 
-    MaterialDescription edited = Session.Working();
+    MaterialDescription edited = tab->Session.Working();
 
     if (ImGui::CollapsingHeader("Base Color", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -114,24 +168,24 @@ void MaterialInspectorPanel::OnDraw()
                            edited.BaseColorFactor.Z, edited.BaseColorFactor.W };
         ImGui::ColorEdit4("Factor", color, ImGuiColorEditFlags_Float);
         edited.BaseColorFactor = Vec4(color[0], color[1], color[2], color[3]);
-        CommitWidgetEdit(edited);
-        DrawTextureSlot("base_color_texture", "Texture", edited.BaseColorTexture, edited);
+        CommitWidgetEdit(*tab, edited);
+        DrawTextureSlot(*tab, "base_color_texture", "Texture", edited.BaseColorTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Surface", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::SliderFloat("Roughness", &edited.RoughnessFactor, 0.0f, 1.0f);
-        CommitWidgetEdit(edited);
+        CommitWidgetEdit(*tab, edited);
         ImGui::SliderFloat("Metallic", &edited.MetallicFactor, 0.0f, 1.0f);
-        CommitWidgetEdit(edited);
-        DrawTextureSlot("orm_texture", "ORM Texture", edited.OrmTexture, edited);
+        CommitWidgetEdit(*tab, edited);
+        DrawTextureSlot(*tab, "orm_texture", "ORM Texture", edited.OrmTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Normal", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        DrawTextureSlot("normal_texture", "Texture", edited.NormalTexture, edited);
+        DrawTextureSlot(*tab, "normal_texture", "Texture", edited.NormalTexture, edited);
         ImGui::SliderFloat("Scale", &edited.NormalScale, 0.0f, 2.0f);
-        CommitWidgetEdit(edited);
+        CommitWidgetEdit(*tab, edited);
     }
 
     if (ImGui::CollapsingHeader("Emissive", ImGuiTreeNodeFlags_DefaultOpen))
@@ -141,8 +195,8 @@ void MaterialInspectorPanel::OnDraw()
         ImGui::ColorEdit3("Factor##emissive", emissive,
                           ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         edited.EmissiveFactor = Vec4(emissive[0], emissive[1], emissive[2], 0.0f);
-        CommitWidgetEdit(edited);
-        DrawTextureSlot("emissive_texture", "Texture", edited.EmissiveTexture, edited);
+        CommitWidgetEdit(*tab, edited);
+        DrawTextureSlot(*tab, "emissive_texture", "Texture", edited.EmissiveTexture, edited);
     }
 
     if (ImGui::CollapsingHeader("Alpha", ImGuiTreeNodeFlags_DefaultOpen))
@@ -151,16 +205,16 @@ void MaterialInspectorPanel::OnDraw()
         int mode = static_cast<int>(edited.AlphaMode);
         if (ImGui::Combo("Mode", &mode, kModes, 3))
         {
-            const MaterialDescription before = Session.Working();
+            const MaterialDescription before = tab->Session.Working();
             edited.AlphaMode = static_cast<MaterialAlphaMode>(mode);
-            Session.SetWorking(edited);
-            Commands.Execute(std::make_unique<EditMaterialCommand>(
-                Session, before, Session.Working()));
+            tab->Session.SetWorking(edited);
+            tab->Commands.Execute(std::make_unique<EditMaterialCommand>(
+                tab->Session, before, tab->Session.Working()));
         }
         if (edited.AlphaMode == MaterialAlphaMode::Mask)
         {
             ImGui::SliderFloat("Cutoff", &edited.AlphaCutoff, 0.0f, 1.0f);
-            CommitWidgetEdit(edited);
+            CommitWidgetEdit(*tab, edited);
         }
     }
 }

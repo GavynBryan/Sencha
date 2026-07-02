@@ -115,13 +115,13 @@ std::string PieDriver::ResolveHostAppPath() const
     // weakly_canonical drops SDL's trailing slash so parent_path is the real parent.
     const std::filesystem::path baseDir = std::filesystem::weakly_canonical(base);
 
-    // Installed SDK: app sits beside the editor (bin/app, bin/sencha_editor).
+    // Installed SDK: app sits beside the editor (bin/app, bin/kyusu).
     std::filesystem::path candidate = baseDir / "app";
     if (std::filesystem::exists(candidate))
         return candidate.string();
 
-    // Build tree: editor is build/editor/, app is build/app/.
-    candidate = baseDir.parent_path() / "app" / "app";
+    // Build tree: the editor is build/editor/kyusu/, app is build/app/.
+    candidate = baseDir.parent_path().parent_path() / "app" / "app";
     if (std::filesystem::exists(candidate))
         return candidate.string();
 

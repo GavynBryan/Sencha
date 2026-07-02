@@ -89,3 +89,11 @@ bool MaterialEditSession::CreateNew(const std::string& filePath, std::string* er
 {
     return SaveMaterialFile(filePath, MaterialDescription{}, error);
 }
+
+void MaterialEditSession::RenameTo(std::string virtualPath, std::string filePath)
+{
+    if (!HasOpen())
+        return;
+    OpenVirtualPath = std::move(virtualPath);
+    OpenFilePath = std::move(filePath);
+}

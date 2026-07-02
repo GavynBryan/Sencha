@@ -50,6 +50,10 @@ public:
     // Writes a default-constructed material to `filePath` (new material).
     static bool CreateNew(const std::string& filePath, std::string* error);
 
+    // Re-points the open material after its file moved on disk (rename/move).
+    // Saved and working state are unaffected; the content did not change.
+    void RenameTo(std::string virtualPath, std::string filePath);
+
 private:
     std::string OpenVirtualPath;
     std::string OpenFilePath;

@@ -78,6 +78,7 @@ public:
                         std::function<void()> openAction,
                         std::function<void()> saveAction,
                         std::function<void()> saveAsAction);
+    void SetSaveAllAction(std::function<void()> saveAllAction);
 
 private:
     bool InitImGui(const RendererServices& services);
@@ -109,6 +110,7 @@ private:
     std::function<void()> OpenAction;
     std::function<void()> SaveAction;
     std::function<void()> SaveAsAction;
+    std::function<void()> SaveAllAction;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;

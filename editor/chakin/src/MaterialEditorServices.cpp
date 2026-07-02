@@ -60,8 +60,10 @@ MaterialEditorServices::~MaterialEditorServices()
     // tear down later, in ~Renderer.
     if (Preview != nullptr)
         Preview->ReleaseResources();
-    if (Assets && OpenMaterialHandle.IsValid())
-        Assets->Assets.ReleaseMaterial(OpenMaterialHandle);
+    if (Assets)
+        for (const auto& tab : Tabs.Tabs())
+            if (tab->Handle.IsValid())
+                Assets->Assets.ReleaseMaterial(tab->Handle);
     Assets.reset();
 }
 
@@ -116,26 +118,30 @@ void MaterialEditorServices::BuildUi()
         "chakin.imgui.ini");
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
-        [this]() { Commands.Undo(); },
-        [this]() { Commands.Redo(); },
-        [this]() { return Commands.CanUndo(); },
-        [this]() { return Commands.CanRedo(); });
+        [this]() { if (MaterialEditTab* tab = Tabs.Active()) tab->Commands.Undo(); },
+        [this]() { if (MaterialEditTab* tab = Tabs.Active()) tab->Commands.Redo(); },
+        [this]() { MaterialEditTab* tab = Tabs.Active(); return tab != nullptr && tab->Commands.CanUndo(); },
+        [this]() { MaterialEditTab* tab = Tabs.Active(); return tab != nullptr && tab->Commands.CanRedo(); });
     UiFeature->SetFileActions(
         {},
         {},
-        [this]() { SaveOpenMaterial(); },
+        [this]() { SaveActiveMaterial(); },
         {});
+    UiFeature->SetSaveAllAction([this]() { SaveAllMaterials(); });
 
     UiFeature->AddPanel(std::make_unique<MaterialBrowserPanel>(
-        *Materials, Session,
+        *Materials, Tabs,
         MaterialBrowserPanel::Actions{
             .Open = [this](const std::string& path) { OpenMaterial(path); },
             .CreateNew = [this](const std::string& name) { CreateMaterial(name, false); },
             .Duplicate = [this](const std::string& name) { CreateMaterial(name, true); },
+            .Rename = [this](const std::string& path, const std::string& newRelPath)
+            { RenameMaterial(path, newRelPath); },
             .Rescan = [this]() { RescanMaterials(); },
         }));
-    UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(Session, Commands, Assets->Registry));
-    UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(*Preview));
+    UiFeature->AddPanel(std::make_unique<MaterialInspectorPanel>(Tabs, Assets->Registry));
+    UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
+        *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
 
     renderer.AddFeature(std::move(uiFeature));
 }
@@ -151,18 +157,21 @@ void MaterialEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
         && (ctx.Event.key.mod & SDL_KMOD_CTRL) != 0)
     {
         const bool shift = (ctx.Event.key.mod & SDL_KMOD_SHIFT) != 0;
+        MaterialEditTab* tab = Tabs.Active();
         switch (ctx.Event.key.scancode)
         {
         case SDL_SCANCODE_S:
-            SaveOpenMaterial();
+            shift ? SaveAllMaterials() : SaveActiveMaterial();
             ctx.Handled = true;
             return;
         case SDL_SCANCODE_Z:
-            shift ? Commands.Redo() : Commands.Undo();
+            if (tab != nullptr)
+                shift ? tab->Commands.Redo() : tab->Commands.Undo();
             ctx.Handled = true;
             return;
         case SDL_SCANCODE_Y:
-            Commands.Redo();
+            if (tab != nullptr)
+                tab->Commands.Redo();
             ctx.Handled = true;
             return;
         default:
@@ -176,11 +185,19 @@ void MaterialEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 
 void MaterialEditorServices::ProcessFrame()
 {
-    if (Session.Version() != AppliedSessionVersion)
-    {
-        ApplyWorkingToResident();
-        AppliedSessionVersion = Session.Version();
-    }
+    for (const auto& tab : Tabs.Tabs())
+        if (tab->Session.Version() != tab->AppliedVersion)
+        {
+            ApplyWorkingToResident(*tab);
+            tab->AppliedVersion = tab->Session.Version();
+        }
+
+    // The preview follows the active tab (tab bar clicks change it without
+    // going through OpenMaterial).
+    MaterialEditTab* active = Tabs.Active();
+    if (Preview != nullptr)
+        Preview->SetMaterial(active != nullptr ? active->Handle : MaterialHandle{});
+
     UpdateTitle();
 }
 
@@ -196,40 +213,56 @@ void MaterialEditorServices::OpenMaterial(const std::string& virtualPath)
     }
 
     std::string error;
-    if (!Session.Open(virtualPath, record->FilePath, &error))
+    const bool existed = Tabs.Find(virtualPath) != nullptr;
+    MaterialEditTab* tab = Tabs.OpenOrFocus(virtualPath, record->FilePath, &error);
+    if (tab == nullptr)
     {
         std::fprintf(stderr, "[chakin] failed to open '%s': %s\n", virtualPath.c_str(), error.c_str());
         return;
     }
 
-    // Undo history belongs to one material: a stale command applied to a
-    // different open file would silently edit the wrong asset.
-    Commands.Clear();
-
-    if (OpenMaterialHandle.IsValid())
-        Assets->Assets.ReleaseMaterial(OpenMaterialHandle);
-    OpenMaterialHandle = Assets->Assets.LoadMaterial(virtualPath);
-    Preview->SetMaterial(OpenMaterialHandle);
-
-    // The resident material just loaded from disk, which is the saved (and,
-    // right after Open, working) state.
-    AppliedSessionVersion = Session.Version();
+    if (!existed)
+    {
+        tab->Handle = Assets->Assets.LoadMaterial(virtualPath);
+        // The resident material just loaded from disk, which is the saved
+        // (and, right after Open, working) state.
+        tab->AppliedVersion = tab->Session.Version();
+    }
 }
 
-void MaterialEditorServices::SaveOpenMaterial()
+void MaterialEditorServices::CloseTab(std::size_t index)
 {
-    if (!Session.HasOpen())
+    if (index >= Tabs.Tabs().size())
+        return;
+    if (Assets && Tabs.Tabs()[index]->Handle.IsValid())
+        Assets->Assets.ReleaseMaterial(Tabs.Tabs()[index]->Handle);
+    Tabs.Close(index);
+}
+
+void MaterialEditorServices::SaveActiveMaterial()
+{
+    MaterialEditTab* tab = Tabs.Active();
+    if (tab == nullptr || !tab->Session.HasOpen())
         return;
     std::string error;
-    if (!Session.Save(&error))
+    if (!tab->Session.Save(&error))
         std::fprintf(stderr, "[chakin] save failed: %s\n", error.c_str());
+}
+
+void MaterialEditorServices::SaveAllMaterials()
+{
+    std::string error;
+    Tabs.SaveAll(&error);
+    if (!error.empty())
+        std::fprintf(stderr, "[chakin] save all: %s\n", error.c_str());
 }
 
 void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplicateOpen)
 {
     if (!Assets || !Project || Project->ContentRoots.empty() || name.empty())
         return;
-    if (duplicateOpen && !Session.HasOpen())
+    MaterialEditTab* active = Tabs.Active();
+    if (duplicateOpen && (active == nullptr || !active->Session.HasOpen()))
         return;
 
     const std::filesystem::path root(Project->ContentRoots.front());
@@ -243,7 +276,7 @@ void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplic
     }
 
     std::string error;
-    const bool written = duplicateOpen ? Session.SaveTo(file.string(), &error)
+    const bool written = duplicateOpen ? active->Session.SaveTo(file.string(), &error)
                                        : MaterialEditSession::CreateNew(file.string(), &error);
     if (!written)
     {
@@ -255,39 +288,114 @@ void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplic
     OpenMaterial("asset://materials/" + name + ".smat");
 }
 
+void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
+                                            const std::string& newRelPath)
+{
+    if (!Assets || !Project || newRelPath.empty())
+        return;
+    const AssetRecord* record = Assets->Registry.FindByPath(virtualPath);
+    if (record == nullptr || record->FilePath.empty())
+    {
+        std::fprintf(stderr, "[chakin] '%s' is not a renameable material file\n", virtualPath.c_str());
+        return;
+    }
+
+    // The move stays inside the content root that owns the file, so the new
+    // asset:// path is the new root-relative path.
+    const std::filesystem::path oldFile(record->FilePath);
+    std::filesystem::path owningRoot;
+    for (const std::string& root : Project->ContentRoots)
+    {
+        const auto rel = oldFile.lexically_relative(root);
+        if (!rel.empty() && rel.native().rfind("..", 0) != 0)
+        {
+            owningRoot = root;
+            break;
+        }
+    }
+    if (owningRoot.empty())
+    {
+        std::fprintf(stderr, "[chakin] '%s' is outside every content root\n", record->FilePath.c_str());
+        return;
+    }
+
+    std::string rel = newRelPath;
+    if (rel.size() < 5 || rel.substr(rel.size() - 5) != ".smat")
+        rel += ".smat";
+    const std::filesystem::path newFile = (owningRoot / rel).lexically_normal();
+
+    std::error_code ec;
+    if (std::filesystem::exists(newFile, ec))
+    {
+        std::fprintf(stderr, "[chakin] '%s' already exists\n", newFile.string().c_str());
+        return;
+    }
+    std::filesystem::create_directories(newFile.parent_path(), ec);
+    std::filesystem::rename(oldFile, newFile, ec);
+    if (ec)
+    {
+        std::fprintf(stderr, "[chakin] rename failed: %s\n", ec.message().c_str());
+        return;
+    }
+
+    const std::string newVirtual = "asset://" + rel;
+    // Levels referencing the old path are not rewritten; those faces render
+    // as the level default until reassigned. Same policy as deleting a file.
+    std::fprintf(stderr, "[chakin] renamed '%s' -> '%s' (level refs are not rewritten)\n",
+                 virtualPath.c_str(), newVirtual.c_str());
+
+    if (MaterialEditTab* tab = Tabs.Find(virtualPath))
+    {
+        tab->Session.RenameTo(newVirtual, newFile.string());
+        if (tab->Handle.IsValid())
+            Assets->Assets.ReleaseMaterial(tab->Handle);
+        tab->Handle = MaterialHandle{};
+    }
+
+    RescanMaterials();
+
+    if (MaterialEditTab* tab = Tabs.Find(newVirtual); tab != nullptr && !tab->Handle.IsValid())
+    {
+        tab->Handle = Assets->Assets.LoadMaterial(newVirtual);
+        // Force a re-apply so an unsaved working state survives the move.
+        tab->AppliedVersion = 0;
+    }
+}
+
 void MaterialEditorServices::RescanMaterials()
 {
     if (!Assets || !Project)
         return;
     // Registry re-scan picks up files created since startup (this app's New/
-    // Duplicate included), then the pickable list follows.
+    // Duplicate/Rename included), then the pickable list follows.
     for (const std::string& root : Project->ContentRoots)
         ScanAssetsDirectory(root, Assets->Registry);
     Materials->Rescan(Project->ContentRoots);
 }
 
-void MaterialEditorServices::ApplyWorkingToResident()
+void MaterialEditorServices::ApplyWorkingToResident(MaterialEditTab& tab)
 {
-    if (!Assets || !Session.HasOpen() || !OpenMaterialHandle.IsValid())
+    if (!Assets || !tab.Session.HasOpen() || !tab.Handle.IsValid())
         return;
-    const AssetRecord* record = Assets->Registry.FindByPath(Session.VirtualPath());
+    const AssetRecord* record = Assets->Registry.FindByPath(tab.Session.VirtualPath());
     if (record == nullptr)
         return;
 
     AssetStaging staging;
     staging.Record = *record;
-    staging.Payload = Session.Working();
+    staging.Payload = tab.Session.Working();
     (void)Assets->Assets.MaterialLoaderRef().CommitReload(std::move(staging));
 }
 
 void MaterialEditorServices::UpdateTitle()
 {
+    MaterialEditTab* tab = Tabs.Active();
     std::string title = "Chakin - Material Editor";
-    if (Session.HasOpen())
+    if (tab != nullptr && tab->Session.HasOpen())
     {
         title += " - ";
-        title += Session.VirtualPath();
-        if (Session.IsDirty())
+        title += tab->Session.VirtualPath();
+        if (tab->Session.IsDirty())
             title += " *";
     }
     if (title != LastWindowTitle && Window != nullptr)

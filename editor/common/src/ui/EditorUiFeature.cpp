@@ -308,6 +308,11 @@ void EditorUiFeature::SetFileActions(std::function<void()> newAction,
     SaveAsAction = std::move(saveAsAction);
 }
 
+void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
+{
+    SaveAllAction = std::move(saveAllAction);
+}
+
 bool EditorUiFeature::InitImGui(const RendererServices& services)
 {
     if (!services.Device || !services.PhysicalDevice || !services.Queues || !services.Swapchain)
@@ -466,6 +471,8 @@ void EditorUiFeature::DrawMainMenuBar()
             OpenAction();
         if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveAction != nullptr) && SaveAction)
             SaveAction();
+        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, SaveAllAction != nullptr) && SaveAllAction)
+            SaveAllAction();
         if (ImGui::MenuItem("Save As", nullptr, false, SaveAsAction != nullptr) && SaveAsAction)
             SaveAsAction();
         if (ImGui::MenuItem("Exit"))
