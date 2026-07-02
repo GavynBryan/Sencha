@@ -3,6 +3,7 @@
 #include "project/Project.h"
 #include "document/DocumentCook.h"
 #include "document/EditorDocument.h"
+#include "document/WorldCook.h"
 #include "document/WorldDocument.h"
 
 #include <app/Engine.h>
@@ -34,15 +35,6 @@ std::string PieDriver::Cook(const std::string& levelName)
         return {};
     }
 
-    // Name the artifacts after the explicit arg, else the document's file stem,
-    // else "untitled" for a never-saved level.
-    std::string name = levelName;
-    if (name.empty())
-    {
-        const std::filesystem::path docPath(World_.FocusDocument().GetDisplayName());
-        name = World_.FocusDocument().HasFilePath() ? docPath.stem().string() : "untitled";
-    }
-
     double cellSize = 16.0;
     if (const CVarMetadata* cvar = Engine_.Console().Registry().FindCVar("editor.cook.cell_size");
         cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
@@ -55,6 +47,49 @@ std::string PieDriver::Cook(const std::string& levelName)
     }
 
     const std::filesystem::path assetsRoot = std::filesystem::path(Project_->Directory) / "assets";
+
+    // World mode cooks every saved zone through the world cook; Play stays
+    // single-zone on the focus zone's cooked scene (play-from-world is the
+    // runtime loading policy's work, not the editor's).
+    if (World_.IsWorld())
+    {
+        const WorldCookResult cooked =
+            CookWorld(World_, assetsRoot, cellSize, Engine_.Logging(), Assets_);
+        if (!cooked.Success)
+        {
+            log.Error("cook failed: " + cooked.Error);
+            return {};
+        }
+
+        std::string focusStem;
+        for (const ZoneHeader& zone : World_.Manifest().Zones)
+        {
+            if (zone.Id == World_.FocusZone())
+            {
+                focusStem = std::filesystem::path(zone.SceneRef).stem().string();
+                break;
+            }
+        }
+        if (focusStem.empty())
+        {
+            log.Error("cook: the focus zone has no scene to play");
+            return {};
+        }
+        LastCookedMap_ = "levels/" + focusStem;
+        log.Info("cooked world ({} zones) -> {}", cooked.ZoneCount,
+                 cooked.CookedManifestPath.generic_string());
+        return LastCookedMap_;
+    }
+
+    // Name the artifacts after the explicit arg, else the document's file stem,
+    // else "untitled" for a never-saved level.
+    std::string name = levelName;
+    if (name.empty())
+    {
+        const std::filesystem::path docPath(World_.FocusDocument().GetDisplayName());
+        name = World_.FocusDocument().HasFilePath() ? docPath.stem().string() : "untitled";
+    }
+
     const DocumentCookResult cooked =
         CookDocument(World_.FocusDocument(), name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
     if (!cooked.Success)

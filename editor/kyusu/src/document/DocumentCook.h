@@ -31,6 +31,8 @@ struct DocumentCookResult
     std::vector<std::string> GeneratedMeshPaths; // asset:// per cell, in cook order
     std::filesystem::path    CookedScenePath;
     std::filesystem::path    ManifestPath;
+    std::filesystem::path    CollisionSidecarPath;
+    uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
 };
 
@@ -52,9 +54,14 @@ struct RuntimeAssets;
 // scene serializers for passthrough game components). Brush-only: passthrough
 // entities carrying asset-handle components (e.g. StaticMesh props) need the
 // live overload, which supplies the asset system to resolve their refs.
+// `logging` and `assets` are optional: null logging cooks silently (headless),
+// null assets cooks brush-only (passthrough asset-handle components need the
+// shared asset system to resolve their refs).
 [[nodiscard]] DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                                         const std::filesystem::path& assetsRoot,
-                                        double cellSize);
+                                        double cellSize,
+                                        LoggingProvider* logging = nullptr,
+                                        RuntimeAssets* assets = nullptr);
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's

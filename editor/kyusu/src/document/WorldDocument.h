@@ -45,6 +45,12 @@ public:
 
     // Mode and files.
     [[nodiscard]] bool IsWorld() const { return WorldMode_; }
+    [[nodiscard]] std::string_view WorldPath() const { return WorldPath_; }
+
+    // Absolute path for a zone's project-relative scene ref (resolved against
+    // the world file's directory). The world cook reads authored scenes through
+    // this so it opens exactly the files the editor saves.
+    [[nodiscard]] std::string ResolveScenePath(std::string_view sceneRef) const;
     bool LoadWorld(std::string_view path);          // parses .sworld; sidecar or start zone picks focus
     bool SaveWorld();                                // world file + every dirty zone document + sidecar
     bool SaveWorldAs(std::string_view path);
@@ -138,7 +144,6 @@ private:
     };
 
     [[nodiscard]] const ZoneHeader* FindZoneHeader(ZoneId zone) const;
-    [[nodiscard]] std::string ResolveScenePath(std::string_view sceneRef) const;
     [[nodiscard]] uint64_t MintRawId();
     void MarkManifestEdited();
     void AssignSceneRefsForNewZones();

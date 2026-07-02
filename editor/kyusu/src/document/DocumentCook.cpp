@@ -319,6 +319,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     result.Success = true;
     result.CookedScenePath = cookedScenePath;
     result.ManifestPath = manifestPath;
+    result.CollisionSidecarPath = cookedDir / (stemStr + ".collision.json");
+    result.ContentHash = geometryHash;
     result.CellCount = cells.size();
     return result;
 }
@@ -326,11 +328,16 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
 DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
-                          double cellSize)
+                          double cellSize,
+                          LoggingProvider* logging,
+                          RuntimeAssets* assets)
 {
-    // Headless, brush-only: a sink-less logger discards everything, no assets.
-    LoggingProvider logging;
-    EditorDocument doc(logging);
+    // A sink-less local logger keeps the no-logging call headless and silent.
+    LoggingProvider silent;
+    LoggingProvider& log = logging != nullptr ? *logging : silent;
+    EditorDocument doc(log);
+    if (assets != nullptr)
+        doc.SetAssetEnvironment(*assets);
     if (!doc.Load(authoredLevelPath.generic_string()))
     {
         DocumentCookResult result;
@@ -342,7 +349,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     const std::string sourceRel =
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
     return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
-                             assetsRoot, cellSize, logging, nullptr);
+                             assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
