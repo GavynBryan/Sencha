@@ -132,6 +132,44 @@ Gate: in the template game module, a player capsule walks, jumps, and looks on a
 cooked level using mapped input and collides with the geometry, in both an FPS and a
 3rd-person camera configuration, with no engine change between the two.
 
+### Phase 2.5 - Scripting: the T language (v1.0)
+
+Goal: designers author entity behavior, abilities, interactions, and triggers as
+script assets without touching native code, and without breaking any invariant
+above.
+
+Decision: Sencha owns its scripting language. T is a small, statically typed,
+non-OO gameplay language compiled at cook to deterministic register bytecode and
+executed by an interpreter inside scheduled fixed-tick systems. This supersedes
+the earlier (out-of-repo) note recommending an embedded Lua-family VM. The full
+evaluation and v1.0 design live in `docs/plans/t-language.md`. Sequenced after
+Phase 2 because ability and behavior scripts consume its physics queries,
+movement, and input mapping.
+
+Hard constraints (enforced, not documented; restated from the design doc):
+- Scripts are assets: `.t` sources cook to `.tbc` through the existing
+  IAssetImporter / IAssetLoader / CookedCacheIndex path and hot reload in PIE
+  via the in-place slot swap. `AssetType::Script` finally grows machinery.
+- Scripts drive behavior only through existing seams: gameplay tags, AbilityKit
+  definitions and intents, cvars, reflection-based component reads/writes, and
+  CommandBuffer for structural changes. No raw registry access, no parallel
+  flag system.
+- Script-defined components register through the same TypeSchema /
+  ComponentTypeId path as game-module components and appear in the inspector.
+- Script execution stays inside scheduled systems; callbacks are system
+  details, not a third concurrency lane.
+- Determinism holds: no wall clock, no address identity, no unseeded
+  randomness; scripts see the fixed tick index, fixed dt, and seeded streams.
+- Native game modules remain the path for systems-heavy code; T is for entity
+  behavior and content glue.
+- The scripting surface ships with fitness tests, and the determinism gate
+  covers script-driven fixed-tick systems.
+
+Gate: the hookshot workflow runs end to end (ability asset + `.t` script +
+tag-marked level data), an edit to the script hot-reloads in PIE without an
+editor restart, and the scripted scenario passes the serial == parallel
+determinism check.
+
 ### Phase 3 - Content and shipping pipeline
 
 Goal: cook and package a standalone shippable build.
