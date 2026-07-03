@@ -139,6 +139,21 @@ public:
     bool RenameZone(ZoneId zone, std::string name);
     bool RenameRegion(RegionId region, std::string name);
 
+    // Transition verbs, same non-undoable discipline. AddTransition mints the
+    // edge and nothing else; reverse pairing is the caller's explicit second
+    // call. Returns the new id.
+    TransitionId AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
+                               bool oneWay, int32_t preloadPriority);
+    bool RemoveTransition(TransitionId transition);
+    bool SetTransitionTopology(TransitionId transition, TransitionTopology topology);
+    bool SetTransitionOneWay(TransitionId transition, bool oneWay);
+    bool SetTransitionPreloadPriority(TransitionId transition, int32_t priority);
+
+    // Reruns validation against the current manifest AND open-zone content.
+    // Manifest verbs revalidate themselves; content edits (linking a portal,
+    // moving entities) do not, so content-touching flows call this explicitly.
+    void Revalidate() { RunValidation(); }
+
     std::function<void()> OnFocusChanged;
 
     // Fires after a zone document is destroyed by UnloadZone. The workspace

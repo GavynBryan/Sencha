@@ -9,6 +9,11 @@ enum class ContentRiskSeverity : uint8_t
 {
     Warning,
     Error,
+    // The rule's inputs are not loaded (e.g. a portal check whose source zone
+    // is closed): neither a verdict nor a silence. Coordination note: if the
+    // streaming telemetry records land with their own severity vocabulary,
+    // adopt it here and delete this note.
+    Unverified,
 };
 
 enum class ContentRiskSourceKind : uint8_t

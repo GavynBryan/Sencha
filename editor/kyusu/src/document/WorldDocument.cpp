@@ -1,5 +1,6 @@
 #include "WorldDocument.h"
 
+#include "PortalGeometry.h"
 #include "ZoneBounds.h"
 
 #include <core/json/JsonParser.h>
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -447,6 +449,77 @@ RegionId WorldDocument::AddRegion(std::string name)
     return Manifest_.Regions.back().Id;
 }
 
+TransitionId WorldDocument::AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
+                                          bool oneWay, int32_t preloadPriority)
+{
+    assert(WorldMode_ && "AddTransition: world mode only");
+    TransitionRecord record;
+    record.Id = MintTransitionId();
+    record.From = from;
+    record.To = to;
+    record.Topology = topology;
+    record.Flags.OneWay = oneWay;
+    record.PreloadPriority = preloadPriority;
+    Manifest_.Transitions.push_back(record);
+    MarkManifestEdited();
+    RunValidation();
+    return record.Id;
+}
+
+bool WorldDocument::RemoveTransition(TransitionId transition)
+{
+    const auto count = std::erase_if(Manifest_.Transitions,
+                                     [&](const TransitionRecord& record)
+                                     { return record.Id == transition; });
+    if (count == 0)
+        return false;
+    MarkManifestEdited();
+    RunValidation();
+    return true;
+}
+
+bool WorldDocument::SetTransitionTopology(TransitionId transition, TransitionTopology topology)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.Topology = topology;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetTransitionOneWay(TransitionId transition, bool oneWay)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.Flags.OneWay = oneWay;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetTransitionPreloadPriority(TransitionId transition, int32_t priority)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.PreloadPriority = priority;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
 bool WorldDocument::RenameZone(ZoneId zone, std::string name)
 {
     for (ZoneHeader& header : Manifest_.Zones)
@@ -608,6 +681,205 @@ void WorldDocument::RunValidation()
             .Message = std::format("zone {} has {} entities outside its bounds",
                                    ZoneIdToString(zone.Id), outside),
         });
+    }
+
+    // Portal and transition rules. Portal scanning covers open zones only;
+    // Doorway is the only topology that promises an aperture, so Seam and
+    // Teleport transitions are exempt from every portal rule. Records append
+    // in rule order, ascending source id within each rule.
+    {
+        struct PortalSighting
+        {
+            ZoneId Zone;
+            bool HasBounds = false;
+            Aabb3d Bounds;
+        };
+        std::unordered_map<uint64_t, std::vector<PortalSighting>> linkedPortals;
+        std::vector<ContentRiskRecord> missing;
+        std::vector<ContentRiskRecord> duplicate;
+        std::vector<ContentRiskRecord> unverifiedRecords;
+        std::vector<ContentRiskRecord> misaligned;
+        std::vector<ContentRiskRecord> unlinked;
+        std::vector<ContentRiskRecord> wrongZone;
+        std::vector<ContentRiskRecord> brushMissing;
+
+        const auto findTransition = [&](TransitionId id) -> const TransitionRecord*
+        {
+            for (const TransitionRecord& record : Manifest_.Transitions)
+                if (record.Id == id)
+                    return &record;
+            return nullptr;
+        };
+
+        for (const ZoneHeader& zone : Manifest_.Zones)
+        {
+            const auto it = OpenZones_.find(zone.Id);
+            if (it == OpenZones_.end())
+                continue;
+            const EditorScene& scene = it->second.Document->GetScene();
+            size_t unlinkedCount = 0;
+            size_t brushMissingCount = 0;
+            for (EntityId entity : scene.GetAllEntities())
+            {
+                const PortalComponent* portal = scene.TryGetPortal(entity);
+                if (portal == nullptr)
+                    continue;
+                const auto bounds = scene.TryGetWorldBounds(entity);
+                if (!bounds.has_value())
+                    ++brushMissingCount;
+                const TransitionRecord* record =
+                    portal->Transition.IsValid() ? findTransition(portal->Transition) : nullptr;
+                if (record == nullptr)
+                {
+                    ++unlinkedCount;
+                    continue;
+                }
+                linkedPortals[portal->Transition.Value].push_back(
+                    { zone.Id, bounds.has_value(), bounds.value_or(Aabb3d{}) });
+            }
+            if (unlinkedCount > 0)
+                unlinked.push_back({
+                    .Severity = ContentRiskSeverity::Warning,
+                    .Kind = ContentRiskSourceKind::Zone,
+                    .SourceId = zone.Id.Value,
+                    .RuleId = "partition.portal.unlinked",
+                    .Message = std::format("zone {} has {} portals linked to no transition",
+                                           ZoneIdToString(zone.Id), unlinkedCount),
+                });
+            if (brushMissingCount > 0)
+                brushMissing.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Zone,
+                    .SourceId = zone.Id.Value,
+                    .RuleId = "partition.portal.brush_missing",
+                    .Message = std::format("zone {} has {} portal components on entities "
+                                           "without brush geometry",
+                                           ZoneIdToString(zone.Id), brushMissingCount),
+                });
+        }
+
+        const std::vector<PortalSighting> noSightings;
+        for (const TransitionRecord& record : Manifest_.Transitions)
+        {
+            if (record.Topology != TransitionTopology::Doorway)
+                continue;
+            const auto sightingsIt = linkedPortals.find(record.Id.Value);
+            const std::vector<PortalSighting>& sightings =
+                sightingsIt != linkedPortals.end() ? sightingsIt->second : noSightings;
+
+            size_t inFrom = 0;
+            const PortalSighting* fromSighting = nullptr;
+            bool anyWrongZone = false;
+            for (const PortalSighting& sighting : sightings)
+            {
+                if (sighting.Zone == record.From)
+                {
+                    ++inFrom;
+                    fromSighting = &sighting;
+                }
+                else
+                {
+                    anyWrongZone = true;
+                }
+            }
+
+            const bool fromOpen = OpenZones_.contains(record.From);
+            if (!fromOpen)
+                unverifiedRecords.push_back({
+                    .Severity = ContentRiskSeverity::Unverified,
+                    .Kind = ContentRiskSourceKind::Transition,
+                    .SourceId = record.Id.Value,
+                    .RuleId = "partition.transition.portal_unverified",
+                    .Message = std::format("transition {} portal check needs zone {} loaded",
+                                           TransitionIdToString(record.Id),
+                                           ZoneIdToString(record.From)),
+                });
+            else if (inFrom == 0)
+                missing.push_back({
+                    .Severity = ContentRiskSeverity::Warning,
+                    .Kind = ContentRiskSourceKind::Transition,
+                    .SourceId = record.Id.Value,
+                    .RuleId = "partition.transition.portal_missing",
+                    .Message = std::format("doorway transition {} has no linked portal in "
+                                           "zone {}",
+                                           TransitionIdToString(record.Id),
+                                           ZoneIdToString(record.From)),
+                });
+            if (sightings.size() > 1)
+                duplicate.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Transition,
+                    .SourceId = record.Id.Value,
+                    .RuleId = "partition.transition.portal_duplicate",
+                    .Message = std::format("transition {} is named by {} portals",
+                                           TransitionIdToString(record.Id), sightings.size()),
+                });
+            if (anyWrongZone)
+                wrongZone.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Transition,
+                    .SourceId = record.Id.Value,
+                    .RuleId = "partition.portal.wrong_zone",
+                    .Message = std::format("transition {} has a linked portal outside its "
+                                           "source zone {}",
+                                           TransitionIdToString(record.Id),
+                                           ZoneIdToString(record.From)),
+                });
+
+            // Facing check on the one unambiguous case: a single portal with
+            // bounds in the source zone. The thin axis must be the dominant
+            // axis of the zone-center delta; the direction SIGN is not
+            // checkable without a stored normal, which D9 forbids.
+            if (fromOpen && inFrom == 1 && sightings.size() == 1 && fromSighting->HasBounds)
+            {
+                const ZoneHeader* fromHeader = FindZoneHeader(record.From);
+                const ZoneHeader* toHeader = FindZoneHeader(record.To);
+                if (fromHeader != nullptr && toHeader != nullptr)
+                {
+                    const Vec3d delta = toHeader->Bounds.Center() - fromHeader->Bounds.Center();
+                    const double magnitudes[3] = { std::abs(static_cast<double>(delta[0])),
+                                                   std::abs(static_cast<double>(delta[1])),
+                                                   std::abs(static_cast<double>(delta[2])) };
+                    constexpr double epsilon = 1e-6;
+                    if (magnitudes[0] > epsilon || magnitudes[1] > epsilon
+                        || magnitudes[2] > epsilon)
+                    {
+                        int deltaAxis = 0;
+                        for (int i = 1; i < 3; ++i)
+                            if (magnitudes[i] > magnitudes[deltaAxis])
+                                deltaAxis = i;
+                        if (DominantPortalAxis(fromSighting->Bounds) != deltaAxis)
+                            misaligned.push_back({
+                                .Severity = ContentRiskSeverity::Warning,
+                                .Kind = ContentRiskSourceKind::Transition,
+                                .SourceId = record.Id.Value,
+                                .RuleId = "partition.transition.portal_misaligned",
+                                .Message = std::format(
+                                    "transition {} portal's thin axis does not face "
+                                    "zone {}",
+                                    TransitionIdToString(record.Id),
+                                    ZoneIdToString(record.To)),
+                            });
+                    }
+                }
+            }
+        }
+
+        const auto appendSorted = [&](std::vector<ContentRiskRecord>& records)
+        {
+            std::sort(records.begin(), records.end(),
+                      [](const ContentRiskRecord& a, const ContentRiskRecord& b)
+                      { return a.SourceId < b.SourceId; });
+            for (ContentRiskRecord& record : records)
+                ValidationRecords_.push_back(std::move(record));
+        };
+        appendSorted(missing);
+        appendSorted(duplicate);
+        appendSorted(unverifiedRecords);
+        appendSorted(misaligned);
+        appendSorted(unlinked);
+        appendSorted(wrongZone);
+        appendSorted(brushMissing);
     }
 
     auto& log = Logging_.GetLogger<WorldDocument>();

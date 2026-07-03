@@ -257,9 +257,18 @@ void WorldPartitionPanel::DrawValidation()
     for (const ContentRiskRecord& record : records)
     {
         ImGui::PushID(rowId++);
-        const bool isError = record.Severity == ContentRiskSeverity::Error;
-        ImGui::TextColored(isError ? EditorUi::Danger : EditorUi::Warning,
-                           isError ? ICON_FA_CIRCLE_XMARK : ICON_FA_TRIANGLE_EXCLAMATION);
+        switch (record.Severity)
+        {
+        case ContentRiskSeverity::Error:
+            ImGui::TextColored(EditorUi::Danger, ICON_FA_CIRCLE_XMARK);
+            break;
+        case ContentRiskSeverity::Unverified:
+            ImGui::TextColored(EditorUi::TextDim, ICON_FA_CIRCLE_QUESTION);
+            break;
+        case ContentRiskSeverity::Warning:
+            ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION);
+            break;
+        }
         ImGui::SameLine();
         const std::string label = record.RuleId + "##validation_row";
         if (ImGui::Selectable(label.c_str()))
