@@ -415,7 +415,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsolePanel = editorConsole.get();
     ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
-    UiFeature->AddPanel(std::make_unique<WorldPartitionPanel>(Workspace->World));
+    UiFeature->AddPanel(std::make_unique<WorldPartitionPanel>(
+        Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(

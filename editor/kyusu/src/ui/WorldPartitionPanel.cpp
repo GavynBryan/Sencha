@@ -4,15 +4,24 @@
 #include "ui/ScopedPanel.h"
 #include "fonts/IconsFontAwesome6.h"
 
+#include "commands/CommandStack.h"
 #include "document/WorldDocument.h"
+#include "document/commands/MoveEntitiesToZoneCommand.h"
+#include "selection/SelectionService.h"
+
+#include <core/logging/LoggingProvider.h>
 
 #include <imgui.h>
 
 #include <cstring>
 #include <string>
+#include <vector>
 
-WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world)
+WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world, SelectionService& selection,
+                                         CommandStack& commands)
     : WorldDoc(world)
+    , Selection(selection)
+    , Commands(commands)
 {
 }
 
@@ -204,6 +213,22 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
             (void)WorldDoc.UnloadZone(zone.Id);
         if (isOpen && dirty && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Save the zone first");
+
+        std::vector<EntityId> selectedEntities;
+        for (const SelectableRef& ref : Selection.GetSelection())
+            if (ref.IsEntity())
+                selectedEntities.push_back(ref.Entity);
+        const bool canReceive = isOpen && !isFocus && !selectedEntities.empty();
+        if (ImGui::MenuItem("Move Selection Here", nullptr, false, canReceive))
+        {
+            if (auto command = MakeMoveEntitiesToZoneCommand(selectedEntities, WorldDoc,
+                                                             zone.Id, Selection))
+            {
+                Commands.Execute(std::move(command));
+                WorldDoc.Logging().GetLogger<WorldPartitionPanel>().Info(
+                    "moved {} entities to {}", selectedEntities.size(), zone.Name);
+            }
+        }
         if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
         {
             RenamingZone_ = zone.Id;

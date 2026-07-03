@@ -7,10 +7,13 @@
 #include "commands/CommandStack.h"
 #include "document/commands/CreateEntityCommand.h"
 #include "document/commands/DeleteEntityCommand.h"
+#include "document/commands/MoveEntitiesToZoneCommand.h"
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "selection/commands/SelectCommand.h"
 #include "selection/SelectionService.h"
+
+#include <core/logging/LoggingProvider.h>
 
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializer.h>
@@ -20,6 +23,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
                                          SelectionService& selection, CommandStack& commands)
@@ -75,6 +79,7 @@ void SceneHierarchyPanel::OnDraw()
     // Deferred so the delete command (which erases from the entity list) does not
     // mutate the vector this loop iterates.
     EntityId toDelete = {};
+    ZoneId moveTarget = {};
 
     for (EntityId entity : scene.GetAllEntities())
     {
@@ -128,6 +133,27 @@ void SceneHierarchyPanel::OnDraw()
         {
             if (ImGui::MenuItem(ICON_FA_TRASH "  Delete"))
                 toDelete = entity;
+            if (WorldDoc.IsWorld())
+            {
+                // Targets: every open zone except the focus zone, manifest order.
+                bool hasTarget = false;
+                for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+                    if (zone.Id != WorldDoc.FocusZone() && WorldDoc.IsZoneOpen(zone.Id))
+                        hasTarget = true;
+                if (ImGui::BeginMenu(ICON_FA_ARROW_RIGHT "  Move To Zone", hasTarget))
+                {
+                    for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+                    {
+                        if (zone.Id == WorldDoc.FocusZone() || !WorldDoc.IsZoneOpen(zone.Id))
+                            continue;
+                        if (ImGui::MenuItem(zone.Name.c_str()))
+                            moveTarget = zone.Id;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (!hasTarget && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("load a target zone as context first");
+            }
             ImGui::EndPopup();
         }
 
@@ -137,4 +163,24 @@ void SceneHierarchyPanel::OnDraw()
     if (toDelete.IsValid())
         Commands.Execute(MakeDeleteEntitiesCommand(
             std::span<const EntityId>(&toDelete, 1), scene, document, Selection));
+
+    if (moveTarget.IsValid())
+    {
+        // The move routes the current entity selection, matching the panel
+        // acting on selection state rather than the hovered row alone.
+        std::vector<EntityId> selectedEntities;
+        for (const SelectableRef& ref : Selection.GetSelection())
+            if (ref.IsEntity())
+                selectedEntities.push_back(ref.Entity);
+        if (auto command = MakeMoveEntitiesToZoneCommand(selectedEntities, WorldDoc,
+                                                         moveTarget, Selection))
+        {
+            const size_t count = selectedEntities.size();
+            Commands.Execute(std::move(command));
+            for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+                if (zone.Id == moveTarget)
+                    WorldDoc.Logging().GetLogger<SceneHierarchyPanel>().Info(
+                        "moved {} entities to {}", count, zone.Name);
+        }
+    }
 }

@@ -5,6 +5,8 @@
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
 
+class CommandStack;
+class SelectionService;
 class WorldDocument;
 struct ContentRiskRecord;
 struct RegionRecord;
@@ -19,7 +21,8 @@ struct ZoneHeader;
 class WorldPartitionPanel : public IEditorPanel
 {
 public:
-    explicit WorldPartitionPanel(WorldDocument& world);
+    WorldPartitionPanel(WorldDocument& world, SelectionService& selection,
+                        CommandStack& commands);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -35,6 +38,8 @@ private:
     bool DrawRenameField(bool active);
 
     WorldDocument& WorldDoc;
+    SelectionService& Selection;
+    CommandStack& Commands;
 
     // ImGui transients only (never document state).
     ZoneId   RenamingZone_;
