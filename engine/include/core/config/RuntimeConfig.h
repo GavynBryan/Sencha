@@ -37,6 +37,14 @@ struct EngineRuntimeConfig
     // streaming — turn this on. Both paths produce bit-identical results.
     bool ZoneParallelPropagation = false;
 
+    // World partition streaming policy (WorldPartitionRuntime). HopCount is the
+    // neighbor graph distance kept resident around the focus zone; LingerSeconds is
+    // how long an undemanded zone stays attached before DestroyZone; ResidentZoneCap
+    // bounds the demand set (focus and pins may exceed it; see the policy spec).
+    int    StreamingHopCount = 1;
+    double StreamingLingerSeconds = 3.0;
+    int    StreamingResidentZoneCap = 8;
+
     bool ExitOnEscape = false;
     bool TogglePauseOnF1 = false;
 };
