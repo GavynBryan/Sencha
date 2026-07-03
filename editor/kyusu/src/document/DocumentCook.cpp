@@ -219,9 +219,17 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         for (EntityId entity : scene.GetAllEntities())
         {
             if (scene.TryGetBrush(entity) != nullptr)
+            {
                 brushEntities.push_back(entity);
-            else if (scene.TryGetBakedBrush(entity) != nullptr)
+                continue;
+            }
+            if (scene.TryGetBakedBrush(entity) != nullptr)
                 scene.GetRegistry().Components.RemoveComponent<BakedBrushComponent>(entity);
+            // A portal on a brush dies with the brush entity below; one placed
+            // on a non-brush entity (possible through the inspector) is still
+            // editor-only data and never reaches the cooked scene.
+            if (scene.IsPortal(entity))
+                scene.GetRegistry().Components.RemoveComponent<PortalComponent>(entity);
         }
         for (EntityId entity : brushEntities)
             scene.DestroyEntity(entity);

@@ -13,7 +13,12 @@ std::vector<CookBrushGeometry> CollectCookBrushes(const EditorScene& scene, cons
     // Renderers pass skipLocked=false; the cook follows suit — a locked brush is
     // still part of the level geometry, locking is an editing affordance only.
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
-        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform) {
+        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform) {
+            // Portal markers are editor-only annotations: no baked geometry, no
+            // collision. All cook consumers collect through here, so this one
+            // check strips them from every baked surface.
+            if (scene.IsPortal(entity))
+                return;
             CookBrushGeometry brush;
             brush.WorldBounds = Aabb3d::Empty();
 

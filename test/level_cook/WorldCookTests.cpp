@@ -184,6 +184,39 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
     EXPECT_EQ(cookedEntityCount(afterManifest.Zones[1].CookedSceneRef), 1u);
 }
 
+TEST_F(WorldCookTest, CookStripsPortalBrushes)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    EditorScene& scene = world.FocusDocument().GetScene();
+    scene.CreateBrush(Vec3d{ 0, 0, 0 });
+    const EntityId portal = scene.CreateBrush(Vec3d{ 8, 0, 0 });
+    scene.GetRegistry().Components.AddComponent(
+        portal, PortalComponent{ TransitionId{ 0x00000000000000c1ull } });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult withPortal = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(withPortal.Success) << withPortal.Error;
+    const WorldPartitionManifest manifest = ParseCookedManifest(withPortal.CookedManifestPath);
+    const std::string cookedScene = ReadFile(Root / manifest.Zones[0].CookedSceneRef);
+    const std::string cookedCollision = ReadFile(Root / manifest.Zones[0].CookedCollisionRef);
+
+    // No portal entity and no portal key reach the cooked scene.
+    EXPECT_EQ(cookedScene.find("portal"), std::string::npos);
+
+    // Deleting the portal and re-cooking produces byte-identical artifacts:
+    // the portal contributed no geometry, collision, or passthrough entity.
+    scene.DestroyEntity(portal);
+    world.FocusDocument().MarkDirty();
+    ASSERT_TRUE(world.SaveWorld());
+    const WorldCookResult withoutPortal = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(withoutPortal.Success) << withoutPortal.Error;
+    const WorldPartitionManifest after = ParseCookedManifest(withoutPortal.CookedManifestPath);
+
+    EXPECT_EQ(ReadFile(Root / after.Zones[0].CookedSceneRef), cookedScene);
+    EXPECT_EQ(ReadFile(Root / after.Zones[0].CookedCollisionRef), cookedCollision);
+}
+
 TEST_F(WorldCookTest, RefusesDirtyZoneDocuments)
 {
     WorldDocument world(Logging);
