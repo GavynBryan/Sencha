@@ -212,6 +212,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
@@ -222,6 +223,9 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp

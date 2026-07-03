@@ -333,12 +333,22 @@ bool WorldDocument::UnloadZone(ZoneId zone)
         return false;
     }
     OpenZones_.erase(it);
+    if (OnZoneUnloaded)
+        OnZoneUnloaded(zone);
     return true;
 }
 
 bool WorldDocument::IsZoneOpen(ZoneId zone) const
 {
     return OpenZones_.contains(zone);
+}
+
+EditorDocument* WorldDocument::ZoneDocument(ZoneId zone)
+{
+    if (!WorldMode_)
+        return nullptr;
+    const auto it = OpenZones_.find(zone);
+    return it != OpenZones_.end() ? it->second.Document.get() : nullptr;
 }
 
 bool WorldDocument::SetZoneVisible(ZoneId zone, bool visible)

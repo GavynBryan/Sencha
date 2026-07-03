@@ -132,6 +132,15 @@ void EditorWorkspace::Init(CommandStack& commands)
     // does. In legacy mode focus never changes, so this never fires.
     World.OnFocusChanged = [this] { ResetInteractionState(); };
 
+    // An unload destroys a zone document that queued commands may still
+    // reference (the cross-zone move holds two documents). Focus is unchanged,
+    // so only the stack drops; tools and selection stay.
+    World.OnZoneUnloaded = [this](ZoneId)
+    {
+        if (Commands != nullptr)
+            Commands->Clear();
+    };
+
     // The transient pivot is per-selection: any selection change resets it to
     // the computed center AND leaves pivot-editing (clicking another object
     // means the user is done placing this pivot).

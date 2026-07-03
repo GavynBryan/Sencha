@@ -39,6 +39,10 @@ public:
     // Forwarded to every zone document, present and future.
     void SetAssetEnvironment(RuntimeAssets& assets);
 
+    // The provider zone documents log through; command factories that refuse an
+    // operation report through it too.
+    [[nodiscard]] LoggingProvider& Logging() { return Logging_; }
+
     // Non-owning; the workspace's world view state rides the user sidecar with
     // the zone view states, so it persists per user alongside them.
     void BindViewSettings(WorldViewSettings* settings) { ViewSettings_ = settings; }
@@ -87,6 +91,10 @@ public:
     [[nodiscard]] bool IsZoneOpen(ZoneId zone) const;
     bool SetZoneVisible(ZoneId zone, bool visible);
 
+    // An open zone's document, for cross-zone operations (the move command).
+    // Null when the zone is not open or the document is in legacy mode.
+    [[nodiscard]] EditorDocument* ZoneDocument(ZoneId zone);
+
     // Focus. SetFocusZone loads the zone if needed, then fires OnFocusChanged
     // (after the switch; the workspace uses it to reset interaction state).
     bool SetFocusZone(ZoneId zone);
@@ -132,6 +140,13 @@ public:
     bool RenameRegion(RegionId region, std::string name);
 
     std::function<void()> OnFocusChanged;
+
+    // Fires after a zone document is destroyed by UnloadZone. The workspace
+    // clears the undo stack on it: queued commands may hold references into any
+    // open zone document (the cross-zone move holds two), and an unload would
+    // dangle them. Narrower than the focus-change reset: focus did not change,
+    // so the tool context, sink, and selection stay.
+    std::function<void(ZoneId)> OnZoneUnloaded;
 
 private:
     // Each open zone document gets a unique RegistryId {NextRegistryIndex_++, 1},
