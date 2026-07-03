@@ -32,6 +32,11 @@ private:
                          const BrushMesh& mesh,
                          const Transform3f& transform,
                          const Vec4& tint) const;
+    // One flat color for every face, no per-material tint (portal markers).
+    void AppendBrushMeshFlat(std::vector<EditorSolidVertex>& vertices,
+                             const BrushMesh& mesh,
+                             const Transform3f& transform,
+                             const Vec4& color) const;
 
     EditorSolidPipeline& Solid;
 };

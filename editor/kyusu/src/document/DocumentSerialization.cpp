@@ -6,8 +6,10 @@
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneFormat.h>
+#include <zone/WorldPartitionIds.h>
 
 #include <cstdint>
+#include <string>
 
 // A BrushId persists as its raw u32; the mesh it points at is serialized
 // separately by EditorDocument as a sidecar (03-§5). Must be visible before
@@ -55,6 +57,48 @@ struct ComponentStorageTraits<BrushComponent>
     }
 };
 
+// A TransitionId persists as its 16-hex text form (the manifest's id encoding).
+// The all-zeros form is the unlinked portal (invalid id). Malformed text loads
+// as unlinked with a logged warning rather than failing: the scene loader
+// treats any component-load failure as fatal for the whole scene, and a broken
+// portal link must not make a zone unloadable. Validation then reports the
+// unlinked portal, so the breakage stays visible.
+template <>
+struct SceneFieldCodec<TransitionId>
+{
+    static bool Save(IWriteArchive& archive, std::string_view key, TransitionId value,
+                     SceneSerializationContext&)
+    {
+        const std::string text = TransitionIdToString(value);
+        archive.Field(key, std::string_view(text));
+        return archive.Ok();
+    }
+
+    static bool Load(IReadArchive& archive, std::string_view key, TransitionId& value,
+                     SceneSerializationContext& context)
+    {
+        std::string text;
+        archive.Field(key, text);
+        if (!archive.Ok())
+            return false;
+        if (text == std::string(16, '0'))
+        {
+            value = TransitionId{};
+            return true;
+        }
+        const auto parsed = TransitionIdFromString(text);
+        if (!parsed.has_value())
+        {
+            context.Logging->GetLogger<PortalComponent>().Warn(
+                "portal transition id '{}' is malformed; loading as unlinked", text);
+            value = TransitionId{};
+            return true;
+        }
+        value = *parsed;
+        return true;
+    }
+};
+
 template <>
 struct ComponentStorageTraits<BakedBrushComponent>
 {
@@ -69,6 +113,26 @@ struct ComponentStorageTraits<BakedBrushComponent>
     static bool Add(Registry& registry, EntityId entity, BakedBrushComponent component)
     {
         if (registry.Components.HasComponent<BakedBrushComponent>(entity))
+            return false;
+        registry.Components.AddComponent(entity, component);
+        return true;
+    }
+};
+
+template <>
+struct ComponentStorageTraits<PortalComponent>
+{
+    static constexpr std::uint32_t BinaryChunkId = MakeFourCC('P', 'R', 'T', 'L');
+
+    static void Register(Registry& registry)
+    {
+        if (!registry.Components.IsRegistered<PortalComponent>())
+            registry.Components.RegisterComponent<PortalComponent>();
+    }
+
+    static bool Add(Registry& registry, EntityId entity, PortalComponent component)
+    {
+        if (registry.Components.HasComponent<PortalComponent>(entity))
             return false;
         registry.Components.AddComponent(entity, component);
         return true;
@@ -91,4 +155,5 @@ void RegisterDocumentSerializers()
     // Editor-only components.
     RegisterComponent<BrushComponent>();
     RegisterComponent<BakedBrushComponent>();
+    RegisterComponent<PortalComponent>();
 }

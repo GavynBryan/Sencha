@@ -86,6 +86,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<BakedBrushComponent>();
+    world.RegisterComponent<PortalComponent>();
     world.RegisterComponent<CameraComponent>();
 
     // Register storage for every serializer the registry knows — engine, editor,

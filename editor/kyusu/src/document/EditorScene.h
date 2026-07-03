@@ -12,10 +12,12 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
+#include <zone/WorldPartitionIds.h>
 
 #include <optional>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -63,6 +65,31 @@ struct TypeSchema<BakedBrushComponent>
     {
         return std::tuple{
             MakeField("source", &BakedBrushComponent::Source),
+        };
+    }
+};
+
+// Marks a brush entity as a portal: the marker volume realizing a transition
+// (a thin box fitted into the opening). Editor-only, like BrushComponent: the
+// cook strips it and bakes no geometry for it. Transition is the manifest edge
+// this portal realizes; invalid means placed but not yet linked, which
+// validation reports rather than forbids. Shape and facing derive from the
+// brush geometry; nothing else is stored.
+struct PortalComponent
+{
+    TransitionId Transition;
+};
+static_assert(std::is_trivially_copyable_v<PortalComponent>);
+
+template <>
+struct TypeSchema<PortalComponent>
+{
+    static constexpr std::string_view Name = "portal";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("transition", &PortalComponent::Transition),
         };
     }
 };
@@ -120,6 +147,10 @@ public:
     // this to keep the entity clickable through its source shape.
     [[nodiscard]] const BakedBrushComponent* TryGetBakedBrush(EntityId entity) const;
     [[nodiscard]] const BrushMesh* TryGetDormantBrushMesh(EntityId entity) const;
+    // True when the entity carries PortalComponent: the predicate the portal
+    // renderer tint, cook exclusion, and validation all key on.
+    [[nodiscard]] bool IsPortal(EntityId entity) const;
+    [[nodiscard]] const PortalComponent* TryGetPortal(EntityId entity) const;
     // True when another entity shares this entity's brush mesh (live or dormant):
     // the entity is one placement of an instance group.
     [[nodiscard]] bool IsBrushInstanced(EntityId entity) const;

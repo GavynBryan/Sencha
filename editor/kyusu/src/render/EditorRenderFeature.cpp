@@ -288,7 +288,13 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             else
             {
                 const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
+                const Vec4 dimmedPortalWire(
+                    EditorTheme::PortalWire.X * EditorTheme::ContextZoneDim.X,
+                    EditorTheme::PortalWire.Y * EditorTheme::ContextZoneDim.Y,
+                    EditorTheme::PortalWire.Z * EditorTheme::ContextZoneDim.Z,
+                    EditorTheme::PortalWire.W * EditorTheme::ContextZoneDim.W);
+                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire,
+                                        dimmedPortalWire);
             }
             Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
         });

@@ -186,6 +186,17 @@ const BrushMesh* EditorScene::TryGetDormantBrushMesh(EntityId entity) const
     return baked != nullptr ? BrushMeshes.Find(baked->Source) : nullptr;
 }
 
+bool EditorScene::IsPortal(EntityId entity) const
+{
+    return TryGetPortal(entity) != nullptr;
+}
+
+const PortalComponent* EditorScene::TryGetPortal(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    return world.TryGet<PortalComponent>(entity);
+}
+
 bool EditorScene::IsBrushInstanced(EntityId entity) const
 {
     const World& world = Registry_.Components;

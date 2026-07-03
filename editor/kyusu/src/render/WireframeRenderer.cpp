@@ -1,5 +1,6 @@
 #include "WireframeRenderer.h"
 
+#include "EditorTheme.h"
 #include "document/SceneBrushWalk.h"
 
 #include <algorithm>
@@ -17,11 +18,13 @@ WireframeRenderer::WireframeRenderer(SelectionService& selection,
 void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                                      const EditorScene& scene)
 {
-    DrawWireframe(frame, viewport, scene, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    DrawWireframe(frame, viewport, scene, Vec4(1.0f, 0.0f, 0.0f, 1.0f),
+                  EditorTheme::PortalWire);
 }
 
 void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorViewport& viewport,
-                                      const EditorScene& scene, const Vec4& color)
+                                      const EditorScene& scene, const Vec4& color,
+                                      const Vec4& portalColor)
 {
     // Brushes whose full wireframe the selection/hover already draws (bright anti-aliased
     // wide lines) get skipped here: the plain red one under them just doubles every edge
@@ -46,7 +49,8 @@ void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorVie
         {
             if (std::find(skip.begin(), skip.end(), id) != skip.end())
                 return;
-            AppendBrushMesh(vertices, mesh, transform, color);
+            AppendBrushMesh(vertices, mesh, transform,
+                            scene.IsPortal(id) ? portalColor : color);
         });
 
     Lines.Submit(frame, viewport, vertices);

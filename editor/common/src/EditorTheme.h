@@ -30,6 +30,10 @@ inline constexpr Vec4 ComponentVisual{ 0.7f, 0.85f, 1.0f, 1.0f };
 // so they read as present but inert.
 inline constexpr Vec4 ContextZoneDim{ 0.45f, 0.45f, 0.50f, 1.0f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
+// Portal marker brushes: read as volumes, not walls. Translucent cyan fill so
+// the opening stays visible through them; the wire stays full-strength.
+inline constexpr Vec4 PortalFill{ 0.25f, 0.75f, 0.95f, 0.30f };
+inline constexpr Vec4 PortalWire{ 0.25f, 0.75f, 0.95f, 1.0f };
 
 inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
 inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance
