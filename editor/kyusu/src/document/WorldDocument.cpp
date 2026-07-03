@@ -578,6 +578,38 @@ void WorldDocument::RunValidation()
     for (ContentRiskRecord& record : unresolved)
         ValidationRecords_.push_back(std::move(record));
 
+    // Containment of open-zone content in the zone header's bounds, one record
+    // per zone. Zones with derived bounds self-heal on save (the union
+    // recompute), so a persistent hit means designer-set bounds, exactly where
+    // a straying entity stays wrong until a human acts. Entities without world
+    // bounds (nothing boundable) are skipped.
+    for (const ZoneHeader& zone : Manifest_.Zones)
+    {
+        const auto it = OpenZones_.find(zone.Id);
+        if (it == OpenZones_.end())
+            continue;
+        const EditorScene& scene = it->second.Document->GetScene();
+        size_t outside = 0;
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            const auto bounds = scene.TryGetWorldBounds(entity);
+            if (!bounds.has_value())
+                continue;
+            if (!zone.Bounds.Contains(bounds->Min) || !zone.Bounds.Contains(bounds->Max))
+                ++outside;
+        }
+        if (outside == 0)
+            continue;
+        ValidationRecords_.push_back({
+            .Severity = ContentRiskSeverity::Warning,
+            .Kind = ContentRiskSourceKind::Zone,
+            .SourceId = zone.Id.Value,
+            .RuleId = "partition.zone.entity_outside_bounds",
+            .Message = std::format("zone {} has {} entities outside its bounds",
+                                   ZoneIdToString(zone.Id), outside),
+        });
+    }
+
     auto& log = Logging_.GetLogger<WorldDocument>();
     for (const ContentRiskRecord& record : ValidationRecords_)
     {

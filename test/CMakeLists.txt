@@ -166,6 +166,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeleteEntityCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DuplicateEntitiesCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MergeBrushesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/SeparateFacesCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/export/GltfMeshExport.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp

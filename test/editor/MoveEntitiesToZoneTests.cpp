@@ -195,6 +195,65 @@ TEST_F(MoveEntitiesToZoneTest, UnloadZoneFiresObserver)
     EXPECT_EQ(unloaded, TargetZone);
 }
 
+namespace
+{
+
+[[nodiscard]] size_t CountRecords(const WorldDocument& world, std::string_view ruleId)
+{
+    size_t count = 0;
+    for (const ContentRiskRecord& record : world.ValidationRecords())
+        if (record.RuleId == ruleId)
+            ++count;
+    return count;
+}
+
+} // namespace
+
+TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsFires)
+{
+    ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
+
+    // Designer-set bounds nowhere near the brush at x = 5: the save must not
+    // recompute them, and the rule must persist.
+    for (ZoneHeader& zone : World.Manifest().Zones)
+        if (zone.Id == SourceZone)
+        {
+            zone.BoundsOverridden = true;
+            zone.Bounds = Aabb3d::FromMinMax(Vec3d{ -1, -1, -1 }, Vec3d{ 1, 1, 1 });
+        }
+    ASSERT_TRUE(World.SaveWorld());
+
+    EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 1u);
+    for (const ContentRiskRecord& record : World.ValidationRecords())
+        if (record.RuleId == "partition.zone.entity_outside_bounds")
+        {
+            EXPECT_EQ(record.Severity, ContentRiskSeverity::Warning);
+            EXPECT_EQ(record.SourceId, SourceZone.Value);
+        }
+}
+
+TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsSilentWhenContained)
+{
+    // Derived bounds are the union of the zone's content: containment is exact
+    // (closed intervals), so the corners on the boundary do not fire.
+    ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
+    EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 0u);
+}
+
+TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsSelfHealsOnSaveForDerivedBounds)
+{
+    ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
+
+    Transform3f moved = *Source().GetScene().TryGetTransform(Entity);
+    moved.Position = Vec3d{ 100.0f, 0.0f, 0.0f };
+    Source().GetScene().SetTransform(Entity, moved);
+    Source().MarkDirty();
+    ASSERT_TRUE(World.SaveWorld());
+
+    // The save recomputed the derived union around the moved entity.
+    EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 0u);
+}
+
 TEST_F(MoveEntitiesToZoneTest, UnloadClearsUndoStack)
 {
     // The workspace binding: any zone unload drops the stack, because queued

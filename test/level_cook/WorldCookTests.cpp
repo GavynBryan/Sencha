@@ -3,6 +3,7 @@
 #include "document/DocumentSerialization.h"
 #include "document/WorldCook.h"
 #include "document/WorldDocument.h"
+#include "document/commands/MoveEntitiesToZoneCommand.h"
 
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -137,6 +138,50 @@ TEST_F(WorldCookTest, RecookWithoutEditsIsByteIdenticalAndEditsChangeOneHash)
     EXPECT_EQ(edited.Zones[0].CookedContentHash, before.Zones[0].CookedContentHash);
     EXPECT_NE(edited.Zones[1].CookedContentHash, before.Zones[1].CookedContentHash);
     EXPECT_EQ(ReadFile(Root / edited.Zones[0].CookedSceneRef), artifactsBefore[0]);
+}
+
+TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    ASSERT_TRUE(world.LoadZone(second));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    // Far from the first brush: its geometry cooks to its own cell, so the move
+    // shifts exactly one cell entity between the zones' cooked scenes.
+    const EntityId moving = world.FocusDocument().GetScene().CreateBrush(Vec3d{ 777, 0, 0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const auto cookedEntityCount = [this](const std::string& sceneRef)
+    {
+        const auto json = JsonParse(ReadFile(Root / sceneRef));
+        EXPECT_TRUE(json.has_value());
+        const JsonValue* entities = json->Find("entities");
+        EXPECT_NE(entities, nullptr);
+        return entities->AsArray().size();
+    };
+
+    const WorldCookResult before = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(before.Success) << before.Error;
+    const WorldPartitionManifest beforeManifest = ParseCookedManifest(before.CookedManifestPath);
+    EXPECT_EQ(cookedEntityCount(beforeManifest.Zones[0].CookedSceneRef), 2u);
+    EXPECT_EQ(cookedEntityCount(beforeManifest.Zones[1].CookedSceneRef), 0u);
+
+    const EntityId entities[] = { moving };
+    MoveEntitiesToZoneCommand move(entities, world.FocusDocument(),
+                                   *world.ZoneDocument(second));
+    move.Execute();
+    ASSERT_TRUE(world.SaveWorld());
+
+    const WorldCookResult after = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(after.Success) << after.Error;
+    const WorldPartitionManifest afterManifest = ParseCookedManifest(after.CookedManifestPath);
+
+    // Both zones changed content, and the moved geometry crossed over.
+    EXPECT_NE(afterManifest.Zones[0].CookedContentHash, beforeManifest.Zones[0].CookedContentHash);
+    EXPECT_NE(afterManifest.Zones[1].CookedContentHash, beforeManifest.Zones[1].CookedContentHash);
+    EXPECT_EQ(cookedEntityCount(afterManifest.Zones[0].CookedSceneRef), 1u);
+    EXPECT_EQ(cookedEntityCount(afterManifest.Zones[1].CookedSceneRef), 1u);
 }
 
 TEST_F(WorldCookTest, RefusesDirtyZoneDocuments)
