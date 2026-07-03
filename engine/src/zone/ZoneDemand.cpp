@@ -1,68 +1,45 @@
 #include <zone/ZoneDemand.h>
 
 #include <algorithm>
-#include <cstdint>
-#include <limits>
 #include <utility>
 
 namespace
 {
 
-struct DemandEntry
+bool ZoneExists(const WorldPartitionManifest& manifest, ZoneId zone)
 {
-    ZoneId            Zone;
-    int32_t           Hop = 0;
-    // Highest PreloadPriority among the transition edges that discovered the
-    // zone at its shortest hop; eviction tiebreaker only.
-    int32_t           Priority = std::numeric_limits<int32_t>::min();
-    ZoneParticipation Desired;
-    ZoneDemandSources Sources;
-    bool              Pinned = false;
-};
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == zone)
+            return true;
+    return false;
+}
 
-DemandEntry* Find(std::vector<DemandEntry>& entries, ZoneId zone)
+ZoneHopRank* FindRank(std::vector<ZoneHopRank>& ranks, ZoneId zone)
 {
-    for (DemandEntry& entry : entries)
-        if (entry.Zone == zone)
-            return &entry;
+    for (ZoneHopRank& rank : ranks)
+        if (rank.Zone == zone)
+            return &rank;
     return nullptr;
 }
 
 } // namespace
 
-std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& manifest,
-                                                const WorldPartitionIndex& index,
-                                                ZoneId focus,
-                                                std::span<const ZonePin> pins,
-                                                const WorldPartitionStreamingConfig& config)
+std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
+                                             const WorldPartitionIndex& index,
+                                             ZoneId focus,
+                                             int32_t hopCount)
 {
-    const auto zoneExists = [&](ZoneId zone)
-    {
-        for (const ZoneHeader& header : manifest.Zones)
-            if (header.Id == zone)
-                return true;
-        return false;
-    };
-
-    // The caller decides what "no focus yet" means; the policy does not guess.
-    if (!focus.IsValid() || !zoneExists(focus))
+    if (!focus.IsValid() || !ZoneExists(manifest, focus))
         return {};
 
-    std::vector<DemandEntry> entries;
-    {
-        DemandEntry entry;
-        entry.Zone = focus;
-        entry.Desired = ZoneParticipation{ .Visible = true, .Physics = true,
-                                           .Logic = true, .Audio = true };
-        entry.Sources.Focus = true;
-        entries.push_back(entry);
-    }
+    std::vector<ZoneHopRank> ranks;
+    ranks.push_back(ZoneHopRank{ focus, 0, std::numeric_limits<int32_t>::min() });
 
-    // BFS over outgoing edges only: a two-way door is two edges (the unpaired
-    // validation rule keeps it that way), so paired doors are symmetric by
-    // construction and a OneWay edge INTO the focus does not preload its source.
+    // Outgoing edges only: a two-way door is two edges (the unpaired validation
+    // rule keeps it that way), so paired doors are symmetric by construction
+    // and a OneWay edge INTO the focus does not preload its source.
     std::vector<ZoneId> frontier{ focus };
-    for (int32_t hop = 1; hop <= config.HopCount; ++hop)
+    for (int32_t hop = 1; hop <= hopCount; ++hop)
     {
         std::vector<ZoneId> next;
         for (ZoneId zone : frontier)
@@ -70,9 +47,9 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
             for (uint32_t edgeIndex : index.Outgoing(zone))
             {
                 const TransitionRecord& edge = manifest.Transitions[edgeIndex];
-                if (!zoneExists(edge.To))
+                if (!ZoneExists(manifest, edge.To))
                     continue;
-                if (DemandEntry* existing = Find(entries, edge.To))
+                if (ZoneHopRank* existing = FindRank(ranks, edge.To))
                 {
                     // A zone reachable by several edges at its shortest hop
                     // keeps the highest priority among those discoveries.
@@ -80,31 +57,79 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                         existing->Priority = edge.PreloadPriority;
                     continue;
                 }
-                DemandEntry entry;
-                entry.Zone = edge.To;
-                entry.Hop = hop;
-                entry.Priority = edge.PreloadPriority;
-                entry.Sources.Neighbor = true;
-                entries.push_back(entry);
+                ranks.push_back(ZoneHopRank{ edge.To, hop, edge.PreloadPriority });
                 next.push_back(edge.To);
             }
         }
         frontier = std::move(next);
     }
 
+    std::sort(ranks.begin(), ranks.end(),
+              [](const ZoneHopRank& a, const ZoneHopRank& b)
+              { return a.Zone.Value < b.Zone.Value; });
+    return ranks;
+}
+
+std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& manifest,
+                                                const WorldPartitionIndex& index,
+                                                ZoneId focus,
+                                                std::span<const ZonePin> pins,
+                                                const WorldPartitionStreamingConfig& config)
+{
+    struct DemandEntry
+    {
+        ZoneHopRank       Rank;
+        ZoneParticipation Desired;
+        ZoneDemandSources Sources;
+        bool              Pinned = false;
+    };
+
+    // The caller decides what "no focus yet" means; the policy does not guess.
+    const std::vector<ZoneHopRank> ranks =
+        ComputeZoneHopRanks(manifest, index, focus, config.HopCount);
+    if (ranks.empty())
+        return {};
+
+    std::vector<DemandEntry> entries;
+    entries.reserve(ranks.size());
+    for (const ZoneHopRank& rank : ranks)
+    {
+        DemandEntry entry;
+        entry.Rank = rank;
+        if (rank.Zone == focus)
+        {
+            entry.Desired = ZoneParticipation{ .Visible = true, .Physics = true,
+                                               .Logic = true, .Audio = true };
+            entry.Sources.Focus = true;
+        }
+        else
+        {
+            entry.Sources.Neighbor = true;
+        }
+        entries.push_back(entry);
+    }
+
+    const auto find = [&](ZoneId zone) -> DemandEntry*
+    {
+        for (DemandEntry& entry : entries)
+            if (entry.Rank.Zone == zone)
+                return &entry;
+        return nullptr;
+    };
+
     // Pins OR their minimum onto whatever the zone already earned. A pin on a
     // zone the manifest does not contain is ignored: validation owns reporting
     // broken content; the policy stays total.
     for (const ZonePin& pin : pins)
     {
-        if (!pin.Zone.IsValid() || !zoneExists(pin.Zone))
+        if (!pin.Zone.IsValid() || !ZoneExists(manifest, pin.Zone))
             continue;
-        DemandEntry* existing = Find(entries, pin.Zone);
+        DemandEntry* existing = find(pin.Zone);
         if (existing == nullptr)
         {
             DemandEntry entry;
-            entry.Zone = pin.Zone;
-            entry.Hop = std::numeric_limits<int32_t>::max();
+            entry.Rank = ZoneHopRank{ pin.Zone, std::numeric_limits<int32_t>::max(),
+                                      std::numeric_limits<int32_t>::min() };
             entry.Desired = pin.Minimum;
             entry.Sources.Pinned = true;
             entry.Pinned = true;
@@ -132,11 +157,11 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         std::sort(evictable.begin(), evictable.end(),
                   [&](size_t a, size_t b)
                   {
-                      if (entries[a].Hop != entries[b].Hop)
-                          return entries[a].Hop > entries[b].Hop;
-                      if (entries[a].Priority != entries[b].Priority)
-                          return entries[a].Priority < entries[b].Priority;
-                      return entries[a].Zone.Value > entries[b].Zone.Value;
+                      if (entries[a].Rank.Hop != entries[b].Rank.Hop)
+                          return entries[a].Rank.Hop > entries[b].Rank.Hop;
+                      if (entries[a].Rank.Priority != entries[b].Rank.Priority)
+                          return entries[a].Rank.Priority < entries[b].Rank.Priority;
+                      return entries[a].Rank.Zone.Value > entries[b].Rank.Zone.Value;
                   });
         std::vector<bool> evicted(entries.size(), false);
         size_t remaining = entries.size();
@@ -157,11 +182,11 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
 
     std::sort(entries.begin(), entries.end(),
               [](const DemandEntry& a, const DemandEntry& b)
-              { return a.Zone.Value < b.Zone.Value; });
+              { return a.Rank.Zone.Value < b.Rank.Zone.Value; });
 
     std::vector<ZoneDemandRecord> records;
     records.reserve(entries.size());
     for (const DemandEntry& entry : entries)
-        records.push_back(ZoneDemandRecord{ entry.Zone, entry.Desired, entry.Sources });
+        records.push_back(ZoneDemandRecord{ entry.Rank.Zone, entry.Desired, entry.Sources });
     return records;
 }

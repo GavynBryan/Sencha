@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -43,6 +45,25 @@ struct WorldPartitionStreamingConfig
     double  LingerSeconds = 3.0;
     int32_t ResidentZoneCap = 8;
 };
+
+// One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
+// the highest PreloadPriority among the transition edges that discovered the
+// zone at its shortest hop (minimum for the focus). Eviction and load-issue
+// ordering read these; ComputeZoneDemand's traversal is this one.
+struct ZoneHopRank
+{
+    ZoneId  Zone;
+    int32_t Hop = 0;
+    int32_t Priority = std::numeric_limits<int32_t>::min();
+};
+
+// Pure. BFS over outgoing edges only, up to hopCount hops from the focus.
+// Empty for an invalid or unknown focus. Ascending zone id.
+[[nodiscard]] std::vector<ZoneHopRank>
+ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
+                    const WorldPartitionIndex& index,
+                    ZoneId focus,
+                    int32_t hopCount);
 
 // Pure. The demand set for one focus: the focus zone at full participation,
 // its graph neighbors within HopCount hops dormant, plus pins at their minimum.
