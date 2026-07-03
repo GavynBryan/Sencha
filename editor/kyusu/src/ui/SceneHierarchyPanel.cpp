@@ -133,6 +133,9 @@ void SceneHierarchyPanel::OnDraw()
         {
             if (ImGui::MenuItem(ICON_FA_TRASH "  Delete"))
                 toDelete = entity;
+            if (WorldDoc.IsWorld() && scene.IsPortal(entity)
+                && ImGui::MenuItem(ICON_FA_ARROW_RIGHT "  Create Transition From Portal"))
+                TransitionPopup_.Open(WorldDoc.FocusZone(), entity);
             if (WorldDoc.IsWorld())
             {
                 // Targets: every open zone except the focus zone, manifest order.
@@ -183,4 +186,6 @@ void SceneHierarchyPanel::OnDraw()
                         "moved {} entities to {}", count, zone.Name);
         }
     }
+
+    TransitionPopup_.Draw(WorldDoc, Commands);
 }

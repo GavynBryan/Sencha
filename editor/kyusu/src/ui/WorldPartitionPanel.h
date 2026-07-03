@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/AddTransitionPopup.h"
 #include "ui/IEditorPanel.h"
 
 #include <zone/WorldPartitionIds.h>
@@ -31,6 +32,7 @@ public:
 private:
     void DrawRegion(const RegionRecord& region);
     void DrawZoneRow(const ZoneHeader& zone);
+    void DrawTransitionRow(const TransitionRecord& transition);
     void DrawValidation();
     void NavigateToRecord(const ContentRiskRecord& record);
     // Inline-rename helper: draws the InputText when `active`, commits through
@@ -47,4 +49,6 @@ private:
     char     RenameBuffer_[128] = {};
     RegionId NavigateRegion_;   // region to force-open after a validation click
     ZoneId   SelectedZoneRow_;  // zone row a validation click highlighted
+    TransitionId SelectedTransitionRow_; // transition row a validation click highlighted
+    AddTransitionPopup TransitionPopup_;
 };

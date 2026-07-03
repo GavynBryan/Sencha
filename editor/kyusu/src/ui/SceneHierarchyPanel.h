@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/AddTransitionPopup.h"
 #include "ui/IEditorPanel.h"
 
 #include <string>
@@ -22,6 +23,7 @@ private:
     WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
+    AddTransitionPopup TransitionPopup_;
     // GetTitle is const and the title varies with the focus zone; the ### suffix
     // keeps the ImGui window identity stable while the visible text changes.
     mutable std::string TitleCache;
