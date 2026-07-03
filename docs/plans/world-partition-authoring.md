@@ -123,8 +123,7 @@ Editor (exists):
 - `CommandStack` plus `CompositeCommand` for multi-part undo steps;
   `CaptureEntity`/`RestoreEntity` snapshots for undoable entity lifecycle.
 - `BrushOps` pure verbs including `CarveFaceRect` and `RectFaceFrame`; `FaceCarveTool`
-  as the canonical face-pick, live-preview, commit tool pattern. `PierceFaceRect` does
-  not exist.
+  as the canonical face-pick, live-preview, commit tool pattern.
 - Shared `EditorLinePipeline`/`EditorWideLinePipeline`/`EditorFillPipeline` for overlay
   rendering; `EditorOverlayState.Labels` for world-anchored text. The `EditorLineBatch`
   consolidation (hardening W5) is still a plan.
@@ -380,28 +379,33 @@ transition's id, never the reverse):
   streaming hints. The runtime timing semantics of crossing one (history reset, input
   policy, camera policy) are Track C item 6's transition model; this plan supplies the
   graph those semantics attach to and does not duplicate that design.
-- **Portal**: an entity in the source zone's content (transform, rect shape, normal,
-  linked `TransitionId`). It is the editable realization: gizmo-manipulable frame,
-  validation anchor, and later the see-through render surface. Not every transition has
-  one; every doorway-created one does.
+- **Portal**: a marker volume brush entity in the source zone's content (a thin box
+  fitted into the opening, flagged by a component that stores only the linked
+  `TransitionId`). It is the editable realization: manipulable like any brush, the
+  validation anchor, and later the see-through render surface. Not every transition
+  has one; every doorway-created one does. (Amended per owner override; see
+  `docs/plans/world-partition/00-execution-overview.md` D9.)
 
-Authoring flow (v1.0), built on the `FaceCarveTool` pattern:
+Authoring flow (v1.0), amended per owner override (see
+`docs/plans/world-partition/00-execution-overview.md` D9); a portal is a marker volume
+brush, not a face-inset operation:
 
-1. Designer blocks out a room, picks a wall face.
-2. A new pure `BrushOps` verb, `PierceFaceRect` (planned in the roadmap's tool suite as
-   batch 1, item 2), cuts the through-opening: `CarveFaceRect` on the picked face and
-   the projected opposite face, `DeleteFace` on both inset rects, four bridging interior
-   quads inheriting the host `FaceMaterial`.
-3. The transition tool offers "create transition from opening" on the resulting
-   opening: target picked from zone headers (loaded or not; headers make unloaded
-   targets pickable) or "new zone in region R".
-4. One `CompositeCommand` mints: the transition record (and its reverse unless OneWay),
-   the portal entity sized to the opening's `RectFaceFrame` world rect, and, for a new
-   target, the zone header plus empty scene file.
+1. Designer blocks out a room and cuts the through-opening with the existing mesh
+   tools (carve, delete face, bridge; no new `BrushOps` verb).
+2. Designer fits a thin box brush into the opening and flags it as a portal (the
+   portal component).
+3. Transition creation targets a zone picked from zone headers (loaded or not; headers
+   make unloaded targets pickable) or "new zone in region R", and links the selected
+   portal brush.
+4. The transition record (and its reverse unless OneWay) is minted as a manifest verb;
+   the portal link is an undoable component edit; a new target mints the zone header
+   plus an empty scene file.
 5. Validation runs incrementally (Section 9); the target zone can be loaded as context
    (Section 6.3).
 
-The portal entity's frame math reuses `RectFaceFrame`; no new geometry vocabulary. Edge
+The portal's shape and normal derive from its brush geometry (the normal axis is the
+axis of minimum world-bounds extent); the component stores only the linked
+`TransitionId`, never duplicated geometry. Edge
 styling in views derives from `Topology` plus `Flags`; the proposal's long styling list
 (seam, doorway, see-through, one-way, warp, elevator, cross-space) is presentation over
 those two fields plus, later, the space comparison, not stored per-edge styling.
@@ -479,9 +483,11 @@ Because ownership is structural, the tool set reduces to moves between registrie
   restoring it into the target registry. Brush mesh sidecar entries move with their
   entity. Undo restores the original registry. Cross-zone entity id stability follows
   the serialized-identity scheme from Track C item 5 (Section 3.3).
-- **Select Entities Owned By Zone** (v1.0): trivial; a zone's entities are its
-  registry's contents.
-- **Show Ownership Tint** (v1.0): Section 6.3.
+- Select Entities Owned By Zone and Show Ownership Tint: dropped by
+  `04-move-selection-to-zone.md` (amended). Selection is focus-zone-only by design,
+  so select-owned reduces to Select All in the focus zone; context dimming already
+  shows ownership visually. Recorded triggers to revisit: a cross-zone audit-selection
+  request; designer confusion between multiple context zones.
 - Adopt Entities In Bounds, Reassign By Containment, Split Zone, Merge Zones: deferred
   bulk conveniences over the move primitive (Section 11). Validation's
   bounds-containment warning (Section 9) covers the audit need meanwhile.
@@ -543,13 +549,15 @@ Gate: open a three-zone world; edit one zone with a second greyed and unselectab
 a third header-only; save; reload; states and validation persist.
 
 **Phase E2: ownership editing (v1.0).** Move Selection To Zone with undo across
-registries, select-owned, ownership tint, bounds-containment warnings.
+registries, bounds-containment warnings (select-owned and ownership tint dropped by
+`04-move-selection-to-zone.md` with recorded triggers).
 Gate: move an entity between zones, undo, redo; cook reflects the move; validation
 updates.
 
-**Phase E3: transitions and portals (v1.0).** `PierceFaceRect` verb; transition tool
-(create from opening, target picker over headers, reverse-pair creation, new-zone
-target); portal entity with frame gizmo; transition validation.
+**Phase E3: transitions and portals (v1.0).** Portal marker brushes (amended per
+owner override, `00-execution-overview.md` D9); transition creation (target picker
+over headers, reverse-pair creation, new-zone target, portal linking); transition
+validation.
 Gate: the Section 10 slice workflow end to end.
 
 **Phase E4: multi-zone editing polish (v1.0 stretch, v2.0 otherwise).**
@@ -631,12 +639,13 @@ v1.0 set, structural:
 1. Ids are nonzero and unique per record type across the manifest.
 2. Every zone names exactly one existing region.
 3. Every transition's `From` and `To` name existing zones and differ.
-4. A Doorway transition has exactly one portal entity in `From`'s content whose linked
-   `TransitionId` names it, and a portal's linked transition has that portal's zone as
-   its `From` (checked when `From` is loaded; recorded as unverifiable-until-loaded
-   otherwise, which is itself a visible state, not silence).
-5. Portal frame normal agrees with transition direction (points out of `From` through
-   the opening).
+4. A Doorway transition has exactly one portal brush entity in `From`'s content whose
+   linked `TransitionId` names it, and a portal's linked transition has that portal's
+   zone as its `From` (checked when `From` is loaded; recorded as
+   unverifiable-until-loaded otherwise, which is itself a visible state, not silence).
+5. The portal brush's derived normal axis (its minimum-extent axis) agrees with the
+   transition direction (points out of `From` toward `To`). Rule ids, severities, and
+   the exact checks for rules 4 and 5 are pinned in `05-transitions-and-portals.md`.
 6. A non-OneWay doorway or seam has a reverse edge (derived pairing: matching swapped
    endpoints; an explicit pairing field is deferred until warps make derivation
    ambiguous).
@@ -671,10 +680,10 @@ migration tooling, or any space work.
 
 Editor slice (Phases 1, E1, E2, E3): a world of one region and three zones. Hub Room
 editable; Hallway A loaded as Context (greyed, unselectable, snappable); Boss Arena
-header-only. Cut a doorway with `PierceFaceRect`; create a transition from the opening
-targeting Hallway A (reverse edge minted); move one entity from Hub Room to Hallway A
-ownership and undo/redo it; break the portal link by hand-editing and watch validation
-name it and jump to it.
+header-only. Cut a doorway with the existing carve and face tools; fit and flag a
+portal brush; create a transition targeting Hallway A (reverse edge minted); move one
+entity from Hub Room to Hallway A ownership and undo/redo it; break the portal link by
+hand-editing and watch validation name it and jump to it.
 
 Runtime slice (Phase R): cook that world; in the template game, walk Hub Room toward
 the doorway. Hallway A attaches dormant ahead of arrival, flips participation on entry,
@@ -735,7 +744,7 @@ content, not slice scope.
    Portal entity, optional link, one word for the geometry (Section 5).
 5. **v1.0 versus v2.0?** v1.0: manifest and ids, `WorldPartitionRuntime` with one
    policy, world cook, partition tree, Context (loaded-inactive) zones, Move Selection
-   To Zone, transition-from-opening with `PierceFaceRect`, structural validation,
+   To Zone, portal marker brushes with transition linking, structural validation,
    play-from-zone. v2.0: graph panel, see-through portals, demand inspector UI, bulk
    ownership tools, participation-tier preview, spaces and warps. Rationale and the
    roadmap moves this requires: Section 7 and Section 13.
@@ -752,9 +761,9 @@ content, not slice scope.
    labeled preview offsets as view state, distinct cross-space edge styling, and
    eventually portal-framed preview (Section 8).
 9. **Smallest slice?** Section 10: one region, three zones (editable, context,
-   header-only), one pierced doorway with a paired transition, one ownership move, one
-   validation break; plus the runtime twin proving dormant preload and hitch-free
-   traversal over the same cooked manifest.
+   header-only), one doorway with a fitted portal brush and paired transition, one
+   ownership move, one validation break; plus the runtime twin proving dormant preload
+   and hitch-free traversal over the same cooked manifest.
 
 ---
 
@@ -768,8 +777,9 @@ authority.
    partition tree, editor zone states with Context, Move Selection To Zone,
    transition-from-opening). Justification: the v1.0 gate's "three interconnected zones
    authored in kyusu" clause has no path without it (Section 7).
-3. `PierceFaceRect` (already batch 1, item 2 of the tool suite) is noted as a Phase E3
-   dependency of this plan.
+3. `PierceFaceRect` (batch 1, item 2 of the tool suite) is no longer a dependency of
+   this plan: portals are marker volume brushes (owner override,
+   `00-execution-overview.md` D9). The verb remains an independent tool-suite item.
 4. The v2.0 partition map view item absorbs the graph panel and demand inspector panel
    as its concrete contents.
 5. When `WorldPartitionRuntime` lands (Phase R gate), delete its row from the roadmap's

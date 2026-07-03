@@ -20,11 +20,14 @@ and ask, not to improvise (see "Stop conditions" below).
 | `00-execution-overview.md` | all | Guardrails, pinned decisions, sequencing, stop conditions. |
 | `01-manifest-and-identity.md` | Phase 1 | `ZoneId` migration, partition ids, manifest records, JSON schema, adjacency index, validation, tests. |
 | `02-world-document-and-partition-tree.md` | Phase E1 | `WorldDocument`, workspace surgery, zone editor states, tree panel, bounds overlay, world cook. |
-| (not yet written) | Phases R, E2, E3 | Written before those phases start. Their already-pinned decisions are in Section 3 so nothing built earlier drifts. |
+| `03-runtime-streaming.md` | Phase R | `WorldPartitionRuntime`, demand policy, streaming tunables, template game world path, PIE play-from-world. |
+| `04-move-selection-to-zone.md` | Phase E2 | Cross-zone entity moves with undo, UI entry points, bounds-containment validation. |
+| `05-transitions-and-portals.md` | Phase E3 | Portal marker brushes, transition verbs and panel UI, linkage validation, cook exclusion. |
 
-Execution order: Phase 1 first, alone, to completion. Then E1. Phases R and E2/E3 get
-their specs written (and reviewed) before implementation starts; do not begin them from
-the design doc alone.
+Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
+Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
+touches the engine). Phase E3 starts after E2; it builds on E2's cross-zone command
+precedents and the D12 unload pin.
 
 ---
 
@@ -134,6 +137,52 @@ assets in the front-door sense; entangling them with the asset system now buys n
 Revisit trigger: binary cooked scenes (Track F) making cooked zone scenes first-class
 assets.
 
+**D9. A portal is a marker volume brush.** Owner override, recorded 2026-07: this
+replaces the pierce-based portal flow previously pinned in Section 6 and in the design
+doc's Section 5 authoring flow (both amended). A portal is a brush entity flagged by an
+editor-side component storing only the linked `TransitionId` (trivially copyable,
+static_asserted; no strings, no vectors, no rect frame). The designer cuts the opening
+with the existing mesh tools and fits a thin box brush into it. Shape and normal derive
+from the brush geometry: the portal's normal axis is the axis of minimum world-bounds
+extent, computed by a pure helper and never stored. `PierceFaceRect` is dropped from
+Phase E3 entirely; it survives only as an unrelated generic roadmap tool-suite item. D1
+is unchanged: the portal stores the `TransitionId`; the manifest never references
+entities.
+
+**D10. The zone content recipe is a game-supplied function.** `WorldPartitionRuntime`
+decides which zones are resident; the game decides how a zone's cooked refs become a
+registry. The seam is one callable, `ZoneLoadRecipeFn`, returning per-zone build and
+finalize callbacks plus an optional asset preload (exact shape in `03-`). This is the
+game-binary boundary; it is a function, not an interface, because one implementation
+slot is all the boundary needs.
+
+**D11. Transition manifest edits are non-undoable; portal linkage is undoable.**
+`AddTransition`/`RemoveTransition` and the transition setters are `WorldDocument`
+verbs, off the `CommandStack` like `AddZone` (the E1 W4 precedent). Setting a portal's
+transition field is an ordinary undoable component edit. Consequence, stated plainly:
+undoing a link can leave an orphan transition record; validation reports it and removal
+stays explicit. One undo system; no manifest snapshot machinery invented.
+
+**D12. `UnloadZone` clears the undo stack.** A cross-zone move command on the stack
+references two documents; unloading the non-focus one would dangle it. `WorldDocument`
+gains an `OnZoneUnloaded` observer; the workspace binds it to clearing the
+`CommandStack` (narrower than the full D5 reset: focus did not change, so tools and
+selection stay). Chosen over refusing unload while the stack is non-empty, which would
+make unload effectively unusable.
+
+**D13. Portals are editor-only in v1.0; the cook strips them.** Portal brushes
+contribute nothing to render cells, the collision bake, or the cooked passthrough
+scene (the `BakedBrushComponent` precedent). Phase R streaming consumes transitions,
+never portals; a cooked portal component today would be a parsed-but-never-read field.
+Recorded trigger to emit an engine-side runtime component: Track C item 6 (the
+transition timing model) defining what the runtime actually needs from a portal volume.
+
+**D14. Phase R tunables are `EngineRuntimeConfig` fields** beside `AsyncCommitBudgetMs`:
+`StreamingHopCount` (int, default 1), `StreamingLingerSeconds` (double, default 3.0),
+`StreamingResidentZoneCap` (int, default 8); JSON keys `streaming_hop_count`,
+`streaming_linger_seconds`, `streaming_resident_zone_cap`; validated as hop >= 0,
+linger finite and >= 0, cap >= 1.
+
 ---
 
 ## 4. Stop conditions
@@ -161,7 +210,7 @@ it feels mid-implementation.
 
 ## 5. Definition-of-done template
 
-Every stage in `01-` and `02-` ends with this checklist, plus its own gate:
+Every stage in the phase specs ends with this checklist, plus its own gate:
 
 1. Full ctest suite green, including the stage's new tests.
 2. `scripts/check_editor_layering.sh` green (editor stages).
@@ -177,18 +226,15 @@ Every stage in `01-` and `02-` ends with this checklist, plus its own gate:
 
 So that Phases 1 and E1 do not build anything these later phases would have to undo:
 
-- **Phase R:** the policy layer is a new type beside `ZoneRuntime` (working name
-  `WorldPartitionRuntime`, per the roadmap); its tunables are `EngineRuntimeConfig`
-  fields following the `AsyncCommitBudgetMs` pattern; unload is `DestroyZone` until
-  stateful detach lands. Nothing in Phase 1's manifest types may assume loading
-  machinery (they are plain data plus pure functions; keep them that way).
-- **Phase E2 (Move Selection To Zone):** built on `CaptureEntity`/`RestoreEntity`
-  across two zone documents inside one `CompositeCommand`; the brush mesh sidecar entry
-  moves with the entity. No new snapshot machinery. The target zone must be loaded;
-  loading it is a prerequisite step the command refuses to do implicitly.
-- **Phase E3 (transitions and portals):** the opening cut is a new pure `BrushOps` verb
-  `PierceFaceRect` with the domain already recorded in the roadmap (rectangular-quad
-  opposite-face pairs); the portal component stores `TransitionId` (D1); the transition
-  tool follows the `FaceCarveTool` structure (hover validate, drag preview via the
-  sink, commit as one composite command). Portal component data is trivially copyable
-  (chunk memcpy constraint): id plus a rect frame, no strings, no vectors.
+- **Phase R:** specced in `03-runtime-streaming.md` (supersedes the early pins that
+  lived here: policy type beside `ZoneRuntime`, config-field tunables per D14, unload
+  is `DestroyZone` until stateful detach lands).
+- **Phase E2 (Move Selection To Zone):** specced in `04-move-selection-to-zone.md`
+  (supersedes the early pins that lived here: `CaptureEntity`/`RestoreEntity` across
+  two zone documents, sidecar moves with the entity, target must already be loaded).
+- **Phase E3 (transitions and portals):** specced in `05-transitions-and-portals.md`
+  under D9: the portal is a marker volume brush flagged by a component that stores
+  only the linked `TransitionId` (D1), trivially copyable (chunk memcpy constraint,
+  no strings, no vectors); shape and normal derive from the brush geometry. There is
+  no opening-cut verb in this phase; the designer cuts openings with the existing
+  mesh tools.
