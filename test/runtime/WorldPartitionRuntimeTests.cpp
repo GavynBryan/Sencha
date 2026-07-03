@@ -2,6 +2,7 @@
 
 #include <core/json/JsonParser.h>
 #include <jobs/AsyncTaskQueue.h>
+#include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/registry/Registry.h>
 #include <zone/AsyncZoneLoader.h>
@@ -421,4 +422,237 @@ TEST_F(WorldPartitionRuntimeTest, DemandRecordsAreDeterministicallyOrdered)
         EXPECT_EQ(first[i].Sources.Neighbor, second[i].Sources.Neighbor);
         EXPECT_EQ(first[i].Sources.Lingering, second[i].Sources.Lingering);
     }
+}
+
+//=============================================================================
+// R4: the traversal gate, headless. When the traversal-hitch harness lands,
+// this scripted walk becomes one of its scripts; coordinate, do not duplicate.
+//=============================================================================
+
+namespace
+{
+
+// Scripted Hub-to-Arena walk. Every step sets focus from the position, runs
+// one Update, then settles all in-flight loads, so the residency event
+// sequence depends only on policy, never on task-thread timing.
+struct TraversalRun
+{
+    std::vector<std::string> Events;
+    std::vector<std::pair<ZoneId, double>> AttachPositions;   // zone, x at attach
+    std::vector<ZoneParticipation> AttachParticipations;
+    bool RecordsExplainedResidency = true;
+};
+
+TraversalRun RunScriptedTraversal(unsigned taskThreads)
+{
+    AsyncTaskQueue tasks(taskThreads);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+
+    TraversalRun run;
+    double currentX = 0.0;
+
+    WorldPartitionRuntime partition(
+        [&](const ZoneHeader& header) -> ZoneLoadRecipe
+        {
+            run.Events.push_back("issue:" + ZoneIdToString(header.Id));
+            const ZoneId zone = header.Id;
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Entities.Create(); };
+            recipe.Finalize = [&run, &zones, &currentX, zone](Registry&)
+            {
+                run.Events.push_back("attach:" + ZoneIdToString(zone));
+                run.AttachPositions.push_back({ zone, currentX });
+                run.AttachParticipations.push_back(zones.GetParticipation(zone));
+            };
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.5 });
+    std::string error;
+    if (!partition.LoadManifest(FixtureManifest(), &error))
+    {
+        ADD_FAILURE() << error;
+        return run;
+    }
+    partition.SetFocus(kHub);
+
+    const ZoneId zoneOrder[] = { kHub, kHallway, kArena };
+    bool wasLoaded[3] = { false, false, false };
+    ZoneParticipation lastParticipation[3];
+
+    const auto participationTag = [](const ZoneParticipation& p)
+    {
+        std::string tag = "----";
+        if (p.Visible) tag[0] = 'V';
+        if (p.Physics) tag[1] = 'P';
+        if (p.Logic) tag[2] = 'L';
+        if (p.Audio) tag[3] = 'A';
+        return tag;
+    };
+
+    for (int step = 0; step <= 60; ++step)
+    {
+        currentX = 0.5 * step;   // Hub center to Arena center
+        partition.SetFocus(Vec3d{ currentX, 1.0, 0.0 });
+        partition.Update(0.25, loader, zones);
+
+        // Settle: all in-flight loads attach before the step's observations.
+        const auto anyLoading = [&]
+        {
+            for (ZoneId zone : zoneOrder)
+                if (loader.IsLoading(zone))
+                    return true;
+            return false;
+        };
+        if (taskThreads == 0)
+        {
+            while (anyLoading())
+            {
+                tasks.PumpWork();
+                tasks.DrainCompletions();
+            }
+        }
+        else
+        {
+            while (anyLoading())
+            {
+                tasks.DrainCompletions();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            const ZoneId zone = zoneOrder[i];
+            const bool loaded = zones.IsZoneLoaded(zone);
+            if (loaded != wasLoaded[i])
+                run.Events.push_back((loaded ? "load:" : "destroy:") + ZoneIdToString(zone));
+            const ZoneParticipation participation =
+                loaded ? zones.GetParticipation(zone) : ZoneParticipation{};
+            if (participationTag(participation) != participationTag(lastParticipation[i]))
+                run.Events.push_back("part:" + ZoneIdToString(zone) + ":"
+                                     + participationTag(participation));
+            wasLoaded[i] = loaded;
+            lastParticipation[i] = participation;
+
+            if (loaded)
+            {
+                bool explained = false;
+                for (const ZoneDemandRecord& record : partition.DemandRecords())
+                    if (record.Zone == zone)
+                        explained = record.Sources.Focus || record.Sources.Pinned
+                            || record.Sources.Neighbor || record.Sources.Lingering;
+                run.RecordsExplainedResidency &= explained;
+            }
+        }
+    }
+    return run;
+}
+
+} // namespace
+
+TEST(WorldPartitionTraversal, TraversalAttachesDormantAheadOfCrossing)
+{
+    const TraversalRun run = RunScriptedTraversal(0);
+
+    for (const ZoneParticipation& participation : run.AttachParticipations)
+        EXPECT_FALSE(participation.Any());   // never visible-on-attach
+
+    // Ahead of the crossing: each zone attached before the position reached it.
+    for (const auto& [zone, x] : run.AttachPositions)
+    {
+        if (zone == kHallway)
+            EXPECT_LT(x, 9.0);
+        if (zone == kArena)
+            EXPECT_LT(x, 21.0);
+    }
+    bool arenaAttached = false;
+    for (const auto& [zone, x] : run.AttachPositions)
+        arenaAttached |= zone == kArena;
+    EXPECT_TRUE(arenaAttached);
+}
+
+TEST(WorldPartitionTraversal, TraversalFlipsParticipationOnEntryAndUnloadsBehind)
+{
+    const TraversalRun run = RunScriptedTraversal(0);
+
+    const auto indexOf = [&](const std::string& event)
+    {
+        for (size_t i = 0; i < run.Events.size(); ++i)
+            if (run.Events[i] == event)
+                return static_cast<ptrdiff_t>(i);
+        return static_cast<ptrdiff_t>(-1);
+    };
+
+    const ptrdiff_t hallwayFull = indexOf("part:" + ZoneIdToString(kHallway) + ":VPLA");
+    const ptrdiff_t hubDormant = indexOf("part:" + ZoneIdToString(kHub) + ":----");
+    const ptrdiff_t hubDestroyed = indexOf("destroy:" + ZoneIdToString(kHub));
+
+    ASSERT_GE(hallwayFull, 0);   // flips to full on entry
+    ASSERT_GE(hubDormant, 0);    // the old focus demotes
+    ASSERT_GE(hubDestroyed, 0);  // and unloads after the linger budget
+    EXPECT_LT(hubDormant, hubDestroyed);
+}
+
+TEST(WorldPartitionTraversal, TraversalDemandRecordsExplainResidencyEveryStep)
+{
+    const TraversalRun run = RunScriptedTraversal(0);
+    EXPECT_TRUE(run.RecordsExplainedResidency);
+}
+
+TEST(WorldPartitionTraversal, TraversalIdenticalAcrossTaskThreadCounts)
+{
+    const TraversalRun serial = RunScriptedTraversal(0);
+    const TraversalRun threaded = RunScriptedTraversal(1);
+
+    EXPECT_EQ(serial.Events, threaded.Events);
+}
+
+TEST(WorldPartitionTraversal, TraversalRunsFullTickBudget)
+{
+    AsyncTaskQueue tasks(0);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+
+    WorldPartitionRuntime partition(
+        [](const ZoneHeader&) -> ZoneLoadRecipe
+        {
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Entities.Create(); };
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
+    std::string error;
+    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
+    partition.SetFocus(kHub);
+
+    FrameDriver driver(runtime);
+    double x = 0.0;
+    driver.Register(FramePhase::DrainAsyncTasks,
+                    [&](PhaseContext&)
+                    {
+                        tasks.PumpWork();
+                        tasks.DrainCompletions();
+                    });
+    driver.Register(FramePhase::ScheduleTicks,
+                    [&](PhaseContext& ctx) { ctx.Runtime->ScheduleFixedTicks(); });
+    driver.Register(FramePhase::Update,
+                    [&](PhaseContext&)
+                    {
+                        x = std::min(30.0, x + 0.5);
+                        partition.SetFocus(Vec3d{ x, 1.0, 0.0 });
+                        partition.Update(1.0 / 60.0, loader, zones);
+                    });
+
+    // Streaming work must never eat a scheduled tick: every frame runs exactly
+    // the budget ScheduleFixedTicks granted.
+    for (int frame = 0; frame < 120; ++frame)
+    {
+        driver.StepOnce();
+        const RuntimeFrameSnapshot& snapshot = runtime.GetCurrentFrame();
+        EXPECT_EQ(snapshot.FixedTicks, snapshot.Budget.TicksToRunThisFrame);
+    }
+    EXPECT_TRUE(zones.IsZoneLoaded(kArena));
 }
