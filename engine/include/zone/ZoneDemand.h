@@ -1,0 +1,56 @@
+#pragma once
+
+#include <span>
+#include <vector>
+
+#include <zone/WorldPartitionIndex.h>
+#include <zone/WorldPartitionManifest.h>
+#include <zone/ZoneParticipation.h>
+
+// Why a zone is demanded. Flags, not a single enum: one zone can be demanded
+// for several reasons at once (pinned and a neighbor, say), and the demand
+// inspector wants all of them.
+struct ZoneDemandSources
+{
+    bool Focus = false;
+    bool Pinned = false;
+    bool Neighbor = false;
+    bool Lingering = false;
+};
+
+// One zone's desired residency this update. The data contract the kyusu demand
+// inspector and the streaming telemetry read; records first, UI second.
+struct ZoneDemandRecord
+{
+    ZoneId            Zone;
+    ZoneParticipation Desired;
+    ZoneDemandSources Sources;
+};
+
+// A script- or transition-driven residency demand beyond the policy. Data, not
+// subclasses.
+struct ZonePin
+{
+    ZoneId            Zone;
+    ZoneParticipation Minimum;
+};
+
+// Mirrors the EngineRuntimeConfig streaming fields; plain data so the policy
+// stays pure and testable without config plumbing.
+struct WorldPartitionStreamingConfig
+{
+    int32_t HopCount = 1;
+    double  LingerSeconds = 3.0;
+    int32_t ResidentZoneCap = 8;
+};
+
+// Pure. The demand set for one focus: the focus zone at full participation,
+// its graph neighbors within HopCount hops dormant, plus pins at their minimum.
+// Lingering is runtime state and is layered on by WorldPartitionRuntime::Update,
+// never computed here. Deterministic: records ascend by zone id value.
+[[nodiscard]] std::vector<ZoneDemandRecord>
+ComputeZoneDemand(const WorldPartitionManifest& manifest,
+                  const WorldPartitionIndex& index,
+                  ZoneId focus,
+                  std::span<const ZonePin> pins,
+                  const WorldPartitionStreamingConfig& config);
