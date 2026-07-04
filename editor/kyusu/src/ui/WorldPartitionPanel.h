@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ui/AddTransitionPopup.h"
 #include "ui/IEditorPanel.h"
 
+#include <ecs/EntityId.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
 
@@ -11,6 +11,7 @@ class SelectionService;
 class WorldDocument;
 struct ContentRiskRecord;
 struct RegionRecord;
+struct TransitionRecord;
 struct ZoneHeader;
 
 // The partition tree: regions containing zone rows in manifest order, with the
@@ -50,5 +51,11 @@ private:
     RegionId NavigateRegion_;   // region to force-open after a validation click
     ZoneId   SelectedZoneRow_;  // zone row a validation click highlighted
     TransitionId SelectedTransitionRow_; // transition row a validation click highlighted
-    AddTransitionPopup TransitionPopup_;
+    // Deferred Connect To request: executed at the top of the next draw,
+    // because minting a zone mid-iteration would invalidate the manifest
+    // loops the tree walks. Invalid To plus a valid NewRegion mints the zone.
+    ZoneId   PendingConnectFrom_;
+    ZoneId   PendingConnectTo_;
+    RegionId PendingConnectNewRegion_;
+    EntityId PendingConnectPortal_;
 };

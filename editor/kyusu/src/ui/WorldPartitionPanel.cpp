@@ -5,6 +5,7 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
+#include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
 #include "document/commands/LinkPortalCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
@@ -41,6 +42,22 @@ void WorldPartitionPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
+    // Deferred connect from a zone row's Connect To submenu (see the header).
+    if (PendingConnectFrom_.IsValid())
+    {
+        ZoneId target = PendingConnectTo_;
+        if (!target.IsValid() && PendingConnectNewRegion_.IsValid())
+            target = WorldDoc.AddZone(PendingConnectNewRegion_, "New Zone");
+        if (target.IsValid())
+            SelectedTransitionRow_ = ConnectZones(WorldDoc, PendingConnectFrom_, target,
+                                                  /*oneWay*/ false, PendingConnectPortal_,
+                                                  Commands);
+        PendingConnectFrom_ = ZoneId{};
+        PendingConnectTo_ = ZoneId{};
+        PendingConnectNewRegion_ = RegionId{};
+        PendingConnectPortal_ = EntityId{};
+    }
+
     if (ImGui::Button(ICON_FA_PLUS "  New Region"))
         (void)WorldDoc.AddRegion("New Region");
     ImGui::Separator();
@@ -74,8 +91,6 @@ void WorldPartitionPanel::OnDraw()
 
     ImGui::Separator();
     DrawValidation();
-
-    TransitionPopup_.Draw(WorldDoc, Commands);
 }
 
 bool WorldPartitionPanel::DrawRenameField(bool active)
@@ -239,10 +254,12 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
             std::strncpy(RenameBuffer_, zone.Name.c_str(), sizeof(RenameBuffer_) - 1);
             RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
         }
-        if (ImGui::MenuItem(ICON_FA_ARROW_RIGHT "  Add Transition To..."))
+        if (ImGui::BeginMenu(ICON_FA_ARROW_RIGHT "  Connect To"))
         {
-            // The link box pre-checks when the selection is exactly one portal
-            // brush in this zone (selection is focus-zone-only by contract).
+            // One click mints a two-way Doorway pair with defaults; the
+            // transition row's menu adjusts topology/one-way/priority after.
+            // A selected portal in this zone auto-links (selection is
+            // focus-zone-only by contract).
             EntityId linkEntity{};
             if (isFocus)
             {
@@ -251,7 +268,29 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
                     && WorldDoc.FocusDocument().GetScene().IsPortal(refs[0].Entity))
                     linkEntity = refs[0].Entity;
             }
-            TransitionPopup_.Open(zone.Id, linkEntity);
+            for (const ZoneHeader& target : WorldDoc.Manifest().Zones)
+            {
+                if (target.Id == zone.Id)
+                    continue;
+                if (ImGui::MenuItem(target.Name.c_str()))
+                {
+                    PendingConnectFrom_ = zone.Id;
+                    PendingConnectTo_ = target.Id;
+                    PendingConnectPortal_ = linkEntity;
+                }
+            }
+            ImGui::Separator();
+            for (const RegionRecord& region : WorldDoc.Manifest().Regions)
+            {
+                const std::string label = "New Zone In " + region.Name;
+                if (ImGui::MenuItem(label.c_str()))
+                {
+                    PendingConnectFrom_ = zone.Id;
+                    PendingConnectNewRegion_ = region.Id;
+                    PendingConnectPortal_ = linkEntity;
+                }
+            }
+            ImGui::EndMenu();
         }
         ImGui::EndPopup();
     }
