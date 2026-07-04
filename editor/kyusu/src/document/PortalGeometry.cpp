@@ -48,3 +48,25 @@ ZoneId GuessPortalTargetZone(const WorldPartitionManifest& manifest, ZoneId owne
     }
     return best != nullptr ? best->Id : ZoneId{};
 }
+
+PortalBoxFit FitPortalBoxToFace(std::span<const Vec3d> faceWorldVertices, Vec3d faceNormal,
+                                double thickness)
+{
+    Aabb3d bounds = Aabb3d::Empty();
+    for (const Vec3d& vertex : faceWorldVertices)
+        bounds.ExpandToInclude(vertex);
+
+    const double magnitudes[3] = { std::abs(static_cast<double>(faceNormal[0])),
+                                   std::abs(static_cast<double>(faceNormal[1])),
+                                   std::abs(static_cast<double>(faceNormal[2])) };
+    int normalAxis = 0;
+    for (int i = 1; i < 3; ++i)
+        if (magnitudes[i] > magnitudes[normalAxis])
+            normalAxis = i;
+
+    PortalBoxFit fit;
+    fit.Center = bounds.Center();
+    fit.HalfExtents = bounds.HalfExtent();
+    fit.HalfExtents[normalAxis] = static_cast<float>(thickness * 0.5);
+    return fit;
+}

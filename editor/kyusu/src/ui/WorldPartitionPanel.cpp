@@ -8,8 +8,10 @@
 #include "document/PortalGeometry.h"
 #include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
+#include "document/commands/CreateEntityCommand.h"
 #include "document/commands/LinkPortalCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
+#include "meshedit/ElementGeometry.h"
 #include "selection/SelectionService.h"
 #include "selection/commands/SelectCommand.h"
 
@@ -112,6 +114,51 @@ void WorldPartitionPanel::DrawHeaderButtons()
     if (ImGui::Button(ICON_FA_PLUS "  Zone"))
         (void)WorldDoc.AddZone(zoneRegion, "New Zone");
     ImGui::EndDisabled();
+
+    // A ready-made portal marker: fitted over the selected face (the doorway
+    // cut), else a default thin box at the origin for the manipulators. The
+    // new portal is selected, so the connect bar appears immediately.
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_PLUS "  Portal"))
+    {
+        EditorDocument& document = WorldDoc.FocusDocument();
+        EditorScene& scene = document.GetScene();
+        Vec3d center{ 0.0, 0.0, 0.0 };
+        Vec3d halfExtents{ 2.0, 2.0, 0.125 };
+
+        const auto refs = Selection.GetSelection();
+        if (refs.size() == 1 && refs[0].IsFace())
+        {
+            const BrushMesh* mesh = scene.TryGetBrushMesh(refs[0].Entity);
+            const Transform3f* transform = scene.TryGetTransform(refs[0].Entity);
+            if (mesh != nullptr && transform != nullptr
+                && refs[0].ElementId < mesh->Faces.size())
+            {
+                std::vector<Vec3d> worldVertices;
+                for (uint32_t index : ElementVertexIndices(*mesh, *transform, refs[0]))
+                    worldVertices.push_back(
+                        transform->TransformPoint(mesh->Vertices[index].Position));
+                if (!worldVertices.empty())
+                {
+                    const Vec3d normal = transform->Rotation.RotateVector(
+                        BrushComputeFaceNormal(*mesh, mesh->Faces[refs[0].ElementId]));
+                    const PortalBoxFit fit =
+                        FitPortalBoxToFace(worldVertices, normal, /*thickness*/ 0.25);
+                    center = fit.Center;
+                    halfExtents = fit.HalfExtents;
+                }
+            }
+        }
+
+        auto create = MakeCreatePortalBrushCommand(center, halfExtents, scene, document);
+        CreateEntityCommand* command = create.get();
+        Commands.Execute(std::move(create));
+        Commands.Execute(std::make_unique<SelectCommand>(
+            Selection, SelectableRef::EntitySelection(scene.GetRegistry().Id,
+                                                      command->GetCreatedEntity())));
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Select the opening's face first to fit the portal into it");
 }
 
 void WorldPartitionPanel::DrawConnectBar()

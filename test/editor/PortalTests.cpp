@@ -3,6 +3,7 @@
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/PortalGeometry.h"
+#include "document/commands/CreateEntityCommand.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -170,4 +171,55 @@ TEST(GuessPortalTargetZoneTest, IgnoresOwnerAndOffAxisZones)
     const Aabb3d doorway =
         Aabb3d::FromCenterHalfExtent(Vec3d{ 9, 2, 0 }, Vec3d{ 0.2, 1.5, 1.5 });
     EXPECT_EQ(GuessPortalTargetZone(GuessFixture(), ZoneId{ 0xa2 }, doorway), ZoneId{ 0xa1 });
+}
+
+TEST(FitPortalBoxToFaceTest, ThinAxisFollowsFaceNormal)
+{
+    // A 4 x 3 wall face in the XY plane, normal +Z.
+    const Vec3d xyFace[] = { { 0, 0, 5 }, { 4, 0, 5 }, { 4, 3, 5 }, { 0, 3, 5 } };
+    PortalBoxFit fit = FitPortalBoxToFace(xyFace, Vec3d{ 0, 0, 1 }, 0.25);
+    EXPECT_FLOAT_EQ(fit.Center[0], 2.0f);
+    EXPECT_FLOAT_EQ(fit.Center[1], 1.5f);
+    EXPECT_FLOAT_EQ(fit.Center[2], 5.0f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[0], 2.0f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[1], 1.5f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[2], 0.125f);
+
+    // Same footprint standing in YZ, normal -X.
+    const Vec3d yzFace[] = { { 7, 0, 0 }, { 7, 0, 4 }, { 7, 3, 4 }, { 7, 3, 0 } };
+    fit = FitPortalBoxToFace(yzFace, Vec3d{ -1, 0, 0 }, 0.25);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[0], 0.125f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[1], 1.5f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[2], 2.0f);
+
+    // A floor face in XZ, normal +Y; a slightly tilted normal still snaps to
+    // its dominant axis.
+    const Vec3d floorFace[] = { { 0, 2, 0 }, { 4, 2, 0 }, { 4, 2, 4 }, { 0, 2, 4 } };
+    fit = FitPortalBoxToFace(floorFace, Vec3d{ 0.1f, 0.9f, 0.1f }, 0.5);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[1], 0.25f);
+    EXPECT_FLOAT_EQ(fit.HalfExtents[0], 2.0f);
+}
+
+TEST_F(PortalTest, CreatePortalBrushCommandIsOneUndoStep)
+{
+    EditorDocument document(Logging);
+    EditorScene& scene = document.GetScene();
+
+    auto create = MakeCreatePortalBrushCommand(Vec3d{ 3, 1, 0 }, Vec3d{ 2.0, 2.0, 0.125 },
+                                               scene, document);
+    CreateEntityCommand* command = create.get();
+    command->Execute();
+    const EntityId portal = command->GetCreatedEntity();
+
+    ASSERT_TRUE(scene.HasEntity(portal));
+    EXPECT_TRUE(scene.IsPortal(portal));
+    EXPECT_FALSE(scene.TryGetPortal(portal)->Transition.IsValid());
+    EXPECT_NE(scene.TryGetBrushMesh(portal), nullptr);
+    const auto bounds = scene.TryGetWorldBounds(portal);
+    ASSERT_TRUE(bounds.has_value());
+    EXPECT_EQ(DominantPortalAxis(*bounds), 2);
+
+    command->Undo();
+    EXPECT_FALSE(scene.HasEntity(portal));
+    EXPECT_EQ(scene.GetEntityCount(), 0u);
 }
