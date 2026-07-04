@@ -133,7 +133,6 @@ implementation exists. When a term lands as code, delete its row.
 
 | Term | Appears in | Status today | Becomes code |
 | --- | --- | --- | --- |
-| `WorldPartitionRuntime` | CLAUDE.md, superseded roadmap | Stance only. No such type. `ZoneRuntime` and `AsyncZoneLoader` exist; no partition cells, adjacency, manifests, or budgets beyond `AsyncCommitBudgetMs`. | Track C, v1.0 |
 | `IZonePopulationStrategy` | CLAUDE.md | Stance only. No interface, no strategy. Not to be built until a second population policy exists (directive 4). | Deferred, Section 11 |
 | `IPoseModifier` | CLAUDE.md, superseded roadmap | Stance only. No animation runtime exists to modify poses. The superseded roadmap's "skinned mesh exists" claim was about asset data; nothing renders skinned meshes. | Track A, v1.0; seam added only with the second modifier |
 | Navigation (area classification, cost biasing, hierarchical cross-zone planner) | CLAUDE.md directive 4 | A design decision on the record, zero code. | Track A, v1.0 core; planner v2.0 |
