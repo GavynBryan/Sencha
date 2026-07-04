@@ -4,13 +4,17 @@
 #include <core/assets/AssetPreloader.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
+#include <ecs/EntityId.h>
 #include <zone/AsyncZoneLoader.h>
+#include <zone/WorldPartitionRuntime.h>
+#include <zone/ZoneId.h>
 
 #include <optional>
 #include <string_view>
 
 class Registry;
 class CollisionShapeCache;
+class ZoneRuntime;
 
 //=============================================================================
 // TemplateGame
@@ -33,6 +37,8 @@ public:
 
 private:
     ConsoleResult LoadMap(std::string_view mapName);
+    ConsoleResult LoadWorld(std::string_view worldName);
+    ConsoleResult FocusWorldZone(std::string_view zoneHex);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
 
@@ -41,6 +47,12 @@ private:
     std::optional<RuntimeAssets> Assets;
     std::optional<AssetPreloader> Preloader;
     std::optional<AsyncZoneLoader> ZoneLoader;
+    // The world-streaming path (`world <name>`): game-owned and game-pumped by
+    // WorldPartitionUpdateSystem. Empty while the single-zone `map` path runs.
+    std::optional<WorldPartitionRuntime> Partition;
+    ZoneId PendingZoneFocus;   // `zone <hexid>` issued before the world loaded
+    EntityId WorldPawn;        // the avatar in the global registry (world path)
+    ZoneRuntime* ZoneRuntimePtr = nullptr;
     // Cooked-collision cache owned (by value) by the engine's PhysicsStepSystem;
     // grabbed at system registration so map load can fill it (LoadZoneCollision).
     // Not owned: the step system outlives the game's map loads.
