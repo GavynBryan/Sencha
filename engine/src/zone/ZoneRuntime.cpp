@@ -162,6 +162,14 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
 {
     InvalidateFrameScratch();
 
+    // The global registry hosts world-lifetime gameplay state (the player pawn
+    // and camera in a partitioned world) and is never dormant: it participates
+    // in every span, ordered first so the frame's registry order is stable.
+    VisibleScratch.push_back(GlobalRegistry.get());
+    PhysicsScratch.push_back(GlobalRegistry.get());
+    LogicScratch.push_back(GlobalRegistry.get());
+    AudioScratch.push_back(GlobalRegistry.get());
+
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");

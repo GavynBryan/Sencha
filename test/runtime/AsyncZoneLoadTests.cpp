@@ -58,8 +58,8 @@ TEST(ZoneRuntimeAttach, DetachedRegistryAttachesAndIsVisible)
     EXPECT_TRUE(zones.GetParticipation(zone).Logic);
 
     FrameRegistryView view = zones.BuildFrameView();
-    ASSERT_EQ(view.Logic.size(), 1u);
-    EXPECT_EQ(view.Logic[0], &attached);
+    ASSERT_EQ(view.Logic.size(), 2u);   // the global registry rides every span
+    EXPECT_EQ(view.Logic[1], &attached);
 }
 
 TEST(ZoneRuntimeAttach, ReservedIdsNeverCollideWithCreateZone)
@@ -184,14 +184,16 @@ TEST(AsyncZoneLoad, DormantPreloadAttachesSeamlessly)
     EXPECT_EQ(runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::None);
     FrameRegistryView dormantView = zones.BuildFrameView();
-    EXPECT_TRUE(dormantView.Visible.empty());
-    EXPECT_TRUE(dormantView.Logic.empty());
+    ASSERT_EQ(dormantView.Visible.size(), 1u);   // only the ever-present global
+    EXPECT_EQ(dormantView.Visible[0], &zones.Global());
+    ASSERT_EQ(dormantView.Logic.size(), 1u);
+    EXPECT_EQ(dormantView.Logic[0], &zones.Global());
 
     // The player crosses the doorway: the game flips the room live.
     zones.SetParticipation(nextRoom, ZoneParticipation{ .Visible = true, .Logic = true });
     FrameRegistryView liveView = zones.BuildFrameView();
-    ASSERT_EQ(liveView.Logic.size(), 1u);
-    EXPECT_EQ(liveView.Logic[0], zones.FindZone(nextRoom));
+    ASSERT_EQ(liveView.Logic.size(), 2u);
+    EXPECT_EQ(liveView.Logic[1], zones.FindZone(nextRoom));
 }
 
 TEST(AsyncZoneLoad, CancelBeforeWorkDropsTheLoad)
