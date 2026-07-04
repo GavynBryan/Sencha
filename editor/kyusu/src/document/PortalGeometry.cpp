@@ -1,5 +1,7 @@
 #include "PortalGeometry.h"
 
+#include <cmath>
+
 int DominantPortalAxis(const Aabb3d& worldBounds)
 {
     const Vec3d extent = worldBounds.Extent();
@@ -8,4 +10,41 @@ int DominantPortalAxis(const Aabb3d& worldBounds)
         if (extent[i] < extent[axis])
             axis = i;
     return axis;
+}
+
+ZoneId GuessPortalTargetZone(const WorldPartitionManifest& manifest, ZoneId owner,
+                             const Aabb3d& portalWorldBounds)
+{
+    const int facing = DominantPortalAxis(portalWorldBounds);
+    const Vec3d center = portalWorldBounds.Center();
+    constexpr double epsilon = 1e-6;
+
+    const ZoneHeader* best = nullptr;
+    double bestDistance = 0.0;
+    for (const ZoneHeader& zone : manifest.Zones)
+    {
+        if (zone.Id == owner)
+            continue;
+        const Vec3d delta = zone.Bounds.Center() - center;
+        const double magnitudes[3] = { std::abs(static_cast<double>(delta[0])),
+                                       std::abs(static_cast<double>(delta[1])),
+                                       std::abs(static_cast<double>(delta[2])) };
+        if (magnitudes[0] < epsilon && magnitudes[1] < epsilon && magnitudes[2] < epsilon)
+            continue;
+        int deltaAxis = 0;
+        for (int i = 1; i < 3; ++i)
+            if (magnitudes[i] > magnitudes[deltaAxis])
+                deltaAxis = i;
+        if (deltaAxis != facing)
+            continue;
+        const double distance = magnitudes[0] * magnitudes[0] + magnitudes[1] * magnitudes[1]
+            + magnitudes[2] * magnitudes[2];
+        if (best == nullptr || distance < bestDistance
+            || (distance == bestDistance && zone.Id.Value < best->Id.Value))
+        {
+            best = &zone;
+            bestDistance = distance;
+        }
+    }
+    return best != nullptr ? best->Id : ZoneId{};
 }

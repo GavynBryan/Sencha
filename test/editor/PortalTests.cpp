@@ -2,6 +2,7 @@
 
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
+#include "document/PortalGeometry.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -116,4 +117,57 @@ TEST_F(PortalTest, IsPortalReflectsComponentPresence)
     EXPECT_TRUE(scene.IsPortal(portal));
     EXPECT_EQ(scene.TryGetPortal(plain), nullptr);
     EXPECT_NE(scene.TryGetPortal(portal), nullptr);
+}
+
+namespace
+{
+
+// Hub [-8..8] with Hallway [9..20] beyond +X and Attic straight above: the
+// 3-zone shape the guess is tuned for.
+WorldPartitionManifest GuessFixture()
+{
+    WorldPartitionManifest manifest;
+    ZoneHeader hub;
+    hub.Id = ZoneId{ 0xa1 };
+    hub.Name = "Hub";
+    hub.Bounds = Aabb3d::FromMinMax(Vec3d{ -8, 0, -8 }, Vec3d{ 8, 4, 8 });
+    ZoneHeader hallway;
+    hallway.Id = ZoneId{ 0xa2 };
+    hallway.Name = "Hallway";
+    hallway.Bounds = Aabb3d::FromMinMax(Vec3d{ 9, 0, -2 }, Vec3d{ 20, 4, 2 });
+    ZoneHeader attic;
+    attic.Id = ZoneId{ 0xa3 };
+    attic.Name = "Attic";
+    attic.Bounds = Aabb3d::FromMinMax(Vec3d{ -8, 10, -8 }, Vec3d{ 8, 14, 8 });
+    manifest.Zones = { hub, hallway, attic };
+    return manifest;
+}
+
+} // namespace
+
+TEST(GuessPortalTargetZoneTest, PicksZoneAlongThinAxis)
+{
+    // A portal in Hub's +X wall, thin in X: the hallway lies along that axis.
+    const Aabb3d portal =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 8, 2, 0 }, Vec3d{ 0.2, 1.5, 1.5 });
+    EXPECT_EQ(GuessPortalTargetZone(GuessFixture(), ZoneId{ 0xa1 }, portal), ZoneId{ 0xa2 });
+
+    // Thin in Y (a floor hatch): the attic sits straight above.
+    const Aabb3d hatch =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 0, 4, 0 }, Vec3d{ 1.5, 0.2, 1.5 });
+    EXPECT_EQ(GuessPortalTargetZone(GuessFixture(), ZoneId{ 0xa1 }, hatch), ZoneId{ 0xa3 });
+}
+
+TEST(GuessPortalTargetZoneTest, IgnoresOwnerAndOffAxisZones)
+{
+    // Thin in Z: no zone lies dominantly along Z, so there is no candidate.
+    const Aabb3d portal =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 8, 2, 0 }, Vec3d{ 1.5, 1.5, 0.2 });
+    EXPECT_FALSE(GuessPortalTargetZone(GuessFixture(), ZoneId{ 0xa1 }, portal).IsValid());
+
+    // From the hallway's perspective the same X-thin portal guesses back to
+    // the NEAREST x-dominant zone, never the owner itself.
+    const Aabb3d doorway =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 9, 2, 0 }, Vec3d{ 0.2, 1.5, 1.5 });
+    EXPECT_EQ(GuessPortalTargetZone(GuessFixture(), ZoneId{ 0xa2 }, doorway), ZoneId{ 0xa1 });
 }

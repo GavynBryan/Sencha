@@ -5,6 +5,7 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
+#include "document/PortalGeometry.h"
 #include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
 #include "document/commands/LinkPortalCommand.h"
@@ -58,8 +59,7 @@ void WorldPartitionPanel::OnDraw()
         PendingConnectPortal_ = EntityId{};
     }
 
-    if (ImGui::Button(ICON_FA_PLUS "  New Region"))
-        (void)WorldDoc.AddRegion("New Region");
+    DrawHeaderButtons();
     ImGui::Separator();
 
     for (const RegionRecord& region : WorldDoc.Manifest().Regions)
@@ -89,8 +89,138 @@ void WorldPartitionPanel::OnDraw()
         DrawZoneRow(zone);
     }
 
+    DrawConnectBar();
+
     ImGui::Separator();
     DrawValidation();
+}
+
+void WorldPartitionPanel::DrawHeaderButtons()
+{
+    if (ImGui::Button(ICON_FA_PLUS "  Region"))
+        (void)WorldDoc.AddRegion("New Region");
+
+    // New zones land in the focus zone's region (fallback: the first region).
+    RegionId zoneRegion;
+    for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+        if (zone.Id == WorldDoc.FocusZone())
+            zoneRegion = zone.Region;
+    if (!zoneRegion.IsValid() && !WorldDoc.Manifest().Regions.empty())
+        zoneRegion = WorldDoc.Manifest().Regions[0].Id;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!zoneRegion.IsValid());
+    if (ImGui::Button(ICON_FA_PLUS "  Zone"))
+        (void)WorldDoc.AddZone(zoneRegion, "New Zone");
+    ImGui::EndDisabled();
+}
+
+void WorldPartitionPanel::DrawConnectBar()
+{
+    const auto refs = Selection.GetSelection();
+    if (refs.size() != 1 || !refs[0].IsEntity())
+        return;
+    const EntityId entity = refs[0].Entity;
+    const EditorScene& scene = WorldDoc.FocusDocument().GetScene();
+    const PortalComponent* portal = scene.TryGetPortal(entity);
+    if (portal == nullptr)
+        return;
+
+    const auto zoneName = [&](ZoneId zone) -> const char*
+    {
+        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+            if (header.Id == zone)
+                return header.Name.c_str();
+        return "<unknown zone>";
+    };
+    const auto navigateTo = [&](const TransitionRecord& record)
+    {
+        SelectedTransitionRow_ = record.Id;
+        SelectedZoneRow_ = record.From;
+        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+            if (header.Id == record.From)
+                NavigateRegion_ = header.Region;
+    };
+
+    ImGui::Separator();
+
+    if (portal->Transition.IsValid())
+    {
+        const TransitionRecord* record = nullptr;
+        for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
+            if (candidate.Id == portal->Transition)
+                record = &candidate;
+        if (record != nullptr)
+        {
+            ImGui::Text("Portal linked " ICON_FA_ARROW_RIGHT "  %s", zoneName(record->To));
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Show"))
+                navigateTo(*record);
+        }
+        else
+        {
+            ImGui::TextColored(EditorUi::Warning, "Portal linked to a removed transition");
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Unlink"))
+        {
+            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
+                                                    TransitionId{}))
+            {
+                Commands.Execute(std::move(unlink));
+                WorldDoc.Revalidate();
+            }
+        }
+        return;
+    }
+
+    // Unlinked: the one-click connect flow, target pre-guessed from the
+    // portal's facing when the selection lands on it.
+    if (ConnectBarEntity_ != entity)
+    {
+        ConnectBarEntity_ = entity;
+        ConnectBarTwoWay_ = true;
+        ConnectBarTarget_ = ZoneId{};
+        if (const auto bounds = scene.TryGetWorldBounds(entity))
+            ConnectBarTarget_ =
+                GuessPortalTargetZone(WorldDoc.Manifest(), WorldDoc.FocusZone(), *bounds);
+        if (!ConnectBarTarget_.IsValid())
+            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+                if (header.Id != WorldDoc.FocusZone())
+                {
+                    ConnectBarTarget_ = header.Id;
+                    break;
+                }
+    }
+
+    ImGui::Text("Connect %s " ICON_FA_ARROW_RIGHT, zoneName(WorldDoc.FocusZone()));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::BeginCombo("##connect_target", ConnectBarTarget_.IsValid()
+                                                  ? zoneName(ConnectBarTarget_)
+                                                  : "<no other zone>"))
+    {
+        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+        {
+            if (header.Id == WorldDoc.FocusZone())
+                continue;
+            if (ImGui::Selectable(header.Name.c_str(), header.Id == ConnectBarTarget_))
+                ConnectBarTarget_ = header.Id;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::Checkbox("Two-way", &ConnectBarTwoWay_);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!ConnectBarTarget_.IsValid());
+    if (ImGui::Button(ICON_FA_LINK "  Connect"))
+    {
+        const TransitionId forward = ConnectZones(WorldDoc, WorldDoc.FocusZone(),
+                                                  ConnectBarTarget_, !ConnectBarTwoWay_,
+                                                  entity, Commands);
+        for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
+            if (record.Id == forward)
+                navigateTo(record);
+    }
+    ImGui::EndDisabled();
 }
 
 bool WorldPartitionPanel::DrawRenameField(bool active)

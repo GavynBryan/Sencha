@@ -31,9 +31,14 @@ public:
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
 
 private:
+    void DrawHeaderButtons();
     void DrawRegion(const RegionRecord& region);
     void DrawZoneRow(const ZoneHeader& zone);
     void DrawTransitionRow(const TransitionRecord& transition);
+    // The portal connect strip between the tree and the validation list: shown
+    // while the selection is exactly one portal entity; connects unlinked
+    // portals (target pre-guessed from facing) and navigates linked ones.
+    void DrawConnectBar();
     void DrawValidation();
     void NavigateToRecord(const ContentRiskRecord& record);
     // Inline-rename helper: draws the InputText when `active`, commits through
@@ -58,4 +63,9 @@ private:
     ZoneId   PendingConnectTo_;
     RegionId PendingConnectNewRegion_;
     EntityId PendingConnectPortal_;
+    // Connect-bar transients: the target re-guesses when the selected portal
+    // changes, then stays a plain user choice.
+    EntityId ConnectBarEntity_;
+    ZoneId   ConnectBarTarget_;
+    bool     ConnectBarTwoWay_ = true;
 };
