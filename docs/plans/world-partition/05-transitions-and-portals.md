@@ -224,6 +224,22 @@ the value plus its coordination note and nothing else engine-side consumes it ye
 
 ## T4. Partition panel transition UI and linking flows
 
+> **Amended 2026-07-04 (owner UX revision, post-implementation).** The popup-driven
+> flow below shipped and was then reworked for discoverability; the shipped shape is:
+> the "Add Transition To >" popup is DELETED. Transitions create instantly with
+> defaults (two-way Doorway, priority 0) through one shared flow
+> (`document/TransitionConnect.h`: `ConnectZones`, which also auto-links a selected
+> portal undoably and revalidates); the zone row and the hierarchy panel's portal
+> entry both expose it as a flat "Connect To >" submenu (zones plus New Zone In
+> <region>). The World panel header gains [+ Region] [+ Zone] [+ Portal] buttons;
+> + Portal spawns a thin portal brush fitted over the selected face
+> (`FitPortalBoxToFace`) as one undo step, selected. Selecting a single portal shows
+> a connect bar between the tree and validation: unlinked portals get a one-click
+> Connect with the target pre-guessed from the portal's facing
+> (`GuessPortalTargetZone`); linked portals get Show and undoable Unlink. The
+> transition ROW UI and its context menu (item 1 and 2 below) are unchanged and
+> remain the editing surface after instant creation.
+
 ### What changes (all in `editor/kyusu/src/ui/WorldPartitionPanel.{h,cpp}`)
 
 1. **Transition rows.** Each zone row grows child rows for its outgoing transitions
