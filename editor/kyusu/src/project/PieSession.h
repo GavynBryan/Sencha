@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 //=============================================================================
 // PieSession
@@ -16,14 +17,15 @@ class PieSession
 public:
     ~PieSession();
 
-    // Spawns `app --game <gameModulePath> +map <map>` with the working directory
-    // set to workingDir (the project content root). Returns false and sets *error
-    // if a session is already running or the spawn fails. An empty map launches
-    // the host with no level.
+    // Spawns `app --game <gameModulePath> <startupArgs...>` with the working
+    // directory set to workingDir (the project content root). startupArgs are
+    // pre-tokenized +command arguments ("+map levels/x" or "+world w +zone id");
+    // empty launches the host with no level. Returns false and sets *error if a
+    // session is already running or the spawn fails.
     bool Launch(const std::string& appPath,
                 const std::string& gameModulePath,
                 const std::string& workingDir,
-                const std::string& map,
+                const std::vector<std::string>& startupArgs,
                 std::string* error);
 
     void Stop();

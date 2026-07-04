@@ -11,6 +11,7 @@
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
 #include <core/logging/Logger.h>
+#include <zone/WorldPartitionIds.h>
 
 #include <SDL3/SDL.h>
 
@@ -48,9 +49,8 @@ std::string PieDriver::Cook(const std::string& levelName)
 
     const std::filesystem::path assetsRoot = std::filesystem::path(Project_->Directory) / "assets";
 
-    // World mode cooks every saved zone through the world cook; Play stays
-    // single-zone on the focus zone's cooked scene (play-from-world is the
-    // runtime loading policy's work, not the editor's).
+    // World mode cooks every saved zone through the world cook; Play then
+    // launches the world path (+world +zone) against the cooked manifest.
     if (World_.IsWorld())
     {
         const WorldCookResult cooked =
@@ -61,24 +61,12 @@ std::string PieDriver::Cook(const std::string& levelName)
             return {};
         }
 
-        std::string focusStem;
-        for (const ZoneHeader& zone : World_.Manifest().Zones)
-        {
-            if (zone.Id == World_.FocusZone())
-            {
-                focusStem = std::filesystem::path(zone.SceneRef).stem().string();
-                break;
-            }
-        }
-        if (focusStem.empty())
-        {
-            log.Error("cook: the focus zone has no scene to play");
-            return {};
-        }
-        LastCookedMap_ = "levels/" + focusStem;
+        LastCookedWorld_ = std::filesystem::path(std::string(World_.WorldPath())).stem().string();
+        LastCookedZone_ = ZoneIdToString(World_.FocusZone());
+        LastCookedMap_.clear();
         log.Info("cooked world ({} zones) -> {}", cooked.ZoneCount,
                  cooked.CookedManifestPath.generic_string());
-        return LastCookedMap_;
+        return LastCookedWorld_;
     }
 
     // Name the artifacts after the explicit arg, else the document's file stem,
@@ -98,6 +86,8 @@ std::string PieDriver::Cook(const std::string& levelName)
         return {};
     }
 
+    LastCookedWorld_.clear();
+    LastCookedZone_.clear();
     LastCookedMap_ = "levels/" + name;
     log.Info("cooked '{}' ({} cells) -> {}",
              LastCookedMap_, cooked.CellCount, cooked.CookedScenePath.generic_string());
@@ -113,23 +103,41 @@ void PieDriver::Play(const std::string& map)
         log.Error("play: no project open (set SENCHA_PROJECT)");
         return;
     }
-    if (map.empty())
+
+    // An explicit map plays single-zone; otherwise the last cook decides:
+    // a cooked world launches the streaming path from the focus zone.
+    std::vector<std::string> startupArgs;
+    std::string label;
+    if (!map.empty())
     {
-        log.Error("play: no cooked map; cook a level first or pass a map name");
+        startupArgs = { "+map", map };
+        label = map;
+    }
+    else if (!LastCookedWorld_.empty())
+    {
+        startupArgs = { "+world", LastCookedWorld_, "+zone", LastCookedZone_ };
+        label = LastCookedWorld_ + " (zone " + LastCookedZone_ + ")";
+    }
+    else
+    {
+        log.Error("play: nothing cooked; cook first or pass a map name");
         return;
     }
 
     const std::string app = ResolveHostAppPath();
     // CWD is the project directory: the game resolves its content roots
     // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
-    log.Info("play: {} --game {} +map {} (cwd {})",
-             app, Project_->GameModulePath, map, Project_->Directory);
+    std::string commandLine;
+    for (const std::string& arg : startupArgs)
+        commandLine += " " + arg;
+    log.Info("play: {} --game {}{} (cwd {})",
+             app, Project_->GameModulePath, commandLine, Project_->Directory);
 
     std::string error;
-    if (!Pie.Launch(app, Project_->GameModulePath, Project_->Directory, map, &error))
+    if (!Pie.Launch(app, Project_->GameModulePath, Project_->Directory, startupArgs, &error))
         log.Error("play failed: " + error);
     else
-        log.Info("play: session started (" + map + ")");
+        log.Info("play: session started (" + label + ")");
 }
 
 void PieDriver::Stop()

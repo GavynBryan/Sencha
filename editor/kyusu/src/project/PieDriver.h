@@ -46,4 +46,9 @@ private:
     // Last successfully cooked map ("levels/<name>"); `play` with no arg uses it,
     // closing the author -> cook -> play loop.
     std::string        LastCookedMap_;
+    // World-mode cook result: the world file stem plus the focus zone's hex id.
+    // Play launches `+world <stem> +zone <hex>` against the cooked world
+    // manifest; the map fields and these are mutually exclusive.
+    std::string        LastCookedWorld_;
+    std::string        LastCookedZone_;
 };

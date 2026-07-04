@@ -17,7 +17,7 @@ PieSession::~PieSession()
 bool PieSession::Launch(const std::string& appPath,
                         const std::string& gameModulePath,
                         const std::string& workingDir,
-                        const std::string& map,
+                        const std::vector<std::string>& startupArgs,
                         std::string* error)
 {
     if (IsRunning())
@@ -30,11 +30,7 @@ bool PieSession::Launch(const std::string& appPath,
     // Run in the project directory so the game's content roots ("assets",
     // "assets/.cooked") resolve relative to CWD, exactly as a shipped game does.
     std::vector<std::string> args{"--game", gameModulePath};
-    if (!map.empty())
-    {
-        args.push_back("+map");
-        args.push_back(map);
-    }
+    args.insert(args.end(), startupArgs.begin(), startupArgs.end());
 
     long pid = -1;
     if (!SpawnProcess(appPath, args, workingDir, pid, error))
