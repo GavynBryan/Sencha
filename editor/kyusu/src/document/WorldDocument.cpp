@@ -207,7 +207,12 @@ bool WorldDocument::SaveWorldAs(std::string_view path)
 {
     if (path.empty())
         return false;
-    WorldPath_.assign(path);
+    // Whatever the save dialog produced, the world lands with the extension
+    // the open routing fast-paths on.
+    std::filesystem::path normalized{ std::string(path) };
+    if (normalized.extension() != ".sworld")
+        normalized.replace_extension(".sworld");
+    WorldPath_ = normalized.string();
     return SaveWorld();
 }
 
@@ -244,8 +249,26 @@ void WorldDocument::New()
     LegacyDocument_->New();
 }
 
+bool WorldDocument::IsWorldManifestFile(std::string_view path)
+{
+    std::ifstream file(std::string(path), std::ios::binary);
+    if (!file.is_open())
+        return false;
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const auto json = JsonParse(buffer.str());
+    if (!json.has_value() || !json->IsObject())
+        return false;
+    return json->Find("format_version") != nullptr && json->Find("zones") != nullptr;
+}
+
 bool WorldDocument::Load(std::string_view path)
 {
+    // A world manifest saved under any extension still opens as a world;
+    // routing by content keeps a mistyped Save As name from producing a file
+    // that only ever opens blank.
+    if (IsWorldManifestFile(path))
+        return LoadWorld(path);
     if (WorldMode_)
         CloseWorldToLegacy();
     return LegacyDocument_->Load(path);

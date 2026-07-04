@@ -341,3 +341,49 @@ TEST_F(WorldDocumentTest, ComputeZoneBoundsRespectsOverrideFlag)
     EXPECT_EQ(world.Manifest().Zones[0].Bounds, authored);
     EXPECT_EQ(world.Manifest().Zones[0].Id, zone);
 }
+
+TEST_F(WorldDocumentTest, SaveWorldAsEnforcesSworldExtension)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+
+    // A dialog-produced .json name still lands as .sworld.
+    ASSERT_TRUE(world.SaveWorldAs((Root / "mistyped.json").string()));
+    EXPECT_TRUE(std::string(world.WorldPath()).ends_with(".sworld"));
+    EXPECT_TRUE(fs::exists(Root / "mistyped.sworld"));
+    EXPECT_FALSE(fs::exists(Root / "mistyped.json"));
+
+    // No extension at all gets one too.
+    ASSERT_TRUE(world.SaveWorldAs((Root / "bare").string()));
+    EXPECT_TRUE(fs::exists(Root / "bare.sworld"));
+}
+
+TEST_F(WorldDocumentTest, LoadRoutesWorldManifestByContent)
+{
+    ZoneId zone{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        zone = world.Manifest().Zones[0].Id;
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    }
+    // A world manifest that ended up under the level extension (the historical
+    // Save As bug) still opens as a world through the legacy Load entry.
+    const fs::path disguised = Root / "disguised.json";
+    fs::copy_file(WorldPath(), disguised);
+
+    WorldDocument reopened(Logging);
+    ASSERT_TRUE(reopened.Load(disguised.string()));
+    EXPECT_TRUE(reopened.IsWorld());
+    ASSERT_EQ(reopened.Manifest().Zones.size(), 1u);
+    EXPECT_EQ(reopened.Manifest().Zones[0].Id, zone);
+
+    // A plain level file keeps routing to the legacy document.
+    EditorDocument level(Logging);
+    level.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    const fs::path levelPath = Root / "plain.level.json";
+    ASSERT_TRUE(level.SaveAs(levelPath.string()));
+    ASSERT_TRUE(reopened.Load(levelPath.string()));
+    EXPECT_FALSE(reopened.IsWorld());
+    EXPECT_EQ(reopened.FocusDocument().GetScene().GetEntityCount(), 1u);
+}

@@ -55,8 +55,14 @@ public:
     // the world file's directory). The world cook reads authored scenes through
     // this so it opens exactly the files the editor saves.
     [[nodiscard]] std::string ResolveScenePath(std::string_view sceneRef) const;
+    // True when the file parses as a world manifest (format_version plus a
+    // zones array). Open routing sniffs content, not just the extension: a
+    // world saved under the wrong extension must still open as a world.
+    [[nodiscard]] static bool IsWorldManifestFile(std::string_view path);
     bool LoadWorld(std::string_view path);          // parses .sworld; sidecar or start zone picks focus
     bool SaveWorld();                                // world file + every dirty zone document + sidecar
+    // Enforces the .sworld extension (replacing whatever the dialog produced)
+    // so saved worlds always round-trip through the extension fast path.
     bool SaveWorldAs(std::string_view path);
     void NewWorld(std::string_view name);            // one minted region and zone, focus on it
 

@@ -571,12 +571,11 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
     AssetSystem* assets = &runtimeAssets.Assets;
-    CollisionShapeCache* shapes = PhysicsShapes;
     LoggingProvider* loggingPtr = &logging;
 
     const EngineRuntimeConfig& runtimeConfig = engine.Config().Runtime;
     Partition.emplace(
-        [meshes, materialSets, assets, shapes, loggingPtr](const ZoneHeader& header)
+        [this, meshes, materialSets, assets, loggingPtr](const ZoneHeader& header)
         {
             // Cooked refs are relative to the assets root (the world cook's
             // contract); the recipe carries scene and collision only. The
@@ -589,8 +588,16 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             ZoneLoadRecipe recipe;
             recipe.Build = [parsed, scenePath, meshes, materialSets](Registry& registry)
             { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets); };
-            recipe.Finalize = [parsed, loggingPtr, assets, shapes, collisionPath](Registry& registry)
-            { (void)FinalizeZoneScene(registry, *parsed, *loggingPtr, assets, shapes, collisionPath); };
+            // PhysicsShapes resolves at finalize time through `this`: the
+            // startup +world command runs at GameLoaded, BEFORE system
+            // registration hands out the shape cache, so capturing the
+            // pointer's value here would bake in null and silently skip
+            // every zone's collision.
+            recipe.Finalize = [this, parsed, loggingPtr, assets, collisionPath](Registry& registry)
+            {
+                (void)FinalizeZoneScene(registry, *parsed, *loggingPtr, assets, PhysicsShapes,
+                                        collisionPath);
+            };
             return recipe;
         },
         WorldPartitionStreamingConfig{

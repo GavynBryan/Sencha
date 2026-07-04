@@ -53,6 +53,24 @@ std::string PieDriver::Cook(const std::string& levelName)
     // launches the world path (+world +zone) against the cooked manifest.
     if (World_.IsWorld())
     {
+        // The world cook reads authored files from disk and refuses dirty
+        // documents (a stale cook would silently lie); saving here keeps
+        // Cook a one-click action. A never-saved world still needs a path.
+        if (World_.IsDirty())
+        {
+            if (!World_.HasSaveTarget())
+            {
+                log.Error("cook: save the world first (no file path yet)");
+                return {};
+            }
+            if (!World_.SaveWorld())
+            {
+                log.Error("cook: saving the world before cook failed");
+                return {};
+            }
+            log.Info("cook: saved the world");
+        }
+
         const WorldCookResult cooked =
             CookWorld(World_, assetsRoot, cellSize, Engine_.Logging(), Assets_);
         if (!cooked.Success)
