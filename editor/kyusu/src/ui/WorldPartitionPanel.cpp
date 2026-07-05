@@ -503,9 +503,10 @@ namespace
 {
 
 // Starter radius when a region switches to the Proximity shape: the largest
-// horizontal extent among the region's zone bounds, so the first preview
-// circle reaches the neighboring cells and the designer tunes from something
-// visible. 100 when the region has no measurable zones yet.
+// horizontal half-extent among the region's zone bounds, so from a cell
+// center the first preview sphere reaches the neighboring cells' near faces
+// and the designer tunes from something visible. 100 when the region has no
+// measurable zones yet.
 double SeedRegionRadius(const WorldPartitionManifest& manifest, RegionId region)
 {
     double largest = 0.0;

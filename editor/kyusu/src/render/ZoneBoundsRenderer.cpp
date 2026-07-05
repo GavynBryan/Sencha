@@ -61,6 +61,22 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
             view.PreviewFocus = ResolveFocusZone(world.Manifest(), viewport.Camera.Position,
                                                  view.PreviewFocus);
             view.PreviewFocusPosition = viewport.Camera.Position;
+            // The fly camera usually hovers outside every zone bound (zones
+            // are room-height); the sticky runtime resolution would pin the
+            // last zone entered as focus forever. The preview roams to the
+            // nearest zone instead, so a bird's-eye pass reads each cell's
+            // shape as the camera crosses the map.
+            bool inside = false;
+            for (const ZoneHeader& header : world.Manifest().Zones)
+                inside |= header.Bounds.IsValid()
+                    && header.Bounds.Contains(viewport.Camera.Position);
+            if (!inside)
+            {
+                const ZoneId nearest =
+                    NearestPreviewFocusZone(world.Manifest(), viewport.Camera.Position);
+                if (nearest.IsValid())
+                    view.PreviewFocus = nearest;
+            }
         }
         // A camera outside every zone (the usual editing vantage, floating
         // above the map) previews around the zone being edited instead of
@@ -102,25 +118,34 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         AppendBoxEdges(segments, zone.Bounds, color);
     }
 
-    // The proximity horizon as a ground-plane circle around the preview focus
-    // position: which cells fall inside is read directly off the viewport, so
-    // a mistuned radius is visible at a glance.
+    // The proximity horizon around the preview focus position. The demand
+    // test is a 3D point-to-box distance, so the horizon is a sphere: three
+    // orthogonal rings read from any viewport (top view the ground ring,
+    // front/side views the vertical rings) and show the reduced ground-level
+    // reach when the preview position floats above the cells.
     if (view.StreamingPreview && previewConfig.Radius > 0.0)
     {
         constexpr int kSegments = 64;
-        const double radius = previewConfig.Radius;
+        constexpr float kTau = 6.2831853f;
+        const float radius = static_cast<float>(previewConfig.Radius);
         const Vec3d& center = view.PreviewFocusPosition;
-        Vec3d previous{ center.X + radius, center.Y, center.Z };
-        for (int i = 1; i <= kSegments; ++i)
+        const auto ring = [&](const Vec3d& axisA, const Vec3d& axisB)
         {
-            const double angle = 2.0 * 3.14159265358979323846 * i / kSegments;
-            const Vec3d point{ center.X + radius * std::cos(angle), center.Y,
-                               center.Z + radius * std::sin(angle) };
-            segments.push_back(EditorLineSegment{ previous, point,
-                                                  EditorTheme::PreviewDemanded,
-                                                  EditorTheme::OverlayLinePixels });
-            previous = point;
-        }
+            Vec3d previous = center + axisA * radius;
+            for (int i = 1; i <= kSegments; ++i)
+            {
+                const float angle = kTau * static_cast<float>(i) / kSegments;
+                const Vec3d point = center + axisA * (radius * std::cos(angle))
+                    + axisB * (radius * std::sin(angle));
+                segments.push_back(EditorLineSegment{ previous, point,
+                                                      EditorTheme::PreviewDemanded,
+                                                      EditorTheme::OverlayLinePixels });
+                previous = point;
+            }
+        };
+        ring(Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f });
+        ring(Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 1.0f, 0.0f });
+        ring(Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f });
     }
 
     // The transition graph over the bounds: one line per edge between zone
