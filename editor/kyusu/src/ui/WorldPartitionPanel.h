@@ -39,6 +39,10 @@ private:
     // while the selection is exactly one portal entity; connects unlinked
     // portals (target pre-guessed from facing) and navigates linked ones.
     void DrawConnectBar();
+    // Live demand list from the pure streaming policy around the preview
+    // focus the viewport resolved; the bounds tint in the viewport and this
+    // list read the same computation.
+    void DrawStreamingPreview();
     void DrawValidation();
     void NavigateToRecord(const ContentRiskRecord& record);
     // Inline-rename helper: draws the InputText when `active`, commits through

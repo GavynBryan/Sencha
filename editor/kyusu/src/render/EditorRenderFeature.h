@@ -63,7 +63,7 @@ public:
                         PreviewBuffer& preview,
                         std::function<const ManipulatorSession*()> session,
                         const GridSettings& grid,
-                        const WorldViewSettings& worldView,
+                        WorldViewSettings& worldView,
                         LoggingProvider& logging,
                         const ConsoleRegistry& console,
                         AssetSystem* assets,
@@ -101,7 +101,8 @@ private:
     std::function<const ManipulatorSession*()> Session;
     ViewportLayout& Layout;
     const GridSettings&    GridCfg;
-    const WorldViewSettings& WorldView;
+    // Mutable: the streaming preview stores its sticky focus here per frame.
+    WorldViewSettings& WorldView;
     GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars
     ViewportBackdropRenderer Backdrop;
     GpuGridRenderer        Grid;

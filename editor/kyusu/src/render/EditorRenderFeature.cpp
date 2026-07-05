@@ -28,7 +28,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          PreviewBuffer& preview,
                                          std::function<const ManipulatorSession*()> session,
                                          const GridSettings& grid,
-                                         const WorldViewSettings& worldView,
+                                         WorldViewSettings& worldView,
                                          LoggingProvider& logging,
                                          const ConsoleRegistry& console,
                                          AssetSystem* assets,
@@ -311,8 +311,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         Meshes.DrawViewport(local, viewport, scene);
     Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     Highlight.DrawViewport(local, viewport, scene, *Session());
-    if (WorldView.ShowZoneBounds)
-        ZoneBounds.DrawViewport(local, viewport, World);
+    if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
+        ZoneBounds.DrawViewport(local, viewport, World, WorldView);
     Preview.DrawViewport(local, viewport);
 
     vkCmdEndRendering(frame.Cmd);

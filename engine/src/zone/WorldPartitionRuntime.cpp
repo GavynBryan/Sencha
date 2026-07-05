@@ -17,13 +17,6 @@ bool SameParticipation(const ZoneParticipation& a, const ZoneParticipation& b)
         && a.Audio == b.Audio;
 }
 
-double BoundsVolume(const Aabb3d& bounds)
-{
-    const Vec3d extent = bounds.Extent();
-    return static_cast<double>(extent[0]) * static_cast<double>(extent[1])
-        * static_cast<double>(extent[2]);
-}
-
 } // namespace
 
 WorldPartitionRuntime::WorldPartitionRuntime(ZoneLoadRecipeFn recipe,
@@ -85,27 +78,7 @@ void WorldPartitionRuntime::SetFocus(Vec3d position)
 {
     if (!HasManifest_)
         return;
-
-    // Hysteresis: the current focus wins while the position stays inside it,
-    // so a doorway threshold does not flap focus between overlapping bounds.
-    if (const ZoneHeader* current = FindHeader(Focus_);
-        current != nullptr && current->Bounds.Contains(position))
-        return;
-
-    const ZoneHeader* best = nullptr;
-    for (const ZoneHeader& header : Manifest_.Zones)
-    {
-        if (!header.Bounds.Contains(position))
-            continue;
-        if (best == nullptr || BoundsVolume(header.Bounds) < BoundsVolume(best->Bounds)
-            || (BoundsVolume(header.Bounds) == BoundsVolume(best->Bounds)
-                && header.Id.Value < best->Id.Value))
-            best = &header;
-    }
-    // No candidate keeps the previous focus: bounds gaps and overhangs are
-    // normal geometry, not focus changes.
-    if (best != nullptr)
-        Focus_ = best->Id;
+    Focus_ = ResolveFocusZone(Manifest_, position, Focus_);
 }
 
 void WorldPartitionRuntime::SetFocus(ZoneId zone)

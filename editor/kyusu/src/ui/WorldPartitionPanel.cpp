@@ -15,8 +15,10 @@
 #include "selection/SelectionService.h"
 #include "selection/commands/SelectCommand.h"
 #include "ui/TransitionInlineEditor.h"
+#include "viewport/WorldViewSettings.h"
 
 #include <core/logging/LoggingProvider.h>
+#include <zone/ZoneDemand.h>
 
 #include <imgui.h>
 
@@ -93,9 +95,56 @@ void WorldPartitionPanel::OnDraw()
     }
 
     DrawConnectBar();
+    DrawStreamingPreview();
 
     ImGui::Separator();
     DrawValidation();
+}
+
+void WorldPartitionPanel::DrawStreamingPreview()
+{
+    WorldViewSettings* view = WorldDoc.ViewSettings();
+    if (view == nullptr)
+        return;
+
+    ImGui::Separator();
+    ImGui::Checkbox("Streaming Preview", &view->StreamingPreview);
+    if (!view->StreamingPreview)
+        return;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::InputInt("Hops", &view->PreviewHopCount))
+        view->PreviewHopCount = view->PreviewHopCount < 0 ? 0 : view->PreviewHopCount;
+
+    const auto zoneName = [&](ZoneId zone) -> const char*
+    {
+        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+            if (header.Id == zone)
+                return header.Name.c_str();
+        return "<unknown>";
+    };
+
+    if (!view->PreviewFocus.IsValid())
+    {
+        ImGui::TextDisabled("Fly the perspective camera into a zone");
+        return;
+    }
+
+    const auto records = ComputeZoneDemand(
+        WorldDoc.Manifest(), WorldDoc.Index(), view->PreviewFocus, {},
+        WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount });
+    for (const ZoneDemandRecord& record : records)
+    {
+        std::string why;
+        if (record.Sources.Focus)
+            why = "focus, full participation";
+        else if (record.Sources.Neighbor)
+            why = "neighbor, dormant preload";
+        ImGui::BulletText("%s (%s)", zoneName(record.Zone), why.c_str());
+    }
+    const size_t total = WorldDoc.Manifest().Zones.size();
+    if (total > records.size())
+        ImGui::TextDisabled("%zu of %zu zones stay unloaded", total - records.size(), total);
 }
 
 void WorldPartitionPanel::DrawHeaderButtons()

@@ -65,6 +65,15 @@ ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                     ZoneId focus,
                     int32_t hopCount);
 
+// Pure focus resolution from a position: candidates are zones whose Bounds
+// contain the position; the previous focus wins while it remains a candidate
+// (hysteresis at doorway thresholds); otherwise the smallest-volume candidate,
+// ties by ascending zone id. No candidate returns `previous` unchanged
+// (sticky: bounds gaps and overhangs are normal geometry, not focus changes).
+// Shared by WorldPartitionRuntime and the editor's streaming preview.
+[[nodiscard]] ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest,
+                                      Vec3d position, ZoneId previous);
+
 // Pure. The demand set for one focus: the focus zone at full participation,
 // its graph neighbors within HopCount hops dormant, plus pins at their minimum.
 // Lingering is runtime state and is layered on by WorldPartitionRuntime::Update,

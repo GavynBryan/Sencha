@@ -22,7 +22,36 @@ ZoneHopRank* FindRank(std::vector<ZoneHopRank>& ranks, ZoneId zone)
     return nullptr;
 }
 
+double BoundsVolume(const Aabb3d& bounds)
+{
+    const Vec3d extent = bounds.Extent();
+    return static_cast<double>(extent[0]) * static_cast<double>(extent[1])
+        * static_cast<double>(extent[2]);
+}
+
 } // namespace
+
+ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
+                        ZoneId previous)
+{
+    // Hysteresis: the previous focus wins while the position stays inside it,
+    // so a doorway threshold does not flap focus between overlapping bounds.
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == previous && header.Bounds.Contains(position))
+            return previous;
+
+    const ZoneHeader* best = nullptr;
+    for (const ZoneHeader& header : manifest.Zones)
+    {
+        if (!header.Bounds.Contains(position))
+            continue;
+        if (best == nullptr || BoundsVolume(header.Bounds) < BoundsVolume(best->Bounds)
+            || (BoundsVolume(header.Bounds) == BoundsVolume(best->Bounds)
+                && header.Id.Value < best->Id.Value))
+            best = &header;
+    }
+    return best != nullptr ? best->Id : previous;
+}
 
 std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                                              const WorldPartitionIndex& index,

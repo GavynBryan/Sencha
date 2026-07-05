@@ -34,6 +34,10 @@ inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges ov
 // the opening stays visible through them; the wire stays full-strength.
 inline constexpr Vec4 PortalFill{ 0.25f, 0.75f, 0.95f, 0.30f };
 inline constexpr Vec4 PortalWire{ 0.25f, 0.75f, 0.95f, 1.0f };
+// Streaming preview: zone bounds tinted by the live demand state around the
+// preview focus (which keeps the Selection accent).
+inline constexpr Vec4 PreviewDemanded{ 0.3f, 0.9f, 0.4f, 1.0f };
+inline constexpr Vec4 PreviewUndemanded{ 0.65f, 0.2f, 0.2f, 1.0f };
 
 inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
 inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance

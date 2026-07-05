@@ -46,6 +46,7 @@ public:
     // Non-owning; the workspace's world view state rides the user sidecar with
     // the zone view states, so it persists per user alongside them.
     void BindViewSettings(WorldViewSettings* settings) { ViewSettings_ = settings; }
+    [[nodiscard]] WorldViewSettings* ViewSettings() { return ViewSettings_; }
 
     // Mode and files.
     [[nodiscard]] bool IsWorld() const { return WorldMode_; }

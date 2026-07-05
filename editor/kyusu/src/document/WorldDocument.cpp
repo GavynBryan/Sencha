@@ -968,7 +968,11 @@ void WorldDocument::WriteUserSidecar() const
     if (FocusZone_.IsValid())
         root.emplace_back("focus_zone", JsonValue{ ZoneIdToString(FocusZone_) });
     if (ViewSettings_ != nullptr)
+    {
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
+        root.emplace_back("streaming_preview", JsonValue{ ViewSettings_->StreamingPreview });
+        root.emplace_back("preview_hop_count", JsonValue{ ViewSettings_->PreviewHopCount });
+    }
 
     JsonValue::Array zones;
     for (const ZoneHeader& header : Manifest_.Zones)
@@ -1028,6 +1032,13 @@ ZoneId WorldDocument::ApplyUserSidecar()
     if (const JsonValue* show = root->Find("show_zone_bounds");
         show != nullptr && show->IsBool() && ViewSettings_ != nullptr)
         ViewSettings_->ShowZoneBounds = show->AsBool();
+    if (const JsonValue* preview = root->Find("streaming_preview");
+        preview != nullptr && preview->IsBool() && ViewSettings_ != nullptr)
+        ViewSettings_->StreamingPreview = preview->AsBool();
+    if (const JsonValue* hops = root->Find("preview_hop_count");
+        hops != nullptr && hops->IsNumber() && ViewSettings_ != nullptr)
+        ViewSettings_->PreviewHopCount =
+            std::max(0, static_cast<int>(hops->AsNumber()));
 
     if (const JsonValue* focus = root->Find("focus_zone"); focus != nullptr && focus->IsString())
     {

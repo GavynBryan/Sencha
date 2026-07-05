@@ -216,3 +216,20 @@ TEST(ZoneDemand, InvalidFocusYieldsEmptyDemand)
     EXPECT_TRUE(Demand(ChainManifest(), ZoneId{}, {}, {}).empty());
     EXPECT_TRUE(Demand(ChainManifest(), ZoneId{ 0xff }, {}, {}).empty());
 }
+
+TEST(ZoneDemand, ResolveFocusZoneIsPureAndSticky)
+{
+    WorldPartitionManifest manifest;
+    ZoneHeader big = MakeZone(0xa1);
+    big.Bounds = Aabb3d::FromMinMax(Vec3d{ -10, 0, -10 }, Vec3d{ 10, 4, 10 });
+    ZoneHeader small = MakeZone(0xa2);
+    small.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 4, 4, 4 });
+    manifest.Zones = { big, small };
+
+    // No previous focus: the smallest containing volume wins.
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 2, 1, 2 }, ZoneId{}), ZoneId{ 0xa2 });
+    // Hysteresis: the previous focus holds while it still contains the point.
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 2, 1, 2 }, ZoneId{ 0xa1 }), ZoneId{ 0xa1 });
+    // Sticky: a point in no zone keeps the previous focus.
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 100, 0, 0 }, ZoneId{ 0xa2 }), ZoneId{ 0xa2 });
+}
