@@ -33,11 +33,16 @@ comment plus the editor consumption below (manual gate).
 - `EditorRenderFeature` owns one `SceneRenderQueueBuilder` per OPEN zone
   (`std::unordered_map<ZoneId, std::unique_ptr<...>>`, entries dropped when the
   zone closes; each builder's brush-hash cache keeps idle zones free).
-- Solid viewports draw context zones via `Forward.Draw(..., tint = grey)` (theme
-  constant `ContextZoneDim`) over their builders' brush + placed-mesh queues,
-  replacing the checker context path when the real-material path is active (the
-  checker fallback remains for the no-assets boot). Wireframe viewports keep the
-  current dimmed-wire context look.
+- Solid viewports draw context zones FULL-BRIGHT (real materials, white tint)
+  and then wash a translucent grey fill over their brush faces (theme constant
+  `ContextZoneOverlay`, the FaceFill mechanism), replacing the checker context
+  path when the real-material path is active (the checker fallback remains for
+  the no-assets boot, still multiply-dimmed by `ContextZoneDim`). Wireframe
+  viewports keep the dimmed-wire context look. Owner-directed revision: a
+  multiply dim was tried first and rejected; the wash keeps textures readable.
+- Placed meshes cannot receive the brush-triangle wash, so the overlay folds
+  into their multiply tint (exact on white, close on bright textures), derived
+  from the same constant.
 - Context zones use a NEUTRAL full-bright ambient light set, not the focus zone's
   lights: the grey must not depend on whether a focus light happens to reach the
   neighboring zone (unlit-and-dimmed reads as black, not grey).
@@ -47,12 +52,13 @@ comment plus the editor consumption below (manual gate).
 `editor_solid.frag.glsl` gains a flat branch: vertex tint alpha below 0.5 selects
 the tint color WITHOUT the checker (the portal fill constant's 0.30 alpha already
 qualifies; regular tints stay at alpha 1). That covers the checker-fallback path.
-On the real-material path, `PortalVolumeRenderer` (its own gatherer over the
-shared `EditorFillPipeline`, the face-highlight pipeline) draws portal markers as
-ALPHA-BLENDED flat fills after the body pass: translucent from both sides,
-depth-tested so walls occlude them, never depth-writing. Focus tint white,
-context tint the overlay grey. (In the real-material body pass portals are
-otherwise invisible: the cook-input collector rightly skips them.)
+On the real-material path, `BrushFillRenderer` (one gatherer over the shared
+`EditorFillPipeline`, the face-highlight pipeline; also the context-zone wash
+above) draws portal markers as ALPHA-BLENDED flat fills after the body pass:
+translucent from both sides, depth-tested so walls occlude them, never
+depth-writing. Focus tint white, context tint dimmed. (In the real-material
+body pass portals are otherwise invisible: the cook-input collector rightly
+skips them.)
 
 ### V4. Manual gate
 

@@ -29,6 +29,10 @@ inline constexpr Vec4 ComponentVisual{ 0.7f, 0.85f, 1.0f, 1.0f };
 // wireframe, and component-visual paths with their colors modulated by this,
 // so they read as present but inert.
 inline constexpr Vec4 ContextZoneDim{ 0.45f, 0.45f, 0.50f, 1.0f };
+// Solid-view context zones instead render their materials full-bright with
+// this translucent grey washed over the brush faces (the FaceFill mechanism),
+// faint enough that the underlying textures stay readable.
+inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 // Portal marker brushes: read as volumes, not walls. Translucent cyan fill so
 // the opening stays visible through them; the wire stays full-strength.

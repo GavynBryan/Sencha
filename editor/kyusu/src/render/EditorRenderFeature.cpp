@@ -44,7 +44,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
-    , PortalVolumes(Fills)
+    , BrushFills(Fills)
     , ZoneBounds(WideLines)
     , Preview(preview, Lines)
     , Console(&console)
@@ -307,18 +307,28 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                 const auto it = ContextBuilders.find(zone.Value);
                 if (MaterialPath && it != ContextBuilders.end())
                 {
-                    // Neutral full-bright ambient: the grey must not depend on
-                    // whether a focus-zone light happens to reach this zone
-                    // (unlit-and-dimmed reads as black, not grey).
+                    // Full-bright neutral ambient under a translucent grey wash:
+                    // the textures stay readable and the grey does not depend on
+                    // whether a focus-zone light happens to reach this zone.
                     RenderLightSet contextLights;
                     contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
                     contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
-                    const Vec4 dim = EditorTheme::ContextZoneDim;
                     Forward.Draw(local, viewport.BuildRenderData(), contextLights,
-                                 it->second->BrushQueue(), *MeshCache, *MaterialStore, dim);
+                                 it->second->BrushQueue(), *MeshCache, *MaterialStore);
+                    // Placed meshes cannot receive the brush-triangle wash, so
+                    // the overlay folds into their multiply tint instead (exact
+                    // on white, close on bright textures).
+                    const Vec4& wash = EditorTheme::ContextZoneOverlay;
+                    const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
+                                       1.0f - wash.W + wash.Y * wash.W,
+                                       1.0f - wash.W + wash.Z * wash.W, 1.0f);
                     Forward.Draw(local, viewport.BuildRenderData(), contextLights,
-                                 it->second->MeshQueue(), *MeshCache, *MaterialStore, dim);
-                    PortalVolumes.DrawViewport(local, viewport, contextScene, dim);
+                                 it->second->MeshQueue(), *MeshCache, *MaterialStore,
+                                 meshDim);
+                    BrushFills.DrawZoneOverlay(local, viewport, contextScene,
+                                               EditorTheme::ContextZoneOverlay);
+                    BrushFills.DrawPortalVolumes(local, viewport, contextScene,
+                                                 EditorTheme::ContextZoneDim);
                 }
                 else
                 {
@@ -346,7 +356,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // The real-material body rightly skips portal markers (the cook collector
     // drops them); Solid viewports draw them as translucent volumes on top.
     if (MaterialPath && viewport.Shading == ViewportShading::Solid)
-        PortalVolumes.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        BrushFills.DrawPortalVolumes(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)
