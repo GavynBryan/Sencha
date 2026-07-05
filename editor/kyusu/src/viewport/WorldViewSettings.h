@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/Vec.h>
 #include <zone/ZoneId.h>
 
 // World-mode view state (the GridSettings pattern): never undoable, never in
@@ -13,7 +14,10 @@ struct WorldViewSettings
     // perspective viewport's camera, no cook or play session involved.
     bool StreamingPreview = false;
     int  PreviewHopCount = 1;
-    // Sticky preview focus, resolved per frame while the preview is on.
-    // Session transient: never persisted.
+    // Proximity demand preview: mirrors streaming_radius. 0 = graph only.
+    float PreviewRadius = 0.0f;
+    // Sticky preview focus and the camera position it resolved from, updated
+    // per frame while the preview is on. Session transients: never persisted.
     ZoneId PreviewFocus;
+    Vec3d  PreviewFocusPosition{};
 };

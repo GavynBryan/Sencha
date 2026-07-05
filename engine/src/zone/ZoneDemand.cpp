@@ -1,6 +1,7 @@
 #include <zone/ZoneDemand.h>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace
@@ -103,7 +104,8 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                                                 const WorldPartitionIndex& index,
                                                 ZoneId focus,
                                                 std::span<const ZonePin> pins,
-                                                const WorldPartitionStreamingConfig& config)
+                                                const WorldPartitionStreamingConfig& config,
+                                                const Vec3d* focusPosition)
 {
     struct DemandEntry
     {
@@ -119,6 +121,9 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     if (ranks.empty())
         return {};
 
+    const ZoneParticipation preload{ .Visible = config.NeighborVisible,
+                                     .Physics = config.NeighborPhysics };
+
     std::vector<DemandEntry> entries;
     entries.reserve(ranks.size());
     for (const ZoneHopRank& rank : ranks)
@@ -133,6 +138,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         }
         else
         {
+            entry.Desired = preload;
             entry.Sources.Neighbor = true;
         }
         entries.push_back(entry);
@@ -145,6 +151,47 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                 return &entry;
         return nullptr;
     };
+
+    // Proximity demand: zones whose bounds' closest point lies within Radius
+    // of the focus position (point-to-box, not center-to-center: a huge field
+    // cell whose edge is near counts as near). Graph neighbors are always
+    // preferred by eviction, so spatial-only entries rank one hop past the
+    // horizon with nearer-survives-longer priority; the quantization makes
+    // priority ties exact and deterministic.
+    if (config.Radius > 0.0 && focusPosition != nullptr)
+    {
+        for (const ZoneHeader& header : manifest.Zones)
+        {
+            if (header.Id == focus || !header.Bounds.IsValid())
+                continue;
+            const Vec3d closest{
+                std::clamp((*focusPosition)[0], header.Bounds.Min[0], header.Bounds.Max[0]),
+                std::clamp((*focusPosition)[1], header.Bounds.Min[1], header.Bounds.Max[1]),
+                std::clamp((*focusPosition)[2], header.Bounds.Min[2], header.Bounds.Max[2])
+            };
+            const Vec3d delta = closest - *focusPosition;
+            const double distanceSq = static_cast<double>(delta[0]) * delta[0]
+                + static_cast<double>(delta[1]) * delta[1]
+                + static_cast<double>(delta[2]) * delta[2];
+            if (distanceSq > config.Radius * config.Radius)
+                continue;
+            if (DemandEntry* existing = find(header.Id))
+            {
+                existing->Sources.Spatial = true;
+                existing->Desired.Visible |= preload.Visible;
+                existing->Desired.Physics |= preload.Physics;
+                continue;
+            }
+            DemandEntry entry;
+            entry.Rank = ZoneHopRank{
+                header.Id, config.HopCount + 1,
+                -static_cast<int32_t>(std::lround(std::sqrt(distanceSq) * 100.0))
+            };
+            entry.Desired = preload;
+            entry.Sources.Spatial = true;
+            entries.push_back(entry);
+        }
+    }
 
     // Pins OR their minimum onto whatever the zone already earned. A pin on a
     // zone the manifest does not contain is ignored: validation owns reporting

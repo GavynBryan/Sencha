@@ -17,6 +17,7 @@ struct ZoneDemandSources
     bool Focus = false;
     bool Pinned = false;
     bool Neighbor = false;
+    bool Spatial = false;
     bool Lingering = false;
 };
 
@@ -44,6 +45,13 @@ struct WorldPartitionStreamingConfig
     int32_t HopCount = 1;
     double  LingerSeconds = 3.0;
     int32_t ResidentZoneCap = 8;
+    // Preloaded zones render (and carry static collision) so doorways read as
+    // real space and threshold crossings land on resident colliders.
+    bool    NeighborVisible = true;
+    bool    NeighborPhysics = true;
+    // Proximity demand: zones whose bounds lie within this distance of the
+    // focus position join the demand set. 0 = graph hops only.
+    double  Radius = 0.0;
 };
 
 // One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
@@ -75,12 +83,15 @@ ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                                       Vec3d position, ZoneId previous);
 
 // Pure. The demand set for one focus: the focus zone at full participation,
-// its graph neighbors within HopCount hops dormant, plus pins at their minimum.
-// Lingering is runtime state and is layered on by WorldPartitionRuntime::Update,
-// never computed here. Deterministic: records ascend by zone id value.
+// its graph neighbors within HopCount hops at the config's preload
+// participation, zones within Radius of the focus position likewise (when a
+// position is supplied), plus pins at their minimum. Lingering is runtime
+// state and is layered on by WorldPartitionRuntime::Update, never computed
+// here. Deterministic: records ascend by zone id value.
 [[nodiscard]] std::vector<ZoneDemandRecord>
 ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   const WorldPartitionIndex& index,
                   ZoneId focus,
                   std::span<const ZonePin> pins,
-                  const WorldPartitionStreamingConfig& config);
+                  const WorldPartitionStreamingConfig& config,
+                  const Vec3d* focusPosition = nullptr);

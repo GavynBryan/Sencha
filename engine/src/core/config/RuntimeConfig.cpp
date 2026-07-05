@@ -105,6 +105,12 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
             config.StreamingLingerSeconds, sectionError)
         || !ReadIntEither(root, "streamingResidentZoneCap", "streaming_resident_zone_cap",
             config.StreamingResidentZoneCap, sectionError)
+        || !ReadBoolEither(root, "streamingNeighborVisible", "streaming_neighbor_visible",
+            config.StreamingNeighborVisible, sectionError)
+        || !ReadBoolEither(root, "streamingNeighborPhysics", "streaming_neighbor_physics",
+            config.StreamingNeighborPhysics, sectionError)
+        || !ReadDoubleEither(root, "streamingRadius", "streaming_radius",
+            config.StreamingRadius, sectionError)
         || !ReadBoolEither(root, "exitOnEscape", "exit_on_escape",
             config.ExitOnEscape, sectionError)
         || !ReadBoolEither(root, "togglePauseOnF1", "toggle_pause_on_f1",
@@ -153,6 +159,12 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
     if (config.StreamingResidentZoneCap < 1)
     {
         if (error) error->Message = "runtime config: 'streamingResidentZoneCap' must be at least 1";
+        return std::nullopt;
+    }
+
+    if (!std::isfinite(config.StreamingRadius) || config.StreamingRadius < 0.0)
+    {
+        if (error) error->Message = "runtime config: 'streamingRadius' must be zero (graph only) or positive";
         return std::nullopt;
     }
 

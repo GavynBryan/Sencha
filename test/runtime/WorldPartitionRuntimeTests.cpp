@@ -181,7 +181,12 @@ TEST_F(WorldPartitionRuntimeTest, FocusZoneParticipationIsFull)
     EXPECT_TRUE(participation.Physics);
     EXPECT_TRUE(participation.Logic);
     EXPECT_TRUE(participation.Audio);
-    EXPECT_FALSE(Zones.GetParticipation(kHallway).Any());
+    // The neighbor render-preloads: visible, collidable, inert.
+    const ZoneParticipation neighbor = Zones.GetParticipation(kHallway);
+    EXPECT_TRUE(neighbor.Visible);
+    EXPECT_TRUE(neighbor.Physics);
+    EXPECT_FALSE(neighbor.Logic);
+    EXPECT_FALSE(neighbor.Audio);
 }
 
 TEST_F(WorldPartitionRuntimeTest, FocusChangeDemotesOldFocusToDormant)
@@ -195,8 +200,10 @@ TEST_F(WorldPartitionRuntimeTest, FocusChangeDemotesOldFocusToDormant)
     Partition.SetFocus(kHallway);
     Step();
 
-    EXPECT_TRUE(Zones.GetParticipation(kHallway).Visible);
-    EXPECT_FALSE(Zones.GetParticipation(kHub).Any());   // demoted, still resident (neighbor)
+    EXPECT_TRUE(Zones.GetParticipation(kHallway).Logic);   // promoted to full
+    // The old focus demotes to the neighbor render preload, still resident.
+    EXPECT_TRUE(Zones.GetParticipation(kHub).Visible);
+    EXPECT_FALSE(Zones.GetParticipation(kHub).Logic);
     EXPECT_TRUE(Zones.IsZoneLoaded(kHub));
 }
 
@@ -655,4 +662,38 @@ TEST(WorldPartitionTraversal, TraversalRunsFullTickBudget)
         EXPECT_EQ(snapshot.FixedTicks, snapshot.Budget.TicksToRunThisFrame);
     }
     EXPECT_TRUE(zones.IsZoneLoaded(kArena));
+}
+
+TEST(WorldPartitionTraversal, TraversalNeighborIsVisibleBeforeCrossing)
+{
+    AsyncTaskQueue tasks(0);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+    WorldPartitionRuntime partition(
+        [](const ZoneHeader&) -> ZoneLoadRecipe
+        {
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Entities.Create(); };
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{});
+    std::string error;
+    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
+
+    // Standing in Hub: the hallway attaches dormant, then converges to the
+    // render preload, all before the player reaches the doorway.
+    partition.SetFocus(Vec3d{ 0, 1, 0 });
+    for (int i = 0; i < 3; ++i)
+    {
+        partition.Update(0.016, loader, zones);
+        tasks.PumpWork();
+        tasks.DrainCompletions();
+    }
+
+    ASSERT_TRUE(zones.IsZoneLoaded(kHallway));
+    const ZoneParticipation hallway = zones.GetParticipation(kHallway);
+    EXPECT_TRUE(hallway.Visible);    // readable through the doorway
+    EXPECT_TRUE(hallway.Physics);    // the threshold lands on resident colliders
+    EXPECT_FALSE(hallway.Logic);     // nothing simulates until entry
 }

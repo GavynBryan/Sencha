@@ -44,6 +44,13 @@ struct EngineRuntimeConfig
     int    StreamingHopCount = 1;
     double StreamingLingerSeconds = 3.0;
     int    StreamingResidentZoneCap = 8;
+    // Preloaded (non-focus) zones render and carry static collision so a
+    // doorway reads as real space and the threshold crossing lands on resident
+    // colliders; logic and audio stay off until entry. Radius adds
+    // proximity-based demand from the focus position (0 = graph hops only).
+    bool   StreamingNeighborVisible = true;
+    bool   StreamingNeighborPhysics = true;
+    double StreamingRadius = 0.0;
 
     bool ExitOnEscape = false;
     bool TogglePauseOnF1 = false;

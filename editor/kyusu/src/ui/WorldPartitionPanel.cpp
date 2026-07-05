@@ -115,6 +115,10 @@ void WorldPartitionPanel::DrawStreamingPreview()
     ImGui::SetNextItemWidth(80.0f);
     if (ImGui::InputInt("Hops", &view->PreviewHopCount))
         view->PreviewHopCount = view->PreviewHopCount < 0 ? 0 : view->PreviewHopCount;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::InputFloat("Radius", &view->PreviewRadius, 0.0f, 0.0f, "%.0f"))
+        view->PreviewRadius = view->PreviewRadius < 0.0f ? 0.0f : view->PreviewRadius;
 
     const auto zoneName = [&](ZoneId zone) -> const char*
     {
@@ -132,14 +136,26 @@ void WorldPartitionPanel::DrawStreamingPreview()
 
     const auto records = ComputeZoneDemand(
         WorldDoc.Manifest(), WorldDoc.Index(), view->PreviewFocus, {},
-        WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount });
+        WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount,
+                                       .Radius = view->PreviewRadius },
+        &view->PreviewFocusPosition);
     for (const ZoneDemandRecord& record : records)
     {
         std::string why;
-        if (record.Sources.Focus)
-            why = "focus, full participation";
-        else if (record.Sources.Neighbor)
-            why = "neighbor, dormant preload";
+        const auto tag = [&](bool on, const char* name)
+        {
+            if (!on)
+                return;
+            if (!why.empty())
+                why += "+";
+            why += name;
+        };
+        tag(record.Sources.Focus, "focus");
+        tag(record.Sources.Neighbor, "neighbor");
+        tag(record.Sources.Spatial, "near");
+        why += record.Sources.Focus ? ", live"
+             : record.Desired.Visible ? ", render preload"
+                                      : ", dormant preload";
         ImGui::BulletText("%s (%s)", zoneName(record.Zone), why.c_str());
     }
     const size_t total = WorldDoc.Manifest().Zones.size();

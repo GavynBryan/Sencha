@@ -53,6 +53,7 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Index_ = std::move(index);
     HasManifest_ = true;
     Focus_ = ZoneId{};
+    HasFocusPosition_ = false;
     Pins_.clear();
     Issued_.clear();
     Lingering_.clear();
@@ -79,12 +80,20 @@ void WorldPartitionRuntime::SetFocus(Vec3d position)
     if (!HasManifest_)
         return;
     Focus_ = ResolveFocusZone(Manifest_, position, Focus_);
+    FocusPosition_ = position;
+    HasFocusPosition_ = true;
 }
 
 void WorldPartitionRuntime::SetFocus(ZoneId zone)
 {
     assert(HasManifest_ && FindHeader(zone) != nullptr && "SetFocus: unknown zone");
     Focus_ = zone;
+    if (const ZoneHeader* header = FindHeader(zone); header != nullptr
+        && header->Bounds.IsValid())
+    {
+        FocusPosition_ = header->Bounds.Center();
+        HasFocusPosition_ = true;
+    }
 }
 
 void WorldPartitionRuntime::PinZone(ZoneId zone, ZoneParticipation minimum)
@@ -112,7 +121,8 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     if (HasManifest_ && Focus_.IsValid())
     {
         ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, Config_.HopCount);
-        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, Config_);
+        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, Config_,
+                                   HasFocusPosition_ ? &FocusPosition_ : nullptr);
     }
 
     const auto findDemand = [&](ZoneId zone) -> const ZoneDemandRecord*

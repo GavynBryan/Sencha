@@ -82,6 +82,10 @@ private:
     WorldPartitionIndex Index_;
     bool HasManifest_ = false;
     ZoneId Focus_;
+    // Last known focus position for proximity demand: the position handed to
+    // SetFocus(Vec3d), or the focus zone's bounds center after SetFocus(ZoneId).
+    Vec3d FocusPosition_{};
+    bool HasFocusPosition_ = false;
     std::vector<ZonePin> Pins_;
     // Zones this runtime has issued BeginLoad for and not yet seen attach or
     // cancel; the enumerable half of AsyncZoneLoader::IsLoading.

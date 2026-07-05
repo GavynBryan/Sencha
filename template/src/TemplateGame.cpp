@@ -656,6 +656,9 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             .HopCount = runtimeConfig.StreamingHopCount,
             .LingerSeconds = runtimeConfig.StreamingLingerSeconds,
             .ResidentZoneCap = runtimeConfig.StreamingResidentZoneCap,
+            .NeighborVisible = runtimeConfig.StreamingNeighborVisible,
+            .NeighborPhysics = runtimeConfig.StreamingNeighborPhysics,
+            .Radius = runtimeConfig.StreamingRadius,
         });
 
     std::string loadError;

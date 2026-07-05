@@ -154,3 +154,26 @@ TEST(RuntimeConfig, StreamingFieldsRejectInvalid)
     EXPECT_FALSE(Parse(R"({"streaming_resident_zone_cap": 0})", &error).has_value());
     EXPECT_NE(error.Message.find("streamingResidentZoneCap"), std::string::npos);
 }
+
+TEST(RuntimeConfig, StreamingPreloadFieldsParseAndValidate)
+{
+    const auto defaults = Parse(R"({})");
+    ASSERT_TRUE(defaults.has_value());
+    EXPECT_TRUE(defaults->StreamingNeighborVisible);
+    EXPECT_TRUE(defaults->StreamingNeighborPhysics);
+    EXPECT_DOUBLE_EQ(defaults->StreamingRadius, 0.0);
+
+    const auto parsed = Parse(R"({
+        "streaming_neighbor_visible": false,
+        "streaming_neighbor_physics": false,
+        "streaming_radius": 64.0
+    })");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(parsed->StreamingNeighborVisible);
+    EXPECT_FALSE(parsed->StreamingNeighborPhysics);
+    EXPECT_DOUBLE_EQ(parsed->StreamingRadius, 64.0);
+
+    RuntimeConfigError error;
+    EXPECT_FALSE(Parse(R"({"streaming_radius": -1.0})", &error).has_value());
+    EXPECT_NE(error.Message.find("streamingRadius"), std::string::npos);
+}

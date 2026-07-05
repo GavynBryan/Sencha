@@ -75,7 +75,7 @@ TEST(ZoneDemand, FocusAloneIsFullParticipation)
     EXPECT_FALSE(records[0].Sources.Neighbor);
 }
 
-TEST(ZoneDemand, NeighborsWithinHopCountAreDormant)
+TEST(ZoneDemand, NeighborsPreloadVisibleByDefault)
 {
     const auto records = Demand(ChainManifest(), ZoneId{ 0xa1 }, {},
                                 WorldPartitionStreamingConfig{ .HopCount = 2 });
@@ -86,10 +86,27 @@ TEST(ZoneDemand, NeighborsWithinHopCountAreDormant)
     {
         const ZoneDemandRecord* record = FindRecord(records, id);
         ASSERT_NE(record, nullptr);
-        EXPECT_FALSE(record->Desired.Any());   // dormant
+        // Render preload: visible with static collision, no logic or audio.
+        EXPECT_TRUE(record->Desired.Visible);
+        EXPECT_TRUE(record->Desired.Physics);
+        EXPECT_FALSE(record->Desired.Logic);
+        EXPECT_FALSE(record->Desired.Audio);
         EXPECT_TRUE(record->Sources.Neighbor);
         EXPECT_FALSE(record->Sources.Focus);
     }
+}
+
+TEST(ZoneDemand, NeighborConfigOffKeepsDormant)
+{
+    const auto records = Demand(ChainManifest(), ZoneId{ 0xa1 }, {},
+                                WorldPartitionStreamingConfig{
+                                    .HopCount = 1,
+                                    .NeighborVisible = false,
+                                    .NeighborPhysics = false });
+
+    const ZoneDemandRecord* neighbor = FindRecord(records, 0xa2);
+    ASSERT_NE(neighbor, nullptr);
+    EXPECT_FALSE(neighbor->Desired.Any());
 }
 
 TEST(ZoneDemand, OneWayInboundEdgeDoesNotPreloadSource)
@@ -128,8 +145,8 @@ TEST(ZoneDemand, PinnedZoneCarriesItsMinimum)
     ASSERT_NE(near, nullptr);
     EXPECT_TRUE(near->Sources.Pinned);
     EXPECT_TRUE(near->Sources.Neighbor);
-    EXPECT_TRUE(near->Desired.Audio);
-    EXPECT_FALSE(near->Desired.Visible);
+    EXPECT_TRUE(near->Desired.Audio);       // the pin's minimum, OR-ed on
+    EXPECT_TRUE(near->Desired.Visible);     // the neighbor render preload
 }
 
 TEST(ZoneDemand, CapEvictsByHopThenPriorityThenId)
@@ -232,4 +249,72 @@ TEST(ZoneDemand, ResolveFocusZoneIsPureAndSticky)
     EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 2, 1, 2 }, ZoneId{ 0xa1 }), ZoneId{ 0xa1 });
     // Sticky: a point in no zone keeps the previous focus.
     EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 100, 0, 0 }, ZoneId{ 0xa2 }), ZoneId{ 0xa2 });
+}
+
+namespace
+{
+
+// A 1x3 strip of bounded zones with NO transitions: proximity is the only
+// demand path.
+WorldPartitionManifest StripManifest()
+{
+    WorldPartitionManifest manifest;
+    ZoneHeader a = MakeZone(0xa1);
+    a.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 4, 10 });
+    ZoneHeader b = MakeZone(0xa2);
+    b.Bounds = Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 4, 10 });
+    ZoneHeader c = MakeZone(0xa3);
+    c.Bounds = Aabb3d::FromMinMax(Vec3d{ 100, 0, 0 }, Vec3d{ 110, 4, 10 });
+    manifest.Zones = { a, b, c };
+    return manifest;
+}
+
+} // namespace
+
+TEST(ZoneDemand, ZonesWithinRadiusJoinDemand)
+{
+    const WorldPartitionManifest manifest = StripManifest();
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const Vec3d position{ 5, 1, 5 };
+
+    // Radius 0: graph only, and there is no graph.
+    auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                     WorldPartitionStreamingConfig{}, &position);
+    ASSERT_EQ(records.size(), 1u);
+
+    // Radius 8 reaches the adjacent strip cell (closest point at x=10, distance
+    // 5) but not the far one (distance 95). Closest-point matters: b's CENTER
+    // is 10+ away.
+    records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                WorldPartitionStreamingConfig{ .Radius = 8.0 }, &position);
+    ASSERT_EQ(records.size(), 2u);
+    const ZoneDemandRecord* nearZone = FindRecord(records, 0xa2);
+    ASSERT_NE(nearZone, nullptr);
+    EXPECT_TRUE(nearZone->Sources.Spatial);
+    EXPECT_FALSE(nearZone->Sources.Neighbor);
+    EXPECT_TRUE(nearZone->Desired.Visible);
+    EXPECT_EQ(FindRecord(records, 0xa3), nullptr);
+
+    // No position supplied: spatial demand is inert regardless of radius.
+    records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                WorldPartitionStreamingConfig{ .Radius = 8.0 });
+    ASSERT_EQ(records.size(), 1u);
+}
+
+TEST(ZoneDemand, SpatialEvictsAfterGraphNeighbors)
+{
+    // One graph neighbor plus one spatial-only zone, cap 2: the spatial zone
+    // (ranked one hop past the horizon) evicts first.
+    WorldPartitionManifest manifest = StripManifest();
+    manifest.Transitions = { MakeEdge(0xc1, 0xa1, 0xa3) };
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const Vec3d position{ 5, 1, 5 };
+
+    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                           WorldPartitionStreamingConfig{
+                                               .ResidentZoneCap = 2, .Radius = 8.0 },
+                                           &position);
+    ASSERT_EQ(records.size(), 2u);
+    EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // the graph neighbor survives
+    EXPECT_EQ(FindRecord(records, 0xa2), nullptr);   // the spatial zone evicts
 }

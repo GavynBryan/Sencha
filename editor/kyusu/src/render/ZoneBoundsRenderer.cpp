@@ -54,11 +54,16 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
     if (view.StreamingPreview)
     {
         if (viewport.Orientation == ViewportOrientation::Perspective)
+        {
             view.PreviewFocus = ResolveFocusZone(world.Manifest(), viewport.Camera.Position,
                                                  view.PreviewFocus);
+            view.PreviewFocusPosition = viewport.Camera.Position;
+        }
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
                                    WorldPartitionStreamingConfig{
-                                       .HopCount = view.PreviewHopCount });
+                                       .HopCount = view.PreviewHopCount,
+                                       .Radius = view.PreviewRadius },
+                                   &view.PreviewFocusPosition);
     }
     const auto demanded = [&](ZoneId zone)
     {
