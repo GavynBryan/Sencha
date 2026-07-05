@@ -137,15 +137,18 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return "<unknown>";
     };
 
-    if (!view->PreviewFocus.IsValid())
+    ZoneId previewFocus = view->PreviewFocus;
+    if (!previewFocus.IsValid())
+        previewFocus = WorldDoc.FocusZone();
+    if (!previewFocus.IsValid())
     {
-        ImGui::TextDisabled("Fly the perspective camera into a zone");
+        ImGui::TextDisabled("No zone to preview around yet");
         return;
     }
 
     const std::vector<std::string> activeTags = SplitTagList(view->PreviewTags);
     const auto records = ComputeZoneDemand(
-        WorldDoc.Manifest(), WorldDoc.Index(), view->PreviewFocus, {},
+        WorldDoc.Manifest(), WorldDoc.Index(), previewFocus, {},
         WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount,
                                        .Radius = view->PreviewRadius },
         &view->PreviewFocusPosition, activeTags);

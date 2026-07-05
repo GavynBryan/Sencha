@@ -2,12 +2,14 @@
 
 #include "PortalGeometry.h"
 #include "ZoneBounds.h"
+#include "commands/MoveEntitiesToZoneCommand.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <zone/WorldPartitionValidation.h>
+#include <zone/ZoneDemand.h>
 
 #include <algorithm>
 #include <cctype>
@@ -526,6 +528,48 @@ void WorldDocument::ReconcilePortalConnections()
             continue;
         if (const auto bounds = ComputeZoneBounds(it->second.Document->GetScene()))
             header.Bounds = *bounds;
+    }
+
+    // Filing is derived too: a marker belongs to the zone whose bounds
+    // contain its center (ResolveFocusZone semantics: the current holder wins
+    // while it still contains the center, smallest volume otherwise, sticky
+    // when nothing contains it). Wherever it was created, it refiles itself
+    // between open zones, so hierarchy placement is never the author's
+    // decision. Collected first, applied after: the move mutates entity lists.
+    struct PendingRefile
+    {
+        EntityId Entity;
+        ZoneId From;
+        ZoneId To;
+    };
+    std::vector<PendingRefile> refiles;
+    for (const ZoneHeader& zone : Manifest_.Zones)
+    {
+        const auto it = OpenZones_.find(zone.Id);
+        if (it == OpenZones_.end())
+            continue;
+        EditorScene& scene = it->second.Document->GetScene();
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            if (!scene.IsPortal(entity))
+                continue;
+            const auto bounds = scene.TryGetWorldBounds(entity);
+            if (!bounds.has_value())
+                continue;
+            const ZoneId home = ResolveFocusZone(Manifest_, bounds->Center(), zone.Id);
+            if (home.IsValid() && home != zone.Id && OpenZones_.contains(home))
+                refiles.push_back({ entity, zone.Id, home });
+        }
+    }
+    for (const PendingRefile& refile : refiles)
+    {
+        EditorDocument* source = ZoneDocument(refile.From);
+        EditorDocument* target = ZoneDocument(refile.To);
+        if (source == nullptr || target == nullptr)
+            continue;
+        const EntityId entities[] = { refile.Entity };
+        MoveEntitiesToZoneCommand move(entities, *source, *target);
+        move.Execute();
     }
 
     const auto findRecord = [&](TransitionId id) -> const TransitionRecord*

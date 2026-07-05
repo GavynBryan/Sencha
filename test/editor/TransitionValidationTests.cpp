@@ -414,3 +414,21 @@ TEST_F(TransitionValidationTest, MovedPortalRelinksToItsNewZone)
     EXPECT_NE(linked->Id, original);
     ASSERT_EQ(World.Manifest().Transitions.size(), 2u);   // the pair, reused
 }
+
+TEST_F(TransitionValidationTest, PortalRefilesToTheZoneContainingItsCenter)
+{
+    // Created in the focus zone but physically sitting inside the OTHER
+    // zone's bounds: reconciliation refiles it there and links that zone's
+    // edge. Hierarchy placement is derived, never the author's decision.
+    SetZoneBounds(ToZone, Vec3d{ 40, 0, 0 });
+    const EntityId portal = AddPortalBrush(TransitionId{}, Vec3d{ 0.2, 4.0, 4.0 },
+                                           Vec3d{ 38, 0, 0 });   // inside ToZone
+    World.Revalidate();
+
+    EXPECT_EQ(World.FocusDocument().GetScene().GetEntityCount(), 0u);
+    const EditorScene& targetScene = World.ZoneDocument(ToZone)->GetScene();
+    ASSERT_EQ(targetScene.GetEntityCount(), 1u);
+    const EntityId moved = targetScene.GetAllEntities()[0];
+    ASSERT_TRUE(targetScene.IsPortal(moved));
+    (void)portal;
+}

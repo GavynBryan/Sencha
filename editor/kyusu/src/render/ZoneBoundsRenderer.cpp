@@ -60,6 +60,11 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
                                                  view.PreviewFocus);
             view.PreviewFocusPosition = viewport.Camera.Position;
         }
+        // A camera outside every zone (the usual editing vantage, floating
+        // above the map) previews around the zone being edited instead of
+        // showing nothing.
+        if (!view.PreviewFocus.IsValid())
+            view.PreviewFocus = world.FocusZone();
         const std::vector<std::string> activeTags = SplitTagList(view.PreviewTags);
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
                                    WorldPartitionStreamingConfig{
