@@ -356,11 +356,17 @@ TEST_F(WorldPartitionRuntimeTest, FocusResolutionPrefersCurrentZoneOnOverlap)
     EXPECT_EQ(Partition.FocusZone(), kHallway);
 }
 
-TEST_F(WorldPartitionRuntimeTest, PositionInNoZoneKeepsFocus)
+TEST_F(WorldPartitionRuntimeTest, PositionInNoZoneFocusesNearestZone)
 {
     LoadFixture();
     Partition.SetFocus(kHub);
+    // Far east of every bounds: the nearest zone (Arena, x up to 40) wins;
+    // the stale previous focus does not survive.
     Partition.SetFocus(Vec3d{ 1000.0, 0.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kArena);
+    // Hovering above the Hub's box focuses the Hub: the floor-slab case
+    // (derived bounds hug geometry; the pawn transform rides above them).
+    Partition.SetFocus(Vec3d{ 0.0, 10.0, 0.0 });
     EXPECT_EQ(Partition.FocusZone(), kHub);
 }
 

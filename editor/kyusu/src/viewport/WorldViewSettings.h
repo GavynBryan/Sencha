@@ -41,12 +41,3 @@ struct WorldViewSettings
 [[nodiscard]] WorldPartitionStreamingConfig
 ResolvePreviewStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
                               const WorldViewSettings& view);
-
-// Nearest zone by closest-point distance to `position` (ties: smaller bounds
-// volume, then lower id, mirroring ResolveFocusZone). The preview focus when
-// the fly camera hovers outside every zone bound: a player is always inside a
-// zone, an editor camera usually is not, and the runtime's sticky resolution
-// would pin the last zone entered as focus forever from a bird's-eye vantage.
-// Invalid when no zone has valid bounds.
-[[nodiscard]] ZoneId NearestPreviewFocusZone(const WorldPartitionManifest& manifest,
-                                             Vec3d position);

@@ -61,22 +61,6 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
             view.PreviewFocus = ResolveFocusZone(world.Manifest(), viewport.Camera.Position,
                                                  view.PreviewFocus);
             view.PreviewFocusPosition = viewport.Camera.Position;
-            // The fly camera usually hovers outside every zone bound (zones
-            // are room-height); the sticky runtime resolution would pin the
-            // last zone entered as focus forever. The preview roams to the
-            // nearest zone instead, so a bird's-eye pass reads each cell's
-            // shape as the camera crosses the map.
-            bool inside = false;
-            for (const ZoneHeader& header : world.Manifest().Zones)
-                inside |= header.Bounds.IsValid()
-                    && header.Bounds.Contains(viewport.Camera.Position);
-            if (!inside)
-            {
-                const ZoneId nearest =
-                    NearestPreviewFocusZone(world.Manifest(), viewport.Camera.Position);
-                if (nearest.IsValid())
-                    view.PreviewFocus = nearest;
-            }
         }
         // A camera outside every zone (the usual editing vantage, floating
         // above the map) previews around the zone being edited instead of

@@ -234,7 +234,7 @@ TEST(ZoneDemand, InvalidFocusYieldsEmptyDemand)
     EXPECT_TRUE(Demand(ChainManifest(), ZoneId{ 0xff }, {}, {}).empty());
 }
 
-TEST(ZoneDemand, ResolveFocusZoneIsPureAndSticky)
+TEST(ZoneDemand, ResolveFocusZonePrefersContainmentWithHysteresis)
 {
     WorldPartitionManifest manifest;
     ZoneHeader big = MakeZone(0xa1);
@@ -247,8 +247,34 @@ TEST(ZoneDemand, ResolveFocusZoneIsPureAndSticky)
     EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 2, 1, 2 }, ZoneId{}), ZoneId{ 0xa2 });
     // Hysteresis: the previous focus holds while it still contains the point.
     EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 2, 1, 2 }, ZoneId{ 0xa1 }), ZoneId{ 0xa1 });
-    // Sticky: a point in no zone keeps the previous focus.
-    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 100, 0, 0 }, ZoneId{ 0xa2 }), ZoneId{ 0xa2 });
+    // A point in no zone resolves to the nearest bounds, not the previous
+    // focus: (100, 0, 0) is 90 from big's box, 96 from small's.
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 100, 0, 0 }, ZoneId{ 0xa2 }), ZoneId{ 0xa1 });
+}
+
+TEST(ZoneDemand, ResolveFocusZoneFallsToNearestOutsideAllBounds)
+{
+    // Derived bounds hug authored geometry: two floor slabs one unit tall,
+    // the shape a cook derives for content-only cells. A pawn whose transform
+    // rides above the slab must still focus the cell it stands on.
+    WorldPartitionManifest manifest;
+    ZoneHeader west = MakeZone(0xa1);
+    west.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 1, 10 });
+    ZoneHeader east = MakeZone(0xa2);
+    east.Bounds = Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 1, 10 });
+    manifest.Zones = { west, east };
+
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 5, 2, 5 }, ZoneId{ 0xa2 }), ZoneId{ 0xa1 });
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 15, 2, 5 }, ZoneId{ 0xa1 }), ZoneId{ 0xa2 });
+    // Equidistant on the shared face: equal volumes, so the lower id wins.
+    EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 10, 2, 5 }, ZoneId{}), ZoneId{ 0xa1 });
+
+    // Previous survives only when no zone has valid bounds.
+    WorldPartitionManifest broken;
+    ZoneHeader inverted = MakeZone(0xa3);
+    inverted.Bounds = Aabb3d::FromMinMax(Vec3d{ 1, 1, 1 }, Vec3d{ -1, -1, -1 });
+    broken.Zones = { inverted };
+    EXPECT_EQ(ResolveFocusZone(broken, Vec3d{ 0, 0, 0 }, ZoneId{ 0xa7 }), ZoneId{ 0xa7 });
 }
 
 namespace

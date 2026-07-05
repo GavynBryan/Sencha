@@ -90,9 +90,13 @@ ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
 // Pure focus resolution from a position: candidates are zones whose Bounds
 // contain the position; the previous focus wins while it remains a candidate
 // (hysteresis at doorway thresholds); otherwise the smallest-volume candidate,
-// ties by ascending zone id. No candidate returns `previous` unchanged
-// (sticky: bounds gaps and overhangs are normal geometry, not focus changes).
-// Shared by WorldPartitionRuntime and the editor's streaming preview.
+// ties by ascending zone id. A position inside no zone resolves to the
+// NEAREST zone by closest-point distance (ties: smaller volume, then id):
+// derived bounds hug authored geometry, so a pawn standing on a floor slab or
+// airborne routinely sits outside its zone's box, and keeping the previous
+// focus would freeze streaming on whatever zone was entered last. `previous`
+// survives only when no zone has valid bounds. Shared by
+// WorldPartitionRuntime and the editor's streaming preview.
 [[nodiscard]] ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest,
                                       Vec3d position, ZoneId previous);
 
