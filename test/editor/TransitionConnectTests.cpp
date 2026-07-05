@@ -89,9 +89,9 @@ TEST_F(TransitionConnectTest, PortalLinksUndoably)
 
     const EditorScene& scene = World.FocusDocument().GetScene();
     ASSERT_EQ(scene.TryGetPortal(Portal)->Transition, forward);
-    // The forward edge is satisfied; the reverse edge's zone has no portal.
+    // One linked portal satisfies the symmetric pair: both directions clear.
     EXPECT_EQ(CountRecords("partition.transition.portal_missing"), 0u);
-    EXPECT_EQ(CountRecords("partition.transition.portal_unverified"), 1u);
+    EXPECT_EQ(CountRecords("partition.transition.portal_unverified"), 0u);
 
     // The link is the undoable half; the manifest edges are verbs and stay.
     ASSERT_TRUE(Stack.CanUndo());

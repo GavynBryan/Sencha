@@ -796,6 +796,30 @@ void WorldDocument::RunValidation()
         }
 
         const std::vector<PortalSighting> noSightings;
+        // A symmetric doorway pair is one physical opening: one linked portal
+        // on either side satisfies the aperture check for BOTH directions. The
+        // per-edge rules (duplicate, wrong_zone, misaligned) stay per-edge.
+        const auto reverseOf = [&](const TransitionRecord& record) -> const TransitionRecord*
+        {
+            if (record.Flags.OneWay)
+                return nullptr;
+            for (const TransitionRecord& other : Manifest_.Transitions)
+                if (&other != &record && other.From == record.To && other.To == record.From
+                    && other.Topology == TransitionTopology::Doorway && !other.Flags.OneWay)
+                    return &other;
+            return nullptr;
+        };
+        const auto linkedInOwnZone = [&](const TransitionRecord& record)
+        {
+            const auto it = linkedPortals.find(record.Id.Value);
+            if (it == linkedPortals.end())
+                return false;
+            for (const PortalSighting& sighting : it->second)
+                if (sighting.Zone == record.From)
+                    return true;
+            return false;
+        };
+
         for (const TransitionRecord& record : Manifest_.Transitions)
         {
             if (record.Topology != TransitionTopology::Doorway)
@@ -820,8 +844,11 @@ void WorldDocument::RunValidation()
                 }
             }
 
+            const TransitionRecord* reverse = reverseOf(record);
+            const bool pairSatisfied =
+                inFrom > 0 || (reverse != nullptr && linkedInOwnZone(*reverse));
             const bool fromOpen = OpenZones_.contains(record.From);
-            if (!fromOpen)
+            if (!fromOpen && !pairSatisfied)
                 unverifiedRecords.push_back({
                     .Severity = ContentRiskSeverity::Unverified,
                     .Kind = ContentRiskSourceKind::Transition,
@@ -831,7 +858,7 @@ void WorldDocument::RunValidation()
                                            TransitionIdToString(record.Id),
                                            ZoneIdToString(record.From)),
                 });
-            else if (inFrom == 0)
+            else if (fromOpen && !pairSatisfied)
                 missing.push_back({
                     .Severity = ContentRiskSeverity::Warning,
                     .Kind = ContentRiskSourceKind::Transition,

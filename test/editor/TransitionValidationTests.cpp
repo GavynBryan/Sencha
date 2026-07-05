@@ -286,3 +286,32 @@ TEST_F(TransitionValidationTest, RenameTransitionRewritesAndRevalidates)
     EXPECT_TRUE(World.Manifest().Transitions[0].Name.empty());
     EXPECT_FALSE(World.RenameTransition(TransitionId{ 0xff }, "x"));
 }
+
+TEST_F(TransitionValidationTest, PortalPairSatisfiedByOneSide)
+{
+    // A symmetric doorway pair with one portal, linked to the forward edge,
+    // living in the From zone: both directions' aperture checks clear even
+    // though the reverse edge's own zone holds no portal.
+    const TransitionId forward =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Doorway, false, 0);
+    (void)World.AddTransition(ToZone, FromZone, TransitionTopology::Doorway, false, 0);
+    AddPortalBrush(forward, Vec3d{ 0.2, 4.0, 4.0 });
+    World.Revalidate();
+
+    EXPECT_EQ(CountRecords("partition.transition.portal_missing"), 0u);
+    EXPECT_EQ(CountRecords("partition.transition.portal_unverified"), 0u);
+}
+
+TEST_F(TransitionValidationTest, OneWayStillRequiresOwnPortal)
+{
+    // Two OneWay edges are not a symmetric pair: each direction keeps
+    // demanding its own portal.
+    const TransitionId forward =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Doorway, true, 0);
+    (void)World.AddTransition(ToZone, FromZone, TransitionTopology::Doorway, true, 0);
+    AddPortalBrush(forward, Vec3d{ 0.2, 4.0, 4.0 });
+    World.Revalidate();
+
+    // The reverse OneWay edge's zone is open (fixture loads it) and unportaled.
+    EXPECT_EQ(CountRecords("partition.transition.portal_missing"), 1u);
+}
