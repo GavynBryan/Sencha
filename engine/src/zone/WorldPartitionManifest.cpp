@@ -226,6 +226,8 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
         return std::nullopt;
     if (!ReadOptionalId(root, "start_zone", ZoneIdFromString, manifest.StartZone, error, "start_zone"))
         return std::nullopt;
+    if (!ReadOptionalString(root, "world_scene", manifest.WorldSceneRef, error, "world_scene"))
+        return std::nullopt;
 
     if (const JsonValue* regions = root.Find("regions"))
     {
@@ -438,6 +440,8 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
     root.emplace_back("name", JsonValue{ manifest.Name });
     if (manifest.StartZone.IsValid())
         root.emplace_back("start_zone", JsonValue{ ZoneIdToString(manifest.StartZone) });
+    if (!manifest.WorldSceneRef.empty())
+        root.emplace_back("world_scene", JsonValue{ manifest.WorldSceneRef });
 
     JsonValue::Array regions;
     for (const RegionRecord& record : manifest.Regions)

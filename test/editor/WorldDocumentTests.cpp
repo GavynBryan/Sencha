@@ -4,9 +4,13 @@
 #include "document/WorldDocument.h"
 #include "document/ZoneBounds.h"
 
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -111,14 +115,16 @@ TEST_F(WorldDocumentTest, LoadZoneAssignsUniqueMonotonicRegistryIds)
     const ZoneId second = world.AddZone(region, "Second");
     const ZoneId third = world.AddZone(region, "Third");
 
-    EXPECT_EQ(world.FocusDocument().GetRegistry().Id.Index, 2u);
+    // The world scene document takes index 2 (created before any zone opens).
+    EXPECT_EQ(world.WorldSceneDocument().GetRegistry().Id.Index, 2u);
+    EXPECT_EQ(world.FocusDocument().GetRegistry().Id.Index, 3u);
 
     ASSERT_TRUE(world.LoadZone(second));
-    EXPECT_EQ(OpenZoneDocument(world, second).GetRegistry().Id.Index, 3u);
+    EXPECT_EQ(OpenZoneDocument(world, second).GetRegistry().Id.Index, 4u);
 
     ASSERT_TRUE(world.UnloadZone(second));
     ASSERT_TRUE(world.LoadZone(third));
-    EXPECT_EQ(OpenZoneDocument(world, third).GetRegistry().Id.Index, 4u);
+    EXPECT_EQ(OpenZoneDocument(world, third).GetRegistry().Id.Index, 5u);
 
     EXPECT_EQ(world.FocusDocument().GetRegistry().Zone, first);
 }
@@ -356,6 +362,113 @@ TEST_F(WorldDocumentTest, SaveWorldAsEnforcesSworldExtension)
     // No extension at all gets one too.
     ASSERT_TRUE(world.SaveWorldAs((Root / "bare").string()));
     EXPECT_TRUE(fs::exists(Root / "bare.sworld"));
+}
+
+TEST_F(WorldDocumentTest, WorldSceneRoundTripsThroughSaveAndLoad)
+{
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        world.WorldSceneDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        EXPECT_EQ(world.Manifest().WorldSceneRef, "levels/test_world.level.json");
+        EXPECT_TRUE(fs::exists(Root / "levels/test_world.level.json"));
+    }
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    EXPECT_EQ(reloaded.Manifest().WorldSceneRef, "levels/test_world.level.json");
+    EXPECT_EQ(reloaded.WorldSceneDocument().GetScene().GetEntityCount(), 1u);
+
+    // The world scene is not a zone: open-zone iteration never visits it.
+    size_t visited = 0;
+    reloaded.VisitOpenZones([&](ZoneId, EditorDocument&, const ZoneViewState&) { ++visited; });
+    EXPECT_EQ(visited, 1u);
+
+    // Its dirt counts as the world's dirt, so save prompts cover it.
+    EXPECT_FALSE(reloaded.IsDirty());
+    reloaded.WorldSceneDocument().MarkDirty();
+    EXPECT_TRUE(reloaded.IsDirty());
+}
+
+TEST_F(WorldDocumentTest, FocusWorldSceneSwitchesFocusDocumentAndFiresOnce)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId zone = world.Manifest().Zones[0].Id;
+
+    int fired = 0;
+    world.OnFocusChanged = [&fired] { ++fired; };
+
+    ASSERT_TRUE(world.FocusWorldScene());
+    EXPECT_EQ(fired, 1);
+    EXPECT_TRUE(world.IsWorldSceneFocused());
+    EXPECT_FALSE(world.FocusZone().IsValid());
+    EXPECT_EQ(&world.FocusDocument(), &world.WorldSceneDocument());
+
+    // While the world scene is focused every zone is context: the previous
+    // focus zone may unload.
+    ASSERT_TRUE(world.UnloadZone(zone));
+
+    // Focusing the already-focused world scene is a no-op.
+    ASSERT_TRUE(world.FocusWorldScene());
+    EXPECT_EQ(fired, 1);
+
+    // A zone focus leaves the world scene (reloading the zone on the way).
+    ASSERT_TRUE(world.SetFocusZone(zone));
+    EXPECT_EQ(fired, 2);
+    EXPECT_FALSE(world.IsWorldSceneFocused());
+    EXPECT_EQ(world.FocusZone(), zone);
+}
+
+TEST_F(WorldDocumentTest, SidecarRecordsWorldSceneFocus)
+{
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        ASSERT_TRUE(world.FocusWorldScene());
+        ASSERT_TRUE(world.SaveWorld());
+    }
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    EXPECT_TRUE(reloaded.IsWorldSceneFocused());
+    EXPECT_FALSE(reloaded.FocusZone().IsValid());
+    EXPECT_EQ(&reloaded.FocusDocument(), &reloaded.WorldSceneDocument());
+}
+
+TEST_F(WorldDocumentTest, AbsentWorldSceneKeyLoadsAsEmptyWorldScene)
+{
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    }
+
+    // A pre-world-scene manifest carries no "world_scene" key: strip it from
+    // the saved file to reproduce a legacy world.
+    {
+        std::ifstream in(WorldPath(), std::ios::binary);
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        auto json = JsonParse(buffer.str());
+        ASSERT_TRUE(json.has_value());
+        std::erase_if(json->AsObject(),
+                      [](const auto& field) { return field.first == "world_scene"; });
+        std::ofstream out(WorldPath(), std::ios::binary | std::ios::trunc);
+        out << JsonStringify(*json, /*pretty*/ true);
+    }
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+
+    EXPECT_TRUE(reloaded.IsWorld());
+    EXPECT_TRUE(reloaded.Manifest().WorldSceneRef.empty());
+    EXPECT_EQ(reloaded.WorldSceneDocument().GetScene().GetEntityCount(), 0u);
+    EXPECT_FALSE(reloaded.IsWorldSceneFocused());
 }
 
 TEST_F(WorldDocumentTest, LoadRoutesWorldManifestByContent)

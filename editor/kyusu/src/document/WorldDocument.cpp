@@ -62,6 +62,8 @@ void WorldDocument::SetAssetEnvironment(RuntimeAssets& assets)
     Assets_ = &assets;
     if (LegacyDocument_)
         LegacyDocument_->SetAssetEnvironment(assets);
+    if (WorldScene_)
+        WorldScene_->SetAssetEnvironment(assets);
     for (auto& [zone, open] : OpenZones_)
         open.Document->SetAssetEnvironment(assets);
 }
@@ -101,12 +103,15 @@ bool WorldDocument::LoadWorld(std::string_view path)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    WorldSceneFocused_ = false;
     WorldPath_.assign(path);
     Manifest_ = std::move(*manifest);
     IndexDirty_ = true;
     WorldDirty_ = false;
+    CreateWorldSceneDocument();
 
-    ZoneId focus = ApplyUserSidecar();
+    const SidecarFocus sidecar = ApplyUserSidecar();
+    ZoneId focus = sidecar.Zone;
     if (!focus.IsValid() || FindZoneHeader(focus) == nullptr)
         focus = Manifest_.StartZone;
     if (!focus.IsValid() || FindZoneHeader(focus) == nullptr)
@@ -122,11 +127,15 @@ bool WorldDocument::LoadWorld(std::string_view path)
         Manifest_ = {};
         IndexDirty_ = true;
         OpenZones_.clear();
+        WorldScene_.reset();
+        WorldSceneFocused_ = false;
         LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
         if (Assets_)
             LegacyDocument_->SetAssetEnvironment(*Assets_);
         return false;
     }
+    if (sidecar.WorldScene)
+        FocusWorldScene();
     RunValidation();
     return true;
 }
@@ -138,11 +147,31 @@ bool WorldDocument::SaveWorld()
     if (WorldPath_.empty())
         return false;
 
+    namespace fs = std::filesystem;
+
+    // The world scene ref derives from the world file's stem; assigned before
+    // the zone refs so new zones dodge it. A rare stem collision with an
+    // existing zone scene gets the same numeric-suffix escape new zones use.
+    if (Manifest_.WorldSceneRef.empty())
+    {
+        const std::string base = SanitizeZoneFileName(fs::path(WorldPath_).stem().string());
+        std::string candidate = "levels/" + base + "_world.level.json";
+        for (int suffix = 2;; ++suffix)
+        {
+            const auto taken = std::any_of(Manifest_.Zones.begin(), Manifest_.Zones.end(),
+                                           [&](const ZoneHeader& zone)
+                                           { return zone.SceneRef == candidate; });
+            if (!taken)
+                break;
+            candidate = "levels/" + base + "_world_" + std::to_string(suffix) + ".level.json";
+        }
+        Manifest_.WorldSceneRef = std::move(candidate);
+        MarkManifestEdited();
+    }
+
     AssignSceneRefsForNewZones();
     // Refresh derived bounds before the zone files write so they persist current.
     RefreshDerivedZoneBounds();
-
-    namespace fs = std::filesystem;
     for (ZoneHeader& header : Manifest_.Zones)
     {
         const std::string scenePath = ResolveScenePath(header.SceneRef);
@@ -188,6 +217,27 @@ bool WorldDocument::SaveWorld()
         }
     }
 
+    // The world scene writes beside the zone scenes, same discipline: a fresh
+    // document lands at its ref so the manifest never references a missing file.
+    {
+        const std::string scenePath = ResolveScenePath(Manifest_.WorldSceneRef);
+        std::error_code ec;
+        fs::create_directories(fs::path(scenePath).parent_path(), ec);
+        if (!WorldScene_->HasFilePath())
+        {
+            if (!WorldScene_->SaveAs(scenePath))
+            {
+                log.Error("failed to save world scene '{}'", scenePath);
+                return false;
+            }
+        }
+        else if (WorldScene_->IsDirty() && !WorldScene_->Save())
+        {
+            log.Error("failed to save world scene '{}'", scenePath);
+            return false;
+        }
+    }
+
     const std::string text = JsonStringify(WriteWorldPartitionManifest(Manifest_), /*pretty*/ true);
     std::ofstream file(WorldPath_, std::ios::binary | std::ios::trunc);
     if (!file.is_open())
@@ -225,10 +275,12 @@ void WorldDocument::NewWorld(std::string_view name)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    WorldSceneFocused_ = false;
     WorldPath_.clear();
     Manifest_ = {};
     Manifest_.Name.assign(name);
     IndexDirty_ = true;
+    CreateWorldSceneDocument();
 
     const RegionId region = AddRegion("Region 1");
     const ZoneId zone = AddZone(region, "Zone 1");
@@ -397,15 +449,46 @@ bool WorldDocument::SetFocusZone(ZoneId zone)
         return false;
 
     FocusZone_ = zone;
+    WorldSceneFocused_ = false;
     if (OnFocusChanged)
         OnFocusChanged();
     return true;
+}
+
+bool WorldDocument::FocusWorldScene()
+{
+    if (!WorldMode_)
+        return false;
+    if (WorldSceneFocused_)
+        return true;
+
+    // Every zone becomes context: no zone focus survives, so any of them may
+    // unload while the world scene is edited.
+    WorldSceneFocused_ = true;
+    FocusZone_ = ZoneId{};
+    if (OnFocusChanged)
+        OnFocusChanged();
+    return true;
+}
+
+EditorDocument& WorldDocument::WorldSceneDocument()
+{
+    assert(WorldMode_ && "WorldSceneDocument: world mode only");
+    return *WorldScene_;
+}
+
+const EditorDocument& WorldDocument::WorldSceneDocument() const
+{
+    assert(WorldMode_ && "WorldSceneDocument: world mode only");
+    return *WorldScene_;
 }
 
 EditorDocument& WorldDocument::FocusDocument()
 {
     if (!WorldMode_)
         return *LegacyDocument_;
+    if (WorldSceneFocused_)
+        return *WorldScene_;
     const auto it = OpenZones_.find(FocusZone_);
     assert(it != OpenZones_.end() && "FocusDocument: focus zone is not open");
     return *it->second.Document;
@@ -415,6 +498,8 @@ const EditorDocument& WorldDocument::FocusDocument() const
 {
     if (!WorldMode_)
         return *LegacyDocument_;
+    if (WorldSceneFocused_)
+        return *WorldScene_;
     const auto it = OpenZones_.find(FocusZone_);
     assert(it != OpenZones_.end() && "FocusDocument: focus zone is not open");
     return *it->second.Document;
@@ -425,6 +510,8 @@ bool WorldDocument::IsDirty() const
     if (!WorldMode_)
         return LegacyDocument_->IsDirty();
     if (WorldDirty_)
+        return true;
+    if (WorldScene_ && WorldScene_->IsDirty())
         return true;
     for (const auto& [zone, open] : OpenZones_)
     {
@@ -740,10 +827,10 @@ void WorldDocument::AssignSceneRefsForNewZones()
         std::string candidate = "levels/" + base + ".level.json";
         for (int suffix = 2;; ++suffix)
         {
-            const auto taken = std::any_of(
-                Manifest_.Zones.begin(), Manifest_.Zones.end(),
-                [&](const ZoneHeader& other)
-                { return &other != &header && other.SceneRef == candidate; });
+            const auto taken = candidate == Manifest_.WorldSceneRef
+                || std::any_of(Manifest_.Zones.begin(), Manifest_.Zones.end(),
+                               [&](const ZoneHeader& other)
+                               { return &other != &header && other.SceneRef == candidate; });
             if (!taken)
                 break;
             candidate = "levels/" + base + "_" + std::to_string(suffix) + ".level.json";
@@ -826,6 +913,29 @@ void WorldDocument::RunValidation()
     }
 }
 
+void WorldDocument::CreateWorldSceneDocument()
+{
+    WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
+    if (Assets_)
+        WorldScene_->SetAssetEnvironment(*Assets_);
+    if (Manifest_.WorldSceneRef.empty())
+        return;
+
+    // A referenced scene that fails to load degrades to an empty world scene:
+    // the world stays editable, and the next save rewrites the file.
+    const std::string scenePath = ResolveScenePath(Manifest_.WorldSceneRef);
+    if (!WorldScene_->Load(scenePath))
+    {
+        Logging_.GetLogger<WorldDocument>().Error(
+            "cannot load world scene '{}'; the world scene starts empty", scenePath);
+        WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+        WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
+        if (Assets_)
+            WorldScene_->SetAssetEnvironment(*Assets_);
+    }
+}
+
 std::string WorldDocument::UserSidecarPath() const
 {
     return WorldPath_ + ".user.json";
@@ -839,6 +949,8 @@ void WorldDocument::WriteUserSidecar() const
     JsonValue::Object root;
     if (FocusZone_.IsValid())
         root.emplace_back("focus_zone", JsonValue{ ZoneIdToString(FocusZone_) });
+    if (WorldSceneFocused_)
+        root.emplace_back("focus_world_scene", JsonValue{ true });
     if (ViewSettings_ != nullptr)
     {
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
@@ -868,11 +980,11 @@ void WorldDocument::WriteUserSidecar() const
         file << JsonStringify(JsonValue{ std::move(root) }, /*pretty*/ true);
 }
 
-ZoneId WorldDocument::ApplyUserSidecar()
+WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
 {
     std::ifstream file(UserSidecarPath(), std::ios::binary);
     if (!file.is_open())
-        return ZoneId{};
+        return {};
     std::ostringstream buffer;
     buffer << file.rdbuf();
 
@@ -881,7 +993,7 @@ ZoneId WorldDocument::ApplyUserSidecar()
     // open) are always an acceptable outcome.
     const std::optional<JsonValue> root = JsonParse(buffer.str());
     if (!root.has_value() || !root->IsObject())
-        return ZoneId{};
+        return {};
 
     if (const JsonValue* zones = root->Find("zones"); zones != nullptr && zones->IsArray())
     {
@@ -914,12 +1026,16 @@ ZoneId WorldDocument::ApplyUserSidecar()
         hops != nullptr && hops->IsNumber() && ViewSettings_ != nullptr)
         ViewSettings_->PreviewHopCount = std::max(0, static_cast<int>(hops->AsNumber()));
 
+    SidecarFocus result;
     if (const JsonValue* focus = root->Find("focus_zone"); focus != nullptr && focus->IsString())
     {
         if (const auto zone = ZoneIdFromString(focus->AsString()); zone.has_value())
-            return *zone;
+            result.Zone = *zone;
     }
-    return ZoneId{};
+    if (const JsonValue* worldScene = root->Find("focus_world_scene");
+        worldScene != nullptr && worldScene->IsBool())
+        result.WorldScene = worldScene->AsBool();
+    return result;
 }
 
 void WorldDocument::CloseWorldToLegacy()
@@ -931,6 +1047,8 @@ void WorldDocument::CloseWorldToLegacy()
     IndexDirty_ = true;
     WorldDirty_ = false;
     FocusZone_ = ZoneId{};
+    WorldSceneFocused_ = false;
+    WorldScene_.reset();
     OpenZones_.clear();
     ValidationRecords_.clear();
     LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);

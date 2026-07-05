@@ -102,9 +102,20 @@ public:
     // Null when the zone is not open or the document is in legacy mode.
     [[nodiscard]] EditorDocument* ZoneDocument(ZoneId zone);
 
+    // The world scene: authored global content, one document per world, open
+    // whenever the world is open. It is not a zone: no ZoneId, no view state,
+    // no bounds, never in OpenZones_ or the manifest zone list. World mode
+    // only (asserts).
+    [[nodiscard]] EditorDocument& WorldSceneDocument();
+    [[nodiscard]] const EditorDocument& WorldSceneDocument() const;
+
     // Focus. SetFocusZone loads the zone if needed, then fires OnFocusChanged
     // (after the switch; the workspace uses it to reset interaction state).
+    // FocusWorldScene focuses the world scene instead of any zone: while it is
+    // focused FocusZone() is invalid and every zone is context.
     bool SetFocusZone(ZoneId zone);
+    bool FocusWorldScene();
+    [[nodiscard]] bool IsWorldSceneFocused() const { return WorldSceneFocused_; }
     [[nodiscard]] ZoneId FocusZone() const { return FocusZone_; }
     [[nodiscard]] EditorDocument& FocusDocument();
     [[nodiscard]] const EditorDocument& FocusDocument() const;
@@ -188,6 +199,13 @@ private:
         ZoneViewState View;
     };
 
+    // What the user sidecar recorded as focused: a zone, or the world scene.
+    struct SidecarFocus
+    {
+        ZoneId Zone;
+        bool WorldScene = false;
+    };
+
     [[nodiscard]] const ZoneHeader* FindZoneHeader(ZoneId zone) const;
     [[nodiscard]] uint64_t MintRawId();
     void MarkManifestEdited();
@@ -196,11 +214,14 @@ private:
     // Recomputes non-overridden zone bounds from live content in open zones, so
     // validation and the manifest write see current spans.
     void RefreshDerivedZoneBounds();
+    // A fresh world scene document with its own registry identity, loaded from
+    // the manifest's WorldSceneRef when that resolves to a file.
+    void CreateWorldSceneDocument();
     [[nodiscard]] std::string UserSidecarPath() const;
     void WriteUserSidecar() const;
     // Opens the zones the sidecar recorded and applies their visibility;
-    // returns the recorded focus zone (invalid when absent or malformed).
-    ZoneId ApplyUserSidecar();
+    // returns the recorded focus (invalid when absent or malformed).
+    SidecarFocus ApplyUserSidecar();
     // Persists the outgoing world's sidecar and returns to legacy mode with a
     // fresh single document.
     void CloseWorldToLegacy();
@@ -217,8 +238,10 @@ private:
     std::vector<ContentRiskRecord> ValidationRecords_;
 
     ZoneId FocusZone_;
+    bool WorldSceneFocused_ = false;
     WorldViewSettings* ViewSettings_ = nullptr;
     std::unordered_map<ZoneId, OpenZone> OpenZones_;
+    std::unique_ptr<EditorDocument> WorldScene_;
     std::unique_ptr<EditorDocument> LegacyDocument_;
     ZoneViewState LegacyView_;
 

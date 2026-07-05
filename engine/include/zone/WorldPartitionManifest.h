@@ -91,6 +91,11 @@ struct WorldPartitionManifest
 {
     std::string Name;
     ZoneId      StartZone;   // optional; invalid means "not designated" (validation warns)
+    // The world scene: authored global content loaded once at world start and
+    // never streamed. A project-relative scene path like a zone's SceneRef;
+    // empty means the world has none. It is not a zone: no id, no bounds, no
+    // region, no participation in the index or the demand policy.
+    std::string WorldSceneRef;
     std::vector<RegionRecord>     Regions;
     std::vector<ZoneHeader>       Zones;
     std::vector<TransitionRecord> Transitions;
