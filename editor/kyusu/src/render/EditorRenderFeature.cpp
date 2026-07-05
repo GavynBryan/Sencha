@@ -44,6 +44,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
+    , PortalVolumes(Fills)
     , ZoneBounds(WideLines)
     , Preview(preview, Lines)
     , Console(&console)
@@ -306,12 +307,18 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                 const auto it = ContextBuilders.find(zone.Value);
                 if (MaterialPath && it != ContextBuilders.end())
                 {
+                    // Neutral full-bright ambient: the grey must not depend on
+                    // whether a focus-zone light happens to reach this zone
+                    // (unlit-and-dimmed reads as black, not grey).
+                    RenderLightSet contextLights;
+                    contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
+                    contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
                     const Vec4 dim = EditorTheme::ContextZoneDim;
-                    Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                    Forward.Draw(local, viewport.BuildRenderData(), contextLights,
                                  it->second->BrushQueue(), *MeshCache, *MaterialStore, dim);
-                    Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                    Forward.Draw(local, viewport.BuildRenderData(), contextLights,
                                  it->second->MeshQueue(), *MeshCache, *MaterialStore, dim);
-                    BrushSolid.DrawPortals(local, viewport, contextScene, dim);
+                    PortalVolumes.DrawViewport(local, viewport, contextScene, dim);
                 }
                 else
                 {
@@ -337,9 +344,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
         body->DrawViewport(local, viewport, scene);
     // The real-material body rightly skips portal markers (the cook collector
-    // drops them); Solid viewports draw them flat on top.
+    // drops them); Solid viewports draw them as translucent volumes on top.
     if (MaterialPath && viewport.Shading == ViewportShading::Solid)
-        BrushSolid.DrawPortals(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        PortalVolumes.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)

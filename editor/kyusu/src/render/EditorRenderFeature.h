@@ -11,6 +11,7 @@
 #include "GpuGridRenderer.h"
 #include "render/ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
+#include "PortalVolumeRenderer.h"
 #include "SceneRenderQueueBuilder.h"
 #include "SceneSolidRenderer.h"
 #include "SelectionRenderer.h"
@@ -142,6 +143,7 @@ private:
     EditorWideLinePipeline WideLines;
     EditorFillPipeline     Fills;
     SelectionRenderer      Highlight;
+    PortalVolumeRenderer   PortalVolumes;
     ZoneBoundsRenderer     ZoneBounds;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;

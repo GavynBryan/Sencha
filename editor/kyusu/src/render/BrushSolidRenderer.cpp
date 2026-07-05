@@ -70,25 +70,6 @@ void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const Edi
     Solid.Submit(frame, viewport, vertices);
 }
 
-void BrushSolidRenderer::DrawPortals(const FrameContext& frame, const EditorViewport& viewport,
-                                     const EditorScene& scene, const Vec4& tint)
-{
-    std::vector<EditorSolidVertex> vertices;
-    ForEachVisibleBrush(scene, /*skipLocked*/ false,
-        [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
-        {
-            if (!scene.IsPortal(id))
-                return;
-            const Vec4 fill(EditorTheme::PortalFill.X * tint.X,
-                            EditorTheme::PortalFill.Y * tint.Y,
-                            EditorTheme::PortalFill.Z * tint.Z,
-                            EditorTheme::PortalFill.W);
-            AppendBrushMeshFlat(vertices, mesh, transform, fill);
-        });
-    if (!vertices.empty())
-        Solid.Submit(frame, viewport, vertices);
-}
-
 void BrushSolidRenderer::AppendBrushMeshFlat(std::vector<EditorSolidVertex>& vertices,
                                              const BrushMesh& mesh,
                                              const Transform3f& transform,
