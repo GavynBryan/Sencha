@@ -641,6 +641,48 @@ bool WorldDocument::RenameRegion(RegionId region, std::string name)
     return false;
 }
 
+bool WorldDocument::SetRegionHopCount(RegionId region, std::optional<int32_t> hopCount)
+{
+    for (RegionRecord& record : Manifest_.Regions)
+    {
+        if (record.Id != region)
+            continue;
+        record.Streaming.HopCount = hopCount;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetRegionRadius(RegionId region, std::optional<double> radius)
+{
+    for (RegionRecord& record : Manifest_.Regions)
+    {
+        if (record.Id != region)
+            continue;
+        record.Streaming.Radius = radius;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetRegionResidentCap(RegionId region, std::optional<int32_t> cap)
+{
+    for (RegionRecord& record : Manifest_.Regions)
+    {
+        if (record.Id != region)
+            continue;
+        record.Streaming.ResidentZoneCap = cap;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
 const ZoneHeader* WorldDocument::FindZoneHeader(ZoneId zone) const
 {
     for (const ZoneHeader& header : Manifest_.Zones)

@@ -146,6 +146,11 @@ public:
     bool RenameZone(ZoneId zone, std::string name);
     bool RenameRegion(RegionId region, std::string name);
 
+    // Region streaming overrides; nullopt clears the field back to inherited.
+    bool SetRegionHopCount(RegionId region, std::optional<int32_t> hopCount);
+    bool SetRegionRadius(RegionId region, std::optional<double> radius);
+    bool SetRegionResidentCap(RegionId region, std::optional<int32_t> cap);
+
     // Transition verbs, same non-undoable discipline. AddTransition mints the
     // edge and nothing else; reverse pairing is the caller's explicit second
     // call. Returns the new id.

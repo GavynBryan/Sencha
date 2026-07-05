@@ -468,6 +468,7 @@ void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
 
     if (open)
     {
+        DrawRegionStreaming(region);
         for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
         {
             if (zone.Region == region.Id)
@@ -475,6 +476,58 @@ void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
         }
         ImGui::TreePop();
     }
+
+    ImGui::PopID();
+}
+
+void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
+{
+    ImGui::PushID("region_streaming");
+    ImGui::TextColored(EditorUi::TextDim, "Streaming: %s",
+                       RegionStreamingBadge(region.Streaming));
+
+    // Inherited fields display the engine-default base; an edit authors the
+    // override, the clear button returns the field to inherited. Clamps
+    // mirror the validation bounds so the editors cannot author an invalid
+    // value (hand-edited manifests still validate).
+    const WorldPartitionStreamingConfig base{};
+    const auto clearOrInherited = [&](bool authored, const char* id, auto clear)
+    {
+        ImGui::SameLine();
+        if (!authored)
+        {
+            ImGui::TextColored(EditorUi::TextDim, "(inherited)");
+            return;
+        }
+        ImGui::PushID(id);
+        if (ImGui::SmallButton(ICON_FA_XMARK))
+            clear();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clear back to inherited");
+        ImGui::PopID();
+    };
+
+    ImGui::SetNextItemWidth(70.0f);
+    int hops = region.Streaming.HopCount.value_or(base.HopCount);
+    if (ImGui::InputInt("Hops", &hops))
+        (void)WorldDoc.SetRegionHopCount(region.Id, hops < 0 ? 0 : hops);
+    clearOrInherited(region.Streaming.HopCount.has_value(), "clear_hops",
+                     [&] { (void)WorldDoc.SetRegionHopCount(region.Id, std::nullopt); });
+
+    ImGui::SetNextItemWidth(70.0f);
+    float radius = static_cast<float>(region.Streaming.Radius.value_or(base.Radius));
+    if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
+        (void)WorldDoc.SetRegionRadius(region.Id,
+                                       radius < 0.0f ? 0.0 : static_cast<double>(radius));
+    clearOrInherited(region.Streaming.Radius.has_value(), "clear_radius",
+                     [&] { (void)WorldDoc.SetRegionRadius(region.Id, std::nullopt); });
+
+    ImGui::SetNextItemWidth(70.0f);
+    int cap = region.Streaming.ResidentZoneCap.value_or(base.ResidentZoneCap);
+    if (ImGui::InputInt("Cap", &cap))
+        (void)WorldDoc.SetRegionResidentCap(region.Id, cap < 1 ? 1 : cap);
+    clearOrInherited(region.Streaming.ResidentZoneCap.has_value(), "clear_cap",
+                     [&] { (void)WorldDoc.SetRegionResidentCap(region.Id, std::nullopt); });
 
     ImGui::PopID();
 }

@@ -3,15 +3,23 @@
 #include "ui/IEditorPanel.h"
 
 #include <zone/WorldPartitionIds.h>
+#include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneId.h>
 
 class CommandStack;
 class SelectionService;
 class WorldDocument;
 struct ContentRiskRecord;
-struct RegionRecord;
-struct TransitionRecord;
-struct ZoneHeader;
+
+// Derived streaming badge for a region row: "Radius" when the authored radius
+// is positive, else "Graph"; "(inherited)" when the region authors no override
+// at all. Presentation only, computed from the values; nothing stores a mode.
+[[nodiscard]] inline const char* RegionStreamingBadge(const RegionStreamingConfig& streaming)
+{
+    if (streaming == RegionStreamingConfig{})
+        return "Graph (inherited)";
+    return streaming.Radius && *streaming.Radius > 0.0 ? "Radius" : "Graph";
+}
 
 // The partition tree: regions containing zone rows in manifest order, with the
 // per-zone state (focus/context/hidden/header-only), open/visible controls, and
@@ -32,6 +40,9 @@ public:
 private:
     void DrawHeaderButtons();
     void DrawRegion(const RegionRecord& region);
+    // The region's streaming shape: derived badge plus inline hop/radius/cap
+    // editors, each clearable back to inherited (the manifest's absent state).
+    void DrawRegionStreaming(const RegionRecord& region);
     void DrawZoneRow(const ZoneHeader& zone);
     // The world-level connection list: one row per symmetric pair (or per
     // one-way edge), never nested under zones, because connections are world
