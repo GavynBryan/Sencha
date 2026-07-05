@@ -6,10 +6,8 @@
 
 #include "commands/CommandStack.h"
 #include "document/AssetFieldIo.h"
-#include "document/PortalGeometry.h"
 #include "document/TransitionConnect.h"
 #include "document/commands/AssetFieldEditCommand.h"
-#include "document/commands/LinkPortalCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
 #include "document/commands/RawComponentRemoveCommand.h"
@@ -127,7 +125,6 @@ void InspectorPanel::ResetEditState()
     EditingEntity = {};
     EditingComponent = InvalidComponentId;
     EditBefore.clear();
-    PortalConnectTarget_ = ZoneId{};
 }
 
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
@@ -425,68 +422,23 @@ void InspectorPanel::DrawPortalSection(EntityId entity)
 
     if (record != nullptr)
     {
+        // The connection is derived from where this marker sits; the partner
+        // edge (the pair's other direction) edits alongside it.
+        TransitionId partner;
+        for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
+            if (candidate.Id != record->Id && candidate.From == record->To
+                && candidate.To == record->From && candidate.Topology == record->Topology
+                && !candidate.Flags.OneWay && !record->Flags.OneWay)
+                partner = candidate.Id;
         const std::string label =
-            "World transition: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
+            "World connection: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
         ImGui::TextUnformatted(label.c_str());
-        DrawTransitionInlineEditor(WorldDoc, portal->Transition);
-        if (ImGui::SmallButton("Unlink"))
-        {
-            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
-                                                    TransitionId{}))
-            {
-                Commands.Execute(std::move(unlink));
-                WorldDoc.Revalidate();
-            }
-        }
-    }
-    else if (portal->Transition.IsValid())
-    {
-        ImGui::TextColored(EditorUi::Warning, "Links a removed world transition");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Unlink"))
-        {
-            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
-                                                    TransitionId{}))
-            {
-                Commands.Execute(std::move(unlink));
-                WorldDoc.Revalidate();
-            }
-        }
+        DrawTransitionInlineEditor(WorldDoc, portal->Transition, partner);
     }
     else
     {
-        ImGui::TextDisabled("Unlinked marker: connect it to a world transition");
-        if (!PortalConnectTarget_.IsValid())
-        {
-            if (const auto bounds = scene.TryGetWorldBounds(entity))
-                PortalConnectTarget_ = GuessPortalTargetZone(WorldDoc.Manifest(),
-                                                             WorldDoc.FocusZone(), *bounds);
-        }
-        const auto zoneName = [&](ZoneId zone) -> const char*
-        {
-            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-                if (header.Id == zone)
-                    return header.Name.c_str();
-            return "<pick a zone>";
-        };
-        ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::BeginCombo("##portal_target", zoneName(PortalConnectTarget_)))
-        {
-            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-            {
-                if (header.Id == WorldDoc.FocusZone())
-                    continue;
-                if (ImGui::Selectable(header.Name.c_str(), header.Id == PortalConnectTarget_))
-                    PortalConnectTarget_ = header.Id;
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!PortalConnectTarget_.IsValid());
-        if (ImGui::Button("Connect"))
-            (void)ConnectZones(WorldDoc, WorldDoc.FocusZone(), PortalConnectTarget_,
-                               /*oneWay*/ false, entity, Commands);
-        ImGui::EndDisabled();
+        ImGui::TextDisabled("Spans no second zone yet: move the marker onto a boundary");
+        ImGui::TextDisabled("(the connection derives from where the marker sits)");
     }
 
     ImGui::Separator();

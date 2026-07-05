@@ -4,7 +4,6 @@
 
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
-#include <zone/ZoneId.h>
 
 #include "document/EditorScene.h"
 
@@ -68,7 +67,4 @@ private:
     IComponentSerializer*  PendingRemoval = nullptr;
 
     EntityId LastEntity = {};
-    // Portal section transient: the connect target combo choice, re-guessed
-    // when the selected entity changes.
-    ZoneId PortalConnectTarget_;
 };

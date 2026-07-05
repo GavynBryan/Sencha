@@ -81,9 +81,6 @@ void SceneHierarchyPanel::OnDraw()
     // mutate the vector this loop iterates.
     EntityId toDelete = {};
     ZoneId moveTarget = {};
-    ZoneId connectTo = {};
-    RegionId connectNewRegion = {};
-    EntityId connectPortal = {};
 
     for (EntityId entity : scene.GetAllEntities())
     {
@@ -137,33 +134,6 @@ void SceneHierarchyPanel::OnDraw()
         {
             if (ImGui::MenuItem(ICON_FA_TRASH "  Delete"))
                 toDelete = entity;
-            if (WorldDoc.IsWorld() && scene.IsPortal(entity)
-                && ImGui::BeginMenu(ICON_FA_ARROW_RIGHT "  Connect To"))
-            {
-                // One click: two-way Doorway pair from the focus zone with this
-                // portal linked; the transition row's menu adjusts it after.
-                for (const ZoneHeader& target : WorldDoc.Manifest().Zones)
-                {
-                    if (target.Id == WorldDoc.FocusZone())
-                        continue;
-                    if (ImGui::MenuItem(target.Name.c_str()))
-                    {
-                        connectTo = target.Id;
-                        connectPortal = entity;
-                    }
-                }
-                ImGui::Separator();
-                for (const RegionRecord& region : WorldDoc.Manifest().Regions)
-                {
-                    const std::string newZoneLabel = "New Zone In " + region.Name;
-                    if (ImGui::MenuItem(newZoneLabel.c_str()))
-                    {
-                        connectNewRegion = region.Id;
-                        connectPortal = entity;
-                    }
-                }
-                ImGui::EndMenu();
-            }
             if (WorldDoc.IsWorld())
             {
                 // Targets: every open zone except the focus zone, manifest order.
@@ -215,13 +185,4 @@ void SceneHierarchyPanel::OnDraw()
         }
     }
 
-    if (connectTo.IsValid() || connectNewRegion.IsValid())
-    {
-        ZoneId target = connectTo;
-        if (!target.IsValid())
-            target = WorldDoc.AddZone(connectNewRegion, "New Zone");
-        if (target.IsValid())
-            (void)ConnectZones(WorldDoc, WorldDoc.FocusZone(), target, /*oneWay*/ false,
-                               connectPortal, Commands);
-    }
 }

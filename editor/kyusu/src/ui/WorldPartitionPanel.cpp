@@ -9,7 +9,6 @@
 #include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
 #include "document/commands/CreateEntityCommand.h"
-#include "document/commands/LinkPortalCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 #include "meshedit/ElementGeometry.h"
 #include "selection/SelectionService.h"
@@ -94,7 +93,7 @@ void WorldPartitionPanel::OnDraw()
         DrawZoneRow(zone);
     }
 
-    DrawConnectBar();
+    DrawConnections();
     DrawStreamingPreview();
 
     ImGui::Separator();
@@ -241,117 +240,220 @@ void WorldPartitionPanel::DrawHeaderButtons()
         ImGui::SetTooltip("Select the opening's face first to fit the portal into it");
 }
 
-void WorldPartitionPanel::DrawConnectBar()
+void WorldPartitionPanel::DrawConnections()
 {
-    const auto refs = Selection.GetSelection();
-    if (refs.size() != 1 || !refs[0].IsEntity())
-        return;
-    const EntityId entity = refs[0].Entity;
-    const EditorScene& scene = WorldDoc.FocusDocument().GetScene();
-    const PortalComponent* portal = scene.TryGetPortal(entity);
-    if (portal == nullptr)
+    ImGui::Separator();
+    ImGui::TextColored(EditorUi::Accent, ICON_FA_ARROW_RIGHT "  Connections");
+
+    // A selected portal that derived no counterpart yet gets a placement hint
+    // instead of a linking chore.
+    {
+        const auto refs = Selection.GetSelection();
+        if (refs.size() == 1 && refs[0].IsEntity()
+            && WorldDoc.FocusDocument().GetScene().IsPortal(refs[0].Entity)
+            && !WorldDoc.FocusDocument().GetScene().TryGetPortal(refs[0].Entity)
+                    ->Transition.IsValid())
+            ImGui::TextDisabled(
+                "Selected portal spans no second zone yet: move it onto a boundary");
+    }
+
+    // One row per connection: a symmetric pair (swapped endpoints, same
+    // topology, both two-way) collapses into a single undirected row keyed by
+    // its lower-id edge. Ids copied first: row menus edit the vector.
+    struct ConnectionRow
+    {
+        TransitionId Representative;
+        TransitionId Partner;   // invalid for a one-way or unpaired edge
+    };
+    std::vector<ConnectionRow> rows;
+    std::vector<uint64_t> consumed;
+    for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
+    {
+        bool skip = false;
+        for (uint64_t id : consumed)
+            skip |= id == record.Id.Value;
+        if (skip)
+            continue;
+        ConnectionRow row{ record.Id, TransitionId{} };
+        if (!record.Flags.OneWay)
+        {
+            for (const TransitionRecord& other : WorldDoc.Manifest().Transitions)
+            {
+                if (other.Id == record.Id || other.Flags.OneWay
+                    || other.Topology != record.Topology || other.From != record.To
+                    || other.To != record.From)
+                    continue;
+                row.Partner = other.Id;
+                consumed.push_back(other.Id.Value);
+                break;
+            }
+        }
+        rows.push_back(row);
+    }
+
+    if (rows.empty())
+        ImGui::TextDisabled("None: place a portal across a zone boundary");
+    for (const ConnectionRow& row : rows)
+        DrawConnectionRow(row.Representative, row.Partner);
+}
+
+void WorldPartitionPanel::DrawConnectionRow(TransitionId representative, TransitionId partner)
+{
+    const auto findRecord = [&](TransitionId id) -> const TransitionRecord*
+    {
+        for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
+            if (record.Id == id)
+                return &record;
+        return nullptr;
+    };
+    const TransitionRecord* record = findRecord(representative);
+    if (record == nullptr)
         return;
 
-    const auto zoneName = [&](ZoneId zone) -> const char*
+    ImGui::PushID(static_cast<int>(representative.Value & 0x7fffffff));
+
+    if (RenamingTransition_ == representative)
+    {
+        DrawRenameField(true);
+        if (ImGui::IsItemDeactivated())
+        {
+            // Both directions carry the connection's name.
+            (void)WorldDoc.RenameTransition(representative, RenameBuffer_);
+            if (partner.IsValid())
+                (void)WorldDoc.RenameTransition(partner, RenameBuffer_);
+            RenamingTransition_ = TransitionId{};
+        }
+        ImGui::PopID();
+        return;
+    }
+
+    // Inline severity: the worst transition-kind record naming either edge.
+    const ContentRiskRecord* worst = nullptr;
+    for (const ContentRiskRecord& riskRecord : WorldDoc.ValidationRecords())
+    {
+        if (riskRecord.Kind != ContentRiskSourceKind::Transition
+            || (riskRecord.SourceId != representative.Value
+                && riskRecord.SourceId != partner.Value))
+            continue;
+        if (worst == nullptr || riskRecord.Severity == ContentRiskSeverity::Error)
+            worst = &riskRecord;
+    }
+    if (worst != nullptr)
+    {
+        switch (worst->Severity)
+        {
+        case ContentRiskSeverity::Error:
+            ImGui::TextColored(EditorUi::Danger, ICON_FA_CIRCLE_XMARK);
+            break;
+        case ContentRiskSeverity::Unverified:
+            ImGui::TextColored(EditorUi::TextDim, ICON_FA_CIRCLE_QUESTION);
+            break;
+        case ContentRiskSeverity::Warning:
+            ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION);
+            break;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", worst->Message.c_str());
+        ImGui::SameLine();
+    }
+
+    const char* badge = "D";
+    if (record->Topology == TransitionTopology::Seam)
+        badge = "S";
+    else if (record->Topology == TransitionTopology::Teleport)
+        badge = "T";
+    ImGui::TextColored(EditorUi::TextDim, "%s", badge);
+    ImGui::SameLine();
+
+    const auto zoneName = [&](ZoneId zone) -> std::string
     {
         for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
             if (header.Id == zone)
-                return header.Name.c_str();
-        return "<unknown zone>";
+                return header.Name;
+        return ZoneIdToString(zone);
     };
-    const auto navigateTo = [&](const TransitionRecord& record)
-    {
-        SelectedTransitionRow_ = record.Id;
-        SelectedZoneRow_ = record.From;
-        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-            if (header.Id == record.From)
-                NavigateRegion_ = header.Region;
-    };
+    std::string label;
+    if (!record->Name.empty())
+        label = record->Name;
+    else
+        label = zoneName(record->From)
+              + (partner.IsValid() ? " " ICON_FA_ARROWS_LEFT_RIGHT " " : " " ICON_FA_ARROW_RIGHT " ")
+              + zoneName(record->To);
+    if (!record->RequiredTags.empty())
+        label += "  " ICON_FA_LOCK;
+    label += "##connection_row";
+    const bool highlighted = SelectedTransitionRow_ == representative
+        || (partner.IsValid() && SelectedTransitionRow_ == partner);
+    ImGui::Selectable(label.c_str(), highlighted);
 
-    ImGui::Separator();
-
-    if (portal->Transition.IsValid())
+    if (ImGui::BeginPopupContextItem("##connection_ctx"))
     {
-        const TransitionRecord* record = nullptr;
-        for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
-            if (candidate.Id == portal->Transition)
-                record = &candidate;
-        if (record != nullptr)
+        // Every property edit applies to both directions of a pair: a
+        // connection is one thing, however the streaming graph stores it.
+        DrawTransitionInlineEditor(WorldDoc, representative, partner);
+        ImGui::Separator();
+
+        if (partner.IsValid())
         {
-            const std::string label =
-                "World transition: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
-            ImGui::TextUnformatted(label.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Show"))
-                navigateTo(*record);
-            DrawTransitionInlineEditor(WorldDoc, portal->Transition);
-        }
-        else
-        {
-            ImGui::TextColored(EditorUi::Warning, "Portal linked to a removed transition");
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Unlink"))
-        {
-            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
-                                                    TransitionId{}))
+            if (ImGui::MenuItem("Make One-way"))
             {
-                Commands.Execute(std::move(unlink));
-                WorldDoc.Revalidate();
+                (void)WorldDoc.RemoveTransition(partner);
+                (void)WorldDoc.SetTransitionOneWay(representative, true);
             }
         }
-        return;
-    }
+        else if (ImGui::MenuItem("Make Two-way"))
+        {
+            (void)WorldDoc.SetTransitionOneWay(representative, false);
+            const TransitionId reverse = WorldDoc.AddTransition(
+                record->To, record->From, record->Topology, false, record->PreloadPriority);
+            (void)WorldDoc.SetTransitionPreloadDepth(reverse, record->PreloadDepth);
+            (void)WorldDoc.SetTransitionRequiredTags(reverse, record->RequiredTags);
+        }
 
-    // Unlinked: the one-click connect flow, target pre-guessed from the
-    // portal's facing when the selection lands on it.
-    if (ConnectBarEntity_ != entity)
-    {
-        ConnectBarEntity_ = entity;
-        ConnectBarTwoWay_ = true;
-        ConnectBarTarget_ = ZoneId{};
-        if (const auto bounds = scene.TryGetWorldBounds(entity))
-            ConnectBarTarget_ =
-                GuessPortalTargetZone(WorldDoc.Manifest(), WorldDoc.FocusZone(), *bounds);
-        if (!ConnectBarTarget_.IsValid())
-            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-                if (header.Id != WorldDoc.FocusZone())
+        EntityId linkedPortal{};
+        {
+            const EditorScene& scene = WorldDoc.FocusDocument().GetScene();
+            for (EntityId entity : scene.GetAllEntities())
+                if (const PortalComponent* portal = scene.TryGetPortal(entity);
+                    portal != nullptr
+                    && (portal->Transition == representative
+                        || portal->Transition == partner))
                 {
-                    ConnectBarTarget_ = header.Id;
+                    linkedPortal = entity;
                     break;
                 }
+        }
+        if (ImGui::MenuItem("Select Portal", nullptr, false, linkedPortal.IsValid()))
+        {
+            Commands.Execute(std::make_unique<SelectCommand>(
+                Selection,
+                SelectableRef::EntitySelection(
+                    WorldDoc.FocusDocument().GetScene().GetRegistry().Id, linkedPortal)));
+        }
+
+        if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
+        {
+            RenamingTransition_ = representative;
+            std::strncpy(RenameBuffer_, record->Name.c_str(), sizeof(RenameBuffer_) - 1);
+            RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
+        }
+
+        if (ImGui::BeginMenu(ICON_FA_TRASH "  Remove"))
+        {
+            if (ImGui::MenuItem("Confirm Remove"))
+            {
+                (void)WorldDoc.RemoveTransition(representative);
+                if (partner.IsValid())
+                    (void)WorldDoc.RemoveTransition(partner);
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndPopup();
     }
 
-    ImGui::Text("Connect %s " ICON_FA_ARROW_RIGHT, zoneName(WorldDoc.FocusZone()));
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::BeginCombo("##connect_target", ConnectBarTarget_.IsValid()
-                                                  ? zoneName(ConnectBarTarget_)
-                                                  : "<no other zone>"))
-    {
-        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-        {
-            if (header.Id == WorldDoc.FocusZone())
-                continue;
-            if (ImGui::Selectable(header.Name.c_str(), header.Id == ConnectBarTarget_))
-                ConnectBarTarget_ = header.Id;
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::Checkbox("Two-way", &ConnectBarTwoWay_);
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!ConnectBarTarget_.IsValid());
-    if (ImGui::Button(ICON_FA_LINK "  Connect"))
-    {
-        const TransitionId forward = ConnectZones(WorldDoc, WorldDoc.FocusZone(),
-                                                  ConnectBarTarget_, !ConnectBarTwoWay_,
-                                                  entity, Commands);
-        for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
-            if (record.Id == forward)
-                navigateTo(record);
-    }
-    ImGui::EndDisabled();
+    ImGui::PopID();
 }
+
 
 bool WorldPartitionPanel::DrawRenameField(bool active)
 {
@@ -550,178 +652,6 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
                     PendingConnectPortal_ = linkEntity;
                 }
             }
-            ImGui::EndMenu();
-        }
-        ImGui::EndPopup();
-    }
-
-    // Ids copied first: a row's context menu can remove its transition, which
-    // rebuilds the index and edits the vector the spans point into.
-    std::vector<TransitionId> outgoing;
-    for (uint32_t index : WorldDoc.Index().Outgoing(zone.Id))
-        outgoing.push_back(WorldDoc.Manifest().Transitions[index].Id);
-    for (TransitionId id : outgoing)
-    {
-        const TransitionRecord* record = nullptr;
-        for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
-            if (candidate.Id == id)
-                record = &candidate;
-        if (record == nullptr)
-            continue;
-        ImGui::Indent();
-        DrawTransitionRow(*record);
-        ImGui::Unindent();
-    }
-
-    ImGui::PopID();
-}
-
-void WorldPartitionPanel::DrawTransitionRow(const TransitionRecord& transition)
-{
-    ImGui::PushID(static_cast<int>(transition.Id.Value & 0x7fffffff));
-
-    if (RenamingTransition_ == transition.Id)
-    {
-        DrawRenameField(true);
-        if (ImGui::IsItemDeactivated())
-        {
-            // An emptied field clears the authored name back to the derived label.
-            (void)WorldDoc.RenameTransition(transition.Id, RenameBuffer_);
-            RenamingTransition_ = TransitionId{};
-        }
-        ImGui::PopID();
-        return;
-    }
-
-    // Inline severity: the worst transition-kind record naming this edge.
-    const ContentRiskRecord* worst = nullptr;
-    for (const ContentRiskRecord& record : WorldDoc.ValidationRecords())
-    {
-        if (record.Kind != ContentRiskSourceKind::Transition
-            || record.SourceId != transition.Id.Value)
-            continue;
-        if (worst == nullptr || record.Severity == ContentRiskSeverity::Error)
-            worst = &record;
-    }
-    if (worst != nullptr)
-    {
-        switch (worst->Severity)
-        {
-        case ContentRiskSeverity::Error:
-            ImGui::TextColored(EditorUi::Danger, ICON_FA_CIRCLE_XMARK);
-            break;
-        case ContentRiskSeverity::Unverified:
-            ImGui::TextColored(EditorUi::TextDim, ICON_FA_CIRCLE_QUESTION);
-            break;
-        case ContentRiskSeverity::Warning:
-            ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION);
-            break;
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", worst->Message.c_str());
-        ImGui::SameLine();
-    }
-
-    const char* badge = "D";
-    if (transition.Topology == TransitionTopology::Seam)
-        badge = "S";
-    else if (transition.Topology == TransitionTopology::Teleport)
-        badge = "T";
-    ImGui::TextColored(EditorUi::TextDim, "%s", badge);
-    ImGui::SameLine();
-
-    std::string rowText;
-    if (!transition.Name.empty())
-    {
-        rowText = transition.Name;
-    }
-    else
-    {
-        rowText = ZoneIdToString(transition.To);
-        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-            if (header.Id == transition.To)
-                rowText = header.Name;
-    }
-    std::string label = std::string(ICON_FA_ARROW_RIGHT) + "  " + rowText;
-    if (transition.Flags.OneWay)
-        label += "  " ICON_FA_ARROW_RIGHT_LONG;
-    label += "##transition_row";
-    ImGui::Selectable(label.c_str(), SelectedTransitionRow_ == transition.Id);
-
-    if (ImGui::BeginPopupContextItem("##transition_ctx"))
-    {
-        if (ImGui::BeginMenu("Topology"))
-        {
-            const auto item = [&](const char* name, TransitionTopology topology)
-            {
-                if (ImGui::MenuItem(name, nullptr, transition.Topology == topology))
-                    (void)WorldDoc.SetTransitionTopology(transition.Id, topology);
-            };
-            item("Doorway", TransitionTopology::Doorway);
-            item("Seam", TransitionTopology::Seam);
-            item("Teleport", TransitionTopology::Teleport);
-            ImGui::EndMenu();
-        }
-        if (ImGui::MenuItem("One-Way", nullptr, transition.Flags.OneWay))
-            (void)WorldDoc.SetTransitionOneWay(transition.Id, !transition.Flags.OneWay);
-        int priority = transition.PreloadPriority;
-        ImGui::SetNextItemWidth(100.0f);
-        if (ImGui::InputInt("Preload Priority", &priority))
-            (void)WorldDoc.SetTransitionPreloadPriority(transition.Id, priority);
-        ImGui::Separator();
-
-        const bool fromIsFocus = WorldDoc.FocusZone() == transition.From;
-        EntityId selectedPortal{};
-        if (fromIsFocus)
-        {
-            const auto refs = Selection.GetSelection();
-            if (refs.size() == 1 && refs[0].IsEntity()
-                && WorldDoc.FocusDocument().GetScene().IsPortal(refs[0].Entity))
-                selectedPortal = refs[0].Entity;
-        }
-        if (ImGui::MenuItem("Link Selected Portal", nullptr, false, selectedPortal.IsValid()))
-        {
-            if (auto link = MakeLinkPortalCommand(WorldDoc.FocusDocument(), selectedPortal,
-                                                  transition.Id))
-            {
-                Commands.Execute(std::move(link));
-                WorldDoc.Revalidate();
-            }
-        }
-
-        EntityId linkedPortal{};
-        if (fromIsFocus)
-        {
-            const EditorScene& scene = WorldDoc.FocusDocument().GetScene();
-            for (EntityId entity : scene.GetAllEntities())
-                if (const PortalComponent* portal = scene.TryGetPortal(entity);
-                    portal != nullptr && portal->Transition == transition.Id)
-                {
-                    linkedPortal = entity;
-                    break;
-                }
-        }
-        if (ImGui::MenuItem("Select Portal", nullptr, false, linkedPortal.IsValid()))
-        {
-            Commands.Execute(std::make_unique<SelectCommand>(
-                Selection,
-                SelectableRef::EntitySelection(
-                    WorldDoc.FocusDocument().GetScene().GetRegistry().Id, linkedPortal)));
-        }
-        ImGui::Separator();
-
-        if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
-        {
-            RenamingTransition_ = transition.Id;
-            std::strncpy(RenameBuffer_, transition.Name.c_str(), sizeof(RenameBuffer_) - 1);
-            RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
-        }
-
-        // Removes only this edge, never its derived reverse.
-        if (ImGui::BeginMenu(ICON_FA_TRASH "  Remove"))
-        {
-            if (ImGui::MenuItem("Confirm Remove"))
-                (void)WorldDoc.RemoveTransition(transition.Id);
             ImGui::EndMenu();
         }
         ImGui::EndPopup();

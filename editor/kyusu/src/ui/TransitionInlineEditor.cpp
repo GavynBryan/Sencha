@@ -8,7 +8,8 @@
 #include <cstring>
 #include <string>
 
-void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
+void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition,
+                                TransitionId partner)
 {
     const TransitionRecord* record = nullptr;
     for (const TransitionRecord& candidate : world.Manifest().Transitions)
@@ -16,6 +17,13 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
             record = &candidate;
     if (record == nullptr)
         return;
+
+    const auto both = [&](auto&& apply)
+    {
+        apply(transition);
+        if (partner.IsValid())
+            apply(partner);
+    };
 
     const auto topologyName = [](TransitionTopology topology)
     {
@@ -35,23 +43,19 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
                                              TransitionTopology::Seam,
                                              TransitionTopology::Teleport })
             if (ImGui::Selectable(topologyName(topology), topology == record->Topology))
-                (void)world.SetTransitionTopology(transition, topology);
+                both([&](TransitionId id) { (void)world.SetTransitionTopology(id, topology); });
         ImGui::EndCombo();
     }
 
-    bool oneWay = record->Flags.OneWay;
-    if (ImGui::Checkbox("One-way", &oneWay))
-        (void)world.SetTransitionOneWay(transition, oneWay);
-    ImGui::SameLine();
     int priority = record->PreloadPriority;
     ImGui::SetNextItemWidth(90.0f);
     if (ImGui::InputInt("Priority", &priority))
-        (void)world.SetTransitionPreloadPriority(transition, priority);
+        both([&](TransitionId id) { (void)world.SetTransitionPreloadPriority(id, priority); });
     ImGui::SameLine();
     int depth = record->PreloadDepth;
     ImGui::SetNextItemWidth(90.0f);
     if (ImGui::InputInt("Depth", &depth))
-        (void)world.SetTransitionPreloadDepth(transition, depth);
+        both([&](TransitionId id) { (void)world.SetTransitionPreloadDepth(id, depth); });
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Preload reach through this connection (0 = the global horizon)");
 
@@ -64,7 +68,8 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
     ImGui::SetNextItemWidth(-1.0f);
     (void)ImGui::InputText("##required_tags", tagBuffer, sizeof(tagBuffer));
     if (ImGui::IsItemDeactivatedAfterEdit())
-        (void)world.SetTransitionRequiredTags(transition, SplitTagList(tagBuffer));
+        both([&](TransitionId id)
+             { (void)world.SetTransitionRequiredTags(id, SplitTagList(tagBuffer)); });
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Required world tags (comma separated); empty = always open");
 }

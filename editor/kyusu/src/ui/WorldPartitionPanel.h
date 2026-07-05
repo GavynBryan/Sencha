@@ -34,11 +34,11 @@ private:
     void DrawHeaderButtons();
     void DrawRegion(const RegionRecord& region);
     void DrawZoneRow(const ZoneHeader& zone);
-    void DrawTransitionRow(const TransitionRecord& transition);
-    // The portal connect strip between the tree and the validation list: shown
-    // while the selection is exactly one portal entity; connects unlinked
-    // portals (target pre-guessed from facing) and navigates linked ones.
-    void DrawConnectBar();
+    // The world-level connection list: one row per symmetric pair (or per
+    // one-way edge), never nested under zones, because connections are world
+    // data. Every edit applies to both directions of a pair.
+    void DrawConnections();
+    void DrawConnectionRow(TransitionId representative, TransitionId partner);
     // Live demand list from the pure streaming policy around the preview
     // focus the viewport resolved; the bounds tint in the viewport and this
     // list read the same computation.
@@ -68,9 +68,4 @@ private:
     ZoneId   PendingConnectTo_;
     RegionId PendingConnectNewRegion_;
     EntityId PendingConnectPortal_;
-    // Connect-bar transients: the target re-guesses when the selected portal
-    // changes, then stays a plain user choice.
-    EntityId ConnectBarEntity_;
-    ZoneId   ConnectBarTarget_;
-    bool     ConnectBarTwoWay_ = true;
 };
