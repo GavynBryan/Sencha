@@ -9,6 +9,7 @@
 #include <zone/ZoneDemand.h>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace
@@ -52,6 +53,7 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
     // The preview focus follows the perspective (fly) camera; ortho viewports
     // reuse the stored focus so every view tints identically this frame.
     std::vector<ZoneDemandRecord> demand;
+    WorldPartitionStreamingConfig previewConfig;
     if (view.StreamingPreview)
     {
         if (viewport.Orientation == ViewportOrientation::Perspective)
@@ -66,11 +68,10 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         if (!view.PreviewFocus.IsValid())
             view.PreviewFocus = world.FocusZone();
         const std::vector<std::string> activeTags = SplitTagList(view.PreviewTags);
+        previewConfig =
+            ResolvePreviewStreamingConfig(world.Manifest(), view.PreviewFocus, view);
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
-                                   WorldPartitionStreamingConfig{
-                                       .HopCount = view.PreviewHopCount,
-                                       .Radius = view.PreviewRadius },
-                                   &view.PreviewFocusPosition, activeTags);
+                                   previewConfig, &view.PreviewFocusPosition, activeTags);
     }
     const auto demanded = [&](ZoneId zone)
     {
@@ -99,6 +100,27 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
                                                  : EditorTheme::ContextZoneDim;
         }
         AppendBoxEdges(segments, zone.Bounds, color);
+    }
+
+    // The proximity horizon as a ground-plane circle around the preview focus
+    // position: which cells fall inside is read directly off the viewport, so
+    // a mistuned radius is visible at a glance.
+    if (view.StreamingPreview && previewConfig.Radius > 0.0)
+    {
+        constexpr int kSegments = 64;
+        const double radius = previewConfig.Radius;
+        const Vec3d& center = view.PreviewFocusPosition;
+        Vec3d previous{ center.X + radius, center.Y, center.Z };
+        for (int i = 1; i <= kSegments; ++i)
+        {
+            const double angle = 2.0 * 3.14159265358979323846 * i / kSegments;
+            const Vec3d point{ center.X + radius * std::cos(angle), center.Y,
+                               center.Z + radius * std::sin(angle) };
+            segments.push_back(EditorLineSegment{ previous, point,
+                                                  EditorTheme::PreviewDemanded,
+                                                  EditorTheme::OverlayLinePixels });
+            previous = point;
+        }
     }
 
     // The transition graph over the bounds: one line per edge between zone

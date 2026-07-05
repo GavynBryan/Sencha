@@ -698,3 +698,181 @@ TEST(WorldPartitionTraversal, TraversalNeighborIsVisibleBeforeCrossing)
     EXPECT_TRUE(hallway.Physics);    // the threshold lands on resident colliders
     EXPECT_FALSE(hallway.Logic);     // nothing simulates until entry
 }
+
+namespace
+{
+
+// Two topologies in one world: a graph region of rooms (streams by authored
+// edges) and a proximity region of field cells with no edge between the
+// cells, entered through one authored edge from the arena.
+constexpr const char* kTwoRegionFixtureJson = R"({
+  "format_version": 1,
+  "name": "TwoRegionFixture",
+  "start_zone": "00000000000000a1",
+  "regions": [
+    { "id": "00000000000000b1", "name": "Rooms" },
+    { "id": "00000000000000b2", "name": "Fields", "streaming": { "radius": 20 } }
+  ],
+  "zones": [
+    { "id": "00000000000000a1", "name": "Hub", "region": "00000000000000b1",
+      "scene": "levels/hub.level.json",
+      "bounds": { "min": [-8, 0, -8], "max": [8, 4, 8] },
+      "cooked_scene": "levels/hub.cooked.json",
+      "cooked_collision": "levels/hub.collision.json",
+      "content_hash": "00000000000000d1" },
+    { "id": "00000000000000a2", "name": "Hallway", "region": "00000000000000b1",
+      "scene": "levels/hallway.level.json",
+      "bounds": { "min": [9, 0, -2], "max": [20, 4, 2] },
+      "cooked_scene": "levels/hallway.cooked.json",
+      "cooked_collision": "levels/hallway.collision.json",
+      "content_hash": "00000000000000d2" },
+    { "id": "00000000000000a3", "name": "Arena", "region": "00000000000000b1",
+      "scene": "levels/arena.level.json",
+      "bounds": { "min": [21, 0, -8], "max": [40, 8, 8] },
+      "cooked_scene": "levels/arena.cooked.json",
+      "cooked_collision": "levels/arena.collision.json",
+      "content_hash": "00000000000000d3" },
+    { "id": "00000000000000a7", "name": "Vault", "region": "00000000000000b1",
+      "scene": "levels/vault.level.json",
+      "bounds": { "min": [9, 0, 3], "max": [20, 4, 14] },
+      "cooked_scene": "levels/vault.cooked.json",
+      "cooked_collision": "levels/vault.collision.json",
+      "content_hash": "00000000000000d7" },
+    { "id": "00000000000000a4", "name": "FieldWest", "region": "00000000000000b2",
+      "scene": "levels/field_west.level.json",
+      "bounds": { "min": [100, 0, -8], "max": [116, 4, 8] },
+      "cooked_scene": "levels/field_west.cooked.json",
+      "cooked_collision": "levels/field_west.collision.json",
+      "content_hash": "00000000000000d4" },
+    { "id": "00000000000000a5", "name": "FieldMid", "region": "00000000000000b2",
+      "scene": "levels/field_mid.level.json",
+      "bounds": { "min": [116, 0, -8], "max": [132, 4, 8] },
+      "cooked_scene": "levels/field_mid.cooked.json",
+      "cooked_collision": "levels/field_mid.collision.json",
+      "content_hash": "00000000000000d5" },
+    { "id": "00000000000000a6", "name": "FieldEast", "region": "00000000000000b2",
+      "scene": "levels/field_east.level.json",
+      "bounds": { "min": [132, 0, -8], "max": [148, 4, 8] },
+      "cooked_scene": "levels/field_east.cooked.json",
+      "cooked_collision": "levels/field_east.collision.json",
+      "content_hash": "00000000000000d6" }
+  ],
+  "transitions": [
+    { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2" },
+    { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1" },
+    { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3" },
+    { "id": "00000000000000c4", "from": "00000000000000a3", "to": "00000000000000a2" },
+    { "id": "00000000000000c7", "from": "00000000000000a2", "to": "00000000000000a7",
+      "preload_priority": 5 },
+    { "id": "00000000000000c8", "from": "00000000000000a7", "to": "00000000000000a2" },
+    { "id": "00000000000000c5", "from": "00000000000000a3", "to": "00000000000000a4" },
+    { "id": "00000000000000c6", "from": "00000000000000a4", "to": "00000000000000a3" }
+  ]
+})";
+
+WorldPartitionManifest TwoRegionManifest()
+{
+    const auto json = JsonParse(kTwoRegionFixtureJson);
+    EXPECT_TRUE(json.has_value());
+    std::string error;
+    const auto manifest = ReadWorldPartitionManifest(*json, &error);
+    EXPECT_TRUE(manifest.has_value()) << error;
+    return *manifest;
+}
+
+// One runtime, one focus, one update: the demand set that focus produces.
+std::vector<ZoneId> DemandSetAt(WorldPartitionManifest manifest, ZoneId focus)
+{
+    AsyncTaskQueue tasks(0);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+    WorldPartitionRuntime partition(
+        [](const ZoneHeader&) -> ZoneLoadRecipe
+        {
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Entities.Create(); };
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{});
+    std::string error;
+    if (!partition.LoadManifest(std::move(manifest), &error))
+    {
+        ADD_FAILURE() << error;
+        return {};
+    }
+    partition.SetFocus(focus);
+    partition.Update(0.0, loader, zones);
+    std::vector<ZoneId> demanded;
+    for (const ZoneDemandRecord& record : partition.DemandRecords())
+        demanded.push_back(record.Zone);
+    return demanded;
+}
+
+} // namespace
+
+TEST(WorldPartitionRegionStreaming, FocusRegionSelectsDemandShape)
+{
+    const auto contains = [](const std::vector<ZoneId>& set, uint64_t id)
+    {
+        for (ZoneId zone : set)
+            if (zone == ZoneId{ id })
+                return true;
+        return false;
+    };
+
+    // Graph-region focus: the authored graph is the shape (hop 1, no radius);
+    // the field cells stay out however near or far they sit.
+    const auto graphSet = DemandSetAt(TwoRegionManifest(), ZoneId{ 0xa1 });
+    EXPECT_TRUE(contains(graphSet, 0xa1));
+    EXPECT_TRUE(contains(graphSet, 0xa2));
+    EXPECT_FALSE(contains(graphSet, 0xa3));
+    EXPECT_FALSE(contains(graphSet, 0xa4));
+    EXPECT_FALSE(contains(graphSet, 0xa5));
+    EXPECT_FALSE(contains(graphSet, 0xa6));
+
+    // Grid-region focus: proximity is the shape; no manifest edge connects
+    // the cells, and the ring still loads.
+    const auto gridSet = DemandSetAt(TwoRegionManifest(), ZoneId{ 0xa5 });
+    EXPECT_TRUE(contains(gridSet, 0xa5));
+    EXPECT_TRUE(contains(gridSet, 0xa4));
+    EXPECT_TRUE(contains(gridSet, 0xa6));
+    EXPECT_FALSE(contains(gridSet, 0xa1));
+    EXPECT_FALSE(contains(gridSet, 0xa2));
+    EXPECT_FALSE(contains(gridSet, 0xa3));
+}
+
+TEST(WorldPartitionRegionStreaming, RegionHopOverrideOrdersDeepLoadsByRank)
+{
+    WorldPartitionManifest manifest = TwoRegionManifest();
+    ASSERT_EQ(manifest.Regions[0].Name, "Rooms");
+    manifest.Regions[0].Streaming.HopCount = 2;
+
+    AsyncTaskQueue tasks(0);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+    std::vector<ZoneId> issued;
+    WorldPartitionRuntime partition(
+        [&](const ZoneHeader& header) -> ZoneLoadRecipe
+        {
+            issued.push_back(header.Id);
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Entities.Create(); };
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{});   // base hop count stays 1
+    std::string error;
+    ASSERT_TRUE(partition.LoadManifest(std::move(manifest), &error)) << error;
+
+    partition.SetFocus(ZoneId{ 0xa1 });
+    partition.Update(0.0, loader, zones);
+
+    // The override reaches hop 2 in the ranks BFS too, so the deeper zones
+    // issue in rank order: the priority-5 vault ahead of the priority-0
+    // arena. If only the demand call resolved the override, both would be
+    // rank-less and issue by ascending id (arena first).
+    const std::vector<ZoneId> expected{ ZoneId{ 0xa1 }, ZoneId{ 0xa2 }, ZoneId{ 0xa7 },
+                                        ZoneId{ 0xa3 } };
+    EXPECT_EQ(issued, expected);
+}

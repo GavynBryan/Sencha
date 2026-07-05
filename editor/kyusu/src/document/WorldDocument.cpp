@@ -801,7 +801,10 @@ void WorldDocument::WriteUserSidecar() const
     {
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
         root.emplace_back("streaming_preview", JsonValue{ ViewSettings_->StreamingPreview });
-        root.emplace_back("preview_hop_count", JsonValue{ ViewSettings_->PreviewHopCount });
+        // Preview overrides follow the absent-inherits model on disk too: no
+        // key means the preview shows the authored per-region shape.
+        if (ViewSettings_->PreviewHopCount)
+            root.emplace_back("preview_hop_count", JsonValue{ *ViewSettings_->PreviewHopCount });
     }
 
     JsonValue::Array zones;
@@ -867,8 +870,7 @@ ZoneId WorldDocument::ApplyUserSidecar()
         ViewSettings_->StreamingPreview = preview->AsBool();
     if (const JsonValue* hops = root->Find("preview_hop_count");
         hops != nullptr && hops->IsNumber() && ViewSettings_ != nullptr)
-        ViewSettings_->PreviewHopCount =
-            std::max(0, static_cast<int>(hops->AsNumber()));
+        ViewSettings_->PreviewHopCount = std::max(0, static_cast<int>(hops->AsNumber()));
 
     if (const JsonValue* focus = root->Find("focus_zone"); focus != nullptr && focus->IsString())
     {

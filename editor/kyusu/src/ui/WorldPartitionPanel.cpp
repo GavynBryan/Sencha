@@ -18,6 +18,7 @@
 #include <imgui.h>
 
 #include <cstring>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -104,14 +105,72 @@ void WorldPartitionPanel::DrawStreamingPreview()
     ImGui::Checkbox("Streaming Preview", &view->StreamingPreview);
     if (!view->StreamingPreview)
         return;
-    ImGui::SameLine();
+
+    ZoneId previewFocus = view->PreviewFocus;
+    if (!previewFocus.IsValid())
+        previewFocus = WorldDoc.FocusZone();
+    if (!previewFocus.IsValid())
+    {
+        ImGui::TextDisabled("No zone to preview around yet");
+        return;
+    }
+
+    // The config in force: focus selects the region whose shape is active.
+    // This line is what makes that rule legible at region boundaries.
+    const RegionRecord* focusRegion = nullptr;
+    for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+        if (header.Id == previewFocus)
+            for (const RegionRecord& region : WorldDoc.Manifest().Regions)
+                if (region.Id == header.Region)
+                    focusRegion = &region;
+    const WorldPartitionStreamingConfig resolved = ResolveRegionStreamingConfig(
+        WorldDoc.Manifest(), previewFocus, WorldPartitionStreamingConfig{});
+    {
+        const RegionStreamingConfig authored =
+            focusRegion != nullptr ? focusRegion->Streaming : RegionStreamingConfig{};
+        std::string line = focusRegion != nullptr
+            ? std::format("Shape from \"{}\":", focusRegion->Name)
+            : std::string{ "Shape from world base:" };
+        line += std::format(" Hop {}{}", resolved.HopCount,
+                            authored.HopCount ? "" : " (inherited)");
+        line += std::format(", Radius {:g}{}", resolved.Radius,
+                            authored.Radius ? "" : " (inherited)");
+        line += std::format(", Cap {}{}", resolved.ResidentZoneCap,
+                            authored.ResidentZoneCap ? "" : " (inherited)");
+        ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
+        ImGui::TextWrapped("%s", line.c_str());
+        ImGui::PopStyleColor();
+    }
+
+    // Per-field preview overrides: absent shows the resolved value, edited
+    // overrides that one field for the preview only.
+    const auto clearButton = [](auto& field, const char* id)
+    {
+        if (!field.has_value())
+            return;
+        ImGui::SameLine();
+        ImGui::PushID(id);
+        if (ImGui::SmallButton(ICON_FA_XMARK))
+            field.reset();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clear the preview override (back to the authored shape)");
+        ImGui::PopID();
+    };
     ImGui::SetNextItemWidth(80.0f);
-    if (ImGui::InputInt("Hops", &view->PreviewHopCount))
-        view->PreviewHopCount = view->PreviewHopCount < 0 ? 0 : view->PreviewHopCount;
-    ImGui::SameLine();
+    int hops = view->PreviewHopCount.value_or(resolved.HopCount);
+    if (ImGui::InputInt("Hops", &hops))
+        view->PreviewHopCount = hops < 0 ? 0 : hops;
+    clearButton(view->PreviewHopCount, "clear_hops");
     ImGui::SetNextItemWidth(80.0f);
-    if (ImGui::InputFloat("Radius", &view->PreviewRadius, 0.0f, 0.0f, "%.0f"))
-        view->PreviewRadius = view->PreviewRadius < 0.0f ? 0.0f : view->PreviewRadius;
+    float radius = view->PreviewRadius.value_or(static_cast<float>(resolved.Radius));
+    if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
+        view->PreviewRadius = radius < 0.0f ? 0.0f : radius;
+    clearButton(view->PreviewRadius, "clear_radius");
+    ImGui::SetNextItemWidth(80.0f);
+    int cap = view->PreviewResidentCap.value_or(resolved.ResidentZoneCap);
+    if (ImGui::InputInt("Cap", &cap))
+        view->PreviewResidentCap = cap < 1 ? 1 : cap;
+    clearButton(view->PreviewResidentCap, "clear_cap");
 
     // Scratch world tags: preview how gated connections reflow without play.
     char tagBuffer[256];
@@ -131,20 +190,10 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return "<unknown>";
     };
 
-    ZoneId previewFocus = view->PreviewFocus;
-    if (!previewFocus.IsValid())
-        previewFocus = WorldDoc.FocusZone();
-    if (!previewFocus.IsValid())
-    {
-        ImGui::TextDisabled("No zone to preview around yet");
-        return;
-    }
-
     const std::vector<std::string> activeTags = SplitTagList(view->PreviewTags);
     const auto records = ComputeZoneDemand(
         WorldDoc.Manifest(), WorldDoc.Index(), previewFocus, {},
-        WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount,
-                                       .Radius = view->PreviewRadius },
+        ResolvePreviewStreamingConfig(WorldDoc.Manifest(), previewFocus, *view),
         &view->PreviewFocusPosition, activeTags);
     for (const ZoneDemandRecord& record : records)
     {

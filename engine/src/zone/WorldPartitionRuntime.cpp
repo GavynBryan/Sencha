@@ -126,8 +126,13 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     std::vector<ZoneHopRank> ranks;
     if (HasManifest_ && Focus_.IsValid())
     {
-        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, Config_.HopCount, WorldTags_);
-        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, Config_,
+        // One resolved config for both calls: resolving only the demand call
+        // would demand zones past the base hop count that the ranks BFS never
+        // reaches, and rank-less zones sort last in load ordering.
+        const WorldPartitionStreamingConfig resolved =
+            ResolveRegionStreamingConfig(Manifest_, Focus_, Config_);
+        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, resolved.HopCount, WorldTags_);
+        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, resolved,
                                    HasFocusPosition_ ? &FocusPosition_ : nullptr, WorldTags_);
     }
 
