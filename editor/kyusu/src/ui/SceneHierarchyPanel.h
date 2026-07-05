@@ -16,7 +16,7 @@ public:
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
-    DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    DockSlot GetDockSlot() const override { return DockSlot::Right; }
 
 private:
     WorldDocument& WorldDoc;

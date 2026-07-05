@@ -19,6 +19,18 @@ class VulkanInstanceService;
 class EditorSkin;
 struct IEditorPanel;
 
+// Fraction of its parent split each DockSlot region takes when the default
+// layout is built. Regions without panels are never split, so the fields for
+// slots an application leaves empty are inert.
+struct DockLayoutRatios
+{
+    float Bottom = 0.19f;       // full-width strip, of the whole dockspace height
+    float Left = 0.18f;         // left column, of the main row width
+    float Right = 0.24f;        // right column, of the width left after the left column
+    float CenterBottom = 0.26f; // strip under the central node, of the center column height
+    float RightBottom = 0.285f; // lower right, of the right column height
+};
+
 class EditorUiFeature : public IRenderFeature
 {
 public:
@@ -28,7 +40,8 @@ public:
                     SdlWindow& window,
                     VulkanInstanceService& instance,
                     VulkanFrameService& frames,
-                    std::string iniFileName);
+                    std::string iniFileName,
+                    DockLayoutRatios layoutRatios = {});
     ~EditorUiFeature() override;
 
     EditorUiFeature(const EditorUiFeature&) = delete;
@@ -117,6 +130,7 @@ private:
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;
+    DockLayoutRatios LayoutRatios;
     // View > Preferences > Theme: theme selection plus the palette override window.
     ThemePreferences ThemePrefs;
     // Forces a default-layout rebuild on the next frame (first run / View>Reset).

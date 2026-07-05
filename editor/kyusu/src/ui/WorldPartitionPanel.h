@@ -39,7 +39,9 @@ public:
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
-    DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    // Wider share of the upper-right row than the hierarchy packed beside it.
+    float GetDockWeight() const override { return 1.45f; }
 
 private:
     void DrawHeaderButtons();

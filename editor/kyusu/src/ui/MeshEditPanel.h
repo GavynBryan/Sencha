@@ -44,7 +44,7 @@ public:
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
-    DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    DockSlot GetDockSlot() const override { return DockSlot::Left; }
 
 private:
     void DrawObjectVerbs();

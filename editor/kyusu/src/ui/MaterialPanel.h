@@ -35,7 +35,7 @@ public:
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
-    DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
 
     // Stash the primary selected face's material + projection, expressed in
     // world space so it can be pasted onto faces of differently-transformed

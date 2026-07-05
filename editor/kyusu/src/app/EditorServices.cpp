@@ -353,8 +353,18 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     auto& frames = engine.Graphics().Frames;
     Renderer& renderer = engine.Graphics().MainRenderer;
 
+    // Default layout proportions: mesh tools in a narrow left column, console
+    // under the viewport, world/hierarchy row over the inspector on the right,
+    // material strip across the bottom.
+    const DockLayoutRatios layoutRatios{
+        .Bottom = 0.2f,
+        .Left = 0.15f,
+        .Right = 0.4f,
+        .CenterBottom = 0.25f,
+        .RightBottom = 0.3f,
+    };
     auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
-                                                       "kyusu.imgui.ini");
+                                                       "kyusu.imgui.ini", layoutRatios);
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },

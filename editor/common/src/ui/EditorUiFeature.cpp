@@ -31,21 +31,30 @@
 
 namespace
 {
-// Docks a region node's panels top-to-bottom so they stack (matches the mockup's
-// columns) rather than tab. Single-panel regions just dock the one window.
-void DockStacked(ImGuiID region, const std::vector<IEditorPanel*>& panels)
+// Docks a region node's panels along one axis, each taking its dock weight's
+// share of the region. remainderDir is where the not-yet-docked panels go
+// (Down stacks top-to-bottom, Right packs left-to-right). Single-panel regions
+// just dock the one window.
+void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiDir remainderDir)
 {
+    float totalWeight = 0.0f;
+    for (const IEditorPanel* panel : panels)
+        totalWeight += panel->GetDockWeight();
+
     const int count = static_cast<int>(panels.size());
     for (int i = 0; i < count; ++i)
     {
         if (i < count - 1)
         {
-            // Slice the top 1/(remaining) off for this panel; recurse into the rest.
-            ImGuiID top = 0;
-            const float lowerRatio = static_cast<float>(count - 1 - i) / static_cast<float>(count - i);
-            const ImGuiID lower = ImGui::DockBuilderSplitNode(region, ImGuiDir_Down, lowerRatio, nullptr, &top);
-            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), top);
-            region = lower;
+            // Slice this panel's weighted share off; recurse into the remainder.
+            ImGuiID slice = 0;
+            const float weight = panels[i]->GetDockWeight();
+            const float remainderRatio = (totalWeight - weight) / totalWeight;
+            const ImGuiID remainder =
+                ImGui::DockBuilderSplitNode(region, remainderDir, remainderRatio, nullptr, &slice);
+            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), slice);
+            region = remainder;
+            totalWeight -= weight;
         }
         else
         {
@@ -54,43 +63,81 @@ void DockStacked(ImGuiID region, const std::vector<IEditorPanel*>& panels)
     }
 }
 
-// Builds the designed default layout from each panel's DockSlot hint: a left and
-// right column (stacked), a bottom strip, and the viewport in the center (no tab
-// bar). No panel is named here — placement is declarative on the panels.
-void BuildDefaultDockLayout(ImGuiID dockId, const std::vector<std::unique_ptr<IEditorPanel>>& panels)
+// Builds the designed default layout from each panel's DockSlot hint: a
+// full-width bottom strip, a left column, a right column (an upper row over a
+// lower stack), and the viewport in the center (no tab bar) with its own strip
+// beneath. Regions with no panels are never split, so applications that only
+// populate a few slots get a correspondingly simpler tree. No panel is named
+// here — placement is declarative on the panels.
+void BuildDefaultDockLayout(ImGuiID dockId,
+                            const std::vector<std::unique_ptr<IEditorPanel>>& panels,
+                            const DockLayoutRatios& ratios)
 {
     ImGui::DockBuilderRemoveNode(dockId);
     ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
 
-    ImGuiID center = dockId;
-    const ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.18f, nullptr, &center);
-    const ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.24f, nullptr, &center);
-    const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.26f, nullptr, &center);
-
-    std::vector<IEditorPanel*> leftPanels, rightPanels, bottomPanels, centerPanels;
+    std::vector<IEditorPanel*> leftPanels, rightPanels, rightBottomPanels,
+        bottomPanels, centerPanels, centerBottomPanels;
     for (const std::unique_ptr<IEditorPanel>& panel : panels)
     {
         if (panel == nullptr)
             continue;
         switch (panel->GetDockSlot())
         {
-        case DockSlot::Left:   leftPanels.push_back(panel.get());   break;
-        case DockSlot::Right:  rightPanels.push_back(panel.get());  break;
-        case DockSlot::Bottom: bottomPanels.push_back(panel.get()); break;
-        case DockSlot::Center: centerPanels.push_back(panel.get()); break;
+        case DockSlot::Left:         leftPanels.push_back(panel.get());         break;
+        case DockSlot::Right:        rightPanels.push_back(panel.get());        break;
+        case DockSlot::RightBottom:  rightBottomPanels.push_back(panel.get());  break;
+        case DockSlot::Bottom:       bottomPanels.push_back(panel.get());       break;
+        case DockSlot::Center:       centerPanels.push_back(panel.get());       break;
+        case DockSlot::CenterBottom: centerBottomPanels.push_back(panel.get()); break;
         case DockSlot::Floating: break; // left undocked
         }
     }
 
-    DockStacked(left, leftPanels);
-    DockStacked(right, rightPanels);
-    DockStacked(bottom, bottomPanels);
+    // Split order shapes the tree: the bottom strip spans the full width, the
+    // left and right columns span the remaining height, and the center strips
+    // only the center column.
+    ImGuiID center = dockId;
+    if (!bottomPanels.empty())
+    {
+        const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, ratios.Bottom, nullptr, &center);
+        DockPacked(bottom, bottomPanels, ImGuiDir_Right);
+    }
+    if (!leftPanels.empty())
+    {
+        const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, ratios.Left, nullptr, &center);
+        DockPacked(left, leftPanels, ImGuiDir_Down);
+    }
+    if (!rightPanels.empty() || !rightBottomPanels.empty())
+    {
+        ImGuiID rightColumn = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, ratios.Right, nullptr, &center);
+        if (!rightPanels.empty() && !rightBottomPanels.empty())
+        {
+            ImGuiID upper = 0;
+            const ImGuiID lower =
+                ImGui::DockBuilderSplitNode(rightColumn, ImGuiDir_Down, ratios.RightBottom, nullptr, &upper);
+            DockPacked(upper, rightPanels, ImGuiDir_Right);
+            DockPacked(lower, rightBottomPanels, ImGuiDir_Down);
+        }
+        else
+        {
+            // Only one of the two right regions is populated; it takes the column.
+            DockPacked(rightColumn, rightPanels.empty() ? rightBottomPanels : rightPanels,
+                       rightPanels.empty() ? ImGuiDir_Down : ImGuiDir_Right);
+        }
+    }
+    if (!centerBottomPanels.empty())
+    {
+        const ImGuiID lower =
+            ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, ratios.CenterBottom, nullptr, &center);
+        DockPacked(lower, centerBottomPanels, ImGuiDir_Right);
+    }
 
     // The viewport owns the central node; drop its tab bar so it reads as the scene.
     if (ImGuiDockNode* centerNode = ImGui::DockBuilderGetNode(center))
         centerNode->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
-    DockStacked(center, centerPanels);
+    DockPacked(center, centerPanels, ImGuiDir_Down);
 
     ImGui::DockBuilderFinish(dockId);
 }
@@ -118,12 +165,14 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
                                  SdlWindow& window,
                                  VulkanInstanceService& instance,
                                  VulkanFrameService& frames,
-                                 std::string iniFileName)
+                                 std::string iniFileName,
+                                 DockLayoutRatios layoutRatios)
     : EngineInstance(engine)
     , Window(window)
     , Instance(instance)
     , Frames(frames)
     , IniFileName(std::move(iniFileName))
+    , LayoutRatios(layoutRatios)
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
 }
@@ -191,7 +240,7 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
         const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
         if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
         {
-            BuildDefaultDockLayout(dockId, Panels);
+            BuildDefaultDockLayout(dockId, Panels, LayoutRatios);
             LayoutDirty = false;
         }
         ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
