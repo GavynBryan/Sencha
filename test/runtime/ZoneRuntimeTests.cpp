@@ -351,3 +351,29 @@ TEST(Registry, MakeZoneRegistryInvalidZoneIdAsserts)
     EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{}), "valid ZoneId");
 }
 #endif
+
+// The streaming flicker regression: linger expiry destroys zones in the game
+// update, after the frame view was built and before render extraction reads
+// it. Destroying one zone must null ONLY its own entries, or every unload
+// renders one empty frame.
+TEST(ZoneRuntime, DestroyZoneLeavesUnrelatedFrameViewEntriesIntact)
+{
+    ZoneRuntime runtime;
+    Registry& visible = runtime.CreateZone(ZoneId{ 1 });
+    runtime.CreateZone(ZoneId{ 2 });   // dormant: in no span
+    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
+
+    FrameRegistryView view = runtime.BuildFrameView();
+    ASSERT_EQ(view.Visible.size(), 2u);
+    ASSERT_EQ(view.Visible[1], &visible);
+
+    // Destroying the dormant zone mid-frame: the visible zone keeps drawing.
+    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 2 }));
+    EXPECT_EQ(view.Visible[0], &runtime.Global());
+    EXPECT_EQ(view.Visible[1], &visible);
+
+    // Destroying the visible zone nulls exactly its entry.
+    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
+    EXPECT_EQ(view.Visible[0], &runtime.Global());
+    EXPECT_EQ(view.Visible[1], nullptr);
+}

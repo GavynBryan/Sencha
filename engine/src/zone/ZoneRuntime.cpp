@@ -81,7 +81,19 @@ bool ZoneRuntime::DestroyZone(ZoneId zone)
     if (it == Zones.end())
         return false;
 
-    InvalidateFrameScratch();
+    // Surgical: null only the in-flight frame-view entries that point at the
+    // dying registry, never the rest. Streaming destroys zones mid-frame
+    // (linger expiry runs in the game update, after the frame view was built
+    // and before render extraction consumes it); blanking the whole scratch
+    // here rendered one empty frame per unload. Span consumers skip null
+    // entries, so a zone visible when destroyed vanishes safely and every
+    // unrelated registry keeps drawing.
+    Registry* dying = (*it)->ZoneRegistry.get();
+    for (auto* scratch : { &VisibleScratch, &PhysicsScratch, &LogicScratch, &AudioScratch })
+        for (Registry*& entry : *scratch)
+            if (entry == dying)
+                entry = nullptr;
+
     Zones.erase(it);
     return true;
 }
