@@ -510,6 +510,11 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 //=============================================================================
 struct EditorServices::SourceWatchState
 {
+    explicit SourceWatchState(JobSystem* jobs)
+        : TextureImporter(jobs)
+    {
+    }
+
     struct RootWatch
     {
         AssetSourceWatcher Watcher;
@@ -528,7 +533,7 @@ void EditorServices::BuildSourceWatch()
         return;
 
     Engine& engine = *EnginePtr;
-    SourceWatch = std::make_unique<SourceWatchState>();
+    SourceWatch = std::make_unique<SourceWatchState>(&engine.Jobs());
     SourceWatch->Importers.Register(SourceWatch->TextureImporter);
     for (const std::string& root : Project->ContentRoots)
     {
@@ -780,7 +785,7 @@ void EditorServices::InitAssets()
     if (!Project)
         return;
 
-    MountProjectContent(*Project, *Assets, logging);
+    MountProjectContent(*Project, *Assets, logging, &engine.Jobs());
 }
 
 void EditorServices::UnloadGameModule()

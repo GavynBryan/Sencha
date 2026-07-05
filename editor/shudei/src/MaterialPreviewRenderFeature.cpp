@@ -36,6 +36,7 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
 {
     Services = services;
     Targets.Setup(services);
+    Backdrop.Setup(services);
     Forward.Setup(services);
 
     for (std::size_t i = 0; i < Meshes.size(); ++i)
@@ -49,6 +50,7 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
 void MaterialPreviewRenderFeature::Teardown()
 {
     Forward.Teardown();
+    Backdrop.Teardown();
     Targets.Teardown();
 }
 
@@ -125,7 +127,8 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
     colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttach.clearValue.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
+    // Black base; the backdrop draw paints the glowing grid over it.
+    colorAttach.clearValue.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
 
     VkRenderingAttachmentInfo depthAttach{};
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -144,6 +147,9 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
     info.pColorAttachments = &colorAttach;
     info.pDepthAttachment = &depthAttach;
     vkCmdBeginRendering(frame.Cmd, &info);
+
+    Backdrop.Draw(frame.Cmd, target->Extent, VK_FORMAT_R16G16B16A16_SFLOAT,
+                  Services.DepthFormat, BackdropStyle);
 
     if (Material.IsValid())
     {

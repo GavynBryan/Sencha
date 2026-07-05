@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PreviewBackdropRenderer.h"
 #include "PreviewPrimitives.h"
 
 #include "render/ViewportTargetCache.h"
@@ -49,9 +50,14 @@ public:
 
     float LightIntensity = 8.0f;
 
+    // Backdrop look, refreshed per frame from the editor.preview.backdrop.*
+    // cvars by the composition root.
+    PreviewBackdropStyle BackdropStyle;
+
 private:
     RuntimeAssets& Assets;
     ViewportTargetCache Targets;
+    PreviewBackdropRenderer Backdrop;
     MeshForwardPass Forward;
     RenderQueue Queue;
     RenderLightSet Lights;

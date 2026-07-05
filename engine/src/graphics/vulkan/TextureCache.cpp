@@ -228,6 +228,12 @@ VkExtent2D TextureCache::GetExtent(TextureHandle handle) const
     return entry ? entry->Extent : VkExtent2D{};
 }
 
+ImageHandle TextureCache::GetGpuImage(TextureHandle handle) const
+{
+    const TextureEntry* entry = Resolve(handle);
+    return entry ? entry->GpuImage : ImageHandle{};
+}
+
 // -- AssetCache CRTP hooks ----------------------------------------------------
 
 bool TextureCache::OnLoad(std::string_view path, TextureEntry& out)

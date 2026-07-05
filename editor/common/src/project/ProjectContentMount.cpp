@@ -16,7 +16,8 @@
 
 void MountProjectContent(const ProjectDescriptor& project,
                          RuntimeAssets& assets,
-                         LoggingProvider& logging)
+                         LoggingProvider& logging,
+                         JobSystem* jobs)
 {
     Logger& log = logging.GetLogger<ProjectDescriptor>();
     for (const std::string& root : project.ContentRoots)
@@ -29,7 +30,7 @@ void MountProjectContent(const ProjectDescriptor& project,
         // bindless slot: the same resolve the runtime uses, which is what makes the
         // Solid viewport WYSIWYG. Editors are cook-enabled; cooked wins over the scan.
         {
-            PngTextureImporter textureImporter;
+            PngTextureImporter textureImporter(jobs);
             AssetImporterRegistry importers;
             importers.Register(textureImporter);
             (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);

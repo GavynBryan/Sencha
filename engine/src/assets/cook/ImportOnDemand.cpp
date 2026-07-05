@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace
@@ -41,12 +42,65 @@ namespace
             if (!bytes.empty())
                 file.write(reinterpret_cast<const char*>(bytes.data()),
                            static_cast<std::streamsize>(bytes.size()));
-            return file.good();
+            if (!file.good())
+                return false;
+
+            WrittenHashes[std::string(fileRelPath)] = HashBytes64(bytes);
+            return true;
+        }
+
+        // Hash of the bytes written under `fileRelPath` this run; 0 if the
+        // writer never wrote that path.
+        [[nodiscard]] uint64_t WrittenHash(std::string_view fileRelPath) const
+        {
+            const auto it = WrittenHashes.find(std::string(fileRelPath));
+            return it == WrittenHashes.end() ? 0 : it->second;
         }
 
     private:
         std::filesystem::path Root;
+        std::unordered_map<std::string, uint64_t> WrittenHashes;
     };
+
+    // Records the hash each artifact was written with, so registration and
+    // future launches never have to read the artifact back.
+    void StampArtifactHashes(const FileCookOutputWriter& writer,
+                             std::vector<CookedArtifact>& artifacts)
+    {
+        for (CookedArtifact& artifact : artifacts)
+            artifact.ContentHash = writer.WrittenHash(artifact.FileRelPath);
+    }
+
+    // Size + last-write time, the cheap freshness signal. {0, 0} doubles as
+    // "absent or unreadable", which for the meta sidecar is a real state
+    // (cooked without a sidecar) and must compare equal to itself.
+    struct FileStat
+    {
+        uint64_t Size = 0;
+        int64_t MTime = 0;
+
+        bool operator==(const FileStat&) const = default;
+    };
+
+    FileStat StatFile(const std::filesystem::path& path)
+    {
+        std::error_code ec;
+        const uint64_t size = std::filesystem::file_size(path, ec);
+        if (ec)
+            return {};
+        const auto mtime = std::filesystem::last_write_time(path, ec);
+        if (ec)
+            return {};
+        return FileStat{ size, static_cast<int64_t>(mtime.time_since_epoch().count()) };
+    }
+
+    void StampSourceStats(CookedSourceEntry& entry, const FileStat& source, const FileStat& meta)
+    {
+        entry.SourceSize = source.Size;
+        entry.SourceMTime = source.MTime;
+        entry.MetaSize = meta.Size;
+        entry.MetaMTime = meta.MTime;
+    }
 
     bool ReadFileBytes(const std::filesystem::path& path, std::vector<std::byte>& out)
     {
@@ -126,24 +180,37 @@ namespace
         return true;
     }
 
+    // Registers the artifacts using their stored content hashes. An artifact
+    // without one (a pre-hash index entry) is hashed from disk once and the
+    // entry upgraded in place; `outHashesUpgraded` tells the caller to
+    // re-save the index so the read never repeats.
     bool RegisterArtifacts(const std::filesystem::path& root,
-                           const std::vector<CookedArtifact>& artifacts,
+                           std::vector<CookedArtifact>& artifacts,
                            AssetRegistry& registry,
-                           Logger& log)
+                           Logger& log,
+                           bool& outHashesUpgraded)
     {
         bool ok = true;
-        for (const CookedArtifact& artifact : artifacts)
+        for (CookedArtifact& artifact : artifacts)
         {
             AssetRecord record;
             record.Type = artifact.Type;
             record.SourceKind = AssetSourceKind::File;
             record.Path = artifact.Path;
             record.FilePath = (root / artifact.FileRelPath).generic_string();
-            if (!HashFileContents(record.FilePath, record.ContentHash))
+            if (artifact.ContentHash == 0)
             {
-                log.Warn("ImportOnDemand: could not hash cooked artifact '{}'", record.FilePath);
-                ok = false;
+                if (HashFileContents(record.FilePath, artifact.ContentHash))
+                {
+                    outHashesUpgraded = true;
+                }
+                else
+                {
+                    log.Warn("ImportOnDemand: could not hash cooked artifact '{}'", record.FilePath);
+                    ok = false;
+                }
             }
+            record.ContentHash = artifact.ContentHash;
             ok = registry.RegisterOrVerify(record) && ok;
         }
         return ok;
@@ -217,6 +284,33 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         const std::string sourceRel =
             std::filesystem::relative(it->path(), root).generic_string();
 
+        std::filesystem::path metaPath = it->path();
+        metaPath += std::string(kImportSettingsSuffix);
+        const FileStat sourceStat = StatFile(it->path());
+        const FileStat metaStat = StatFile(metaPath);
+
+        const CookedSourceEntry* cached = index.Find(sourceRel);
+
+        // Freshness fast path: unchanged size + mtime for the source and its
+        // sidecar means the source bytes are never read. Any mismatch falls
+        // through to the content hash, which stays the ground truth.
+        if (cached != nullptr && sourceStat.MTime != 0
+            && FileStat{ cached->SourceSize, cached->SourceMTime } == sourceStat
+            && FileStat{ cached->MetaSize, cached->MetaMTime } == metaStat
+            && ArtifactFilesExist(root, *cached))
+        {
+            ++stats.CookedFresh;
+            CookedSourceEntry entry = *cached;
+            bool hashesUpgraded = false;
+            ok = RegisterArtifacts(root, entry.Artifacts, registry, log, hashesUpgraded) && ok;
+            if (hashesUpgraded)
+            {
+                index.Put(std::move(entry));
+                indexDirty = true;
+            }
+            continue;
+        }
+
         std::vector<std::byte> bytes;
         if (!ReadFileBytes(it->path(), bytes))
         {
@@ -228,12 +322,18 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         std::vector<std::byte> metaBytes;
         const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
 
-        if (const CookedSourceEntry* cached = index.Find(sourceRel);
-            cached != nullptr && cached->SourceHash == sourceHash
+        if (cached != nullptr && cached->SourceHash == sourceHash
             && ArtifactFilesExist(root, *cached))
         {
             ++stats.CookedFresh;
-            ok = RegisterArtifacts(root, cached->Artifacts, registry, log) && ok;
+            // Content unchanged under changed stats (a touch, a copy): stamp
+            // the new stats so the next launch takes the fast path.
+            CookedSourceEntry entry = *cached;
+            StampSourceStats(entry, sourceStat, metaStat);
+            bool hashesUpgraded = false;
+            ok = RegisterArtifacts(root, entry.Artifacts, registry, log, hashesUpgraded) && ok;
+            index.Put(std::move(entry));
+            indexDirty = true;
             continue;
         }
 
@@ -246,10 +346,12 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
             ok = false;
             continue;
         }
+        StampArtifactHashes(writer, result.Artifacts);
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
         entry.SourceHash = sourceHash;
+        StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
         index.Put(std::move(entry));
         indexDirty = true;
@@ -257,7 +359,8 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         log.Info("ImportOnDemand: cooked '{}' ({} artifact{})",
             sourceRel, result.Artifacts.size(), result.Artifacts.size() == 1 ? "" : "s");
 
-        ok = RegisterArtifacts(root, result.Artifacts, registry, log) && ok;
+        bool hashesUpgraded = false;
+        ok = RegisterArtifacts(root, result.Artifacts, registry, log, hashesUpgraded) && ok;
     }
 
     if (indexDirty)
@@ -313,6 +416,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
         log.Warn("ReimportOneSource: re-import of '{}' failed: {}", sourceRelPath, whyNot);
         return false;
     }
+    StampArtifactHashes(writer, result.Artifacts);
 
     for (const CookedArtifact& artifact : result.Artifacts)
         outArtifactPaths.push_back(artifact.Path);
@@ -333,6 +437,9 @@ bool ReimportOneSource(std::string_view rootDirectory,
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
     entry.SourceHash = sourceHash;
+    std::filesystem::path metaPath = sourcePath;
+    metaPath += std::string(kImportSettingsSuffix);
+    StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));
     entry.Artifacts = std::move(result.Artifacts);
     index.Put(std::move(entry));
     std::filesystem::create_directories(cookedDir, ec);

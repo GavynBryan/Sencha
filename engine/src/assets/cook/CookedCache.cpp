@@ -34,6 +34,28 @@ namespace
         return result.ec == std::errc{} && result.ptr == text.data() + text.size();
     }
 
+    // Freshness-accelerator numbers (sizes, mtimes) serialize as decimal
+    // strings: JSON numbers are doubles and cannot carry 64 bits. All are
+    // optional in the JSON — absent or malformed reads as 0 (unknown), which
+    // just disables the fast path for that entry.
+    template <typename T>
+    std::string DecimalToString(T value)
+    {
+        return std::format("{}", value);
+    }
+
+    template <typename T>
+    T DecimalField(const JsonValue& object, const char* key)
+    {
+        const JsonValue* field = object.Find(key);
+        if (field == nullptr || !field->IsString())
+            return 0;
+        const std::string& text = field->AsString();
+        T out{};
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), out);
+        return (result.ec == std::errc{} && result.ptr == text.data() + text.size()) ? out : T{};
+    }
+
     bool ParseArtifact(const JsonValue& value, CookedArtifact& out, std::string* error)
     {
         if (!value.IsObject())
@@ -55,6 +77,9 @@ namespace
         out.Path = path->AsString();
         out.FileRelPath = file->AsString();
         out.Type = assetType;
+        if (const JsonValue* hash = value.Find("hash");
+            hash != nullptr && hash->IsString())
+            (void)HashFromHex(hash->AsString(), out.ContentHash);
         return true;
     }
 } // namespace
@@ -98,12 +123,18 @@ JsonValue CookedCacheIndex::ToJson() const
             item.emplace_back("path", JsonValue(artifact.Path));
             item.emplace_back("file", JsonValue(artifact.FileRelPath));
             item.emplace_back("type", JsonValue(std::string(AssetTypeToString(artifact.Type))));
+            if (artifact.ContentHash != 0)
+                item.emplace_back("hash", JsonValue(HashToHex(artifact.ContentHash)));
             artifacts.emplace_back(std::move(item));
         }
 
         JsonValue::Object source;
         source.emplace_back("source", JsonValue(entry->SourceRelPath));
         source.emplace_back("hash", JsonValue(HashToHex(entry->SourceHash)));
+        source.emplace_back("size", JsonValue(DecimalToString(entry->SourceSize)));
+        source.emplace_back("mtime", JsonValue(DecimalToString(entry->SourceMTime)));
+        source.emplace_back("meta_size", JsonValue(DecimalToString(entry->MetaSize)));
+        source.emplace_back("meta_mtime", JsonValue(DecimalToString(entry->MetaMTime)));
         source.emplace_back("artifacts", JsonValue(std::move(artifacts)));
         sources.emplace_back(std::move(source));
     }
@@ -150,6 +181,10 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
             return Fail(error, "source 'artifacts' must be an array");
 
         entry.SourceRelPath = source->AsString();
+        entry.SourceSize = DecimalField<uint64_t>(item, "size");
+        entry.SourceMTime = DecimalField<int64_t>(item, "mtime");
+        entry.MetaSize = DecimalField<uint64_t>(item, "meta_size");
+        entry.MetaMTime = DecimalField<int64_t>(item, "meta_mtime");
         for (const JsonValue& artifactJson : artifacts->AsArray())
         {
             CookedArtifact artifact;

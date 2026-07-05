@@ -89,7 +89,7 @@ Done and load-bearing:
   components plus data plus uniform systems), the data-driven movement stack
   (`MovementProfile`, ground/air locomotion, jump execution, `MovementIntent`), and
   `CameraRig` with first-person/third-person/fixed as data.
-- Editors: kyusu, chakin, and kettle over `editor_common` (docking UI, themes, keymap
+- Editors: kyusu, shudei, and kettle over `editor_common` (docking UI, themes, keymap
   rebinding, `CommandStack` undo, reflection-driven inspector that picks up game-module
   components, out-of-process PIE spawning the real `app` host, material hot reload).
   The brush half-edge kernel with pure tested `BrushOps` verbs including `CarveFaceRect`,

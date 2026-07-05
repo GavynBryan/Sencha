@@ -47,7 +47,7 @@ Or launch the level editor directly:
 ```
 
 (`SENCHA_PROJECT=$PWD/project.senchaproj` still works as a fallback; the
-material editor is `bin/chakin` with the same flags.)
+material editor is `bin/shudei` with the same flags.)
 
 The editor reads the descriptor and loads `game.so` for its component
 serializers (so it can edit scenes containing the game's components). The

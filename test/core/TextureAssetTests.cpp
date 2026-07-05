@@ -4,6 +4,7 @@
 #include <assets/texture/TextureSerializer.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
+#include <jobs/ThreadPoolJobSystem.h>
 #include <render/Image.h>
 #include <render/TextureData.h>
 
@@ -293,6 +294,32 @@ TEST(TextureCook, CookCompressesFullChainsToTaggedFormats)
                                    TextureUsage::Orm, orm));
     EXPECT_EQ(orm.Format, TexturePixelFormat::BC7);
     EXPECT_TRUE(ValidateTextureData(orm));
+}
+
+TEST(TextureCook, PooledCookMatchesSerialByteForByte)
+{
+    // The pool is a pure throughput knob: rows and blocks write disjoint
+    // output, so the cooked bytes must be identical with and without it.
+    Image noisy = MakeImage(64, 48);
+    std::mt19937 rng(12345);
+    for (uint8_t& byte : noisy.Pixels)
+        byte = static_cast<uint8_t>(rng());
+
+    ThreadPoolJobSystem pool(3);
+    for (const TextureUsage usage :
+         { TextureUsage::BaseColor, TextureUsage::Normal, TextureUsage::LinearData })
+    {
+        TextureData serial;
+        ASSERT_TRUE(CookImageToTexture(noisy, TextureCookParams{ .Usage = usage }, serial));
+
+        TextureData pooled;
+        ASSERT_TRUE(CookImageToTexture(
+            noisy, TextureCookParams{ .Usage = usage, .Jobs = &pool }, pooled));
+
+        EXPECT_EQ(serial.Format, pooled.Format);
+        ASSERT_EQ(serial.Blob.size(), pooled.Blob.size());
+        EXPECT_EQ(serial.Blob, pooled.Blob);
+    }
 }
 
 TEST(TextureCook, Bc7BlocksDecodeBackToTheSourceColor)

@@ -94,7 +94,7 @@ void ProjectBrowserPanel::DrawRecentList()
             Act.OpenLevelEditor(entry.Path);
         ImGui::SetItemTooltip("Open in the level editor");
         ImGui::SameLine();
-        if (ImGui::SmallButton("Chakin") && Act.OpenMaterialEditor)
+        if (ImGui::SmallButton("Shudei") && Act.OpenMaterialEditor)
             Act.OpenMaterialEditor(entry.Path);
         ImGui::SetItemTooltip("Open in the material editor");
         ImGui::EndDisabled();

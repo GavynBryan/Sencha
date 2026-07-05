@@ -71,6 +71,17 @@ private:
     // The Textures panel calls this after writing the settings sidecar.
     bool RecookTexture(const TextureSourceLocation& source, std::string* error);
 
+    // Writes a new .smat beside `textureVirtualPath`, named after it with a
+    // "T-" prefix swapped to "M-", the texture bound as base color, and opens
+    // it. An existing material at that path just opens.
+    void CreateMaterialFromTexture(const std::string& textureVirtualPath);
+
+    // Preview backdrop look knobs (editor.preview.backdrop.*), registered at
+    // startup and read into the render feature every frame so they tune live
+    // from the dev console.
+    void RegisterPreviewBackdropCVars();
+    void UpdatePreviewBackdropStyle();
+
     // Pushes a tab's working description into its resident material (in-place
     // swap; live handles keep working).
     void ApplyWorkingToResident(MaterialEditTab& tab);

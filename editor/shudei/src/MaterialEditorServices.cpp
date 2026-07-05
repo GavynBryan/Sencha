@@ -7,8 +7,10 @@
 #include "TexturesPanel.h"
 
 #include "project/ProjectContentMount.h"
+#include "ui/EditorThemeFile.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorUiFeature.h"
+#include "ui/ImGuiTextureBinding.h"
 
 #include <SDL3/SDL.h>
 
@@ -20,7 +22,11 @@
 #include <assets/cook/TextureImportSettings.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/material/MaterialAssetLoader.h>
+#include <assets/material/MaterialWriter.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
+#include <core/console/ConsoleTypes.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <platform/SdlWindow.h>
@@ -33,6 +39,7 @@
 #include <span>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 namespace
 {
@@ -51,6 +58,11 @@ namespace
 
 struct MaterialEditorServices::TextureRecookState
 {
+    explicit TextureRecookState(JobSystem* jobs)
+        : TextureImporter(jobs)
+    {
+    }
+
     struct RootReloader
     {
         std::string Root;
@@ -78,10 +90,12 @@ MaterialEditorServices::MaterialEditorServices(Engine& engine,
 
 MaterialEditorServices::~MaterialEditorServices()
 {
-    // Release GPU refs while the caches live: the render features themselves
-    // tear down later, in ~Renderer.
+    // Release GPU refs while the caches live: the render features (and the
+    // panels they own) tear down later, in ~Renderer.
     if (Preview != nullptr)
         Preview->ReleaseResources();
+    if (Textures != nullptr)
+        Textures->ReleasePreviewResources();
     if (Assets)
         for (const auto& tab : Tabs.Tabs())
             if (tab->Handle.IsValid())
@@ -94,7 +108,7 @@ void MaterialEditorServices::LoadProject()
 {
     if (!ProjectPath)
     {
-        std::fprintf(stderr, "[chakin] no project: pass --project <path.senchaproj> or set SENCHA_PROJECT\n");
+        std::fprintf(stderr, "[shudei] no project: pass --project <path.senchaproj> or set SENCHA_PROJECT\n");
         return;
     }
 
@@ -102,12 +116,12 @@ void MaterialEditorServices::LoadProject()
     std::string error;
     if (!ProjectDescriptor::Load(*ProjectPath, descriptor, &error))
     {
-        std::fprintf(stderr, "[chakin] failed to open project '%s': %s\n",
+        std::fprintf(stderr, "[shudei] failed to open project '%s': %s\n",
                      ProjectPath->c_str(), error.c_str());
         return;
     }
     Project = std::move(descriptor);
-    std::fprintf(stderr, "[chakin] opened project '%s' (%s)\n",
+    std::fprintf(stderr, "[shudei] opened project '%s' (%s)\n",
                  Project->Name.c_str(), ProjectPath->c_str());
 }
 
@@ -122,10 +136,10 @@ void MaterialEditorServices::InitAssets()
     if (!Project)
         return;
 
-    MountProjectContent(*Project, *Assets, engine.Logging());
+    MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
     Materials->Rescan(Project->ContentRoots);
 
-    TextureRecook = std::make_unique<TextureRecookState>();
+    TextureRecook = std::make_unique<TextureRecookState>(&engine.Jobs());
     TextureRecook->Importers.Register(TextureRecook->TextureImporter);
     for (const std::string& root : Project->ContentRoots)
         TextureRecook->Roots.push_back(std::unique_ptr<TextureRecookState::RootReloader>(
@@ -139,7 +153,8 @@ void MaterialEditorServices::InitAssets()
 void MaterialEditorServices::BuildUi()
 {
     Engine& engine = *EnginePtr;
-    ApplyEditorThemeFromConsole(engine.Console());
+    ApplyEditorThemeFromConsole(engine.Console(), "Shudei");
+    RegisterPreviewBackdropCVars();
 
     Renderer& renderer = engine.Graphics().MainRenderer;
 
@@ -148,7 +163,7 @@ void MaterialEditorServices::BuildUi()
 
     auto uiFeature = std::make_unique<EditorUiFeature>(
         engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames,
-        "chakin.imgui.ini");
+        "shudei.imgui.ini");
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (MaterialEditTab* tab = Tabs.Active()) tab->Commands.Undo(); },
@@ -181,13 +196,85 @@ void MaterialEditorServices::BuildUi()
         Assets->Registry,
         Project ? Project->ContentRoots : std::vector<std::string>{},
         [this](const TextureSourceLocation& source, std::string* error)
-        { return RecookTexture(source, error); });
+        { return RecookTexture(source, error); },
+        std::make_unique<ImGuiTextureBinding>(
+            Assets->Assets, Assets->Textures,
+            engine.Graphics().Images, engine.Graphics().Samplers),
+        [this](const std::string& textureVirtualPath)
+        { CreateMaterialFromTexture(textureVirtualPath); });
     Textures = texturesPanel.get();
     UiFeature->AddPanel(std::move(texturesPanel));
     UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
         *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
 
     renderer.AddFeature(std::move(uiFeature));
+}
+
+void MaterialEditorServices::RegisterPreviewBackdropCVars()
+{
+    ConsoleRegistry& registry = EnginePtr->Console().Registry();
+    const auto registerDouble = [&registry](const char* name, double def, const char* help)
+    {
+        registry.RegisterCVar({
+            .Name = name,
+            .Owner = "editor",
+            .Type = CVarType::Double,
+            .DefaultValue = def,
+            .CurrentValue = def,
+            .Flags = CVarFlags::Archive,
+            .Help = help,
+            .Source = { "editor" },
+        });
+    };
+    registerDouble("editor.preview.backdrop.cell_px", 64.0,
+                   "Material preview backdrop: grid cell size in px.");
+    registerDouble("editor.preview.backdrop.glow_px", 2.5,
+                   "Material preview backdrop: glow halo width in px.");
+    registerDouble("editor.preview.backdrop.intensity", 1.6,
+                   "Material preview backdrop: line brightness (above 1 pushes into HDR).");
+    registry.RegisterCVar({
+        .Name = "editor.preview.backdrop.color",
+        .Owner = "editor",
+        .Type = CVarType::String,
+        .DefaultValue = std::string("#1e8fff"),
+        .CurrentValue = std::string("#1e8fff"),
+        .Flags = CVarFlags::Archive,
+        .Help = "Material preview backdrop: grid line color, #RRGGBB sRGB hex.",
+        .Source = { "editor" },
+    });
+}
+
+void MaterialEditorServices::UpdatePreviewBackdropStyle()
+{
+    if (Preview == nullptr)
+        return;
+    ConsoleRegistry& registry = EnginePtr->Console().Registry();
+    const auto readDouble = [&registry](const char* name, float fallback)
+    {
+        if (const CVarMetadata* cvar = registry.FindCVar(name);
+            cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
+            return static_cast<float>(std::get<double>(cvar->CurrentValue));
+        return fallback;
+    };
+
+    PreviewBackdropStyle style;
+    style.CellPx = readDouble("editor.preview.backdrop.cell_px", style.CellPx);
+    style.GlowPx = readDouble("editor.preview.backdrop.glow_px", style.GlowPx);
+    const float intensity =
+        readDouble("editor.preview.backdrop.intensity", style.LineColor[3]);
+    if (const CVarMetadata* cvar = registry.FindCVar("editor.preview.backdrop.color");
+        cvar != nullptr)
+        if (const std::string* hex = std::get_if<std::string>(&cvar->CurrentValue))
+        {
+            float r = 0.0f;
+            float g = 0.0f;
+            float b = 0.0f;
+            float a = 1.0f;
+            if (ParseThemeColor(*hex, r, g, b, a))
+                style.LineColor = Vec4{ r, g, b, 1.0f };
+        }
+    style.LineColor[3] = intensity;
+    Preview->BackdropStyle = style;
 }
 
 void MaterialEditorServices::RegisterSystems(EngineSchedule& schedule)
@@ -241,6 +328,7 @@ void MaterialEditorServices::ProcessFrame()
     MaterialEditTab* active = Tabs.Active();
     if (Preview != nullptr)
         Preview->SetMaterial(active != nullptr ? active->Handle : MaterialHandle{});
+    UpdatePreviewBackdropStyle();
 
     UpdateTitle();
 }
@@ -252,7 +340,7 @@ void MaterialEditorServices::OpenMaterial(const std::string& virtualPath)
     const AssetRecord* record = Assets->Registry.FindByPath(virtualPath);
     if (record == nullptr || record->FilePath.empty())
     {
-        std::fprintf(stderr, "[chakin] '%s' is not an editable material file\n", virtualPath.c_str());
+        std::fprintf(stderr, "[shudei] '%s' is not an editable material file\n", virtualPath.c_str());
         return;
     }
 
@@ -261,7 +349,7 @@ void MaterialEditorServices::OpenMaterial(const std::string& virtualPath)
     MaterialEditTab* tab = Tabs.OpenOrFocus(virtualPath, record->FilePath, &error);
     if (tab == nullptr)
     {
-        std::fprintf(stderr, "[chakin] failed to open '%s': %s\n", virtualPath.c_str(), error.c_str());
+        std::fprintf(stderr, "[shudei] failed to open '%s': %s\n", virtualPath.c_str(), error.c_str());
         return;
     }
 
@@ -290,7 +378,7 @@ void MaterialEditorServices::SaveActiveMaterial()
         return;
     std::string error;
     if (!tab->Session.Save(&error))
-        std::fprintf(stderr, "[chakin] save failed: %s\n", error.c_str());
+        std::fprintf(stderr, "[shudei] save failed: %s\n", error.c_str());
 }
 
 void MaterialEditorServices::SaveAllMaterials()
@@ -298,7 +386,7 @@ void MaterialEditorServices::SaveAllMaterials()
     std::string error;
     Tabs.SaveAll(&error);
     if (!error.empty())
-        std::fprintf(stderr, "[chakin] save all: %s\n", error.c_str());
+        std::fprintf(stderr, "[shudei] save all: %s\n", error.c_str());
 }
 
 void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplicateOpen)
@@ -315,7 +403,7 @@ void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplic
     std::filesystem::create_directories(file.parent_path(), ec);
     if (std::filesystem::exists(file, ec))
     {
-        std::fprintf(stderr, "[chakin] '%s' already exists\n", file.string().c_str());
+        std::fprintf(stderr, "[shudei] '%s' already exists\n", file.string().c_str());
         return;
     }
 
@@ -324,7 +412,7 @@ void MaterialEditorServices::CreateMaterial(const std::string& name, bool duplic
                                        : MaterialEditSession::CreateNew(file.string(), &error);
     if (!written)
     {
-        std::fprintf(stderr, "[chakin] create failed: %s\n", error.c_str());
+        std::fprintf(stderr, "[shudei] create failed: %s\n", error.c_str());
         return;
     }
 
@@ -340,7 +428,7 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     const AssetRecord* record = Assets->Registry.FindByPath(virtualPath);
     if (record == nullptr || record->FilePath.empty())
     {
-        std::fprintf(stderr, "[chakin] '%s' is not a renameable material file\n", virtualPath.c_str());
+        std::fprintf(stderr, "[shudei] '%s' is not a renameable material file\n", virtualPath.c_str());
         return;
     }
 
@@ -359,7 +447,7 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     }
     if (owningRoot.empty())
     {
-        std::fprintf(stderr, "[chakin] '%s' is outside every content root\n", record->FilePath.c_str());
+        std::fprintf(stderr, "[shudei] '%s' is outside every content root\n", record->FilePath.c_str());
         return;
     }
 
@@ -371,21 +459,21 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     std::error_code ec;
     if (std::filesystem::exists(newFile, ec))
     {
-        std::fprintf(stderr, "[chakin] '%s' already exists\n", newFile.string().c_str());
+        std::fprintf(stderr, "[shudei] '%s' already exists\n", newFile.string().c_str());
         return;
     }
     std::filesystem::create_directories(newFile.parent_path(), ec);
     std::filesystem::rename(oldFile, newFile, ec);
     if (ec)
     {
-        std::fprintf(stderr, "[chakin] rename failed: %s\n", ec.message().c_str());
+        std::fprintf(stderr, "[shudei] rename failed: %s\n", ec.message().c_str());
         return;
     }
 
     const std::string newVirtual = "asset://" + rel;
     // Levels referencing the old path are not rewritten; those faces render
     // as the level default until reassigned. Same policy as deleting a file.
-    std::fprintf(stderr, "[chakin] renamed '%s' -> '%s' (level refs are not rewritten)\n",
+    std::fprintf(stderr, "[shudei] renamed '%s' -> '%s' (level refs are not rewritten)\n",
                  virtualPath.c_str(), newVirtual.c_str());
 
     if (MaterialEditTab* tab = Tabs.Find(virtualPath))
@@ -404,6 +492,55 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
         // Force a re-apply so an unsaved working state survives the move.
         tab->AppliedVersion = 0;
     }
+}
+
+void MaterialEditorServices::CreateMaterialFromTexture(const std::string& textureVirtualPath)
+{
+    if (!Assets || !Project)
+        return;
+
+    // "asset://textures/T-cliff.png" -> "textures/M-cliff.smat": beside the
+    // texture, in the content root that owns its source file.
+    const auto source = ResolveTextureSource(Project->ContentRoots, textureVirtualPath);
+    if (!source)
+    {
+        std::fprintf(stderr, "[shudei] '%s' has no source file under any content root\n",
+                     textureVirtualPath.c_str());
+        return;
+    }
+
+    const std::size_t slash = source->RelPath.rfind('/');
+    const std::string folder =
+        slash == std::string::npos ? std::string{} : source->RelPath.substr(0, slash + 1);
+    std::string name =
+        slash == std::string::npos ? source->RelPath : source->RelPath.substr(slash + 1);
+    if (const std::size_t dot = name.rfind('.'); dot != std::string::npos)
+        name.resize(dot);
+    if (name.starts_with("T-"))
+        name.replace(0, 2, "M-");
+
+    const std::string materialRel = folder + name + ".smat";
+    const std::filesystem::path file = std::filesystem::path(source->Root) / materialRel;
+
+    std::error_code ec;
+    if (std::filesystem::exists(file, ec))
+    {
+        std::fprintf(stderr, "[shudei] '%s' already exists; opening it\n",
+                     file.string().c_str());
+    }
+    else
+    {
+        MaterialDescription description;
+        description.BaseColorTexture = AssetRef{ AssetType::Texture, textureVirtualPath };
+        std::string error;
+        if (!SaveMaterialFile(file.string(), description, &error))
+        {
+            std::fprintf(stderr, "[shudei] create material failed: %s\n", error.c_str());
+            return;
+        }
+        RescanMaterials();
+    }
+    OpenMaterial("asset://" + materialRel);
 }
 
 bool MaterialEditorServices::RecookTexture(const TextureSourceLocation& source, std::string* error)
@@ -457,7 +594,7 @@ void MaterialEditorServices::ApplyWorkingToResident(MaterialEditTab& tab)
 void MaterialEditorServices::UpdateTitle()
 {
     MaterialEditTab* tab = Tabs.Active();
-    std::string title = "Chakin - Material Editor";
+    std::string title = "Shudei - Material Editor";
     if (tab != nullptr && tab->Session.HasOpen())
     {
         title += " - ";

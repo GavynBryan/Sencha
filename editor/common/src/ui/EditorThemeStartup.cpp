@@ -15,14 +15,14 @@
 #define SENCHA_EDITOR_THEME_DIR "."
 #endif
 
-void ApplyEditorThemeFromConsole(ConsoleService& console)
+void ApplyEditorThemeFromConsole(ConsoleService& console, std::string_view defaultTheme)
 {
     console.Registry().RegisterCVar({
         .Name = "editor.ui.theme",
         .Owner = "editor",
         .Type = CVarType::String,
-        .DefaultValue = std::string{},
-        .CurrentValue = std::string{},
+        .DefaultValue = std::string(defaultTheme),
+        .CurrentValue = std::string(defaultTheme),
         .Flags = CVarFlags::Archive,
         .Help = "Editor chrome theme: a name under the bundled themes/ dir or a path to a theme JSON. Empty = built-in. Applied at startup.",
         .Source = { "editor" },

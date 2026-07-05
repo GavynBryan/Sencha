@@ -7,6 +7,7 @@
 #include <string_view>
 
 struct Image;
+class JobSystem;
 class LoggingProvider;
 
 //=============================================================================
@@ -37,11 +38,14 @@ class LoggingProvider;
 // Decoded image + usage → full RGBA8 mip chain (colorspace-correct
 // filtering, normal renormalization), uncompressed. The filtering stage of
 // the cook, exposed so its correctness is testable on readable pixels.
-// Pure; errors travel in `error`.
+// Pure; errors travel in `error`. `jobs` forks the per-row work when given;
+// rows write disjoint output, so the pooled result is byte-identical to
+// serial (null runs serial).
 [[nodiscard]] bool BuildTextureMipChainRgba8(const Image& image,
                                              TextureUsage usage,
                                              TextureData& out,
-                                             std::string* error = nullptr);
+                                             std::string* error = nullptr,
+                                             JobSystem* jobs = nullptr);
 
 // Decoded image + usage → full mip chain TextureData, BC-compressed per
 // CookedFormatForUsage. Pure; errors travel in `error`.
@@ -61,6 +65,11 @@ struct TextureCookParams
     TextureFilter Filter = TextureFilter::Linear;
     bool Compress = true;
     bool GenerateMips = true;
+
+    // Optional pool for the per-row filter and block-compression loops.
+    // Rows and blocks write disjoint output, so the cooked bytes are
+    // identical with or without it; null runs serial.
+    JobSystem* Jobs = nullptr;
 };
 [[nodiscard]] bool CookImageToTexture(const Image& image,
                                       const TextureCookParams& params,
@@ -78,7 +87,17 @@ struct TextureCookParams
 class PngTextureImporter final : public IAssetImporter
 {
 public:
+    // `jobs` rides into every cook this importer performs (see
+    // TextureCookParams::Jobs); null cooks serial.
+    explicit PngTextureImporter(JobSystem* jobs = nullptr)
+        : Jobs(jobs)
+    {
+    }
+
     [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
     [[nodiscard]] ImportResult Import(const ImportInput& input,
                                       ICookOutputWriter& output) override;
+
+private:
+    JobSystem* Jobs = nullptr;
 };

@@ -234,14 +234,14 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/TextureImportStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialEditSession.cpp
-        ${CMAKE_SOURCE_DIR}/editor/chakin/src/MaterialTabSet.cpp
-        ${CMAKE_SOURCE_DIR}/editor/chakin/src/PreviewPrimitives.cpp
+        ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialEditSession.cpp
+        ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialTabSet.cpp
+        ${CMAKE_SOURCE_DIR}/editor/shudei/src/PreviewPrimitives.cpp
         ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
     target_include_directories(editor_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src
         ${CMAKE_SOURCE_DIR}/editor/common/src
-        ${CMAKE_SOURCE_DIR}/editor/chakin/src
+        ${CMAKE_SOURCE_DIR}/editor/shudei/src
         ${CMAKE_SOURCE_DIR}/editor/kettle/src)
     target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)

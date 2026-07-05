@@ -2,6 +2,7 @@
 #include <assets/cook/TextureImportSettings.h>
 
 #include <assets/texture/TextureSerializer.h>
+#include <jobs/JobSystem.h>
 #include <render/Image.h>
 #include <render/ImageLoader.h>
 
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -36,6 +38,24 @@ namespace
         return static_cast<uint8_t>(std::clamp(c * 255.0f + 0.5f, 0.0f, 255.0f));
     }
 
+    // Runs fn(row) for rows [0, rowCount), through the pool when one is
+    // supplied and the level is large enough to be worth forking. Every row
+    // writes disjoint output, so the pooled result is byte-identical to the
+    // serial one; the threshold is purely a fork-overhead cutoff for the
+    // small tail levels of a mip chain.
+    void ForEachRow(JobSystem* jobs, uint32_t rowCount,
+                    const std::function<void(uint32_t row)>& fn)
+    {
+        constexpr uint32_t kMinRowsToFork = 8;
+        if (jobs != nullptr && jobs->WorkerCount() > 0 && rowCount >= kMinRowsToFork)
+        {
+            jobs->ParallelFor(rowCount, fn);
+            return;
+        }
+        for (uint32_t row = 0; row < rowCount; ++row)
+            fn(row);
+    }
+
     // -- Downsampling ----------------------------------------------------------
     //
     // 2x2 box filter, clamped at odd edges. Three channel disciplines
@@ -52,9 +72,9 @@ namespace
 
     void DownsampleLevel(const uint8_t* src, uint32_t srcW, uint32_t srcH,
                          uint8_t* dst, uint32_t dstW, uint32_t dstH,
-                         MipFilter filter)
+                         MipFilter filter, JobSystem* jobs)
     {
-        for (uint32_t y = 0; y < dstH; ++y)
+        ForEachRow(jobs, dstH, [&](uint32_t y)
         {
             const uint32_t y0 = std::min(y * 2, srcH - 1);
             const uint32_t y1 = std::min(y * 2 + 1, srcH - 1);
@@ -111,7 +131,7 @@ namespace
                     }
                 }
             }
-        }
+        });
     }
 
     MipFilter FilterForUsage(TextureUsage usage)
@@ -154,7 +174,8 @@ TextureUsage InferTextureUsageFromName(std::string_view sourceRelPath)
     return TextureUsage::BaseColor;
 }
 
-bool BuildTextureMipChainRgba8(const Image& image, TextureUsage usage, TextureData& out, std::string* error)
+bool BuildTextureMipChainRgba8(const Image& image, TextureUsage usage, TextureData& out,
+                               std::string* error, JobSystem* jobs)
 {
     if (!image.IsValid())
     {
@@ -203,7 +224,7 @@ bool BuildTextureMipChainRgba8(const Image& image, TextureUsage usage, TextureDa
         const TextureMipLevel& dstMip = texture.Mips[i];
         DownsampleLevel(texture.Blob.data() + srcMip.Offset, srcMip.Width, srcMip.Height,
                         texture.Blob.data() + dstMip.Offset, dstMip.Width, dstMip.Height,
-                        filter);
+                        filter, jobs);
     }
 
     out = std::move(texture);
@@ -243,7 +264,8 @@ namespace
 
     // Compresses an RGBA8 chain into `format`, level by level, block by
     // block. The mip table is recomputed for the block-compressed sizes.
-    bool EncodeMipChain(const TextureData& rgba, TexturePixelFormat format, TextureData& out)
+    bool EncodeMipChain(const TextureData& rgba, TexturePixelFormat format, TextureData& out,
+                        JobSystem* jobs)
     {
         EnsureEncodersInitialized();
 
@@ -266,6 +288,17 @@ namespace
         }
         encoded.Blob.resize(totalBytes);
 
+        switch (format)
+        {
+        case TexturePixelFormat::BC7:
+        case TexturePixelFormat::BC7_SRGB:
+        case TexturePixelFormat::BC5:
+        case TexturePixelFormat::BC4:
+            break;
+        default:
+            return false;
+        }
+
         for (std::size_t level = 0; level < rgba.Mips.size(); ++level)
         {
             const TextureMipLevel& src = rgba.Mips[level];
@@ -275,7 +308,7 @@ namespace
 
             const uint32_t blocksX = (src.Width + 3) / 4;
             const uint32_t blocksY = (src.Height + 3) / 4;
-            for (uint32_t by = 0; by < blocksY; ++by)
+            ForEachRow(jobs, blocksY, [&](uint32_t by)
             {
                 for (uint32_t bx = 0; bx < blocksX; ++bx)
                 {
@@ -295,14 +328,12 @@ namespace
                         rgbcx::encode_bc5(dstBlocks + blockIndex * 16, block,
                                           /*chan0*/ 0, /*chan1*/ 1);
                         break;
-                    case TexturePixelFormat::BC4:
+                    default:
                         rgbcx::encode_bc4(dstBlocks + blockIndex * 8, block);
                         break;
-                    default:
-                        return false;
                     }
                 }
-            }
+            });
         }
 
         out = std::move(encoded);
@@ -340,7 +371,7 @@ bool CookImageToTexture(const Image& image,
                         std::string* error)
 {
     TextureData rgba;
-    if (!BuildTextureMipChainRgba8(image, params.Usage, rgba, error))
+    if (!BuildTextureMipChainRgba8(image, params.Usage, rgba, error, params.Jobs))
         return false;
 
     if (!params.GenerateMips)
@@ -366,7 +397,7 @@ bool CookImageToTexture(const Image& image,
     }
 
     TextureData encoded;
-    if (!EncodeMipChain(rgba, format, encoded))
+    if (!EncodeMipChain(rgba, format, encoded, params.Jobs))
     {
         if (error)
             *error = "texture cook: block compression failed";
@@ -406,6 +437,7 @@ ImportResult PngTextureImporter::Import(const ImportInput& input, ICookOutputWri
         .Filter = settings.Filter,
         .Compress = settings.Compress,
         .GenerateMips = settings.GenerateMips,
+        .Jobs = Jobs,
     };
 
     TextureData texture;

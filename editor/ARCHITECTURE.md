@@ -13,10 +13,10 @@ The editor tooling is a family of applications over one shared shell library:
 | --- | --- | --- |
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
 | `editor/kyusu/` | `kyusu` | The level editor ("Kyusu - Level Editor"). Everything below is about its internals. |
-| `editor/chakin/` | `chakin` | The material editor ("Chakin - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
+| `editor/shudei/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
 | `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
 
-Product names (Kyusu, Chakin, Kettle) exist only on executables and window
+Product names (Kyusu, Shudei, Kettle) exist only on executables and window
 titles; internal types stay mechanically named.
 
 Every application is a `Game` running inside the runtime `Engine`. It does not
@@ -50,7 +50,7 @@ Materials (and assets generally) resolve against the project's content roots,
 never against the open level file's location. Kyusu watches `.smat`/`.png`
 sources per content root (`AssetSourceWatcher` + `AssetHotReloader`, polled
 from the frame hook) and hot-swaps resident assets in place, so a save from
-Chakin or a text editor shows up live.
+Shudei or a text editor shows up live.
 
 ## Include convention
 
@@ -110,7 +110,7 @@ Level editor (`editor/kyusu/src/`):
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-Material editor (`editor/chakin/src/`, flat): `MaterialEditorApp` +
+Material editor (`editor/shudei/src/`, flat): `MaterialEditorApp` +
 `MaterialEditorServices`, `MaterialEditSession` (open/edit/save/duplicate,
 headless-tested), `EditMaterialCommand`, `PreviewPrimitives` (procedural
 sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into a
@@ -170,7 +170,7 @@ firewall above.
   register it with the `ToolRegistry` populated in `workspace/EditorWorkspace`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
-- A keyboard shortcut: `EditorServices::BuildInput` (Kyusu); Chakin handles its
+- A keyboard shortcut: `EditorServices::BuildInput` (Kyusu); Shudei handles its
   few chords directly in `HandlePlatformEvent`.
 - A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
   `EditorServices::BuildViewportRendering`.

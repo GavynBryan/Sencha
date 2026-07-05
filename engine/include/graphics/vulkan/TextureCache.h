@@ -118,6 +118,12 @@ public:
     [[nodiscard]] BindlessImageIndex GetBindlessIndex(TextureHandle handle) const;
     [[nodiscard]] VkExtent2D         GetExtent(TextureHandle handle) const;
 
+    // The entry's current GPU image. Not stable across hot reloads: a reload
+    // swaps the entry's image in place, so a caller holding a view or
+    // descriptor built from it must compare against this each frame and
+    // rebuild when it changes.
+    [[nodiscard]] ImageHandle        GetGpuImage(TextureHandle handle) const;
+
     // The sampler a cooked texture asks for (the TextureData -> Vulkan mapping
     // lives here by design): Nearest-filtered textures (pixel art) sample
     // point-filtered at every stage with anisotropy off; everything else keeps

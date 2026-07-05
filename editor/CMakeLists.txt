@@ -8,5 +8,5 @@ endif()
 # each application links it and adds its own domain code.
 add_subdirectory(common)
 add_subdirectory(kyusu)
-add_subdirectory(chakin)
+add_subdirectory(shudei)
 add_subdirectory(kettle)

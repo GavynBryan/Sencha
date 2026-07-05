@@ -15,7 +15,7 @@ MaterialEditorApp::~MaterialEditorApp() = default;
 
 void MaterialEditorApp::OnConfigure(GameConfigureContext& ctx)
 {
-    ctx.Config.Window.Title = "Chakin - Material Editor";
+    ctx.Config.Window.Title = "Shudei - Material Editor";
 }
 
 void MaterialEditorApp::OnStart(GameStartupContext& ctx)

@@ -14,6 +14,9 @@
 
 namespace
 {
+    // Preview box height: uniform for every texture, aspect preserved inside.
+    constexpr float kPreviewBoxHeight = 192.0f;
+
     bool ContainsCaseInsensitive(std::string_view haystack, std::string_view needle)
     {
         if (needle.empty())
@@ -54,11 +57,21 @@ namespace
 
 TexturesPanel::TexturesPanel(const AssetRegistry& registry,
                              std::vector<std::string> contentRoots,
-                             RecookFn recook)
+                             RecookFn recook,
+                             std::unique_ptr<ImGuiTextureBinding> preview,
+                             CreateMaterialFn createMaterial)
     : Registry(registry)
     , ContentRoots(std::move(contentRoots))
     , Recook(std::move(recook))
+    , Preview(std::move(preview))
+    , CreateMaterial(std::move(createMaterial))
 {
+}
+
+void TexturesPanel::ReleasePreviewResources()
+{
+    if (Preview)
+        Preview->Release();
 }
 
 void TexturesPanel::SelectTexture(const std::string& virtualPath)
@@ -113,6 +126,15 @@ void TexturesPanel::DrawRow(const char* label, const std::string& virtualPath)
     ImGui::PushID(virtualPath.c_str());
     if (ImGui::Selectable(label, Selected == virtualPath))
         SelectTexture(virtualPath);
+    if (ImGui::BeginPopupContextItem("texture_context"))
+    {
+        if (ImGui::MenuItem("Create Material", nullptr, false, CreateMaterial != nullptr))
+            CreateMaterial(virtualPath);
+        ImGui::SetItemTooltip("New .smat beside this texture, named after it "
+                              "(a \"T-\" prefix becomes \"M-\"), with this texture "
+                              "as its base color.");
+        ImGui::EndPopup();
+    }
     ImGui::PopID();
 }
 
@@ -163,20 +185,48 @@ void TexturesPanel::DrawTextureList()
 
 void TexturesPanel::DrawDetails()
 {
+    // Import settings with the preview box beside them; a column too narrow
+    // for both stacks the preview underneath instead.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const bool sideBySide = avail >= kPreviewBoxHeight * 2.0f;
+    bool nearestFilter = false;
+    if (sideBySide)
+    {
+        if (ImGui::BeginChild("##import_settings",
+                              ImVec2(avail - kPreviewBoxHeight - style.ItemSpacing.x, 0.0f)))
+            nearestFilter = DrawImportSettings();
+        ImGui::EndChild();
+        ImGui::SameLine();
+        DrawPreview(nearestFilter);
+    }
+    else
+    {
+        const float previewHeight = kPreviewBoxHeight + style.ItemSpacing.y;
+        if (ImGui::BeginChild("##import_settings", ImVec2(0.0f, -previewHeight)))
+            nearestFilter = DrawImportSettings();
+        ImGui::EndChild();
+        DrawPreview(nearestFilter);
+    }
+}
+
+bool TexturesPanel::DrawImportSettings()
+{
     ImGui::SeparatorText("Import Settings");
     if (Selected.empty())
     {
         ImGui::TextDisabled("Select a texture.");
-        return;
+        return false;
     }
 
     ImGui::TextUnformatted(Selected.c_str());
 
     const auto source = ResolveTextureSource(ContentRoots, Selected);
     // Ground truth every frame: what the cooked artifact actually is.
-    const std::string cooked = source
-        ? DescribeCookedTextureState(ReadCookedTextureState(*source))
-        : std::string("no source file");
+    const CookedTextureState cookedState =
+        source ? ReadCookedTextureState(*source) : CookedTextureState{};
+    const std::string cooked =
+        source ? DescribeCookedTextureState(cookedState) : std::string("no source file");
     ImGui::TextDisabled("cooked: %s", cooked.c_str());
 
     ImGui::BeginDisabled(SourceMissing);
@@ -211,6 +261,41 @@ void TexturesPanel::DrawDetails()
 
     if (!Status.empty())
         ImGui::TextWrapped("%s", Status.c_str());
+
+    return cookedState.Filter == TextureFilter::Nearest;
+}
+
+void TexturesPanel::DrawPreview(bool nearestFilter)
+{
+    if (Preview == nullptr)
+        return;
+    Preview->SetTexture(Selected, nearestFilter);
+
+    // Uniform presentation: every texture gets the same square box, scaled
+    // to fit with its aspect kept (nearest-filtered textures stay crisp when
+    // the fit upscales them).
+    const float width = ImGui::GetContentRegionAvail().x;
+    if (width < 16.0f)
+        return;
+    const ImVec2 box(std::min(width, kPreviewBoxHeight), kPreviewBoxHeight);
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(origin, ImVec2(origin.x + box.x, origin.y + box.y),
+                        ImGui::GetColorU32(ImGuiCol_FrameBg));
+
+    const ImTextureID texture = Preview->TextureId();
+    const VkExtent2D extent = Preview->Extent();
+    if (texture != 0 && extent.width > 0 && extent.height > 0)
+    {
+        const float scale = std::min(box.x / static_cast<float>(extent.width),
+                                     box.y / static_cast<float>(extent.height));
+        const ImVec2 size(extent.width * scale, extent.height * scale);
+        const ImVec2 corner(origin.x + (box.x - size.x) * 0.5f,
+                            origin.y + (box.y - size.y) * 0.5f);
+        draw->AddImage(texture, corner, ImVec2(corner.x + size.x, corner.y + size.y));
+    }
+    ImGui::Dummy(box);
 }
 
 void TexturesPanel::OnDraw()
@@ -222,15 +307,34 @@ void TexturesPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "filter textures", FilterText, sizeof(FilterText));
+    // Texture list on the left, import settings + preview on the right,
+    // split by a draggable divider.
+    const float panelLeft = ImGui::GetCursorScreenPos().x;
+    const float panelWidth = ImGui::GetContentRegionAvail().x;
+    const float panelHeight = std::max(ImGui::GetContentRegionAvail().y, 1.0f);
+    constexpr float kMinColumnWidth = 160.0f;
+    const float listWidth = std::clamp(panelWidth * ListFraction, kMinColumnWidth,
+                                       std::max(kMinColumnWidth, panelWidth - kMinColumnWidth));
 
-    // List on top, details pinned below it.
-    const float detailsHeight = ImGui::GetTextLineHeightWithSpacing() * 11.0f;
-    if (ImGui::BeginChild("##texture_list",
-                          ImVec2(0.0f, -detailsHeight)))
-        DrawTextureList();
+    if (ImGui::BeginChild("##list_column", ImVec2(listWidth, 0.0f)))
+    {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##filter", "filter textures", FilterText, sizeof(FilterText));
+        if (ImGui::BeginChild("##texture_list"))
+            DrawTextureList();
+        ImGui::EndChild();
+    }
     ImGui::EndChild();
 
-    DrawDetails();
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::InvisibleButton("##column_splitter", ImVec2(6.0f, panelHeight));
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (ImGui::IsItemActive() && panelWidth > 0.0f)
+        ListFraction = std::clamp((ImGui::GetMousePos().x - panelLeft) / panelWidth, 0.1f, 0.9f);
+    ImGui::SameLine(0.0f, 0.0f);
+
+    if (ImGui::BeginChild("##details_column"))
+        DrawDetails();
+    ImGui::EndChild();
 }
