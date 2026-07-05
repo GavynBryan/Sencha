@@ -46,9 +46,6 @@ void AudioSystem::Update(AudioService* audio, std::span<Registry*> active)
     // voice list.
     for (Registry* registry : active)
     {
-        if (registry == nullptr)
-            continue;
-
         std::vector<VoiceId>& playing = PlayingByRegistry[registry];
         playing.clear();
         DriveRegistry(*audio, *registry, playing);
