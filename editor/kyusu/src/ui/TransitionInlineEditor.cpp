@@ -42,10 +42,17 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition,
         for (TransitionTopology topology : { TransitionTopology::Doorway,
                                              TransitionTopology::Seam,
                                              TransitionTopology::Teleport })
+        {
             if (ImGui::Selectable(topologyName(topology), topology == record->Topology))
                 both([&](TransitionId id) { (void)world.SetTransitionTopology(id, topology); });
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 260.0f);
+            ImGui::TextDisabled("%s", TransitionTopologyHelp(topology));
+            ImGui::PopTextWrapPos();
+        }
         ImGui::EndCombo();
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Topology never affects streaming; the streaming shape is per region");
 
     int priority = record->PreloadPriority;
     ImGui::SetNextItemWidth(90.0f);
@@ -72,4 +79,22 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition,
              { (void)world.SetTransitionRequiredTags(id, SplitTagList(tagBuffer)); });
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Required world tags (comma separated); empty = always open");
+}
+
+const char* TransitionTopologyHelp(TransitionTopology topology)
+{
+    switch (topology)
+    {
+    case TransitionTopology::Doorway:
+        return "Identical to Seam today; reserved for threshold (as opposed to "
+               "seamless) transition timing, not yet implemented. Never affects "
+               "streaming.";
+    case TransitionTopology::Seam:
+        return "Identical to Doorway today; reserved for seamless (as opposed to "
+               "threshold) transition timing, not yet implemented. Never affects "
+               "streaming.";
+    case TransitionTopology::Teleport:
+        return "No geometric relationship; no reverse edge required.";
+    }
+    return "";
 }

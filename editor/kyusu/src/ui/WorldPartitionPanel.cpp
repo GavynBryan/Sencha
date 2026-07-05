@@ -341,11 +341,20 @@ void WorldPartitionPanel::DrawConnectionRow(TransitionId representative, Transit
     }
 
     const char* badge = "D";
+    const char* badgeName = "Doorway";
     if (record->Topology == TransitionTopology::Seam)
+    {
         badge = "S";
+        badgeName = "Seam";
+    }
     else if (record->Topology == TransitionTopology::Teleport)
+    {
         badge = "T";
+        badgeName = "Teleport";
+    }
     ImGui::TextColored(EditorUi::TextDim, "%s", badge);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s: %s", badgeName, TransitionTopologyHelp(record->Topology));
     ImGui::SameLine();
 
     const auto zoneName = [&](ZoneId zone) -> std::string
