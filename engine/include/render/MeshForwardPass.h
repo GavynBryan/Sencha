@@ -55,12 +55,16 @@ class MeshForwardPass
 {
 public:
     void Setup(const RendererServices& services);
+    // tint multiplies every material's BaseColor for this draw (the shader
+    // already folds BaseColor into the texture): white is a no-op, the editor
+    // dims context zones with it. One value per Draw call by design.
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
               const RenderLightSet& lights,
               const RenderQueue& queue,
               StaticMeshCache& meshes,
-              MaterialCache& materials);
+              MaterialCache& materials,
+              Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
     void Teardown();
 
     // Last Draw()'s measurements: queue items in vs instanced draw calls out
@@ -82,7 +86,7 @@ private:
     [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                  StaticMeshCache& meshes, MaterialCache& materials);
+                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;

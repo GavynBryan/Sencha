@@ -54,6 +54,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     // always has one). The builder + SceneSolidRenderer replace BrushSolid for the
     // Solid body, and the placed-mesh queue replaces the StaticMeshRenderer draw.
     // The IBrushBodyRenderer seam stays at two implementations (Wireframe + SceneSolid).
+    RuntimeAssetsRef = runtimeAssets;
+    LoggingRef = &logging;
     if (runtimeAssets != nullptr)
     {
         MeshCache = &runtimeAssets->StaticMeshes;
@@ -134,6 +136,23 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     if (MaterialPath)
     {
         QueueBuilder->Build(World.FocusDocument());
+
+        // Context zones build their own queues so they render real materials.
+        std::erase_if(ContextBuilders, [&](const auto& entry)
+                      { return !World.IsZoneOpen(ZoneId{ entry.first }); });
+        EditorDocument& focusDocument = World.FocusDocument();
+        World.VisitOpenZones(
+            [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
+            {
+                if (&document == &focusDocument || !view.VisibleInEditor)
+                    return;
+                auto& builder = ContextBuilders[zone.Value];
+                if (builder == nullptr)
+                    builder = std::make_unique<SceneRenderQueueBuilder>(
+                        RuntimeAssetsRef->Assets, RuntimeAssetsRef->StaticMeshes,
+                        RuntimeAssetsRef->MaterialSets, *LoggingRef);
+                builder->Build(document);
+            });
         // Hemispheric ambient is live-tunable in the dev console, same path as the
         // grid/bloom knobs above. BuildLights() leaves the tints alone, so set them
         // after. Defaults match RenderLightSet's neutral cool fill.
@@ -275,15 +294,30 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // theme dim constant. No real-material pass, no selection highlight, no
     // hover glow; picking never sees them, so they read as present but inert.
     World.VisitOpenZones(
-        [&](ZoneId, EditorDocument& document, const ZoneViewState& view)
+        [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
         {
             if (&document == &focusDocument || !view.VisibleInEditor)
                 return;
             const EditorScene& contextScene = document.GetScene();
             if (viewport.Shading == ViewportShading::Solid)
             {
-                BrushSolid.DrawViewportTinted(local, viewport, contextScene,
-                                              EditorTheme::ContextZoneDim);
+                // Real materials under the grey overlay when the WYSIWYG path
+                // is up; the checker fallback only without an asset system.
+                const auto it = ContextBuilders.find(zone.Value);
+                if (MaterialPath && it != ContextBuilders.end())
+                {
+                    const Vec4 dim = EditorTheme::ContextZoneDim;
+                    Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                                 it->second->BrushQueue(), *MeshCache, *MaterialStore, dim);
+                    Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                                 it->second->MeshQueue(), *MeshCache, *MaterialStore, dim);
+                    BrushSolid.DrawPortals(local, viewport, contextScene, dim);
+                }
+                else
+                {
+                    BrushSolid.DrawViewportTinted(local, viewport, contextScene,
+                                                  EditorTheme::ContextZoneDim);
+                }
             }
             else
             {
@@ -302,6 +336,10 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // The focus zone renders exactly as a single document does.
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
         body->DrawViewport(local, viewport, scene);
+    // The real-material body rightly skips portal markers (the cook collector
+    // drops them); Solid viewports draw them flat on top.
+    if (MaterialPath && viewport.Shading == ViewportShading::Solid)
+        BrushSolid.DrawPortals(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)

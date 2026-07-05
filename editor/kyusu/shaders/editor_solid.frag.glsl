@@ -17,6 +17,10 @@ void main()
     vec2 cell = floor(InUv);
     float checker = mod(cell.x + cell.y, 2.0);
     vec3 base = mix(vec3(0.26), vec3(0.52), checker) * InTint.rgb;
+    // Tint alpha below 0.5 selects the tint color WITHOUT the checker: marker
+    // volumes (portals) read as flat translucent-styled color, not geometry.
+    if (InTint.a < 0.5)
+        base = InTint.rgb;
 
     vec3 n = normalize(InNormal);
     vec3 lightDir = normalize(vec3(0.4, 0.9, 0.6));

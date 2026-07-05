@@ -167,7 +167,7 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
 }
 
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                               StaticMeshCache& meshes, MaterialCache& materials)
+                               StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint)
 {
     // Walk the instanced runs (consecutive order entries sharing mesh, section,
     // and material collapse into one draw; a run of one is the ordinary case).
@@ -192,7 +192,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
 
         MeshPushConstants push{};
-        push.BaseColor = material->BaseColor;
+        push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
+                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
         push.BaseColorTextureIndex = material->BaseColorTextureIndex;
 
         if (vertexBuffer != lastVertexBuffer)
@@ -222,7 +223,8 @@ void MeshForwardPass::Draw(const FrameContext& frame,
                            const RenderLightSet& lights,
                            const RenderQueue& queue,
                            StaticMeshCache& meshes,
-                           MaterialCache& materials)
+                           MaterialCache& materials,
+                           Vec4 tint)
 {
     LastStats = DrawStats{ .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()), .DrawCalls = 0 };
 
@@ -240,7 +242,7 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         return;
 
     BindFrameState(frame, *uniformOffset);
-    DrawRuns(frame, queue, meshes, materials);
+    DrawRuns(frame, queue, meshes, materials, tint);
 }
 
 void MeshForwardPass::Teardown()

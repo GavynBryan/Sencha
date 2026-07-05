@@ -26,7 +26,9 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 
 class EditorScene;
 class EditorDocument;
@@ -119,6 +121,13 @@ private:
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
     std::optional<SceneSolidRenderer>      SceneSolid;
+    // One WYSIWYG queue builder per open context zone (lazily created, dropped
+    // when the zone closes): context zones render their real materials dimmed
+    // by the draw-level tint instead of the procedural-checker fallback. Idle
+    // zones cost nothing (the builder's content hash skips re-bakes).
+    std::unordered_map<uint64_t, std::unique_ptr<SceneRenderQueueBuilder>> ContextBuilders;
+    RuntimeAssets*     RuntimeAssetsRef = nullptr;
+    LoggingProvider*   LoggingRef = nullptr;
     StaticMeshCache*       MeshCache = nullptr;        // for the unconditional MeshQueue draw
     MaterialCache*         MaterialStore = nullptr;
     bool                   MaterialPath = false;

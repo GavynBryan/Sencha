@@ -26,6 +26,11 @@ public:
     // Same path with every per-material tint modulated (context-zone dimming).
     void DrawViewportTinted(const FrameContext& frame, const EditorViewport& viewport,
                             const EditorScene& scene, const Vec4& tint);
+    // Only the portal marker volumes, flat-filled: the real-material body pass
+    // rightly skips them (they are not geometry), so Solid viewports draw them
+    // through here on top of it, focus full-strength and context dimmed.
+    void DrawPortals(const FrameContext& frame, const EditorViewport& viewport,
+                     const EditorScene& scene, const Vec4& tint);
 
 private:
     void AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,
