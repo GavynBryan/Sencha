@@ -1,7 +1,7 @@
 # Phase V: Context-Zone and Portal Viewport Rendering
 
-Status: execution spec (2026-07-05), NOT implemented. Owner review before any stage
-starts. Fixes two owner-reported defects from hands-on testing and lands the intended
+Status: IMPLEMENTED 2026-07-05 (owner-directed same-day execution, commit
+"partition 08"). Fixes two owner-reported defects from hands-on testing and lands the intended
 look: context zones VISIBLE with their real materials under a grey overlay (not the
 procedural checker), portals as flat translucent cyan volumes (not checker boxes).
 
