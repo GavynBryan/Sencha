@@ -1,5 +1,6 @@
 #include "TemplateGame.h"
 
+#include "PlayerStartComponent.h"
 #include "SpinComponent.h"
 
 #include <app/DefaultRenderPipeline.h>
@@ -156,15 +157,36 @@ namespace
     // content. The map path spawns it into its single zone; the world path
     // spawns it once into the global registry, where zone unloads never
     // touch it. Returns the pawn.
-    EntityId SpawnPlayerAvatar(Registry& registry)
+    EntityId SpawnPlayerAvatar(Registry& registry, Logger& log)
     {
+        // The authored spawn point: the first player_start entity in this
+        // registry (world scene content on the world path). Entities load in
+        // scene order, so "first" is deterministic per cooked scene.
+        Vec3d spawnPosition{ 0.0f, 2.0f, 0.0f };
+        const World& spawnLookup = registry.Components;
+        bool foundStart = false;
+        for (EntityId entity : registry.Entities.GetAliveEntities())
+        {
+            if (!spawnLookup.HasComponent<PlayerStartComponent>(entity))
+                continue;
+            if (const LocalTransform* transform = spawnLookup.TryGet<LocalTransform>(entity))
+            {
+                spawnPosition = transform->Value.Position;
+                foundStart = true;
+                break;
+            }
+        }
+        if (!foundStart)
+            log.Info("TemplateGame: no player_start entity; spawning the avatar at the "
+                     "default position");
+
         // Use the scene's camera if it authored one; a cooked level is pure
         // geometry, so spawn one to make it viewable.
         EntityId camera = FindFirstCamera(registry);
         if (!camera.IsValid())
         {
             Transform3f cameraStart;
-            cameraStart.Position = Vec3d{ 0.0f, 2.0, 0.0f };
+            cameraStart.Position = spawnPosition;
             camera = CreateDefaultEntity(registry, cameraStart);
             AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
         }
@@ -181,7 +203,7 @@ namespace
         // against collision.
         World& pawnWorld = registry.Components;
         Transform3f pawnStart;
-        pawnStart.Position = Vec3d{ 0.0f, 2.0f, 0.0f };
+        pawnStart.Position = spawnPosition;
         const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
         pawnWorld.AddComponent<CharacterController>(pawn, CharacterController{});
         pawnWorld.AddComponent<MovementProfile>(pawn, MovementProfile{});
@@ -363,6 +385,7 @@ void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
     // without ever starting the game.
     InitSceneSerializer();
     RegisterComponent<SpinComponent>();
+    RegisterComponent<PlayerStartComponent>();
 }
 
 void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serializers)
@@ -372,6 +395,7 @@ void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serialize
     // outlive dlclose and crash when the registry frees it at exit. Built-in
     // serializers (engine code) are left for the host to manage.
     serializers.Remove(ResolveComponentTypeId<SpinComponent>());
+    serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
 }
 
 void TemplateGame::OnStart(GameStartupContext&)
@@ -592,7 +616,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 return;
 
             // Single-zone life: the avatar lives and dies with the map's zone.
-            (void)SpawnPlayerAvatar(registry);
+            (void)SpawnPlayerAvatar(registry, logging.GetLogger<TemplateGame>());
 
             ActiveZoneRegistry = &registry;
             ZoneActive = true;
@@ -711,7 +735,30 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         RegisterPhysicsComponents(global.Components);
         RegisterMovement(global.Components);
         RegisterCameraComponents(global.Components);
-        WorldPawn = SpawnPlayerAvatar(global);
+
+        // The world scene: authored global content, loaded synchronously into
+        // the global registry before the avatar spawns (a world load is a
+        // loading-screen boundary, not a streaming moment), so the player
+        // start and every other world-lifetime entity exist first.
+        const WorldPartitionManifest& loaded = Partition->Manifest();
+        if (!loaded.CookedWorldSceneRef.empty())
+        {
+            const std::string scenePath =
+                std::string(kAuthoredRoot) + "/" + loaded.CookedWorldSceneRef;
+            const std::string collisionPath =
+                std::string(kAuthoredRoot) + "/" + loaded.CookedWorldCollisionRef;
+            SceneParse parsed = ParseSceneFile(scenePath);
+            const bool sceneLoaded = FinalizeZoneScene(
+                global, parsed, logging, &runtimeAssets.Assets, PhysicsShapes, collisionPath);
+            // A startup +world runs at GameLoaded, before system registration
+            // hands out the collision cache; the collision half completes in
+            // OnRegisterSystems.
+            if (sceneLoaded && PhysicsShapes == nullptr
+                && !loaded.CookedWorldCollisionRef.empty())
+                PendingWorldSceneCollision = collisionPath;
+        }
+
+        WorldPawn = SpawnPlayerAvatar(global, logging.GetLogger<TemplateGame>());
         ActiveZoneRegistry = &global;   // the input and spin systems read this
     }
 
@@ -774,6 +821,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // load can fill it with the level's cooked brush collision.
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         PhysicsShapes = &step->GetShapeCache();
+    // A startup +world loaded the world scene before this hook handed out the
+    // cache: complete its collision half now, still before the first frame.
+    if (PhysicsShapes != nullptr && !PendingWorldSceneCollision.empty())
+    {
+        LoadZoneCollision(GetEngine().Zones().Global().Components, *PhysicsShapes,
+                          PendingWorldSceneCollision, std::string(kCookedScanRoot));
+        PendingWorldSceneCollision.clear();
+    }
     // Engine-provided gameplay: the ability kit and movement systems drive the sim
     // over active registries, and camera follow places the view. The template only
     // wires input in and orders it ahead of the sim so intent lands the same tick.

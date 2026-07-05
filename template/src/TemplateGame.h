@@ -58,6 +58,10 @@ private:
     std::vector<std::string> WorldTags;
     ZoneId PendingZoneFocus;   // `zone <hexid>` issued before the world loaded
     EntityId WorldPawn;        // the avatar in the global registry (world path)
+    // The world scene's cooked collision sidecar when the scene loaded before
+    // OnRegisterSystems handed out the collision cache (a startup +world);
+    // that hook loads it into the global registry and clears this.
+    std::string PendingWorldSceneCollision;
     ZoneRuntime* ZoneRuntimePtr = nullptr;
     // Cooked-collision cache owned (by value) by the engine's PhysicsStepSystem;
     // grabbed at system registration so map load can fill it (LoadZoneCollision).
