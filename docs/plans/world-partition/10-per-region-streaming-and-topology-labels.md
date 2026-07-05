@@ -240,9 +240,16 @@ ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focu
   in the panel).
 - The panel's inline region editors clamp to the validation bounds (hop >= 0,
   radius >= 0, cap >= 1); `streaming_invalid` still guards hand-edited manifests.
-- The derived badge reads "Graph (inherited)" when a region authors no override;
-  any authored field drops the marker ("Radius" when the authored radius is
-  positive, else "Graph").
+- Owner UI revision (2026-07-05): the passive derived badge plus always-visible
+  raw fields read as jargon ("why a radius in graph mode?"). Shipped shape: a
+  streaming-shape combo (Inherited / Graph / Proximity, each with a help line)
+  that is presentation over the radius value (Graph authors an explicit 0,
+  Proximity seeds a starter radius from the region's largest cell extent,
+  Inherited clears the field); the radius editor only appears for a proximity
+  shape and commits on deactivate (a per-keystroke commit would flip the shape
+  mid-typing); fields carry designer-terms labels (Load radius, Preload hops,
+  Zone cap) and tooltips. Still no stored mode anywhere: the combo derives from
+  values and writes values (`RegionStreamingShapeLabel` is the pure helper).
 - Owed manual GUI gates: the S3 two-region diamond-to-disc preview walkthrough
   (radius circle drawn, config-in-force line naming the active region) and the S4
   combo read-through.

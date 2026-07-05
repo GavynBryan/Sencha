@@ -11,14 +11,18 @@ class SelectionService;
 class WorldDocument;
 struct ContentRiskRecord;
 
-// Derived streaming badge for a region row: "Radius" when the authored radius
-// is positive, else "Graph"; "(inherited)" when the region authors no override
-// at all. Presentation only, computed from the values; nothing stores a mode.
-[[nodiscard]] inline const char* RegionStreamingBadge(const RegionStreamingConfig& streaming)
+// Derived label for a region's streaming-shape combo. The shape is read off
+// the radius in force: positive = Proximity (cells load by distance), zero =
+// Graph (rooms load through authored connections); an absent override shows
+// the base's shape marked inherited. Presentation only, computed from the
+// values; nothing stores a mode.
+[[nodiscard]] inline const char* RegionStreamingShapeLabel(const RegionStreamingConfig& streaming,
+                                                           double baseRadius)
 {
-    if (streaming == RegionStreamingConfig{})
-        return "Graph (inherited)";
-    return streaming.Radius && *streaming.Radius > 0.0 ? "Radius" : "Graph";
+    const bool proximity = streaming.Radius.value_or(baseRadius) > 0.0;
+    if (!streaming.Radius.has_value())
+        return proximity ? "Inherited (Proximity)" : "Inherited (Graph)";
+    return proximity ? "Proximity" : "Graph";
 }
 
 // The partition tree: regions containing zone rows in manifest order, with the

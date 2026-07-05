@@ -69,17 +69,19 @@ TEST_F(RegionStreamingEditTest, VerbsRefuseUnknownRegion)
     EXPECT_FALSE(World.SetRegionResidentCap(RegionId{ 0xdead }, 1));
 }
 
-TEST(RegionStreamingBadge, MapsOverrideStateToLabel)
+TEST(RegionStreamingShapeLabel, DerivesShapeFromRadiusInForce)
 {
     RegionStreamingConfig streaming;
-    EXPECT_STREQ(RegionStreamingBadge(streaming), "Graph (inherited)");
+    EXPECT_STREQ(RegionStreamingShapeLabel(streaming, 0.0), "Inherited (Graph)");
+    EXPECT_STREQ(RegionStreamingShapeLabel(streaming, 250.0), "Inherited (Proximity)");
 
-    streaming.HopCount = 2;   // overridden, but still graph-shaped
-    EXPECT_STREQ(RegionStreamingBadge(streaming), "Graph");
-
-    streaming.Radius = 0.0;   // explicit zero radius is still graph
-    EXPECT_STREQ(RegionStreamingBadge(streaming), "Graph");
+    streaming.Radius = 0.0;   // explicit zero pins the graph shape
+    EXPECT_STREQ(RegionStreamingShapeLabel(streaming, 250.0), "Graph");
 
     streaming.Radius = 250.0;
-    EXPECT_STREQ(RegionStreamingBadge(streaming), "Radius");
+    EXPECT_STREQ(RegionStreamingShapeLabel(streaming, 0.0), "Proximity");
+
+    streaming.HopCount = 2;   // hop and cap overrides never change the shape
+    streaming.ResidentZoneCap = 12;
+    EXPECT_STREQ(RegionStreamingShapeLabel(streaming, 0.0), "Proximity");
 }

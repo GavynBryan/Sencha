@@ -17,6 +17,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <string>
@@ -160,16 +161,25 @@ void WorldPartitionPanel::DrawStreamingPreview()
     int hops = view->PreviewHopCount.value_or(resolved.HopCount);
     if (ImGui::InputInt("Hops", &hops))
         view->PreviewHopCount = hops < 0 ? 0 : hops;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("What-if override: preview with a different preload hop count. "
+                          "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewHopCount, "clear_hops");
     ImGui::SetNextItemWidth(80.0f);
     float radius = view->PreviewRadius.value_or(static_cast<float>(resolved.Radius));
     if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
         view->PreviewRadius = radius < 0.0f ? 0.0f : radius;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("What-if override: preview with a different load radius. "
+                          "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewRadius, "clear_radius");
     ImGui::SetNextItemWidth(80.0f);
     int cap = view->PreviewResidentCap.value_or(resolved.ResidentZoneCap);
     if (ImGui::InputInt("Cap", &cap))
         view->PreviewResidentCap = cap < 1 ? 1 : cap;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("What-if override: preview with a different zone cap. "
+                          "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewResidentCap, "clear_cap");
 
     // Scratch world tags: preview how gated connections reflow without play.
@@ -489,17 +499,77 @@ void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
     ImGui::PopID();
 }
 
+namespace
+{
+
+// Starter radius when a region switches to the Proximity shape: the largest
+// horizontal extent among the region's zone bounds, so the first preview
+// circle reaches the neighboring cells and the designer tunes from something
+// visible. 100 when the region has no measurable zones yet.
+double SeedRegionRadius(const WorldPartitionManifest& manifest, RegionId region)
+{
+    double largest = 0.0;
+    for (const ZoneHeader& zone : manifest.Zones)
+    {
+        if (zone.Region != region || !zone.Bounds.IsValid())
+            continue;
+        const Vec3d extent = zone.Bounds.Extent();
+        largest = std::max({ largest, static_cast<double>(extent[0]),
+                             static_cast<double>(extent[2]) });
+    }
+    return largest > 0.0 ? largest : 100.0;
+}
+
+} // namespace
+
 void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
 {
     ImGui::PushID("region_streaming");
-    ImGui::TextColored(EditorUi::TextDim, "Streaming: %s",
-                       RegionStreamingBadge(region.Streaming));
+
+    const WorldPartitionStreamingConfig base{};
+    const bool proximity = region.Streaming.Radius.value_or(base.Radius) > 0.0;
+    const bool inheritedShape = !region.Streaming.Radius.has_value();
+
+    // The shape combo is presentation over the radius value: Graph authors an
+    // explicit 0, Proximity authors a starter radius, Inherited clears the
+    // field. Nothing stores a mode; the runtime reads only the values.
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::BeginCombo("Streaming",
+                          RegionStreamingShapeLabel(region.Streaming, base.Radius)))
+    {
+        const auto option = [&](const char* label, bool selected, const char* help,
+                                auto apply)
+        {
+            if (ImGui::Selectable(label, selected) && !selected)
+                apply();
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 280.0f);
+            ImGui::TextDisabled("%s", help);
+            ImGui::PopTextWrapPos();
+        };
+        option("Inherited", inheritedShape,
+               "Use the world's default shape.",
+               [&] { (void)WorldDoc.SetRegionRadius(region.Id, std::nullopt); });
+        option("Graph", !inheritedShape && !proximity,
+               "Zones load through authored connections: rooms behind doorways. "
+               "Only connected zones preload; distance never matters.",
+               [&] { (void)WorldDoc.SetRegionRadius(region.Id, 0.0); });
+        option("Proximity", !inheritedShape && proximity,
+               "Zones load by distance from the player: an open area tiled into "
+               "grid cells needs no connections, and diagonal neighbors load too.",
+               [&]
+               {
+                   (void)WorldDoc.SetRegionRadius(
+                       region.Id, SeedRegionRadius(WorldDoc.Manifest(), region.Id));
+               });
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How this region decides which zones load around the player");
 
     // Inherited fields display the engine-default base; an edit authors the
     // override, the clear button returns the field to inherited. Clamps
     // mirror the validation bounds so the editors cannot author an invalid
     // value (hand-edited manifests still validate).
-    const WorldPartitionStreamingConfig base{};
     const auto clearOrInherited = [&](bool authored, const char* id, auto clear)
     {
         ImGui::SameLine();
@@ -516,25 +586,42 @@ void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
         ImGui::PopID();
     };
 
+    // The radius only exists for a proximity shape; the combo owns entering
+    // and leaving it. Committed on deactivate: a per-keystroke commit would
+    // flip the shape to Graph (and hide this field) the moment a typed value
+    // passes through 0.
+    if (proximity)
+    {
+        ImGui::SetNextItemWidth(70.0f);
+        float radius = static_cast<float>(region.Streaming.Radius.value_or(base.Radius));
+        (void)ImGui::InputFloat("Load radius", &radius, 0.0f, 0.0f, "%.0f");
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            (void)WorldDoc.SetRegionRadius(region.Id,
+                                           radius < 0.0f ? 0.0 : static_cast<double>(radius));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("World units. Zones within this distance of the player load, "
+                              "connected or not. Drawn as a circle in the streaming preview.");
+    }
+
     ImGui::SetNextItemWidth(70.0f);
     int hops = region.Streaming.HopCount.value_or(base.HopCount);
-    if (ImGui::InputInt("Hops", &hops))
+    if (ImGui::InputInt("Preload hops", &hops))
         (void)WorldDoc.SetRegionHopCount(region.Id, hops < 0 ? 0 : hops);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How many connections ahead zones preload: 1 keeps every "
+                          "adjacent room loaded, 2 the rooms behind those. Connections "
+                          "still apply in a Proximity region (its entrances).");
     clearOrInherited(region.Streaming.HopCount.has_value(), "clear_hops",
                      [&] { (void)WorldDoc.SetRegionHopCount(region.Id, std::nullopt); });
 
     ImGui::SetNextItemWidth(70.0f);
-    float radius = static_cast<float>(region.Streaming.Radius.value_or(base.Radius));
-    if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
-        (void)WorldDoc.SetRegionRadius(region.Id,
-                                       radius < 0.0f ? 0.0 : static_cast<double>(radius));
-    clearOrInherited(region.Streaming.Radius.has_value(), "clear_radius",
-                     [&] { (void)WorldDoc.SetRegionRadius(region.Id, std::nullopt); });
-
-    ImGui::SetNextItemWidth(70.0f);
     int cap = region.Streaming.ResidentZoneCap.value_or(base.ResidentZoneCap);
-    if (ImGui::InputInt("Cap", &cap))
+    if (ImGui::InputInt("Zone cap", &cap))
         (void)WorldDoc.SetRegionResidentCap(region.Id, cap < 1 ? 1 : cap);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Most zones kept loaded at once while the player is in this "
+                          "region; the farthest preloads unload first. The player's zone "
+                          "and pinned zones never unload.");
     clearOrInherited(region.Streaming.ResidentZoneCap.has_value(), "clear_cap",
                      [&] { (void)WorldDoc.SetRegionResidentCap(region.Id, std::nullopt); });
 
