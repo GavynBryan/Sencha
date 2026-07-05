@@ -327,8 +327,6 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                  meshDim);
                     BrushFills.DrawZoneOverlay(local, viewport, contextScene,
                                                EditorTheme::ContextZoneOverlay);
-                    BrushFills.DrawPortalVolumes(local, viewport, contextScene,
-                                                 EditorTheme::ContextZoneDim);
                 }
                 else
                 {
@@ -339,13 +337,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             else
             {
                 const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                const Vec4 dimmedPortalWire(
-                    EditorTheme::PortalWire.X * EditorTheme::ContextZoneDim.X,
-                    EditorTheme::PortalWire.Y * EditorTheme::ContextZoneDim.Y,
-                    EditorTheme::PortalWire.Z * EditorTheme::ContextZoneDim.Z,
-                    EditorTheme::PortalWire.W * EditorTheme::ContextZoneDim.W);
-                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire,
-                                        dimmedPortalWire);
+                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
             }
             Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
         });
@@ -353,10 +345,6 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // The focus zone renders exactly as a single document does.
     if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
         body->DrawViewport(local, viewport, scene);
-    // The real-material body rightly skips portal markers (the cook collector
-    // drops them); Solid viewports draw them as translucent volumes on top.
-    if (MaterialPath && viewport.Shading == ViewportShading::Solid)
-        BrushFills.DrawPortalVolumes(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     // Placed meshes draw in every viewport so they read regardless of shading: through
     // the real-material queue when active, else the procedural-checker fallback.
     if (MaterialPath)

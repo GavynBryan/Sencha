@@ -1,7 +1,5 @@
 #include "BrushFillRenderer.h"
 
-#include "EditorTheme.h"
-
 #include "document/EditorScene.h"
 #include "document/SceneBrushWalk.h"
 #include "brush/BrushTessellation.h"
@@ -30,37 +28,14 @@ BrushFillRenderer::BrushFillRenderer(EditorFillPipeline& fills)
 {
 }
 
-void BrushFillRenderer::DrawPortalVolumes(const FrameContext& frame,
-                                          const EditorViewport& viewport,
-                                          const EditorScene& scene, const Vec4& tint)
-{
-    std::vector<EditorLineVertex> vertices;
-    ForEachVisibleBrush(scene, /*skipLocked*/ false,
-        [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
-        {
-            if (!scene.IsPortal(id))
-                return;
-            const Vec4 fill(EditorTheme::PortalFill.X * tint.X,
-                            EditorTheme::PortalFill.Y * tint.Y,
-                            EditorTheme::PortalFill.Z * tint.Z,
-                            EditorTheme::PortalFill.W);
-            AppendBrushFill(vertices, mesh, transform, fill);
-        });
-    if (!vertices.empty())
-        Fills.Submit(frame, viewport, vertices, /*onTop*/ false);
-}
-
 void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
                                         const EditorViewport& viewport,
                                         const EditorScene& scene, const Vec4& color)
 {
     std::vector<EditorLineVertex> vertices;
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
-        [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
+        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         {
-            // Portals get their own dimmed volume fill, not the wash.
-            if (scene.IsPortal(id))
-                return;
             AppendBrushFill(vertices, mesh, transform, color);
         });
     if (!vertices.empty())

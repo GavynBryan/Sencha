@@ -34,8 +34,9 @@ TransitionRecord MakeTransition(uint64_t id, uint64_t from, uint64_t to,
     return transition;
 }
 
-// Internally consistent three-zone world: no rule fires. Zone bounds keep a
-// gap because Aabb3d::Intersects is closed and touching boxes count as overlap.
+// Internally consistent three-zone world: no rule fires. Adjacent zones sit
+// face-to-face (east kisses hub at x=8, north kisses hub at z=8); a shared
+// boundary is contact, not overlap, so the overlap rule stays silent.
 WorldPartitionManifest MakeCleanManifest()
 {
     WorldPartitionManifest manifest;
@@ -44,8 +45,8 @@ WorldPartitionManifest MakeCleanManifest()
     manifest.Regions = { RegionRecord{ RegionId{ RegionB1 }, "Ruins" } };
     manifest.Zones = {
         MakeZone(ZoneA1, "hub", Aabb3d{ { -8.0f, 0.0f, -8.0f }, { 8.0f, 4.0f, 8.0f } }),
-        MakeZone(ZoneA2, "east", Aabb3d{ { 9.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } }),
-        MakeZone(ZoneA3, "north", Aabb3d{ { -8.0f, 0.0f, 9.0f }, { 8.0f, 4.0f, 20.0f } }),
+        MakeZone(ZoneA2, "east", Aabb3d{ { 8.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } }),
+        MakeZone(ZoneA3, "north", Aabb3d{ { -8.0f, 0.0f, 8.0f }, { 8.0f, 4.0f, 20.0f } }),
     };
     manifest.Transitions = {
         MakeTransition(0xc1, ZoneA1, ZoneA2),
@@ -167,6 +168,23 @@ TEST(WorldPartitionValidation, BoundsOverlapFiresOncePerPair)
     EXPECT_NE(records[0].Message.find("hub"), std::string::npos);
     EXPECT_NE(records[0].Message.find("east"), std::string::npos);
     EXPECT_EQ(records[0].Message.find("00000000000000a1"), std::string::npos);
+}
+
+TEST(WorldPartitionValidation, KissingFacesDoNotOverlap)
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    // east's -x face lies exactly on hub's +x face (x = 8): contact, not overlap.
+    manifest.Zones[1].Bounds = Aabb3d{ { 8.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
+    EXPECT_TRUE(Validate(manifest).empty());
+}
+
+TEST(WorldPartitionValidation, TouchingCornersDoNotOverlap)
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    // east shares only the single corner (8, 4, 8) with hub's max corner: zero
+    // overlap depth on every axis.
+    manifest.Zones[1].Bounds = Aabb3d{ { 8.0f, 4.0f, 8.0f }, { 24.0f, 8.0f, 20.0f } };
+    EXPECT_TRUE(Validate(manifest).empty());
 }
 
 TEST(WorldPartitionValidation, MessageFallsBackToHexWhenZoneUnnamed)

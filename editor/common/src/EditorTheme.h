@@ -34,10 +34,8 @@ inline constexpr Vec4 ContextZoneDim{ 0.45f, 0.45f, 0.50f, 1.0f };
 // faint enough that the underlying textures stay readable.
 inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
-// Portal marker brushes: read as volumes, not walls. Translucent cyan fill so
-// the opening stays visible through them; the wire stays full-strength.
-inline constexpr Vec4 PortalFill{ 0.25f, 0.75f, 0.95f, 0.30f };
-inline constexpr Vec4 PortalWire{ 0.25f, 0.75f, 0.95f, 1.0f };
+// Transition graph edges in the streaming preview: cyan lines between zone centers.
+inline constexpr Vec4 TransitionLine{ 0.25f, 0.75f, 0.95f, 1.0f };
 // Streaming preview: zone bounds tinted by the live demand state around the
 // preview focus (which keeps the Selection accent).
 inline constexpr Vec4 PreviewDemanded{ 0.3f, 0.9f, 0.4f, 1.0f };

@@ -34,13 +34,6 @@ public:
 
 private:
     void DrawComponent(IComponentSerializer& serializer, EntityId entity);
-    // World-mode section above the generic list for portal entities: the
-    // resolved WORLD transition (name, endpoints, inline edits through the
-    // WorldDocument verbs) instead of the raw 16-hex field. Portals are
-    // editor-owned components with world-level semantics the generic schema
-    // cannot render; this is the one deliberate exception to the
-    // no-named-components rule below.
-    void DrawPortalSection(EntityId entity);
     // Picker for an asset-handle field (RuntimeField tagged with an AssetType):
     // a combo of scanned assets of that type, applied via AssetFieldEditCommand.
     void DrawAssetField(const RuntimeField& field, EntityId entity,

@@ -1,8 +1,6 @@
 #include "WorldDocument.h"
 
-#include "PortalGeometry.h"
 #include "ZoneBounds.h"
-#include "commands/MoveEntitiesToZoneCommand.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -141,9 +139,8 @@ bool WorldDocument::SaveWorld()
         return false;
 
     AssignSceneRefsForNewZones();
-    // Derived connections land before the zone files write, so the links they
-    // stamp onto portals persist in this save.
-    ReconcilePortalConnections();
+    // Refresh derived bounds before the zone files write so they persist current.
+    RefreshDerivedZoneBounds();
 
     namespace fs = std::filesystem;
     for (ZoneHeader& header : Manifest_.Zones)
@@ -508,17 +505,17 @@ bool WorldDocument::RemoveTransition(TransitionId transition)
 
 void WorldDocument::Revalidate()
 {
-    ReconcilePortalConnections();
+    RefreshDerivedZoneBounds();
     RunValidation();
 }
 
-void WorldDocument::ReconcilePortalConnections()
+void WorldDocument::RefreshDerivedZoneBounds()
 {
     if (!WorldMode_)
         return;
 
-    // Spans need current bounds; derived ones refresh from live content first
-    // (the same recompute a save performs).
+    // Non-overridden spans refresh from live content (the recompute a save also
+    // performs) so validation and the manifest write see current bounds.
     for (ZoneHeader& header : Manifest_.Zones)
     {
         if (header.BoundsOverridden)
@@ -528,104 +525,6 @@ void WorldDocument::ReconcilePortalConnections()
             continue;
         if (const auto bounds = ComputeZoneBounds(it->second.Document->GetScene()))
             header.Bounds = *bounds;
-    }
-
-    // Filing is derived too: a marker belongs to the zone whose bounds
-    // contain its center (ResolveFocusZone semantics: the current holder wins
-    // while it still contains the center, smallest volume otherwise, sticky
-    // when nothing contains it). Wherever it was created, it refiles itself
-    // between open zones, so hierarchy placement is never the author's
-    // decision. Collected first, applied after: the move mutates entity lists.
-    struct PendingRefile
-    {
-        EntityId Entity;
-        ZoneId From;
-        ZoneId To;
-    };
-    std::vector<PendingRefile> refiles;
-    for (const ZoneHeader& zone : Manifest_.Zones)
-    {
-        const auto it = OpenZones_.find(zone.Id);
-        if (it == OpenZones_.end())
-            continue;
-        EditorScene& scene = it->second.Document->GetScene();
-        for (EntityId entity : scene.GetAllEntities())
-        {
-            if (!scene.IsPortal(entity))
-                continue;
-            const auto bounds = scene.TryGetWorldBounds(entity);
-            if (!bounds.has_value())
-                continue;
-            const ZoneId home = ResolveFocusZone(Manifest_, bounds->Center(), zone.Id);
-            if (home.IsValid() && home != zone.Id && OpenZones_.contains(home))
-                refiles.push_back({ entity, zone.Id, home });
-        }
-    }
-    for (const PendingRefile& refile : refiles)
-    {
-        EditorDocument* source = ZoneDocument(refile.From);
-        EditorDocument* target = ZoneDocument(refile.To);
-        if (source == nullptr || target == nullptr)
-            continue;
-        const EntityId entities[] = { refile.Entity };
-        MoveEntitiesToZoneCommand move(entities, *source, *target);
-        move.Execute();
-    }
-
-    const auto findRecord = [&](TransitionId id) -> const TransitionRecord*
-    {
-        for (const TransitionRecord& record : Manifest_.Transitions)
-            if (record.Id == id)
-                return &record;
-        return nullptr;
-    };
-    const auto findDoorway = [&](ZoneId from, ZoneId to) -> TransitionId
-    {
-        for (const TransitionRecord& record : Manifest_.Transitions)
-            if (record.From == from && record.To == to
-                && record.Topology == TransitionTopology::Doorway)
-                return record.Id;
-        return TransitionId{};
-    };
-
-    for (const ZoneHeader& zone : Manifest_.Zones)
-    {
-        const auto it = OpenZones_.find(zone.Id);
-        if (it == OpenZones_.end())
-            continue;
-        EditorScene& scene = it->second.Document->GetScene();
-        for (EntityId entity : scene.GetAllEntities())
-        {
-            const PortalComponent* portal = scene.TryGetPortal(entity);
-            if (portal == nullptr)
-                continue;
-            const auto bounds = scene.TryGetWorldBounds(entity);
-            if (!bounds.has_value())
-                continue;   // no geometry to derive from: validation's report
-
-            const ZoneId target = DerivePortalCounterpart(Manifest_, zone.Id, *bounds);
-            if (!target.IsValid())
-                continue;   // nothing on the other side yet: stays unlinked
-
-            // Geometry wins: the correct link is the Doorway edge leaving this
-            // portal's own zone toward the zone its placement spans.
-            const TransitionRecord* linked = findRecord(portal->Transition);
-            if (linked != nullptr && linked->From == zone.Id && linked->To == target
-                && linked->Topology == TransitionTopology::Doorway)
-                continue;
-
-            TransitionId forward = findDoorway(zone.Id, target);
-            if (!forward.IsValid())
-            {
-                forward = AddTransition(zone.Id, target, TransitionTopology::Doorway,
-                                        /*oneWay*/ false, 0);
-                if (!findDoorway(target, zone.Id).IsValid())
-                    (void)AddTransition(target, zone.Id, TransitionTopology::Doorway,
-                                        /*oneWay*/ false, 0);
-            }
-            scene.SetComponent(entity, PortalComponent{ forward });
-            it->second.Document->MarkDirty();
-        }
     }
 }
 
@@ -875,232 +774,6 @@ void WorldDocument::RunValidation()
             .Message = std::format("zone {} has {} entities outside its bounds",
                                    ZoneIdToString(zone.Id), outside),
         });
-    }
-
-    // Portal and transition rules. Portal scanning covers open zones only;
-    // Doorway is the only topology that promises an aperture, so Seam and
-    // Teleport transitions are exempt from every portal rule. Records append
-    // in rule order, ascending source id within each rule.
-    {
-        struct PortalSighting
-        {
-            ZoneId Zone;
-            bool HasBounds = false;
-            Aabb3d Bounds;
-        };
-        std::unordered_map<uint64_t, std::vector<PortalSighting>> linkedPortals;
-        std::vector<ContentRiskRecord> missing;
-        std::vector<ContentRiskRecord> duplicate;
-        std::vector<ContentRiskRecord> unverifiedRecords;
-        std::vector<ContentRiskRecord> misaligned;
-        std::vector<ContentRiskRecord> unlinked;
-        std::vector<ContentRiskRecord> wrongZone;
-        std::vector<ContentRiskRecord> brushMissing;
-
-        const auto findTransition = [&](TransitionId id) -> const TransitionRecord*
-        {
-            for (const TransitionRecord& record : Manifest_.Transitions)
-                if (record.Id == id)
-                    return &record;
-            return nullptr;
-        };
-
-        for (const ZoneHeader& zone : Manifest_.Zones)
-        {
-            const auto it = OpenZones_.find(zone.Id);
-            if (it == OpenZones_.end())
-                continue;
-            const EditorScene& scene = it->second.Document->GetScene();
-            size_t unlinkedCount = 0;
-            size_t brushMissingCount = 0;
-            for (EntityId entity : scene.GetAllEntities())
-            {
-                const PortalComponent* portal = scene.TryGetPortal(entity);
-                if (portal == nullptr)
-                    continue;
-                const auto bounds = scene.TryGetWorldBounds(entity);
-                if (!bounds.has_value())
-                    ++brushMissingCount;
-                const TransitionRecord* record =
-                    portal->Transition.IsValid() ? findTransition(portal->Transition) : nullptr;
-                if (record == nullptr)
-                {
-                    ++unlinkedCount;
-                    continue;
-                }
-                linkedPortals[portal->Transition.Value].push_back(
-                    { zone.Id, bounds.has_value(), bounds.value_or(Aabb3d{}) });
-            }
-            if (unlinkedCount > 0)
-                unlinked.push_back({
-                    .Severity = ContentRiskSeverity::Warning,
-                    .Kind = ContentRiskSourceKind::Zone,
-                    .SourceId = zone.Id.Value,
-                    .RuleId = "partition.portal.unlinked",
-                    .Message = std::format("zone {} has {} portals linked to no transition",
-                                           ZoneIdToString(zone.Id), unlinkedCount),
-                });
-            if (brushMissingCount > 0)
-                brushMissing.push_back({
-                    .Severity = ContentRiskSeverity::Error,
-                    .Kind = ContentRiskSourceKind::Zone,
-                    .SourceId = zone.Id.Value,
-                    .RuleId = "partition.portal.brush_missing",
-                    .Message = std::format("zone {} has {} portal components on entities "
-                                           "without brush geometry",
-                                           ZoneIdToString(zone.Id), brushMissingCount),
-                });
-        }
-
-        const std::vector<PortalSighting> noSightings;
-        // A symmetric doorway pair is one physical opening: one linked portal
-        // on either side satisfies the aperture check for BOTH directions. The
-        // per-edge rules (duplicate, wrong_zone, misaligned) stay per-edge.
-        const auto reverseOf = [&](const TransitionRecord& record) -> const TransitionRecord*
-        {
-            if (record.Flags.OneWay)
-                return nullptr;
-            for (const TransitionRecord& other : Manifest_.Transitions)
-                if (&other != &record && other.From == record.To && other.To == record.From
-                    && other.Topology == TransitionTopology::Doorway && !other.Flags.OneWay)
-                    return &other;
-            return nullptr;
-        };
-        const auto linkedInOwnZone = [&](const TransitionRecord& record)
-        {
-            const auto it = linkedPortals.find(record.Id.Value);
-            if (it == linkedPortals.end())
-                return false;
-            for (const PortalSighting& sighting : it->second)
-                if (sighting.Zone == record.From)
-                    return true;
-            return false;
-        };
-
-        for (const TransitionRecord& record : Manifest_.Transitions)
-        {
-            if (record.Topology != TransitionTopology::Doorway)
-                continue;
-            const auto sightingsIt = linkedPortals.find(record.Id.Value);
-            const std::vector<PortalSighting>& sightings =
-                sightingsIt != linkedPortals.end() ? sightingsIt->second : noSightings;
-
-            size_t inFrom = 0;
-            const PortalSighting* fromSighting = nullptr;
-            bool anyWrongZone = false;
-            for (const PortalSighting& sighting : sightings)
-            {
-                if (sighting.Zone == record.From)
-                {
-                    ++inFrom;
-                    fromSighting = &sighting;
-                }
-                else
-                {
-                    anyWrongZone = true;
-                }
-            }
-
-            const TransitionRecord* reverse = reverseOf(record);
-            const bool pairSatisfied =
-                inFrom > 0 || (reverse != nullptr && linkedInOwnZone(*reverse));
-            const bool fromOpen = OpenZones_.contains(record.From);
-            if (!fromOpen && !pairSatisfied)
-                unverifiedRecords.push_back({
-                    .Severity = ContentRiskSeverity::Unverified,
-                    .Kind = ContentRiskSourceKind::Transition,
-                    .SourceId = record.Id.Value,
-                    .RuleId = "partition.transition.portal_unverified",
-                    .Message = std::format("transition {} portal check needs zone {} loaded",
-                                           TransitionIdToString(record.Id),
-                                           ZoneIdToString(record.From)),
-                });
-            else if (fromOpen && !pairSatisfied)
-                missing.push_back({
-                    .Severity = ContentRiskSeverity::Warning,
-                    .Kind = ContentRiskSourceKind::Transition,
-                    .SourceId = record.Id.Value,
-                    .RuleId = "partition.transition.portal_missing",
-                    .Message = std::format("doorway transition {} has no linked portal in "
-                                           "zone {}",
-                                           TransitionIdToString(record.Id),
-                                           ZoneIdToString(record.From)),
-                });
-            if (sightings.size() > 1)
-                duplicate.push_back({
-                    .Severity = ContentRiskSeverity::Error,
-                    .Kind = ContentRiskSourceKind::Transition,
-                    .SourceId = record.Id.Value,
-                    .RuleId = "partition.transition.portal_duplicate",
-                    .Message = std::format("transition {} is named by {} portals",
-                                           TransitionIdToString(record.Id), sightings.size()),
-                });
-            if (anyWrongZone)
-                wrongZone.push_back({
-                    .Severity = ContentRiskSeverity::Error,
-                    .Kind = ContentRiskSourceKind::Transition,
-                    .SourceId = record.Id.Value,
-                    .RuleId = "partition.portal.wrong_zone",
-                    .Message = std::format("transition {} has a linked portal outside its "
-                                           "source zone {}",
-                                           TransitionIdToString(record.Id),
-                                           ZoneIdToString(record.From)),
-                });
-
-            // Facing check on the one unambiguous case: a single portal with
-            // bounds in the source zone. The thin axis must be the dominant
-            // axis of the zone-center delta; the direction SIGN is not
-            // checkable without a stored normal, which D9 forbids.
-            if (fromOpen && inFrom == 1 && sightings.size() == 1 && fromSighting->HasBounds)
-            {
-                const ZoneHeader* fromHeader = FindZoneHeader(record.From);
-                const ZoneHeader* toHeader = FindZoneHeader(record.To);
-                if (fromHeader != nullptr && toHeader != nullptr)
-                {
-                    const Vec3d delta = toHeader->Bounds.Center() - fromHeader->Bounds.Center();
-                    const double magnitudes[3] = { std::abs(static_cast<double>(delta[0])),
-                                                   std::abs(static_cast<double>(delta[1])),
-                                                   std::abs(static_cast<double>(delta[2])) };
-                    constexpr double epsilon = 1e-6;
-                    if (magnitudes[0] > epsilon || magnitudes[1] > epsilon
-                        || magnitudes[2] > epsilon)
-                    {
-                        int deltaAxis = 0;
-                        for (int i = 1; i < 3; ++i)
-                            if (magnitudes[i] > magnitudes[deltaAxis])
-                                deltaAxis = i;
-                        if (DominantPortalAxis(fromSighting->Bounds) != deltaAxis)
-                            misaligned.push_back({
-                                .Severity = ContentRiskSeverity::Warning,
-                                .Kind = ContentRiskSourceKind::Transition,
-                                .SourceId = record.Id.Value,
-                                .RuleId = "partition.transition.portal_misaligned",
-                                .Message = std::format(
-                                    "transition {} portal's thin axis does not face "
-                                    "zone {}",
-                                    TransitionIdToString(record.Id),
-                                    ZoneIdToString(record.To)),
-                            });
-                    }
-                }
-            }
-        }
-
-        const auto appendSorted = [&](std::vector<ContentRiskRecord>& records)
-        {
-            std::sort(records.begin(), records.end(),
-                      [](const ContentRiskRecord& a, const ContentRiskRecord& b)
-                      { return a.SourceId < b.SourceId; });
-            for (ContentRiskRecord& record : records)
-                ValidationRecords_.push_back(std::move(record));
-        };
-        appendSorted(missing);
-        appendSorted(duplicate);
-        appendSorted(unverifiedRecords);
-        appendSorted(misaligned);
-        appendSorted(unlinked);
-        appendSorted(wrongZone);
-        appendSorted(brushMissing);
     }
 
     auto& log = Logging_.GetLogger<WorldDocument>();

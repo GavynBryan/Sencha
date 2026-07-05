@@ -35,6 +35,24 @@ std::string RegionLabel(const WorldPartitionManifest& manifest, RegionId id)
     return Hex(id.Value);
 }
 
+// Overlap for validation means interpenetrating volume, not contact. Zones that
+// share a face, edge, or corner (the normal way adjacent zones sit against a
+// doorway) have zero or negative depth on at least one axis; only positive
+// overlap past a small epsilon on all three axes counts. Aabb3d::Intersects is
+// deliberately closed (broadphase wants contact), so it is the wrong test here.
+bool BoundsInterpenetrate(const Aabb3d& a, const Aabb3d& b)
+{
+    constexpr double epsilon = 1e-4;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const double depth =
+            std::min(a.Max[axis], b.Max[axis]) - std::max(a.Min[axis], b.Min[axis]);
+        if (depth <= epsilon)
+            return false;
+    }
+    return true;
+}
+
 std::string TransitionLabel(const WorldPartitionManifest& manifest,
                             const TransitionRecord& transition)
 {
@@ -253,7 +271,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
             {
                 if (zones[a]->Id == zones[b]->Id)
                     continue;
-                if (!zones[a]->Bounds.Intersects(zones[b]->Bounds))
+                if (!BoundsInterpenetrate(zones[a]->Bounds, zones[b]->Bounds))
                     continue;
                 rule.push_back({
                     .Severity = ContentRiskSeverity::Warning,

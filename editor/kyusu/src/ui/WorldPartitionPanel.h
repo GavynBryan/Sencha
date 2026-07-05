@@ -2,7 +2,6 @@
 
 #include "ui/IEditorPanel.h"
 
-#include <ecs/EntityId.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
 
@@ -67,5 +66,4 @@ private:
     ZoneId   PendingConnectFrom_;
     ZoneId   PendingConnectTo_;
     RegionId PendingConnectNewRegion_;
-    EntityId PendingConnectPortal_;
 };

@@ -1,6 +1,5 @@
 #include "BrushSolidRenderer.h"
 
-#include "EditorTheme.h"
 #include "document/EditorScene.h"
 #include "document/SceneBrushWalk.h"
 #include "brush/BrushTessellation.h"
@@ -51,36 +50,12 @@ void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const Edi
     std::vector<EditorSolidVertex> vertices;
     vertices.reserve(scene.GetEntityCount() * 36);
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
-        [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
+        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         {
-            // Portal markers replace the per-material tint with the theme fill,
-            // still modulated by the caller's tint (the context-zone dim).
-            if (scene.IsPortal(id))
-            {
-                const Vec4 fill(EditorTheme::PortalFill.X * tint.X,
-                                EditorTheme::PortalFill.Y * tint.Y,
-                                EditorTheme::PortalFill.Z * tint.Z,
-                                EditorTheme::PortalFill.W * tint.W);
-                AppendBrushMeshFlat(vertices, mesh, transform, fill);
-                return;
-            }
             AppendBrushMesh(vertices, mesh, transform, tint);
         });
 
     Solid.Submit(frame, viewport, vertices);
-}
-
-void BrushSolidRenderer::AppendBrushMeshFlat(std::vector<EditorSolidVertex>& vertices,
-                                             const BrushMesh& mesh,
-                                             const Transform3f& transform,
-                                             const Vec4& color) const
-{
-    BrushTessellate(mesh, transform,
-        [&](const FaceMaterial&, std::span<const BrushTriVertex> triangles) {
-            for (const BrushTriVertex& v : triangles)
-                vertices.push_back(EditorSolidVertex{
-                    .Position = v.Position, .Normal = v.Normal, .Uv = v.Uv, .Tint = color });
-        });
 }
 
 void BrushSolidRenderer::AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,

@@ -1,6 +1,8 @@
 # Phase E3: Transitions and Portals
 
-Status: execution spec (2026-07-03). Implements Phase E3 of
+Status: SUPERSEDED by `09-retire-portals-doors-as-world-content.md` (2026-07-05).
+Kept as the record of what E3 shipped; the portal mechanisms below were since
+removed. Originally: execution spec (2026-07-03). Implements Phase E3 of
 `docs/plans/world-partition-authoring.md` (Sections 5 and 9 rules 4 through 6, both
 as amended) under the owner override recorded as `00-execution-overview.md` D9:
 

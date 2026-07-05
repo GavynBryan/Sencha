@@ -6,7 +6,6 @@
 
 #include "commands/CommandStack.h"
 #include "document/AssetFieldIo.h"
-#include "document/TransitionConnect.h"
 #include "document/commands/AssetFieldEditCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
@@ -14,7 +13,6 @@
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
 #include "selection/SelectionService.h"
-#include "ui/TransitionInlineEditor.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
@@ -404,46 +402,6 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
     }
 }
 
-void InspectorPanel::DrawPortalSection(EntityId entity)
-{
-    if (!WorldDoc.IsWorld())
-        return;
-    EditorScene& scene = WorldDoc.FocusDocument().GetScene();
-    const PortalComponent* portal = scene.TryGetPortal(entity);
-    if (portal == nullptr)
-        return;
-
-    ImGui::TextColored(EditorUi::Accent, ICON_FA_ARROW_RIGHT "  Portal marker");
-
-    const TransitionRecord* record = nullptr;
-    for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
-        if (candidate.Id == portal->Transition)
-            record = &candidate;
-
-    if (record != nullptr)
-    {
-        // The connection is derived from where this marker sits; the partner
-        // edge (the pair's other direction) edits alongside it.
-        TransitionId partner;
-        for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
-            if (candidate.Id != record->Id && candidate.From == record->To
-                && candidate.To == record->From && candidate.Topology == record->Topology
-                && !candidate.Flags.OneWay && !record->Flags.OneWay)
-                partner = candidate.Id;
-        const std::string label =
-            "World connection: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
-        ImGui::TextUnformatted(label.c_str());
-        DrawTransitionInlineEditor(WorldDoc, portal->Transition, partner);
-    }
-    else
-    {
-        ImGui::TextDisabled("Spans no second zone yet: move the marker onto a boundary");
-        ImGui::TextDisabled("(the connection derives from where the marker sits)");
-    }
-
-    ImGui::Separator();
-}
-
 void InspectorPanel::OnDraw()
 {
     ScopedPanel panel(GetTitle(), &Visible);
@@ -475,11 +433,8 @@ void InspectorPanel::OnDraw()
     ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();
 
-    DrawPortalSection(entity);
-
     // Registry-driven: every component the registry knows about, drawn by schema.
-    // No component is named in editor code here (the portal section above is
-    // the recorded exception).
+    // No component is named in editor code here.
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
     for (const auto& serializer : GetComponentSerializerEntries())
     {

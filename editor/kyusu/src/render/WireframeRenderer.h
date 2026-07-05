@@ -23,10 +23,9 @@ public:
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                       const EditorScene& scene) override;
-    // Portal marker brushes draw in portalColor instead of the body color; the
-    // context-zone caller passes both pre-dimmed.
+    // The context-zone caller passes a pre-dimmed color.
     void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport,
-                       const EditorScene& scene, const Vec4& color, const Vec4& portalColor);
+                       const EditorScene& scene, const Vec4& color);
 
 private:
     void AppendBrushMesh(std::vector<EditorLineVertex>& vertices,

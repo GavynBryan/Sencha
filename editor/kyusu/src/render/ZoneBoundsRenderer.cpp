@@ -118,7 +118,7 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
             const auto to = zoneCenter(record.To);
             if (!from.has_value() || !to.has_value())
                 continue;
-            segments.push_back(EditorLineSegment{ *from, *to, EditorTheme::PortalWire,
+            segments.push_back(EditorLineSegment{ *from, *to, EditorTheme::TransitionLine,
                                                   EditorTheme::OverlayLinePixels });
         }
     }

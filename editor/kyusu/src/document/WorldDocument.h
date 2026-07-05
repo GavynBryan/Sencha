@@ -159,10 +159,9 @@ public:
     bool SetTransitionRequiredTags(TransitionId transition, std::vector<std::string> tags);
     bool SetTransitionPreloadDepth(TransitionId transition, int32_t depth);
 
-    // Reconciles derived connections from portal geometry, then reruns
-    // validation. Manifest verbs revalidate themselves; content edits (placing
-    // or moving a portal, moving entities) call this explicitly, and save runs
-    // it implicitly.
+    // Refreshes derived zone bounds, then reruns validation. Manifest verbs
+    // revalidate themselves; content edits (moving entities) call this
+    // explicitly, and save runs it implicitly.
     void Revalidate();
 
     std::function<void()> OnFocusChanged;
@@ -189,13 +188,9 @@ private:
     void MarkManifestEdited();
     void AssignSceneRefsForNewZones();
     void RunValidation();
-    // Connections derive from where portals sit: every portal in an open zone
-    // gets the symmetric Doorway pair between its zone and the zone its
-    // placement spans, and links the edge leaving its own zone (a direct
-    // derived write, like recomputed bounds; never undoable). Creation and
-    // relinking only, never removal: stale records are validation's report
-    // and an explicit panel action.
-    void ReconcilePortalConnections();
+    // Recomputes non-overridden zone bounds from live content in open zones, so
+    // validation and the manifest write see current spans.
+    void RefreshDerivedZoneBounds();
     [[nodiscard]] std::string UserSidecarPath() const;
     void WriteUserSidecar() const;
     // Opens the zones the sidecar recorded and applies their visibility;

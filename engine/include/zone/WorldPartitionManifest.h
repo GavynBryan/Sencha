@@ -13,7 +13,7 @@ class JsonValue;
 enum class TransitionTopology : uint8_t
 {
     Seam,       // contiguous geometry, no visual break
-    Doorway,    // authored opening; expects a portal entity in From's content
+    Doorway,    // authored opening (a door)
     Teleport,   // discontinuous; no geometric relationship implied
 };
 
@@ -67,7 +67,8 @@ struct TransitionRecord
     // this edge to exist for streaming; empty = always open. Stored as dotted
     // NAMES (tag ids are registration-order runtime values, never serialized).
     std::vector<std::string> RequiredTags;
-    // No portal reference: linkage is content-side, resolved when the source zone loads.
+    // No content reference: an edge is topological. Content that realizes it
+    // (a door) references the edge, never the reverse.
 
     friend bool operator==(const TransitionRecord&, const TransitionRecord&) = default;
 };

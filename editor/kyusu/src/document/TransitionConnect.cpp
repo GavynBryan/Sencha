@@ -1,10 +1,6 @@
 #include "TransitionConnect.h"
 
-#include "EditorDocument.h"
 #include "WorldDocument.h"
-#include "commands/LinkPortalCommand.h"
-
-#include "commands/CommandStack.h"
 
 #include <utility>
 
@@ -55,8 +51,7 @@ std::string TransitionDisplayName(const WorldPartitionManifest& manifest,
     return zoneName(record.From) + " -> " + zoneName(record.To);
 }
 
-TransitionId ConnectZones(WorldDocument& world, ZoneId from, ZoneId to, bool oneWay,
-                          EntityId portal, CommandStack& commands)
+TransitionId ConnectZones(WorldDocument& world, ZoneId from, ZoneId to, bool oneWay)
 {
     if (!world.IsWorld() || from == to)
         return TransitionId{};
@@ -74,15 +69,5 @@ TransitionId ConnectZones(WorldDocument& world, ZoneId from, ZoneId to, bool one
         world.AddTransition(from, to, TransitionTopology::Doorway, oneWay, 0);
     if (!oneWay)
         (void)world.AddTransition(to, from, TransitionTopology::Doorway, false, 0);
-
-    if (portal.IsValid() && world.FocusZone() == from
-        && world.FocusDocument().GetScene().IsPortal(portal))
-    {
-        if (auto link = MakeLinkPortalCommand(world.FocusDocument(), portal, forward))
-        {
-            commands.Execute(std::move(link));
-            world.Revalidate();
-        }
-    }
     return forward;
 }

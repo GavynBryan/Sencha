@@ -26,6 +26,8 @@ and ask, not to improvise (see "Stop conditions" below).
 | `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). IMPLEMENTED 2026-07-05. |
 | `07-global-content.md` | Phase G | The world scene: authored global content loaded once into ZoneRuntime::Global(). Spec only; owner review before implementation. |
 | `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
+| `09-retire-portals-doors-as-world-content.md` | (reversal) | Portals removed entirely; connections authored zone-to-zone only; doors recorded as future world-scene content. Reverses D9, D15, D19, D20. IMPLEMENTED 2026-07-05. |
+| `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. Spec only; owner review before implementation. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
@@ -140,17 +142,7 @@ assets in the front-door sense; entangling them with the asset system now buys n
 Revisit trigger: binary cooked scenes (Track F) making cooked zone scenes first-class
 assets.
 
-**D9. A portal is a marker volume brush.** Owner override, recorded 2026-07: this
-replaces the pierce-based portal flow previously pinned in Section 6 and in the design
-doc's Section 5 authoring flow (both amended). A portal is a brush entity flagged by an
-editor-side component storing only the linked `TransitionId` (trivially copyable,
-static_asserted; no strings, no vectors, no rect frame). The designer cuts the opening
-with the existing mesh tools and fits a thin box brush into it. Shape and normal derive
-from the brush geometry: the portal's normal axis is the axis of minimum world-bounds
-extent, computed by a pure helper and never stored. `PierceFaceRect` is dropped from
-Phase E3 entirely; it survives only as an unrelated generic roadmap tool-suite item. D1
-is unchanged: the portal stores the `TransitionId`; the manifest never references
-entities.
+**D9.** Reversed by `09-retire-portals-doors-as-world-content.md` (portals removed).
 
 **D10. The zone content recipe is a game-supplied function.** `WorldPartitionRuntime`
 decides which zones are resident; the game decides how a zone's cooked refs become a
@@ -186,13 +178,7 @@ transition timing model) defining what the runtime actually needs from a portal 
 `streaming_linger_seconds`, `streaming_resident_zone_cap`; validated as hop >= 0,
 linger finite and >= 0, cap >= 1.
 
-**D15 (owner decision, 2026-07-05). One portal satisfies a symmetric doorway pair.**
-A symmetric pair (matching swapped endpoints, both Doorway, both non-OneWay) is one
-physical opening: `portal_missing` and `portal_unverified` clear for both directions
-when either edge has a linked portal in its own zone. OneWay edges keep demanding
-their own portal; `portal_duplicate`, `wrong_zone`, and `misaligned` stay per-edge.
-The portal remains zone-owned content (D1/D9 unchanged); only the warning arithmetic
-became pair-aware.
+**D15.** Reversed by `09-retire-portals-doors-as-world-content.md` (portals removed).
 
 **D16. Transitions carry an optional authored `Name`** (manifest key `name`, omitted
 when empty; format_version stays 1). Empty displays as the derived
@@ -210,20 +196,11 @@ until that spec is reviewed.
 anywhere in kyusu. Focus resolution therefore lives beside the demand policy in
 `zone/ZoneDemand.h`, shared by the runtime and the preview.
 
-**D19 (owner decision, 2026-07-05). Connections derive from portal geometry.**
-Placing a portal marker across a zone boundary IS the connection authoring:
-`ReconcilePortalConnections` (save, Revalidate, portal creation) derives the
-counterpart from the marker's placement (`DerivePortalCounterpart`), mints the
-symmetric Doorway pair, and stamps the link as a derived write (like recomputed
-bounds, never undoable). Creation and relinking only, never removal. There is no
-manual linking step and no ownership decision: physical containment owns the
-marker, geometry owns the connection.
+**D19.** Reversed by `09-retire-portals-doors-as-world-content.md` (connections are
+authored zone-to-zone via `ConnectZones`, never derived from geometry).
 
-**D20. Connections display undirected, at world level.** One panel row per
-symmetric pair; property edits apply to both directions; the directed pair is a
-storage and streaming detail the UI never surfaces (One-way conversion adds or
-removes the reverse edge explicitly). Rationale: nesting directed edges under zone
-rows made world data read as zone-owned, which misled the owner in testing.
+**D20.** Reversed by `09-retire-portals-doors-as-world-content.md`; the undirected
+one-row-per-pair display it pinned survives unchanged (restated as P-D2 there).
 
 ---
 

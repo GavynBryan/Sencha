@@ -67,18 +67,3 @@ private:
     return std::make_unique<CreateEntityCommand>(
         [&scene, position] { return scene.CreateEntity(position); }, scene, document);
 }
-
-// A thin box brush already flagged as a portal, so create-and-flag is one undo
-// step (Undo's DestroyEntity releases the mesh and the component together).
-[[nodiscard]] inline std::unique_ptr<CreateEntityCommand> MakeCreatePortalBrushCommand(
-    Vec3d center, Vec3d halfExtents, EditorScene& scene, EditorDocument& document)
-{
-    return std::make_unique<CreateEntityCommand>(
-        [&scene, center, halfExtents]
-        {
-            const EntityId entity = scene.CreateBrush(center, halfExtents);
-            scene.GetRegistry().Components.AddComponent(entity, PortalComponent{});
-            return entity;
-        },
-        scene, document);
-}
