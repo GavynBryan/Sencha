@@ -63,8 +63,10 @@ public:
     // Once per frame from the owning game system. Computes demand, layers
     // linger state, and diffs desired against resident plus in-flight: issues
     // dormant BeginLoad through the recipe, SetParticipation changes,
-    // CancelLoad for undemanded in-flight loads, and DestroyZone for zones
-    // whose linger expired. Never touches the focus zone's residency.
+    // CancelLoad for undemanded in-flight loads, and RequestDestroy for zones
+    // whose linger expired (destruction lands at the next commit drain, never
+    // mid-frame: the in-flight frame view stays untouched). Never touches the
+    // focus zone's residency.
     void Update(double deltaSeconds, AsyncZoneLoader& loader, ZoneRuntime& zones);
 
     // Why is this zone resident: rebuilt every Update, includes Lingering
@@ -93,6 +95,9 @@ private:
     bool HasFocusPosition_ = false;
     std::vector<ZonePin> Pins_;
     std::vector<std::string> WorldTags_;
+    // Zones whose destruction is queued for the next drain; still resident
+    // until it runs, so Update must not re-request them.
+    std::vector<ZoneId> PendingDestroys_;
     // Zones this runtime has issued BeginLoad for and not yet seen attach or
     // cancel; the enumerable half of AsyncZoneLoader::IsLoading.
     std::vector<ZoneId> Issued_;

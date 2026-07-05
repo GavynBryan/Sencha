@@ -111,6 +111,13 @@ bool AsyncZoneLoader::IsLoading(ZoneId zone) const
                        [zone](const InFlightLoad& load) { return load.Zone == zone; });
 }
 
+AsyncTaskHandle AsyncZoneLoader::RequestDestroy(ZoneId zone)
+{
+    return Tasks.Submit<int>(
+        [] { return 0; },
+        [this, zone](int) { (void)Zones.DestroyZone(zone); });
+}
+
 bool AsyncZoneLoader::CancelLoad(ZoneId zone)
 {
     auto it = std::find_if(InFlight.begin(), InFlight.end(),

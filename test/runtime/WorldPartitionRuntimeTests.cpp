@@ -335,6 +335,7 @@ TEST_F(WorldPartitionRuntimeTest, UncancellableInFlightLoadRetriesAndReportsLing
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     partition.Update(0.1, loader, zones);
+    tasks.DrainCompletions();   // destruction lands at the drain, as in a frame
     EXPECT_FALSE(zones.IsZoneLoaded(kHallway));
 }
 
@@ -514,19 +515,19 @@ TraversalRun RunScriptedTraversal(unsigned taskThreads)
         };
         if (taskThreads == 0)
         {
-            while (anyLoading())
+            do
             {
                 tasks.PumpWork();
                 tasks.DrainCompletions();
-            }
+            } while (anyLoading());
         }
         else
         {
-            while (anyLoading())
+            do
             {
                 tasks.DrainCompletions();
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
+            } while (anyLoading());
         }
 
         for (size_t i = 0; i < 3; ++i)

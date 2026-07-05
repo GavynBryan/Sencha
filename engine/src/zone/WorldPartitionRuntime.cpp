@@ -55,6 +55,7 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Focus_ = ZoneId{};
     HasFocusPosition_ = false;
     Pins_.clear();
+    PendingDestroys_.clear();
     Issued_.clear();
     Lingering_.clear();
     Records_.clear();
@@ -211,6 +212,9 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     // order for determinism) accumulate linger time, sit dormant meanwhile,
     // and are destroyed at or past the linger budget. Re-entering the desired
     // set resets the clock (handled by the demand check dropping the state).
+    std::erase_if(PendingDestroys_,
+                  [&](ZoneId zone) { return !zones.IsZoneLoaded(zone); });
+
     std::vector<const ZoneHeader*> loadedHeaders;
     for (const ZoneHeader& header : Manifest_.Zones)
         if (zones.IsZoneLoaded(header.Id))
@@ -235,8 +239,17 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 
         if (state.Seconds >= Config_.LingerSeconds)
         {
-            zones.DestroyZone(zone);
-            continue;
+            // Destruction rides the drain (never mid-frame); the zone stays
+            // resident and reported until the commit runs, and must not be
+            // re-requested meanwhile.
+            bool pending = false;
+            for (ZoneId requested : PendingDestroys_)
+                pending |= requested == zone;
+            if (!pending)
+            {
+                (void)loader.RequestDestroy(zone);
+                PendingDestroys_.push_back(zone);
+            }
         }
         if (zones.GetParticipation(zone).Any())
             zones.SetParticipation(zone, ZoneParticipation{});
