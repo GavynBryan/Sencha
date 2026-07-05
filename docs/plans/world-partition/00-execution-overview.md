@@ -23,7 +23,9 @@ and ask, not to improvise (see "Stop conditions" below).
 | `03-runtime-streaming.md` | Phase R | `WorldPartitionRuntime`, demand policy, streaming tunables, template game world path, PIE play-from-world. |
 | `04-move-selection-to-zone.md` | Phase E2 | Cross-zone entity moves with undo, UI entry points, bounds-containment validation. |
 | `05-transitions-and-portals.md` | Phase E3 | Portal marker brushes, transition verbs and panel UI, linkage validation, cook exclusion. |
-| `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). Spec only; owner review before implementation. |
+| `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). IMPLEMENTED 2026-07-05. |
+| `07-global-content.md` | Phase G | The world scene: authored global content loaded once into ZoneRuntime::Global(). Spec only; owner review before implementation. |
+| `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
