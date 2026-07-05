@@ -453,6 +453,58 @@ void TemplateGame::OnStart(GameStartupContext&)
             return FocusWorldZone(args[0]);
         },
     });
+    engine.Console().Registry().RegisterCommand({
+        .Name = "zones",
+        .Owner = "game",
+        .Usage = "zones",
+        .Help = "Print the world partition demand table: why each zone is resident, "
+                "its participation, and the focus.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
+            ConsoleResult result;
+            if (!Partition || !Partition->HasManifest())
+            {
+                result.Info("no world loaded (use `world <name>`)");
+                return result;
+            }
+            ZoneRuntime& zones = GetEngine().Zones();
+            const auto zoneName = [&](ZoneId zone) -> std::string
+            {
+                for (const ZoneHeader& header : Partition->Manifest().Zones)
+                    if (header.Id == zone)
+                        return header.Name;
+                return ZoneIdToString(zone);
+            };
+            result.Info("focus: " + zoneName(Partition->FocusZone()));
+            for (const ZoneDemandRecord& record : Partition->DemandRecords())
+            {
+                std::string sources;
+                const auto tag = [&](bool on, const char* name)
+                {
+                    if (!on)
+                        return;
+                    if (!sources.empty())
+                        sources += "+";
+                    sources += name;
+                };
+                tag(record.Sources.Focus, "focus");
+                tag(record.Sources.Neighbor, "neighbor");
+                tag(record.Sources.Pinned, "pinned");
+                tag(record.Sources.Lingering, "lingering");
+
+                std::string state;
+                if (zones.IsZoneLoaded(record.Zone))
+                    state = zones.GetParticipation(record.Zone).Any() ? "live" : "dormant";
+                else if (ZoneLoader && ZoneLoader->IsLoading(record.Zone))
+                    state = "loading";
+                else
+                    state = "unloaded";
+
+                result.Info("  " + zoneName(record.Zone) + ": " + sources + ", " + state);
+            }
+            return result;
+        },
+    });
 
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
