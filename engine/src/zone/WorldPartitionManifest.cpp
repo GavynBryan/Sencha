@@ -316,6 +316,9 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadRequiredId(entry, "to", ZoneIdFromString, record.To, error,
                                 std::format("transitions[{}].to", i)))
                 return std::nullopt;
+            if (!ReadOptionalString(entry, "name", record.Name, error,
+                                    std::format("transitions[{}].name", i)))
+                return std::nullopt;
             if (const JsonValue* topology = entry.Find("topology"))
             {
                 const auto parsed =
@@ -402,6 +405,8 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
     {
         JsonValue::Object entry;
         entry.emplace_back("id", JsonValue{ TransitionIdToString(record.Id) });
+        if (!record.Name.empty())
+            entry.emplace_back("name", JsonValue{ record.Name });
         entry.emplace_back("from", JsonValue{ ZoneIdToString(record.From) });
         entry.emplace_back("to", JsonValue{ ZoneIdToString(record.To) });
         entry.emplace_back("topology", JsonValue{ TopologyToString(record.Topology) });

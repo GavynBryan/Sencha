@@ -151,6 +151,7 @@ public:
     TransitionId AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
                                bool oneWay, int32_t preloadPriority);
     bool RemoveTransition(TransitionId transition);
+    bool RenameTransition(TransitionId transition, std::string name);
     bool SetTransitionTopology(TransitionId transition, TransitionTopology topology);
     bool SetTransitionOneWay(TransitionId transition, bool oneWay);
     bool SetTransitionPreloadPriority(TransitionId transition, int32_t priority);

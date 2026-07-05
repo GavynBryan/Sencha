@@ -53,6 +53,7 @@ struct ZoneHeader
 struct TransitionRecord
 {
     TransitionId       Id;
+    std::string        Name;   // optional; empty displays as "<From> -> <To>"
     ZoneId             From;
     ZoneId             To;
     TransitionTopology Topology = TransitionTopology::Doorway;

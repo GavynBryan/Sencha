@@ -497,6 +497,19 @@ void WorldPartitionPanel::DrawTransitionRow(const TransitionRecord& transition)
 {
     ImGui::PushID(static_cast<int>(transition.Id.Value & 0x7fffffff));
 
+    if (RenamingTransition_ == transition.Id)
+    {
+        DrawRenameField(true);
+        if (ImGui::IsItemDeactivated())
+        {
+            // An emptied field clears the authored name back to the derived label.
+            (void)WorldDoc.RenameTransition(transition.Id, RenameBuffer_);
+            RenamingTransition_ = TransitionId{};
+        }
+        ImGui::PopID();
+        return;
+    }
+
     // Inline severity: the worst transition-kind record naming this edge.
     const ContentRiskRecord* worst = nullptr;
     for (const ContentRiskRecord& record : WorldDoc.ValidationRecords())
@@ -534,11 +547,19 @@ void WorldPartitionPanel::DrawTransitionRow(const TransitionRecord& transition)
     ImGui::TextColored(EditorUi::TextDim, "%s", badge);
     ImGui::SameLine();
 
-    std::string toName = ZoneIdToString(transition.To);
-    for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-        if (header.Id == transition.To)
-            toName = header.Name;
-    std::string label = std::string(ICON_FA_ARROW_RIGHT) + "  " + toName;
+    std::string rowText;
+    if (!transition.Name.empty())
+    {
+        rowText = transition.Name;
+    }
+    else
+    {
+        rowText = ZoneIdToString(transition.To);
+        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+            if (header.Id == transition.To)
+                rowText = header.Name;
+    }
+    std::string label = std::string(ICON_FA_ARROW_RIGHT) + "  " + rowText;
     if (transition.Flags.OneWay)
         label += "  " ICON_FA_ARROW_RIGHT_LONG;
     label += "##transition_row";
@@ -605,6 +626,13 @@ void WorldPartitionPanel::DrawTransitionRow(const TransitionRecord& transition)
                     WorldDoc.FocusDocument().GetScene().GetRegistry().Id, linkedPortal)));
         }
         ImGui::Separator();
+
+        if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
+        {
+            RenamingTransition_ = transition.Id;
+            std::strncpy(RenameBuffer_, transition.Name.c_str(), sizeof(RenameBuffer_) - 1);
+            RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
+        }
 
         // Removes only this edge, never its derived reverse.
         if (ImGui::BeginMenu(ICON_FA_TRASH "  Remove"))

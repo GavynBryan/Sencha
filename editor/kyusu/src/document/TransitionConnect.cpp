@@ -8,6 +8,21 @@
 
 #include <utility>
 
+std::string TransitionDisplayName(const WorldPartitionManifest& manifest,
+                                  const TransitionRecord& record)
+{
+    if (!record.Name.empty())
+        return record.Name;
+    const auto zoneName = [&](ZoneId zone) -> std::string
+    {
+        for (const ZoneHeader& header : manifest.Zones)
+            if (header.Id == zone)
+                return header.Name;
+        return ZoneIdToString(zone);
+    };
+    return zoneName(record.From) + " -> " + zoneName(record.To);
+}
+
 TransitionId ConnectZones(WorldDocument& world, ZoneId from, ZoneId to, bool oneWay,
                           EntityId portal, CommandStack& commands)
 {

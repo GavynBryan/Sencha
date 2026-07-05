@@ -226,3 +226,24 @@ TEST(WorldPartitionManifest, ReadParsesButDoesNotValidate)
     ASSERT_TRUE(manifest.has_value()) << error;
     EXPECT_EQ(manifest->Transitions[0].To, ZoneId{ 0xff });
 }
+
+TEST(WorldPartitionManifest, TransitionNameRoundTripsAndStaysOptional)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    ASSERT_EQ(manifest.Transitions.size(), 1u);
+    EXPECT_TRUE(manifest.Transitions[0].Name.empty());   // fixture has no name key
+
+    manifest.Transitions[0].Name = "Front Door";
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    std::string error;
+    const auto reread = ReadWorldPartitionManifest(written, &error);
+    ASSERT_TRUE(reread.has_value()) << error;
+    EXPECT_EQ(reread->Transitions[0].Name, "Front Door");
+
+    // An empty name never writes a key (WriteOmitsEmptyCookedFields precedent).
+    manifest.Transitions[0].Name.clear();
+    const JsonValue bare = WriteWorldPartitionManifest(manifest);
+    const auto rereadBare = ReadWorldPartitionManifest(bare, &error);
+    ASSERT_TRUE(rereadBare.has_value()) << error;
+    EXPECT_TRUE(rereadBare->Transitions[0].Name.empty());
+}

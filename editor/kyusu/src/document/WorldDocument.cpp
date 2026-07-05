@@ -501,6 +501,20 @@ bool WorldDocument::RemoveTransition(TransitionId transition)
     return true;
 }
 
+bool WorldDocument::RenameTransition(TransitionId transition, std::string name)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.Name = std::move(name);
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
 bool WorldDocument::SetTransitionTopology(TransitionId transition, TransitionTopology topology)
 {
     for (TransitionRecord& record : Manifest_.Transitions)

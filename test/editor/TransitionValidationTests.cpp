@@ -271,3 +271,18 @@ TEST(DominantPortalAxisTest, DominantAxisIsMinimumExtent)
                   Aabb3d::FromCenterHalfExtent(Vec3d{ -3, 0, 7 }, Vec3d{ 4, 4, 0.1 })),
               2);
 }
+
+TEST_F(TransitionValidationTest, RenameTransitionRewritesAndRevalidates)
+{
+    const TransitionId id =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Doorway, false, 0);
+
+    ASSERT_TRUE(World.RenameTransition(id, "Front Door"));
+    EXPECT_EQ(World.Manifest().Transitions[0].Name, "Front Door");
+    EXPECT_TRUE(World.IsDirty());
+
+    // Clearing restores the derived display label (empty stored name).
+    ASSERT_TRUE(World.RenameTransition(id, ""));
+    EXPECT_TRUE(World.Manifest().Transitions[0].Name.empty());
+    EXPECT_FALSE(World.RenameTransition(TransitionId{ 0xff }, "x"));
+}

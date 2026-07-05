@@ -52,6 +52,7 @@ private:
     // ImGui transients only (never document state).
     ZoneId   RenamingZone_;
     RegionId RenamingRegion_;
+    TransitionId RenamingTransition_;
     char     RenameBuffer_[128] = {};
     RegionId NavigateRegion_;   // region to force-open after a validation click
     ZoneId   SelectedZoneRow_;  // zone row a validation click highlighted

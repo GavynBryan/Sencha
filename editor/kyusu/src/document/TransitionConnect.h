@@ -2,10 +2,19 @@
 
 #include <ecs/EntityId.h>
 #include <zone/WorldPartitionIds.h>
+#include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneId.h>
+
+#include <string>
 
 class CommandStack;
 class WorldDocument;
+
+// The transition's user-facing label: its authored Name, else the derived
+// "<From name> -> <To name>". Every surface (rows, inspector, connect bar)
+// names the edge the same way, and always as world-level data.
+[[nodiscard]] std::string TransitionDisplayName(const WorldPartitionManifest& manifest,
+                                                const TransitionRecord& record);
 
 // The one zone-connect flow every UI entry point routes through: mints a
 // Doorway transition from `from` to `to` with default priority (plus the
