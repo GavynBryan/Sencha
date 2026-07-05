@@ -248,3 +248,99 @@ TEST(WorldPartitionValidation, RecordsAreDeterministicallyOrdered)
         EXPECT_EQ(first[i].Message, second[i].Message);
     }
 }
+
+namespace
+{
+
+constexpr uint64_t RegionB2 = 0xb2;
+constexpr uint64_t ZoneA4 = 0xa4;
+constexpr uint64_t ZoneA5 = 0xa5;
+
+// The clean fixture plus a proximity-streamed region west of the hub: two
+// field cells with no edge between them, connected (or not) to the graph by
+// an entrance edge pair the test adds.
+WorldPartitionManifest MakeGridRegionManifest()
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    RegionRecord grid{ RegionId{ RegionB2 }, "Fields" };
+    grid.Streaming.Radius = 100.0;
+    manifest.Regions.push_back(grid);
+
+    ZoneHeader cellA = MakeZone(ZoneA4, "field_a",
+                                Aabb3d{ { -24.0f, 0.0f, -8.0f }, { -8.0f, 4.0f, 8.0f } });
+    ZoneHeader cellB = MakeZone(ZoneA5, "field_b",
+                                Aabb3d{ { -40.0f, 0.0f, -8.0f }, { -24.0f, 4.0f, 8.0f } });
+    cellA.Region = RegionId{ RegionB2 };
+    cellB.Region = RegionId{ RegionB2 };
+    manifest.Zones.push_back(cellA);
+    manifest.Zones.push_back(cellB);
+    return manifest;
+}
+
+} // namespace
+
+TEST(WorldPartitionValidation, StreamingInvalidFiresPerBadField)
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    manifest.Regions[0].Streaming.HopCount = -1;
+    manifest.Regions[0].Streaming.Radius = -5.0;
+    manifest.Regions[0].Streaming.ResidentZoneCap = 0;
+
+    const auto records = Validate(manifest);
+    ASSERT_EQ(records.size(), 3u);
+    for (const ContentRiskRecord& record : records)
+    {
+        EXPECT_EQ(record.RuleId, "partition.region.streaming_invalid");
+        EXPECT_EQ(record.Severity, ContentRiskSeverity::Error);
+        EXPECT_EQ(record.Kind, ContentRiskSourceKind::Region);
+        EXPECT_EQ(record.SourceId, RegionB1);
+        EXPECT_FALSE(record.Message.empty());
+    }
+}
+
+TEST(WorldPartitionValidation, StreamingBoundaryValuesAreClean)
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    manifest.Regions[0].Streaming.HopCount = 0;
+    manifest.Regions[0].Streaming.Radius = 0.0;
+    manifest.Regions[0].Streaming.ResidentZoneCap = 1;
+
+    EXPECT_TRUE(Validate(manifest).empty());
+}
+
+TEST(WorldPartitionValidation, RadiusRegionCellsReachableThroughOneEntranceEdge)
+{
+    WorldPartitionManifest manifest = MakeGridRegionManifest();
+    // One entrance pair into the region; field_b has no edge at all yet stays
+    // quiet: an explicit-radius region streams by proximity, not edges.
+    manifest.Transitions.push_back(MakeTransition(0xc6, ZoneA1, ZoneA4));
+    manifest.Transitions.push_back(MakeTransition(0xc7, ZoneA4, ZoneA1));
+
+    EXPECT_TRUE(Validate(manifest).empty());
+}
+
+TEST(WorldPartitionValidation, IslandRadiusRegionStillWarnsEveryCell)
+{
+    const WorldPartitionManifest manifest = MakeGridRegionManifest();
+
+    const auto records = Validate(manifest);
+    ASSERT_EQ(records.size(), 2u);
+    EXPECT_EQ(records[0].RuleId, "partition.graph.unreachable");
+    EXPECT_EQ(records[0].SourceId, ZoneA4);
+    EXPECT_EQ(records[1].RuleId, "partition.graph.unreachable");
+    EXPECT_EQ(records[1].SourceId, ZoneA5);
+}
+
+TEST(WorldPartitionValidation, StartZoneInsideRadiusRegionReachesItsSiblings)
+{
+    WorldPartitionManifest manifest = MakeGridRegionManifest();
+    manifest.StartZone = ZoneId{ ZoneA4 };
+    // The graph region is now the island: no edge connects it to the fields.
+    const auto records = Validate(manifest);
+    ASSERT_EQ(records.size(), 3u);
+    for (const ContentRiskRecord& record : records)
+        EXPECT_EQ(record.RuleId, "partition.graph.unreachable");
+    EXPECT_EQ(records[0].SourceId, ZoneA1);
+    EXPECT_EQ(records[1].SourceId, ZoneA2);
+    EXPECT_EQ(records[2].SourceId, ZoneA3);
+}

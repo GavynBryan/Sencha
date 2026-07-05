@@ -32,6 +32,34 @@ double BoundsVolume(const Aabb3d& bounds)
 
 } // namespace
 
+WorldPartitionStreamingConfig
+ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
+                             const WorldPartitionStreamingConfig& base)
+{
+    WorldPartitionStreamingConfig resolved = base;
+    if (!focus.IsValid())
+        return resolved;
+
+    RegionId focusRegion;
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == focus)
+            focusRegion = header.Region;
+
+    for (const RegionRecord& region : manifest.Regions)
+    {
+        if (region.Id != focusRegion)
+            continue;
+        if (region.Streaming.HopCount)
+            resolved.HopCount = *region.Streaming.HopCount;
+        if (region.Streaming.Radius)
+            resolved.Radius = *region.Streaming.Radius;
+        if (region.Streaming.ResidentZoneCap)
+            resolved.ResidentZoneCap = *region.Streaming.ResidentZoneCap;
+        break;
+    }
+    return resolved;
+}
+
 ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
                         ZoneId previous)
 {

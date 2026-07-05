@@ -24,10 +24,24 @@ struct TransitionFlags
     friend bool operator==(const TransitionFlags&, const TransitionFlags&) = default;
 };
 
+// Per-region overrides of the streaming demand shape. Each field optional:
+// absent inherits the world/global base (EngineRuntimeConfig). Graph versus
+// radius character is derived from the values: Radius == 0 is graph-only.
+struct RegionStreamingConfig
+{
+    std::optional<int32_t> HopCount;        // >= 0
+    std::optional<double>  Radius;          // finite, >= 0
+    std::optional<int32_t> ResidentZoneCap; // >= 1
+
+    friend bool operator==(const RegionStreamingConfig&,
+                           const RegionStreamingConfig&) = default;
+};
+
 struct RegionRecord
 {
-    RegionId    Id;
-    std::string Name;
+    RegionId              Id;
+    std::string           Name;
+    RegionStreamingConfig Streaming;
 
     friend bool operator==(const RegionRecord&, const RegionRecord&) = default;
 };

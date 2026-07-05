@@ -1,6 +1,7 @@
 #include <zone/WorldPartitionValidation.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <unordered_set>
 
@@ -140,6 +141,36 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                                        ZoneLabel(manifest, zone.Id),
                                        RegionLabel(manifest, zone.Region)),
             });
+        }
+        AppendSortedBySourceId(records, std::move(rule));
+    }
+
+    // partition.region.streaming_invalid: one record per bad field, so the
+    // panel can name each offending value.
+    {
+        std::vector<ContentRiskRecord> rule;
+        for (const RegionRecord& region : manifest.Regions)
+        {
+            const RegionStreamingConfig& streaming = region.Streaming;
+            const auto add = [&](std::string message)
+            {
+                rule.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Region,
+                    .SourceId = region.Id.Value,
+                    .RuleId = "partition.region.streaming_invalid",
+                    .Message = std::move(message),
+                });
+            };
+            if (streaming.HopCount && *streaming.HopCount < 0)
+                add(std::format("region {} streaming hop count {} is negative",
+                                RegionLabel(manifest, region.Id), *streaming.HopCount));
+            if (streaming.Radius && (!std::isfinite(*streaming.Radius) || *streaming.Radius < 0.0))
+                add(std::format("region {} streaming radius {} must be finite and non-negative",
+                                RegionLabel(manifest, region.Id), *streaming.Radius));
+            if (streaming.ResidentZoneCap && *streaming.ResidentZoneCap < 1)
+                add(std::format("region {} streaming resident zone cap {} is below 1",
+                                RegionLabel(manifest, region.Id), *streaming.ResidentZoneCap));
         }
         AppendSortedBySourceId(records, std::move(rule));
     }
@@ -292,6 +323,16 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         manifest.StartZone.IsValid() && index.ContainsZone(manifest.StartZone);
     if (startZoneKnown)
     {
+        // A region with an explicit Radius > 0 override streams by proximity,
+        // not authored edges, so its zones are mutually reachable: reaching any
+        // one of them reaches them all. Only explicit overrides participate;
+        // validation is pure over the manifest and cannot see the inherited
+        // base radius in EngineRuntimeConfig.
+        std::unordered_set<uint64_t> radiusRegions;
+        for (const RegionRecord& region : manifest.Regions)
+            if (region.Streaming.Radius && *region.Streaming.Radius > 0.0)
+                radiusRegions.insert(region.Id.Value);
+
         std::unordered_set<uint64_t> reached;
         std::vector<ZoneId> frontier{ manifest.StartZone };
         reached.insert(manifest.StartZone.Value);
@@ -299,6 +340,15 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         {
             const ZoneId zone = frontier.back();
             frontier.pop_back();
+            for (const ZoneHeader& header : manifest.Zones)
+            {
+                if (header.Id != zone || !radiusRegions.contains(header.Region.Value))
+                    continue;
+                for (const ZoneHeader& sibling : manifest.Zones)
+                    if (sibling.Region == header.Region
+                        && reached.insert(sibling.Id.Value).second)
+                        frontier.push_back(sibling.Id);
+            }
             for (const uint32_t edge : index.Outgoing(zone))
             {
                 const ZoneId next = manifest.Transitions[edge].To;

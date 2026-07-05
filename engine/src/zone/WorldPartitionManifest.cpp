@@ -244,6 +244,48 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadOptionalString(entry, "name", record.Name, error,
                                     std::format("regions[{}].name", i)))
                 return std::nullopt;
+            if (const JsonValue* streaming = entry.Find("streaming"))
+            {
+                if (!streaming->IsObject())
+                {
+                    SetError(error, std::format("regions[{}].streaming must be an object", i));
+                    return std::nullopt;
+                }
+                const auto readInt = [&](const char* key, std::optional<int32_t>& out)
+                {
+                    const JsonValue* value = streaming->Find(key);
+                    if (!value)
+                        return true;
+                    const double number = value->IsNumber()
+                        ? value->AsNumber()
+                        : std::numeric_limits<double>::quiet_NaN();
+                    if (!std::isfinite(number) || number != std::floor(number)
+                        || number < std::numeric_limits<int32_t>::min()
+                        || number > std::numeric_limits<int32_t>::max())
+                    {
+                        SetError(error,
+                                 std::format("regions[{}].streaming.{} must be a 32-bit integer",
+                                             i, key));
+                        return false;
+                    }
+                    out = static_cast<int32_t>(number);
+                    return true;
+                };
+                if (!readInt("hop_count", record.Streaming.HopCount))
+                    return std::nullopt;
+                if (!readInt("resident_zone_cap", record.Streaming.ResidentZoneCap))
+                    return std::nullopt;
+                if (const JsonValue* radius = streaming->Find("radius"))
+                {
+                    if (!radius->IsNumber())
+                    {
+                        SetError(error,
+                                 std::format("regions[{}].streaming.radius must be a number", i));
+                        return std::nullopt;
+                    }
+                    record.Streaming.Radius = radius->AsNumber();
+                }
+            }
             manifest.Regions.push_back(std::move(record));
         }
     }
@@ -403,6 +445,18 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
         JsonValue::Object entry;
         entry.emplace_back("id", JsonValue{ RegionIdToString(record.Id) });
         entry.emplace_back("name", JsonValue{ record.Name });
+        const RegionStreamingConfig& streaming = record.Streaming;
+        if (streaming.HopCount || streaming.Radius || streaming.ResidentZoneCap)
+        {
+            JsonValue::Object object;
+            if (streaming.HopCount)
+                object.emplace_back("hop_count", JsonValue{ *streaming.HopCount });
+            if (streaming.Radius)
+                object.emplace_back("radius", JsonValue{ *streaming.Radius });
+            if (streaming.ResidentZoneCap)
+                object.emplace_back("resident_zone_cap", JsonValue{ *streaming.ResidentZoneCap });
+            entry.emplace_back("streaming", JsonValue{ std::move(object) });
+        }
         regions.emplace_back(JsonValue{ std::move(entry) });
     }
     root.emplace_back("regions", JsonValue{ std::move(regions) });

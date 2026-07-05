@@ -388,3 +388,43 @@ TEST(ZoneDemand, DepthDoesNotLeakSideways)
     EXPECT_NE(FindRecord(records, 0xa4), nullptr);   // plain hop-1 neighbor
     EXPECT_EQ(FindRecord(records, 0xa5), nullptr);   // the plain corridor stops at 1
 }
+
+TEST(ZoneDemand, ResolverOverridesPresentFieldsAndInheritsAbsent)
+{
+    WorldPartitionManifest manifest = ChainManifest();
+    RegionRecord region{ RegionId{ 0xb1 }, "Fields" };
+    region.Streaming.HopCount = 3;
+    region.Streaming.ResidentZoneCap = 16;
+    manifest.Regions.push_back(region);
+    manifest.Zones[0].Region = RegionId{ 0xb1 };
+
+    WorldPartitionStreamingConfig base;
+    base.HopCount = 1;
+    base.Radius = 50.0;
+    base.ResidentZoneCap = 8;
+    base.LingerSeconds = 7.0;
+
+    const auto resolved = ResolveRegionStreamingConfig(manifest, ZoneId{ 0xa1 }, base);
+    EXPECT_EQ(resolved.HopCount, 3);
+    EXPECT_EQ(resolved.Radius, 50.0);
+    EXPECT_EQ(resolved.ResidentZoneCap, 16);
+    EXPECT_EQ(resolved.LingerSeconds, 7.0);
+}
+
+TEST(ZoneDemand, ResolverReturnsBaseForUnknownOrRegionlessFocus)
+{
+    WorldPartitionManifest manifest = ChainManifest();
+    RegionRecord region{ RegionId{ 0xb1 }, "Fields" };
+    region.Streaming.HopCount = 3;
+    manifest.Regions.push_back(region);
+    manifest.Zones[0].Region = RegionId{ 0xb1 };
+
+    const WorldPartitionStreamingConfig base;
+
+    // Focus outside the manifest entirely.
+    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{ 0xff }, base), base);
+    // Focus in a zone whose region reference resolves to no region record.
+    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{ 0xa2 }, base), base);
+    // Invalid focus.
+    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{}, base), base);
+}

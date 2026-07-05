@@ -52,7 +52,18 @@ struct WorldPartitionStreamingConfig
     // Proximity demand: zones whose bounds lie within this distance of the
     // focus position join the demand set. 0 = graph hops only.
     double  Radius = 0.0;
+
+    friend bool operator==(const WorldPartitionStreamingConfig&,
+                           const WorldPartitionStreamingConfig&) = default;
 };
+
+// The streaming config in force while `focus` is resident: the focus zone's
+// region overrides applied over `base`, field by field. Pure; the runtime and
+// the editor preview both resolve through it. Invalid or region-less focus
+// returns base unchanged.
+[[nodiscard]] WorldPartitionStreamingConfig
+ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
+                             const WorldPartitionStreamingConfig& base);
 
 // One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
 // the highest PreloadPriority among the transition edges that discovered the

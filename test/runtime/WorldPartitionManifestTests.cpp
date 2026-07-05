@@ -265,3 +265,45 @@ TEST(WorldPartitionManifest, GateAndDepthRoundTripAndStayOptional)
     EXPECT_EQ(reread->Transitions[0].RequiredTags[0], "quest.bridge");
     EXPECT_EQ(reread->Transitions[0].PreloadDepth, 2);
 }
+
+TEST(WorldPartitionManifest, RegionStreamingRoundTripsPresentSubset)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    manifest.Regions[0].Streaming.HopCount = 2;
+    manifest.Regions[0].Streaming.Radius = 250.0;
+
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    std::string error;
+    const auto reread = ReadWorldPartitionManifest(written, &error);
+    ASSERT_TRUE(reread.has_value()) << error;
+    EXPECT_EQ(reread->Regions[0].Streaming.HopCount, 2);
+    EXPECT_EQ(reread->Regions[0].Streaming.Radius, 250.0);
+    EXPECT_FALSE(reread->Regions[0].Streaming.ResidentZoneCap.has_value());
+    EXPECT_EQ(*reread, manifest);
+}
+
+TEST(WorldPartitionManifest, RegionStreamingOmittedWhenAllAbsent)
+{
+    // Legacy manifests carry no streaming key and load with every field
+    // inherited; writing them back emits no streaming object.
+    const WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    EXPECT_EQ(manifest.Regions[0].Streaming, RegionStreamingConfig{});
+
+    const std::string text = JsonStringify(WriteWorldPartitionManifest(manifest));
+    EXPECT_EQ(text.find("streaming"), std::string::npos);
+}
+
+TEST(WorldPartitionManifest, ReadRejectsMalformedRegionStreaming)
+{
+    std::string error;
+    const auto manifest = TryParse(R"json(
+    {
+      "format_version": 1,
+      "regions": [
+        { "id": "00000000000000b1", "streaming": { "hop_count": "two" } }
+      ]
+    })json", &error);
+
+    EXPECT_FALSE(manifest.has_value());
+    EXPECT_EQ(error, "regions[0].streaming.hop_count must be a 32-bit integer");
+}
