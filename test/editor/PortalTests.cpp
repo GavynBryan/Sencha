@@ -223,3 +223,19 @@ TEST_F(PortalTest, CreatePortalBrushCommandIsOneUndoStep)
     EXPECT_FALSE(scene.HasEntity(portal));
     EXPECT_EQ(scene.GetEntityCount(), 0u);
 }
+
+TEST(DerivePortalCounterpartTest, LargestStraddledOverlapWins)
+{
+    const WorldPartitionManifest manifest = GuessFixture();
+    // A portal in Hub's +X wall reaches into the hallway when stretched along
+    // its thin axis.
+    const Aabb3d doorway =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 8.5, 2, 0 }, Vec3d{ 0.2, 1.5, 1.5 });
+    EXPECT_EQ(DerivePortalCounterpart(manifest, ZoneId{ 0xa1 }, doorway), ZoneId{ 0xa2 });
+
+    // Deep inside Hub, touching nothing: the center-direction fallback still
+    // points somewhere sane (the hallway lies along the thin axis).
+    const Aabb3d interior =
+        Aabb3d::FromCenterHalfExtent(Vec3d{ 0, 2, 0 }, Vec3d{ 0.2, 1.5, 1.5 });
+    EXPECT_EQ(DerivePortalCounterpart(manifest, ZoneId{ 0xa1 }, interior), ZoneId{ 0xa2 });
+}

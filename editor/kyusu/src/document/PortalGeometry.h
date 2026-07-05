@@ -29,3 +29,13 @@ struct PortalBoxFit
 
 [[nodiscard]] PortalBoxFit FitPortalBoxToFace(std::span<const Vec3d> faceWorldVertices,
                                               Vec3d faceNormal, double thickness);
+
+// The zone on the far side of a portal owned by `holder`: the portal's bounds
+// are stretched one unit both ways along the thin (facing) axis so a marker
+// flush in a wall reaches both rooms, then the non-holder zone with the
+// largest bounds intersection wins (ties by ascending id). Falls back to
+// GuessPortalTargetZone's center-direction heuristic when the stretch touches
+// nothing. Invalid when no candidate exists. This is what makes connection
+// authoring geometric: where the door sits decides what it connects.
+[[nodiscard]] ZoneId DerivePortalCounterpart(const WorldPartitionManifest& manifest,
+                                             ZoneId holder, const Aabb3d& portalWorldBounds);

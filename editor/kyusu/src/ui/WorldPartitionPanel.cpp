@@ -233,6 +233,9 @@ void WorldPartitionPanel::DrawHeaderButtons()
         Commands.Execute(std::make_unique<SelectCommand>(
             Selection, SelectableRef::EntitySelection(scene.GetRegistry().Id,
                                                       command->GetCreatedEntity())));
+        // Where the door sits decides what it connects: derive immediately so
+        // a well-placed portal is a working connection with zero extra steps.
+        WorldDoc.Revalidate();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Select the opening's face first to fit the portal into it");

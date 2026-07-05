@@ -49,6 +49,51 @@ ZoneId GuessPortalTargetZone(const WorldPartitionManifest& manifest, ZoneId owne
     return best != nullptr ? best->Id : ZoneId{};
 }
 
+ZoneId DerivePortalCounterpart(const WorldPartitionManifest& manifest, ZoneId holder,
+                               const Aabb3d& portalWorldBounds)
+{
+    Aabb3d reach = portalWorldBounds;
+    const int facing = DominantPortalAxis(portalWorldBounds);
+    reach.Min[facing] -= 1.0f;
+    reach.Max[facing] += 1.0f;
+
+    const auto overlapVolume = [&](const Aabb3d& bounds) -> double
+    {
+        double volume = 1.0;
+        for (int i = 0; i < 3; ++i)
+        {
+            const double lo = std::max(static_cast<double>(reach.Min[i]),
+                                       static_cast<double>(bounds.Min[i]));
+            const double hi = std::min(static_cast<double>(reach.Max[i]),
+                                       static_cast<double>(bounds.Max[i]));
+            if (hi <= lo)
+                return 0.0;
+            volume *= hi - lo;
+        }
+        return volume;
+    };
+
+    const ZoneHeader* best = nullptr;
+    double bestVolume = 0.0;
+    for (const ZoneHeader& zone : manifest.Zones)
+    {
+        if (zone.Id == holder || !zone.Bounds.IsValid())
+            continue;
+        const double volume = overlapVolume(zone.Bounds);
+        if (volume <= 0.0)
+            continue;
+        if (best == nullptr || volume > bestVolume
+            || (volume == bestVolume && zone.Id.Value < best->Id.Value))
+        {
+            best = &zone;
+            bestVolume = volume;
+        }
+    }
+    if (best != nullptr)
+        return best->Id;
+    return GuessPortalTargetZone(manifest, holder, portalWorldBounds);
+}
+
 PortalBoxFit FitPortalBoxToFace(std::span<const Vec3d> faceWorldVertices, Vec3d faceNormal,
                                 double thickness)
 {

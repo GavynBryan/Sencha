@@ -139,6 +139,9 @@ bool WorldDocument::SaveWorld()
         return false;
 
     AssignSceneRefsForNewZones();
+    // Derived connections land before the zone files write, so the links they
+    // stamp onto portals persist in this save.
+    ReconcilePortalConnections();
 
     namespace fs = std::filesystem;
     for (ZoneHeader& header : Manifest_.Zones)
@@ -499,6 +502,87 @@ bool WorldDocument::RemoveTransition(TransitionId transition)
     MarkManifestEdited();
     RunValidation();
     return true;
+}
+
+void WorldDocument::Revalidate()
+{
+    ReconcilePortalConnections();
+    RunValidation();
+}
+
+void WorldDocument::ReconcilePortalConnections()
+{
+    if (!WorldMode_)
+        return;
+
+    // Spans need current bounds; derived ones refresh from live content first
+    // (the same recompute a save performs).
+    for (ZoneHeader& header : Manifest_.Zones)
+    {
+        if (header.BoundsOverridden)
+            continue;
+        const auto it = OpenZones_.find(header.Id);
+        if (it == OpenZones_.end())
+            continue;
+        if (const auto bounds = ComputeZoneBounds(it->second.Document->GetScene()))
+            header.Bounds = *bounds;
+    }
+
+    const auto findRecord = [&](TransitionId id) -> const TransitionRecord*
+    {
+        for (const TransitionRecord& record : Manifest_.Transitions)
+            if (record.Id == id)
+                return &record;
+        return nullptr;
+    };
+    const auto findDoorway = [&](ZoneId from, ZoneId to) -> TransitionId
+    {
+        for (const TransitionRecord& record : Manifest_.Transitions)
+            if (record.From == from && record.To == to
+                && record.Topology == TransitionTopology::Doorway)
+                return record.Id;
+        return TransitionId{};
+    };
+
+    for (const ZoneHeader& zone : Manifest_.Zones)
+    {
+        const auto it = OpenZones_.find(zone.Id);
+        if (it == OpenZones_.end())
+            continue;
+        EditorScene& scene = it->second.Document->GetScene();
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            const PortalComponent* portal = scene.TryGetPortal(entity);
+            if (portal == nullptr)
+                continue;
+            const auto bounds = scene.TryGetWorldBounds(entity);
+            if (!bounds.has_value())
+                continue;   // no geometry to derive from: validation's report
+
+            const ZoneId target = DerivePortalCounterpart(Manifest_, zone.Id, *bounds);
+            if (!target.IsValid())
+                continue;   // nothing on the other side yet: stays unlinked
+
+            // Geometry wins: the correct link is the Doorway edge leaving this
+            // portal's own zone toward the zone its placement spans.
+            const TransitionRecord* linked = findRecord(portal->Transition);
+            if (linked != nullptr && linked->From == zone.Id && linked->To == target
+                && linked->Topology == TransitionTopology::Doorway)
+                continue;
+
+            TransitionId forward = findDoorway(zone.Id, target);
+            if (!forward.IsValid())
+            {
+                forward = AddTransition(zone.Id, target, TransitionTopology::Doorway,
+                                        /*oneWay*/ false, 0);
+                if (!findDoorway(target, zone.Id).IsValid())
+                    (void)AddTransition(target, zone.Id, TransitionTopology::Doorway,
+                                        /*oneWay*/ false, 0);
+            }
+            scene.SetComponent(entity, PortalComponent{ forward });
+            it->second.Document->MarkDirty();
+        }
+    }
 }
 
 bool WorldDocument::RenameTransition(TransitionId transition, std::string name)

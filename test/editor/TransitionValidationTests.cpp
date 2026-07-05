@@ -3,6 +3,7 @@
 #include "document/DocumentSerialization.h"
 #include "document/PortalGeometry.h"
 #include "document/WorldDocument.h"
+#include "document/commands/MoveEntitiesToZoneCommand.h"
 
 #include <core/logging/LoggingProvider.h>
 
@@ -333,4 +334,83 @@ TEST_F(TransitionValidationTest, TagAndDepthVerbsRewriteRecords)
     const TransitionId unknown{ 0xff };
     EXPECT_FALSE(World.SetTransitionRequiredTags(unknown, {}));
     EXPECT_FALSE(World.SetTransitionPreloadDepth(unknown, 1));
+}
+
+TEST_F(TransitionValidationTest, PortalPlacementDerivesConnection)
+{
+    // A portal straddling the boundary between the zones (bounds [-10..10] and
+    // [30..50] in X, portal at the From zone's +X face): the counterpart
+    // derives from geometry, the doorway pair mints itself, and the portal
+    // links its own zone's edge. No linking step anywhere.
+    SetZoneBounds(ToZone, Vec3d{ 12, 0, 0 });   // adjacent: [2..22] in X
+    const EntityId portal = AddPortalBrush(TransitionId{}, Vec3d{ 0.2, 4.0, 4.0 },
+                                           Vec3d{ 10, 0, 0 });
+    World.Revalidate();
+
+    ASSERT_EQ(World.Manifest().Transitions.size(), 2u);
+    const PortalComponent* component =
+        World.FocusDocument().GetScene().TryGetPortal(portal);
+    ASSERT_TRUE(component->Transition.IsValid());
+    const TransitionRecord& forward = World.Manifest().Transitions[0];
+    EXPECT_EQ(component->Transition, forward.Id);
+    EXPECT_EQ(forward.From, FromZone);
+    EXPECT_EQ(forward.To, ToZone);
+    EXPECT_EQ(World.Manifest().Transitions[1].From, ToZone);
+    EXPECT_EQ(World.Manifest().Transitions[1].To, FromZone);
+    // The derived pair satisfies validation outright.
+    EXPECT_EQ(CountRecords("partition.transition.portal_missing"), 0u);
+    EXPECT_EQ(CountRecords("partition.portal.unlinked"), 0u);
+}
+
+TEST_F(TransitionValidationTest, ReconcileReusesExistingPairAndNeverRemoves)
+{
+    SetZoneBounds(ToZone, Vec3d{ 12, 0, 0 });
+    const TransitionId existing =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Doorway, false, 7);
+    (void)World.AddTransition(ToZone, FromZone, TransitionTopology::Doorway, false, 7);
+    // An unrelated teleport must survive reconciliation untouched.
+    const TransitionId teleport =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Teleport, true, 0);
+
+    const EntityId portal = AddPortalBrush(TransitionId{}, Vec3d{ 0.2, 4.0, 4.0 },
+                                           Vec3d{ 10, 0, 0 });
+    World.Revalidate();
+
+    // Linked to the EXISTING doorway edge; nothing new minted, nothing removed.
+    EXPECT_EQ(World.FocusDocument().GetScene().TryGetPortal(portal)->Transition, existing);
+    ASSERT_EQ(World.Manifest().Transitions.size(), 3u);
+    bool teleportSurvives = false;
+    for (const TransitionRecord& record : World.Manifest().Transitions)
+        teleportSurvives |= record.Id == teleport;
+    EXPECT_TRUE(teleportSurvives);
+}
+
+TEST_F(TransitionValidationTest, MovedPortalRelinksToItsNewZone)
+{
+    SetZoneBounds(ToZone, Vec3d{ 12, 0, 0 });
+    const EntityId portal = AddPortalBrush(TransitionId{}, Vec3d{ 0.2, 4.0, 4.0 },
+                                           Vec3d{ 10, 0, 0 });
+    World.Revalidate();
+    const TransitionId original =
+        World.FocusDocument().GetScene().TryGetPortal(portal)->Transition;
+    ASSERT_TRUE(original.IsValid());
+
+    // The E2 move carries the portal into the other zone; on the next
+    // reconcile it links THAT zone's edge of the pair instead.
+    const EntityId entities[] = { portal };
+    MoveEntitiesToZoneCommand move(entities, World.FocusDocument(),
+                                   *World.ZoneDocument(ToZone));
+    move.Execute();
+    World.Revalidate();
+
+    const EditorScene& targetScene = World.ZoneDocument(ToZone)->GetScene();
+    const EntityId moved = targetScene.GetAllEntities()[0];
+    const TransitionRecord* linked = nullptr;
+    for (const TransitionRecord& record : World.Manifest().Transitions)
+        if (record.Id == targetScene.TryGetPortal(moved)->Transition)
+            linked = &record;
+    ASSERT_NE(linked, nullptr);
+    EXPECT_EQ(linked->From, ToZone);
+    EXPECT_NE(linked->Id, original);
+    ASSERT_EQ(World.Manifest().Transitions.size(), 2u);   // the pair, reused
 }
