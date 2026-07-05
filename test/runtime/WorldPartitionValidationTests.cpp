@@ -163,8 +163,24 @@ TEST(WorldPartitionValidation, BoundsOverlapFiresOncePerPair)
     const auto records = Validate(manifest);
     ExpectSingleRecord(records, "partition.bounds.overlap",
                        ContentRiskSeverity::Warning, ContentRiskSourceKind::Zone, ZoneA1);
+    // The message reads by authored name, not the opaque hex id.
+    EXPECT_NE(records[0].Message.find("hub"), std::string::npos);
+    EXPECT_NE(records[0].Message.find("east"), std::string::npos);
+    EXPECT_EQ(records[0].Message.find("00000000000000a1"), std::string::npos);
+}
+
+TEST(WorldPartitionValidation, MessageFallsBackToHexWhenZoneUnnamed)
+{
+    WorldPartitionManifest manifest = MakeCleanManifest();
+    manifest.Zones[0].Name.clear();
+    manifest.Zones[1].Bounds = Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
+
+    const auto records = Validate(manifest);
+    ExpectSingleRecord(records, "partition.bounds.overlap",
+                       ContentRiskSeverity::Warning, ContentRiskSourceKind::Zone, ZoneA1);
+    // Unnamed zone shows its hex id; the named partner still shows its name.
     EXPECT_NE(records[0].Message.find("00000000000000a1"), std::string::npos);
-    EXPECT_NE(records[0].Message.find("00000000000000a2"), std::string::npos);
+    EXPECT_NE(records[0].Message.find("east"), std::string::npos);
 }
 
 TEST(WorldPartitionValidation, UnreachableZoneFires)

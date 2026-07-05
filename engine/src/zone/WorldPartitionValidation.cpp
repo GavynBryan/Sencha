@@ -12,6 +12,38 @@ std::string Hex(uint64_t value)
     return std::format("{:016x}", value);
 }
 
+// Human-legible reference for a message: the authored name when set, else the
+// hex id. Messages are baked at validation time, so a rename that re-runs
+// validation re-renders them with the new name.
+std::string ZoneLabel(const WorldPartitionManifest& manifest, ZoneId id)
+{
+    for (const ZoneHeader& zone : manifest.Zones)
+    {
+        if (zone.Id == id)
+            return zone.Name.empty() ? Hex(id.Value) : zone.Name;
+    }
+    return Hex(id.Value);
+}
+
+std::string RegionLabel(const WorldPartitionManifest& manifest, RegionId id)
+{
+    for (const RegionRecord& region : manifest.Regions)
+    {
+        if (region.Id == id)
+            return region.Name.empty() ? Hex(id.Value) : region.Name;
+    }
+    return Hex(id.Value);
+}
+
+std::string TransitionLabel(const WorldPartitionManifest& manifest,
+                            const TransitionRecord& transition)
+{
+    if (!transition.Name.empty())
+        return transition.Name;
+    return std::format("{} -> {}", ZoneLabel(manifest, transition.From),
+                       ZoneLabel(manifest, transition.To));
+}
+
 void AppendSortedBySourceId(std::vector<ContentRiskRecord>& records,
                             std::vector<ContentRiskRecord> ruleRecords)
 {
@@ -87,7 +119,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.region_missing",
                 .Message = std::format("zone {} references missing region {}",
-                                       Hex(zone.Id.Value), Hex(zone.Region.Value)),
+                                       ZoneLabel(manifest, zone.Id),
+                                       RegionLabel(manifest, zone.Region)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -108,7 +141,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = transition.Id.Value,
                 .RuleId = "partition.transition.endpoint_missing",
                 .Message = std::format("transition {} endpoint {} names no zone",
-                                       Hex(transition.Id.Value), Hex(missing.Value)),
+                                       TransitionLabel(manifest, transition),
+                                       Hex(missing.Value)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -127,7 +161,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = transition.Id.Value,
                 .RuleId = "partition.transition.self_loop",
                 .Message = std::format("transition {} connects zone {} to itself",
-                                       Hex(transition.Id.Value), Hex(transition.From.Value)),
+                                       TransitionLabel(manifest, transition),
+                                       ZoneLabel(manifest, transition.From)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -152,8 +187,9 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = transition.Id.Value,
                 .RuleId = "partition.transition.unpaired",
                 .Message = std::format("transition {} ({} to {}) has no reverse edge",
-                                       Hex(transition.Id.Value), Hex(transition.From.Value),
-                                       Hex(transition.To.Value)),
+                                       TransitionLabel(manifest, transition),
+                                       ZoneLabel(manifest, transition.From),
+                                       ZoneLabel(manifest, transition.To)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -171,7 +207,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .Kind = ContentRiskSourceKind::Zone,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.scene_missing",
-                .Message = std::format("zone {} has no scene reference", Hex(zone.Id.Value)),
+                .Message = std::format("zone {} has no scene reference",
+                                       ZoneLabel(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -189,7 +226,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .Kind = ContentRiskSourceKind::Zone,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.bounds_invalid",
-                .Message = std::format("zone {} bounds are invalid", Hex(zone.Id.Value)),
+                .Message = std::format("zone {} bounds are invalid",
+                                       ZoneLabel(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -223,7 +261,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                     .SourceId = zones[a]->Id.Value,
                     .RuleId = "partition.bounds.overlap",
                     .Message = std::format("zone {} bounds overlap zone {}",
-                                           Hex(zones[a]->Id.Value), Hex(zones[b]->Id.Value)),
+                                           ZoneLabel(manifest, zones[a]->Id),
+                                           ZoneLabel(manifest, zones[b]->Id)),
                 });
             }
         }
@@ -269,7 +308,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.graph.unreachable",
                 .Message = std::format("zone {} is not reachable from the start zone",
-                                       Hex(zone.Id.Value)),
+                                       ZoneLabel(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
