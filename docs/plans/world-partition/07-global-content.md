@@ -1,8 +1,8 @@
 # Phase G: Global Content (the world scene)
 
-Status: execution spec (2026-07-05), NOT implemented. Owner review before any stage
-starts. Read `00-execution-overview.md` (especially D19/D20 and the R5a global-span
-decision) first.
+Status: IMPLEMENTED 2026-07-05 (all three stages; see "Implementation notes" at the
+end for deviations). Read `00-execution-overview.md` (especially D19/D20 and the R5a
+global-span decision) first.
 
 ## The model
 
@@ -76,3 +76,27 @@ Logic in systems, live state in resources, authored state in global entities.
 Per-entity preload tiers (vista/boundary content: the recorded next mechanism for
 doors and LOD proxies resident before their zone), any second global registry, any
 "manager entity" convention (directors are systems + resources; see the note).
+
+## Implementation notes (2026-07-05)
+
+- Cooked world-scene artifacts land where `CookDocument` puts every level's
+  (`.cooked/levels/<stem>_world.level.cooked.json` + collision), not at the
+  `worlds/<world>/world.cooked.json` path this spec sketched: the cook derives
+  artifact placement from the authored path, and inventing a second layout for one
+  scene would fork the pipeline. The cooked manifest's fields are the contract the
+  runtime reads: `cooked_world_scene`, `cooked_world_collision`,
+  `world_scene_content_hash` at the manifest's top level.
+- A startup `+world` executes at GameLoaded, before `OnRegisterSystems` hands out
+  the collision shape cache, so the world scene's entities load synchronously as
+  specced but its collision half completes in `OnRegisterSystems`, still before the
+  first frame. An interactive `world` command after startup loads both at once.
+- While a zone is focused the world scene does not draw as a context layer: the
+  context render path iterates open zones only, and the world scene is deliberately
+  not one. Phase V (08) owns context rendering; extending it to the world scene is
+  a decision for that phase.
+- `SaveWorld` always assigns the ref and writes the scene file (the header-only
+  zone discipline: the manifest never references a missing file). Legacy worlds
+  without the key load with an empty world scene and gain the key on next save.
+- While the world scene is focused, `FocusZone()` is invalid and every zone is
+  context (any zone may unload). The sidecar records the focus as
+  `focus_world_scene`.
