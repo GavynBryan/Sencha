@@ -235,6 +235,9 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
+        // The frame view dies with the frame; the drain phase mutates zone
+        // lifecycle before the next one is built.
+        engine.Zones().EndFrameView();
 
         if (!rf.LifecycleOnly)
             return;

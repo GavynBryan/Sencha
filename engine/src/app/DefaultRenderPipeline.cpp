@@ -63,8 +63,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     for (Registry* registry : ctx.ActiveRegistries)
     {
-        if (registry == nullptr)
-            continue;
 
         auto* activeCamera = registry->Resources.TryGet<ActiveCameraService>();
 
@@ -87,8 +85,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     for (Registry* registry : ctx.ActiveRegistries)
     {
-        if (registry == nullptr)
-            continue;
 
         if (!registry->Components.IsRegistered<WorldTransform>()
             || !registry->Components.IsRegistered<StaticMeshComponent>())
@@ -102,8 +98,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     Lights.Reset();
     for (Registry* registry : ctx.ActiveRegistries)
     {
-        if (registry == nullptr)
-            continue;
         LightExtractor.Extract(registry->Components, Lights);
     }
 

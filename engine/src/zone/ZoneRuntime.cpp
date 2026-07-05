@@ -27,6 +27,8 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
     assert(zone.IsValid() && "ZoneRuntime::CreateZone: zone id must be valid");
     assert(!FindLoadedZone(zone) && "ZoneRuntime::CreateZone: duplicate zone id");
 
+    assert(!FrameViewLive_
+           && "CreateZone with a live frame view: zone lifecycle is drain-point-only");
     InvalidateFrameScratch();
 
     const RegistryId registryId = AllocateRegistryId();
@@ -52,6 +54,8 @@ RegistryId ZoneRuntime::ReserveRegistryId()
 Registry& ZoneRuntime::AttachZone(std::unique_ptr<Registry> registry,
                                   ZoneParticipation participation)
 {
+    assert(!FrameViewLive_
+           && "AttachZone with a live frame view: zone lifecycle is drain-point-only");
     assert(registry && "ZoneRuntime::AttachZone: registry must not be null");
     assert(registry->Kind == RegistryKind::Zone && "ZoneRuntime::AttachZone: registry kind must be Zone");
     assert(registry->Zone.IsValid() && "ZoneRuntime::AttachZone: registry must carry a valid ZoneId");
@@ -81,19 +85,9 @@ bool ZoneRuntime::DestroyZone(ZoneId zone)
     if (it == Zones.end())
         return false;
 
-    // Surgical: null only the in-flight frame-view entries that point at the
-    // dying registry, never the rest. Streaming destroys zones mid-frame
-    // (linger expiry runs in the game update, after the frame view was built
-    // and before render extraction consumes it); blanking the whole scratch
-    // here rendered one empty frame per unload. Span consumers skip null
-    // entries, so a zone visible when destroyed vanishes safely and every
-    // unrelated registry keeps drawing.
-    Registry* dying = (*it)->ZoneRegistry.get();
-    for (auto* scratch : { &VisibleScratch, &PhysicsScratch, &LogicScratch, &AudioScratch })
-        for (Registry*& entry : *scratch)
-            if (entry == dying)
-                entry = nullptr;
-
+    assert(!FrameViewLive_
+           && "DestroyZone with a live frame view: zone lifecycle is drain-point-only");
+    InvalidateFrameScratch();
     Zones.erase(it);
     return true;
 }
@@ -172,6 +166,7 @@ std::size_t ZoneRuntime::ZoneCount() const
 
 FrameRegistryView ZoneRuntime::BuildFrameView()
 {
+    FrameViewLive_ = true;
     InvalidateFrameScratch();
 
     // The global registry hosts world-lifetime gameplay state (the player pawn
@@ -238,6 +233,11 @@ RegistryId ZoneRuntime::AllocateRegistryId()
         && "ZoneRuntime::AllocateRegistryId: registry id index overflow");
 
     return RegistryId{ NextRegistryIndex++, 1 };
+}
+
+void ZoneRuntime::EndFrameView()
+{
+    FrameViewLive_ = false;
 }
 
 void ZoneRuntime::InvalidateFrameScratch()

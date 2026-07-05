@@ -135,36 +135,31 @@ TEST(ZoneRuntime, DestroyZoneExcludesDestroyedZoneFromFrameView)
     EXPECT_EQ(view.Visible[1], &bellTower);
 }
 
-TEST(ZoneRuntime, DestroyZoneVisiblyInvalidatesPreviouslyBuiltFrameView)
+// The frame view is a bracketed lifetime: zone lifecycle happens only while
+// no view is live (the drain point), so spans never contain nulls and a
+// mutation can never blank an in-flight frame. The next build reflects it.
+TEST(ZoneRuntime, ZoneLifecycleBetweenFrameViewsIsReflectedByTheNextBuild)
 {
     ZoneRuntime runtime;
 
-    runtime.CreateZone(ZoneId{ 1 });
-    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
-    FrameRegistryView view = runtime.BuildFrameView();
-
-    ASSERT_EQ(view.Visible.size(), 2u);
-    ASSERT_NE(view.Visible[1], nullptr);
-
-    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
-
-    EXPECT_EQ(view.Visible[1], nullptr);
-}
-
-TEST(ZoneRuntime, CreateZoneVisiblyInvalidatesPreviouslyBuiltFrameView)
-{
-    ZoneRuntime runtime;
-
-    runtime.CreateZone(ZoneId{ 1 });
-    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
-    FrameRegistryView view = runtime.BuildFrameView();
-
-    ASSERT_EQ(view.Visible.size(), 2u);
-    ASSERT_NE(view.Visible[1], nullptr);
-
+    Registry& keep = runtime.CreateZone(ZoneId{ 1 });
     runtime.CreateZone(ZoneId{ 2 });
+    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
+    runtime.SetParticipation(ZoneId{ 2 }, ZoneParticipation{ .Visible = true });
 
-    EXPECT_EQ(view.Visible[1], nullptr);
+    FrameRegistryView view = runtime.BuildFrameView();
+    ASSERT_EQ(view.Visible.size(), 3u);
+    for (Registry* entry : view.Visible)
+        EXPECT_NE(entry, nullptr);   // spans never contain nulls
+    runtime.EndFrameView();
+
+    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 2 }));
+    runtime.CreateZone(ZoneId{ 3 });
+
+    view = runtime.BuildFrameView();
+    ASSERT_EQ(view.Visible.size(), 2u);   // global + zone 1; zone 3 is dormant
+    EXPECT_EQ(view.Visible[1], &keep);
+    runtime.EndFrameView();
 }
 
 TEST(ZoneRuntime, FindZoneMissingReturnsNull)
@@ -352,28 +347,3 @@ TEST(Registry, MakeZoneRegistryInvalidZoneIdAsserts)
 }
 #endif
 
-// The streaming flicker regression: linger expiry destroys zones in the game
-// update, after the frame view was built and before render extraction reads
-// it. Destroying one zone must null ONLY its own entries, or every unload
-// renders one empty frame.
-TEST(ZoneRuntime, DestroyZoneLeavesUnrelatedFrameViewEntriesIntact)
-{
-    ZoneRuntime runtime;
-    Registry& visible = runtime.CreateZone(ZoneId{ 1 });
-    runtime.CreateZone(ZoneId{ 2 });   // dormant: in no span
-    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
-
-    FrameRegistryView view = runtime.BuildFrameView();
-    ASSERT_EQ(view.Visible.size(), 2u);
-    ASSERT_EQ(view.Visible[1], &visible);
-
-    // Destroying the dormant zone mid-frame: the visible zone keeps drawing.
-    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 2 }));
-    EXPECT_EQ(view.Visible[0], &runtime.Global());
-    EXPECT_EQ(view.Visible[1], &visible);
-
-    // Destroying the visible zone nulls exactly its entry.
-    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
-    EXPECT_EQ(view.Visible[0], &runtime.Global());
-    EXPECT_EQ(view.Visible[1], nullptr);
-}

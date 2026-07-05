@@ -25,8 +25,7 @@ void AudioSystem::Update(AudioService* audio, std::span<Registry*> active)
     std::unordered_set<Registry*> activeSet;
     activeSet.reserve(active.size());
     for (Registry* registry : active)
-        if (registry != nullptr)
-            activeSet.insert(registry);
+        activeSet.insert(registry);
 
     // Sweep: registries no longer in the audio view (dormant or detached)
     // get their voices stopped — by id only, never touching the registry.

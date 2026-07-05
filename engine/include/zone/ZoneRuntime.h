@@ -57,10 +57,12 @@ public:
         }
     }
 
-    // The returned view is valid only until the next BuildFrameView call or any
-    // zone lifecycle mutation on this ZoneRuntime. Do not mutate zones while a
-    // frame is executing.
+    // The returned view is valid until EndFrameView. Zone lifecycle
+    // (CreateZone, AttachZone, DestroyZone) asserts that no view is live:
+    // mutations belong at the drain point, before the frame's view is built.
+    // Spans therefore never contain null entries.
     FrameRegistryView BuildFrameView();
+    void EndFrameView();
 
 private:
     struct LoadedZone
@@ -75,6 +77,10 @@ private:
 
     RegistryId AllocateRegistryId();
     void InvalidateFrameScratch();
+
+    // True between BuildFrameView and EndFrameView: the window in which zone
+    // lifecycle mutation would dangle span entries mid-frame.
+    bool FrameViewLive_ = false;
 
     std::unique_ptr<Registry> GlobalRegistry;
     std::vector<std::unique_ptr<LoadedZone>> Zones;

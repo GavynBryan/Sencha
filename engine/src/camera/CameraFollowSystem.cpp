@@ -13,10 +13,6 @@ void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        // A mid-frame zone destroy nulls its frame-view entry; every span
-        // consumer tolerates that.
-        if (reg == nullptr)
-            continue;
         World& world = reg->Components;
         if (!world.IsRegistered<CameraRig>())
             continue;
