@@ -23,6 +23,7 @@ and ask, not to improvise (see "Stop conditions" below).
 | `03-runtime-streaming.md` | Phase R | `WorldPartitionRuntime`, demand policy, streaming tunables, template game world path, PIE play-from-world. |
 | `04-move-selection-to-zone.md` | Phase E2 | Cross-zone entity moves with undo, UI entry points, bounds-containment validation. |
 | `05-transitions-and-portals.md` | Phase E3 | Portal marker brushes, transition verbs and panel UI, linkage validation, cook exclusion. |
+| `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). Spec only; owner review before implementation. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
@@ -182,6 +183,30 @@ transition timing model) defining what the runtime actually needs from a portal 
 `StreamingResidentZoneCap` (int, default 8); JSON keys `streaming_hop_count`,
 `streaming_linger_seconds`, `streaming_resident_zone_cap`; validated as hop >= 0,
 linger finite and >= 0, cap >= 1.
+
+**D15 (owner decision, 2026-07-05). One portal satisfies a symmetric doorway pair.**
+A symmetric pair (matching swapped endpoints, both Doorway, both non-OneWay) is one
+physical opening: `portal_missing` and `portal_unverified` clear for both directions
+when either edge has a linked portal in its own zone. OneWay edges keep demanding
+their own portal; `portal_duplicate`, `wrong_zone`, and `misaligned` stay per-edge.
+The portal remains zone-owned content (D1/D9 unchanged); only the warning arithmetic
+became pair-aware.
+
+**D16. Transitions carry an optional authored `Name`** (manifest key `name`, omitted
+when empty; format_version stays 1). Empty displays as the derived
+"<From name> -> <To name>"; `TransitionDisplayName` is the one label mechanism, and
+every editor surface presents the link as WORLD-level data, never zone-local.
+
+**D17 (owner decision, 2026-07-05). Render-only neighbors are the pinned direction**
+for preloaded zones: neighbors preload with Visible (and, for threshold safety,
+Physics) participation instead of dormant, flipping full on entry. Retires the R
+spec's "accepted pop". Specced in `06-streaming-maturation.md` N1; not implemented
+until that spec is reviewed.
+
+**D18. The editor streaming preview consumes ONLY the pure policy**
+(`ResolveFocusZone`, `ComputeZoneDemand`): no `ZoneRuntime`, no loader, no async
+anywhere in kyusu. Focus resolution therefore lives beside the demand policy in
+`zone/ZoneDemand.h`, shared by the runtime and the preview.
 
 ---
 

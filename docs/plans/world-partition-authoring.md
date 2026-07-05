@@ -643,6 +643,9 @@ v1.0 set, structural:
    linked `TransitionId` names it, and a portal's linked transition has that portal's
    zone as its `From` (checked when `From` is loaded; recorded as
    unverifiable-until-loaded otherwise, which is itself a visible state, not silence).
+   (Amended per owner decision, see 00 D15: for a SYMMETRIC doorway pair, one linked
+   portal on either side satisfies the aperture check for both directions; OneWay
+   edges keep the per-direction requirement.)
 5. The portal brush's derived normal axis (its minimum-extent axis) agrees with the
    transition direction (points out of `From` toward `To`). Rule ids, severities, and
    the exact checks for rules 4 and 5 are pinned in `05-transitions-and-portals.md`.
