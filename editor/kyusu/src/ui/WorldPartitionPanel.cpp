@@ -62,6 +62,8 @@ void WorldPartitionPanel::OnDraw()
     DrawHeaderButtons();
     ImGui::Separator();
 
+    DrawWorldSceneRow();
+
     for (const RegionRecord& region : WorldDoc.Manifest().Regions)
         DrawRegion(region);
 
@@ -227,6 +229,44 @@ void WorldPartitionPanel::DrawStreamingPreview()
     const size_t total = WorldDoc.Manifest().Zones.size();
     if (total > records.size())
         ImGui::TextDisabled("%zu of %zu zones stay unloaded", total - records.size(), total);
+}
+
+void WorldPartitionPanel::DrawWorldSceneRow()
+{
+    ImGui::PushID("world_scene_row");
+
+    const bool isFocus = WorldDoc.IsWorldSceneFocused();
+    if (isFocus)
+    {
+        ImGui::TextColored(EditorUi::Accent, "F");
+        ImGui::SameLine();
+    }
+
+    std::string name{ WorldDoc.Manifest().Name };
+    if (name.empty())
+        name = "World";
+    std::string label = ICON_FA_GLOBE "  " + name;
+    if (WorldDoc.WorldSceneDocument().IsDirty())
+        label += " " ICON_FA_CIRCLE_DOT;
+    label += "##world_scene_row";
+    ImGui::Selectable(label.c_str(), isFocus, ImGuiSelectableFlags_AllowDoubleClick);
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("The world scene: entities that live for the whole world "
+                          "(player start, global volumes, persistent props). Loaded once "
+                          "at world start, never streamed.");
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            (void)WorldDoc.FocusWorldScene();
+    }
+
+    if (ImGui::BeginPopupContextItem("##world_scene_ctx"))
+    {
+        if (ImGui::MenuItem("Focus"))
+            (void)WorldDoc.FocusWorldScene();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopID();
 }
 
 void WorldPartitionPanel::DrawHeaderButtons()

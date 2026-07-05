@@ -184,6 +184,74 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
     EXPECT_EQ(cookedEntityCount(afterManifest.Zones[1].CookedSceneRef), 1u);
 }
 
+TEST_F(WorldCookTest, CooksWorldSceneBesideZones)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    world.WorldSceneDocument().GetScene().CreateBrush(Vec3d{ 64, 0, 0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+
+    const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
+    EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.level.json");
+    ASSERT_FALSE(manifest.CookedWorldSceneRef.empty());
+    ASSERT_FALSE(manifest.CookedWorldCollisionRef.empty());
+    EXPECT_NE(manifest.CookedWorldContentHash, 0u);
+    EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldSceneRef));
+    EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldCollisionRef));
+}
+
+TEST_F(WorldCookTest, WorldSceneRecookIsByteIdenticalAndEditChangesOnlyItsHash)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    world.WorldSceneDocument().GetScene().CreateBrush(Vec3d{ 64, 0, 0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult firstCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(firstCook.Success) << firstCook.Error;
+    const WorldPartitionManifest before = ParseCookedManifest(firstCook.CookedManifestPath);
+    const std::string artifactBefore = ReadFile(Root / before.CookedWorldSceneRef);
+
+    // No edits: byte-identical world scene artifact, identical hash.
+    const WorldCookResult secondCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(secondCook.Success) << secondCook.Error;
+    const WorldPartitionManifest unchanged = ParseCookedManifest(secondCook.CookedManifestPath);
+    EXPECT_EQ(unchanged.CookedWorldContentHash, before.CookedWorldContentHash);
+    EXPECT_EQ(ReadFile(Root / unchanged.CookedWorldSceneRef), artifactBefore);
+
+    // A world-scene edit changes its own hash and no zone's.
+    world.WorldSceneDocument().GetScene().CreateBrush(Vec3d{ 96, 0, 0 });
+    world.WorldSceneDocument().MarkDirty();
+    ASSERT_TRUE(world.SaveWorld());
+    const WorldCookResult thirdCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(thirdCook.Success) << thirdCook.Error;
+    const WorldPartitionManifest edited = ParseCookedManifest(thirdCook.CookedManifestPath);
+
+    EXPECT_NE(edited.CookedWorldContentHash, before.CookedWorldContentHash);
+    ASSERT_EQ(edited.Zones.size(), before.Zones.size());
+    for (size_t i = 0; i < edited.Zones.size(); ++i)
+        EXPECT_EQ(edited.Zones[i].CookedContentHash, before.Zones[i].CookedContentHash);
+}
+
+TEST_F(WorldCookTest, RefusesDirtyWorldScene)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    world.WorldSceneDocument().MarkDirty();
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("world scene"), std::string::npos);
+}
+
 TEST_F(WorldCookTest, RefusesDirtyZoneDocuments)
 {
     WorldDocument world(Logging);

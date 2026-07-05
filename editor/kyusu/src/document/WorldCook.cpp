@@ -26,8 +26,8 @@ WorldCookResult CookWorld(WorldDocument& world,
         return result;
     }
 
-    // Saved files only: a dirty zone or an unresolved scene means the authored
-    // files on disk do not describe the world the designer sees.
+    // Saved files only: a dirty document or an unresolved scene means the
+    // authored files on disk do not describe the world the designer sees.
     std::string blocked;
     world.VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
                          {
@@ -37,6 +37,12 @@ WorldCookResult CookWorld(WorldDocument& world,
                                  blocked += ", ";
                              blocked += document.GetDisplayName();
                          });
+    if (world.WorldSceneDocument().IsDirty())
+    {
+        if (!blocked.empty())
+            blocked += ", ";
+        blocked += "world scene";
+    }
     if (!blocked.empty())
     {
         result.Error = "CookWorld: unsaved zone documents: " + blocked;
@@ -76,6 +82,33 @@ WorldCookResult CookWorld(WorldDocument& world,
         zone.CookedCollisionRef =
             fs::relative(zoneCook.CollisionSidecarPath, assetsRoot, ec).generic_string();
         zone.CookedContentHash = zoneCook.ContentHash;
+    }
+
+    // The world scene cooks through the same level-cook path as a zone scene;
+    // its cooked refs land at the manifest's top level. A world saved before
+    // the world scene existed has no ref and cooks without one.
+    if (!cooked.WorldSceneRef.empty())
+    {
+        const fs::path scenePath = world.ResolveScenePath(cooked.WorldSceneRef);
+        std::error_code ec;
+        if (!fs::exists(scenePath, ec))
+        {
+            result.Error = "CookWorld: world scene '" + cooked.WorldSceneRef
+                + "' has no saved file; save the world first";
+            return result;
+        }
+        const DocumentCookResult sceneCook =
+            CookDocument(scenePath, assetsRoot, cellSize, &logging, assets);
+        if (!sceneCook.Success)
+        {
+            result.Error = "CookWorld: world scene: " + sceneCook.Error;
+            return result;
+        }
+        cooked.CookedWorldSceneRef =
+            fs::relative(sceneCook.CookedScenePath, assetsRoot, ec).generic_string();
+        cooked.CookedWorldCollisionRef =
+            fs::relative(sceneCook.CollisionSidecarPath, assetsRoot, ec).generic_string();
+        cooked.CookedWorldContentHash = sceneCook.ContentHash;
     }
 
     const std::string worldStem = fs::path(std::string(world.WorldPath())).stem().string();

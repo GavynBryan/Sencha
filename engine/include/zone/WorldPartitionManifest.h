@@ -96,6 +96,12 @@ struct WorldPartitionManifest
     // empty means the world has none. It is not a zone: no id, no bounds, no
     // region, no participation in the index or the demand policy.
     std::string WorldSceneRef;
+    // Cooked-manifest-only, the ZoneHeader trio's world-scene counterpart:
+    // zero/empty in authored manifests, filled by the world cook, consumed by
+    // the runtime's world-start load.
+    std::string CookedWorldSceneRef;
+    std::string CookedWorldCollisionRef;
+    uint64_t    CookedWorldContentHash = 0;
     std::vector<RegionRecord>     Regions;
     std::vector<ZoneHeader>       Zones;
     std::vector<TransitionRecord> Transitions;

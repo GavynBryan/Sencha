@@ -43,6 +43,10 @@ public:
 
 private:
     void DrawHeaderButtons();
+    // The world row above the regions: the world scene, focusable like a zone.
+    // It shows the world's name (the scene has none of its own) and carries no
+    // bounds badge and no eye toggle; it is always present, never streamed.
+    void DrawWorldSceneRow();
     void DrawRegion(const RegionRecord& region);
     // The region's streaming shape: derived badge plus inline hop/radius/cap
     // editors, each clearable back to inherited (the manifest's absent state).

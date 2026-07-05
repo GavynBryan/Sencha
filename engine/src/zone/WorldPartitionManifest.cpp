@@ -228,6 +228,22 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
         return std::nullopt;
     if (!ReadOptionalString(root, "world_scene", manifest.WorldSceneRef, error, "world_scene"))
         return std::nullopt;
+    if (!ReadOptionalString(root, "cooked_world_scene", manifest.CookedWorldSceneRef, error,
+                            "cooked_world_scene"))
+        return std::nullopt;
+    if (!ReadOptionalString(root, "cooked_world_collision", manifest.CookedWorldCollisionRef,
+                            error, "cooked_world_collision"))
+        return std::nullopt;
+    if (const JsonValue* hash = root.Find("world_scene_content_hash"))
+    {
+        const auto decoded = hash->IsString() ? HexDecode(hash->AsString()) : std::nullopt;
+        if (!decoded)
+        {
+            SetError(error, "world_scene_content_hash is malformed");
+            return std::nullopt;
+        }
+        manifest.CookedWorldContentHash = *decoded;
+    }
 
     if (const JsonValue* regions = root.Find("regions"))
     {
@@ -442,6 +458,13 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
         root.emplace_back("start_zone", JsonValue{ ZoneIdToString(manifest.StartZone) });
     if (!manifest.WorldSceneRef.empty())
         root.emplace_back("world_scene", JsonValue{ manifest.WorldSceneRef });
+    if (!manifest.CookedWorldSceneRef.empty())
+        root.emplace_back("cooked_world_scene", JsonValue{ manifest.CookedWorldSceneRef });
+    if (!manifest.CookedWorldCollisionRef.empty())
+        root.emplace_back("cooked_world_collision", JsonValue{ manifest.CookedWorldCollisionRef });
+    if (manifest.CookedWorldContentHash != 0)
+        root.emplace_back("world_scene_content_hash",
+                          JsonValue{ HexEncode(manifest.CookedWorldContentHash) });
 
     JsonValue::Array regions;
     for (const RegionRecord& record : manifest.Regions)
