@@ -1,8 +1,9 @@
 # Phase: Per-Region Streaming Shape; Honest Topology Labels
 
-Status: execution spec (2026-07-05), NOT implemented. Owner review before any stage
-starts. Independent of Phase G (07) and of the portal retirement (09). Read
-`00-execution-overview.md` and `06-streaming-maturation.md` first.
+Status: IMPLEMENTED 2026-07-05 (all four stages; see "Implementation notes" at the
+end for deviations and owed manual gates). Independent of Phase G (07) and of the
+portal retirement (09). Read `00-execution-overview.md` and
+`06-streaming-maturation.md` first.
 
 ## Why
 
@@ -227,3 +228,21 @@ ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focu
   cap the far spatial ring evicts first, then nearer spatial, then the outermost graph
   hops; the focus and its immediate graph ring survive. S-D2 makes the cap per-region
   so a grid region can raise it.
+
+## Implementation notes (2026-07-05)
+
+- The preview's shared resolution lives in `ResolvePreviewStreamingConfig`
+  (`viewport/WorldViewSettings.{h,cpp}`): per-region shape resolved over engine
+  defaults, then the per-field preview overrides. Both preview consumers call it.
+- The user sidecar's `preview_hop_count` follows the absent-inherits model: written
+  only when the preview override is set, so a fresh session previews the authored
+  shape. A legacy sidecar carrying the key loads as an explicit override (clearable
+  in the panel).
+- The panel's inline region editors clamp to the validation bounds (hop >= 0,
+  radius >= 0, cap >= 1); `streaming_invalid` still guards hand-edited manifests.
+- The derived badge reads "Graph (inherited)" when a region authors no override;
+  any authored field drops the marker ("Radius" when the authored radius is
+  positive, else "Graph").
+- Owed manual GUI gates: the S3 two-region diamond-to-disc preview walkthrough
+  (radius circle drawn, config-in-force line naming the active region) and the S4
+  combo read-through.

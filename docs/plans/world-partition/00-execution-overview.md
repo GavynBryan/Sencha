@@ -27,7 +27,7 @@ and ask, not to improvise (see "Stop conditions" below).
 | `07-global-content.md` | Phase G | The world scene: authored global content loaded once into ZoneRuntime::Global(). Spec only; owner review before implementation. |
 | `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
 | `09-retire-portals-doors-as-world-content.md` | (reversal) | Portals removed entirely; connections authored zone-to-zone only; doors recorded as future world-scene content. Reverses D9, D15, D19, D20. IMPLEMENTED 2026-07-05. |
-| `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. Spec only; owner review before implementation. |
+| `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. IMPLEMENTED 2026-07-05. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
