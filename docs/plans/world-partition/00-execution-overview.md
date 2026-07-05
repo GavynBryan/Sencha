@@ -208,6 +208,21 @@ until that spec is reviewed.
 anywhere in kyusu. Focus resolution therefore lives beside the demand policy in
 `zone/ZoneDemand.h`, shared by the runtime and the preview.
 
+**D19 (owner decision, 2026-07-05). Connections derive from portal geometry.**
+Placing a portal marker across a zone boundary IS the connection authoring:
+`ReconcilePortalConnections` (save, Revalidate, portal creation) derives the
+counterpart from the marker's placement (`DerivePortalCounterpart`), mints the
+symmetric Doorway pair, and stamps the link as a derived write (like recomputed
+bounds, never undoable). Creation and relinking only, never removal. There is no
+manual linking step and no ownership decision: physical containment owns the
+marker, geometry owns the connection.
+
+**D20. Connections display undirected, at world level.** One panel row per
+symmetric pair; property edits apply to both directions; the directed pair is a
+storage and streaming detail the UI never surfaces (One-way conversion adds or
+removes the reverse edge explicitly). Rationale: nesting directed edges under zone
+rows made world data read as zone-owned, which misled the owner in testing.
+
 ---
 
 ## 4. Stop conditions

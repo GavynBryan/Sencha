@@ -1,10 +1,12 @@
 # Phase N: Streaming Maturation (runtime demand-model extensions)
 
-Status: execution spec (2026-07-05), NOT yet implemented. Owner review required
-before any stage starts (`00-execution-overview.md` Section 5 discipline). Read the
-design doc Sections 4 and 6.5, overview decisions D7, D10, D14, and D17, and
-`03-runtime-streaming.md` first: this phase extends the mechanisms Phase R built and
-changes none of their contracts.
+Status: IMPLEMENTED 2026-07-05 (owner-directed same-day execution; commits
+"partition 06/N1+N2" and "06/N3+N4"). Deviations from the spec text below, recorded
+here: N3 ships the ALL-of-list tag shape as `RequiredTags` names on the record (the
+`SetWorldTags` push model as pinned); N4's exact semantics landed as "an edge may be
+crossed while budget remains OR it carries depth; the far side continues with
+max(budget - 1, depth - 1)". The same day also landed the authoring reset (overview
+D19/D20): connections derive from portal geometry and display undirected.
 
 Prerequisites: Phases 1, E1, E2, E3, R complete (they are), plus the V-series
 feedback-loop work (named transitions, pair-aware portals, streaming preview): the
