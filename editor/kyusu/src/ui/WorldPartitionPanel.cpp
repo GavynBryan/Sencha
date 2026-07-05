@@ -14,6 +14,7 @@
 #include "meshedit/ElementGeometry.h"
 #include "selection/SelectionService.h"
 #include "selection/commands/SelectCommand.h"
+#include "ui/TransitionInlineEditor.h"
 
 #include <core/logging/LoggingProvider.h>
 
@@ -198,10 +199,13 @@ void WorldPartitionPanel::DrawConnectBar()
                 record = &candidate;
         if (record != nullptr)
         {
-            ImGui::Text("Portal linked " ICON_FA_ARROW_RIGHT "  %s", zoneName(record->To));
+            const std::string label =
+                "World transition: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
+            ImGui::TextUnformatted(label.c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton("Show"))
                 navigateTo(*record);
+            DrawTransitionInlineEditor(WorldDoc, portal->Transition);
         }
         else
         {

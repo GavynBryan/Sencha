@@ -6,13 +6,17 @@
 
 #include "commands/CommandStack.h"
 #include "document/AssetFieldIo.h"
+#include "document/PortalGeometry.h"
+#include "document/TransitionConnect.h"
 #include "document/commands/AssetFieldEditCommand.h"
+#include "document/commands/LinkPortalCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
 #include "document/commands/RawComponentRemoveCommand.h"
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
 #include "selection/SelectionService.h"
+#include "ui/TransitionInlineEditor.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
@@ -123,6 +127,7 @@ void InspectorPanel::ResetEditState()
     EditingEntity = {};
     EditingComponent = InvalidComponentId;
     EditBefore.clear();
+    PortalConnectTarget_ = ZoneId{};
 }
 
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
@@ -402,6 +407,91 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
     }
 }
 
+void InspectorPanel::DrawPortalSection(EntityId entity)
+{
+    if (!WorldDoc.IsWorld())
+        return;
+    EditorScene& scene = WorldDoc.FocusDocument().GetScene();
+    const PortalComponent* portal = scene.TryGetPortal(entity);
+    if (portal == nullptr)
+        return;
+
+    ImGui::TextColored(EditorUi::Accent, ICON_FA_ARROW_RIGHT "  Portal marker");
+
+    const TransitionRecord* record = nullptr;
+    for (const TransitionRecord& candidate : WorldDoc.Manifest().Transitions)
+        if (candidate.Id == portal->Transition)
+            record = &candidate;
+
+    if (record != nullptr)
+    {
+        const std::string label =
+            "World transition: " + TransitionDisplayName(WorldDoc.Manifest(), *record);
+        ImGui::TextUnformatted(label.c_str());
+        DrawTransitionInlineEditor(WorldDoc, portal->Transition);
+        if (ImGui::SmallButton("Unlink"))
+        {
+            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
+                                                    TransitionId{}))
+            {
+                Commands.Execute(std::move(unlink));
+                WorldDoc.Revalidate();
+            }
+        }
+    }
+    else if (portal->Transition.IsValid())
+    {
+        ImGui::TextColored(EditorUi::Warning, "Links a removed world transition");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Unlink"))
+        {
+            if (auto unlink = MakeLinkPortalCommand(WorldDoc.FocusDocument(), entity,
+                                                    TransitionId{}))
+            {
+                Commands.Execute(std::move(unlink));
+                WorldDoc.Revalidate();
+            }
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("Unlinked marker: connect it to a world transition");
+        if (!PortalConnectTarget_.IsValid())
+        {
+            if (const auto bounds = scene.TryGetWorldBounds(entity))
+                PortalConnectTarget_ = GuessPortalTargetZone(WorldDoc.Manifest(),
+                                                             WorldDoc.FocusZone(), *bounds);
+        }
+        const auto zoneName = [&](ZoneId zone) -> const char*
+        {
+            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+                if (header.Id == zone)
+                    return header.Name.c_str();
+            return "<pick a zone>";
+        };
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::BeginCombo("##portal_target", zoneName(PortalConnectTarget_)))
+        {
+            for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
+            {
+                if (header.Id == WorldDoc.FocusZone())
+                    continue;
+                if (ImGui::Selectable(header.Name.c_str(), header.Id == PortalConnectTarget_))
+                    PortalConnectTarget_ = header.Id;
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!PortalConnectTarget_.IsValid());
+        if (ImGui::Button("Connect"))
+            (void)ConnectZones(WorldDoc, WorldDoc.FocusZone(), PortalConnectTarget_,
+                               /*oneWay*/ false, entity, Commands);
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Separator();
+}
+
 void InspectorPanel::OnDraw()
 {
     ScopedPanel panel(GetTitle(), &Visible);
@@ -433,8 +523,11 @@ void InspectorPanel::OnDraw()
     ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();
 
+    DrawPortalSection(entity);
+
     // Registry-driven: every component the registry knows about, drawn by schema.
-    // No component is named in editor code here.
+    // No component is named in editor code here (the portal section above is
+    // the recorded exception).
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
     for (const auto& serializer : GetComponentSerializerEntries())
     {
