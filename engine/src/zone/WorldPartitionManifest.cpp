@@ -319,6 +319,27 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadOptionalString(entry, "name", record.Name, error,
                                     std::format("transitions[{}].name", i)))
                 return std::nullopt;
+            if (const JsonValue* tags = entry.Find("required_tags"))
+            {
+                if (!tags->IsArray())
+                {
+                    SetError(error, std::format("transitions[{}].required_tags must be an array",
+                                                i));
+                    return std::nullopt;
+                }
+                for (const JsonValue& tag : tags->AsArray())
+                {
+                    if (!tag.IsString() || tag.AsString().empty())
+                    {
+                        SetError(error,
+                                 std::format("transitions[{}].required_tags entries must be "
+                                             "nonempty strings",
+                                             i));
+                        return std::nullopt;
+                    }
+                    record.RequiredTags.push_back(tag.AsString());
+                }
+            }
             if (const JsonValue* topology = entry.Find("topology"))
             {
                 const auto parsed =
@@ -346,6 +367,20 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
                     return std::nullopt;
                 }
                 record.PreloadPriority = static_cast<int32_t>(number);
+            }
+            if (const JsonValue* depth = entry.Find("preload_depth"))
+            {
+                const double number = depth->IsNumber()
+                    ? depth->AsNumber()
+                    : std::numeric_limits<double>::quiet_NaN();
+                if (!std::isfinite(number) || number != std::floor(number) || number < 0
+                    || number > std::numeric_limits<int32_t>::max())
+                {
+                    SetError(error, std::format(
+                        "transitions[{}].preload_depth must be a non-negative integer", i));
+                    return std::nullopt;
+                }
+                record.PreloadDepth = static_cast<int32_t>(number);
             }
             manifest.Transitions.push_back(record);
         }
@@ -412,6 +447,15 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
         entry.emplace_back("topology", JsonValue{ TopologyToString(record.Topology) });
         entry.emplace_back("one_way", JsonValue{ record.Flags.OneWay });
         entry.emplace_back("preload_priority", JsonValue{ record.PreloadPriority });
+        if (record.PreloadDepth != 0)
+            entry.emplace_back("preload_depth", JsonValue{ record.PreloadDepth });
+        if (!record.RequiredTags.empty())
+        {
+            JsonValue::Array tags;
+            for (const std::string& tag : record.RequiredTags)
+                tags.emplace_back(JsonValue{ tag });
+            entry.emplace_back("required_tags", JsonValue{ std::move(tags) });
+        }
         transitions.emplace_back(JsonValue{ std::move(entry) });
     }
     root.emplace_back("transitions", JsonValue{ std::move(transitions) });

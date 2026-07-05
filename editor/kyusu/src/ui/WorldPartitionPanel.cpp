@@ -120,6 +120,16 @@ void WorldPartitionPanel::DrawStreamingPreview()
     if (ImGui::InputFloat("Radius", &view->PreviewRadius, 0.0f, 0.0f, "%.0f"))
         view->PreviewRadius = view->PreviewRadius < 0.0f ? 0.0f : view->PreviewRadius;
 
+    // Scratch world tags: preview how gated connections reflow without play.
+    char tagBuffer[256];
+    std::strncpy(tagBuffer, view->PreviewTags.c_str(), sizeof(tagBuffer) - 1);
+    tagBuffer[sizeof(tagBuffer) - 1] = '\0';
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::InputText("##preview_tags", tagBuffer, sizeof(tagBuffer)))
+        view->PreviewTags = tagBuffer;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Active world tags for the preview (comma separated)");
+
     const auto zoneName = [&](ZoneId zone) -> const char*
     {
         for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
@@ -134,11 +144,12 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return;
     }
 
+    const std::vector<std::string> activeTags = SplitTagList(view->PreviewTags);
     const auto records = ComputeZoneDemand(
         WorldDoc.Manifest(), WorldDoc.Index(), view->PreviewFocus, {},
         WorldPartitionStreamingConfig{ .HopCount = view->PreviewHopCount,
                                        .Radius = view->PreviewRadius },
-        &view->PreviewFocusPosition);
+        &view->PreviewFocusPosition, activeTags);
     for (const ZoneDemandRecord& record : records)
     {
         std::string why;

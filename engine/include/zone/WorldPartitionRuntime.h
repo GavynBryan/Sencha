@@ -55,6 +55,11 @@ public:
     void PinZone(ZoneId zone, ZoneParticipation minimum);
     void UnpinZone(ZoneId zone);
 
+    // The active world-state gameplay tags (dotted names) gating RequiredTags
+    // edges. The game pushes the full set whenever its world state changes
+    // (quest flags, unlocks); demand reflows on the next Update.
+    void SetWorldTags(std::vector<std::string> tags);
+
     // Once per frame from the owning game system. Computes demand, layers
     // linger state, and diffs desired against resident plus in-flight: issues
     // dormant BeginLoad through the recipe, SetParticipation changes,
@@ -87,6 +92,7 @@ private:
     Vec3d FocusPosition_{};
     bool HasFocusPosition_ = false;
     std::vector<ZonePin> Pins_;
+    std::vector<std::string> WorldTags_;
     // Zones this runtime has issued BeginLoad for and not yet seen attach or
     // cancel; the enumerable half of AsyncZoneLoader::IsLoading.
     std::vector<ZoneId> Issued_;

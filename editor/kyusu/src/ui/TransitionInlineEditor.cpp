@@ -1,8 +1,12 @@
 #include "TransitionInlineEditor.h"
 
+#include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
 
 #include <imgui.h>
+
+#include <cstring>
+#include <string>
 
 void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
 {
@@ -43,4 +47,24 @@ void DrawTransitionInlineEditor(WorldDocument& world, TransitionId transition)
     ImGui::SetNextItemWidth(90.0f);
     if (ImGui::InputInt("Priority", &priority))
         (void)world.SetTransitionPreloadPriority(transition, priority);
+    ImGui::SameLine();
+    int depth = record->PreloadDepth;
+    ImGui::SetNextItemWidth(90.0f);
+    if (ImGui::InputInt("Depth", &depth))
+        (void)world.SetTransitionPreloadDepth(transition, depth);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Preload reach through this connection (0 = the global horizon)");
+
+    // Gate: the connection exists for streaming only while ALL listed world
+    // tags are active. Committed on deactivate so typing does not spam verbs.
+    char tagBuffer[256];
+    const std::string joined = JoinTagList(record->RequiredTags);
+    std::strncpy(tagBuffer, joined.c_str(), sizeof(tagBuffer) - 1);
+    tagBuffer[sizeof(tagBuffer) - 1] = '\0';
+    ImGui::SetNextItemWidth(-1.0f);
+    (void)ImGui::InputText("##required_tags", tagBuffer, sizeof(tagBuffer));
+    if (ImGui::IsItemDeactivatedAfterEdit())
+        (void)world.SetTransitionRequiredTags(transition, SplitTagList(tagBuffer));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Required world tags (comma separated); empty = always open");
 }

@@ -57,8 +57,26 @@ ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
 std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                                              const WorldPartitionIndex& index,
                                              ZoneId focus,
-                                             int32_t hopCount)
+                                             int32_t hopCount,
+                                             std::span<const std::string> activeTags)
 {
+    const auto gateOpen = [&](const TransitionRecord& edge)
+    {
+        for (const std::string& required : edge.RequiredTags)
+        {
+            bool present = false;
+            for (const std::string& active : activeTags)
+                if (active == required)
+                {
+                    present = true;
+                    break;
+                }
+            if (!present)
+                return false;
+        }
+        return true;
+    };
+
     if (!focus.IsValid() || !ZoneExists(manifest, focus))
         return {};
 
@@ -68,30 +86,62 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     // Outgoing edges only: a two-way door is two edges (the unpaired validation
     // rule keeps it that way), so paired doors are symmetric by construction
     // and a OneWay edge INTO the focus does not preload its source.
-    std::vector<ZoneId> frontier{ focus };
-    for (int32_t hop = 1; hop <= hopCount; ++hop)
+    //
+    // The traversal carries a remaining hop budget instead of running level by
+    // level: an edge may be crossed while budget remains OR when it carries an
+    // authored PreloadDepth, and the far side continues with
+    // max(budget - 1, PreloadDepth - 1), so one critical corridor preloads
+    // deeper than the global horizon. Hop values stay true BFS distances. A
+    // zone re-reached with a larger budget re-expands (FIFO order keeps the
+    // sequence deterministic).
+    struct Frontier
     {
-        std::vector<ZoneId> next;
-        for (ZoneId zone : frontier)
+        ZoneId  Zone;
+        int32_t Hop = 0;
+        int32_t Remaining = 0;
+    };
+    std::vector<Frontier> queue{ Frontier{ focus, 0, hopCount } };
+    std::vector<std::pair<uint64_t, int32_t>> bestRemaining{ { focus.Value, hopCount } };
+    const auto remainingOf = [&](ZoneId zone) -> int32_t*
+    {
+        for (auto& [id, remaining] : bestRemaining)
+            if (id == zone.Value)
+                return &remaining;
+        return nullptr;
+    };
+
+    for (size_t head = 0; head < queue.size(); ++head)
+    {
+        const Frontier current = queue[head];
+        for (uint32_t edgeIndex : index.Outgoing(current.Zone))
         {
-            for (uint32_t edgeIndex : index.Outgoing(zone))
+            const TransitionRecord& edge = manifest.Transitions[edgeIndex];
+            if (!ZoneExists(manifest, edge.To) || !gateOpen(edge))
+                continue;
+            if (current.Remaining <= 0 && edge.PreloadDepth <= 0)
+                continue;
+            const int32_t farRemaining =
+                std::max(current.Remaining - 1, edge.PreloadDepth - 1);
+            const int32_t farHop = current.Hop + 1;
+
+            if (ZoneHopRank* existing = FindRank(ranks, edge.To))
             {
-                const TransitionRecord& edge = manifest.Transitions[edgeIndex];
-                if (!ZoneExists(manifest, edge.To))
-                    continue;
-                if (ZoneHopRank* existing = FindRank(ranks, edge.To))
+                // A zone reachable by several edges at its shortest hop keeps
+                // the highest priority among those discoveries.
+                if (existing->Hop == farHop && edge.PreloadPriority > existing->Priority)
+                    existing->Priority = edge.PreloadPriority;
+                if (int32_t* known = remainingOf(edge.To);
+                    known != nullptr && farRemaining > *known)
                 {
-                    // A zone reachable by several edges at its shortest hop
-                    // keeps the highest priority among those discoveries.
-                    if (existing->Hop == hop && edge.PreloadPriority > existing->Priority)
-                        existing->Priority = edge.PreloadPriority;
-                    continue;
+                    *known = farRemaining;
+                    queue.push_back(Frontier{ edge.To, existing->Hop, farRemaining });
                 }
-                ranks.push_back(ZoneHopRank{ edge.To, hop, edge.PreloadPriority });
-                next.push_back(edge.To);
+                continue;
             }
+            ranks.push_back(ZoneHopRank{ edge.To, farHop, edge.PreloadPriority });
+            bestRemaining.push_back({ edge.To.Value, farRemaining });
+            queue.push_back(Frontier{ edge.To, farHop, farRemaining });
         }
-        frontier = std::move(next);
     }
 
     std::sort(ranks.begin(), ranks.end(),
@@ -105,7 +155,8 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                                                 ZoneId focus,
                                                 std::span<const ZonePin> pins,
                                                 const WorldPartitionStreamingConfig& config,
-                                                const Vec3d* focusPosition)
+                                                const Vec3d* focusPosition,
+                                                std::span<const std::string> activeTags)
 {
     struct DemandEntry
     {
@@ -117,7 +168,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
 
     // The caller decides what "no focus yet" means; the policy does not guess.
     const std::vector<ZoneHopRank> ranks =
-        ComputeZoneHopRanks(manifest, index, focus, config.HopCount);
+        ComputeZoneHopRanks(manifest, index, focus, config.HopCount, activeTags);
     if (ranks.empty())
         return {};
 

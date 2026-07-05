@@ -59,6 +59,14 @@ struct TransitionRecord
     TransitionTopology Topology = TransitionTopology::Doorway;
     TransitionFlags    Flags;
     int32_t            PreloadPriority = 0; // higher loads earlier within the neighbor set
+    // Authored reach: crossing this edge grants the BFS at least this many
+    // further hops, letting one critical corridor preload deeper than the
+    // global horizon. 0 = inherit the remaining budget.
+    int32_t            PreloadDepth = 0;
+    // Gate: ALL listed gameplay-tag names must be active in the world state for
+    // this edge to exist for streaming; empty = always open. Stored as dotted
+    // NAMES (tag ids are registration-order runtime values, never serialized).
+    std::vector<std::string> RequiredTags;
     // No portal reference: linkage is content-side, resolved when the source zone loads.
 
     friend bool operator==(const TransitionRecord&, const TransitionRecord&) = default;

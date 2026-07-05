@@ -10,7 +10,9 @@
 #include <zone/ZoneId.h>
 
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 class Registry;
 class CollisionShapeCache;
@@ -50,6 +52,10 @@ private:
     // The world-streaming path (`world <name>`): game-owned and game-pumped by
     // WorldPartitionUpdateSystem. Empty while the single-zone `map` path runs.
     std::optional<WorldPartitionRuntime> Partition;
+    // Active world-state tags gating RequiredTags transitions; the `worldtag`
+    // command toggles entries. A real game pushes these from its quest/save
+    // system instead.
+    std::vector<std::string> WorldTags;
     ZoneId PendingZoneFocus;   // `zone <hexid>` issued before the world loaded
     EntityId WorldPawn;        // the avatar in the global registry (world path)
     ZoneRuntime* ZoneRuntimePtr = nullptr;

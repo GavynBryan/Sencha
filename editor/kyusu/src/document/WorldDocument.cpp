@@ -543,6 +543,35 @@ bool WorldDocument::SetTransitionOneWay(TransitionId transition, bool oneWay)
     return false;
 }
 
+bool WorldDocument::SetTransitionRequiredTags(TransitionId transition,
+                                              std::vector<std::string> tags)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.RequiredTags = std::move(tags);
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetTransitionPreloadDepth(TransitionId transition, int32_t depth)
+{
+    for (TransitionRecord& record : Manifest_.Transitions)
+    {
+        if (record.Id != transition)
+            continue;
+        record.PreloadDepth = depth < 0 ? 0 : depth;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
 bool WorldDocument::SetTransitionPreloadPriority(TransitionId transition, int32_t priority)
 {
     for (TransitionRecord& record : Manifest_.Transitions)

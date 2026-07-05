@@ -8,6 +8,38 @@
 
 #include <utility>
 
+std::string JoinTagList(const std::vector<std::string>& tags)
+{
+    std::string joined;
+    for (const std::string& tag : tags)
+    {
+        if (!joined.empty())
+            joined += ", ";
+        joined += tag;
+    }
+    return joined;
+}
+
+std::vector<std::string> SplitTagList(std::string_view text)
+{
+    std::vector<std::string> tags;
+    std::string current;
+    for (const char c : text)
+    {
+        if (c == ',' || c == ' ')
+        {
+            if (!current.empty())
+                tags.push_back(std::move(current));
+            current.clear();
+            continue;
+        }
+        current += c;
+    }
+    if (!current.empty())
+        tags.push_back(std::move(current));
+    return tags;
+}
+
 std::string TransitionDisplayName(const WorldPartitionManifest& manifest,
                                   const TransitionRecord& record)
 {

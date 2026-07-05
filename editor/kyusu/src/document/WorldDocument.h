@@ -156,6 +156,8 @@ public:
     bool SetTransitionTopology(TransitionId transition, TransitionTopology topology);
     bool SetTransitionOneWay(TransitionId transition, bool oneWay);
     bool SetTransitionPreloadPriority(TransitionId transition, int32_t priority);
+    bool SetTransitionRequiredTags(TransitionId transition, std::vector<std::string> tags);
+    bool SetTransitionPreloadDepth(TransitionId transition, int32_t depth);
 
     // Reruns validation against the current manifest AND open-zone content.
     // Manifest verbs revalidate themselves; content edits (linking a portal,

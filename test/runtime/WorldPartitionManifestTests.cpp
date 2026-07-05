@@ -247,3 +247,21 @@ TEST(WorldPartitionManifest, TransitionNameRoundTripsAndStaysOptional)
     ASSERT_TRUE(rereadBare.has_value()) << error;
     EXPECT_TRUE(rereadBare->Transitions[0].Name.empty());
 }
+
+TEST(WorldPartitionManifest, GateAndDepthRoundTripAndStayOptional)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    ASSERT_EQ(manifest.Transitions.size(), 1u);
+    EXPECT_TRUE(manifest.Transitions[0].RequiredTags.empty());
+    EXPECT_EQ(manifest.Transitions[0].PreloadDepth, 0);
+
+    manifest.Transitions[0].RequiredTags = { "quest.bridge" };
+    manifest.Transitions[0].PreloadDepth = 2;
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    std::string error;
+    const auto reread = ReadWorldPartitionManifest(written, &error);
+    ASSERT_TRUE(reread.has_value()) << error;
+    ASSERT_EQ(reread->Transitions[0].RequiredTags.size(), 1u);
+    EXPECT_EQ(reread->Transitions[0].RequiredTags[0], "quest.bridge");
+    EXPECT_EQ(reread->Transitions[0].PreloadDepth, 2);
+}

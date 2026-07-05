@@ -66,12 +66,15 @@ struct ZoneHopRank
 };
 
 // Pure. BFS over outgoing edges only, up to hopCount hops from the focus.
+// Edges whose RequiredTags are not all present in activeTags do not exist for
+// the traversal (a gate removes the EDGE, never a zone reachable another way).
 // Empty for an invalid or unknown focus. Ascending zone id.
 [[nodiscard]] std::vector<ZoneHopRank>
 ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                     const WorldPartitionIndex& index,
                     ZoneId focus,
-                    int32_t hopCount);
+                    int32_t hopCount,
+                    std::span<const std::string> activeTags = {});
 
 // Pure focus resolution from a position: candidates are zones whose Bounds
 // contain the position; the previous focus wins while it remains a candidate
@@ -94,4 +97,5 @@ ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   ZoneId focus,
                   std::span<const ZonePin> pins,
                   const WorldPartitionStreamingConfig& config,
-                  const Vec3d* focusPosition = nullptr);
+                  const Vec3d* focusPosition = nullptr,
+                  std::span<const std::string> activeTags = {});

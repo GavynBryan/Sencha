@@ -315,3 +315,22 @@ TEST_F(TransitionValidationTest, OneWayStillRequiresOwnPortal)
     // The reverse OneWay edge's zone is open (fixture loads it) and unportaled.
     EXPECT_EQ(CountRecords("partition.transition.portal_missing"), 1u);
 }
+
+TEST_F(TransitionValidationTest, TagAndDepthVerbsRewriteRecords)
+{
+    const TransitionId id =
+        World.AddTransition(FromZone, ToZone, TransitionTopology::Doorway, false, 0);
+
+    ASSERT_TRUE(World.SetTransitionRequiredTags(id, { "quest.bridge", "power.on" }));
+    ASSERT_EQ(World.Manifest().Transitions[0].RequiredTags.size(), 2u);
+    EXPECT_EQ(World.Manifest().Transitions[0].RequiredTags[0], "quest.bridge");
+
+    ASSERT_TRUE(World.SetTransitionPreloadDepth(id, 3));
+    EXPECT_EQ(World.Manifest().Transitions[0].PreloadDepth, 3);
+    ASSERT_TRUE(World.SetTransitionPreloadDepth(id, -5));
+    EXPECT_EQ(World.Manifest().Transitions[0].PreloadDepth, 0);   // clamped
+
+    const TransitionId unknown{ 0xff };
+    EXPECT_FALSE(World.SetTransitionRequiredTags(unknown, {}));
+    EXPECT_FALSE(World.SetTransitionPreloadDepth(unknown, 1));
+}

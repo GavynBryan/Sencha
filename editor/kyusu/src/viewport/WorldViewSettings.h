@@ -3,6 +3,8 @@
 #include <math/Vec.h>
 #include <zone/ZoneId.h>
 
+#include <string>
+
 // World-mode view state (the GridSettings pattern): never undoable, never in
 // the .sworld, persisted per user in the world's sidecar.
 struct WorldViewSettings
@@ -20,4 +22,7 @@ struct WorldViewSettings
     // per frame while the preview is on. Session transients: never persisted.
     ZoneId PreviewFocus;
     Vec3d  PreviewFocusPosition{};
+    // Scratch world tags (comma separated) for previewing gated connections;
+    // mirrors what the game would push through SetWorldTags. Transient.
+    std::string PreviewTags;
 };

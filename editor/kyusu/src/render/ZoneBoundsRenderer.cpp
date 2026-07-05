@@ -2,6 +2,7 @@
 
 #include "EditorTheme.h"
 
+#include "document/TransitionConnect.h"
 #include "document/WorldDocument.h"
 #include "viewport/WorldViewSettings.h"
 
@@ -59,11 +60,12 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
                                                  view.PreviewFocus);
             view.PreviewFocusPosition = viewport.Camera.Position;
         }
+        const std::vector<std::string> activeTags = SplitTagList(view.PreviewTags);
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
                                    WorldPartitionStreamingConfig{
                                        .HopCount = view.PreviewHopCount,
                                        .Radius = view.PreviewRadius },
-                                   &view.PreviewFocusPosition);
+                                   &view.PreviewFocusPosition, activeTags);
     }
     const auto demanded = [&](ZoneId zone)
     {

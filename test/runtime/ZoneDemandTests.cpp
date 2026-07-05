@@ -318,3 +318,73 @@ TEST(ZoneDemand, SpatialEvictsAfterGraphNeighbors)
     EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // the graph neighbor survives
     EXPECT_EQ(FindRecord(records, 0xa2), nullptr);   // the spatial zone evicts
 }
+
+TEST(ZoneDemand, GatedEdgeInvisibleWithoutTag)
+{
+    WorldPartitionManifest manifest = ChainManifest();
+    manifest.Transitions[0].RequiredTags = { "quest.bridge" };   // A -> B gated
+
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                     WorldPartitionStreamingConfig{ .HopCount = 1 });
+    ASSERT_EQ(records.size(), 1u);   // the gate hides the only edge out
+
+    const std::string active[] = { "quest.bridge" };
+    records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                WorldPartitionStreamingConfig{ .HopCount = 1 }, nullptr,
+                                active);
+    ASSERT_EQ(records.size(), 2u);
+    EXPECT_NE(FindRecord(records, 0xa2), nullptr);
+}
+
+TEST(ZoneDemand, GatingNeverRemovesReachableZones)
+{
+    // Two routes to 0xa2: gated direct edge plus an open detour via 0xa3.
+    WorldPartitionManifest manifest;
+    manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3) };
+    manifest.Transitions = { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3),
+                             MakeEdge(0xc3, 0xa3, 0xa2) };
+    manifest.Transitions[0].RequiredTags = { "locked.door" };
+
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                           WorldPartitionStreamingConfig{ .HopCount = 2 });
+    EXPECT_NE(FindRecord(records, 0xa2), nullptr);   // still reachable via 0xa3
+}
+
+TEST(ZoneDemand, DepthExtendsThroughEdge)
+{
+    // Global horizon 1; the A -> B edge carries depth 3, so the chain preloads
+    // three deep through it while nothing else exceeds one hop.
+    WorldPartitionManifest manifest = ChainManifest();
+    manifest.Transitions[0].PreloadDepth = 3;
+
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                           WorldPartitionStreamingConfig{ .HopCount = 1 });
+
+    EXPECT_NE(FindRecord(records, 0xa2), nullptr);   // depth hop 1
+    EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // depth hop 2
+    EXPECT_NE(FindRecord(records, 0xa4), nullptr);   // depth hop 3
+}
+
+TEST(ZoneDemand, DepthDoesNotLeakSideways)
+{
+    // A hub with two corridors: only the deep edge's corridor extends.
+    WorldPartitionManifest manifest;
+    manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4),
+                       MakeZone(0xa5) };
+    manifest.Transitions = {
+        MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa2, 0xa3),   // deep corridor
+        MakeEdge(0xc3, 0xa1, 0xa4), MakeEdge(0xc4, 0xa4, 0xa5),   // plain corridor
+    };
+    manifest.Transitions[0].PreloadDepth = 2;
+
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                           WorldPartitionStreamingConfig{ .HopCount = 1 });
+
+    EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // reached through the deep edge
+    EXPECT_NE(FindRecord(records, 0xa4), nullptr);   // plain hop-1 neighbor
+    EXPECT_EQ(FindRecord(records, 0xa5), nullptr);   // the plain corridor stops at 1
+}

@@ -506,6 +506,37 @@ void TemplateGame::OnStart(GameStartupContext&)
         },
     });
 
+    engine.Console().Registry().RegisterCommand({
+        .Name = "worldtag",
+        .Owner = "game",
+        .Usage = "worldtag <dotted.tag.name>",
+        .Help = "Toggle a world-state tag; transitions gated on it open or close and "
+                "streaming reflows next frame.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1 || args[0].empty())
+            {
+                result.Error("usage: worldtag <dotted.tag.name>");
+                return result;
+            }
+            const auto it = std::find(WorldTags.begin(), WorldTags.end(), args[0]);
+            if (it != WorldTags.end())
+            {
+                WorldTags.erase(it);
+                result.Info("tag '" + args[0] + "' cleared");
+            }
+            else
+            {
+                WorldTags.push_back(args[0]);
+                result.Info("tag '" + args[0] + "' set");
+            }
+            if (Partition)
+                Partition->SetWorldTags(WorldTags);
+            return result;
+        },
+    });
+
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
     std::printf("  Load a world: +world <name> (+zone <hexid> overrides the start zone)\n");
@@ -668,6 +699,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         result.Error("world refused: " + loadError);
         return result;
     }
+    Partition->SetWorldTags(WorldTags);
 
     // The avatar spawns once into the global registry, so zone unloads never
     // destroy it. The global registry needs the same component registration a

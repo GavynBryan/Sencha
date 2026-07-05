@@ -6,9 +6,16 @@
 #include <zone/ZoneId.h>
 
 #include <string>
+#include <string_view>
+#include <vector>
 
 class CommandStack;
 class WorldDocument;
+
+// Comma/space-separated dotted tag names <-> a RequiredTags-shaped list.
+// Shared by the inline editor, the preview scratch input, and the renderer.
+[[nodiscard]] std::string JoinTagList(const std::vector<std::string>& tags);
+[[nodiscard]] std::vector<std::string> SplitTagList(std::string_view text);
 
 // The transition's user-facing label: its authored Name, else the derived
 // "<From name> -> <To name>". Every surface (rows, inspector, connect bar)

@@ -113,6 +113,11 @@ void WorldPartitionRuntime::UnpinZone(ZoneId zone)
     std::erase_if(Pins_, [&](const ZonePin& pin) { return pin.Zone == zone; });
 }
 
+void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
+{
+    WorldTags_ = std::move(tags);
+}
+
 void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                                    ZoneRuntime& zones)
 {
@@ -120,9 +125,9 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     std::vector<ZoneHopRank> ranks;
     if (HasManifest_ && Focus_.IsValid())
     {
-        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, Config_.HopCount);
+        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, Config_.HopCount, WorldTags_);
         demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, Config_,
-                                   HasFocusPosition_ ? &FocusPosition_ : nullptr);
+                                   HasFocusPosition_ ? &FocusPosition_ : nullptr, WorldTags_);
     }
 
     const auto findDemand = [&](ZoneId zone) -> const ZoneDemandRecord*
