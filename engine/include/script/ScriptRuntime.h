@@ -33,6 +33,43 @@ struct ScriptBehavior
 };
 SENCHA_DECLARE_COMPONENT_TYPE(ScriptBehavior, "sencha.script_behavior");
 
+// One cue a script emitted this tick: the content hash of the cue asset path
+// (stable across builds, unlike a runtime id) and an optional world position.
+// A presentation system drains the buffer and resolves the hash to a cue
+// asset; the script layer never plays audio or VFX directly.
+struct ScriptCueEvent
+{
+    std::uint64_t CueHash = 0;
+    float Position[3] = { 0.0f, 0.0f, 0.0f };
+    std::uint8_t HasPosition = 0;
+};
+
+// Per-entity ring of cue events (spec section C, cue.fire / cue_at). Trivially
+// copyable ECS component; drops the oldest on overflow.
+struct ScriptCueBuffer
+{
+    static constexpr std::uint8_t Capacity = 8;
+    ScriptCueEvent Events[Capacity];
+    std::uint8_t Count = 0;
+
+    void Push(const ScriptCueEvent& event)
+    {
+        if (Count < Capacity)
+        {
+            Events[Count++] = event;
+        }
+        else
+        {
+            for (std::uint8_t i = 1; i < Capacity; ++i)
+            {
+                Events[i - 1] = Events[i];
+            }
+            Events[Capacity - 1] = event;
+        }
+    }
+};
+SENCHA_DECLARE_COMPONENT_TYPE(ScriptCueBuffer, "sencha.script_cue_buffer");
+
 // A field bind resolved to storage: which component, the byte offset of the
 // leaf group, the storage scalar kind, and how many scalars (a Vec3 is 3).
 struct ResolvedFieldBind

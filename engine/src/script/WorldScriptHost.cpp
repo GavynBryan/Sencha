@@ -1,5 +1,6 @@
 #include <script/WorldScriptHost.h>
 
+#include <core/hash/ContentHash.h>
 #include <core/random/DeterministicRandom.h>
 #include <ecs/CommandBuffer.h>
 #include <ecs/World.h>
@@ -340,9 +341,34 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         return ScriptTrapCode::None;
     }
 
+    // Cues: append to the subject's cue buffer, which a presentation system
+    // drains. The cue asset path hashes to a stable id (unlike a runtime
+    // asset id), so the event is deterministic and build-stable.
+    if (name == "cue.fire" || name == "cue.fire_at")
+    {
+        ScriptCueBuffer* buffer = W.TryGet<ScriptCueBuffer>(Subject);
+        if (buffer == nullptr)
+        {
+            return ScriptTrapCode::None; // no sink; drop, matching a full buffer
+        }
+        const auto bind = static_cast<std::uint32_t>(window[0]);
+        ScriptCueEvent event;
+        event.CueHash = HashBytes64(module.GetString(module.AssetBinds[bind].Path));
+        if (name == "cue.fire_at")
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                event.Position[i] = static_cast<float>(std::bit_cast<double>(window[1 + i]));
+            }
+            event.HasPosition = 1;
+        }
+        buffer->Push(event);
+        return ScriptTrapCode::None;
+    }
+
     (void)argCount;
-    // Physics, movement, and cues need their owning systems present (ability/
-    // trigger bridges). Unsupported here is a deterministic Arg trap rather
-    // than silent success.
+    // Physics and movement need their owning systems present (a physics rig
+    // and the movement systems). Unsupported here is a deterministic Arg trap
+    // rather than silent success.
     return ScriptTrapCode::Arg;
 }

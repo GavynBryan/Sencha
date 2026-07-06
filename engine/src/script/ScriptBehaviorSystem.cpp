@@ -129,6 +129,10 @@ void RegisterScriptRuntime(World& world, std::uint64_t worldSeed)
     {
         world.RegisterComponent<ScriptBehavior>();
     }
+    if (!world.IsRegistered<ScriptCueBuffer>())
+    {
+        world.RegisterComponent<ScriptCueBuffer>();
+    }
     if (!world.HasResource<ScriptRuntime>())
     {
         world.AddResource<ScriptRuntime>().WorldSeed = worldSeed;

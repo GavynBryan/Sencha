@@ -1,5 +1,6 @@
 #include "ScriptTestSupport.h"
 
+#include <core/hash/ContentHash.h>
 #include <ecs/World.h>
 #include <script/ScriptBehaviorSystem.h>
 #include <script/ScriptCompiler.h>
@@ -204,6 +205,42 @@ TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
     ASSERT_NE(stored, nullptr);
     EXPECT_EQ(stored->Count, 7);
     EXPECT_FLOAT_EQ(stored->Weight, 2.5f);
+}
+
+TEST(ScriptBehaviorE2E, CueFireAppendsToBuffer)
+{
+    // A behavior fires a cue on spawn; it lands in the entity's cue buffer as
+    // the stable content hash of the cue path.
+    ScriptCompileResult compiled = CompileScript(
+        "cue.t",
+        "behavior Chime {\n"
+        "    fn spawn(ctx: BehaviorContext) {\n"
+        "        ctx.cue(cue\"ui.chime\")\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, ScriptCueBuffer{});
+    ScriptBehavior behavior{};
+    behavior.LinkedModule = link.ModuleIndex;
+    world.AddComponent(entity, behavior);
+
+    ScriptBehaviorSystem system;
+    system.Step(world, 0, 1.0f / 60.0f);
+
+    const ScriptCueBuffer* cues = world.TryGet<ScriptCueBuffer>(entity);
+    ASSERT_NE(cues, nullptr);
+    ASSERT_EQ(cues->Count, 1);
+    EXPECT_EQ(cues->Events[0].CueHash, HashBytes64(std::string_view("ui.chime")));
+    EXPECT_EQ(cues->Events[0].HasPosition, 0);
 }
 
 TEST(ScriptLink, ReportsMissingComponent)
