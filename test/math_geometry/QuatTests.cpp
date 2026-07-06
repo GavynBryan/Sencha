@@ -178,6 +178,23 @@ TEST(Quat, Equality)
 
 // --- Axis-Angle and Vector Rotation ---
 
+TEST(Quat, NlerpInterpolatesAndNormalizes)
+{
+	Quatf a = Quatf::Identity();
+	Quatf b = Quatf::FromAxisAngle(Vec3d(0.0f, 0.0f, 1.0f), Pi);
+	Quatf result = Quatf::Nlerp(a, b, 0.5f);
+
+	EXPECT_NEAR(result.Length(), 1.0f, 1e-6f);
+	ExpectVecNear(result.RotateVector(Vec3d(1.0f, 0.0f, 0.0f)), Vec3d(0.0f, 1.0f, 0.0f));
+}
+
+TEST(Quat, NlerpUsesShortestHemisphere)
+{
+	Quatf result = Quatf::Nlerp(Quatf::Identity(), -Quatf::Identity(), 0.5f);
+
+	EXPECT_TRUE(result.NearlyEquals(Quatf::Identity()));
+}
+
 TEST(Quat, FromAxisAngleCreatesExpectedRotation)
 {
 	Quatf q = Quatf::FromAxisAngle(Vec3d(0.0f, 0.0f, 1.0f), Pi / 2.0f);

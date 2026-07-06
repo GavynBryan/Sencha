@@ -32,6 +32,9 @@ test/       GoogleTest-based engine tests.
   streaming and traversal track (roadmap Track C).
 - `docs/gameplay/abilitykit.md` is the execution spec for the gameplay
   framework items in roadmap Track A.
+- `docs/animation/suite-plan.md` is the execution spec for skinned
+  rendering, the animation runtime, montage integration, and the `kabuki`
+  animation editor.
 - `docs/architecture/hardening-and-consolidation.md` is the execution spec
   for the editor hardening and module ABI items (roadmap Tracks D and F).
 - `docs/plans/sencha-level-editor/` is the shipped-branch record and the
