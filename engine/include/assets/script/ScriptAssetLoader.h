@@ -7,7 +7,7 @@
 class LoggingProvider;
 
 //=============================================================================
-// ScriptAssetLoader (docs/plans/t-language-v1-spec.md, section E milestone 4)
+// ScriptAssetLoader
 //
 // Staged-load contract for cooked T scripts (.tbc). CPU-only, modeled on
 // AudioClipAssetLoader: LoadStaged reads the bytes, parses the container,
@@ -32,7 +32,7 @@ public:
     [[nodiscard]] ScriptHandle CommitTyped(AssetStaging&& staged);
 
     // Hot reload: same layout swaps in place, a layout change signals the
-    // caller to reload the world (spec answer 17). Returns the outcome so
+    // caller to reload the world. Returns the outcome so
     // the reloader can distinguish them; a failed staging is NotResident.
     [[nodiscard]] ScriptReloadResult CommitReload(AssetStaging&& staged);
 

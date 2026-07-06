@@ -8,7 +8,7 @@ class JsonValue;
 struct FixedLogicContext;
 
 //=============================================================================
-// ScriptSceneLink (docs/plans/t-language.md, milestone 5 integration)
+// ScriptSceneLink
 //
 // Connects authored ScriptSource components to the runtime bridges. Two steps
 // bracket scene load:

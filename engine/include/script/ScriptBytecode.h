@@ -4,7 +4,7 @@
 #include <cstdint>
 
 //=============================================================================
-// ScriptBytecode (docs/plans/t-language-v1-spec.md, section A)
+// ScriptBytecode
 //
 // Bytecode v0 for the T gameplay language. The instruction set is frozen by
 // the spec; this header transcribes it. Instructions are one or two
@@ -182,7 +182,7 @@ inline constexpr std::array<ScriptOpInfo, 61> kScriptOps = {{
 inline constexpr uint32_t kScriptOpCount = static_cast<uint32_t>(kScriptOps.size());
 static_assert(kScriptOpCount == 61, "Bytecode v0 defines exactly 61 opcodes.");
 
-// Limits from spec section A. The encoding enforces most of these (8-bit and
+// Encoding limits. The encoding enforces most of these (8-bit and
 // 16-bit operand fields); the rest the validator checks.
 inline constexpr uint32_t kScriptMaxFrameSlots      = 256;
 inline constexpr uint32_t kScriptMaxCallDepth       = 32;
@@ -293,7 +293,7 @@ namespace ScriptBytecodeDetail
     return static_cast<int32_t>(raw << 8) >> 8;
 }
 
-// ── Extension word layouts (spec section A) ─────────────────────────────────
+// ── Extension word layouts ─────────────────────────────────
 //
 // CLDX/CSTX word 2: bits 0-15 field-bind index, bits 16-23 index register.
 // AGETL/ASETL word 2: bits 0-15 element count, bits 16-23 index register,

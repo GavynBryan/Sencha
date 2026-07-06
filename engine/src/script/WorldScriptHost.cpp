@@ -13,7 +13,7 @@
 
 namespace
 {
-    // Storage scalar <-> 64-bit register conversions (spec D.2). Floats live
+    // Storage scalar <-> 64-bit register conversions. Floats live
     // as f64 in registers; f32 fields widen on load and round on store.
     std::uint64_t LoadScalar(const std::byte* at, ScriptScalarKind scalar)
     {
@@ -55,6 +55,17 @@ namespace
         }
         }
         return 0;
+    }
+
+    // A per-callback random stream: seeded from the world seed, the subject
+    // entity, and the tick, with the import index folded in so distinct random
+    // calls in one callback draw from independent streams.
+    DeterministicRandom RandomStream(std::uint64_t worldSeed, EntityId subject, std::uint64_t tick,
+                                     std::uint32_t importIndex)
+    {
+        const std::uint64_t streamId =
+            PackScriptEntity(subject) ^ (static_cast<std::uint64_t>(importIndex) << 40);
+        return DeterministicRandom::FromInputs(worldSeed, streamId, tick);
     }
 
     void StoreScalar(std::byte* at, ScriptScalarKind scalar, std::uint64_t reg)
@@ -232,55 +243,74 @@ ScriptTrapCode WorldScriptHost::TagRemove(const ScriptModule&, std::uint64_t ent
     return ScriptTrapCode::None;
 }
 
+ScriptHostOp ResolveScriptHostOp(std::string_view name)
+{
+    struct Entry
+    {
+        std::string_view Name;
+        ScriptHostOp Op;
+    };
+    static constexpr Entry kOps[] = {
+        { "ability.finish", ScriptHostOp::AbilityFinish },
+        { "ability.cancel", ScriptHostOp::AbilityCancel },
+        { "random.f32", ScriptHostOp::RandomF32 },
+        { "random.range", ScriptHostOp::RandomRange },
+        { "commands.destroy", ScriptHostOp::CommandsDestroy },
+        { "commands.remove", ScriptHostOp::CommandsRemove },
+        { "commands.add", ScriptHostOp::CommandsAdd },
+        { "cue.fire", ScriptHostOp::CueFire },
+        { "cue.fire_at", ScriptHostOp::CueFireAt },
+    };
+    for (const Entry& entry : kOps)
+    {
+        if (entry.Name == name)
+        {
+            return entry.Op;
+        }
+    }
+    return ScriptHostOp::Unknown;
+}
+
 ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32_t importIndex,
                                          std::span<std::uint64_t> window, std::uint32_t argCount)
 {
-    const std::string_view name = module.GetString(module.HostImports[importIndex].Name);
-
-    // Ability lifecycle: record the outcome for the bridge to act on after
-    // the callback returns (spec D.4). The last call wins.
-    if (name == "ability.finish")
+    (void)argCount;
+    switch (static_cast<ScriptHostOp>(Linked->Imports[importIndex].Id))
     {
+    // Ability lifecycle: record the outcome for the bridge to act on after the
+    // callback returns. The last call wins.
+    case ScriptHostOp::AbilityFinish:
         PendingOutcome = ScriptAbilityOutcome::Finish;
         return ScriptTrapCode::None;
-    }
-    if (name == "ability.cancel")
-    {
+    case ScriptHostOp::AbilityCancel:
         PendingOutcome = ScriptAbilityOutcome::Cancel;
         return ScriptTrapCode::None;
-    }
 
-    // Deterministic randomness (spec D.6): a per-callback stream seeded from
-    // the world seed, the subject entity, and the tick.
-    if (name.starts_with("random."))
+    // Deterministic randomness: a per-callback stream seeded from the world
+    // seed, the subject entity, and the tick.
+    case ScriptHostOp::RandomF32:
     {
-        const std::uint64_t streamId =
-            PackScriptEntity(Subject) ^ (static_cast<std::uint64_t>(importIndex) << 40);
-        DeterministicRandom rng =
-            DeterministicRandom::FromInputs(Runtime.WorldSeed, streamId, Tick);
-        if (name == "random.f32")
+        DeterministicRandom rng = RandomStream(Runtime.WorldSeed, Subject, Tick, importIndex);
+        window[0] = std::bit_cast<std::uint64_t>(static_cast<double>(rng.NextFloat01()));
+        return ScriptTrapCode::None;
+    }
+    case ScriptHostOp::RandomRange:
+    {
+        const int32_t lo = static_cast<int32_t>(window[0]);
+        const int32_t hi = static_cast<int32_t>(window[1]);
+        if (lo > hi)
         {
-            window[0] = std::bit_cast<std::uint64_t>(static_cast<double>(rng.NextFloat01()));
-            return ScriptTrapCode::None;
+            return ScriptTrapCode::Arg;
         }
-        if (name == "random.range")
-        {
-            const int32_t lo = static_cast<int32_t>(window[0]);
-            const int32_t hi = static_cast<int32_t>(window[1]);
-            if (lo > hi)
-            {
-                return ScriptTrapCode::Arg;
-            }
-            window[0] = static_cast<std::uint64_t>(
-                static_cast<std::uint32_t>(rng.NextRange(lo, hi)));
-            return ScriptTrapCode::None;
-        }
+        DeterministicRandom rng = RandomStream(Runtime.WorldSeed, Subject, Tick, importIndex);
+        window[0] = static_cast<std::uint64_t>(static_cast<std::uint32_t>(rng.NextRange(lo, hi)));
+        return ScriptTrapCode::None;
     }
 
     // Structural changes: enqueue onto the tick's CommandBuffer (deferred to
     // the flush at the tick boundary), so a callback never restructures the
     // ECS mid-iteration.
-    if (name == "commands.destroy")
+    case ScriptHostOp::CommandsDestroy:
     {
         const EntityId target = UnpackScriptEntity(window[0]);
         if (!W.IsAlive(target))
@@ -290,7 +320,7 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         Commands.DestroyEntity(target);
         return ScriptTrapCode::None;
     }
-    if (name == "commands.remove")
+    case ScriptHostOp::CommandsRemove:
     {
         const EntityId target = UnpackScriptEntity(window[0]);
         if (!W.IsAlive(target))
@@ -301,7 +331,7 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         Commands.RemoveComponentRaw(target, Linked->Components[bind], /*size*/ 0);
         return ScriptTrapCode::None;
     }
-    if (name == "commands.add")
+    case ScriptHostOp::CommandsAdd:
     {
         const EntityId target = UnpackScriptEntity(window[0]);
         if (!W.IsAlive(target))
@@ -342,9 +372,10 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
     }
 
     // Cues: append to the subject's cue buffer, which a presentation system
-    // drains. The cue asset path hashes to a stable id (unlike a runtime
-    // asset id), so the event is deterministic and build-stable.
-    if (name == "cue.fire" || name == "cue.fire_at")
+    // drains. The cue asset path hashes to a stable id (unlike a runtime asset
+    // id), so the event is deterministic and build-stable.
+    case ScriptHostOp::CueFire:
+    case ScriptHostOp::CueFireAt:
     {
         ScriptCueBuffer* buffer = W.TryGet<ScriptCueBuffer>(Subject);
         if (buffer == nullptr)
@@ -354,7 +385,7 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         const auto bind = static_cast<std::uint32_t>(window[0]);
         ScriptCueEvent event;
         event.CueHash = HashBytes64(module.GetString(module.AssetBinds[bind].Path));
-        if (name == "cue.fire_at")
+        if (static_cast<ScriptHostOp>(Linked->Imports[importIndex].Id) == ScriptHostOp::CueFireAt)
         {
             for (int i = 0; i < 3; ++i)
             {
@@ -366,9 +397,12 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         return ScriptTrapCode::None;
     }
 
-    (void)argCount;
-    // Physics and movement need their owning systems present (a physics rig
-    // and the movement systems). Unsupported here is a deterministic Arg trap
-    // rather than silent success.
+    case ScriptHostOp::Unknown:
+        break;
+    }
+
+    // Physics and movement need their owning systems present (a physics rig and
+    // the movement systems). Unsupported here is a deterministic Arg trap rather
+    // than silent success.
     return ScriptTrapCode::Arg;
 }

@@ -103,9 +103,8 @@ ScriptInvokeResult ScriptVm::Invoke(const ScriptModule& module, uint32_t functio
             break;
         case ScriptOp::Ldp:
         {
-            // Params flatten to a slot list in declaration order; the
-            // instance-resolved block replaces this in Milestone 5. Defaults
-            // execute here so hand-assembled modules run standalone.
+            // Params flatten to a slot list in declaration order; the slot's
+            // default value loads here so hand-assembled modules run standalone.
             uint32_t slot = ScriptDecodeBx(word);
             uint64_t value = 0;
             for (const ScriptParamDef& param : module.Params)
@@ -141,7 +140,7 @@ ScriptInvokeResult ScriptVm::Invoke(const ScriptModule& module, uint32_t functio
                 trap(ScriptTrapCode::DivZero, at);
                 return result;
             }
-            // INT_MIN / -1 wraps to INT_MIN rather than trapping (spec D.2).
+            // INT_MIN / -1 wraps to INT_MIN rather than trapping.
             const int64_t wide = static_cast<int64_t>(num) / den;
             r[a] = FromI(static_cast<int32_t>(wide));
             break;
@@ -390,10 +389,19 @@ ScriptInvokeResult ScriptVm::Invoke(const ScriptModule& module, uint32_t functio
         }
         case ScriptOp::HCall:
         {
-            // Intrinsics dispatch by import name; a per-module resolved
-            // import table replaces the lookup at link time (Milestone 4).
-            const ScriptHostImport& import = module.HostImports[b];
-            const int32_t intrinsic = FindScriptIntrinsic(module.GetString(import.Name));
+            // Intrinsics execute inline; everything else goes to the host. The
+            // link-resolved table decides which with no name comparison; a
+            // hand-assembled module without a link step resolves the name here.
+            int32_t intrinsic;
+            if (b < options.Imports.size())
+            {
+                const ResolvedScriptImport& imp = options.Imports[b];
+                intrinsic = imp.Kind == ScriptImportKind::Intrinsic ? imp.Id : -1;
+            }
+            else
+            {
+                intrinsic = FindScriptIntrinsic(module.GetString(module.HostImports[b].Name));
+            }
             const ScriptTrapCode code =
                 (intrinsic >= 0)
                     ? ExecuteScriptIntrinsic(intrinsic, r + a)

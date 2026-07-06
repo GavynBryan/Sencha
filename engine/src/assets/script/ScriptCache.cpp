@@ -55,7 +55,7 @@ ScriptReloadResult ScriptCache::ReloadInPlace(std::string_view path,
     if (newHash != entry->SchemaHash)
     {
         // A layout change cannot mutate a live World's component storage;
-        // the caller reloads the world instead (spec answer 17). The old
+        // the caller reloads the world instead. The old
         // module stays resident until then.
         return ScriptReloadResult::LayoutChanged;
     }

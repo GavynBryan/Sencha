@@ -6,7 +6,7 @@
 #include <string_view>
 
 //=============================================================================
-// ScriptIntrinsics (docs/plans/t-language-v1-spec.md, section C, imports 0-17)
+// ScriptIntrinsics
 //
 // The core math imports, versioned with the VM and always present. The
 // transcendentals use fixed polynomial kernels evaluated in a fixed order

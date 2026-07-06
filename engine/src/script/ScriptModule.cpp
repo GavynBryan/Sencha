@@ -647,7 +647,7 @@ uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module)
     // Cover the fields that decide storage layout and reflection identity:
     // component name, each leaf path, scalar kind, array count, byte offset.
     // Defaults and bytecode are deliberately excluded so a logic-only edit
-    // keeps the same hash and hot-swaps in place (spec answer 17).
+    // keeps the same hash and hot-swaps in place.
     ScriptContainerIo::Writer w;
     for (const ScriptComponentDef& component : module.Components)
     {

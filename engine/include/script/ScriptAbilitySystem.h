@@ -10,7 +10,7 @@ struct FixedLogicContext;
 class World;
 
 //=============================================================================
-// ScriptAbilitySystem (docs/plans/t-language-v1-spec.md, section E milestone 5)
+// ScriptAbilitySystem
 //
 // Drives T ability callbacks on the fixed tick. AbilityKit is data plus
 // effects with no per-tick active-ability loop, so script abilities need
@@ -20,7 +20,7 @@ class World;
 // transitions and the finish/cancel outcomes the callbacks request.
 //
 // start runs on the activation tick only; fixed begins the next tick, so an
-// `enter` in start takes effect before the first fixed (spec D.4). finish and
+// `enter` in start takes effect before the first fixed. finish and
 // cancel run their named callbacks (if present), then the instance is removed.
 //=============================================================================
 class ScriptAbilitySystem

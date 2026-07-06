@@ -5,7 +5,7 @@
 #include <string>
 
 //=============================================================================
-// ScriptImporter (docs/plans/t-language-v1-spec.md, section E milestone 4)
+// ScriptImporter
 //
 // Cooks T sources: .t compiles to a .tbc bytecode container under .cooked/,
 // keeping the source's virtual path (Decision B). Dev-only, like every

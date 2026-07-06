@@ -3,6 +3,7 @@
 #include "ScriptLexer.h"
 #include "ScriptParser.h"
 #include "script/ScriptBytecode.h"
+#include "script/ScriptHostSurface.h"
 #include "core/hash/ContentHash.h"
 
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <vector>
 
 //=============================================================================
 // Typecheck + codegen in one pass over the merged AST. Types are checked as
@@ -87,7 +89,7 @@ namespace
     };
 
     //─────────────────────────────────────────────────────────────────────
-    // Host surface (spec section C)
+    // Host surface
     //─────────────────────────────────────────────────────────────────────
 
     struct HostRecordField
@@ -660,7 +662,7 @@ namespace
     }
 
     //─────────────────────────────────────────────────────────────────────
-    // Callback shapes (spec section C preludes)
+    // Callback shapes
     //─────────────────────────────────────────────────────────────────────
 
     struct CallbackShape
@@ -835,7 +837,7 @@ namespace
             return Make(type, slot);
         }
 
-        // Implicit conversion: exact f32 -> f64 widening only (spec D.2).
+        // Implicit conversion: exact f32 -> f64 widening only.
         bool Coerce(Value& value, const SType& target, const ScriptExpr& at)
         {
             if (value.Type == target)
@@ -1153,8 +1155,8 @@ namespace
                     }
                     if (name == "QueryMask")
                     {
-                        // Host enum: pool placeholder patched at link (spec
-                        // section B, kind 0x0D).
+                        // Host enum: a constant-pool placeholder patched to the
+                        // resolved member value at link.
                         const auto key = std::make_pair(std::string("QueryMask"),
                                                         std::string(expr.Text));
                         auto it = C.HostEnumConst.find(key);
@@ -2515,7 +2517,7 @@ namespace
             }
 
             // Component store. Widening applies; the runtime rounds f32
-            // fields on store (spec D.2).
+            // fields on store.
             if (place.Type.Is(SType::K::F64) && value.Type.Is(SType::K::F32))
             {
                 value.Type = {SType::K::F64};
@@ -2758,23 +2760,41 @@ namespace
 
 const ScriptHostDecls& DefaultScriptHostDecls()
 {
-    // Native LocalTransform stores Transform3f (f32 position/scale), so the
-    // script-visible fields are f32 and the field-bind scalar is Float; the
-    // world-side host converts f32 storage to the VM's f64 registers.
-    static const ScriptHostFieldDecl kTransformFields[] = {
-        {"position", "local.position", ScriptScalarKind::Float, 3},
-        {"scale", "local.scale", ScriptScalarKind::Float, 3},
-    };
-    static const ScriptHostComponentDecl kComponents[] = {
-        {"Transform", kTransformFields},
-    };
-    static const ScriptHostDecls kDecls{kComponents};
-    return kDecls;
+    // Derived from the shared host-component surface (ScriptHostSurface.h) so
+    // the compiler's view of host fields cannot drift from the linker's. The
+    // compiler needs the script name, bind path, scalar, and slot count; the
+    // byte offset is the linker's concern and is dropped here. Fields are f32
+    // (Transform3f storage); the world host widens them to the VM's f64
+    // registers.
+    static const std::vector<std::vector<ScriptHostFieldDecl>> fieldsByComponent = [] {
+        std::vector<std::vector<ScriptHostFieldDecl>> out;
+        for (const ScriptHostComponent& component : ScriptHostComponents())
+        {
+            std::vector<ScriptHostFieldDecl> fields;
+            for (const ScriptHostField& field : component.Fields)
+            {
+                fields.push_back({field.ScriptName, field.BindPath, field.Scalar, field.SlotCount});
+            }
+            out.push_back(std::move(fields));
+        }
+        return out;
+    }();
+    static const std::vector<ScriptHostComponentDecl> components = [] {
+        std::vector<ScriptHostComponentDecl> out;
+        const std::span<const ScriptHostComponent> source = ScriptHostComponents();
+        for (std::size_t i = 0; i < source.size(); ++i)
+        {
+            out.push_back({source[i].Name, fieldsByComponent[i]});
+        }
+        return out;
+    }();
+    static const ScriptHostDecls decls{components};
+    return decls;
 }
 
 namespace
 {
-    // Path resolution per spec D.8: relative to the importing file, no ".."
+    // Path resolution: relative to the importing file, no ".."
     // or absolute paths.
     bool ResolveImportPath(std::string_view importer, std::string_view import, std::string& out)
     {
@@ -2806,7 +2826,7 @@ namespace
     {
         std::set<std::string> visited;
         // Depth-first, imports before the importer, matching the source-hash
-        // order in spec section B.
+        // order.
         struct Frame
         {
             std::string Path;

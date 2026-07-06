@@ -3,46 +3,15 @@
 #include <app/GameContexts.h>
 #include <ecs/CommandBuffer.h>
 #include <ecs/World.h>
+#include <script/ScriptCallbacks.h>
 #include <script/ScriptRuntime.h>
 #include <script/WorldScriptHost.h>
 
 #include <bit>
-#include <string>
 
 namespace
 {
-    // Finds a callback's function index in a declaration, or -1.
-    std::int32_t FindCallback(const ScriptModule& module, const ScriptDeclaration& decl,
-                              std::string_view name)
-    {
-        for (const ScriptCallbackDef& callback : decl.Callbacks)
-        {
-            if (module.GetString(callback.Name) == name)
-            {
-                return static_cast<std::int32_t>(callback.FunctionIndex);
-            }
-        }
-        return -1;
-    }
-
-    // The callback name for the fixed tick given the current state: a
-    // per-state "State.fixed" when in a state, else the bare "fixed".
-    std::int32_t FixedCallback(const ScriptModule& module, const ScriptDeclaration& decl,
-                               std::int32_t state)
-    {
-        if (state >= 0 && static_cast<std::size_t>(state) < decl.States.size())
-        {
-            const std::string qualified =
-                std::string(module.GetString(decl.States[state])) + ".fixed";
-            if (const std::int32_t fn = FindCallback(module, decl, qualified); fn >= 0)
-            {
-                return fn;
-            }
-        }
-        return FindCallback(module, decl, "fixed");
-    }
-
-    void Invoke(ScriptVm& vm, WorldScriptHost& host, const ScriptModule& module,
+    void Invoke(ScriptVm& vm, WorldScriptHost& host, const ScriptLinkedModule& linked,
                 std::uint32_t linkedIndex, std::uint32_t functionIndex, EntityId entity,
                 std::uint64_t tick, float dt, std::int32_t& stateInOut)
     {
@@ -54,12 +23,13 @@ namespace
         };
         ScriptInvokeOptions options;
         options.Args = args;
-        const ScriptInvokeResult result = vm.Invoke(module, functionIndex, host, options);
+        options.Imports = linked.Imports;
+        const ScriptInvokeResult result = vm.Invoke(*linked.Module, functionIndex, host, options);
         if (result.Ok() && result.PendingState >= 0)
         {
             stateInOut = result.PendingState;
         }
-        // A trap ends this callback; behaviors resume next tick (spec D.4).
+        // A trap ends this callback; behaviors resume next tick.
     }
 }
 
@@ -91,15 +61,15 @@ void ScriptBehaviorSystem::Step(World& world, std::uint64_t tickIndex, float dt)
         if (behavior.Spawned == 0)
         {
             behavior.Spawned = 1;
-            if (const std::int32_t spawn = FindCallback(module, decl, "spawn"); spawn >= 0)
+            if (const std::int32_t spawn = FindScriptCallback(module, decl, "spawn"); spawn >= 0)
             {
-                Invoke(Vm, host, module, behavior.LinkedModule,
+                Invoke(Vm, host, linked, behavior.LinkedModule,
                        static_cast<std::uint32_t>(spawn), entity, tickIndex, dt, state);
             }
         }
-        if (const std::int32_t fixed = FixedCallback(module, decl, state); fixed >= 0)
+        if (const std::int32_t fixed = FindScriptFixedCallback(module, decl, state); fixed >= 0)
         {
-            Invoke(Vm, host, module, behavior.LinkedModule,
+            Invoke(Vm, host, linked, behavior.LinkedModule,
                    static_cast<std::uint32_t>(fixed), entity, tickIndex, dt, state);
         }
         behavior.State = state;

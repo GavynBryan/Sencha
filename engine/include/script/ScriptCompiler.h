@@ -8,7 +8,7 @@
 #include <string_view>
 
 //=============================================================================
-// ScriptCompiler (docs/plans/t-language-v1-spec.md, sections D, E milestone 3)
+// ScriptCompiler
 //
 // Compiles T source to a bytecode-v0 ScriptModule. Pure: sources arrive
 // through the resolver callback (the cook importer and tests supply file
@@ -18,7 +18,7 @@
 //
 // The compiler knows engine-owned surfaces (host components like Transform,
 // host records like RayHit, the host function table, host enums) through
-// ScriptHostDecls. The default set transcribes spec section C; games extend
+// ScriptHostDecls. The default set is the built-in host surface; games extend
 // it at cook configuration, not by editing the compiler.
 //=============================================================================
 
@@ -57,7 +57,7 @@ struct ScriptHostDecls
     std::span<const ScriptHostComponentDecl> Components;
 };
 
-// Returns the spec section C surface: Transform plus the standard host
+// Returns the built-in host surface: Transform plus the standard host
 // functions and records, which are built into the compiler.
 [[nodiscard]] const ScriptHostDecls& DefaultScriptHostDecls();
 

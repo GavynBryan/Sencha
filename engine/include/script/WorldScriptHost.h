@@ -3,12 +3,14 @@
 #include <script/ScriptRuntime.h>
 #include <script/ScriptVm.h>
 
+#include <string_view>
+
 class World;
 class CommandBuffer;
 class GameplayTagRegistry;
 
-// Outcome an ability callback requested through ctx.cancel()/ctx.finish()
-// (spec D.4). The ability bridge reads it after each invocation.
+// Outcome an ability callback requested through ctx.cancel()/ctx.finish(). The
+// ability bridge reads it after each invocation.
 enum class ScriptAbilityOutcome
 {
     None,
@@ -16,8 +18,29 @@ enum class ScriptAbilityOutcome
     Cancel,
 };
 
+// The closed set of host operations WorldScriptHost implements. An import name
+// resolves to one of these once at link (ResolveScriptHostOp); the host then
+// dispatches on the id. Unknown covers names whose owning system is not present
+// in v1 (physics, movement), which trap as an argument error at call time.
+enum class ScriptHostOp : std::int32_t
+{
+    Unknown = -1,
+    AbilityFinish,
+    AbilityCancel,
+    RandomF32,
+    RandomRange,
+    CommandsDestroy,
+    CommandsRemove,
+    CommandsAdd,
+    CueFire,
+    CueFireAt,
+};
+
+// Maps a host import's dotted name to its op id. Runs at link, not per call.
+[[nodiscard]] ScriptHostOp ResolveScriptHostOp(std::string_view name);
+
 //=============================================================================
-// WorldScriptHost (docs/plans/t-language-v1-spec.md, sections C, D)
+// WorldScriptHost
 //
 // The ScriptHostCallHandler implementation over real engine seams: component
 // field access through World::GetComponentRaw plus the linked field binds

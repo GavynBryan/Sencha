@@ -144,7 +144,22 @@ if(JOBS_TEST_SOURCES)
 endif()
 
 if(SCRIPT_TEST_SOURCES)
-    add_executable(script_tests ${SCRIPT_TEST_SOURCES})
+    # The T compiler, module writer, and disassembler are excluded from the
+    # engine library in a shipping build (SENCHA_ENABLE_COOK=OFF). The script
+    # tests exercise the compiler golden path, so when the engine omits them
+    # they are compiled directly into the test exe (the brush_tests discipline);
+    # when COOK is ON the engine already provides them and the extra list is
+    # empty to avoid duplicate symbols.
+    set(SCRIPT_COOK_ONLY_SOURCES "")
+    if(NOT SENCHA_ENABLE_COOK)
+        file(GLOB_RECURSE SCRIPT_COMPILER_SOURCES CONFIGURE_DEPENDS
+            ${CMAKE_SOURCE_DIR}/engine/src/script/compiler/*.cpp)
+        list(APPEND SCRIPT_COOK_ONLY_SOURCES
+            ${SCRIPT_COMPILER_SOURCES}
+            ${CMAKE_SOURCE_DIR}/engine/src/script/ScriptModuleWriter.cpp
+            ${CMAKE_SOURCE_DIR}/engine/src/script/ScriptDisassembler.cpp)
+    endif()
+    add_executable(script_tests ${SCRIPT_TEST_SOURCES} ${SCRIPT_COOK_ONLY_SOURCES})
     target_link_libraries(script_tests PRIVATE sencha_engine GTest::gtest_main)
     target_compile_definitions(script_tests PRIVATE
         SCRIPT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/script/fixtures")

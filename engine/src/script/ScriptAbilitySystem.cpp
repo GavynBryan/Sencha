@@ -3,43 +3,15 @@
 #include <app/GameContexts.h>
 #include <ecs/CommandBuffer.h>
 #include <ecs/World.h>
+#include <script/ScriptCallbacks.h>
 #include <script/ScriptRuntime.h>
 #include <script/WorldScriptHost.h>
 
 #include <bit>
-#include <string>
 #include <vector>
 
 namespace
 {
-    std::int32_t FindCallback(const ScriptModule& module, const ScriptDeclaration& decl,
-                              std::string_view name)
-    {
-        for (const ScriptCallbackDef& callback : decl.Callbacks)
-        {
-            if (module.GetString(callback.Name) == name)
-            {
-                return static_cast<std::int32_t>(callback.FunctionIndex);
-            }
-        }
-        return -1;
-    }
-
-    std::int32_t FixedCallback(const ScriptModule& module, const ScriptDeclaration& decl,
-                               std::int32_t state)
-    {
-        if (state >= 0 && static_cast<std::size_t>(state) < decl.States.size())
-        {
-            const std::string qualified =
-                std::string(module.GetString(decl.States[state])) + ".fixed";
-            if (const std::int32_t fn = FindCallback(module, decl, qualified); fn >= 0)
-            {
-                return fn;
-            }
-        }
-        return FindCallback(module, decl, "fixed");
-    }
-
     // Builds the AbilityContext prelude: owner, tick, dt, aim_origin (3),
     // aim_direction (3). Aim stored as f32; the VM registers are f64.
     void BuildArgs(std::uint64_t args[9], EntityId owner, std::uint64_t tick, float dt,
@@ -56,11 +28,11 @@ namespace
     }
 
     // Runs a callback and returns its outcome; applies a pending state
-    // transition to `stateInOut`.
-    ScriptAbilityOutcome RunCallback(ScriptVm& vm, WorldScriptHost& host, const ScriptModule& module,
-                                     std::uint32_t linkedIndex, std::int32_t functionIndex,
-                                     const std::uint64_t args[9], EntityId owner,
-                                     std::uint64_t tick, std::int32_t& stateInOut)
+    // transition to `stateInOut`. A trap cancels the ability.
+    ScriptAbilityOutcome RunCallback(ScriptVm& vm, WorldScriptHost& host,
+                                     const ScriptLinkedModule& linked, std::uint32_t linkedIndex,
+                                     std::int32_t functionIndex, const std::uint64_t args[9],
+                                     EntityId owner, std::uint64_t tick, std::int32_t& stateInOut)
     {
         if (functionIndex < 0)
         {
@@ -69,13 +41,13 @@ namespace
         host.Begin(linkedIndex, owner, tick);
         ScriptInvokeOptions options;
         options.Args = std::span<const std::uint64_t>(args, 9);
+        options.Imports = linked.Imports;
         const ScriptInvokeResult result =
-            vm.Invoke(module, static_cast<std::uint32_t>(functionIndex), host, options);
+            vm.Invoke(*linked.Module, static_cast<std::uint32_t>(functionIndex), host, options);
         if (result.Ok() && result.PendingState >= 0)
         {
             stateInOut = result.PendingState;
         }
-        // A trap cancels an ability (spec D.4).
         if (!result.Ok())
         {
             return ScriptAbilityOutcome::Cancel;
@@ -144,28 +116,28 @@ void ScriptAbilitySystem::Step(World& world, std::uint64_t tickIndex, float dt)
             // Activation tick: start only. fixed begins next tick so an
             // `enter` in start settles first.
             ability.Started = 1;
-            outcome = RunCallback(Vm, host, module, ability.LinkedModule,
-                                  FindCallback(module, decl, "start"), args, owner, tickIndex,
+            outcome = RunCallback(Vm, host, linked, ability.LinkedModule,
+                                  FindScriptCallback(module, decl, "start"), args, owner, tickIndex,
                                   state);
         }
         else
         {
-            outcome = RunCallback(Vm, host, module, ability.LinkedModule,
-                                  FixedCallback(module, decl, state), args, owner, tickIndex,
-                                  state);
+            outcome = RunCallback(Vm, host, linked, ability.LinkedModule,
+                                  FindScriptFixedCallback(module, decl, state), args, owner,
+                                  tickIndex, state);
         }
         ability.State = state;
 
         if (outcome == ScriptAbilityOutcome::Finish)
         {
-            RunCallback(Vm, host, module, ability.LinkedModule,
-                        FindCallback(module, decl, "finish"), args, owner, tickIndex, state);
+            RunCallback(Vm, host, linked, ability.LinkedModule,
+                        FindScriptCallback(module, decl, "finish"), args, owner, tickIndex, state);
             toRemove.push_back(owner);
         }
         else if (outcome == ScriptAbilityOutcome::Cancel)
         {
-            RunCallback(Vm, host, module, ability.LinkedModule,
-                        FindCallback(module, decl, "cancel"), args, owner, tickIndex, state);
+            RunCallback(Vm, host, linked, ability.LinkedModule,
+                        FindScriptCallback(module, decl, "cancel"), args, owner, tickIndex, state);
             toRemove.push_back(owner);
         }
     });

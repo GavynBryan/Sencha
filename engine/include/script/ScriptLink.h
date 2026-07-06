@@ -7,7 +7,7 @@
 class World;
 
 //=============================================================================
-// ScriptLink (docs/plans/t-language-v1-spec.md, section E milestone 5)
+// ScriptLink
 //
 // Resolves a validated, world-agnostic module against a specific World and
 // installs it into the World's ScriptRuntime resource. This is where the

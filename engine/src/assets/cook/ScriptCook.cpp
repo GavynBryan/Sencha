@@ -58,7 +58,7 @@ namespace
         }
     }
 
-    // Import paths resolve relative to the importing file (spec D.8).
+    // Import paths resolve relative to the importing file.
     [[nodiscard]] std::string ResolveRelative(std::string_view importer, std::string_view import)
     {
         const size_t slash = importer.find_last_of('/');

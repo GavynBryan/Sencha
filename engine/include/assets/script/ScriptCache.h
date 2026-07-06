@@ -11,7 +11,7 @@
 #include <string>
 
 //=============================================================================
-// ScriptCache (docs/plans/t-language-v1-spec.md, section E milestone 4)
+// ScriptCache
 //
 // Path-keyed, ref-counted cache of validated T bytecode modules. CPU-only,
 // like AudioClipCache: no GPU half. The cache holds the immutable parsed +
@@ -38,7 +38,7 @@ struct ScriptEntry
 class ScriptCache;
 using ScriptCacheHandle = Owned<ScriptHandle>;
 
-// Distinguishes the two hot-reload outcomes (spec answer 17).
+// Distinguishes the two hot-reload outcomes.
 enum class ScriptReloadResult
 {
     NotResident,   // path not loaded; nothing swapped

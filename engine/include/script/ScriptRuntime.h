@@ -5,6 +5,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
+#include <script/ScriptImports.h>
 #include <script/ScriptModule.h>
 
 #include <cstdint>
@@ -12,7 +13,7 @@
 #include <vector>
 
 //=============================================================================
-// ScriptRuntime (docs/plans/t-language-v1-spec.md, section E milestone 5)
+// ScriptRuntime
 //
 // Per-World state for T execution. A cooked module is world-agnostic; linking
 // it against a specific World resolves its symbolic binds (tag names,
@@ -22,7 +23,7 @@
 //=============================================================================
 
 // Per-entity attachment for the behavior bridge: which linked module and
-// declaration drive this entity, and its current state (spec D.4). Trivially
+// declaration drive this entity, and its current state. Trivially
 // copyable ECS component. State is the interned index into the declaration's
 // state list; -1 for a stateless behavior.
 struct ScriptBehavior
@@ -45,7 +46,7 @@ struct ScriptCueEvent
     std::uint8_t HasPosition = 0;
 };
 
-// Per-entity ring of cue events (spec section C, cue.fire / cue_at). Trivially
+// Per-entity ring of cue events produced by cue.fire / cue.fire_at. Trivially
 // copyable ECS component; drops the oldest on overflow.
 struct ScriptCueBuffer
 {
@@ -85,9 +86,10 @@ struct ResolvedFieldBind
 struct ScriptLinkedModule
 {
     std::shared_ptr<const ScriptModule> Module;
-    std::vector<GameplayTagId> Tags;       // per BindTags index
-    std::vector<ResolvedFieldBind> Fields; // per BindFields index
-    std::vector<ComponentId> Components;   // per BindComponents index
+    std::vector<GameplayTagId> Tags;         // per BindTags index
+    std::vector<ResolvedFieldBind> Fields;   // per BindFields index
+    std::vector<ComponentId> Components;     // per BindComponents index
+    std::vector<ResolvedScriptImport> Imports; // per HostImports index
     // Per BindComponents index: the module schema index for a script
     // component (used to marshal commands.add record images), or -1 for a
     // host component (not addable from a script in v1).
@@ -106,7 +108,7 @@ struct ScriptRuntime
     std::uint64_t WorldSeed = 0;
 };
 
-// Per-entity state for one running script ability (spec D.4). AbilityKit has
+// Per-entity state for one running script ability. AbilityKit has
 // no per-tick active-ability loop, so the script ability bridge tracks its
 // own instances: which linked module and ability declaration drive this
 // owner, the current state, whether start has run, and the aim captured at

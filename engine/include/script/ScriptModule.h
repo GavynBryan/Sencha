@@ -8,7 +8,7 @@
 #include <vector>
 
 //=============================================================================
-// ScriptModule (docs/plans/t-language-v1-spec.md, section B)
+// ScriptModule
 //
 // The in-memory form of a cooked T script and the .tbc parser/writer. The
 // container is little-endian: a 32-byte header, a section table, then 8-byte
@@ -53,7 +53,7 @@ inline constexpr uint32_t kScriptFirstStrippableSectionKind = 0x40;
 
 // Scalar kinds follow FieldScalar order (core/metadata/RuntimeSchema.h) so a
 // later milestone can map them without a translation table; 16+ are
-// script-only extensions from spec section B.
+// script-only extensions.
 enum class ScriptScalarKind : uint8_t
 {
     Bool   = 0,
@@ -146,7 +146,7 @@ struct ScriptAssetBind
 struct ScriptHostImport
 {
     uint32_t Name = 0;      // string index, dotted
-    uint32_t Signature = 0; // string index, spec section C encoding
+    uint32_t Signature = 0; // string index, host-signature encoding
     uint16_t MinHostApiVersion = 0;
 };
 
@@ -248,7 +248,7 @@ struct ScriptModuleParseResult
 
 // Hash over the declared component schemas (names, leaf paths, scalar kinds,
 // offsets, array counts). Equal hashes mean a hot reload can swap the module
-// in place; a change routes to the world-reload path (spec answer 17).
+// in place; a change routes to the world-reload path.
 [[nodiscard]] uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module);
 
 // Storage footprint of a script component: the end of its last leaf rounded up

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "script/ScriptImports.h"
 #include "script/ScriptModule.h"
 #include "script/ScriptTrap.h"
 
@@ -8,17 +9,17 @@
 #include <vector>
 
 //=============================================================================
-// ScriptVm (docs/plans/t-language-v1-spec.md, sections A, C, D)
+// ScriptVm
 //
 // The interpreter. Executes one callback invocation over a validated module:
 // the VM trusts ScriptBytecodeValidator and carries no runtime type tags.
 // Slots are untagged 64 bits.
 //
-// The VM holds no state between invocations (design principle 15): pending
+// The VM holds no state between invocations: pending
 // state transitions surface in the invocation result, persistent data lives
 // in components behind the host handler, and the slot arena is scratch.
 // Everything that touches engine state (components, tags, host calls above
-// the intrinsic range) goes through ScriptHostCallHandler; Milestone 5
+// the intrinsic range) goes through ScriptHostCallHandler; the world host
 // implements it over the real seams, tests fake it.
 //=============================================================================
 
@@ -60,6 +61,11 @@ struct ScriptInvokeOptions
     std::span<const uint64_t> Args;
     // Destination for a RETV value; must match the function's RetSlots.
     std::span<uint64_t> Return;
+    // Per HostImports index, resolved at link. When present, HCALL dispatches
+    // intrinsic vs host on the resolved kind with no name comparison. Empty for
+    // hand-assembled modules invoked without a link step, which fall back to
+    // resolving the import name at the call site.
+    std::span<const ResolvedScriptImport> Imports;
 };
 
 struct ScriptInvokeResult
@@ -68,7 +74,7 @@ struct ScriptInvokeResult
     uint32_t TrapFunction = 0;   // function index, valid when trapped
     uint32_t TrapCodeOffset = 0; // word offset within that function
     // Last ENTER executed, as a state index into the owning declaration's
-    // state list; -1 when no transition is pending (spec D.4).
+    // state list; -1 when no transition is pending.
     int32_t PendingState = -1;
     uint64_t InstructionsExecuted = 0;
 

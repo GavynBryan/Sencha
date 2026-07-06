@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-// Lexer for T (spec D.1). Produces a token stream with explicit Terminator
+// Lexer for T. Produces a token stream with explicit Terminator
 // tokens: a newline terminates a statement unless paren/bracket depth is
 // open, the previous token is a continuation suffix (binary operator, comma,
 // assignment, dot, arrow, opening bracket), or the next line begins with a

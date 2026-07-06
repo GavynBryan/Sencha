@@ -2,22 +2,26 @@
 
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <script/ScriptHostSurface.h>
+#include <script/ScriptIntrinsics.h>
+#include <script/WorldScriptHost.h>
 #include <world/transform/TransformComponents.h>
 
-#include <array>
+#include <cstddef>
 #include <format>
+#include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace
 {
-    // Native components a script may name, with their field layout expressed
-    // the way the compiler emits bind paths. Kept explicit (not reflected)
-    // because Transform3f has no TypeSchema recursion; this is the engine's
-    // authoritative statement of what "Transform" means to a script.
+    // A native-component field resolved to storage, at the granularity a script
+    // may bind it: the whole group ("local.position", 3 slots) or one axis
+    // ("local.position.y", 1 slot). Expanded from the shared host surface.
     struct HostFieldLayout
     {
-        std::string_view Path;   // e.g. "local.position" or "local.position.y"
-        std::uint16_t Offset;    // bytes from the component start
+        std::string Path;     // "local.position" or "local.position.y"
+        std::uint16_t Offset; // bytes from the component start
         ScriptScalarKind Scalar;
         std::uint8_t SlotCount;
     };
@@ -29,28 +33,58 @@ namespace
         std::vector<HostFieldLayout> Fields;
     };
 
-    // LocalTransform.Value is a Transform3f: position (f32 x3) at 0, rotation
-    // (f32 x4) at 12, scale (f32 x3) at 28. Offsets verified against the
-    // struct layout.
+    // The byte offsets the shared surface declares must match the real struct.
+    // The runtime reads component storage by raw offset, so a layout change has
+    // to fail here rather than corrupt a field.
+    static_assert(std::is_standard_layout_v<Transform3f>,
+                  "script host offsets assume a standard-layout Transform3f");
+    static_assert(offsetof(LocalTransform, Value) + offsetof(Transform3f, Position) == 0,
+                  "Transform position offset changed; update ScriptHostSurface");
+    static_assert(offsetof(LocalTransform, Value) + offsetof(Transform3f, Scale) == 28,
+                  "Transform scale offset changed; update ScriptHostSurface");
+
+    // The native component type behind a host-surface name. Small and closed:
+    // mapping a script-visible name to a C++ component type is inherently code,
+    // not data.
+    ComponentTypeId HostComponentType(std::string_view name)
+    {
+        if (name == "Transform")
+        {
+            return ResolveComponentTypeId<LocalTransform>();
+        }
+        return ComponentTypeId{};
+    }
+
+    // Expands the shared host surface into resolvable bind paths: each group
+    // field plus its per-axis leaves, so a script binding either granularity
+    // resolves to the same storage.
     const std::vector<HostComponentLayout>& HostComponents()
     {
         static const std::vector<HostComponentLayout> table = [] {
-            std::vector<HostComponentLayout> t;
-            HostComponentLayout transform;
-            transform.Name = "Transform";
-            transform.Type = ResolveComponentTypeId<LocalTransform>();
-            transform.Fields = {
-                { "local.position", 0, ScriptScalarKind::Float, 3 },
-                { "local.position.x", 0, ScriptScalarKind::Float, 1 },
-                { "local.position.y", 4, ScriptScalarKind::Float, 1 },
-                { "local.position.z", 8, ScriptScalarKind::Float, 1 },
-                { "local.scale", 28, ScriptScalarKind::Float, 3 },
-                { "local.scale.x", 28, ScriptScalarKind::Float, 1 },
-                { "local.scale.y", 32, ScriptScalarKind::Float, 1 },
-                { "local.scale.z", 36, ScriptScalarKind::Float, 1 },
-            };
-            t.push_back(std::move(transform));
-            return t;
+            static constexpr std::string_view kAxes[] = { "x", "y", "z", "w" };
+            std::vector<HostComponentLayout> out;
+            for (const ScriptHostComponent& component : ScriptHostComponents())
+            {
+                HostComponentLayout layout;
+                layout.Name = component.Name;
+                layout.Type = HostComponentType(component.Name);
+                for (const ScriptHostField& field : component.Fields)
+                {
+                    const auto scalarSize = static_cast<std::uint16_t>(
+                        ScriptScalarSize(static_cast<std::uint8_t>(field.Scalar)));
+                    layout.Fields.push_back({ std::string(field.BindPath), field.ByteOffset,
+                                              field.Scalar, field.SlotCount });
+                    for (std::uint8_t axis = 0; axis < field.SlotCount && axis < 4; ++axis)
+                    {
+                        layout.Fields.push_back(
+                            { std::string(field.BindPath) + "." + std::string(kAxes[axis]),
+                              static_cast<std::uint16_t>(field.ByteOffset + axis * scalarSize),
+                              field.Scalar, 1 });
+                    }
+                }
+                out.push_back(std::move(layout));
+            }
+            return out;
         }();
         return table;
     }
@@ -250,6 +284,25 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
             resolved.Ok = true;
         }
         linked.Fields.push_back(resolved);
+    }
+
+    // 5. Host imports. Resolve each dotted name once to an intrinsic id (the VM
+    // executes those inline) or a host op id (WorldScriptHost dispatches on it),
+    // so neither path compares names at call time.
+    linked.Imports.reserve(module->HostImports.size());
+    for (const ScriptHostImport& import : module->HostImports)
+    {
+        const std::string_view name = module->GetString(import.Name);
+        const std::int32_t intrinsic = FindScriptIntrinsic(name);
+        if (intrinsic >= 0)
+        {
+            linked.Imports.push_back({ ScriptImportKind::Intrinsic, intrinsic });
+        }
+        else
+        {
+            linked.Imports.push_back(
+                { ScriptImportKind::Host, static_cast<std::int32_t>(ResolveScriptHostOp(name)) });
+        }
     }
 
     result.ModuleIndex = static_cast<std::uint32_t>(runtime.Modules.size());

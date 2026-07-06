@@ -11,7 +11,7 @@
 #include <tuple>
 
 //=============================================================================
-// ScriptSource (docs/plans/t-language.md, milestone 5 integration)
+// ScriptSource
 //
 // The authoring-facing script component: a designer attaches this to a level
 // entity and points its `script` field at a cooked T script, exactly the way

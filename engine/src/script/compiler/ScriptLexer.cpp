@@ -60,7 +60,7 @@ namespace
     }
 
     // Continuation suffix: a line ending on one of these does not terminate
-    // the statement (spec D.1 rule 2).
+    // the statement.
     [[nodiscard]] bool IsContinuationSuffix(ScriptTokKind kind)
     {
         switch (kind)
@@ -87,7 +87,7 @@ namespace
     }
 
     // Continuation prefix: a line beginning with one of these continues the
-    // previous statement (spec D.1 rule 3).
+    // previous statement.
     [[nodiscard]] bool IsContinuationPrefix(ScriptTokKind kind)
     {
         switch (kind)
@@ -343,7 +343,7 @@ ScriptLexResult LexScript(std::string_view source)
         col += width;
     }
 
-    // Terminator insertion (spec D.1): walk the raw stream tracking paren
+    // Terminator insertion: walk the raw stream tracking paren
     // and bracket depth; braces do not suppress terminators (multi-line
     // record literals and argument lists continue via trailing commas).
     int depth = 0;

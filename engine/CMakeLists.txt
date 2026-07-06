@@ -37,13 +37,20 @@ if(NOT SENCHA_ENABLE_VULKAN)
 endif()
 
 if(NOT SENCHA_ENABLE_COOK)
-    # Hot reload (Stage 6) re-cooks on source change, so it is dev-only too —
-    # filtered out alongside the cook layer it depends on.
+    # Hot reload (Stage 6) re-cooks on source change, so it is dev-only too:
+    # filtered out alongside the cook layer it depends on. The T script
+    # compiler, module writer, and disassembler produce or inspect .tbc at cook
+    # time; the runtime only parses, validates, and executes .tbc, so they are
+    # dev/cook-only and do not ride in a shipping binary.
     foreach(_pattern
         "[/\\\\]src[/\\\\]assets[/\\\\]cook[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]cook[/\\\\]"
         "[/\\\\]src[/\\\\]assets[/\\\\]hotreload[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]hotreload[/\\\\]"
+        "[/\\\\]src[/\\\\]script[/\\\\]compiler[/\\\\]"
+        "[/\\\\]src[/\\\\]script[/\\\\]ScriptModuleWriter\\.cpp$"
+        "[/\\\\]src[/\\\\]script[/\\\\]ScriptDisassembler\\.cpp$"
+        "[/\\\\]include[/\\\\]script[/\\\\]ScriptCompiler\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")

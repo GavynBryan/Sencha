@@ -8,7 +8,7 @@ struct FixedLogicContext;
 class World;
 
 //=============================================================================
-// ScriptBehaviorSystem (docs/plans/t-language-v1-spec.md, section E milestone 5)
+// ScriptBehaviorSystem
 //
 // Invokes T behavior callbacks on the fixed tick. For each entity carrying a
 // ScriptBehavior, it runs the spawn callback once (lazily, the first time the
@@ -18,7 +18,7 @@ class World;
 //
 // Structural changes a callback requests go through a CommandBuffer flushed at
 // the end of the tick; component field writes are immediate. State transitions
-// a callback returns (spec D.4) are applied to ScriptBehavior.State after the
+// a callback returns are applied to ScriptBehavior.State after the
 // callback returns.
 //=============================================================================
 class ScriptBehaviorSystem

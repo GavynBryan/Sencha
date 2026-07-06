@@ -176,7 +176,7 @@ namespace
         return i == text.size();
     }
 
-    // Register preludes per declaration kind (spec section C).
+    // Register preludes per declaration kind.
     [[nodiscard]] std::vector<SlotType> PreludeFor(ScriptDeclKind kind)
     {
         switch (kind)

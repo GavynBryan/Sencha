@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-// AST for T (design doc EBNF plus spec grammar notes). Nodes carry source
+// AST for T. Nodes carry source
 // positions for error reporting and the line table. string_views alias the
 // source text, which the compiler keeps alive for the whole compile.
 

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Trap catalog (docs/plans/t-language-v1-spec.md, section D.7). Codes are
+// Trap catalog. Codes are
 // stable: they appear in logs, tests, and tooling.
 enum class ScriptTrapCode : uint8_t
 {
