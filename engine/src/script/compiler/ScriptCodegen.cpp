@@ -2758,9 +2758,12 @@ namespace
 
 const ScriptHostDecls& DefaultScriptHostDecls()
 {
+    // Native LocalTransform stores Transform3f (f32 position/scale), so the
+    // script-visible fields are f32 and the field-bind scalar is Float; the
+    // world-side host converts f32 storage to the VM's f64 registers.
     static const ScriptHostFieldDecl kTransformFields[] = {
-        {"position", "local.position", ScriptScalarKind::Double, 3},
-        {"scale", "local.scale", ScriptScalarKind::Double, 3},
+        {"position", "local.position", ScriptScalarKind::Float, 3},
+        {"scale", "local.scale", ScriptScalarKind::Float, 3},
     };
     static const ScriptHostComponentDecl kComponents[] = {
         {"Transform", kTransformFields},

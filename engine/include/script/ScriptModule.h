@@ -67,6 +67,25 @@ enum class ScriptScalarKind : uint8_t
     Int64  = 18,
 };
 
+// Storage size in bytes of one scalar of the given kind (Color3 is three
+// contiguous floats; Entity is a generational id pair).
+[[nodiscard]] constexpr size_t ScriptScalarSize(uint8_t scalar)
+{
+    switch (static_cast<ScriptScalarKind>(scalar))
+    {
+    case ScriptScalarKind::Bool:   return 1;
+    case ScriptScalarKind::Int32:  return 4;
+    case ScriptScalarKind::UInt32: return 4;
+    case ScriptScalarKind::Float:  return 4;
+    case ScriptScalarKind::Double: return 8;
+    case ScriptScalarKind::Color3: return 12;
+    case ScriptScalarKind::Entity: return 8;
+    case ScriptScalarKind::TagId:  return 4;
+    case ScriptScalarKind::Int64:  return 8;
+    }
+    return 4;
+}
+
 enum class ScriptDeclKind : uint8_t
 {
     Ability     = 1,

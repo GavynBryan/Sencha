@@ -350,4 +350,12 @@ if(NOT WIN32)
         NAME editor_layering_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_editor_layering.sh ${CMAKE_SOURCE_DIR}
     )
+    add_test(
+        NAME script_layering_directions
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_script_layering.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
+        NAME script_host_surface
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_script_host_surface.sh ${CMAKE_SOURCE_DIR}
+    )
 endif()

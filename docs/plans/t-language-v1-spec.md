@@ -474,6 +474,19 @@ and its done-when test; tasks are ordered and independently verifiable. Test
 suites live in a new `test/script/` group added to `test/CMakeLists.txt` with
 the same stanza shape as `jobs_tests`.
 
+Implementation status: milestones 2, 3, and 4 are complete. Milestone 5's
+engine prerequisites (raw component registration, type-erased CommandBuffer
+ops, DeterministicRandom), the world-side runtime (ScriptLink, WorldScriptHost,
+ScriptBehaviorSystem), the behavior end-to-end (the pickup fixture cooked,
+linked, ticked, and verified deterministic), and the two fitness ctests are
+landed. Deferred (they need native systems AbilityKit does not yet expose):
+the ability bridge (AbilityKit has no per-tick active-ability loop, so a
+scripted-ability-instance system is required, not just a hook), the trigger
+and interaction systems and their bridges, and the full
+ScriptComponentSerializer (inspector plus scene save/load parity). These are
+the remaining M5 items; the behavior path already exercises the full
+cook -> link -> VM -> host -> component-write -> determinism stack.
+
 ### Milestone 2: bytecode plus VM core
 
 1. `engine/include/script/ScriptBytecode.h`: opcode enum with the exact hex
