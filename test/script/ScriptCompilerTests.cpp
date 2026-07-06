@@ -217,26 +217,26 @@ TEST(ScriptCompiler, CompiledBehaviorRunsInTheVm)
 TEST(ScriptCompiler, StatementTerminationRules)
 {
     // Trailing operator continues.
-    EXPECT_TRUE(CompileSource("fn f() -> f32 {\n"
+    EXPECT_TRUE(CompileSource("fn f(): f32 {\n"
                               "    let a = 1.0 +\n"
                               "        2.0\n"
                               "    return a\n"
                               "}\n").Ok);
     // Leading operator continues.
-    EXPECT_TRUE(CompileSource("fn f() -> f32 {\n"
+    EXPECT_TRUE(CompileSource("fn f(): f32 {\n"
                               "    let a = 1.0\n"
                               "        + 2.0\n"
                               "    return a\n"
                               "}\n").Ok);
     // Open paren suppresses terminators.
-    EXPECT_TRUE(CompileSource("fn g(x: f32) -> f32 { return x }\n"
-                              "fn f() -> f32 {\n"
+    EXPECT_TRUE(CompileSource("fn g(x: f32): f32 { return x }\n"
+                              "fn f(): f32 {\n"
                               "    return g(\n"
                               "        1.0\n"
                               "    )\n"
                               "}\n").Ok);
     // A newline between complete statements terminates.
-    EXPECT_TRUE(CompileSource("fn f() -> i32 {\n"
+    EXPECT_TRUE(CompileSource("fn f(): i32 {\n"
                               "    let a = 1\n"
                               "    let b = 2\n"
                               "    return a + b\n"
@@ -274,7 +274,7 @@ TEST(ScriptCompiler, ErrorMessagesCarryPositions)
                 "    }\n"
                 "}\n",
                 "BehaviorContext", 2);
-    ExpectError("fn f() -> i32 {\n"
+    ExpectError("fn f(): i32 {\n"
                 "    let a = 1\n"
                 "}\n",
                 "must end with a return", 1);
@@ -284,6 +284,11 @@ TEST(ScriptCompiler, ErrorMessagesCarryPositions)
                 "    }\n"
                 "}\n",
                 "enter is only valid", 3);
+    // Return types use ':'; the arrow is rejected with guidance.
+    ExpectError("fn f() -> i32 {\n"
+                "    return 1\n"
+                "}\n",
+                "use ':' for return types", 1);
 }
 
 TEST(ScriptCompiler, ImportRules)

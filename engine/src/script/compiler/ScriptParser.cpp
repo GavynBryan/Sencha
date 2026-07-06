@@ -656,6 +656,10 @@ namespace
             }
             if (Is(ScriptTokKind::Arrow))
             {
+                return Fail(Peek(), "use ':' for return types, not '->'");
+            }
+            if (Is(ScriptTokKind::Colon))
+            {
                 Advance();
                 ScriptTypeRef type;
                 if (!ParseType(type))

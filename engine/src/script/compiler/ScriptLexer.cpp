@@ -76,7 +76,7 @@ namespace
         case ScriptTokKind::PlusAssign: case ScriptTokKind::MinusAssign:
         case ScriptTokKind::StarAssign: case ScriptTokKind::SlashAssign:
         case ScriptTokKind::Comma: case ScriptTokKind::Dot:
-        case ScriptTokKind::Arrow: case ScriptTokKind::DotDot:
+        case ScriptTokKind::DotDot:
         case ScriptTokKind::LParen: case ScriptTokKind::LBracket:
         case ScriptTokKind::LBrace: case ScriptTokKind::Colon:
         case ScriptTokKind::Not:

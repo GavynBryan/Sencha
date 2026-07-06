@@ -4,7 +4,7 @@ component DoorState {
 }
 
 interaction OpenDoor {
-    fn can_interact(ctx: InteractionContext) -> bool {
+    fn can_interact(ctx: InteractionContext): bool {
         return ctx.target.has(DoorState) && !ctx.target.DoorState.locked
     }
 

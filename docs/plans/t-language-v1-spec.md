@@ -339,7 +339,7 @@ The lexer emits a statement terminator at a newline unless:
 1. bracket depth > 0 (any of `(`, `[`, `{` opened by an expression context;
    a declaration or control-flow `{` body does not suppress terminators), or
 2. the last significant token on the line is a binary operator, `,`, `=`, a
-   compound-assignment operator, `.`, `->`, or an opening bracket, or
+   compound-assignment operator, `.`, `:`, or an opening bracket, or
 3. the next line's first significant token is `.` or a binary operator
    (`+ - * / % && || == != < <= > >=`): the expression continues.
 

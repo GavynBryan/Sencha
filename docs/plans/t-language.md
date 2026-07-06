@@ -241,7 +241,9 @@ strings); there is no runtime string type.
 - `ability Name { ... }`, `behavior Name { ... }`, `trigger Name { ... }`,
   `interaction Name { ... }`
 - `state Name` (inside ability/behavior blocks)
-- `fn name(args) -> Type { ... }` and per-state `fn State.name(args) { ... }`
+- `fn name(args): Type { ... }` and per-state `fn State.name(args) { ... }`.
+  Return types use the same colon as every other type position; `->` is
+  rejected with guidance (one rule: name, colon, type).
 - `const name: Type = literal` (compile-time constant)
 - `param name: Type = literal` (a tunable: the default lives in the script, and
   the owning asset, for example a `.sability` file, may override it as data.
@@ -290,7 +292,7 @@ const_decl    = "const" IDENT ":" type "=" literal ;
 param_decl    = "param" IDENT ":" type "=" literal ;
 
 function      = "fn" [ IDENT "." ] IDENT "(" [ fparam { "," fparam } ] ")"
-                [ "->" type ] block ;
+                [ ":" type ] block ;
 fparam        = IDENT ":" type ;
 
 type          = "bool" | "i32" | "i64" | "f32" | "f64" | "Vec2" | "Vec3"
@@ -414,7 +416,7 @@ component DoorState {
 }
 
 interaction OpenDoor {
-    fn can_interact(ctx: InteractionContext) -> bool {
+    fn can_interact(ctx: InteractionContext): bool {
         return ctx.target.has(DoorState) && !ctx.target.DoorState.locked
     }
 
