@@ -45,6 +45,10 @@ file(GLOB_RECURSE JOBS_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/jobs/*.cpp
 )
 
+file(GLOB_RECURSE SCRIPT_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/script/*.cpp
+)
+
 file(GLOB_RECURSE PHYSICS_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/physics/*.cpp
 )
@@ -137,6 +141,12 @@ if(JOBS_TEST_SOURCES)
     add_executable(jobs_tests ${JOBS_TEST_SOURCES})
     target_link_libraries(jobs_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS jobs_tests)
+endif()
+
+if(SCRIPT_TEST_SOURCES)
+    add_executable(script_tests ${SCRIPT_TEST_SOURCES})
+    target_link_libraries(script_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS script_tests)
 endif()
 
 # Physics tests link only the engine: the Jolt backend is firewalled inside
@@ -279,6 +289,12 @@ endif()
 
 if(TARGET jobs_tests)
     gtest_discover_tests(jobs_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET script_tests)
+    gtest_discover_tests(script_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()
