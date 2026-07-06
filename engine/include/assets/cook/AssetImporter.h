@@ -28,6 +28,11 @@
 //     cache source → set of outputs from day one).
 //=============================================================================
 
+// Import-settings sidecar naming: "<source>.meta" beside the source file.
+// Driver-level (any importer may have one); the schema belongs to the
+// importer (textures: TextureImportSettings).
+inline constexpr std::string_view kImportSettingsSuffix = ".meta";
+
 struct ImportInput
 {
     // Source file, relative to the assets root, generic separators.
@@ -35,6 +40,11 @@ struct ImportInput
 
     // The source file's contents.
     std::span<const std::byte> Bytes;
+
+    // Contents of the source's import-settings sidecar ("<source>.meta"),
+    // empty when absent. The driver reads it (and folds it into the cooked
+    // cache's freshness hash) so importers stay filesystem-free.
+    std::span<const std::byte> MetaBytes{};
 };
 
 // Where importers write cooked artifacts. The seam keeps importers free of

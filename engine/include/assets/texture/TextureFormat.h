@@ -19,6 +19,10 @@
 inline constexpr char kStexMagic[4] = { 'S', 'T', 'E', 'X' };
 inline constexpr uint32_t kStexVersion = 1;
 
+// Header flag bits. Absent flags read as the pre-flag behavior, so adding a
+// flag never needs a version bump.
+inline constexpr uint32_t kStexFlagNearestFilter = 1u << 0;
+
 struct StexFileHeader
 {
     char Magic[4];

@@ -99,6 +99,18 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
             config.AsyncTaskThreadCount, sectionError)
         || !ReadBoolEither(root, "zoneParallelPropagation", "zone_parallel_propagation",
             config.ZoneParallelPropagation, sectionError)
+        || !ReadIntEither(root, "streamingHopCount", "streaming_hop_count",
+            config.StreamingHopCount, sectionError)
+        || !ReadDoubleEither(root, "streamingLingerSeconds", "streaming_linger_seconds",
+            config.StreamingLingerSeconds, sectionError)
+        || !ReadIntEither(root, "streamingResidentZoneCap", "streaming_resident_zone_cap",
+            config.StreamingResidentZoneCap, sectionError)
+        || !ReadBoolEither(root, "streamingNeighborVisible", "streaming_neighbor_visible",
+            config.StreamingNeighborVisible, sectionError)
+        || !ReadBoolEither(root, "streamingNeighborPhysics", "streaming_neighbor_physics",
+            config.StreamingNeighborPhysics, sectionError)
+        || !ReadDoubleEither(root, "streamingRadius", "streaming_radius",
+            config.StreamingRadius, sectionError)
         || !ReadBoolEither(root, "exitOnEscape", "exit_on_escape",
             config.ExitOnEscape, sectionError)
         || !ReadBoolEither(root, "togglePauseOnF1", "toggle_pause_on_f1",
@@ -129,6 +141,30 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
     if (config.AsyncTaskThreadCount < 1)
     {
         if (error) error->Message = "runtime config: 'asyncTaskThreadCount' must be at least 1";
+        return std::nullopt;
+    }
+
+    if (config.StreamingHopCount < 0)
+    {
+        if (error) error->Message = "runtime config: 'streamingHopCount' must be zero (focus zone only) or positive";
+        return std::nullopt;
+    }
+
+    if (!std::isfinite(config.StreamingLingerSeconds) || config.StreamingLingerSeconds < 0.0)
+    {
+        if (error) error->Message = "runtime config: 'streamingLingerSeconds' must be zero or positive";
+        return std::nullopt;
+    }
+
+    if (config.StreamingResidentZoneCap < 1)
+    {
+        if (error) error->Message = "runtime config: 'streamingResidentZoneCap' must be at least 1";
+        return std::nullopt;
+    }
+
+    if (!std::isfinite(config.StreamingRadius) || config.StreamingRadius < 0.0)
+    {
+        if (error) error->Message = "runtime config: 'streamingRadius' must be zero (graph only) or positive";
         return std::nullopt;
     }
 

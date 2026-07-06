@@ -176,10 +176,11 @@ TEST_F(EngineScheduleTest, BuildFrameViewUsesZoneParticipation)
     FrameRegistryView view = harness.BuildView();
 
     ASSERT_NE(view.Global, nullptr);
-    EXPECT_EQ(view.Logic.size(), 1u);
-    EXPECT_EQ(view.Physics.size(), 1u);
-    EXPECT_EQ(view.Visible.size(), 1u);
-    EXPECT_EQ(view.Logic[0]->Zone, ZoneId{ 1 });
-    EXPECT_EQ(view.Physics[0]->Zone, ZoneId{ 2 });
-    EXPECT_EQ(view.Visible[0]->Zone, ZoneId{ 2 });
+    ASSERT_EQ(view.Logic.size(), 2u);   // the global registry rides every span
+    ASSERT_EQ(view.Physics.size(), 2u);
+    ASSERT_EQ(view.Visible.size(), 2u);
+    EXPECT_EQ(view.Logic[0], view.Global);
+    EXPECT_EQ(view.Logic[1]->Zone, ZoneId{ 1 });
+    EXPECT_EQ(view.Physics[1]->Zone, ZoneId{ 2 });
+    EXPECT_EQ(view.Visible[1]->Zone, ZoneId{ 2 });
 }

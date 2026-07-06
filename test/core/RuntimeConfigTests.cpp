@@ -120,3 +120,60 @@ TEST(RuntimeConfig, RejectsWrongFieldTypes)
     EXPECT_FALSE(Parse(R"({"exitOnEscape": 1})").has_value());
     EXPECT_FALSE(Parse(R"({"zoneParallelPropagation": "yes"})").has_value());
 }
+
+TEST(RuntimeConfig, StreamingFieldsParseAndDefault)
+{
+    const auto defaults = Parse(R"({})");
+    ASSERT_TRUE(defaults.has_value());
+    EXPECT_EQ(defaults->StreamingHopCount, 1);
+    EXPECT_DOUBLE_EQ(defaults->StreamingLingerSeconds, 3.0);
+    EXPECT_EQ(defaults->StreamingResidentZoneCap, 8);
+
+    const auto parsed = Parse(R"({
+        "streaming_hop_count": 2,
+        "streaming_linger_seconds": 0.5,
+        "streaming_resident_zone_cap": 4
+    })");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->StreamingHopCount, 2);
+    EXPECT_DOUBLE_EQ(parsed->StreamingLingerSeconds, 0.5);
+    EXPECT_EQ(parsed->StreamingResidentZoneCap, 4);
+}
+
+TEST(RuntimeConfig, StreamingFieldsRejectInvalid)
+{
+    RuntimeConfigError error;
+    EXPECT_FALSE(Parse(R"({"streaming_hop_count": -1})", &error).has_value());
+    EXPECT_NE(error.Message.find("streamingHopCount"), std::string::npos);
+
+    EXPECT_FALSE(Parse(R"({"streaming_linger_seconds": -0.1})", &error).has_value());
+    EXPECT_NE(error.Message.find("streamingLingerSeconds"), std::string::npos);
+
+    // Non-finite literals never survive the JSON parser; the isfinite clause
+    // guards programmatic construction only.
+    EXPECT_FALSE(Parse(R"({"streaming_resident_zone_cap": 0})", &error).has_value());
+    EXPECT_NE(error.Message.find("streamingResidentZoneCap"), std::string::npos);
+}
+
+TEST(RuntimeConfig, StreamingPreloadFieldsParseAndValidate)
+{
+    const auto defaults = Parse(R"({})");
+    ASSERT_TRUE(defaults.has_value());
+    EXPECT_TRUE(defaults->StreamingNeighborVisible);
+    EXPECT_TRUE(defaults->StreamingNeighborPhysics);
+    EXPECT_DOUBLE_EQ(defaults->StreamingRadius, 0.0);
+
+    const auto parsed = Parse(R"({
+        "streaming_neighbor_visible": false,
+        "streaming_neighbor_physics": false,
+        "streaming_radius": 64.0
+    })");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(parsed->StreamingNeighborVisible);
+    EXPECT_FALSE(parsed->StreamingNeighborPhysics);
+    EXPECT_DOUBLE_EQ(parsed->StreamingRadius, 64.0);
+
+    RuntimeConfigError error;
+    EXPECT_FALSE(Parse(R"({"streaming_radius": -1.0})", &error).has_value());
+    EXPECT_NE(error.Message.find("streamingRadius"), std::string::npos);
+}

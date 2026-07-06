@@ -22,6 +22,21 @@ example/    Small executable examples.
 test/       GoogleTest-based engine tests.
 ```
 
+## Roadmap and Plans
+
+- `docs/plans/engine-roadmap.md` is the standing master roadmap: the v1.0
+  through v3.0 version arc, gates, tracks, and sequencing for the whole
+  engine. It owns versions and priorities; the specialist docs below own
+  execution detail. It supersedes the former `real-engine-roadmap.md`.
+- `docs/action-adventure-core-runtime.md` is the execution spec for the
+  streaming and traversal track (roadmap Track C).
+- `docs/gameplay/abilitykit.md` is the execution spec for the gameplay
+  framework items in roadmap Track A.
+- `docs/architecture/hardening-and-consolidation.md` is the execution spec
+  for the editor hardening and module ABI items (roadmap Tracks D and F).
+- `docs/plans/sencha-level-editor/` is the shipped-branch record and the
+  execution detail for the editor substrate roadmap Track D builds on.
+
 ## Core Architecture Map
 
 - `docs/core-systems-map.md` is the first broad map of the engine: core

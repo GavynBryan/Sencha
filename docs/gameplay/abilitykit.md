@@ -1,6 +1,6 @@
 # AbilityKit — Sencha's Gameplay Framework
 
-Status: **proposed working plan** (2026-06-24).
+Status: **proposed working plan** (2026-06-24). Version assignments and gates live in `docs/plans/engine-roadmap.md` (Track A).
 
 This document plans **AbilityKit**, Sencha's gameplay framework, built the
 data-driven ECS way: bespoke gameplay behavior lives in **authored data**

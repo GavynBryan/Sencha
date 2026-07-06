@@ -87,6 +87,12 @@ public:
     // while the build is mid-flight on the task thread — retry next frame.
     bool CancelLoad(ZoneId zone);
 
+    // Destroys the zone at the next commit drain (FramePhase::DrainAsyncTasks),
+    // never mid-frame: zone lifecycle stays at the single frame point where no
+    // frame view is live, symmetric with BeginLoad's attach. The zone remains
+    // resident (and rendered) until the drain runs.
+    AsyncTaskHandle RequestDestroy(ZoneId zone);
+
 private:
     struct InFlightLoad
     {

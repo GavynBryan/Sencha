@@ -11,12 +11,12 @@
 set -uo pipefail
 
 ROOT="${1:-.}"
-UI="$ROOT/editor/src/ui"
+UI_DIRS=("$ROOT/editor/common/src/ui" "$ROOT/editor/kyusu/src/ui")
 status=0
 
 # Greps UI sources for a pattern, excluding EditorUiStyle.* and comment-only lines.
 scan() {
-    grep -rnE "$1" "$UI" 2>/dev/null \
+    grep -rnE "$1" "${UI_DIRS[@]}" 2>/dev/null \
         | grep -vE '/EditorUiStyle\.(h|cpp):' \
         | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)'
 }

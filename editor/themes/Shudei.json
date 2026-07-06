@@ -1,0 +1,25 @@
+{
+  "colors": {
+    "window_bg": "#000000",
+    "panel_bg": "#000000",
+    "header_bg": "#0F111C",
+    "frame_bg": "#000000",
+    "frame_bg_hovered": "#1A1B35",
+    "frame_bg_active": "#001F3D",
+    "border": "#201C3A",
+    "accent": "#004EE5",
+    "accent_hover": "#4DA3FF",
+    "accent_dim": "#000E3D",
+    "selected": "#002058",
+    "secondary": "#00FF6B",
+    "secondary_hover": "#BAFFB7",
+    "button_bg": "#001D8A",
+    "button_hovered": "#404988",
+    "warning": "#ED9D26",
+    "danger": "#DE4133",
+    "critical": "#F4328D",
+    "success": "#00E5CC",
+    "text_primary": "#C2C4FF",
+    "text_dim": "#717296"
+  }
+}

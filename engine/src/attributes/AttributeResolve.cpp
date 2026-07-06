@@ -9,6 +9,10 @@
 
 void ResetAttributesToBase(World& world)
 {
+    // A frame span may include worlds that host no attribute-bearing entities
+    // (the global registry before a game registers components there).
+    if (!world.IsRegistered<AttributeSet>())
+        return;
     // Mutable ForEachComponent bumps the AttributeSet change version, so
     // Changed<AttributeSet> downstream sees the recomputed Current values.
     world.ForEachComponent<AttributeSet>([](EntityId, AttributeSet& set)
@@ -20,6 +24,8 @@ void ResetAttributesToBase(World& world)
 
 void ClampAttributes(World& world)
 {
+    if (!world.IsRegistered<AttributeSet>())
+        return;
     const AttributeRegistry* registry = std::as_const(world).TryGetResource<AttributeRegistry>();
     if (registry == nullptr)
         return;

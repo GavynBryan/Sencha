@@ -91,7 +91,8 @@ TextureHandle TextureAssetLoader::CommitTyped(AssetStaging&& staged)
     TextureHandle handle{};
     if (TextureData* texture = std::any_cast<TextureData>(&staged.Payload))
     {
-        handle = Cache->CreateFromTextureData(staged.Record.Path, *texture);
+        handle = Cache->CreateFromTextureData(staged.Record.Path, *texture,
+                                              TextureCache::SamplerForTextureData(*texture));
     }
     else if (Image* image = std::any_cast<Image>(&staged.Payload))
     {

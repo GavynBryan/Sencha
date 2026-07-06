@@ -606,6 +606,13 @@ TEST(BrushOps, TraceAbsentSeedReturnsEmpty)
     EXPECT_TRUE(BrushOps::TraceEdgeRing(box, 0, 6).StripFaces.empty());
 }
 
+namespace
+{
+constexpr std::array<Vec3d, 3> kWorldFrame = {
+    Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f }
+};
+}
+
 TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }); // verts at +/-1
@@ -613,7 +620,7 @@ TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
 
     // Stretch +X to 2 (anchor the -X face), leave Y/Z alone.
     const std::optional<BrushMesh> after = service.ResizeBounds(
-        box, Transform3f::Identity(),
+        box, Transform3f::Identity(), kWorldFrame,
         Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(1.0f, 1.0f, 1.0f),
         Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(2.0f, 1.0f, 1.0f),
         true);
@@ -627,6 +634,38 @@ TEST(MeshEditService, ResizeBoundsRemapsVerticesAffinely)
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.X, expectedX);
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.Y, box.Vertices[i].Position.Y);
         EXPECT_FLOAT_EQ(after->Vertices[i].Position.Z, box.Vertices[i].Position.Z);
+    }
+}
+
+TEST(MeshEditService, ResizeBoundsHonorsARotatedFrame)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshEditService service;
+
+    // Frame rotated 45 degrees about Y: U = (1,0,-1)/sqrt2, W = (1,0,1)/sqrt2.
+    const float inv = 1.0f / std::sqrt(2.0f);
+    const std::array<Vec3d, 3> frame = {
+        Vec3d{ inv, 0.0f, -inv }, Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ inv, 0.0f, inv }
+    };
+
+    // The box's frame bounds: corner (+/-1, y, +/-1) projects onto U in
+    // [-sqrt2, sqrt2]. Double the frame-U extent about its center.
+    const float s2 = std::sqrt(2.0f);
+    const std::optional<BrushMesh> after = service.ResizeBounds(
+        box, Transform3f::Identity(), frame,
+        Vec3d(-s2, -1.0f, -s2), Vec3d(s2, 1.0f, s2),
+        Vec3d(-2.0f * s2, -1.0f, -s2), Vec3d(2.0f * s2, 1.0f, s2),
+        true);
+
+    ASSERT_TRUE(after.has_value());
+    for (std::size_t i = 0; i < box.Vertices.size(); ++i)
+    {
+        // Frame coordinates: U doubles, N and V unchanged.
+        const Vec3d before = box.Vertices[i].Position;
+        const Vec3d now = after->Vertices[i].Position;
+        EXPECT_NEAR(now.Dot(frame[0]), before.Dot(frame[0]) * 2.0f, 1e-4f);
+        EXPECT_NEAR(now.Dot(frame[1]), before.Dot(frame[1]), 1e-4f);
+        EXPECT_NEAR(now.Dot(frame[2]), before.Dot(frame[2]), 1e-4f);
     }
 }
 
@@ -884,4 +923,155 @@ TEST(MeshEditService, EdgeExtrudeUpContinuesFloorSurface)
         EXPECT_TRUE(FacesContinueSurface(after->Mesh, floorFace, i));
     }
     EXPECT_EQ(walls, 4);
+}
+
+TEST(MeshEditService, ElementKindObserverFiresOnRealChangesOnly)
+{
+    MeshEditService service;
+    std::vector<MeshElementKind> seen;
+    service.SetElementKindObserver([&](MeshElementKind next) { seen.push_back(next); });
+
+    service.SetElementKind(MeshElementKind::Object); // already Object: no fire
+    service.SetElementKind(MeshElementKind::Face);
+    service.SetElementKind(MeshElementKind::Face);   // no change: no fire
+    service.CycleElementKind();                       // Face -> next kind: fires
+
+    ASSERT_EQ(seen.size(), 2u);
+    EXPECT_EQ(seen[0], MeshElementKind::Face);
+    EXPECT_EQ(seen[1], service.GetElementKind());
+}
+
+namespace
+{
+    std::uint32_t FaceWithNormal(const BrushMesh& mesh, Vec3d direction)
+    {
+        for (std::uint32_t i = 0; i < mesh.Faces.size(); ++i)
+            if (mesh.Faces[i].Normal.Normalized().Dot(direction.Normalized()) > 0.9f)
+                return i;
+        ADD_FAILURE() << "no face facing the requested direction";
+        return 0;
+    }
+}
+
+TEST(MeshEditService, FaceExtrudeWallsContinueTheirNeighborFaces)
+{
+    // The user workflow: texture a box's top, extrude a SIDE face outward. The
+    // extension's new top strip continues the top's texture (each wall inherits
+    // the face across its base edge), and the moved side face keeps its own.
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t top = FaceWithNormal(box, { 0.0f, 1.0f, 0.0f });
+    const std::uint32_t side = FaceWithNormal(box, { 1.0f, 0.0f, 0.0f });
+    box.Faces[top].Material.Material =
+        AssetRef{ AssetType::Material, "asset://materials/dev/red.smat" };
+    box.Faces[side].Material.Material =
+        AssetRef{ AssetType::Material, "asset://materials/dev/blue.smat" };
+
+    const SelectableRef ref =
+        SelectableRef::FaceSelection(RegistryId::Global(), EntityId{ 1, 1 }, side);
+    MeshEditService service;
+    const auto result = service.ExtrudeElements(
+        box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Face,
+        Vec3d{ 1.0f, 0.0f, 0.0f }, true);
+    ASSERT_TRUE(result.has_value());
+    const BrushMesh& after = result->Mesh;
+    ASSERT_EQ(after.Faces.size(), 10u);
+
+    // Two red top surfaces now: the original top and the extension's top strip,
+    // and the strip continues the SAME projection (no seam at the shared edge).
+    std::vector<const BrushFace*> redTops;
+    for (const BrushFace& f : after.Faces)
+        if (f.Material.Material.Path == "asset://materials/dev/red.smat")
+        {
+            EXPECT_GT(f.Normal.Y, 0.9f) << "red must only appear on up-facing faces";
+            redTops.push_back(&f);
+        }
+    ASSERT_EQ(redTops.size(), 2u);
+    EXPECT_FLOAT_EQ(redTops[0]->Material.Uv.AxisU.Dot(redTops[1]->Material.Uv.AxisU), 1.0f);
+    EXPECT_FLOAT_EQ(redTops[0]->Material.Uv.AxisV.Dot(redTops[1]->Material.Uv.AxisV), 1.0f);
+
+    // The pulled side face (now the far cap) keeps its own texture.
+    int blue = 0;
+    for (const BrushFace& f : after.Faces)
+        if (f.Material.Material.Path == "asset://materials/dev/blue.smat")
+        {
+            EXPECT_GT(f.Normal.X, 0.9f);
+            ++blue;
+        }
+    EXPECT_EQ(blue, 1);
+}
+
+namespace
+{
+    // Faces whose material ref matches `path`.
+    int CountFacesWithMaterial(const BrushMesh& mesh, std::string_view path)
+    {
+        int count = 0;
+        for (const BrushFace& face : mesh.Faces)
+            if (face.Material.Material.Path == path)
+                ++count;
+        return count;
+    }
+
+    constexpr const char* kRed = "asset://materials/dev/red.smat";
+}
+
+TEST(MeshEditService, PanelExtrudeVerbKeepsCapAndContinuesNeighbors)
+{
+    // The MeshEditPanel Extrude button path (ApplyVerb -> BrushOps::ExtrudeFace):
+    // the moved cap keeps its texture; the walls continue their base-edge
+    // neighbors (all default here), never the cap's.
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
+    StubMeshEditTarget target(std::move(box));
+
+    MeshEditService service;
+    MeshEditParams params;
+    params.Distance = 1.0f;
+    std::unique_ptr<ICommand> command = service.ApplyVerb(
+        target, FaceSelection(target.Entity, 0), MeshEditVerb::Extrude, params);
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+
+    EXPECT_EQ(CountFacesWithMaterial(captured->After, kRed), 1);
+    EXPECT_EQ(captured->After.Faces.size(), 10u);
+}
+
+TEST(BrushOps, CarveFaceRectKeepsMaterialOnEveryPiece)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
+
+    ASSERT_TRUE(BrushOps::RectFaceFrame(box, 0).has_value());
+    const BrushMesh carved = BrushOps::CarveFaceRect(
+        box, 0, Vec2d{ 0.5f, 0.5f }, Vec2d{ 1.5f, 1.5f });
+
+    // Host face decomposed into ring quads + the center rectangle; every piece
+    // keeps the host's texture (this is the carve-then-extrude wall workflow).
+    EXPECT_GT(carved.Faces.size(), box.Faces.size());
+    EXPECT_EQ(CountFacesWithMaterial(carved, kRed),
+              static_cast<int>(carved.Faces.size() - 5));
+}
+
+TEST(MeshEditService, EdgeExtrudeInheritsTheAdjacentFaceMaterial)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    for (BrushFace& face : box.Faces)
+        face.Material.Material = AssetRef{ AssetType::Material, kRed };
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const SelectableRef ref =
+        SelectableRef::EdgeSelection(RegistryId::Global(), EntityId{ 1, 1 }, edges[0].Index);
+
+    // Pull the edge away along the average of its two face normals so the flap
+    // is a real face (not coplanar with either neighbor).
+    const Vec3d delta = (edges[0].B - edges[0].A).Cross(Vec3d{ 0.3f, 0.9f, 0.2f }).Normalized();
+
+    MeshEditService service;
+    const auto result = service.ExtrudeElements(
+        box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Edge, delta, true);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(CountFacesWithMaterial(result->Mesh, kRed),
+              static_cast<int>(result->Mesh.Faces.size()));
 }

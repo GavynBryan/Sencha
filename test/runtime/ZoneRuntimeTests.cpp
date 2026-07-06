@@ -9,7 +9,7 @@ TEST(ZoneId, DefaultIsInvalid)
     ZoneId id;
 
     EXPECT_FALSE(id.IsValid());
-    EXPECT_EQ(id, ZoneId::Invalid());
+    EXPECT_EQ(id, ZoneId{});
 }
 
 TEST(ZoneId, Equality)
@@ -65,7 +65,7 @@ TEST(ZoneRuntime, CreateZoneInvalidZoneIdAsserts)
 {
     ZoneRuntime runtime;
 
-    EXPECT_DEATH(runtime.CreateZone(ZoneId::Invalid()), "zone id must be valid");
+    EXPECT_DEATH(runtime.CreateZone(ZoneId{}), "zone id must be valid");
 }
 #endif
 
@@ -131,40 +131,35 @@ TEST(ZoneRuntime, DestroyZoneExcludesDestroyedZoneFromFrameView)
     EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Visible.size(), 1u);
-    EXPECT_EQ(view.Visible[0], &bellTower);
+    ASSERT_EQ(view.Visible.size(), 2u);   // the global registry plus bellTower
+    EXPECT_EQ(view.Visible[1], &bellTower);
 }
 
-TEST(ZoneRuntime, DestroyZoneVisiblyInvalidatesPreviouslyBuiltFrameView)
+// The frame view is a bracketed lifetime: zone lifecycle happens only while
+// no view is live (the drain point), so spans never contain nulls and a
+// mutation can never blank an in-flight frame. The next build reflects it.
+TEST(ZoneRuntime, ZoneLifecycleBetweenFrameViewsIsReflectedByTheNextBuild)
 {
     ZoneRuntime runtime;
 
-    runtime.CreateZone(ZoneId{ 1 });
-    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
-    FrameRegistryView view = runtime.BuildFrameView();
-
-    ASSERT_EQ(view.Visible.size(), 1u);
-    ASSERT_NE(view.Visible[0], nullptr);
-
-    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
-
-    EXPECT_EQ(view.Visible[0], nullptr);
-}
-
-TEST(ZoneRuntime, CreateZoneVisiblyInvalidatesPreviouslyBuiltFrameView)
-{
-    ZoneRuntime runtime;
-
-    runtime.CreateZone(ZoneId{ 1 });
-    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
-    FrameRegistryView view = runtime.BuildFrameView();
-
-    ASSERT_EQ(view.Visible.size(), 1u);
-    ASSERT_NE(view.Visible[0], nullptr);
-
+    Registry& keep = runtime.CreateZone(ZoneId{ 1 });
     runtime.CreateZone(ZoneId{ 2 });
+    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
+    runtime.SetParticipation(ZoneId{ 2 }, ZoneParticipation{ .Visible = true });
 
-    EXPECT_EQ(view.Visible[0], nullptr);
+    FrameRegistryView view = runtime.BuildFrameView();
+    ASSERT_EQ(view.Visible.size(), 3u);
+    for (Registry* entry : view.Visible)
+        EXPECT_NE(entry, nullptr);   // spans never contain nulls
+    runtime.EndFrameView();
+
+    EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 2 }));
+    runtime.CreateZone(ZoneId{ 3 });
+
+    view = runtime.BuildFrameView();
+    ASSERT_EQ(view.Visible.size(), 2u);   // global + zone 1; zone 3 is dormant
+    EXPECT_EQ(view.Visible[1], &keep);
+    runtime.EndFrameView();
 }
 
 TEST(ZoneRuntime, FindZoneMissingReturnsNull)
@@ -240,10 +235,14 @@ TEST(ZoneRuntime, BuildFrameViewEmptyRuntimeHasOnlyGlobal)
     FrameRegistryView view = runtime.BuildFrameView();
 
     EXPECT_EQ(view.Global, &runtime.Global());
-    EXPECT_TRUE(view.Visible.empty());
-    EXPECT_TRUE(view.Physics.empty());
-    EXPECT_TRUE(view.Logic.empty());
-    EXPECT_TRUE(view.Audio.empty());
+    ASSERT_EQ(view.Visible.size(), 1u);
+    ASSERT_EQ(view.Physics.size(), 1u);
+    ASSERT_EQ(view.Logic.size(), 1u);
+    ASSERT_EQ(view.Audio.size(), 1u);
+    EXPECT_EQ(view.Visible[0], &runtime.Global());
+    EXPECT_EQ(view.Physics[0], &runtime.Global());
+    EXPECT_EQ(view.Logic[0], &runtime.Global());
+    EXPECT_EQ(view.Audio[0], &runtime.Global());
 }
 
 TEST(ZoneRuntime, BuildFrameViewIncludesZonesByVisibleFlag)
@@ -256,8 +255,8 @@ TEST(ZoneRuntime, BuildFrameViewIncludesZonesByVisibleFlag)
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Visible.size(), 1u);
-    EXPECT_EQ(view.Visible[0], &chapel);
+    ASSERT_EQ(view.Visible.size(), 2u);   // the global registry rides every span
+    EXPECT_EQ(view.Visible[1], &chapel);
 }
 
 TEST(ZoneRuntime, BuildFrameViewIncludesZonesByPhysicsFlag)
@@ -270,8 +269,8 @@ TEST(ZoneRuntime, BuildFrameViewIncludesZonesByPhysicsFlag)
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Physics.size(), 1u);
-    EXPECT_EQ(view.Physics[0], &chapel);
+    ASSERT_EQ(view.Physics.size(), 2u);   // the global registry rides every span
+    EXPECT_EQ(view.Physics[1], &chapel);
 }
 
 TEST(ZoneRuntime, BuildFrameViewIncludesZonesByLogicFlag)
@@ -284,8 +283,8 @@ TEST(ZoneRuntime, BuildFrameViewIncludesZonesByLogicFlag)
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Logic.size(), 1u);
-    EXPECT_EQ(view.Logic[0], &chapel);
+    ASSERT_EQ(view.Logic.size(), 2u);   // the global registry rides every span
+    EXPECT_EQ(view.Logic[1], &chapel);
 }
 
 TEST(ZoneRuntime, BuildFrameViewIncludesZonesByAudioFlag)
@@ -298,21 +297,26 @@ TEST(ZoneRuntime, BuildFrameViewIncludesZonesByAudioFlag)
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Audio.size(), 1u);
-    EXPECT_EQ(view.Audio[0], &chapel);
+    ASSERT_EQ(view.Audio.size(), 2u);   // the global registry rides every span
+    EXPECT_EQ(view.Audio[1], &chapel);
 }
 
-TEST(ZoneRuntime, BuildFrameViewDoesNotIncludeGlobalInParticipationSpans)
+// The global registry hosts world-lifetime gameplay state (the partitioned
+// world's pawn and camera) and is never dormant: it participates in every
+// span, ordered first.
+TEST(ZoneRuntime, BuildFrameViewGlobalParticipatesInAllSpans)
 {
     ZoneRuntime runtime;
+    runtime.CreateZone(ZoneId{ 1 });
+    runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Visible = true });
 
     FrameRegistryView view = runtime.BuildFrameView();
 
     EXPECT_EQ(view.Global, &runtime.Global());
-    EXPECT_TRUE(view.Visible.empty());
-    EXPECT_TRUE(view.Physics.empty());
-    EXPECT_TRUE(view.Logic.empty());
-    EXPECT_TRUE(view.Audio.empty());
+    ASSERT_EQ(view.Visible.size(), 2u);
+    EXPECT_EQ(view.Visible[0], &runtime.Global());
+    ASSERT_EQ(view.Physics.size(), 1u);
+    EXPECT_EQ(view.Physics[0], &runtime.Global());
 }
 
 TEST(Registry, GlobalKindRequiresInvalidZoneId)
@@ -339,6 +343,7 @@ TEST(Registry, MakeGlobalRegistryNonGlobalIdAsserts)
 
 TEST(Registry, MakeZoneRegistryInvalidZoneIdAsserts)
 {
-    EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId::Invalid()), "valid ZoneId");
+    EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{}), "valid ZoneId");
 }
 #endif
+

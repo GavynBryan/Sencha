@@ -58,8 +58,7 @@ void CaptionSystem::Update(CaptionRuntime* captions, const AudioService* audio,
     // caption is rebound to the fresh voice before retirement would see the
     // dead one.
     for (Registry* registry : active)
-        if (registry != nullptr)
-            DriveRegistry(*captions, *registry, audio == nullptr);
+        DriveRegistry(*captions, *registry, audio == nullptr);
 
     captions->Tick(audio, dtSeconds);
 }

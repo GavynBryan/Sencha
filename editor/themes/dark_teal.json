@@ -1,0 +1,20 @@
+{
+  "comment": "The built-in editor chrome palette, as a starting point for custom themes. Colors are authored sRGB hex (#RRGGBB or #RRGGBBAA); the editor linearizes them for its sRGB swapchain. Point the editor.ui.theme cvar at a copy of this file and edit away.",
+  "colors": {
+    "window_bg": "#0A0D0F",
+    "panel_bg": "#0A0D0F",
+    "header_bg": "#0F1A1C",
+    "frame_bg": "#0D1214",
+    "frame_bg_hovered": "#1A3535",
+    "frame_bg_active": "#003D35",
+    "border": "#1C3A3A",
+    "accent": "#00E5CC",
+    "accent_dim": "#003D35",
+    "selected": "#003D35",
+    "secondary": "#7B2FBE",
+    "button_bg": "#112022",
+    "button_hovered": "#1A3535",
+    "text_primary": "#C8F0EC",
+    "text_dim": "#3A6060"
+  }
+}

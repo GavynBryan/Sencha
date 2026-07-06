@@ -1,6 +1,7 @@
 # Hardening & Consolidation Plan
 
-Status: standing plan (living document). Companion to
+Status: standing plan (living document). Version assignments and gates live in
+`docs/plans/engine-roadmap.md` (Tracks D and F). Companion to
 `docs/plans/sencha-level-editor/09-module-abi-hardening.md` (the deep dive for
 the module-ABI zone).
 

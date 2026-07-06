@@ -4,12 +4,14 @@
 #include <assets/texture/TextureSerializer.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
+#include <jobs/ThreadPoolJobSystem.h>
 #include <render/Image.h>
 #include <render/TextureData.h>
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/TextureCook.h>
+#include <assets/cook/TextureImportSettings.h>
 #include <core/assets/AssetRegistry.h>
 #include <bc7decomp.h>
 #endif
@@ -19,9 +21,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <random>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -291,6 +296,32 @@ TEST(TextureCook, CookCompressesFullChainsToTaggedFormats)
     EXPECT_TRUE(ValidateTextureData(orm));
 }
 
+TEST(TextureCook, PooledCookMatchesSerialByteForByte)
+{
+    // The pool is a pure throughput knob: rows and blocks write disjoint
+    // output, so the cooked bytes must be identical with and without it.
+    Image noisy = MakeImage(64, 48);
+    std::mt19937 rng(12345);
+    for (uint8_t& byte : noisy.Pixels)
+        byte = static_cast<uint8_t>(rng());
+
+    ThreadPoolJobSystem pool(3);
+    for (const TextureUsage usage :
+         { TextureUsage::BaseColor, TextureUsage::Normal, TextureUsage::LinearData })
+    {
+        TextureData serial;
+        ASSERT_TRUE(CookImageToTexture(noisy, TextureCookParams{ .Usage = usage }, serial));
+
+        TextureData pooled;
+        ASSERT_TRUE(CookImageToTexture(
+            noisy, TextureCookParams{ .Usage = usage, .Jobs = &pool }, pooled));
+
+        EXPECT_EQ(serial.Format, pooled.Format);
+        ASSERT_EQ(serial.Blob.size(), pooled.Blob.size());
+        EXPECT_EQ(serial.Blob, pooled.Blob);
+    }
+}
+
 TEST(TextureCook, Bc7BlocksDecodeBackToTheSourceColor)
 {
     // Encoder sanity, not container plumbing: a solid color must survive
@@ -523,3 +554,123 @@ TEST(PngTextureImport, SuffixedSourcesCookToTaggedFormats)
 }
 
 #endif // SENCHA_ENABLE_COOK
+
+// -- Import settings (sidecar) ------------------------------------------------
+
+namespace
+{
+    std::span<const std::byte> AsBytes(std::string_view text)
+    {
+        return std::as_bytes(std::span(text.data(), text.size()));
+    }
+}
+
+TEST(TextureImportSettings, EmptyInputIsDefaults)
+{
+    TextureImportSettings settings;
+    settings.Filter = TextureFilter::Nearest; // must be overwritten
+    ASSERT_TRUE(ParseTextureImportSettings({}, settings));
+    EXPECT_EQ(settings, TextureImportSettings{});
+}
+
+TEST(TextureImportSettings, ParsesEveryField)
+{
+    TextureImportSettings settings;
+    std::string error;
+    ASSERT_TRUE(ParseTextureImportSettings(AsBytes(
+        R"({"version": 1, "usage": "normal", "filter": "nearest", "compress": false, "mips": false})"),
+        settings, &error)) << error;
+    EXPECT_EQ(settings.Usage, TextureUsage::Normal);
+    EXPECT_EQ(settings.Filter, TextureFilter::Nearest);
+    EXPECT_FALSE(settings.Compress);
+    EXPECT_FALSE(settings.GenerateMips);
+}
+
+TEST(TextureImportSettings, RejectsTyposInsteadOfDefaulting)
+{
+    TextureImportSettings settings;
+    std::string error;
+    EXPECT_FALSE(ParseTextureImportSettings(AsBytes(R"({"filtr": "nearest"})"), settings, &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(ParseTextureImportSettings(AsBytes(R"({"filter": "nearset"})"), settings, &error));
+    EXPECT_FALSE(ParseTextureImportSettings(AsBytes("not json"), settings, &error));
+}
+
+TEST(TextureImportSettings, SaveFileRoundTrips)
+{
+    TextureImportSettings settings;
+    settings.Usage = TextureUsage::LinearData;
+    settings.Filter = TextureFilter::Nearest;
+    settings.Compress = false;
+    settings.GenerateMips = false;
+
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "sencha_import_settings_roundtrip.meta";
+    std::string error;
+    ASSERT_TRUE(SaveTextureImportSettingsFile(path.string(), settings, &error)) << error;
+
+    std::ifstream file(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), {});
+    TextureImportSettings loaded;
+    ASSERT_TRUE(ParseTextureImportSettings(AsBytes(text), loaded, &error)) << error;
+    EXPECT_EQ(loaded, settings);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+// -- Cook params (uncompressed / no-mips / filter) ------------------------------
+
+TEST(TextureCook, UncompressedParamsKeepRgbaAndColorspace)
+{
+    TextureData texture;
+    ASSERT_TRUE(CookImageToTexture(
+        MakeImage(8, 8),
+        TextureCookParams{ .Usage = TextureUsage::BaseColor, .Compress = false }, texture));
+    EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8_SRGB);
+    EXPECT_EQ(texture.Mips.size(), FullMipChainLength(8, 8));
+    ASSERT_TRUE(ValidateTextureData(texture));
+
+    ASSERT_TRUE(CookImageToTexture(
+        MakeImage(8, 8, PixelFormat::RGBA8),
+        TextureCookParams{ .Usage = TextureUsage::LinearData, .Compress = false }, texture));
+    EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8);
+}
+
+TEST(TextureCook, NoMipsParamsEmitOnlyMipZero)
+{
+    TextureData texture;
+    ASSERT_TRUE(CookImageToTexture(
+        MakeImage(16, 16),
+        TextureCookParams{ .Usage = TextureUsage::BaseColor,
+                           .Compress = false,
+                           .GenerateMips = false },
+        texture));
+    ASSERT_EQ(texture.Mips.size(), 1u);
+    EXPECT_EQ(texture.Mips[0].Width, 16u);
+    ASSERT_TRUE(ValidateTextureData(texture));
+}
+
+TEST(TextureCook, FilterRidesTheStexRoundTrip)
+{
+    TextureData texture;
+    ASSERT_TRUE(CookImageToTexture(
+        MakeImage(8, 8),
+        TextureCookParams{ .Usage = TextureUsage::BaseColor,
+                           .Filter = TextureFilter::Nearest },
+        texture));
+    EXPECT_EQ(texture.Filter, TextureFilter::Nearest);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteStexToBytes(texture, bytes));
+    TextureData loaded;
+    std::string error;
+    ASSERT_TRUE(LoadStexFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_EQ(loaded.Filter, TextureFilter::Nearest);
+
+    // Default-filtered textures round-trip as linear (flag absent).
+    ASSERT_TRUE(CookImageToTexture(MakeImage(8, 8), TextureUsage::BaseColor, texture));
+    ASSERT_TRUE(WriteStexToBytes(texture, bytes));
+    ASSERT_TRUE(LoadStexFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_EQ(loaded.Filter, TextureFilter::Linear);
+}

@@ -2,6 +2,7 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/JsonShape.h>
+#include <core/metadata/ScalarGroup.h>
 #include <core/metadata/TypeSchema.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
@@ -82,6 +83,22 @@ struct TypeSchema<Quat<T>>
             MakeField("w", &Quat<T>::W),
         };
     }
+};
+
+// Vec and Quat are contiguous same-typed scalars, so a schema-flattening tool
+// can treat each as one N-wide value instead of recursing into x/y/z/w leaves.
+template <int N, typename T>
+struct PackedScalarGroup<Vec<N, T>>
+{
+    static constexpr std::size_t Count = static_cast<std::size_t>(N);
+    using Component = T;
+};
+
+template <typename T>
+struct PackedScalarGroup<Quat<T>>
+{
+    static constexpr std::size_t Count = 4;
+    using Component = T;
 };
 
 template <typename T>

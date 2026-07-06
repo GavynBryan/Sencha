@@ -229,6 +229,56 @@ struct Quat
 			c
 		};
 	}
+
+	// Rotation mapping local X/Y/Z onto the given orthonormal right-handed basis
+	// (the basis vectors become the rotation matrix columns; see ToMat3). Inputs
+	// must satisfy z = x cross y; a left-handed or skewed basis is not a rotation
+	// and gives an unnormalized result.
+	static Quat FromBasis(const Vec<3, T>& x, const Vec<3, T>& y, const Vec<3, T>& z)
+		requires std::floating_point<T>
+	{
+		// Shepperd's method on the column matrix [x y z]: pick the largest
+		// diagonal-derived term for numerical stability.
+		const T m00 = x.X, m01 = y.X, m02 = z.X;
+		const T m10 = x.Y, m11 = y.Y, m12 = z.Y;
+		const T m20 = x.Z, m21 = y.Z, m22 = z.Z;
+		const T trace = m00 + m11 + m22;
+
+		Quat q;
+		if (trace > T{0})
+		{
+			const T s = std::sqrt(trace + T{1}) * T{2};
+			q.W = s / T{4};
+			q.X = (m21 - m12) / s;
+			q.Y = (m02 - m20) / s;
+			q.Z = (m10 - m01) / s;
+		}
+		else if (m00 > m11 && m00 > m22)
+		{
+			const T s = std::sqrt(T{1} + m00 - m11 - m22) * T{2};
+			q.W = (m21 - m12) / s;
+			q.X = s / T{4};
+			q.Y = (m01 + m10) / s;
+			q.Z = (m02 + m20) / s;
+		}
+		else if (m11 > m22)
+		{
+			const T s = std::sqrt(T{1} + m11 - m00 - m22) * T{2};
+			q.W = (m02 - m20) / s;
+			q.X = (m01 + m10) / s;
+			q.Y = s / T{4};
+			q.Z = (m12 + m21) / s;
+		}
+		else
+		{
+			const T s = std::sqrt(T{1} + m22 - m00 - m11) * T{2};
+			q.W = (m10 - m01) / s;
+			q.X = (m02 + m20) / s;
+			q.Y = (m12 + m21) / s;
+			q.Z = s / T{4};
+		}
+		return q.Normalized();
+	}
 };
 
 // -- Free function: scalar * quat -------------------------------------------

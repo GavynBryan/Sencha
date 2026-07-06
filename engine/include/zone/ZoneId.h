@@ -1,31 +1,8 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <functional>
+#include <core/identity/StrongId.h>
 
-struct ZoneId
-{
-    uint32_t Value = 0;
-
-    static constexpr ZoneId Invalid()
-    {
-        return { 0 };
-    }
-
-    bool IsValid() const
-    {
-        return Value != 0;
-    }
-
-    bool operator==(const ZoneId&) const = default;
-};
-
-template<>
-struct std::hash<ZoneId>
-{
-    size_t operator()(const ZoneId& id) const noexcept
-    {
-        return std::hash<uint32_t>{}(id.Value);
-    }
-};
+// The persistent zone identity: minted by the editor when a zone is created,
+// serialized in the world partition manifest, and used verbatim as the runtime
+// residency key in ZoneRuntime. Zero is invalid (StrongId convention).
+using ZoneId = StrongId<struct ZoneIdTag, uint64_t>;

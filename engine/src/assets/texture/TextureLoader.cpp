@@ -43,6 +43,8 @@ bool LoadStexFromBytes(std::span<const std::byte> bytes, TextureData& out, std::
     TextureData texture;
     texture.Format = header.Format;
     texture.Usage = header.Usage;
+    texture.Filter = (header.Flags & kStexFlagNearestFilter) != 0 ? TextureFilter::Nearest
+                                                                  : TextureFilter::Linear;
     texture.Width = header.Width;
     texture.Height = header.Height;
 

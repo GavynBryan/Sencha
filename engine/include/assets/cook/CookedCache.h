@@ -40,6 +40,12 @@ struct CookedArtifact
     std::string FileRelPath;
 
     AssetType Type = AssetType::Unknown;
+
+    // HashBytes64 of the artifact file's contents, recorded when the cook
+    // wrote it, so registration reuses it instead of re-reading the artifact
+    // every launch. 0 = unknown (pre-hash index entry); registration falls
+    // back to hashing the file and upgrades the entry.
+    uint64_t ContentHash = 0;
 };
 
 struct CookedSourceEntry
@@ -49,6 +55,18 @@ struct CookedSourceEntry
 
     // HashBytes64 of the source file contents the artifacts were cooked from.
     uint64_t SourceHash = 0;
+
+    // Size and last-write time (filesystem clock ticks) of the source file
+    // when it was cooked. A freshness accelerator only: when both match the
+    // file on disk, the driver skips reading the source bytes; on any
+    // mismatch the content hash stays the ground truth. 0 = unknown.
+    uint64_t SourceSize = 0;
+    int64_t SourceMTime = 0;
+
+    // Same accelerator for the "<source>.meta" import-settings sidecar
+    // (absent sidecar records 0/0, matching a still-absent sidecar).
+    uint64_t MetaSize = 0;
+    int64_t MetaMTime = 0;
 
     std::vector<CookedArtifact> Artifacts;
 };

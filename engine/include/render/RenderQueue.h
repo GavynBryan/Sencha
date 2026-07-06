@@ -28,6 +28,17 @@ struct RenderQueueItem
 
 [[nodiscard]] uint64_t BuildOpaqueSortKey(const RenderQueueItem& item);
 
+// A run of consecutive OpaqueOrder() entries that share mesh, section, and
+// material: one instanced draw call. Built by SortOpaque() from the actual item
+// fields (never from the truncated sort-key bits, so slot aliasing can only
+// cost a merge, not correctness). The runs partition the order; a run of one
+// is an ordinary single-instance draw, so there is exactly one draw path.
+struct RenderQueueRun
+{
+    uint32_t First = 0; // index into OpaqueOrder()
+    uint32_t Count = 0;
+};
+
 //=============================================================================
 // RenderQueue
 //
@@ -49,7 +60,12 @@ public:
     // the 128-byte items themselves. Empty until SortOpaque() has run.
     [[nodiscard]] const std::vector<uint32_t>& OpaqueOrder() const { return OpaqueOrderIndices; }
 
+    // Instanced-draw runs over OpaqueOrder() (see RenderQueueRun). Empty until
+    // SortOpaque() has run.
+    [[nodiscard]] const std::vector<RenderQueueRun>& OpaqueRuns() const { return OpaqueRunList; }
+
 private:
     std::vector<RenderQueueItem> OpaqueItems;
     std::vector<uint32_t>        OpaqueOrderIndices;
+    std::vector<RenderQueueRun>  OpaqueRunList;
 };

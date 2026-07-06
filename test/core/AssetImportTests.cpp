@@ -105,6 +105,8 @@ namespace
         ImportResult Import(const ImportInput& input, ICookOutputWriter& output) override
         {
             ++ImportCount;
+            LastMeta.assign(reinterpret_cast<const char*>(input.MetaBytes.data()),
+                            input.MetaBytes.size());
             if (FailWith.has_value())
                 return ImportResult{ .Error = *FailWith };
 
@@ -128,6 +130,7 @@ namespace
         }
 
         int ImportCount = 0;
+        std::string LastMeta;
         std::optional<std::string> FailWith;
         bool EscapeCookedDir = false;
     };
@@ -140,9 +143,13 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
     CookedSourceEntry entry;
     entry.SourceRelPath = "textures/dev/checker.png";
     entry.SourceHash = 0xDEADBEEFCAFEF00DULL; // high bits must survive JSON
+    entry.SourceSize = 0xFFFFFFFF12345678ULL; // > 2^53: doubles would mangle it
+    entry.SourceMTime = -1234567890123456789LL;
+    entry.MetaSize = 42;
+    entry.MetaMTime = 987654321;
     entry.Artifacts = {
         { "asset://textures/dev/checker.stex", ".cooked/textures/dev/checker.stex",
-          AssetType::Texture },
+          AssetType::Texture, 0xABCDEF0123456789ULL },
         { "asset://textures/dev/checker_orm.stex", ".cooked/textures/dev/checker_orm.stex",
           AssetType::Texture },
     };
@@ -158,17 +165,25 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
     const CookedSourceEntry* found = parsed.Find("textures/dev/checker.png");
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->SourceHash, 0xDEADBEEFCAFEF00DULL);
+    EXPECT_EQ(found->SourceSize, 0xFFFFFFFF12345678ULL);
+    EXPECT_EQ(found->SourceMTime, -1234567890123456789LL);
+    EXPECT_EQ(found->MetaSize, 42u);
+    EXPECT_EQ(found->MetaMTime, 987654321);
     ASSERT_EQ(found->Artifacts.size(), 2u);
     EXPECT_EQ(found->Artifacts[0].Path, "asset://textures/dev/checker.stex");
     EXPECT_EQ(found->Artifacts[0].FileRelPath, ".cooked/textures/dev/checker.stex");
     EXPECT_EQ(found->Artifacts[0].Type, AssetType::Texture);
+    EXPECT_EQ(found->Artifacts[0].ContentHash, 0xABCDEF0123456789ULL);
+    EXPECT_EQ(found->Artifacts[1].ContentHash, 0u);
 }
 
 TEST(CookedCacheIndex, PutReplacesEntryForSameSource)
 {
     CookedCacheIndex index;
-    index.Put({ "a.src", 1, { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
-    index.Put({ "a.src", 2, { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
+    index.Put({ .SourceRelPath = "a.src", .SourceHash = 1,
+                .Artifacts = { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
+    index.Put({ .SourceRelPath = "a.src", .SourceHash = 2,
+                .Artifacts = { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
 
     ASSERT_EQ(index.Size(), 1u);
     EXPECT_EQ(index.Find("a.src")->SourceHash, 2u);
@@ -260,6 +275,69 @@ TEST(ImportOnDemand, WarmCacheSkipsImporter)
     EXPECT_EQ(stats.CookedFresh, 1u);
     EXPECT_EQ(stats.Imported, 0u);
     EXPECT_TRUE(registry.Contains("asset://meshes/rock.smesh"));
+}
+
+TEST(ImportOnDemand, TouchedUnchangedSourceStaysFresh)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+    }
+    ASSERT_EQ(importer.ImportCount, 1);
+
+    // Rewrite identical content: new mtime, same bytes. The stat fast path
+    // misses, the hash fallback must still serve from cache.
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    AssetRegistry registry(logging);
+    ImportOnDemandStats stats;
+    ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+
+    EXPECT_EQ(importer.ImportCount, 1) << "unchanged content must not re-import";
+    EXPECT_EQ(stats.CookedFresh, 1u);
+    EXPECT_EQ(stats.Imported, 0u);
+}
+
+TEST(ImportOnDemand, RegistrationUsesRecordedArtifactHashes)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    uint64_t cookedHash = 0;
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+        const AssetRecord* record = registry.FindByPath("asset://meshes/rock.smesh");
+        ASSERT_NE(record, nullptr);
+        cookedHash = record->ContentHash;
+        ASSERT_NE(cookedHash, 0u);
+    }
+
+    // Tamper with the artifact bytes (file still exists, source untouched).
+    // Registration trusts the hash recorded at cook time instead of reading
+    // the artifact back, so the record keeps the cooked hash.
+    root.WriteFile(".cooked/meshes/rock.smesh", "tampered bytes");
+
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+    EXPECT_EQ(importer.ImportCount, 1);
+
+    const AssetRecord* record = registry.FindByPath("asset://meshes/rock.smesh");
+    ASSERT_NE(record, nullptr);
+    EXPECT_EQ(record->ContentHash, cookedHash);
 }
 
 TEST(ImportOnDemand, ChangedSourceRecooks)
@@ -382,3 +460,42 @@ TEST(ImportOnDemand, RegistryRejectsDuplicateExtensionClaims)
 }
 
 #endif // SENCHA_ENABLE_COOK
+
+TEST(ImportOnDemand, EditedImportSettingsSidecarRecooks)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+    }
+    ASSERT_EQ(importer.ImportCount, 1);
+    EXPECT_TRUE(importer.LastMeta.empty());
+
+    // Writing the sidecar changes the freshness hash: same source recooks and
+    // the importer receives the sidecar bytes.
+    root.WriteFile("meshes/rock.src.meta", R"({"version": 1})");
+    {
+        AssetRegistry registry(logging);
+        ImportOnDemandStats stats;
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+        EXPECT_EQ(stats.Imported, 1u);
+    }
+    EXPECT_EQ(importer.ImportCount, 2);
+    EXPECT_EQ(importer.LastMeta, R"({"version": 1})");
+
+    // Unchanged source + sidecar pair is fresh again.
+    {
+        AssetRegistry registry(logging);
+        ImportOnDemandStats stats;
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+        EXPECT_EQ(stats.CookedFresh, 1u);
+    }
+    EXPECT_EQ(importer.ImportCount, 2);
+}

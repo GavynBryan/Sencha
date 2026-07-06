@@ -1,6 +1,6 @@
 @PACKAGE_INIT@
 
-# Sencha SDK package config (real-engine-roadmap.md Phase 0). An out-of-tree
+# Sencha SDK package config (engine-roadmap.md: SDK boundary, shipped). An out-of-tree
 # game project does find_package(Sencha) and gets the imported sencha::engine
 # target plus the sencha_game_module() helper, with no engine source present.
 
