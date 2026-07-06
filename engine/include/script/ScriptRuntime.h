@@ -50,6 +50,10 @@ struct ScriptLinkedModule
     std::vector<GameplayTagId> Tags;       // per BindTags index
     std::vector<ResolvedFieldBind> Fields; // per BindFields index
     std::vector<ComponentId> Components;   // per BindComponents index
+    // Per BindComponents index: the module schema index for a script
+    // component (used to marshal commands.add record images), or -1 for a
+    // host component (not addable from a script in v1).
+    std::vector<std::int32_t> ComponentSchemaIndex;
 };
 
 // World resource holding every linked module plus the deterministic world

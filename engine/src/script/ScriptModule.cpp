@@ -666,3 +666,19 @@ uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module)
     }
     return w.Bytes.empty() ? 0 : HashBytes64(std::span<const std::byte>(w.Bytes));
 }
+
+ScriptComponentLayout ComputeScriptComponentLayout(const ScriptComponentDef& component)
+{
+    ScriptComponentLayout layout;
+    uint16_t end = 0;
+    for (const ScriptComponentField& field : component.Fields)
+    {
+        const size_t scalarSize = ScriptScalarSize(field.Scalar);
+        const uint16_t leafEnd =
+            static_cast<uint16_t>(field.ByteOffset + scalarSize * std::max<uint8_t>(field.ArrayCount, 1));
+        end = std::max(end, leafEnd);
+        layout.Alignment = std::max(layout.Alignment, scalarSize);
+    }
+    layout.Size = (end + layout.Alignment - 1) & ~(layout.Alignment - 1);
+    return layout;
+}

@@ -262,10 +262,73 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         }
     }
 
+    // Structural changes: enqueue onto the tick's CommandBuffer (deferred to
+    // the flush at the tick boundary), so a callback never restructures the
+    // ECS mid-iteration.
+    if (name == "commands.destroy")
+    {
+        const EntityId target = UnpackScriptEntity(window[0]);
+        if (!W.IsAlive(target))
+        {
+            return ScriptTrapCode::Entity;
+        }
+        Commands.DestroyEntity(target);
+        return ScriptTrapCode::None;
+    }
+    if (name == "commands.remove")
+    {
+        const EntityId target = UnpackScriptEntity(window[0]);
+        if (!W.IsAlive(target))
+        {
+            return ScriptTrapCode::Entity;
+        }
+        const auto bind = static_cast<std::uint32_t>(window[1]);
+        Commands.RemoveComponentRaw(target, Linked->Components[bind], /*size*/ 0);
+        return ScriptTrapCode::None;
+    }
+    if (name == "commands.add")
+    {
+        const EntityId target = UnpackScriptEntity(window[0]);
+        if (!W.IsAlive(target))
+        {
+            return ScriptTrapCode::Entity;
+        }
+        const auto bind = static_cast<std::uint32_t>(window[1]);
+        const std::int32_t schemaIndex = Linked->ComponentSchemaIndex[bind];
+        if (schemaIndex < 0)
+        {
+            // Host components are not addable from a script in v1.
+            return ScriptTrapCode::Arg;
+        }
+        const ScriptComponentDef& schema =
+            Linked->Module->Components[static_cast<std::size_t>(schemaIndex)];
+        const ScriptComponentLayout layout = ComputeScriptComponentLayout(schema);
+        // Marshal the record image (window[2..]) into component bytes: the
+        // image is laid out leaf by leaf in schema order, matching codegen.
+        std::vector<std::byte> bytes(layout.Size, std::byte{ 0 });
+        std::uint32_t slot = 2;
+        for (const ScriptComponentField& field : schema.Fields)
+        {
+            const auto scalar = static_cast<ScriptScalarKind>(field.Scalar);
+            const std::size_t scalarSize = ScriptScalarSize(field.Scalar);
+            for (std::uint8_t e = 0; e < std::max<std::uint8_t>(field.ArrayCount, 1); ++e)
+            {
+                if (slot < window.size())
+                {
+                    StoreScalar(bytes.data() + field.ByteOffset + e * scalarSize, scalar,
+                                window[slot]);
+                }
+                ++slot;
+            }
+        }
+        Commands.AddComponentRaw(target, Linked->Components[bind], bytes.data(), layout.Size,
+                                 layout.Alignment);
+        return ScriptTrapCode::None;
+    }
+
     (void)argCount;
-    // Physics, movement, cues, and commands need their owning systems present;
-    // the behavior bridge supplies component, tag, and random access. A call
-    // to an unsupported host function in this context is a deterministic Arg
-    // trap rather than silent success.
+    // Physics, movement, and cues need their owning systems present (ability/
+    // trigger bridges). Unsupported here is a deterministic Arg trap rather
+    // than silent success.
     return ScriptTrapCode::Arg;
 }

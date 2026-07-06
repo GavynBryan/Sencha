@@ -97,23 +97,10 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
     for (const ScriptComponentDef& component : module->Components)
     {
         const std::string_view name = module->GetString(component.Name);
-        // Layout: the largest leaf scalar sets the size and alignment; the
-        // schema already packed offsets, so the total size is the end of the
-        // last leaf rounded to the max scalar size.
-        std::uint16_t end = 0;
-        std::size_t maxScalar = 1;
-        for (const ScriptComponentField& field : component.Fields)
-        {
-            const std::size_t scalarSize = ScriptScalarSize(field.Scalar);
-            const std::uint16_t leafEnd = static_cast<std::uint16_t>(
-                field.ByteOffset + scalarSize * field.ArrayCount);
-            end = std::max(end, leafEnd);
-            maxScalar = std::max(maxScalar, scalarSize);
-        }
-        const std::size_t size = (end + maxScalar - 1) & ~(maxScalar - 1);
+        const ScriptComponentLayout layout = ComputeScriptComponentLayout(component);
         const ComponentTypeId typeId =
             MakeComponentTypeId(std::string("script.") + std::string(name));
-        world.RegisterComponentRaw(name, typeId, size, maxScalar, /*isTag*/ false);
+        world.RegisterComponentRaw(name, typeId, layout.Size, layout.Alignment, /*isTag*/ false);
     }
 
     // 2. Tag binds.
@@ -137,12 +124,15 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
         linked.Tags.push_back(*id);
     }
 
-    // 3. Component binds (has(), commands).
+    // 3. Component binds (has(), commands). For script components the module
+    // schema index is recorded so commands.add can marshal the record image.
     linked.Components.reserve(module->ComponentBinds.size());
+    linked.ComponentSchemaIndex.reserve(module->ComponentBinds.size());
     for (const std::uint32_t nameIdx : module->ComponentBinds)
     {
         const std::string_view name = module->GetString(nameIdx);
         ComponentId id = InvalidComponentId;
+        std::int32_t schemaIndex = -1;
         if (const HostComponentLayout* host = FindHostComponent(name))
         {
             id = world.GetComponentIdByType(host->Type);
@@ -151,6 +141,14 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
         {
             id = world.GetComponentIdByType(
                 MakeComponentTypeId(std::string("script.") + std::string(name)));
+            for (std::size_t i = 0; i < module->Components.size(); ++i)
+            {
+                if (module->GetString(module->Components[i].Name) == name)
+                {
+                    schemaIndex = static_cast<std::int32_t>(i);
+                    break;
+                }
+            }
         }
         if (id == InvalidComponentId)
         {
@@ -158,6 +156,7 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
                                     "registered in this world", name));
         }
         linked.Components.push_back(id);
+        linked.ComponentSchemaIndex.push_back(schemaIndex);
     }
 
     // 4. Field binds.

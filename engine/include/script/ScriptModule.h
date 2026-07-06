@@ -250,3 +250,13 @@ struct ScriptModuleParseResult
 // offsets, array counts). Equal hashes mean a hot reload can swap the module
 // in place; a change routes to the world-reload path (spec answer 17).
 [[nodiscard]] uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module);
+
+// Storage footprint of a script component: the end of its last leaf rounded up
+// to the largest leaf scalar's alignment. Shared by registration and the
+// command-buffer marshalling path so they agree byte for byte.
+struct ScriptComponentLayout
+{
+    size_t Size = 0;
+    size_t Alignment = 1;
+};
+[[nodiscard]] ScriptComponentLayout ComputeScriptComponentLayout(const ScriptComponentDef& component);

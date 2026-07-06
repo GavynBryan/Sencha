@@ -161,6 +161,51 @@ TEST(ScriptBehaviorE2E, RunToRunReproducible)
     }
 }
 
+TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
+{
+    // A behavior adds a script component to itself on spawn; the deferred
+    // command applies at the tick boundary and the next tick sees the values.
+    ScriptCompileResult compiled = CompileScript(
+        "adder.t",
+        "component Marker {\n"
+        "    count: i32 = 0\n"
+        "    weight: f32 = 0.0\n"
+        "}\n"
+        "behavior Adder {\n"
+        "    fn spawn(ctx: BehaviorContext) {\n"
+        "        ctx.commands.add(ctx.entity, Marker { count: 7, weight: 2.5 })\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const ComponentId markerId =
+        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    ASSERT_NE(markerId, InvalidComponentId);
+
+    const EntityId entity = world.CreateEntity();
+    ScriptBehavior behavior{};
+    behavior.LinkedModule = link.ModuleIndex;
+    world.AddComponent(entity, behavior);
+
+    ScriptBehaviorSystem system;
+    system.Step(world, 0, 1.0f / 60.0f); // spawn enqueues the add; flush applies it
+    ASSERT_TRUE(world.HasComponent(entity, markerId));
+
+    struct MarkerBytes { int32_t Count; float Weight; };
+    const MarkerBytes* stored =
+        static_cast<const MarkerBytes*>(world.GetComponentRaw(entity, markerId));
+    ASSERT_NE(stored, nullptr);
+    EXPECT_EQ(stored->Count, 7);
+    EXPECT_FLOAT_EQ(stored->Weight, 2.5f);
+}
+
 TEST(ScriptLink, ReportsMissingComponent)
 {
     // A script naming a host component the world has not registered fails to
