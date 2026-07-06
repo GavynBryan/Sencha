@@ -4,19 +4,15 @@
 
 #include <algorithm>
 
-namespace
+std::string MaterialDisplayName(std::string_view virtualPath)
 {
-    // "asset://materials/dev/gray.smat" -> "materials/dev/gray"
-    std::string FriendlyName(std::string_view path)
-    {
-        constexpr std::string_view scheme = "asset://";
-        std::string_view name = path;
-        if (name.substr(0, scheme.size()) == scheme)
-            name.remove_prefix(scheme.size());
-        if (name.size() >= 5 && name.substr(name.size() - 5) == ".smat")
-            name.remove_suffix(5);
-        return std::string(name);
-    }
+    constexpr std::string_view scheme = "asset://";
+    std::string_view name = virtualPath;
+    if (name.substr(0, scheme.size()) == scheme)
+        name.remove_prefix(scheme.size());
+    if (name.size() >= 5 && name.substr(name.size() - 5) == ".smat")
+        name.remove_suffix(5);
+    return std::string(name);
 }
 
 MaterialLibrary::MaterialLibrary(LoggingProvider& logging)
@@ -50,7 +46,7 @@ void MaterialLibrary::Rescan(std::span<const std::string> roots)
         {
             if (record.Type != AssetType::Material)
                 continue;
-            Entries.push_back(MaterialAsset{ record.Path, FriendlyName(record.Path) });
+            Entries.push_back(MaterialAsset{ record.Path, MaterialDisplayName(record.Path) });
         }
     }
 

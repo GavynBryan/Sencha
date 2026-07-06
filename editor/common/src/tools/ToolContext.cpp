@@ -13,7 +13,8 @@ ToolContext::ToolContext(CommandStack& commandStack,
                          BrushCreationSettings& brushCreate,
                          EditorOverlayState& overlay,
                          ManipulationSink& sink,
-                         EdgeCutSettings& edgeCut)
+                         EdgeCutSettings& edgeCut,
+                         ActiveMaterialState& activeMaterial)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
@@ -28,5 +29,6 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Overlay(overlay)
     , Sink(sink)
     , EdgeCut(edgeCut)
+    , ActiveMaterial(activeMaterial)
 {
 }

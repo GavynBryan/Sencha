@@ -20,7 +20,8 @@
 
 class EditorUiFeature;
 class EditorConsolePanel;
-class MaterialPanel;
+class MaterialBrowserPanel;
+class MaterialThumbnailCache;
 class ViewportPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
@@ -108,13 +109,14 @@ private:
     void ExportSelectionGlb();
     [[nodiscard]] bool SelectionHasBakedBrush() const;
 
-    ViewportPanel* Viewports = nullptr;
+    ViewportPanel* PerspectivePanel = nullptr;
+    ViewportPanel* OrthoPanel = nullptr;
+    // Held for the Active Material panel's Browse jump (Reveal()).
+    MaterialBrowserPanel* Browser = nullptr;
     // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
     // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
     EditorRenderFeature* RenderFeature = nullptr;
     EditorConsolePanel* ConsolePanel = nullptr;
-    // Held for the copy/paste-projection shortcuts (the panel owns the stash).
-    MaterialPanel* MaterialsPanel = nullptr;
     EditorUiFeature* UiFeature = nullptr;
     EditorViewportCameraSystem* CameraSystem = nullptr;
     EditorFrameHook* FrameHook = nullptr;
@@ -143,6 +145,11 @@ private:
     std::unique_ptr<EditorToolSidebar> ToolSidebar;
     std::unique_ptr<EditorStatusBar> StatusBar;
     std::unique_ptr<MaterialLibrary> Materials;
+    // Thumbnail GPU residency for the browser and active-material previews.
+    // Reset explicitly in the destructor after the render feature releases its
+    // scene resources and before Assets goes away (the bindings inside release
+    // through the asset system and the live ImGui backend).
+    std::unique_ptr<MaterialThumbnailCache> Thumbnails;
 
     GameModuleLoader ModuleLoader;
     LoadedModule     GameModule;

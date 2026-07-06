@@ -8,6 +8,8 @@
 #include "input/ViewportToolDispatcher.h"
 #include "editmodes/PivotState.h"
 #include "interaction/InteractionHost.h"
+#include "meshedit/ActiveMaterialState.h"
+#include "meshedit/FaceMaterialEdits.h"
 #include "meshedit/MeshEditService.h"
 #include "overlay/EditorOverlayState.h"
 #include "render/PreviewBuffer.h"
@@ -27,6 +29,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 class LoggingProvider;
 
@@ -105,13 +108,30 @@ public:
     // has not been moved), then clears the transient pivot. One undoable step.
     void SetSelectedBrushOriginToPivot();
 
+    // Applies the active material to every selected face, one undoable step per
+    // brush. No-op when no material is active or nothing face-like is selected.
+    void ApplyActiveMaterialToSelectedFaces();
+
+    // Stash the primary selected face's material + projection into UvClipboard
+    // (kept when nothing face-like is selected, so a failed copy never clobbers
+    // a good clipboard).
+    void CopySelectedFaceProjection();
+    // Apply the clipboard's material + projection to every selected face.
+    void PasteFaceProjectionToSelection();
+
     WorldDocument World;
     WorldViewSettings WorldView;
-    ViewportLayout Layout = ViewportLayout::MakeFourWay();
+    ViewportLayout Layout = ViewportLayout::MakeDefault();
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
     MeshEditService MeshEdit;
+    // Editor-wide texturing state: the browser and viewport sampling write it,
+    // the apply verbs read it.
+    ActiveMaterialState ActiveMaterial;
+    // Face projection clipboard. Lives here (not in a panel) so the copy/paste
+    // shortcuts work with every panel closed.
+    std::optional<FaceMaterialClipboard> UvClipboard;
     GridSettings Grid;
     BrushCreationSettings BrushCreate;
     EdgeCutSettings EdgeCut;

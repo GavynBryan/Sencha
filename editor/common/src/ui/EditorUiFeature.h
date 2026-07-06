@@ -135,6 +135,9 @@ private:
     ThemePreferences ThemePrefs;
     // Forces a default-layout rebuild on the next frame (first run / View>Reset).
     bool LayoutDirty = false;
+    // Front tabs to raise on the frame after a layout rebuild (window titles of
+    // tab-group nodes; SetWindowFocus needs the windows to exist first).
+    std::vector<std::string> PendingTabFocus;
     // 9-slice texture skin (owned here; released before the ImGui backend shuts
     // down since it holds ImGui descriptor sets). Null if textures didn't load.
     std::unique_ptr<EditorSkin> Skin;

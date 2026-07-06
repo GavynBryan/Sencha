@@ -168,20 +168,15 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         lights.AmbientGround = Vec<3>(groundR, groundG, groundB);
     }
 
-    // Render only what the panel lays out: every leaf in quad mode, just the active
-    // viewport in single mode (the others hold stale screen rects).
+    // Render every viewport that is actually on screen. A hidden panel zeroes its
+    // viewport's rect, so a degenerate rect means "not shown this frame"; its
+    // target is pruned below and rebuilt when the panel reappears.
     std::vector<EditorViewport*> live;
-    if (Layout.GetMode() == LayoutMode::Single)
-    {
-        if (EditorViewport* active = Layout.Active())
-            live.push_back(active);
-    }
-    else
-    {
-        for (const auto& viewport : Layout.All())
-            if (viewport != nullptr)
-                live.push_back(&*viewport);
-    }
+    for (const auto& viewport : Layout.All())
+        if (viewport != nullptr
+            && viewport->RegionMax.x > viewport->RegionMin.x
+            && viewport->RegionMax.y > viewport->RegionMin.y)
+            live.push_back(&*viewport);
 
     std::vector<ViewportId> liveIds;
     liveIds.reserve(live.size());

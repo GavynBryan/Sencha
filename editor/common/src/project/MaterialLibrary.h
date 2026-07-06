@@ -2,6 +2,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class LoggingProvider;
@@ -21,6 +22,12 @@ struct MaterialAsset
     std::string Path;        // virtual path, e.g. asset://materials/dev/gray.smat
     std::string DisplayName; // friendly label, e.g. materials/dev/gray
 };
+
+// The friendly label for a material's virtual path: the one rule every panel
+// shares with Rescan, so an AssetRef held outside the library (active material,
+// clipboard) displays identically to a scanned entry.
+// "asset://materials/dev/gray.smat" -> "materials/dev/gray"
+[[nodiscard]] std::string MaterialDisplayName(std::string_view virtualPath);
 
 class MaterialLibrary
 {

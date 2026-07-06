@@ -1,7 +1,6 @@
 #include "ViewportPanel.h"
 
 #include "ui/EditorUiStyle.h"
-#include "fonts/IconsFontAwesome6.h"
 
 #include "EditorTheme.h"
 #include "overlay/EditorOverlayState.h"
@@ -27,22 +26,32 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
 }
 
 ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
-                             ViewportTargetCache& targets)
+                             ViewportTargetCache& targets, std::string title, DockSlot slot, float dockWeight,
+                             ViewportId viewport)
     : Layout(layout)
     , Marquee(marquee)
     , Overlay(overlay)
     , Targets(targets)
+    , Title(std::move(title))
+    , Slot(slot)
+    , Weight(dockWeight)
+    , Viewport(viewport)
 {
 }
 
-std::string_view ViewportPanel::GetTitle() const
+void ViewportPanel::ClearViewportRegion()
 {
-    return "Viewport";
+    RegionHovered = false;
+    if (EditorViewport* viewport = Layout.Find(Viewport))
+    {
+        viewport->RegionMin = ImVec2(0.0f, 0.0f);
+        viewport->RegionMax = ImVec2(0.0f, 0.0f);
+    }
 }
 
 void ViewportPanel::OnDraw()
 {
-    // Dock-managed: the host docks this into the central node (see EditorUiFeature).
+    // Dock-managed: the host docks this into its slot (see EditorUiFeature).
     // NoBackground keeps the window transparent so the 3D scene — drawn into the
     // swapchain behind ImGui and scissored to RegionMin/Max — shows through.
     const ImGuiWindowFlags windowFlags =
@@ -50,117 +59,31 @@ void ViewportPanel::OnDraw()
         | ImGuiWindowFlags_NoScrollWithMouse
         | ImGuiWindowFlags_NoBackground;
 
-    // Recomputed each frame as the leaves draw; OR-ed across all viewports.
     RegionHovered = false;
     RegionRects.clear();
 
-    if (!ImGui::Begin(GetTitle().data(), &Visible, windowFlags))
+    if (!ImGui::Begin(Title.c_str(), &Visible, windowFlags))
     {
+        // Collapsed or fully clipped: no rect was drawn this frame, so drop the
+        // stale one; input must not route to a view that is not on screen.
+        ClearViewportRegion();
         ImGui::End();
         return;
     }
 
-    DrawLayoutToggle();
-
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    if (Layout.GetMode() == LayoutMode::Single)
-        DrawSingleView(avail);
-    else
-        DrawNode(Layout.Tree(), avail);
+    if (EditorViewport* viewport = Layout.Find(Viewport))
+        DrawViewport(*viewport, ImGui::GetContentRegionAvail());
 
     FillGapsBehindViewports();
 
     ImGui::End();
 }
 
-void ViewportPanel::DrawLayoutToggle()
-{
-    const bool single = Layout.GetMode() == LayoutMode::Single;
-    if (ImGui::SmallButton(single ? ICON_FA_TABLE_CELLS_LARGE : ICON_FA_WINDOW_MAXIMIZE))
-    {
-        Layout.SetMode(single ? LayoutMode::Quad : LayoutMode::Single);
-        if (Layout.GetMode() == LayoutMode::Single)
-            SyncTabToOrientation = true;
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(single ? "Switch to four-way layout" : "Switch to single tabbed viewport");
-
-    // In single mode the orientation tabs share this row with the toggle.
-    if (single)
-        ImGui::SameLine();
-}
-
-void ViewportPanel::DrawSingleView(ImVec2 size)
-{
-    EditorViewport* viewport = Layout.Active();
-    if (viewport == nullptr && !Layout.All().empty())
-        viewport = Layout.All().front().get();
-    if (viewport == nullptr)
-        return;
-
-    // The tab bar both reflects and drives the single viewport's orientation. On
-    // the frame we entered single mode, force-select the current orientation;
-    // otherwise the active tab is authoritative so clicks switch the view.
-    if (ImGui::BeginTabBar("##ViewOrientationTabs", ImGuiTabBarFlags_None))
-    {
-        for (ViewportOrientation orientation : AllViewportOrientations())
-        {
-            ImGuiTabItemFlags flags = 0;
-            if (SyncTabToOrientation && viewport->Orientation == orientation)
-                flags |= ImGuiTabItemFlags_SetSelected;
-            if (ImGui::BeginTabItem(Traits(orientation).Label, nullptr, flags))
-            {
-                if (!SyncTabToOrientation && viewport->Orientation != orientation)
-                    viewport->ApplyOrientation(orientation);
-                ImGui::EndTabItem();
-            }
-        }
-        ImGui::EndTabBar();
-    }
-    SyncTabToOrientation = false;
-
-    DrawViewport(*viewport, ImGui::GetContentRegionAvail(), /*showOrientationSelector=*/false);
-}
-
-void ViewportPanel::DrawNode(const LayoutNode& node, ImVec2 size)
-{
-    if (node.Kind == LayoutNode::NodeKind::Leaf)
-    {
-        EditorViewport* viewport = Layout.Find(node.Viewport);
-        if (viewport == nullptr)
-            return;
-
-        ImGui::PushID(static_cast<int>(viewport->Id.Value));
-        DrawViewport(*viewport, size);
-        ImGui::PopID();
-        return;
-    }
-
-    const ImGuiStyle& style = ImGui::GetStyle();
-    if (node.SplitAxis == LayoutNode::Axis::Horizontal)
-    {
-        const float width = std::max(0.0f, size.x - style.ItemSpacing.x);
-        const float firstWidth = width * node.Ratio;
-        const float secondWidth = width - firstWidth;
-        DrawNode(*node.First, ImVec2(firstWidth, size.y));
-        ImGui::SameLine(0.0f, style.ItemSpacing.x);
-        DrawNode(*node.Second, ImVec2(secondWidth, size.y));
-        return;
-    }
-
-    const float height = std::max(0.0f, size.y - style.ItemSpacing.y);
-    const float firstHeight = height * node.Ratio;
-    const float secondHeight = height - firstHeight;
-    DrawNode(*node.First, ImVec2(size.x, firstHeight));
-    DrawNode(*node.Second, ImVec2(size.x, secondHeight));
-}
-
-void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size, bool showOrientationSelector)
+void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 {
     ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_Borders, kViewportChildFlags);
 
-    if (showOrientationSelector)
-        DrawOrientationSelector(viewport);
+    DrawOrientationSelector(viewport);
 
     const ImVec2 renderSize(
         std::max(0.0f, ImGui::GetContentRegionAvail().x),
@@ -280,11 +203,10 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
 void ViewportPanel::FillGapsBehindViewports()
 {
     // The panel window is NoBackground so the 3D scene shows through the viewport
-    // region rects. Everything else (splitter gaps, per-viewport header strips, the
-    // toggle row) would otherwise show the engine's bright clear color. Fill that
-    // complement with the dark panel color: build a grid from the region-rect edges
-    // and fill each cell whose center lies outside every region. General over the
-    // single/quad/arbitrary-split layouts.
+    // region rect. Everything else (the header strip, border gaps) would otherwise
+    // show the engine's bright clear color. Fill that complement with the dark
+    // panel color: build a grid from the region-rect edges and fill each cell
+    // whose center lies outside every region.
     const ImVec2 wp = ImGui::GetWindowPos();
     const ImVec2 cMin(wp.x + ImGui::GetWindowContentRegionMin().x,
                       wp.y + ImGui::GetWindowContentRegionMin().y);
@@ -345,8 +267,13 @@ void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
 
     for (ViewportOrientation orientation : AllViewportOrientations())
     {
+        // The ortho view stays orthographic: only the fixed ortho orientations
+        // are offered (no Perspective, no camera-axis User view).
+        const OrientationTraits& traits = Traits(orientation);
+        if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
+            continue;
         const bool selected = viewport.Orientation == orientation;
-        if (ImGui::Selectable(Traits(orientation).Label, selected))
+        if (ImGui::Selectable(traits.Label, selected))
             viewport.ApplyOrientation(orientation);
         if (selected)
             ImGui::SetItemDefaultFocus();

@@ -4,9 +4,12 @@
 #include "ui/ScopedPanel.h"
 
 #include "commands/CommandStack.h"
+#include "document/WorldDocument.h"
 #include "meshedit/IMeshEditTarget.h"
 #include "meshedit/MeshEditService.h"
+#include "project/MaterialLibrary.h"
 #include "selection/SelectionService.h"
+#include "meshedit/ActiveMaterialState.h"
 
 #include <imgui.h>
 
@@ -16,11 +19,17 @@ MeshEditPanel::MeshEditPanel(std::function<IMeshEditTarget*()> target,
                              SelectionService& selection,
                              MeshEditService& meshEdit,
                              CommandStack& commands,
+                             WorldDocument& world,
+                             ActiveMaterialState& activeMaterial,
+                             std::optional<FaceMaterialClipboard>& uvClipboard,
                              ObjectActions objectActions)
     : TargetResolver(std::move(target))
     , Selection(selection)
     , MeshEdit(meshEdit)
     , Commands(commands)
+    , World(world)
+    , ActiveMaterial(activeMaterial)
+    , UvClipboard(uvClipboard)
     , Objects(std::move(objectActions))
 {
 }
@@ -152,6 +161,38 @@ void MeshEditPanel::DrawFaceVerbs()
         Objects.SeparateFaces();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Split these faces into a new brush (the source opens where they were).");
+
+    DrawTextureTools();
+
+    ImGui::SeparatorText("Modify Texture");
+    Uv.Draw(Target(), Selection, Commands, UvClipboard);
+}
+
+void MeshEditPanel::DrawTextureTools()
+{
+    ImGui::SeparatorText("Texture Tools");
+
+    if (ActiveMaterial.Active.IsValid())
+        ImGui::TextUnformatted(MaterialDisplayName(ActiveMaterial.Active.Path).c_str());
+    else
+        ImGui::TextDisabled("No active material (pick one in Materials,\nor Shift+RClick a face).");
+
+    if (!ActiveMaterial.Active.IsValid())
+        ImGui::BeginDisabled();
+    if (ImGui::Button("Apply"))
+        ApplyMaterialToSelectedFaces(Target(), Selection, Commands, ActiveMaterial.Active);
+    if (!ActiveMaterial.Active.IsValid())
+        ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Apply the active material to the selected faces.  [Shift+T]");
+
+    ImGui::SameLine();
+    if (ImGui::Button("Clear"))
+        ApplyMaterialToSelectedFaces(Target(), Selection, Commands, AssetRef{});
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Drop the faces' own material; they inherit the level default.");
+
+    ImGui::TextDisabled("Level default: %s", World.FocusDocument().GetDefaultMaterial().Path.c_str());
 }
 
 void MeshEditPanel::DrawEdgeVerbs()

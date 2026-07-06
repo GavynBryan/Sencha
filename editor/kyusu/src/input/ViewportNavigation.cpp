@@ -30,6 +30,11 @@ InputConsumed ViewportNavigation::OnInput(const InputEvent& event, PointerCaptur
 
 InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)
 {
+    // Shift+Right is the material-sample chord (ViewportToolDispatcher, next in
+    // the router chain); starting fly-look here would eat the click.
+    if (e.Button == MouseButton::Right && e.Modifiers.Shift)
+        return InputConsumed::No;
+
     if (e.Button != MouseButton::Right && e.Button != MouseButton::Middle)
         return InputConsumed::No;
 

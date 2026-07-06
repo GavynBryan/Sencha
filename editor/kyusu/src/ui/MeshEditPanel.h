@@ -1,12 +1,16 @@
 #pragma once
 
+#include "FaceUvControls.h"
 #include "ui/IEditorPanel.h"
 
 #include <functional>
+#include <optional>
 
 class CommandStack;
 class MeshEditService;
 class SelectionService;
+class WorldDocument;
+struct ActiveMaterialState;
 struct IMeshEditTarget;
 
 // The contextual mesh-edit verb panel: per-element-mode operations (extrude,
@@ -40,16 +44,23 @@ public:
                   SelectionService& selection,
                   MeshEditService& meshEdit,
                   CommandStack& commands,
+                  WorldDocument& world,
+                  ActiveMaterialState& activeMaterial,
+                  std::optional<FaceMaterialClipboard>& uvClipboard,
                   ObjectActions objectActions);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    // Shares the left column with the Active Material panel; this keeps the
+    // larger share.
+    float GetDockWeight() const override { return 1.8f; }
 
 private:
     void DrawObjectVerbs();
     void DrawFaceVerbs();
     void DrawEdgeVerbs();
+    void DrawTextureTools();
 
     [[nodiscard]] IMeshEditTarget& Target() const;
 
@@ -57,6 +68,10 @@ private:
     SelectionService& Selection;
     MeshEditService& MeshEdit;
     CommandStack& Commands;
+    WorldDocument& World;
+    ActiveMaterialState& ActiveMaterial;
+    std::optional<FaceMaterialClipboard>& UvClipboard;
+    FaceUvControls Uv;
     ObjectActions Objects;
 
     float ExtrudeDistance = 1.0f;

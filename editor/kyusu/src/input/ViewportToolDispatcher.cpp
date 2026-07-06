@@ -2,11 +2,14 @@
 
 #include "input/InputRouter.h"
 
+#include "brush/BrushMesh.h"
+#include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "editmodes/EditSessionHost.h"
 #include "interaction/InteractionHost.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElements.h"
+#include "meshedit/ActiveMaterialState.h"
 #include "overlay/EditorOverlayState.h"
 #include "overlay/SelectionLabels.h"
 #include "selection/SelectionService.h"
@@ -62,8 +65,37 @@ void ViewportToolDispatcher::Abort()
     Recognizer.Reset();
 }
 
+void ViewportToolDispatcher::SampleFaceMaterial(const PointerDownEvent& e)
+{
+    EditorViewport* vp = Layout.Find(e.Viewport);
+    if (vp == nullptr)
+        return;
+
+    const SelectableRef picked = Context.Picking.Pick(*vp, e.Position, Context.Scene,
+                                                      { .Mode = BrushPickMode::FaceOnly });
+    if (!picked.IsFace())
+        return;
+    const BrushMesh* mesh = Context.Scene.TryGetBrushMesh(picked.Entity);
+    if (mesh == nullptr || picked.ElementId >= mesh->Faces.size())
+        return;
+
+    // Sample what the face RENDERS: an inherit-default face yields the level
+    // default, not an empty ref.
+    Context.ActiveMaterial.Active = EffectiveMaterial(mesh->Faces[picked.ElementId].Material,
+                                                      Context.Document.GetDefaultMaterial());
+}
+
 InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)
 {
+    // Shift+Right samples a face's material into the active material; fly-look
+    // explicitly yields this chord (ViewportNavigation). Consumed even on a
+    // miss: the gesture was aimed at the scene either way.
+    if (e.Button == MouseButton::Right && e.Modifiers.Shift)
+    {
+        SampleFaceMaterial(e);
+        return InputConsumed::Yes;
+    }
+
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 

@@ -224,6 +224,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/FaceMaterialEdits.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp

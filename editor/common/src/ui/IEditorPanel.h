@@ -29,6 +29,11 @@ struct IEditorPanel
     // panel gets twice the space of a weight-1 neighbor).
     [[nodiscard]] virtual float GetDockWeight() const { return 1.0f; }
 
+    // Panels in the same slot sharing a non-negative group dock into ONE node
+    // (ImGui tabs them) instead of splitting it; -1 keeps a panel in its own
+    // weighted slice. Groups are meaningful only within a slot.
+    [[nodiscard]] virtual int GetDockTabGroup() const { return -1; }
+
     // Shared show/hide state (the View menu toggles this uniformly). Panels pass
     // &Visible to ImGui::Begin's p_open so the window close box stays in sync.
     [[nodiscard]] bool IsVisible() const { return Visible; }

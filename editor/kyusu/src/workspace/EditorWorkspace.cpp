@@ -66,7 +66,8 @@ void EditorWorkspace::BuildInteractionState()
         BrushCreate,
         Overlay,
         *Sink,
-        EdgeCut);
+        EdgeCut,
+        ActiveMaterial);
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());
@@ -518,6 +519,28 @@ void EditorWorkspace::SetSelectedBrushOriginToPivot()
         Commands->Execute(std::move(command));
         Pivot.Override.reset(); // the origin is now the pivot; drop the transient
     }
+}
+
+void EditorWorkspace::ApplyActiveMaterialToSelectedFaces()
+{
+    if (!ActiveMaterial.Active.IsValid() || Sink == nullptr || Commands == nullptr)
+        return;
+    ApplyMaterialToSelectedFaces(*Sink, Selection, *Commands, ActiveMaterial.Active);
+}
+
+void EditorWorkspace::CopySelectedFaceProjection()
+{
+    if (Sink == nullptr)
+        return;
+    if (auto copied = ::CopySelectedFaceProjection(*Sink, Selection))
+        UvClipboard = std::move(copied);
+}
+
+void EditorWorkspace::PasteFaceProjectionToSelection()
+{
+    if (!UvClipboard.has_value() || Sink == nullptr || Commands == nullptr)
+        return;
+    PasteFaceProjection(*Sink, Selection, *Commands, *UvClipboard);
 }
 
 void EditorWorkspace::DeleteSelection()

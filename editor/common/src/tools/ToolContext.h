@@ -18,6 +18,7 @@ struct BrushCreationSettings;
 struct EditorOverlayState;
 struct ManipulationSink;
 struct EdgeCutSettings;
+struct ActiveMaterialState;
 
 struct ToolContext
 {
@@ -34,7 +35,8 @@ struct ToolContext
                 BrushCreationSettings& brushCreate,
                 EditorOverlayState& overlay,
                 ManipulationSink& sink,
-                EdgeCutSettings& edgeCut);
+                EdgeCutSettings& edgeCut,
+                ActiveMaterialState& activeMaterial);
 
     CommandStack& Commands;
     SelectionService& Selection;
@@ -51,6 +53,9 @@ struct ToolContext
     // The brush-edit backend, for tools that preview/commit mesh edits (the edge cut).
     ManipulationSink& Sink;
     EdgeCutSettings& EdgeCut;
+    // The editor-wide texturing material: new brushes stamp it onto their
+    // faces, Shift+RClick sampling writes it.
+    ActiveMaterialState& ActiveMaterial;
     // Lets a tool hand off to another tool by id (e.g. the edge cut switches to
     // Select after committing). Set by the workspace once the registry exists.
     std::function<void(std::string_view)> ActivateTool;

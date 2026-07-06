@@ -31,34 +31,72 @@
 
 namespace
 {
-// Docks a region node's panels along one axis, each taking its dock weight's
-// share of the region. remainderDir is where the not-yet-docked panels go
-// (Down stacks top-to-bottom, Right packs left-to-right). Single-panel regions
-// just dock the one window.
-void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiDir remainderDir)
+// Docks a region node's panels along one axis, each unit taking its dock
+// weight's share of the region. remainderDir is where the not-yet-docked units
+// go (Down stacks top-to-bottom, Right packs left-to-right). Panels sharing a
+// non-negative tab group form ONE unit: every member docks into the same node
+// and ImGui tabs them (unit weight = the largest member weight). The first
+// visible member of a multi-panel unit is recorded in outFrontTabs so the host
+// can raise it once the windows exist (a rebuild would otherwise leave an
+// arbitrary tab selected).
+void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiDir remainderDir,
+                std::vector<std::string>& outFrontTabs)
 {
-    float totalWeight = 0.0f;
-    for (const IEditorPanel* panel : panels)
-        totalWeight += panel->GetDockWeight();
+    struct DockUnit
+    {
+        std::vector<IEditorPanel*> Members;
+        float Weight = 0.0f;
+        int TabGroup = -1;
+    };
+    std::vector<DockUnit> units;
+    for (IEditorPanel* panel : panels)
+    {
+        DockUnit* unit = nullptr;
+        const int group = panel->GetDockTabGroup();
+        if (group >= 0)
+            for (DockUnit& candidate : units)
+                if (candidate.TabGroup == group)
+                {
+                    unit = &candidate;
+                    break;
+                }
+        if (unit == nullptr)
+        {
+            units.push_back(DockUnit{ .TabGroup = group });
+            unit = &units.back();
+        }
+        unit->Members.push_back(panel);
+        unit->Weight = std::max(unit->Weight, panel->GetDockWeight());
+    }
 
-    const int count = static_cast<int>(panels.size());
+    float totalWeight = 0.0f;
+    for (const DockUnit& unit : units)
+        totalWeight += unit.Weight;
+
+    const int count = static_cast<int>(units.size());
     for (int i = 0; i < count; ++i)
     {
+        ImGuiID node = region;
         if (i < count - 1)
         {
-            // Slice this panel's weighted share off; recurse into the remainder.
+            // Slice this unit's weighted share off; recurse into the remainder.
             ImGuiID slice = 0;
-            const float weight = panels[i]->GetDockWeight();
+            const float weight = units[i].Weight;
             const float remainderRatio = (totalWeight - weight) / totalWeight;
-            const ImGuiID remainder =
-                ImGui::DockBuilderSplitNode(region, remainderDir, remainderRatio, nullptr, &slice);
-            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), slice);
-            region = remainder;
+            region = ImGui::DockBuilderSplitNode(region, remainderDir, remainderRatio, nullptr, &slice);
+            node = slice;
             totalWeight -= weight;
         }
-        else
+        for (IEditorPanel* member : units[i].Members)
+            ImGui::DockBuilderDockWindow(member->GetTitle().data(), node);
+        if (units[i].Members.size() > 1)
         {
-            ImGui::DockBuilderDockWindow(panels[i]->GetTitle().data(), region);
+            for (IEditorPanel* member : units[i].Members)
+                if (member->IsVisible())
+                {
+                    outFrontTabs.emplace_back(member->GetTitle());
+                    break;
+                }
         }
     }
 }
@@ -71,7 +109,8 @@ void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiD
 // here — placement is declarative on the panels.
 void BuildDefaultDockLayout(ImGuiID dockId,
                             const std::vector<std::unique_ptr<IEditorPanel>>& panels,
-                            const DockLayoutRatios& ratios)
+                            const DockLayoutRatios& ratios,
+                            std::vector<std::string>& outFrontTabs)
 {
     ImGui::DockBuilderRemoveNode(dockId);
     ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
@@ -102,12 +141,12 @@ void BuildDefaultDockLayout(ImGuiID dockId,
     if (!bottomPanels.empty())
     {
         const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, ratios.Bottom, nullptr, &center);
-        DockPacked(bottom, bottomPanels, ImGuiDir_Right);
+        DockPacked(bottom, bottomPanels, ImGuiDir_Right, outFrontTabs);
     }
     if (!leftPanels.empty())
     {
         const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, ratios.Left, nullptr, &center);
-        DockPacked(left, leftPanels, ImGuiDir_Down);
+        DockPacked(left, leftPanels, ImGuiDir_Down, outFrontTabs);
     }
     if (!rightPanels.empty() || !rightBottomPanels.empty())
     {
@@ -117,27 +156,27 @@ void BuildDefaultDockLayout(ImGuiID dockId,
             ImGuiID upper = 0;
             const ImGuiID lower =
                 ImGui::DockBuilderSplitNode(rightColumn, ImGuiDir_Down, ratios.RightBottom, nullptr, &upper);
-            DockPacked(upper, rightPanels, ImGuiDir_Right);
-            DockPacked(lower, rightBottomPanels, ImGuiDir_Down);
+            DockPacked(upper, rightPanels, ImGuiDir_Right, outFrontTabs);
+            DockPacked(lower, rightBottomPanels, ImGuiDir_Down, outFrontTabs);
         }
         else
         {
             // Only one of the two right regions is populated; it takes the column.
             DockPacked(rightColumn, rightPanels.empty() ? rightBottomPanels : rightPanels,
-                       rightPanels.empty() ? ImGuiDir_Down : ImGuiDir_Right);
+                       rightPanels.empty() ? ImGuiDir_Down : ImGuiDir_Right, outFrontTabs);
         }
     }
     if (!centerBottomPanels.empty())
     {
         const ImGuiID lower =
             ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, ratios.CenterBottom, nullptr, &center);
-        DockPacked(lower, centerBottomPanels, ImGuiDir_Right);
+        DockPacked(lower, centerBottomPanels, ImGuiDir_Right, outFrontTabs);
     }
 
     // The viewport owns the central node; drop its tab bar so it reads as the scene.
     if (ImGuiDockNode* centerNode = ImGui::DockBuilderGetNode(center))
         centerNode->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
-    DockPacked(center, centerPanels, ImGuiDir_Down);
+    DockPacked(center, centerPanels, ImGuiDir_Down, outFrontTabs);
 
     ImGui::DockBuilderFinish(dockId);
 }
@@ -205,6 +244,16 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    // One frame after a layout rebuild: raise the intended front tab of each
+    // tab-group node. Deferred because SetWindowFocus is by-name and the freshly
+    // docked windows only exist once they have been submitted.
+    if (!PendingTabFocus.empty())
+    {
+        for (const std::string& title : PendingTabFocus)
+            ImGui::SetWindowFocus(title.c_str());
+        PendingTabFocus.clear();
+    }
+
     DrawMainMenuBar();
     for (const std::function<void()>& chrome : ChromeBars)
     {
@@ -240,7 +289,8 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
         const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
         if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
         {
-            BuildDefaultDockLayout(dockId, Panels, LayoutRatios);
+            PendingTabFocus.clear();
+            BuildDefaultDockLayout(dockId, Panels, LayoutRatios, PendingTabFocus);
             LayoutDirty = false;
         }
         ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
@@ -400,9 +450,13 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     EditorUi::Apply(ImGui::GetStyle());
     EditorUi::LoadFonts(io);
 
+    // Every ImGuiTextureBinding costs one combined-image-sampler set: the skin,
+    // the viewport targets, and up to editor.materials.thumbnail_budget resident
+    // material thumbnails all draw from this pool, so it is sized well past that
+    // budget's default (128).
     const std::array<VkDescriptorPoolSize, 11> poolSizes{{
         { VK_DESCRIPTOR_TYPE_SAMPLER, 32 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512 },
         { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 32 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 32 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 32 },
@@ -417,7 +471,7 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = 32 * static_cast<uint32_t>(poolSizes.size());
+    poolInfo.maxSets = 1024;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 

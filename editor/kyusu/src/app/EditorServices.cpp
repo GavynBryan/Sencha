@@ -14,13 +14,15 @@
 #include "export/GltfMeshExport.h"
 #include "project/PieDriver.h"
 #include "render/EditorRenderFeature.h"
+#include "ui/ActiveMaterialPanel.h"
 #include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/InspectorPanel.h"
-#include "ui/MaterialPanel.h"
+#include "ui/MaterialBrowserPanel.h"
+#include "ui/MaterialThumbnailCache.h"
 #include "ui/MeshEditPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
@@ -106,6 +108,11 @@ EditorServices::~EditorServices()
     // Before the engine frees the graphics services the caches borrow.
     if (RenderFeature != nullptr)
         RenderFeature->ReleaseSceneResources();
+    // The thumbnail bindings release texture refs through Assets and free ImGui
+    // descriptor sets, so this must land after the render feature's release and
+    // before Assets goes away (the panels referencing the cache never touch it
+    // in their destructors).
+    Thumbnails.reset();
     SourceWatch.reset();
     Assets.reset();
     // Toolbar, StatusBar, Materials, and the project/module state release with the
@@ -200,12 +207,13 @@ void EditorServices::BuildInput()
         { "gizmo.move",            SDLK_W,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Move); } },
         { "gizmo.rotate",          SDLK_E,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Rotate); } },
         { "gizmo.scale",           SDLK_R,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Scale); } },
-        { "gizmo.space",           SDLK_T,      { .Shift = true },               [this] { Workspace->Manipulators->CycleTransformSpace(); } },
+        { "gizmo.space",           SDLK_G,      { .Ctrl = true },                [this] { Workspace->Manipulators->CycleTransformSpace(); } },
         { "grid.origin_selection", SDLK_G,      { .Shift = true },               [this] { Workspace->SetGridOriginToSelection(); } },
         { "grid.align_face",       SDLK_G,      { .Alt = true },                 [this] { Workspace->AlignGridToSelectedFace(); } },
         { "grid.reset",            SDLK_G,      { .Ctrl = true, .Shift = true }, [this] { Workspace->ResetGrid(); } },
-        { "material.copy_proj",    SDLK_C,      { .Ctrl = true, .Shift = true }, [this] { if (MaterialsPanel) MaterialsPanel->CopyProjection(); } },
-        { "material.paste_proj",   SDLK_V,      { .Ctrl = true, .Shift = true }, [this] { if (MaterialsPanel) MaterialsPanel->PasteProjection(); } },
+        { "material.apply",        SDLK_T,      { .Shift = true },               [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
+        { "material.copy_proj",    SDLK_C,      { .Ctrl = true, .Shift = true }, [this] { Workspace->CopySelectedFaceProjection(); } },
+        { "material.paste_proj",   SDLK_V,      { .Ctrl = true, .Shift = true }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
     };
     // User keymap overrides ride on the action names: a keybinds.json in the
     // working directory rebinds any table entry without a recompile.
@@ -233,7 +241,10 @@ void EditorServices::BuildInput()
         {
             UiInputCapture capture = UiFeature != nullptr ? UiFeature->GetInputCapture()
                                                           : UiInputCapture{};
-            if (Viewports != nullptr && Viewports->IsViewportRegionHovered())
+            const bool overViewport =
+                (PerspectivePanel != nullptr && PerspectivePanel->IsViewportRegionHovered())
+                || (OrthoPanel != nullptr && OrthoPanel->IsViewportRegionHovered());
+            if (overViewport)
                 capture.Mouse = false;
             return capture;
         }));
@@ -353,14 +364,14 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     auto& frames = engine.Graphics().Frames;
     Renderer& renderer = engine.Graphics().MainRenderer;
 
-    // Default layout proportions: mesh tools in a narrow left column, console
-    // under the viewport, world/hierarchy row over the inspector on the right,
-    // material strip across the bottom.
+    // Default layout proportions: mesh tools over the active material in a
+    // narrow left column, the perspective viewport dominating the center with
+    // the ortho view + Materials/Console strip under it, world/hierarchy row
+    // over the inspector on the right.
     const DockLayoutRatios layoutRatios{
-        .Bottom = 0.2f,
         .Left = 0.15f,
-        .Right = 0.4f,
-        .CenterBottom = 0.25f,
+        .Right = 0.3f,
+        .CenterBottom = 0.35f,
         .RightBottom = 0.3f,
     };
     auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
@@ -417,10 +428,29 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
     UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
 
-    auto viewportPanel = std::make_unique<ViewportPanel>(Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
-                                                         RenderFeature->GetViewportTargets());
-    Viewports = viewportPanel.get();
-    UiFeature->AddPanel(std::move(viewportPanel));
+    // One panel per viewport: the perspective view owns the central node, the
+    // ortho view shares the center-bottom strip with the Materials browser.
+    ViewportId perspectiveId{};
+    ViewportId orthoId{};
+    for (const auto& viewport : Workspace->Layout.All())
+    {
+        if (viewport == nullptr)
+            continue;
+        if (viewport->Orientation == ViewportOrientation::Perspective)
+            perspectiveId = viewport->Id;
+        else
+            orthoId = viewport->Id;
+    }
+    auto perspectivePanel = std::make_unique<ViewportPanel>(
+        Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
+        RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+    PerspectivePanel = perspectivePanel.get();
+    UiFeature->AddPanel(std::move(perspectivePanel));
+    auto orthoPanel = std::make_unique<ViewportPanel>(
+        Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
+        RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+    OrthoPanel = orthoPanel.get();
+    UiFeature->AddPanel(std::move(orthoPanel));
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
     ConsolePanel = editorConsole.get();
     ConsolePanel->SetVisible(consoleOpenOnStart);
@@ -434,6 +464,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
         Workspace->Selection, Workspace->MeshEdit, *Commands,
+        Workspace->World, Workspace->ActiveMaterial, Workspace->UvClipboard,
         MeshEditPanel::ObjectActions{
             .Duplicate = [this] { Workspace->DuplicateSelection(/*asInstance*/ false); },
             .Instance = [this] { Workspace->DuplicateSelection(/*asInstance*/ true); },
@@ -453,11 +484,46 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
                 return false;
             },
         }));
-    auto materialPanel = std::make_unique<MaterialPanel>(
-        Workspace->World, [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
-        Workspace->Selection, Workspace->MeshEdit, *Commands, *Materials);
-    MaterialsPanel = materialPanel.get();
-    UiFeature->AddPanel(std::move(materialPanel));
+
+    // Material picking surfaces: thumbnail residency for both panels, bounded
+    // by the budget cvar so a large library never pins every base color
+    // texture on the GPU.
+    console.Registry().RegisterCVar({
+        .Name = "editor.materials.thumbnail_budget",
+        .Owner = "editor",
+        .Type = CVarType::Int,
+        .DefaultValue = std::int64_t{ 128 },
+        .CurrentValue = std::int64_t{ 128 },
+        .Flags = CVarFlags::Archive,
+        .Help = "Max GPU-resident material thumbnails in the browser cache.",
+        .Source = { "editor" },
+    });
+    console.Registry().RegisterCVar({
+        .Name = "editor.materials.thumbnail_size",
+        .Owner = "editor",
+        .Type = CVarType::Double,
+        .DefaultValue = 96.0,
+        .CurrentValue = 96.0,
+        .Flags = CVarFlags::Archive,
+        .Help = "Material browser cell size in pixels.",
+        .Source = { "editor" },
+    });
+    Thumbnails = std::make_unique<MaterialThumbnailCache>(
+        Assets->Assets, Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
+        Assets->Registry);
+
+    // Added after MeshEditPanel so the left column's Down-pack puts it below
+    // the mesh tools, and before the browser so its previews are always
+    // fresher than the browser's trim.
+    UiFeature->AddPanel(std::make_unique<ActiveMaterialPanel>(
+        Workspace->ActiveMaterial, *Thumbnails,
+        [this] { if (Browser != nullptr) Browser->Reveal(); }));
+
+    auto browserPanel = std::make_unique<MaterialBrowserPanel>(
+        *Materials, *Thumbnails, Workspace->ActiveMaterial, console.Registry(),
+        [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
+    Browser = browserPanel.get();
+    UiFeature->AddPanel(std::move(browserPanel));
 
     renderer.AddFeature(std::move(uiFeature));
 }
@@ -596,6 +662,17 @@ void EditorServices::ProcessFrame()
         Workspace->UpdateOverlay();
         Workspace->SyncOrthoViewsToGridFrame();
     }
+
+    // A hidden viewport panel is never drawn, so it cannot clear its own stale
+    // on-screen rect; do it here so ResolveAt never routes input to an
+    // invisible view (and the render feature skips its offscreen target).
+    for (ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
+        if (panel != nullptr && !panel->IsVisible())
+            panel->ClearViewportRegion();
+
+    // One LRU tick per frame, before the UI panels request thumbnails.
+    if (Thumbnails)
+        Thumbnails->BeginFrame();
 }
 
 namespace

@@ -2,8 +2,10 @@
 
 #include "commands/CommandStack.h"
 #include "document/BrushCreationSettings.h"
+#include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
 #include "document/commands/CreateEntityCommand.h"
+#include "meshedit/ActiveMaterialState.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "render/PreviewBuffer.h"
@@ -146,6 +148,14 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
     auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate,
                                             Plane.FrameAligned ? Plane.DepthAxis : 1,
                                             LastCenter, LastHalfExtents, LastRotation);
+
+    // A new brush is born wearing the active material: the common case is to
+    // texture as you build. Empty active material leaves faces on the level
+    // default (their empty ref).
+    if (ctx.ActiveMaterial.Active.IsValid())
+        for (BrushFace& face : mesh.Faces)
+            face.Material.Material = ctx.ActiveMaterial.Active;
+
     auto cmd = MakeCreateBrushMeshCommand(transform, std::move(mesh), Scene, Document);
     CreateEntityCommand* rawCmd = cmd.get();
     ctx.Commands.Execute(std::move(cmd));

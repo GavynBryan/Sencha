@@ -32,6 +32,10 @@ private:
     // it (plus an edge's length) to the overlay hover state, for the renderer glow.
     void UpdateHover(EditorViewport& viewport, ImVec2 pos);
 
+    // Shift+Right-click: sample the material the face under the cursor renders
+    // with into the active material. View state only; not an undo step.
+    void SampleFaceMaterial(const PointerDownEvent& e);
+
     // Reverts any in-flight interaction and drops any tool gesture. (W4.)
     void Abort();
 
