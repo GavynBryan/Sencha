@@ -5,5 +5,5 @@ component BobMotion {
 }
 
 fn bob_offset(t: f32, frequency: f32, amplitude: f32) -> f32 {
-    return sin(t * frequency * tau) * amplitude
+    return f32(sin(t * frequency * tau) * amplitude)
 }

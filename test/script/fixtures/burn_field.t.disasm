@@ -1,0 +1,10 @@
+fn BurnField.on_enter frame=6 args=4 rets=0
+     0: THAS    r4, r1, tag"character.player"
+     1: NOT     r5, r4
+     2: BF      r5 -> 4
+     3: RET     
+     4: TADD    r1, tag"damage.burning"
+     5: RET     
+fn BurnField.on_exit frame=4 args=4 rets=0
+     0: TREM    r1, tag"damage.burning"
+     1: RET     

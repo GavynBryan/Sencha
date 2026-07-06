@@ -1,0 +1,59 @@
+fn Hookshot.start frame=38 args=9 rets=0
+     0: MOV     r9, r0
+     1: LDP     r10, param[0]
+     2: LDC     r11, k0 = 0x0000000000000000
+     3: MOVW    r12, r3, n=3
+     4: MOVW    r15, r6, n=3
+     5: MOV     r18, r10
+     6: MOV     r19, r11
+     7: HCALL   r12, physics.raycast, argc=8
+     8: MOVW    r21, r12, n=9
+     9: NOT     r30, r21
+    10: MOV     r31, r30
+    11: BT      r31 -> 15
+    12: THAS    r32, r22, tag"hookshot.anchor"
+    13: NOT     r33, r32
+    14: MOV     r31, r33
+    15: BF      r31 -> 18
+    16: HCALL   r0, ability.cancel, argc=0
+    17: RET     
+    18: MOV     r30, r9
+    19: LDI     r31, 0
+    20: MOVW    r32, r23, n=3
+    21: MOV     r35, r22
+    22: LDC     r37, k1 = 0x0000000000000000
+    23: MOV     r36, r37
+    24: HCALL   r30, commands.add, argc=7
+    25: TADD    r9, tag"state.hookshot.active"
+    26: LDI     r30, 0
+    27: HCALL   r30, cue.fire, argc=1
+    28: ENTER   state 0
+    29: RET     
+fn Hookshot.Pulling.fixed frame=26 args=9 rets=0
+     0: MOV     r9, r0
+     1: CLD     r10, r9, HookshotState.target
+     2: LDP     r13, param[1]
+     3: LDP     r14, param[2]
+     4: MOVW    r15, r10, n=3
+     5: MOV     r18, r13
+     6: MOV     r19, r14
+     7: HCALL   r15, movement.pull_toward, argc=5
+     8: CLD     r13, r9, Transform.local.position
+     9: MOVW    r16, r13, n=3
+    10: MOVW    r19, r10, n=3
+    11: HCALL   r16, core.vec3_distance, argc=6
+    12: LDP     r22, param[2]
+    13: CLEF    r23, r16, r22
+    14: BF      r23 -> 20
+    15: TREM    r9, tag"state.hookshot.active"
+    16: MOV     r24, r9
+    17: LDI     r25, 0
+    18: HCALL   r24, commands.remove, argc=2
+    19: HCALL   r0, ability.finish, argc=0
+    20: RET     
+fn Hookshot.cancel frame=11 args=9 rets=0
+     0: TREM    r0, tag"state.hookshot.active"
+     1: MOV     r9, r0
+     2: LDI     r10, 0
+     3: HCALL   r9, commands.remove, argc=2
+     4: RET     

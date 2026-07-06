@@ -1,0 +1,19 @@
+fn OpenDoor.can_interact frame=8 args=4 rets=1
+     0: CHAS    r4, r1, DoorState
+     1: MOV     r5, r4
+     2: BF      r5 -> 6
+     3: CLD     r6, r1, DoorState.locked
+     4: NOT     r7, r6
+     5: MOV     r5, r7
+     6: RETV    r5, n=1
+fn OpenDoor.interact frame=6 args=4 rets=0
+     0: MOV     r4, r1
+     1: CLD     r5, r4, DoorState.open
+     2: BF      r5 -> 4
+     3: RET     
+     4: LDC     r5, k0 = 0x0000000000000001 (4.94066e-324)
+     5: CST     r4, r5, DoorState.open
+     6: TADD    r4, tag"door.open"
+     7: LDI     r5, 0
+     8: HCALL   r5, cue.fire, argc=1
+     9: RET     

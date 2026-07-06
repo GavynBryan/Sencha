@@ -146,6 +146,8 @@ endif()
 if(SCRIPT_TEST_SOURCES)
     add_executable(script_tests ${SCRIPT_TEST_SOURCES})
     target_link_libraries(script_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_compile_definitions(script_tests PRIVATE
+        SCRIPT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/script/fixtures")
     list(APPEND SENCHA_TEST_TARGETS script_tests)
 endif()
 

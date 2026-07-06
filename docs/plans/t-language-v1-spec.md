@@ -366,7 +366,10 @@ apply to it; the parser attaches it to the preceding `if`).
   conversions and at component stores to f32 fields. Everything else stays
   f64.
 - Float compares: NaN makes `==`, `<`, `<=`, `>`, `>=` false and `!=` true.
-- No implicit numeric conversions anywhere. Mixed-type arithmetic is a
+- No implicit numeric conversions, with one exception: f32 widens to f64
+  implicitly (the widening is exact, so it cannot introduce
+  nondeterminism or surprise). Narrowing (f64 to f32, any float to any
+  integer, i64 to i32) is always explicit. Mixed integer arithmetic is a
   compile error naming the conversion to insert.
 - Conversion syntax: `i32(x)`, `i64(x)`, `f32(x)`, `f64(x)` are calls whose
   callee is a type keyword. Grammar note: a type keyword is a valid `primary`
