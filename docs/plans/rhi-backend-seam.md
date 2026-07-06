@@ -271,6 +271,9 @@ transitions for the cases it actually has (an offscreen target rendered then
 sampled). Raw `VulkanBarriers` stays backend-internal. D3D12 implements the
 same named transitions with resource barriers. This keeps the surface narrow
 and prevents the render layer from encoding Vulkan's synchronization model.
+These verbs are also the primitive a future render graph (Section 9) would
+drive: the graph decides which transitions to emit and when, and calls these
+same functions.
 
 `FrameContext` becomes:
 
@@ -589,7 +592,93 @@ the descope is a decision with a known escape path, not an unknown.
 
 ---
 
-## 9. Open questions
+## 9. Render graph: adjacent, deferred, non-blocking
+
+A render graph is the paradigm that carries rendering past forward shading
+with a handful of hand-ordered passes. It is recorded here because the
+question comes up naturally against this plan, and because the answer
+constrains nothing in the RHI: the two are orthogonal.
+
+**Relationship to the RHI.** The graph sits above the neutral RHI and drives
+its named-transition verbs (Section 2.2). It ships independently whenever
+pass count earns it, and neither depends on nor blocks backend selection.
+The RHI is designed without assuming a graph; a graph plugs in later without
+touching the backend seam.
+
+**Why the graph's value is orthogonal to the dispatch question.** The
+current feature loop (`Renderer::RecordMainColorPhase`,
+`for (IRenderFeature* feat : bucket) feat->OnDraw(ctx)`) is cold: single-digit
+indirect calls per frame. The hot path (`MeshForwardPass::DrawRuns`) is
+already a virtual-free data loop over sort-keyed POD `RenderQueueItem` with
+instanced-run coalescing. So the graph's wins are structural (synchronization,
+memory, parallel recording), not a change to dispatch cost.
+
+**Extensibility without virtual dispatch, across the game-module boundary.**
+A pass is a POD descriptor (declared resource reads and writes, formats,
+sizes, an ordering key) plus a registered record function pointer,
+`void (*)(rhi::CommandList, const void* passData)`. The build and compile
+phase is pure data with zero dispatch: the game module appends a descriptor,
+and the compiler (dependency resolution, barrier derivation, transient
+aliasing, culling, scheduling) is a concrete engine-side algorithm over
+arrays. Execute is one cold function-pointer call per pass per frame: a
+registered operation on CLAUDE.md's dispatch ladder, not a runtime interface
+(no `IPass` base, no per-object vtable). Adopting a graph this way retires
+the `IRenderFeature` virtual rather than adding a seam. The honest caveat:
+crossing a compiled module boundary where the engine drives game-supplied
+pass code requires one runtime indirection per pass per frame; virtual,
+`std::function`, and a function pointer are isomorphic in cost. Only
+compile-time dispatch removes it, and that requires compile-time knowledge
+of every pass type, which negates the module boundary. The function-pointer
+registered operation is the shape that honors "no virtual dispatch" and
+keeps the indirection off the hot path.
+
+**What it offers over the phase-bucket model.** Each is tied to a Track B
+item:
+
+- **Computed synchronization.** Barriers derived from declared read and
+  write intent, a deterministic function of data, replacing hand-placed
+  `VulkanBarriers`. The biggest win, and it grows as shadows, transparency,
+  and post add write-then-sample dependencies that are error-prone to
+  transition by hand.
+- **Transient-target aliasing.** Lifetime-based memory reuse across targets
+  whose live ranges do not overlap, versus each offscreen feature owning a
+  full-frame-resident target today. Real VRAM against the v2.0 post stack.
+- **Pass culling.** Drop a pass and free its transients when its output
+  feeds nothing this frame, propagating data-driven feature toggles through
+  the whole resource subtree.
+- **Parallel command recording.** Independent passes record on separate
+  JobSystem workers and submit in dependency order, versus today's serial
+  main-thread recording. The performance headline, and it fits the
+  ~1ms-gate concurrency doctrine.
+- **An inspectable, testable frame.** The compiled graph is data: assert the
+  barrier and alias plan with no GPU, validate read-before-write at compile
+  instead of as a hang, and dump the pass DAG.
+- **Async-compute scheduling** further out, for GPU particles or GI.
+
+**Runtime cost, stated honestly.** One real cost: the per-frame compile
+(topological sort, resource-lifetime computation, transient-alias solve,
+barrier derivation), on the order of tens of microseconds at tens of passes,
+a sub-fraction of a frame, growing with pass count and not draw count. The
+real trap is per-frame allocation churn, avoided by building the graph into
+the existing `VulkanFrameScratch` per-frame arena (reset each frame, zero
+heap traffic). The execute indirection is one cold function-pointer call per
+pass, negligible. Net: the compile cost buys parallel recording, so it is a
+net CPU win past the earning trigger and small unearned overhead below it,
+and computed barriers that see the whole frame typically beat hand-placed
+ones on the GPU.
+
+**Earning trigger (matches the repo's deferral pattern).** Not shadows
+alone. The crossover is shadows plus transparency plus a real post stack
+together: several transient targets with overlapping-but-distinct lifetimes
+and chained write-then-sample dependencies, where hand-managing barriers and
+target lifetimes stops being obviously correct. Below that, manual is
+clearer and a graph is unearned abstraction (directive 4). A deep post stack
+plus clustered many-light shading plus async compute or GI is where it
+becomes effectively non-optional.
+
+---
+
+## 10. Open questions
 
 1. **Pipeline layout modeling.** One engine-standard layout exists today
    (frame set + bindless set + push range). Is a `PipelineLayoutHandle`
