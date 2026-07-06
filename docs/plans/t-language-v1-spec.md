@@ -476,16 +476,18 @@ the same stanza shape as `jobs_tests`.
 
 Implementation status: milestones 2, 3, and 4 are complete. Milestone 5's
 engine prerequisites (raw component registration, type-erased CommandBuffer
-ops, DeterministicRandom), the world-side runtime (ScriptLink, WorldScriptHost,
-ScriptBehaviorSystem), the behavior end-to-end (the pickup fixture cooked,
-linked, ticked, and verified deterministic), and the two fitness ctests are
-landed. Deferred (they need native systems AbilityKit does not yet expose):
-the ability bridge (AbilityKit has no per-tick active-ability loop, so a
-scripted-ability-instance system is required, not just a hook), the trigger
-and interaction systems and their bridges, and the full
-ScriptComponentSerializer (inspector plus scene save/load parity). These are
-the remaining M5 items; the behavior path already exercises the full
-cook -> link -> VM -> host -> component-write -> determinism stack.
+ops, DeterministicRandom), the world-side runtime (ScriptLink, WorldScriptHost),
+the behavior bridge (ScriptBehaviorSystem) with its deterministic end-to-end,
+the ability bridge (ScriptAbilitySystem, a scripted-ability-instance system
+since AbilityKit has no per-tick active-ability loop) covering
+start/fixed/finish/cancel, `enter` state transitions, params, the
+AbilityContext aim prelude, and structural commands, and the two fitness
+ctests are all landed. Deferred (they need native systems not yet present):
+the trigger and interaction systems and their bridges; the physics-raycast,
+movement, and cue host calls (they need a physics/movement rig, so the full
+hookshot fixture is not yet driven end to end, though every mechanic it uses
+except those three host calls is proven by the buff-ability end-to-end); and
+the full ScriptComponentSerializer (inspector plus scene save/load parity).
 
 ### Milestone 2: bytecode plus VM core
 

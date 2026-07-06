@@ -108,6 +108,7 @@ void WorldScriptHost::Begin(std::uint32_t linkedModuleIndex, EntityId subject, s
                  : nullptr;
     Subject = subject;
     Tick = tick;
+    PendingOutcome = ScriptAbilityOutcome::None;
 }
 
 ScriptTrapCode WorldScriptHost::ComponentLoad(const ScriptModule&, std::uint64_t entityBits,
@@ -234,6 +235,19 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
                                          std::span<std::uint64_t> window, std::uint32_t argCount)
 {
     const std::string_view name = module.GetString(module.HostImports[importIndex].Name);
+
+    // Ability lifecycle: record the outcome for the bridge to act on after
+    // the callback returns (spec D.4). The last call wins.
+    if (name == "ability.finish")
+    {
+        PendingOutcome = ScriptAbilityOutcome::Finish;
+        return ScriptTrapCode::None;
+    }
+    if (name == "ability.cancel")
+    {
+        PendingOutcome = ScriptAbilityOutcome::Cancel;
+        return ScriptTrapCode::None;
+    }
 
     // Deterministic randomness (spec D.6): a per-callback stream seeded from
     // the world seed, the subject entity, and the tick.

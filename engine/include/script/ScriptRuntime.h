@@ -64,6 +64,41 @@ struct ScriptRuntime
     std::uint64_t WorldSeed = 0;
 };
 
+// Per-entity state for one running script ability (spec D.4). AbilityKit has
+// no per-tick active-ability loop, so the script ability bridge tracks its
+// own instances: which linked module and ability declaration drive this
+// owner, the current state, whether start has run, and the aim captured at
+// activation (the AbilityContext prelude). One script ability per entity in
+// v1. Trivially copyable ECS component.
+struct ScriptAbilityState
+{
+    std::uint32_t LinkedModule = 0;
+    std::uint32_t Declaration = 0;
+    std::int32_t State = -1;
+    std::uint32_t Started = 0;
+    float AimOrigin[3] = { 0.0f, 0.0f, 0.0f };
+    float AimDirection[3] = { 0.0f, 0.0f, 0.0f };
+};
+SENCHA_DECLARE_COMPONENT_TYPE(ScriptAbilityState, "sencha.script_ability_state");
+
+// A pending script-ability activation. The bridge drains these at the start
+// of its tick and installs a ScriptAbilityState on the owner. This is the
+// script analog of AbilityActivationQueue; a game pushes a request when an
+// AbilityKit ability that carries a script activates.
+struct ScriptAbilityRequest
+{
+    EntityId Owner{};
+    std::uint32_t LinkedModule = 0;
+    std::uint32_t Declaration = 0;
+    float AimOrigin[3] = { 0.0f, 0.0f, 0.0f };
+    float AimDirection[3] = { 0.0f, 0.0f, 0.0f };
+};
+
+struct ScriptAbilityActivationQueue
+{
+    std::vector<ScriptAbilityRequest> Pending;
+};
+
 // EntityId <-> 64-bit register value. The VM carries entities as opaque
 // 64-bit slots; this is the one place the packing is defined.
 [[nodiscard]] inline std::uint64_t PackScriptEntity(EntityId entity)

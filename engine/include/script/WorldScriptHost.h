@@ -7,6 +7,15 @@ class World;
 class CommandBuffer;
 class GameplayTagRegistry;
 
+// Outcome an ability callback requested through ctx.cancel()/ctx.finish()
+// (spec D.4). The ability bridge reads it after each invocation.
+enum class ScriptAbilityOutcome
+{
+    None,
+    Finish,
+    Cancel,
+};
+
 //=============================================================================
 // WorldScriptHost (docs/plans/t-language-v1-spec.md, sections C, D)
 //
@@ -28,8 +37,11 @@ public:
 
     // Binds the host to one invocation: which linked module the callback
     // belongs to, the subject entity (owner/entity), and the fixed tick for
-    // seeding randomness.
+    // seeding randomness. Resets the pending ability outcome.
     void Begin(std::uint32_t linkedModuleIndex, EntityId subject, std::uint64_t tick);
+
+    // The outcome the just-invoked ability callback requested, if any.
+    [[nodiscard]] ScriptAbilityOutcome Outcome() const { return PendingOutcome; }
 
     ScriptTrapCode HostCall(const ScriptModule& module, std::uint32_t importIndex,
                             std::span<std::uint64_t> window, std::uint32_t argCount) override;
@@ -57,4 +69,5 @@ private:
     const ScriptLinkedModule* Linked = nullptr;
     EntityId Subject{};
     std::uint64_t Tick = 0;
+    ScriptAbilityOutcome PendingOutcome = ScriptAbilityOutcome::None;
 };
