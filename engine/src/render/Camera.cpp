@@ -41,10 +41,10 @@ namespace
 
 bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
                                    const World& world,
-                                   VkExtent2D targetExtent,
+                                   rhi::Extent2D targetExtent,
                                    CameraRenderData& out)
 {
-    if (!activeCamera.HasActive() || targetExtent.width == 0 || targetExtent.height == 0)
+    if (!activeCamera.HasActive() || targetExtent.Width == 0 || targetExtent.Height == 0)
     {
         return false;
     }
@@ -57,8 +57,8 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
         return false;
     }
 
-    const float aspect = static_cast<float>(targetExtent.width)
-                       / static_cast<float>(targetExtent.height);
+    const float aspect = static_cast<float>(targetExtent.Width)
+                       / static_cast<float>(targetExtent.Height);
     Mat4 projection;
     if (camera->Projection == ProjectionKind::Perspective)
     {

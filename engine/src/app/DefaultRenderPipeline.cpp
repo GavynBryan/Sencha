@@ -10,6 +10,8 @@
 #include <render/MeshRenderFeature.h>
 #endif
 
+#include <rhi/RhiTypes.h>
+
 #include <memory>
 #include <unordered_set>
 
@@ -72,7 +74,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             continue;
 
         hasCamera = CameraRenderDataSystem::Build(
-            *activeCamera, registry->Components, extent, Camera);
+            *activeCamera, registry->Components,
+            rhi::Extent2D{ extent.width, extent.height }, Camera);
         if (hasCamera)
             break;
     }

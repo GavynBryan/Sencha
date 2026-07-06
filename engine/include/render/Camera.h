@@ -7,7 +7,7 @@
 #include <math/Vec.h>
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <vulkan/vulkan.h>
+#include <rhi/RhiTypes.h>
 
 //=============================================================================
 // CameraRenderData
@@ -40,6 +40,6 @@ class CameraRenderDataSystem
 public:
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
                                     const World& world,
-                                    VkExtent2D targetExtent,
+                                    rhi::Extent2D targetExtent,
                                     CameraRenderData& out);
 };

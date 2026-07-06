@@ -46,6 +46,12 @@ include(GNUInstallDirs)
 add_test(NAME physics_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckPhysicsIsolation.cmake")
 
+# Render backend firewall: Vulkan must stay behind engine/**/graphics/vulkan/
+# (plus a shrinking migration allowlist). Same standalone-script form so it runs
+# under ctest without building the engine or the Vulkan SDK.
+add_test(NAME render_backend_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckRenderBackendIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")
