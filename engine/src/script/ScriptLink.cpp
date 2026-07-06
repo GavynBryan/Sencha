@@ -254,6 +254,9 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
 
     result.ModuleIndex = static_cast<std::uint32_t>(runtime.Modules.size());
     runtime.Modules.push_back(std::move(linked));
+    // Keep ModuleHandles parallel; the scene-link step overwrites the slot
+    // with the asset handle that loaded the module.
+    runtime.ModuleHandles.emplace_back();
     result.Ok = true;
     return result;
 }

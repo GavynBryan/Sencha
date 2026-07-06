@@ -29,7 +29,7 @@ status=0
 # VM-core files: everything under script/ EXCEPT the bridge files.
 core_files() {
     { find "$INC" "$SRC" -type f \( -name '*.h' -o -name '*.cpp' \) 2>/dev/null; } \
-        | grep -vE '(ScriptRuntime|ScriptLink|WorldScriptHost|ScriptBehaviorSystem|ScriptAbilitySystem)\.' \
+        | grep -vE '(ScriptRuntime|ScriptLink|WorldScriptHost|ScriptBehaviorSystem|ScriptAbilitySystem|ScriptSceneLink|ScriptComponents)\.' \
         | grep -vE '(ScriptCook)\.'
 }
 

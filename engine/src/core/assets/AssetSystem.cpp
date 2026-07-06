@@ -191,6 +191,11 @@ std::string_view AssetSystem::GetPathForScript(ScriptHandle handle) const
     return Scripts ? Scripts->GetName(handle) : std::string_view{};
 }
 
+std::shared_ptr<const ScriptModule> AssetSystem::GetScriptModule(ScriptHandle handle) const
+{
+    return Scripts ? Scripts->Get(handle) : nullptr;
+}
+
 std::string_view AssetSystem::GetPathForSkeleton(SkeletonHandle handle) const
 {
     return Skeletons ? Skeletons->GetName(handle) : std::string_view{};

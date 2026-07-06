@@ -82,6 +82,11 @@ public:
 
     [[nodiscard]] ScriptHandle LoadScript(std::string_view path);
 
+    // The immutable validated module behind a script handle, or nullptr if the
+    // handle is stale. Used by the scene-link step to resolve a loaded script
+    // to its module for world-side linking.
+    [[nodiscard]] std::shared_ptr<const ScriptModule> GetScriptModule(ScriptHandle handle) const;
+
     [[nodiscard]] SkeletonHandle LoadSkeleton(std::string_view path);
     [[nodiscard]] AnimationClipHandle LoadAnimationClip(std::string_view path);
 

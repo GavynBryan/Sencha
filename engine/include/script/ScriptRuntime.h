@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assets/script/ScriptCache.h>
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
@@ -98,6 +99,10 @@ struct ScriptLinkedModule
 struct ScriptRuntime
 {
     std::vector<ScriptLinkedModule> Modules;
+    // Parallel to Modules: the asset handle that loaded each module, so the
+    // scene resolve step can map a ScriptSource's handle to its linked module.
+    // Invalid for modules linked directly (tests) rather than via an asset.
+    std::vector<ScriptHandle> ModuleHandles;
     std::uint64_t WorldSeed = 0;
 };
 

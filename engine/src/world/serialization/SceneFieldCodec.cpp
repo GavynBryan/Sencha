@@ -440,6 +440,54 @@ bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
     return archive.Ok();
 }
 
+bool SceneFieldCodec<ScriptHandle>::Save(IWriteArchive& archive,
+                                         std::string_view key,
+                                         ScriptHandle value,
+                                         SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryWrite(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<ScriptHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForScript(value), context);
+}
+
+bool SceneFieldCodec<ScriptHandle>::Load(IReadArchive& archive,
+                                         std::string_view key,
+                                         ScriptHandle& value,
+                                         SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryRead(archive, key);
+
+    std::string path;
+    if (!ReadTypedAssetPath(archive, key, AssetType::Script, path, context))
+        return false;
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<ScriptHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    value = context.Assets->LoadScript(path);
+    if (!value.IsValid())
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<ScriptHandle>: failed to load script asset '{}'", path);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return archive.Ok();
+}
+
 namespace
 {
     // Shared load body for the caption enum codecs: persisted as strings in

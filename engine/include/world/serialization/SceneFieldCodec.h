@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assets/script/ScriptCache.h>
 #include <audio/AudioClipCache.h>
 #include <audio/Caption.h>
 #include <core/assets/AssetRef.h>
@@ -101,6 +102,23 @@ struct SceneFieldCodec<AudioClipHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      AudioClipHandle& value,
+                     SceneSerializationContext& context);
+};
+
+// A cooked T script referenced by an entity's ScriptSource: the asset path
+// persists, resolved through AssetSystem::LoadScript at load (the mesh/audio
+// pattern).
+template<>
+struct SceneFieldCodec<ScriptHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     ScriptHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     ScriptHandle& value,
                      SceneSerializationContext& context);
 };
 
