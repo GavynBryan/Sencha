@@ -1,7 +1,9 @@
 #include <core/assets/AssetRef.h>
+#include <core/identity/StrongId.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <math/MathSchemas.h>
+#include <math/Quat.h>
 #include <math/Vec.h>
 
 #include <gtest/gtest.h>
@@ -83,6 +85,36 @@ template <> struct TypeSchema<ColorComp>
     }
 };
 
+// A transform-like component: Vec3/Quat members group into one N-wide leaf each
+// instead of flattening to x/y/z/w.
+struct GroupedComp { Vec3d Position; Quat<float> Rotation; Vec3d Scale; };
+template <> struct TypeSchema<GroupedComp>
+{
+    static constexpr std::string_view Name = "test.grouped";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("position", &GroupedComp::Position),
+            MakeField("rotation", &GroupedComp::Rotation),
+            MakeField("scale",    &GroupedComp::Scale),
+        };
+    }
+};
+
+using TestId = StrongId<struct TestIdTag, std::uint32_t>;
+struct IdComp { TestId Id; float Value = 0.f; };
+template <> struct TypeSchema<IdComp>
+{
+    static constexpr std::string_view Name = "test.id";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("id",    &IdComp::Id),
+            MakeField("value", &IdComp::Value),
+        };
+    }
+};
+
 namespace
 {
     const RuntimeField* Find(const std::vector<RuntimeField>& fields, std::string_view name)
@@ -96,8 +128,8 @@ namespace
 TEST(RuntimeSchema, ColorTaggedVec3CollapsesToOneColor3Leaf)
 {
     const auto& fields = RuntimeFieldsOf<ColorComp>();
-    // color -> 1 Color3 leaf; plain -> x,y,z; tint -> 1. = 5 leaves.
-    ASSERT_EQ(fields.size(), 5u);
+    // color -> 1 Color3 leaf; plain -> 1 grouped Vec3 leaf; tint -> 1. = 3 leaves.
+    ASSERT_EQ(fields.size(), 3u);
 
     const RuntimeField* color = Find(fields, "color");
     ASSERT_NE(color, nullptr);
@@ -105,11 +137,13 @@ TEST(RuntimeSchema, ColorTaggedVec3CollapsesToOneColor3Leaf)
     EXPECT_EQ(color->Size, 3 * sizeof(float));
     EXPECT_EQ(color->Asset, AssetType::Unknown);
 
-    // The untagged Vec3 still flattens to its three scalar components.
+    // The untagged Vec3 groups into one N-wide leaf; it does not flatten to x/y/z.
     EXPECT_EQ(Find(fields, "color.x"), nullptr);
-    ASSERT_NE(Find(fields, "plain.x"), nullptr);
-    ASSERT_NE(Find(fields, "plain.z"), nullptr);
-    EXPECT_EQ(Find(fields, "plain.y")->Scalar, FieldScalar::Float);
+    EXPECT_EQ(Find(fields, "plain.x"), nullptr);
+    const RuntimeField* plain = Find(fields, "plain");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(plain->Scalar, FieldScalar::Float);
+    EXPECT_EQ(plain->Count, 3u);
 
     // The Color3 leaf addresses the real bytes: writing channel 1 hits Color.Y.
     ColorComp c{};
@@ -184,26 +218,31 @@ TEST(RuntimeSchema, OffsetsRoundTripThroughRawBytes)
     EXPECT_EQ(c.Count, 99);
 }
 
-TEST(RuntimeSchema, NestedSchemasFlattenWithDottedPaths)
+TEST(RuntimeSchema, NestedVectorGroupsIntoOneLeaf)
 {
     const auto& fields = RuntimeFieldsOf<NestedComp>();
-    // position -> x,y,z (3 doubles) + radius
-    ASSERT_EQ(fields.size(), 4u);
+    // position -> 1 grouped Vec3 leaf + radius
+    ASSERT_EQ(fields.size(), 2u);
+    EXPECT_EQ(Find(fields, "position.y"), nullptr);
 
-    // Vec3d == Vec<3> whose scalar is float in this codebase, so leaves are Float.
-    const RuntimeField* py = Find(fields, "position.y");
-    ASSERT_NE(py, nullptr);
-    EXPECT_EQ(py->Scalar, FieldScalar::Float);
+    // Vec3d == Vec<3> whose scalar is float in this codebase, so the leaf is Float.
+    const RuntimeField* position = Find(fields, "position");
+    ASSERT_NE(position, nullptr);
+    EXPECT_EQ(position->Scalar, FieldScalar::Float);
+    EXPECT_EQ(position->Count, 3u);
+    EXPECT_EQ(position->Size, sizeof(float));
 
     NestedComp n{};
     auto* base = reinterpret_cast<std::byte*>(&n);
+    // The grouped leaf addresses contiguous components: channel 1 hits Position.Y.
     const float v = 3.25f;
-    std::memcpy(base + py->Offset, &v, py->Size);
+    std::memcpy(base + position->Offset + position->Size, &v, position->Size);
     EXPECT_FLOAT_EQ(n.Position.Y, 3.25f);
 
     const RuntimeField* radius = Find(fields, "radius");
     ASSERT_NE(radius, nullptr);
     EXPECT_EQ(radius->Scalar, FieldScalar::Float);
+    EXPECT_EQ(radius->Count, 1u);
     const float r = 7.0f;
     std::memcpy(base + radius->Offset, &r, radius->Size);
     EXPECT_FLOAT_EQ(n.Radius, 7.0f);
@@ -217,4 +256,65 @@ TEST(RuntimeSchema, EnumMapsToUnderlyingKindAndSize)
     ASSERT_NE(mode, nullptr);
     EXPECT_EQ(mode->Scalar, FieldScalar::UInt32); // underlying is unsigned
     EXPECT_EQ(mode->Size, sizeof(Mode));          // but only one byte wide
+}
+
+TEST(RuntimeSchema, VecAndQuatGroupIntoOneLeafEach)
+{
+    const auto& fields = RuntimeFieldsOf<GroupedComp>();
+    // position + rotation + scale, each one grouped leaf.
+    ASSERT_EQ(fields.size(), 3u);
+
+    const RuntimeField* position = Find(fields, "position");
+    ASSERT_NE(position, nullptr);
+    EXPECT_EQ(position->Scalar, FieldScalar::Float);
+    EXPECT_EQ(position->Count, 3u);
+    EXPECT_EQ(position->Offset, offsetof(GroupedComp, Position));
+
+    const RuntimeField* rotation = Find(fields, "rotation");
+    ASSERT_NE(rotation, nullptr);
+    EXPECT_EQ(rotation->Scalar, FieldScalar::Float);
+    EXPECT_EQ(rotation->Count, 4u); // a quaternion groups all four components
+    EXPECT_EQ(rotation->Offset, offsetof(GroupedComp, Rotation));
+
+    const RuntimeField* scale = Find(fields, "scale");
+    ASSERT_NE(scale, nullptr);
+    EXPECT_EQ(scale->Count, 3u);
+    EXPECT_EQ(scale->Offset, offsetof(GroupedComp, Scale));
+
+    // The grouped leaves address contiguous components at Offset + i*Size.
+    GroupedComp g{};
+    auto* base = reinterpret_cast<std::byte*>(&g);
+    const float rz = 0.75f;
+    std::memcpy(base + rotation->Offset + 2 * rotation->Size, &rz, rotation->Size);
+    EXPECT_FLOAT_EQ(g.Rotation.Z, 0.75f);
+    const float sx = 2.0f;
+    std::memcpy(base + scale->Offset, &sx, scale->Size);
+    EXPECT_FLOAT_EQ(g.Scale.X, 2.0f);
+}
+
+TEST(RuntimeSchema, StrongIdReflectsAsReadOnlyUnderlyingScalar)
+{
+    const auto& fields = RuntimeFieldsOf<IdComp>();
+    ASSERT_EQ(fields.size(), 2u);
+
+    const RuntimeField* id = Find(fields, "id");
+    ASSERT_NE(id, nullptr);
+    // The id surfaces its underlying integer, shown but not editable.
+    EXPECT_EQ(id->Scalar, FieldScalar::UInt32);
+    EXPECT_EQ(id->Size, sizeof(std::uint32_t));
+    EXPECT_EQ(id->Count, 1u);
+    EXPECT_TRUE(id->ReadOnly);
+    EXPECT_EQ(id->Asset, AssetType::Unknown);
+
+    // The leaf addresses the StrongId's underlying value.
+    IdComp c{};
+    auto* base = reinterpret_cast<std::byte*>(&c);
+    const std::uint32_t raw = 42;
+    std::memcpy(base + id->Offset, &raw, id->Size);
+    EXPECT_EQ(c.Id.Value, 42u);
+
+    // A plain scalar sibling stays editable.
+    const RuntimeField* value = Find(fields, "value");
+    ASSERT_NE(value, nullptr);
+    EXPECT_FALSE(value->ReadOnly);
 }

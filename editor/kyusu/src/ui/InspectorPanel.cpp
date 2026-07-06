@@ -32,6 +32,29 @@
 
 namespace
 {
+    // Row label from a dotted schema path: last segment, '_' to space, each word
+    // capitalized ("local.position" -> "Position", "play_on_active" -> "Play On
+    // Active"). Display-only; the widget id and serialization keep the raw path.
+    std::string HumanizeFieldLabel(const std::string& dotted)
+    {
+        const std::size_t dot = dotted.find_last_of('.');
+        std::string out = dotted.substr(dot == std::string::npos ? 0 : dot + 1);
+        bool boundary = true;
+        for (char& ch : out)
+        {
+            if (ch == '_')
+            {
+                ch = ' ';
+                boundary = true;
+                continue;
+            }
+            if (boundary && ch >= 'a' && ch <= 'z')
+                ch = static_cast<char>(ch - 'a' + 'A');
+            boundary = false;
+        }
+        return out;
+    }
+
     ImGuiDataType DataTypeFor(const RuntimeField& field)
     {
         switch (field.Scalar)
@@ -68,7 +91,7 @@ namespace
         void* ptr = component + field.Offset;
 
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(field.Name.c_str());
+        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
         ImGui::SameLine(labelWidth);
         ImGui::SetNextItemWidth(-FLT_MIN);
 
@@ -79,16 +102,25 @@ namespace
             return edit;
         }
 
+        // An identity id shows its value greyed and non-interactive; a disabled
+        // widget never reports activation, so it stays out of the edit/commit path.
+        if (field.ReadOnly)
+            ImGui::BeginDisabled();
+
         if (field.Scalar == FieldScalar::Bool)
             ImGui::Checkbox(id.c_str(), reinterpret_cast<bool*>(ptr));
         else if (field.Scalar == FieldScalar::Color3)
             ImGui::ColorEdit3(id.c_str(), reinterpret_cast<float*>(ptr),
                               ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         else
-            ImGui::DragScalar(id.c_str(), DataTypeFor(field), ptr, 0.05f);
+            ImGui::DragScalarN(id.c_str(), DataTypeFor(field), ptr,
+                               static_cast<int>(field.Count), 0.05f);
 
         edit.Activated = ImGui::IsItemActivated();
         edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
+
+        if (field.ReadOnly)
+            ImGui::EndDisabled();
         return edit;
     }
 }
@@ -141,7 +173,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // Let the trash button below sit on top of the full-width header and take its
     // own clicks (otherwise the header swallows them as a collapse toggle).
     ImGui::SetNextItemAllowOverlap();
-    const bool open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+    const bool open = ImGui::CollapsingHeader(header.c_str());
 
     // Remove affordances on the header row: a right-click context menu (bound to
     // the header, so registered before any later same-row item) and a right-
@@ -284,7 +316,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     if (assets == nullptr || catalog == nullptr)
     {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(field.Name.c_str());
+        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
         ImGui::SameLine(labelWidth);
         ImGui::TextDisabled("<no asset system>");
         return;
@@ -309,7 +341,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     if (field.Arity != AssetArity::List)
     {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(field.Name.c_str());
+        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
         ImGui::SameLine(labelWidth);
         ImGui::SetNextItemWidth(-FLT_MIN);
 
@@ -329,7 +361,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     // is the authored set length, free to grow or shrink; a mesh section past the
     // end falls back to the last member at render time (StaticMeshComponent).
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(field.Name.c_str());
+    ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
 
     ImGui::PushID(field.Name.c_str());
     ImGui::Indent();

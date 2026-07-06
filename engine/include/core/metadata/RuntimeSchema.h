@@ -1,6 +1,8 @@
 #pragma once
 
 #include <core/assets/AssetRef.h>
+#include <core/identity/StrongId.h>
+#include <core/metadata/ScalarGroup.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 
@@ -48,6 +50,11 @@ struct RuntimeField
     // Arity says whether it is one handle or an ordered list (per-slot materials).
     AssetType    Asset = AssetType::Unknown;
     AssetArity   Arity = AssetArity::Single;
+    // Contiguous same-typed scalars edited as one N-wide row (Vec/Quat); 1 is a
+    // plain scalar. The leaf spans [Offset, Offset + Count*Size).
+    std::uint8_t Count = 1;
+    // A leaf the editor shows but does not let the user edit (an identity id).
+    bool         ReadOnly = false;
 };
 
 namespace RuntimeSchemaDetail
@@ -70,6 +77,19 @@ namespace RuntimeSchemaDetail
         else
             return FieldScalar::Unsupported;
     }
+
+    // Detects StrongId<Tag, U> members so a flattened leaf can address the
+    // underlying integer (StrongId stores a single U at offset 0).
+    template <typename T>
+    struct IsStrongId : std::false_type
+    {
+    };
+
+    template <typename Tag, typename U>
+    struct IsStrongId<StrongId<Tag, U>> : std::true_type
+    {
+        using Underlying = U;
+    };
 
     // A VisitSchema visitor that flattens fields against a fixed root object:
     // each leaf's offset is its member address minus the root's, so offsets stay
@@ -109,10 +129,29 @@ namespace RuntimeSchemaDetail
                 }
             }
 
+            // A packed scalar group (Vec/Quat) stops the recursion and becomes one
+            // N-wide leaf, so the editor draws a single row instead of x/y/z drags.
+            // Checked before HasTypeSchema because these types have a schema too.
+            if constexpr (PackedScalarGroup<MemberType>::Count > 0)
+            {
+                using Comp = typename PackedScalarGroup<MemberType>::Component;
+                RuntimeField f{ std::move(name), offset, sizeof(Comp), ScalarKindOf<Comp>() };
+                f.Count = static_cast<std::uint8_t>(PackedScalarGroup<MemberType>::Count);
+                Out.push_back(std::move(f));
+                return;
+            }
+
             if constexpr (HasTypeSchema<MemberType>)
             {
                 Collector<Root> sub{ Out, Base, name };
                 VisitSchema<TypeSchema<MemberType>>(member, sub);
+            }
+            else if constexpr (IsStrongId<MemberType>::value)
+            {
+                using U = typename IsStrongId<MemberType>::Underlying;
+                RuntimeField f{ std::move(name), offset, sizeof(U), ScalarKindOf<U>() };
+                f.ReadOnly = true;
+                Out.push_back(std::move(f));
             }
             else
             {
