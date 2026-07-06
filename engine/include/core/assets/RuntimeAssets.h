@@ -2,6 +2,7 @@
 
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
+#include <assets/script/ScriptCache.h>
 #include <audio/AudioClipCache.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
@@ -35,6 +36,9 @@ struct RuntimeAssets
     SkinnedMeshCache SkinnedMeshes;
     AnimationClipCache AnimationClips;
     AudioClipCache AudioClips;
+    // CPU-only, no cross-cache references, so ordering is free; grouped with
+    // the other CPU caches.
+    ScriptCache Scripts;
     AssetSystem Assets;
 
     RuntimeAssets(LoggingProvider& logging,
@@ -51,8 +55,9 @@ struct RuntimeAssets
         , SkinnedMeshes(logging, buffers)
         , AnimationClips()
         , AudioClips(logging)
+        , Scripts(logging)
         , Assets(logging, Registry, StaticMeshes, Materials, Textures, AudioClips,
-                 Skeletons, AnimationClips, SkinnedMeshes, MaterialSets)
+                 Skeletons, AnimationClips, SkinnedMeshes, MaterialSets, Scripts)
     {
     }
 

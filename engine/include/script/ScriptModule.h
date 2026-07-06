@@ -226,3 +226,8 @@ struct ScriptModuleParseResult
 // input; SourceHash passes through). Debug sections are emitted only when
 // HasDebug is set.
 [[nodiscard]] std::vector<std::byte> WriteScriptModule(const ScriptModule& module);
+
+// Hash over the declared component schemas (names, leaf paths, scalar kinds,
+// offsets, array counts). Equal hashes mean a hot reload can swap the module
+// in place; a change routes to the world-reload path (spec answer 17).
+[[nodiscard]] uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module);

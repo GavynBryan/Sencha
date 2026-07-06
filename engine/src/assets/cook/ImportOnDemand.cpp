@@ -293,8 +293,12 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
 
         // Freshness fast path: unchanged size + mtime for the source and its
         // sidecar means the source bytes are never read. Any mismatch falls
-        // through to the content hash, which stays the ground truth.
+        // through to the content hash, which stays the ground truth. A source
+        // with an import closure (non-zero DependencyHash) is excluded: its
+        // dependencies can change while its own bytes stay put, so it must fall
+        // through to recompute the dependency hash from the source's imports.
         if (cached != nullptr && sourceStat.MTime != 0
+            && cached->DependencyHash == 0
             && FileStat{ cached->SourceSize, cached->SourceMTime } == sourceStat
             && FileStat{ cached->MetaSize, cached->MetaMTime } == metaStat
             && ArtifactFilesExist(root, *cached))
@@ -321,8 +325,11 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         }
         std::vector<std::byte> metaBytes;
         const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
+        const uint64_t dependencyHash =
+            importer->ComputeDependencyHash(ImportInput{ sourceRel, bytes });
 
         if (cached != nullptr && cached->SourceHash == sourceHash
+            && cached->DependencyHash == dependencyHash
             && ArtifactFilesExist(root, *cached))
         {
             ++stats.CookedFresh;
@@ -352,6 +359,7 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         entry.SourceRelPath = sourceRel;
         entry.SourceHash = sourceHash;
         StampSourceStats(entry, sourceStat, metaStat);
+        entry.DependencyHash = dependencyHash;
         entry.Artifacts = result.Artifacts;
         index.Put(std::move(entry));
         indexDirty = true;
@@ -440,6 +448,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
     std::filesystem::path metaPath = sourcePath;
     metaPath += std::string(kImportSettingsSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));
+    entry.DependencyHash = importer->ComputeDependencyHash(ImportInput{ sourceRelPath, bytes });
     entry.Artifacts = std::move(result.Artifacts);
     index.Put(std::move(entry));
     std::filesystem::create_directories(cookedDir, ec);

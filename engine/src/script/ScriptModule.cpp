@@ -641,3 +641,28 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
     result.Ok = true;
     return result;
 }
+
+uint64_t ComputeScriptComponentSchemaHash(const ScriptModule& module)
+{
+    // Cover the fields that decide storage layout and reflection identity:
+    // component name, each leaf path, scalar kind, array count, byte offset.
+    // Defaults and bytecode are deliberately excluded so a logic-only edit
+    // keeps the same hash and hot-swaps in place (spec answer 17).
+    ScriptContainerIo::Writer w;
+    for (const ScriptComponentDef& component : module.Components)
+    {
+        const std::string_view name = module.GetString(component.Name);
+        w.WriteBytes(name.data(), name.size());
+        w.Write<uint8_t>(0);
+        for (const ScriptComponentField& field : component.Fields)
+        {
+            const std::string_view path = module.GetString(field.Name);
+            w.WriteBytes(path.data(), path.size());
+            w.Write<uint8_t>(0);
+            w.Write<uint8_t>(field.Scalar);
+            w.Write<uint8_t>(field.ArrayCount);
+            w.Write<uint16_t>(field.ByteOffset);
+        }
+    }
+    return w.Bytes.empty() ? 0 : HashBytes64(std::span<const std::byte>(w.Bytes));
+}

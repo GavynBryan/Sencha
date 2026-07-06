@@ -126,6 +126,35 @@ void AssetHotReloader::StageReload(const AssetRecord& record)
             });
         break;
     }
+    case AssetType::Script:
+    {
+        IAssetSource* source = &Assets.DefaultSource();
+        const AssetRecord rec = record; // capture by value for the task thread
+        Tasks.Submit<AssetStaging>(
+            // Task thread: pure parse + validate of the re-cooked .tbc.
+            [this, source, rec]() -> AssetStaging {
+                return Assets.ScriptLoaderRef().LoadStaged(rec, *source);
+            },
+            // Owner thread, drain point: a same-layout edit swaps in place; a
+            // component layout change cannot mutate a live World's storage, so
+            // it is reported for the world-reload path (spec answer 17), not
+            // hot-swapped here.
+            [this, path = record.Path](AssetStaging staging) {
+                switch (Assets.ScriptLoaderRef().CommitReload(std::move(staging)))
+                {
+                case ScriptReloadResult::Swapped:
+                    Log.Info("AssetHotReloader: reloaded script '{}'", path);
+                    break;
+                case ScriptReloadResult::LayoutChanged:
+                    Log.Info("AssetHotReloader: script '{}' changed component layout; "
+                             "a world reload is required to apply it", path);
+                    break;
+                case ScriptReloadResult::NotResident:
+                    break;
+                }
+            });
+        break;
+    }
     default:
         Log.Debug("AssetHotReloader: '{}' ({}) is not hot-reloadable yet "
                   "(Stage 6 covers textures, static meshes, and materials)",

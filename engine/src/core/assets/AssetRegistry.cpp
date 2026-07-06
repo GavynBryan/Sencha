@@ -19,6 +19,7 @@ namespace
         if (extension == ".stex")   return AssetType::Texture;
         if (extension == ".smap")   return AssetType::Scene;
         if (extension == ".sclip")  return AssetType::Audio;
+        if (extension == ".tbc")    return AssetType::Script;
         if (extension == ".sskel")  return AssetType::Skeleton;
         if (extension == ".sanim")  return AssetType::AnimationClip;
         // Source formats (.png, .gltf, ...) are deliberately absent: they

@@ -135,6 +135,7 @@ JsonValue CookedCacheIndex::ToJson() const
         source.emplace_back("mtime", JsonValue(DecimalToString(entry->SourceMTime)));
         source.emplace_back("meta_size", JsonValue(DecimalToString(entry->MetaSize)));
         source.emplace_back("meta_mtime", JsonValue(DecimalToString(entry->MetaMTime)));
+        source.emplace_back("deps", JsonValue(HashToHex(entry->DependencyHash)));
         source.emplace_back("artifacts", JsonValue(std::move(artifacts)));
         sources.emplace_back(std::move(source));
     }
@@ -175,6 +176,14 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
         CookedSourceEntry entry;
         if (hash == nullptr || !hash->IsString() || !HashFromHex(hash->AsString(), entry.SourceHash))
             return Fail(error, "source 'hash' must be a 16-digit hex string");
+
+        // Absent on indices written before version 4; defaulting to zero
+        // matches self-contained sources.
+        if (const JsonValue* deps = item.Find("deps");
+            deps != nullptr && deps->IsString())
+        {
+            (void)HashFromHex(deps->AsString(), entry.DependencyHash);
+        }
 
         const JsonValue* artifacts = item.Find("artifacts");
         if (artifacts == nullptr || !artifacts->IsArray())

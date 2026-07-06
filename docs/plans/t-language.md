@@ -707,20 +707,26 @@ runs `ScriptCompiler` and writes the artifact: pure, bytes in, artifacts out,
 errors returned not logged, per the importer contract.
 
 `ScriptAssetLoader : IAssetLoader`, modeled on `AudioClipAssetLoader` (the
-CPU-only loader): `LoadStaged` parses and validates the container off-thread
-(pure, no engine state); `CommitTyped` links bind tables against the live
-registries and schemas on the owner thread, registers the script's components,
-and returns a `ScriptHandle` from `ScriptCache`. Registration follows the
-documented "adding a new asset type" exercise in `docs/assets/architecture.md`
-(cache member in `RuntimeAssets`, loader owned by `AssetSystem`,
-`LoaderFor(type)` case, extension mapping).
+CPU-only loader): `LoadStaged` reads the bytes, parses the container, and
+validates the bytecode off-thread (pure, no engine state); `CommitTyped`
+registers the immutable validated module with `ScriptCache` on the owner
+thread and returns a `ScriptHandle`. The asset layer is world-agnostic, so
+the loader does not link bind tables or register components: linking a module
+against a specific World (tag ids, `ComponentId` plus offsets, host slots)
+and registering its script components are the world-side `ScriptLink` and
+component-registration steps (bridges milestone), which lets one cooked
+module serve every World that loads it. Registration follows the documented
+"adding a new asset type" exercise in `docs/assets/architecture.md` (cache
+member in `RuntimeAssets`, loader owned by `AssetSystem`, `LoaderFor(type)`
+case, extension mapping).
 
 Component registration timing is a hard constraint, not a convention:
 `World::RegisterComponent` forbids registration after the first entity exists
 (asserted; UB in release). Script assets are therefore manifest-listed and
 load in the zone pre-population wave, so every script-defined component
-registers during world build, before any entity is created. `CommitTyped`
-registers components only inside that window. A script asset arriving after
+registers during world build, before any entity is created. Registration is
+part of the world-side `ScriptLink` step (not the world-agnostic loader's
+`CommitTyped`) and runs only inside that window. A script asset arriving after
 world population is a load error naming the script and the window it missed,
 never a lazy registration.
 

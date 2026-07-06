@@ -80,6 +80,16 @@ public:
 
     [[nodiscard]] virtual ImportResult Import(const ImportInput& input,
                                               ICookOutputWriter& output) = 0;
+
+    // Hash over files this source depends on beyond its own bytes (a T
+    // script's import closure). The freshness check compares it against the
+    // cooked entry's DependencyHash, so an edit to a dependency recooks the
+    // dependents. Self-contained sources keep the default zero.
+    [[nodiscard]] virtual uint64_t ComputeDependencyHash(const ImportInput& input) const
+    {
+        (void)input;
+        return 0;
+    }
 };
 
 //=============================================================================

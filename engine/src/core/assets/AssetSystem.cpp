@@ -23,9 +23,10 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          SkeletonCache& skeletons,
                          AnimationClipCache& animationClips,
                          SkinnedMeshCache& skinnedMeshes,
-                         MaterialSetCache& materialSets)
+                         MaterialSetCache& materialSets,
+                         ScriptCache& scripts)
     : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips,
-                  &skeletons, &animationClips, &skinnedMeshes, &materialSets)
+                  &skeletons, &animationClips, &skinnedMeshes, &materialSets, &scripts)
 {
 }
 
@@ -38,7 +39,8 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          SkeletonCache* skeletons,
                          AnimationClipCache* animationClips,
                          SkinnedMeshCache* skinnedMeshes,
-                         MaterialSetCache* materialSets)
+                         MaterialSetCache* materialSets,
+                         ScriptCache* scripts)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
     , StaticMeshes(meshes)
@@ -46,6 +48,7 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , MaterialSets(materialSets)
     , Textures(textures)
     , AudioClips(audioClips)
+    , Scripts(scripts)
     , Skeletons(skeletons)
     , AnimationClips(animationClips)
     , SkinnedMeshes(skinnedMeshes)
@@ -53,6 +56,7 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , TexLoader(logging, textures)
     , MatLoader(logging, *this, materials, textures)
     , ClipLoader(logging, audioClips)
+    , ScriptLoader(logging, scripts)
     , SkelLoader(logging, skeletons)
     , AnimLoader(logging, *this, animationClips, skeletons)
     , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
@@ -182,6 +186,11 @@ std::string_view AssetSystem::GetPathForAudioClip(AudioClipHandle handle) const
     return AudioClips ? AudioClips->GetName(handle) : std::string_view{};
 }
 
+std::string_view AssetSystem::GetPathForScript(ScriptHandle handle) const
+{
+    return Scripts ? Scripts->GetName(handle) : std::string_view{};
+}
+
 std::string_view AssetSystem::GetPathForSkeleton(SkeletonHandle handle) const
 {
     return Skeletons ? Skeletons->GetName(handle) : std::string_view{};
@@ -228,6 +237,7 @@ bool AssetSystem::IsResident(std::string_view path, AssetType type) const
     case AssetType::Material:      return Materials && Materials->Find(path).IsValid();
     case AssetType::Texture:       return Textures && Textures->Find(path).IsValid();
     case AssetType::Audio:         return AudioClips && AudioClips->Find(path).IsValid();
+    case AssetType::Script:        return Scripts && Scripts->Find(path).IsValid();
     case AssetType::Skeleton:      return Skeletons && Skeletons->Find(path).IsValid();
     case AssetType::AnimationClip: return AnimationClips && AnimationClips->Find(path).IsValid();
     default:                       return false;
@@ -512,6 +522,30 @@ AudioClipHandle AssetSystem::LoadAudioClip(std::string_view path)
     }
 }
 
+ScriptHandle AssetSystem::LoadScript(std::string_view path)
+{
+    const AssetRecord* record = Resolve(path, AssetType::Script);
+    if (!record)
+        return {};
+
+    if (!Scripts)
+    {
+        Log.Error("AssetSystem: missing ScriptCache for script asset {}", record->Path);
+        return {};
+    }
+
+    if (ScriptHandle existing = Scripts->Find(path); existing.IsValid())
+        return Scripts->Acquire(path);
+
+    AssetStaging staging = ScriptLoader.LoadStaged(*record, Source);
+    if (!staging.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staging.Error);
+        return {};
+    }
+    return ScriptLoader.CommitTyped(std::move(staging));
+}
+
 SkeletonHandle AssetSystem::LoadSkeleton(std::string_view path)
 {
     const AssetRecord* record = Resolve(path, AssetType::Skeleton);
@@ -605,6 +639,13 @@ AudioClipHandle AssetSystem::TryAcquireAudioClip(std::string_view path)
     return AudioClips ? AudioClips->Acquire(path) : AudioClipHandle{};
 }
 
+ScriptHandle AssetSystem::TryAcquireScript(std::string_view path)
+{
+    // Scripts register through commit, never through OnLoad, so Acquire on
+    // an unknown path yields an invalid handle without loading.
+    return Scripts ? Scripts->Acquire(path) : ScriptHandle{};
+}
+
 SkeletonHandle AssetSystem::TryAcquireSkeleton(std::string_view path)
 {
     return Skeletons ? Skeletons->Acquire(path) : SkeletonHandle{};
@@ -645,6 +686,12 @@ void AssetSystem::ReleaseAudioClip(AudioClipHandle handle)
         AudioClips->Release(handle);
 }
 
+void AssetSystem::ReleaseScript(ScriptHandle handle)
+{
+    if (Scripts)
+        Scripts->Release(handle);
+}
+
 void AssetSystem::ReleaseSkeleton(SkeletonHandle handle)
 {
     if (Skeletons)
@@ -666,6 +713,7 @@ IAssetLoader* AssetSystem::LoaderFor(AssetType type)
     case AssetType::Texture:       return &TexLoader;
     case AssetType::Material:      return &MatLoader;
     case AssetType::Audio:         return &ClipLoader;
+    case AssetType::Script:        return &ScriptLoader;
     case AssetType::Skeleton:      return &SkelLoader;
     case AssetType::AnimationClip: return &AnimLoader;
     default:                       return nullptr;

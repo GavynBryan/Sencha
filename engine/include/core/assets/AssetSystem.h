@@ -5,6 +5,7 @@
 #include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/material/MaterialAssetLoader.h>
+#include <assets/script/ScriptAssetLoader.h>
 #include <assets/skeleton/SkeletonAssetLoader.h>
 #include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
@@ -27,6 +28,7 @@ class AnimationClipCache;
 class AudioClipCache;
 class MaterialCache;
 class LoggingProvider;
+class ScriptCache;
 class SkeletonCache;
 class SkinnedMeshCache;
 class StaticMeshCache;
@@ -53,7 +55,8 @@ public:
                 SkeletonCache& skeletons,
                 AnimationClipCache& animationClips,
                 SkinnedMeshCache& skinnedMeshes,
-                MaterialSetCache& materialSets);
+                MaterialSetCache& materialSets,
+                ScriptCache& scripts);
     AssetSystem(LoggingProvider& logging,
                 AssetRegistry& registry,
                 StaticMeshCache* meshes,
@@ -63,7 +66,8 @@ public:
                 SkeletonCache* skeletons = nullptr,
                 AnimationClipCache* animationClips = nullptr,
                 SkinnedMeshCache* skinnedMeshes = nullptr,
-                MaterialSetCache* materialSets = nullptr);
+                MaterialSetCache* materialSets = nullptr,
+                ScriptCache* scripts = nullptr);
 
     [[nodiscard]] StaticMeshHandle LoadStaticMesh(std::string_view path);
     [[nodiscard]] SkinnedMeshHandle LoadSkinnedMesh(std::string_view path);
@@ -75,6 +79,8 @@ public:
     [[nodiscard]] TextureHandle LoadTexture(std::string_view path, bool srgb = true);
 
     [[nodiscard]] AudioClipHandle LoadAudioClip(std::string_view path);
+
+    [[nodiscard]] ScriptHandle LoadScript(std::string_view path);
 
     [[nodiscard]] SkeletonHandle LoadSkeleton(std::string_view path);
     [[nodiscard]] AnimationClipHandle LoadAnimationClip(std::string_view path);
@@ -94,6 +100,7 @@ public:
     [[nodiscard]] std::string_view GetPathForSkinnedMesh(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetPathForMaterial(MaterialHandle handle) const;
     [[nodiscard]] std::string_view GetPathForAudioClip(AudioClipHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForScript(ScriptHandle handle) const;
     [[nodiscard]] std::string_view GetPathForSkeleton(SkeletonHandle handle) const;
     [[nodiscard]] std::string_view GetPathForAnimationClip(AnimationClipHandle handle) const;
 
@@ -123,6 +130,7 @@ public:
     [[nodiscard]] MaterialHandle TryAcquireMaterial(std::string_view path);
     [[nodiscard]] TextureHandle TryAcquireTexture(std::string_view path);
     [[nodiscard]] AudioClipHandle TryAcquireAudioClip(std::string_view path);
+    [[nodiscard]] ScriptHandle TryAcquireScript(std::string_view path);
     [[nodiscard]] SkeletonHandle TryAcquireSkeleton(std::string_view path);
     [[nodiscard]] AnimationClipHandle TryAcquireAnimationClip(std::string_view path);
 
@@ -133,6 +141,7 @@ public:
     void ReleaseMaterial(MaterialHandle handle);
     void ReleaseTexture(TextureHandle handle);
     void ReleaseAudioClip(AudioClipHandle handle);
+    void ReleaseScript(ScriptHandle handle);
     void ReleaseSkeleton(SkeletonHandle handle);
     void ReleaseAnimationClip(AnimationClipHandle handle);
 
@@ -146,6 +155,7 @@ public:
     [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
     [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
     [[nodiscard]] AudioClipAssetLoader& AudioClipLoaderRef() { return ClipLoader; }
+    [[nodiscard]] ScriptAssetLoader& ScriptLoaderRef() { return ScriptLoader; }
     [[nodiscard]] SkeletonAssetLoader& SkeletonLoaderRef() { return SkelLoader; }
     [[nodiscard]] AnimationClipAssetLoader& AnimationClipLoaderRef() { return AnimLoader; }
 
@@ -157,6 +167,7 @@ private:
     MaterialSetCache* MaterialSets = nullptr;
     TextureCache* Textures = nullptr;
     AudioClipCache* AudioClips = nullptr;
+    ScriptCache* Scripts = nullptr;
     SkeletonCache* Skeletons = nullptr;
     AnimationClipCache* AnimationClips = nullptr;
     SkinnedMeshCache* SkinnedMeshes = nullptr;
@@ -166,6 +177,7 @@ private:
     TextureAssetLoader TexLoader;
     MaterialAssetLoader MatLoader;
     AudioClipAssetLoader ClipLoader;
+    ScriptAssetLoader ScriptLoader;
     SkeletonAssetLoader SkelLoader;
     AnimationClipAssetLoader AnimLoader;
     SkinnedMeshAssetLoader SkinnedLoader;

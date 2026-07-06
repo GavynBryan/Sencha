@@ -69,15 +69,22 @@ struct CookedSourceEntry
     int64_t MetaMTime = 0;
 
     std::vector<CookedArtifact> Artifacts;
+
+    // Importer-defined hash over files the source depends on beyond its own
+    // bytes (a T script's import closure). Zero for importers whose sources
+    // are self-contained. Freshness requires both hashes to match. Declared
+    // last so positional CookedSourceEntry initializers stay valid.
+    uint64_t DependencyHash = 0;
 };
 
 // Bumping this is the blunt cook-invalidation knob: an old index is a cold
 // cache, so every source recooks. Version 2: texture cook output changed
 // from RGBA8 to BC-compressed (Decision L format table). Version 3: .smesh
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
-// .sanim artifacts (Decisions J, M, N). A per-importer cook version is the
-// finer-grained eventual replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 3;
+// .sanim artifacts (Decisions J, M, N). Version 4: entries carry a
+// dependency hash (T script import closures). A per-importer cook version
+// is the finer-grained eventual replacement if bumps become frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 4;
 
 class CookedCacheIndex
 {
