@@ -39,6 +39,10 @@
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
+#include <script/ScriptAbilitySystem.h>
+#include <script/ScriptBehaviorSystem.h>
+#include <script/ScriptComponents.h>
+#include <script/ScriptSceneLink.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
@@ -108,7 +112,8 @@ namespace
     // resource registration on the detached registry, then the JSON parse.
     // Shared by the single-zone map path and the world-streaming recipe.
     void BuildZoneScene(Registry& registry, SceneParse& parsed, const std::string& scenePath,
-                        StaticMeshCache* meshes, MaterialSetCache* materialSets)
+                        StaticMeshCache* meshes, MaterialSetCache* materialSets,
+                        AssetSystem* assets)
     {
         InitializeDefault3DRegistry(registry, meshes, materialSets);
         // Physics components must be registered before any entity is created
@@ -121,7 +126,17 @@ namespace
         // storage must exist before the finalize pass spawns entities.
         RegisterMovement(registry.Components);
         RegisterCameraComponents(registry.Components);
+        // Script runtime + its components, registered before the finalize pass
+        // spawns entities. LinkScriptsForScene then loads and links the scene's
+        // scripts (also pre-entity), so their script-defined components register
+        // in time and the resolve system can attach the runtime behavior after
+        // load. Host components are already registered above, so Transform field
+        // binds resolve. A scene with no scripts links to nothing.
+        RegisterScriptRuntime(registry.Components);
+        RegisterScriptAbilities(registry.Components);
         parsed = ParseSceneFile(scenePath);
+        if (parsed.Json)
+            LinkScriptsForScene(registry.Components, *assets, *parsed.Json);
     }
 
     // The owner-thread half: scene deserialization plus the cooked brush
@@ -386,6 +401,9 @@ void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
     InitSceneSerializer();
     RegisterComponent<SpinComponent>();
     RegisterComponent<PlayerStartComponent>();
+    // ScriptSource lets a level entity carry a T script (an asset-ref field),
+    // authored in the inspector and run by the script bridges.
+    RegisterComponent<ScriptSource>();
 }
 
 void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serializers)
@@ -396,6 +414,7 @@ void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serialize
     // serializers (engine code) are left for the host to manage.
     serializers.Remove(ResolveComponentTypeId<SpinComponent>());
     serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
+    serializers.Remove(ResolveComponentTypeId<ScriptSource>());
 }
 
 void TemplateGame::OnStart(GameStartupContext&)
@@ -604,11 +623,12 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     auto parsed = std::make_shared<SceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
+    AssetSystem* assets = &runtimeAssets.Assets;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, scenePath](Registry& registry) {
-            BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets);
+        [parsed, meshes, materialSets, scenePath, assets](Registry& registry) {
+            BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, assets);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
             if (!FinalizeZoneScene(registry, *parsed, logging, &RuntimeAssetState().Assets,
@@ -693,8 +713,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 std::string(kAuthoredRoot) + "/" + header.CookedCollisionRef;
             auto parsed = std::make_shared<SceneParse>();
             ZoneLoadRecipe recipe;
-            recipe.Build = [parsed, scenePath, meshes, materialSets](Registry& registry)
-            { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets); };
+            recipe.Build = [parsed, scenePath, meshes, materialSets, assets](Registry& registry)
+            { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, assets); };
             // PhysicsShapes resolves at finalize time through `this`: the
             // startup +world command runs at GameLoaded, BEFORE system
             // registration hands out the shape cache, so capturing the
@@ -735,6 +755,10 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         RegisterPhysicsComponents(global.Components);
         RegisterMovement(global.Components);
         RegisterCameraComponents(global.Components);
+        // Same pre-entity script registration a zone build performs, so a
+        // world-lifetime scripted entity links like one in a streamed zone.
+        RegisterScriptRuntime(global.Components);
+        RegisterScriptAbilities(global.Components);
 
         // The world scene: authored global content, loaded synchronously into
         // the global registry before the avatar spawns (a world load is a
@@ -748,6 +772,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             const std::string collisionPath =
                 std::string(kAuthoredRoot) + "/" + loaded.CookedWorldCollisionRef;
             SceneParse parsed = ParseSceneFile(scenePath);
+            if (parsed.Json)
+                LinkScriptsForScene(global.Components, runtimeAssets.Assets, *parsed.Json);
             const bool sceneLoaded = FinalizeZoneScene(
                 global, parsed, logging, &runtimeAssets.Assets, PhysicsShapes, collisionPath);
             // A startup +world runs at GameLoaded, before system registration
@@ -840,6 +866,12 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
     ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition, ZoneLoader, ZoneRuntimePtr,
                                                       WorldPawn);
+    // Script bridges: resolve attaches the runtime behavior to ScriptSource
+    // entities after load, then the behavior/ability systems tick them.
+    ctx.Schedule.Register<ScriptResolveSystem>();
+    ctx.Schedule.Register<ScriptBehaviorSystem>();
+    ctx.Schedule.Register<ScriptAbilitySystem>();
+    ctx.Schedule.After<ScriptBehaviorSystem, ScriptResolveSystem>();
 }
 
 void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)

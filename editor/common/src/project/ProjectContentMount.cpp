@@ -4,6 +4,7 @@
 
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/ScriptCook.h>
 #include <assets/cook/TextureCook.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
@@ -25,14 +26,17 @@ void MountProjectContent(const ProjectDescriptor& project,
         ScanAssetsDirectory(root, assets.Registry);
         ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(), assets.Registry);
 
-        // Cook source textures on demand (.png -> .stex) and register the cooked
-        // overlay, so a material's asset://...png resolves to its cooked .stex with a
-        // bindless slot: the same resolve the runtime uses, which is what makes the
-        // Solid viewport WYSIWYG. Editors are cook-enabled; cooked wins over the scan.
+        // Cook source textures on demand (.png -> .stex) and T scripts (.t -> .tbc)
+        // and register the cooked overlay, so a material's asset://...png resolves to
+        // its cooked .stex with a bindless slot: the same resolve the runtime uses,
+        // which is what makes the Solid viewport WYSIWYG. Editors are cook-enabled;
+        // cooked wins over the scan.
         {
             PngTextureImporter textureImporter(jobs);
+            ScriptImporter scriptImporter(root);
             AssetImporterRegistry importers;
             importers.Register(textureImporter);
+            importers.Register(scriptImporter);
             (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);
         }
         RegisterCookedAssets(root, assets.Registry);

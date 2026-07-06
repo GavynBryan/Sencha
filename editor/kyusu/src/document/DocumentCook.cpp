@@ -8,6 +8,7 @@
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/ScriptCook.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -301,8 +302,10 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     // unchanged sources are served from the cooked cache.
     {
         PngTextureImporter textureImporter;
+        ScriptImporter scriptImporter(assetsRoot.generic_string());
         AssetImporterRegistry importers;
         importers.Register(textureImporter);
+        importers.Register(scriptImporter);
         AssetRegistry scratch(logging); // we want the on-disk artifacts + index, not a live registry
         (void)ImportAssetsOnDemand(assetsRoot.generic_string(), importers, scratch, logging);
     }
