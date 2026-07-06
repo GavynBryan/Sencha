@@ -592,12 +592,12 @@ The repo's deferral pattern: every deferral records the concrete trigger that re
   only existing seams (Track A item 3), a fitness test enforces that surface, and
   requests expressible as data vocabulary still land as data. Scripts are for entity
   behavior and content glue; native modules remain the home of systems-heavy code.
-- **Second RHI and further platforms: single Vulkan backend through v2.0, Windows and
-  Linux via that backend.** The render-domain vs `graphics/vulkan` split already
-  isolates the backend, so the option stays cheap without building a speculative
-  abstraction now (directive 4). Revisit trigger: the first shipping target (console or
-  platform deal) that cannot run this backend. Sub-item that may pull in earlier: a
-  headless or null-render build if llvmpipe proves insufficient for CI.
+- **Second RHI: superseded by owner decision (2026-07-06).** The deferral (single
+  Vulkan backend through v2.0, revisit on the first shipping target that cannot run
+  it) is replaced by the approved design in `rhi-backend-seam.md`: a link-time
+  backend seam with compile-time selection, D3D12 as the second target, D3D11
+  descoped with its own recorded trigger. The headless/null-render sub-item is
+  delivered by that plan's null backend (its step 5).
 - **macOS: out of scope.** Trigger: a shipping target that requires it (implies the
   second-RHI trigger via a Metal path or a translation layer decision).
 - **`IZonePopulationStrategy`: not until a second population policy exists.**
