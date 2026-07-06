@@ -113,6 +113,43 @@ public:
         Commands.push_back(std::move(cmd));
     }
 
+    // Type-erased add for callers that only have a ComponentId and raw bytes
+    // (a script VM enqueuing a script-defined component). `blob` is copied
+    // into the arena, so it need not outlive the call; pass size 0 / null
+    // blob for a tag component. Hooks are optional; a script component's
+    // lifecycle runs through its serializer, not ComponentTraits, so they are
+    // typically null. Same deferred flush as the templated overload.
+    void AddComponentRaw(EntityId entity, ComponentId id, const void* blob, size_t size,
+                         size_t align,
+                         void (*onAdd)(void*, World&, EntityId) = nullptr)
+    {
+        Command cmd;
+        cmd.Kind        = CommandKind::AddComponent;
+        cmd.Entity      = entity;
+        cmd.Payload.Id  = id;
+        cmd.Payload.Size = size;
+        cmd.Payload.Align = align == 0 ? 1 : align;
+        cmd.Payload.OnAddHook = onAdd;
+        if (size > 0 && blob != nullptr)
+        {
+            cmd.Payload.HasData = true;
+            cmd.Payload.DataOffset = StorePayload(blob, size, cmd.Payload.Align);
+        }
+        Commands.push_back(std::move(cmd));
+    }
+
+    void RemoveComponentRaw(EntityId entity, ComponentId id, size_t size,
+                            void (*onRemove)(const void*, World&, EntityId) = nullptr)
+    {
+        Command cmd;
+        cmd.Kind        = CommandKind::RemoveComponent;
+        cmd.Entity      = entity;
+        cmd.Payload.Id  = id;
+        cmd.Payload.Size = size;
+        cmd.Payload.OnRemoveHook = onRemove;
+        Commands.push_back(std::move(cmd));
+    }
+
     void DestroyEntity(EntityId entity)
     {
         Command cmd;

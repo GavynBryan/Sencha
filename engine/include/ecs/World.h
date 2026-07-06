@@ -13,8 +13,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -131,6 +134,48 @@ public:
         meta.IsTag     = std::is_empty_v<T>;
         ComponentMetas.push_back(meta);
 
+        return id;
+    }
+
+    // Type-erased registration for components whose C++ type is not known at
+    // compile time (script-defined components learned from a cooked module).
+    // The storage and mutation paths are already type-erased at the
+    // ComponentId level; this supplies the one piece the template path got
+    // from T: the size/alignment/tag-ness and stable identity. Same rules as
+    // the template overload: before the first entity, dense id assignment, a
+    // re-registration with a mismatched layout asserts. The name is copied
+    // into World-owned storage so the caller need not keep it alive.
+    ComponentId RegisterComponentRaw(std::string_view name, ComponentTypeId type,
+                                     size_t size, size_t alignment, bool isTag)
+    {
+        assert(!EntityCreated
+               && "Component registration after entity creation is forbidden (v1).");
+
+        if (auto it = TypeToId.find(type); it != TypeToId.end())
+        {
+            const ComponentMeta& existing = ComponentMetas[it->second];
+            assert(existing.Size == (isTag ? 0 : size)
+                   && existing.Alignment == (isTag ? 1 : alignment)
+                   && existing.IsTag == isTag
+                   && "ComponentTypeId collision: same stable name, different storage layout.");
+            return it->second;
+        }
+
+        assert(NextComponentId < static_cast<ComponentId>(MaxComponents)
+               && "Component budget (256) exceeded.");
+
+        const std::string& owned = OwnedComponentNames.emplace_back(name);
+        const ComponentId id = NextComponentId++;
+        TypeToId[type] = id;
+
+        ComponentMeta meta{};
+        meta.Id        = id;
+        meta.TypeId    = type;
+        meta.Name      = std::string_view(owned);
+        meta.Size      = isTag ? 0 : size;
+        meta.Alignment = isTag ? 1 : alignment;
+        meta.IsTag     = isTag;
+        ComponentMetas.push_back(meta);
         return id;
     }
 
@@ -855,6 +900,11 @@ private:
     std::unordered_map<ComponentTypeId, ComponentId>   TypeToId;
     ComponentId NextComponentId = 0;
 
+    // Stable backing storage for names registered through RegisterComponentRaw
+    // (the template path uses static string_views). A deque never relocates
+    // its elements, so the string_views in ComponentMetas stay valid.
+    std::deque<std::string>                            OwnedComponentNames;
+
     std::unordered_map<
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> Resources;
@@ -887,6 +937,7 @@ private:
         ComponentMetas = std::move(other.ComponentMetas);
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
+        OwnedComponentNames = std::move(other.OwnedComponentNames);
         Resources = std::move(other.Resources);
         LegacyStores = std::move(other.LegacyStores);
         QueryDepth = other.QueryDepth;
