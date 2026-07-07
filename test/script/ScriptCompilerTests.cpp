@@ -322,3 +322,40 @@ TEST(ScriptCompiler, GoldenDisassembly)
         EXPECT_EQ(disasm, golden) << fixture << " disassembly drifted";
     }
 }
+
+TEST(ScriptCompiler, RequiresClauseLowersAndRoundTrips)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Health { current: i32 = 0 }\n"
+        "component Mana { current: i32 = 0 }\n"
+        "behavior Regen {\n"
+        "    requires Health, Mana\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        ctx.entity.Health.current += 1\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+
+    auto findRegen = [](const ScriptModule& m) -> const ScriptDeclaration* {
+        for (const ScriptDeclaration& d : m.Declarations)
+            if (m.GetString(d.Name) == "Regen")
+                return &d;
+        return nullptr;
+    };
+
+    const ScriptDeclaration* decl = findRegen(r.Module);
+    ASSERT_NE(decl, nullptr);
+    ASSERT_EQ(decl->RequiredComponents.size(), 2u);
+    EXPECT_EQ(r.Module.GetString(decl->RequiredComponents[0]), "Health");
+    EXPECT_EQ(r.Module.GetString(decl->RequiredComponents[1]), "Mana");
+
+    // The required set survives the container round-trip (format v1).
+    const std::vector<std::byte> bytes = WriteScriptModule(r.Module);
+    const ScriptModuleParseResult parsed = ParseScriptModule(bytes);
+    ASSERT_TRUE(parsed.Ok) << parsed.Error;
+    const ScriptDeclaration* rt = findRegen(parsed.Module);
+    ASSERT_NE(rt, nullptr);
+    ASSERT_EQ(rt->RequiredComponents.size(), 2u);
+    EXPECT_EQ(parsed.Module.GetString(rt->RequiredComponents[0]), "Health");
+    EXPECT_EQ(parsed.Module.GetString(rt->RequiredComponents[1]), "Mana");
+}

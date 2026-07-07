@@ -416,3 +416,60 @@ TEST(ScriptLink, ReportsMissingComponent)
     EXPECT_FALSE(link.Ok);
     EXPECT_NE(link.Error.find("Transform"), std::string::npos) << link.Error;
 }
+
+TEST(ScriptBehaviorE2E, RequiresGatesOnComponentPresence)
+{
+    // A `requires` behavior runs only on entities that have the required
+    // component; an entity missing it is skipped (no tick, no NoComponent trap).
+    ScriptCompileResult compiled = CompileScript(
+        "gated.t",
+        "component Marker {\n"
+        "    hits: i32 = 0\n"
+        "}\n"
+        "behavior Ticker {\n"
+        "    requires Marker\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        ctx.entity.Marker.hits += 1\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const ComponentId markerId =
+        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    ASSERT_NE(markerId, InvalidComponentId);
+
+    struct MarkerBytes { std::int32_t Hits; };
+
+    // Entity WITH Marker and the behavior: ticks each step.
+    const EntityId withMarker = world.CreateEntity();
+    const MarkerBytes zero{ 0 };
+    world.AddComponentRaw(withMarker, markerId, &zero, sizeof(MarkerBytes), alignof(MarkerBytes),
+                          nullptr);
+    ScriptBehavior ticking{};
+    ticking.LinkedModule = link.ModuleIndex;
+    world.AddComponent(withMarker, ticking);
+
+    // Entity WITHOUT Marker but with the behavior: gated out (would otherwise trap
+    // reading Marker), so the gate both filters and prevents a trap.
+    const EntityId withoutMarker = world.CreateEntity();
+    ScriptBehavior gated{};
+    gated.LinkedModule = link.ModuleIndex;
+    world.AddComponent(withoutMarker, gated);
+
+    ScriptBehaviorSystem system;
+    for (std::uint64_t t = 0; t < 3; ++t)
+        system.Step(world, t, 1.0f / 60.0f);
+
+    const auto* hits =
+        static_cast<const MarkerBytes*>(world.GetComponentRaw(withMarker, markerId));
+    ASSERT_NE(hits, nullptr);
+    EXPECT_EQ(hits->Hits, 3);                                   // ticked every step
+    EXPECT_FALSE(world.HasComponent(withoutMarker, markerId));  // never touched
+}

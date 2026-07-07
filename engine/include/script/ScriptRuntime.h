@@ -94,6 +94,10 @@ struct ScriptLinkedModule
     // component (used to marshal commands.add record images), or -1 for a
     // host component (not addable from a script in v1).
     std::vector<std::int32_t> ComponentSchemaIndex;
+    // Per Module->Declarations index: the `requires` set resolved to this
+    // world's ComponentIds. The tick runs a declaration only on entities that
+    // have every one of these.
+    std::vector<std::vector<ComponentId>> DeclarationRequired;
 };
 
 // World resource holding every linked module plus the deterministic world

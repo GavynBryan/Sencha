@@ -26,8 +26,8 @@ enum class ScriptTokKind : uint8_t
     AssetLit,    // asset"..."
     // Keywords.
     KwComponent, KwEnum, KwAbility, KwBehavior, KwTrigger, KwInteraction,
-    KwState, KwFn, KwConst, KwParam, KwImport, KwLet, KwIf, KwElse, KwWhile,
-    KwFor, KwIn, KwReturn, KwEnter, KwTrue, KwFalse,
+    KwState, KwFn, KwConst, KwParam, KwRequires, KwImport, KwLet, KwIf, KwElse,
+    KwWhile, KwFor, KwIn, KwReturn, KwEnter, KwTrue, KwFalse,
     // Punctuation and operators.
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
     Comma, Dot, Colon, Arrow, DotDot,

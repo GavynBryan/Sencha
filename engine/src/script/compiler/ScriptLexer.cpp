@@ -22,6 +22,7 @@ namespace
         {"fn", ScriptTokKind::KwFn},
         {"const", ScriptTokKind::KwConst},
         {"param", ScriptTokKind::KwParam},
+        {"requires", ScriptTokKind::KwRequires},
         {"import", ScriptTokKind::KwImport},
         {"let", ScriptTokKind::KwLet},
         {"if", ScriptTokKind::KwIf},

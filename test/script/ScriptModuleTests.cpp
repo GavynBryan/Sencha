@@ -104,10 +104,10 @@ TEST(ScriptModule, GoldenHeaderBytes)
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[1]), 'B');
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[2]), 'C');
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[3]), '0');
-    // Container version 1, bytecode version 0, little-endian u16s.
+    // Container version 1, bytecode version 1, little-endian u16s.
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[4]), 1);
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[5]), 0);
-    EXPECT_EQ(std::to_integer<uint8_t>(bytes[6]), 0);
+    EXPECT_EQ(std::to_integer<uint8_t>(bytes[6]), 1);
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[7]), 0);
     // Deterministic-strict flag set, debug flag clear.
     EXPECT_EQ(std::to_integer<uint8_t>(bytes[10]), 1);

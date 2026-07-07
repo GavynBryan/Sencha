@@ -145,6 +145,10 @@ struct ScriptAstBlock
     std::vector<std::string_view> States;
     std::vector<ScriptAstConst> Consts; // consts and params
     std::vector<ScriptAstFn> Fns;
+    // Components the declaration's subject entity is required to have. The tick
+    // runs only on entities that have them all; the typechecker treats the
+    // subject as known to have them (no has() guard needed).
+    std::vector<std::string_view> Requires;
     uint32_t Line = 0;
     uint32_t Col = 0;
 };

@@ -803,6 +803,23 @@ namespace
                         return false;
                     }
                     break;
+                case ScriptTokKind::KwRequires:
+                    Advance(); // requires
+                    if (!Is(ScriptTokKind::Ident))
+                    {
+                        return Fail(Peek(), "expected a component name after 'requires'");
+                    }
+                    block.Requires.push_back(Advance().Text);
+                    while (Is(ScriptTokKind::Comma))
+                    {
+                        Advance(); // ,
+                        if (!Is(ScriptTokKind::Ident))
+                        {
+                            return Fail(Peek(), "expected a component name after ','");
+                        }
+                        block.Requires.push_back(Advance().Text);
+                    }
+                    break;
                 case ScriptTokKind::KwFn:
                     if (!ParseFn(block.Fns))
                     {
@@ -812,7 +829,7 @@ namespace
                 case ScriptTokKind::Eof:
                     return Fail(Peek(), "unterminated declaration block");
                 default:
-                    return Fail(Peek(), "expected state, const, param, or fn");
+                    return Fail(Peek(), "expected state, const, param, requires, or fn");
                 }
                 SkipTerminators();
             }

@@ -501,6 +501,11 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
                 callback.FunctionIndex = r.Read<uint32_t>();
                 decl.Callbacks.push_back(callback);
             }
+            const uint16_t requiredCount = r.Read<uint16_t>();
+            for (uint16_t q = 0; q < requiredCount && !r.Failed; ++q)
+            {
+                decl.RequiredComponents.push_back(r.Read<uint32_t>());
+            }
             if (!r.Failed)
             {
                 if (!CheckString(module, decl.Name, "Declarations", error))
@@ -523,6 +528,13 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
                     if (callback.FunctionIndex >= module.Functions.size())
                     {
                         return fail("Declarations callback references a missing function");
+                    }
+                }
+                for (const uint32_t required : decl.RequiredComponents)
+                {
+                    if (!CheckString(module, required, "Declarations", error))
+                    {
+                        return fail(std::move(error));
                     }
                 }
                 module.Declarations.push_back(std::move(decl));

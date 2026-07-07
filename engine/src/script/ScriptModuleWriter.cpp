@@ -139,6 +139,11 @@ std::vector<std::byte> WriteScriptModule(const ScriptModule& module)
             w.Write<uint32_t>(callback.Name);
             w.Write<uint32_t>(callback.FunctionIndex);
         }
+        w.Write<uint16_t>(static_cast<uint16_t>(d.RequiredComponents.size()));
+        for (const uint32_t required : d.RequiredComponents)
+        {
+            w.Write<uint32_t>(required);
+        }
     }));
 
     if (!module.HostEnumFixups.empty())

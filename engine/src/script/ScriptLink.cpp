@@ -311,6 +311,37 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
         }
     }
 
+    // 6. Per-declaration `requires` sets: resolve each named component (script or
+    // host) to this world's ComponentId. The tick gates a declaration on them.
+    linked.DeclarationRequired.reserve(module->Declarations.size());
+    for (const ScriptDeclaration& decl : module->Declarations)
+    {
+        std::vector<ComponentId> required;
+        required.reserve(decl.RequiredComponents.size());
+        for (const std::uint32_t nameIdx : decl.RequiredComponents)
+        {
+            const std::string_view name = module->GetString(nameIdx);
+            ComponentId id = InvalidComponentId;
+            if (const HostComponentLayout* host = FindHostComponent(name))
+            {
+                id = world.GetComponentIdByType(host->Type);
+            }
+            else
+            {
+                id = world.GetComponentIdByType(
+                    MakeComponentTypeId(std::string("script.") + std::string(name)));
+            }
+            if (id == InvalidComponentId)
+            {
+                return fail(std::format("declaration '{}' requires component '{}' which is not "
+                                        "registered in this world",
+                                        module->GetString(decl.Name), name));
+            }
+            required.push_back(id);
+        }
+        linked.DeclarationRequired.push_back(std::move(required));
+    }
+
     result.ModuleIndex = static_cast<std::uint32_t>(runtime.Modules.size());
     runtime.Modules.push_back(std::move(linked));
     // Keep ModuleHandles parallel; the scene-link step overwrites the slot

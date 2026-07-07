@@ -16,6 +16,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -498,6 +499,40 @@ public:
                 count += chunkPtr->RowCount;
         }
         return count;
+    }
+
+    // Type-erased required-signature iteration: invokes fn(EntityId) for every
+    // live entity whose archetype contains ALL of requiredIds, in archetype/chunk
+    // order. The runtime counterpart of Query<With<...>> for components known only
+    // by id (a script behavior ticked over its required components). Like
+    // ForEachComponent it does not push a query scope, so structural changes made
+    // during iteration must be deferred to a CommandBuffer. Empty requiredIds
+    // matches every archetype.
+    template <typename F>
+    void ForEachEntityMatching(std::span<const ComponentId> requiredIds, F&& fn)
+    {
+        ArchetypeSignature required;
+        for (const ComponentId id : requiredIds)
+            required.set(id);
+        const ArchetypeSignature excluded;
+
+        for (auto& archPtr : ArchetypeList)
+        {
+            Archetype& arch = *archPtr;
+            if (!SignatureMatches(arch.Signature, required, excluded))
+                continue;
+
+            for (auto& chunkPtr : arch.Chunks)
+            {
+                Chunk& chunk = *chunkPtr;
+                if (chunk.IsEmpty())
+                    continue;
+
+                const EntityIndex* entities = chunk.EntityIndices();
+                for (uint32_t row = 0; row < chunk.RowCount; ++row)
+                    fn(EntityId{ entities[row], GenerationForIndex(entities[row]) });
+            }
+        }
     }
 
     // ── Archetype access (for Query internals) ───────────────────────────────

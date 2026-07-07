@@ -3241,6 +3241,12 @@ ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view ma
                     decl.Callbacks.push_back({ctx.Str(callbackName), fn.FunctionIndex});
                 }
             }
+            for (const std::string_view required : block.Requires)
+            {
+                // Kept symbolic; link resolves the name to a ComponentId (and
+                // errors if it names neither a script nor a host component).
+                decl.RequiredComponents.push_back(ctx.Str(required));
+            }
             ctx.Module.Declarations.push_back(std::move(decl));
         }
     }

@@ -22,7 +22,7 @@
 
 inline constexpr uint32_t kScriptContainerMagic = 0x30434254u; // "TBC0" little-endian
 inline constexpr uint16_t kScriptContainerVersion = 1;
-inline constexpr uint16_t kScriptBytecodeVersion = 0;
+inline constexpr uint16_t kScriptBytecodeVersion = 1;
 
 inline constexpr uint16_t kScriptFlagDeterministicStrict = 1u << 0;
 inline constexpr uint16_t kScriptFlagHasDebug            = 1u << 1;
@@ -170,6 +170,9 @@ struct ScriptDeclaration
     ScriptDeclKind Kind = ScriptDeclKind::Ability;
     std::vector<uint32_t> States; // string indices, declaration order
     std::vector<ScriptCallbackDef> Callbacks;
+    // Components the declaration's subject entity must have (string indices).
+    // Resolved to ComponentIds at link; gate the tick and type the subject.
+    std::vector<uint32_t> RequiredComponents;
 };
 
 struct ScriptHostEnumFixup

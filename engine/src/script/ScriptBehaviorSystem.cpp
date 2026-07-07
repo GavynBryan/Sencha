@@ -61,6 +61,19 @@ void ScriptBehaviorSystem::Step(World& world, std::uint64_t tickIndex, float dt)
         }
         const ScriptDeclaration& decl = module.Declarations[behavior.Declaration];
 
+        // requires gate: run only on entities that have every required component.
+        // Skip without marking spawned so the behavior starts if the components
+        // are added later. This is the interim per-entity form; the behavior-as-
+        // component pivot replaces it with an archetype filter.
+        if (behavior.Declaration < linked.DeclarationRequired.size())
+        {
+            for (const ComponentId required : linked.DeclarationRequired[behavior.Declaration])
+            {
+                if (!world.HasComponent(entity, required))
+                    return;
+            }
+        }
+
         std::int32_t state = behavior.State;
         // Spawned is set before invoking, so a trapping spawn is not retried
         // (and does not re-log) every tick.

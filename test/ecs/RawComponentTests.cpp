@@ -5,6 +5,8 @@
 
 #include <bit>
 #include <cstring>
+#include <set>
+#include <vector>
 
 namespace
 {
@@ -137,4 +139,47 @@ TEST(CommandBufferRaw, RawAddMatchesTemplatedPayloadCapture)
     int32_t stored = 0;
     std::memcpy(&stored, world.GetComponentRaw(entity, id), sizeof(stored));
     EXPECT_EQ(stored, 7);
+}
+
+TEST(ForEachEntityMatching, YieldsOnlyEntitiesWithAllRequiredComponents)
+{
+    // The required-signature iterator (the runtime half of a `requires` behavior
+    // tick) visits exactly the entities whose archetype has every required id.
+    World world;
+    const ComponentId a = world.RegisterComponentRaw("A", MakeComponentTypeId("script.A"),
+                                                      sizeof(int32_t), alignof(int32_t), false);
+    const ComponentId b = world.RegisterComponentRaw("B", MakeComponentTypeId("script.B"),
+                                                      sizeof(int32_t), alignof(int32_t), false);
+
+    auto make = [&](bool hasA, bool hasB) {
+        const EntityId e = world.CreateEntity();
+        const int32_t v = 0;
+        if (hasA)
+            world.AddComponentRaw(e, a, &v, sizeof(v), alignof(int32_t), nullptr);
+        if (hasB)
+            world.AddComponentRaw(e, b, &v, sizeof(v), alignof(int32_t), nullptr);
+        return e;
+    };
+    const EntityId ab1 = make(true, true);
+    const EntityId ab2 = make(true, true);
+    make(true, false);  // A only
+    make(false, true);  // B only
+    make(false, false); // neither
+
+    auto collect = [&](std::vector<ComponentId> required) {
+        std::set<std::uint32_t> seen;
+        world.ForEachEntityMatching(required, [&](EntityId e) { seen.insert(e.Index); });
+        return seen;
+    };
+
+    // Requiring {A, B} yields exactly the two entities that have both.
+    const std::set<std::uint32_t> both = collect({ a, b });
+    EXPECT_EQ(both.size(), 2u);
+    EXPECT_TRUE(both.count(ab1.Index));
+    EXPECT_TRUE(both.count(ab2.Index));
+
+    // Requiring {A} yields the three A-bearing entities (two AB + one A-only).
+    EXPECT_EQ(collect({ a }).size(), 3u);
+    // Requiring {B} yields the three B-bearing entities (two AB + one B-only).
+    EXPECT_EQ(collect({ b }).size(), 3u);
 }

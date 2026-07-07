@@ -82,9 +82,10 @@ struct CookedSourceEntry
 // from RGBA8 to BC-compressed (Decision L format table). Version 3: .smesh
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
 // .sanim artifacts (Decisions J, M, N). Version 4: entries carry a
-// dependency hash (T script import closures). A per-importer cook version
-// is the finer-grained eventual replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 4;
+// dependency hash (T script import closures). Version 5: T bytecode format
+// v1 (behavior `requires` in the Declarations record). A per-importer cook
+// version is the finer-grained eventual replacement if bumps become frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 5;
 
 class CookedCacheIndex
 {
