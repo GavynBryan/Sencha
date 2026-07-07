@@ -1,6 +1,8 @@
 #include "ScriptTestSupport.h"
 
 #include <core/hash/ContentHash.h>
+#include <core/logging/LoggingProvider.h>
+#include <debug/DebugLogSink.h>
 #include <ecs/World.h>
 #include <script/ScriptBehaviorSystem.h>
 #include <script/ScriptCompiler.h>
@@ -14,6 +16,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <string>
 
 namespace
 {
@@ -205,6 +208,154 @@ TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
     ASSERT_NE(stored, nullptr);
     EXPECT_EQ(stored->Count, 7);
     EXPECT_FLOAT_EQ(stored->Weight, 2.5f);
+}
+
+TEST(ScriptBehaviorE2E, CommandsAddOfPresentComponentTrapsNotAborts)
+{
+    // A behavior whose spawn adds a component the entity already has (e.g. one a
+    // designer authored in the scene) must trap, not abort the player: the add is
+    // rejected and the existing component keeps its authored value.
+    ScriptCompileResult compiled = CompileScript(
+        "adder.t",
+        "component Marker {\n"
+        "    count: i32 = 0\n"
+        "}\n"
+        "behavior Adder {\n"
+        "    fn spawn(ctx: BehaviorContext) {\n"
+        "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const ComponentId markerId =
+        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    ASSERT_NE(markerId, InvalidComponentId);
+
+    const EntityId entity = world.CreateEntity();
+    // Author the component first, with a value distinct from what spawn would set.
+    struct MarkerBytes { std::int32_t Count; };
+    const MarkerBytes authored{ 99 };
+    world.AddComponentRaw(entity, markerId, &authored, sizeof(MarkerBytes), alignof(MarkerBytes),
+                          nullptr);
+
+    ScriptBehavior behavior{};
+    behavior.LinkedModule = link.ModuleIndex;
+    world.AddComponent(entity, behavior);
+
+    ScriptBehaviorSystem system;
+    system.Step(world, 0, 1.0f / 60.0f); // must complete, not abort
+
+    ASSERT_TRUE(world.HasComponent(entity, markerId));
+    const auto* stored = static_cast<const MarkerBytes*>(world.GetComponentRaw(entity, markerId));
+    ASSERT_NE(stored, nullptr);
+    EXPECT_EQ(stored->Count, 99); // authored value preserved; the illegal add was rejected
+}
+
+TEST(ScriptBehaviorE2E, DuplicateAddInOneCallbackTrapsNotAborts)
+{
+    // Two adds of the same component in one callback: the second would hit the
+    // flush's "already has component" assert. The per-Step pending set catches it
+    // at enqueue, so the first add applies and the player does not abort.
+    ScriptCompileResult compiled = CompileScript(
+        "adder.t",
+        "component Marker {\n"
+        "    count: i32 = 0\n"
+        "}\n"
+        "behavior Adder {\n"
+        "    fn spawn(ctx: BehaviorContext) {\n"
+        "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
+        "        ctx.commands.add(ctx.entity, Marker { count: 8 })\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const ComponentId markerId =
+        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    ASSERT_NE(markerId, InvalidComponentId);
+
+    const EntityId entity = world.CreateEntity();
+    ScriptBehavior behavior{};
+    behavior.LinkedModule = link.ModuleIndex;
+    world.AddComponent(entity, behavior);
+
+    ScriptBehaviorSystem system;
+    system.Step(world, 0, 1.0f / 60.0f); // must complete, not abort
+
+    ASSERT_TRUE(world.HasComponent(entity, markerId));
+    struct MarkerBytes { std::int32_t Count; };
+    const auto* stored = static_cast<const MarkerBytes*>(world.GetComponentRaw(entity, markerId));
+    ASSERT_NE(stored, nullptr);
+    EXPECT_EQ(stored->Count, 7); // first add applied; the duplicate was rejected
+}
+
+TEST(ScriptBehaviorE2E, TrapReportsStructuredDiagnostic)
+{
+    // A trapped callback logs one structured line (declaration, callback, trap
+    // code, tick). Here spawn traps by adding an already-present component.
+    ScriptCompileResult compiled = CompileScript(
+        "adder.t",
+        "component Marker {\n"
+        "    count: i32 = 0\n"
+        "}\n"
+        "behavior Adder {\n"
+        "    fn spawn(ctx: BehaviorContext) {\n"
+        "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
+        "    }\n"
+        "}\n",
+        {});
+    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
+
+    World world;
+    RegisterScriptRuntime(world);
+    const ScriptLinkResult link =
+        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
+    ASSERT_TRUE(link.Ok) << link.Error;
+
+    const ComponentId markerId =
+        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    const EntityId entity = world.CreateEntity();
+    struct MarkerBytes { std::int32_t Count; };
+    const MarkerBytes authored{ 99 };
+    world.AddComponentRaw(entity, markerId, &authored, sizeof(MarkerBytes), alignof(MarkerBytes),
+                          nullptr);
+    ScriptBehavior behavior{};
+    behavior.LinkedModule = link.ModuleIndex;
+    world.AddComponent(entity, behavior);
+
+    LoggingProvider logging;
+    DebugLogSink& sink = logging.AddSink<DebugLogSink>();
+    ScriptBehaviorSystem system;
+    system.SetLogging(logging);
+    system.Step(world, 42, 1.0f / 60.0f);
+
+    std::string message;
+    for (std::size_t i = 0; i < sink.Count(); ++i)
+    {
+        const std::string& candidate = sink.GetEntry(i).Message;
+        if (candidate.find("trap STRUCTURAL") != std::string::npos)
+        {
+            message = candidate;
+            break;
+        }
+    }
+    ASSERT_FALSE(message.empty()) << "no structured trap diagnostic was logged";
+    EXPECT_NE(message.find("Adder"), std::string::npos);    // declaration
+    EXPECT_NE(message.find("spawn"), std::string::npos);    // callback / function
+    EXPECT_NE(message.find("tick 42"), std::string::npos);  // tick
 }
 
 TEST(ScriptBehaviorE2E, CueFireAppendsToBuffer)

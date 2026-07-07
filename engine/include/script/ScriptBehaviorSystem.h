@@ -6,6 +6,7 @@
 
 struct FixedLogicContext;
 class World;
+class LoggingProvider;
 
 //=============================================================================
 // ScriptBehaviorSystem
@@ -30,8 +31,13 @@ public:
     // without a full schedule.
     void Step(World& world, std::uint64_t tickIndex, float dt);
 
+    // Where trap diagnostics go (the player's logging, which PIE routes to a
+    // file the editor tails). Optional: unset in tests, which skip reporting.
+    void SetLogging(LoggingProvider& logging) { Log = &logging; }
+
 private:
     ScriptVm Vm;
+    LoggingProvider* Log = nullptr;
 };
 
 // Registers the ScriptBehavior component and the ScriptRuntime resource in a

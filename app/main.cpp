@@ -33,24 +33,24 @@ namespace
     constexpr const char* kModuleExtension = ".so";
 #endif
 
-    // Strips --game <path> from argv (so the remaining +commands reach the engine
-    // startup script regardless of order) and returns the path, or empty.
-    std::string ExtractGameArg(int& argc, char** argv)
+    // Strips `<flag> <value>` from argv (so the remaining +commands reach the
+    // engine startup script regardless of order) and returns the value, or empty.
+    std::string ExtractValueArg(int& argc, char** argv, const char* flag)
     {
-        std::string path;
+        std::string value;
         int write = 1;
         for (int read = 1; read < argc; ++read)
         {
-            if (std::strcmp(argv[read], "--game") == 0 && read + 1 < argc)
+            if (std::strcmp(argv[read], flag) == 0 && read + 1 < argc)
             {
-                path = argv[read + 1];
+                value = argv[read + 1];
                 ++read; // skip the value too
                 continue;
             }
             argv[write++] = argv[read];
         }
         argc = write;
-        return path;
+        return value;
     }
 
     // The default game module sits next to the executable as game<ext>: drop a
@@ -68,7 +68,7 @@ namespace
 
     std::string ResolveModulePath(int& argc, char** argv)
     {
-        if (std::string arg = ExtractGameArg(argc, argv); !arg.empty())
+        if (std::string arg = ExtractValueArg(argc, argv, "--game"); !arg.empty())
             return arg;
         if (const char* env = std::getenv("SENCHA_GAME_MODULE"); env != nullptr && env[0] != '\0')
             return env;
@@ -79,6 +79,8 @@ namespace
 int main(int argc, char** argv)
 {
     const std::string modulePath = ResolveModulePath(argc, argv);
+    // Optional log file (PIE passes it so the editor can tail the player's log).
+    const std::string logPath = ExtractValueArg(argc, argv, "--log");
     if (modulePath.empty())
     {
         std::fprintf(stderr,
@@ -100,7 +102,7 @@ int main(int argc, char** argv)
     }
 
     Application app(argc, argv);
-    app.Configure([](EngineConfig& config) {
+    app.Configure([&logPath](EngineConfig& config) {
         config.App.Name = "Sencha";
         config.Window.Title = "Sencha";
         config.Window.Width = 1280;
@@ -109,6 +111,7 @@ int main(int argc, char** argv)
         config.Runtime.ExitOnEscape = true;
         config.Runtime.TogglePauseOnF1 = true;
         config.Debug.DebugUi = true;
+        config.Debug.LogFilePath = logPath;
     });
 
     const int result = app.Run(*module.Instance);

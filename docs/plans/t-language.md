@@ -867,3 +867,28 @@ Generics. Interactive debugger stepping (the line table and disassembly ship in
 v1.0). Spawn-with-id ergonomics if prerequisite 3 slips. Any networking or
 replication awareness. Parallel VM execution (behind the profile gate, with the
 serial reference path identical).
+
+## Interfaces and traits: design direction (not v1.0)
+
+T is monomorphic on purpose: records, free functions, and a fixed per-declaration
+callback set, with no interfaces, traits, concepts, or runtime dispatch. That is a
+deliberate cost decision (dispatch pulls in vtables, generics-adjacent typing, and
+a larger surface that fights the frozen-tiny v1.0), not an oversight. Most needs
+that read as "I want a trait" are already covered by shape-neutral mechanisms:
+
+- **Is-a membership and queries**: gameplay tags. `tag"damage.flammable"` plus a
+  tag query expresses "everything that is Damageable" without a type hierarchy.
+- **Has-data-X preconditions**: components plus a behavior `requires` clause. A
+  behavior that operates on any entity carrying a `Health` component declares
+  `requires Health` and runs only on matching entities, no `has()` guards.
+- **Closed dispatch over a known set**: a registered operation / function table
+  keyed by an enum or tag, chosen where the behavior is authored (data), not by a
+  runtime vtable.
+- **Content-authored variation**: data tables, tags, asset metadata, cvars.
+
+The rule for adding any dispatch mechanism to T is the CLAUDE.md directive-4 bar:
+a concrete, present use case that the above cannot express cleanly, answered by the
+narrowest mechanism that fits (which is usually still not full traits). Until such
+a case forces it, T stays monomorphic. Generic functions over multiple record types
+are the one gap the alternatives do not close; that is the `Generics` v2.0 item
+above, and any trait-like feature would be designed alongside it, minimally, then.

@@ -10,13 +10,16 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
+#include <core/logging/LogLevel.h>
 #include <core/logging/Logger.h>
 #include <zone/WorldPartitionIds.h>
 
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <fstream>
 #include <span>
+#include <string>
 #include <variant>
 
 PieDriver::PieDriver(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets)
@@ -143,6 +146,12 @@ void PieDriver::Play(const std::string& map)
     }
 
     const std::string app = ResolveHostAppPath();
+    // The player mirrors its log into this file so the editor can tail it (the
+    // player's stdout is the editor's own inherited stream). Reset the tail so we
+    // read from the freshly truncated file.
+    PieLogPath_ = (std::filesystem::path(Project_->Directory) / "pie.log").string();
+    PieLogOffset_ = 0;
+    PieLogPending_.clear();
     // CWD is the project directory: the game resolves its content roots
     // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
     std::string commandLine;
@@ -152,7 +161,8 @@ void PieDriver::Play(const std::string& map)
              app, Project_->GameModulePath, commandLine, Project_->Directory);
 
     std::string error;
-    if (!Pie.Launch(app, Project_->GameModulePath, Project_->Directory, startupArgs, &error))
+    if (!Pie.Launch(app, Project_->GameModulePath, Project_->Directory, PieLogPath_, startupArgs,
+                    &error))
         log.Error("play failed: " + error);
     else
         log.Info("play: session started (" + label + ")");
@@ -166,6 +176,77 @@ void PieDriver::Stop()
 bool PieDriver::IsPlaying()
 {
     return Pie.IsRunning();
+}
+
+namespace
+{
+    // Category for lines mirrored from the PIE player, so the console shows their
+    // origin distinctly from the editor's own PieDriver messages.
+    struct PieLog
+    {
+    };
+
+    LogLevel PieLineLevel(const std::string& line)
+    {
+        if (line.find("[ERROR]") != std::string::npos || line.find("[CRIT]") != std::string::npos)
+            return LogLevel::Error;
+        if (line.find("[WARN]") != std::string::npos)
+            return LogLevel::Warning;
+        return LogLevel::Info;
+    }
+}
+
+void PieDriver::Poll()
+{
+    const bool playing = Pie.IsRunning(); // reaps and records the exit status
+
+    if (playing || WasPlaying_)
+        DrainPieLog(); // surface new player lines (including a crash's final ones)
+
+    if (WasPlaying_ && !playing)
+    {
+        const PieExitStatus exit = Pie.TakeExit();
+        Logger& log = Engine_.Logging().GetLogger<PieDriver>();
+        if (exit.Kind == PieExitKind::Crashed)
+            log.Error("PIE crashed: signal {} (the player aborted; see the log above)", exit.Value);
+        else if (exit.Kind == PieExitKind::Exited && exit.Value != 0)
+            log.Warn("PIE exited with code {}", exit.Value);
+        else
+            log.Info("PIE session ended");
+    }
+    WasPlaying_ = playing;
+}
+
+void PieDriver::DrainPieLog()
+{
+    if (PieLogPath_.empty())
+        return;
+    std::ifstream file(PieLogPath_, std::ios::binary);
+    if (!file)
+        return;
+    file.seekg(0, std::ios::end);
+    const std::streamoff end = file.tellg();
+    if (end < PieLogOffset_) // the player truncated the file on (re)launch
+        PieLogOffset_ = 0;
+    if (end <= PieLogOffset_)
+        return;
+
+    std::string chunk(static_cast<std::size_t>(end - PieLogOffset_), '\0');
+    file.seekg(PieLogOffset_, std::ios::beg);
+    file.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+    PieLogOffset_ = end;
+
+    // Emit complete lines; carry any trailing partial line to the next drain.
+    PieLogPending_ += chunk;
+    Logger& log = Engine_.Logging().GetLogger<PieLog>();
+    std::size_t newline;
+    while ((newline = PieLogPending_.find('\n')) != std::string::npos)
+    {
+        const std::string line = PieLogPending_.substr(0, newline);
+        PieLogPending_.erase(0, newline + 1);
+        if (!line.empty())
+            log.Log(PieLineLevel(line), line);
+    }
 }
 
 std::string PieDriver::ResolveHostAppPath() const

@@ -8,6 +8,7 @@
 #include <audio/CaptionSystem.h>
 #include <core/console/ConsoleService.h>
 #include <core/logging/ConsoleLogSink.h>
+#include <core/logging/FileLogSink.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -45,6 +46,10 @@ bool Engine::Initialize()
     LoggingProvider& logging = LoggingState;
     if (Configuration.Debug.ConsoleLogging)
         logging.AddSink<ConsoleLogSink>();
+    // A file sink lets the out-of-process PIE player hand its log to the editor,
+    // which tails the file (the player's stdout is not visible to the editor).
+    if (!Configuration.Debug.LogFilePath.empty())
+        logging.AddSink<FileLogSink>(Configuration.Debug.LogFilePath);
 
     DebugLogSink& debugLog = logging.AddSink<DebugLogSink>();
     DebugState = std::make_unique<DebugService>(logging, debugLog);

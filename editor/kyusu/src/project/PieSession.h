@@ -3,6 +3,21 @@
 #include <string>
 #include <vector>
 
+// How a PIE child terminated. Crashed carries the signal number (e.g. SIGABRT
+// from a failed assert); Exited carries the process exit code.
+enum class PieExitKind
+{
+    None,
+    Exited,
+    Crashed,
+};
+
+struct PieExitStatus
+{
+    PieExitKind Kind = PieExitKind::None;
+    int Value = 0;
+};
+
 //=============================================================================
 // PieSession
 //
@@ -25,14 +40,21 @@ public:
     bool Launch(const std::string& appPath,
                 const std::string& gameModulePath,
                 const std::string& workingDir,
+                const std::string& logPath,
                 const std::vector<std::string>& startupArgs,
                 std::string* error);
 
     void Stop();
     [[nodiscard]] bool IsRunning();
 
+    // The child's termination detected since the last call, if any (one-shot):
+    // IsRunning records it when it reaps a terminated child. Kind is None when
+    // the child is still running or was stopped explicitly.
+    [[nodiscard]] PieExitStatus TakeExit();
+
 private:
     // pid_t kept as long to keep the platform header out of this interface; -1 is
     // "no child".
     long ChildPid = -1;
+    PieExitStatus LastExit;
 };

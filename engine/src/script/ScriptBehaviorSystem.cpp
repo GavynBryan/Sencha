@@ -1,19 +1,22 @@
 #include <script/ScriptBehaviorSystem.h>
 
 #include <app/GameContexts.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/CommandBuffer.h>
 #include <ecs/World.h>
 #include <script/ScriptCallbacks.h>
 #include <script/ScriptRuntime.h>
+#include <script/ScriptTrapReport.h>
 #include <script/WorldScriptHost.h>
 
 #include <bit>
 
 namespace
 {
-    void Invoke(ScriptVm& vm, WorldScriptHost& host, const ScriptLinkedModule& linked,
-                std::uint32_t linkedIndex, std::uint32_t functionIndex, EntityId entity,
-                std::uint64_t tick, float dt, std::int32_t& stateInOut)
+    ScriptInvokeResult Invoke(ScriptVm& vm, WorldScriptHost& host, const ScriptLinkedModule& linked,
+                              std::uint32_t linkedIndex, std::uint32_t functionIndex,
+                              EntityId entity, std::uint64_t tick, float dt,
+                              std::int32_t& stateInOut)
     {
         host.Begin(linkedIndex, entity, tick);
         const std::uint64_t args[3] = {
@@ -30,6 +33,7 @@ namespace
             stateInOut = result.PendingState;
         }
         // A trap ends this callback; behaviors resume next tick.
+        return result;
     }
 }
 
@@ -58,19 +62,31 @@ void ScriptBehaviorSystem::Step(World& world, std::uint64_t tickIndex, float dt)
         const ScriptDeclaration& decl = module.Declarations[behavior.Declaration];
 
         std::int32_t state = behavior.State;
+        // Spawned is set before invoking, so a trapping spawn is not retried
+        // (and does not re-log) every tick.
         if (behavior.Spawned == 0)
         {
             behavior.Spawned = 1;
             if (const std::int32_t spawn = FindScriptCallback(module, decl, "spawn"); spawn >= 0)
             {
-                Invoke(Vm, host, linked, behavior.LinkedModule,
-                       static_cast<std::uint32_t>(spawn), entity, tickIndex, dt, state);
+                const ScriptInvokeResult result =
+                    Invoke(Vm, host, linked, behavior.LinkedModule,
+                           static_cast<std::uint32_t>(spawn), entity, tickIndex, dt, state);
+                if (Log != nullptr && !result.Ok())
+                {
+                    ReportScriptTrap(*Log, module, decl, result, tickIndex);
+                }
             }
         }
         if (const std::int32_t fixed = FindScriptFixedCallback(module, decl, state); fixed >= 0)
         {
-            Invoke(Vm, host, linked, behavior.LinkedModule,
-                   static_cast<std::uint32_t>(fixed), entity, tickIndex, dt, state);
+            const ScriptInvokeResult result =
+                Invoke(Vm, host, linked, behavior.LinkedModule, static_cast<std::uint32_t>(fixed),
+                       entity, tickIndex, dt, state);
+            if (Log != nullptr && !result.Ok())
+            {
+                ReportScriptTrap(*Log, module, decl, result, tickIndex);
+            }
         }
         behavior.State = state;
     });

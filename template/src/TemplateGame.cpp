@@ -867,10 +867,11 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition, ZoneLoader, ZoneRuntimePtr,
                                                       WorldPawn);
     // Script bridges: resolve attaches the runtime behavior to ScriptSource
-    // entities after load, then the behavior/ability systems tick them.
+    // entities after load, then the behavior/ability systems tick them. Both get
+    // the engine's logging so a trapped callback surfaces a structured diagnostic.
     ctx.Schedule.Register<ScriptResolveSystem>();
-    ctx.Schedule.Register<ScriptBehaviorSystem>();
-    ctx.Schedule.Register<ScriptAbilitySystem>();
+    ctx.Schedule.Register<ScriptBehaviorSystem>().SetLogging(GetEngine().Logging());
+    ctx.Schedule.Register<ScriptAbilitySystem>().SetLogging(GetEngine().Logging());
     ctx.Schedule.After<ScriptBehaviorSystem, ScriptResolveSystem>();
 }
 

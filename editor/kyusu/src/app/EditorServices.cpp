@@ -638,6 +638,10 @@ void EditorServices::ProcessFrame()
         Files->UpdateTitle();
     }
 
+    // Surface the out-of-process PIE player's log (and a crash) in the editor console.
+    if (Pie)
+        Pie->Poll();
+
     // Poll watched sources on an interval, not per frame: the watcher is a
     // content-hash-confirmed mtime scan over the content roots. A save from
     // the material editor or a text editor lands in the viewport within ~0.5s.

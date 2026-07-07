@@ -8,6 +8,7 @@
 
 struct FixedLogicContext;
 class World;
+class LoggingProvider;
 
 //=============================================================================
 // ScriptAbilitySystem
@@ -31,8 +32,12 @@ public:
     // Runs one world's script abilities for a tick. Exposed for tests.
     void Step(World& world, std::uint64_t tickIndex, float dt);
 
+    // Where trap diagnostics go (see ScriptBehaviorSystem::SetLogging). Optional.
+    void SetLogging(LoggingProvider& logging) { Log = &logging; }
+
 private:
     ScriptVm Vm;
+    LoggingProvider* Log = nullptr;
 };
 
 // Registers the ScriptAbilityState component and the activation queue in a
