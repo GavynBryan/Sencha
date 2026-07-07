@@ -724,3 +724,66 @@ IAssetLoader* AssetSystem::LoaderFor(AssetType type)
     default:                       return nullptr;
     }
 }
+
+// The four switches below stay in sync: SupportsAssetHandleOps is true for
+// exactly the types the other three handle. Texture is loader-backed but omitted
+// (its load is srgb-parameterized and it has no GetPathForTexture).
+bool AssetSystem::SupportsAssetHandleOps(AssetType type) const
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh:
+    case AssetType::SkinnedMesh:
+    case AssetType::Material:
+    case AssetType::Audio:
+    case AssetType::Script:
+    case AssetType::Skeleton:
+    case AssetType::AnimationClip: return true;
+    default:                       return false;
+    }
+}
+
+uint64_t AssetSystem::LoadAssetHandle(AssetType type, std::string_view path)
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh:    return LoadStaticMesh(path).ToToken();
+    case AssetType::SkinnedMesh:   return LoadSkinnedMesh(path).ToToken();
+    case AssetType::Material:      return LoadMaterial(path).ToToken();
+    case AssetType::Audio:         return LoadAudioClip(path).ToToken();
+    case AssetType::Script:        return LoadScript(path).ToToken();
+    case AssetType::Skeleton:      return LoadSkeleton(path).ToToken();
+    case AssetType::AnimationClip: return LoadAnimationClip(path).ToToken();
+    default:                       return 0;
+    }
+}
+
+void AssetSystem::ReleaseAssetHandle(AssetType type, uint64_t handle)
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh:    ReleaseStaticMesh(StaticMeshHandle::FromToken(handle)); break;
+    case AssetType::SkinnedMesh:   ReleaseSkinnedMesh(SkinnedMeshHandle::FromToken(handle)); break;
+    case AssetType::Material:      ReleaseMaterial(MaterialHandle::FromToken(handle)); break;
+    case AssetType::Audio:         ReleaseAudioClip(AudioClipHandle::FromToken(handle)); break;
+    case AssetType::Script:        ReleaseScript(ScriptHandle::FromToken(handle)); break;
+    case AssetType::Skeleton:      ReleaseSkeleton(SkeletonHandle::FromToken(handle)); break;
+    case AssetType::AnimationClip: ReleaseAnimationClip(AnimationClipHandle::FromToken(handle)); break;
+    default:                       break;
+    }
+}
+
+std::string_view AssetSystem::GetAssetHandlePath(AssetType type, uint64_t handle) const
+{
+    switch (type)
+    {
+    case AssetType::StaticMesh:    return GetPathForStaticMesh(StaticMeshHandle::FromToken(handle));
+    case AssetType::SkinnedMesh:   return GetPathForSkinnedMesh(SkinnedMeshHandle::FromToken(handle));
+    case AssetType::Material:      return GetPathForMaterial(MaterialHandle::FromToken(handle));
+    case AssetType::Audio:         return GetPathForAudioClip(AudioClipHandle::FromToken(handle));
+    case AssetType::Script:        return GetPathForScript(ScriptHandle::FromToken(handle));
+    case AssetType::Skeleton:      return GetPathForSkeleton(SkeletonHandle::FromToken(handle));
+    case AssetType::AnimationClip: return GetPathForAnimationClip(AnimationClipHandle::FromToken(handle));
+    default:                       return {};
+    }
+}

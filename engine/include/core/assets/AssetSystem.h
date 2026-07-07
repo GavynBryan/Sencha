@@ -109,6 +109,18 @@ public:
     [[nodiscard]] std::string_view GetPathForSkeleton(SkeletonHandle handle) const;
     [[nodiscard]] std::string_view GetPathForAnimationClip(AnimationClipHandle handle) const;
 
+    // Type-erased single-handle ops, keyed by AssetType. The handle is the
+    // canonical uint64 token (Handle<Tag>::ToToken); 0 is the null handle. For
+    // callers that hold an AssetType at runtime and cannot name the concrete
+    // handle type (the editor's asset-field live-edit path). Covers the loader-
+    // backed types with a symmetric path<->handle model; SupportsAssetHandleOps
+    // is false for Texture (usage-tagged srgb load, no GetPathForTexture) and
+    // the loaderless Scene/Geometry/Collision, which callers reject.
+    [[nodiscard]] bool SupportsAssetHandleOps(AssetType type) const;
+    [[nodiscard]] uint64_t LoadAssetHandle(AssetType type, std::string_view path);
+    void ReleaseAssetHandle(AssetType type, uint64_t handle);
+    [[nodiscard]] std::string_view GetAssetHandlePath(AssetType type, uint64_t handle) const;
+
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
     // True if `path` currently has a live entry in the cache for `type`,

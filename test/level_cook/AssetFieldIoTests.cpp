@@ -242,3 +242,22 @@ TEST(AssetFieldIo, UnsupportedShapeThrows)
         (void)ReadAssetField(f.Assets, AssetType::Texture, AssetArity::Single, &unused),
         std::runtime_error);
 }
+
+// The generic single-handle ops cover exactly the loader-backed types with a
+// symmetric path<->handle model. Texture (srgb load, no GetPathForTexture) and
+// the loaderless types are out, which is what makes the Single live-edit path
+// reject them rather than silently produce an unusable field.
+TEST(AssetFieldIo, SupportsAssetHandleOpsCoversSymmetricTypes)
+{
+    AssetFieldFixture f;
+    for (const AssetType type : { AssetType::StaticMesh, AssetType::SkinnedMesh,
+                                  AssetType::Material, AssetType::Audio,
+                                  AssetType::Script, AssetType::Skeleton,
+                                  AssetType::AnimationClip })
+        EXPECT_TRUE(f.Assets.SupportsAssetHandleOps(type)) << static_cast<int>(type);
+
+    for (const AssetType type : { AssetType::Unknown, AssetType::Texture,
+                                  AssetType::Scene, AssetType::Geometry,
+                                  AssetType::Collision })
+        EXPECT_FALSE(f.Assets.SupportsAssetHandleOps(type)) << static_cast<int>(type);
+}

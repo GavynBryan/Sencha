@@ -28,8 +28,10 @@ struct AssetFieldValue
 
 // Reads the live handle(s) at `field` (component bytes with the field offset
 // already applied) back to references, for display and for snapshotting an
-// edit's "before". Dispatches on (type, arity): the one place that knows each
-// handle's shape on the live-edit path.
+// edit's "before". A single handle routes through AssetSystem's type-generic ops
+// (SupportsAssetHandleOps / GetAssetHandlePath); this file owns the id-first ref
+// resolution and the MaterialSet (List) shape. An unsupported (type, arity)
+// throws, which the panel boundary logs to keep the editor alive.
 //
 // The archive path is SceneFieldCodec<Handle> (world/serialization), kept
 // separate on purpose: archive I/O and live-memory edits are different
@@ -39,10 +41,11 @@ struct AssetFieldValue
                                              AssetArity arity, const void* field);
 
 // Resolves `value` (id-first) and writes the handle(s) into `field`, retaining
-// the new asset(s) and releasing the previously held one(s) so refcounts stay
-// balanced across apply/undo. Acquire-before-release at whole-value granularity:
-// for a List the new set is acquired in full before the old set is released, so
-// a material shared between an edited and an unedited slot never transits zero.
-// An empty value clears the field.
+// the new asset(s) (AssetSystem::LoadAssetHandle for a single handle, the
+// MaterialSet acquire for a List) and releasing the previously held one(s) so
+// refcounts stay balanced across apply/undo. Acquire-before-release at whole-
+// value granularity: for a List the new set is acquired in full before the old
+// set is released, so a material shared between an edited and an unedited slot
+// never transits zero. An empty value clears the field.
 void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
                      void* field, const AssetFieldValue& value);

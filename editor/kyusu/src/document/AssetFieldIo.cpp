@@ -1,11 +1,10 @@
 #include "AssetFieldIo.h"
 
-#include <assets/script/ScriptCache.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <render/MaterialSetCache.h>
-#include <render/static_mesh/StaticMeshHandle.h>
 
+#include <cstdint>
 #include <cstring>
 #include <span>
 #include <stdexcept>
@@ -15,20 +14,21 @@
 
 namespace
 {
-    // The field is type-erased (void* with the offset already applied); handles
-    // are trivially copyable, so we move them in and out by bytes.
-    template <typename Handle>
-    Handle ReadHandle(const void* field)
+    // The field is type-erased (void* with the offset already applied). Every
+    // asset handle is a trivially copyable 8-byte {Index, Generation}; moving it
+    // as the canonical uint64 token (low=Index, high=Generation) is byte-
+    // identical to the handle's memory on little-endian, so a concrete handle
+    // reconstructs via Handle<Tag>::FromToken(ReadHandleToken(field)).
+    uint64_t ReadHandleToken(const void* field)
     {
-        Handle handle{};
-        std::memcpy(&handle, field, sizeof(handle));
-        return handle;
+        uint64_t token = 0;
+        std::memcpy(&token, field, sizeof(token));
+        return token;
     }
 
-    template <typename Handle>
-    void WriteHandle(void* field, Handle handle)
+    void WriteHandleToken(void* field, uint64_t token)
     {
-        std::memcpy(field, &handle, sizeof(handle));
+        std::memcpy(field, &token, sizeof(token));
     }
 
     // A path back to a reference: the id looked up through the catalog (invalid
@@ -49,24 +49,38 @@ namespace
         return ref.Path.empty() ? std::string{}
                                 : std::string(assets.ResolveRefPath(ref.Id, ref.Path, type));
     }
-}
 
-AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
-                               AssetArity arity, const void* field)
-{
-    AssetFieldValue value;
-
-    if (type == AssetType::StaticMesh && arity == AssetArity::Single)
+    // Single-arity: one handle addressed through AssetSystem's type-generic ops,
+    // so the concrete handle type never appears here.
+    AssetFieldValue ReadSingleHandle(AssetSystem& assets, AssetType type, const void* field)
     {
-        std::string path(assets.GetPathForStaticMesh(ReadHandle<StaticMeshHandle>(field)));
+        AssetFieldValue value;
+        std::string path(assets.GetAssetHandlePath(type, ReadHandleToken(field)));
         if (!path.empty())
             value.Refs.push_back(RefFromPath(assets, std::move(path), type));
         return value;
     }
 
-    if (type == AssetType::Material && arity == AssetArity::List)
+    void ApplySingleHandle(AssetSystem& assets, AssetType type, void* field,
+                           const AssetFieldValue& value)
     {
-        const MaterialSetHandle set = ReadHandle<MaterialSetHandle>(field);
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const uint64_t old = ReadHandleToken(field);
+        const uint64_t next = path.empty() ? 0 : assets.LoadAssetHandle(type, path);
+        WriteHandleToken(field, next);          // acquire-then-write
+        assets.ReleaseAssetHandle(type, old);   // release the replaced handle last
+    }
+
+    // List-arity (per-slot materials): a MaterialSet, its own shape. Slots are
+    // positional (index binds to a mesh section); an unset slot keeps its place
+    // with an invalid handle.
+    AssetFieldValue ReadMaterialList(AssetSystem& assets, AssetType type, const void* field)
+    {
+        AssetFieldValue value;
+        const MaterialSetHandle set = MaterialSetHandle::FromToken(ReadHandleToken(field));
         if (const std::vector<MaterialHandle>* members = assets.GetMaterialSet(set))
             for (const MaterialHandle material : *members)
                 value.Refs.push_back(
@@ -74,42 +88,11 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
-    if (type == AssetType::Script && arity == AssetArity::Single)
+    void ApplyMaterialList(AssetSystem& assets, AssetType type, void* field,
+                           const AssetFieldValue& value)
     {
-        std::string path(assets.GetPathForScript(ReadHandle<ScriptHandle>(field)));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    throw std::runtime_error(
-        "ReadAssetField: unsupported (asset type " + std::to_string(static_cast<int>(type))
-        + ", arity " + std::to_string(static_cast<int>(arity)) + ") shape");
-}
-
-void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
-                     void* field, const AssetFieldValue& value)
-{
-    if (type == AssetType::StaticMesh && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const StaticMeshHandle old = ReadHandle<StaticMeshHandle>(field);
-        const StaticMeshHandle next = path.empty() ? StaticMeshHandle{}
-                                                   : assets.LoadStaticMesh(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseStaticMesh(old);       // release the replaced handle last
-        return;
-    }
-
-    if (type == AssetType::Material && arity == AssetArity::List)
-    {
-        // Build the new set in slot order. An unset slot keeps its position with
-        // an invalid handle (slots are positional: index binds to a mesh section).
-        // Loading each member up front retains it, so the materials are held
-        // before the old set is released below.
+        // Load each member up front so the materials are retained before the old
+        // set is released below.
         std::vector<MaterialHandle> materials;
         materials.reserve(value.Refs.size());
         for (const AssetFieldRef& ref : value.Refs)
@@ -126,22 +109,38 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
             if (material.IsValid())
                 assets.ReleaseMaterial(material); // the set holds its own reference
 
-        const MaterialSetHandle old = ReadHandle<MaterialSetHandle>(field);
-        WriteHandle(field, next);
+        const MaterialSetHandle old = MaterialSetHandle::FromToken(ReadHandleToken(field));
+        WriteHandleToken(field, next.ToToken());
         assets.ReleaseMaterialSet(old);
+    }
+}
+
+AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
+                               AssetArity arity, const void* field)
+{
+    if (arity == AssetArity::Single && assets.SupportsAssetHandleOps(type))
+        return ReadSingleHandle(assets, type, field);
+
+    if (type == AssetType::Material && arity == AssetArity::List)
+        return ReadMaterialList(assets, type, field);
+
+    throw std::runtime_error(
+        "ReadAssetField: unsupported (asset type " + std::to_string(static_cast<int>(type))
+        + ", arity " + std::to_string(static_cast<int>(arity)) + ") shape");
+}
+
+void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
+                     void* field, const AssetFieldValue& value)
+{
+    if (arity == AssetArity::Single && assets.SupportsAssetHandleOps(type))
+    {
+        ApplySingleHandle(assets, type, field, value);
         return;
     }
 
-    if (type == AssetType::Script && arity == AssetArity::Single)
+    if (type == AssetType::Material && arity == AssetArity::List)
     {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const ScriptHandle old = ReadHandle<ScriptHandle>(field);
-        const ScriptHandle next = path.empty() ? ScriptHandle{} : assets.LoadScript(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseScript(old);           // release the replaced handle last
+        ApplyMaterialList(assets, type, field, value);
         return;
     }
 
