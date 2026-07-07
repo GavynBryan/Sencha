@@ -22,6 +22,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <array>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -297,10 +298,30 @@ void EditorUiFeature::OnDraw(const FrameContext& frame)
         ImGui::End();
     }
 
+    // A panel draw that throws mid-frame leaves ImGui's Begin/End and Push/Pop
+    // stacks unbalanced, so snapshot them per panel and rewind on failure: one
+    // panel's error is logged and skipped, the rest of the frame stays consistent.
     for (const std::unique_ptr<IEditorPanel>& panel : Panels)
     {
-        if (panel != nullptr && panel->IsVisible())
+        if (panel == nullptr || !panel->IsVisible())
+            continue;
+
+        ImGuiErrorRecoveryState recovery;
+        ImGui::ErrorRecoveryStoreState(&recovery);
+        try
+        {
             panel->OnDraw();
+        }
+        catch (const std::exception& e)
+        {
+            ImGui::ErrorRecoveryTryToRecoverState(&recovery);
+            if (Log) Log->Error("panel '{}' draw failed: {}", panel->GetTitle(), e.what());
+        }
+        catch (...)
+        {
+            ImGui::ErrorRecoveryTryToRecoverState(&recovery);
+            if (Log) Log->Error("panel '{}' draw failed: unknown exception", panel->GetTitle());
+        }
     }
 
     ThemePrefs.DrawWindow(EngineInstance.Console().Registry());

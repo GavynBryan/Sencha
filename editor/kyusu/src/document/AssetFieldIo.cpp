@@ -1,13 +1,15 @@
 #include "AssetFieldIo.h"
 
+#include <assets/script/ScriptCache.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
-#include <cassert>
 #include <cstring>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -72,8 +74,17 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
-    assert(false && "ReadAssetField: unsupported (asset type, arity) shape");
-    return value;
+    if (type == AssetType::Script && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForScript(ReadHandle<ScriptHandle>(field)));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
+    throw std::runtime_error(
+        "ReadAssetField: unsupported (asset type " + std::to_string(static_cast<int>(type))
+        + ", arity " + std::to_string(static_cast<int>(arity)) + ") shape");
 }
 
 void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
@@ -121,5 +132,20 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
         return;
     }
 
-    assert(false && "ApplyAssetField: unsupported (asset type, arity) shape");
+    if (type == AssetType::Script && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const ScriptHandle old = ReadHandle<ScriptHandle>(field);
+        const ScriptHandle next = path.empty() ? ScriptHandle{} : assets.LoadScript(path);
+        WriteHandle(field, next);            // acquire-then-write
+        assets.ReleaseScript(old);           // release the replaced handle last
+        return;
+    }
+
+    throw std::runtime_error(
+        "ApplyAssetField: unsupported (asset type " + std::to_string(static_cast<int>(type))
+        + ", arity " + std::to_string(static_cast<int>(arity)) + ") shape");
 }

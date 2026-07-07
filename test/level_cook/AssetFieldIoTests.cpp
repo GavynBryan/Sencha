@@ -5,16 +5,21 @@
 
 #include "document/AssetFieldIo.h"
 
+#include <assets/script/ScriptCache.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/Material.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
+#include <script/ScriptModule.h>
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <initializer_list>
+#include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace
@@ -27,12 +32,27 @@ namespace
         AssetRegistry    Registry{ Logging };
         MaterialCache    Materials;
         MaterialSetCache Sets{ &Materials };
+        ScriptCache      Scripts{ Logging };
         AssetSystem      Assets{ Logging, Registry, nullptr, &Materials,
-                                 nullptr, nullptr, nullptr, nullptr, nullptr, &Sets };
+                                 nullptr, nullptr, nullptr, nullptr, nullptr, &Sets, &Scripts };
 
         MaterialHandle Register(const char* path)
         {
             return Assets.RegisterProceduralMaterial(path, Material{});
+        }
+
+        // A script resident in both the registry (so LoadScript resolves the
+        // path) and the cache (so the resident lookup short-circuits the staged
+        // loader, which the compiler-free runtime lib cannot run). An empty
+        // module is enough: the live-edit path only round-trips the path.
+        ScriptHandle RegisterScript(const char* path)
+        {
+            AssetRecord record;
+            record.Type = AssetType::Script;
+            record.SourceKind = AssetSourceKind::Procedural;
+            record.Path = path;
+            Registry.Register(record);
+            return Scripts.Register(path, std::make_shared<const ScriptModule>());
         }
     };
 
@@ -160,4 +180,65 @@ TEST(AssetFieldIo, MissingRefResolvesToEmptySlot)
     EXPECT_TRUE(read.Refs[0].Path.empty());
 
     f.Assets.ReleaseMaterialSet(field);
+}
+
+// The reported crash: expanding a freshly-added ScriptSource, whose ScriptHandle
+// is still unset, must read back as empty rather than abort on an unhandled shape.
+TEST(AssetFieldIo, ScriptSingleUnsetReadsEmpty)
+{
+    AssetFieldFixture f;
+    ScriptHandle field{};
+    const AssetFieldValue read =
+        ReadAssetField(f.Assets, AssetType::Script, AssetArity::Single, &field);
+    EXPECT_TRUE(read.Refs.empty());
+}
+
+// A set script field reads back its path.
+TEST(AssetFieldIo, ScriptSingleReadsAssignedPath)
+{
+    AssetFieldFixture f;
+    const char* s = "asset://s/x.tbc";
+    ScriptHandle field = f.RegisterScript(s);
+
+    const AssetFieldValue read =
+        ReadAssetField(f.Assets, AssetType::Script, AssetArity::Single, &field);
+    ASSERT_EQ(read.Refs.size(), 1u);
+    EXPECT_EQ(read.Refs[0].Path, s);
+
+    f.Assets.ReleaseScript(field);
+}
+
+// Apply resolves a ref to a live handle; clearing the field releases it.
+TEST(AssetFieldIo, ScriptSingleApplyRoundTrips)
+{
+    AssetFieldFixture f;
+    const char* s = "asset://s/x.tbc";
+    const ScriptHandle keeper = f.RegisterScript(s); // hold it resident so LoadScript's cache lookup hits
+
+    ScriptHandle field{};
+    AssetFieldValue value;
+    value.Refs.push_back(AssetFieldRef{ {}, s });
+    ApplyAssetField(f.Assets, AssetType::Script, AssetArity::Single, &field, value);
+    EXPECT_TRUE(field.IsValid());
+
+    const AssetFieldValue read =
+        ReadAssetField(f.Assets, AssetType::Script, AssetArity::Single, &field);
+    ASSERT_EQ(read.Refs.size(), 1u);
+    EXPECT_EQ(read.Refs[0].Path, s);
+
+    ApplyAssetField(f.Assets, AssetType::Script, AssetArity::Single, &field, {});
+    EXPECT_FALSE(field.IsValid());
+
+    f.Assets.ReleaseScript(keeper);
+}
+
+// Resilience: an asset shape with no live-edit branch reports a catchable error
+// (the panel boundary logs it and keeps the editor alive) instead of aborting.
+TEST(AssetFieldIo, UnsupportedShapeThrows)
+{
+    AssetFieldFixture f;
+    std::uint64_t unused = 0; // never dereferenced; the shape is rejected first
+    EXPECT_THROW(
+        (void)ReadAssetField(f.Assets, AssetType::Texture, AssetArity::Single, &unused),
+        std::runtime_error);
 }
