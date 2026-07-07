@@ -359,3 +359,53 @@ TEST(ScriptCompiler, RequiresClauseLowersAndRoundTrips)
     EXPECT_EQ(parsed.Module.GetString(rt->RequiredComponents[0]), "Health");
     EXPECT_EQ(parsed.Module.GetString(rt->RequiredComponents[1]), "Mana");
 }
+
+TEST(ScriptNumeric, StoringF64IntoF32FieldRequiresCast)
+{
+    // sin() is f64 -> f64; the field is f32. The narrowing must be an explicit cast.
+    ExpectError(
+        "component Motion {\n"
+        "    y: f32 = 0.0\n"
+        "}\n"
+        "behavior Bob {\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        ctx.entity.Motion.y = sin(ctx.dt) * 10.0\n"
+        "    }\n"
+        "}\n",
+        "f32 field");
+}
+
+TEST(ScriptNumeric, F32CastBuildsTheNarrowingStore)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Motion {\n"
+        "    y: f32 = 0.0\n"
+        "}\n"
+        "behavior Bob {\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        ctx.entity.Motion.y = f32(sin(ctx.dt) * 10.0)\n"
+        "    }\n"
+        "}\n");
+    EXPECT_TRUE(r.Ok) << r.Error.Message;
+}
+
+TEST(ScriptNumeric, NoOpAndRedundantCastsFail)
+{
+    // f32(x) where x is already f32 narrows nothing.
+    ExpectError(
+        "behavior Bob {\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        let a: f32 = f32(ctx.dt)\n"
+        "    }\n"
+        "}\n",
+        "narrows nothing");
+
+    // f64(x) where x is f32 is a redundant widening (f32 -> f64 is implicit).
+    ExpectError(
+        "behavior Bob {\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        let a: f64 = f64(ctx.dt)\n"
+        "    }\n"
+        "}\n",
+        "redundant");
+}

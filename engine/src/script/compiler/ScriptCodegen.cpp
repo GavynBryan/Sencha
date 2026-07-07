@@ -1416,7 +1416,11 @@ namespace
             const SType::K from = value.Type.Kind;
             if (target == "f32")
             {
-                if (from == SType::K::F32) return value;
+                if (from == SType::K::F32)
+                {
+                    Fail(expr, "f32() narrows nothing: the value is already f32");
+                    return Bad();
+                }
                 if (from == SType::K::F64) { unary(ScriptOp::RndF32); return Make({SType::K::F32}, dst); }
                 if (from == SType::K::I32)
                 {
@@ -1435,17 +1439,26 @@ namespace
             }
             else if (target == "f64")
             {
-                if (from == SType::K::F64 || from == SType::K::F32)
+                if (from == SType::K::F64)
                 {
-                    value.Type = {SType::K::F64};
-                    return value;
+                    Fail(expr, "f64() narrows nothing: the value is already f64");
+                    return Bad();
+                }
+                if (from == SType::K::F32)
+                {
+                    Fail(expr, "f64() is redundant: f32 widens to f64 implicitly");
+                    return Bad();
                 }
                 if (from == SType::K::I32) { unary(ScriptOp::I2F); return Make({SType::K::F64}, dst); }
                 if (from == SType::K::I64) { unary(ScriptOp::L2F); return Make({SType::K::F64}, dst); }
             }
             else if (target == "i32")
             {
-                if (from == SType::K::I32) return value;
+                if (from == SType::K::I32)
+                {
+                    Fail(expr, "i32() narrows nothing: the value is already i32");
+                    return Bad();
+                }
                 if (from == SType::K::I64) { unary(ScriptOp::L2I); return Make({SType::K::I32}, dst); }
                 if (from == SType::K::F32 || from == SType::K::F64)
                 {
@@ -1456,7 +1469,11 @@ namespace
             }
             else if (target == "i64")
             {
-                if (from == SType::K::I64) return value;
+                if (from == SType::K::I64)
+                {
+                    Fail(expr, "i64() narrows nothing: the value is already i64");
+                    return Bad();
+                }
                 if (from == SType::K::I32) { unary(ScriptOp::I2L); return Make({SType::K::I64}, dst); }
             }
             Fail(expr, "unsupported conversion");
@@ -2516,18 +2533,21 @@ namespace
                 return true;
             }
 
-            // Component store. Widening applies; the runtime rounds f32
-            // fields on store.
+            // Component store. Widening (an f32 value into an f64 field) is
+            // implicit; narrowing (an f64 value into an f32 field) requires an
+            // explicit cast at the assignment so the precision boundary is visible.
             if (place.Type.Is(SType::K::F64) && value.Type.Is(SType::K::F32))
             {
                 value.Type = {SType::K::F64};
             }
-            if (place.Type.Is(SType::K::F32) && value.Type.Is(SType::K::F64))
-            {
-                value.Type = {SType::K::F32}; // store rounds
-            }
             if (!(value.Type == place.Type))
             {
+                if (place.Type.Is(SType::K::F32) && value.Type.Is(SType::K::F64))
+                {
+                    return FailAt(stmt.Line, stmt.Col,
+                                  "cannot store an f64 value into an f32 field: wrap the "
+                                  "right-hand side in f32()");
+                }
                 return FailAt(stmt.Line, stmt.Col,
                               "type mismatch: insert an explicit conversion");
             }
