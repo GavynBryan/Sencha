@@ -892,3 +892,144 @@ narrowest mechanism that fits (which is usually still not full traits). Until su
 a case forces it, T stays monomorphic. Generic functions over multiple record types
 are the one gap the alternatives do not close; that is the `Generics` v2.0 item
 above, and any trait-like feature would be designed alongside it, minimally, then.
+
+## Static component safety (v1.1)
+
+Status: accepted design, staged for implementation after v1.0. This closes the one
+place T is not actually static by construction (principle 3): component *access*.
+
+In v1.0, `ctx.entity.Health.current` compiles whether or not the entity has `Health`.
+The typechecker (`ResolvePlace`) validates only that the component and field names
+exist and that the base is *some* entity; a missing component is a runtime
+`NoComponent` trap. The `if !ctx.entity.has(X) { return }` guard is a separate
+statement the compiler does not connect to the access, so it can be forgotten, and
+forgetting it moves a preventable error to run time. That is the dynamic-safety gap a
+Rust-inspired language should not have.
+
+v1.1 makes component access statically proven. Two mechanisms cover the two cases: a
+behavior types the entity it owns with `requires`, and it types any other entity it
+touches by narrowing. Between them it becomes impossible to write `e.Component` the
+compiler cannot prove is present.
+
+### Typed entities
+
+`Entity` becomes a type that carries a compile-time component set. `Entity` with no
+set (a raycast hit, a stored `Entity` field) knows nothing; `Entity{Health, Transform}`
+is known to have those. Field access type-checks against the set: `e.Health.current`
+requires `Health` in `e`'s set, otherwise a compile error ("entity is not known to
+have Health; add it to `requires` or narrow it").
+
+An entity with a larger set is usable where a smaller one is expected (more components
+is more specific; bare `Entity` is the top). Implementation note: the set is an
+interned index carried in the existing `SType` (so it stays a small POD), with one new
+subset rule in `Coerce`; the enforcement point is `ResolvePlace`.
+
+### `requires` (subject entity typing + runtime gate)
+
+```
+behavior Bob {
+    requires BobConfig, BobState
+
+    fn spawn(ctx: BehaviorContext) {
+        ctx.entity.BobState.base = ctx.entity.Transform.position.y
+    }
+    fn fixed(ctx: BehaviorContext) {
+        let e = ctx.entity
+        e.Transform.position.y =
+            e.BobState.base + f32(sin(f32(ctx.tick) * ctx.dt * e.BobConfig.frequency * tau)
+                                  * e.BobConfig.amplitude)
+    }
+}
+```
+
+`requires C1, C2` declares the components a behavior operates on. Compile time: it seeds
+the declaration's subject entity (`ctx.entity` for behavior, `ctx.owner` for ability,
+`ctx.target` for interaction) with `{C1, C2}`, so field access on the subject is
+statically valid and needs no `has()`. Run time: the behavior ticks only on entities
+whose archetype contains the behavior plus every required component (the archetype
+filter, see behavior-as-component below). Because archetype membership guarantees
+presence, required access is both statically proven and trap-free at zero per-entity
+cost. `Transform` above is a required component too (a `requires` set may name host
+components).
+
+### Narrowing (foreign entities)
+
+Every other entity a script reaches (a raycast `hit.entity`, `ctx.other` in a trigger,
+an `Entity` field like `HookshotState.target_entity`, a spawn result) arrives as a bare
+`Entity` with an empty set: the compiler will not let you touch its components until you
+prove they are there. You prove it by narrowing, in the let-else form:
+
+```
+let target: Entity(Health) = owner.HookshotState.target_entity else { return }
+target.Health.current -= 10
+
+let d: Entity(DoorState) = hit.entity else { return }
+d.DoorState.open = true
+```
+
+`let name: Entity(C1, C2) = expr else { block }` binds `name` as `Entity{C1, C2}` when
+`expr`'s archetype has those components, granting static field access to exactly them;
+otherwise the `else` block runs and must diverge (`return`), which is the graceful
+"this callback aborts, the game does not crash" behavior. It compiles to one archetype
+signature test. This is the one place a runtime check is unavoidable and correct: you
+cannot know a raycast hit's components at compile time, so something must check, and
+narrowing fuses that check to the access instead of leaving it an advisory guard. The
+narrowing is a typed binding, not whole-program flow typing, which keeps the compiler
+small. Single-component sugar: `let d: DoorState = e else { ... }`.
+
+### Behavior-as-component (the runtime that makes it sound)
+
+The compile-time promise is only as good as the runtime that keeps it, so v1.1 also
+retires the `ScriptSource` attachment indirection. Each `behavior Name` declaration
+becomes a registered component (`script.behavior.Name`, holding `{State, Spawned}`),
+synthesized and registered through the same path as script data components (the
+`ScriptComponentSerializer`). Adding it to an entity in the inspector attaches the
+behavior; an entity may carry several, and a file may declare several (both impossible
+with `ScriptSource`, which attached only the first behavior in a file). One
+`ScriptBehaviorSystem` ticks each registered behavior as an archetype-filtered query
+over its required signature (the behavior component plus its required components), the
+same filtering native `Query<With<...>>` does. The archetype membership *is* the
+`requires` guarantee.
+
+### Behaviors are data, not systems; the component-id budget
+
+There is exactly one `ScriptBehaviorSystem`, registered once at startup and never
+changed at run time, so the ECS "no add or remove systems at run time" rule holds. A
+behavior is data: shared bytecode (loaded once per world), a registered component type,
+and a required signature; the one system loops the registered behaviors. "Lots of
+behaviors" is the same as "lots of components or prefabs or assets," which the engine is
+built for.
+
+The constraint this introduces is the component-id budget: every registered component
+consumes one bit of `ArchetypeSignature = bitset<MaxComponents>` (`MaxComponents = 256`).
+It is a per-world budget (a level registers only the behaviors it uses), so a level with
+dozens of behaviors plus data and native components fits comfortably; only a single very
+large level would strain it, and the editor's document world (which registers every
+project behaviour for the Add Component menu) hits it sooner. The default is per-behavior
+components with the per-world budget; if a level ever needs many, raise `MaxComponents`
+(a bitset-width change). A shared "behavior holder" component that lists an entity's
+behaviors is the fallback, at the cost of per-behavior archetype filtering (requires
+becomes a per-entity check again), so it is reserved for if the budget genuinely bites.
+
+### The safety invariant
+
+Bare `Entity` has an empty set and no accessible components. A component is reachable
+only through `requires` (the subject) or a narrow (anyone else). Writing `e.Component`
+the compiler cannot prove is a compile error, and the presence check is fused into the
+access rather than being a separate guard that can be forgotten. That is static
+component safety with a single honest runtime check, only where a foreign entity is
+touched.
+
+### Staged plan
+
+1. Runtime foundation: `requires` end to end (keyword, AST, `.tbc` Declarations record
+   plus a bytecode-format bump, link resolves names to `ComponentId`s); behavior-as-
+   component (retire `ScriptSource`); a type-erased `World::ForEachEntityMatching`
+   required-signature iterator; `ScriptBehaviorSystem` ticks over it.
+2. Typed entities: `SType` carries the interned component set; `requires` seeds the
+   subject; `ResolvePlace` enforces membership; `Coerce` gains the subset rule.
+3. Narrowing: let-else parse, typecheck (the bound local is `Entity{set}`), codegen (a
+   signature test branching to `else`).
+4. Migration and polish: convert the existing scripts to `requires` plus narrowing;
+   optional author-time auto-add of required components when a behavior is added in the
+   editor; fold this section's normative parts into the spec.

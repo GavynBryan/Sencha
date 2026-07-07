@@ -587,3 +587,95 @@ the full ScriptComponentSerializer (inspector plus scene save/load parity).
    activation queued, ticks run, component/tag/cue trajectory asserted from
    the cooked fixture. Done when: green, plus the scripted determinism gate
    (serial vs parallel engine config, per-tick component hash equality).
+
+## F. Static component safety (v1.1, planned)
+
+Extends v1.0. The design and rationale are in `t-language.md` ("Static component
+safety (v1.1)"); this section is the normative delta. Component access becomes a
+compile-time-proven property of a typed `Entity` rather than a runtime `NoComponent`
+trap.
+
+### F.1 Typed entities
+
+An `Entity` value carries a component set: the set of components the compiler has
+proven it has. Field access `e.C.field` type-checks iff `C` is in `e`'s set;
+otherwise it is a compile error, not a runtime trap. The empty set (bare `Entity`,
+e.g. a `RayHit.entity` or an `Entity`-typed component field) permits no component
+access. `Entity{S1}` is assignable where `Entity{S2}` is expected iff `S2` is a
+subset of `S1`. Representation: the set is an interned index carried in `SType`
+(`SType.Index` for `K::Entity`), so `SType` stays a fixed POD; assignability adds one
+subset rule to `Coerce`; enforcement is in `ResolvePlace`. This is a compile-time-only
+change: bytecode and the runtime component-load path (`Cld`/`Cst`) are unchanged, and
+the `NoComponent` trap (D.7) remains as the defensive backstop, now unreachable for
+statically proven access.
+
+### F.2 `requires`
+
+Grammar: a `requires` clause is a new `block_item` inside a `script_decl` block:
+
+```
+requires_clause = "requires" IDENT { "," IDENT } ;
+```
+
+Each `IDENT` names a component (script-defined or host). Compile time: the required
+set seeds the declaration's subject entity type in the fixed context schema
+(`ctx.entity` for behavior, `ctx.owner` for ability, `ctx.target` for interaction),
+so subject field access is statically valid without a guard. Run time: the owning
+system ticks the declaration only on entities whose archetype contains the
+declaration's component plus every required component (an archetype-signature filter,
+`(sig & required) == required`), which makes required access trap-free.
+
+Container: the Declarations record (section B, kind `0x0C`) gains, after the callbacks
+array, `u16 required count; required count x u32 component name (string idx)`. This is
+a format change: **bytecode format version becomes 1** (header offset 6). A loader
+rejects format versions it does not know; `kCookedCacheIndexVersion` bumps so existing
+`.tbc` recook. Link resolves each required name to a `ComponentId` (a link error names
+an unresolvable component), stored on the declaration's linked form.
+
+### F.3 Narrowing (foreign entities)
+
+Grammar: a let-else narrowing statement:
+
+```
+narrow_stmt = "let" IDENT ":" entity_type "=" expr "else" block ;
+entity_type = "Entity" "(" IDENT { "," IDENT } ")" | IDENT ;   // sugar: a bare component name
+```
+
+The right side is an `Entity`-typed expression. `IDENT` binds a fresh local typed as
+`Entity{listed components}`. Semantics: at run time, test the entity's archetype for
+all listed components; if present, bind and continue with the narrowed type in scope;
+if absent, execute the `else` block, which must diverge (end in `return`), so control
+never proceeds with an unproven binding. Codegen: a `CHas`-style signature test that
+branches to the `else` block on failure; the narrowed local aliases the same entity
+value with a refined static type (no new runtime entity representation). The bound
+local is a typed binding, not whole-program flow refinement of the source expression.
+
+### F.4 Runtime: behavior-as-component
+
+Behaviors become registered components rather than `ScriptSource` targets. Each
+`behavior Name` declaration registers `MakeComponentTypeId("script.behavior.Name")`
+with a `{state: i32 = -1, spawned: bool = false}` layout, through the same non-template
+registration and `ScriptComponentSerializer` path as script data components. One
+`ScriptBehaviorSystem` iterates each registered behavior via a type-erased required-
+signature archetype walk (`World::ForEachEntityMatching(requiredIds, fn)`, mirroring
+`Query`'s `SignatureMatches`), where `requiredIds` is the behavior component plus its
+F.2 required components. No systems are registered or removed at run time. The
+component-id budget (`ArchetypeSignature = bitset<MaxComponents>`, `MaxComponents =
+256`) is per world; raising `MaxComponents` is the escape valve if a level needs many
+behaviors.
+
+### F.5 Milestone group (v1.1)
+
+1. `requires` end to end: keyword and `block_item` (lexer/parser/AST); Declarations
+   record delta and format-version bump (F.2); link name resolution;
+   behavior-as-component registration and the `ForEachEntityMatching` tick (F.4).
+   Done when: an entity carries two behaviors and both tick; a `requires X` behavior
+   skips entities missing `X` with no `has()` in the script.
+2. Typed entities (F.1): `SType` set, `Coerce` subset rule, `ResolvePlace` membership
+   enforcement, subject seeding from `requires`. Done when: a golden compile-error
+   test rejects unproven `e.C` with the guidance message; required access compiles and
+   does not trap.
+3. Narrowing (F.3). Done when: golden tests show access allowed inside the bound block,
+   the `else` taken (diverging) when absent, and the binding proceeding when present.
+4. Migration: convert the fixtures to `requires` plus narrowing; suite and fitness
+   ctests green; recook picks up the format bump.
