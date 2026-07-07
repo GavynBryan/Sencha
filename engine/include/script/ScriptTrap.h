@@ -16,6 +16,7 @@ enum class ScriptTrapCode : uint8_t
     NoComponent = 7,
     TagCapacity = 8,
     Arg         = 9,
+    Structural  = 10,
 };
 
 [[nodiscard]] constexpr const char* ScriptTrapName(ScriptTrapCode code)
@@ -32,6 +33,7 @@ enum class ScriptTrapCode : uint8_t
     case ScriptTrapCode::NoComponent: return "NO_COMPONENT";
     case ScriptTrapCode::TagCapacity: return "TAG_CAPACITY";
     case ScriptTrapCode::Arg:         return "ARG";
+    case ScriptTrapCode::Structural:  return "STRUCTURAL";
     }
     return "UNKNOWN";
 }

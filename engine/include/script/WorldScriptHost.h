@@ -1,9 +1,13 @@
 #pragma once
 
+#include <ecs/ComponentId.h>
 #include <script/ScriptRuntime.h>
 #include <script/ScriptVm.h>
 
+#include <cstdint>
+#include <map>
 #include <string_view>
+#include <utility>
 
 class World;
 class CommandBuffer;
@@ -84,6 +88,16 @@ public:
                              std::uint32_t tagBind) override;
 
 private:
+    // The net effect a structural command will have at flush, per (entity, component).
+    // Script content must never enqueue an add of a present component or a remove of
+    // an absent one: the CommandBuffer flush asserts on those, which would abort the
+    // whole player. Mirroring the buffer's pending effect here lets the add/remove
+    // ops reject an illegal change as a deterministic trap at enqueue time, robust
+    // against multiple commands touching the same (entity, component) in one Step.
+    // Lives for the Step (the host is constructed per Step alongside the buffer).
+    bool WillHaveComponent(std::uint64_t entityBits, ComponentId component);
+    void SetPendingPresence(std::uint64_t entityBits, ComponentId component, bool present);
+
     World& W;
     CommandBuffer& Commands;
     const ScriptRuntime& Runtime;
@@ -93,4 +107,5 @@ private:
     EntityId Subject{};
     std::uint64_t Tick = 0;
     ScriptAbilityOutcome PendingOutcome = ScriptAbilityOutcome::None;
+    std::map<std::pair<std::uint64_t, ComponentId>, bool> PendingPresence;
 };

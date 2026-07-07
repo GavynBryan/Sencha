@@ -123,6 +123,26 @@ void WorldScriptHost::Begin(std::uint32_t linkedModuleIndex, EntityId subject, s
     PendingOutcome = ScriptAbilityOutcome::None;
 }
 
+bool WorldScriptHost::WillHaveComponent(std::uint64_t entityBits, ComponentId component)
+{
+    const auto key = std::make_pair(entityBits, component);
+    if (auto it = PendingPresence.find(key); it != PendingPresence.end())
+    {
+        return it->second;
+    }
+    // World state is stable across a Step (structural changes are deferred to the
+    // flush), so seed once from the live signature and track deltas from there.
+    const bool present = W.HasComponent(UnpackScriptEntity(entityBits), component);
+    PendingPresence.emplace(key, present);
+    return present;
+}
+
+void WorldScriptHost::SetPendingPresence(std::uint64_t entityBits, ComponentId component,
+                                         bool present)
+{
+    PendingPresence[std::make_pair(entityBits, component)] = present;
+}
+
 ScriptTrapCode WorldScriptHost::ComponentLoad(const ScriptModule&, std::uint64_t entityBits,
                                               std::uint32_t fieldBind, std::uint32_t elementIndex,
                                               std::span<std::uint64_t> out)
@@ -328,7 +348,16 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
             return ScriptTrapCode::Entity;
         }
         const auto bind = static_cast<std::uint32_t>(window[1]);
-        Commands.RemoveComponentRaw(target, Linked->Components[bind], /*size*/ 0);
+        const ComponentId component = Linked->Components[bind];
+        // Removing a component the entity does not (and will not) have is a
+        // deterministic no-op, not a trap: idempotent remove is friendlier and
+        // keeps the flush from asserting on an absent component.
+        if (!WillHaveComponent(window[0], component))
+        {
+            return ScriptTrapCode::None;
+        }
+        Commands.RemoveComponentRaw(target, component, /*size*/ 0);
+        SetPendingPresence(window[0], component, false);
         return ScriptTrapCode::None;
     }
     case ScriptHostOp::CommandsAdd:
@@ -344,6 +373,15 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
         {
             // Host components are not addable from a script in v1.
             return ScriptTrapCode::Arg;
+        }
+        const ComponentId component = Linked->Components[bind];
+        // Adding a component the entity already has (e.g. one the designer authored)
+        // would assert in the CommandBuffer flush and abort the player; reject it as
+        // a trap instead. A behavior that needs the component present should declare
+        // it with `requires` rather than add it here.
+        if (WillHaveComponent(window[0], component))
+        {
+            return ScriptTrapCode::Structural;
         }
         const ScriptComponentDef& schema =
             Linked->Module->Components[static_cast<std::size_t>(schemaIndex)];
@@ -366,8 +404,8 @@ ScriptTrapCode WorldScriptHost::HostCall(const ScriptModule& module, std::uint32
                 ++slot;
             }
         }
-        Commands.AddComponentRaw(target, Linked->Components[bind], bytes.data(), layout.Size,
-                                 layout.Alignment);
+        Commands.AddComponentRaw(target, component, bytes.data(), layout.Size, layout.Alignment);
+        SetPendingPresence(window[0], component, true);
         return ScriptTrapCode::None;
     }
 

@@ -26,7 +26,7 @@ status=0
 # world-side bridges (all dev-time or engine-mediated).
 runtime_core() {
     { find "$INC" "$SRC" -maxdepth 1 -type f \( -name '*.h' -o -name '*.cpp' \) 2>/dev/null; } \
-        | grep -vE '(ScriptRuntime|ScriptLink|WorldScriptHost|ScriptBehaviorSystem|ScriptAbilitySystem|ScriptSceneLink|ScriptComponents|ScriptCook|ScriptCompiler)\.'
+        | grep -vE '(ScriptRuntime|ScriptLink|WorldScriptHost|ScriptBehaviorSystem|ScriptAbilitySystem|ScriptSceneLink|ScriptComponents|ScriptComponentSerializer|ScriptCook|ScriptCompiler)\.'
 }
 
 # Forbidden symbols: wall clock, IO streams, sockets, threads/async. Word

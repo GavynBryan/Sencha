@@ -2,6 +2,7 @@
 
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <script/ScriptComponentSerializer.h>
 #include <script/ScriptHostSurface.h>
 #include <script/ScriptIntrinsics.h>
 #include <script/WorldScriptHost.h>
@@ -136,6 +137,11 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
             MakeComponentTypeId(std::string("script.") + std::string(name));
         world.RegisterComponentRaw(name, typeId, layout.Size, layout.Alignment, /*isTag*/ false);
     }
+
+    // Register a serializer per script component so authored field values
+    // round-trip through scene save/load (idempotent on the identity triple, so
+    // a second zone or a hot reload re-registering the same module is a no-op).
+    RegisterScriptComponentSerializers(*module);
 
     // 2. Tag binds.
     GameplayTagRegistry* tagRegistry = world.TryGetResource<GameplayTagRegistry>();

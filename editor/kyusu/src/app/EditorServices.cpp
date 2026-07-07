@@ -31,6 +31,7 @@
 #include <SDL3/SDL.h>
 
 #include "project/ProjectContentMount.h"
+#include "project/ProjectScriptComponents.h"
 
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
@@ -78,6 +79,12 @@ EditorServices::EditorServices(Engine& engine,
     // LoadGameModule). The document then serializes through it.
     InitAssets();
     BuildSourceWatch();
+
+    // Register serializers for script-defined components declared in the project's
+    // cooked scripts, BEFORE the document's World registers storage, so they appear
+    // in the inspector's Add Component menu and round-trip through scene save/load.
+    if (Assets)
+        RegisterProjectScriptComponents(Assets->Registry, engine.Logging());
 
     BuildDocument();
     BuildPlayLoop();
