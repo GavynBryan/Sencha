@@ -105,9 +105,9 @@ struct SceneFieldCodec<AudioClipHandle>
                      SceneSerializationContext& context);
 };
 
-// A cooked T script referenced by an entity's ScriptSource: the asset path
-// persists, resolved through AssetSystem::LoadScript at load (the mesh/audio
-// pattern).
+// A cooked T script referenced by a component's script-asset field: the asset
+// path persists, resolved through AssetSystem::LoadScript at load (the
+// mesh/audio pattern).
 template<>
 struct SceneFieldCodec<ScriptHandle>
 {

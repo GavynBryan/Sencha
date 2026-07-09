@@ -42,6 +42,15 @@ public:
     virtual ScriptTrapCode ComponentStore(const ScriptModule& module, uint64_t entityBits,
                                           uint32_t fieldBind, uint32_t elementIndex,
                                           std::span<const uint64_t> in) = 0;
+    // CSTD / CSTDLT: the deferred field mutations. The write is recorded now and
+    // applied at the flush point (with its reaction waves), not in place. Store
+    // overwrites the leaf; Delta adds the value (`+=`, wrapping for integers).
+    virtual ScriptTrapCode ComponentStoreDeferred(const ScriptModule& module, uint64_t entityBits,
+                                                  uint32_t fieldBind, uint32_t elementIndex,
+                                                  std::span<const uint64_t> in) = 0;
+    virtual ScriptTrapCode ComponentDelta(const ScriptModule& module, uint64_t entityBits,
+                                          uint32_t fieldBind, uint32_t elementIndex,
+                                          std::span<const uint64_t> in) = 0;
     virtual ScriptTrapCode ComponentHas(const ScriptModule& module, uint64_t entityBits,
                                         uint32_t componentBind, bool& out) = 0;
 

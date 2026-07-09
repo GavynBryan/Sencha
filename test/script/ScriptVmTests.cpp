@@ -306,6 +306,40 @@ TEST(ScriptVm, ComponentLoadStoreThroughHost)
     EXPECT_EQ(missing.TrapCodeOffset, 0u);
 }
 
+// CSTD / CSTDLT dispatch to the deferred host methods and record intent without
+// touching storage: a deferred write commits at the flush point, not in place.
+TEST(ScriptVm, DeferredStoreAndDeltaRecordWithoutApplying)
+{
+    Runner r;
+    const uint8_t bind = r.A.FieldBind("Health", "hp", ScriptScalarKind::Int32, 1);
+    r.A.BeginFn("f", 8, 1, 0);
+    r.A.AsBx(ScriptOp::Ldi, 1, 10);        // r1 = 10
+    r.A.Abc(ScriptOp::CstD, 0, 1, bind);   // defer hp = 10
+    r.A.AsBx(ScriptOp::Ldi, 2, 5);         // r2 = 5
+    r.A.Abc(ScriptOp::CstDlt, 0, 2, bind); // defer hp += 5
+    r.A.Abc(ScriptOp::Ret, 0, 0);
+    const uint32_t fn = r.A.EndFn();
+
+    const uint64_t entity = 0x0000000700000009ull;
+    r.Host.Components[{entity, bind}] = {BitsI(100)};
+
+    EXPECT_TRUE(r.Run(fn, {entity}).Ok());
+
+    // Storage and the immediate-write log are untouched: both ops deferred.
+    EXPECT_TRUE(r.Host.WriteLog.empty());
+    const std::vector<uint64_t> stored = r.Host.Components[{entity, bind}];
+    EXPECT_EQ(stored[0], BitsI(100));
+
+    ASSERT_EQ(r.Host.DeferredLog.size(), 1u);
+    EXPECT_EQ(r.Host.DeferredLog[0].Entity, entity);
+    EXPECT_EQ(r.Host.DeferredLog[0].FieldBind, bind);
+    EXPECT_EQ(FromBitsI(r.Host.DeferredLog[0].Values[0]), 10);
+
+    ASSERT_EQ(r.Host.DeltaLog.size(), 1u);
+    EXPECT_EQ(r.Host.DeltaLog[0].Entity, entity);
+    EXPECT_EQ(FromBitsI(r.Host.DeltaLog[0].Values[0]), 5);
+}
+
 TEST(ScriptVm, TagOpsThroughHost)
 {
     Runner r;

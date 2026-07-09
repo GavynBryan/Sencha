@@ -4,7 +4,6 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <script/ScriptAbilitySystem.h>
-#include <script/ScriptBehaviorSystem.h>
 #include <script/ScriptCompiler.h>
 #include <script/ScriptLink.h>
 #include <script/ScriptRuntime.h>

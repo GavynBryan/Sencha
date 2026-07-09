@@ -316,6 +316,30 @@ ScriptInvokeResult ScriptVm::Invoke(const ScriptModule& module, uint32_t functio
             }
             break;
         }
+        case ScriptOp::CstD:
+        {
+            const uint8_t slots = module.FieldBinds[c].SlotCount;
+            const ScriptTrapCode code = host.ComponentStoreDeferred(
+                module, r[a], c, 0, std::span<const uint64_t>(r + b, slots));
+            if (code != ScriptTrapCode::None)
+            {
+                trap(code, at);
+                return result;
+            }
+            break;
+        }
+        case ScriptOp::CstDlt:
+        {
+            const uint8_t slots = module.FieldBinds[c].SlotCount;
+            const ScriptTrapCode code =
+                host.ComponentDelta(module, r[a], c, 0, std::span<const uint64_t>(r + b, slots));
+            if (code != ScriptTrapCode::None)
+            {
+                trap(code, at);
+                return result;
+            }
+            break;
+        }
         case ScriptOp::CHas:
         {
             bool has = false;

@@ -7,6 +7,8 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/EntityRegistry.h>
+#include <ecs/FieldDelta.h>
+#include <ecs/TransitionDispatch.h>
 
 #include <any>
 #include <cassert>
@@ -249,6 +251,28 @@ public:
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
 
+        // Fire runtime remove-dispatch for each observed component while the whole
+        // entity is still present (before the row drops), in ascending ComponentId
+        // order (deterministic). Gated so a world with no dispatch keeps the fast
+        // wholesale drop. Dispatch cannot structurally mutate (reaction-depth
+        // guard), so loc/arch stay valid across the walk. Native ComponentTraits
+        // OnRemove is deliberately not synthesized here: destruction fires no
+        // native remove hook today, and observers ride the dispatch table.
+        if (!TransitionDispatches.empty())
+        {
+            const Chunk* ch = arch.Chunks[loc.ChunkIndex].get();
+            for (ComponentId id = 0; id < NextComponentId; ++id)
+            {
+                if (!arch.Signature.test(id)) continue;
+                const uint32_t col = ch->FindColumn(id);
+                FireRemoveDispatch(id, entity,
+                    col != UINT32_MAX
+                        ? static_cast<const void*>(ch->ColumnData(col)
+                              + loc.RowIndex * ch->Columns[col].Stride)
+                        : nullptr);
+            }
+        }
+
         EntityIndex moved = arch.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
@@ -258,81 +282,39 @@ public:
 
     // ── Structural mutations ─────────────────────────────────────────────────
 
+    // Typed add is sugar over the one type-erased add core (AddComponentRaw), so
+    // every add path (typed, raw, command-buffer flush) shares one implementation
+    // and one runtime-dispatch fire point. The native ComponentTraits OnAdd hook,
+    // if any, is passed through as the raw core's onAdd callback.
     template <typename T>
     void AddComponent(EntityId entity, const T& value = T{})
     {
-        assert(QueryDepth == 0 && LifecycleHookDepth == 0
-               && "AddComponent called while a query/lifecycle hook is active — use CommandBuffer.");
-        assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
-
-        const ComponentId  id  = GetComponentId<T>();
-        EntityLocation     loc = Entities.GetLocation(entity);
-        Archetype&         src = *ArchetypeList[loc.ArchetypeId];
-
-        assert(!src.Signature.test(id) && "Entity already has component T.");
-
-        ArchetypeSignature newSig = src.Signature;
-        newSig.set(id);
-        Archetype* dst = GetOrCreateArchetype(newSig);
-
-        auto [dci, dri] = dst->AddRow(entity.Index);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
-
-        if constexpr (!std::is_empty_v<T>)
-            dst->WriteComponent(dci, dri, id, value);
-
-        EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
-        if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
-
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
-
+        const ComponentId id = GetComponentId<T>();
+        void (*onAdd)(void*, World&, EntityId) = nullptr;
         if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
-            const Chunk* ch  = dst->Chunks[dci].get();
-            const uint32_t c = ch->FindColumn(id);
-            T* ptr = reinterpret_cast<T*>(const_cast<uint8_t*>(ch->ColumnData(c))) + dri;
-            ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnAdd(*ptr, *this, entity);
+            onAdd = [](void* ptr, World& w, EntityId e) {
+                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), w, e);
+            };
         }
+        if constexpr (std::is_empty_v<T>)
+            AddComponentRaw(entity, id, nullptr, 0, 1, onAdd);
+        else
+            AddComponentRaw(entity, id, &value, sizeof(T), alignof(T), onAdd);
     }
 
     template <typename T>
     void RemoveComponent(EntityId entity)
     {
-        assert(QueryDepth == 0 && LifecycleHookDepth == 0
-               && "RemoveComponent called while a query/lifecycle hook is active — use CommandBuffer.");
-        assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
-
-        const ComponentId  id  = GetComponentId<T>();
-        EntityLocation     loc = Entities.GetLocation(entity);
-        Archetype&         src = *ArchetypeList[loc.ArchetypeId];
-
-        assert(src.Signature.test(id) && "Entity does not have component T.");
-
+        const ComponentId id = GetComponentId<T>();
+        void (*onRemove)(const void*, World&, EntityId) = nullptr;
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
-            const uint32_t c   = src.Chunks[loc.ChunkIndex]->FindColumn(id);
-            const T*       ptr = reinterpret_cast<const T*>(
-                src.Chunks[loc.ChunkIndex]->ColumnData(c)) + loc.RowIndex;
-            ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnRemove(*ptr, *this, entity);
+            onRemove = [](const void* ptr, World& w, EntityId e) {
+                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);
+            };
         }
-
-        ArchetypeSignature newSig = src.Signature;
-        newSig.reset(id);
-        Archetype* dst = GetOrCreateArchetype(newSig);
-
-        auto [dci, dri] = dst->AddRow(entity.Index);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
-
-        EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
-        if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
-
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        RemoveComponentRaw(entity, id, onRemove);
     }
 
     // ── Component access ─────────────────────────────────────────────────────
@@ -511,10 +493,21 @@ public:
     template <typename F>
     void ForEachEntityMatching(std::span<const ComponentId> requiredIds, F&& fn)
     {
+        ForEachEntityMatching(requiredIds, std::span<const ComponentId>{}, std::forward<F>(fn));
+    }
+
+    // Iterates entities whose archetype has every id in `requiredIds` and none in
+    // `excludedIds` (the `over` / `without` signature of a `system`).
+    template <typename F>
+    void ForEachEntityMatching(std::span<const ComponentId> requiredIds,
+                               std::span<const ComponentId> excludedIds, F&& fn)
+    {
         ArchetypeSignature required;
         for (const ComponentId id : requiredIds)
             required.set(id);
-        const ArchetypeSignature excluded;
+        ArchetypeSignature excluded;
+        for (const ComponentId id : excludedIds)
+            excluded.set(id);
 
         for (auto& archPtr : ArchetypeList)
         {
@@ -753,6 +746,18 @@ public:
             ScopedLifecycleHook hookScope(*this);
             onAdd(ch->ColumnData(col) + dri * size, *this, entity);
         }
+
+        // Runtime transition dispatch fires after the native OnAdd hook, reading
+        // the committed post-hook component (null for a tag). Decoupled from size.
+        if (!TransitionDispatches.empty())
+        {
+            Chunk*         ch  = dst->Chunks[dci].get();
+            const uint32_t col = ch->FindColumn(id);
+            FireAddDispatch(id, entity,
+                col != UINT32_MAX
+                    ? static_cast<const void*>(ch->ColumnData(col) + dri * size)
+                    : nullptr);
+        }
     }
 
     void RemoveComponentRaw(
@@ -768,6 +773,19 @@ public:
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
         assert(src.Signature.test(id) && "Entity does not have component.");
+
+        // Runtime transition dispatch fires before the native OnRemove hook and
+        // before the row drops, reading the live component (null for a tag).
+        if (!TransitionDispatches.empty())
+        {
+            const Chunk*   ch  = src.Chunks[loc.ChunkIndex].get();
+            const uint32_t col = ch->FindColumn(id);
+            FireRemoveDispatch(id, entity,
+                col != UINT32_MAX
+                    ? static_cast<const void*>(ch->ColumnData(col)
+                          + loc.RowIndex * ch->Columns[col].Stride)
+                    : nullptr);
+        }
 
         if (onRemove)
         {
@@ -902,9 +920,167 @@ public:
             Entities.SetLocation(move.Entity, move.Destination);
     }
 
+    // ── Runtime transition dispatch ─────────────────────────────────────────
+    //
+    // Register per-ComponentId lifecycle dispatch for a dynamically-registered
+    // component (the runtime generalization of the compile-time ComponentTraits;
+    // used by the T observer layer). The consolidated add/remove/destroy cores
+    // consult this and fire synchronously at the committed transition, decoupled
+    // from payload size. Inert until a dispatch is registered (the common path
+    // does one empty-vector check). The callee reads live state and defers its
+    // effects; the reaction-depth guard (LifecycleHookDepth) asserts if it tries
+    // to synchronously mutate archetypes.
+    void RegisterTransitionDispatch(ComponentId id, const TransitionDispatch& dispatch)
+    {
+        if (TransitionDispatches.size() <= static_cast<size_t>(id))
+            TransitionDispatches.resize(static_cast<size_t>(id) + 1);
+        TransitionDispatches[id] = dispatch;
+    }
+
+    void ClearTransitionDispatch(ComponentId id)
+    {
+        if (static_cast<size_t>(id) < TransitionDispatches.size())
+            TransitionDispatches[id] = TransitionDispatch{};
+    }
+
+    bool HasTransitionDispatch(ComponentId id) const
+    {
+        return TransitionDispatchFor(id) != nullptr;
+    }
+
+    // The reaction scope for the active drain: a CommandBuffer that a synchronous
+    // observer's deferred effects append to as the "next wave". Set by
+    // CommandBuffer::Flush around its drain, null outside a drain. World stores
+    // only the pointer and never calls CommandBuffer methods (that would cycle
+    // the include); the observer layer reads it to enqueue its effects.
+    CommandBuffer* ActiveReactions() const { return ActiveReactions_; }
+    CommandBuffer* SetActiveReactions(CommandBuffer* buffer)
+    {
+        CommandBuffer* previous = ActiveReactions_;
+        ActiveReactions_ = buffer;
+        return previous;
+    }
+
+    // Applies a deferred field mutation (used by CommandBuffer::Flush for the
+    // SetField/DeltaField kinds). Writes the leaf field at `offset` within the
+    // component, then fires the OnSet dispatch iff an observer is registered and
+    // the bytes actually changed (bitwise). A stale entity or a missing component
+    // is a no-op. Largest observable field is a small vector; kMaxFieldBytes
+    // bounds the old-value capture.
+    static constexpr std::size_t kMaxFieldBytes = 32;
+
+    void ApplyFieldSet(EntityId entity, ComponentId id, std::uint16_t offset,
+                       const void* bytes, std::size_t size)
+    {
+        void* component = GetComponentRaw(entity, id);
+        if (component == nullptr) return;
+        assert(size <= kMaxFieldBytes);
+        auto* field = static_cast<std::uint8_t*>(component) + offset;
+
+        if (HasSetDispatch(id))
+        {
+            std::uint8_t oldBytes[kMaxFieldBytes];
+            std::memcpy(oldBytes, field, size);
+            std::memcpy(field, bytes, size);
+            if (std::memcmp(oldBytes, field, size) != 0)
+                FireSetDispatch(id, entity, offset, oldBytes, field, size);
+        }
+        else
+        {
+            std::memcpy(field, bytes, size);
+        }
+    }
+
+    void ApplyFieldDelta(EntityId entity, ComponentId id, std::uint16_t offset,
+                         NumericFieldKind kind, const void* delta, std::size_t size)
+    {
+        void* component = GetComponentRaw(entity, id);
+        if (component == nullptr) return;
+        assert(size <= kMaxFieldBytes);
+        auto* field = static_cast<std::uint8_t*>(component) + offset;
+
+        if (HasSetDispatch(id))
+        {
+            std::uint8_t oldBytes[kMaxFieldBytes];
+            std::memcpy(oldBytes, field, size);
+            ApplyNumericDelta(field, delta, kind);
+            if (std::memcmp(oldBytes, field, size) != 0)
+                FireSetDispatch(id, entity, offset, oldBytes, field, size);
+        }
+        else
+        {
+            ApplyNumericDelta(field, delta, kind);
+        }
+    }
+
+    // Born-with reconstruction: while a ReconstructionScope is active, structural
+    // and field transitions still commit to storage but fire NO runtime dispatch.
+    // Scene load and snapshot restore reconstruct entities born-with (their
+    // components exist from the start, not "added at runtime"), so on_add/on_set
+    // observers do not fire during load. Activation runs afterward as an ordinary
+    // scheduled system. Nesting is counted so streamed reconstruction composes.
+    struct ReconstructionScope
+    {
+        explicit ReconstructionScope(World& world) : W(world) { ++W.ReconstructionDepth_; }
+        ~ReconstructionScope() { --W.ReconstructionDepth_; }
+        ReconstructionScope(const ReconstructionScope&) = delete;
+        ReconstructionScope& operator=(const ReconstructionScope&) = delete;
+
+        World& W;
+    };
+
+    bool IsReconstructing() const { return ReconstructionDepth_ != 0; }
+
 private:
+    const TransitionDispatch* TransitionDispatchFor(ComponentId id) const
+    {
+        if (static_cast<size_t>(id) < TransitionDispatches.size())
+        {
+            const TransitionDispatch& d = TransitionDispatches[id];
+            if (d.OnAdd != nullptr || d.OnRemove != nullptr) return &d;
+        }
+        return nullptr;
+    }
+
+    void FireAddDispatch(ComponentId id, EntityId entity, const void* component)
+    {
+        if (ReconstructionDepth_ != 0) return; // born-with: no dispatch during load
+        const TransitionDispatch* d = TransitionDispatchFor(id);
+        if (d == nullptr || d->OnAdd == nullptr) return;
+        ScopedLifecycleHook guard(*this);
+        d->OnAdd(*this, entity, id, component, d->Context);
+    }
+
+    void FireRemoveDispatch(ComponentId id, EntityId entity, const void* component)
+    {
+        if (ReconstructionDepth_ != 0) return; // born-with: no dispatch during load
+        const TransitionDispatch* d = TransitionDispatchFor(id);
+        if (d == nullptr || d->OnRemove == nullptr) return;
+        ScopedLifecycleHook guard(*this);
+        d->OnRemove(*this, entity, id, component, d->Context);
+    }
+
+    bool HasSetDispatch(ComponentId id) const
+    {
+        return static_cast<size_t>(id) < TransitionDispatches.size()
+            && TransitionDispatches[id].OnSet != nullptr;
+    }
+
+    void FireSetDispatch(ComponentId id, EntityId entity, std::uint16_t offset,
+                         const void* oldBytes, const void* newBytes, std::size_t size)
+    {
+        if (ReconstructionDepth_ != 0) return; // born-with: no dispatch during load
+        if (!HasSetDispatch(id)) return;
+        const TransitionDispatch& d = TransitionDispatches[id];
+        ScopedLifecycleHook guard(*this);
+        d.OnSet(*this, entity, id, offset, oldBytes, newBytes,
+                static_cast<std::uint16_t>(size), d.Context);
+    }
+
     EntityRegistry                          Entities;
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
+    std::vector<TransitionDispatch>         TransitionDispatches;
+    CommandBuffer*                          ActiveReactions_ = nullptr;
 
     struct SigHash
     {
@@ -949,6 +1125,7 @@ private:
 
     mutable uint32_t QueryDepth = 0;
     uint32_t LifecycleHookDepth = 0;
+    uint32_t ReconstructionDepth_ = 0;
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;
     bool     EntityCreated = false;
@@ -968,6 +1145,7 @@ private:
     {
         Entities = std::move(other.Entities);
         ArchetypeList = std::move(other.ArchetypeList);
+        TransitionDispatches = std::move(other.TransitionDispatches);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
         TypeToId = std::move(other.TypeToId);

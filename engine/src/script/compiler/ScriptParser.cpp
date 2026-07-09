@@ -676,17 +676,10 @@ namespace
             return true;
         }
 
-        bool ParseComponent(ScriptAstUnit& unit)
+        // Parses a `{ name: type [= default] ... }` field list (component bodies
+        // and a behavior's config/runtime blocks share this shape).
+        bool ParseFieldList(std::vector<ScriptAstField>& out)
         {
-            const ScriptToken& keyword = Advance(); // component
-            ScriptAstComponent component;
-            component.Line = keyword.Line;
-            component.Col = keyword.Col;
-            if (!Is(ScriptTokKind::Ident))
-            {
-                return Fail(Peek(), "expected component name");
-            }
-            component.Name = Advance().Text;
             if (!Expect(ScriptTokKind::LBrace, "'{'"))
             {
                 return false;
@@ -719,10 +712,28 @@ namespace
                         return false;
                     }
                 }
-                component.Fields.push_back(std::move(field));
+                out.push_back(std::move(field));
                 SkipTerminators();
             }
             Advance(); // }
+            return true;
+        }
+
+        bool ParseComponent(ScriptAstUnit& unit)
+        {
+            const ScriptToken& keyword = Advance(); // component
+            ScriptAstComponent component;
+            component.Line = keyword.Line;
+            component.Col = keyword.Col;
+            if (!Is(ScriptTokKind::Ident))
+            {
+                return Fail(Peek(), "expected component name");
+            }
+            component.Name = Advance().Text;
+            if (!ParseFieldList(component.Fields))
+            {
+                return false;
+            }
             unit.Components.push_back(std::move(component));
             return true;
         }
@@ -781,6 +792,26 @@ namespace
             SkipTerminators();
             while (!Is(ScriptTokKind::RBrace))
             {
+                // `config { ... }` / `runtime { ... }` field blocks in a behavior.
+                // Contextual (config/runtime stay usable as body aliases).
+                if (kind == ScriptAstBlockKind::Behavior && Is(ScriptTokKind::Ident)
+                    && (Peek().Text == "config" || Peek().Text == "runtime"))
+                {
+                    const bool isConfig = Peek().Text == "config";
+                    Advance();
+                    if (isConfig)
+                    {
+                        block.HasConfig = true;
+                        if (!ParseFieldList(block.ConfigFields)) return false;
+                    }
+                    else
+                    {
+                        block.HasRuntime = true;
+                        if (!ParseFieldList(block.RuntimeFields)) return false;
+                    }
+                    SkipTerminators();
+                    continue;
+                }
                 switch (Peek().Kind)
                 {
                 case ScriptTokKind::KwState:
@@ -804,10 +835,19 @@ namespace
                     }
                     break;
                 case ScriptTokKind::KwRequires:
-                    Advance(); // requires
+                case ScriptTokKind::KwOver:
+                {
+                    // `over` (systems) and `requires` (behaviors/abilities) both
+                    // name the components the subject entity must have; the tick
+                    // runs only on entities that have them all and the subject is
+                    // typed as present (no has() guard).
+                    const char* after = Peek().Kind == ScriptTokKind::KwOver
+                                            ? "'over'" : "'requires'";
+                    Advance();
                     if (!Is(ScriptTokKind::Ident))
                     {
-                        return Fail(Peek(), "expected a component name after 'requires'");
+                        return Fail(Peek(),
+                                    std::string("expected a component name after ") + after);
                     }
                     block.Requires.push_back(Advance().Text);
                     while (Is(ScriptTokKind::Comma))
@@ -820,6 +860,68 @@ namespace
                         block.Requires.push_back(Advance().Text);
                     }
                     break;
+                }
+                case ScriptTokKind::KwWithout:
+                {
+                    Advance(); // without
+                    if (!Is(ScriptTokKind::Ident))
+                    {
+                        return Fail(Peek(), "expected a component name after 'without'");
+                    }
+                    block.Excludes.push_back(Advance().Text);
+                    while (Is(ScriptTokKind::Comma))
+                    {
+                        Advance(); // ,
+                        if (!Is(ScriptTokKind::Ident))
+                        {
+                            return Fail(Peek(), "expected a component name after ','");
+                        }
+                        block.Excludes.push_back(Advance().Text);
+                    }
+                    break;
+                }
+                case ScriptTokKind::KwWrites:
+                {
+                    Advance(); // writes
+                    if (!Is(ScriptTokKind::Ident))
+                    {
+                        return Fail(Peek(), "expected a component name after 'writes'");
+                    }
+                    block.Writes.push_back(Advance().Text);
+                    while (Is(ScriptTokKind::Comma))
+                    {
+                        Advance(); // ,
+                        if (!Is(ScriptTokKind::Ident))
+                        {
+                            return Fail(Peek(), "expected a component name after ','");
+                        }
+                        block.Writes.push_back(Advance().Text);
+                    }
+                    break;
+                }
+                case ScriptTokKind::KwAfter:
+                case ScriptTokKind::KwBefore:
+                {
+                    const bool isAfter = Peek().Kind == ScriptTokKind::KwAfter;
+                    std::vector<std::string_view>& edges = isAfter ? block.After : block.Before;
+                    Advance();
+                    if (!Is(ScriptTokKind::Ident))
+                    {
+                        return Fail(Peek(), std::string("expected a system name after '")
+                                            + (isAfter ? "after" : "before") + "'");
+                    }
+                    edges.push_back(Advance().Text);
+                    while (Is(ScriptTokKind::Comma))
+                    {
+                        Advance(); // ,
+                        if (!Is(ScriptTokKind::Ident))
+                        {
+                            return Fail(Peek(), "expected a system name after ','");
+                        }
+                        edges.push_back(Advance().Text);
+                    }
+                    break;
+                }
                 case ScriptTokKind::KwFn:
                     if (!ParseFn(block.Fns))
                     {
@@ -829,7 +931,9 @@ namespace
                 case ScriptTokKind::Eof:
                     return Fail(Peek(), "unterminated declaration block");
                 default:
-                    return Fail(Peek(), "expected state, const, param, requires, or fn");
+                    return Fail(Peek(),
+                                "expected state, const, param, requires, over, without, "
+                                "writes, after, before, or fn");
                 }
                 SkipTerminators();
             }
@@ -864,6 +968,41 @@ ScriptParseResult ParseScript(std::string_view path, const std::vector<ScriptTok
         case ScriptTokKind::KwComponent:
             ok = parser.ParseComponent(result.Unit);
             break;
+        case ScriptTokKind::Hash:
+        {
+            // #[config] / #[runtime] attribute on a component.
+            parser.Advance(); // #
+            if (!parser.Expect(ScriptTokKind::LBracket, "'[' after '#'")) { ok = false; break; }
+            if (!parser.Is(ScriptTokKind::Ident))
+            {
+                ok = parser.Fail(parser.Peek(), "expected an attribute name after '#['");
+                break;
+            }
+            const std::string_view attrName = parser.Advance().Text;
+            if (!parser.Expect(ScriptTokKind::RBracket, "']'")) { ok = false; break; }
+            ScriptComponentAttr attr = ScriptComponentAttr::Default;
+            if (attrName == "config") { attr = ScriptComponentAttr::Config; }
+            else if (attrName == "runtime") { attr = ScriptComponentAttr::Runtime; }
+            else
+            {
+                ok = parser.Fail(parser.Peek(),
+                                 "unknown attribute '" + std::string(attrName)
+                                     + "' (expected config or runtime)");
+                break;
+            }
+            parser.SkipTerminators();
+            if (!parser.Is(ScriptTokKind::KwComponent))
+            {
+                ok = parser.Fail(parser.Peek(), "an attribute must be followed by a component");
+                break;
+            }
+            ok = parser.ParseComponent(result.Unit);
+            if (ok && !result.Unit.Components.empty())
+            {
+                result.Unit.Components.back().Attr = attr;
+            }
+            break;
+        }
         case ScriptTokKind::KwEnum:
             ok = parser.ParseEnum(result.Unit);
             break;
@@ -885,10 +1024,16 @@ ScriptParseResult ParseScript(std::string_view path, const std::vector<ScriptTok
         case ScriptTokKind::KwInteraction:
             ok = parser.ParseScriptBlock(result.Unit, ScriptAstBlockKind::Interaction);
             break;
+        case ScriptTokKind::KwSystem:
+            ok = parser.ParseScriptBlock(result.Unit, ScriptAstBlockKind::System);
+            break;
+        case ScriptTokKind::KwObserver:
+            ok = parser.ParseScriptBlock(result.Unit, ScriptAstBlockKind::Observer);
+            break;
         default:
             ok = parser.Fail(parser.Peek(),
                              "expected a declaration (import, component, enum, const, fn, "
-                             "ability, behavior, trigger, or interaction)");
+                             "ability, behavior, trigger, interaction, system, or observer)");
             break;
         }
         if (!ok)

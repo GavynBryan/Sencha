@@ -2,18 +2,21 @@
 #include <ecs/World.h>
 
 #include <cassert>
+#include <utility>
 #include <vector>
 
-void CommandBuffer::Flush()
+void CommandBuffer::ApplyCommands()
 {
-    assert(!W->InQueryScope()
-           && "CommandBuffer::Flush called while a query is active.");
-
     for (size_t i = 0; i < Commands.size();)
     {
         Command& cmd = Commands[i];
 
-        if (cmd.Kind == CommandKind::AddComponent && cmd.Payload.OnAddHook == nullptr)
+        // Coalescing merges only a run of consecutive same-id adds that have no
+        // native hook AND no runtime dispatch. An observed component (HasDispatch)
+        // must be applied singly so its transition fires; the batch path fires
+        // neither the native hook nor the dispatch.
+        if (cmd.Kind == CommandKind::AddComponent && cmd.Payload.OnAddHook == nullptr
+            && !cmd.Payload.HasDispatch)
         {
             const ComponentId id = cmd.Payload.Id;
             const size_t size = cmd.Payload.Size;
@@ -25,7 +28,8 @@ void CommandBuffer::Flush()
                    && Commands[end].Payload.Id == id
                    && Commands[end].Payload.Size == size
                    && Commands[end].Payload.Align == align
-                   && Commands[end].Payload.OnAddHook == nullptr)
+                   && Commands[end].Payload.OnAddHook == nullptr
+                   && !Commands[end].Payload.HasDispatch)
             {
                 ++end;
             }
@@ -49,7 +53,8 @@ void CommandBuffer::Flush()
             }
         }
 
-        if (cmd.Kind == CommandKind::RemoveComponent && cmd.Payload.OnRemoveHook == nullptr)
+        if (cmd.Kind == CommandKind::RemoveComponent && cmd.Payload.OnRemoveHook == nullptr
+            && !cmd.Payload.HasDispatch)
         {
             const ComponentId id = cmd.Payload.Id;
 
@@ -57,7 +62,8 @@ void CommandBuffer::Flush()
             while (end < Commands.size()
                    && Commands[end].Kind == CommandKind::RemoveComponent
                    && Commands[end].Payload.Id == id
-                   && Commands[end].Payload.OnRemoveHook == nullptr)
+                   && Commands[end].Payload.OnRemoveHook == nullptr
+                   && !Commands[end].Payload.HasDispatch)
             {
                 ++end;
             }
@@ -112,10 +118,61 @@ void CommandBuffer::Flush()
             W->CreateEntity();
             break;
         }
+        case CommandKind::SetField:
+        {
+            if (!W->IsAlive(cmd.Entity)) break;
+            W->ApplyFieldSet(cmd.Entity, cmd.Payload.Id, cmd.Payload.FieldOffset,
+                             PayloadData(cmd.Payload), cmd.Payload.Size);
+            break;
+        }
+        case CommandKind::DeltaField:
+        {
+            if (!W->IsAlive(cmd.Entity)) break;
+            W->ApplyFieldDelta(cmd.Entity, cmd.Payload.Id, cmd.Payload.FieldOffset,
+                               cmd.Payload.NumericKind, PayloadData(cmd.Payload),
+                               cmd.Payload.Size);
+            break;
+        }
         }
 
         ++i;
     }
+}
+
+void CommandBuffer::Flush()
+{
+    assert(!W->InQueryScope()
+           && "CommandBuffer::Flush called while a query is active.");
+
+    // Wave 0 is this buffer's recorded commands. A synchronous observer's
+    // deferred effects append to nextWave (the world's active reaction scope);
+    // after wave 0 the flush drains nextWave, and so on to quiescence. This
+    // realizes the breadth-first wave model: effects observed in wave N apply in
+    // wave N+1, never interleaved into the wave being applied.
+    CommandBuffer nextWave(*W);
+    CommandBuffer* previous = W->SetActiveReactions(&nextWave);
+
+    ApplyCommands();
+
+    uint32_t waves = 0;
+    while (!nextWave.IsEmpty())
+    {
+        CommandBuffer current(std::move(nextWave));
+        nextWave = CommandBuffer(*W);
+        W->SetActiveReactions(&nextWave);
+
+        current.ApplyCommands();
+
+        if (++waves > kMaxReactionWaves)
+        {
+            assert(false
+                   && "Reaction wave cycle guard exceeded: an observer cascade "
+                      "did not converge.");
+            break;
+        }
+    }
+
+    W->SetActiveReactions(previous);
 
     Commands.clear();
     PayloadArena.clear();

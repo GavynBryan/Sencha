@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-static_assert(kScriptOpCount == 61, "Bytecode v0 pins 61 opcodes.");
+static_assert(kScriptOpCount == 63, "Bytecode v0 pins 63 opcodes.");
 
 TEST(ScriptBytecode, OpTableIsSortedAndDense)
 {

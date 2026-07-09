@@ -144,6 +144,11 @@ std::vector<std::byte> WriteScriptModule(const ScriptModule& module)
         {
             w.Write<uint32_t>(required);
         }
+        w.Write<uint16_t>(static_cast<uint16_t>(d.ExcludedComponents.size()));
+        for (const uint32_t excluded : d.ExcludedComponents)
+        {
+            w.Write<uint32_t>(excluded);
+        }
     }));
 
     if (!module.HostEnumFixups.empty())

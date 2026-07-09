@@ -485,7 +485,7 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
             const uint8_t kind = r.Read<uint8_t>();
             const uint8_t stateCount = r.Read<uint8_t>();
             const uint16_t callbackCount = r.Read<uint16_t>();
-            if (kind < 1 || kind > 4)
+            if (kind < 1 || kind > 6)
             {
                 return fail("Declarations entry has an invalid kind");
             }
@@ -505,6 +505,11 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
             for (uint16_t q = 0; q < requiredCount && !r.Failed; ++q)
             {
                 decl.RequiredComponents.push_back(r.Read<uint32_t>());
+            }
+            const uint16_t excludedCount = r.Read<uint16_t>();
+            for (uint16_t q = 0; q < excludedCount && !r.Failed; ++q)
+            {
+                decl.ExcludedComponents.push_back(r.Read<uint32_t>());
             }
             if (!r.Failed)
             {
@@ -533,6 +538,13 @@ ScriptModuleParseResult ParseScriptModule(std::span<const std::byte> bytes)
                 for (const uint32_t required : decl.RequiredComponents)
                 {
                     if (!CheckString(module, required, "Declarations", error))
+                    {
+                        return fail(std::move(error));
+                    }
+                }
+                for (const uint32_t excluded : decl.ExcludedComponents)
+                {
+                    if (!CheckString(module, excluded, "Declarations", error))
                     {
                         return fail(std::move(error));
                     }

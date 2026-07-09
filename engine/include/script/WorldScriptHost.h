@@ -78,6 +78,12 @@ public:
     ScriptTrapCode ComponentStore(const ScriptModule& module, std::uint64_t entityBits,
                                   std::uint32_t fieldBind, std::uint32_t elementIndex,
                                   std::span<const std::uint64_t> in) override;
+    ScriptTrapCode ComponentStoreDeferred(const ScriptModule& module, std::uint64_t entityBits,
+                                          std::uint32_t fieldBind, std::uint32_t elementIndex,
+                                          std::span<const std::uint64_t> in) override;
+    ScriptTrapCode ComponentDelta(const ScriptModule& module, std::uint64_t entityBits,
+                                  std::uint32_t fieldBind, std::uint32_t elementIndex,
+                                  std::span<const std::uint64_t> in) override;
     ScriptTrapCode ComponentHas(const ScriptModule& module, std::uint64_t entityBits,
                                 std::uint32_t componentBind, bool& out) override;
     ScriptTrapCode TagHas(const ScriptModule& module, std::uint64_t entityBits,

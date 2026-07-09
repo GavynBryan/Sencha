@@ -87,6 +87,8 @@ std::string DisassembleScriptModule(const ScriptModule& module)
                 break;
             case ScriptOp::Cld:
             case ScriptOp::Cst:
+            case ScriptOp::CstD:
+            case ScriptOp::CstDlt:
             {
                 const std::string_view component =
                     c < module.FieldBinds.size()

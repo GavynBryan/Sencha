@@ -40,9 +40,9 @@
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
 #include <script/ScriptAbilitySystem.h>
-#include <script/ScriptBehaviorSystem.h>
-#include <script/ScriptComponents.h>
+#include <script/ScriptRuntime.h> // RegisterScriptRuntime
 #include <script/ScriptSceneLink.h>
+#include <script/ScriptSystemTick.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
@@ -401,9 +401,6 @@ void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
     InitSceneSerializer();
     RegisterComponent<SpinComponent>();
     RegisterComponent<PlayerStartComponent>();
-    // ScriptSource lets a level entity carry a T script (an asset-ref field),
-    // authored in the inspector and run by the script bridges.
-    RegisterComponent<ScriptSource>();
 }
 
 void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serializers)
@@ -414,7 +411,6 @@ void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serialize
     // serializers (engine code) are left for the host to manage.
     serializers.Remove(ResolveComponentTypeId<SpinComponent>());
     serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
-    serializers.Remove(ResolveComponentTypeId<ScriptSource>());
 }
 
 void TemplateGame::OnStart(GameStartupContext&)
@@ -866,13 +862,12 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
     ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition, ZoneLoader, ZoneRuntimePtr,
                                                       WorldPawn);
-    // Script bridges: resolve attaches the runtime behavior to ScriptSource
-    // entities after load, then the behavior/ability systems tick them. Both get
-    // the engine's logging so a trapped callback surfaces a structured diagnostic.
-    ctx.Schedule.Register<ScriptResolveSystem>();
-    ctx.Schedule.Register<ScriptBehaviorSystem>().SetLogging(GetEngine().Logging());
+    // Script bridges: the system tick iterates linked modules' `system`
+    // declarations globally (observers fire synchronously inside its flushes);
+    // the ability system ticks abilities. Both get the engine's logging so a
+    // trapped callback surfaces a structured diagnostic.
+    ctx.Schedule.Register<ScriptSystemTick>().SetLogging(GetEngine().Logging());
     ctx.Schedule.Register<ScriptAbilitySystem>().SetLogging(GetEngine().Logging());
-    ctx.Schedule.After<ScriptBehaviorSystem, ScriptResolveSystem>();
 }
 
 void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)

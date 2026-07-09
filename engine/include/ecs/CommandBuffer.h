@@ -3,6 +3,7 @@
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
+#include <ecs/FieldDelta.h>
 #include <ecs/World.h>
 
 #include <cassert>
@@ -19,6 +20,8 @@ enum class CommandKind : uint8_t
     RemoveComponent,
     DestroyEntity,
     CreateEntity,
+    SetField,
+    DeltaField,
 };
 
 struct ComponentPayload
@@ -28,6 +31,19 @@ struct ComponentPayload
     size_t      Align      = 1;
     size_t      DataOffset = 0;
     bool        HasData    = false;
+
+    // True when this component has a runtime transition dispatch registered
+    // (an observer). Stamped at record time because coalescing (which consults
+    // OnAddHook) cannot see the runtime ComponentId->dispatch table; a stamped
+    // command is never merged into a batch, so every observed transition is
+    // applied singly and fires its dispatch.
+    bool        HasDispatch = false;
+
+    // For the SetField / DeltaField kinds: the leaf field's byte offset within
+    // the component, and (delta only) its numeric kind. Size holds the field
+    // size and the arena data holds the new value (set) or the addend (delta).
+    std::uint16_t    FieldOffset = 0;
+    NumericFieldKind NumericKind = NumericFieldKind::Int32;
 
     void (*OnAddHook)(void*, World&, EntityId) = nullptr;
     void (*OnRemoveHook)(const void*, World&, EntityId) = nullptr;
@@ -77,6 +93,7 @@ public:
         cmd.Payload.Id    = W->template GetComponentId<T>();
         cmd.Payload.Size  = std::is_empty_v<T> ? 0 : sizeof(T);
         cmd.Payload.Align = std::is_empty_v<T> ? 1 : alignof(T);
+        cmd.Payload.HasDispatch = W->HasTransitionDispatch(cmd.Payload.Id);
 
         if constexpr (!std::is_empty_v<T>)
         {
@@ -102,6 +119,7 @@ public:
         cmd.Entity = entity;
         cmd.Payload.Id   = W->template GetComponentId<T>();
         cmd.Payload.Size = std::is_empty_v<T> ? 0 : sizeof(T);
+        cmd.Payload.HasDispatch = W->HasTransitionDispatch(cmd.Payload.Id);
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
@@ -129,6 +147,7 @@ public:
         cmd.Payload.Id  = id;
         cmd.Payload.Size = size;
         cmd.Payload.Align = align == 0 ? 1 : align;
+        cmd.Payload.HasDispatch = W->HasTransitionDispatch(id);
         cmd.Payload.OnAddHook = onAdd;
         if (size > 0 && blob != nullptr)
         {
@@ -146,6 +165,7 @@ public:
         cmd.Entity      = entity;
         cmd.Payload.Id  = id;
         cmd.Payload.Size = size;
+        cmd.Payload.HasDispatch = W->HasTransitionDispatch(id);
         cmd.Payload.OnRemoveHook = onRemove;
         Commands.push_back(std::move(cmd));
     }
@@ -155,6 +175,48 @@ public:
         Command cmd;
         cmd.Kind   = CommandKind::DestroyEntity;
         cmd.Entity = entity;
+        Commands.push_back(std::move(cmd));
+    }
+
+    // Deferred write of a leaf field: overwrite `size` bytes at `offset` within
+    // component `id` on `entity` with a copy of `bytes` (taken now, into the
+    // arena). Applied at flush; fires OnSet if the field has an observer and the
+    // bytes change. This is the deferred foreign/observable field set.
+    void SetFieldRaw(EntityId entity, ComponentId id, std::uint16_t offset,
+                     const void* bytes, size_t size)
+    {
+        Command cmd;
+        cmd.Kind             = CommandKind::SetField;
+        cmd.Entity           = entity;
+        cmd.Payload.Id       = id;
+        cmd.Payload.Size     = size;
+        cmd.Payload.FieldOffset = offset;
+        if (size > 0 && bytes != nullptr)
+        {
+            cmd.Payload.HasData    = true;
+            cmd.Payload.DataOffset = StorePayload(bytes, size, size == 0 ? 1 : size);
+        }
+        Commands.push_back(std::move(cmd));
+    }
+
+    // Deferred `field += delta`: read-modify-write of the numeric field. The
+    // addend `bytes` is copied now; the typed add (wrapping for integers) runs at
+    // flush, then OnSet fires if the value changes.
+    void DeltaFieldRaw(EntityId entity, ComponentId id, std::uint16_t offset,
+                       NumericFieldKind kind, const void* bytes, size_t size)
+    {
+        Command cmd;
+        cmd.Kind             = CommandKind::DeltaField;
+        cmd.Entity           = entity;
+        cmd.Payload.Id       = id;
+        cmd.Payload.Size     = size;
+        cmd.Payload.FieldOffset = offset;
+        cmd.Payload.NumericKind = kind;
+        if (size > 0 && bytes != nullptr)
+        {
+            cmd.Payload.HasData    = true;
+            cmd.Payload.DataOffset = StorePayload(bytes, size, size == 0 ? 1 : size);
+        }
         Commands.push_back(std::move(cmd));
     }
 
@@ -171,7 +233,19 @@ public:
 
     // Flush all recorded commands to the world.
     // Must be called outside any active query.
+    //
+    // The recorded commands are wave 0. Each committed transition fires its
+    // runtime dispatch synchronously; a synchronous observer's deferred effects
+    // append to a fresh next-wave buffer (installed as the world's active
+    // reactions). After wave 0 the flush drains the next wave, and so on to
+    // quiescence, breadth-first. A hard cycle guard (kMaxReactionWaves) fails
+    // closed rather than looping forever.
     void Flush();
+
+    // Upper bound on reaction waves in one drain. A well-formed observer cascade
+    // converges quickly; exceeding this is a defect (a non-converging cascade),
+    // not a tuning knob.
+    static constexpr uint32_t kMaxReactionWaves = 64;
 
     bool   IsEmpty() const { return Commands.empty(); }
     size_t Count()   const { return Commands.size(); }
@@ -183,6 +257,12 @@ public:
     }
 
 private:
+    // Applies this buffer's recorded commands in record order (coalescing runs of
+    // unobserved, hook-free same-id adds/removes into batches). Runtime dispatch
+    // fires from the World cores as each transition commits. Does not touch the
+    // reaction scope; the caller (Flush) owns the wave loop.
+    void ApplyCommands();
+
     World*               W;
     std::vector<Command> Commands;
     std::vector<uint8_t> PayloadArena;

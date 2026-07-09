@@ -2,9 +2,11 @@
 
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <script/ScriptCallbacks.h>
 #include <script/ScriptComponentSerializer.h>
 #include <script/ScriptHostSurface.h>
 #include <script/ScriptIntrinsics.h>
+#include <script/ScriptObserverDispatch.h>
 #include <script/WorldScriptHost.h>
 #include <world/transform/TransformComponents.h>
 
@@ -342,7 +344,69 @@ ScriptLinkResult LinkScriptModule(World& world, std::shared_ptr<const ScriptModu
         linked.DeclarationRequired.push_back(std::move(required));
     }
 
+    // Per-declaration `without` sets, resolved the same way. The tick skips any
+    // entity carrying one of these.
+    linked.DeclarationExcluded.reserve(module->Declarations.size());
+    for (const ScriptDeclaration& decl : module->Declarations)
+    {
+        std::vector<ComponentId> excluded;
+        excluded.reserve(decl.ExcludedComponents.size());
+        for (const std::uint32_t nameIdx : decl.ExcludedComponents)
+        {
+            const std::string_view name = module->GetString(nameIdx);
+            ComponentId id = InvalidComponentId;
+            if (const HostComponentLayout* host = FindHostComponent(name))
+            {
+                id = world.GetComponentIdByType(host->Type);
+            }
+            else
+            {
+                id = world.GetComponentIdByType(
+                    MakeComponentTypeId(std::string("script.") + std::string(name)));
+            }
+            if (id == InvalidComponentId)
+            {
+                return fail(std::format("declaration '{}' excludes component '{}' which is not "
+                                        "registered in this world",
+                                        module->GetString(decl.Name), name));
+            }
+            excluded.push_back(id);
+        }
+        linked.DeclarationExcluded.push_back(std::move(excluded));
+    }
+
     result.ModuleIndex = static_cast<std::uint32_t>(runtime.Modules.size());
+
+    // Register T `observer` declarations with the world's observer dispatcher so
+    // their on_add / on_remove run at the trigger component's transition. Done
+    // before the module is moved into the runtime; the binding stores the index
+    // the module will occupy. Codegen has already checked each observer watches
+    // exactly one component.
+    for (std::uint32_t d = 0; d < module->Declarations.size(); ++d)
+    {
+        const ScriptDeclaration& decl = module->Declarations[d];
+        if (decl.Kind != ScriptDeclKind::Observer)
+        {
+            continue;
+        }
+        if (linked.DeclarationRequired[d].size() != 1)
+        {
+            return fail(std::format("observer '{}' must watch exactly one component",
+                                    module->GetString(decl.Name)));
+        }
+        if (!world.HasResource<ScriptObserverDispatch>())
+        {
+            world.AddResource<ScriptObserverDispatch>();
+        }
+        ScriptObserverDispatch::Binding binding;
+        binding.LinkedModule = result.ModuleIndex;
+        binding.Declaration = d;
+        binding.OnAddFn = FindScriptCallback(*module, decl, "on_add");
+        binding.OnRemoveFn = FindScriptCallback(*module, decl, "on_remove");
+        world.GetResource<ScriptObserverDispatch>().Register(
+            world, linked.DeclarationRequired[d][0], binding);
+    }
+
     runtime.Modules.push_back(std::move(linked));
     // Keep ModuleHandles parallel; the scene-link step overwrites the slot
     // with the asset handle that loaded the module.

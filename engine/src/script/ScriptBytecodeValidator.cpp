@@ -186,7 +186,10 @@ namespace
                      SlotType::F64, SlotType::F64, SlotType::F64,
                      SlotType::F64, SlotType::F64, SlotType::F64 };
         case ScriptDeclKind::Behavior:
+        case ScriptDeclKind::System:
             return { SlotType::Entity, SlotType::I64, SlotType::F64 };
+        case ScriptDeclKind::Observer:
+            return { SlotType::Entity };
         case ScriptDeclKind::Trigger:
         case ScriptDeclKind::Interaction:
             return { SlotType::Entity, SlotType::Entity, SlotType::I64, SlotType::F64 };
@@ -318,6 +321,8 @@ namespace
             }
             case ScriptOp::Cld:
             case ScriptOp::Cst:
+            case ScriptOp::CstD:
+            case ScriptOp::CstDlt:
                 if (c >= module.FieldBinds.size())
                 {
                     return Failure{"structural-3", "field bind index out of range", at};

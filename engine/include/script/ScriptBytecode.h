@@ -81,6 +81,8 @@ enum class ScriptOp : uint8_t
     CHas    = 0x62,
     CldX    = 0x63,
     CstX    = 0x64,
+    CstD    = 0x65,
+    CstDlt  = 0x66,
 
     THas    = 0x70,
     THasU   = 0x71,
@@ -115,7 +117,7 @@ struct ScriptOpInfo
 
 // Transcribed from the spec's opcode table, in opcode order. The count is the
 // contract the rest of the VM (validator, disassembler, tests) pins against.
-inline constexpr std::array<ScriptOpInfo, 61> kScriptOps = {{
+inline constexpr std::array<ScriptOpInfo, 63> kScriptOps = {{
     { ScriptOp::Nop,     "NOP",     ScriptOpFormat::ABC },
     { ScriptOp::Mov,     "MOV",     ScriptOpFormat::ABC },
     { ScriptOp::MovW,    "MOVW",    ScriptOpFormat::ABC },
@@ -166,6 +168,8 @@ inline constexpr std::array<ScriptOpInfo, 61> kScriptOps = {{
     { ScriptOp::CHas,    "CHAS",    ScriptOpFormat::ABC },
     { ScriptOp::CldX,    "CLDX",    ScriptOpFormat::Ext },
     { ScriptOp::CstX,    "CSTX",    ScriptOpFormat::Ext },
+    { ScriptOp::CstD,    "CSTD",    ScriptOpFormat::ABC },
+    { ScriptOp::CstDlt,  "CSTDLT",  ScriptOpFormat::ABC },
     { ScriptOp::THas,    "THAS",    ScriptOpFormat::ABC },
     { ScriptOp::THasU,   "THASU",   ScriptOpFormat::ABC },
     { ScriptOp::TAdd,    "TADD",    ScriptOpFormat::ABC },
@@ -180,7 +184,7 @@ inline constexpr std::array<ScriptOpInfo, 61> kScriptOps = {{
 }};
 
 inline constexpr uint32_t kScriptOpCount = static_cast<uint32_t>(kScriptOps.size());
-static_assert(kScriptOpCount == 61, "Bytecode v0 defines exactly 61 opcodes.");
+static_assert(kScriptOpCount == 63, "Bytecode v0 defines exactly 63 opcodes.");
 
 // Encoding limits. The encoding enforces most of these (8-bit and
 // 16-bit operand fields); the rest the validator checks.

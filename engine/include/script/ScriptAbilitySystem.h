@@ -32,7 +32,7 @@ public:
     // Runs one world's script abilities for a tick. Exposed for tests.
     void Step(World& world, std::uint64_t tickIndex, float dt);
 
-    // Where trap diagnostics go (see ScriptBehaviorSystem::SetLogging). Optional.
+    // Where trap diagnostics go (the player's logging). Optional; unset in tests.
     void SetLogging(LoggingProvider& logging) { Log = &logging; }
 
 private:

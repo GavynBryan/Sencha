@@ -238,7 +238,7 @@ TEST_F(EcsTest, AddComponentDuringActiveQueryAssertsInDebug)
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
-    EXPECT_DEATH(world.AddComponent<Pos>(e), "AddComponent called while a query/lifecycle hook is active");
+    EXPECT_DEATH(world.AddComponent<Pos>(e), "query/lifecycle hook");
 #endif
     world.PopQueryScope();
 }
@@ -749,7 +749,7 @@ TEST_F(EcsTest, LifecycleHook_StructuralMutationAssertsInDebug)
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
     EXPECT_DEATH(world.AddComponent<HookAddsMass>(e, { 1 }),
-                 "lifecycle hook is active");
+                 "query/lifecycle hook");
 #endif
 }
 
@@ -796,7 +796,7 @@ TEST_F(EcsTest, Invariant_StructuralChangeDuringQueryFails)
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
-    EXPECT_DEATH(world.AddComponent<Pos>(e), "query/lifecycle hook is active");
+    EXPECT_DEATH(world.AddComponent<Pos>(e), "query/lifecycle hook");
 #endif
     world.PopQueryScope();
 }

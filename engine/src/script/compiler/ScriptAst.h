@@ -87,9 +87,21 @@ struct ScriptAstField
     uint32_t Col = 0;
 };
 
+// A component's authoring attribute. Config components are script read-only
+// (the authored attach point); Runtime components are script read/write. Default
+// is read/write like Runtime; the serialization purpose split arrives with the
+// consumer.
+enum class ScriptComponentAttr : uint8_t
+{
+    Default,
+    Config,
+    Runtime,
+};
+
 struct ScriptAstComponent
 {
     std::string_view Name;
+    ScriptComponentAttr Attr = ScriptComponentAttr::Default;
     std::vector<ScriptAstField> Fields;
     uint32_t Line = 0;
     uint32_t Col = 0;
@@ -136,6 +148,8 @@ enum class ScriptAstBlockKind : uint8_t
     Behavior,
     Trigger,
     Interaction,
+    System,
+    Observer,
 };
 
 struct ScriptAstBlock
@@ -149,6 +163,24 @@ struct ScriptAstBlock
     // runs only on entities that have them all; the typechecker treats the
     // subject as known to have them (no has() guard needed).
     std::vector<std::string_view> Requires;
+    // Components the subject entity must NOT have (`without`): the iteration
+    // signature excludes them.
+    std::vector<std::string_view> Excludes;
+    // A `behavior`'s inline config {} / runtime {} field lists. Desugaring turns
+    // them into #[config] <B>Config and #[runtime] <B>State components. HasConfig/
+    // HasRuntime distinguish an empty block from an absent one.
+    bool HasConfig = false;
+    bool HasRuntime = false;
+    std::vector<ScriptAstField> ConfigFields;
+    std::vector<ScriptAstField> RuntimeFields;
+    // Components a `system` declares it writes on the subject (the effect
+    // signature). A self component-field write must name a component in this
+    // set, and the set must be a subset of the iterated (`over`) components.
+    std::vector<std::string_view> Writes;
+    // Schedule edges (system names): this system runs after all in After and
+    // before all in Before. The compiler topo-sorts systems into tick order.
+    std::vector<std::string_view> After;
+    std::vector<std::string_view> Before;
     uint32_t Line = 0;
     uint32_t Col = 0;
 };

@@ -4,10 +4,10 @@
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <ecs/World.h>
-#include <script/ScriptBehaviorSystem.h>
 #include <script/ScriptCompiler.h>
 #include <script/ScriptLink.h>
 #include <script/ScriptRuntime.h>
+#include <script/ScriptSystemTick.h>
 #include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
@@ -82,7 +82,7 @@ TEST(ScriptBehaviorE2E, PickupBobsDeterministically)
         world.GetComponentIdByType(MakeComponentTypeId("script.BobMotion"));
     ASSERT_NE(bobId, InvalidComponentId);
 
-    // Spawn a pickup entity at y = 100.
+    // A pickup entity at y = 100; the base height is authored (no spawn capture).
     const EntityId entity = world.CreateEntity();
     LocalTransform xform{};
     xform.Value.Position.X = 0.0f;
@@ -90,26 +90,14 @@ TEST(ScriptBehaviorE2E, PickupBobsDeterministically)
     xform.Value.Position.Z = 0.0f;
     world.AddComponent(entity, xform);
 
-    BobMotionBytes bob{ /*base*/ 0.0f, /*amp*/ 12.0f, /*freq*/ 0.8f };
+    BobMotionBytes bob{ /*base*/ 100.0f, /*amp*/ 12.0f, /*freq*/ 0.8f };
     world.AddComponentRaw(entity, bobId, &bob, sizeof(bob), alignof(BobMotionBytes), nullptr);
 
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    behavior.Declaration = 0; // the Pickup behavior
-    world.AddComponent(entity, behavior);
-
     const float dt = 1.0f / 60.0f;
-    ScriptBehaviorSystem system;
+    ScriptSystemTick system;
 
-    // Tick 0 runs spawn (captures base_height = 100) then fixed.
-    system.Step(world, 0, dt);
-    {
-        const BobMotionBytes* stored =
-            static_cast<const BobMotionBytes*>(world.GetComponentRaw(entity, bobId));
-        EXPECT_FLOAT_EQ(stored->BaseHeight, 100.0f);
-    }
-
-    for (uint64_t tick = 1; tick <= 8; ++tick)
+    // The `over Transform, BobMotion` system bobs every tick from tick 0.
+    for (uint64_t tick = 0; tick <= 8; ++tick)
     {
         system.Step(world, tick, dt);
         const LocalTransform* xf = world.TryGet<LocalTransform>(entity);
@@ -139,13 +127,10 @@ TEST(ScriptBehaviorE2E, RunToRunReproducible)
         xform.Value.Position.Y = 50.0f;
         xform.Value.Position.Z = 0.0f;
         world.AddComponent(e, xform);
-        BobMotionBytes bob{ 0.0f, 7.5f, 1.3f };
+        BobMotionBytes bob{ /*base*/ 50.0f, 7.5f, 1.3f };
         world.AddComponentRaw(e, bobId, &bob, sizeof(bob), alignof(BobMotionBytes), nullptr);
-        ScriptBehavior behavior{};
-        behavior.LinkedModule = link.ModuleIndex;
-        world.AddComponent(e, behavior);
 
-        ScriptBehaviorSystem system;
+        ScriptSystemTick system;
         for (uint64_t tick = 0; tick <= 20; ++tick)
         {
             system.Step(world, tick, 1.0f / 60.0f);
@@ -167,16 +152,18 @@ TEST(ScriptBehaviorE2E, RunToRunReproducible)
 
 TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
 {
-    // A behavior adds a script component to itself on spawn; the deferred
-    // command applies at the tick boundary and the next tick sees the values.
+    // A system adds a script component to a matched entity; the deferred command
+    // applies at the flush and marshals the multi-field (i32 + f32) record image.
     ScriptCompileResult compiled = CompileScript(
         "adder.t",
+        "component Seed { on: i32 = 0 }\n"
         "component Marker {\n"
         "    count: i32 = 0\n"
         "    weight: f32 = 0.0\n"
         "}\n"
-        "behavior Adder {\n"
-        "    fn spawn(ctx: BehaviorContext) {\n"
+        "system Adder {\n"
+        "    over Seed\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.commands.add(ctx.entity, Marker { count: 7, weight: 2.5 })\n"
         "    }\n"
         "}\n",
@@ -189,17 +176,18 @@ TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     ASSERT_TRUE(link.Ok) << link.Error;
 
+    const ComponentId seedId = world.GetComponentIdByType(MakeComponentTypeId("script.Seed"));
     const ComponentId markerId =
         world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
+    ASSERT_NE(seedId, InvalidComponentId);
     ASSERT_NE(markerId, InvalidComponentId);
 
     const EntityId entity = world.CreateEntity();
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    world.AddComponent(entity, behavior);
+    const std::int32_t on = 1;
+    world.AddComponentRaw(entity, seedId, &on, sizeof(on), alignof(std::int32_t), nullptr);
 
-    ScriptBehaviorSystem system;
-    system.Step(world, 0, 1.0f / 60.0f); // spawn enqueues the add; flush applies it
+    ScriptSystemTick system;
+    system.Step(world, 0, 1.0f / 60.0f); // fixed enqueues the add; flush applies it
     ASSERT_TRUE(world.HasComponent(entity, markerId));
 
     struct MarkerBytes { int32_t Count; float Weight; };
@@ -212,16 +200,18 @@ TEST(ScriptBehaviorE2E, CommandsAddMarshalsRecordImage)
 
 TEST(ScriptBehaviorE2E, CommandsAddOfPresentComponentTrapsNotAborts)
 {
-    // A behavior whose spawn adds a component the entity already has (e.g. one a
-    // designer authored in the scene) must trap, not abort the player: the add is
-    // rejected and the existing component keeps its authored value.
+    // A system that adds a component the entity already has (e.g. one a designer
+    // authored in the scene) must trap, not abort the player: the add is rejected
+    // and the existing component keeps its authored value.
     ScriptCompileResult compiled = CompileScript(
         "adder.t",
+        "component Seed { on: i32 = 0 }\n"
         "component Marker {\n"
         "    count: i32 = 0\n"
         "}\n"
-        "behavior Adder {\n"
-        "    fn spawn(ctx: BehaviorContext) {\n"
+        "system Adder {\n"
+        "    over Seed\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
         "    }\n"
         "}\n",
@@ -234,22 +224,21 @@ TEST(ScriptBehaviorE2E, CommandsAddOfPresentComponentTrapsNotAborts)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     ASSERT_TRUE(link.Ok) << link.Error;
 
+    const ComponentId seedId = world.GetComponentIdByType(MakeComponentTypeId("script.Seed"));
     const ComponentId markerId =
         world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
     ASSERT_NE(markerId, InvalidComponentId);
 
     const EntityId entity = world.CreateEntity();
-    // Author the component first, with a value distinct from what spawn would set.
+    const std::int32_t on = 1;
+    world.AddComponentRaw(entity, seedId, &on, sizeof(on), alignof(std::int32_t), nullptr);
+    // Author Marker first, with a value distinct from what the system would set.
     struct MarkerBytes { std::int32_t Count; };
     const MarkerBytes authored{ 99 };
     world.AddComponentRaw(entity, markerId, &authored, sizeof(MarkerBytes), alignof(MarkerBytes),
                           nullptr);
 
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    world.AddComponent(entity, behavior);
-
-    ScriptBehaviorSystem system;
+    ScriptSystemTick system;
     system.Step(world, 0, 1.0f / 60.0f); // must complete, not abort
 
     ASSERT_TRUE(world.HasComponent(entity, markerId));
@@ -265,11 +254,13 @@ TEST(ScriptBehaviorE2E, DuplicateAddInOneCallbackTrapsNotAborts)
     // at enqueue, so the first add applies and the player does not abort.
     ScriptCompileResult compiled = CompileScript(
         "adder.t",
+        "component Seed { on: i32 = 0 }\n"
         "component Marker {\n"
         "    count: i32 = 0\n"
         "}\n"
-        "behavior Adder {\n"
-        "    fn spawn(ctx: BehaviorContext) {\n"
+        "system Adder {\n"
+        "    over Seed\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
         "        ctx.commands.add(ctx.entity, Marker { count: 8 })\n"
         "    }\n"
@@ -283,16 +274,16 @@ TEST(ScriptBehaviorE2E, DuplicateAddInOneCallbackTrapsNotAborts)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     ASSERT_TRUE(link.Ok) << link.Error;
 
+    const ComponentId seedId = world.GetComponentIdByType(MakeComponentTypeId("script.Seed"));
     const ComponentId markerId =
         world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
     ASSERT_NE(markerId, InvalidComponentId);
 
     const EntityId entity = world.CreateEntity();
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    world.AddComponent(entity, behavior);
+    const std::int32_t on = 1;
+    world.AddComponentRaw(entity, seedId, &on, sizeof(on), alignof(std::int32_t), nullptr);
 
-    ScriptBehaviorSystem system;
+    ScriptSystemTick system;
     system.Step(world, 0, 1.0f / 60.0f); // must complete, not abort
 
     ASSERT_TRUE(world.HasComponent(entity, markerId));
@@ -305,14 +296,16 @@ TEST(ScriptBehaviorE2E, DuplicateAddInOneCallbackTrapsNotAborts)
 TEST(ScriptBehaviorE2E, TrapReportsStructuredDiagnostic)
 {
     // A trapped callback logs one structured line (declaration, callback, trap
-    // code, tick). Here spawn traps by adding an already-present component.
+    // code, tick). Here fixed traps by adding an already-present component.
     ScriptCompileResult compiled = CompileScript(
         "adder.t",
+        "component Seed { on: i32 = 0 }\n"
         "component Marker {\n"
         "    count: i32 = 0\n"
         "}\n"
-        "behavior Adder {\n"
-        "    fn spawn(ctx: BehaviorContext) {\n"
+        "system Adder {\n"
+        "    over Seed\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.commands.add(ctx.entity, Marker { count: 7 })\n"
         "    }\n"
         "}\n",
@@ -325,20 +318,20 @@ TEST(ScriptBehaviorE2E, TrapReportsStructuredDiagnostic)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     ASSERT_TRUE(link.Ok) << link.Error;
 
+    const ComponentId seedId = world.GetComponentIdByType(MakeComponentTypeId("script.Seed"));
     const ComponentId markerId =
         world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
     const EntityId entity = world.CreateEntity();
+    const std::int32_t on = 1;
+    world.AddComponentRaw(entity, seedId, &on, sizeof(on), alignof(std::int32_t), nullptr);
     struct MarkerBytes { std::int32_t Count; };
     const MarkerBytes authored{ 99 };
     world.AddComponentRaw(entity, markerId, &authored, sizeof(MarkerBytes), alignof(MarkerBytes),
                           nullptr);
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    world.AddComponent(entity, behavior);
 
     LoggingProvider logging;
     DebugLogSink& sink = logging.AddSink<DebugLogSink>();
-    ScriptBehaviorSystem system;
+    ScriptSystemTick system;
     system.SetLogging(logging);
     system.Step(world, 42, 1.0f / 60.0f);
 
@@ -354,18 +347,20 @@ TEST(ScriptBehaviorE2E, TrapReportsStructuredDiagnostic)
     }
     ASSERT_FALSE(message.empty()) << "no structured trap diagnostic was logged";
     EXPECT_NE(message.find("Adder"), std::string::npos);    // declaration
-    EXPECT_NE(message.find("spawn"), std::string::npos);    // callback / function
+    EXPECT_NE(message.find("fixed"), std::string::npos);    // callback / function
     EXPECT_NE(message.find("tick 42"), std::string::npos);  // tick
 }
 
 TEST(ScriptBehaviorE2E, CueFireAppendsToBuffer)
 {
-    // A behavior fires a cue on spawn; it lands in the entity's cue buffer as
-    // the stable content hash of the cue path.
+    // A system fires a cue; it lands in the entity's cue buffer as the stable
+    // content hash of the cue path.
     ScriptCompileResult compiled = CompileScript(
         "cue.t",
-        "behavior Chime {\n"
-        "    fn spawn(ctx: BehaviorContext) {\n"
+        "component Seed { on: i32 = 0 }\n"
+        "system Chime {\n"
+        "    over Seed\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.cue(cue\"ui.chime\")\n"
         "    }\n"
         "}\n",
@@ -378,13 +373,13 @@ TEST(ScriptBehaviorE2E, CueFireAppendsToBuffer)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     ASSERT_TRUE(link.Ok) << link.Error;
 
+    const ComponentId seedId = world.GetComponentIdByType(MakeComponentTypeId("script.Seed"));
     const EntityId entity = world.CreateEntity();
+    const std::int32_t on = 1;
+    world.AddComponentRaw(entity, seedId, &on, sizeof(on), alignof(std::int32_t), nullptr);
     world.AddComponent(entity, ScriptCueBuffer{});
-    ScriptBehavior behavior{};
-    behavior.LinkedModule = link.ModuleIndex;
-    world.AddComponent(entity, behavior);
 
-    ScriptBehaviorSystem system;
+    ScriptSystemTick system;
     system.Step(world, 0, 1.0f / 60.0f);
 
     const ScriptCueBuffer* cues = world.TryGet<ScriptCueBuffer>(entity);
@@ -400,8 +395,10 @@ TEST(ScriptLink, ReportsMissingComponent)
     // link with a clear message.
     ScriptCompileResult compiled = CompileScript(
         "t.t",
-        "behavior B {\n"
-        "    fn fixed(ctx: BehaviorContext) {\n"
+        "system B {\n"
+        "    over Transform\n"
+        "    writes Transform\n"
+        "    fn fixed(ctx: FixedContext) {\n"
         "        ctx.entity.Transform.position.y = 1.0\n"
         "    }\n"
         "}\n",
@@ -415,61 +412,4 @@ TEST(ScriptLink, ReportsMissingComponent)
         LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
     EXPECT_FALSE(link.Ok);
     EXPECT_NE(link.Error.find("Transform"), std::string::npos) << link.Error;
-}
-
-TEST(ScriptBehaviorE2E, RequiresGatesOnComponentPresence)
-{
-    // A `requires` behavior runs only on entities that have the required
-    // component; an entity missing it is skipped (no tick, no NoComponent trap).
-    ScriptCompileResult compiled = CompileScript(
-        "gated.t",
-        "component Marker {\n"
-        "    hits: i32 = 0\n"
-        "}\n"
-        "behavior Ticker {\n"
-        "    requires Marker\n"
-        "    fn fixed(ctx: BehaviorContext) {\n"
-        "        ctx.entity.Marker.hits += 1\n"
-        "    }\n"
-        "}\n",
-        {});
-    ASSERT_TRUE(compiled.Ok) << compiled.Error.Message;
-
-    World world;
-    RegisterScriptRuntime(world);
-    const ScriptLinkResult link =
-        LinkScriptModule(world, std::make_shared<const ScriptModule>(std::move(compiled.Module)));
-    ASSERT_TRUE(link.Ok) << link.Error;
-
-    const ComponentId markerId =
-        world.GetComponentIdByType(MakeComponentTypeId("script.Marker"));
-    ASSERT_NE(markerId, InvalidComponentId);
-
-    struct MarkerBytes { std::int32_t Hits; };
-
-    // Entity WITH Marker and the behavior: ticks each step.
-    const EntityId withMarker = world.CreateEntity();
-    const MarkerBytes zero{ 0 };
-    world.AddComponentRaw(withMarker, markerId, &zero, sizeof(MarkerBytes), alignof(MarkerBytes),
-                          nullptr);
-    ScriptBehavior ticking{};
-    ticking.LinkedModule = link.ModuleIndex;
-    world.AddComponent(withMarker, ticking);
-
-    // Entity WITHOUT Marker but with the behavior: gated out (would otherwise trap
-    // reading Marker), so the gate both filters and prevents a trap.
-    const EntityId withoutMarker = world.CreateEntity();
-    ScriptBehavior gated{};
-    gated.LinkedModule = link.ModuleIndex;
-    world.AddComponent(withoutMarker, gated);
-
-    ScriptBehaviorSystem system;
-    for (std::uint64_t t = 0; t < 3; ++t)
-        system.Step(world, t, 1.0f / 60.0f);
-
-    const auto* hits =
-        static_cast<const MarkerBytes*>(world.GetComponentRaw(withMarker, markerId));
-    ASSERT_NE(hits, nullptr);
-    EXPECT_EQ(hits->Hits, 3);                                   // ticked every step
-    EXPECT_FALSE(world.HasComponent(withoutMarker, markerId));  // never touched
 }

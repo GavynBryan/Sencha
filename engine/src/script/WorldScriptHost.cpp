@@ -3,10 +3,12 @@
 #include <core/hash/ContentHash.h>
 #include <core/random/DeterministicRandom.h>
 #include <ecs/CommandBuffer.h>
+#include <ecs/FieldDelta.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <array>
 #include <bit>
 #include <cstring>
 #include <utility>
@@ -194,6 +196,77 @@ ScriptTrapCode WorldScriptHost::ComponentStore(const ScriptModule&, std::uint64_
     {
         StoreScalar(start + i * scalarSize, scalar, in[i]);
     }
+    return ScriptTrapCode::None;
+}
+
+ScriptTrapCode WorldScriptHost::ComponentStoreDeferred(const ScriptModule&,
+                                                       std::uint64_t entityBits,
+                                                       std::uint32_t fieldBind,
+                                                       std::uint32_t elementIndex,
+                                                       std::span<const std::uint64_t> in)
+{
+    const EntityId entity = UnpackScriptEntity(entityBits);
+    if (!W.IsAlive(entity))
+    {
+        return ScriptTrapCode::Entity;
+    }
+    const ResolvedFieldBind& bind = Linked->Fields[fieldBind];
+    const auto scalar = static_cast<ScriptScalarKind>(bind.Scalar);
+    const std::size_t scalarSize = ScriptScalarSize(bind.Scalar);
+    const std::size_t byteCount = in.size() * scalarSize;
+    // Leaf fields are small (scalars and short vectors); the widest is a Color3
+    // packed into 8 bytes. A fixed buffer holds the storage image before it is
+    // copied into the command arena.
+    std::array<std::byte, 64> storage{};
+    if (byteCount == 0 || byteCount > storage.size())
+    {
+        return ScriptTrapCode::Arg;
+    }
+    for (std::size_t i = 0; i < in.size(); ++i)
+    {
+        StoreScalar(storage.data() + i * scalarSize, scalar, in[i]);
+    }
+    const std::size_t offset =
+        bind.Offset + static_cast<std::size_t>(elementIndex) * bind.SlotCount * scalarSize;
+    Commands.SetFieldRaw(entity, bind.Component, static_cast<std::uint16_t>(offset), storage.data(),
+                         byteCount);
+    return ScriptTrapCode::None;
+}
+
+ScriptTrapCode WorldScriptHost::ComponentDelta(const ScriptModule&, std::uint64_t entityBits,
+                                               std::uint32_t fieldBind, std::uint32_t elementIndex,
+                                               std::span<const std::uint64_t> in)
+{
+    const EntityId entity = UnpackScriptEntity(entityBits);
+    if (!W.IsAlive(entity))
+    {
+        return ScriptTrapCode::Entity;
+    }
+    if (in.empty())
+    {
+        return ScriptTrapCode::Arg;
+    }
+    const ResolvedFieldBind& bind = Linked->Fields[fieldBind];
+    const auto scalar = static_cast<ScriptScalarKind>(bind.Scalar);
+    // A delta targets one numeric scalar; the addend commutes only for these
+    // kinds (integer adds wrap). Non-numeric or multi-slot targets are a trap.
+    NumericFieldKind kind{};
+    switch (scalar)
+    {
+    case ScriptScalarKind::Int32: kind = NumericFieldKind::Int32; break;
+    case ScriptScalarKind::UInt32: kind = NumericFieldKind::UInt32; break;
+    case ScriptScalarKind::Int64: kind = NumericFieldKind::Int64; break;
+    case ScriptScalarKind::Float: kind = NumericFieldKind::Float; break;
+    case ScriptScalarKind::Double: kind = NumericFieldKind::Double; break;
+    default: return ScriptTrapCode::Arg;
+    }
+    const std::size_t scalarSize = ScriptScalarSize(bind.Scalar);
+    std::array<std::byte, 8> addend{};
+    StoreScalar(addend.data(), scalar, in[0]);
+    const std::size_t offset =
+        bind.Offset + static_cast<std::size_t>(elementIndex) * bind.SlotCount * scalarSize;
+    Commands.DeltaFieldRaw(entity, bind.Component, static_cast<std::uint16_t>(offset), kind,
+                           addend.data(), scalarSize);
     return ScriptTrapCode::None;
 }
 

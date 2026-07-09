@@ -7,11 +7,7 @@ fn bob_offset frame=9 args=3 rets=1
      5: MULF    r7, r6, r2
      6: RNDF32  r8, r7
      7: RETV    r8, n=1
-fn Pickup.spawn frame=4 args=3 rets=0
-     0: CLD     r3, r0, Transform.local.position.y
-     1: CST     r0, r3, BobMotion.base_height
-     2: RET     
-fn Pickup.fixed frame=14 args=3 rets=0
+fn Bob.fixed frame=14 args=3 rets=0
      0: MOV     r3, r0
      1: L2F     r4, r1
      2: RNDF32  r4, r4

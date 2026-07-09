@@ -182,8 +182,9 @@ TEST(AssetFieldIo, MissingRefResolvesToEmptySlot)
     f.Assets.ReleaseMaterialSet(field);
 }
 
-// The reported crash: expanding a freshly-added ScriptSource, whose ScriptHandle
-// is still unset, must read back as empty rather than abort on an unhandled shape.
+// The reported crash: expanding a component's freshly-added script-asset field,
+// whose ScriptHandle is still unset, must read back as empty rather than abort
+// on an unhandled shape.
 TEST(AssetFieldIo, ScriptSingleUnsetReadsEmpty)
 {
     AssetFieldFixture f;

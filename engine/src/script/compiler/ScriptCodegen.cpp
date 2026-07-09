@@ -10,6 +10,7 @@
 #include <bit>
 #include <charconv>
 #include <climits>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -200,6 +201,7 @@ namespace
     {
         std::string_view Name;
         bool IsHost = false;
+        bool IsConfig = false; // #[config]: script read-only
         std::vector<ComponentFieldSem> Fields;
         std::vector<ComponentLeaf> Leaves; // script components only
     };
@@ -640,6 +642,7 @@ namespace
             {
                 return false;
             }
+            sem.IsConfig = decl.Attr == ScriptComponentAttr::Config;
             ctx.Components.push_back(std::move(sem));
         }
         for (const ScriptAstConst& decl : unit.Consts)
@@ -679,6 +682,8 @@ namespace
         case ScriptAstBlockKind::Behavior: return {"BehaviorContext", 3};
         case ScriptAstBlockKind::Trigger: return {"TriggerContext", 4};
         case ScriptAstBlockKind::Interaction: return {"InteractionContext", 4};
+        case ScriptAstBlockKind::System: return {"FixedContext", 3};
+        case ScriptAstBlockKind::Observer: return {"ObserveCtx", 1};
         }
         return {"", 0};
     }
@@ -698,6 +703,10 @@ namespace
             return name == "on_enter" || name == "on_exit";
         case ScriptAstBlockKind::Interaction:
             return name == "can_interact" || name == "interact";
+        case ScriptAstBlockKind::System:
+            return name == "fixed";
+        case ScriptAstBlockKind::Observer:
+            return name == "on_add" || name == "on_remove";
         }
         return false;
     }
@@ -868,6 +877,7 @@ namespace
             uint32_t Slot = 0;      // Local: base slot (+ Offset for vec members)
             uint32_t EntitySlot = 0;
             uint8_t FieldBind = 0;
+            std::string_view ComponentName; // ComponentField: the component written
             bool Ok = false;
         };
 
@@ -1057,6 +1067,7 @@ namespace
             }
             place.Kind = Place::K::ComponentField;
             place.EntitySlot = entity.Slot;
+            place.ComponentName = componentNode->Text;
             place.Ok = true;
             return place;
         }
@@ -1282,6 +1293,12 @@ namespace
                                {"target", 1, {SType::K::Entity}},
                                {"tick", 2, {SType::K::I64}},
                                {"dt", 3, {SType::K::F32}}});
+            case ScriptAstBlockKind::System:
+                return lookup({{"entity", 0, {SType::K::Entity}},
+                               {"tick", 1, {SType::K::I64}},
+                               {"dt", 2, {SType::K::F32}}});
+            case ScriptAstBlockKind::Observer:
+                return lookup({{"entity", 0, {SType::K::Entity}}});
             }
             return Bad();
         }
@@ -2425,6 +2442,47 @@ namespace
             {
                 return false;
             }
+            // #[config] components are the authored attach point: script read-only.
+            if (place.Kind == Place::K::ComponentField)
+            {
+                const int32_t ci = C.FindComponent(place.ComponentName);
+                if (ci >= 0 && C.Components[static_cast<size_t>(ci)].IsConfig)
+                {
+                    FailAt(stmt.Line, stmt.Col,
+                           "component '" + std::string(place.ComponentName)
+                               + "' is #[config] and is read-only");
+                    return false;
+                }
+            }
+            // An `observer` defers all effects: it may read live component state
+            // but not write it immediately (use commands.add / commands.remove).
+            if (place.Kind == Place::K::ComponentField && Fn.Block != nullptr
+                && Fn.Block->Kind == ScriptAstBlockKind::Observer)
+            {
+                FailAt(stmt.Line, stmt.Col,
+                       "an observer cannot write component fields immediately; defer effects "
+                       "(commands.add / commands.remove)");
+                return false;
+            }
+            // A `system` writes only the components it declares in `writes` (the
+            // effect signature). Reads of over-components stay unrestricted;
+            // component reads route through EvalExpr, not this write path.
+            if (place.Kind == Place::K::ComponentField && Fn.Block != nullptr
+                && Fn.Block->Kind == ScriptAstBlockKind::System)
+            {
+                bool declared = false;
+                for (const std::string_view w : Fn.Block->Writes)
+                {
+                    if (w == place.ComponentName) { declared = true; break; }
+                }
+                if (!declared)
+                {
+                    FailAt(stmt.Line, stmt.Col,
+                           "system writes '" + std::string(place.ComponentName)
+                               + "' but does not declare it in `writes`");
+                    return false;
+                }
+            }
             Value value{};
             if (compound)
             {
@@ -2904,6 +2962,322 @@ namespace
     }
 }
 
+namespace
+{
+    ScriptExprPtr MakeIdent(std::string_view text, uint32_t line, uint32_t col)
+    {
+        auto e = std::make_unique<ScriptExpr>();
+        e->Kind = ScriptExpr::K::Ident;
+        e->Text = text;
+        e->Line = line;
+        e->Col = col;
+        return e;
+    }
+
+    ScriptExprPtr MakeMember(std::string_view text, ScriptExprPtr lhs, uint32_t line, uint32_t col)
+    {
+        auto e = std::make_unique<ScriptExpr>();
+        e->Kind = ScriptExpr::K::Member;
+        e->Text = text;
+        e->Lhs = std::move(lhs);
+        e->Line = line;
+        e->Col = col;
+        return e;
+    }
+
+    // ctx.entity.<component>
+    ScriptExprPtr MakeSubjectComponent(std::string_view component, uint32_t line, uint32_t col)
+    {
+        return MakeMember(component,
+                          MakeMember("entity", MakeIdent("ctx", line, col), line, col), line, col);
+    }
+
+    // Rewrites the behavior body aliases `config` / `runtime` (used as `config.f`
+    // / `runtime.f`) into `ctx.entity.<Config>` / `ctx.entity.<State>` so the
+    // lowered system body is ordinary subject-component access.
+    void RewriteAliasExpr(ScriptExprPtr& e, std::string_view configName, std::string_view stateName)
+    {
+        if (!e) return;
+        if (e->Kind == ScriptExpr::K::Ident)
+        {
+            if (e->Text == "config" && !configName.empty())
+            {
+                e = MakeSubjectComponent(configName, e->Line, e->Col);
+                return;
+            }
+            if (e->Text == "runtime" && !stateName.empty())
+            {
+                e = MakeSubjectComponent(stateName, e->Line, e->Col);
+                return;
+            }
+        }
+        RewriteAliasExpr(e->Lhs, configName, stateName);
+        RewriteAliasExpr(e->Rhs, configName, stateName);
+        for (ScriptExprPtr& arg : e->Args) RewriteAliasExpr(arg, configName, stateName);
+    }
+
+    void RewriteAliasStmts(std::vector<ScriptStmtPtr>& body, std::string_view configName,
+                           std::string_view stateName)
+    {
+        for (ScriptStmtPtr& stmt : body)
+        {
+            if (!stmt) continue;
+            RewriteAliasExpr(stmt->A, configName, stateName);
+            RewriteAliasExpr(stmt->B, configName, stateName);
+            RewriteAliasStmts(stmt->Body, configName, stateName);
+            RewriteAliasStmts(stmt->ElseBody, configName, stateName);
+        }
+    }
+
+    ScriptAstFn MakeCtxCallback(std::string_view name, std::string_view ctxType,
+                                std::vector<ScriptStmtPtr> body, uint32_t line, uint32_t col)
+    {
+        ScriptAstFn fn;
+        fn.Name = name;
+        fn.Line = line;
+        fn.Col = col;
+        ScriptAstFnParam param;
+        param.Name = "ctx";
+        param.Type.Name = ctxType;
+        param.Type.Line = line;
+        param.Type.Col = col;
+        fn.Params.push_back(std::move(param));
+        fn.Body = std::move(body);
+        return fn;
+    }
+
+    // ctx.commands.add(ctx.entity, <state> { fields }) as a statement. With no
+    // fields the State takes its declared defaults; spawn initializers fill the
+    // record (add-with-initializer). Unlisted fields still default.
+    ScriptStmtPtr MakeActivateAdd(std::string_view stateName,
+                                  std::vector<std::string_view> fieldNames,
+                                  std::vector<ScriptExprPtr> fieldExprs, uint32_t line, uint32_t col)
+    {
+        auto call = std::make_unique<ScriptExpr>();
+        call->Kind = ScriptExpr::K::Call;
+        call->Line = line;
+        call->Col = col;
+        call->Lhs = MakeMember(
+            "add", MakeMember("commands", MakeIdent("ctx", line, col), line, col), line, col);
+        call->Args.push_back(MakeMember("entity", MakeIdent("ctx", line, col), line, col));
+        auto record = std::make_unique<ScriptExpr>();
+        record->Kind = ScriptExpr::K::Record;
+        record->Text = stateName;
+        record->Line = line;
+        record->Col = col;
+        record->Names = std::move(fieldNames);
+        record->Args = std::move(fieldExprs);
+        call->Args.push_back(std::move(record));
+
+        auto stmt = std::make_unique<ScriptStmt>();
+        stmt->Kind = ScriptStmt::K::ExprStmt;
+        stmt->A = std::move(call);
+        stmt->Line = line;
+        stmt->Col = col;
+        return stmt;
+    }
+
+    // ctx.commands.remove(ctx.entity, <component>) as a statement.
+    ScriptStmtPtr MakeCommandsRemove(std::string_view componentName, uint32_t line, uint32_t col)
+    {
+        auto call = std::make_unique<ScriptExpr>();
+        call->Kind = ScriptExpr::K::Call;
+        call->Line = line;
+        call->Col = col;
+        call->Lhs = MakeMember(
+            "remove", MakeMember("commands", MakeIdent("ctx", line, col), line, col), line, col);
+        call->Args.push_back(MakeMember("entity", MakeIdent("ctx", line, col), line, col));
+        call->Args.push_back(MakeIdent(componentName, line, col)); // component, a bare Ident
+
+        auto stmt = std::make_unique<ScriptStmt>();
+        stmt->Kind = ScriptStmt::K::ExprStmt;
+        stmt->A = std::move(call);
+        stmt->Line = line;
+        stmt->Col = col;
+        return stmt;
+    }
+
+    // Desugars behaviors that use config/runtime blocks into #[config] Config +
+    // #[runtime] State components and BActivate/BFixed systems (the native
+    // constructs). Behaviors without config/runtime keep the legacy lowering.
+    // `strings` gives synthesized names stable storage for the compile. Returns
+    // false and fills `result.Error` on a rejected behavior.
+    bool DesugarBehaviors(std::vector<LoadedUnit>& units, std::deque<std::string>& strings,
+                          ScriptCompileResult& result)
+    {
+        auto intern = [&](std::string_view base, const char* suffix) -> std::string_view {
+            strings.push_back(std::string(base) + suffix);
+            return strings.back();
+        };
+
+        for (LoadedUnit& loaded : units)
+        {
+            ScriptAstUnit& unit = loaded.Unit;
+            std::vector<ScriptAstBlock> kept;
+            for (ScriptAstBlock& block : unit.Blocks)
+            {
+                if (block.Kind != ScriptAstBlockKind::Behavior
+                    || (!block.HasConfig && !block.HasRuntime))
+                {
+                    kept.push_back(std::move(block));
+                    continue;
+                }
+
+                const uint32_t line = block.Line;
+                const uint32_t col = block.Col;
+
+                const std::string_view configName =
+                    block.HasConfig ? intern(block.Name, "Config") : std::string_view{};
+                const std::string_view stateName =
+                    block.HasRuntime ? intern(block.Name, "State") : std::string_view{};
+
+                // Spawn initializers: each statement is `runtime.<field> = <expr>`,
+                // lowered into the State record that BActivate adds. Straight-line
+                // field initializers only; per-entity logic belongs in fixed.
+                std::vector<std::string_view> spawnFields;
+                std::vector<ScriptExprPtr> spawnExprs;
+                for (ScriptAstFn& fn : block.Fns)
+                {
+                    if (fn.Name != "spawn") continue;
+                    if (!block.HasRuntime)
+                    {
+                        result.Ok = false;
+                        result.Error = {loaded.Path, fn.Line, fn.Col,
+                                        "behavior spawn requires a runtime block to initialize"};
+                        return false;
+                    }
+                    for (ScriptStmtPtr& stmt : fn.Body)
+                    {
+                        const bool isFieldInit =
+                            stmt && stmt->Kind == ScriptStmt::K::Assign
+                            && stmt->Op == ScriptTokKind::Assign && stmt->A
+                            && stmt->A->Kind == ScriptExpr::K::Member && stmt->A->Lhs
+                            && stmt->A->Lhs->Kind == ScriptExpr::K::Ident
+                            && stmt->A->Lhs->Text == "runtime";
+                        if (!isFieldInit)
+                        {
+                            result.Ok = false;
+                            result.Error = {loaded.Path, stmt ? stmt->Line : fn.Line,
+                                            stmt ? stmt->Col : fn.Col,
+                                            "spawn body must be `runtime.<field> = <expr>` "
+                                            "initializers"};
+                            return false;
+                        }
+                        // Values read config (and constants), not the not-yet-added
+                        // State: rewrite config aliases only.
+                        RewriteAliasExpr(stmt->B, configName, std::string_view{});
+                        spawnFields.push_back(stmt->A->Text);
+                        spawnExprs.push_back(std::move(stmt->B));
+                    }
+                }
+
+                if (block.HasConfig)
+                {
+                    ScriptAstComponent comp;
+                    comp.Name = configName;
+                    comp.Attr = ScriptComponentAttr::Config;
+                    comp.Fields = std::move(block.ConfigFields);
+                    comp.Line = line;
+                    comp.Col = col;
+                    unit.Components.push_back(std::move(comp));
+                }
+                if (block.HasRuntime)
+                {
+                    ScriptAstComponent comp;
+                    comp.Name = stateName;
+                    comp.Attr = ScriptComponentAttr::Runtime;
+                    comp.Fields = std::move(block.RuntimeFields);
+                    comp.Line = line;
+                    comp.Col = col;
+                    unit.Components.push_back(std::move(comp));
+                }
+
+                const std::string_view activateName = intern(block.Name, "Activate");
+
+                // BActivate: over Config, without State, add State{} (once).
+                if (block.HasRuntime && block.HasConfig)
+                {
+                    ScriptAstBlock activate;
+                    activate.Kind = ScriptAstBlockKind::System;
+                    activate.Name = activateName;
+                    activate.Line = line;
+                    activate.Col = col;
+                    activate.Requires.push_back(configName);
+                    activate.Excludes.push_back(stateName);
+                    std::vector<ScriptStmtPtr> body;
+                    body.push_back(MakeActivateAdd(stateName, std::move(spawnFields),
+                                                   std::move(spawnExprs), line, col));
+                    activate.Fns.push_back(
+                        MakeCtxCallback("fixed", "FixedContext", std::move(body), line, col));
+                    kept.push_back(std::move(activate));
+                }
+
+                // BFixed: the behavior's fixed body over Config+State.
+                for (ScriptAstFn& fn : block.Fns)
+                {
+                    if (fn.Name != "fixed") continue;
+                    RewriteAliasStmts(fn.Body, configName, stateName);
+                    ScriptAstBlock fixed;
+                    fixed.Kind = ScriptAstBlockKind::System;
+                    fixed.Name = intern(block.Name, "Fixed");
+                    fixed.Line = line;
+                    fixed.Col = col;
+                    if (block.HasConfig) fixed.Requires.push_back(configName);
+                    if (block.HasRuntime)
+                    {
+                        fixed.Requires.push_back(stateName);
+                        fixed.Writes.push_back(stateName);
+                    }
+                    if (block.HasRuntime && block.HasConfig) fixed.After.push_back(activateName);
+                    fixed.Fns.push_back(MakeCtxCallback("fixed", "FixedContext", std::move(fn.Body),
+                                                        fn.Line, fn.Col));
+                    kept.push_back(std::move(fixed));
+                }
+
+                // BDespawn: the behavior's despawn body fires when State is
+                // removed (before the drop), as an on_remove observer.
+                if (block.HasRuntime)
+                {
+                    for (ScriptAstFn& fn : block.Fns)
+                    {
+                        if (fn.Name != "despawn") continue;
+                        RewriteAliasStmts(fn.Body, configName, stateName);
+                        ScriptAstBlock despawn;
+                        despawn.Kind = ScriptAstBlockKind::Observer;
+                        despawn.Name = intern(block.Name, "Despawn");
+                        despawn.Line = line;
+                        despawn.Col = col;
+                        despawn.Requires.push_back(stateName);
+                        despawn.Fns.push_back(MakeCtxCallback(
+                            "on_remove", "ObserveCtx", std::move(fn.Body), fn.Line, fn.Col));
+                        kept.push_back(std::move(despawn));
+                    }
+
+                    // BDetach: removing Config (the attach point) removes State,
+                    // which in turn fires BDespawn. Makes Config a real
+                    // attach/detach point (remove + re-add reactivates).
+                    if (block.HasConfig)
+                    {
+                        ScriptAstBlock detach;
+                        detach.Kind = ScriptAstBlockKind::Observer;
+                        detach.Name = intern(block.Name, "Detach");
+                        detach.Line = line;
+                        detach.Col = col;
+                        detach.Requires.push_back(configName);
+                        std::vector<ScriptStmtPtr> body;
+                        body.push_back(MakeCommandsRemove(stateName, line, col));
+                        detach.Fns.push_back(
+                            MakeCtxCallback("on_remove", "ObserveCtx", std::move(body), line, col));
+                        kept.push_back(std::move(detach));
+                    }
+                }
+            }
+            unit.Blocks = std::move(kept);
+        }
+        return true;
+    }
+}
+
 ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view mainSource,
                                   const ScriptSourceResolver& resolver,
                                   const ScriptHostDecls& hostDecls)
@@ -2912,6 +3286,15 @@ ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view ma
 
     std::vector<LoadedUnit> units;
     if (!LoadUnits(mainPath, mainSource, resolver, units, result))
+    {
+        return result;
+    }
+
+    // Behavior sugar: rewrite config/runtime behaviors into the native
+    // components + systems before typecheck/codegen. Synthesized names live in
+    // `synthStrings` for the whole compile.
+    std::deque<std::string> synthStrings;
+    if (!DesugarBehaviors(units, synthStrings, result))
     {
         return result;
     }
@@ -2980,14 +3363,17 @@ ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view ma
                 // Context params resolve specially below.
                 const std::string_view name = param.Type.Name;
                 if (name == "AbilityContext" || name == "BehaviorContext"
-                    || name == "TriggerContext" || name == "InteractionContext")
+                    || name == "TriggerContext" || name == "InteractionContext"
+                    || name == "FixedContext" || name == "ObserveCtx")
                 {
                     ctx.Failure.reset();
                     type = {SType::K::Ctx, static_cast<uint32_t>(
                         name == "AbilityContext"     ? ScriptAstBlockKind::Ability
                         : name == "BehaviorContext"  ? ScriptAstBlockKind::Behavior
                         : name == "TriggerContext"   ? ScriptAstBlockKind::Trigger
-                                                     : ScriptAstBlockKind::Interaction)};
+                        : name == "InteractionContext" ? ScriptAstBlockKind::Interaction
+                        : name == "FixedContext"     ? ScriptAstBlockKind::System
+                                                     : ScriptAstBlockKind::Observer)};
                 }
                 else
                 {
@@ -3238,21 +3624,212 @@ ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view ma
         ctx.Module.Components.push_back(std::move(def));
     }
 
-    // Declarations.
+    // A `system` writes only components it iterates: `writes` must be a subset
+    // of `over`. Runs after body emission (past the context-param failure reset)
+    // so the diagnostic is not cleared.
     for (const LoadedUnit& unit : units)
     {
         for (const ScriptAstBlock& block : unit.Unit.Blocks)
         {
+            for (const std::string_view w : block.Writes)
+            {
+                bool inOver = false;
+                for (const std::string_view r : block.Requires)
+                {
+                    if (r == w) { inOver = true; break; }
+                }
+                if (!inOver)
+                {
+                    ctx.Fail(unit.Unit.FileIndex, block.Line, block.Col,
+                             "system writes '" + std::string(w)
+                                 + "' which is not in its `over` set");
+                    break;
+                }
+            }
+            if (ctx.Failure) break;
+        }
+        if (ctx.Failure) break;
+    }
+    if (ctx.Failure)
+    {
+        result.Error = {ctx.Failure->File, ctx.Failure->Line, ctx.Failure->Col,
+                        ctx.Failure->Message};
+        return result;
+    }
+
+    // An observer watches exactly one component (its single `over`) and defines
+    // at least one of on_add / on_remove.
+    for (const LoadedUnit& unit : units)
+    {
+        for (const ScriptAstBlock& block : unit.Unit.Blocks)
+        {
+            if (block.Kind != ScriptAstBlockKind::Observer) continue;
+            if (block.Requires.size() != 1)
+            {
+                ctx.Fail(unit.Unit.FileIndex, block.Line, block.Col,
+                         "observer '" + std::string(block.Name)
+                             + "' must watch exactly one component (over)");
+                break;
+            }
+            bool hasCallback = false;
+            for (const ScriptAstFn& fn : block.Fns)
+            {
+                if (fn.Name == "on_add" || fn.Name == "on_remove") { hasCallback = true; break; }
+            }
+            if (!hasCallback)
+            {
+                ctx.Fail(unit.Unit.FileIndex, block.Line, block.Col,
+                         "observer '" + std::string(block.Name)
+                             + "' needs an on_add or on_remove callback");
+                break;
+            }
+        }
+        if (ctx.Failure) break;
+    }
+    if (ctx.Failure)
+    {
+        result.Error = {ctx.Failure->File, ctx.Failure->Line, ctx.Failure->Col,
+                        ctx.Failure->Message};
+        return result;
+    }
+
+    // Resolve `system` tick order from after/before edges: a topo sort with a
+    // declaration-order tiebreak (deterministic). Systems fill their declaration
+    // slots in this order, so the runtime, which ticks declarations in order,
+    // runs them scheduled. Non-system declarations keep their slots and indices.
+    std::vector<std::pair<uint16_t, const ScriptAstBlock*>> systems;
+    for (const LoadedUnit& unit : units)
+    {
+        for (const ScriptAstBlock& block : unit.Unit.Blocks)
+        {
+            if (block.Kind == ScriptAstBlockKind::System)
+            {
+                systems.push_back({unit.Unit.FileIndex, &block});
+            }
+        }
+    }
+    std::vector<const ScriptAstBlock*> systemTickOrder;
+    {
+        const size_t n = systems.size();
+        auto indexOf = [&](std::string_view name) -> int {
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (systems[i].second->Name == name) return static_cast<int>(i);
+            }
+            return -1;
+        };
+        std::vector<std::vector<size_t>> succ(n);
+        std::vector<int> indeg(n, 0);
+        for (size_t i = 0; i < n && !ctx.Failure; ++i)
+        {
+            const ScriptAstBlock& b = *systems[i].second;
+            for (const std::string_view a : b.After) // i after a: a -> i
+            {
+                const int j = indexOf(a);
+                if (j < 0) { ctx.Fail(systems[i].first, b.Line, b.Col,
+                    "unknown system '" + std::string(a) + "' in `after`"); break; }
+                succ[static_cast<size_t>(j)].push_back(i);
+                indeg[i]++;
+            }
+            for (const std::string_view bf : b.Before) // i before bf: i -> bf
+            {
+                const int j = indexOf(bf);
+                if (j < 0) { ctx.Fail(systems[i].first, b.Line, b.Col,
+                    "unknown system '" + std::string(bf) + "' in `before`"); break; }
+                succ[i].push_back(static_cast<size_t>(j));
+                indeg[static_cast<size_t>(j)]++;
+            }
+        }
+        std::vector<bool> placed(n, false);
+        for (size_t emitted = 0; emitted < n && !ctx.Failure; ++emitted)
+        {
+            int pick = -1;
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (!placed[i] && indeg[i] == 0) { pick = static_cast<int>(i); break; }
+            }
+            if (pick < 0)
+            {
+                ctx.Fail(systems.empty() ? 0 : systems[0].first, 0, 0,
+                         "system schedule has a cycle (after/before)");
+                break;
+            }
+            placed[static_cast<size_t>(pick)] = true;
+            systemTickOrder.push_back(systems[static_cast<size_t>(pick)].second);
+            for (const size_t v : succ[static_cast<size_t>(pick)]) indeg[v]--;
+        }
+
+        // Conflict pass (writers-only): two systems that write the same component
+        // must be ordered (directly or transitively) by after/before, else the
+        // result depends on an unspecified tick order. Slice S writes are
+        // immediate sets, always order-sensitive; the delta exemption arrives
+        // with deltas. Transitive reachability over the `before` edges decides
+        // "ordered".
+        std::vector<std::vector<char>> reach(n, std::vector<char>(n, 0));
+        for (size_t s = 0; s < n; ++s)
+        {
+            std::vector<size_t> stack{ s };
+            while (!stack.empty())
+            {
+                const size_t u = stack.back();
+                stack.pop_back();
+                for (const size_t v : succ[u])
+                {
+                    if (!reach[s][v]) { reach[s][v] = 1; stack.push_back(v); }
+                }
+            }
+        }
+        for (size_t i = 0; i < n && !ctx.Failure; ++i)
+        {
+            for (size_t j = i + 1; j < n && !ctx.Failure; ++j)
+            {
+                std::string_view shared;
+                for (const std::string_view wi : systems[i].second->Writes)
+                {
+                    for (const std::string_view wj : systems[j].second->Writes)
+                    {
+                        if (wi == wj) { shared = wi; break; }
+                    }
+                    if (!shared.empty()) break;
+                }
+                if (shared.empty()) continue;
+                if (reach[i][j] || reach[j][i]) continue; // ordered
+                ctx.Fail(systems[i].first, systems[i].second->Line, systems[i].second->Col,
+                         "systems '" + std::string(systems[i].second->Name) + "' and '"
+                             + std::string(systems[j].second->Name) + "' both write '"
+                             + std::string(shared)
+                             + "'; order them with after/before");
+            }
+        }
+    }
+    if (ctx.Failure)
+    {
+        result.Error = {ctx.Failure->File, ctx.Failure->Line, ctx.Failure->Col,
+                        ctx.Failure->Message};
+        return result;
+    }
+
+    // Declarations.
+    size_t nextSystem = 0;
+    for (const LoadedUnit& unit : units)
+    {
+        for (const ScriptAstBlock& block : unit.Unit.Blocks)
+        {
+            // Systems fill their slots in resolved tick order; everything else
+            // keeps its declaration position (and index).
+            const ScriptAstBlock* emit = block.Kind == ScriptAstBlockKind::System
+                                             ? systemTickOrder[nextSystem++]
+                                             : &block;
             ScriptDeclaration decl;
-            decl.Name = ctx.Str(block.Name);
-            decl.Kind = static_cast<ScriptDeclKind>(static_cast<uint8_t>(block.Kind) + 1);
-            for (const std::string_view state : block.States)
+            decl.Name = ctx.Str(emit->Name);
+            decl.Kind = static_cast<ScriptDeclKind>(static_cast<uint8_t>(emit->Kind) + 1);
+            for (const std::string_view state : emit->States)
             {
                 decl.States.push_back(ctx.Str(state));
             }
             for (const FnSem& fn : ctx.Fns)
             {
-                if (fn.Block == &block)
+                if (fn.Block == emit)
                 {
                     const std::string callbackName =
                         fn.Ast->State.empty()
@@ -3261,11 +3838,15 @@ ScriptCompileResult CompileScript(std::string_view mainPath, std::string_view ma
                     decl.Callbacks.push_back({ctx.Str(callbackName), fn.FunctionIndex});
                 }
             }
-            for (const std::string_view required : block.Requires)
+            for (const std::string_view required : emit->Requires)
             {
                 // Kept symbolic; link resolves the name to a ComponentId (and
                 // errors if it names neither a script nor a host component).
                 decl.RequiredComponents.push_back(ctx.Str(required));
+            }
+            for (const std::string_view excluded : emit->Excludes)
+            {
+                decl.ExcludedComponents.push_back(ctx.Str(excluded));
             }
             ctx.Module.Declarations.push_back(std::move(decl));
         }

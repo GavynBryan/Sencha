@@ -92,6 +92,8 @@ enum class ScriptDeclKind : uint8_t
     Behavior    = 2,
     Trigger     = 3,
     Interaction = 4,
+    System      = 5,
+    Observer    = 6,
 };
 
 enum class ScriptAssetKind : uint8_t
@@ -173,6 +175,9 @@ struct ScriptDeclaration
     // Components the declaration's subject entity must have (string indices).
     // Resolved to ComponentIds at link; gate the tick and type the subject.
     std::vector<uint32_t> RequiredComponents;
+    // Components the subject must NOT have (`without`, string indices). Resolved
+    // at link; excludes matching archetypes from the tick.
+    std::vector<uint32_t> ExcludedComponents;
 };
 
 struct ScriptHostEnumFixup

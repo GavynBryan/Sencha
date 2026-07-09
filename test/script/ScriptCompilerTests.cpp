@@ -156,15 +156,13 @@ TEST(ScriptCompiler, HookshotModuleShape)
     EXPECT_EQ(m.GetString(m.HostEnumFixups[0].MemberName), "Hookshot");
 }
 
-TEST(ScriptCompiler, CompiledBehaviorRunsInTheVm)
+TEST(ScriptCompiler, CompiledSystemRunsInTheVm)
 {
     const ScriptCompileResult result = CompileFixture("pickup.t");
     ASSERT_TRUE(result.Ok) << result.Error.Message;
     const ScriptModule& m = result.Module;
 
-    const int32_t spawn = FindFunction(m, "Pickup.spawn");
-    const int32_t fixed = FindFunction(m, "Pickup.fixed");
-    ASSERT_GE(spawn, 0);
+    const int32_t fixed = FindFunction(m, "Bob.fixed");
     ASSERT_GE(fixed, 0);
 
     const int32_t posY = FindFieldBind(m, "Transform", "local.position.y");
@@ -176,8 +174,9 @@ TEST(ScriptCompiler, CompiledBehaviorRunsInTheVm)
 
     FakeScriptHost host;
     const uint64_t entity = 42;
+    // base_height is authored (no spawn capture in the system form).
     host.Components[{entity, static_cast<uint32_t>(posY)}] = {BitsF(100.0)};
-    host.Components[{entity, static_cast<uint32_t>(baseHeight)}] = {BitsF(0.0)};
+    host.Components[{entity, static_cast<uint32_t>(baseHeight)}] = {BitsF(100.0)};
     host.Components[{entity, static_cast<uint32_t>(amplitude)}] = {BitsF(12.0)};
     host.Components[{entity, static_cast<uint32_t>(frequency)}] = {BitsF(0.8)};
 
@@ -185,12 +184,6 @@ TEST(ScriptCompiler, CompiledBehaviorRunsInTheVm)
     ScriptInvokeOptions options;
     const uint64_t args[3] = {entity, BitsL(480), BitsF(1.0 / 60.0)};
     options.Args = args;
-
-    const ScriptInvokeResult spawnResult =
-        vm.Invoke(m, static_cast<uint32_t>(spawn), host, options);
-    ASSERT_TRUE(spawnResult.Ok())
-        << ScriptTrapName(spawnResult.Trap) << " at " << spawnResult.TrapCodeOffset;
-    EXPECT_EQ((host.Components[{entity, static_cast<uint32_t>(baseHeight)}][0]), BitsF(100.0));
 
     const ScriptInvokeResult fixedResult =
         vm.Invoke(m, static_cast<uint32_t>(fixed), host, options);
@@ -408,4 +401,412 @@ TEST(ScriptNumeric, NoOpAndRedundantCastsFail)
         "    }\n"
         "}\n",
         "redundant");
+}
+
+TEST(ScriptCompilerSystem, CompilesSystemWithOverAndFixed)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Health { current: i32 = 0 }\n"
+        "system Regen {\n"
+        "    over Health\n"
+        "    writes Health\n"
+        "    fn fixed(ctx: FixedContext) {\n"
+        "        ctx.entity.Health.current += 1\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+
+    ASSERT_EQ(r.Module.Declarations.size(), 1u);
+    const ScriptDeclaration& d = r.Module.Declarations[0];
+    EXPECT_EQ(r.Module.GetString(d.Name), "Regen");
+    EXPECT_EQ(d.Kind, ScriptDeclKind::System);
+    ASSERT_EQ(d.RequiredComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(d.RequiredComponents[0]), "Health");
+    ASSERT_EQ(d.Callbacks.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(d.Callbacks[0].Name), "fixed");
+
+    EXPECT_TRUE(ValidateScriptModule(r.Module).Ok);
+
+    // The System declaration kind (5) round-trips through the .tbc container.
+    const std::vector<std::byte> bytes = WriteScriptModule(r.Module);
+    const ScriptModuleParseResult parsed = ParseScriptModule(bytes);
+    ASSERT_TRUE(parsed.Ok) << parsed.Error;
+    ASSERT_EQ(parsed.Module.Declarations.size(), 1u);
+    EXPECT_EQ(parsed.Module.Declarations[0].Kind, ScriptDeclKind::System);
+}
+
+TEST(ScriptCompilerSystem, CompilesWithoutClauseAndRoundTrips)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component A { x: i32 = 0 }\n"
+        "component B { y: i32 = 0 }\n"
+        "system S {\n"
+        "    over A\n"
+        "    without B\n"
+        "    writes A\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.A.x += 1 }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+    ASSERT_EQ(r.Module.Declarations.size(), 1u);
+    const ScriptDeclaration& d = r.Module.Declarations[0];
+    ASSERT_EQ(d.ExcludedComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(d.ExcludedComponents[0]), "B");
+
+    const std::vector<std::byte> bytes = WriteScriptModule(r.Module);
+    const ScriptModuleParseResult parsed = ParseScriptModule(bytes);
+    ASSERT_TRUE(parsed.Ok) << parsed.Error;
+    ASSERT_EQ(parsed.Module.Declarations.size(), 1u);
+    ASSERT_EQ(parsed.Module.Declarations[0].ExcludedComponents.size(), 1u);
+    EXPECT_EQ(parsed.Module.GetString(parsed.Module.Declarations[0].ExcludedComponents[0]), "B");
+}
+
+TEST(ScriptCompilerSystem, RejectsNonFixedCallback)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system Regen {\n"
+        "    over Health\n"
+        "    fn spawn(ctx: FixedContext) {}\n"
+        "}\n",
+        "unknown callback");
+}
+
+TEST(ScriptCompilerSystem, RejectsWrongContextType)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system Regen {\n"
+        "    over Health\n"
+        "    fn fixed(ctx: BehaviorContext) {}\n"
+        "}\n",
+        "FixedContext");
+}
+
+TEST(ScriptCompilerSystem, RejectsWriteOfUndeclaredComponent)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system Regen {\n"
+        "    over Health\n"
+        "    fn fixed(ctx: FixedContext) {\n"
+        "        ctx.entity.Health.current += 1\n"
+        "    }\n"
+        "}\n",
+        "does not declare it in `writes`");
+}
+
+TEST(ScriptCompilerSystem, RejectsWritesNotInOver)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "component Mana { current: i32 = 0 }\n"
+        "system Regen {\n"
+        "    over Health\n"
+        "    writes Mana\n"
+        "    fn fixed(ctx: FixedContext) {}\n"
+        "}\n",
+        "not in its `over` set");
+}
+
+TEST(ScriptCompilerSystem, RejectsScheduleCycle)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system A {\n"
+        "    over Health\n"
+        "    after B\n"
+        "    fn fixed(ctx: FixedContext) {}\n"
+        "}\n"
+        "system B {\n"
+        "    over Health\n"
+        "    after A\n"
+        "    fn fixed(ctx: FixedContext) {}\n"
+        "}\n",
+        "cycle");
+}
+
+TEST(ScriptCompilerSystem, RejectsUnknownSystemInAfter)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system A {\n"
+        "    over Health\n"
+        "    after Nope\n"
+        "    fn fixed(ctx: FixedContext) {}\n"
+        "}\n",
+        "unknown system 'Nope'");
+}
+
+TEST(ScriptCompilerSystem, RejectsUnorderedSameComponentWriters)
+{
+    ExpectError(
+        "component Health { current: i32 = 0 }\n"
+        "system A {\n"
+        "    over Health\n"
+        "    writes Health\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Health.current = 1 }\n"
+        "}\n"
+        "system B {\n"
+        "    over Health\n"
+        "    writes Health\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Health.current = 2 }\n"
+        "}\n",
+        "both write 'Health'");
+}
+
+TEST(ScriptCompilerSystem, OrderedSameComponentWritersOk)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Health { current: i32 = 0 }\n"
+        "system A {\n"
+        "    over Health\n"
+        "    writes Health\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Health.current = 1 }\n"
+        "}\n"
+        "system B {\n"
+        "    over Health\n"
+        "    writes Health\n"
+        "    after A\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Health.current = 2 }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+}
+
+TEST(ScriptCompilerSystem, ConfigComponentIsReadOnly)
+{
+    ExpectError(
+        "#[config] component Cfg { speed: f32 = 1.0 }\n"
+        "system Move {\n"
+        "    over Cfg\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Cfg.speed = 2.0 }\n"
+        "}\n",
+        "read-only");
+}
+
+TEST(ScriptCompilerSystem, ConfigComponentIsReadable)
+{
+    const ScriptCompileResult r = CompileSource(
+        "#[config] component Cfg { speed: f32 = 1.0 }\n"
+        "component Vel { v: f32 = 0.0 }\n"
+        "system Move {\n"
+        "    over Cfg, Vel\n"
+        "    writes Vel\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.Vel.v = ctx.entity.Cfg.speed }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+}
+
+TEST(ScriptCompilerSystem, RuntimeComponentIsWritable)
+{
+    const ScriptCompileResult r = CompileSource(
+        "#[runtime] component St { n: i32 = 0 }\n"
+        "system Tick {\n"
+        "    over St\n"
+        "    writes St\n"
+        "    fn fixed(ctx: FixedContext) { ctx.entity.St.n += 1 }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+}
+
+TEST(ScriptCompilerSystem, AllowsReadingOverComponentNotInWrites)
+{
+    // Reads of over-components are unrestricted; only writes need declaring.
+    const ScriptCompileResult r = CompileSource(
+        "component Health { current: i32 = 0 }\n"
+        "component Log { n: i32 = 0 }\n"
+        "system Watch {\n"
+        "    over Health, Log\n"
+        "    writes Log\n"
+        "    fn fixed(ctx: FixedContext) {\n"
+        "        ctx.entity.Log.n = ctx.entity.Health.current\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+}
+
+TEST(ScriptCompilerObserver, CompilesOnAddObserver)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Trigger { x: i32 = 0 }\n"
+        "component Marker { n: i32 = 0 }\n"
+        "observer Watch {\n"
+        "    over Trigger\n"
+        "    fn on_add(ctx: ObserveCtx) {\n"
+        "        ctx.commands.add(ctx.entity, Marker { n: 42 })\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+    ASSERT_EQ(r.Module.Declarations.size(), 1u);
+    EXPECT_EQ(r.Module.Declarations[0].Kind, ScriptDeclKind::Observer);
+    ASSERT_EQ(r.Module.Declarations[0].RequiredComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(r.Module.Declarations[0].RequiredComponents[0]), "Trigger");
+    ASSERT_EQ(r.Module.Declarations[0].Callbacks.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(r.Module.Declarations[0].Callbacks[0].Name), "on_add");
+    EXPECT_TRUE(ValidateScriptModule(r.Module).Ok);
+}
+
+TEST(ScriptCompilerObserver, RejectsImmediateComponentWrite)
+{
+    ExpectError(
+        "component Trigger { x: i32 = 0 }\n"
+        "observer Watch {\n"
+        "    over Trigger\n"
+        "    fn on_add(ctx: ObserveCtx) { ctx.entity.Trigger.x = 1 }\n"
+        "}\n",
+        "cannot write component fields immediately");
+}
+
+TEST(ScriptCompilerObserver, RejectsWrongContextType)
+{
+    ExpectError(
+        "component Trigger { x: i32 = 0 }\n"
+        "observer Watch {\n"
+        "    over Trigger\n"
+        "    fn on_add(ctx: FixedContext) {}\n"
+        "}\n",
+        "ObserveCtx");
+}
+
+TEST(ScriptCompilerBehavior, DesugarsConfigRuntimeToComponentsAndSystems)
+{
+    const ScriptCompileResult r = CompileSource(
+        "behavior Counter {\n"
+        "    config { step: i32 = 2 }\n"
+        "    runtime { n: i32 = 0 }\n"
+        "    fn fixed(ctx: FixedContext) {\n"
+        "        runtime.n += config.step\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+
+    auto hasComponent = [&](std::string_view name) {
+        for (const ScriptComponentDef& c : r.Module.Components)
+            if (r.Module.GetString(c.Name) == name) return true;
+        return false;
+    };
+    EXPECT_TRUE(hasComponent("CounterConfig"));
+    EXPECT_TRUE(hasComponent("CounterState"));
+
+    auto findDecl = [&](std::string_view name) -> const ScriptDeclaration* {
+        for (const ScriptDeclaration& d : r.Module.Declarations)
+            if (r.Module.GetString(d.Name) == name) return &d;
+        return nullptr;
+    };
+    const ScriptDeclaration* activate = findDecl("CounterActivate");
+    const ScriptDeclaration* fixed = findDecl("CounterFixed");
+    ASSERT_NE(activate, nullptr);
+    ASSERT_NE(fixed, nullptr);
+    EXPECT_EQ(activate->Kind, ScriptDeclKind::System);
+    EXPECT_EQ(fixed->Kind, ScriptDeclKind::System);
+    // Activate: over CounterConfig, without CounterState.
+    ASSERT_EQ(activate->RequiredComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(activate->RequiredComponents[0]), "CounterConfig");
+    ASSERT_EQ(activate->ExcludedComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(activate->ExcludedComponents[0]), "CounterState");
+    // Fixed: over CounterConfig + CounterState.
+    EXPECT_EQ(fixed->RequiredComponents.size(), 2u);
+    // The behavior block itself did not survive as a declaration.
+    EXPECT_EQ(findDecl("Counter"), nullptr);
+
+    EXPECT_TRUE(ValidateScriptModule(r.Module).Ok);
+}
+
+TEST(ScriptCompilerBehavior, LegacyBehaviorWithoutConfigRuntimeIsUnchanged)
+{
+    // A behavior with no config/runtime blocks keeps the existing lowering.
+    const ScriptCompileResult r = CompileSource(
+        "component Health { current: i32 = 0 }\n"
+        "behavior Regen {\n"
+        "    requires Health\n"
+        "    fn fixed(ctx: BehaviorContext) {\n"
+        "        ctx.entity.Health.current += 1\n"
+        "    }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+    bool hasBehaviorDecl = false;
+    for (const ScriptDeclaration& d : r.Module.Declarations)
+        if (d.Kind == ScriptDeclKind::Behavior) hasBehaviorDecl = true;
+    EXPECT_TRUE(hasBehaviorDecl);
+}
+
+TEST(ScriptCompilerBehavior, DesugarsDespawnAndDetachToObservers)
+{
+    const ScriptCompileResult r = CompileSource(
+        "component Gravestone {}\n"
+        "behavior Counter {\n"
+        "    config { step: i32 = 2 }\n"
+        "    runtime { n: i32 = 0 }\n"
+        "    fn fixed(ctx: FixedContext) { runtime.n += config.step }\n"
+        "    fn despawn(ctx: ObserveCtx) { ctx.commands.add(ctx.entity, Gravestone {}) }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+    auto findDecl = [&](std::string_view name) -> const ScriptDeclaration* {
+        for (const ScriptDeclaration& d : r.Module.Declarations)
+            if (r.Module.GetString(d.Name) == name) return &d;
+        return nullptr;
+    };
+    const ScriptDeclaration* despawn = findDecl("CounterDespawn");
+    const ScriptDeclaration* detach = findDecl("CounterDetach");
+    ASSERT_NE(despawn, nullptr);
+    ASSERT_NE(detach, nullptr);
+    EXPECT_EQ(despawn->Kind, ScriptDeclKind::Observer);
+    EXPECT_EQ(detach->Kind, ScriptDeclKind::Observer);
+    ASSERT_EQ(despawn->RequiredComponents.size(), 1u);
+    ASSERT_EQ(detach->RequiredComponents.size(), 1u);
+    EXPECT_EQ(r.Module.GetString(despawn->RequiredComponents[0]), "CounterState");
+    EXPECT_EQ(r.Module.GetString(detach->RequiredComponents[0]), "CounterConfig");
+}
+
+TEST(ScriptCompilerBehavior, SpawnStraightLineInitializersCompile)
+{
+    // Straight-line `runtime.<field> = <expr>` lines lower into the record that
+    // BActivate adds; config reads are allowed in the initializer expressions.
+    const ScriptCompileResult r = CompileSource(
+        "behavior Counter {\n"
+        "    config { step: i32 = 2 }\n"
+        "    runtime {\n"
+        "        n: i32 = 0\n"
+        "        m: i32 = 0\n"
+        "    }\n"
+        "    fn spawn(ctx: FixedContext) {\n"
+        "        runtime.n = config.step\n"
+        "        runtime.m = 7\n"
+        "    }\n"
+        "    fn fixed(ctx: FixedContext) { runtime.n += config.step }\n"
+        "}\n");
+    ASSERT_TRUE(r.Ok) << r.Error.Message;
+    EXPECT_TRUE(ValidateScriptModule(r.Module).Ok);
+}
+
+TEST(ScriptCompilerBehavior, RejectsSpawnControlFlow)
+{
+    // spawn is straight-line field initializers only; per-entity logic belongs
+    // in fixed. A control-flow statement is a compile error, not a silent drop.
+    ExpectError(
+        "behavior Counter {\n"
+        "    config { step: i32 = 2 }\n"
+        "    runtime { n: i32 = 0 }\n"
+        "    fn spawn(ctx: FixedContext) {\n"
+        "        if config.step > 0 { runtime.n = 5 }\n"
+        "    }\n"
+        "}\n",
+        "runtime.<field> = <expr>");
+}
+
+TEST(ScriptCompilerBehavior, RejectsSpawnReadingRuntime)
+{
+    // The initializer runs before State exists, so reading runtime is invalid.
+    ExpectError(
+        "behavior Counter {\n"
+        "    config { step: i32 = 2 }\n"
+        "    runtime {\n"
+        "        n: i32 = 0\n"
+        "        m: i32 = 0\n"
+        "    }\n"
+        "    fn spawn(ctx: FixedContext) {\n"
+        "        runtime.n = 5\n"
+        "        runtime.m = runtime.n\n"
+        "    }\n"
+        "}\n",
+        "runtime");
 }

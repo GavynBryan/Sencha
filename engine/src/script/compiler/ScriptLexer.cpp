@@ -18,6 +18,13 @@ namespace
         {"behavior", ScriptTokKind::KwBehavior},
         {"trigger", ScriptTokKind::KwTrigger},
         {"interaction", ScriptTokKind::KwInteraction},
+        {"system", ScriptTokKind::KwSystem},
+        {"observer", ScriptTokKind::KwObserver},
+        {"over", ScriptTokKind::KwOver},
+        {"without", ScriptTokKind::KwWithout},
+        {"writes", ScriptTokKind::KwWrites},
+        {"after", ScriptTokKind::KwAfter},
+        {"before", ScriptTokKind::KwBefore},
         {"state", ScriptTokKind::KwState},
         {"fn", ScriptTokKind::KwFn},
         {"const", ScriptTokKind::KwConst},
@@ -311,6 +318,7 @@ ScriptLexResult LexScript(std::string_view source)
             else { kind = ScriptTokKind::Slash; }
             break;
         case '%': kind = ScriptTokKind::Percent; break;
+        case '#': kind = ScriptTokKind::Hash; break;
         case '!':
             if (twoChar('=')) { kind = ScriptTokKind::NotEq; width = 2; }
             else { kind = ScriptTokKind::Not; }

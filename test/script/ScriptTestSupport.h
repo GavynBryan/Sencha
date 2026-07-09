@@ -165,6 +165,8 @@ public:
     std::set<std::pair<uint64_t, uint32_t>> Tags;
     std::set<std::pair<uint64_t, uint32_t>> TagsUnder; // extra hierarchical matches
     std::vector<Write> WriteLog;
+    std::vector<Write> DeferredLog; // CSTD intents, in execution order
+    std::vector<Write> DeltaLog;    // CSTDLT intents, in execution order
     std::vector<uint32_t> HostCallLog;
     std::function<ScriptTrapCode(uint32_t, std::span<uint64_t>, uint32_t)> OnHostCall;
 
@@ -217,6 +219,25 @@ public:
             it->second[base + i] = in[i];
         }
         WriteLog.push_back({entityBits, fieldBind, elementIndex,
+                            std::vector<uint64_t>(in.begin(), in.end())});
+        return ScriptTrapCode::None;
+    }
+
+    // Deferred writes record their intent without touching Components: they
+    // commit at the flush point, so a load in the same body must not see them.
+    ScriptTrapCode ComponentStoreDeferred(const ScriptModule&, uint64_t entityBits,
+                                          uint32_t fieldBind, uint32_t elementIndex,
+                                          std::span<const uint64_t> in) override
+    {
+        DeferredLog.push_back({entityBits, fieldBind, elementIndex,
+                               std::vector<uint64_t>(in.begin(), in.end())});
+        return ScriptTrapCode::None;
+    }
+
+    ScriptTrapCode ComponentDelta(const ScriptModule&, uint64_t entityBits, uint32_t fieldBind,
+                                  uint32_t elementIndex, std::span<const uint64_t> in) override
+    {
+        DeltaLog.push_back({entityBits, fieldBind, elementIndex,
                             std::vector<uint64_t>(in.begin(), in.end())});
         return ScriptTrapCode::None;
     }
