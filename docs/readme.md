@@ -83,6 +83,12 @@ behavior.
   components + data + uniform systems — no per-entity behavior object, tags for
   mutual exclusion, events as data. Public entry point:
   `engine/include/framework/AbilityKit.h`.
+- `docs/gameplay/ability-architecture.md` is the proposed working plan for the
+  ability runtime's next layer: activation lifecycle (held/toggle/charge),
+  payload ops with parameter schemas, ability and effect definitions as
+  authored assets, and the ability/movement boundary. It resolves the
+  behavior and Stage 7 questions abilitykit.md left open (decisions D-K
+  onward).
 - AbilityKit lives under `engine/.../framework/`, kept decoupled from the renderer
   and scene data by the `framework_isolation` check
   (`cmake/CheckFrameworkIsolation.cmake`).
