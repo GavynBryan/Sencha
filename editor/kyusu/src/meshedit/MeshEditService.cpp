@@ -8,14 +8,19 @@
 #include "brush/BrushHalfEdge.h"
 #include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
+#include "commands/CompositeCommand.h"
 
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <map>
+#include <limits>
 #include <optional>
+#include <set>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -65,13 +70,39 @@ std::vector<std::uint32_t> GatherVertexIndices(const BrushMesh& mesh,
                                                SelectableKind want)
 {
     std::vector<std::uint32_t> indices;
+    std::vector<bool> seen(mesh.Vertices.size(), false);
+    const auto push = [&](std::uint32_t index)
+    {
+        if (index < seen.size() && !seen[index])
+        {
+            seen[index] = true;
+            indices.push_back(index);
+        }
+    };
+
+    // Edge refs index the mesh-wide edge enumeration: build it once for the
+    // whole selection. This runs per drag frame, and resolving each edge ref
+    // separately (a full-mesh enumeration per ref) made large edge drags
+    // quadratic.
+    if (want == SelectableKind::Edge)
+    {
+        const std::vector<EdgeElement> edges = MeshElements::Edges(mesh, transform);
+        for (const SelectableRef& ref : elements)
+        {
+            if (ref.Kind != want || ref.ElementId >= edges.size())
+                continue;
+            push(edges[ref.ElementId].VertexA);
+            push(edges[ref.ElementId].VertexB);
+        }
+        return indices;
+    }
+
     for (const SelectableRef& ref : elements)
     {
         if (ref.Kind != want)
             continue;
         for (std::uint32_t index : ElementVertexIndices(mesh, transform, ref))
-            if (std::find(indices.begin(), indices.end(), index) == indices.end())
-                indices.push_back(index);
+            push(index);
     }
     return indices;
 }
@@ -99,7 +130,9 @@ std::optional<BrushMesh> TranslateElementsImpl(const BrushMesh& base,
     for (std::uint32_t index : indices)
         after.Vertices[index].Position += localDelta;
 
-    if (validate && !BrushValidateAndRepair(after).Ok)
+    // Weld tolerance 0: moving elements onto each other must not auto-merge
+    // them; that is the explicit weld verb's job.
+    if (validate && !BrushValidateAndRepair(after, 0.0f).Ok)
         return std::nullopt;
     return after;
 }
@@ -234,6 +267,318 @@ std::optional<BrushMesh> ApplyInsertEdgeLoop(const VerbContext& ctx)
     return after;
 }
 
+std::optional<BrushMesh> ApplyDissolveEdge(const VerbContext& ctx)
+{
+    // Resolve every selected edge to its endpoint positions up front: each
+    // dissolve reindexes faces (and repair may reindex vertices), so indices are
+    // not stable while edits compose. Positions are: dissolving moves nothing.
+    std::vector<std::pair<Vec3d, Vec3d>> endpoints;
+    for (const SelectableRef& ref : ctx.Refs)
+        if (const std::optional<EdgeElement> edge =
+                MeshElements::TryGetEdge(ctx.Before, ctx.Transform, ref.ElementId))
+            endpoints.emplace_back(ctx.Before.Vertices[edge->VertexA].Position,
+                                   ctx.Before.Vertices[edge->VertexB].Position);
+    if (endpoints.empty())
+        return std::nullopt;
+
+    const auto findVertex = [](const BrushMesh& mesh, Vec3d p) -> std::optional<std::uint32_t>
+    {
+        constexpr double kEps2 = 1.0e-8;
+        for (std::uint32_t i = 0; i < mesh.Vertices.size(); ++i)
+            if ((mesh.Vertices[i].Position - p).SqrMagnitude() <= kEps2)
+                return i;
+        return std::nullopt;
+    };
+
+    BrushMesh after = ctx.Before;
+    int applied = 0;
+    for (const auto& [pa, pb] : endpoints)
+    {
+        const std::optional<std::uint32_t> a = findVertex(after, pa);
+        const std::optional<std::uint32_t> b = findVertex(after, pb);
+        if (!a || !b)
+            continue;
+        BrushMesh next = BrushOps::DissolveEdge(after, *a, *b);
+        // The kernel merges two faces into one; an unchanged face count means it
+        // refused (boundary/non-manifold/non-simple merge).
+        if (next.Faces.size() < after.Faces.size())
+        {
+            after = std::move(next);
+            ++applied;
+        }
+    }
+    if (applied == 0)
+    {
+        if (ctx.Log)
+            ctx.Log->Info("Dissolve: no selected edge had exactly two mergeable faces");
+        return std::nullopt;
+    }
+    if (!BrushValidateAndRepair(after, 0.0f).Ok)
+    {
+        if (ctx.Log)
+            ctx.Log->Warn("Dissolve: merged result failed validation; edit discarded");
+        return std::nullopt;
+    }
+    return after;
+}
+
+std::optional<BrushMesh> ApplyWeldVertices(const VerbContext& ctx)
+{
+    const std::vector<std::uint32_t> indices =
+        GatherVertexIndices(ctx.Before, ctx.Transform, ctx.Refs, SelectableKind::Vertex);
+    if (indices.size() < 2)
+        return std::nullopt;
+
+    BrushMesh after = BrushOps::WeldVertices(ctx.Before, indices, ctx.Params.WeldDistance);
+    // The kernel only collapses positions; the default repair tolerance merges
+    // the now-coincident vertices into one.
+    if (!BrushValidateAndRepair(after).Ok)
+        return std::nullopt;
+    if (after.Vertices.size() == ctx.Before.Vertices.size())
+    {
+        if (ctx.Log)
+            ctx.Log->Info("Weld: no selected vertices within {} of each other",
+                          ctx.Params.WeldDistance);
+        return std::nullopt;
+    }
+    return after;
+}
+
+std::optional<BrushMesh> ApplySnapVerticesToGrid(const VerbContext& ctx)
+{
+    if (ctx.Params.GridSpacing <= 0.0f)
+        return std::nullopt;
+    const std::vector<std::uint32_t> indices =
+        GatherVertexIndices(ctx.Before, ctx.Transform, ctx.Refs, SelectableKind::Vertex);
+    if (indices.empty())
+        return std::nullopt;
+
+    // The grid frame's right-handed basis, matching GridFrame::Basis (N = V x U;
+    // +Y fallback for a degenerate frame).
+    const Vec3d u = ctx.Params.GridAxisU.Normalized();
+    const Vec3d v = ctx.Params.GridAxisV.Normalized();
+    const Vec3d cross = v.Cross(u);
+    const Vec3d n = cross.SqrMagnitude() > 1e-12 ? cross.Normalized() : Vec3d{ 0.0f, 1.0f, 0.0f };
+    const double s = ctx.Params.GridSpacing;
+
+    BrushMesh after = ctx.Before;
+    bool moved = false;
+    for (std::uint32_t index : indices)
+    {
+        const Vec3d world = ctx.Transform.TransformPoint(after.Vertices[index].Position);
+        const Vec3d rel = world - ctx.Params.GridOrigin;
+        const Vec3d snapped = ctx.Params.GridOrigin
+            + u * (std::round(rel.Dot(u) / s) * s)
+            + n * (std::round(rel.Dot(n) / s) * s)
+            + v * (std::round(rel.Dot(v) / s) * s);
+        if ((snapped - world).SqrMagnitude() > 0.0)
+        {
+            after.Vertices[index].Position = InverseTransformPoint(ctx.Transform, snapped);
+            moved = true;
+        }
+    }
+    if (!moved)
+        return std::nullopt;
+    // Weld tolerance 0: snapping may land vertices exactly on each other on
+    // purpose; merging is the explicit weld verb's job.
+    if (!BrushValidateAndRepair(after, 0.0f).Ok)
+        return std::nullopt;
+    return after;
+}
+
+// Order the selected edges into two disjoint simple paths. Both paths must be
+// open runs or both must be closed loops, with matching vertex counts.
+struct BridgeChains
+{
+    std::array<std::vector<std::uint32_t>, 2> Paths;
+    bool Closed = false;
+};
+
+BridgeChains GatherBridgeChains(
+    const BrushMesh& mesh, const Transform3f& transform, std::span<const SelectableRef> refs)
+{
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> edges;
+    for (const SelectableRef& ref : refs)
+        if (const std::optional<EdgeElement> edge =
+                MeshElements::TryGetEdge(mesh, transform, ref.ElementId))
+            edges.emplace_back(edge->VertexA, edge->VertexB);
+    if (edges.size() < 2)
+        return {};
+
+    // Vertex adjacency restricted to the selected edges.
+    std::map<std::uint32_t, std::vector<std::uint32_t>> adjacency;
+    for (const auto& [a, b] : edges)
+    {
+        adjacency[a].push_back(b);
+        adjacency[b].push_back(a);
+    }
+    for (auto& [v, neighbors] : adjacency)
+    {
+        std::sort(neighbors.begin(), neighbors.end());
+        if (neighbors.size() > 2
+            || std::adjacent_find(neighbors.begin(), neighbors.end()) != neighbors.end())
+            return {}; // branching or duplicate edge: not a simple chain
+    }
+
+    std::set<std::uint32_t> unseen;
+    for (const auto& [vertex, unused] : adjacency)
+        unseen.insert(vertex);
+
+    BridgeChains chains;
+    std::size_t found = 0;
+    while (!unseen.empty())
+    {
+        if (found == 2)
+            return {};
+        std::set<std::uint32_t> component;
+        std::vector<std::uint32_t> frontier{ *unseen.begin() };
+        while (!frontier.empty())
+        {
+            const std::uint32_t vertex = frontier.back();
+            frontier.pop_back();
+            if (!component.insert(vertex).second)
+                continue;
+            unseen.erase(vertex);
+            for (std::uint32_t neighbor : adjacency.at(vertex))
+                if (!component.count(neighbor))
+                    frontier.push_back(neighbor);
+        }
+
+        std::vector<std::uint32_t> endpoints;
+        for (std::uint32_t vertex : component)
+            if (adjacency.at(vertex).size() == 1)
+                endpoints.push_back(vertex);
+        const bool closed = endpoints.empty();
+        if ((!closed && endpoints.size() != 2) || (closed && component.size() < 3)
+            || (found != 0 && chains.Closed != closed))
+            return {};
+
+        const std::uint32_t start = closed ? *component.begin() : endpoints.front();
+        std::vector<std::uint32_t> path;
+        std::optional<std::uint32_t> previous;
+        std::uint32_t current = start;
+        while (true)
+        {
+            path.push_back(current);
+            std::optional<std::uint32_t> next;
+            for (std::uint32_t neighbor : adjacency.at(current))
+                if (!previous.has_value() || neighbor != *previous)
+                {
+                    next = neighbor;
+                    break;
+                }
+            if (!next || (closed && *next == start))
+                break;
+            previous = current;
+            current = *next;
+            if (path.size() > component.size())
+                return {};
+        }
+        if (path.size() != component.size())
+            return {};
+        chains.Paths[found++] = std::move(path);
+        chains.Closed = closed;
+    }
+    if (found != 2 || chains.Paths[0].size() != chains.Paths[1].size())
+        return {};
+
+    // Align the second path to the first by geometric correspondence. Closed
+    // loops need a rotation as well as a direction choice; open paths only need
+    // the direction choice. The least-squares pairing removes the top/bottom
+    // orientation coin-flip that produced twisted bridge strips.
+    std::vector<std::uint32_t> best = chains.Paths[1];
+    double bestScore = std::numeric_limits<double>::max();
+    const std::size_t n = chains.Paths[0].size();
+    const std::size_t rotations = chains.Closed ? n : 1;
+    for (std::size_t rotation = 0; rotation < rotations; ++rotation)
+        for (bool reverse : { false, true })
+        {
+            std::vector<std::uint32_t> candidate;
+            candidate.reserve(n);
+            double score = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const std::size_t source = chains.Closed
+                    ? (rotation + (reverse ? n - i : i)) % n
+                    : (reverse ? n - 1 - i : i);
+                candidate.push_back(chains.Paths[1][source]);
+                const Vec3d a = mesh.Vertices[chains.Paths[0][i]].Position;
+                const Vec3d b = mesh.Vertices[candidate.back()].Position;
+                score += (b - a).SqrMagnitude();
+            }
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = std::move(candidate);
+            }
+        }
+    chains.Paths[1] = std::move(best);
+    return chains;
+}
+
+std::optional<BrushMesh> ApplyBridgeEdges(const VerbContext& ctx)
+{
+    const BridgeChains chains = GatherBridgeChains(ctx.Before, ctx.Transform, ctx.Refs);
+    if (chains.Paths[0].empty())
+    {
+        if (ctx.Log)
+            ctx.Log->Info("Bridge: selection must be two separate equal-length edge paths or loops");
+        return std::nullopt;
+    }
+
+    // The bridge continues the texture bordering chain A's first edge.
+    const FaceMaterial* inherit = nullptr;
+    for (const BrushFace& face : ctx.Before.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n && inherit == nullptr; ++i)
+        {
+            const std::uint32_t u = face.Loop[i];
+            const std::uint32_t v = face.Loop[(i + 1) % n];
+            if ((u == chains.Paths[0][0] && v == chains.Paths[0][1])
+                || (u == chains.Paths[0][1] && v == chains.Paths[0][0]))
+                inherit = &face.Material;
+        }
+        if (inherit != nullptr)
+            break;
+    }
+
+    BrushMesh after = BrushOps::BridgeEdgePaths(ctx.Before, chains.Paths[0], chains.Paths[1],
+                                                ctx.Params.BridgeSegments, inherit, chains.Closed);
+    if (after.Faces.size() == ctx.Before.Faces.size())
+        return std::nullopt;
+    if (!BrushValidateAndRepair(after, 0.0f).Ok)
+    {
+        if (ctx.Log)
+            ctx.Log->Warn("Bridge: result failed validation; edit discarded");
+        return std::nullopt;
+    }
+    return after;
+}
+
+std::optional<BrushMesh> ApplySetEdgeSoftness(const VerbContext& ctx)
+{
+    // Membership edit only: no vertices move and no topology changes, so no
+    // repair pass. One edge enumeration serves every selected ref.
+    const std::vector<EdgeElement> edges = MeshElements::Edges(ctx.Before, ctx.Transform);
+    BrushMesh after = ctx.Before;
+    bool changed = false;
+    for (const SelectableRef& ref : ctx.Refs)
+    {
+        if (ref.ElementId >= edges.size())
+            continue;
+        const EdgeElement& edge = edges[ref.ElementId];
+        if (BrushEdgeIsSoft(after, edge.VertexA, edge.VertexB) != ctx.Params.Soften)
+        {
+            BrushSetEdgeSoft(after, edge.VertexA, edge.VertexB, ctx.Params.Soften);
+            changed = true;
+        }
+    }
+    if (!changed)
+        return std::nullopt;
+    return after;
+}
+
 // Which refs a verb operates on, and how it transforms the mesh. Adding a verb =
 // add the enum value + one row here (+ its apply above). Row order == MeshEditVerb.
 struct VerbDescriptor
@@ -244,10 +589,11 @@ struct VerbDescriptor
 
 bool IsFaceRef(const SelectableRef& r) { return r.IsFace(); }
 bool IsEdgeRef(const SelectableRef& r) { return r.IsEdge(); }
+bool IsVertexRef(const SelectableRef& r) { return r.IsVertex(); }
 bool IsMeshElementRef(const SelectableRef& r) { return r.IsMeshElement(); }
 bool IsEntityRef(const SelectableRef& r) { return r.IsEntity(); }
 
-const std::array<VerbDescriptor, 8> kVerbs = { {
+const std::array<VerbDescriptor, 13> kVerbs = { {
     { IsFaceRef,        ApplyExtrude },             // Extrude
     { IsFaceRef,        ApplyDelete },              // Delete
     { IsFaceRef,        ApplyClip },                // Clip
@@ -256,6 +602,11 @@ const std::array<VerbDescriptor, 8> kVerbs = { {
     { IsEdgeRef,        ApplyInsertEdgeLoop },      // InsertEdgeLoop
     { IsFaceRef,        ApplyFlipNormal },          // FlipFaceNormal
     { IsEntityRef,      ApplyRecalculateNormals },  // RecalculateNormals
+    { IsEdgeRef,        ApplyDissolveEdge },        // DissolveEdge
+    { IsVertexRef,      ApplyWeldVertices },        // WeldVertices
+    { IsVertexRef,      ApplySnapVerticesToGrid },  // SnapVerticesToGrid
+    { IsEdgeRef,        ApplyBridgeEdges },         // BridgeEdges
+    { IsEdgeRef,        ApplySetEdgeSoftness },     // SetEdgeSoftness
 } };
 }
 
@@ -296,32 +647,53 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
 {
     const VerbDescriptor& desc = kVerbs[static_cast<std::size_t>(verb)];
 
-    // Gather the refs this verb operates on; they must all belong to one entity.
-    std::vector<SelectableRef> refs;
+    struct EntityRefs
+    {
+        EntityId Entity;
+        RegistryId Registry;
+        std::vector<SelectableRef> Refs;
+    };
+    std::vector<EntityRefs> groups;
     for (const SelectableRef& ref : selection.Items)
         if (desc.Filter(ref))
-            refs.push_back(ref);
-    if (refs.empty())
+        {
+            auto group = std::find_if(groups.begin(), groups.end(), [&](const EntityRefs& candidate)
+            {
+                return candidate.Entity == ref.Entity && candidate.Registry == ref.Registry;
+            });
+            if (group == groups.end())
+            {
+                groups.push_back(EntityRefs{ .Entity = ref.Entity, .Registry = ref.Registry });
+                group = std::prev(groups.end());
+            }
+            group->Refs.push_back(ref);
+        }
+    if (groups.empty())
         return nullptr;
 
-    const EntityId entity = refs.front().Entity;
-    const RegistryId registry = refs.front().Registry;
-    for (const SelectableRef& ref : refs)
-        if (ref.Entity != entity || ref.Registry != registry)
-            return nullptr;
-
-    const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
-    if (!resolved.has_value() || resolved->Mesh == nullptr)
-        return nullptr;
-
-    BrushMesh before = *resolved->Mesh;
     Logger* log = Logging ? &Logging->GetLogger<MeshEditService>() : nullptr;
-    const VerbContext ctx{ before, resolved->Transform, refs, params, ElementKind, log };
-    std::optional<BrushMesh> after = desc.Apply(ctx);
-    if (!after.has_value())
-        return nullptr;
+    std::vector<std::unique_ptr<ICommand>> commands;
+    commands.reserve(groups.size());
+    for (const EntityRefs& group : groups)
+    {
+        const std::optional<MeshEditTargetMesh> resolved = target.Resolve(group.Entity);
+        if (!resolved.has_value() || resolved->Mesh == nullptr)
+            continue;
 
-    return target.MakeEditCommand(entity, std::move(before), std::move(*after));
+        BrushMesh before = *resolved->Mesh;
+        const VerbContext ctx{ before, resolved->Transform, group.Refs, params, ElementKind, log };
+        std::optional<BrushMesh> after = desc.Apply(ctx);
+        if (!after.has_value())
+            continue;
+        if (std::unique_ptr<ICommand> command =
+                target.MakeEditCommand(group.Entity, std::move(before), std::move(*after)))
+            commands.push_back(std::move(command));
+    }
+    if (commands.empty())
+        return nullptr;
+    if (commands.size() == 1)
+        return std::move(commands.front());
+    return std::make_unique<CompositeCommand>(std::move(commands));
 }
 
 std::optional<BrushMesh> MeshEditService::TranslateElements(const BrushMesh& base,
@@ -426,11 +798,12 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
 
     if (want == SelectableKind::Face)
     {
-        // Resolve sources and their post-extrude caps up front by identity: each
-        // extrude repairs/reindexes, so neither the source nor the cap can be
-        // addressed by a fixed index across the loop. The cap is the source loop
-        // translated rigidly by offset (centroid + offset, same normal).
-        std::vector<FaceKey> sourceKeys;
+        // One region extrude for the whole face set: interior edges between
+        // selected faces stay internal (no swept walls); only the region
+        // boundary is walled. Caps are resolved afterwards by identity (the
+        // source loop translated rigidly: centroid + offset, same normal)
+        // because the repair inside the extrude can reindex.
+        std::vector<std::uint32_t> region;
         std::vector<FaceKey> capKeys;
         for (const SelectableRef& ref : elements)
         {
@@ -438,23 +811,16 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
                 continue;
             if (ref.ElementId >= base.Faces.size())
                 return std::nullopt;
-            const Vec3d centroid = BrushFaceCentroid(base, base.Faces[ref.ElementId]);
-            const Vec3d normal = BrushComputeFaceNormal(base, base.Faces[ref.ElementId]);
-            sourceKeys.push_back(FaceKey{ centroid, normal });
-            capKeys.push_back(FaceKey{ centroid + offset, normal });
+            region.push_back(ref.ElementId);
+            capKeys.push_back(FaceKey{
+                BrushFaceCentroid(base, base.Faces[ref.ElementId]) + offset,
+                BrushComputeFaceNormal(base, base.Faces[ref.ElementId]) });
         }
-        if (sourceKeys.empty())
+        if (region.empty())
             return std::nullopt;
 
-        BrushMesh after = base;
-        int applied = 0;
-        for (const FaceKey& key : sourceKeys)
-            if (const std::optional<std::uint32_t> index = FindFace(after, key))
-            {
-                after = BrushOps::ExtrudeFaceAlong(after, *index, offset);
-                ++applied;
-            }
-        if (applied == 0 || !BrushValidateAndRepair(after).Ok)
+        BrushMesh after = BrushOps::ExtrudeFacesAlong(base, region, offset);
+        if (after.Faces.size() <= base.Faces.size() || !BrushValidateAndRepair(after).Ok)
             return std::nullopt;
 
         std::vector<std::uint32_t> ids;
@@ -592,7 +958,8 @@ std::optional<BrushMesh> MeshEditService::RotateElements(const BrushMesh& base,
         after.Vertices[index].Position = InverseTransformPoint(transform, rotated);
     }
 
-    if (validate && !BrushValidateAndRepair(after).Ok)
+    // Weld tolerance 0: see TranslateElementsImpl.
+    if (validate && !BrushValidateAndRepair(after, 0.0f).Ok)
         return std::nullopt;
     return after;
 }
@@ -619,7 +986,8 @@ std::optional<BrushMesh> MeshEditService::ScaleElements(const BrushMesh& base,
         after.Vertices[index].Position = InverseTransformPoint(transform, scaled);
     }
 
-    if (validate && !BrushValidateAndRepair(after).Ok)
+    // Weld tolerance 0: see TranslateElementsImpl.
+    if (validate && !BrushValidateAndRepair(after, 0.0f).Ok)
         return std::nullopt;
     return after;
 }

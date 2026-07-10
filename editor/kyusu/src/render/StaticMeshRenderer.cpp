@@ -4,9 +4,11 @@
 
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSystem.h>
+#include <core/logging/LoggingProvider.h>
 #include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -17,6 +19,7 @@ StaticMeshRenderer::StaticMeshRenderer(EditorSolidPipeline& solid,
                                        const AssetRegistry* catalog)
     : Solid(solid)
     , Loader(logging)
+    , Log(&logging.GetLogger<StaticMeshRenderer>())
     , Assets(assets)
     , Catalog(catalog)
 {
@@ -31,10 +34,38 @@ const MeshGeometry* StaticMeshRenderer::GeometryFor(const std::string& assetPath
     if (Catalog != nullptr)
         if (const AssetRecord* record = Catalog->FindByPath(assetPath);
             record != nullptr && !record->FilePath.empty())
+        {
             (void)Loader.LoadFromFile(record->FilePath, geometry);
+            PruneInvalidIndices(assetPath, geometry);
+        }
 
     const MeshGeometry& stored = Cache.emplace(assetPath, std::move(geometry)).first->second;
     return stored.Vertices.empty() ? nullptr : &stored;
+}
+
+void StaticMeshRenderer::PruneInvalidIndices(const std::string& assetPath, MeshGeometry& geometry) const
+{
+    std::size_t write = 0;
+    std::size_t dropped = 0;
+    for (const std::uint32_t index : geometry.Indices)
+    {
+        if (index < geometry.Vertices.size())
+        {
+            geometry.Indices[write] = index;
+            ++write;
+        }
+        else
+        {
+            ++dropped;
+        }
+    }
+    geometry.Indices.resize(write);
+
+    if (dropped > 0 && Log != nullptr)
+    {
+        Log->Warn("StaticMeshRenderer: dropped {} invalid indices from '{}' ({} vertices)",
+                  dropped, assetPath, geometry.Vertices.size());
+    }
 }
 
 void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,

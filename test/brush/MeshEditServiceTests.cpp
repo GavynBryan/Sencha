@@ -1,6 +1,7 @@
 #include "meshedit/MeshEditService.h"
 
 #include "meshedit/MeshElements.h"
+#include "meshedit/LoopSelection.h"
 #include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
 
@@ -61,6 +62,31 @@ public:
 
     EntityId Entity{ 1, 1 };
     BrushMesh Mesh;
+};
+
+class MultiStubMeshEditTarget : public IMeshEditTarget
+{
+public:
+    std::optional<MeshEditTargetMesh> Resolve(EntityId entity) const override
+    {
+        if (entity == First)
+            return MeshEditTargetMesh{ .Mesh = &FirstMesh, .Transform = Transform3f::Identity() };
+        if (entity == Second)
+            return MeshEditTargetMesh{ .Mesh = &SecondMesh, .Transform = Transform3f::Identity() };
+        return std::nullopt;
+    }
+
+    std::unique_ptr<ICommand> MakeEditCommand(EntityId entity, BrushMesh before, BrushMesh after) override
+    {
+        Edited.push_back(entity);
+        return std::make_unique<CapturingCommand>(std::move(before), std::move(after));
+    }
+
+    EntityId First{ 1, 1 };
+    EntityId Second{ 2, 1 };
+    BrushMesh FirstMesh = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    BrushMesh SecondMesh = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::vector<EntityId> Edited;
 };
 
 SelectionSnapshot FaceSelection(EntityId entity, std::uint32_t face)
@@ -136,6 +162,24 @@ TEST(MeshEditService, MultiFaceExtrudeIsOrderIndependent)
     // Identity-resolved targets make the result independent of selection order.
     EXPECT_EQ(ExtrudedFaceCount({ 0, 1 }), ExtrudedFaceCount({ 1, 0 }));
     EXPECT_GT(ExtrudedFaceCount({ 0, 1 }), 0u);
+}
+
+TEST(MeshEditService, MultiBrushVerbBuildsOneCompositeOfEachEditableBrush)
+{
+    MultiStubMeshEditTarget target;
+    MeshEditService service;
+    SelectionSnapshot selection;
+    selection.Items = {
+        SelectableRef::FaceSelection(RegistryId::Global(), target.First, 0),
+        SelectableRef::FaceSelection(RegistryId::Global(), target.Second, 0),
+    };
+    selection.Primary = selection.Items.front();
+
+    auto command = service.ApplyVerb(target, selection, MeshEditVerb::Extrude, { .Distance = 1.0f });
+    ASSERT_NE(command, nullptr);
+    ASSERT_EQ(target.Edited.size(), 2u);
+    EXPECT_EQ(target.Edited[0], target.First);
+    EXPECT_EQ(target.Edited[1], target.Second);
 }
 
 TEST(MeshEditService, InvalidSelectionDoesNotProduceCommand)
@@ -504,6 +548,19 @@ TEST(BrushOps, TraceEdgeLoopStopsAtValenceThreePrimitiveVertices)
     const std::vector<std::array<std::uint32_t, 2>> loop =
         BrushOps::TraceEdgeLoop(box, edges[0].VertexA, edges[0].VertexB);
     EXPECT_EQ(loop.size(), 1u);
+}
+
+TEST(LoopSelection, SharpRectangleSelectsItsBoundaryInsteadOfThePerpendicularRing)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const SelectableRef seed = SelectableRef::EdgeSelection(
+        RegistryId::Global(), EntityId{ 1, 1 }, edges.front().Index);
+
+    const std::vector<SelectableRef> selected = GatherLoopSelection(
+        box, Transform3f::Identity(), seed, MeshElementKind::Edge);
+    EXPECT_EQ(selected.size(), 4u);
 }
 
 TEST(BrushOps, TraceEdgeLoopSelectsInsertedLoopAfterCut)
@@ -1074,4 +1131,180 @@ TEST(MeshEditService, EdgeExtrudeInheritsTheAdjacentFaceMaterial)
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(CountFacesWithMaterial(result->Mesh, kRed),
               static_cast<int>(result->Mesh.Faces.size()));
+}
+
+TEST(MeshEditService, DissolveEdgeVerbMergesFacesPerSelectedEdge)
+{
+    StubMeshEditTarget target(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }));
+    MeshEditService service;
+
+    const std::vector<EdgeElement> edges = MeshElements::Edges(target.Mesh, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const SelectableRef ref =
+        SelectableRef::EdgeSelection(RegistryId::Global(), target.Entity, edges[0].Index);
+
+    auto command = service.ApplyVerb(target, SelectionSnapshot{ .Items = { ref }, .Primary = ref },
+                                     MeshEditVerb::DissolveEdge);
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    EXPECT_EQ(captured->After.Faces.size(), 5u);
+}
+
+TEST(MeshEditService, WeldVerticesVerbMergesVerticesWithinDistance)
+{
+    StubMeshEditTarget target(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }));
+    MeshEditService service;
+
+    // Two endpoints of one box edge: 2 apart, inside the 2.5 weld distance.
+    const std::vector<EdgeElement> edges = MeshElements::Edges(target.Mesh, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const std::optional<EdgeElement> edge =
+        MeshElements::TryGetEdge(target.Mesh, Transform3f::Identity(), edges[0].Index);
+    ASSERT_TRUE(edge.has_value());
+
+    SelectionSnapshot selection;
+    selection.Items = {
+        SelectableRef::VertexSelection(RegistryId::Global(), target.Entity, edge->VertexA),
+        SelectableRef::VertexSelection(RegistryId::Global(), target.Entity, edge->VertexB),
+    };
+    selection.Primary = selection.Items.front();
+
+    auto command = service.ApplyVerb(target, selection, MeshEditVerb::WeldVertices,
+                                     { .WeldDistance = 2.5f });
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    EXPECT_EQ(captured->After.Vertices.size(), 7u);
+
+    // Below the pair's separation, the verb refuses instead of emitting a no-op.
+    EXPECT_EQ(service.ApplyVerb(target, selection, MeshEditVerb::WeldVertices,
+                                { .WeldDistance = 0.5f }),
+              nullptr);
+}
+
+TEST(MeshEditService, SnapVerticesToGridVerbQuantizesWorldPositions)
+{
+    StubMeshEditTarget target(BrushOps::Translate(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }),
+                                                  { 0.3f, 0.0f, 0.0f }));
+    MeshEditService service;
+
+    SelectionSnapshot selection;
+    for (std::uint32_t i = 0; i < target.Mesh.Vertices.size(); ++i)
+        selection.Items.push_back(SelectableRef::VertexSelection(RegistryId::Global(), target.Entity, i));
+    selection.Primary = selection.Items.front();
+
+    MeshEditParams params;
+    params.GridSpacing = 1.0f;
+    auto command = service.ApplyVerb(target, selection, MeshEditVerb::SnapVerticesToGrid, params);
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+
+    const Aabb3d bounds = BrushComputeBounds(captured->After);
+    EXPECT_NEAR(bounds.Min.X, -1.0f, 1e-5);
+    EXPECT_NEAR(bounds.Max.X, 1.0f, 1e-5);
+    EXPECT_EQ(captured->After.Vertices.size(), 8u);
+}
+
+TEST(MeshEditService, TranslatingAVertexOntoAnotherDoesNotAutoWeld)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::vector<EdgeElement> edges = MeshElements::Edges(box, Transform3f::Identity());
+    ASSERT_FALSE(edges.empty());
+    const std::optional<EdgeElement> edge =
+        MeshElements::TryGetEdge(box, Transform3f::Identity(), edges[0].Index);
+    ASSERT_TRUE(edge.has_value());
+
+    const Vec3d delta =
+        box.Vertices[edge->VertexB].Position - box.Vertices[edge->VertexA].Position;
+    const SelectableRef ref =
+        SelectableRef::VertexSelection(RegistryId::Global(), EntityId{ 1, 1 }, edge->VertexA);
+
+    MeshEditService service;
+    const std::optional<BrushMesh> result = service.TranslateElements(
+        box, Transform3f::Identity(), std::array{ ref }, MeshElementKind::Vertex, delta, true);
+    ASSERT_TRUE(result.has_value());
+    // The coincident pair survives; merging is the explicit weld verb's job.
+    EXPECT_EQ(result->Vertices.size(), 8u);
+}
+
+TEST(MeshEditService, BridgeEdgesVerbSpansTwoSelectedEdges)
+{
+    // Two coplanar floor quads with a gap; bridge A's right edge to B's left.
+    BrushMesh mesh;
+    mesh.Vertices = {
+        { { -2.0f, 0.0f, -1.0f } }, { { -1.0f, 0.0f, -1.0f } },
+        { { -1.0f, 0.0f, 1.0f } },  { { -2.0f, 0.0f, 1.0f } },
+        { { 1.0f, 0.0f, -1.0f } },  { { 2.0f, 0.0f, -1.0f } },
+        { { 2.0f, 0.0f, 1.0f } },   { { 1.0f, 0.0f, 1.0f } },
+    };
+    BrushFace a;
+    a.Loop = { 0, 3, 2, 1 };
+    a.Normal = BrushComputeFaceNormal(mesh, a);
+    BrushFace b;
+    b.Loop = { 4, 7, 6, 5 };
+    b.Normal = BrushComputeFaceNormal(mesh, b);
+    mesh.Faces = { a, b };
+
+    StubMeshEditTarget target(mesh);
+    MeshEditService service;
+
+    const auto edgeIndex = [&](std::uint32_t va, std::uint32_t vb) -> std::optional<std::uint32_t>
+    {
+        for (const EdgeElement& edge : MeshElements::Edges(target.Mesh, Transform3f::Identity()))
+            if ((edge.VertexA == va && edge.VertexB == vb) || (edge.VertexA == vb && edge.VertexB == va))
+                return edge.Index;
+        return std::nullopt;
+    };
+    const std::optional<std::uint32_t> edgeA = edgeIndex(1, 2);
+    const std::optional<std::uint32_t> edgeB = edgeIndex(4, 7);
+    ASSERT_TRUE(edgeA.has_value());
+    ASSERT_TRUE(edgeB.has_value());
+
+    SelectionSnapshot selection;
+    selection.Items = {
+        SelectableRef::EdgeSelection(RegistryId::Global(), target.Entity, *edgeA),
+        SelectableRef::EdgeSelection(RegistryId::Global(), target.Entity, *edgeB),
+    };
+    selection.Primary = selection.Items.front();
+
+    auto command = service.ApplyVerb(target, selection, MeshEditVerb::BridgeEdges,
+                                     { .BridgeSegments = 3 });
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    EXPECT_EQ(captured->After.Faces.size(), 2u + 3u);
+    EXPECT_EQ(captured->After.Vertices.size(), 8u + 4u); // 2 interior rows x 2 columns
+}
+
+TEST(MeshEditService, BridgeEdgesVerbSpansTwoSelectedClosedLoops)
+{
+    BrushMesh mesh;
+    mesh.Vertices = {
+        { { -1.0f, -1.0f, -1.0f } }, { { 1.0f, -1.0f, -1.0f } },
+        { { 1.0f, 1.0f, -1.0f } },   { { -1.0f, 1.0f, -1.0f } },
+        { { -1.0f, -1.0f, 1.0f } },  { { 1.0f, -1.0f, 1.0f } },
+        { { 1.0f, 1.0f, 1.0f } },    { { -1.0f, 1.0f, 1.0f } },
+    };
+    mesh.Faces = {
+        BrushFace{ .Loop = { 0, 1, 2, 3 } },
+        BrushFace{ .Loop = { 4, 7, 6, 5 } },
+    };
+
+    StubMeshEditTarget target(mesh);
+    MeshEditService service;
+    SelectionSnapshot selection;
+    for (const EdgeElement& edge : MeshElements::Edges(mesh, Transform3f::Identity()))
+        selection.Items.push_back(
+            SelectableRef::EdgeSelection(RegistryId::Global(), target.Entity, edge.Index));
+    selection.Primary = selection.Items.front();
+
+    auto command = service.ApplyVerb(target, selection, MeshEditVerb::BridgeEdges);
+    ASSERT_NE(command, nullptr);
+    const auto* captured = dynamic_cast<const CapturingCommand*>(command.get());
+    ASSERT_NE(captured, nullptr);
+    EXPECT_EQ(captured->After.Faces.size(), 6u);
+    BrushMesh repaired = captured->After;
+    EXPECT_TRUE(BrushValidateAndRepair(repaired).Closed);
 }

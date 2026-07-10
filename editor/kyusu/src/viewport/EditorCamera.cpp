@@ -17,10 +17,12 @@ void GetOrthoBasis(const Vec3d& orthoAxis, const Vec3d& upHint, Vec3d& right, Ve
 {
     const Vec3d forward = (-orthoAxis).Normalized();
     Vec3d viewUp = upHint;
-    if (viewUp.SqrMagnitude() < 1e-8f)
+    // A near-zero or axis-parallel hint makes the cross product degenerate;
+    // fall back to world up, then forward.
+    if (forward.Cross(viewUp).SqrMagnitude() < 1e-8f)
     {
         viewUp = Vec3d::Up();
-        if (std::abs(orthoAxis.Dot(viewUp)) > 0.999f)
+        if (forward.Cross(viewUp).SqrMagnitude() < 1e-8f)
             viewUp = Vec3d::Forward();
     }
 

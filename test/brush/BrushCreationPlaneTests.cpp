@@ -59,3 +59,46 @@ TEST(BrushDepthPlacement, CopyFromBoundsMatchesSelectedExtent)
     EXPECT_FLOAT_EQ(x.Center, 0.0f);
     EXPECT_FLOAT_EQ(x.Half, 1.0f);
 }
+
+// The rest sign records which side of the rest plane the extent grew toward, so
+// a pending brush switched between primitive classes can keep resting there.
+TEST(BrushDepthPlacement, RestSignFollowsTheExtrusionSide)
+{
+    EXPECT_FLOAT_EQ(RestOnGridDepth(0.0f, 1.0f, 1.0f).Sign, 1.0f);
+    EXPECT_FLOAT_EQ(RestOnGridDepth(0.0f, 1.0f, -1.0f).Sign, -1.0f);
+    EXPECT_FLOAT_EQ(RestOnSurfaceDepth(3.0f, 1.0f, 1.0f).Sign, 1.0f);
+    EXPECT_FLOAT_EQ(RestOnSurfaceDepth(3.0f, 1.0f, -1.0f).Sign, -1.0f);
+    // Copied bounds have no natural rest side; +1 by convention.
+    const Aabb3d bounds(Vec3d(-1.0f, 2.0f, -5.0f), Vec3d(1.0f, 8.0f, 5.0f));
+    EXPECT_FLOAT_EQ(CopyDepthFromBounds(bounds, 1).Sign, 1.0f);
+}
+
+// Pending regeneration: a solid keeps the drag's own depth (a thin copied depth
+// must not be re-floored), takes the grid floor only when the drag authored zero
+// depth, and a Plane is always a zero-thickness sheet.
+TEST(BrushDepthPlacement, PendingDepthHalfKeepsDragDepthForSolids)
+{
+    EXPECT_FLOAT_EQ(PendingDepthHalf(/*solid*/ true, /*drag*/ 0.1f, /*floor*/ 0.5f), 0.1f);
+    EXPECT_FLOAT_EQ(PendingDepthHalf(true, 2.0f, 0.5f), 2.0f);
+}
+
+TEST(BrushDepthPlacement, PendingDepthHalfFloorsZeroDepthDragOnly)
+{
+    EXPECT_FLOAT_EQ(PendingDepthHalf(true, 0.0f, 0.5f), 0.5f);
+}
+
+TEST(BrushDepthPlacement, PendingDepthHalfPlaneIsFlushZeroDepth)
+{
+    EXPECT_FLOAT_EQ(PendingDepthHalf(false, 2.0f, 0.5f), 0.0f);
+    EXPECT_FLOAT_EQ(PendingDepthHalf(false, 0.0f, 0.5f), 0.0f);
+}
+
+TEST(BrushDepthPlacement, PendingDepthHalfRoundTripsPlaneSolidPlane)
+{
+    // Plane-authored drag: Plane -> Box -> Plane regenerates the same halves
+    // each time (the transition shift is the caller's job; the half is pure).
+    const float boxHalf = PendingDepthHalf(true, 0.0f, 0.5f);
+    EXPECT_FLOAT_EQ(boxHalf, 0.5f);
+    EXPECT_FLOAT_EQ(PendingDepthHalf(false, 0.0f, 0.5f), 0.0f);
+    EXPECT_FLOAT_EQ(PendingDepthHalf(true, 0.0f, 0.5f), boxHalf);
+}

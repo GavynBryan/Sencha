@@ -93,3 +93,57 @@ TEST(GizmoMath, SnapAxisOffsetDisabledPassesThrough)
 {
     EXPECT_NEAR(GizmoMath::SnapAxisOffset(0.7, 5.0, 0.0, 0.0f), 0.7, 1e-12);
 }
+
+// Factor f places the bound at pivot + (bound - pivot) * f; the snapped factor
+// lands that point on the nearest grid line. Bound 2 about pivot 0 dragged to
+// factor 1.35 (bound at 2.7) snaps to 3.0, factor 1.5.
+TEST(GizmoMath, SnapScaleFactorLandsBoundOnGridLine)
+{
+    EXPECT_NEAR(GizmoMath::SnapScaleFactor(1.35, 0.0, 2.0, 0.0, 1.0f), 1.5, 1e-9);
+}
+
+// A non-zero pivot measures the extent from the pivot, not from world zero:
+// pivot 1, bound 3 (extent 2) at factor 1.2 puts the bound at 3.4 -> 3.0 -> 1.0.
+TEST(GizmoMath, SnapScaleFactorMeasuresExtentFromPivot)
+{
+    EXPECT_NEAR(GizmoMath::SnapScaleFactor(1.2, 1.0, 3.0, 0.0, 1.0f), 1.0, 1e-9);
+}
+
+// The grid origin shifts the lines the bound snaps to.
+TEST(GizmoMath, SnapScaleFactorRespectsGridOrigin)
+{
+    // bound 2 at factor 1.0 sits at 2.0; lines at 0.5 + k -> nearest is 2.5.
+    EXPECT_NEAR(GizmoMath::SnapScaleFactor(1.1, 0.0, 2.0, 0.5, 1.0f), 1.25, 1e-9);
+}
+
+// Disabled spacing and a degenerate (bound == pivot) extent pass through.
+TEST(GizmoMath, SnapScaleFactorPassesThroughWhenUndefined)
+{
+    EXPECT_NEAR(GizmoMath::SnapScaleFactor(1.3, 0.0, 2.0, 0.0, 0.0f), 1.3, 1e-12);
+    EXPECT_NEAR(GizmoMath::SnapScaleFactor(1.3, 2.0, 2.0, 0.0, 1.0f), 1.3, 1e-12);
+}
+
+TEST(GizmoMath, OnGridLatticeDetectsLatticePoints)
+{
+    EXPECT_TRUE(GizmoMath::OnGridLattice(4.0, 0.0, 1.0f, 1e-3));
+    EXPECT_TRUE(GizmoMath::OnGridLattice(-3.0, 0.0, 1.0f, 1e-3));
+    EXPECT_FALSE(GizmoMath::OnGridLattice(4.3, 0.0, 1.0f, 1e-3));
+    // Offset origin shifts the lattice.
+    EXPECT_TRUE(GizmoMath::OnGridLattice(4.5, 0.5, 1.0f, 1e-3));
+    EXPECT_FALSE(GizmoMath::OnGridLattice(4.0, 0.5, 1.0f, 1e-3));
+    // Tolerance boundary: within counts, beyond does not.
+    EXPECT_TRUE(GizmoMath::OnGridLattice(4.0009, 0.0, 1.0f, 1e-3));
+    EXPECT_FALSE(GizmoMath::OnGridLattice(4.002, 0.0, 1.0f, 1e-3));
+    // No lattice without spacing.
+    EXPECT_FALSE(GizmoMath::OnGridLattice(4.0, 0.0, 0.0f, 1e-3));
+}
+
+TEST(GizmoMath, SnapAxisOffsetWithOnLatticeReferenceYieldsSpacingMultiples)
+{
+    // Reference on the lattice: every snapped offset is a whole number of
+    // cells, so all on-lattice vertices stay on the lattice together.
+    const double offset = GizmoMath::SnapAxisOffset(2.3, /*coord*/ 4.0, /*origin*/ 0.0, 1.0f);
+    EXPECT_DOUBLE_EQ(offset, 2.0);
+    const double back = GizmoMath::SnapAxisOffset(-0.6, 4.0, 0.0, 1.0f);
+    EXPECT_DOUBLE_EQ(back, -1.0);
+}

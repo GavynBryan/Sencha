@@ -60,9 +60,24 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
     Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
 }
 
+void BrushManipulationSink::CommitMeshes(std::vector<MeshEdit> edits)
+{
+    if (edits.empty())
+        return;
+
+    std::vector<std::unique_ptr<ICommand>> commands;
+    commands.reserve(edits.size());
+    for (MeshEdit& edit : edits)
+        commands.push_back(MakeEditCommand(edit.Entity, std::move(edit.Before), std::move(edit.After)));
+
+    Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
+}
+
 void BrushManipulationSink::CommitMesh(EntityId entity, BrushMesh before, BrushMesh after)
 {
-    Commands.Execute(MakeEditCommand(entity, std::move(before), std::move(after)));
+    std::vector<MeshEdit> edits;
+    edits.push_back({ entity, std::move(before), std::move(after) });
+    CommitMeshes(std::move(edits));
 }
 
 void BrushManipulationSink::SelectElements(std::span<const SelectableRef> refs)
@@ -90,8 +105,16 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
 {
     if (sources.empty())
         return;
+    // Offset before executing: the command leaves the sources untouched, but
+    // reading them first keeps the observer independent of command internals.
+    std::optional<Vec3d> offset;
+    if (!transforms.empty())
+        if (const Transform3f* source = Scene.TryGetTransform(sources.front()))
+            offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
         sources, transforms, Scene, Document, Selection));
+    if (DuplicateObserver && offset.has_value())
+        DuplicateObserver(*offset);
 }
 
 std::optional<MeshEditTargetMesh> BrushManipulationSink::Resolve(EntityId entity) const

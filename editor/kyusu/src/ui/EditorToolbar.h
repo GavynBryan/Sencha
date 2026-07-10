@@ -6,7 +6,6 @@ class ManipulatorSession;
 class ToolRegistry;
 class MeshEditService;
 struct GridSettings;
-struct BrushCreationSettings;
 struct EdgeCutSettings;
 struct WorldViewSettings;
 
@@ -48,12 +47,15 @@ public:
     };
 
     // Host wiring for the transform group. The session drives gizmo mode/space
-    // and the pivot toggles; SetOriginToPivot commits the moved pivot into the
-    // primary brush's origin; HasSelection gates the pivot pair's visibility.
+    // and the pivot toggles; the SetOrigin* callbacks re-origin the primary
+    // brush (pivot commit, first selected vertex, world-bounds center/min
+    // corner); HasSelection gates the pivot pair's visibility.
     struct TransformControls
     {
-
         std::function<void()> SetOriginToPivot;
+        std::function<void()> SetOriginToVertex;
+        std::function<void()> SetOriginToBoundsCenter;
+        std::function<void()> SetOriginToBoundsCorner;
         std::function<bool()> HasSelection;
     };
 
@@ -64,7 +66,7 @@ public:
                   std::function<ManipulatorSession*()> session,
                   MeshEditService& meshEdit, GridSettings& grid,
                   WorldViewSettings& worldView,
-                  BrushCreationSettings& brushCreate, EdgeCutSettings& edgeCut);
+                  EdgeCutSettings& edgeCut);
 
     void SetPlayControls(PlayControls controls) { Play = std::move(controls); }
     void SetGridFrameControls(GridFrameControls controls) { GridFrame = std::move(controls); }
@@ -73,8 +75,7 @@ public:
     void Draw();
 
 private:
-    void DrawToolContextGroup(float buttonSize); // brush primitive / edge-cut sub-modes
-    void DrawModeGroup(float buttonSize);
+    void DrawToolContextGroup(float buttonSize); // edge-cut sub-mode / carve apply-cancel
     void DrawTransformGroup(float buttonSize);
     void DrawGridGroup(float buttonSize);
     void DrawPlayGroup(float buttonSize);
@@ -87,7 +88,6 @@ private:
     MeshEditService& MeshEdit;
     GridSettings& Grid;
     WorldViewSettings& WorldView;
-    BrushCreationSettings& BrushCreate;
     EdgeCutSettings& EdgeCut;
     PlayControls Play;
     GridFrameControls GridFrame;

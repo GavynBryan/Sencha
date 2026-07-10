@@ -30,6 +30,8 @@ namespace
         loop = std::move(out);
     }
 
+    void RemapSoftEdges(BrushMesh& mesh, const std::vector<std::uint32_t>& remap);
+
     // Compacts vertices, dropping any not referenced by a face loop.
     bool DropUnreferenced(BrushMesh& mesh)
     {
@@ -39,7 +41,8 @@ namespace
                 if (index < used.size())
                     used[index] = true;
 
-        std::vector<std::uint32_t> remap(mesh.Vertices.size(), 0);
+        constexpr std::uint32_t kDropped = 0xFFFFFFFFu;
+        std::vector<std::uint32_t> remap(mesh.Vertices.size(), kDropped);
         std::vector<BrushVertex> kept;
         kept.reserve(mesh.Vertices.size());
         bool changed = false;
@@ -61,6 +64,7 @@ namespace
         for (BrushFace& face : mesh.Faces)
             for (std::uint32_t& index : face.Loop)
                 index = remap[index];
+        RemapSoftEdges(mesh, remap);
         mesh.Vertices = std::move(kept);
         return true;
     }
@@ -72,6 +76,27 @@ namespace
             std::swap(a, b);
         return (static_cast<std::uint64_t>(a) << 32) | static_cast<std::uint64_t>(b);
     }
+
+    // Rewrite the soft-edge pairs through a vertex remap, dropping pairs that
+    // collapse or fall out of range, and deduplicating the survivors.
+    void RemapSoftEdges(BrushMesh& mesh, const std::vector<std::uint32_t>& remap)
+    {
+        std::vector<std::array<std::uint32_t, 2>> kept;
+        kept.reserve(mesh.SoftEdges.size());
+        constexpr std::uint32_t kDropped = 0xFFFFFFFFu;
+        for (const std::array<std::uint32_t, 2>& edge : mesh.SoftEdges)
+        {
+            if (edge[0] >= remap.size() || edge[1] >= remap.size()
+                || remap[edge[0]] == kDropped || remap[edge[1]] == kDropped)
+                continue;
+            const std::array<std::uint32_t, 2> mapped = BrushSoftEdgeKey(remap[edge[0]], remap[edge[1]]);
+            if (mapped[0] == mapped[1])
+                continue;
+            if (std::find(kept.begin(), kept.end(), mapped) == kept.end())
+                kept.push_back(mapped);
+        }
+        mesh.SoftEdges = std::move(kept);
+    }
 }
 
 void BrushWeldVertices(BrushMesh& mesh, float tolerance)
@@ -80,20 +105,49 @@ void BrushWeldVertices(BrushMesh& mesh, float tolerance)
     std::vector<BrushVertex> merged;
     merged.reserve(mesh.Vertices.size());
 
+    // Spatial hash on cells of `tolerance`: coincidence candidates can only
+    // live in the 27 cells around a vertex, so the weld stays linear on the
+    // detailed meshes the live carve preview re-repairs every pointer move.
+    // Ties resolve to the lowest merged index, matching the sequential
+    // first-match scan this replaces.
+    const auto cellKey = [](std::int64_t x, std::int64_t y, std::int64_t z)
+    {
+        const std::uint64_t h = static_cast<std::uint64_t>(x) * 73856093ull
+                              ^ static_cast<std::uint64_t>(y) * 19349663ull
+                              ^ static_cast<std::uint64_t>(z) * 83492791ull;
+        return h;
+    };
+    const float cellSize = tolerance > 0.0f ? tolerance : 1.0f;
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> cells;
+    cells.reserve(mesh.Vertices.size() * 2);
+    const auto cellOf = [cellSize](float v)
+    { return static_cast<std::int64_t>(std::floor(v / cellSize)); };
+
     for (std::size_t i = 0; i < mesh.Vertices.size(); ++i)
     {
         const Vec3d& position = mesh.Vertices[i].Position;
+        const std::int64_t cx = cellOf(position.X);
+        const std::int64_t cy = cellOf(position.Y);
+        const std::int64_t cz = cellOf(position.Z);
+
         std::uint32_t target = static_cast<std::uint32_t>(merged.size());
-        for (std::size_t j = 0; j < merged.size(); ++j)
-        {
-            if (NearlyCoincident(merged[j].Position, position, tolerance))
-            {
-                target = static_cast<std::uint32_t>(j);
-                break;
-            }
-        }
+        for (std::int64_t dx = -1; dx <= 1; ++dx)
+            for (std::int64_t dy = -1; dy <= 1; ++dy)
+                for (std::int64_t dz = -1; dz <= 1; ++dz)
+                {
+                    const auto it = cells.find(cellKey(cx + dx, cy + dy, cz + dz));
+                    if (it == cells.end())
+                        continue;
+                    for (std::uint32_t j : it->second)
+                        if (j < target && NearlyCoincident(merged[j].Position, position, tolerance))
+                            target = j;
+                }
+
         if (target == merged.size())
+        {
             merged.push_back(mesh.Vertices[i]);
+            cells[cellKey(cx, cy, cz)].push_back(target);
+        }
         remap[i] = target;
     }
 
@@ -103,6 +157,7 @@ void BrushWeldVertices(BrushMesh& mesh, float tolerance)
             index = remap[index];
         RemoveConsecutiveDuplicates(face.Loop);
     }
+    RemapSoftEdges(mesh, remap);
     mesh.Vertices = std::move(merged);
 }
 
@@ -112,7 +167,11 @@ BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance)
 
     const BrushMesh before = mesh; // for Changed detection (small meshes)
 
-    BrushWeldVertices(mesh, weldTolerance);
+    // Tolerance 0 disables the weld entirely: element moves and snaps may park
+    // vertices exactly on top of each other on purpose, merged only by the
+    // explicit weld verb.
+    if (weldTolerance > 0.0f)
+        BrushWeldVertices(mesh, weldTolerance);
     DropUnreferenced(mesh);
 
     // Drop degenerate faces (<3 distinct vertices / zero-area normal).
@@ -171,6 +230,11 @@ BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance)
     }
     if (!result.Closed)
         result.Warnings.push_back("brush is not closed (open mesh)");
+
+    // Soft markings on edges that no longer exist topologically are stale;
+    // prune them so the set stays an exact subset of the mesh's edges.
+    std::erase_if(mesh.SoftEdges, [&](const std::array<std::uint32_t, 2>& edge)
+                  { return edgeCounts.find(EdgeKey(edge[0], edge[1])) == edgeCounts.end(); });
 
     result.Ok = true;
 

@@ -2,6 +2,7 @@
 
 #include "meshedit/ElementGeometry.h"
 #include "meshedit/ManipulationSink.h"
+#include "meshedit/MeshElements.h"
 
 namespace
 {
@@ -36,6 +37,12 @@ std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
 
     Accumulator pivot;
 
+    // Edge midpoints need the entity's edge enumeration; build it once per
+    // entity, not once per selected edge (this runs every frame per viewport,
+    // and a per-ref rebuild made large edge selections quadratic).
+    EntityId cachedEntity = {};
+    std::vector<EdgeElement> cachedEdges;
+
     for (SelectableRef ref : selection.Items)
     {
         if (!ref.IsValid())
@@ -55,8 +62,19 @@ std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
         if (!resolved.has_value() || resolved->Mesh == nullptr)
             continue;
 
-        // Each mesh-element ref reports its own center (vertex pos / edge mid /
-        // face center); no per-mode switch.
+        if (ref.IsEdge())
+        {
+            if (!(cachedEntity == ref.Entity))
+            {
+                cachedEntity = ref.Entity;
+                cachedEdges = MeshElements::Edges(*resolved->Mesh, resolved->Transform);
+            }
+            if (ref.ElementId < cachedEdges.size())
+                pivot.Add(cachedEdges[ref.ElementId].Mid);
+            continue;
+        }
+
+        // Vertex and face refs report their own center directly.
         if (const std::optional<Vec3d> center =
                 ElementCenter(*resolved->Mesh, resolved->Transform, ref))
             pivot.Add(*center);

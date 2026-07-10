@@ -34,15 +34,22 @@ struct BrushCreationPlane
     Vec3d     DepthDir = { 0.0f, 1.0f, 0.0f };
     float     DepthCenter = 0.0f;
     float     DepthHalf = 0.5f;
+    // Side of the rest plane the depth extent grows toward, measured along
+    // DepthDir. Kept even for zero-depth Plane drags so a later switch to a
+    // solid primitive knows which side to grow.
+    float     DepthSign = 1.0f;
     bool      FrameAligned = true;
 };
 
-// Depth-axis placement (center, half-extent). Pure math, no viewport/ImGui, so
-// the three creation cases unit-test in brush_tests.
+// Depth-axis placement (center, half-extent, rest side). Pure math, no
+// viewport/ImGui, so the three creation cases unit-test in brush_tests.
 struct BrushDepthPlacement
 {
     float Center = 0.0f;
     float Half = 0.0f;
+    // Side of the reference (rest) plane the extent grows toward; +1 by
+    // convention when there is no natural rest side (depth copied from bounds).
+    float Sign = 1.0f;
 };
 
 // Rest on a grid plane: bottom on the grid line, one cell tall, extruded toward
@@ -51,7 +58,7 @@ struct BrushDepthPlacement
 {
     const float half = spacing * 0.5f;
     const float sign = towardCamera >= 0.0f ? 1.0f : -1.0f;
-    return BrushDepthPlacement{ .Center = gridDepth + half * sign, .Half = half };
+    return BrushDepthPlacement{ .Center = gridDepth + half * sign, .Half = half, .Sign = sign };
 }
 
 // Rest flush on a hit surface, extruded one cell along the face's outward normal
@@ -60,7 +67,7 @@ struct BrushDepthPlacement
 {
     const float half = spacing * 0.5f;
     const float sign = normalDepth >= 0.0f ? 1.0f : -1.0f;
-    return BrushDepthPlacement{ .Center = hitDepth + half * sign, .Half = half };
+    return BrushDepthPlacement{ .Center = hitDepth + half * sign, .Half = half, .Sign = sign };
 }
 
 // Match a selected brush's depth-axis bounds (column-match QoL: a new brush
@@ -69,7 +76,19 @@ struct BrushDepthPlacement
 {
     const float lo = bounds.Min[depthAxis];
     const float hi = bounds.Max[depthAxis];
-    return BrushDepthPlacement{ .Center = (lo + hi) * 0.5f, .Half = (hi - lo) * 0.5f };
+    return BrushDepthPlacement{ .Center = (lo + hi) * 0.5f, .Half = (hi - lo) * 0.5f, .Sign = 1.0f };
+}
+
+// Depth half-extent when a pending brush is regenerated for a primitive class,
+// from placement captured once at drag release. A solid keeps the drag's own
+// depth and takes the grid floor only when the drag authored zero depth (a
+// Plane drag switched to a solid afterwards); a Plane is a zero-thickness
+// sheet regardless of the drag.
+[[nodiscard]] inline float PendingDepthHalf(bool solidPrimitive, float dragDepthHalf, float floorHalf)
+{
+    if (!solidPrimitive)
+        return 0.0f;
+    return dragDepthHalf > 0.0f ? dragDepthHalf : floorHalf;
 }
 
 [[nodiscard]] std::optional<BrushCreationPlane>

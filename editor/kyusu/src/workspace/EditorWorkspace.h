@@ -23,12 +23,14 @@
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
 
+#include "brush/BrushOps.h"
 #include "document/BrushCreationSettings.h"
 #include "document/EdgeCutSettings.h"
 #include "document/WorldDocument.h"
 
 #include <functional>
 #include <memory>
+#include <array>
 #include <optional>
 
 class LoggingProvider;
@@ -55,11 +57,30 @@ public:
 
     // Deletes the entity-kind selection as one undoable step (no-op if empty).
     void DeleteSelection();
+    // Backspace verb in edge mode: merge the faces across each selected edge.
+    void DissolveSelectedEdges();
+    // Bridges two selected edge paths from different brushes into a new bridge
+    // brush without changing either source. The cross-brush bridge starts as a
+    // PENDING preview entity (adjust Segments live, Apply commits, Cancel or
+    // Undo drops it); same-brush bridges stay immediate mesh edits.
+    void BridgeSelectedEdges(int segments);
+    [[nodiscard]] bool HasPendingBridge() const { return Bridge == BridgeState::Pending; }
+    // Regenerates the pending preview with a new segment count.
+    void SetPendingBridgeSegments(int segments);
+    void CommitPendingBridge();
+    void CancelPendingBridge();
 
     // Duplicates the entity-kind selection in place as one undoable step and
     // selects the copies. With asInstance, brush copies SHARE the source's mesh
     // (editing any instance edits them all; baking them shares one asset).
     void DuplicateSelection(bool asInstance);
+
+    // Repeats the last recorded repeatable action (Ctrl+R). Today that is a
+    // duplicate-with-offset: after a Shift-drag duplicate, each press
+    // duplicates the current selection again displaced by the same offset (the
+    // copies stay selected, so repeated presses chain placements). No-op until
+    // an action records itself.
+    void RepeatLastAction();
 
     // Breaks every selected instanced brush out of its instance group (each gets
     // its own copy of the live shared mesh), as one undoable step.
@@ -107,6 +128,19 @@ public:
     // Re-origins the primary selected brush to the moved pivot (no-op if the pivot
     // has not been moved), then clears the transient pivot. One undoable step.
     void SetSelectedBrushOriginToPivot();
+
+    // Anchor choices for re-origining the primary selected brush without moving
+    // its geometry: the first selected vertex, its world-bounds center, or the
+    // world-bounds minimum corner.
+    enum class OriginAnchor : std::uint8_t
+    {
+        SelectedVertex,
+        BoundsCenter,
+        BoundsMinCorner,
+    };
+    // Re-origins the primary selected brush to the anchor (no-op when the anchor
+    // does not resolve), then clears the transient pivot. One undoable step.
+    void SetSelectedBrushOrigin(OriginAnchor anchor);
 
     // Applies the active material to every selected face, one undoable step per
     // brush. No-op when no material is active or nothing face-like is selected.
@@ -159,9 +193,84 @@ public:
     // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;
 
+    // Cross-brush bridge lifecycle. Invariants: Bridge == Pending exactly while
+    // PendingBridgeData holds a live preview entity (with the resolved paths it
+    // regenerates from) and the command stack's pending-edit scope is open for
+    // it. Transitions happen only in BeginPendingBridge (Idle -> Pending) and
+    // CommitPendingBridge / CancelPendingBridge (Pending -> Idle).
+    enum class BridgeState : std::uint8_t { Idle, Pending };
+    struct PendingBridge
+    {
+        EntityId Entity = {};
+        BrushOps::BridgePathSpec PathA;
+        BrushOps::BridgePathSpec PathB;
+        FaceMaterial Material;
+        int Segments = 1;
+        // The scene and document the preview entity lives in, captured at
+        // begin: a focus change swaps ActiveDocument, and cancel must destroy
+        // the entity where it was created.
+        EditorScene* Scene = nullptr;
+        EditorDocument* Document = nullptr;
+        std::vector<SelectableRef> BeforeSelection;
+    };
+    BridgeState Bridge = BridgeState::Idle;
+    PendingBridge PendingBridgeData;
+
+    void BeginPendingBridge(PendingBridge pending);
+    void RegeneratePendingBridge();
+
+    // Pending face inset / edge bevel: a panel-driven preview over the
+    // captured selection, committed as one undo step. Invariants mirror the
+    // bridge: ElementEdit != Idle exactly while ElementEditCaptures holds the
+    // pre-edit snapshots and the pending-edit scope is open. Transitions only
+    // in BeginInsetOnSelectedFaces / BeginBevelOnSelectedEdges (Idle -> *) and
+    // CommitPendingElementEdit / CancelPendingElementEdit (* -> Idle).
+    enum class ElementEditState : std::uint8_t { Idle, Inset, Bevel };
+    struct ElementEditCapture
+    {
+        EntityId Entity = {};
+        BrushMesh Original;
+        std::vector<std::uint32_t> Faces;                  // Inset
+        std::vector<std::array<std::uint32_t, 2>> Edges;   // Bevel (vertex pairs into Original)
+    };
+
+public:
+    void BeginInsetOnSelectedFaces(float distance);
+    [[nodiscard]] bool HasPendingInset() const { return ElementEdit == ElementEditState::Inset; }
+    void SetPendingInsetDistance(float distance);
+    void BeginBevelOnSelectedEdges(float width, int segments);
+    [[nodiscard]] bool HasPendingBevel() const { return ElementEdit == ElementEditState::Bevel; }
+    void SetPendingBevelParams(float width, int segments);
+    void CommitPendingElementEdit();
+    void CancelPendingElementEdit();
+
+private:
+    void RegeneratePendingElementEdit();
+
+    ElementEditState ElementEdit = ElementEditState::Idle;
+    std::vector<ElementEditCapture> ElementEditCaptures;
+    float ElementEditDistance = 0.0f; // Inset
+    float ElementEditWidth = 0.0f;    // Bevel
+    int ElementEditSegments = 1;      // Bevel
+
+    // The last repeatable action, recorded by the action itself (currently the
+    // duplicate-with-offset observer on the sink). Ctrl+R replays it against
+    // the current selection.
+    std::function<void()> LastRepeatable;
+
+    // Duplicates the current entity selection displaced by `offset`, as one
+    // undoable step (the copies end up selected, so repeats chain).
+    void DuplicateSelectionWithOffset(Vec3d offset);
+
 private:
     // Builds the document-bound editing stack (sink, tool context, tools,
     // dispatcher, manipulator session) against the active document. Init and
     // ResetInteractionState share it.
     void BuildInteractionState();
+
+    // Re-expresses the current selection in the new element kind (face -> its
+    // edges, edge -> endpoints, and so on) so switching modes carries the
+    // selection along. No-op when nothing needs converting, so it is safe when
+    // the kind change fires from inside a selection notification.
+    void ConvertSelectionToKind(MeshElementKind next);
 };

@@ -3,6 +3,9 @@
 #include "meshedit/IMeshEditTarget.h"
 #include "meshedit/ManipulationSink.h"
 
+#include <functional>
+#include <utility>
+
 class CommandStack;
 class EditorDocument;
 class EditorScene;
@@ -29,6 +32,7 @@ public:
     void PreviewTransform(EntityId entity, const Transform3f& transform) override;
     void PreviewMesh(EntityId entity, const BrushMesh& mesh) override;
     void CommitTransforms(const std::vector<TransformEdit>& edits) override;
+    void CommitMeshes(std::vector<MeshEdit> edits) override;
     void CommitMesh(EntityId entity, BrushMesh before, BrushMesh after) override;
     void SelectElements(std::span<const SelectableRef> refs) override;
     [[nodiscard]] std::vector<EntityId> CreatePreviewDuplicates(
@@ -36,6 +40,14 @@ public:
     void DestroyPreviewEntities(std::span<const EntityId> entities) override;
     void CommitDuplicate(std::span<const EntityId> sources,
                          std::span<const Transform3f> transforms) override;
+
+    // Fired after a duplicate commits, with the world offset the copies landed
+    // at relative to their sources. The workspace records it so Ctrl+R can
+    // repeat the duplicate-with-offset on the (by then new) selection.
+    void SetDuplicateObserver(std::function<void(Vec3d offset)> observer)
+    {
+        DuplicateObserver = std::move(observer);
+    }
 
     // IMeshEditTarget (verb path)
     [[nodiscard]] std::optional<MeshEditTargetMesh> Resolve(EntityId entity) const override;
@@ -48,4 +60,5 @@ private:
     EditorDocument& Document;
     CommandStack& Commands;
     SelectionService& Selection;
+    std::function<void(Vec3d)> DuplicateObserver;
 };

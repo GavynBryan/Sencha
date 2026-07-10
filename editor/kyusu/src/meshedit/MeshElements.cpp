@@ -1,7 +1,5 @@
 #include "MeshElements.h"
 
-#include "brush/BrushHalfEdge.h"
-
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -59,22 +57,28 @@ std::optional<FaceElement> BuildFace(const BrushMesh& mesh,
 
 std::vector<std::pair<std::uint32_t, std::uint32_t>> UniqueEdgeVertexPairs(const BrushMesh& mesh)
 {
+    // Straight from the face loops: same pair set (and so the same sorted
+    // enumeration order) as walking a half-edge build, without constructing
+    // one per call. Edge indices are hot-path lookups (selection, pivot,
+    // highlights), so this stays allocation-light.
     std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs;
-    const BrushHalfEdgeMesh halfEdge = BrushBuildHalfEdge(mesh);
-    pairs.reserve(halfEdge.HalfEdges.size());
+    std::size_t loopEntries = 0;
+    for (const BrushFace& face : mesh.Faces)
+        loopEntries += face.Loop.size();
+    pairs.reserve(loopEntries);
 
-    for (const BrushHalfEdge& edge : halfEdge.HalfEdges)
+    for (const BrushFace& face : mesh.Faces)
     {
-        if (edge.Origin >= mesh.Vertices.size() || edge.Next >= halfEdge.HalfEdges.size())
-            continue;
-
-        const std::uint32_t target = halfEdge.HalfEdges[edge.Next].Origin;
-        if (target >= mesh.Vertices.size() || target == edge.Origin)
-            continue;
-
-        const std::uint32_t a = std::min(edge.Origin, target);
-        const std::uint32_t b = std::max(edge.Origin, target);
-        pairs.emplace_back(a, b);
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const std::uint32_t origin = face.Loop[i];
+            const std::uint32_t target = face.Loop[(i + 1) % n];
+            if (origin >= mesh.Vertices.size() || target >= mesh.Vertices.size()
+                || origin == target)
+                continue;
+            pairs.emplace_back(std::min(origin, target), std::max(origin, target));
+        }
     }
 
     std::sort(pairs.begin(), pairs.end());

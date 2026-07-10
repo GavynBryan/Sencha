@@ -98,7 +98,8 @@ TEST(SelectionFold, InvalidRefsAreIgnored)
 TEST(SelectionFold, ClickDecode)
 {
     EXPECT_EQ(SelectionFold::OpForClick(false, false), SelectionFold::Op::Replace);
-    EXPECT_EQ(SelectionFold::OpForClick(false, true), SelectionFold::Op::Add);
+    // Shift and Ctrl both toggle: the contextual add/subtract click.
+    EXPECT_EQ(SelectionFold::OpForClick(false, true), SelectionFold::Op::Toggle);
     EXPECT_EQ(SelectionFold::OpForClick(true, false), SelectionFold::Op::Toggle);
     EXPECT_EQ(SelectionFold::OpForClick(true, true), SelectionFold::Op::Remove);
 }

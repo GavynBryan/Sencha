@@ -27,6 +27,10 @@ public:
     [[nodiscard]] int GetActiveIndex() const;
     [[nodiscard]] const std::vector<std::unique_ptr<ITool>>& GetTools() const;
 
+    // The shared context, for UI that drives tool operations directly (e.g. the
+    // Tool Properties panel regenerating a tool's pending preview).
+    [[nodiscard]] ToolContext& GetContext() { return Context; }
+
     // Aborts the active tool's in-progress gesture, if any. (W4.)
     void Cancel();
 

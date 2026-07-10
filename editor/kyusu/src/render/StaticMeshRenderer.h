@@ -5,6 +5,7 @@
 #include "viewport/EditorViewport.h"
 
 #include <assets/static_mesh/MeshLoader.h>
+#include <core/logging/Logger.h>
 #include <graphics/vulkan/Renderer.h>
 #include <render/static_mesh/MeshGeometry.h>
 
@@ -40,9 +41,11 @@ private:
     // mesh paths referenced this session, never evicted; revisit if a long editor
     // session on a large project pushes memory.
     const MeshGeometry* GeometryFor(const std::string& assetPath);
+    void PruneInvalidIndices(const std::string& assetPath, MeshGeometry& geometry) const;
 
     EditorSolidPipeline& Solid;
     MeshLoader Loader;
+    Logger* Log = nullptr;
     AssetSystem* Assets = nullptr;
     const AssetRegistry* Catalog = nullptr;
     std::unordered_map<std::string, MeshGeometry> Cache;

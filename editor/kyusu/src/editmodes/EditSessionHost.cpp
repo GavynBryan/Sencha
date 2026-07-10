@@ -28,3 +28,15 @@ InputConsumed EditSessionHost::OnPointerDown(ToolContext& ctx, EditorViewport& v
 
     return Active->OnPointerDown(ctx, viewport, pointer);
 }
+
+void EditSessionHost::UpdateHover(const EditorViewport& viewport, ImVec2 pos)
+{
+    if (Active)
+        Active->UpdateHover(viewport, pos);
+}
+
+void EditSessionHost::ClearHover()
+{
+    if (Active)
+        Active->ClearHover();
+}

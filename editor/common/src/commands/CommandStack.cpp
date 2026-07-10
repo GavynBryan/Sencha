@@ -1,5 +1,8 @@
 #include "CommandStack.h"
 
+#include <cassert>
+#include <utility>
+
 void CommandStack::Execute(std::unique_ptr<ICommand> command)
 {
     if (command == nullptr)
@@ -15,7 +18,17 @@ void CommandStack::Execute(std::unique_ptr<ICommand> command)
 
 void CommandStack::Undo()
 {
-    if (!CanUndo())
+    if (PendingEditCancel)
+    {
+        // Cleared before invoking: the callback runs the owning tool's cancel
+        // transition, which calls ClosePendingEdit again (a no-op by then).
+        std::function<void()> cancel = std::move(PendingEditCancel);
+        PendingEditCancel = nullptr;
+        cancel();
+        return;
+    }
+
+    if (Cursor == 0)
         return;
 
     --Cursor;
@@ -33,16 +46,33 @@ void CommandStack::Redo()
 
 void CommandStack::Clear()
 {
+    PendingEditCancel = nullptr;
     Commands.clear();
     Cursor = 0;
 }
 
 bool CommandStack::CanUndo() const
 {
-    return Cursor > 0;
+    return HasPendingEdit() || Cursor > 0;
 }
 
 bool CommandStack::CanRedo() const
 {
     return Cursor < Commands.size();
+}
+
+void CommandStack::OpenPendingEdit(std::function<void()> cancel)
+{
+    assert(!PendingEditCancel && "a pending edit is already open");
+    PendingEditCancel = std::move(cancel);
+}
+
+void CommandStack::ClosePendingEdit()
+{
+    PendingEditCancel = nullptr;
+}
+
+bool CommandStack::HasPendingEdit() const
+{
+    return static_cast<bool>(PendingEditCancel);
 }

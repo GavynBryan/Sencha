@@ -1,16 +1,10 @@
 #include "BrushCreateDragInteraction.h"
 
-#include "commands/CommandStack.h"
 #include "document/BrushCreationSettings.h"
 #include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
-#include "document/commands/CreateEntityCommand.h"
-#include "meshedit/ActiveMaterialState.h"
-#include "document/EditorDocument.h"
-#include "document/EditorScene.h"
+#include "document/tools/BrushTool.h"
 #include "render/PreviewBuffer.h"
-#include "selection/commands/SelectCommand.h"
-#include "selection/SelectionService.h"
 #include "tools/ToolContext.h"
 #include "viewport/EditorViewport.h"
 #include "viewport/Picking.h"
@@ -19,14 +13,11 @@
 #include <memory>
 #include <utility>
 
-BrushCreateDragInteraction::BrushCreateDragInteraction(BrushCreationPlane plane,
-                                                       EditorScene& scene,
-                                                       EditorDocument& document)
+BrushCreateDragInteraction::BrushCreateDragInteraction(BrushCreationPlane plane, BrushTool& tool)
     : Plane(plane)
     , LastCenter(plane.Anchor)
     , LastHalfExtents(Vec3d(0.5f, 0.5f, 0.5f))
-    , Scene(scene)
-    , Document(document)
+    , Tool(tool)
 {
 }
 
@@ -39,8 +30,9 @@ int BrushCreateDragInteraction::AxisIndex(Vec3d axis)
 
 namespace
 {
-    // The mesh the drag will both preview and commit, plus the transform placing
-    // it. One MakePrimitive call feeds both so they never diverge.
+    // The live drag preview mesh plus the transform placing it. Built with the
+    // same settings BrushTool uses for the pending brush, so the preview does
+    // not change shape on release.
     std::pair<Transform3f, BrushMesh> BuildPrimitive(const BrushCreationSettings& settings,
                                                      int depthAxis, Vec3d center, Vec3d halfExtents,
                                                      Quatf rotation = Quatf::Identity())
@@ -49,11 +41,16 @@ namespace
         params.HalfExtents = halfExtents;
         params.DepthAxis = depthAxis;
         params.CylinderSides = settings.CylinderSides;
+        params.PlaneSubdivisions = settings.PlaneSubdivisions;
 
         Transform3f transform = Transform3f::Identity();
         transform.Position = center;
         transform.Rotation = rotation;
-        return { transform, BrushOps::MakePrimitive(settings.ActivePrimitive, params) };
+
+        BrushMesh mesh = BrushOps::MakePrimitive(settings.ActivePrimitive, params);
+        if (settings.Inner)
+            mesh = BrushOps::FlipAllFaces(mesh);
+        return { transform, std::move(mesh) };
     }
 }
 
@@ -134,38 +131,34 @@ void BrushCreateDragInteraction::OnPointerUp(ToolContext& ctx,
                                              EditorViewport& viewport,
                                              const PointerEvent& pointer)
 {
-    ctx.Preview.Clear();
-
     const std::optional<Vec3d> snapped = ctx.Picking.ProjectPointToPlane(viewport, pointer.Position, Plane.Plane);
     if (snapped.has_value())
         UpdatePreview(ctx, *snapped);
 
-    ctx.Preview.Clear();
-
     if (!HasValidSize)
-        return;
-
-    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate,
-                                            Plane.FrameAligned ? Plane.DepthAxis : 1,
-                                            LastCenter, LastHalfExtents, LastRotation);
-
-    // A new brush is born wearing the active material: the common case is to
-    // texture as you build. Empty active material leaves faces on the level
-    // default (their empty ref).
-    if (ctx.ActiveMaterial.Active.IsValid())
-        for (BrushFace& face : mesh.Faces)
-            face.Material.Material = ctx.ActiveMaterial.Active;
-
-    auto cmd = MakeCreateBrushMeshCommand(transform, std::move(mesh), Scene, Document);
-    CreateEntityCommand* rawCmd = cmd.get();
-    ctx.Commands.Execute(std::move(cmd));
-
-    const EntityId created = rawCmd->GetCreatedEntity();
-    if (created.IsValid())
     {
-        const SelectableRef ref = SelectableRef::EntitySelection(Scene.GetRegistry().Id, created);
-        ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, ref));
+        ctx.Preview.Clear();
+        return;
     }
+
+    // Release does not commit: the drag result becomes the tool's pending brush,
+    // which the Tool Properties panel can keep reshaping (primitive kind, sides,
+    // subdivisions, inner) until Apply, Enter, a click-off, or a new drag.
+    BrushTool::PendingBrush pending{};
+    pending.Center = LastCenter;
+    pending.HalfExtents = LastHalfExtents;
+    pending.Rotation = LastRotation;
+    pending.DepthAxis = Plane.FrameAligned ? Plane.DepthAxis : 1;
+    pending.DragDepthHalf = Plane.DepthHalf;
+    // The resolver's rest sign is measured along DepthDir; the pending brush
+    // stores it along its local depth axis, which the rotated (frame) basis
+    // maps to -DepthDir, so re-sign it against the actual local axis.
+    Vec3d localDepth{};
+    localDepth[pending.DepthAxis] = 1.0f;
+    const Vec3d localDepthWorld = LastRotation.RotateVector(localDepth);
+    pending.DepthSign = localDepthWorld.Dot(Plane.DepthDir) < 0.0f ? -Plane.DepthSign
+                                                                   : Plane.DepthSign;
+    Tool.SetPending(ctx, pending);
 }
 
 void BrushCreateDragInteraction::OnCancel(ToolContext& ctx)

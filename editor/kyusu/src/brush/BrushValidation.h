@@ -25,7 +25,9 @@ struct BrushRepairResult
 // must merge for adjacency to be well-defined.
 void BrushWeldVertices(BrushMesh& mesh, float tolerance = 1e-4f);
 
-// Weld, drop unreferenced vertices, remove degenerate faces, recompute normals
+// Weld (weldTolerance > 0; 0 skips the weld so intentionally coincident
+// vertices survive), drop unreferenced vertices, remove degenerate faces,
+// recompute normals
 // from the current winding, and report closedness. Does NOT re-wind faces, so an
 // in-place edit keeps its existing orientation. Idempotent: a repaired mesh
 // repairs to itself with Changed == false.

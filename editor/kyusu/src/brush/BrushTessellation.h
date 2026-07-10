@@ -4,6 +4,7 @@
 
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cstdint>
 #include <functional>
 #include <span>
 
@@ -17,9 +18,9 @@
 // triangles. UVs are evaluated from each face's projection in LOCAL space (hence
 // resize-invariant); positions/normals are transformed to world.
 //
-// Faces are assumed convex + planar, which the brush ops guarantee today; a
-// non-convex face (only reachable via future carve) would fan-triangulate
-// incorrectly — the cook will gain robust triangulation when that lands.
+// Faces are assumed planar and simple (non-self-intersecting). Convex faces
+// fan-triangulate; non-convex faces (from polygon carve) ear-clip in the face
+// plane, so concave loops render correctly.
 //=============================================================================
 
 struct BrushTriVertex
@@ -30,7 +31,9 @@ struct BrushTriVertex
 };
 
 // Invoked once per face with that face's material and its triangle vertices
-// (3 * (loop - 2) of them, fan order).
+// (at most 3 * (loop - 2) of them; collinear loop vertices emit no triangle).
 using BrushFaceEmit = std::function<void(const FaceMaterial&, std::span<const BrushTriVertex>)>;
 
 void BrushTessellate(const BrushMesh& mesh, const Transform3f& transform, const BrushFaceEmit& emit);
+void BrushTessellateFace(const BrushMesh& mesh, const Transform3f& transform,
+                         std::uint32_t faceIndex, const BrushFaceEmit& emit);

@@ -2,6 +2,8 @@
 
 #include "GridFrame.h"
 
+#include <cmath>
+
 void EditorViewport::ApplyOrientation(ViewportOrientation orientation)
 {
     Orientation = orientation;
@@ -10,7 +12,13 @@ void EditorViewport::ApplyOrientation(ViewportOrientation orientation)
     Camera.ActiveMode = traits.Mode;
 
     if (!traits.UsesCameraAxis)
+    {
         Camera.OrthoAxis = traits.OrthoAxis;
+        // The up hint must be refreshed with the axis: a hint left over from a
+        // previous orientation can be parallel to the new axis, which degenerates
+        // the view basis. Straight down/up views use world forward as up.
+        Camera.OrthoUpHint = std::abs(traits.OrthoAxis.Y) > 0.999f ? Vec3d::Forward() : Vec3d::Up();
+    }
 
     // Perspective gets the solid checker preview; ortho grid views stay wireframe.
     Shading = traits.Mode == EditorCamera::Mode::Perspective ? ViewportShading::Solid

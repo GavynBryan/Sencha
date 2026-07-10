@@ -54,6 +54,9 @@ inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
 inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
 inline constexpr Vec4 HoverEligible{ 0.4f, 1.0f, 0.85f, 1.0f };  // element under the cursor (selection-eligible)
 inline constexpr Vec4 VertexHandle{ 0.6f, 0.7f, 0.85f, 1.0f };   // all vertices shown in vertex mode
+// Soft (smooth-shaded) edges: a green stroke replacing the wireframe color on
+// edges marked soft, so softness reads directly in the viewport.
+inline constexpr Vec4 SoftEdgeWireframe{ 0.35f, 0.95f, 0.5f, 1.0f };
 
 // Screen-constant sizes (pixels), resolved to world via ViewportProjection.
 inline constexpr float GizmoAxisPixels = 90.0f;

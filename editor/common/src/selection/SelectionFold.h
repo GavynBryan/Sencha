@@ -25,9 +25,11 @@ enum class Op : uint8_t
                                       const std::vector<SelectableRef>& gathered,
                                       Op op);
 
-// Modifier decode for a single-item click: Ctrl toggles (the reversible gesture
-// for one item), Shift adds, Ctrl+Shift removes explicitly. Plain bools so this
-// header stays free of input-layer types.
+// Modifier decode for a single-item click: Shift and Ctrl both toggle (absent
+// adds, present removes: the contextual add/subtract gesture), Ctrl+Shift
+// removes explicitly. Plain bools so this header stays free of input-layer
+// types. Element-mode Ctrl+click is intercepted for path select before this
+// decode applies.
 [[nodiscard]] Op OpForClick(bool ctrl, bool shift);
 
 // Modifier decode for bulk gathers (marquee, loop selection, whole-mesh

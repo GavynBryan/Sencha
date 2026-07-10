@@ -12,10 +12,22 @@
 
 namespace
 {
+    // Unit-scale projection: the math tests below check the projection formula,
+    // independent of the authored 2x2 default density on UvProjection.
     UvProjection DefaultUv()
     {
-        return UvProjection{}; // AxisU=(1,0,0), AxisV=(0,0,1), Scale=1, Offset=0, Rot=0
+        UvProjection p; // AxisU=(1,0,0), AxisV=(0,0,1), Offset=0, Rot=0
+        p.Scale = { 1.0f, 1.0f };
+        return p;
     }
+}
+
+// New faces tile at 2 world units per texture repeat: the authored default.
+TEST(UvProjection, DefaultScaleIsTwoByTwo)
+{
+    const UvProjection p;
+    EXPECT_FLOAT_EQ(p.Scale.X, 2.0f);
+    EXPECT_FLOAT_EQ(p.Scale.Y, 2.0f);
 }
 
 //=============================================================================

@@ -8,6 +8,7 @@
 #include "meshedit/LoopSelection.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElements.h"
+#include "meshedit/PathSelection.h"
 #include "selection/SelectionFold.h"
 #include "selection/SelectionService.h"
 #include "selection/commands/SelectCommand.h"
@@ -91,16 +92,34 @@ InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, co
     else if (picked.IsValid())
         gathered.push_back(picked);
 
-    // Element mode: a click that hit nothing keeps the current selection (don't drop
-    // the edit context on a stray click). Object mode clears.
-    if (elementMode && gathered.empty())
-        return InputConsumed::Yes;
+    // Ctrl+click extends along the shortest topological path from the primary to
+    // the picked element. Falls back to the plain modifier decode (toggle) when
+    // no same-kind primary exists on the same brush.
+    bool pathSelect = false;
+    if (elementMode && pointer.Modifiers.Ctrl && !pointer.Modifiers.Shift && !altLoop && !reclickLoop
+        && picked.IsMeshElement() && current.Primary.IsMeshElement()
+        && current.Primary.Kind == picked.Kind && current.Primary.Entity == picked.Entity
+        && current.Primary != picked)
+    {
+        const BrushMesh* mesh = ctx.Scene.TryGetBrushMesh(picked.Entity);
+        if (mesh != nullptr)
+        {
+            std::vector<SelectableRef> path = GatherPathSelection(*mesh, current.Primary, picked);
+            if (!path.empty())
+            {
+                gathered = std::move(path);
+                pathSelect = true;
+            }
+        }
+    }
 
-    // Loop gathers fold with the bulk decode (Ctrl removes the loop); a single
-    // pick folds with the click decode (Ctrl toggles it).
-    const SelectionFold::Op op = (altLoop || reclickLoop)
-        ? SelectionFold::OpForBulk(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift)
-        : SelectionFold::OpForClick(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift);
+    // A void click clears (in element mode too); shift/ctrl void clicks fold an
+    // empty gather and leave the selection alone.
+    const SelectionFold::Op op = pathSelect
+        ? SelectionFold::Op::Add
+        : (altLoop || reclickLoop)
+            ? SelectionFold::OpForBulk(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift)
+            : SelectionFold::OpForClick(pointer.Modifiers.Ctrl, pointer.Modifiers.Shift);
     SelectionSnapshot snapshot = SelectionFold::Apply(current, gathered, op);
     ctx.Commands.Execute(std::make_unique<SelectCommand>(ctx.Selection, std::move(snapshot)));
     return InputConsumed::Yes;

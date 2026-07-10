@@ -2,6 +2,8 @@
 
 #include "viewport/EditorViewport.h"
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -15,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <utility>
 #include <vector>
@@ -36,6 +39,11 @@ struct EditorImmediatePipelineConfig
     VkPrimitiveTopology  Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkCullModeFlags      CullMode = VK_CULL_MODE_NONE;
     bool                 DepthWrite = false;
+    // 0 = binding 0 is per-vertex data, one vertex drawn per element.
+    // N > 0 = binding 0 is per-instance data; each submitted record draws N
+    // vertices that the vertex shader derives from gl_VertexIndex (the
+    // wide-line quad expansion), cutting upload size by the expansion factor.
+    std::uint32_t        InstanceExpansion = 0;
     ColorBlendAttachmentDesc Blend{}; // default = opaque (no blend)
     // Polygon offset applied to the depth-tested slot only (on-top draws ignore depth).
     float                DepthBiasConstant = 0.0f;
@@ -60,6 +68,7 @@ public:
         Pipelines = services.Pipelines;
         Scratch = services.Scratch;
         Buffers = services.Buffers;
+        Log = services.Logging != nullptr ? &services.Logging->GetLogger<EditorImmediatePipeline>() : nullptr;
 
         VertexShader = Shaders->CreateModuleFromSpirv(
             Config.VertexSpirv, Config.VertexWordCount, Config.VertexName);
@@ -96,10 +105,33 @@ public:
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
+        if (vertices.size() > std::numeric_limits<VkDeviceSize>::max() / sizeof(TVertex))
+        {
+            if (Log != nullptr && !LoggedOverflow)
+            {
+                Log->Error("{}: dropped submission of {} vertices; byte count overflowed",
+                           Config.VertexName, vertices.size());
+                LoggedOverflow = true;
+            }
+            return;
+        }
+
         const VkDeviceSize byteCount = sizeof(TVertex) * vertices.size();
         const auto allocation = Scratch->AllocateVertex(byteCount);
         if (!allocation.IsValid())
+        {
+            // The scratch error names no caller; identify the pipeline and the
+            // vertex count so an oversized submission can be traced to its
+            // builder. Logged once per failure streak to avoid per-frame spam.
+            if (Log != nullptr && !LoggedOverflow)
+            {
+                Log->Error("{}: dropped submission of {} vertices ({} bytes) that exceeded frame scratch",
+                           Config.VertexName, vertices.size(), static_cast<uint64_t>(byteCount));
+                LoggedOverflow = true;
+            }
             return;
+        }
+        LoggedOverflow = false;
 
         std::memcpy(allocation.Mapped, vertices.data(), static_cast<size_t>(byteCount));
 
@@ -132,7 +164,10 @@ public:
         vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
         vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
         vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-        vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        if (Config.InstanceExpansion > 0)
+            vkCmdDraw(frame.Cmd, Config.InstanceExpansion, static_cast<uint32_t>(vertices.size()), 0, 0);
+        else
+            vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
     }
 
     // Switch cull mode at runtime (cvar toggle). Nulls the cached pipelines so the
@@ -144,6 +179,13 @@ public:
         Config.CullMode = mode;
         Pipeline = VK_NULL_HANDLE;
         PipelineOnTop = VK_NULL_HANDLE;
+    }
+
+    [[nodiscard]] std::size_t MaxScratchVerticesPerSubmit() const
+    {
+        if (Scratch == nullptr)
+            return 0;
+        return static_cast<std::size_t>(Scratch->GetBytesPerFrame() / sizeof(TVertex));
     }
 
     void Teardown()
@@ -168,6 +210,7 @@ public:
         Scratch = nullptr;
         Pipelines = nullptr;
         Shaders = nullptr;
+        Log = nullptr;
         Device = VK_NULL_HANDLE;
     }
 
@@ -197,7 +240,9 @@ private:
         desc.FragmentShader = FragmentShader;
         desc.Layout = PipelineLayout;
         desc.Topology = Config.Topology;
-        desc.VertexBindings = { { 0, sizeof(TVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
+        desc.VertexBindings = { { 0, sizeof(TVertex),
+                                  Config.InstanceExpansion > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                                               : VK_VERTEX_INPUT_RATE_VERTEX } };
         desc.VertexAttributes = Config.Attributes;
         desc.CullMode = Config.CullMode;
         desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded
@@ -218,6 +263,8 @@ private:
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanFrameScratch* Scratch = nullptr;
+    Logger* Log = nullptr;
+    bool LoggedOverflow = false;
     VkDevice Device = VK_NULL_HANDLE;
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;

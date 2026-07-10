@@ -27,6 +27,11 @@ enum class MeshEditVerb : uint8_t
     InsertEdgeLoop,
     FlipFaceNormal,
     RecalculateNormals,
+    DissolveEdge,
+    WeldVertices,
+    SnapVerticesToGrid,
+    BridgeEdges,
+    SetEdgeSoftness,
 };
 
 struct MeshEditParams
@@ -39,6 +44,15 @@ struct MeshEditParams
     Vec3d TranslateDelta = {}; // world-space, for MeshEditVerb::TranslateElements
     float CutPosition = 0.5f;  // 0..1 along the seed edge, for InsertEdgeLoop
     bool LoopCut = true;       // InsertEdgeLoop: full loop (true) or single edge (false)
+    float WeldDistance = 0.1f; // WeldVertices: max merge distance (mesh-local units)
+    int BridgeSegments = 1;    // BridgeEdges: quad rows spanning the gap (>1 bows the bridge)
+    bool Soften = true;        // SetEdgeSoftness: true marks the edges soft, false hard
+    // SnapVerticesToGrid: the world grid frame to quantize against (mirrors
+    // GridSettings; N = AxisV x AxisU completes the lattice).
+    Vec3d GridOrigin = {};
+    Vec3d GridAxisU = { 1.0f, 0.0f, 0.0f };
+    Vec3d GridAxisV = { 0.0f, 0.0f, 1.0f };
+    float GridSpacing = 1.0f;
 };
 
 class MeshEditService

@@ -1,5 +1,7 @@
 #include "BrushMesh.h"
 
+#include <algorithm>
+
 Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face)
 {
     // Newell's method: robust for non-planar / concave polygons, and orientation
@@ -49,4 +51,20 @@ Aabb3d BrushComputeBounds(const BrushMesh& mesh)
     for (const BrushVertex& vertex : mesh.Vertices)
         bounds.ExpandToInclude(vertex.Position);
     return bounds;
+}
+
+bool BrushEdgeIsSoft(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    const std::array<std::uint32_t, 2> key = BrushSoftEdgeKey(a, b);
+    return std::find(mesh.SoftEdges.begin(), mesh.SoftEdges.end(), key) != mesh.SoftEdges.end();
+}
+
+void BrushSetEdgeSoft(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, bool soft)
+{
+    const std::array<std::uint32_t, 2> key = BrushSoftEdgeKey(a, b);
+    const auto it = std::find(mesh.SoftEdges.begin(), mesh.SoftEdges.end(), key);
+    if (soft && it == mesh.SoftEdges.end())
+        mesh.SoftEdges.push_back(key);
+    else if (!soft && it != mesh.SoftEdges.end())
+        mesh.SoftEdges.erase(it);
 }

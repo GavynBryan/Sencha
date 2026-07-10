@@ -1,9 +1,11 @@
 #include "BrushCreationPlane.h"
 
+#include "document/BrushCreationSettings.h"
 #include "document/EditorScene.h"
 #include "selection/SelectionService.h"
 #include "tools/ToolContext.h"
 #include "viewport/EditorViewport.h"
+#include "viewport/ElementSnap.h"
 #include "viewport/Picking.h"
 #include "viewport/ViewportOrientation.h"
 
@@ -63,7 +65,17 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
         {
             depthAxis = DominantAxis(surface->Normal);
             plane = GridForAxis(UnitAxis(depthAxis));
-            plane.Origin = surface->Point;
+            // Keep the plane at the hit depth, but phase-align U/V to the
+            // workspace grid: GridPlane::Snap quantizes relative to Origin, so a
+            // raw hit point would smear its fractional offset onto every snapped
+            // drag point, putting surface-projected brushes off the world grid.
+            Vec3d origin = surface->Point;
+            const Vec3d fromGrid = origin - ctx.Grid.Origin;
+            const float du = fromGrid.Dot(plane.AxisU);
+            const float dv = fromGrid.Dot(plane.AxisV);
+            origin -= plane.AxisU * (du - std::round(du / ctx.Grid.Spacing) * ctx.Grid.Spacing);
+            origin -= plane.AxisV * (dv - std::round(dv / ctx.Grid.Spacing) * ctx.Grid.Spacing);
+            plane.Origin = origin;
             plane.Spacing = ctx.Grid.Spacing;
             plane.SnapEnabled = ctx.Grid.SnapEnabled;
         }
@@ -77,6 +89,19 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     const std::optional<Vec3d> anchor = ctx.Picking.ProjectPointToPlane(viewport, pressPos, plane);
     if (!anchor.has_value())
         return std::nullopt;
+
+    // An element snap target anchors the drag on the picked vertex/edge/face
+    // point (projected onto the drawing plane) instead of a grid line.
+    Vec3d anchorPoint = *anchor;
+    if (const std::optional<Vec3d> snap = ElementSnapPoint(ctx, viewport, pressPos))
+    {
+        const Vec3d planeNormal = plane.AxisU.Cross(plane.AxisV);
+        if (planeNormal.SqrMagnitude() > 0.0f)
+        {
+            const Vec3d n = planeNormal.Normalized();
+            anchorPoint = *snap - n * (*snap - plane.Origin).Dot(n);
+        }
+    }
 
     // A plane whose axes are all signed world axes takes the identity-transform
     // path (world-component extents, exactly the pre-frame behavior); a custom
@@ -124,13 +149,25 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
         depth = RestOnGridDepth(plane.Origin.Dot(depthDir), ctx.Grid.Spacing, toward);
     }
 
+    // A plane primitive is a zero-thickness quad emitted at its local depth
+    // center, so it rests flush at the reference depth instead of half a cell
+    // off it (the box/cylinder rule).
+    if (ctx.BrushCreate.ActivePrimitive == BrushPrimitive::Plane && !selectedBounds.has_value())
+    {
+        depth.Center = surface.has_value() ? surface->Point[depthAxis]
+                     : frameAligned        ? plane.Origin[depthAxis]
+                                           : plane.Origin.Dot(depthDir);
+        depth.Half = 0.0f;
+    }
+
     return BrushCreationPlane{
         .Plane = plane,
-        .Anchor = *anchor,
+        .Anchor = anchorPoint,
         .DepthAxis = depthAxis,
         .DepthDir = depthDir,
         .DepthCenter = depth.Center,
         .DepthHalf = depth.Half,
+        .DepthSign = depth.Sign,
         .FrameAligned = frameAligned,
     };
 }

@@ -3,30 +3,7 @@
 #include "meshedit/ManipulationSink.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElementKindTraits.h"
-
-namespace
-{
-// Picks the entity to edit (primary's if it matches the wanted kind, else the
-// first matching ref) and collects that entity's refs of that kind.
-EntityId GatherModeElements(const SelectionSnapshot& selection, SelectableKind wantKind,
-                            std::vector<SelectableRef>& outElements)
-{
-    EntityId entity = {};
-    if (selection.Primary.IsValid() && selection.Primary.Kind == wantKind)
-        entity = selection.Primary.Entity;
-    else
-    {
-        for (SelectableRef ref : selection.Items)
-            if (ref.IsValid() && ref.Kind == wantKind) { entity = ref.Entity; break; }
-    }
-    if (!entity.IsValid())
-        return {};
-    for (SelectableRef ref : selection.Items)
-        if (ref.IsValid() && ref.Kind == wantKind && ref.Entity == entity)
-            outElements.push_back(ref);
-    return entity;
-}
-}
+#include "meshedit/SelectionConversion.h"
 
 std::vector<ObjectTarget> GatherObjectTargets(const ManipulatorContext& ctx)
 {
@@ -41,14 +18,16 @@ std::vector<ObjectTarget> GatherObjectTargets(const ManipulatorContext& ctx)
     return items;
 }
 
-std::optional<ElementTarget> ResolveElementTarget(const ManipulatorContext& ctx, MeshElementKind kind)
+std::vector<ElementTarget> ResolveElementTargets(const ManipulatorContext& ctx, MeshElementKind kind)
 {
-    std::vector<SelectableRef> elements;
-    const EntityId entity = GatherModeElements(ctx.Selection, Traits(kind).Selectable, elements);
-    if (!entity.IsValid() || elements.empty())
-        return std::nullopt;
-    const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(entity);
-    if (!resolved.has_value() || resolved->Mesh == nullptr)
-        return std::nullopt;
-    return ElementTarget{ entity, *resolved->Mesh, resolved->Transform, std::move(elements) };
+    std::vector<ElementTarget> targets;
+    for (EntityRefGroup& group : GroupSelectionByEntity(ctx.Selection, Traits(kind).Selectable))
+    {
+        const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(group.Entity);
+        if (!resolved.has_value() || resolved->Mesh == nullptr)
+            continue;
+        targets.push_back(ElementTarget{
+            group.Entity, *resolved->Mesh, resolved->Transform, std::move(group.Refs) });
+    }
+    return targets;
 }

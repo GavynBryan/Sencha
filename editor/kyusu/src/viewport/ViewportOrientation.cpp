@@ -31,7 +31,8 @@ const std::array<ViewportOrientation, 8> kOrientations = {
 
 const OrientationTraits& Traits(ViewportOrientation orientation)
 {
-    return kTraits[static_cast<size_t>(orientation)];
+    const size_t index = static_cast<size_t>(orientation);
+    return kTraits[index < kTraits.size() ? index : 0];
 }
 
 const std::array<ViewportOrientation, 8>& AllViewportOrientations()

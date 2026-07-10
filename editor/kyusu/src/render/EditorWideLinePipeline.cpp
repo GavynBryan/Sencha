@@ -5,6 +5,14 @@
 
 #include <cstddef>
 
+// The segment list is uploaded as the instance stream verbatim; the attribute
+// offsets below index straight into EditorLineSegment.
+static_assert(offsetof(EditorLineSegment, A) == 0);
+static_assert(offsetof(EditorLineSegment, B) == 12);
+static_assert(offsetof(EditorLineSegment, Color) == 24);
+static_assert(offsetof(EditorLineSegment, WidthPx) == 40);
+static_assert(sizeof(EditorLineSegment) == 44);
+
 void EditorWideLinePipeline::Setup(const RendererServices& services)
 {
     EditorImmediatePipelineConfig config;
@@ -17,6 +25,7 @@ void EditorWideLinePipeline::Setup(const RendererServices& services)
     config.Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.CullMode = VK_CULL_MODE_NONE;
     config.DepthWrite = false;
+    config.InstanceExpansion = 6; // two triangles per segment, built in the vertex shader
 
     // Pull the depth-tested wireframe slightly toward the camera so edges coincident
     // with the solid surface win LESS_OR_EQUAL instead of z-fighting. Constant term
@@ -34,11 +43,10 @@ void EditorWideLinePipeline::Setup(const RendererServices& services)
     config.Blend.AlphaOp = VK_BLEND_OP_ADD;
 
     config.Attributes = {
-        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(EditorWideLineVertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(EditorWideLineVertex, Other) },
-        { 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(EditorWideLineVertex, Color) },
-        { 3, 0, VK_FORMAT_R32_SFLOAT,          offsetof(EditorWideLineVertex, HalfWidthPx) },
-        { 4, 0, VK_FORMAT_R32_SFLOAT,          offsetof(EditorWideLineVertex, Side) },
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(EditorLineSegment, A) },
+        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(EditorLineSegment, B) },
+        { 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(EditorLineSegment, Color) },
+        { 3, 0, VK_FORMAT_R32_SFLOAT,          offsetof(EditorLineSegment, WidthPx) },
     };
     Pipeline.Setup(services, std::move(config));
 }
@@ -46,39 +54,27 @@ void EditorWideLinePipeline::Setup(const RendererServices& services)
 void EditorWideLinePipeline::Submit(const FrameContext& frame,
                                     const EditorViewport& viewport,
                                     std::span<const EditorLineSegment> segments,
-                                    bool onTop)
+                                    bool onTop,
+                                    std::string_view source)
 {
+    (void)source;
     if (segments.empty())
         return;
 
-    Expanded.clear();
-    Expanded.reserve(segments.size() * 6);
-    for (const EditorLineSegment& s : segments)
+    // Chunk to the scratch slice so a huge selection degrades to more draws
+    // instead of a dropped overlay. If the frame's scratch truly runs out the
+    // shared pipeline logs the drop with its own counts.
+    const std::size_t maxPerSubmit = Pipeline.MaxScratchVerticesPerSubmit();
+    if (maxPerSubmit == 0)
+        return;
+    for (std::size_t offset = 0; offset < segments.size(); offset += maxPerSubmit)
     {
-        const float half = s.WidthPx * 0.5f;
-        const EditorWideLineVertex aMinus{ s.A, s.B, s.Color, half, -1.0f };
-        const EditorWideLineVertex aPlus{ s.A, s.B, s.Color, half, +1.0f };
-        const EditorWideLineVertex bMinus{ s.B, s.A, s.Color, half, -1.0f };
-        const EditorWideLineVertex bPlus{ s.B, s.A, s.Color, half, +1.0f };
-        // Two triangles tiling the ribbon quad: aMinus/aPlus at A and bMinus/bPlus at B,
-        // on the -/+ perpendicular sides. The vertex shader canonicalizes the
-        // perpendicular so both endpoints agree on which side is which; aPlus and bMinus
-        // are then opposite corners, so these triangles share that diagonal and tile
-        // cleanly (and the AA coordinate runs consistently across the quad).
-        Expanded.push_back(aMinus);
-        Expanded.push_back(aPlus);
-        Expanded.push_back(bMinus);
-        Expanded.push_back(bMinus);
-        Expanded.push_back(aPlus);
-        Expanded.push_back(bPlus);
+        const std::size_t count = std::min(maxPerSubmit, segments.size() - offset);
+        Pipeline.Submit(frame, viewport, segments.subspan(offset, count), onTop);
     }
-
-    Pipeline.Submit(frame, viewport, std::span<const EditorWideLineVertex>(Expanded), onTop);
 }
 
 void EditorWideLinePipeline::Teardown()
 {
     Pipeline.Teardown();
-    Expanded.clear();
-    Expanded.shrink_to_fit();
 }

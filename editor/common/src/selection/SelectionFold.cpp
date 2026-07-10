@@ -85,10 +85,8 @@ SelectionFold::Op SelectionFold::OpForClick(bool ctrl, bool shift)
 {
     if (ctrl && shift)
         return Op::Remove;
-    if (ctrl)
+    if (ctrl || shift)
         return Op::Toggle;
-    if (shift)
-        return Op::Add;
     return Op::Replace;
 }
 
