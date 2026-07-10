@@ -1,10 +1,12 @@
 #include "FaceCarveTool.h"
 
+#include "EditorTheme.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "document/EditorScene.h"
 #include "brush/BrushTransform.h"
 #include "brush/BrushValidation.h"
+#include "commands/CommandStack.h"
 #include "meshedit/ManipulationSink.h"
 #include "meshedit/MeshElements.h"
 #include "meshedit/MeshEditService.h"
@@ -14,15 +16,55 @@
 #include "tools/ToolContext.h"
 #include "viewport/EditorViewport.h"
 #include "viewport/Picking.h"
+#include "viewport/ViewportProjection.h"
 
 #include <algorithm>
-#include <array>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>
 
 namespace
 {
+constexpr float kAdjustHandleHitPixels = 11.0f;
+
+float ScreenDistance(ImVec2 a, ImVec2 b)
+{
+    const float dx = a.x - b.x;
+    const float dy = a.y - b.y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+std::vector<SelectableRef> NewEdgeRefs(const EditorScene& scene, EntityId entity,
+                                       const BrushMesh& original, const BrushMesh& edited)
+{
+    std::vector<bool> isNew(edited.Vertices.size(), false);
+    for (std::size_t i = 0; i < edited.Vertices.size(); ++i)
+    {
+        const Vec3d p = edited.Vertices[i].Position;
+        bool inOriginal = false;
+        for (const BrushVertex& ov : original.Vertices)
+        {
+            if ((ov.Position - p).SqrMagnitude() <= 1.0e-8f)
+            {
+                inOriginal = true;
+                break;
+            }
+        }
+        isNew[i] = !inOriginal;
+    }
+
+    std::vector<SelectableRef> refs;
+    const RegistryId registry = scene.GetRegistry().Id;
+    for (const EdgeElement& edge : MeshElements::Edges(edited, Transform3f::Identity()))
+    {
+        if (edge.VertexA < isNew.size() && edge.VertexB < isNew.size()
+            && isNew[edge.VertexA] && isNew[edge.VertexB])
+            refs.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
+    }
+    return refs;
+}
+
 // Forwards the drag to the tool. The ToolRegistry owns the tool and the
 // InteractionHost cancels interactions before any tool switch, so the reference
 // cannot dangle.
@@ -64,10 +106,35 @@ std::string_view FaceCarveTool::GetIcon() const
     return ICON_FA_CROP_SIMPLE;
 }
 
+void FaceCarveTool::SetMode(ToolContext& ctx, FaceCarveMode mode)
+{
+    if (Mode == mode)
+        return;
+    RevertAll(ctx);
+    Mode = mode;
+}
+
+void FaceCarveTool::SetPierceEnabled(ToolContext& ctx, bool enabled)
+{
+    if (Pierce == enabled)
+        return;
+    Pierce = enabled;
+    if (Phase == FaceCarvePhase::Idle)
+        return;
+
+    const Vec2d rectMin{ std::min(AnchorUv.X, LastUv.X), std::min(AnchorUv.Y, LastUv.Y) };
+    const Vec2d rectMax{ std::max(AnchorUv.X, LastUv.X), std::max(AnchorUv.Y, LastUv.Y) };
+    if (Mode == FaceCarveMode::EdgeLoop)
+        UpdateLoopPreview(ctx, rectMin, rectMax);
+    else
+        UpdateRectPreview(ctx, rectMin, rectMax);
+    WriteReadout(ctx, rectMin, rectMax, HasPending());
+}
+
 InputConsumed FaceCarveTool::OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
 {
     // A pending carve keeps its own glow and readout; hover changes nothing.
-    if (PendingValid || Dragging)
+    if (Phase != FaceCarvePhase::Idle)
     {
         ctx.Overlay.HoverBody = TargetEntity;
         return InputConsumed::Yes;
@@ -112,39 +179,36 @@ void FaceCarveTool::OnHoverEnd(ToolContext& ctx)
     // The dispatcher fires HoverEnd on every pointer move while ANY interaction
     // is active: touch only the hover glow, and only when neither dragging nor
     // holding a pending carve (a revert here would destroy the live preview).
-    if (Dragging || PendingValid)
+    if (Phase != FaceCarvePhase::Idle)
         return;
     ctx.Overlay.HoverBody = {};
     ctx.Overlay.Readout.Clear();
 }
 
-InputConsumed FaceCarveTool::OnClick(ToolContext&, EditorViewport&, const PointerEvent&)
+InputConsumed FaceCarveTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     // A click is not a rect; consuming it keeps stray clicks from re-selecting
     // while the tool is active, and a pending carve survives.
     return InputConsumed::Yes;
 }
 
-std::unique_ptr<IInteraction> FaceCarveTool::BeginDrag(ToolContext& ctx, EditorViewport& viewport,
-                                                       const PointerEvent& pressPointer)
+bool FaceCarveTool::CaptureFace(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
 {
-    const SelectableRef picked = ctx.Picking.Pick(viewport, pressPointer.Position, ctx.Scene,
+    if (Phase != FaceCarvePhase::Idle)
+        RevertAll(ctx);
+
+    const SelectableRef picked = ctx.Picking.Pick(viewport, pos, ctx.Scene,
         BrushPickRequest{ .Mode = BrushPickMode::FaceOnly });
     if (!picked.IsFace())
-        return nullptr; // an existing pending carve is kept; a stray drag must not destroy it
-
-    // Any prior pending preview (possibly on a DIFFERENT entity) must revert
-    // BEFORE re-resolving: ResolveMesh returns the live (previewed) mesh, and
-    // the new snapshot must be the real geometry.
-    RevertAll(ctx);
+        return false;
 
     const std::optional<MeshEditTargetMesh> resolved = ctx.Sink.ResolveMesh(picked.Entity);
     if (!resolved.has_value() || resolved->Mesh == nullptr)
-        return nullptr;
+        return false;
     const std::optional<BrushOps::BrushRectFaceFrame> frame =
         BrushOps::RectFaceFrame(*resolved->Mesh, picked.ElementId);
     if (!frame.has_value())
-        return nullptr;
+        return false;
 
     TargetEntity = picked.Entity;
     Original = *resolved->Mesh;
@@ -163,21 +227,141 @@ std::unique_ptr<IInteraction> FaceCarveTool::BeginDrag(ToolContext& ctx, EditorV
     DragPlane.Spacing = ctx.Grid.Spacing;
     DragPlane.SnapEnabled = ctx.Grid.SnapEnabled;
 
+    Phase = FaceCarvePhase::Dragging;
+    PreviewValid = false;
+    // ctx is the workspace-owned ToolContext every tool entry point receives,
+    // so it outlives this scope; Commit and RevertAll close it before the tool
+    // returns to Idle.
+    ctx.Commands.OpenPendingEdit([this, &ctx] { RevertAll(ctx); });
+    return true;
+}
+
+bool FaceCarveTool::BeginPendingAdjust(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+{
+    if (Phase != FaceCarvePhase::Pending || !TargetEntity.IsValid())
+        return false;
+
+    const std::optional<Vec2d> uv = CursorUv(ctx, viewport, pos);
+    if (!uv.has_value())
+        return false;
+
+    const Vec2d rectMin{ std::min(AnchorUv.X, LastUv.X), std::min(AnchorUv.Y, LastUv.Y) };
+    const Vec2d rectMax{ std::max(AnchorUv.X, LastUv.X), std::max(AnchorUv.Y, LastUv.Y) };
+    const Vec2d corners[4] = {
+        { rectMin.X, rectMin.Y },
+        { rectMax.X, rectMin.Y },
+        { rectMax.X, rectMax.Y },
+        { rectMin.X, rectMax.Y },
+    };
+
+    const auto worldAt = [&](Vec2d p)
+    {
+        return TargetTransform.TransformPoint(Frame.Origin + Frame.AxisU * p.X + Frame.AxisV * p.Y);
+    };
+
+    const ViewportProjection projection(viewport);
+    float bestPixels = kAdjustHandleHitPixels;
+    int best = -1;
+    for (int i = 0; i < 4; ++i)
+    {
+        const std::optional<ProjectedPoint> projected = projection.WorldToPixel(worldAt(corners[i]));
+        if (!projected.has_value())
+            continue;
+        const float pixels = ScreenDistance(pos, projected->Pixel);
+        if (pixels <= bestPixels)
+        {
+            bestPixels = pixels;
+            best = i;
+        }
+    }
+    if (best < 0)
+        return false;
+
+    AnchorUv = corners[(best + 2) % 4];
+    LastUv = *uv;
+    Phase = FaceCarvePhase::Dragging;
+    DragViewport = viewport.Id;
+    ctx.Overlay.HoverBody = TargetEntity;
+    return true;
+}
+
+void FaceCarveTool::UpdateRectPreview(ToolContext& ctx, Vec2d rectMin, Vec2d rectMax)
+{
+    // Undo can revert the carve mid-drag; the live interaction keeps forwarding
+    // moves, which must not resurrect a preview from stale capture state.
+    if (Phase == FaceCarvePhase::Idle)
+        return;
+
+    BrushMesh carved = Pierce
+        ? BrushOps::CarveFaceRectThrough(Original, FaceIndex, rectMin, rectMax)
+        : BrushOps::CarveFaceRect(Original, FaceIndex, rectMin, rectMax);
+    // The ops return the input untouched on refusal, so any count change means
+    // success; checked before repair, which can compact a flush pierce back to
+    // the original counts (a slab removal shrinks the brush).
+    if ((carved.Faces.size() != Original.Faces.size()
+         || carved.Vertices.size() != Original.Vertices.size())
+        && BrushValidateAndRepair(carved).Ok)
+    {
+        ctx.Sink.PreviewMesh(TargetEntity, carved);
+        Pending = std::move(carved);
+        PreviewValid = true;
+    }
+    else
+    {
+        ctx.Sink.PreviewMesh(TargetEntity, Original);
+        PreviewValid = false;
+    }
+}
+
+void FaceCarveTool::UpdateLoopPreview(ToolContext& ctx, Vec2d rectMin, Vec2d rectMax)
+{
+    if (Phase == FaceCarvePhase::Idle)
+        return;
+
+    BrushMesh cut = Pierce
+        ? BrushOps::InsertFaceLoopBoundsThrough(Original, FaceIndex, rectMin, rectMax)
+        : BrushOps::InsertFaceLoopBounds(Original, FaceIndex, rectMin, rectMax);
+    if ((cut.Faces.size() != Original.Faces.size()
+         || cut.Vertices.size() != Original.Vertices.size())
+        && BrushValidateAndRepair(cut).Ok)
+    {
+        ctx.Sink.PreviewMesh(TargetEntity, cut);
+        Pending = std::move(cut);
+        PreviewValid = true;
+    }
+    else
+    {
+        ctx.Sink.PreviewMesh(TargetEntity, Original);
+        PreviewValid = false;
+    }
+}
+
+std::unique_ptr<IInteraction> FaceCarveTool::BeginDrag(ToolContext& ctx, EditorViewport& viewport,
+                                                       const PointerEvent& pressPointer)
+{
+    if (BeginPendingAdjust(ctx, viewport, pressPointer.Position))
+        return std::make_unique<CarveDragInteraction>(*this);
+
+    if (!CaptureFace(ctx, viewport, pressPointer.Position))
+        return nullptr;
+
     const std::optional<Vec2d> anchor = CursorUv(ctx, viewport, pressPointer.Position);
     if (!anchor.has_value())
     {
-        TargetEntity = {};
+        RevertAll(ctx);
         return nullptr;
     }
     AnchorUv = *anchor;
     LastUv = *anchor;
-    Dragging = true;
     ctx.Overlay.HoverBody = TargetEntity;
     return std::make_unique<CarveDragInteraction>(*this);
 }
 
 void FaceCarveTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
 {
+    if (Phase == FaceCarvePhase::Idle)
+        return;
+
     const std::optional<Vec2d> uv = CursorUv(ctx, viewport, pos);
     if (uv.has_value())
         LastUv = *uv;
@@ -185,30 +369,24 @@ void FaceCarveTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec
     const Vec2d rectMin{ std::min(AnchorUv.X, LastUv.X), std::min(AnchorUv.Y, LastUv.Y) };
     const Vec2d rectMax{ std::max(AnchorUv.X, LastUv.X), std::max(AnchorUv.Y, LastUv.Y) };
 
-    // Always carve from the captured Original: the live mesh is the preview.
-    BrushMesh carved = BrushOps::CarveFaceRect(Original, FaceIndex, rectMin, rectMax);
-    if (carved.Faces.size() > Original.Faces.size() && BrushValidateAndRepair(carved).Ok)
-    {
-        ctx.Sink.PreviewMesh(TargetEntity, carved);
-        Pending = std::move(carved);
-        PendingValid = true;
-    }
+    // Always edit from the captured Original: the live mesh is the preview.
+    if (Mode == FaceCarveMode::EdgeLoop)
+        UpdateLoopPreview(ctx, rectMin, rectMax);
     else
-    {
-        ctx.Sink.PreviewMesh(TargetEntity, Original);
-        PendingValid = false;
-    }
+        UpdateRectPreview(ctx, rectMin, rectMax);
     WriteReadout(ctx, rectMin, rectMax, /*pending*/ false);
 }
 
 void FaceCarveTool::EndDrag(ToolContext& ctx)
 {
-    Dragging = false;
-    if (!PendingValid)
+    if (Phase != FaceCarvePhase::Dragging)
+        return;
+    if (!PreviewValid)
     {
         RevertAll(ctx);
         return;
     }
+    Phase = FaceCarvePhase::Pending;
     // Release does NOT commit: the preview persists until Enter/Apply.
     const Vec2d rectMin{ std::min(AnchorUv.X, LastUv.X), std::min(AnchorUv.Y, LastUv.Y) };
     const Vec2d rectMax{ std::max(AnchorUv.X, LastUv.X), std::max(AnchorUv.Y, LastUv.Y) };
@@ -217,18 +395,26 @@ void FaceCarveTool::EndDrag(ToolContext& ctx)
 
 InputConsumed FaceCarveTool::OnKeyDown(ToolContext& ctx, const KeyDownEvent& event)
 {
-    if (!PendingValid || Dragging)
-        return InputConsumed::No; // Escape without a pending carve climbs the editing context
+    if (Phase == FaceCarvePhase::Dragging)
+        return InputConsumed::No;
 
     if (event.Key == SDLK_RETURN || event.Key == SDLK_KP_ENTER)
     {
-        Commit(ctx);
-        return InputConsumed::Yes;
+        if (CanCommit())
+        {
+            Commit(ctx);
+            return InputConsumed::Yes;
+        }
+        return InputConsumed::No;
     }
     if (event.Key == SDLK_ESCAPE)
     {
-        RevertAll(ctx);
-        return InputConsumed::Yes;
+        if (Phase == FaceCarvePhase::Pending)
+        {
+            RevertAll(ctx);
+            return InputConsumed::Yes;
+        }
+        return InputConsumed::No;
     }
     return InputConsumed::No;
 }
@@ -245,46 +431,62 @@ void FaceCarveTool::OnCancel(ToolContext& ctx)
 
 void FaceCarveTool::Commit(ToolContext& ctx)
 {
-    if (!PendingValid || !TargetEntity.IsValid())
+    if (!CanCommit() || !TargetEntity.IsValid())
         return;
 
     // Clear state into locals FIRST: CommitMesh and the tool hand-off re-enter
     // OnDeactivate -> RevertAll, which must then no-op.
     const EntityId entity = TargetEntity;
+    const FaceCarveMode mode = Mode;
+    const bool pierce = Pierce;
     BrushMesh before = std::move(Original);
     BrushMesh after = std::move(Pending);
-    PendingValid = false;
-    Dragging = false;
+    ctx.Commands.ClosePendingEdit();
+    Phase = FaceCarvePhase::Idle;
+    PreviewValid = false;
     TargetEntity = {};
     ctx.Overlay.Readout.Clear();
     ctx.Overlay.HoverBody = {};
+    ctx.Overlay.PointHandles.clear();
 
     if (!ctx.Sink.ResolveMesh(entity).has_value())
         return; // the entity died while pending; nothing to commit
 
-    const std::uint32_t centerFace = static_cast<std::uint32_t>(after.Faces.size() - 1);
+    std::vector<SelectableRef> refs;
+    MeshElementKind selectedKind = MeshElementKind::Face;
+    if (mode == FaceCarveMode::EdgeLoop || pierce)
+    {
+        refs = NewEdgeRefs(ctx.Scene, entity, before, after);
+        selectedKind = MeshElementKind::Edge;
+    }
+    else
+    {
+        const std::uint32_t centerFace = static_cast<std::uint32_t>(after.Faces.size() - 1);
+        refs.push_back(SelectableRef::FaceSelection(ctx.Scene.GetRegistry().Id, entity, centerFace));
+    }
+
     ctx.Sink.CommitMesh(entity, std::move(before), std::move(after));
 
-    // Hand off ready-to-extrude: the kept center face selected in Face mode
-    // under the Select tool (the kernel appends it last).
-    const std::array<SelectableRef, 1> refs = {
-        SelectableRef::FaceSelection(ctx.Scene.GetRegistry().Id, entity, centerFace)
-    };
     ctx.Sink.SelectElements(refs);
-    ctx.MeshEdit.SetElementKind(MeshElementKind::Face);
+    ctx.MeshEdit.SetElementKind(selectedKind);
     if (ctx.ActivateTool)
         ctx.ActivateTool("select");
 }
 
 void FaceCarveTool::RevertAll(ToolContext& ctx)
 {
-    if (TargetEntity.IsValid() && ctx.Sink.ResolveMesh(TargetEntity).has_value())
-        ctx.Sink.PreviewMesh(TargetEntity, Original);
+    if (Phase != FaceCarvePhase::Idle)
+    {
+        ctx.Commands.ClosePendingEdit();
+        if (TargetEntity.IsValid() && ctx.Sink.ResolveMesh(TargetEntity).has_value())
+            ctx.Sink.PreviewMesh(TargetEntity, Original);
+    }
+    Phase = FaceCarvePhase::Idle;
+    PreviewValid = false;
     TargetEntity = {};
-    PendingValid = false;
-    Dragging = false;
     ctx.Overlay.Readout.Clear();
     ctx.Overlay.HoverBody = {};
+    ctx.Overlay.PointHandles.clear();
 }
 
 std::optional<Vec2d> FaceCarveTool::CursorUv(ToolContext& ctx, const EditorViewport& viewport,
@@ -322,4 +524,30 @@ void FaceCarveTool::WriteReadout(ToolContext& ctx, Vec2d rectMin, Vec2d rectMax,
     readout.Text = FormatUnits((alongU - a).Magnitude()) + " x " + FormatUnits((b - alongU).Magnitude())
                  + (pending ? "  Enter to apply" : "");
     readout.Viewport = DragViewport;
+    WriteRectHandles(ctx, rectMin, rectMax);
+}
+
+void FaceCarveTool::WriteRectHandles(ToolContext& ctx, Vec2d rectMin, Vec2d rectMax) const
+{
+    ctx.Overlay.PointHandles.clear();
+    if (!PreviewValid || !DragViewport.IsValid())
+        return;
+
+    const Vec2d corners[4] = {
+        { rectMin.X, rectMin.Y },
+        { rectMax.X, rectMin.Y },
+        { rectMax.X, rectMax.Y },
+        { rectMin.X, rectMax.Y },
+    };
+
+    for (Vec2d uv : corners)
+    {
+        PointHandleRequest handle;
+        handle.World = TargetTransform.TransformPoint(
+            Frame.Origin + Frame.AxisU * uv.X + Frame.AxisV * uv.Y);
+        handle.Fill = EditorTheme::Handle;
+        handle.Border = EditorTheme::Readout;
+        handle.SizePixels = EditorTheme::HandlePixels;
+        ctx.Overlay.PointHandles.push_back(handle);
+    }
 }

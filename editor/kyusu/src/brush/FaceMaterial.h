@@ -28,7 +28,8 @@ struct UvProjection
     // justify freely. Not assumed orthonormal — Scale carries texel density.
     Vec3d AxisU = { 1.0f, 0.0f, 0.0f }; // +U direction in brush-local space
     Vec3d AxisV = { 0.0f, 0.0f, 1.0f }; // +V direction in brush-local space
-    Vec2d Scale = { 1.0f, 1.0f };       // world-units per texture tile (texel density)
+    Vec2d Scale = { 2.0f, 2.0f };       // world-units per texture tile (texel density);
+                                        // 2x2 is the authored default for new faces
     Vec2d Offset = { 0.0f, 0.0f };      // texture shift, in UV
     float Rotation = 0.0f;              // degrees, rotates (U,V) in their own plane
     bool  WorldAligned = true;          // true: project from world/box axes (resize lock)

@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 // Creation sub-modes for the Brush tool. A primitive is just a BrushMesh built
@@ -18,6 +19,7 @@ struct BrushPrimitiveParams
     Vec3d HalfExtents{ 0.5, 0.5, 0.5 };
     int   DepthAxis = 1;     // plane normal / cylinder axis (0=X, 1=Y, 2=Z)
     int   CylinderSides = 12;
+    int   PlaneSubdivisions = 1; // quads per side of the plane grid
 };
 
 //=============================================================================
@@ -34,9 +36,10 @@ struct BrushOps
     // The default brush: 8 vertices, 6 quad faces, outward normals.
     [[nodiscard]] static BrushMesh MakeBox(Vec3d halfExtents);
 
-    // A single flat quad on the two non-depth axes (zero thickness). Open mesh,
-    // like the result of DeleteFace; authoring tolerates it.
-    [[nodiscard]] static BrushMesh MakePlane(Vec3d halfExtents, int depthAxis);
+    // A flat quad grid on the two non-depth axes (zero thickness), subdivided
+    // into subdivisions x subdivisions quads (clamped to >= 1). Open mesh, like
+    // the result of DeleteFace; authoring tolerates it.
+    [[nodiscard]] static BrushMesh MakePlane(Vec3d halfExtents, int depthAxis, int subdivisions = 1);
 
     // An N-sided prism about depthAxis (clamped to >= 3 sides). Cross-section
     // fills the drag footprint: ring radii are the two non-depth half-extents.
@@ -86,6 +89,88 @@ struct BrushOps
     // Reverse one face's winding (and its cached normal). The manual counterpart to
     // the recalc-normals verb: repair no longer re-orients, so the flip persists.
     [[nodiscard]] static BrushMesh FlipFace(const BrushMesh& mesh, std::uint32_t face);
+
+    // Reverses every face (inside-out mesh): the "inner" variant of a pending
+    // primitive, for rooms built from a single brush seen from within.
+    [[nodiscard]] static BrushMesh FlipAllFaces(const BrushMesh& mesh);
+
+    // Merge the two faces sharing the undirected edge (a, b) into one ngon,
+    // removing the edge but keeping its endpoint vertices in the merged loop.
+    // The merged face keeps the first adjacent face's material and recomputes
+    // its normal. Returns the mesh unchanged when the edge is absent, on a
+    // boundary, non-manifold (not exactly two faces), or when the two faces
+    // share more than that one edge (the merge would produce a non-simple
+    // loop). Leaves validation to the caller.
+    [[nodiscard]] static BrushMesh DissolveEdge(const BrushMesh& mesh,
+                                                std::uint32_t a, std::uint32_t b);
+
+    // Collapse clusters of the given vertices lying within `distance` of each
+    // other (mesh-local units) onto their cluster centroid. Positions only: the
+    // now-coincident vertices merge in the caller's validate/repair pass.
+    // Out-of-range indices are ignored.
+    [[nodiscard]] static BrushMesh WeldVertices(const BrushMesh& mesh,
+                                                std::span<const std::uint32_t> vertices,
+                                                float distance);
+
+    // Bridge two equal-length vertex paths with a grid of quads: pathA and
+    // pathB are ordered runs of existing vertex indices (>= 2 each, same
+    // count, disjoint). `closed` closes the final column back to the first.
+    // `segments` rows of quads span the gap; with more than
+    // one, the intermediate rows follow a Hermite blend seeded by each path's
+    // boundary tangent (the summed away-from-face directions of the faces
+    // bordering the path's edges), so bridging two perpendicular wall edges
+    // bows into a curved hallway shell. Columns whose bordering faces cancel
+    // (coplanar interiors) blend straight. Quads wind to continue pathA's
+    // bordering face across the shared edge. Pure append; leaves validation to
+    // the caller. Returns the mesh unchanged on invalid paths. `inherit`
+    // supplies the strip's material as in ExtrudeEdge.
+    [[nodiscard]] static BrushMesh BridgeEdgePaths(const BrushMesh& mesh,
+                                                   std::span<const std::uint32_t> pathA,
+                                                   std::span<const std::uint32_t> pathB,
+                                                   int segments,
+                                                   const FaceMaterial* inherit = nullptr,
+                                                   bool closed = false);
+
+    // One side of a cross-mesh bridge, resolved by the caller into a single
+    // space (world in the editor): ordered positions, per-vertex departure
+    // tangents (empty, or one unit vector per position with zero meaning
+    // straight), whether the run closes into a loop, and for open runs the
+    // source face winding (whether a bordering face traverses the run in path
+    // order), which drives the strip's facing.
+    struct BridgePathSpec
+    {
+        std::vector<Vec3d> Positions;
+        std::vector<Vec3d> Tangents;
+        bool Closed = false;
+        bool WindsForward = false;
+    };
+
+    // A standalone bridge mesh spanning two resolved paths (no source mesh
+    // geometry is copied; the caller owns committing it as a new brush).
+    // Closed loops orient deterministically from geometry: each loop's Newell
+    // normal against the axis between the two centroids decides quad facing
+    // and whether b pairs reversed, and least-squares distance picks only the
+    // rotation. (Winding flags cannot decide this: on a closed manifold every
+    // edge borders two faces traversing it in opposite directions, so a flag
+    // read from "the" bordering face is a coin flip; the distance-only pairing
+    // it fed also tied on symmetric loops. Both fed the twist.) Open runs pair
+    // by distance (their endpoints anchor the choice) and face by a's winding
+    // flag. Interior rows follow the same Hermite blend as BridgeEdgePaths.
+    // Returns an empty mesh when the paths cannot pair.
+    [[nodiscard]] static BrushMesh BuildBridgeBetweenPaths(BridgePathSpec a,
+                                                           BridgePathSpec b,
+                                                           int segments,
+                                                           const FaceMaterial* inherit = nullptr);
+
+    // Per-vertex bridge departure tangents for a path of existing mesh
+    // vertices: the summed away-from-face directions of the faces bordering
+    // each incident path edge. Coplanar interiors cancel to zero (straight); a
+    // box rim yields the corner bisector, so a bridge leaving it bows outward.
+    // `closed` wraps the last edge back to the first. Unit or zero vectors,
+    // mesh-local space.
+    [[nodiscard]] static std::vector<Vec3d> PathBoundaryTangents(const BrushMesh& mesh,
+                                                                 std::span<const std::uint32_t> path,
+                                                                 bool closed);
 
     // The quad strip and perpendicular edge ring reached from a seed edge by the
     // loop-cut flood-fill: StripFaces are the quads the cut crosses (the face loop),
@@ -157,6 +242,29 @@ struct BrushOps
     [[nodiscard]] static std::optional<BrushRectFaceFrame> RectFaceFrame(const BrushMesh& mesh,
                                                                          std::uint32_t face);
 
+    // Insert loop cuts at the interior bounds of a rectangle authored in a
+    // rectangular face frame. Flush bounds are omitted; every non-flush bound
+    // must resolve to a full InsertEdgeLoop cut, or already coincide with an
+    // existing edge (a rect side flush with an existing loop adds no cut
+    // there), or the mesh is returned unchanged. This is the pure topology
+    // kernel behind Face Carve's Edge Loop mode.
+    [[nodiscard]] static BrushMesh InsertFaceLoopBounds(const BrushMesh& mesh, std::uint32_t face,
+                                                        Vec2d rectMin, Vec2d rectMax);
+
+    // Pierce variant of InsertFaceLoopBounds: inserts the full wrapping loop
+    // cuts, then removes the loop-bounded rect faces on `face` and the nearest
+    // directly opposite rectangular face and bridges them into a tunnel. The
+    // loops mint the two openings' corners, so their alignment falls out of
+    // the cuts themselves. A rect side flush with the face edge opens a notch
+    // instead of walling: the strip the loops cut through that side's
+    // bordering face is removed and the wall omitted (requires box-like flat
+    // rectangular sides). Returns the mesh unchanged when no eligible opposite
+    // face exists, the loops do not reach it cleanly (e.g. blocked by non-quad
+    // side topology), the rect covers the face, or only an opposite pair of
+    // sides is flush (the channel would split the brush in two).
+    [[nodiscard]] static BrushMesh InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint32_t face,
+                                                               Vec2d rectMin, Vec2d rectMax);
+
     // Re-topologize a flat rectangular quad face around an inset rectangle given
     // in RectFaceFrame coordinates (rectMin/rectMax are (u,v) pairs, any corner
     // order, unclamped). The rectangle becomes its own face, appended LAST (the
@@ -173,4 +281,19 @@ struct BrushOps
     // quad, the rect is empty after clamping, or the rect covers the whole face.
     [[nodiscard]] static BrushMesh CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
                                                  Vec2d rectMin, Vec2d rectMax);
+
+    // Carve a rectangular opening through `face` and the first opposite
+    // near-parallel rectangular face that contains the projection along -face
+    // normal. The two center cap faces are removed and their loops are bridged
+    // into a closed tunnel. A rect side flush with the face edge (snap
+    // tolerance) opens a notch instead of walling: the bordering face on that
+    // side is cut so the channel is open (requires box-like flat rectangular
+    // sides bordering both caps; source and target must be flush on matching
+    // sides). Returns the mesh unchanged when no eligible opposite face
+    // exists, the projected rectangle is not aligned to that face's frame, the
+    // rect covers the face, or only an opposite pair of sides is flush (the
+    // channel would split the brush in two).
+    [[nodiscard]] static BrushMesh CarveFaceRectThrough(const BrushMesh& mesh, std::uint32_t face,
+                                                        Vec2d rectMin, Vec2d rectMax);
+
 };

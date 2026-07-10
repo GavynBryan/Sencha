@@ -6,13 +6,12 @@
 #include <math/Quat.h>
 #include <math/Vec.h>
 
-class EditorDocument;
-class EditorScene;
+class BrushTool;
 
 class BrushCreateDragInteraction : public IInteraction
 {
 public:
-    BrushCreateDragInteraction(BrushCreationPlane plane, EditorScene& scene, EditorDocument& document);
+    BrushCreateDragInteraction(BrushCreationPlane plane, BrushTool& tool);
 
     void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
@@ -27,6 +26,5 @@ private:
     Vec3d LastHalfExtents;
     Quatf LastRotation = Quatf::Identity();
     bool HasValidSize = false;
-    EditorScene& Scene;
-    EditorDocument& Document;
+    BrushTool& Tool;
 };

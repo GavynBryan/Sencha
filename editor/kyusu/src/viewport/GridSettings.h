@@ -2,6 +2,20 @@
 
 #include <math/Vec.h>
 
+#include <cstdint>
+
+// What the snap toggle snaps to: grid lines, or a picked geometry element
+// (vertex position / edge midpoint / face surface point). Element targets are
+// resolved per gesture by the consumers (translate drag, brush-create anchor)
+// through PickingService.
+enum class SnapTarget : std::uint8_t
+{
+    Grid = 0,
+    Vertex,
+    Edge,
+    Face,
+};
+
 // Editor-wide grid/snap settings: the single source for grid spacing, the
 // snap-on/off toggle, and the grid frame (origin + axes). Owned by
 // EditorWorkspace and consulted by EditorViewport::GetGrid(), which stamps
@@ -16,6 +30,7 @@
 struct GridSettings
 {
     bool SnapEnabled = true;
+    SnapTarget Target = SnapTarget::Grid;
     float Spacing = 1.0f;
     Vec3d Origin = {};
     Vec3d AxisU = { 1.0f, 0.0f, 0.0f };

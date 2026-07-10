@@ -112,7 +112,11 @@ BrushRepairResult BrushValidateAndRepair(BrushMesh& mesh, float weldTolerance)
 
     const BrushMesh before = mesh; // for Changed detection (small meshes)
 
-    BrushWeldVertices(mesh, weldTolerance);
+    // Tolerance 0 disables the weld entirely: element moves and snaps may park
+    // vertices exactly on top of each other on purpose, merged only by the
+    // explicit weld verb.
+    if (weldTolerance > 0.0f)
+        BrushWeldVertices(mesh, weldTolerance);
     DropUnreferenced(mesh);
 
     // Drop degenerate faces (<3 distinct vertices / zero-area normal).

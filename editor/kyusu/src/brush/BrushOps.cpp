@@ -106,30 +106,40 @@ namespace
     }
 }
 
-BrushMesh BrushOps::MakePlane(Vec3d halfExtents, int depthAxis)
+BrushMesh BrushOps::MakePlane(Vec3d halfExtents, int depthAxis, int subdivisions)
 {
+    subdivisions = std::max(subdivisions, 1);
     const auto [uIdx, vIdx] = PlaneAxes(depthAxis);
     const double hu = halfExtents[uIdx];
     const double hv = halfExtents[vIdx];
     constexpr double d = 0.0; // flat: zero thickness on the depth axis
 
     BrushMesh mesh;
-    EmitFace(mesh, {
-        AxisPoint(uIdx, -hu, vIdx, -hv, depthAxis, d),
-        AxisPoint(uIdx, hu, vIdx, -hv, depthAxis, d),
-        AxisPoint(uIdx, hu, vIdx, hv, depthAxis, d),
-        AxisPoint(uIdx, -hu, vIdx, hv, depthAxis, d),
-    });
-    BrushValidateAndRepair(mesh);
+    for (int i = 0; i < subdivisions; ++i)
+        for (int j = 0; j < subdivisions; ++j)
+        {
+            const double u0 = -hu + 2.0 * hu * i / subdivisions;
+            const double u1 = -hu + 2.0 * hu * (i + 1) / subdivisions;
+            const double v0 = -hv + 2.0 * hv * j / subdivisions;
+            const double v1 = -hv + 2.0 * hv * (j + 1) / subdivisions;
+            EmitFace(mesh, {
+                AxisPoint(uIdx, u0, vIdx, v0, depthAxis, d),
+                AxisPoint(uIdx, u1, vIdx, v0, depthAxis, d),
+                AxisPoint(uIdx, u1, vIdx, v1, depthAxis, d),
+                AxisPoint(uIdx, u0, vIdx, v1, depthAxis, d),
+            });
+        }
+    BrushValidateAndRepair(mesh); // welds the shared grid vertices
 
-    // Repair does not reorient, so the single face keeps the winding from PlaneAxes,
-    // whose normal can point along -depthAxis (down). Face it along +depthAxis,
-    // matching the grid up / the surface it was placed against.
-    if (!mesh.Faces.empty() && mesh.Faces[0].Normal[depthAxis] < 0.0f)
-    {
-        std::reverse(mesh.Faces[0].Loop.begin(), mesh.Faces[0].Loop.end());
-        mesh.Faces[0].Normal = -mesh.Faces[0].Normal;
-    }
+    // Repair does not reorient, so each face keeps the winding from PlaneAxes,
+    // whose normal can point along -depthAxis (down). Face them along +depthAxis,
+    // matching the grid up / the surface the plane was placed against.
+    for (BrushFace& face : mesh.Faces)
+        if (face.Normal[depthAxis] < 0.0f)
+        {
+            std::reverse(face.Loop.begin(), face.Loop.end());
+            face.Normal = -face.Normal;
+        }
     SeedFaceUvs(mesh);
     return mesh;
 }
@@ -172,7 +182,7 @@ BrushMesh BrushOps::MakePrimitive(BrushPrimitive kind, const BrushPrimitiveParam
     switch (kind)
     {
         case BrushPrimitive::Plane:
-            return MakePlane(params.HalfExtents, params.DepthAxis);
+            return MakePlane(params.HalfExtents, params.DepthAxis, params.PlaneSubdivisions);
         case BrushPrimitive::Cylinder:
             return MakeCylinder(params.HalfExtents, params.DepthAxis, params.CylinderSides);
         case BrushPrimitive::Box:
@@ -388,6 +398,17 @@ BrushMesh BrushOps::FlipFace(const BrushMesh& mesh, std::uint32_t face)
     return out;
 }
 
+BrushMesh BrushOps::FlipAllFaces(const BrushMesh& mesh)
+{
+    BrushMesh out = mesh;
+    for (BrushFace& face : out.Faces)
+    {
+        std::reverse(face.Loop.begin(), face.Loop.end());
+        face.Normal = -face.Normal;
+    }
+    return out;
+}
+
 namespace
 {
     // Undirected edge identity (sorted endpoints), for adjacency and midpoint maps.
@@ -459,6 +480,465 @@ namespace
         }
         return fill;
     }
+}
+
+BrushMesh BrushOps::DissolveEdge(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    if (a >= mesh.Vertices.size() || b >= mesh.Vertices.size() || a == b)
+        return mesh;
+
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    const auto it = edgeFaces.find(UndirectedEdge(a, b));
+    if (it == edgeFaces.end() || it->second.size() != 2)
+        return mesh; // boundary or non-manifold edge: no well-defined pair to merge
+    const auto [f1, i1] = it->second[0];
+    const auto [f2, i2] = it->second[1];
+    if (f1 == f2)
+        return mesh; // both sides on one face (a slit): merging is meaningless
+
+    const std::vector<std::uint32_t>& loop1 = mesh.Faces[f1].Loop;
+    const std::size_t n1 = loop1.size();
+
+    // f2's loop, rewound if needed so it traverses the shared edge opposite to
+    // f1 (authoring tolerates inconsistent winding; the merge must not).
+    std::vector<std::uint32_t> loop2 = mesh.Faces[f2].Loop;
+    const std::size_t n2 = loop2.size();
+    if (loop2[i2] == loop1[i1])
+        std::reverse(loop2.begin(), loop2.end());
+    std::size_t j2 = 0;
+    while (j2 < n2 && !(loop2[j2] == loop1[(i1 + 1) % n1] && loop2[(j2 + 1) % n2] == loop1[i1]))
+        ++j2;
+    if (j2 == n2)
+        return mesh;
+
+    // All of f1's boundary starting after the shared edge, then f2's vertices
+    // strictly between the shared endpoints: the union boundary minus the edge.
+    std::vector<std::uint32_t> merged;
+    merged.reserve(n1 + n2 - 2);
+    for (std::size_t k = 0; k < n1; ++k)
+        merged.push_back(loop1[(i1 + 1 + k) % n1]);
+    for (std::size_t k = 2; k < n2; ++k)
+        merged.push_back(loop2[(j2 + k) % n2]);
+
+    // Faces sharing more than one edge would fold the merged loop back on
+    // itself; a repeated vertex is the symptom, so refuse the merge.
+    std::vector<std::uint32_t> sorted = merged;
+    std::sort(sorted.begin(), sorted.end());
+    if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end())
+        return mesh;
+
+    // The dissolved edge's endpoints often become straight-through boundary
+    // points (two coplanar quads becoming one rectangle). Remove only those
+    // redundant corners: a non-collinear endpoint still carries the silhouette
+    // and must remain in the merged ngon.
+    const auto removeRedundantEndpoint = [&](std::uint32_t endpoint)
+    {
+        const auto it = std::find(merged.begin(), merged.end(), endpoint);
+        if (it == merged.end() || merged.size() <= 3)
+            return;
+        const std::size_t index = static_cast<std::size_t>(it - merged.begin());
+        const Vec3d previous = mesh.Vertices[merged[(index + merged.size() - 1) % merged.size()]].Position;
+        const Vec3d current = mesh.Vertices[endpoint].Position;
+        const Vec3d next = mesh.Vertices[merged[(index + 1) % merged.size()]].Position;
+        const Vec3d incoming = current - previous;
+        const Vec3d outgoing = next - current;
+        const double scale = incoming.Magnitude() * outgoing.Magnitude();
+        if (scale <= 1e-10 || incoming.Cross(outgoing).Magnitude() > scale * 1e-5
+            || incoming.Dot(outgoing) <= 0.0)
+            return;
+        merged.erase(it);
+    };
+    removeRedundantEndpoint(a);
+    removeRedundantEndpoint(b);
+
+    BrushMesh out = mesh;
+    BrushFace face;
+    face.Loop = std::move(merged);
+    face.Material = mesh.Faces[f1].Material;
+    face.Normal = BrushComputeFaceNormal(out, face);
+    out.Faces.erase(out.Faces.begin() + std::max(f1, f2));
+    out.Faces.erase(out.Faces.begin() + std::min(f1, f2));
+    out.Faces.push_back(std::move(face));
+    return out;
+}
+
+BrushMesh BrushOps::WeldVertices(const BrushMesh& mesh,
+                                 std::span<const std::uint32_t> vertices, float distance)
+{
+    if (distance < 0.0f)
+        return mesh;
+
+    std::vector<std::uint32_t> selected;
+    for (std::uint32_t v : vertices)
+        if (v < mesh.Vertices.size())
+            selected.push_back(v);
+    std::sort(selected.begin(), selected.end());
+    selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
+    if (selected.size() < 2)
+        return mesh;
+
+    // Union-find over the selected vertices, joining pairs within distance.
+    // Sorted order keeps the roots (and thus centroids) deterministic.
+    std::map<std::uint32_t, std::uint32_t> parent;
+    for (std::uint32_t v : selected)
+        parent[v] = v;
+    const auto findRoot = [&parent](std::uint32_t v) {
+        while (parent[v] != v)
+            v = parent[v] = parent[parent[v]];
+        return v;
+    };
+
+    const double d2 = static_cast<double>(distance) * static_cast<double>(distance);
+    for (std::size_t i = 0; i < selected.size(); ++i)
+        for (std::size_t j = i + 1; j < selected.size(); ++j)
+        {
+            const Vec3d delta = mesh.Vertices[selected[i]].Position - mesh.Vertices[selected[j]].Position;
+            if (delta.SqrMagnitude() <= d2)
+            {
+                const std::uint32_t ri = findRoot(selected[i]);
+                const std::uint32_t rj = findRoot(selected[j]);
+                if (ri != rj)
+                    parent[std::max(ri, rj)] = std::min(ri, rj);
+            }
+        }
+
+    std::map<std::uint32_t, std::vector<std::uint32_t>> clusters;
+    for (std::uint32_t v : selected)
+        clusters[findRoot(v)].push_back(v);
+
+    BrushMesh out = mesh;
+    for (const auto& [root, members] : clusters)
+    {
+        if (members.size() < 2)
+            continue;
+        Vec3d centroid = {};
+        for (std::uint32_t v : members)
+            centroid += mesh.Vertices[v].Position;
+        centroid = centroid * (1.0 / static_cast<double>(members.size()));
+        for (std::uint32_t v : members)
+            out.Vertices[v].Position = centroid;
+    }
+    return out;
+}
+
+namespace
+{
+    // The direction a bridge should leave a path vertex: the sum, over every
+    // face bordering the incident path edges, of the in-plane direction away
+    // from that face, perpendicular to the edge. Coplanar interiors cancel to
+    // zero (the blend treats it as straight); a fold like a box rim yields the
+    // corner bisector. `closed` wraps the last edge back to the first.
+    Vec3d BoundaryTangent(const BrushMesh& mesh, const EdgeFaces& edgeFaces,
+                          std::span<const std::uint32_t> path, std::size_t vertex, bool closed)
+    {
+        const std::size_t n = path.size();
+        Vec3d sum = {};
+        const auto addEdge = [&](std::size_t e)
+        {
+            const std::uint32_t va = path[e];
+            const std::uint32_t vb = path[(e + 1) % n];
+            const auto it = edgeFaces.find(UndirectedEdge(va, vb));
+            if (it == edgeFaces.end())
+                return;
+            const Vec3d a = mesh.Vertices[va].Position;
+            const Vec3d b = mesh.Vertices[vb].Position;
+            const Vec3d mid = (a + b) * 0.5;
+            const Vec3d edge = b - a;
+            const double len2 = edge.SqrMagnitude();
+            if (len2 <= 1e-12)
+                return;
+            for (const auto& [faceIndex, loopIndex] : it->second)
+            {
+                const BrushFace& face = mesh.Faces[faceIndex];
+                const Vec3d interior = BrushFaceCentroid(mesh, face) - mid;
+                const Vec3d perp = interior - edge * (interior.Dot(edge) / len2);
+                if (perp.SqrMagnitude() > 1e-12)
+                    sum += -perp.Normalized();
+            }
+        };
+
+        if (vertex > 0)
+            addEdge(vertex - 1);
+        else if (closed)
+            addEdge(n - 1);
+        if (vertex < (closed ? n : n - 1))
+            addEdge(vertex);
+        return sum.SqrMagnitude() > 1e-12 ? sum.Normalized() : Vec3d{};
+    }
+
+    // Cubic Hermite sample between two path columns; tangents pre-scaled by the
+    // chord so the bow deepens with the gap.
+    Vec3d HermitePoint(Vec3d pa, Vec3d pb, Vec3d m0, Vec3d m1, double t)
+    {
+        const double t2 = t * t;
+        const double t3 = t2 * t;
+        return pa * (2.0 * t3 - 3.0 * t2 + 1.0)
+             + m0 * (t3 - 2.0 * t2 + t)
+             + pb * (-2.0 * t3 + 3.0 * t2)
+             + m1 * (t3 - t2);
+    }
+
+    Vec3d PathCentroid(std::span<const Vec3d> points)
+    {
+        Vec3d sum = {};
+        for (Vec3d p : points)
+            sum += p;
+        return sum * (1.0 / static_cast<double>(points.size()));
+    }
+
+    // Newell normal of the polygon the positions trace, unnormalized. Robust
+    // for non-planar loops; the right-hand rule ties it to traversal order.
+    Vec3d PathNewellNormal(std::span<const Vec3d> points)
+    {
+        Vec3d normal = {};
+        for (std::size_t i = 0; i < points.size(); ++i)
+        {
+            const Vec3d a = points[i];
+            const Vec3d b = points[(i + 1) % points.size()];
+            normal.X += (a.Y - b.Y) * (a.Z + b.Z);
+            normal.Y += (a.Z - b.Z) * (a.X + b.X);
+            normal.Z += (a.X - b.X) * (a.Y + b.Y);
+        }
+        return normal;
+    }
+}
+
+std::vector<Vec3d> BrushOps::PathBoundaryTangents(const BrushMesh& mesh,
+                                                  std::span<const std::uint32_t> path,
+                                                  bool closed)
+{
+    std::vector<Vec3d> tangents;
+    if (path.size() < 2)
+        return tangents;
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    tangents.reserve(path.size());
+    for (std::size_t i = 0; i < path.size(); ++i)
+        tangents.push_back(BoundaryTangent(mesh, edgeFaces, path, i, closed));
+    return tangents;
+}
+
+BrushMesh BrushOps::BuildBridgeBetweenPaths(BridgePathSpec a, BridgePathSpec b, int segments,
+                                            const FaceMaterial* inherit)
+{
+    const std::size_t n = a.Positions.size();
+    if (n < 2 || b.Positions.size() != n || a.Closed != b.Closed || (a.Closed && n < 3))
+        return {};
+    if (!a.Tangents.empty() && a.Tangents.size() != n)
+        return {};
+    if (!b.Tangents.empty() && b.Tangents.size() != n)
+        return {};
+    segments = std::clamp(segments, 1, 64);
+
+    const auto reversePath = [](BridgePathSpec& path)
+    {
+        std::reverse(path.Positions.begin(), path.Positions.end());
+        std::reverse(path.Tangents.begin(), path.Tangents.end());
+        path.WindsForward = !path.WindsForward;
+    };
+    const auto pairingScore = [&](const std::vector<Vec3d>& positions, std::size_t rotation)
+    {
+        double score = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+            score += (positions[(rotation + i) % n] - a.Positions[i]).SqrMagnitude();
+        return score;
+    };
+
+    bool reversedQuads = false;
+    if (a.Closed)
+    {
+        const Vec3d axis = PathCentroid(b.Positions) - PathCentroid(a.Positions);
+        const Vec3d normalA = PathNewellNormal(a.Positions);
+        const Vec3d normalB = PathNewellNormal(b.Positions);
+        const double axisLen2 = axis.SqrMagnitude();
+        const double alignA = axisLen2 > 1e-12 && normalA.SqrMagnitude() > 1e-12
+            ? normalA.Normalized().Dot(axis.Normalized()) : 0.0;
+        const double alignB = axisLen2 > 1e-12 && normalB.SqrMagnitude() > 1e-12
+            ? normalB.Normalized().Dot(axis.Normalized()) : 0.0;
+        constexpr double kAlignEpsilon = 1e-3;
+        if (std::abs(alignA) > kAlignEpsilon && std::abs(alignB) > kAlignEpsilon)
+        {
+            // The loops' own winding against the bridge axis determines the
+            // pairing direction and the quads' outward facing; distance ties
+            // on symmetric loops and must only pick the rotation below.
+            if ((alignB < 0.0) != (alignA < 0.0))
+                reversePath(b);
+            reversedQuads = alignA < 0.0;
+        }
+        else
+        {
+            // Near-coplanar loops (axis in the loop plane): no winding signal;
+            // fall back to distance for the direction as well.
+            BridgePathSpec reversed = b;
+            reversePath(reversed);
+            double bestForward = std::numeric_limits<double>::max();
+            double bestBackward = std::numeric_limits<double>::max();
+            for (std::size_t r = 0; r < n; ++r)
+            {
+                bestForward = std::min(bestForward, pairingScore(b.Positions, r));
+                bestBackward = std::min(bestBackward, pairingScore(reversed.Positions, r));
+            }
+            if (bestBackward < bestForward)
+                b = std::move(reversed);
+            reversedQuads = a.WindsForward;
+        }
+
+        std::size_t bestRotation = 0;
+        double bestScore = std::numeric_limits<double>::max();
+        for (std::size_t r = 0; r < n; ++r)
+        {
+            const double score = pairingScore(b.Positions, r);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestRotation = r;
+            }
+        }
+        if (bestRotation != 0)
+        {
+            std::rotate(b.Positions.begin(),
+                        b.Positions.begin() + static_cast<std::ptrdiff_t>(bestRotation),
+                        b.Positions.end());
+            if (!b.Tangents.empty())
+                std::rotate(b.Tangents.begin(),
+                            b.Tangents.begin() + static_cast<std::ptrdiff_t>(bestRotation),
+                            b.Tangents.end());
+        }
+    }
+    else
+    {
+        // Open runs: the endpoints anchor the pairing, so distance decides the
+        // direction; the strip's facing follows a's source face winding.
+        double forward = 0.0;
+        double backward = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            forward += (b.Positions[i] - a.Positions[i]).SqrMagnitude();
+            backward += (b.Positions[n - 1 - i] - a.Positions[i]).SqrMagnitude();
+        }
+        if (backward < forward)
+            reversePath(b);
+        reversedQuads = a.WindsForward;
+    }
+
+    BrushMesh out;
+    out.Vertices.reserve(2 * n + static_cast<std::size_t>(segments - 1) * n);
+    for (Vec3d p : a.Positions)
+        out.Vertices.push_back(BrushVertex{ p });
+    for (Vec3d p : b.Positions)
+        out.Vertices.push_back(BrushVertex{ p });
+
+    std::vector<std::vector<std::uint32_t>> rows(static_cast<std::size_t>(segments) + 1);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        rows.front().push_back(static_cast<std::uint32_t>(i));
+        rows.back().push_back(static_cast<std::uint32_t>(n + i));
+    }
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const Vec3d pa = a.Positions[i];
+        const Vec3d pb = b.Positions[i];
+        const double chord = (pb - pa).Magnitude();
+        const Vec3d m0 = (a.Tangents.empty() ? Vec3d{} : a.Tangents[i]) * chord;
+        const Vec3d m1 = (b.Tangents.empty() ? Vec3d{} : b.Tangents[i]) * -chord;
+        for (int r = 1; r < segments; ++r)
+        {
+            const double t = static_cast<double>(r) / segments;
+            rows[static_cast<std::size_t>(r)].push_back(static_cast<std::uint32_t>(out.Vertices.size()));
+            out.Vertices.push_back(BrushVertex{ HermitePoint(pa, pb, m0, m1, t) });
+        }
+    }
+
+    const std::size_t columns = a.Closed ? n : n - 1;
+    for (int r = 0; r < segments; ++r)
+        for (std::size_t i = 0; i < columns; ++i)
+        {
+            const std::size_t next = (i + 1) % n;
+            const std::vector<std::uint32_t>& rowA = rows[static_cast<std::size_t>(r)];
+            const std::vector<std::uint32_t>& rowB = rows[static_cast<std::size_t>(r) + 1];
+            BrushFace face;
+            face.Loop = reversedQuads
+                ? std::vector<std::uint32_t>{ rowA[next], rowA[i], rowB[i], rowB[next] }
+                : std::vector<std::uint32_t>{ rowA[i], rowA[next], rowB[next], rowB[i] };
+            if (inherit != nullptr)
+                face.Material = *inherit;
+            face.Normal = BrushComputeFaceNormal(out, face);
+            out.Faces.push_back(std::move(face));
+        }
+    return out;
+}
+
+BrushMesh BrushOps::BridgeEdgePaths(const BrushMesh& mesh,
+                                    std::span<const std::uint32_t> pathA,
+                                    std::span<const std::uint32_t> pathB,
+                                    int segments,
+                                    const FaceMaterial* inherit,
+                                    bool closed)
+{
+    const std::size_t n = pathA.size();
+    if (n < 2 || pathB.size() != n)
+        return mesh;
+    std::set<std::uint32_t> unique;
+    for (std::uint32_t v : pathA)
+        if (v >= mesh.Vertices.size() || !unique.insert(v).second)
+            return mesh;
+    for (std::uint32_t v : pathB)
+        if (v >= mesh.Vertices.size() || !unique.insert(v).second)
+            return mesh;
+    segments = std::clamp(segments, 1, 64);
+
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+
+    // Wind quads to continue pathA's bordering face across the shared edge
+    // (opposite traversal), matching ExtrudeEdge's manifold-consistent flap.
+    bool reversed = false;
+    if (const auto it = edgeFaces.find(UndirectedEdge(pathA[0], pathA[1])); it != edgeFaces.end())
+        for (const auto& [f, i] : it->second)
+        {
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            if (loop[i] == pathA[0] && loop[(i + 1) % loop.size()] == pathA[1])
+                reversed = true;
+        }
+
+    BrushMesh out = mesh;
+
+    // Row 0 is pathA, row `segments` is pathB; the rows between are appended,
+    // one Hermite sample per column. Tangents scale with the chord so the bow
+    // deepens with the gap, and vanish (straight lerp) on interior columns.
+    std::vector<std::vector<std::uint32_t>> rows(static_cast<std::size_t>(segments) + 1);
+    rows.front().assign(pathA.begin(), pathA.end());
+    rows.back().assign(pathB.begin(), pathB.end());
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const Vec3d pa = mesh.Vertices[pathA[i]].Position;
+        const Vec3d pb = mesh.Vertices[pathB[i]].Position;
+        const double chord = (pb - pa).Magnitude();
+        const Vec3d m0 = BoundaryTangent(mesh, edgeFaces, pathA, i, closed) * chord;
+        const Vec3d m1 = BoundaryTangent(mesh, edgeFaces, pathB, i, closed) * -chord;
+        for (int r = 1; r < segments; ++r)
+        {
+            const double t = static_cast<double>(r) / segments;
+            rows[static_cast<std::size_t>(r)].push_back(static_cast<std::uint32_t>(out.Vertices.size()));
+            out.Vertices.push_back(BrushVertex{ HermitePoint(pa, pb, m0, m1, t) });
+        }
+    }
+
+    const std::size_t columns = closed ? n : n - 1;
+    for (int r = 0; r < segments; ++r)
+        for (std::size_t i = 0; i < columns; ++i)
+        {
+            const std::size_t next = (i + 1) % n;
+            const std::vector<std::uint32_t>& rowA = rows[static_cast<std::size_t>(r)];
+            const std::vector<std::uint32_t>& rowB = rows[static_cast<std::size_t>(r) + 1];
+            BrushFace face;
+            face.Loop = reversed
+                ? std::vector<std::uint32_t>{ rowA[next], rowA[i], rowB[i], rowB[next] }
+                : std::vector<std::uint32_t>{ rowA[i], rowA[next], rowB[next], rowB[i] };
+            if (inherit != nullptr)
+                face.Material = *inherit;
+            face.Normal = BrushComputeFaceNormal(out, face);
+            out.Faces.push_back(std::move(face));
+        }
+    return out;
 }
 
 BrushOps::BrushEdgeRing BrushOps::TraceEdgeRing(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
@@ -731,6 +1211,11 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
 
     std::set<std::uint32_t> splitFaces;
     std::vector<BrushFace> halves;
+    // Each split point also belongs in every uncut neighbour that borders its
+    // host edge. Keeping those points in the neighbour loop makes it an ngon
+    // rather than leaving a T-junction across an unchanged quad.
+    std::map<UndirectedEdge, std::vector<std::uint32_t>> edgePoints;
+    edgePoints[UndirectedEdge(a, b)].push_back(mSeed);
     for (const auto& [f, i] : seedIt->second)
     {
         if (faceIndex != kAllAdjacentFaces && f != faceIndex)
@@ -752,6 +1237,7 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
         const std::uint32_t mOpp = static_cast<std::uint32_t>(out.Vertices.size());
         out.Vertices.push_back(BrushVertex{
             out.Vertices[fwdOpp].Position * (1.0f - t) + out.Vertices[othOpp].Position * t });
+        edgePoints[UndirectedEdge(v2, v3)].push_back(mOpp);
 
         BrushFace faceA;
         faceA.Material = mesh.Faces[f].Material;
@@ -769,8 +1255,39 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
     std::vector<BrushFace> rebuilt;
     rebuilt.reserve(out.Faces.size() + halves.size());
     for (std::uint32_t f = 0; f < out.Faces.size(); ++f)
-        if (!splitFaces.count(f))
-            rebuilt.push_back(std::move(out.Faces[f]));
+    {
+        if (splitFaces.count(f))
+            continue;
+
+        BrushFace neighbour = std::move(out.Faces[f]);
+        std::vector<std::uint32_t> loop;
+        loop.reserve(neighbour.Loop.size() + 2);
+        for (std::size_t i = 0; i < neighbour.Loop.size(); ++i)
+        {
+            const std::uint32_t from = neighbour.Loop[i];
+            const std::uint32_t to = neighbour.Loop[(i + 1) % neighbour.Loop.size()];
+            loop.push_back(from);
+            const auto pointsIt = edgePoints.find(UndirectedEdge(from, to));
+            if (pointsIt == edgePoints.end())
+                continue;
+
+            std::vector<std::pair<double, std::uint32_t>> ordered;
+            const Vec3d start = mesh.Vertices[from].Position;
+            const Vec3d edge = mesh.Vertices[to].Position - start;
+            const double length2 = edge.SqrMagnitude();
+            for (std::uint32_t point : pointsIt->second)
+            {
+                const double parameter = length2 > 0.0
+                    ? (out.Vertices[point].Position - start).Dot(edge) / length2 : 0.0;
+                ordered.emplace_back(parameter, point);
+            }
+            std::sort(ordered.begin(), ordered.end());
+            for (const auto& [unused, point] : ordered)
+                loop.push_back(point);
+        }
+        neighbour.Loop = std::move(loop);
+        rebuilt.push_back(std::move(neighbour));
+    }
     for (BrushFace& half : halves)
         rebuilt.push_back(std::move(half));
     out.Faces = std::move(rebuilt);
@@ -912,6 +1429,163 @@ std::optional<BrushOps::BrushRectFaceFrame> BrushOps::RectFaceFrame(const BrushM
         return std::nullopt;
 
     return BrushRectFaceFrame{ .Origin = p0, .AxisU = u, .AxisV = v, .Width = width, .Height = height };
+}
+
+namespace
+{
+    struct FrameLoopSeed
+    {
+        std::uint32_t A = 0;
+        std::uint32_t B = 0;
+        float Position = 0.5f;
+    };
+
+    std::optional<FrameLoopSeed> FindFrameBoundarySeed(
+        const BrushMesh& mesh,
+        const BrushOps::BrushRectFaceFrame& frame,
+        bool cutAlongU,
+        float bound)
+    {
+        const Vec3d normal = frame.AxisU.Cross(frame.AxisV);
+        if (normal.SqrMagnitude() <= 0.0f)
+            return std::nullopt;
+
+        const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+        std::optional<FrameLoopSeed> best;
+        float bestSpan = std::numeric_limits<float>::max();
+        for (const auto& entry : edgeFaces)
+        {
+            const UndirectedEdge& edge = entry.first;
+            const Vec3d pa = mesh.Vertices[edge.U].Position;
+            const Vec3d pb = mesh.Vertices[edge.V].Position;
+            const Vec3d ra = pa - frame.Origin;
+            const Vec3d rb = pb - frame.Origin;
+            if (std::abs(ra.Dot(normal)) > kCarveSnapTol || std::abs(rb.Dot(normal)) > kCarveSnapTol)
+                continue;
+
+            const Vec2d a{ ra.Dot(frame.AxisU), ra.Dot(frame.AxisV) };
+            const Vec2d b{ rb.Dot(frame.AxisU), rb.Dot(frame.AxisV) };
+            if (cutAlongU)
+            {
+                if (std::abs(a.Y) > kCarveSnapTol || std::abs(b.Y) > kCarveSnapTol)
+                    continue;
+            }
+            else
+            {
+                if (std::abs(a.X) > kCarveSnapTol || std::abs(b.X) > kCarveSnapTol)
+                    continue;
+            }
+
+            const float av = cutAlongU ? a.X : a.Y;
+            const float bv = cutAlongU ? b.X : b.Y;
+            const float lo = std::min(av, bv);
+            const float hi = std::max(av, bv);
+            if (hi - lo <= kCarveSnapTol)
+                continue;
+            if (bound <= lo + kCarveSnapTol || bound >= hi - kCarveSnapTol)
+                continue;
+
+            const float span = hi - lo;
+            if (span >= bestSpan)
+                continue;
+
+            best = FrameLoopSeed{
+                .A = edge.U,
+                .B = edge.V,
+                .Position = std::clamp((bound - av) / (bv - av), 0.0f, 1.0f),
+            };
+            bestSpan = span;
+        }
+        return best;
+    }
+
+    std::vector<float> InteriorFrameBounds(float a, float b, float limit)
+    {
+        float lo = std::clamp(std::min(a, b), 0.0f, limit);
+        float hi = std::clamp(std::max(a, b), 0.0f, limit);
+        const auto snap = [limit](float x)
+        {
+            if (x <= kCarveSnapTol)
+                return 0.0f;
+            if (x >= limit - kCarveSnapTol)
+                return limit;
+            return x;
+        };
+        lo = snap(lo);
+        hi = snap(hi);
+        if (hi - lo <= kCarveSnapTol)
+            return {};
+
+        std::vector<float> bounds;
+        if (lo > kCarveSnapTol && lo < limit - kCarveSnapTol)
+            bounds.push_back(lo);
+        if (hi > kCarveSnapTol && hi < limit - kCarveSnapTol
+            && (bounds.empty() || std::abs(hi - bounds.back()) > kCarveSnapTol))
+            bounds.push_back(hi);
+        return bounds;
+    }
+}
+
+BrushMesh BrushOps::InsertFaceLoopBounds(const BrushMesh& mesh, std::uint32_t face,
+                                         Vec2d rectMin, Vec2d rectMax)
+{
+    const std::optional<BrushRectFaceFrame> frame = RectFaceFrame(mesh, face);
+    if (!frame.has_value())
+        return mesh;
+
+    const std::vector<float> uBounds = InteriorFrameBounds(rectMin.X, rectMax.X, frame->Width);
+    const std::vector<float> vBounds = InteriorFrameBounds(rectMin.Y, rectMax.Y, frame->Height);
+    if (uBounds.empty() && vBounds.empty())
+        return mesh;
+
+    BrushMesh out = mesh;
+
+    // True when an edge already runs along the bound line in the face plane:
+    // a rect side flush with an existing loop needs no new cut there.
+    const auto boundHasExistingEdge = [&](bool cutAlongU, float bound) -> bool
+    {
+        const Vec3d normal = frame->AxisU.Cross(frame->AxisV);
+        for (const BrushFace& f : out.Faces)
+        {
+            const std::vector<std::uint32_t>& loop = f.Loop;
+            for (std::size_t i = 0; i < loop.size(); ++i)
+            {
+                const Vec3d ra = out.Vertices[loop[i]].Position - frame->Origin;
+                const Vec3d rb = out.Vertices[loop[(i + 1) % loop.size()]].Position - frame->Origin;
+                if (std::abs(ra.Dot(normal)) > kCarveSnapTol || std::abs(rb.Dot(normal)) > kCarveSnapTol)
+                    continue;
+                const float coordA = cutAlongU ? ra.Dot(frame->AxisU) : ra.Dot(frame->AxisV);
+                const float coordB = cutAlongU ? rb.Dot(frame->AxisU) : rb.Dot(frame->AxisV);
+                const float lateralA = cutAlongU ? ra.Dot(frame->AxisV) : ra.Dot(frame->AxisU);
+                const float lateralB = cutAlongU ? rb.Dot(frame->AxisV) : rb.Dot(frame->AxisU);
+                if (std::abs(coordA - bound) <= kCarveSnapTol && std::abs(coordB - bound) <= kCarveSnapTol
+                    && std::abs(lateralA - lateralB) > kCarveSnapTol)
+                    return true;
+            }
+        }
+        return false;
+    };
+
+    const auto applyBound = [&](bool cutAlongU, float bound) -> bool
+    {
+        const std::optional<FrameLoopSeed> seed = FindFrameBoundarySeed(out, *frame, cutAlongU, bound);
+        if (!seed.has_value())
+            return boundHasExistingEdge(cutAlongU, bound);
+
+        const std::size_t beforeVertices = out.Vertices.size();
+        const std::size_t beforeFaces = out.Faces.size();
+        out = InsertEdgeLoop(out, seed->A, seed->B, seed->Position);
+        return out.Vertices.size() > beforeVertices && out.Faces.size() > beforeFaces;
+    };
+
+    for (float u : uBounds)
+        if (!applyBound(/*cutAlongU*/ true, u))
+            return mesh;
+    for (float v : vBounds)
+        if (!applyBound(/*cutAlongU*/ false, v))
+            return mesh;
+
+    return out;
 }
 
 BrushMesh BrushOps::CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
@@ -1059,4 +1733,1107 @@ BrushMesh BrushOps::CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
     appendFace({ rectIdx[0], rectIdx[1], rectIdx[2], rectIdx[3] });
 
     return out;
+}
+
+namespace
+{
+    std::array<Vec2d, 4> RectUvCorners(Vec2d rectMin, Vec2d rectMax)
+    {
+        return {{
+            { rectMin.X, rectMin.Y },
+            { rectMax.X, rectMin.Y },
+            { rectMax.X, rectMax.Y },
+            { rectMin.X, rectMax.Y },
+        }};
+    }
+
+    std::array<Vec3d, 4> RectFrameCorners(const BrushOps::BrushRectFaceFrame& frame,
+                                          const std::array<Vec2d, 4>& corners)
+    {
+        std::array<Vec3d, 4> out{};
+        for (std::size_t i = 0; i < corners.size(); ++i)
+            out[i] = frame.Origin + frame.AxisU * corners[i].X + frame.AxisV * corners[i].Y;
+        return out;
+    }
+
+    bool StrictlyInsideFrame(Vec2d uv, const BrushOps::BrushRectFaceFrame& frame)
+    {
+        return uv.X > kCarveSnapTol && uv.X < frame.Width - kCarveSnapTol
+            && uv.Y > kCarveSnapTol && uv.Y < frame.Height - kCarveSnapTol;
+    }
+
+    struct ThroughFaceCandidate
+    {
+        std::uint32_t Face = 0;
+        Vec2d RectMin = {};
+        Vec2d RectMax = {};
+        std::array<Vec3d, 4> Projected = {};
+        float Distance = std::numeric_limits<float>::max();
+    };
+
+    bool ProjectedCornersFormFrameRect(const std::array<Vec2d, 4>& uv,
+                                       Vec2d rectMin, Vec2d rectMax)
+    {
+        constexpr float kRectCornerTol = 1e-3f;
+        const std::array<Vec2d, 4> expected = RectUvCorners(rectMin, rectMax);
+        for (Vec2d p : uv)
+        {
+            bool matched = false;
+            for (Vec2d q : expected)
+                matched |= (p - q).SqrMagnitude() <= kRectCornerTol * kRectCornerTol;
+            if (!matched)
+                return false;
+        }
+        return true;
+    }
+
+    std::optional<ThroughFaceCandidate> FindThroughFace(
+        const BrushMesh& mesh,
+        std::uint32_t sourceFace,
+        Vec3d sourceNormal,
+        const std::array<Vec3d, 4>& sourceCorners,
+        bool allowFlush = false)
+    {
+        const Vec3d direction = -sourceNormal;
+        std::optional<ThroughFaceCandidate> best;
+        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+        {
+            if (f == sourceFace)
+                continue;
+            const std::optional<BrushOps::BrushRectFaceFrame> targetFrame =
+                BrushOps::RectFaceFrame(mesh, f);
+            if (!targetFrame.has_value())
+                continue;
+
+            const Vec3d targetNormal = BrushComputeFaceNormal(mesh, mesh.Faces[f]);
+            if (targetNormal.SqrMagnitude() <= 0.0f || sourceNormal.Dot(targetNormal) > -0.98f)
+                continue;
+
+            const float denom = direction.Dot(targetNormal);
+            if (std::abs(denom) <= 1e-5f)
+                continue;
+
+            std::array<Vec2d, 4> targetUv{};
+            std::array<Vec3d, 4> projected{};
+            bool contained = true;
+            float distanceSum = 0.0f;
+            for (std::size_t i = 0; i < sourceCorners.size(); ++i)
+            {
+                const float distance =
+                    (targetFrame->Origin - sourceCorners[i]).Dot(targetNormal) / denom;
+                if (distance <= kCarveSnapTol)
+                {
+                    contained = false;
+                    break;
+                }
+                projected[i] = sourceCorners[i] + direction * distance;
+                const Vec3d rel = projected[i] - targetFrame->Origin;
+                targetUv[i] = { rel.Dot(targetFrame->AxisU), rel.Dot(targetFrame->AxisV) };
+                const bool withinTarget = allowFlush
+                    ? targetUv[i].X >= -kCarveSnapTol && targetUv[i].X <= targetFrame->Width + kCarveSnapTol
+                        && targetUv[i].Y >= -kCarveSnapTol && targetUv[i].Y <= targetFrame->Height + kCarveSnapTol
+                    : StrictlyInsideFrame(targetUv[i], *targetFrame);
+                if (!withinTarget)
+                {
+                    contained = false;
+                    break;
+                }
+                distanceSum += distance;
+            }
+            if (!contained)
+                continue;
+
+            Vec2d rectMin = targetUv[0];
+            Vec2d rectMax = targetUv[0];
+            for (Vec2d uv : targetUv)
+            {
+                rectMin.X = std::min(rectMin.X, uv.X);
+                rectMin.Y = std::min(rectMin.Y, uv.Y);
+                rectMax.X = std::max(rectMax.X, uv.X);
+                rectMax.Y = std::max(rectMax.Y, uv.Y);
+            }
+            if (!ProjectedCornersFormFrameRect(targetUv, rectMin, rectMax))
+                continue;
+
+            const float averageDistance = distanceSum / static_cast<float>(sourceCorners.size());
+            if (!best.has_value() || averageDistance < best->Distance)
+                best = ThroughFaceCandidate{
+                    .Face = f,
+                    .RectMin = rectMin,
+                    .RectMax = rectMax,
+                    .Projected = projected,
+                    .Distance = averageDistance,
+                };
+        }
+        return best;
+    }
+
+    // The quad face lying in `frame`'s plane whose vertices are exactly the
+    // rect corners (matched in frame UV space, tolerating the interpolation
+    // drift of loop-minted vertices). This is how the through-loop path finds
+    // the cap faces the wrapping cuts produced.
+    std::optional<std::uint32_t> FindRectFaceInFrame(const BrushMesh& mesh,
+                                                     const BrushOps::BrushRectFaceFrame& frame,
+                                                     Vec2d rectMin, Vec2d rectMax)
+    {
+        const Vec3d normal = frame.AxisU.Cross(frame.AxisV);
+        const std::array<Vec2d, 4> expected = RectUvCorners(rectMin, rectMax);
+        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+        {
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            if (loop.size() != 4)
+                continue;
+            std::array<bool, 4> used{};
+            bool matches = true;
+            for (std::uint32_t v : loop)
+            {
+                const Vec3d rel = mesh.Vertices[v].Position - frame.Origin;
+                if (std::abs(rel.Dot(normal)) > kCarveShapeTol)
+                {
+                    matches = false;
+                    break;
+                }
+                const Vec2d uv{ rel.Dot(frame.AxisU), rel.Dot(frame.AxisV) };
+                bool found = false;
+                for (int k = 0; k < 4 && !found; ++k)
+                    if (!used[k] && (uv - expected[k]).SqrMagnitude() <= kCarveShapeTol * kCarveShapeTol)
+                    {
+                        used[k] = true;
+                        found = true;
+                    }
+                if (!found)
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches)
+                return f;
+        }
+        return std::nullopt;
+    }
+
+    // Removes the source and target rect cap faces and bridges their rims into
+    // tunnel walls. `projected[k]` is the target-side position under source
+    // rect corner k (RectUvCorners order); the source cap's own loop order is
+    // arbitrary (a loop-minted cap starts anywhere), so each rim vertex is
+    // identified by its rect corner in `sourceFrame` UV space first. Walls wind
+    // to continue the source cap's rim traversal, which keeps the tunnel
+    // interior consistent. `skipWallSide[k]` (rect side k in CarveFaceRect's
+    // CCW convention) omits that wall: a flush pierce opens there instead of
+    // walling. nullopt when either cap is not the expected quad or a rim
+    // vertex cannot be matched.
+    std::optional<BrushMesh> BridgeCapsIntoTunnel(BrushMesh out,
+                                                  std::uint32_t sourceCap,
+                                                  std::uint32_t targetCap,
+                                                  const BrushOps::BrushRectFaceFrame& sourceFrame,
+                                                  Vec2d sourceMin, Vec2d sourceMax,
+                                                  const std::array<Vec3d, 4>& projected,
+                                                  const FaceMaterial& material,
+                                                  const std::array<bool, 4>& skipWallSide = {})
+    {
+        const std::vector<std::uint32_t> sourceLoop = out.Faces[sourceCap].Loop;
+        const std::vector<std::uint32_t> targetLoop = out.Faces[targetCap].Loop;
+        if (sourceLoop.size() != 4 || targetLoop.size() != 4)
+            return std::nullopt;
+
+        const std::array<Vec2d, 4> cornerUv = RectUvCorners(sourceMin, sourceMax);
+        std::array<int, 4> cornerOf{};
+        std::array<bool, 4> used{};
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            const Vec3d rel = out.Vertices[sourceLoop[i]].Position - sourceFrame.Origin;
+            const Vec2d uv{ rel.Dot(sourceFrame.AxisU), rel.Dot(sourceFrame.AxisV) };
+            int match = -1;
+            for (int k = 0; k < 4 && match < 0; ++k)
+                if (!used[k] && (uv - cornerUv[k]).SqrMagnitude() <= kCarveShapeTol * kCarveShapeTol)
+                    match = k;
+            if (match < 0)
+                return std::nullopt;
+            used[match] = true;
+            cornerOf[i] = match;
+        }
+
+        std::array<std::uint32_t, 4> targetAtCorner{};
+        targetAtCorner.fill(std::numeric_limits<std::uint32_t>::max());
+        for (int k = 0; k < 4; ++k)
+            for (std::uint32_t v : targetLoop)
+                if ((out.Vertices[v].Position - projected[static_cast<std::size_t>(k)]).SqrMagnitude()
+                    <= kCarveShapeTol * kCarveShapeTol)
+                {
+                    targetAtCorner[static_cast<std::size_t>(k)] = v;
+                    break;
+                }
+        for (std::uint32_t v : targetAtCorner)
+            if (v == std::numeric_limits<std::uint32_t>::max())
+                return std::nullopt;
+
+        const auto eraseFace = [&](std::uint32_t index)
+        {
+            out.Faces.erase(out.Faces.begin() + static_cast<std::ptrdiff_t>(index));
+        };
+        if (sourceCap > targetCap)
+        {
+            eraseFace(sourceCap);
+            eraseFace(targetCap);
+        }
+        else
+        {
+            eraseFace(targetCap);
+            eraseFace(sourceCap);
+        }
+
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            const std::size_t j = (i + 1) % 4;
+            // The rect side this rim edge covers; the cap loop may traverse
+            // the rect corners in either direction.
+            int side;
+            if (cornerOf[j] == (cornerOf[i] + 1) % 4)
+                side = cornerOf[i];
+            else if (cornerOf[i] == (cornerOf[j] + 1) % 4)
+                side = cornerOf[j];
+            else
+                return std::nullopt; // rim edge spans non-adjacent rect corners
+            if (skipWallSide[static_cast<std::size_t>(side)])
+                continue;
+            BrushFace wall;
+            wall.Loop = {
+                sourceLoop[i],
+                sourceLoop[j],
+                targetAtCorner[static_cast<std::size_t>(cornerOf[j])],
+                targetAtCorner[static_cast<std::size_t>(cornerOf[i])],
+            };
+            wall.Material = material;
+            wall.Normal = BrushComputeFaceNormal(out, wall);
+            out.Faces.push_back(std::move(wall));
+        }
+        return out;
+    }
+
+    // Match 4 vertex indices to a frame rect's corner slots (RectUvCorners
+    // order) by their UV position. nullopt unless the match is a bijection.
+    std::optional<std::array<std::uint32_t, 4>> MatchRectCornerSlots(
+        const BrushMesh& mesh,
+        const BrushOps::BrushRectFaceFrame& frame,
+        Vec2d rectMin, Vec2d rectMax,
+        std::span<const std::uint32_t> candidates)
+    {
+        const std::array<Vec2d, 4> expected = RectUvCorners(rectMin, rectMax);
+        std::array<std::uint32_t, 4> slots{};
+        slots.fill(std::numeric_limits<std::uint32_t>::max());
+        for (std::uint32_t v : candidates)
+        {
+            const Vec3d rel = mesh.Vertices[v].Position - frame.Origin;
+            const Vec2d uv{ rel.Dot(frame.AxisU), rel.Dot(frame.AxisV) };
+            for (int k = 0; k < 4; ++k)
+                if ((uv - expected[static_cast<std::size_t>(k)]).SqrMagnitude()
+                        <= kCarveShapeTol * kCarveShapeTol
+                    && slots[static_cast<std::size_t>(k)] == std::numeric_limits<std::uint32_t>::max())
+                {
+                    slots[static_cast<std::size_t>(k)] = v;
+                    break;
+                }
+        }
+        for (std::uint32_t v : slots)
+            if (v == std::numeric_limits<std::uint32_t>::max())
+                return std::nullopt;
+        return slots;
+    }
+
+    // Flush flags of a rect against its frame, per side in CarveFaceRect's CCW
+    // convention (bottom, right, top, left).
+    std::array<bool, 4> FrameFlushSides(const BrushOps::BrushRectFaceFrame& frame,
+                                        Vec2d rectMin, Vec2d rectMax)
+    {
+        return {
+            rectMin.Y <= kCarveSnapTol,
+            rectMax.X >= frame.Width - kCarveSnapTol,
+            rectMax.Y >= frame.Height - kCarveSnapTol,
+            rectMin.X <= kCarveSnapTol,
+        };
+    }
+
+    bool PointOnSegment(Vec3d p, Vec3d a, Vec3d b)
+    {
+        const Vec3d dir = b - a;
+        const double len2 = dir.SqrMagnitude();
+        if (len2 <= 1e-12)
+            return false;
+        const Vec3d rel = p - a;
+        const double t = rel.Dot(dir) / len2;
+        if (t < -1e-4 || t > 1.0 + 1e-4)
+            return false;
+        return (rel - dir * t).SqrMagnitude() <= kCarveShapeTol * kCarveShapeTol;
+    }
+
+    // The face across the host edge segment containing both points. Used to
+    // classify a flush side: a coplanar neighbor means the surface continues
+    // (the side seams against an interior edge and needs a wall); a bent
+    // neighbor means the brush boundary turns and the side opens a notch.
+    std::optional<std::uint32_t> NeighborAcrossSegment(const BrushMesh& mesh,
+                                                       const EdgeFaces& edgeFaces,
+                                                       std::uint32_t excludeFace,
+                                                       std::span<const std::uint32_t> hostLoop,
+                                                       Vec3d p0, Vec3d p1)
+    {
+        for (std::size_t e = 0; e < hostLoop.size(); ++e)
+        {
+            const std::uint32_t a = hostLoop[e];
+            const std::uint32_t b = hostLoop[(e + 1) % hostLoop.size()];
+            if (!PointOnSegment(p0, mesh.Vertices[a].Position, mesh.Vertices[b].Position)
+                || !PointOnSegment(p1, mesh.Vertices[a].Position, mesh.Vertices[b].Position))
+                continue;
+            const auto it = edgeFaces.find(UndirectedEdge(a, b));
+            if (it == edgeFaces.end())
+                return std::nullopt;
+            for (const auto& [f, unused] : it->second)
+                if (f != excludeFace)
+                    return f;
+        }
+        return std::nullopt;
+    }
+
+    // Inserts existing referenced vertices that lie on a face's edges as
+    // collinear loop vertices, so a freshly built wall cannot leave
+    // T-junctions against the subdivided geometry a channel consumed.
+    void AbsorbCollinearVertices(BrushMesh& mesh, std::uint32_t face)
+    {
+        std::vector<bool> referenced(mesh.Vertices.size(), false);
+        for (const BrushFace& f : mesh.Faces)
+            for (std::uint32_t v : f.Loop)
+                if (v < referenced.size())
+                    referenced[v] = true;
+
+        std::vector<std::uint32_t>& loop = mesh.Faces[face].Loop;
+        for (std::size_t i = 0; i < loop.size();)
+        {
+            const Vec3d a = mesh.Vertices[loop[i]].Position;
+            const Vec3d b = mesh.Vertices[loop[(i + 1) % loop.size()]].Position;
+            const Vec3d dir = b - a;
+            const double len2 = dir.SqrMagnitude();
+            if (len2 <= 1e-12)
+            {
+                ++i;
+                continue;
+            }
+            std::vector<std::pair<float, std::uint32_t>> hits;
+            for (std::uint32_t v = 0; v < mesh.Vertices.size(); ++v)
+            {
+                if (!referenced[v]
+                    || std::find(loop.begin(), loop.end(), v) != loop.end())
+                    continue;
+                const Vec3d rel = mesh.Vertices[v].Position - a;
+                const double t = rel.Dot(dir) / len2;
+                if (t <= 1e-4 || t >= 1.0 - 1e-4)
+                    continue;
+                if ((rel - dir * t).SqrMagnitude() > kCarveShapeTol * kCarveShapeTol)
+                    continue;
+                hits.emplace_back(static_cast<float>(t), v);
+            }
+            if (hits.empty())
+            {
+                ++i;
+                continue;
+            }
+            std::sort(hits.begin(), hits.end());
+            for (std::size_t h = 0; h < hits.size(); ++h)
+                loop.insert(loop.begin() + static_cast<std::ptrdiff_t>(i + 1 + h), hits[h].second);
+            i += hits.size() + 1;
+        }
+    }
+
+    // One-pass retopology for a through-carve whose rect is flush with one or
+    // more face sides: opens the source and target caps, consumes everything
+    // the channel crosses on each flush side's plane (faces fully inside are
+    // deleted, faces partially covered are ring-cut around their overlap), and
+    // walls the non-flush sides. One pass because composing CarveFaceRect
+    // calls is circular: carving either cap inserts split vertices into the
+    // shared neighbor, destroying the rectangular loop the other cap's carve
+    // needs. Scope: every face the channel crosses on a flush plane must be a
+    // flat rectangular quad axis-aligned with the notch, and together they
+    // must tile the notch; opposite-pair-only flush (which would split the
+    // brush in two) and full cover are the caller's rejects. Returns nullopt
+    // to mean "leave the mesh unchanged".
+    std::optional<BrushMesh> CarveThroughWithFlushSides(
+        const BrushMesh& mesh,
+        std::uint32_t face,
+        const BrushOps::BrushRectFaceFrame& sourceFrame,
+        Vec2d sourceMin, Vec2d sourceMax,
+        const std::array<bool, 4>& flush,
+        const ThroughFaceCandidate& target,
+        const BrushOps::BrushRectFaceFrame& targetFrame)
+    {
+        if (mesh.Faces[face].Loop.size() != 4 || mesh.Faces[target.Face].Loop.size() != 4)
+            return std::nullopt;
+
+        // Flush must agree side-for-side: a wall coplanar with a neighbor face
+        // (or a notch missing one side of its cut) is not a valid result.
+        const std::array<bool, 4> targetFlush = FrameFlushSides(targetFrame, target.RectMin, target.RectMax);
+        const int sourceFlushCount = static_cast<int>(flush[0]) + static_cast<int>(flush[1])
+                                   + static_cast<int>(flush[2]) + static_cast<int>(flush[3]);
+        const int targetFlushCount = static_cast<int>(targetFlush[0]) + static_cast<int>(targetFlush[1])
+                                   + static_cast<int>(targetFlush[2]) + static_cast<int>(targetFlush[3]);
+        if (sourceFlushCount != targetFlushCount)
+            return std::nullopt;
+
+        const std::array<std::uint32_t, 4> host = {
+            mesh.Faces[face].Loop[0], mesh.Faces[face].Loop[1],
+            mesh.Faces[face].Loop[2], mesh.Faces[face].Loop[3],
+        };
+        const std::array<std::uint32_t, 4> targetHost = {
+            mesh.Faces[target.Face].Loop[0], mesh.Faces[target.Face].Loop[1],
+            mesh.Faces[target.Face].Loop[2], mesh.Faces[target.Face].Loop[3],
+        };
+
+        BrushMesh out = mesh;
+
+        // Source rect corners S0..S3 (RectUvCorners order): reuse the host
+        // corner when flush in both coordinates, mint otherwise.
+        const std::array<Vec2d, 4> cornerUv = RectUvCorners(sourceMin, sourceMax);
+        const bool atHostCorner[4] = {
+            flush[3] && flush[0],
+            flush[1] && flush[0],
+            flush[1] && flush[2],
+            flush[3] && flush[2],
+        };
+        std::array<std::uint32_t, 4> rectIdx{};
+        for (int k = 0; k < 4; ++k)
+        {
+            if (atHostCorner[k])
+            {
+                rectIdx[static_cast<std::size_t>(k)] = host[static_cast<std::size_t>(k)];
+                continue;
+            }
+            rectIdx[static_cast<std::size_t>(k)] = static_cast<std::uint32_t>(out.Vertices.size());
+            out.Vertices.push_back(BrushVertex{ sourceFrame.Origin
+                + sourceFrame.AxisU * cornerUv[static_cast<std::size_t>(k)].X
+                + sourceFrame.AxisV * cornerUv[static_cast<std::size_t>(k)].Y });
+        }
+
+        // Target-side corners, indexed by SOURCE corner k (target.Projected
+        // order): reuse a target host vertex when the projection lands on one.
+        std::array<std::uint32_t, 4> targetIdx{};
+        for (int k = 0; k < 4; ++k)
+        {
+            const Vec3d p = target.Projected[static_cast<std::size_t>(k)];
+            std::uint32_t found = std::numeric_limits<std::uint32_t>::max();
+            for (std::uint32_t v : targetHost)
+                if ((out.Vertices[v].Position - p).SqrMagnitude() <= kCarveShapeTol * kCarveShapeTol)
+                {
+                    found = v;
+                    break;
+                }
+            if (found == std::numeric_limits<std::uint32_t>::max())
+            {
+                found = static_cast<std::uint32_t>(out.Vertices.size());
+                out.Vertices.push_back(BrushVertex{ p });
+            }
+            targetIdx[static_cast<std::size_t>(k)] = found;
+        }
+
+        // Consume everything the channel crosses on each flush side's plane.
+        // Planned entirely before any face is touched, so every reject leaves
+        // the input unchanged.
+        const auto mintOrReuse = [&](Vec3d position) -> std::uint32_t
+        {
+            for (std::uint32_t v = 0; v < out.Vertices.size(); ++v)
+                if ((out.Vertices[v].Position - position).SqrMagnitude()
+                    <= kCarveShapeTol * kCarveShapeTol)
+                    return v;
+            out.Vertices.push_back(BrushVertex{ position });
+            return static_cast<std::uint32_t>(out.Vertices.size() - 1);
+        };
+
+        struct NeighborCut
+        {
+            std::uint32_t Face = 0;
+            std::array<std::uint32_t, 4> Host{};
+            std::array<std::uint32_t, 4> Rect{}; // overlap corners in the face frame's slot order
+            std::array<bool, 4> Flush{};
+            bool FullyCovered = false;
+        };
+        std::vector<NeighborCut> neighborCuts;
+        std::array<bool, 4> seamSide{};
+        std::set<std::uint32_t> claimed;
+        const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+        const Vec3d sourceNormal = BrushComputeFaceNormal(mesh, mesh.Faces[face]);
+        const Vec3d targetNormal = BrushComputeFaceNormal(mesh, mesh.Faces[target.Face]);
+        for (int k = 0; k < 4; ++k)
+        {
+            if (!flush[k])
+                continue;
+
+            const Vec3d sourceP0 = out.Vertices[rectIdx[static_cast<std::size_t>(k)]].Position;
+            const Vec3d sourceP1 = out.Vertices[rectIdx[static_cast<std::size_t>((k + 1) % 4)]].Position;
+            const Vec3d targetP0 = out.Vertices[targetIdx[static_cast<std::size_t>(k)]].Position;
+            const Vec3d targetP1 = out.Vertices[targetIdx[static_cast<std::size_t>((k + 1) % 4)]].Position;
+
+            const std::optional<std::uint32_t> sourceNeighbor =
+                NeighborAcrossSegment(mesh, edgeFaces, face, host, sourceP0, sourceP1);
+            const std::optional<std::uint32_t> targetNeighbor =
+                NeighborAcrossSegment(mesh, edgeFaces, target.Face, targetHost, targetP0, targetP1);
+            if (!sourceNeighbor.has_value() || !targetNeighbor.has_value())
+                return std::nullopt;
+
+            // Seam: the surface continues past the flush edge (a coplanar
+            // neighbor, e.g. a rect side on an interior loop cut). The channel
+            // gets a wall there and the on-edge corners join the neighbor's
+            // loop; only a bent boundary opens a notch. Half-seam channels
+            // (seam on one cap, boundary on the other) need a real volume
+            // boolean: refused.
+            const bool sourceSeam = std::abs(
+                BrushComputeFaceNormal(mesh, mesh.Faces[*sourceNeighbor]).Dot(sourceNormal)) > 0.99f;
+            const bool targetSeam = std::abs(
+                BrushComputeFaceNormal(mesh, mesh.Faces[*targetNeighbor]).Dot(targetNormal)) > 0.99f;
+            if (sourceSeam != targetSeam)
+                return std::nullopt;
+            if (sourceSeam)
+            {
+                seamSide[static_cast<std::size_t>(k)] = true;
+                continue;
+            }
+
+            if (*sourceNeighbor == target.Face)
+                return std::nullopt;
+            const std::optional<BrushOps::BrushRectFaceFrame> planeFrame =
+                BrushOps::RectFaceFrame(mesh, *sourceNeighbor);
+            if (!planeFrame.has_value())
+                return std::nullopt;
+            const Vec3d planeNormal = planeFrame->AxisU.Cross(planeFrame->AxisV);
+
+            // This side's channel: the flush rect corners and their target
+            // counterparts, all of which must lie in the neighbor plane.
+            const std::array<Vec3d, 4> notchCorners = { sourceP0, sourceP1, targetP0, targetP1 };
+            for (const Vec3d& corner : notchCorners)
+                if (std::abs((corner - planeFrame->Origin).Dot(planeNormal)) > kCarveShapeTol)
+                    return std::nullopt; // channel leaves the side plane: not box-like here
+            const double notchArea =
+                std::sqrt((notchCorners[1] - notchCorners[0]).SqrMagnitude())
+                * std::sqrt((notchCorners[2] - notchCorners[0]).SqrMagnitude());
+
+            // Every face on this plane whose rectangle the channel crosses is
+            // consumed: deleted when fully covered, ring-cut around the
+            // overlap otherwise. Together they must tile the whole channel.
+            double coveredArea = 0.0;
+            for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+            {
+                if (f == face || f == target.Face || claimed.count(f) != 0)
+                    continue;
+                bool onPlane = true;
+                for (std::uint32_t v : mesh.Faces[f].Loop)
+                    if (std::abs((mesh.Vertices[v].Position - planeFrame->Origin).Dot(planeNormal))
+                        > kCarveShapeTol)
+                    {
+                        onPlane = false;
+                        break;
+                    }
+                if (!onPlane)
+                    continue;
+
+                const std::optional<BrushOps::BrushRectFaceFrame> faceFrame =
+                    BrushOps::RectFaceFrame(mesh, f);
+                Vec2d notchMin{ std::numeric_limits<float>::max(),
+                                std::numeric_limits<float>::max() };
+                Vec2d notchMax{ std::numeric_limits<float>::lowest(),
+                                std::numeric_limits<float>::lowest() };
+                if (faceFrame.has_value())
+                {
+                    bool axisAligned = true;
+                    for (const Vec3d& corner : notchCorners)
+                    {
+                        const Vec3d rel = corner - faceFrame->Origin;
+                        const Vec2d uv{ rel.Dot(faceFrame->AxisU), rel.Dot(faceFrame->AxisV) };
+                        notchMin.X = std::min(notchMin.X, uv.X);
+                        notchMin.Y = std::min(notchMin.Y, uv.Y);
+                        notchMax.X = std::max(notchMax.X, uv.X);
+                        notchMax.Y = std::max(notchMax.Y, uv.Y);
+                    }
+                    for (const Vec3d& corner : notchCorners)
+                    {
+                        const Vec3d rel = corner - faceFrame->Origin;
+                        const Vec2d uv{ rel.Dot(faceFrame->AxisU), rel.Dot(faceFrame->AxisV) };
+                        const bool onU = std::abs(uv.X - notchMin.X) <= kCarveShapeTol
+                                      || std::abs(uv.X - notchMax.X) <= kCarveShapeTol;
+                        const bool onV = std::abs(uv.Y - notchMin.Y) <= kCarveShapeTol
+                                      || std::abs(uv.Y - notchMax.Y) <= kCarveShapeTol;
+                        axisAligned &= onU && onV;
+                    }
+                    if (!axisAligned)
+                        return std::nullopt; // channel rotated against this face: not box-like
+
+                    const Vec2d overlapMin{ std::max(notchMin.X, 0.0f), std::max(notchMin.Y, 0.0f) };
+                    const Vec2d overlapMax{ std::min(notchMax.X, faceFrame->Width),
+                                            std::min(notchMax.Y, faceFrame->Height) };
+                    if (overlapMax.X - overlapMin.X <= kCarveShapeTol
+                        || overlapMax.Y - overlapMin.Y <= kCarveShapeTol)
+                        continue; // touching only: not crossed
+
+                    NeighborCut cut;
+                    cut.Face = f;
+                    cut.Host = { mesh.Faces[f].Loop[0], mesh.Faces[f].Loop[1],
+                                 mesh.Faces[f].Loop[2], mesh.Faces[f].Loop[3] };
+                    cut.Flush = FrameFlushSides(*faceFrame, overlapMin, overlapMax);
+                    cut.FullyCovered =
+                        cut.Flush[0] && cut.Flush[1] && cut.Flush[2] && cut.Flush[3];
+                    const std::array<Vec2d, 4> overlapUv = RectUvCorners(overlapMin, overlapMax);
+                    for (int c = 0; c < 4; ++c)
+                        cut.Rect[static_cast<std::size_t>(c)] = mintOrReuse(
+                            faceFrame->Origin
+                            + faceFrame->AxisU * overlapUv[static_cast<std::size_t>(c)].X
+                            + faceFrame->AxisV * overlapUv[static_cast<std::size_t>(c)].Y);
+                    coveredArea += static_cast<double>(overlapMax.X - overlapMin.X)
+                                 * static_cast<double>(overlapMax.Y - overlapMin.Y);
+                    claimed.insert(f);
+                    neighborCuts.push_back(cut);
+                }
+                else
+                {
+                    // A non-rectangular face on the plane: reject only if the
+                    // channel actually reaches it (bounding boxes overlap in
+                    // the plane frame).
+                    Vec2d faceMin{ std::numeric_limits<float>::max(),
+                                   std::numeric_limits<float>::max() };
+                    Vec2d faceMax{ std::numeric_limits<float>::lowest(),
+                                   std::numeric_limits<float>::lowest() };
+                    for (std::uint32_t v : mesh.Faces[f].Loop)
+                    {
+                        const Vec3d rel = mesh.Vertices[v].Position - planeFrame->Origin;
+                        const Vec2d uv{ rel.Dot(planeFrame->AxisU), rel.Dot(planeFrame->AxisV) };
+                        faceMin.X = std::min(faceMin.X, uv.X);
+                        faceMin.Y = std::min(faceMin.Y, uv.Y);
+                        faceMax.X = std::max(faceMax.X, uv.X);
+                        faceMax.Y = std::max(faceMax.Y, uv.Y);
+                    }
+                    Vec2d channelMin{ std::numeric_limits<float>::max(),
+                                      std::numeric_limits<float>::max() };
+                    Vec2d channelMax{ std::numeric_limits<float>::lowest(),
+                                      std::numeric_limits<float>::lowest() };
+                    for (const Vec3d& corner : notchCorners)
+                    {
+                        const Vec3d rel = corner - planeFrame->Origin;
+                        const Vec2d uv{ rel.Dot(planeFrame->AxisU), rel.Dot(planeFrame->AxisV) };
+                        channelMin.X = std::min(channelMin.X, uv.X);
+                        channelMin.Y = std::min(channelMin.Y, uv.Y);
+                        channelMax.X = std::max(channelMax.X, uv.X);
+                        channelMax.Y = std::max(channelMax.Y, uv.Y);
+                    }
+                    if (std::min(channelMax.X, faceMax.X) - std::max(channelMin.X, faceMin.X)
+                            > kCarveShapeTol
+                        && std::min(channelMax.Y, faceMax.Y) - std::max(channelMin.Y, faceMin.Y)
+                            > kCarveShapeTol)
+                        return std::nullopt;
+                }
+            }
+
+            // The consumed faces must tile the whole channel: a gap means the
+            // side surface does not actually span source to target here.
+            if (std::abs(coveredArea - notchArea) > notchArea * 1e-3 + 1e-6)
+                return std::nullopt;
+        }
+
+        // Only sides that actually open the boundary can disconnect the brush.
+        const std::array<bool, 4> openSide = {
+            flush[0] && !seamSide[0],
+            flush[1] && !seamSide[1],
+            flush[2] && !seamSide[2],
+            flush[3] && !seamSide[3],
+        };
+        if (openSide[0] && openSide[1] && openSide[2] && openSide[3])
+            return std::nullopt; // opens every side: nothing bounds the result
+        if ((openSide[0] && openSide[2] && !openSide[1] && !openSide[3])
+            || (openSide[1] && openSide[3] && !openSide[0] && !openSide[2]))
+            return std::nullopt; // an opposite-pair-only channel splits the brush in two
+
+        // Target rect corner slots in the TARGET frame's own order, for its
+        // ring emission (the projected order is mirrored, not reusable).
+        const std::optional<std::array<std::uint32_t, 4>> targetSlots =
+            MatchRectCornerSlots(out, targetFrame, target.RectMin, target.RectMax, targetIdx);
+        if (!targetSlots.has_value())
+            return std::nullopt;
+
+        // All checks passed: erase the source, target, and neighbor faces in
+        // one descending pass, then append the rebuilt pieces.
+        std::vector<std::uint32_t> doomed = { face, target.Face };
+        for (const NeighborCut& cut : neighborCuts)
+            doomed.push_back(cut.Face);
+        std::sort(doomed.begin(), doomed.end(), std::greater<>());
+        const FaceMaterial sourceMaterial = mesh.Faces[face].Material;
+        const FaceMaterial targetMaterial = mesh.Faces[target.Face].Material;
+        for (std::uint32_t f : doomed)
+            out.Faces.erase(out.Faces.begin() + static_cast<std::ptrdiff_t>(f));
+
+        const auto appendQuad = [&](std::array<std::uint32_t, 4> loop, const FaceMaterial& material)
+        {
+            BrushFace piece;
+            piece.Loop.assign(loop.begin(), loop.end());
+            piece.Material = material;
+            piece.Normal = BrushComputeFaceNormal(out, piece);
+            out.Faces.push_back(std::move(piece));
+        };
+        const auto appendRing = [&](const std::array<std::uint32_t, 4>& ringHost,
+                                    const std::array<std::uint32_t, 4>& rect,
+                                    const std::array<bool, 4>& ringFlush,
+                                    const FaceMaterial& material)
+        {
+            for (int k = 0; k < 4; ++k)
+                if (!ringFlush[static_cast<std::size_t>(k)])
+                    appendQuad({ ringHost[static_cast<std::size_t>(k)],
+                                 ringHost[static_cast<std::size_t>((k + 1) % 4)],
+                                 rect[static_cast<std::size_t>((k + 1) % 4)],
+                                 rect[static_cast<std::size_t>(k)] },
+                               material);
+        };
+
+        appendRing(host, rectIdx, flush, sourceMaterial);
+        appendRing(targetHost, *targetSlots, targetFlush, targetMaterial);
+        for (const NeighborCut& cut : neighborCuts)
+            if (!cut.FullyCovered)
+                appendRing(cut.Host, cut.Rect, cut.Flush, mesh.Faces[cut.Face].Material);
+
+        // Tunnel walls everywhere except the open sides: non-flush sides and
+        // seam sides (where the surface continues past the flush edge) both
+        // bound the channel with a wall.
+        for (int k = 0; k < 4; ++k)
+        {
+            if (openSide[static_cast<std::size_t>(k)])
+                continue;
+            const std::size_t i = static_cast<std::size_t>(k);
+            const std::size_t j = static_cast<std::size_t>((k + 1) % 4);
+            appendQuad({ rectIdx[i], rectIdx[j], targetIdx[j], targetIdx[i] }, sourceMaterial);
+        }
+
+        // A channel across subdivided planes mints crossing vertices on other
+        // faces' edges (chain crossings, seam corners on a coplanar neighbor);
+        // absorb them everywhere as collinear loop vertices so no edge is left
+        // T-junctioned.
+        for (std::size_t f = 0; f < out.Faces.size(); ++f)
+            AbsorbCollinearVertices(out, static_cast<std::uint32_t>(f));
+        return out;
+    }
+}
+
+BrushMesh BrushOps::CarveFaceRectThrough(const BrushMesh& mesh, std::uint32_t face,
+                                         Vec2d rectMin, Vec2d rectMax)
+{
+    const std::optional<BrushRectFaceFrame> sourceFrame = RectFaceFrame(mesh, face);
+    if (!sourceFrame.has_value())
+        return mesh;
+
+    // Canonicalize with the same snap-to-flush the plain carve uses.
+    float u0 = std::clamp(std::min(rectMin.X, rectMax.X), 0.0f, sourceFrame->Width);
+    float u1 = std::clamp(std::max(rectMin.X, rectMax.X), 0.0f, sourceFrame->Width);
+    float v0 = std::clamp(std::min(rectMin.Y, rectMax.Y), 0.0f, sourceFrame->Height);
+    float v1 = std::clamp(std::max(rectMin.Y, rectMax.Y), 0.0f, sourceFrame->Height);
+    const auto snap = [](float& x, float limit)
+    {
+        if (x <= kCarveSnapTol)
+            x = 0.0f;
+        if (x >= limit - kCarveSnapTol)
+            x = limit;
+    };
+    snap(u0, sourceFrame->Width);
+    snap(u1, sourceFrame->Width);
+    snap(v0, sourceFrame->Height);
+    snap(v1, sourceFrame->Height);
+    if (u1 - u0 <= kCarveSnapTol || v1 - v0 <= kCarveSnapTol)
+        return mesh;
+    const Vec2d sourceMin{ u0, v0 };
+    const Vec2d sourceMax{ u1, v1 };
+
+    const std::array<bool, 4> flush = FrameFlushSides(*sourceFrame, sourceMin, sourceMax);
+    const bool anyFlush = flush[0] || flush[1] || flush[2] || flush[3];
+    // Which flush sides disconnect the brush depends on whether each one opens
+    // the boundary or seams against a continuing surface; the flush kernel
+    // classifies and rejects accordingly.
+
+    const Vec3d sourceNormal = BrushComputeFaceNormal(mesh, mesh.Faces[face]);
+    if (sourceNormal.SqrMagnitude() <= 0.0f)
+        return mesh;
+
+    const std::array<Vec2d, 4> sourceUv = RectUvCorners(sourceMin, sourceMax);
+    const std::array<Vec3d, 4> sourceCorners = RectFrameCorners(*sourceFrame, sourceUv);
+    const std::optional<ThroughFaceCandidate> target =
+        FindThroughFace(mesh, face, sourceNormal, sourceCorners, /*allowFlush*/ anyFlush);
+    if (!target.has_value())
+        return mesh;
+
+    if (anyFlush)
+    {
+        const std::optional<BrushRectFaceFrame> targetFrame = RectFaceFrame(mesh, target->Face);
+        if (!targetFrame.has_value())
+            return mesh;
+        std::optional<BrushMesh> notched = CarveThroughWithFlushSides(
+            mesh, face, *sourceFrame, sourceMin, sourceMax, flush, *target, *targetFrame);
+        return notched.has_value() ? std::move(*notched) : mesh;
+    }
+
+    BrushMesh out = CarveFaceRect(mesh, face, sourceMin, sourceMax);
+    if (out.Faces.size() <= mesh.Faces.size())
+        return mesh;
+
+    std::uint32_t targetFace = target->Face;
+    if (targetFace > face)
+        --targetFace;
+    std::uint32_t sourceCenterFace = static_cast<std::uint32_t>(out.Faces.size() - 1);
+
+    out = CarveFaceRect(out, targetFace, target->RectMin, target->RectMax);
+    if (out.Faces.size() <= mesh.Faces.size() + 4u)
+        return mesh;
+    if (targetFace < sourceCenterFace)
+        --sourceCenterFace;
+    const std::uint32_t targetCenterFace = static_cast<std::uint32_t>(out.Faces.size() - 1);
+    if (sourceCenterFace >= out.Faces.size() || targetCenterFace >= out.Faces.size())
+        return mesh;
+
+    std::optional<BrushMesh> tunnel = BridgeCapsIntoTunnel(std::move(out),
+                                                           sourceCenterFace, targetCenterFace,
+                                                           *sourceFrame, sourceMin, sourceMax,
+                                                           target->Projected, mesh.Faces[face].Material);
+    return tunnel.has_value() ? std::move(*tunnel) : mesh;
+}
+
+BrushMesh BrushOps::InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint32_t face,
+                                                Vec2d rectMin, Vec2d rectMax)
+{
+    const std::optional<BrushRectFaceFrame> sourceFrame = RectFaceFrame(mesh, face);
+    if (!sourceFrame.has_value())
+        return mesh;
+
+    // Canonicalize with the same snap-to-flush the carves use.
+    float u0 = std::clamp(std::min(rectMin.X, rectMax.X), 0.0f, sourceFrame->Width);
+    float u1 = std::clamp(std::max(rectMin.X, rectMax.X), 0.0f, sourceFrame->Width);
+    float v0 = std::clamp(std::min(rectMin.Y, rectMax.Y), 0.0f, sourceFrame->Height);
+    float v1 = std::clamp(std::max(rectMin.Y, rectMax.Y), 0.0f, sourceFrame->Height);
+    const auto snap = [](float& x, float limit)
+    {
+        if (x <= kCarveSnapTol)
+            x = 0.0f;
+        if (x >= limit - kCarveSnapTol)
+            x = limit;
+    };
+    snap(u0, sourceFrame->Width);
+    snap(u1, sourceFrame->Width);
+    snap(v0, sourceFrame->Height);
+    snap(v1, sourceFrame->Height);
+    if (u1 - u0 <= kCarveSnapTol || v1 - v0 <= kCarveSnapTol)
+        return mesh;
+    const Vec2d sourceMin{ u0, v0 };
+    const Vec2d sourceMax{ u1, v1 };
+
+    const std::array<bool, 4> flush = FrameFlushSides(*sourceFrame, sourceMin, sourceMax);
+    const bool anyFlush = flush[0] || flush[1] || flush[2] || flush[3];
+
+    const Vec3d sourceNormal = BrushComputeFaceNormal(mesh, mesh.Faces[face]);
+    if (sourceNormal.SqrMagnitude() <= 0.0f)
+        return mesh;
+
+    // Resolve the opposite face, its frame, and the flush neighbors' frames
+    // BEFORE the topology changes: the loop cuts re-split faces (indices
+    // shift) but move no existing vertex, so captured frames and projected
+    // corners stay geometrically valid.
+    const std::array<Vec3d, 4> sourceCorners =
+        RectFrameCorners(*sourceFrame, RectUvCorners(sourceMin, sourceMax));
+    const std::optional<ThroughFaceCandidate> target =
+        FindThroughFace(mesh, face, sourceNormal, sourceCorners, /*allowFlush*/ anyFlush);
+    if (!target.has_value())
+        return mesh;
+    const std::optional<BrushRectFaceFrame> targetFrame = RectFaceFrame(mesh, target->Face);
+    if (!targetFrame.has_value())
+        return mesh;
+    if (anyFlush)
+    {
+        const std::array<bool, 4> targetFlush =
+            FrameFlushSides(*targetFrame, target->RectMin, target->RectMax);
+        const int sourceCount = static_cast<int>(flush[0]) + static_cast<int>(flush[1])
+                              + static_cast<int>(flush[2]) + static_cast<int>(flush[3]);
+        const int targetCount = static_cast<int>(targetFlush[0]) + static_cast<int>(targetFlush[1])
+                              + static_cast<int>(targetFlush[2]) + static_cast<int>(targetFlush[3]);
+        if (sourceCount != targetCount)
+            return mesh;
+    }
+
+    // Each flush side's notch strip lies on the face bordering that side's
+    // host edge: capture its frame and notch rect now, find the strip face
+    // after the cuts.
+    struct NotchStrip
+    {
+        BrushRectFaceFrame Frame{};
+        Vec2d Min = {};
+        Vec2d Max = {};
+    };
+    std::vector<NotchStrip> strips;
+    std::array<bool, 4> openSide{};
+    if (anyFlush)
+    {
+        const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+        const std::array<Vec3d, 4> rectCorners =
+            RectFrameCorners(*sourceFrame, RectUvCorners(sourceMin, sourceMax));
+        const std::vector<std::uint32_t>& hostLoop = mesh.Faces[face].Loop;
+        const std::vector<std::uint32_t>& targetHostLoop = mesh.Faces[target->Face].Loop;
+        if (hostLoop.size() != 4)
+            return mesh;
+        const Vec3d targetNormal = BrushComputeFaceNormal(mesh, mesh.Faces[target->Face]);
+        for (int k = 0; k < 4; ++k)
+        {
+            if (!flush[k])
+                continue;
+
+            const Vec3d sourceP0 = rectCorners[static_cast<std::size_t>(k)];
+            const Vec3d sourceP1 = rectCorners[static_cast<std::size_t>((k + 1) % 4)];
+            const Vec3d targetP0 = target->Projected[static_cast<std::size_t>(k)];
+            const Vec3d targetP1 = target->Projected[static_cast<std::size_t>((k + 1) % 4)];
+
+            const std::optional<std::uint32_t> sourceNeighbor =
+                NeighborAcrossSegment(mesh, edgeFaces, face, hostLoop, sourceP0, sourceP1);
+            const std::optional<std::uint32_t> targetNeighbor =
+                NeighborAcrossSegment(mesh, edgeFaces, target->Face, targetHostLoop, targetP0, targetP1);
+            if (!sourceNeighbor.has_value() || !targetNeighbor.has_value())
+                return mesh;
+
+            // Seam sides (a coplanar neighbor: the surface continues past the
+            // flush edge) keep their wall and cut nothing; only a bent
+            // boundary opens a notch. Half-seam channels need a real volume
+            // boolean: refused.
+            const bool sourceSeam = std::abs(
+                BrushComputeFaceNormal(mesh, mesh.Faces[*sourceNeighbor]).Dot(sourceNormal)) > 0.99f;
+            const bool targetSeam = std::abs(
+                BrushComputeFaceNormal(mesh, mesh.Faces[*targetNeighbor]).Dot(targetNormal)) > 0.99f;
+            if (sourceSeam != targetSeam)
+                return mesh;
+            if (sourceSeam)
+                continue;
+            openSide[static_cast<std::size_t>(k)] = true;
+
+            if (*sourceNeighbor == target->Face)
+                return mesh;
+            const std::optional<BrushRectFaceFrame> neighborFrame = RectFaceFrame(mesh, *sourceNeighbor);
+            if (!neighborFrame.has_value())
+                return mesh;
+
+            // Notch corners: the flush side's rect corners and their target
+            // projections, expressed in the neighbor's frame.
+            const Vec3d notchCorners[4] = { sourceP0, sourceP1, targetP0, targetP1 };
+            const Vec3d neighborNormal = neighborFrame->AxisU.Cross(neighborFrame->AxisV);
+            NotchStrip strip;
+            strip.Frame = *neighborFrame;
+            strip.Min = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+            strip.Max = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+            for (const Vec3d& corner : notchCorners)
+            {
+                const Vec3d rel = corner - neighborFrame->Origin;
+                if (std::abs(rel.Dot(neighborNormal)) > kCarveShapeTol)
+                    return mesh; // corner off the neighbor plane: not a box-like side
+                const Vec2d uv{ rel.Dot(neighborFrame->AxisU), rel.Dot(neighborFrame->AxisV) };
+                strip.Min.X = std::min(strip.Min.X, uv.X);
+                strip.Min.Y = std::min(strip.Min.Y, uv.Y);
+                strip.Max.X = std::max(strip.Max.X, uv.X);
+                strip.Max.Y = std::max(strip.Max.Y, uv.Y);
+            }
+            strips.push_back(strip);
+        }
+
+        // Only sides that actually open the boundary can disconnect the brush.
+        if (openSide[0] && openSide[1] && openSide[2] && openSide[3])
+            return mesh; // opens every side: nothing bounds the result
+        if ((openSide[0] && openSide[2] && !openSide[1] && !openSide[3])
+            || (openSide[1] && openSide[3] && !openSide[0] && !openSide[2]))
+            return mesh; // an opposite-pair-only channel splits the brush in two
+    }
+
+    // Full wrapping loops; where they cross the source and opposite faces they
+    // mint vertices exactly at the two rects' corners, so the openings align
+    // by construction.
+    BrushMesh out = InsertFaceLoopBounds(mesh, face, sourceMin, sourceMax);
+    if (out.Faces.size() == mesh.Faces.size() && out.Vertices.size() == mesh.Vertices.size())
+        return mesh;
+
+    const std::optional<std::uint32_t> sourceCap =
+        FindRectFaceInFrame(out, *sourceFrame, sourceMin, sourceMax);
+    const std::optional<std::uint32_t> targetCap =
+        FindRectFaceInFrame(out, *targetFrame, target->RectMin, target->RectMax);
+    if (!sourceCap.has_value() || !targetCap.has_value() || *sourceCap == *targetCap)
+        return mesh; // the loops did not reach the opposite face cleanly
+
+    // Delete every face inside each flush side's notch region so the channel
+    // opens there. The wrapping loops already cut the neighbors into strips,
+    // and pre-existing crossing loops may have tiled the notch into several;
+    // consume them all, and require them to tile the whole notch. Descending
+    // order keeps the collected indices valid; the cap indices are re-resolved
+    // afterwards.
+    if (!strips.empty())
+    {
+        std::vector<std::uint32_t> doomed;
+        for (const NotchStrip& strip : strips)
+        {
+            const Vec3d normal = strip.Frame.AxisU.Cross(strip.Frame.AxisV);
+            const double notchArea = static_cast<double>(strip.Max.X - strip.Min.X)
+                                   * static_cast<double>(strip.Max.Y - strip.Min.Y);
+            double covered = 0.0;
+            for (std::uint32_t f = 0; f < out.Faces.size(); ++f)
+            {
+                if (f == *sourceCap || f == *targetCap
+                    || std::find(doomed.begin(), doomed.end(), f) != doomed.end())
+                    continue;
+                bool inside = true;
+                Vec2d faceMin{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+                Vec2d faceMax{ std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+                for (std::uint32_t v : out.Faces[f].Loop)
+                {
+                    const Vec3d rel = out.Vertices[v].Position - strip.Frame.Origin;
+                    if (std::abs(rel.Dot(normal)) > kCarveShapeTol)
+                    {
+                        inside = false;
+                        break;
+                    }
+                    const Vec2d uv{ rel.Dot(strip.Frame.AxisU), rel.Dot(strip.Frame.AxisV) };
+                    if (uv.X < strip.Min.X - kCarveShapeTol || uv.X > strip.Max.X + kCarveShapeTol
+                        || uv.Y < strip.Min.Y - kCarveShapeTol || uv.Y > strip.Max.Y + kCarveShapeTol)
+                    {
+                        inside = false;
+                        break;
+                    }
+                    faceMin.X = std::min(faceMin.X, uv.X);
+                    faceMin.Y = std::min(faceMin.Y, uv.Y);
+                    faceMax.X = std::max(faceMax.X, uv.X);
+                    faceMax.Y = std::max(faceMax.Y, uv.Y);
+                }
+                if (!inside)
+                    continue;
+                covered += static_cast<double>(faceMax.X - faceMin.X)
+                         * static_cast<double>(faceMax.Y - faceMin.Y);
+                doomed.push_back(f);
+            }
+            if (std::abs(covered - notchArea) > notchArea * 1e-3 + 1e-6)
+                return mesh; // the strips do not tile the notch: leave it alone
+        }
+        std::sort(doomed.begin(), doomed.end(), std::greater<>());
+        for (std::uint32_t f : doomed)
+            out.Faces.erase(out.Faces.begin() + static_cast<std::ptrdiff_t>(f));
+    }
+
+    const std::optional<std::uint32_t> sourceCapAfter =
+        FindRectFaceInFrame(out, *sourceFrame, sourceMin, sourceMax);
+    const std::optional<std::uint32_t> targetCapAfter =
+        FindRectFaceInFrame(out, *targetFrame, target->RectMin, target->RectMax);
+    if (!sourceCapAfter.has_value() || !targetCapAfter.has_value())
+        return mesh;
+
+    std::optional<BrushMesh> tunnel = BridgeCapsIntoTunnel(std::move(out),
+                                                           *sourceCapAfter, *targetCapAfter,
+                                                           *sourceFrame, sourceMin, sourceMax,
+                                                           target->Projected, mesh.Faces[face].Material,
+                                                           /*skipWallSide*/ openSide);
+    if (!tunnel.has_value())
+        return mesh;
+
+    // Pre-existing loops crossing the channel leave vertices on the new wall
+    // edges; absorb them so no edge is left T-junctioned. The walls are the
+    // last appended faces (one per non-open side).
+    const int wallCount = 4 - (static_cast<int>(openSide[0]) + static_cast<int>(openSide[1])
+                               + static_cast<int>(openSide[2]) + static_cast<int>(openSide[3]));
+    for (int w = 0; w < wallCount && w < static_cast<int>(tunnel->Faces.size()); ++w)
+        AbsorbCollinearVertices(*tunnel,
+                                static_cast<std::uint32_t>(tunnel->Faces.size() - 1 - static_cast<std::size_t>(w)));
+    return std::move(*tunnel);
 }

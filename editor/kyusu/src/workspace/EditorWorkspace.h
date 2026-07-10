@@ -23,6 +23,7 @@
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
 
+#include "brush/BrushOps.h"
 #include "document/BrushCreationSettings.h"
 #include "document/EdgeCutSettings.h"
 #include "document/WorldDocument.h"
@@ -55,6 +56,18 @@ public:
 
     // Deletes the entity-kind selection as one undoable step (no-op if empty).
     void DeleteSelection();
+    // Backspace verb in edge mode: merge the faces across each selected edge.
+    void DissolveSelectedEdges();
+    // Bridges two selected edge paths from different brushes into a new bridge
+    // brush without changing either source. The cross-brush bridge starts as a
+    // PENDING preview entity (adjust Segments live, Apply commits, Cancel or
+    // Undo drops it); same-brush bridges stay immediate mesh edits.
+    void BridgeSelectedEdges(int segments);
+    [[nodiscard]] bool HasPendingBridge() const { return Bridge == BridgeState::Pending; }
+    // Regenerates the pending preview with a new segment count.
+    void SetPendingBridgeSegments(int segments);
+    void CommitPendingBridge();
+    void CancelPendingBridge();
 
     // Duplicates the entity-kind selection in place as one undoable step and
     // selects the copies. With asInstance, brush copies SHARE the source's mesh
@@ -108,6 +121,19 @@ public:
     // has not been moved), then clears the transient pivot. One undoable step.
     void SetSelectedBrushOriginToPivot();
 
+    // Anchor choices for re-origining the primary selected brush without moving
+    // its geometry: the first selected vertex, its world-bounds center, or the
+    // world-bounds minimum corner.
+    enum class OriginAnchor : std::uint8_t
+    {
+        SelectedVertex,
+        BoundsCenter,
+        BoundsMinCorner,
+    };
+    // Re-origins the primary selected brush to the anchor (no-op when the anchor
+    // does not resolve), then clears the transient pivot. One undoable step.
+    void SetSelectedBrushOrigin(OriginAnchor anchor);
+
     // Applies the active material to every selected face, one undoable step per
     // brush. No-op when no material is active or nothing face-like is selected.
     void ApplyActiveMaterialToSelectedFaces();
@@ -159,9 +185,41 @@ public:
     // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;
 
+    // Cross-brush bridge lifecycle. Invariants: Bridge == Pending exactly while
+    // PendingBridgeData holds a live preview entity (with the resolved paths it
+    // regenerates from) and the command stack's pending-edit scope is open for
+    // it. Transitions happen only in BeginPendingBridge (Idle -> Pending) and
+    // CommitPendingBridge / CancelPendingBridge (Pending -> Idle).
+    enum class BridgeState : std::uint8_t { Idle, Pending };
+    struct PendingBridge
+    {
+        EntityId Entity = {};
+        BrushOps::BridgePathSpec PathA;
+        BrushOps::BridgePathSpec PathB;
+        FaceMaterial Material;
+        int Segments = 1;
+        // The scene and document the preview entity lives in, captured at
+        // begin: a focus change swaps ActiveDocument, and cancel must destroy
+        // the entity where it was created.
+        EditorScene* Scene = nullptr;
+        EditorDocument* Document = nullptr;
+        std::vector<SelectableRef> BeforeSelection;
+    };
+    BridgeState Bridge = BridgeState::Idle;
+    PendingBridge PendingBridgeData;
+
+    void BeginPendingBridge(PendingBridge pending);
+    void RegeneratePendingBridge();
+
 private:
     // Builds the document-bound editing stack (sink, tool context, tools,
     // dispatcher, manipulator session) against the active document. Init and
     // ResetInteractionState share it.
     void BuildInteractionState();
+
+    // Re-expresses the current selection in the new element kind (face -> its
+    // edges, edge -> endpoints, and so on) so switching modes carries the
+    // selection along. No-op when nothing needs converting, so it is safe when
+    // the kind change fires from inside a selection notification.
+    void ConvertSelectionToKind(MeshElementKind next);
 };

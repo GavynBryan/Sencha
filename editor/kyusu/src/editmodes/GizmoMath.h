@@ -42,4 +42,32 @@ inline constexpr double kParallelEpsilon = 1.0e-8;
     const double snapped = originCoord + std::round((target - originCoord) / spacing) * spacing;
     return snapped - pivotCoord;
 }
+
+// True when coord sits on the grid lattice (originCoord + k*spacing) within
+// tol. spacing <= 0 has no lattice.
+[[nodiscard]] inline bool OnGridLattice(double coord, double originCoord, float spacing, double tol)
+{
+    if (spacing <= 0.0f)
+        return false;
+    const double rel = coord - originCoord;
+    const double nearest = std::round(rel / spacing) * spacing;
+    return std::abs(rel - nearest) <= tol;
+}
+
+// Absolute snap for an axis scale: adjust the factor so the driven AABB bound
+// (which factor f places at pivot + (bound - pivot) * f) lands on the nearest
+// grid line, so scaled geometry faces sit on grid positions rather than the
+// factor snapping to arbitrary increments. spacing <= 0 or a degenerate extent
+// passes the raw factor through. The result can be <= 0 when the nearest line
+// crosses the pivot; the caller clamps to its minimum factor.
+[[nodiscard]] inline double SnapScaleFactor(double rawFactor, double pivotCoord, double boundCoord,
+                                            double originCoord, float spacing)
+{
+    const double extent = boundCoord - pivotCoord;
+    if (spacing <= 0.0f || std::abs(extent) < kParallelEpsilon)
+        return rawFactor;
+    const double target = pivotCoord + extent * rawFactor;
+    const double snapped = originCoord + std::round((target - originCoord) / spacing) * spacing;
+    return (snapped - pivotCoord) / extent;
+}
 } // namespace GizmoMath

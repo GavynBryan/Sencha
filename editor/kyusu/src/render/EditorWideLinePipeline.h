@@ -5,6 +5,7 @@
 #include <math/Vec.h>
 
 #include <span>
+#include <string_view>
 #include <vector>
 
 // One world-space line segment with a screen-space pixel width. Unlike the 1px
@@ -41,10 +42,13 @@ public:
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
                 std::span<const EditorLineSegment> segments,
-                bool onTop = false);
+                bool onTop = false,
+                std::string_view source = {});
     void Teardown();
 
 private:
+    Logger* Log = nullptr;
+    bool LoggedOversizedSubmit = false;
     EditorImmediatePipeline<EditorWideLineVertex> Pipeline;
     std::vector<EditorWideLineVertex> Expanded; // reused per Submit to avoid per-frame allocs
 };

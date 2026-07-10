@@ -29,6 +29,7 @@ public:
     void PreviewTransform(EntityId entity, const Transform3f& transform) override;
     void PreviewMesh(EntityId entity, const BrushMesh& mesh) override;
     void CommitTransforms(const std::vector<TransformEdit>& edits) override;
+    void CommitMeshes(std::vector<MeshEdit> edits) override;
     void CommitMesh(EntityId entity, BrushMesh before, BrushMesh after) override;
     void SelectElements(std::span<const SelectableRef> refs) override;
     [[nodiscard]] std::vector<EntityId> CreatePreviewDuplicates(

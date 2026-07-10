@@ -2,6 +2,8 @@
 
 #include "viewport/EditorViewport.h"
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -15,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <utility>
 #include <vector>
@@ -60,6 +63,7 @@ public:
         Pipelines = services.Pipelines;
         Scratch = services.Scratch;
         Buffers = services.Buffers;
+        Log = services.Logging != nullptr ? &services.Logging->GetLogger<EditorImmediatePipeline>() : nullptr;
 
         VertexShader = Shaders->CreateModuleFromSpirv(
             Config.VertexSpirv, Config.VertexWordCount, Config.VertexName);
@@ -96,10 +100,33 @@ public:
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
+        if (vertices.size() > std::numeric_limits<VkDeviceSize>::max() / sizeof(TVertex))
+        {
+            if (Log != nullptr && !LoggedOverflow)
+            {
+                Log->Error("{}: dropped submission of {} vertices; byte count overflowed",
+                           Config.VertexName, vertices.size());
+                LoggedOverflow = true;
+            }
+            return;
+        }
+
         const VkDeviceSize byteCount = sizeof(TVertex) * vertices.size();
         const auto allocation = Scratch->AllocateVertex(byteCount);
         if (!allocation.IsValid())
+        {
+            // The scratch error names no caller; identify the pipeline and the
+            // vertex count so an oversized submission can be traced to its
+            // builder. Logged once per failure streak to avoid per-frame spam.
+            if (Log != nullptr && !LoggedOverflow)
+            {
+                Log->Error("{}: dropped submission of {} vertices ({} bytes) that exceeded frame scratch",
+                           Config.VertexName, vertices.size(), static_cast<uint64_t>(byteCount));
+                LoggedOverflow = true;
+            }
             return;
+        }
+        LoggedOverflow = false;
 
         std::memcpy(allocation.Mapped, vertices.data(), static_cast<size_t>(byteCount));
 
@@ -146,6 +173,13 @@ public:
         PipelineOnTop = VK_NULL_HANDLE;
     }
 
+    [[nodiscard]] std::size_t MaxScratchVerticesPerSubmit() const
+    {
+        if (Scratch == nullptr)
+            return 0;
+        return static_cast<std::size_t>(Scratch->GetBytesPerFrame() / sizeof(TVertex));
+    }
+
     void Teardown()
     {
         if (Shaders != nullptr)
@@ -168,6 +202,7 @@ public:
         Scratch = nullptr;
         Pipelines = nullptr;
         Shaders = nullptr;
+        Log = nullptr;
         Device = VK_NULL_HANDLE;
     }
 
@@ -218,6 +253,8 @@ private:
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanFrameScratch* Scratch = nullptr;
+    Logger* Log = nullptr;
+    bool LoggedOverflow = false;
     VkDevice Device = VK_NULL_HANDLE;
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;

@@ -7,10 +7,9 @@
 
 #include <graphics/vulkan/Renderer.h>
 
-// Draws the create-drag preview as the wireframe of the actual brush mesh, via
-// the shared editor line pipeline. It is an overlay, not a brush body, so it runs
-// in every viewport regardless of shading. That is why the preview is visible in
-// perspective as well as ortho. Owns no GPU state of its own.
+// Draws the active create-drag preview as an on-top construction wireframe.
+// Releasing the drag promotes it to a scene brush, which renders through the
+// normal body path while its parameters remain editable.
 class BrushPreviewRenderer
 {
 public:

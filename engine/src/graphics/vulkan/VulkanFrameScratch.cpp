@@ -3,11 +3,15 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 
+#include <limits>
+
 namespace
 {
     VkDeviceSize AlignUp(VkDeviceSize value, VkDeviceSize alignment)
     {
         if (alignment <= 1) return value;
+        if (value > std::numeric_limits<VkDeviceSize>::max() - (alignment - 1))
+            return std::numeric_limits<VkDeviceSize>::max();
         return (value + alignment - 1) & ~(alignment - 1);
     }
 }
@@ -90,10 +94,11 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, V
     if (!Valid || size == 0) return {};
 
     const VkDeviceSize alignedCursor = AlignUp(Cursor, alignment == 0 ? 1 : alignment);
-    if (alignedCursor + size > BytesPerFrame)
+    if (alignedCursor > BytesPerFrame || size > BytesPerFrame - alignedCursor)
     {
-        Log.Error("VulkanFrameScratch: allocation of {} bytes exceeds frame slice capacity ({})",
+        Log.Error("VulkanFrameScratch: allocation of {} bytes at cursor {} exceeds frame slice capacity ({})",
                   static_cast<uint64_t>(size),
+                  static_cast<uint64_t>(alignedCursor),
                   static_cast<uint64_t>(BytesPerFrame));
         return {};
     }

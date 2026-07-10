@@ -26,6 +26,15 @@ struct TransformEdit
     Transform3f After = Transform3f::Identity();
 };
 
+// One entity's mesh change: the mesh counterpart of TransformEdit, for
+// committing a multi-mesh element edit as a single undoable step.
+struct MeshEdit
+{
+    EntityId Entity = {};
+    BrushMesh Before;
+    BrushMesh After;
+};
+
 struct ManipulationSink
 {
     [[nodiscard]] virtual std::optional<Transform3f> ResolveTransform(EntityId entity) const = 0;
@@ -36,6 +45,9 @@ struct ManipulationSink
 
     // Commit all edits as one undoable step (move of one or many entities).
     virtual void CommitTransforms(const std::vector<TransformEdit>& edits) = 0;
+    // Commit all mesh edits as one undoable step (element edit across one or
+    // many meshes). CommitMesh is the single-mesh convenience over it.
+    virtual void CommitMeshes(std::vector<MeshEdit> edits) = 0;
     virtual void CommitMesh(EntityId entity, BrushMesh before, BrushMesh after) = 0;
 
     // Replace the selection with the given refs (empty clears it). The extrude

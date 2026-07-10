@@ -102,7 +102,7 @@ private:
     // without a mounted project.
     void BuildSourceWatch();
 
-    // Bake-to-static-mesh actions behind the MeshEditPanel buttons. All need a
+    // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
     // mounted project (the .smesh is written under its first content root).
     void BakeSelectedBrushes();
     void RevertSelectedBakedBrushes();

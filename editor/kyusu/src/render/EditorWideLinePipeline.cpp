@@ -4,9 +4,13 @@
 #include <shaders/kEditorWideLineVertSpv.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 
 void EditorWideLinePipeline::Setup(const RendererServices& services)
 {
+    Log = services.Logging != nullptr ? &services.Logging->GetLogger<EditorWideLinePipeline>() : nullptr;
+
     EditorImmediatePipelineConfig config;
     config.VertexSpirv = kEditorWideLineVertSpv;
     config.VertexWordCount = kEditorWideLineVertSpvWordCount;
@@ -46,13 +50,37 @@ void EditorWideLinePipeline::Setup(const RendererServices& services)
 void EditorWideLinePipeline::Submit(const FrameContext& frame,
                                     const EditorViewport& viewport,
                                     std::span<const EditorLineSegment> segments,
-                                    bool onTop)
+                                    bool onTop,
+                                    std::string_view source)
 {
     if (segments.empty())
         return;
 
+    constexpr std::size_t kVerticesPerSegment = 6;
+    const std::size_t maxVertices = Pipeline.MaxScratchVerticesPerSubmit();
+    const std::size_t maxSegments = maxVertices / kVerticesPerSegment;
+    if (maxSegments == 0 || segments.size() > maxSegments
+        || segments.size() > std::numeric_limits<std::size_t>::max() / kVerticesPerSegment)
+    {
+        if (Log != nullptr && !LoggedOversizedSubmit)
+        {
+            const std::uint64_t expanded = segments.size()
+                > std::numeric_limits<std::uint64_t>::max() / kVerticesPerSegment
+                ? std::numeric_limits<std::uint64_t>::max()
+                : static_cast<std::uint64_t>(segments.size()) * kVerticesPerSegment;
+            Log->Error("{}: dropped {} wide-line segments ({} expanded vertices); scratch fits {} segments",
+                       source.empty() ? "unknown source" : source,
+                       static_cast<std::uint64_t>(segments.size()),
+                       expanded,
+                       static_cast<std::uint64_t>(maxSegments));
+            LoggedOversizedSubmit = true;
+        }
+        return;
+    }
+    LoggedOversizedSubmit = false;
+
     Expanded.clear();
-    Expanded.reserve(segments.size() * 6);
+    Expanded.reserve(segments.size() * kVerticesPerSegment);
     for (const EditorLineSegment& s : segments)
     {
         const float half = s.WidthPx * 0.5f;
@@ -79,6 +107,8 @@ void EditorWideLinePipeline::Submit(const FrameContext& frame,
 void EditorWideLinePipeline::Teardown()
 {
     Pipeline.Teardown();
+    Log = nullptr;
+    LoggedOversizedSubmit = false;
     Expanded.clear();
     Expanded.shrink_to_fit();
 }

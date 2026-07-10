@@ -23,7 +23,7 @@
 #include "ui/InspectorPanel.h"
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
-#include "ui/MeshEditPanel.h"
+#include "ui/ToolPropertiesPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/ViewportPanel.h"
@@ -191,6 +191,7 @@ void EditorServices::BuildInput()
         { "edit.redo",             SDLK_Z,      { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); } },
         { "edit.redo",             SDLK_Y,      { .Ctrl = true },                [this] { Commands->Redo(); } },
         { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
+        { "edit.dissolve",         SDLK_BACKSPACE, {},                           [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
         { "edit.duplicate",        SDLK_D,      { .Ctrl = true },                [this] { Workspace->DuplicateSelection(/*asInstance*/ false); } },
         { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->DuplicateSelection(/*asInstance*/ true); } },
@@ -396,7 +397,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this] { return Workspace->Tools.get(); },
         [this] { return Workspace->Manipulators; },
         Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView,
-        Workspace->BrushCreate, Workspace->EdgeCut);
+        Workspace->EdgeCut);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({
@@ -416,6 +417,12 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     });
     Toolbar->SetTransformControls({
         .SetOriginToPivot = [this] { Workspace->SetSelectedBrushOriginToPivot(); },
+        .SetOriginToVertex = [this]
+        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::SelectedVertex); },
+        .SetOriginToBoundsCenter = [this]
+        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::BoundsCenter); },
+        .SetOriginToBoundsCorner = [this]
+        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::BoundsMinCorner); },
         .HasSelection = [this] { return !Workspace->Selection.GetSelection().empty(); },
     });
     StatusBar = std::make_unique<EditorStatusBar>(
@@ -461,11 +468,13 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands));
-    UiFeature->AddPanel(std::make_unique<MeshEditPanel>(
+    UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
+        [this]() -> ToolRegistry* { return Workspace->Tools.get(); },
         Workspace->Selection, Workspace->MeshEdit, *Commands,
         Workspace->World, Workspace->ActiveMaterial, Workspace->UvClipboard,
-        MeshEditPanel::ObjectActions{
+        Workspace->BrushCreate, Workspace->EdgeCut,
+        ToolPropertiesPanel::ObjectActions{
             .Duplicate = [this] { Workspace->DuplicateSelection(/*asInstance*/ false); },
             .Instance = [this] { Workspace->DuplicateSelection(/*asInstance*/ true); },
             .MakeUnique = [this] { Workspace->MakeSelectedBrushesUnique(); },
@@ -474,6 +483,11 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             .Bake = [this] { BakeSelectedBrushes(); },
             .Revert = [this] { RevertSelectedBakedBrushes(); },
             .ExportGlb = [this] { ExportSelectionGlb(); },
+            .BridgeEdges = [this](int segments) { Workspace->BridgeSelectedEdges(segments); },
+            .HasPendingBridge = [this] { return Workspace->HasPendingBridge(); },
+            .SetBridgeSegments = [this](int segments) { Workspace->SetPendingBridgeSegments(segments); },
+            .CommitBridge = [this] { Workspace->CommitPendingBridge(); },
+            .CancelBridge = [this] { Workspace->CancelPendingBridge(); },
             .HasBakedSelection = [this] { return SelectionHasBakedBrush(); },
             .HasInstancedSelection = [this]
             {
@@ -512,9 +526,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Assets->Assets, Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
         Assets->Registry);
 
-    // Added after MeshEditPanel so the left column's Down-pack puts it below
-    // the mesh tools, and before the browser so its previews are always
-    // fresher than the browser's trim.
+    // Added after ToolPropertiesPanel so the left column's Down-pack puts it
+    // below the tool properties, and before the browser so its previews are
+    // always fresher than the browser's trim.
     UiFeature->AddPanel(std::make_unique<ActiveMaterialPanel>(
         Workspace->ActiveMaterial, *Thumbnails,
         [this] { if (Browser != nullptr) Browser->Reveal(); }));

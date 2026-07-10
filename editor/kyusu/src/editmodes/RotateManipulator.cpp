@@ -132,34 +132,42 @@ private:
 class ElementRotateApply : public IRotateApply
 {
 public:
-    ElementRotateApply(EntityId entity, BrushMesh initial, Transform3f transform,
-                       std::vector<SelectableRef> elements, MeshElementKind kind,
+    ElementRotateApply(std::vector<ElementTarget> targets, MeshElementKind kind,
                        Vec3d axis, Vec3d pivot, MeshEditService& service, ManipulationSink& sink)
-        : Entity(entity), Initial(std::move(initial)), Transform(transform)
-        , Elements(std::move(elements)), Kind(kind), Axis(axis), Pivot(pivot)
+        : Targets(std::move(targets)), Kind(kind), Axis(axis), Pivot(pivot)
         , Service(service), Sink(sink) {}
 
     void Preview(double radians) override
     {
-        if (auto mesh = Service.RotateElements(Initial, Transform, Elements, Kind, Axis, radians, Pivot, false))
-            Sink.PreviewMesh(Entity, *mesh);
+        for (const ElementTarget& t : Targets)
+            if (auto mesh = Service.RotateElements(t.Mesh, t.Transform, t.Elements, Kind, Axis, radians, Pivot, false))
+                Sink.PreviewMesh(t.Entity, *mesh);
     }
 
     void Commit(double radians) override
     {
-        if (auto mesh = Service.RotateElements(Initial, Transform, Elements, Kind, Axis, radians, Pivot, true))
-            Sink.CommitMesh(Entity, Initial, std::move(*mesh));
-        else
-            Sink.PreviewMesh(Entity, Initial); // unusable: revert
+        // Per-target: an unusable result reverts alone; the rest land as one
+        // undo step.
+        std::vector<MeshEdit> edits;
+        edits.reserve(Targets.size());
+        for (const ElementTarget& t : Targets)
+        {
+            if (auto mesh = Service.RotateElements(t.Mesh, t.Transform, t.Elements, Kind, Axis, radians, Pivot, true))
+                edits.push_back({ t.Entity, t.Mesh, std::move(*mesh) });
+            else
+                Sink.PreviewMesh(t.Entity, t.Mesh);
+        }
+        Sink.CommitMeshes(std::move(edits));
     }
 
-    void Cancel() override { Sink.PreviewMesh(Entity, Initial); }
+    void Cancel() override
+    {
+        for (const ElementTarget& t : Targets)
+            Sink.PreviewMesh(t.Entity, t.Mesh);
+    }
 
 private:
-    EntityId Entity;
-    BrushMesh Initial;
-    Transform3f Transform;
-    std::vector<SelectableRef> Elements;
+    std::vector<ElementTarget> Targets;
     MeshElementKind Kind;
     Vec3d Axis;
     Vec3d Pivot;
@@ -332,9 +340,11 @@ std::unique_ptr<IRotateApply> MakeExtrudeRotateApply(const ManipulatorContext& c
     if (kind != MeshElementKind::Face)
         return nullptr; // an edge has no extrude normal; edges fall back to a plain rotate
 
-    std::optional<ElementTarget> r = ResolveElementTarget(ctx, kind);
-    if (!r.has_value() || r->Elements.empty())
+    // Extrude stays single-mesh: it acts on the primary's mesh (the front target).
+    std::vector<ElementTarget> targets = ResolveElementTargets(ctx, kind);
+    if (targets.empty() || targets.front().Elements.empty())
         return nullptr;
+    ElementTarget* r = &targets.front();
 
     // Extrude one step along the average world normal of the selected faces, so
     // the cap has clearance to swing.
@@ -361,11 +371,10 @@ std::unique_ptr<IRotateApply> MakeExtrudeRotateApply(const ManipulatorContext& c
 std::unique_ptr<IRotateApply> MakeElementRotateApply(const ManipulatorContext& ctx, MeshElementKind kind,
                                                      Vec3d axis, Vec3d pivot)
 {
-    std::optional<ElementTarget> r = ResolveElementTarget(ctx, kind);
-    if (!r.has_value())
+    std::vector<ElementTarget> targets = ResolveElementTargets(ctx, kind);
+    if (targets.empty())
         return nullptr;
-    return std::make_unique<ElementRotateApply>(
-        r->Entity, std::move(r->Mesh), r->Transform, std::move(r->Elements), kind, axis, pivot, ctx.Service, ctx.Sink);
+    return std::make_unique<ElementRotateApply>(std::move(targets), kind, axis, pivot, ctx.Service, ctx.Sink);
 }
 
 class RotateDrag : public IInteraction

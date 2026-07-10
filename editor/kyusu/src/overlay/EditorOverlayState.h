@@ -43,6 +43,16 @@ struct DragReadout
     [[nodiscard]] bool Active() const { return From.has_value() && To.has_value(); }
 };
 
+// A screen-sized square drawn at a world point. Viewport limits drawing when set.
+struct PointHandleRequest
+{
+    Vec3d World = {};
+    Vec4 Fill = {};
+    Vec4 Border = {};
+    ViewportId Viewport = {};
+    float SizePixels = 8.0f;
+};
+
 // The element under the cursor for the active element mode. The renderer glows it
 // to show it is selection-eligible; an edge also carries its length, drawn at
 // MeasureAnchor. Element is invalid when nothing is hovered.
@@ -60,6 +70,7 @@ struct ElementHoverState
 struct EditorOverlayState
 {
     std::vector<LabelRequest> Labels;
+    std::vector<PointHandleRequest> PointHandles;
     DragReadout Readout;
     ElementHoverState Hover;
     // A whole brush to highlight as a selected body while hovering, even when it is

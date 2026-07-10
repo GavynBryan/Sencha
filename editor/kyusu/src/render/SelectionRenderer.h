@@ -50,9 +50,10 @@ private:
                     const FaceElement& face,
                     const Vec4& color,
                     float widthPx) const;
-    // Fan-triangulates the (convex) face into translucent fill triangles.
     void AppendFaceFill(std::vector<EditorLineVertex>& triangles,
-                        const FaceElement& face,
+                        const BrushMesh& mesh,
+                        const Transform3f& transform,
+                        std::uint32_t faceIndex,
                         const Vec4& color) const;
     void AppendEdge(std::vector<EditorLineSegment>& segments,
                     const EdgeElement& edge,

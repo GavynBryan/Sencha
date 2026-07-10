@@ -121,6 +121,9 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/LoopSelection.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/PathSelection.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/SelectionConversion.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/overlay/SelectionLabels.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionFold.cpp

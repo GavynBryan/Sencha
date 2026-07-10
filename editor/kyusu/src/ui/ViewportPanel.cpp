@@ -176,6 +176,20 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f), toColor(label.Color), label.Text.c_str());
     }
 
+    for (const PointHandleRequest& handle : Overlay.PointHandles)
+    {
+        if (handle.Viewport.IsValid() && handle.Viewport != viewport.Id)
+            continue;
+        const std::optional<ProjectedPoint> p = projection.WorldToPixel(handle.World);
+        if (!p.has_value() || !inRegion(p->Pixel))
+            continue;
+        const float half = std::max(2.0f, handle.SizePixels * 0.5f);
+        const ImVec2 min(p->Pixel.x - half, p->Pixel.y - half);
+        const ImVec2 max(p->Pixel.x + half, p->Pixel.y + half);
+        drawList->AddRectFilled(min, max, toColor(handle.Fill), 1.0f);
+        drawList->AddRect(min, max, toColor(handle.Border), 1.0f, 0, 1.5f);
+    }
+
     // Hovered edge's length, anchored at its midpoint.
     if (!Overlay.Hover.Measure.empty())
     {
