@@ -1,31 +1,211 @@
 # Renderer Phase 3: Lighting, Shading, Shadows, Baked Irradiance, and Renderer Profiling
 
-Status: PROPOSED 2026-07-10. Plan only; no implementation has landed.
+Status: PROPOSED, revision 2, 2026-07-10. Plan only; no implementation has
+landed. Revision 2 incorporates a cross-agent design review; the disposition
+of that review is recorded in Section 0.
 
 This document is the lighting portion of the "render ladder plan" that
 `docs/assets/pipeline.md` repeatedly defers to ("Decision L ships the data, not
 the lighting", pipeline.md:643). It supersedes the ordering of
 `docs/plans/engine-roadmap.md` Track B item 2 (engine-roadmap.md:324-328), which
-scheduled directional cascaded shadows first: Phase 3 ships spot and point
+scheduled directional cascaded shadows first: this plan ships spot and point
 shadows and no directional lights. It also pulls Track B item 8 ("GI (v2.0
 baked)", engine-roadmap.md:345-346) forward as a first zone-scoped baked
 irradiance solution. Both roadmap rows should be updated when this plan is
 accepted. Where this document and the code disagree, the code as cited was
 inspected on 2026-07-10 at commit 962a3aa.
 
-Scope summary of decisions made here:
+Scope summary of the standing decisions:
 
 - Shading: keep the Decision L material data schema; evaluate it with a
   stylized model (wrapped diffuse, normalized Blinn-Phong specular, hemispheric
   or probe ambient, emission), not a metallic-roughness BRDF.
-- Spot shadows: one 2D depth atlas (D16, quadtree tiers 256/512/1024),
-  hardware-compare PCF with a 3x3 tent filter.
+- Spot shadows: one 2D depth atlas (D16, quadtree tiers 256/512/1024 with
+  guard-band insets), hardware-compare PCF with a 3x3 tent filter.
 - Point shadows: a small depth cube-map array (D16, 512 per face, budgeted at 4
-  lights), same filter adapted to directions.
+  lights), the same filter adapted to directions.
 - Baked lighting: zone-scoped irradiance probe volumes storing L1 spherical
-  harmonics, baked in the editor, streamed with zones, sampled per fragment.
-- Profiling: GPU timestamp scopes, Vulkan debug labels, renderer counters, an
-  ImGui stats panel, and a JSON/CSV frame-capture exporter.
+  harmonics, baked in the editor against static render geometry, dilated at
+  bake time so runtime sampling is plain hardware trilinear, streamed with
+  zones.
+- Profiling: an explicit instrumentation mode ladder (Off / Counters / Gpu /
+  Capture) whose Off path performs no profiling work, plus a compile-time
+  option that removes instrumentation, debug labels, debug pipelines, and
+  panels from shipping builds.
+
+Delivery is split into four independently mergeable phases: 3.0 (renderer
+instrumentation, a preliminary standalone change), 3A (the dynamic-lighting
+renderer: StandardLit, spot lights, spot and point shadows), 3B (baked
+irradiance), and 3C (the evidence-based performance review). 3A is a complete,
+shippable renderer without 3B.
+
+---
+
+## 0. Revision 2 disposition
+
+### 0.1 Decisions retained from revision 1
+
+- The StandardLit material model over Decision L data, wrapped Lambert,
+  normalized Blinn-Phong, roughness-to-exponent mapping, metallic as specular
+  tint, `emissive_strength` as a separate field, and the `.smat` v2 field set
+  (Section 3).
+- The renderer-level style cvar set, minus wording changes to the tonemap row
+  (Section 3.3).
+- Two shader families (StandardLit, Unlit) with the tiny pipeline matrix and
+  the sort-key pipeline bits (Section 3.5).
+- The single shared spot-shadow atlas with quadtree tiers, hardware-compare
+  3x3 tent PCF, D16 with probed D32 fallback, front-face caster rendering, and
+  the full bias stack (Section 4), now with guard-band insets.
+- The point-light depth cube array, major-axis depth reconstruction, and the
+  rejection of dual-paraboloid/octahedral projections (Section 5).
+- Renderer-owned shadow residency: budgets, scoring, hysteresis, tiers, update
+  policies, per-frame view clamp (Section 6), with the invalidation mechanism
+  replaced (0.2).
+- Zone-scoped L1 SH probe volumes, the `.sprobe` chunked sidecar following the
+  collision precedent, `ZoneLoadRecipe` streaming, per-fragment volume
+  selection over a small resident cap (Sections 7, 8).
+- Reuse of `math/spatial/Grid3d<T>` plus a new `GridTransform3d` value type;
+  no generalized spatial-field framework (Section 8).
+- The editor workflow: schema-driven component UI, `LightVisualRenderer`
+  gizmos, cone manipulator, billboard picking, lighting panel with budget
+  warnings, bake orchestration on the existing async lane (Section 10).
+- The capture exporter as the AI-analysis interface, structured JSON/CSV with
+  stable keys (Section 9.5).
+- Standard [0,1] Z retained; reversed-Z migration still rejected (Section 2
+  item 1).
+
+### 0.2 Decisions changed by this review
+
+1. **Profiling gained a disabled-path contract** (review item 1). Adopted the
+   `RenderProfileMode { Off, Counters, Gpu, Capture }` ladder and a nullable
+   `RenderInstrumentation` pointer bundle resolved at pass boundaries, plus a
+   `SENCHA_ENABLE_RENDER_PROFILING` compile-time option following the existing
+   `SENCHA_ENABLE_*` pattern (`cmake/SenchaOptions.cmake:13-33`). Off mode
+   issues no GPU commands, no query resets or readbacks, no history or capture
+   writes, no labels, no allocations. Phase 3.0 validation now includes a
+   RenderDoc command-stream inspection and a statistical A/B methodology
+   (Section 9.7). One deviation from the strictest reading is documented and
+   bounded: pass-scoped counter accumulation into stack locals at run/chunk
+   granularity remains unconditional, because the equivalent counters already
+   exist unconditionally today as a test seam (`MeshForwardPass.h:72-77`); the
+   granularity policy in Section 9.2 forbids anything finer on the Off path.
+2. **Debug shader views moved out of StandardLit** (review item 2). Revision 1
+   claimed a uniform debug branch was near zero cost; that claim was wrong (a
+   whole-shader branch changes instruction count and register allocation even
+   when not taken) and is retracted. Debug views now live in a separate
+   development-only fragment shader built from the same `.glsli` includes,
+   selected at pass level, created lazily, compiled out of shipping builds
+   (Section 9.6).
+3. **Shadow atlas gained guard bands** (review item 3). Revision 1 relied on
+   sampler border color, which only guards the outer image edge, not interior
+   tile boundaries. Tiles are now allocated at power-of-two physical sizes
+   with the logical shadow map inset by a fixed 8-texel guard band; the
+   per-view render clears the physical tile to depth 1 and draws only the
+   interior; `AtlasScaleBias` maps to the interior; the softness clamp is
+   derived from the guard constant so no filter tier can reach a neighboring
+   tile (Section 4.2). The per-tier texture-array alternative was evaluated
+   and rejected (Section 15).
+4. **Shadow invalidation now diffs previous and current caster state**
+   (review item 4). Revision 1 invalidated from new bounds only, which leaves
+   ghost shadows behind departing casters, and used `Changed<WorldTransform>`,
+   which cannot see removals, zone detaches, or visibility changes at all.
+   Replaced with a renderer-owned sorted caster table diffed frame to frame,
+   producing add/remove/change events with union bounds (Section 6.4). Note:
+   inspection for this revision found `Changed<WorldTransform>` is more
+   precise than revision 1 assumed (propagation bumps versions only for
+   chunks actually written, `TransformPropagation.cpp:272-274`); it was
+   replaced anyway because no change filter can supply previous bounds or
+   disappearance events.
+5. **Probe validity no longer participates at runtime** (review item 5).
+   Revision 1 contradicted itself (hardware trilinear filtering plus
+   validity-weighted blending). Resolution: classify and dilate at bake time
+   until every texel holds usable SH data; runtime is plain hardware
+   trilinear; validity ships in `.sprobe` for editor diagnostics only and the
+   runtime validity texture is deleted from the plan. Dilation neighborhood
+   and its leak behavior are specified (Section 7.3).
+6. **The bake traces render geometry, not collision** (review item 6).
+   Revision 1 raycast against cooked Jolt collision. Replaced with a
+   transient CPU triangle BVH built from the zone's cooked static render
+   meshes loaded via `MeshLoader::LoadFromFile`
+   (`engine/include/assets/static_mesh/MeshLoader.h:29`). This removes a
+   lighting-to-collision fidelity coupling and, as a side effect, removes the
+   bake's dependency on the physics module entirely (Section 7.2).
+7. **Probe volume precedence is now priority, then smallest, then stable id**
+   (review item 7). Artist priority overrides incidental size. The stable id
+   is (ZoneId, volume index in `.sprobe` file order), which is
+   cook-deterministic (Section 7.4).
+8. **The tonemap is a knee-plus-shoulder curve, not luminance Reinhard**
+   (review item 8). `c / (1 + luminance(c))` darkens the whole image
+   (0.5 maps to about 0.37) and would force a lighting retune. Replaced with
+   a per-channel identity-below-knee curve that leaves values at or below the
+   knee (default 0.8) exactly unchanged and rolls everything above it
+   smoothly to 1 (Section 3.2). Exposure and emissive were evaluated against
+   it together: at exposure 1.0 existing scenes render byte-comparable below
+   the knee, and `emissive_strength` pushes into the shoulder instead of hard
+   clipping.
+9. **Phases restructured for independent merges** (review item 9).
+   Instrumentation is now Phase 3.0, a preliminary standalone change with no
+   Phase 3 feature dependencies. Dynamic lighting (3A) is complete and
+   shippable without baked irradiance (3B). 3B depends on 3.0, 3A.1, and
+   3A.2 only, not on any shadow stage (Section 11).
+
+### 0.3 Additional problems found during this revision
+
+- **Set 2 needs always-valid descriptors before content exists.** The forward
+  pipeline binds the lighting descriptor set from 3A.3 onward, including
+  frames with zero resident shadows or probes. The set is backed by dummy
+  resources (1x1 depth texture, 1-layer cube array, 1x1x1 volumes) written at
+  creation so no partially-bound descriptor feature is needed (Section 6.6).
+- **Frame scratch sizing.** Shadow views write per-view instance streams into
+  the same 1 MiB per-frame scratch slice the forward pass uses
+  (`VulkanFrameScratch.h:41-58`). A worst-case invalidation frame can
+  overflow it. The scratch size becomes a config value surfaced at engine
+  init, allocation failure skips the view with a one-shot warning and a
+  counter, and the budget table accounts for it (Sections 6.5, 14).
+- **Shadow view scheduling starvation.** With the per-frame view clamp,
+  EveryFrame lights could starve invalidated cached lights indefinitely.
+  Deterministic service order is specified: never-rendered slots, then
+  EveryFrame, then invalid slots oldest-first (Section 6.3).
+- **Mode transitions must latch at a frame boundary.** The instrumentation
+  bundle is immutable during a frame; the `render.profile.mode` cvar latches
+  a pending mode applied before extraction of the next frame (Section 9.1).
+- **Command labels and object names are different mechanisms.** Per-frame
+  command labels are gated by mode (Gpu and above); one-time object naming at
+  resource creation is gated by the compile option plus
+  `VulkanBootstrapPolicy::EnableValidation`, and is not a per-frame cost
+  (Section 9.4).
+- **The runtime keeps no CPU mesh geometry** (`GpuStaticMesh` is GPU-only,
+  `GpuStaticMesh.h:16-27`), so the bake loads `.smesh` payloads from disk in
+  the editor process; this constrained the bake-geometry decision in 0.2
+  item 6.
+- **`DrawStats` is a test seam, not just profiling** (`MeshForwardPass.h:77`
+  "For profiling and tests"), which is why pass-local counter accumulation
+  survives in all modes while publication is gated (Section 9.2).
+
+### 0.4 Alternatives considered and rejected in this revision
+
+- Per-tier shadow texture arrays instead of one guarded atlas (Section 15).
+- Validity-weighted manual trilinear probe filtering (8 texel fetches x 3
+  textures plus weight renormalization per fragment; Section 15).
+- Luminance-normalized Reinhard as the interim tonemap (Section 15).
+- Duplicated profiled/unprofiled renderer implementations, and templating the
+  draw loops on an instrumentation flag (Section 9.2).
+- `Changed<WorldTransform>` as the caster-motion signal, and as a prefilter in
+  front of the caster diff (Section 6.4; prefilter recorded as measure-first).
+
+### 0.5 Measure before committing
+
+- Per-registry query caches (finding 2.11): fix only if the Phase 3.0 rebuild
+  counter shows real cost.
+- Caster-diff CPU cost: the sorted-vector diff is expected to be well under
+  0.1 ms at a few thousand casters; if captures disagree, add the
+  `Changed<>`-prefilter or a static/dynamic caster split, in that order.
+- Per-object light lists and clustered culling: unchanged metric gates
+  (Section 14).
+- Probe volume per-fragment scan: revisit only if content exceeds the
+  8-resident-volume cap.
+- Capture-mode overhead: measured in 3.0 validation; the ring is bounded and
+  serialization happens only on explicit write commands.
 
 ---
 
@@ -51,10 +231,13 @@ Scope summary of decisions made here:
   before `Simulate` (5), `ExtractRenderPacket` (7), and `Render` (8). Phase
   callbacks are registered in `engine/src/app/EngineFramePhases.cpp:22-256`;
   extraction runs at `EngineFramePhases.cpp:188-201` and
-  `renderer.DrawFrameScheduled()` at `:204`.
+  `renderer.DrawFrameScheduled()` at `:204`. Extraction and submission are
+  sequential on one thread within one frame, so renderer-side scheduling
+  state written at extraction is safely consumed at render with no
+  cross-frame handoff.
 - Two frames in flight (`VulkanFrameService.h:64`), per-frame transient data
-  through `VulkanFrameScratch`, a persistently mapped ring with 1 MiB per frame
-  slice (`VulkanFrameScratch.h:41-58`).
+  through `VulkanFrameScratch`, a persistently mapped ring with 1 MiB per
+  frame slice by default (`VulkanFrameScratch.h:41-58`).
 
 ### 1.2 Draw path
 
@@ -71,8 +254,8 @@ Scope summary of decisions made here:
   never pointers into chunks.
 - Sort key layout: `[8b pass][16b material][20b mesh][4b section][16b depth]`
   (`engine/src/render/RenderQueue.cpp:6-21`). `SortOpaque` produces a stable
-  order array plus instanced runs of consecutive identical mesh+section+material
-  (`RenderQueue.h:36-40`, `RenderQueue.cpp:36+`).
+  order array plus instanced runs of consecutive identical
+  mesh+section+material (`RenderQueue.h:36-40`).
 - `MeshForwardPass::Draw` uploads one `MeshFrameUniforms` block per view into
   the scratch (dynamic-offset UBO, set 0 binding 0), writes the per-instance
   world-matrix stream (binding 1, instance rate), and records one
@@ -80,32 +263,34 @@ Scope summary of decisions made here:
   BaseColorTextureIndex}` (`engine/src/render/MeshForwardPass.cpp:101-246`).
   There is exactly one graphics pipeline for all opaque meshes
   (`MeshForwardPass.cpp:55-99`): back-face cull, CCW front face, LESS_OR_EQUAL
-  depth, no blending.
+  depth, no blending. The pass already maintains `DrawStats { QueueItems,
+  DrawCalls }` unconditionally, documented "For profiling and tests"
+  (`MeshForwardPass.h:72-77`).
 - Descriptors: two global sets owned by `VulkanDescriptorCache`. Set 0 is a
   dynamic-offset UBO; set 1 is a 1024-entry update-after-bind bindless
   combined-image-sampler array (`VulkanDescriptorCache.h:14-57`). Pipeline
   layouts are cached by push-constant signature and always use exactly these
-  two set layouts (`VulkanDescriptorCache.h:38-40, 85-89`). Descriptor-indexing
-  features are enabled unconditionally
-  (`engine/src/graphics/vulkan/VulkanDeviceService.cpp:74`).
+  two set layouts (`VulkanDescriptorCache.h:38-40, 85-89`). Descriptor
+  indexing (including non-uniform sampled-image indexing) is enabled
+  unconditionally (`engine/src/graphics/vulkan/VulkanDeviceService.cpp:74`).
 
 ### 1.3 Lighting today
 
 - `PointLightComponent { Color, Intensity, Range, Enabled }` with schema-driven
-  serialization and editor UI (`engine/include/render/PointLightComponent.h:25-50`,
-  chunk `'PLGT'`).
+  serialization and editor UI
+  (`engine/include/render/PointLightComponent.h:25-50`, chunk `'PLGT'`).
 - `LightExtractionSystem` gathers every enabled point light in every active
   registry into `RenderLightSet` with no culling, no sorting, in
   chunk-iteration order; lights beyond the cap are dropped first-come
-  (`engine/src/render/LightExtractionSystem.cpp:3-32`,
-  `RenderLight.h:60-76`).
+  (`engine/src/render/LightExtractionSystem.cpp:3-32`, `RenderLight.h:60-76`).
 - `GpuLight` is a tagged 64-byte std140 record with `DirectionCone` and
-  `GpuLightType::Spot/Directional` already reserved, and `ShadowIndex` reserved
-  for "a future shadow atlas" (`engine/include/render/RenderLight.h:22-45`).
-  `kMaxForwardLights = 64` with the stated rationale that the forward pass
-  loops every light per fragment (`RenderLight.h:42-45`).
-- The fragment shader computes hemispheric ambient (sky/ground blend on
-  N.y) plus, per light, Lambert N.L with windowed inverse-square attenuation:
+  `GpuLightType::Spot/Directional` already reserved, and `ShadowIndex`
+  reserved for "a future shadow atlas"
+  (`engine/include/render/RenderLight.h:22-45`). `kMaxForwardLights = 64`
+  with the stated rationale that the forward pass loops every light per
+  fragment (`RenderLight.h:42-45`).
+- The fragment shader computes hemispheric ambient (sky/ground blend on N.y)
+  plus, per light, Lambert N.L with windowed inverse-square attenuation:
   `window = saturate(1 - (d/range)^4)^2 / d^2`
   (`engine/shaders/mesh_forward.frag.glsl:49-76`). There is no specular, no
   normal mapping, no emission, no shadow term. The light loop branches on
@@ -115,15 +300,14 @@ Scope summary of decisions made here:
   `render.ambient.*` cvars that override them are registered only in the
   editor (`editor/kyusu/src/app/EditorServices.cpp:331-336`, applied at
   `editor/kyusu/src/render/EditorRenderFeature.cpp:161-169`). The runtime
-  pipeline never registers or reads them, so the comment at `RenderLight.h:51`
+  never registers or reads them, so the comment at `RenderLight.h:51`
   overstates the current wiring.
 
 ### 1.4 Material and texture data
 
 - `Material` is the full Decision L glTF metallic-roughness data model: four
   bindless texture slots (base color, normal, ORM, emissive), factors, alpha
-  mode; "The current forward shader consumes BaseColor only; the remaining
-  slots ride the data until the PBR pass lands"
+  mode; "The current forward shader consumes BaseColor only"
   (`engine/include/render/Material.h:33-65`).
 - `.smat` is JSON with strict unknown-key rejection and `kSmatVersion = 1`
   (`engine/include/assets/material/MaterialFormat.h`,
@@ -145,7 +329,7 @@ Scope summary of decisions made here:
     (`engine/src/assets/material/MaterialAssetLoader.cpp:151-157`).
   - Mip generation linearizes sRGB before averaging
     (`TextureCook.cpp:62, 119`).
-  So lighting math already happens in linear space and is encoded once at the
+  Lighting math already happens in linear space and is encoded once at the
   end. This foundation is sound; Phase 3 builds on it unchanged.
 - `StaticMeshVertex` already carries a `Vec4 Tangent` (glTF convention,
   bitangent = cross(N, T.xyz) * T.w), generated by MikkTSpace at cook when the
@@ -154,6 +338,11 @@ Scope summary of decisions made here:
   pipeline strides over it but exposes no attribute yet
   (`MeshForwardPass.cpp:77-81`). Normal mapping is therefore a shader and
   pipeline-desc change, not an asset change.
+- The runtime does not retain CPU vertex data after upload; `GpuStaticMesh`
+  holds buffers and section metadata only (`GpuStaticMesh.h:16-27`). CPU
+  geometry access goes through `MeshLoader::LoadFromFile(path, MeshGeometry&)`
+  (`engine/include/assets/static_mesh/MeshLoader.h:29`), which matters for
+  the bake (Section 7.2).
 
 ### 1.5 Depth and projection conventions (audit result)
 
@@ -165,12 +354,12 @@ Scope summary of decisions made here:
   lands at NDC depth 0 and `z = -far` at depth 1. The pipeline agrees with the
   matrix, not the comment: depth clear is 1.0
   (`engine/src/graphics/vulkan/Renderer.cpp:260`) and the compare op is
-  LESS_OR_EQUAL (`MeshForwardPass.cpp:91`). The renderer is standard [0,1]
-  Z. The comments are stale and must be fixed; see Section 2.
+  LESS_OR_EQUAL (`MeshForwardPass.cpp:91`). The renderer is standard [0,1] Z.
+  The comments are stale and must be fixed (Section 2 item 1).
 - The vertex shader transforms normals with `mat3(world)`
   (`engine/shaders/mesh_forward.vert.glsl:33`). `Transform3d` carries a full
-  `Vec<3> Scale` (`engine/include/math/geometry/3d/Transform3d.h:37`), so
-  non-uniformly scaled meshes light incorrectly today.
+  per-axis `Vec<3> Scale` (`engine/include/math/geometry/3d/Transform3d.h:37`),
+  so non-uniformly scaled meshes light incorrectly today.
 - The vertex and fragment shaders declare different sizes for the same
   `MeshFrame` UBO binding (`mesh_forward.vert.glsl:13-17` vs
   `mesh_forward.frag.glsl:18-29`). Legal in Vulkan, but fragile once shader
@@ -215,7 +404,8 @@ Scope summary of decisions made here:
   inspector code (`editor/kyusu/src/ui/InspectorPanel.cpp:437-490`). Adding a
   component to `EngineSceneComponents`
   (`engine/include/world/ComponentManifest.h:33-39`) yields inspector UI,
-  add-component menu, and JSON+binary scene serialization with no editor edits.
+  add-component menu, and JSON+binary scene serialization with no editor
+  edits.
 - The one shared overlay pipeline is `EditorLinePipeline`
   (`editor/kyusu/src/render/EditorLinePipeline.h`); per-component gizmos render
   through `ComponentVisualRenderer`, but `EditorVisual` supports only static
@@ -225,8 +415,8 @@ Scope summary of decisions made here:
   (`editor/kyusu/src/viewport/Picking.cpp:181-276`).
 - View toggles live in `WorldViewSettings`
   (`editor/kyusu/src/viewport/WorldViewSettings.h:12-35`) with toolbar buttons
-  (`EditorToolbar.cpp:252-255`). There is no long-running-operation or progress
-  UI anywhere; level cook is synchronous (`DocumentCook.h:60-79`).
+  (`EditorToolbar.cpp:252-255`). There is no long-running-operation or
+  progress UI anywhere; level cook is synchronous (`DocumentCook.h:60-79`).
 - Shudei's material panel is hand-written per field, with whole-value
   `EditMaterialCommand` undo
   (`editor/shudei/src/MaterialInspectorPanel.cpp:160-242`).
@@ -237,27 +427,37 @@ Scope summary of decisions made here:
   (`engine/include/time/TimingHistory.h:7-76`), assembled by `TimingSampler`
   (`engine/src/graphics/vulkan/TimingSampler.cpp:31-63`), displayed by the
   ImGui `TimingPanel` behind the runtime debug overlay
-  (`engine/include/debug/IDebugPanel.h`, `ImGuiDebugOverlay`).
+  (`engine/include/debug/IDebugPanel.h`, `ImGuiDebugOverlay`, gated by
+  `SENCHA_ENABLE_DEBUG_UI`, `cmake/SenchaOptions.cmake:21`).
 - There are zero GPU timestamps (no `VkQueryPool` anywhere), zero Vulkan debug
   labels or object names (only the validation messenger,
   `engine/src/graphics/vulkan/VulkanInstanceService.cpp:56-79`), and no
   structured stats export. A chrome-trace exporter exists but nothing wires it
   (`engine/include/runtime/FrameTrace.h:55-84`).
-- `MeshForwardPass` already keeps `DrawStats { QueueItems, DrawCalls }`
-  (`MeshForwardPass.h:72-77`); that is the seed of the counter architecture.
 - Cvar and console infrastructure is complete: designated-initializer
-  `RegisterCVar` (`engine/src/app/EngineConsoleBuiltins.cpp:69-83` is the
-  pattern), console commands via `RegisterCommand`
+  `RegisterCVar` with enum values, flags, and `OnChange`
+  (`engine/src/app/EngineConsoleBuiltins.cpp:69-83` is the pattern), console
+  commands via `RegisterCommand`
   (`engine/src/core/console/ConsoleService.cpp:227-237`), JSON writing via
-  `JsonStringify` (`engine/include/core/json/JsonStringify.h:7`).
+  `JsonStringify` (`engine/include/core/json/JsonStringify.h:7`) with the
+  documented caveat that `JsonValue` is not for hot paths
+  (`JsonValue.h:19-22`).
 
-### 1.9 Concurrency, tests, skinned meshes
+### 1.9 Concurrency, change tracking, tests, skinned meshes
 
 - The bake lane exists: `AsyncTaskQueue::Submit(work, commit)` with commits at
   `DrainAsyncTasks` and a zero-worker deterministic mode
   (`engine/include/jobs/AsyncTaskQueue.h:95-186`); `JobSystem::ParallelFor`
   with the `worker_count == 0` serial reference path
   (`engine/include/jobs/JobSystem.h:11-40`).
+- Transform propagation is dirty-driven and maintains precise change
+  versions: it bumps a chunk's `WorldTransform` column version only when it
+  actually writes that chunk ("Precise change signal: only chunks actually
+  written this sweep match Changed<WorldTransform> downstream",
+  `engine/src/world/transform/TransformPropagation.cpp:271-274`). So
+  `Changed<T>` is trustworthy here, at chunk granularity; its limitation for
+  shadow invalidation is what it cannot express (previous bounds,
+  disappearances), not imprecision (Section 6.4).
 - Tests are GoogleTest, auto-globbed per directory
   (`test/CMakeLists.txt:32-34, 95-99, 265-269`); render tests are pure CPU
   (`test/runtime/LightExtractionTests.cpp`,
@@ -282,68 +482,70 @@ Ordered by how early they must be resolved.
    the comments will invert every bias sign. Decision: stay standard-Z (room
    scale far planes do not need reversed-Z precision; switching would churn
    every pipeline, clear, and compare for no visible gain) and fix the three
-   comments in Stage 0. Shadow code uses the same standard-Z convention.
+   comments in Phase 3.0. Shadow code uses the same standard-Z convention.
 
 2. **Wrong normal transform under non-uniform scale.**
    `mat3(world) * inNormal` (`mesh_forward.vert.glsl:33`) with
-   `Transform3d::Scale` being per-axis (`Transform3d.h:37`). Fix in the Stage 1
+   `Transform3d::Scale` being per-axis (`Transform3d.h:37`). Fix in the 3A.1
    vertex shader with the cofactor (adjugate) matrix built from three cross
    products of the world-matrix columns; no CPU plumbing, correct for
-   non-uniform scale, and shared by the shadow vertex shader (normals are not
-   needed there, but the lit path is the one that matters).
+   non-uniform scale.
 
 3. **`VulkanImageService` is deliberately 2D-single-layer-only.**
    "Cubemap, volumetric, and non-default-view images are out of scope until a
-   feature actually needs them" (`VulkanImageService.h:26-27`). The trigger has
-   arrived. It needs: array layers, cube-compatible creation, 3D images,
-   per-layer/per-face views for rendering, depth-format usage, and a path that
-   leaves images in layouts other than SHADER_READ_ONLY. This is a mechanical
-   widening of `ImageCreateInfo` plus view helpers, done once in Stage 3.
+   feature actually needs them" (`VulkanImageService.h:26-27`). The trigger
+   has arrived. It needs: array layers, cube-compatible creation, 3D images,
+   per-layer/per-face views for rendering, depth-format usage, and a path
+   that leaves images in layouts other than SHADER_READ_ONLY. This is a
+   mechanical widening of `ImageCreateInfo` plus view helpers, done once in
+   3A.3.
 
 4. **`VulkanSamplerCache` cannot express comparison samplers.**
    `SamplerDesc` (`VulkanSamplerCache.h:27-39`) lacks compare enable/op and
    border color. Hardware PCF needs `compareEnable = VK_TRUE`, op
-   LESS_OR_EQUAL, and a white border (outside atlas tile = unshadowed). Small
-   struct extension in Stage 3; the hash/equality already key on the whole
-   struct.
+   LESS_OR_EQUAL, CLAMP_TO_BORDER addressing, and a white border (the border
+   remains the outer-image backstop even with guard bands). Small struct
+   extension in 3A.3; hash/equality already key on the whole struct.
 
 5. **Pipeline layouts only know the two global sets.**
    `VulkanDescriptorCache::GetPipelineLayout` builds layouts from FrameSet +
    BindlessSet only (`VulkanDescriptorCache.h:38-40, 85-89`). Shadow maps and
    probe volumes cannot ride the bindless sampler2D array (different GLSL
    sampler types: `sampler2DShadow`, `samplerCubeArrayShadow`, `sampler3D`).
-   Decision: introduce one additional descriptor set (set 2) owned by the new
-   lighting module, containing the shadow atlas, the point cube array, and the
-   probe volume textures; extend `GetPipelineLayout` to accept optional extra
-   set layouts in the cache key. One set, fixed bindings, rewritten only
-   between frames (double-buffered per frame in flight), no update-after-bind
-   needed.
+   Decision: one additional descriptor set (set 2) owned by the lighting
+   module, containing the shadow atlas, the point cube array, and the probe
+   volume textures; extend `GetPipelineLayout` to accept optional extra set
+   layouts in the cache key. One set, fixed bindings, rewritten only between
+   frames (double-buffered per frame in flight), no update-after-bind needed,
+   dummy-backed from creation (Section 6.6).
 
 6. **Graphics pipelines require a fragment shader.**
    `CreateGraphicsPipeline` errors on a null FS module
-   (`engine/src/graphics/vulkan/VulkanPipelineCache.cpp:139-145`). Shadow depth
-   passes use a trivial empty fragment shader (`void main() {}`) rather than
-   changing the cache contract. Depth bias state already exists in the desc
+   (`engine/src/graphics/vulkan/VulkanPipelineCache.cpp:139-145`). Shadow
+   depth passes use a trivial empty fragment shader rather than changing the
+   cache contract. Depth bias state already exists in the desc
    (`VulkanPipelineCache.h:100-102`).
 
 7. **Light gather is unbounded, unsorted, and order-unstable at the cap.**
    Lights are packed in chunk order per registry and dropped first-come past
    64 (`RenderLight.h:60-66`, `LightExtractionSystem.cpp:17-31`). With
    multiple zones, which light gets dropped depends on zone attach order.
-   Stage 2 adds camera-frustum sphere culling, importance sorting, and a
-   stable tie-break so the packed set is deterministic for identical world
-   state.
+   3A.2 adds camera-frustum sphere culling, importance sorting, and a stable
+   tie-break so the packed set is deterministic for identical world state.
 
-8. **Casters are not extractable today.**
-   The only mesh gather is camera-frustum-culled inline
+8. **Casters are not extractable today, and invalidation needs previous
+   state.** The only mesh gather is camera-frustum-culled inline
    (`RenderExtractionSystem.cpp:69`), but casters outside the camera frustum
-   still cast into it. Shadows need a second, camera-independent caster gather
-   (Stage 3) plus a `CastShadows` field on `StaticMeshComponent`.
+   still cast into it. Shadows need a camera-independent caster gather with a
+   persistent previous-frame table for diff-based invalidation (Section 6.4)
+   plus a `CastShadows` field on `StaticMeshComponent`. No ECS change filter
+   substitutes for the table: `Changed<>` cannot report previous bounds,
+   entity removal, zone detach, or visibility transitions.
 
 9. **`render.ambient.*` cvars are editor-only.**
    Registered in `EditorServices.cpp:331-336`, absent from the runtime, while
-   `RenderLight.h:51` implies otherwise. Stage 0 moves registration into the
-   engine (`EngineConsoleBuiltins.cpp`) so runtime and editor share one
+   `RenderLight.h:51` implies otherwise. Phase 3.0 moves registration into
+   the engine (`EngineConsoleBuiltins.cpp`) so runtime and editor share one
    definition; the editor keeps only its per-frame poll.
 
 10. **Frame UBO growth budget.**
@@ -351,22 +553,21 @@ Ordered by how early they must be resolved.
     Phase 3 grows it (spot cone params, shadow slot matrices, probe volume
     headers) to ~6.5 KiB, still under the 16 KiB guaranteed dynamic-UBO range
     the current design leans on (`RenderLight.h:42-44`). No storage-buffer
-    migration is needed in this phase; note it as the escape hatch if light or
-    shadow caps ever rise.
+    migration is needed in this phase; it is the recorded escape hatch if
+    light or shadow caps ever rise.
 
 11. **Query-cache thrash across registries (measure, then fix).**
-    `RenderExtractionSystem`/`LightExtractionSystem` cache one `Query` keyed by
-    a single `World*` sentinel (`RenderExtractionSystem.h:22-24`), but
+    `RenderExtractionSystem`/`LightExtractionSystem` cache one `Query` keyed
+    by a single `World*` sentinel (`RenderExtractionSystem.h:22-24`), but
     `DefaultRenderPipeline::ExtractRender` calls them once per active registry
     (`DefaultRenderPipeline.cpp:86-102`), busting the cache every call when
-    more than one zone is resident. Flagged for the Stage 7 review with a
-    counter; the fix (a small per-registry cache map) is mechanical if the
-    numbers justify it.
+    more than one zone is resident. Counted in Phase 3.0; fixed in 3C only if
+    the numbers justify it (a small per-registry cache map).
 
 12. **`.smat` unknown-key strictness vs new fields.**
     Unknown keys are errors by design (pipeline.md:661-663). Adding fields
-    requires a version bump to `kSmatVersion = 2` with the loader accepting
-    1 and 2 (v1 files get defaults), and the writer emitting 2. Old binaries
+    requires a version bump to `kSmatVersion = 2` with the loader accepting 1
+    and 2 (v1 files get defaults), and the writer emitting 2. Old binaries
     reading v2 files fail loudly, which is the intended failure mode.
 
 13. **Editor has no async-operation or progress UI.**
@@ -374,6 +575,12 @@ Ordered by how early they must be resolved.
     `engine.Tasks()` (the existing cross-frame lane) with progress polled in
     `EditorServices::ProcessFrame` (`EditorServices.cpp:651-701`); no new
     concurrency mechanism is introduced.
+
+14. **Instrumentation must have a disabled path and a compile-out.**
+    Nothing in the current renderer distinguishes dev diagnostics from
+    shipping cost (the debug overlay gate `SENCHA_ENABLE_DEBUG_UI` covers UI
+    only). Phase 3.0 introduces both the runtime mode ladder and
+    `SENCHA_ENABLE_RENDER_PROFILING` (Section 9).
 
 None of these require pushing back on the request itself; no CLAUDE.md
 invariant is violated by the feature set. The one deliberate architecture
@@ -404,24 +611,24 @@ Per fragment, in linear space:
 
 ```
 N        = normalize(TBN * reconstructZ(sampleBC5(normalMap)))   (or vertex N)
-ambient  = probeIrradiance(N)  if a probe volume covers the point
+ambient  = probeIrradiance(N)  if a probe volume covers the point (Phase 3B)
            else hemiAmbient(N)                    (existing sky/ground blend)
 diffuse  = sum over lights: wrap(N, L) * atten * shadow * lightColor
 specular = sum over lights: normBlinnPhong(N, H, exponent) * specIntensity
            * specTint * atten * shadow * lightColor
 emission = emissiveFactor.rgb * emissiveStrength * emissiveTex
 color    = baseColor * (ambient + diffuse) + specular + emission
-out      = shoulder(color * exposure)
+out      = kneeShoulder(color * exposure)
 ```
 
 Component decisions:
 
 - **Diffuse: wrapped Lambert.** `wrap(N, L) = saturate((dot(N,L) + w) / (1 + w))`
   with `w` a renderer-level cvar (`render.style.diffuse_wrap`, default 0.25,
-  0 = pure Lambert). This is the softened-terminator look the current stylized
-  response gestures at, made explicit and tunable in exactly one place. It is
-  a style control, not a material control: per-material wrap is rejected to
-  avoid toggle sprawl.
+  0 = pure Lambert). This is the softened-terminator look the current
+  stylized response gestures at, made explicit and tunable in exactly one
+  place. It is a style control, not a material control: per-material wrap is
+  rejected to avoid toggle sprawl.
 - **Specular: normalized Blinn-Phong.** `((n + 8) / 8) * pow(dot(N,H), n)`,
   half-vector from the existing `ViewPositionTime` camera position
   (`MeshForwardPass.cpp:106`). Normalization keeps highlight energy roughly
@@ -434,10 +641,10 @@ Component decisions:
   Source: `RoughnessFactor` times the ORM green channel, both already in the
   data (`Material.h:59-61`, `TextureData.h:41`).
 - **Specular intensity and tint.** New scalar `SpecularIntensity` (0..1,
-  default 0.5) added to the schema (Section 3.4). Specular tint reuses the
-  existing metallic data stylistically: `specTint = mix(white, baseColor.rgb,
-  metallic)`. Metallic thus keeps a meaning (tinted highlights for metals)
-  without a full metallic workflow. No separate specular color field in v1.
+  default 0.5) added to the schema (3.4). Specular tint reuses the existing
+  metallic data stylistically: `specTint = mix(white, baseColor.rgb,
+  metallic)`. Metallic keeps a meaning (tinted highlights for metals) without
+  a full metallic workflow. No separate specular color field in v1.
 - **Emission.** `EmissiveFactor.rgb * EmissiveStrength * emissiveTexture`,
   strength a new scalar defaulting to 1 (the Vec4 factor's w is currently
   unused and defaults to 0, so overloading it would silently zero emission on
@@ -445,20 +652,40 @@ Component decisions:
   after diffuse/specular so lights do not modulate it.
 - **Attenuation.** Keep the existing windowed inverse-square exactly as is
   (`mesh_forward.frag.glsl:68-72`); it is correct, local, and already tuned.
-  Spot lights multiply the same attenuation by the cone falloff (Section 5 of
-  the spot section below).
-- **Exposure and shoulder.** `render.exposure` (default 1.0) and a soft
-  shoulder `c / (1 + luminance(c))` gated by `render.tonemap` (default on)
-  applied at the end of the fragment shader. This is explicitly the interim
-  stand-in for the reserved Post phase (engine-roadmap.md:336-338): the
-  forward pass renders straight to the sRGB swapchain, so there is no HDR
-  intermediate to tonemap in post yet. When the Post phase lands, this block
-  moves there verbatim. Without it, emission and tight speculars hard-clip.
+  Spot lights multiply the same attenuation by the cone falloff (Section
+  3A.2 / Section 4).
+- **Exposure and tonemap: identity below a knee, shoulder above it.**
+  Applied per channel at the end of the fragment shader, after exposure:
+
+  ```
+  kneeShoulder(x) = x                              for x <= k
+                    k + (1 - k) * s / (1 + s)      for x >  k, s = (x - k) / (1 - k)
+  ```
+
+  with `k = render.tonemap.knee` (default 0.8) and `render.exposure`
+  (default 1.0). The curve is continuous and C1 at the knee (both one-sided
+  derivatives are 1), leaves every value at or below the knee exactly
+  unchanged, and asymptotically approaches 1. Consequences, evaluated
+  together with exposure and emission rather than in isolation: at the
+  default exposure existing scenes render identically wherever they already
+  fit under the knee, so no lighting retune is required; emissive surfaces
+  and tight speculars driven past the knee by `emissive_strength` or
+  intensity roll off smoothly instead of hard-clipping per channel; the
+  per-channel form desaturates overdriven colors toward white, which is the
+  filmic-style highlight behavior appropriate to the target look. With
+  `render.tonemap` off the shader clamps at 1.0, which is today's behavior.
+  This block is explicitly the interim stand-in for the reserved Post phase
+  (engine-roadmap.md:336-338): the forward pass renders straight to the sRGB
+  swapchain, so there is no HDR intermediate to tonemap in post yet; when the
+  Post phase lands, the function moves there verbatim and the cvars keep
+  their meaning. Rejected: `c / (1 + luminance(c))` (Reinhard by luminance)
+  because it rescales the entire range (0.5 maps to about 0.37), which is a
+  global tone curve demanding a lighting retune, not a highlight shoulder.
 
 ### 3.3 Renderer-level style controls (the complete list)
 
-All are engine-registered cvars (Stage 0/1), archived, polled per frame by the
-pipelines exactly as the editor already polls ambient
+All are engine-registered cvars (Phase 3.0 / 3A.1), archived, polled per frame
+by the pipelines exactly as the editor already polls ambient
 (`EditorRenderFeature.cpp:161-169`):
 
 | Cvar | Default | Meaning |
@@ -466,8 +693,9 @@ pipelines exactly as the editor already polls ambient
 | `render.ambient.sky_r/g/b`, `render.ambient.ground_r/g/b` | current defaults | Hemispheric fallback ambient (moved from editor-only registration) |
 | `render.style.diffuse_wrap` | 0.25 | Wrapped-diffuse width |
 | `render.style.min_ambient` | 0.0 | Floor added to ambient (legibility guard in unbaked rooms) |
-| `render.exposure` | 1.0 | Pre-shoulder scale |
-| `render.tonemap` | true | Soft shoulder on/off |
+| `render.exposure` | 1.0 | Pre-tonemap scale |
+| `render.tonemap` | true | Knee-shoulder curve on/off (off = clamp) |
+| `render.tonemap.knee` | 0.8 | Identity-region upper bound |
 | `render.shadow.darkness` | 1.0 | Global shadow attenuation scale (1 = fully dark shadows) |
 | `render.shadow.softness` | 1.0 | Global multiplier on per-light softness |
 
@@ -484,7 +712,7 @@ loader, writer, and shudei gain:
 |---|---|---|---|
 | `specular_factor` | float 0..1 | 0.5 | `Material::SpecularIntensity` |
 | `emissive_strength` | float >= 0 | 1.0 | `Material::EmissiveStrength` |
-| `shading` | `"standard_lit"` \| `"unlit"` | `standard_lit` | `Material::Shading` (enum `MaterialShading`) |
+| `shading` | `"standard_lit"` or `"unlit"` | `standard_lit` | `Material::Shading` (enum `MaterialShading`) |
 | `double_sided` | bool | false | `Material::DoubleSided` |
 | `receive_shadows` | bool | true | `Material::ReceiveShadows` |
 | `cast_shadows` | bool | true | `Material::CastShadows` |
@@ -494,26 +722,31 @@ defaults), the writer always writes 2. Unknown keys remain errors.
 
 ### 3.5 Shader families and pipeline variants
 
-Two fragment families, one shared vertex shader, all built from shared
-`.glsli` includes (`frame_uniforms.glsli`, `lighting.glsli`,
+Two production fragment families, one shared vertex shader, all built from
+shared `.glsli` includes (`frame_uniforms.glsli`, `lighting.glsli`,
 `shadow_sampling.glsli`, `probe_sampling.glsli`) so the vert/frag UBO
 declaration mismatch (finding 1.5) disappears:
 
-- **StandardLit** (`mesh_forward.frag.glsl`, extended): full model above.
+- **StandardLit** (`mesh_forward.frag.glsl`, extended): the full model above,
+  and nothing else. It contains no debug-view branch, no debug-only
+  calculations, and no instrumentation; development-only views live in a
+  separate shader (Section 9.6) so the production shader's instruction count
+  and register allocation cannot be affected by disabled tooling.
 - **Unlit** (`mesh_unlit.frag.glsl`, new): `baseColor * texture + emission`,
   no lights, no shadows received, still depth-tested and depth-written, still
-  a shadow caster if its material says so. The emissive-unlit use case (glowing
-  panels, screens, skies-on-geometry) is Unlit with an emissive texture and
-  strength; it is not a third family.
+  a shadow caster if its material says so. The emissive-unlit use case
+  (glowing panels, screens) is Unlit with an emissive texture and strength;
+  it is not a third family.
 
 Pipeline count is deliberately tiny. Properties that genuinely require
-separate `VkPipeline`s: fragment shader family (2) x cull mode (back,
-none for double-sided) = 4 opaque pipelines, plus the shadow-depth pipelines
-(Section 4/5) and debug-only pipelines (Section 9). Everything else (textures,
+separate `VkPipeline`s: fragment family (2) x cull mode (back, none for
+double-sided) = 4 production opaque pipelines, plus the shadow-depth
+pipelines (Sections 4, 5) and development-only pipelines (debug-view and
+overdraw, Section 9.6, compiled out of shipping). Everything else (textures,
 factors, specular, emission, shadow receive) is push-constant or UBO data in
-the one StandardLit pipeline. There is no per-feature shader permutation and
-no variant matrix: a material with no normal map samples the flat-normal
-default the neutral-slot system already guarantees (`Material.h:42-45`).
+the one StandardLit pipeline. There is no per-feature shader permutation: a
+material with no normal map samples the flat-normal default the neutral-slot
+system already guarantees (`Material.h:42-45`).
 
 Pipeline selection joins the sort key by carving 2 bits from the material
 field: `[8b pass][2b pipeline][14b material][20b mesh][4b section][16b depth]`
@@ -529,12 +762,12 @@ static asserts extend accordingly (`MeshForwardPass.cpp:15-16`).
 
 ### 3.6 Color-space and convention audit disposition
 
-From Section 1.4/1.5: linear lighting, sRGB sampling, sRGB framebuffer
+From Sections 1.4/1.5: linear lighting, sRGB sampling, sRGB framebuffer
 encoding, BC5 normal handling (always reconstruct Z from XY; works identically
 for uncompressed linear RGBA normals), and attenuation are already correct.
-The three defects to fix are the stale reversed-Z comments (Stage 0), the
-non-uniform-scale normal transform (Stage 1, cofactor matrix), and tangent
-consumption (Stage 1, attribute location 7 plus TBN in the vertex shader,
+The three defects to fix are the stale reversed-Z comments (Phase 3.0), the
+non-uniform-scale normal transform (3A.1, cofactor matrix), and tangent
+consumption (3A.1, attribute location 7 plus TBN in the vertex shader,
 MikkTSpace convention already documented at `StaticMeshVertex.h:15-17`).
 Exposure/tonemap do not exist today; Section 3.2 adds the minimal version.
 
@@ -542,65 +775,119 @@ Exposure/tonemap do not exist today; Section 3.2 adds the minimal version.
 
 ## 4. Recommended shadow technique for spot lights
 
-**Decision: conventional depth shadow maps in one shared 2D atlas, sampled
-with hardware-comparison PCF through a 3x3 tent filter.**
+**Decision: conventional depth shadow maps in one shared 2D atlas with
+guard-band insets, sampled with hardware-comparison PCF through a 3x3 tent
+filter.**
 
-Concretely:
+### 4.1 Storage, projection, rendering
 
 - **Storage.** One `2048x2048` D16_UNORM depth image (8 MiB), usage
   DEPTH_STENCIL_ATTACHMENT | SAMPLED, owned by the renderer (never by
-  components). Tiles allocated at 256/512/1024 by a 3-level quadtree
-  (Section 6). D16 is sufficient for room-scale spot ranges with the near
-  plane pushed out (below); the format is probed at startup with D32_SFLOAT
-  fallback, mirroring `VulkanDepthTarget::ChooseDepthFormat`
-  (`VulkanDepthTarget.h:46`).
+  components). Physical tiles allocated at 256/512/1024 by a 3-level
+  quadtree. D16 is sufficient for room-scale spot ranges with the near plane
+  pushed out; the format is probed at startup with D32_SFLOAT fallback,
+  mirroring `VulkanDepthTarget::ChooseDepthFormat` (`VulkanDepthTarget.h:46`).
 - **Projection.** Standard [0,1] Z (matching the audited main-pass
   convention), perspective FOV = 2 x outer cone angle, near plane =
   `max(0.05, 0.02 * Range)` and far = `Range`. The near plane is the first
   acne lever: pushing it out spreads depth precision over the lit volume.
 - **Rendering.** Depth-only pipeline: shared `shadow_depth.vert.glsl`
   (position from the same per-instance matrix stream the forward pass uses)
-  plus an empty fragment shader (pipeline-cache contract, finding 2.6).
-  Pipeline-level slope-scaled + constant depth bias
-  (`GraphicsPipelineDesc::DepthBias*`, `VulkanPipelineCache.h:100-102`).
-  Casters keep back-face culling (front faces render), same as the main pass:
-  kyusu brush geometry cooks to closed solids, but thin authored props exist,
-  and front-face rendering avoids their peter-panning; double-sided materials
-  render both faces in the shadow pass too.
-- **Sampling.** `sampler2DShadow` with `compareEnable`, LESS_OR_EQUAL, white
-  border color (border addressing outside the tile = unshadowed; the border
-  also guards atlas-neighbor bleed). Filter: 9 hardware-PCF taps in a 3x3
-  tent, tap spacing = `ShadowSoftness` texels (per-light, default 1.5) times
-  `render.shadow.softness`. Each hardware tap is itself a 2x2 comparison, so
-  the effective kernel is ~6x6: soft-edged, stable (no per-pixel rotation
-  noise), and it deliberately reads as slightly blurry, which hides 256/512
-  texel footprints exactly as the brief wants. A 5-tap variant is selected
-  automatically for tiles at the 256 tier.
-- **Acne and peter-panning controls** (each independently debuggable,
-  Section 9):
-  1. Slope-scaled bias (pipeline, cvar `render.shadow.bias_slope`, default 2.0).
-  2. Constant bias (pipeline, cvar `render.shadow.bias_const`, default 4 =
-     DepthBiasConstant units, format-relative).
-  3. Receiver normal-offset: shift the sampled world position along the
-     geometric normal by `texelWorldSize * ShadowBiasScale` before projecting
-     into light space. Texel world size is computed per light from tile
-     resolution and cone angle and uploaded in the shadow slot record. This is
-     the primary defense; it scales with resolution so low tiers do not acne.
-  4. Near-plane selection as above.
-  5. Front-face rendering as above (back-face rendering is the rejected
-     alternative: it trades acne for light leaks through walls thinner than
-     the bias, and brush levels have many door-frame-thickness walls).
-  6. Per-light `ShadowBiasScale` multiplier for the rare problem light.
-  Raising resolution is explicitly not the acne strategy; the defaults are
-  tuned at 512 and verified at 256.
+  plus an empty fragment shader (finding 2.6). Pipeline-level slope-scaled +
+  constant depth bias (`GraphicsPipelineDesc::DepthBias*`,
+  `VulkanPipelineCache.h:100-102`). Casters keep back-face culling (front
+  faces render), same as the main pass: kyusu brush geometry cooks to closed
+  solids, but thin authored props exist, and front-face rendering avoids
+  their peter-panning; double-sided materials render both faces in the shadow
+  pass too. Each `ShadowView` records one `vkCmdBeginRendering` whose
+  renderArea is the **physical** tile with `loadOp = CLEAR` (clear value
+  1.0), and draws with viewport/scissor set to the **logical interior**; the
+  guard band is therefore re-cleared to "no occluder" on every tile render at
+  zero extra cost.
+
+### 4.2 Guard bands (tile isolation)
+
+A sampler border color applies only outside the whole image, not between
+tiles, so filtering across a tile edge would otherwise read a neighboring
+light's depths. The atlas therefore separates physical and logical tiles:
+
+- Physical tiles stay power-of-two (256/512/1024) so the quadtree allocator
+  stays trivial and alignment-friendly.
+- The logical shadow map is the physical tile inset by
+  `kShadowTileGuardTexels = 8` on every side (a 512 physical tile carries a
+  496 logical map; the ~3% resolution loss is imperceptible at these sizes).
+- `GpuShadowSlot::AtlasScaleBias` maps light-space UV [0,1] to the logical
+  interior, so all sampling math is expressed in logical UVs and no shader
+  clamp against tile edges is needed for in-range fragments.
+- The guard band is cleared to depth 1.0 with the tile (4.1), so any filter
+  tap that lands in it compares against "no occluder" and returns lit. That
+  is the correct limit behavior at the cone rim, where the spot falloff has
+  already attenuated the light to zero (the projection FOV equals the outer
+  cone exactly, so only rim fragments can push taps into the band).
+- The filter cannot reach past the band by construction: per-light softness
+  is clamped to `kShadowSoftnessMaxTexels = 4.0`, the tent places taps at
+  ±1.5 x softness texels, and each hardware tap adds at most 1 texel of
+  bilinear footprint, so worst-case reach is `ceil(1.5 * 4) + 1 = 7 < 8`.
+  The two constants live beside each other in one header with the derivation
+  in a comment and a unit test enforcing the inequality (Section 13).
+- Out-of-frustum robustness is standard and independent of the band: before
+  filtering, the shader rejects samples with `w <= 0` or projected z outside
+  [0,1] and returns lit (cone attenuation already zeroed those fragments).
+- Occupancy, allocation pressure, memory accounting, and tests all deal in
+  physical tiles; the editor UI reports "512 (496 usable)" so the inset is
+  visible, not hidden.
+- The white-border comparison sampler is retained purely as the outer-image
+  backstop.
+
+Alternatives weighed for tile isolation: per-tier `sampler2DArrayShadow`
+texture arrays would make every layer edge a real image edge (border color
+then suffices, no insets), but cost three bindings, a per-sample array
+selection, fixed per-tier budgets instead of one fungible atlas (tier
+downgrade under pressure is a stated feature), and more total memory for the
+same worst case. Duplicated edge texels do not compose with depth-compare
+sampling. Dedicated per-light textures multiply bindings and barriers. The
+inset atlas keeps one binding, one sampling path, and ~15 lines of extra CPU
+code; it wins.
+
+### 4.3 Filtering
+
+`sampler2DShadow` with `compareEnable`, LESS_OR_EQUAL, white border. Filter: 9
+hardware-PCF taps in a 3x3 tent, tap spacing = per-light `ShadowSoftness`
+(default 1.5 texels, clamp [0.5, 4.0]) times `render.shadow.softness`. Each
+hardware tap is a 2x2 comparison, so the effective kernel is about 6x6:
+soft-edged, stable (no per-pixel rotation noise), and it deliberately reads
+as slightly blurry, which hides 256/512 texel footprints exactly as intended.
+A 5-tap variant is selected automatically for tiles at the 256 tier. Softness
+is specified in logical texels, so a tier downgrade keeps the kernel size in
+texels (slightly wider in world terms); this is documented behavior.
+
+### 4.4 Acne and peter-panning controls
+
+Each independently debuggable (Section 9.6):
+
+1. Slope-scaled bias (pipeline, cvar `render.shadow.bias_slope`, default 2.0).
+2. Constant bias (pipeline, cvar `render.shadow.bias_const`, default 4,
+   format-relative units).
+3. Receiver normal-offset: shift the sampled world position along the
+   geometric normal by `texelWorldSize * ShadowBiasScale` before projecting
+   into light space. Texel world size is computed per light from logical tile
+   resolution and cone angle and uploaded in the shadow slot record. This is
+   the primary defense; it scales with resolution so low tiers do not acne.
+4. Near-plane selection (4.1).
+5. Front-face rendering (4.1); back-face rendering is the rejected
+   alternative (trades acne for light leaks through walls thinner than the
+   bias, and brush levels have many door-frame-thickness walls).
+6. Per-light `ShadowBiasScale` multiplier for the rare problem light.
+
+Raising resolution is explicitly not the acne strategy; the defaults are tuned
+at 512 and verified at 256.
 
 **Rejected for spots.** Variance and exponential-variance maps: two extra
 color targets, a separable blur pass per light, light bleeding between
 overlapping occluders, and mip/filter machinery, all to buy softness the tent
 filter already provides at our light counts. Poisson-disc with per-pixel
-rotation: shimmering noise under camera motion, which reads as modern and
-wrong for the target look; the tent is stable. Per-light dedicated textures
-(no atlas): more bindings, more barriers, no packing flexibility.
+rotation: shimmering under motion, which reads modern and wrong for the
+target look; the tent is stable.
 
 ---
 
@@ -611,23 +898,25 @@ fixed budget, per-face depth reconstruction.**
 
 - **Storage.** One `VkImage` cube array: 512x512 D16, 6 faces x
   `kMaxShadowedPointLights = 4` cubes = 24 layers (12 MiB). Created
-  cube-array-compatible; `imageCubeArray` is a core 1.0 device feature enabled
-  through the existing `IRenderFeature::Contribute` bootstrap seam
-  (`Renderer.h:116-120`), which is exactly what that seam exists for. Per-face
-  2D views for rendering; one cube-array view for sampling.
+  cube-array-compatible; `imageCubeArray` is a core 1.0 device feature
+  enabled through the existing `IRenderFeature::Contribute` bootstrap seam
+  (`Renderer.h:116-120`). Per-face 2D views for rendering; one cube-array
+  view for sampling. Cube faces need no guard bands: hardware cube-map
+  filtering is seamless across faces, and each cube's layers are addressed
+  by the sampler as one logical cube, never as adjacent atlas memory.
 - **Rendering.** Six per-face passes with 90-degree perspective (near =
   `max(0.05, 0.02 * Range)`, far = Range), the same depth-only pipeline and
-  bias stack as spots. Each face frustum-culls the caster set independently, so
-  a light against a wall renders roughly half its faces empty. Six faces is
-  the honest cost of an omni shadow; it is budgeted, not hidden: the editor
-  UI displays it (Section 10) and update policies amortize it (Section 6).
+  bias stack as spots. Each face frustum-culls the caster set independently,
+  so a light against a wall renders roughly half its faces empty. Six faces
+  is the honest cost of an omni shadow; it is budgeted, not hidden: the
+  editor UI displays it (Section 10) and update policies amortize it
+  (Section 6).
 - **Sampling.** `samplerCubeArrayShadow`. The comparison reference is
-  reconstructed from the fragment-to-light vector: take the major axis
+  reconstructed from the fragment-to-light vector: take the major-axis
   distance `z = max(|v.x|, |v.y|, |v.z|)` and project through the face
   near/far to [0,1] depth. Filter: 5 taps (center + 4 offsets perpendicular
   to the sample direction, spaced by softness), each a hardware 2x2
-  comparison. Face-edge seams are a non-issue with hardware cube filtering of
-  comparison samplers on desktop hardware.
+  comparison.
 - **Radial-distance representation (store `length(v)/far` in a color target
   and compare manually): rejected.** It simplifies bias reasoning (uniform
   world-space bias) but costs an extra R16 color attachment per face, loses
@@ -636,14 +925,12 @@ fixed budget, per-face depth reconstruction.**
   reconstruction proves fiddly on some driver.
 - **Dual-paraboloid and octahedral projections: rejected.** Both halve or
   quarter the pass count but warp straight edges of low-poly brush geometry
-  unless casters are tessellated, and both introduce seam filtering work. At a
-  budget of 4 point shadows the cube array is simpler and visually safer; the
-  exotic projections would only pay off at light counts this phase explicitly
-  does not target.
+  unless casters are tessellated, and both introduce seam filtering work. At
+  a budget of 4 point shadows the cube array is simpler and visually safer.
 
-Point and spot shadows share: the depth-only shader pair, the caster set, the
-bias stack, the residency arbiter, the budget cvars, and the debug views. They
-differ only in storage object and the projection/sampling math.
+Point and spot shadows share: the depth-only shader pair, the caster set and
+its diff, the bias stack, the residency arbiter, the budget cvars, and the
+debug views. They differ only in storage object and projection/sampling math.
 
 ---
 
@@ -658,55 +945,55 @@ or a frame.
 Authoring state (ECS, serialized, schema-driven UI for free):
 
 ```
-PointLightComponent (extended)      SpotLightComponent (new, Section on ECS below)
+PointLightComponent (extended)      SpotLightComponent (new)
   Color, Intensity, Range, Enabled    Color, Intensity, Range, Enabled
-  CastShadows        = false          Direction from WorldTransform forward axis
+  CastShadows        = false          direction = WorldTransform forward axis
   ShadowResolution   = Medium         InnerAngleDegrees = 25, OuterAngleDegrees = 35
   ShadowUpdate       = OnChange       CastShadows, ShadowResolution, ShadowUpdate,
-  ShadowSoftness     = 1.5            ShadowSoftness, ShadowBiasScale (same fields)
-  ShadowBiasScale    = 1.0
+  ShadowSoftness     = 1.5            ShadowSoftness, ShadowBiasScale
+  ShadowBiasScale    = 1.0            (same shadow fields and defaults)
 ```
 
 `ShadowResolution` is `ShadowResolutionTier { Low = 256, Medium = 512,
-High = 1024 }` (points clamp High to 512 per face; a 1024 cube is 4x the
-memory and never worth it at this art scale). `ShadowUpdate` is
-`ShadowUpdatePolicy { EveryFrame, OnChange, Static }`. Shadow enablement
-defaults off: a light is cheap until someone opts into shadows.
+High = 1024 }` (physical tile size; the logical map is inset per Section 4.2;
+points clamp High to 512 per face). `ShadowUpdate` is `ShadowUpdatePolicy
+{ EveryFrame, OnChange, Static }`. Shadow enablement defaults off: a light is
+cheap until someone opts in.
 
 Renderer state (new `engine/{include,src}/render/shadow/`):
 
-- `ShadowAtlas`: the 2D depth image + 3-level quadtree slot allocator
-  (1024/512/256). Pure allocation logic separated from Vulkan so it unit-tests
-  headlessly.
+- `ShadowAtlas`: the 2D depth image + 3-level quadtree slot allocator over
+  physical tiles, plus the logical-inset scale/bias math. Allocation logic is
+  Vulkan-free and unit-tests headlessly.
 - `ShadowCubePool`: the cube array + a 4-slot allocator.
 - `ShadowResidency`: the arbiter. Input: this frame's packed lights (with
-  entity ids and zone ids), camera, budgets. Output: per-light `ShadowIndex`
-  (into the shadow-slot UBO array) and a list of `ShadowView`s to render this
-  frame. Owns per-slot cache state (light-state hash, valid flag, last-used
-  frame, score history). CPU-only, deterministic, unit-testable.
+  stable identities), camera, budgets, and the caster-diff events (6.4).
+  Output: per-light `ShadowIndex` and the ordered list of `ShadowView`s to
+  render this frame. Owns per-slot cache state (light-state hash, valid flag,
+  ages, score history). CPU-only, deterministic, unit-testable.
 - `ShadowView`: one render job = { kind (spot / point face), target (atlas
-  rect or cube layer+face), view-projection matrix, caster cull volume }.
-- `ShadowCasterSet` + `ShadowCasterExtractionSystem`: camera-independent
-  gather of `{ Mesh, SectionIndex, WorldMatrix, WorldBounds }` for every
-  visible-zone entity whose `StaticMeshComponent.CastShadows` and material
-  `CastShadows` are both true, plus the frame's moved-caster bounds list (see
-  6.4). Runs inside `DefaultRenderPipeline::ExtractRender` beside the existing
-  extractors (`DefaultRenderPipeline.cpp:86-102`).
+  physical rect + logical viewport, or cube layer+face), view-projection
+  matrix, caster cull volume }.
+- `ShadowCasterSet` + `ShadowCasterExtractionSystem`: the camera-independent
+  caster gather and its previous-frame table (6.4). Runs inside
+  `DefaultRenderPipeline::ExtractRender` beside the existing extractors
+  (`DefaultRenderPipeline.cpp:86-102`).
 - `ShadowDepthPass`: records the depth-only draws for one `ShadowView`
-  (per-view frustum cull of the caster set, mesh-sorted instanced runs,
-  same instancing mechanism as `MeshForwardPass::BindInstanceStream`,
+  (per-view frustum cull of the caster set, mesh-sorted instanced runs, same
+  instancing mechanism as `MeshForwardPass::BindInstanceStream`,
   `MeshForwardPass.cpp:121-140`). Factored like `MeshForwardPass` so kyusu
   viewports reuse it.
 - `ShadowRenderFeature (IRenderFeature)`: runs in a new `RenderPhase::Shadow`
   bucket ordered before `Offscreen` (`Renderer.h:57-65` reserves the name;
   before-Offscreen ordering means editor viewports can sample shadows too).
-  Owns barriers: per-tile DEPTH_ATTACHMENT rendering, then one
-  atlas/cube-array transition to DEPTH_READ_ONLY + SHADER_READ before
-  MainColor samples it (sync2 helpers, `VulkanBarriers.h:21-39`).
-- `LightBindings`: the set-2 descriptor set (Section 2 item 5): binding 0 =
-  atlas `sampler2DShadow`, binding 1 = cube array `samplerCubeArrayShadow`,
-  binding 2 = probe volume `sampler3D` array (Section 8), double-buffered per
-  frame in flight.
+  Owns barriers: per-tile DEPTH_ATTACHMENT rendering, then one atlas /
+  cube-array transition to DEPTH_READ_ONLY + SHADER_READ before anything
+  samples it (sync2 helpers, `VulkanBarriers.h:21-39`). It executes the view
+  list decided at extraction; no scheduling happens during command recording.
+- `LightBindings`: the set-2 descriptor set (finding 2.5): binding 0 = atlas
+  `sampler2DShadow`, binding 1 = cube array `samplerCubeArrayShadow`,
+  binding 2 = probe volume `sampler3D` array (Phase 3B), double-buffered per
+  frame in flight, dummy-backed from creation (6.6).
 
 GPU-side per-frame data appended to `MeshFrameUniforms`:
 
@@ -736,161 +1023,289 @@ score = Intensity * saturate(Range / distance(camera, light))^2
 
 plus hysteresis: a light currently holding a slot gets a 1.25x multiplier, and
 a slot cannot be stolen until its holder has been outscored for 30 consecutive
-frames. Ties break on `EntityId` then `ZoneId`, so allocation is deterministic
-and does not flicker when two lights hover at equal importance. Over-budget
-lights render unshadowed (their `ShadowIndex` stays UINT32_MAX); a counter and
-an editor warning surface it (Sections 9, 10). Tier downgrade under pressure
-(High request served at Medium when the atlas is full) is applied before
-outright denial.
+frames. Ties break on the stable light identity (6.4), so allocation is
+deterministic and does not flicker when two lights hover at equal importance.
+Over-budget lights render unshadowed (`ShadowIndex` stays UINT32_MAX); a
+counter and an editor warning surface it (Sections 9, 10). Tier downgrade
+under pressure (High request served at Medium when the atlas is full) is
+applied before outright denial.
 
-### 6.3 Update policies
+### 6.3 Update policies and view scheduling
 
 Per-light `ShadowUpdate`:
 
-- `EveryFrame`: re-render whenever resident (flashlights, moving elevators'
-  lights).
+- `EveryFrame`: re-render whenever resident (flashlights, lights on movers).
 - `OnChange` (default): re-render when the light's state hash changes or a
-  moved caster intersects its volume (6.4).
+  caster-diff event intersects its volume (6.4).
 - `Static`: render once on slot acquisition; afterwards only explicit
   invalidation (editor edit, console command `render.shadow.invalidate`)
-  re-renders. For editor-authored fixed scene lighting.
+  re-renders. For editor-authored fixed scene lighting. By definition it
+  ignores caster motion; the default policy is OnChange precisely so that
+  Static is an explicit authored promise.
 
-Newly acquired slots always render on acquisition. Per-frame shadow view
-count is additionally clamped by `render.shadow.max_views_per_frame`
-(default 12) with overflow deferred to following frames, oldest-invalid
-first: a worst-case zone load amortizes over a few frames instead of spiking
-one.
+Per-frame shadow view count is clamped by `render.shadow.max_views_per_frame`
+(default 12). Service order is deterministic and starvation-free: (1) slots
+acquired this frame that have never rendered, (2) EveryFrame slots, (3)
+invalidated slots, oldest invalidation first; ties break on slot index. If
+EveryFrame demand alone exceeds the clamp, category 3 still drains because
+categories rotate: an invalidated slot's age strictly grows until served,
+and category 1 is bounded by the budget. A worst-case zone load therefore
+amortizes over a few frames instead of spiking one, and no cached light waits
+forever behind flashlights.
 
-### 6.4 Invalidation without an observer system
+### 6.4 Invalidation: the caster table diff
 
-Two detection mechanisms, both local to extraction, no global coupling:
+Invalidation must know what changed and where it was before it changed.
+Neither `Changed<T>` (precise but memoryless: no previous bounds, no
+removal/detach/visibility events, chunk granularity) nor component hooks
+(would couple ECS lifecycle to the renderer against the layering rule) can
+supply that. The mechanism is a renderer-owned diff of consecutive caster
+snapshots, entirely inside extraction:
 
-1. **Light change**: `ShadowResidency` hashes the packed light state it
-   already receives (position, rotation-derived direction, range, cone
-   angles, tier) and compares against the slot's stored hash. Renderer-side
-   state diffing; the ECS never calls into the renderer.
-2. **Caster movement**: `ShadowCasterExtractionSystem` runs a second cached
-   query with `Changed<WorldTransform>` + `StaticMeshComponent` and collects
-   the world bounds of moved casters (both old bounds are unknown, so the new
-   bounds are taken conservatively; chunk-conservative change detection means
-   false positives, which only cost a redundant re-render). `ShadowResidency`
-   intersects the moved-bounds list against each resident `OnChange` shadow
-   volume (sphere for points, cone-bounding sphere for spots) and invalidates
-   on overlap.
+- During the caster gather, `ShadowCasterExtractionSystem` appends one record
+  per caster to this frame's table:
 
-Zone attach/detach invalidates trivially: a light whose zone unloads
-disappears from extraction, its slot ages out and frees; newly attached zones'
-casters arrive as new bounds. Per-zone shadow residency needs no extra
-mechanism because extraction is already per-active-registry.
+  ```
+  CasterKey   = (RegistryId, EntityId)        // EntityIds are per-registry;
+                                              // Registry.Id disambiguates
+                                              // (Registry.h:68-76)
+  CasterState = { WorldBounds (quantized), StaticMeshHandle (slot+generation),
+                  SectionMask }
+  ```
 
-### 6.5 Caching effect
+  Only entities passing the caster filter (component `CastShadows` AND
+  material `CastShadows` AND `Visible`) are recorded, so any toggle of those
+  flags manifests as appearance or disappearance in the table.
+- After the gather, sort the table by key (a few thousand 32-byte records;
+  the render queue already sorts more per frame) and linear-merge against the
+  previous frame's sorted table:
+  - in current only: **added** event, bounds = current bounds.
+  - in previous only: **removed** event, bounds = previous bounds. This
+    covers entity destruction, zone detach (the registry's keys vanish while
+    the previous table still holds them), visibility off, `CastShadows` off
+    at either level, and extraction filter changes.
+  - in both with different state: **changed** event, bounds =
+    `Union(previousBounds, currentBounds)`. This covers transform movement
+    (no ghost at the departure site), mesh replacement (handle generation
+    differs), and section-mask edits, i.e. every silhouette-affecting change
+    representable in the extracted state.
+- `ShadowResidency` intersects event bounds against each resident
+  `OnChange` shadow volume (sphere for points, cone-bounding sphere for
+  spots) and invalidates on overlap. The previous table is swapped, never
+  cleared, only after the diff runs, so zone unload invalidates affected
+  cached shadows before the previous state is discarded.
+- Cost control at a coarse boundary: the sort+diff runs only when at least
+  one resident slot has the OnChange policy; otherwise the gather still
+  refreshes the table but skips the merge. The whole mechanism lives in
+  extraction; no ECS component calls into the renderer. If captures ever show
+  the diff itself hot, the recorded escalations are a
+  `Changed<WorldTransform>`-driven prefilter (now known to be precise,
+  finding 1.9) or a static/dynamic caster split, in that order (0.5).
+- Determinism: tables are sorted by key, events are emitted in key order, and
+  invalidation processing follows slot index order, so identical world state
+  produces identical cache behavior. The stable light identity used for
+  scoring ties and cache keying is the same `(RegistryId, EntityId)` pair,
+  captured at light extraction.
+
+### 6.5 Scratch and failure behavior
+
+Every `ShadowView` writes its instance stream through
+`VulkanFrameScratch::AllocateVertex` into the same per-frame slice as the
+forward pass (`VulkanFrameScratch.h:41-58`, 1 MiB default). Worst-case math
+(12 views x 1000 casters x 64 B = 768 KiB plus the main pass) can exceed the
+default, so: the slice size becomes an `EngineRuntimeConfig` value; shadow
+view recording that fails allocation skips that view, leaves the slot
+invalid (it re-queues next frame), warns once, and increments a counter. The
+budget table carries the sizing guidance (Section 14).
+
+### 6.6 Dummy resources
+
+`LightBindings` is created in 3A.3 with always-valid descriptors: a 1x1 D16
+depth texture (cleared to 1.0) for the atlas binding, a 6-layer 1x1 cube
+array for the point binding, and 1x1x1 RGBA16F volumes for the probe binding
+(written in 3B, dummy until then). The forward pipeline can therefore bind
+set 2 unconditionally from 3A.3 onward, with no partially-bound descriptor
+features and no shader-side "does the set exist" special case; a fragment
+with `ShadowIndex == UINT32_MAX` never samples the dummies anyway.
+
+### 6.7 Caching effect
 
 Steady state for an indoor scene of `Static`/`OnChange` lights is zero shadow
 draws: the pass renders only invalidated views. `ShadowCacheHits/Misses`
-counters (Section 9) make the cache observable, and the atlas debug view shows
-slot ages.
+counters make the cache observable, and the atlas debug view shows slot ages
+(Section 9.6).
 
 ---
 
 ## 7. Baked-lighting recommendation
 
 **Decision: zone-scoped irradiance probe volumes, baked in the editor against
-cooked collision geometry, streamed with zones, sampled per fragment. No
-surface lightmaps in this phase.**
+static render geometry, dilated at bake time, streamed with zones, sampled
+per fragment with plain hardware trilinear filtering. No surface lightmaps in
+this phase.**
 
-Comparison against the alternatives, grounded in this codebase:
+### 7.1 Why probes, why zone-scoped
+
+Compared against the alternatives, grounded in this codebase:
 
 1. **Traditional surface lightmaps: rejected.** They require a second UV set
    (the cooked vertex just moved to tangents, Decision M; another vertex
-   stream bump plus an unwrapper/packer is a large tool investment), per-texel
-   density management over brush geometry that recooks per edit
+   stream bump plus an unwrapper/packer is a large tool investment),
+   per-texel density management over brush geometry that recooks per edit
    (`DocumentCook` re-cells geometry per cook,
    `editor/kyusu/src/document/DocumentCook.cpp:238-258`, so packing would
    churn), streaming of per-zone lightmap pages, seam handling, and long
    bakes. They also do nothing for dynamic objects, which still need probes.
-   Cost/benefit is wrong for stable environmental light and mood.
 2. **Baked per-vertex irradiance: rejected as the primary mechanism.** Fits
    the target era and is cheap to sample, but couples bake output to vertex
    density (brush-cooked cells are coarse), invalidates on every geometry
    cook, needs a vertex-format bump, and still leaves dynamic objects
    unsolved. Recorded as a possible later addition for hero static meshes.
-3. **Irradiance probes (chosen), zone-scoped volumes (chosen).** One mechanism
+3. **Irradiance probes in zone-scoped volumes (chosen).** One mechanism
    covers static and dynamic receivers per directive 3 (behavior from data,
    one pipeline); storage is decoupled from geometry so a brush edit
    invalidates the bake logically, not structurally; zone scoping gives
-   streaming, eviction, and leak containment for free via the existing
+   streaming, eviction, and cross-room leak containment via the existing
    registry lifecycle (Section 1.6).
-4. **Hybrid direct-dynamic / indirect-baked (chosen by construction).** Direct
-   lighting stays fully dynamic (points, spots, their shadows); probes replace
-   only the hemispheric ambient term. This is the smallest bake that changes
-   how rooms feel.
+4. **Hybrid direct-dynamic / indirect-baked (chosen by construction).**
+   Direct lighting stays fully dynamic (points, spots, their shadows); probes
+   replace only the hemispheric ambient term. This is the smallest bake that
+   changes how rooms feel.
 
 What the first bake computes (deliberately modest): for each probe, N = 128
-fixed-pattern cosine-stratified rays; each ray is traced against the zone's
-cooked collision (the Jolt query path already loaded per zone,
-`ZoneCollisionLoader.cpp:51-101`); a miss contributes sky/ground hemispheric
-color by ray direction; a hit contributes the direct lighting at the hit point
-(Lambert from the zone's static shadow-casting lights, occlusion tested with
-one shadow ray each) times a constant bounce albedo (`render.bake.albedo`
-cvar, default 0.35). The result is projected into L1 spherical harmonics. That
-yields sky occlusion, one indirect bounce, and colored room mood. It is not
-modern GI and does not try to be.
+rays in a fixed precomputed direction table; each ray traced against the bake
+BVH (7.2); a miss contributes sky/ground hemispheric color by ray direction;
+a hit contributes the direct lighting at the hit point (Lambert from the
+zone's static shadow-casting lights, occlusion tested with one shadow ray
+each) times a constant bounce albedo (`render.bake.albedo` cvar, default
+0.35). The result is projected into L1 spherical harmonics (12 fp16
+coefficients = 24 bytes per probe). That yields sky occlusion, one indirect
+bounce, and colored room mood. It is not modern GI and does not try to be.
+Emissive surfaces occlude but do not emit in v1 (recorded as deferred).
 
-Determinism: ray directions come from a precomputed table seeded by probe
-index (no `Date`/`random` at bake time), the bake parallelizes per probe row
-via `JobSystem::ParallelFor`, and the `worker_count == 0` path is the
-reference; a test asserts serial and parallel bakes are bit-identical
-(pattern: `test/runtime/ZoneParallelTests.cpp:169-202`).
+Determinism: ray directions come from a precomputed table indexed by probe
+index (no time- or address-seeded randomness), each probe writes only its own
+output slot, and the bake parallelizes per probe row via
+`JobSystem::ParallelFor` with the `worker_count == 0` path as the reference;
+a test asserts serial and parallel bakes are bit-identical (pattern:
+`test/runtime/ZoneParallelTests.cpp:169-202`).
 
-Storage and streaming follow the collision precedent exactly (Section 1.6):
+### 7.2 Bake geometry: static render meshes, not collision
+
+The bake must see the surfaces the player sees. Cooked collision happens to
+be derived from the same brush geometry today, but that is an implementation
+coincidence, not a contract: collision may adopt primitives, hulls, or
+gameplay-only shapes at any point, and nothing would flag the divergence
+until lighting silently changed. The bake therefore builds its own transient
+acceleration structure:
+
+- Input: the zone's cooked scene entities whose caster filter passes (the
+  same component AND material `CastShadows` rule the shadow system uses),
+  with their `.smesh` geometry loaded CPU-side via
+  `MeshLoader::LoadFromFile(path, MeshGeometry&)`
+  (`MeshLoader.h:29`); triangles transformed to world space per entity.
+  The runtime keeps no CPU vertex data (`GpuStaticMesh.h:16-27`), which is
+  fine: the bake runs in the editor process where the cooked files are at
+  hand.
+- Structure: a median-split triangle BVH, built per zone, used for the bake,
+  discarded. CPU-only, no new engine subsystem, no physics dependency (a
+  layering win: the render bake no longer touches the physics module at
+  all).
+- Content identity: the bake input hash = per-cell `.smesh` content hashes
+  (already tracked by the cook index, `DocumentCook.cpp:312-320`) + static
+  light state + volume placement/params + bake settings. This keys staleness
+  detection and incremental rebakes, and it is stable because it hashes
+  cooked artifacts, not live editor state.
+- Using Jolt collision instead was rejected rather than kept as a first step:
+  binding the physics query API is not meaningfully less work than a small
+  BVH over `MeshGeometry`, and the BVH also provides exact triangle normals
+  for the inside-geometry classification below.
+
+### 7.3 Validity: classify, dilate at bake, sample plainly at runtime
+
+Hardware trilinear filtering interpolates before the shader sees anything,
+so per-texel validity cannot weight the blend at runtime. The plan is
+therefore:
+
+- **Classify at bake.** A probe is invalid when its short-ray backface hit
+  ratio exceeds a threshold (it sits inside or intersects geometry).
+- **Dilate at bake.** Iteratively fill each invalid probe with the average of
+  its face-adjacent (6-neighborhood) valid neighbors until every texel in
+  the uploaded grids holds usable SH data; probes still unfilled (a fully
+  invalid volume) get the hemispheric ambient projected into SH.
+- **Sample plainly at runtime.** Ordinary hardware trilinear on the SH
+  textures. No validity texture is uploaded; the runtime validity texture
+  from revision 1 is deleted.
+- **Keep validity for diagnostics.** The `.sprobe` file retains the validity
+  bitset; the editor overlay tints invalid (dilated) probes and the lighting
+  panel counts them (Section 10). The runtime ignores the chunk.
+
+Leak behavior of dilation, stated honestly: dilation never crosses volume
+boundaries (each volume's grid is independent by construction, and volumes
+are authored per room), so the cross-room leak the zone scoping exists to
+prevent cannot re-enter through dilation. Within one volume, a thin interior
+wall whose in-wall probes get filled from the lit side can still leak into
+the dark side at the wall. Countermeasures, in order: author cell size at or
+above wall thickness (guidance surfaced in the lighting panel), split the
+volume at the wall, and read the dilated-probe overlay which marks exactly
+where filling happened. True occlusion-aware interpolation (per-probe
+visibility weights, manual 8-corner fetch) is the recorded escalation with
+its real cost written down (Section 15), not a default.
+
+### 7.4 Volume selection and sampling
+
+Runtime sampling is per fragment: test the world position against the
+resident volume headers in the frame UBO (at most
+`kMaxResidentProbeVolumes = 8` active), select by (1) highest explicit
+`Priority`, (2) smallest volume among equal priorities, (3) stable volume id,
+then sample three RGBA16F 3D textures (one per color channel, each texel
+holding that channel's four L1 SH coefficients) with hardware trilinear
+filtering and evaluate irradiance for N. The stable id is
+`(ZoneId, volume index in .sprobe file order)`, which is cook-deterministic,
+so precedence cannot flicker between runs or zone reloads. Artist priority
+overriding size means a deliberate "hallway override" volume can sit inside
+a room volume regardless of relative extents.
+
+Fragments covered by no volume fall back to the existing hemispheric ambient,
+so unbaked zones look exactly as they do today. Per-fragment selection is
+chosen over per-instance volume indices because instanced runs merge across
+zones (`RenderQueue` merges by mesh/material only, Section 1.2) and because
+room-sized cooked cells need intra-draw ambient variation; the cost is eight
+AABB tests per fragment, an always-on cost of the probe feature that 3B
+validation measures against its budget (Section 14). The volume list is
+rebuilt at extraction from resident zones; a `ProbeVolumeSet` owns GPU
+textures per zone and drops them with the zone.
+
+Dynamic objects sample the same volumes per fragment; nothing special-cases
+them. Normal-dependent response comes from L1 SH evaluation.
+
+### 7.5 Storage and streaming
 
 - New chunked binary `.sprobe` (FourCC `'SPRB'`, `kProbeFormatVersion = 1`,
   `BinaryHeader` + `ChunkHeader` per `core/serialization/BinaryFormat.h`),
-  one file per zone, containing per-volume grids of L1 SH RGB (12 fp16
-  coefficients = 24 bytes per probe) plus a validity bitset.
+  one file per zone: per-volume header chunk (grid transform, dims,
+  priority, stable index), SH payload chunk (dilated, upload-ready), validity
+  chunk (editor-only). Unknown chunks skip forward-compatibly, matching
+  `.smesh`/`'SCNE'` practice.
 - `ZoneHeader` gains `CookedProbeRef` + `CookedProbeContentHash` beside the
   existing cooked trio (`WorldPartitionManifest.h:60-62`), written only when
   nonempty (the manifest reader tolerates unknown keys,
   `WorldPartitionManifest.h:112-114`).
-- Runtime load rides `ZoneLoadRecipe`: bytes read in `Build` (off-thread),
-  GPU volume textures created and registered in `Finalize` (main thread at
-  `DrainAsyncTasks`), residency dropped on zone destroy.
-
-Runtime sampling: per fragment. The fragment finds its volume by testing the
-world position against the resident volume headers in the frame UBO (at most
-`kMaxResidentProbeVolumes = 8` active; smallest containing volume wins, ties
-by priority then volume id), then samples three RGBA16F 3D textures (one per
-color channel, each texel holding that channel's four L1 SH coefficients)
-with hardware trilinear filtering and evaluates irradiance for N. Fragments covered by no volume fall back to
-the existing hemispheric ambient, so unbaked zones look exactly as they do
-today. Per-fragment selection is chosen over per-instance volume indices
-because instanced runs merge across zones (`RenderQueue` merges by
-mesh/material only, Section 1.2) and because room-sized cooked cells need
-intra-draw ambient variation; 8 AABB tests per fragment is trivial ALU.
-
-Leak control, in order of effect: volumes are authored per room (component
-below), so interpolation never spans a wall between rooms; probes whose bake
-rays classify them inside geometry (majority of short rays hit backfaces) are
-marked invalid and take dilated values from valid neighbors, and validity
-weights the trilinear blend; volume membership is zone-restricted by
-construction (a volume lives in its zone's registry, and resident volume
-headers carry the zone id). Per-probe occlusion-weighted interpolation is
-deferred (Section 15).
-
-Dynamic objects sample the same volumes per fragment; nothing special-cases
-them. Normal-dependent response comes from L1 SH evaluation.
+- Runtime load rides `ZoneLoadRecipe`: bytes read and parsed in `Build`
+  (off-thread), GPU volume textures created and registered in `Finalize`
+  (main thread at `DrainAsyncTasks`), residency dropped on zone destroy.
 
 ---
 
 ## 8. Probe-volume and 3D-grid recommendation
 
-**Decision: reuse the existing lattice types; add one small value type; do not
-build a generalized spatial-field framework this phase.**
+**Decision: reuse the existing lattice types; add one small value type; do
+not build a generalized spatial-field framework this phase.**
 
-Inspection result the request did not anticipate: Sencha already has
-`Grid3d<T>` (`engine/include/math/spatial/Grid3d.h`), a flat dense 3D array
-with index math, alongside `Grid2d`, `GridPlane`, and `QuadTree`. What is
-missing is only the world mapping.
+Inspection result: Sencha already has `Grid3d<T>`
+(`engine/include/math/spatial/Grid3d.h`), a flat dense 3D array with index
+math, alongside `Grid2d`, `GridPlane`, and `QuadTree`. What is missing is
+only the world mapping.
 
 - Add `math/spatial/GridTransform3d`: origin, per-axis cell size, integer
   dimensions; world-to-cell, cell-to-world, cell AABB, `Contains`, and
@@ -906,103 +1321,219 @@ missing is only the world mapping.
   `EngineSceneComponents` (`ComponentManifest.h:33-39`) for free UI and
   serialization, chunk `'IRVL'`.
 
-The generalized chunked/streamed/GPU-resident spatial-field primitive the
-request floats (water, voxels, occupancy) is explicitly deferred under
-directive 4: today it would have exactly one consumer, and probe volumes,
-water, and voxel systems will want radically different storage (dense fp16
-grids vs chunked SDF vs simulation ping-pong buffers). `Grid3d` +
-`GridTransform3d` are the real shared substrate; anything more is speculative
-abstraction until a second concrete user exists. When one arrives, the
-extraction of shared chunked storage is a mechanical refactor over these value
-types.
+The generalized chunked/streamed/GPU-resident spatial-field primitive (water,
+voxels, occupancy) is explicitly deferred under directive 4: today it would
+have exactly one consumer, and probe volumes, water, and voxel systems will
+want radically different storage. `Grid3d` + `GridTransform3d` are the real
+shared substrate; anything more is speculative abstraction until a second
+concrete user exists.
 
 ---
 
 ## 9. Profiling and debugging architecture
 
-Built in Stage 0 so every later stage lands with numbers attached.
+Rebuilt in this revision around one rule: **when instrumentation is off, the
+work does not happen.** No claim of "free" is made anywhere; disabled means
+absent.
 
-### 9.1 GPU timing
+### 9.1 The mode ladder and the instrumentation bundle
 
-- New `graphics/vulkan/GpuTimestampPool`: one `VkQueryPool`
-  (TIMESTAMP, ~64 queries) per frame in flight; `Begin/End(scopeId)` writes
-  `vkCmdWriteTimestamp2`; results resolved with availability-checked
-  `vkGetQueryPoolResults` when that frame's fence has already been waited
-  (two-frames-later readback, no stalls), scaled by
-  `VkPhysicalDeviceLimits::timestampPeriod`.
-- Scopes: one per `RenderPhase` bucket plus one per feature, plus
-  shadow-view batches (`Shadow/SpotViews`, `Shadow/PointFaces`) and the
-  forward pass. Scope table is fixed at feature setup; no per-frame strings.
-- Timings append to `TimingFrameSample` (new fields: `GpuSeconds` total and a
-  small fixed array of named scope spans) via `TimingSampler::PushRenderFrame`
-  (`TimingSampler.cpp:31-50`), so the existing `TimingPanel` plumbing carries
-  them.
+```cpp
+enum class RenderProfileMode : uint8_t
+{
+    Off,       // default
+    Counters,  // CPU counters published at pass boundaries
+    Gpu,       // + timestamp scopes and command labels
+    Capture,   // + capture ring, metadata, export commands armed
+};
 
-### 9.2 Debug labels and object names
+struct RenderInstrumentation
+{
+    RenderStats* Stats = nullptr;            // non-null in Counters and above
+    GpuTimestampPool* GpuTimestamps = nullptr; // non-null in Gpu and above
+    RenderCapture* Capture = nullptr;        // non-null in Capture
+};
+```
 
-- New `graphics/vulkan/VulkanDebugLabels`: free functions
-  (`BeginLabel/EndLabel/InsertLabel/NameObject`) in the style of
-  `VulkanBarriers` (`VulkanBarriers.h:10-13`), loaded from
-  `VK_EXT_debug_utils` when validation is enabled and no-ops otherwise.
-  Renderer phases, features, shadow views, and all Phase 3 images/pipelines
-  get names. This is what makes RenderDoc captures of the new passes legible.
+- The bundle is owned by the Engine beside `TimingHistory`; a pointer to it
+  is added to `RendererServices` (`Renderer.h:69-86`) so features cache it at
+  `Setup()` per the existing no-lookups-in-the-hot-loop constraint
+  (`Renderer.h:40-43`). `DefaultRenderPipeline` receives the same pointer at
+  wiring.
+- Mode is the cvar `render.profile.mode` (enum string, Transient). Its
+  `OnChange` stores a pending mode; the pending mode is applied once per
+  frame at the top of `FramePhase::ExtractRenderPacket`, before any
+  extraction or recording reads the bundle, so a frame sees exactly one mode.
+  Off nulls all three pointers.
+- Each mode includes everything below it. Semantics:
+  - **Off**: the bundle pointers are null. No timestamp writes, no query
+    resets or readbacks, no history/capture writes, no command labels, no
+    allocations, traversals, or string work on behalf of profiling. The only
+    profiling-adjacent work that exists at all is the pass-local accumulation
+    covered by the granularity policy in 9.2.
+  - **Counters**: subsystems publish their pass-local totals into
+    `RenderStats` at pass exit (one branch and a struct copy per pass), and
+    `DefaultRenderPipeline` pushes the finished frame's stats into a small
+    ring beside `TimingHistory`. Counters are plain integers written by their
+    owning subsystem on one thread; nothing is atomic.
+  - **Gpu**: plus `vkCmdResetQueryPool` once at frame start,
+    `vkCmdWriteTimestamp2` pairs at phase/feature boundaries, fence-safe
+    readback (9.3), and command labels (9.4).
+  - **Capture**: plus appending `{TimingFrameSample, RenderStats, gpu scopes}`
+    records to the capture ring and arming the export console commands (9.5).
 
-### 9.3 Counters
+### 9.2 Counters and the granularity policy
 
-- New `render/RenderStats.h`: one plain aggregate reset each frame and filled
-  by the systems that own each number (extraction fills visibility numbers,
-  passes fill draw numbers, residency fills shadow numbers), extending the
-  existing `MeshForwardPass::DrawStats` pattern (`MeshForwardPass.h:72-77`):
-  visible/culled objects, draw calls, instanced draws, submitted triangles
-  (index counts summed at extraction), lights visible / culled / dropped at
-  cap, per-draw considered lights (min/avg/max: with the global light loop
-  this equals visible lights, and the counter exists precisely to expose
-  that), shadow-casting lights, shadow views rendered, shadow caster draws,
-  atlas tiles used per tier, shadow cache hits/misses, shadow memory,
-  pipeline switches, material switches (push-constant updates), descriptor
-  updates, probe volumes resident, probe memory, and the extraction query
-  rebuild count (finding 2.11).
-- `DefaultRenderPipeline` owns the frame's `RenderStats`, hands sub-structs to
-  features at wiring time, and pushes the finished frame into a stats ring
-  beside `TimingHistory`.
+`render/RenderStats.h` is one plain aggregate, reset per frame, filled by the
+systems that own each number, extending the existing
+`MeshForwardPass::DrawStats` pattern (`MeshForwardPass.h:72-77`): visible and
+culled objects, draw calls, instanced draws, submitted triangles, lights
+visible / culled / dropped at cap, per-draw considered lights (equal to
+visible lights under the global loop; the counter exists to expose exactly
+that), shadow-casting lights, shadow views rendered, shadow caster draws,
+atlas tiles used per tier (physical), shadow cache hits/misses, shadow memory,
+pipeline switches, material (push-constant) switches, probe volumes resident,
+probe memory, extraction query rebuilds (finding 2.11), scratch high-water
+mark, and caster-diff event counts.
 
-### 9.4 Capture export
+The cost policy that keeps the Off path honest without duplicating renderer
+code:
 
-- New `render/RenderCapture`: a ring of `{TimingFrameSample, RenderStats}`
-  records; console commands `render.capture.start [n]` /
-  `render.capture.stop` / `render.capture.write <path>` (registered via
-  `ConsoleService::RegisterCommand`, pattern `ConsoleService.cpp:227-237`)
-  serialize to JSON (schema-versioned envelope: build info, cvar snapshot,
-  scene name, then per-frame records) or CSV (one row per frame, one column
-  per counter) using `JsonStringify` (`JsonStringify.h:7`). Buffered structs,
-  serialized only at write time, per the documented `JsonValue` hot-path
-  caveat (`JsonValue.h:19-22`).
-- This file is the interface for AI-assisted analysis: stable keys, explicit
-  units (`_ms`, `_bytes`, `_count`), machine-diffable. No heuristics live in
-  the renderer.
+- Values that fall out of existing control flow at **run/chunk/pass
+  granularity** (a draw-call increment per run, an index-count add per run, a
+  chunk-count add per chunk, `size()` reads at pass end) accumulate into
+  stack locals unconditionally and are **published only behind the per-pass
+  `Stats != nullptr` check**. This mirrors what the code already does today:
+  `DrawStats` is maintained unconditionally and is a consumed test seam
+  (`MeshForwardPass.h:77`). Bounded by draw-call and chunk counts (hundreds),
+  not entity counts.
+- Anything at **per-entity, per-light, per-instance, or per-fragment
+  granularity** must be derived from aggregates the pass already needed, or
+  it does not exist. No profiling-only branches, writes, or arithmetic inside
+  those loops in any mode.
+- No extra traversals in any mode: a counter that would require re-walking a
+  container is computed from data gathered during the walk that already
+  happens, or dropped.
+- Enforcement is empirical, not rhetorical: the 9.7 A/B methodology treats
+  any measurable Off-vs-compiled-out difference as a bug, and the fix is
+  demoting the offending accumulation behind the pass-level branch (a local
+  change, not a renderer fork).
 
-### 9.5 Debug views
+Duplicating passes into profiled/unprofiled versions, and templating the draw
+loops on an instrumentation flag, were both rejected: they double the tested
+surface for a cost the policy above already bounds to publish-time branches.
 
-One `render.debug.view` cvar (enum) uploaded as a uint in `MeshFrameUniforms`
-and branched uniformly at the end of the StandardLit fragment shader (uniform
-control flow, zero cost when 0): world normals, tangent-space normal-map
-sample, geometric vs mapped normal delta, diffuse only, specular only,
-emission only, roughness/exponent, light complexity (heat ramp on per-fragment
-light iterations), shadow term only, shadow bias visualization (raw compare
-without filter, for tuning bias independently of softness), probe ambient
-only, baked-vs-dynamic split, and probe volume selection id. Atlas contents,
-shadow-caster bounds, probe placement/validity/weights, and overdraw are
-overlay/pass-level views rather than shader branches: an atlas blit quad, line
-batch boxes (editor), and an additive-blend count pipeline respectively; the
-runtime exposes them through `RenderStatsPanel`, the editor through
-`WorldViewSettings` toggles (Section 10).
+### 9.3 GPU timing
 
-### 9.6 Runtime panel
+`graphics/vulkan/GpuTimestampPool`: one `VkQueryPool` (TIMESTAMP, 64 queries)
+per frame in flight, **created lazily the first time a frame begins with mode
+at Gpu or above** and kept until shutdown (a query pool is a trivial object;
+destroy/recreate churn buys nothing). Per frame in Gpu+ mode: reset at frame
+start inside the command buffer, paired writes at scope boundaries, and
+results read with `vkGetQueryPoolResults` (availability-checked, without
+WAIT) for the frame slot whose fence `VulkanFrameService::BeginFrame` has
+already waited, scaled by `VkPhysicalDeviceLimits::timestampPeriod`. Scopes
+are a fixed table registered at feature setup (no per-frame strings): one per
+`RenderPhase` bucket, one per feature, plus `Shadow/SpotViews`,
+`Shadow/PointFaces`, and the forward pass. Results append to
+`TimingFrameSample` (new fixed-size named-scope span array) via
+`TimingSampler::PushRenderFrame` (`TimingSampler.cpp:31-50`) so the existing
+panel plumbing carries them; the fields are zero when mode < Gpu.
 
-- New `debug/RenderStatsPanel (IDebugPanel)` registered exactly like
-  `TimingPanel` (`example/CubeDemo/CubeDemoGame.cpp:327-338`): live counters,
-  GPU scope bars, shadow atlas occupancy strip, capture start/stop buttons,
-  and the debug-view selector.
+### 9.4 Debug labels and object names
+
+`graphics/vulkan/VulkanDebugLabels`: free functions
+(`BeginLabel/EndLabel/InsertLabel/NameObject`) in the style of
+`VulkanBarriers` (`VulkanBarriers.h:10-13`), loaded from
+`VK_EXT_debug_utils`, compiled to no-ops when profiling is compiled out. Two
+distinct gates because they are two distinct mechanisms:
+
+- **Command labels** (per-frame `vkCmdBegin/EndDebugUtilsLabelEXT`) are
+  emitted only when the frame's mode is Gpu or above. Off/Counters frames
+  record zero label commands.
+- **Object names** (`vkSetDebugUtilsObjectNameEXT`) are written once at
+  resource creation when the build has profiling compiled in and
+  `VulkanBootstrapPolicy::EnableValidation` is set (the existing dev
+  default). They are metadata on objects, not commands in the frame, and
+  therefore cannot appear in the 9.7 command-stream check; they cost nothing
+  per frame.
+
+### 9.5 Capture export
+
+`render/RenderCapture`: a bounded ring of `{TimingFrameSample, RenderStats,
+gpu scopes}` records plus one-shot metadata (build info, cvar snapshot, scene
+name). Console commands `render.capture.start [n]` / `render.capture.stop` /
+`render.capture.write <path>` (pattern: `ConsoleService.cpp:227-237`)
+serialize to JSON (schema-versioned envelope) or CSV using `JsonStringify`
+(`JsonStringify.h:7`). Records are plain structs buffered during the run and
+serialized only inside the explicit `write` command, per the documented
+`JsonValue` hot-path caveat (`JsonValue.h:19-22`). Ring memory is bounded
+(default 4096 frames, ~16 MiB) and allocated when Capture mode first
+activates, not at startup. This file format is the interface for AI-assisted
+analysis: stable keys, explicit units (`_ms`, `_bytes`, `_count`),
+machine-diffable. No heuristics live in the renderer.
+
+### 9.6 Debug views (development-only pipelines)
+
+The production StandardLit shader carries no debug functionality (3.5). Debug
+views are a separate development-only fragment shader,
+`mesh_debug_view.frag.glsl`, built from the same `.glsli` includes so views
+cannot drift from the real lighting math. It switches on a view id in the
+frame UBO and implements: world normals, tangent-space normal-map sample,
+geometric vs mapped normal delta, diffuse only, specular only, emission only,
+roughness/exponent, light complexity (it runs the light loop itself and
+counts), shadow term only, raw shadow compare without the filter (for tuning
+bias independently of softness), probe ambient only, baked-vs-dynamic split,
+and probe volume selection id.
+
+Selection is at pass level: when `render.debug.view != 0` (or the editor's
+per-viewport override is set), `MeshForwardPass` substitutes the debug
+pipeline for both production families for that draw call sequence. The debug
+pipelines (back/none cull) are created lazily on first activation through the
+existing `EnsurePipeline` pattern (`MeshForwardPass.cpp:55-99`), and the
+debug SPIR-V, the selection code, and the pipelines are all compiled out of
+shipping builds (9.8). Overdraw remains a separate additive-blend counting
+pipeline under the same gates. Atlas contents, shadow-caster bounds, and
+probe placement/validity/weights are overlay- or blit-level views (editor
+line batch and a blit quad), not shader branches. The runtime exposes view
+selection through `RenderStatsPanel`; the editor through `WorldViewSettings`
+(Section 10).
+
+### 9.7 Phase 3.0 validation (disabled-path proof)
+
+- **Command-stream inspection.** With `render.profile.mode off`, a RenderDoc
+  capture of a representative frame contains zero `vkCmdWriteTimestamp*`,
+  zero `vkCmdResetQueryPool`, zero `vkGetQueryPoolResults` on the timeline,
+  and zero `vkCmdBegin/End/InsertDebugUtilsLabelEXT`. Repeated for a frame
+  after switching Gpu -> Off to prove transitions clean up.
+- **No profiling-only resources before activation.** Query pools and the
+  capture ring do not exist until their modes first activate (asserted via
+  logs/counters in a dev run and by inspection in the capture).
+- **No history/capture writes.** With mode Off, the stats ring and capture
+  ring version counters do not advance over a 1000-frame run.
+- **Statistical A/B, noise-aware.** Two builds: profiling compiled out vs
+  compiled in with mode Off. Identical scene, fixed deterministic camera
+  path, fixed tick timing; at least 10 runs per build of a 2000-frame
+  flythrough; compare per-run median frame times. Acceptance: the compiled-in
+  Off build's median distribution is statistically indistinguishable from the
+  compiled-out build (overlapping interquartile ranges and a
+  difference-of-medians below typical run-to-run noise measured across the 10
+  compiled-out runs). A single capture proves nothing and is not accepted as
+  evidence; the methodology and raw numbers land in the PR.
+
+### 9.8 Compile-time removal
+
+New CMake option `SENCHA_ENABLE_RENDER_PROFILING` (default ON; OFF in the
+shipping preset), following the `SENCHA_ENABLE_*` pattern
+(`cmake/SenchaOptions.cmake:13-33`). When OFF: `GpuTimestampPool`,
+`RenderCapture`, `VulkanDebugLabels` bodies, the capture console commands,
+the debug-view and overdraw shaders/pipelines/selection code, and
+`RenderStatsPanel` are not compiled; the embedded debug SPIR-V headers are
+not generated; `RenderInstrumentation` remains as an always-null struct so
+call sites need no `#ifdef`s beyond the publish points. `RenderStats` and the
+pass-local `DrawStats`-style accumulation stay compiled in all builds (test
+seam, 9.2). Panels additionally require the existing `SENCHA_ENABLE_DEBUG_UI`
+gate.
 
 ---
 
@@ -1021,13 +1552,13 @@ is not free.
   `EditorRenderFeature` (`EditorRenderFeature.cpp:338-355`): point range
   spheres (three axis circles), spot cones (outer solid, inner dashed, range
   cap), probe volume boxes with cell grid on the focused volume, all through
-  `EditorLinePipeline`. `EditorVisual` stays mesh-only; parametric gizmos read
-  typed component fields directly (the generic seam cannot express
-  field-driven shapes, per inspection).
+  `EditorLinePipeline`. `EditorVisual` stays mesh-only; parametric gizmos
+  read typed component fields directly (the generic seam cannot express
+  field-driven shapes).
 - **Cone editing.** A new `IManipulator` registered at the single manipulator
-  site (`ManipulatorSession.cpp:32-35`): drag the cone rim to set
-  OuterAngle, inner ring for InnerAngle, tip-to-cap axis for Range, writing
-  through `RawComponentEditCommand` so undo works like any inspector drag.
+  site (`ManipulatorSession.cpp:32-35`): drag the cone rim for OuterAngle,
+  inner ring for InnerAngle, tip-to-cap axis for Range, writing through
+  `RawComponentEditCommand` so undo works like any inspector drag.
 - **Viewport picking.** Lights and probe volumes get pickable billboard quads
   (constant screen size) added to the `PickingService` candidate loop
   (`Picking.cpp:181-195`); until then hierarchy selection already works.
@@ -1038,30 +1569,33 @@ is not free.
   and the shadow fields (`SceneRenderQueueBuilder.cpp:234-256`).
 - **View toggles.** `WorldViewSettings` gains `ShowLightGizmos = true`,
   `ShowProbeVolumes`, `ShowProbeCells`, `ShowShadowAtlas`, `DebugViewMode`
-  (per-viewport override of `render.debug.view`); toolbar buttons follow the
-  `ShowZoneBounds` pattern (`EditorToolbar.cpp:252-255`).
+  (per-viewport override that selects the development debug pipeline,
+  Section 9.6); toolbar buttons follow the `ShowZoneBounds` pattern
+  (`EditorToolbar.cpp:252-255`).
 - **Lighting panel.** New `IEditorPanel` registered with the other panels
   (`EditorServices.cpp:468-551`):
   - Shadow budget readout: requested vs granted shadowed lights per type,
-    atlas occupancy by tier, and a persistent warning row when requests exceed
+    atlas occupancy by physical tier (with logical sizes shown as
+    "512 (496 usable)"), and a persistent warning row when requests exceed
     budget, naming the denied lights (click to select).
   - Selected-light cost line: tier, memory, views per update ("Point, 512:
     6 faces per update" vs "Spot, 512: 1 view per update"), so point shadows
     read as visibly more expensive than spots at authoring time.
-  - Probe section: per-volume probe counts and memory, invalid-probe count
-    (click to frame them; invalid probes also tint red in the cell overlay),
-    bake staleness (content hash of geometry + static lights vs the hash
-    stored in the `.sprobe`), Bake Zone / Bake World buttons, progress bar,
-    cancel.
+  - Probe section: per-volume probe counts and memory, invalid/dilated probe
+    count (click to frame them; dilated probes tint in the cell overlay),
+    cell-size guidance against wall thickness (7.3), bake staleness (input
+    hash vs `.sprobe` stored hash), Bake Zone / Bake World buttons, progress
+    bar, cancel.
 - **Bake execution.** Kyusu-side `LightingBake` orchestrator: snapshot the
-  zone's static lights + collision, submit per-volume bake work through
-  `engine.Tasks()` (`AsyncTaskQueue`), report progress via an atomic counter
-  polled in `EditorServices::ProcessFrame` (`EditorServices.cpp:651-701`),
-  write `.sprobe` + update the zone header on commit, and mark the world
-  document dirty. Bake math itself lives engine-side (`ProbeBakeMath`) so it
-  is testable without the editor; the editor owns orchestration, IO, and UI.
-  The cooked-manifest path (`WorldCook.cpp:69-85`) invokes the same bake when
-  `CookedProbeContentHash` is stale, so PIE and cooked runs stay fresh.
+  zone's static lights + cooked geometry list, submit per-volume bake work
+  through `engine.Tasks()` (`AsyncTaskQueue`), report progress via an atomic
+  counter polled in `EditorServices::ProcessFrame`
+  (`EditorServices.cpp:651-701`), write `.sprobe` + update the zone header on
+  commit, and mark the world document dirty. Bake math lives engine-side
+  (`ProbeBakeMath`) so it is testable without the editor; the editor owns
+  orchestration, IO, and UI. The cooked-manifest path (`WorldCook.cpp:69-85`)
+  invokes the same bake when `CookedProbeContentHash` is stale, so PIE and
+  cooked runs stay fresh.
 - **Shudei.** Hand-written rows for the v2 material fields in
   `MaterialInspectorPanel::OnDraw` beside the Surface section
   (`MaterialInspectorPanel.cpp:196-203`): specular intensity slider, emissive
@@ -1069,86 +1603,115 @@ is not free.
   free via the existing whole-value `EditMaterialCommand`. The preview
   viewport picks up StandardLit automatically because it renders through
   `MeshForwardPass` (`editor/shudei/src/MaterialPreviewRenderFeature.h`).
+- Editor-process instrumentation (per-viewport stats) is out of scope this
+  phase; the editor benefits from debug views and the lighting panel, and the
+  runtime owns the capture pipeline.
 
 ---
 
 ## 11. Ordered implementation phases
 
-Stages land independently green; each is a mergeable unit. Estimated sizes are
-relative (S/M/L).
+Four phases, each independently mergeable and independently useful. Stages
+within a phase land as separate green PRs. Estimated sizes are relative
+(S/M/L).
 
-### Stage 0: Profiling foundation and convention fixes (M)
+### Phase 3.0: Renderer instrumentation (preliminary, standalone) (M)
 
-- **Goal.** Every subsequent stage is measurable; documented conventions match
-  the code.
+Deliberately not part of Phase 3A: it depends on nothing in Phase 3, other
+work benefits from it immediately, and landing it first means every
+subsequent stage ships with numbers attached.
+
+- **Goal.** The Section 9 instrumentation ladder exists end to end with a
+  proven disabled path; documented conventions match the code.
 - **Dependencies.** None.
 - **Systems affected.** `Renderer` (scope hooks around phase buckets),
-  `TimingSampler`, `TimingHistory`, `DefaultRenderPipeline` (stats ownership),
-  `EngineConsoleBuiltins` (cvar moves), `MeshForwardPass` (stats extension),
-  kyusu `EditorServices` (drop duplicate ambient cvar registration).
-- **New data structures.** `RenderStats`, capture record + ring
-  (`RenderCapture`), GPU scope table.
-- **GPU resources.** Timestamp query pools (per frame in flight).
+  `RendererServices` (+`RenderInstrumentation*`), `TimingSampler`,
+  `TimingHistory` (gpu scope fields), `DefaultRenderPipeline` (stats
+  ownership, mode latch), `EngineConsoleBuiltins` (cvar moves + new cvars),
+  `MeshForwardPass` (publish point), kyusu `EditorServices` (drop duplicate
+  ambient registration), `cmake/SenchaOptions.cmake` (+
+  `SENCHA_ENABLE_RENDER_PROFILING`).
+- **New data structures.** `RenderProfileMode`, `RenderInstrumentation`,
+  `RenderStats`, capture record + ring, GPU scope table.
+- **GPU resources.** Timestamp query pools (lazily created on first Gpu
+  activation, per frame in flight).
 - **Shader changes.** None.
 - **ECS changes.** None.
 - **Editor changes.** None beyond cvar registration cleanup.
 - **New files.** `graphics/vulkan/GpuTimestampPool.{h,cpp}`,
   `graphics/vulkan/VulkanDebugLabels.{h,cpp}`, `render/RenderStats.h`,
-  `render/RenderCapture.{h,cpp}`, `debug/RenderStatsPanel.{h,cpp}`.
+  `render/RenderInstrumentation.h`, `render/RenderCapture.{h,cpp}`,
+  `debug/RenderStatsPanel.{h,cpp}`.
 - **Also.** Fix the reversed-Z comments (`Camera.cpp:18,34`, `Camera.h:19`);
-  register `render.ambient.*` in the engine; wire `render.capture.*` console
-  commands; name existing images/pipelines.
-- **Validation.** Capture 300 frames of SceneViewer and the template game;
-  confirm JSON/CSV parse and GPU totals roughly match CPU-side
-  `RecordSeconds`; ctest green.
-- **Completion criteria.** `RenderStatsPanel` shows live counters + GPU scope
-  times in CubeDemo; a committed capture file demonstrates the schema;
-  validation layer shows named objects in a RenderDoc capture.
+  register `render.ambient.*` in the engine; wire `render.profile.mode` and
+  `render.capture.*`; name existing renderer-owned images/pipelines (9.4).
+- **Validation.** The full Section 9.7 protocol: RenderDoc command-stream
+  inspection in Off (zero timestamp/reset/readback/label commands), no
+  profiling-only resources before activation, no ring writes in Off, and the
+  10-run statistical A/B against a compiled-out build with the acceptance
+  criterion stated there. Plus: capture 300 frames in Capture mode; JSON/CSV
+  parse; GPU totals roughly match CPU-side `RecordSeconds`.
+- **Completion criteria.** `RenderStatsPanel` shows live counters and GPU
+  scopes in CubeDemo at mode Gpu; a committed capture file demonstrates the
+  schema; the A/B evidence is attached to the PR; suite green.
 
-### Stage 1: StandardLit shading, normal mapping, emission, Unlit (L)
+### Phase 3A: The dynamic-lighting renderer
+
+Complete and shippable on its own: StandardLit, spot lights, spot and point
+shadows, debug views. 3A completion = "the dynamic renderer" with no baked
+lighting anywhere in the build.
+
+#### 3A.1: StandardLit shading, normal mapping, emission, Unlit (L)
 
 - **Goal.** The full Section 3 material model renders; visual identity knobs
-  exist; debug views for shading channels work.
-- **Dependencies.** Stage 0 (debug-view cvar, stats).
+  exist; shading-channel debug views work through the development pipeline.
+- **Dependencies.** Phase 3.0 (publish points, debug-view plumbing).
 - **Systems affected.** `MeshForwardPass` (pipeline variants, push constants,
-  UBO growth for style params + debug view), `RenderQueue` (sort-key pipeline
-  bits), material loader/writer/asset-loader, shudei panel.
+  UBO growth for style params + debug view id, debug-pipeline substitution),
+  `RenderQueue` (sort-key pipeline bits), material
+  loader/writer/asset-loader, shudei panel.
 - **New data structures.** `MaterialShading` enum; extended `Material` /
   `MaterialDescription` / `MeshPushConstants`.
-- **GPU resources.** None new (pipelines only).
+- **GPU resources.** None new (pipelines only; debug pipelines lazy,
+  dev-only).
 - **Shader changes.** Split shared `.glsli` includes; vertex shader gains
   tangent attribute (location 7), TBN, cofactor normal matrix; StandardLit
   fragment implements wrap diffuse, normalized Blinn-Phong, emission,
-  exposure/shoulder, debug views; new `mesh_unlit.frag.glsl`; CMake blocks
-  per new shader (`engine/CMakeLists.txt:55-80` pattern).
+  exposure + knee-shoulder tonemap; new `mesh_unlit.frag.glsl`; new
+  development-only `mesh_debug_view.frag.glsl` (Section 9.6); CMake blocks
+  per new shader (`engine/CMakeLists.txt:55-80` pattern), debug shader gated
+  by the profiling option.
 - **ECS changes.** None.
 - **Editor changes.** Shudei v2 field rows; kyusu picks everything up through
   `MeshForwardPass` automatically.
 - **Validation.** A test scene with normal-mapped, emissive, rough/smooth,
   double-sided, and unlit materials; debug views inspected; `.smat` v1 files
-  load unchanged (loader tests); non-uniformly scaled mesh lights correctly
-  (before/after screenshots).
+  load unchanged (loader tests); a non-uniformly scaled mesh lights
+  correctly (before/after screenshots); tonemap identity-below-knee verified
+  against the CPU reference function; with `render.debug.view = 0` a capture
+  shows the production pipelines bound, not the debug pipeline.
 - **Completion criteria.** All six v2 fields round-trip through shudei;
-  StandardLit and Unlit draw in one frame with 4 or fewer pipeline switches
-  reported by stats; suite green including new MaterialLoader v2 tests.
+  StandardLit and Unlit draw in one frame with 4 or fewer production pipeline
+  switches reported by stats; suite green including new MaterialLoader v2 and
+  tonemap-curve tests.
 
-### Stage 2: Spot lights (M)
+#### 3A.2: Spot lights and light culling (M)
 
 - **Goal.** `SpotLightComponent` end to end, plus deterministic light
   culling/prioritization for all lights.
-- **Dependencies.** Stage 1 (shader include structure).
+- **Dependencies.** 3A.1 (shader include structure).
 - **Systems affected.** `RenderLight.h` (GpuLight grows to 80 bytes: new
-  `Vec4 Params` row carrying cosInner + inv cone delta; static asserts and
+  `Vec4 Params` row carrying cosInner + inverse cone delta; static asserts;
   `MAX_LIGHTS` unchanged), `LightExtractionSystem` (spot query, frustum
-  sphere cull, importance sort, stable ids, cone clamping: outer <= 89.5
-  degrees, inner <= outer - 0.5, range > 0.01, one-shot warnings),
-  `MeshForwardPass` (UBO asserts), forward shader (spot case in the existing
-  type switch: cone falloff = `smoothstep(cosOuter, cosInner, dot(L, spotDir))`
-  times the shared attenuation), `SceneRenderQueueBuilder::BuildLights`,
+  sphere cull, importance sort, stable `(RegistryId, EntityId)` identities,
+  cone clamping: outer <= 89.5 degrees, inner <= outer - 0.5, range > 0.01,
+  one-shot warnings), `MeshForwardPass` (UBO asserts), forward shader (spot
+  case in the existing type switch: cone falloff =
+  `smoothstep(cosOuter, cosInner, dot(L, spotDir))` times the shared
+  attenuation), `SceneRenderQueueBuilder::BuildLights`,
   `DefaultRenderPipeline` (cap warning covers both types).
 - **New data structures.** `SpotLightComponent` (+ `TypeSchema`, chunk
-  `'SLGT'`), `RenderLightSet::AddSpot`, light record gains source
-  `EntityId`/`ZoneId` (CPU side only) for stable sort and later shadow keying.
+  `'SLGT'`), `RenderLightSet::AddSpot`, CPU-side light identity records.
 - **GPU resources.** None.
 - **Shader changes.** Spot branch; direction derived on CPU from
   `WorldTransform` forward axis.
@@ -1163,76 +1726,84 @@ relative (S/M/L).
   editor; extraction tests cover packing, clamping, culling, sort stability;
   suite green.
 
-### Stage 3: Shadow substrate + spot shadows, always-update (L)
+#### 3A.3: Shadow substrate + spot shadows, always-update (L)
 
-- **Goal.** First shadows on screen: spot lights shadow correctly with the
-  full bias stack, updated every frame, fixed slot assignment (budget but no
-  caching/policies yet).
-- **Dependencies.** Stage 2.
+- **Goal.** First shadows on screen: spot lights shadow correctly with guard
+  bands and the full bias stack, updated every frame, fixed slot assignment
+  (budget but no caching/policies yet).
+- **Dependencies.** 3A.2.
 - **Systems affected.** `VulkanImageService` (array layers, cube-compatible,
   3D, per-layer views, depth usage; `ImageCreateInfo` widened),
-  `VulkanSamplerCache` (compare op + border color in `SamplerDesc`),
-  `VulkanDescriptorCache` (`GetPipelineLayout` accepts extra set layouts),
-  `Renderer` (`RenderPhase::Shadow` bucket ordered first),
-  `StaticMeshComponent` (+`CastShadows = true`, schema field),
-  `RenderExtractionSystem` untouched; new caster extraction added to
-  `DefaultRenderPipeline::ExtractRender`; `MeshForwardPass` (bind set 2,
+  `VulkanSamplerCache` (compare op + border color), `VulkanDescriptorCache`
+  (`GetPipelineLayout` extra set layouts), `Renderer`
+  (`RenderPhase::Shadow` bucket ordered first), `StaticMeshComponent`
+  (+`CastShadows = true` schema field), new caster extraction in
+  `DefaultRenderPipeline::ExtractRender`, `MeshForwardPass` (bind set 2,
   shadow sampling in StandardLit).
-- **New data structures.** `ShadowCasterSet`,
-  `ShadowCasterExtractionSystem`, `ShadowView`, `GpuShadowSlot` array in
-  `MeshFrameUniforms`, `LightBindings`.
-- **GPU resources.** 2048x2048 D16 atlas image (fixed 512 grid in this stage),
-  comparison sampler, set-2 descriptor sets (x frames in flight).
+- **New data structures.** `ShadowCasterSet` + extraction system (current
+  table only in this stage), `ShadowView`, `GpuShadowSlot` array in
+  `MeshFrameUniforms`, `LightBindings` with dummy resources (6.6),
+  `kShadowTileGuardTexels` / `kShadowSoftnessMaxTexels` constant pair (4.2).
+- **GPU resources.** 2048x2048 D16 atlas (fixed 512 physical grid in this
+  stage, insets active from day one), comparison sampler, set-2 descriptor
+  sets (x frames in flight), dummy depth/cube/volume resources.
 - **Shader changes.** `shadow_depth.vert.glsl` + empty fragment;
-  `shadow_sampling.glsli` (normal offset, projection, 3x3 tent, border
-  behavior); StandardLit multiplies the shadow term into diffuse and
-  specular; shadow debug views (term, bias raw, atlas blit).
-- **ECS changes.** `CastShadows` fields on `StaticMeshComponent`,
+  `shadow_sampling.glsli` (normal offset, projection, validity rejection,
+  3x3 tent over logical UVs); StandardLit multiplies the shadow term into
+  diffuse and specular; shadow debug views land in the development shader.
+- **ECS changes.** `CastShadows` fields on `StaticMeshComponent` and
   `SpotLightComponent`.
 - **Editor changes.** Focus-viewport shadow preview wiring in
   `EditorRenderFeature`.
 - **Validation.** Bias tuning scene (grazing walls, thin door frames,
   double-sided sheets) at 256/512/1024 with acne and peter-panning checked
-  via the bias debug view; barrier correctness under validation layer;
-  GPU scope shows shadow pass cost.
-- **Completion criteria.** N spot lights (up to 8) cast filtered shadows in
-  game and editor; caster gather excludes `CastShadows = false`; empty-scene
-  shadow pass costs < 0.05 ms GPU; suite green with atlas-math and
-  caster-extraction tests.
+  via the raw-compare debug view; a two-adjacent-tiles scene with maximum
+  softness on both lights showing no cross-tile contamination (the guard-band
+  proof); barrier correctness under the validation layer; GPU scope shows
+  shadow pass cost.
+- **Completion criteria.** Up to 8 spot lights cast filtered shadows in game
+  and editor; caster gather excludes `CastShadows = false` at both levels;
+  the guard-reach unit test enforces filter reach < guard band; suite green
+  with atlas inset math and caster-extraction tests.
 
-### Stage 4: Shadow residency: budgets, tiers, policies, caching (M)
+#### 3A.4: Shadow residency: budgets, tiers, policies, diff invalidation (M)
 
-- **Goal.** Shadow cost becomes a managed budget: quadtree tiers, scoring,
-  hysteresis, update policies, moved-caster invalidation, cache counters.
-- **Dependencies.** Stage 3.
+- **Goal.** Shadow cost becomes a managed budget with a correct cache:
+  quadtree tiers, scoring, hysteresis, update policies, previous/current
+  caster diffing, deterministic view scheduling.
+- **Dependencies.** 3A.3.
 - **Systems affected.** New `ShadowAtlas` quadtree allocator replaces the
   fixed grid; new `ShadowResidency` arbiter; `ShadowCasterExtractionSystem`
-  gains the `Changed<WorldTransform>` moved-bounds gather;
-  `ShadowRenderFeature` renders only invalidated views under the per-frame
-  view clamp.
-- **New data structures.** Slot cache records (state hash, valid, age,
-  score), `ShadowResolutionTier`, `ShadowUpdatePolicy` (schema enums on both
-  light components).
+  gains the previous-frame table and the sorted diff (6.4);
+  `ShadowRenderFeature` renders only scheduled views under the per-frame
+  clamp in the 6.3 service order.
+- **New data structures.** Slot cache records (state hash, valid flag, ages,
+  score history), the caster table pair, `ShadowResolutionTier`,
+  `ShadowUpdatePolicy` (schema enums on both light components).
 - **GPU resources.** Unchanged.
 - **Shader changes.** None.
 - **ECS changes.** Tier/policy/softness/bias fields on both light components.
 - **Editor changes.** Lighting panel budget readout + over-budget warnings;
-  `render.shadow.invalidate` console command; atlas debug view shows tiers
-  and ages.
+  `render.shadow.invalidate` console command; atlas debug view shows tiers,
+  insets, and slot ages.
 - **Validation.** Walkthrough across three zones: steady-state shadow views
-  rendered = 0 (counters); moving a caster through a `OnChange` volume
-  invalidates exactly the overlapped lights; 20-light over-budget scene shows
-  stable slot assignment (no flicker over 1000 frames, captured).
-- **Completion criteria.** `ShadowResidency` unit tests (deterministic
-  assignment, hysteresis, tier downgrade, eviction) green; cache hit rate
-  visible in stats; budgets tunable by cvar at runtime.
+  rendered = 0 (counters); moving a caster through an `OnChange` volume
+  invalidates exactly the overlapped lights **including at the departure
+  position** (ghost-shadow regression test: caster leaves a light's cone,
+  the vacated shadow disappears); deleting an entity and detaching a zone
+  both invalidate; a 20-light over-budget scene shows stable slot assignment
+  (no flicker over 1000 captured frames); EveryFrame + invalidated mixed load
+  drains in the documented order.
+- **Completion criteria.** `ShadowResidency` and caster-diff unit tests
+  (deterministic assignment, hysteresis, tier downgrade, eviction, the full
+  add/remove/change event matrix) green; cache hit rate visible in stats;
+  budgets tunable by cvar at runtime.
 
-### Stage 5: Point-light shadows (M)
+#### 3A.5: Point-light shadows (M)
 
 - **Goal.** Optional cube shadows on point lights under the same budget
   machinery.
-- **Dependencies.** Stage 4 (residency) and Stage 3 (image service cube
-  support).
+- **Dependencies.** 3A.4 (residency), 3A.3 (image service cube support).
 - **Systems affected.** `ShadowCubePool`, `ShadowResidency` (point slots,
   6-face views, per-face caster cull), `ShadowRenderFeature`,
   `MeshForwardPass`/StandardLit (cube sampling), a `Contribute()` override
@@ -1240,11 +1811,10 @@ relative (S/M/L).
 - **New data structures.** `GpuPointShadow` params array.
 - **GPU resources.** 512 D16 cube array x 4 (24 layers), cube-array
   comparison sampler.
-- **Shader changes.** `VectorToDepth` major-axis reconstruction + 5-tap
-  directional filter in `shadow_sampling.glsli`; point branch consumes
-  `ShadowIndex`.
-- **ECS changes.** Shadow fields already on `PointLightComponent` from
-  Stage 4 (points simply start being granted slots).
+- **Shader changes.** Major-axis depth reconstruction + 5-tap directional
+  filter in `shadow_sampling.glsli`; point branch consumes `ShadowIndex`.
+- **ECS changes.** Shadow fields already on `PointLightComponent` from 3A.4
+  (points simply start being granted slots).
 - **Editor changes.** Cost line in the lighting panel ("6 faces per update");
   point shadows in viewport preview.
 - **Validation.** Light-in-a-cage scene (all 6 faces occluded differently);
@@ -1252,68 +1822,102 @@ relative (S/M/L).
   in caster-draw counters; bias verified radially (sphere around light).
 - **Completion criteria.** 4 shadowed point + 8 shadowed spot lights render
   in budget (Section 14) on the reference GPU; exceeding the point budget
-  degrades per policy with the editor warning naming the losers.
+  degrades per policy with the editor warning naming the losers. **This
+  completes Phase 3A: a shippable dynamic-lighting renderer.**
 
-### Stage 6: Baked irradiance probe volumes (L)
+### Phase 3B: Baked irradiance probe volumes
+
+Depends on 3.0, 3A.1 (shader structure), and 3A.2 (spot lights exist as bake
+inputs). Independent of 3A.3-3A.5; it can merge before, after, or in parallel
+with the shadow stages, and shipping without it is a supported configuration
+(hemispheric ambient remains).
+
+#### 3B.1: Grid math, bake math, format (M)
+
+- **Goal.** Everything CPU-testable lands first: grid mapping, BVH, SH
+  projection, dilation, `.sprobe` IO. No editor UI, no GPU residency, no
+  shader changes yet.
+- **Dependencies.** 3.0 (none functionally; counters for bake timing), 3A.2
+  (light records as bake input shapes).
+- **Systems affected.** `math/spatial` (new `GridTransform3d`), new
+  `render/probes/ProbeBakeMath` (ray table, BVH build/trace, classification,
+  dilation, SH projection), new `assets/probes/ProbeVolumeFormat`.
+- **New data structures.** `GridTransform3d`, `IrradianceProbeGrid`,
+  `IrradianceVolumeComponent` (chunk `'IRVL'`, registered in the manifest),
+  `.sprobe` chunks.
+- **GPU resources.** None.
+- **Shader changes.** None.
+- **ECS changes.** New component in `ComponentManifest.h:33-39` (UI arrives
+  free; it renders nothing yet).
+- **Editor changes.** None yet (component edits already work via schema).
+- **Validation.** Unit tests: grid mapping and trilinear weights; SH
+  projection of analytic inputs; dilation fill order and volume-boundary
+  containment; serial vs parallel bake bit-identical; `.sprobe` round trip
+  and unknown-chunk skip.
+- **Completion criteria.** A headless test bakes a synthetic two-room volume
+  and asserts the dark room's probes stay dark; suite green.
+
+#### 3B.2: Editor bake, streaming, runtime sampling (L)
 
 - **Goal.** Stable environmental light, color, and mood from a zone-streamed
   bake; hemispheric ambient becomes the fallback only.
-- **Dependencies.** Stage 1 (shader structure); Stage 2 (light records carry
-  ids); independent of Stages 3-5 except shared set-2 bindings.
-- **Systems affected.** `math/spatial` (new `GridTransform3d`),
-  `render/probes/*` (grid, resident set, sampling), `VulkanImageService`
-  (3D textures from Stage 3 widening), `LightBindings` (binding 2),
+- **Dependencies.** 3B.1; 3A.3's `LightBindings` if it has landed (otherwise
+  this stage creates the set with dummy shadow bindings; whichever lands
+  second fills its binding).
+- **Systems affected.** `VulkanImageService` 3D textures (from 3A.3's
+  widening or done here if 3B lands first), `LightBindings` binding 2,
   `MeshForwardPass` (volume headers in UBO), `WorldPartitionManifest`
   (+`CookedProbeRef`/hash), zone load recipes in the template game
   (`template/src/TemplateGame.cpp:684-717`), `WorldCook`/`DocumentCook`
-  (bake-if-stale), kyusu `LightingBake` + panel.
-- **New data structures.** `GridTransform3d`, `IrradianceProbeGrid`,
-  `IrradianceVolumeComponent` (chunk `'IRVL'`), `.sprobe` format
-  (`assets/probes/ProbeVolumeFormat`), `ProbeVolumeSet` (resident volumes,
-  per zone), `GpuProbeVolume` headers in the frame UBO.
-- **GPU resources.** Per resident volume: three RGBA16F 3D textures +
-  validity R8 3D texture; cap 8 resident volumes.
-- **Shader changes.** `probe_sampling.glsli`: volume selection, trilinear L1
-  SH evaluation, validity weighting, hemi fallback; probe debug views.
-- **ECS changes.** New component in the manifest.
-- **Editor changes.** Volume gizmo + cell overlay, invalid-probe tinting,
-  lighting panel bake section with progress/cancel, bake staleness hash.
-- **Validation.** Determinism test (serial vs parallel bake bit-identical);
-  round-trip test (`.sprobe` write/read); leak scene (two rooms, one lit,
-  volumes per room: dark room stays dark); streaming test (zone unload frees
-  volume textures, counters to zero); dynamic object driven between rooms
-  picks up each room's tint.
+  (bake-if-stale), kyusu `LightingBake` + lighting panel probe section,
+  `ProbeVolumeSet` residency.
+- **New data structures.** `ProbeVolumeSet` (resident volumes per zone),
+  `GpuProbeVolume` headers in the frame UBO.
+- **GPU resources.** Per resident volume: three RGBA16F 3D textures (dilated
+  SH, upload-ready from the file); cap 8 resident volumes.
+- **Shader changes.** `probe_sampling.glsli`: volume selection
+  (priority/smallest/stable-id), trilinear L1 SH evaluation, hemi fallback;
+  probe debug views in the development shader.
+- **ECS changes.** None beyond 3B.1.
+- **Editor changes.** Volume gizmo + cell overlay, dilated-probe tinting,
+  lighting panel bake section with progress/cancel, staleness hash, cell-size
+  guidance.
+- **Validation.** Leak scene (two rooms, one lit, volumes per room: dark room
+  stays dark at runtime); streaming test (zone unload frees volume textures,
+  counters to zero); dynamic object driven between rooms picks up each room's
+  tint; probe sampling GPU cost measured against budget with 3.0 tooling.
 - **Completion criteria.** Template-game world bakes from the lighting panel
-  with progress, streams per zone, renders probe ambient with < 0.3 ms GPU
-  added at 1080p, and survives editor geometry edit -> staleness warning ->
+  with progress, streams per zone, renders probe ambient within budget
+  (Section 14), and survives editor geometry edit -> staleness warning ->
   rebake round trip.
 
-### Stage 7: Evidence-based forward-renderer review and tuning (M)
+### Phase 3C: Evidence-based forward-renderer review and tuning (M)
 
 - **Goal.** The Section 14 budgets are confirmed or the named escalations are
-  triggered with numbers, not vibes; cheap fixes land.
-- **Dependencies.** Stages 0-6 (content and counters exist).
-- **Systems affected.** Measurement only, plus targeted fixes: per-registry
-  query caches if the rebuild counter is hot (finding 2.11); anything the
-  captures convict.
-- **New data structures.** None (benchmark scene definitions as content).
+  triggered with numbers; cheap convicted fixes land.
+- **Dependencies.** 3.0 and 3A; includes 3B content if landed (the review is
+  rerun cheaply when 3B lands later).
+- **Systems affected.** Measurement first; then only what captures convict
+  (candidate list: per-registry query caches, finding 2.11; caster-diff
+  prefilter, 0.5; scratch sizing).
+- **New data structures.** None (benchmark scenes as content).
 - **GPU resources.** None.
 - **Shader changes.** None unless convicted by captures.
 - **ECS changes.** None.
 - **Editor changes.** None.
-- **Validation / method.** Three committed benchmark captures (small room,
-  template-game hub with 12 lights / 6 shadowed, worst-case stress: 64
-  lights, 8+4 shadows, probes resident) x 720p/1080p/1440p on the reference
-  GPU, exported JSON attached to the PR; a findings section appended to this
-  document.
+- **Validation / method.** Three committed benchmark captures (small room;
+  template-game hub with 12 lights / 6 shadowed; worst-case stress: 64
+  lights, 8+4 shadows, probes resident if 3B landed) x 720p/1080p/1440p on
+  the reference GPU, exported JSON attached to the PR; a findings section
+  appended to this document.
 - **Explicit thresholds** (also Section 14): the light loop earns per-object
   light lists only when MainColor GPU time exceeds 8 ms at 1080p on the
-  reference GPU with the light-complexity view showing > 16 average
-  lights per fragment in representative (not stress) content; tiled/clustered
+  reference GPU with the light-complexity view showing > 16 average lights
+  per fragment in representative (not stress) content; tiled/clustered
   culling is considered only after per-object lists exist and visible lights
   regularly exceed 64 or per-object lists average > 8; a renderer redesign
-  (deferred, visibility buffer) has no trigger inside this game's scope and is
-  explicitly out of plan.
+  (deferred, visibility buffer) has no trigger inside this game's scope and
+  is explicitly out of plan.
 - **Completion criteria.** Findings appended here with capture references;
   either "current architecture comfortable at target workloads" is stated
   with numbers, or the specific next optimization is scheduled with its
@@ -1327,26 +1931,26 @@ New engine files:
 
 | Path | Content |
 |---|---|
-| `engine/{include,src}/render/shadow/ShadowAtlas.{h,cpp}` | Quadtree tile allocator + atlas image ownership |
+| `engine/{include,src}/render/shadow/ShadowAtlas.{h,cpp}` | Quadtree physical-tile allocator, guard-band inset math, atlas image ownership |
 | `engine/{include,src}/render/shadow/ShadowCubePool.{h,cpp}` | Cube-array slots |
-| `engine/{include,src}/render/shadow/ShadowResidency.{h,cpp}` | Budget/score/hysteresis/cache arbiter |
-| `engine/{include,src}/render/shadow/ShadowCasterSet.{h,cpp}` | Caster records + extraction system |
+| `engine/{include,src}/render/shadow/ShadowResidency.{h,cpp}` | Budget/score/hysteresis/cache arbiter, view scheduling |
+| `engine/{include,src}/render/shadow/ShadowCasterSet.{h,cpp}` | Caster records, previous/current tables, sorted diff |
 | `engine/include/render/shadow/ShadowView.h` | Per-view render job record |
 | `engine/{include,src}/render/shadow/ShadowDepthPass.{h,cpp}` | Depth-only draw recording (editor-reusable) |
 | `engine/{include,src}/render/shadow/ShadowRenderFeature.{h,cpp}` | `RenderPhase::Shadow` feature, barriers |
-| `engine/{include,src}/render/LightBindings.{h,cpp}` | Set-2 layout/sets for atlas + cubes + probes |
+| `engine/{include,src}/render/LightBindings.{h,cpp}` | Set-2 layout/sets for atlas + cubes + probes, dummy resources |
 | `engine/include/render/SpotLightComponent.h` | Component + schema (`'SLGT'`) |
 | `engine/{include,src}/render/probes/IrradianceProbeGrid.{h,cpp}` | Grid3d + GridTransform3d composition |
 | `engine/include/render/probes/IrradianceVolumeComponent.h` | Component + schema (`'IRVL'`) |
 | `engine/{include,src}/render/probes/ProbeVolumeSet.{h,cpp}` | Resident volumes, GPU upload |
-| `engine/{include,src}/render/probes/ProbeBakeMath.{h,cpp}` | Ray table, SH projection, deterministic gather |
+| `engine/{include,src}/render/probes/ProbeBakeMath.{h,cpp}` | Ray table, triangle BVH, classification, dilation, SH projection |
 | `engine/{include,src}/assets/probes/ProbeVolumeFormat.{h,cpp}` | `.sprobe` chunked binary IO |
 | `engine/include/math/spatial/GridTransform3d.h` | World-cell mapping value type |
-| `engine/{include,src}/graphics/vulkan/GpuTimestampPool.{h,cpp}` | Timestamp queries |
-| `engine/{include,src}/graphics/vulkan/VulkanDebugLabels.{h,cpp}` | Debug-utils labels/names |
-| `engine/include/render/RenderStats.h`, `engine/{include,src}/render/RenderCapture.{h,cpp}` | Counters + capture export |
-| `engine/{include,src}/debug/RenderStatsPanel.{h,cpp}` | Runtime panel |
-| `engine/shaders/`: `mesh_unlit.frag.glsl`, `shadow_depth.vert.glsl`, `shadow_depth.frag.glsl`, `frame_uniforms.glsli`, `lighting.glsli`, `shadow_sampling.glsli`, `probe_sampling.glsli` | Shader families + shared includes |
+| `engine/{include,src}/graphics/vulkan/GpuTimestampPool.{h,cpp}` | Lazily created timestamp queries |
+| `engine/{include,src}/graphics/vulkan/VulkanDebugLabels.{h,cpp}` | Mode-gated labels, creation-time object names |
+| `engine/include/render/RenderStats.h`, `engine/include/render/RenderInstrumentation.h`, `engine/{include,src}/render/RenderCapture.{h,cpp}` | Counters, mode bundle, capture export |
+| `engine/{include,src}/debug/RenderStatsPanel.{h,cpp}` | Runtime panel (debug-UI + profiling gates) |
+| `engine/shaders/`: `mesh_unlit.frag.glsl`, `mesh_debug_view.frag.glsl` (dev-only), `shadow_depth.vert.glsl`, `shadow_depth.frag.glsl`, `frame_uniforms.glsli`, `lighting.glsli`, `shadow_sampling.glsli`, `probe_sampling.glsli` | Shader families + shared includes |
 
 Modified engine files (primary): `render/RenderLight.h`,
 `render/LightExtractionSystem.{h,cpp}`, `render/PointLightComponent.h`,
@@ -1359,8 +1963,10 @@ Modified engine files (primary): `render/RenderLight.h`,
 `graphics/vulkan/VulkanDescriptorCache.{h,cpp}`,
 `graphics/vulkan/TimingSampler.cpp`, `time/TimingHistory.h`,
 `app/DefaultRenderPipeline.{h,cpp}`, `app/EngineConsoleBuiltins.cpp`,
+`app/Engine.{h,cpp}` (instrumentation ownership),
 `world/ComponentManifest.h`, `zone/WorldPartitionManifest.{h,cpp}`,
-`engine/CMakeLists.txt`, `engine/shaders/mesh_forward.{vert,frag}.glsl`,
+`engine/CMakeLists.txt`, `cmake/SenchaOptions.cmake`,
+`engine/shaders/mesh_forward.{vert,frag}.glsl`,
 `render/Camera.h` and `render/Camera.cpp` (comments only),
 `template/src/TemplateGame.cpp` (probe recipe).
 
@@ -1373,7 +1979,7 @@ LightingPanel.{h,cpp} (new)}`, `editmodes/` cone manipulator (new) +
 shudei `MaterialInspectorPanel.cpp`.
 
 Docs: update `docs/plans/engine-roadmap.md` Track B items 2/5/8 to record this
-plan's ordering; append Stage 7 findings here.
+plan's ordering; append 3C findings here.
 
 ---
 
@@ -1384,53 +1990,72 @@ GPU harness, Section 1.9, and stays that way this phase). New test files drop
 into existing globbed directories (`test/CMakeLists.txt:32-34`).
 
 - `test/engine_features/ShadowAtlasTests.cpp`: quadtree allocate/free across
-  tiers, fragmentation behavior, determinism of allocation order, full-atlas
-  denial.
-- `test/engine_features/ShadowResidencyTests.cpp`: scoring, hysteresis
-  (no flicker on near-tie scores), tier downgrade under pressure, policy
-  matrix (EveryFrame/OnChange/Static x light-moved/caster-moved/none),
-  moved-bounds invalidation overlap math, per-frame view clamp deferral,
-  deterministic slot assignment across registry orderings.
+  physical tiers, fragmentation, determinism of allocation order, full-atlas
+  denial, and the inset math (logical rect and `AtlasScaleBias` for each
+  tier; guard band respected on all four sides including atlas-edge tiles).
+- `test/engine_features/ShadowFilterReachTests.cpp`: the constant-pair
+  invariant `ceil(1.5 * kShadowSoftnessMaxTexels) + 1 <
+  kShadowTileGuardTexels`, evaluated from the real constants, so nobody can
+  widen the filter or shrink the band independently.
+- `test/engine_features/ShadowResidencyTests.cpp`: scoring, hysteresis (no
+  flicker on near-tie scores), tier downgrade under pressure, policy matrix
+  (EveryFrame/OnChange/Static x light-moved/caster-event/none), view
+  scheduling order and starvation freedom under a saturated EveryFrame load,
+  per-frame clamp deferral, deterministic slot assignment across registry
+  orderings.
+- `test/engine_features/ShadowCasterDiffTests.cpp`: the full event matrix of
+  Section 6.4: add, remove (entity destroyed, visibility off, component
+  `CastShadows` off, material `CastShadows` off, zone table dropped), change
+  (moved: event bounds equal the union of previous and current; mesh handle
+  swapped; section mask edited); the ghost-shadow regression (a caster
+  leaving a volume produces an event overlapping the departure position);
+  diff skipped when no OnChange slot is resident; determinism of event order.
 - `test/runtime/LightExtractionTests.cpp` (extended): spot packing
   (`DirectionCone`, cone params), cone/range clamping, frustum cull, stable
-  importance sort with entity-id tie-break, cap behavior dropping
+  importance sort with identity tie-break, cap behavior dropping
   lowest-scored not latest-added.
 - `test/engine_features/RenderQueueTests.cpp` (extended): sort-key pipeline
   bits keep runs pipeline-pure; material field truncation still merges only
   identical items (existing guarantee, `RenderQueue.h:33-35`).
 - `test/core/MaterialAssetTests.cpp` (extended): `.smat` v1 defaults, v2
   round-trip of all six new fields, unknown-key rejection unchanged.
-- `test/math_geometry/GridTransform3dTests.cpp`: world/cell mapping, trilinear
-  weights sum to 1, boundary clamping.
+- `test/math_geometry/GridTransform3dTests.cpp`: world/cell mapping,
+  trilinear weights sum to 1, boundary clamping.
 - `test/engine_features/ProbeBakeMathTests.cpp`: SH projection of analytic
-  inputs (constant sky = band 0 only; single direction = expected band 1),
-  serial (`worker_count == 0`) vs parallel bake bit-identical (pattern from
-  `test/runtime/ZoneParallelTests.cpp:169-202`), fixed ray table stability.
+  inputs (constant sky = band 0 only; single direction = expected band 1);
+  BVH trace correctness on hand-built geometry; inside-geometry
+  classification; dilation fills every texel, never crosses volume bounds,
+  and converges on a fully-invalid volume to the hemispheric fallback; serial
+  (`worker_count == 0`) vs parallel bake bit-identical (pattern from
+  `test/runtime/ZoneParallelTests.cpp:169-202`); fixed ray-table stability.
 - `test/core/ProbeVolumeFormatTests.cpp`: `.sprobe` write/read round trip,
-  unknown-chunk skip, version rejection.
-- `test/runtime/ShadowCasterExtractionTests.cpp`: `CastShadows` filtering
-  (component and material), moved-caster gather via `Changed<WorldTransform>`
-  chunk conservatism (asserted conservative, not exact).
+  unknown-chunk skip, version rejection, validity chunk ignored by the
+  runtime reader.
+- `test/engine_features/TonemapCurveTests.cpp`: the CPU reference of
+  `kneeShoulder` (mirrored by the shader): exact identity at and below the
+  knee, continuity and C1 at the knee, monotonicity, asymptote below 1.
+- `test/engine_features/RenderInstrumentationTests.cpp`: with a null bundle,
+  publish points write nothing (probed with a canary stats struct); mode
+  latch applies at frame boundaries; capture ring bounds respected; a
+  generated capture parses with `JsonParse` and carries the schema version
+  and required counter keys, so the AI-analysis interface cannot drift
+  silently.
 - Layout guards: compile-time static asserts for the 80-byte `GpuLight`, the
   shadow slot arrays, and the new push-constant block extend the existing
   blocks in `MeshForwardPass.cpp:15-31`.
-- Capture schema: a test parses a generated capture with `JsonParse` and
-  checks the version key and required counters, so the AI-analysis interface
-  cannot drift silently.
 
-GPU-dependent behavior (bias tuning, filtering look, barrier correctness) is
-validated by the staged validation scenes under the Vulkan validation layer
-plus RenderDoc inspection, recorded per stage in Section 11. If llvmpipe CI
-lands later (engine-roadmap.md:523), the capture tool doubles as its
-assertion source.
+GPU-dependent behavior (bias tuning, filter look, guard-band proof scene,
+barrier correctness, the 9.7 disabled-path protocol) is validated by the
+staged scenes under the Vulkan validation layer plus RenderDoc inspection,
+recorded per stage in Section 11. If llvmpipe CI lands later
+(engine-roadmap.md:523), the capture tool doubles as its assertion source.
 
 ---
 
 ## 14. Performance budgets
 
-Reference target: 1920x1080 on a GTX 1060 / RX 580 class GPU (the "high
-quality 2000s at high framerate" floor), 60 fps, total GPU frame <= 12 ms
-leaving 4.6 ms headroom.
+Reference target: 1920x1080 on a GTX 1060 / RX 580 class GPU, 60 fps, total
+GPU frame <= 12 ms leaving headroom.
 
 | Item | Budget |
 |---|---|
@@ -1439,17 +2064,23 @@ leaving 4.6 ms headroom.
 | Shadow phase GPU, worst invalidation frame (view clamp active) | <= 2.5 ms |
 | One 512 spot view | <= 0.15 ms |
 | One 512 point cube update (6 faces, per-face cull) | <= 0.8 ms |
-| Probe sampling added cost (fragment) | <= 0.3 ms full-screen |
+| Probe sampling added cost (fragment, volumes resident) | <= 0.3 ms full-screen |
 | Shadow memory (atlas 8 MiB + cubes 12 MiB) | <= 20 MiB fixed |
 | Probe memory per zone (default density) | <= 2 MiB (typical room volume ~50 KiB) |
 | Frame UBO | <= 8 KiB (16 KiB hard line, `RenderLight.h:42-44`) |
+| Frame scratch slice (config default with shadows) | 2 MiB; high-water counter <= 75% in benchmarks |
 | CPU extraction (meshes + lights + casters) at 5k queue items | <= 1.2 ms |
+| Caster table diff (3k casters, OnChange slots resident) | <= 0.10 ms |
 | `ShadowResidency` + probe residency CPU | <= 0.15 ms |
+| Instrumentation, mode Off vs compiled out | statistically indistinguishable (9.7) |
+| Instrumentation, Counters mode CPU | <= 0.05 ms |
+| Instrumentation, Gpu mode CPU + GPU overhead | <= 0.10 ms |
+| Capture ring memory (Capture mode only, lazily allocated) | <= 16 MiB default |
 | Visible lights after cull (design guidance) | <= 24 typical, 64 hard cap |
 | Shadowed lights simultaneously | 8 spot + 4 point (cvars) |
 | Editor bake, default density, per zone | <= 30 s, editor responsive throughout |
 
-Escalation triggers (from Stage 7, restated as the standing rule):
+Escalation triggers (from 3C, restated as the standing rule):
 
 - **Per-object light lists** when representative content shows MainColor
   > 8 ms at 1080p with average per-fragment light iterations > 16. The
@@ -1457,8 +2088,8 @@ Escalation triggers (from Stage 7, restated as the standing rule):
   light index list; it is deliberately not built ahead of the metric.
 - **Tiled/clustered culling** only after per-object lists exist and visible
   lights regularly exceed 64 or lists average > 8 lights per object.
-- **Architecture change (deferred etc.)**: no trigger within the target
-  game space; out of scope by decision.
+- **Architecture change (deferred etc.)**: no trigger within the target game
+  space; out of scope by decision.
 
 ---
 
@@ -1467,37 +2098,50 @@ Escalation triggers (from Stage 7, restated as the standing rule):
 Risks and mitigations:
 
 - **`imageCubeArray` unavailable on some target device.** Core feature, near
-  universal on desktop; mitigation if ever hit: fall back to 6 atlas tiles per
-  point light behind the same `ShadowResidency` interface (sampling switches
-  to face selection in the shader). Contingency only; not built now.
+  universal on desktop; mitigation if ever hit: fall back to 6 atlas tiles
+  per point light behind the same `ShadowResidency` interface (sampling
+  switches to face selection in the shader). Contingency only; not built now.
 - **D16 precision on long spot ranges.** Near-plane scaling covers the target
   ranges; the atlas format probes with D32 fallback, and per-light
   `ShadowBiasScale` is the manual escape.
-- **Chunk-conservative invalidation storms** (one moving entity in a dense
-  chunk invalidates neighbors' shadows). Bounded by the per-frame view clamp;
-  if captures show churn, the moved-bounds gather gains an entity-level
-  position-delta filter.
-- **Probe leaks from careless volume authoring.** Mitigated by per-room
-  authoring guidance, validity dilation, and the invalid-probe editor
-  overlay; occlusion-weighted interpolation is the known next step if content
-  demands it.
+- **Caster-diff cost on caster-heavy frames.** Bounded by the coarse gate
+  (diff only when OnChange slots are resident) and budgeted (Section 14);
+  recorded escalations: `Changed<>` prefilter, then a static/dynamic caster
+  split (0.5).
+- **Dilation leaks at thin interior walls within one volume.** Countermeasures
+  and their limits are stated in 7.3 (cell-size guidance, volume splitting,
+  dilated-probe overlay); occlusion-aware interpolation is the recorded
+  escalation, with its real cost (manual 8-corner fetch x 3 textures, weight
+  renormalization, a weights texture) written down so the decision is made
+  against numbers, not hope.
 - **Frame UBO growth.** At the chosen caps the block stays ~6.5 KiB; if caps
   rise, the recorded escape is moving lights + shadow slots to a storage
-  buffer (scratch already carries STORAGE usage,
-  `VulkanFrameScratch.h:32-34`).
+  buffer (scratch already carries STORAGE usage, `VulkanFrameScratch.h:32-34`).
+- **Scratch overflow on worst-case invalidation frames.** Sized by config,
+  measured by a high-water counter, degraded by skipping views (they re-queue
+  next frame), never by corruption (6.5).
 - **`.smat` v2 vs older tooling.** Version gate is explicit and loud by
   design; shudei and loaders land in the same stage.
 - **Editor bake blocking on huge worlds.** The bake is per-volume tasked and
   cancelable; Bake Zone exists precisely so Bake World is optional.
+- **Instrumentation cost regressions over time.** The 9.7 A/B protocol is
+  rerun whenever the instrumentation surface changes; the granularity policy
+  (9.2) gives reviewers a bright line.
 
-Rejected alternatives (each with its reason recorded above): metallic-
+Rejected alternatives (reasons recorded in the cited sections): metallic-
 roughness BRDF evaluation and image-based lighting (Section 3); GGX and
 unnormalized Phong (3.2); per-material diffuse-wrap and ramp textures (3.3);
-VSM/EVSM/ESM, rotated-Poisson noise filters, per-light dedicated shadow
-textures (Section 4); dual-paraboloid, octahedral, and radial-distance point
-shadows (Section 5); surface lightmaps and per-vertex bake as primary
-(Section 7); per-instance probe volume indices (Section 7); a generalized
-spatial-field/voxel framework (Section 8); Forward+/clustered now
+luminance-normalized Reinhard as the interim tonemap (3.2); VSM/EVSM/ESM,
+rotated-Poisson noise filters, per-light dedicated shadow textures, per-tier
+shadow texture arrays, duplicated edge texels (Section 4); dual-paraboloid,
+octahedral, and radial-distance point shadows (Section 5);
+`Changed<WorldTransform>` as the invalidation signal, and ECS lifecycle hooks
+calling into the renderer (6.4); surface lightmaps and per-vertex bake as
+primary (7.1); collision geometry as the bake tracing source (7.2);
+validity-weighted runtime interpolation (7.3); per-instance probe volume
+indices (7.4); a generalized spatial-field/voxel framework (Section 8);
+duplicated or templated profiled/unprofiled render passes (9.2); a debug-view
+branch inside the production StandardLit shader (9.6); Forward+/clustered now
 (Sections 11/14); reversed-Z migration (Section 2).
 
 Deferred work, anchored to triggers:
@@ -1510,18 +2154,23 @@ Deferred work, anchored to triggers:
   when posed buffers exist (Decision N).
 - **Alpha-masked shadow casters and receivers, transparency lighting**: land
   with the transparency pass (Track B item 3).
-- **Real post-processing tonemap/exposure**: the in-shader shoulder moves to
+- **Real post-processing tonemap/exposure**: the knee-shoulder block moves to
   the Post phase when it exists (Track B item 5); the cvars keep their
   meaning.
 - **Light channels/layers**: `StaticMeshComponent.LayerMask` is extracted but
   unused today (`RenderExtractionSystem.cpp` never reads it); it is the
   natural mechanism if per-light receiver masking is ever needed.
 - **Per-object light lists, clustered culling**: metric-gated (Section 14).
-- **Probe occlusion weights, specular ambient from probes, per-vertex bake
-  for hero meshes, light cookies via the spot atlas**: each waits for a
-  content-driven need; cookies in particular are a natural atlas extension
-  already anticipated by the slot record's scale/bias addressing.
+- **Probe occlusion-aware interpolation, emissive surfaces contributing to
+  the bake, specular ambient from probes, per-vertex bake for hero meshes,
+  light cookies via the spot atlas**: each waits for a content-driven need;
+  cookies in particular are a natural atlas extension already anticipated by
+  the slot record's scale/bias addressing.
+- **`Changed<>` prefilter for the caster diff, static/dynamic caster split**:
+  measure-first (0.5).
 - **Multi-viewport editor shadow preview** (context zones + all viewports):
   focus-viewport-only in Phase 3; extend when editors ask.
+- **Editor-process instrumentation and per-viewport stats**: after the
+  runtime capture pipeline proves its schema.
 - **Generalized spatial-field primitive**: waits for its second concrete user
   (water, voxels, occupancy), per directive 4.
