@@ -1,5 +1,6 @@
 #include "WireframeRenderer.h"
 
+#include "EditorTheme.h"
 #include "document/SceneBrushWalk.h"
 
 #include <algorithm>
@@ -62,10 +63,15 @@ void WireframeRenderer::AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
         const std::size_t n = face.Loop.size();
         for (std::size_t i = 0; i < n; ++i)
         {
-            const Vec3d a = transform.TransformPoint(mesh.Vertices[face.Loop[i]].Position);
-            const Vec3d b = transform.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % n]].Position);
-            vertices.push_back(EditorLineVertex{ .Position = a, .Color = color });
-            vertices.push_back(EditorLineVertex{ .Position = b, .Color = color });
+            const std::uint32_t ia = face.Loop[i];
+            const std::uint32_t ib = face.Loop[(i + 1) % n];
+            const Vec3d a = transform.TransformPoint(mesh.Vertices[ia].Position);
+            const Vec3d b = transform.TransformPoint(mesh.Vertices[ib].Position);
+            const Vec4& stroke = !mesh.SoftEdges.empty() && BrushEdgeIsSoft(mesh, ia, ib)
+                ? EditorTheme::SoftEdgeWireframe
+                : color;
+            vertices.push_back(EditorLineVertex{ .Position = a, .Color = stroke });
+            vertices.push_back(EditorLineVertex{ .Position = b, .Color = stroke });
         }
     }
 }

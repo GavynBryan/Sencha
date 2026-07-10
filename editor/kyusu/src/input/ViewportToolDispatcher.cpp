@@ -129,6 +129,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     {
         Context.Overlay.Hover = {}; // cursor left the viewports: drop the hover glow
         Context.Overlay.HoverBody = {}; // and the preview-body wireframe
+        Sessions.ClearHover();      // and the gizmo part highlight
         Tools.HoverEnd();           // and any tool's hover preview (e.g. the edge cut)
         // The gesture's viewport vanished mid-drag (e.g. a layout change): abandon it.
         if (capture.HeldBySelf())
@@ -146,6 +147,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     {
         Context.Overlay.Hover = {};
         Context.Overlay.HoverBody = {};
+        Sessions.ClearHover();
         Tools.HoverEnd();
         return Interactions.OnPointerMove(Context, *vp, pointer);
     }
@@ -164,6 +166,10 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
             return Interactions.OnPointerMove(Context, *vp, pointer);
         }
     }
+
+    // Gizmo part highlight tracks the cursor regardless of the active tool
+    // (the session hit-tests only the manipulator that would take the press).
+    Sessions.UpdateHover(*vp, pointer.Position);
 
     // The active tool gets first crack at hover (the edge cut drives a live preview);
     // if it doesn't handle it, fall back to the element-mode selection glow.

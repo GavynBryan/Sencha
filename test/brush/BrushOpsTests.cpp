@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
+#include <utility>
 #include <vector>
 
 namespace
@@ -1396,4 +1398,354 @@ TEST(BrushOpsCarve, ThroughCarveAllSeamSidesRemovesInteriorPrism)
     EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
     EXPECT_TRUE(IsClosed(out));
     EXPECT_EQ(EulerCharacteristic(out), 0); // a through-tube: torus
+}
+
+TEST(BrushOpsCarve, CarveFaceRectWorksOnAPlane)
+{
+    // A plane is an open single-quad mesh; carve must retopologize it the same
+    // way it does a box face (ring quads + center rect), tolerating openness.
+    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
+    ASSERT_EQ(plane.Faces.size(), 1u);
+
+    BrushMesh out = BrushOps::CarveFaceRect(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    EXPECT_EQ(out.Vertices.size(), 8u); // 4 host + 4 minted corners
+    EXPECT_EQ(out.Faces.size(), 5u);    // 4 ring quads + center
+    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
+}
+
+TEST(BrushOpsCarve, LoopBoundsWorkOnASubdividedPlane)
+{
+    const BrushMesh plane = BrushOps::MakePlane({ 2.0f, 0.0f, 2.0f }, /*depthAxis*/ 1, 2);
+    ASSERT_EQ(plane.Faces.size(), 4u);
+
+    BrushMesh out = BrushOps::InsertFaceLoopBounds(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    EXPECT_GT(out.Vertices.size(), plane.Vertices.size());
+    EXPECT_GT(out.Faces.size(), plane.Faces.size());
+    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
+}
+
+TEST(BrushOpsCarve, PierceWallsGetTheirOwnUvProjection)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::uint32_t plusZ = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
+            plusZ = i;
+
+    BrushMesh out = BrushOps::CarveFaceRectThrough(box, plusZ, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    ASSERT_GT(out.Faces.size(), box.Faces.size());
+    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
+
+    out = BrushOps::InsertFaceLoopBoundsThrough(box, plusZ, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    ASSERT_GT(out.Faces.size(), box.Faces.size());
+    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
+}
+
+TEST(BrushOpsCarve, CarveOnPlaneKeepsFacesPointingUp)
+{
+    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
+    const Vec3d hostNormal = BrushComputeFaceNormal(plane, plane.Faces[0]);
+    EXPECT_GT(hostNormal.Y, 0.9f);
+    const auto frame = BrushOps::RectFaceFrame(plane, 0);
+    ASSERT_TRUE(frame.has_value());
+    EXPECT_GT(frame->AxisU.Cross(frame->AxisV).Dot(hostNormal), 0.99f);
+
+    BrushMesh out = BrushOps::CarveFaceRect(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    ASSERT_EQ(out.Faces.size(), 5u);
+    for (const BrushFace& f : out.Faces)
+    {
+        const Vec3d n = BrushComputeFaceNormal(out, f);
+        EXPECT_GT(n.Y, 0.9f);
+    }
+}
+
+TEST(BrushOpsCarve, PierceOnAPlanePunchesAHole)
+{
+    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
+
+    // Rect variant: carve minus the center face.
+    BrushMesh rect = BrushOps::CarveFaceRectThrough(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    EXPECT_EQ(rect.Faces.size(), 4u); // 4 ring quads, no center
+    EXPECT_TRUE(BrushValidateAndRepair(rect).Ok);
+
+    // Loop variant: loop cuts minus the bounded rect face.
+    BrushMesh loop = BrushOps::InsertFaceLoopBoundsThrough(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
+    EXPECT_GT(loop.Faces.size(), plane.Faces.size());
+    EXPECT_TRUE(BrushValidateAndRepair(loop).Ok);
+    const auto frame = BrushOps::RectFaceFrame(plane, 0);
+    ASSERT_TRUE(frame.has_value());
+    EXPECT_EQ(CountFrameFaceCentroidsInside(loop, *frame, { 0.5f, 0.5f }, { 1.5f, 1.5f }), 0u);
+}
+
+TEST(BrushOpsCarve, PierceStillRefusesBlindHolesOnClosedSolids)
+{
+    // An odd-sided prism has no parallel opposite side face; the pierce must
+    // refuse rather than open the solid with a blind hole.
+    const BrushMesh cylinder = BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, /*depthAxis*/ 2, 7);
+    std::uint32_t cap = std::numeric_limits<std::uint32_t>::max();
+    for (std::uint32_t i = 0; i < cylinder.Faces.size(); ++i)
+        if (cylinder.Faces[i].Loop.size() == 4
+            && BrushOps::RectFaceFrame(cylinder, i).has_value())
+            cap = i;
+    if (cap == std::numeric_limits<std::uint32_t>::max())
+        GTEST_SKIP() << "no rectangular side face on this prism";
+    const auto frame = BrushOps::RectFaceFrame(cylinder, cap);
+    const BrushMesh out = BrushOps::CarveFaceRectThrough(
+        cylinder, cap, { frame->Width * 0.25f, frame->Height * 0.25f },
+        { frame->Width * 0.75f, frame->Height * 0.75f });
+    EXPECT_EQ(out.Faces.size(), cylinder.Faces.size());
+}
+
+TEST(BrushOpsCarve, FlushPierceWallsGetTheirOwnUvProjection)
+{
+    // A rect flush on one side runs the notch path (CarveThroughWithFlushSides),
+    // which mints its tunnel walls separately from BridgeCapsIntoTunnel.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::uint32_t plusZ = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
+            plusZ = i;
+
+    BrushMesh out = BrushOps::CarveFaceRectThrough(box, plusZ, { 0.5f, 0.0f }, { 1.5f, 1.0f });
+    ASSERT_TRUE(out.Faces.size() != box.Faces.size() || out.Vertices.size() != box.Vertices.size());
+    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
+
+    out = BrushOps::InsertFaceLoopBoundsThrough(box, plusZ, { 0.5f, 0.0f }, { 1.5f, 1.0f });
+    ASSERT_TRUE(out.Faces.size() != box.Faces.size() || out.Vertices.size() != box.Vertices.size());
+    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
+}
+
+TEST(BrushOpsInset, SingleFaceMatchesExtrudeShape)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::uint32_t plusZ = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
+            plusZ = i;
+
+    const std::uint32_t region[] = { plusZ };
+    BrushMesh out = BrushOps::ExtrudeFacesAlongNormals(box, region, 0.5f);
+    EXPECT_EQ(out.Vertices.size(), 12u);
+    EXPECT_EQ(out.Faces.size(), 10u);
+    EXPECT_TRUE(IsClosed(out));
+    EXPECT_NEAR(BrushComputeBounds(out).Max.Z, 1.5f, 1e-5f);
+    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
+
+    // Negative distance pushes the cap inward instead.
+    BrushMesh inward = BrushOps::ExtrudeFacesAlongNormals(box, region, -0.5f);
+    EXPECT_TRUE(IsClosed(inward));
+    EXPECT_NEAR(BrushComputeBounds(inward).Max.Z, 1.0f, 1e-5f);
+}
+
+TEST(BrushOpsInset, AdjacentRingExtrudesAsOneShell)
+{
+    // All four side faces of a box: a closed band. The band inflates as one
+    // shell; walls appear only along the top and bottom rims.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::vector<std::uint32_t> band;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (std::abs(BrushComputeFaceNormal(box, box.Faces[i]).Y) < 0.1f)
+            band.push_back(i);
+    ASSERT_EQ(band.size(), 4u);
+
+    BrushMesh out = BrushOps::ExtrudeFacesAlongNormals(box, band, 0.25f);
+    EXPECT_TRUE(IsClosed(out));
+    // 8 original + 8 moved ring verts; 6 faces + 8 rim walls.
+    EXPECT_EQ(out.Vertices.size(), 16u);
+    EXPECT_EQ(out.Faces.size(), 14u);
+    // Corners move diagonally outward: X/Z bounds grow, Y stays.
+    const Aabb3d bounds = BrushComputeBounds(out);
+    EXPECT_GT(bounds.Max.X, 1.05f);
+    EXPECT_GT(bounds.Max.Z, 1.05f);
+    EXPECT_NEAR(bounds.Max.Y, 1.0f, 1e-5f);
+}
+
+TEST(BrushOpsInset, InvalidInputsAreNoOps)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t bogus[] = { 99u };
+    EXPECT_EQ(BrushOps::ExtrudeFacesAlongNormals(box, bogus, 1.0f).Vertices.size(),
+              box.Vertices.size());
+    const std::uint32_t valid[] = { 0u };
+    EXPECT_EQ(BrushOps::ExtrudeFacesAlongNormals(box, valid, 0.0f).Vertices.size(),
+              box.Vertices.size());
+}
+
+TEST(BrushOpsBevel, SingleBoxEdgeChamfers)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    // Pick any edge: every box edge is manifold with perpendicular faces.
+    const std::array<std::uint32_t, 2> edge = { box.Faces[0].Loop[0], box.Faces[0].Loop[1] };
+    const std::array<std::uint32_t, 2> edges[] = { edge };
+
+    BrushMesh out = BrushOps::BevelEdges(box, edges, 0.25f, 1);
+    EXPECT_TRUE(IsClosed(out));
+    // The edge's two vertices are replaced by 2 rows of 2: 8 - 2 + 4 = 10.
+    EXPECT_EQ(out.Vertices.size(), 10u);
+    // One chamfer strip added: 6 + 1 = 7.
+    EXPECT_EQ(out.Faces.size(), 7u);
+    // World-aligned box mapping on a 45-degree strip legitimately tilts an
+    // axis out of the face plane; the degenerate case (an axis ALONG the
+    // normal, projecting the texture edge-on) is what must never happen.
+    for (const BrushFace& face : out.Faces)
+    {
+        const Vec3d n = BrushComputeFaceNormal(out, face).Normalized();
+        EXPECT_LT(std::abs(face.Material.Uv.AxisU.Normalized().Dot(n)), 0.9f);
+        EXPECT_LT(std::abs(face.Material.Uv.AxisV.Normalized().Dot(n)), 0.9f);
+    }
+}
+
+TEST(BrushOpsBevel, SegmentsRoundTheProfile)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::array<std::uint32_t, 2> edge = { box.Faces[0].Loop[0], box.Faces[0].Loop[1] };
+    const std::array<std::uint32_t, 2> edges[] = { edge };
+
+    BrushMesh out = BrushOps::BevelEdges(box, edges, 0.25f, 3);
+    EXPECT_TRUE(IsClosed(out));
+    // 2 vertices -> 2 rows of 4: 8 - 2 + 8 = 14; 3 strip quads: 6 + 3 = 9.
+    EXPECT_EQ(out.Vertices.size(), 14u);
+    EXPECT_EQ(out.Faces.size(), 9u);
+}
+
+TEST(BrushOpsBevel, TopRimLoopBevelsWatertight)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::uint32_t top = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).Y > 0.9f)
+            top = i;
+    const std::vector<std::uint32_t>& loop = box.Faces[top].Loop;
+    std::vector<std::array<std::uint32_t, 2>> rim;
+    for (std::size_t i = 0; i < loop.size(); ++i)
+        rim.push_back({ loop[i], loop[(i + 1) % loop.size()] });
+
+    BrushMesh out = BrushOps::BevelEdges(box, rim, 0.25f, 2);
+    EXPECT_TRUE(IsClosed(out));
+    EXPECT_GT(out.Faces.size(), box.Faces.size());
+    // The rim is gone: no vertex sits on both the top plane and a side plane.
+    for (const BrushVertex& v : out.Vertices)
+    {
+        const bool onTop = std::abs(v.Position.Y - 1.0f) < 1e-4f;
+        const bool onSide = std::abs(std::abs(v.Position.X) - 1.0f) < 1e-4f
+                         || std::abs(std::abs(v.Position.Z) - 1.0f) < 1e-4f;
+        EXPECT_FALSE(onTop && onSide);
+    }
+}
+
+TEST(BrushOpsBevel, RefusesCornersAndCoplanarAndBoundary)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    // Three edges fanning one corner vertex: refused.
+    const std::uint32_t corner = box.Faces[0].Loop[0];
+    std::vector<std::array<std::uint32_t, 2>> fan;
+    for (const BrushFace& face : box.Faces)
+        for (std::size_t i = 0; i < face.Loop.size(); ++i)
+        {
+            const std::uint32_t a = face.Loop[i];
+            const std::uint32_t b = face.Loop[(i + 1) % face.Loop.size()];
+            if (a == corner || b == corner)
+            {
+                std::array<std::uint32_t, 2> e = { std::min(a, b), std::max(a, b) };
+                if (std::find(fan.begin(), fan.end(), e) == fan.end())
+                    fan.push_back(e);
+            }
+        }
+    ASSERT_GE(fan.size(), 3u);
+    EXPECT_EQ(BrushOps::BevelEdges(box, fan, 0.2f, 1).Vertices.size(), box.Vertices.size());
+
+    // A boundary edge on a plane (single face): refused.
+    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, 1);
+    const std::array<std::uint32_t, 2> planeEdge[] = {
+        { plane.Faces[0].Loop[0], plane.Faces[0].Loop[1] } };
+    EXPECT_EQ(BrushOps::BevelEdges(plane, planeEdge, 0.2f, 1).Vertices.size(),
+              plane.Vertices.size());
+
+    // A coplanar interior edge (subdivided plane): refused. Find an edge
+    // shared by exactly two (coplanar) quads.
+    const BrushMesh grid = BrushOps::MakePlane({ 2.0f, 0.0f, 2.0f }, 1, 2);
+    std::map<std::pair<std::uint32_t, std::uint32_t>, int> counts;
+    for (const BrushFace& face : grid.Faces)
+        for (std::size_t i = 0; i < face.Loop.size(); ++i)
+        {
+            const std::uint32_t a = face.Loop[i];
+            const std::uint32_t b = face.Loop[(i + 1) % face.Loop.size()];
+            ++counts[{ std::min(a, b), std::max(a, b) }];
+        }
+    std::array<std::uint32_t, 2> interior = { 0, 0 };
+    for (const auto& [key, count] : counts)
+        if (count == 2)
+            interior = { key.first, key.second };
+    ASSERT_NE(interior[0], interior[1]);
+    const std::array<std::uint32_t, 2> interiorEdges[] = { interior };
+    EXPECT_EQ(BrushOps::BevelEdges(grid, interiorEdges, 0.2f, 1).Vertices.size(),
+              grid.Vertices.size());
+}
+
+TEST(BrushOpsInset, DirectionalRegionExtrudeWallsOnlyTheBoundary)
+{
+    // Two coplanar faces of a subdivided slab extruded together: the shared
+    // edge must stay internal (no swept wall between the caps).
+    BrushMesh slab = BrushOps::MakeBox({ 2.0f, 1.0f, 1.0f });
+    std::uint32_t top = 0;
+    for (std::uint32_t i = 0; i < slab.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(slab, slab.Faces[i]).Y > 0.9f)
+            top = i;
+    const std::vector<std::uint32_t>& loop = slab.Faces[top].Loop;
+    slab = BrushOps::InsertEdgeCut(slab, loop[0], loop[1], 0.5f);
+    BrushValidateAndRepair(slab);
+
+    std::vector<std::uint32_t> caps;
+    for (std::uint32_t i = 0; i < slab.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(slab, slab.Faces[i]).Y > 0.9f)
+            caps.push_back(i);
+    ASSERT_EQ(caps.size(), 2u);
+
+    const BrushMesh out = BrushOps::ExtrudeFacesAlong(slab, caps, { 0.0f, 0.5f, 0.0f });
+    ASSERT_GT(out.Faces.size(), slab.Faces.size());
+    EXPECT_TRUE(IsClosed(out));
+
+    // No face may sit strictly between the old top plane (y=1) and the new
+    // cap plane (y=1.5) with a normal in the caps' plane pointing across the
+    // old shared edge (x = 0): an internal wall would be exactly that.
+    for (const BrushFace& face : out.Faces)
+    {
+        const Vec3d centroid = BrushFaceCentroid(out, face);
+        const Vec3d normal = BrushComputeFaceNormal(out, face);
+        const bool inBand = centroid.Y > 1.01f && centroid.Y < 1.49f;
+        const bool crossesSeam = std::abs(centroid.X) < 1e-3f && std::abs(normal.X) > 0.9f;
+        EXPECT_FALSE(inBand && crossesSeam);
+    }
+}
+
+TEST(BrushOpsBevel, ProfileBulgesTowardTheOldCorner)
+{
+    // Rounded rows must stay on the outside of the flat chamfer plane, not
+    // dip into the solid. For the +X/+Y edge of a unit box beveled by w, the
+    // chamfer chord satisfies x + y = 2 - w; every profile vertex must sit at
+    // or outside it.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    std::array<std::uint32_t, 2> edge = { 0, 0 };
+    bool found = false;
+    for (std::uint32_t a = 0; a < box.Vertices.size() && !found; ++a)
+        for (std::uint32_t b = a + 1; b < box.Vertices.size() && !found; ++b)
+        {
+            const Vec3d& pa = box.Vertices[a].Position;
+            const Vec3d& pb = box.Vertices[b].Position;
+            if (pa.X > 0.9f && pa.Y > 0.9f && pb.X > 0.9f && pb.Y > 0.9f
+                && (pa - pb).SqrMagnitude() > 1.0f)
+            {
+                edge = { a, b };
+                found = true;
+            }
+        }
+    ASSERT_TRUE(found);
+
+    constexpr float w = 0.4f;
+    const std::array<std::uint32_t, 2> edges[] = { edge };
+    const BrushMesh out = BrushOps::BevelEdges(box, edges, w, 4);
+    ASSERT_GT(out.Vertices.size(), box.Vertices.size());
+    for (const BrushVertex& v : out.Vertices)
+        if (v.Position.X > 1.0f - w - 1e-4f && v.Position.Y > 1.0f - w - 1e-4f)
+            EXPECT_GE(v.Position.X + v.Position.Y, 2.0f - w - 1e-4f);
 }

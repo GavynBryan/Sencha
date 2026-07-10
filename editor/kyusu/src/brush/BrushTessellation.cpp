@@ -128,9 +128,126 @@ namespace
         return true;
     }
 
+    // Per-loop-vertex LOCAL normals for one face, or empty to shade the face
+    // hard (the cached face normal everywhere).
+    using LoopNormals = std::vector<Vec3d>;
+
+    // Smooth-shading normals across soft edges: for every vertex of every
+    // face, the faces around that vertex connected through soft edges form a
+    // smoothing group whose averaged normal replaces the flat face normal.
+    // Only computed when the mesh has soft edges; entries stay empty (hard)
+    // for faces no soft edge touches.
+    std::vector<LoopNormals> ComputeSoftLoopNormals(const BrushMesh& mesh)
+    {
+        std::vector<LoopNormals> perFace(mesh.Faces.size());
+        if (mesh.SoftEdges.empty())
+            return perFace;
+
+        // Vertex -> (face, loop position) incidences.
+        std::vector<std::vector<std::pair<std::uint32_t, std::uint32_t>>> facesAt(mesh.Vertices.size());
+        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
+        {
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            for (std::uint32_t i = 0; i < loop.size(); ++i)
+                if (loop[i] < facesAt.size())
+                    facesAt[loop[i]].push_back({ f, i });
+        }
+
+        // Vertices touched by any soft edge.
+        std::vector<bool> softVertex(mesh.Vertices.size(), false);
+        for (const std::array<std::uint32_t, 2>& edge : mesh.SoftEdges)
+        {
+            if (edge[0] < softVertex.size())
+                softVertex[edge[0]] = true;
+            if (edge[1] < softVertex.size())
+                softVertex[edge[1]] = true;
+        }
+
+        for (std::uint32_t v = 0; v < mesh.Vertices.size(); ++v)
+        {
+            if (!softVertex[v] || facesAt[v].empty())
+                continue;
+
+            // Group the faces around v: two faces link when they share a soft
+            // edge incident to v. Small counts; a flat union-find suffices.
+            const auto& incident = facesAt[v];
+            std::vector<std::uint32_t> group(incident.size());
+            for (std::uint32_t i = 0; i < group.size(); ++i)
+                group[i] = i;
+            const auto rootOf = [&](std::uint32_t i)
+            {
+                while (group[i] != i)
+                    i = group[i] = group[group[i]];
+                return i;
+            };
+
+            for (std::size_t i = 0; i < incident.size(); ++i)
+                for (std::size_t j = i + 1; j < incident.size(); ++j)
+                {
+                    const auto& fi = mesh.Faces[incident[i].first].Loop;
+                    const auto& fj = mesh.Faces[incident[j].first].Loop;
+                    // Shared soft edge at v: a neighbor vertex of v present in
+                    // both loops adjacent to v, whose (v, x) pair is soft.
+                    bool linked = false;
+                    const auto neighborsAt = [v](const std::vector<std::uint32_t>& loop,
+                                                 std::uint32_t x)
+                    {
+                        for (std::size_t k = 0; k < loop.size(); ++k)
+                            if (loop[k] == v)
+                            {
+                                const std::uint32_t prev = loop[(k + loop.size() - 1) % loop.size()];
+                                const std::uint32_t next = loop[(k + 1) % loop.size()];
+                                if (prev == x || next == x)
+                                    return true;
+                            }
+                        return false;
+                    };
+                    for (const std::array<std::uint32_t, 2>& soft : mesh.SoftEdges)
+                    {
+                        if (soft[0] != v && soft[1] != v)
+                            continue;
+                        const std::uint32_t other = soft[0] == v ? soft[1] : soft[0];
+                        if (neighborsAt(fi, other) && neighborsAt(fj, other))
+                        {
+                            linked = true;
+                            break;
+                        }
+                    }
+                    if (linked)
+                        group[rootOf(static_cast<std::uint32_t>(i))] = rootOf(static_cast<std::uint32_t>(j));
+                }
+
+            // Averaged normal per group, written back to every member face.
+            std::vector<Vec3d> groupNormal(incident.size(), Vec3d{ 0.0f, 0.0f, 0.0f });
+            std::vector<int> groupCount(incident.size(), 0);
+            for (std::size_t i = 0; i < incident.size(); ++i)
+            {
+                const std::uint32_t root = rootOf(static_cast<std::uint32_t>(i));
+                groupNormal[root] += mesh.Faces[incident[i].first].Normal;
+                ++groupCount[root];
+            }
+            for (std::size_t i = 0; i < incident.size(); ++i)
+            {
+                const std::uint32_t root = rootOf(static_cast<std::uint32_t>(i));
+                if (groupCount[root] < 2)
+                    continue; // alone in its group: stays hard
+                const Vec3d sum = groupNormal[root];
+                if (sum.SqrMagnitude() <= 0.0f)
+                    continue;
+                LoopNormals& normals = perFace[incident[i].first];
+                if (normals.empty())
+                    normals.assign(mesh.Faces[incident[i].first].Loop.size(),
+                                   mesh.Faces[incident[i].first].Normal);
+                normals[incident[i].second] = sum.Normalized();
+            }
+        }
+        return perFace;
+    }
+
     void EmitFace(const BrushMesh& mesh, const Transform3f& transform, const BrushFace& face,
                   const BrushFaceEmit& emit, std::vector<BrushTriVertex>& triangles,
-                  std::vector<std::array<std::uint32_t, 3>>& ears)
+                  std::vector<std::array<std::uint32_t, 3>>& ears,
+                  const LoopNormals* loopNormals = nullptr)
     {
         const std::size_t n = face.Loop.size();
         if (n < 3)
@@ -138,11 +255,16 @@ namespace
 
         const Vec3d worldNormal = transform.Rotation.RotateVector(face.Normal);
 
-        const auto vertexAt = [&](std::uint32_t index) {
+        // Loop-position addressing so smoothed normals can differ per corner.
+        const auto vertexAtLoop = [&](std::uint32_t loopIdx) {
+            const std::uint32_t index = face.Loop[loopIdx];
             const Vec3d local = mesh.Vertices[index].Position;
+            const Vec3d normal = loopNormals != nullptr && loopIdx < loopNormals->size()
+                ? transform.Rotation.RotateVector((*loopNormals)[loopIdx])
+                : worldNormal;
             return BrushTriVertex{
                 .Position = transform.TransformPoint(local),
-                .Normal = worldNormal,
+                .Normal = normal,
                 .Uv = ProjectUv(face.Material.Uv, local),
             };
         };
@@ -165,9 +287,9 @@ namespace
             {
                 for (const std::array<std::uint32_t, 3>& tri : ears)
                 {
-                    triangles.push_back(vertexAt(face.Loop[tri[0]]));
-                    triangles.push_back(vertexAt(face.Loop[tri[1]]));
-                    triangles.push_back(vertexAt(face.Loop[tri[2]]));
+                    triangles.push_back(vertexAtLoop(tri[0]));
+                    triangles.push_back(vertexAtLoop(tri[1]));
+                    triangles.push_back(vertexAtLoop(tri[2]));
                 }
                 fan = false;
             }
@@ -175,12 +297,12 @@ namespace
 
         if (fan)
         {
-            const BrushTriVertex base = vertexAt(face.Loop[0]);
+            const BrushTriVertex base = vertexAtLoop(0);
             for (std::size_t i = 1; i + 1 < n; ++i)
             {
                 triangles.push_back(base);
-                triangles.push_back(vertexAt(face.Loop[i]));
-                triangles.push_back(vertexAt(face.Loop[i + 1]));
+                triangles.push_back(vertexAtLoop(static_cast<std::uint32_t>(i)));
+                triangles.push_back(vertexAtLoop(static_cast<std::uint32_t>(i + 1)));
             }
         }
 
@@ -192,10 +314,12 @@ void BrushTessellate(const BrushMesh& mesh, const Transform3f& transform, const 
 {
     std::vector<BrushTriVertex> triangles; // reused across faces
     std::vector<std::array<std::uint32_t, 3>> ears;
+    const std::vector<LoopNormals> soft = ComputeSoftLoopNormals(mesh);
 
-    for (const BrushFace& face : mesh.Faces)
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
     {
-        EmitFace(mesh, transform, face, emit, triangles, ears);
+        const LoopNormals* normals = f < soft.size() && !soft[f].empty() ? &soft[f] : nullptr;
+        EmitFace(mesh, transform, mesh.Faces[f], emit, triangles, ears, normals);
     }
 }
 

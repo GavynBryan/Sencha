@@ -197,3 +197,44 @@ TEST(BrushValidation, RepairRejectsEmptyMesh)
     const BrushRepairResult result = BrushValidateAndRepair(empty);
     EXPECT_FALSE(result.Ok);
 }
+
+TEST(BrushValidation, SoftEdgesSurviveWeldAndCompaction)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+    BrushSetEdgeSoft(box, a, b, true);
+    const Vec3d pa = box.Vertices[a].Position;
+    const Vec3d pb = box.Vertices[b].Position;
+
+    // Append junk vertices before the repair: compaction remaps indices.
+    box.Vertices.insert(box.Vertices.begin(), BrushVertex{ { 9.0f, 9.0f, 9.0f } });
+    for (BrushFace& face : box.Faces)
+        for (std::uint32_t& index : face.Loop)
+            ++index;
+    for (std::array<std::uint32_t, 2>& edge : box.SoftEdges)
+    {
+        ++edge[0];
+        ++edge[1];
+    }
+
+    EXPECT_TRUE(BrushValidateAndRepair(box).Ok);
+    ASSERT_EQ(box.SoftEdges.size(), 1u);
+    // The pair still names the same geometric edge after the remap.
+    const Vec3d qa = box.Vertices[box.SoftEdges[0][0]].Position;
+    const Vec3d qb = box.Vertices[box.SoftEdges[0][1]].Position;
+    const bool same = ((qa - pa).SqrMagnitude() < 1e-8f && (qb - pb).SqrMagnitude() < 1e-8f)
+                   || ((qa - pb).SqrMagnitude() < 1e-8f && (qb - pa).SqrMagnitude() < 1e-8f);
+    EXPECT_TRUE(same);
+}
+
+TEST(BrushValidation, StaleSoftEdgesArePruned)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    // A pair that is not a topological edge (a body diagonal) must be pruned.
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t c = box.Faces[0].Loop[2];
+    box.SoftEdges.push_back(BrushSoftEdgeKey(a, c));
+    EXPECT_TRUE(BrushValidateAndRepair(box).Ok);
+    EXPECT_TRUE(box.SoftEdges.empty());
+}

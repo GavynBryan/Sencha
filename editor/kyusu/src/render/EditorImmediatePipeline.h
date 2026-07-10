@@ -39,6 +39,11 @@ struct EditorImmediatePipelineConfig
     VkPrimitiveTopology  Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkCullModeFlags      CullMode = VK_CULL_MODE_NONE;
     bool                 DepthWrite = false;
+    // 0 = binding 0 is per-vertex data, one vertex drawn per element.
+    // N > 0 = binding 0 is per-instance data; each submitted record draws N
+    // vertices that the vertex shader derives from gl_VertexIndex (the
+    // wide-line quad expansion), cutting upload size by the expansion factor.
+    std::uint32_t        InstanceExpansion = 0;
     ColorBlendAttachmentDesc Blend{}; // default = opaque (no blend)
     // Polygon offset applied to the depth-tested slot only (on-top draws ignore depth).
     float                DepthBiasConstant = 0.0f;
@@ -159,7 +164,10 @@ public:
         vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
         vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
         vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-        vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        if (Config.InstanceExpansion > 0)
+            vkCmdDraw(frame.Cmd, Config.InstanceExpansion, static_cast<uint32_t>(vertices.size()), 0, 0);
+        else
+            vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
     }
 
     // Switch cull mode at runtime (cvar toggle). Nulls the cached pipelines so the
@@ -232,7 +240,9 @@ private:
         desc.FragmentShader = FragmentShader;
         desc.Layout = PipelineLayout;
         desc.Topology = Config.Topology;
-        desc.VertexBindings = { { 0, sizeof(TVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
+        desc.VertexBindings = { { 0, sizeof(TVertex),
+                                  Config.InstanceExpansion > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                                               : VK_VERTEX_INPUT_RATE_VERTEX } };
         desc.VertexAttributes = Config.Attributes;
         desc.CullMode = Config.CullMode;
         desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded

@@ -43,6 +43,23 @@ SelectionRenderer::SelectionRenderer(SelectionService& selection, MeshEditServic
 {
 }
 
+void SelectionRenderer::BeginFrame()
+{
+    EdgeCache.clear();
+}
+
+const std::vector<EdgeElement>& SelectionRenderer::EdgesFor(EntityId entity,
+                                                            const BrushMesh& mesh,
+                                                            const Transform3f& transform)
+{
+    const std::uint64_t key = (static_cast<std::uint64_t>(entity.Index) << 32)
+                            | static_cast<std::uint64_t>(entity.Generation);
+    const auto it = EdgeCache.find(key);
+    if (it != EdgeCache.end())
+        return it->second;
+    return EdgeCache.emplace(key, MeshElements::Edges(mesh, transform)).first->second;
+}
+
 void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                                      const EditorScene& scene, const ManipulatorSession& session)
 {
@@ -69,7 +86,8 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         const Transform3f* transform = scene.TryGetTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
-        AppendWireframe(bodyLines, *mesh, *transform, EditorTheme::ActiveWireframe, EditorTheme::ActiveLinePixels);
+        AppendWireframe(bodyLines, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
+                        EditorTheme::ActiveLinePixels);
         if (vertexMode)
             for (const VertexElement& vertex : MeshElements::Vertices(*mesh, *transform))
                 AppendVertexSquare(bodyLines, viewport, vertex.Position, EditorTheme::VertexHandle,
@@ -85,8 +103,8 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         const BrushMesh* mesh = scene.TryGetBrushMesh(Overlay.HoverBody);
         const Transform3f* transform = scene.TryGetTransform(Overlay.HoverBody);
         if (mesh != nullptr && transform != nullptr)
-            AppendWireframe(bodyLines, *mesh, *transform, EditorTheme::PreviewWireframe,
-                            EditorTheme::PreviewLinePixels);
+            AppendWireframe(bodyLines, *mesh, *transform, Overlay.HoverBody,
+                            EditorTheme::PreviewWireframe, EditorTheme::PreviewLinePixels);
     }
 
     // Per-element highlights, the hover glow, and the gizmos stay on top so the
@@ -113,8 +131,10 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         }
         else if (selected.IsEdge())
         {
-            if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, selected.ElementId))
-                AppendEdge(onTop, *edge, EditorTheme::EdgeHighlight, EditorTheme::OverlayLinePixels);
+            const std::vector<EdgeElement>& edges = EdgesFor(selected.Entity, *mesh, *transform);
+            if (selected.ElementId < edges.size())
+                AppendEdge(onTop, edges[selected.ElementId], EditorTheme::EdgeHighlight,
+                           EditorTheme::OverlayLinePixels);
         }
         else if (selected.IsVertex())
         {
@@ -151,7 +171,8 @@ void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const 
         const Transform3f* transform = scene.TryGetTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
-        AppendWireframe(segments, *mesh, *transform, EditorTheme::ActiveWireframe, EditorTheme::ActiveLinePixels);
+        AppendWireframe(segments, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
+                        EditorTheme::ActiveLinePixels);
     }
     if (!segments.empty())
         Lines.Submit(frame, viewport, segments, /*onTop*/ true, "SelectionRenderer.activeGlow");
@@ -175,11 +196,18 @@ std::vector<EntityId> SelectionRenderer::GatherActiveBodies(const EditorScene& s
 void SelectionRenderer::AppendWireframe(std::vector<EditorLineSegment>& segments,
                                         const BrushMesh& mesh,
                                         const Transform3f& transform,
+                                        EntityId entity,
                                         const Vec4& color,
-                                        float widthPx) const
+                                        float widthPx)
 {
-    for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
-        segments.push_back(EditorLineSegment{ edge.A, edge.B, color, widthPx });
+    for (const EdgeElement& edge : EdgesFor(entity, mesh, transform))
+    {
+        const Vec4& stroke = !mesh.SoftEdges.empty()
+                && BrushEdgeIsSoft(mesh, edge.VertexA, edge.VertexB)
+            ? EditorTheme::SoftEdgeWireframe
+            : color;
+        segments.push_back(EditorLineSegment{ edge.A, edge.B, stroke, widthPx });
+    }
 }
 
 void SelectionRenderer::AppendFace(std::vector<EditorLineSegment>& segments,
@@ -238,7 +266,7 @@ void SelectionRenderer::AppendVertexSquare(std::vector<EditorLineSegment>& segme
 }
 
 void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, const EditorViewport& viewport,
-                                    const EditorScene& scene) const
+                                    const EditorScene& scene)
 {
     const SelectableRef hovered = Overlay.Hover.Element;
     if (!hovered.IsValid() || hovered.Registry != scene.GetRegistry().Id)
@@ -266,8 +294,9 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     }
     else if (hovered.IsEdge())
     {
-        if (const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))
-            AppendEdge(segments, *edge, color, width);
+        const std::vector<EdgeElement>& edges = EdgesFor(hovered.Entity, *mesh, *transform);
+        if (hovered.ElementId < edges.size())
+            AppendEdge(segments, edges[hovered.ElementId], color, width);
     }
     else if (hovered.IsVertex())
     {
@@ -276,7 +305,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     }
     else // object: glow its wireframe so you see what a click would select
     {
-        AppendWireframe(segments, *mesh, *transform, color, width);
+        AppendWireframe(segments, *mesh, *transform, hovered.Entity, color, width);
     }
 }
 

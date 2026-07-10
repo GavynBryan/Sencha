@@ -137,37 +137,46 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
     return InputConsumed::No;
 }
 
+void ManipulatorSession::UpdateHover(const EditorViewport& viewport, ImVec2 pos)
+{
+    ClearHover();
+
+    const SelectionSnapshot snapshot = Selection.GetSnapshot();
+    const ManipulatorContext mctx = MakeContext(snapshot);
+    const TransformMode mode = EffectiveMode();
+
+    // Same priority order routing uses, so only the manipulator that would
+    // receive the click shows a hovered part.
+    for (std::size_t i = 0; i < Manipulators.size(); ++i)
+    {
+        if (Manipulators[i]->Mode() != mode)
+            continue;
+        if (!Manipulators[i]->AppliesTo(mctx, viewport))
+            continue;
+        if (const int part = Manipulators[i]->HitTest(mctx, viewport, pos))
+        {
+            HoverViewport = viewport.Id;
+            HoverIndex = static_cast<int>(i);
+            HoverPart = part;
+            break;
+        }
+    }
+}
+
+void ManipulatorSession::ClearHover()
+{
+    HoverViewport = {};
+    HoverIndex = -1;
+    HoverPart = 0;
+}
+
 void ManipulatorSession::BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const
 {
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
     const ManipulatorContext mctx = MakeContext(snapshot);
     const TransformMode mode = EffectiveMode();
 
-    // Hover: when the cursor is over this viewport, find the part it would grab —
-    // in the same priority order routing uses, so only the manipulator that would
-    // receive the click shows a hovered part.
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const bool inViewport = mouse.x >= viewport.RegionMin.x && mouse.x <= viewport.RegionMax.x
-                         && mouse.y >= viewport.RegionMin.y && mouse.y <= viewport.RegionMax.y;
-    int hoveredIndex = -1;
-    int hoveredPart = 0;
-    if (inViewport)
-    {
-        for (std::size_t i = 0; i < Manipulators.size(); ++i)
-        {
-            if (Manipulators[i]->Mode() != mode)
-                continue;
-            if (!Manipulators[i]->AppliesTo(mctx, viewport))
-                continue;
-            if (const int part = Manipulators[i]->HitTest(mctx, viewport, mouse))
-            {
-                hoveredIndex = static_cast<int>(i);
-                hoveredPart = part;
-                break;
-            }
-        }
-    }
-
+    const bool hoverHere = viewport.Id == HoverViewport;
     for (std::size_t i = 0; i < Manipulators.size(); ++i)
     {
         if (Manipulators[i]->Mode() != mode)
@@ -175,6 +184,7 @@ void ManipulatorSession::BuildVisuals(const EditorViewport& viewport, Manipulato
         if (!Manipulators[i]->AppliesTo(mctx, viewport))
             continue;
         Manipulators[i]->BuildVisual(mctx, viewport,
-                                     static_cast<int>(i) == hoveredIndex ? hoveredPart : 0, out);
+                                     hoverHere && static_cast<int>(i) == HoverIndex ? HoverPart : 0,
+                                     out);
     }
 }

@@ -31,6 +31,20 @@ inline constexpr double kParallelEpsilon = 1.0e-8;
     return (b * e - d) / denom;
 }
 
+// Intersection of the ray with the plane through `point` with `normal`.
+// nullopt when the ray is near-parallel to the plane or the hit is behind the
+// ray origin. Drives the gizmo's center (view-plane) drag.
+[[nodiscard]] inline std::optional<Vec3d> RayPlanePoint(const Ray3d& ray, Vec3d point, Vec3d normal)
+{
+    const double denom = ray.Direction.Dot(normal);
+    if (std::abs(denom) < kParallelEpsilon)
+        return std::nullopt;
+    const double t = (point - ray.Origin).Dot(normal) / denom;
+    if (t < 0.0)
+        return std::nullopt;
+    return ray.Origin + ray.Direction * static_cast<float>(t);
+}
+
 // Absolute snap: the offset that lands the pivot on the nearest grid line along
 // the axis (measured from the grid origin), so geometry snaps to grid positions,
 // not just to grid-sized steps. spacing <= 0 disables snapping.

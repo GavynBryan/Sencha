@@ -3,6 +3,9 @@
 #include "meshedit/IMeshEditTarget.h"
 #include "meshedit/ManipulationSink.h"
 
+#include <functional>
+#include <utility>
+
 class CommandStack;
 class EditorDocument;
 class EditorScene;
@@ -38,6 +41,14 @@ public:
     void CommitDuplicate(std::span<const EntityId> sources,
                          std::span<const Transform3f> transforms) override;
 
+    // Fired after a duplicate commits, with the world offset the copies landed
+    // at relative to their sources. The workspace records it so Ctrl+R can
+    // repeat the duplicate-with-offset on the (by then new) selection.
+    void SetDuplicateObserver(std::function<void(Vec3d offset)> observer)
+    {
+        DuplicateObserver = std::move(observer);
+    }
+
     // IMeshEditTarget (verb path)
     [[nodiscard]] std::optional<MeshEditTargetMesh> Resolve(EntityId entity) const override;
     [[nodiscard]] std::unique_ptr<ICommand> MakeEditCommand(EntityId entity,
@@ -49,4 +60,5 @@ private:
     EditorDocument& Document;
     CommandStack& Commands;
     SelectionService& Selection;
+    std::function<void(Vec3d)> DuplicateObserver;
 };

@@ -5,6 +5,7 @@
 #include "TransformSpace.h"
 
 #include "input/InputEvent.h"
+#include "viewport/ViewportId.h"
 
 #include <array>
 #include <functional>
@@ -31,6 +32,15 @@ public:
                        GridSettings& grid, PivotState& pivot);
 
     InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
+
+    // Tracks the gizmo part under the cursor from a pointer move in `viewport`
+    // (true screen coordinates). Hover must come from the input path: the
+    // offscreen render pass rebases viewport rects onto its render target, so
+    // hit-testing the live mouse there compares mismatched spaces and never
+    // hits. ClearHover drops the highlight when the cursor leaves the
+    // viewports or a drag owns the pointer.
+    void UpdateHover(const EditorViewport& viewport, ImVec2 pos);
+    void ClearHover();
 
     // Visuals for every applicable manipulator (drawn by the overlay renderer).
     void BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const;
@@ -115,4 +125,9 @@ private:
     // Selecting a brush shows the resize-bounds gizmo by default (it now works in
     // perspective too); Move/Rotate/Scale are a key or button away.
     TransformMode ActiveMode = TransformMode::Resize;
+    // Hovered gizmo part, updated by UpdateHover on the input path and read by
+    // BuildVisuals (which cannot derive it; see UpdateHover).
+    ViewportId HoverViewport = {};
+    int HoverIndex = -1;
+    int HoverPart = 0;
 };

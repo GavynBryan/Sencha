@@ -45,6 +45,16 @@ public:
         std::function<void(int)> SetBridgeSegments;
         std::function<void()> CommitBridge;
         std::function<void()> CancelBridge;
+        // Pending inset (faces) / bevel (edges): begin previews on the
+        // selection, the setters regenerate live, commit/cancel close it.
+        std::function<void(float)> BeginInset;
+        std::function<bool()> HasPendingInset;
+        std::function<void(float)> SetInsetDistance;
+        std::function<void(float, int)> BeginBevel;
+        std::function<bool()> HasPendingBevel;
+        std::function<void(float, int)> SetBevelParams;
+        std::function<void()> CommitElementEdit;
+        std::function<void()> CancelElementEdit;
         std::function<bool()> HasBakedSelection;     // any selected entity with a dormant brush
         std::function<bool()> HasInstancedSelection; // any selected instanced brush
     };
@@ -98,9 +108,10 @@ private:
     FaceUvControls Uv;
     ObjectActions Objects;
 
-    float ExtrudeDistance = 1.0f;
-    float CutPosition = 0.5f; // edge-cut authored position (0..1 along the edge)
-    bool CutLoop = true;      // edge-cut: full loop vs single edge
     float WeldDistance = 0.1f; // vertex weld: max merge distance (local units)
     int BridgeSegments = 1;    // bridge: quad rows spanning the gap
+    bool BridgeOptionsOpen = false; // bridge options expanded (collapsed to a button otherwise)
+    float InsetDistance = 0.25f; // face inset: distance along the blended normals
+    float BevelWidth = 0.25f;    // edge bevel: retreat into each face
+    int BevelSegments = 1;       // edge bevel: chamfer strips across the profile
 };

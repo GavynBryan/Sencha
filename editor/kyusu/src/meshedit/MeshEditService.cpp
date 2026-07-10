@@ -70,13 +70,39 @@ std::vector<std::uint32_t> GatherVertexIndices(const BrushMesh& mesh,
                                                SelectableKind want)
 {
     std::vector<std::uint32_t> indices;
+    std::vector<bool> seen(mesh.Vertices.size(), false);
+    const auto push = [&](std::uint32_t index)
+    {
+        if (index < seen.size() && !seen[index])
+        {
+            seen[index] = true;
+            indices.push_back(index);
+        }
+    };
+
+    // Edge refs index the mesh-wide edge enumeration: build it once for the
+    // whole selection. This runs per drag frame, and resolving each edge ref
+    // separately (a full-mesh enumeration per ref) made large edge drags
+    // quadratic.
+    if (want == SelectableKind::Edge)
+    {
+        const std::vector<EdgeElement> edges = MeshElements::Edges(mesh, transform);
+        for (const SelectableRef& ref : elements)
+        {
+            if (ref.Kind != want || ref.ElementId >= edges.size())
+                continue;
+            push(edges[ref.ElementId].VertexA);
+            push(edges[ref.ElementId].VertexB);
+        }
+        return indices;
+    }
+
     for (const SelectableRef& ref : elements)
     {
         if (ref.Kind != want)
             continue;
         for (std::uint32_t index : ElementVertexIndices(mesh, transform, ref))
-            if (std::find(indices.begin(), indices.end(), index) == indices.end())
-                indices.push_back(index);
+            push(index);
     }
     return indices;
 }
@@ -530,6 +556,29 @@ std::optional<BrushMesh> ApplyBridgeEdges(const VerbContext& ctx)
     return after;
 }
 
+std::optional<BrushMesh> ApplySetEdgeSoftness(const VerbContext& ctx)
+{
+    // Membership edit only: no vertices move and no topology changes, so no
+    // repair pass. One edge enumeration serves every selected ref.
+    const std::vector<EdgeElement> edges = MeshElements::Edges(ctx.Before, ctx.Transform);
+    BrushMesh after = ctx.Before;
+    bool changed = false;
+    for (const SelectableRef& ref : ctx.Refs)
+    {
+        if (ref.ElementId >= edges.size())
+            continue;
+        const EdgeElement& edge = edges[ref.ElementId];
+        if (BrushEdgeIsSoft(after, edge.VertexA, edge.VertexB) != ctx.Params.Soften)
+        {
+            BrushSetEdgeSoft(after, edge.VertexA, edge.VertexB, ctx.Params.Soften);
+            changed = true;
+        }
+    }
+    if (!changed)
+        return std::nullopt;
+    return after;
+}
+
 // Which refs a verb operates on, and how it transforms the mesh. Adding a verb =
 // add the enum value + one row here (+ its apply above). Row order == MeshEditVerb.
 struct VerbDescriptor
@@ -544,7 +593,7 @@ bool IsVertexRef(const SelectableRef& r) { return r.IsVertex(); }
 bool IsMeshElementRef(const SelectableRef& r) { return r.IsMeshElement(); }
 bool IsEntityRef(const SelectableRef& r) { return r.IsEntity(); }
 
-const std::array<VerbDescriptor, 12> kVerbs = { {
+const std::array<VerbDescriptor, 13> kVerbs = { {
     { IsFaceRef,        ApplyExtrude },             // Extrude
     { IsFaceRef,        ApplyDelete },              // Delete
     { IsFaceRef,        ApplyClip },                // Clip
@@ -557,6 +606,7 @@ const std::array<VerbDescriptor, 12> kVerbs = { {
     { IsVertexRef,      ApplyWeldVertices },        // WeldVertices
     { IsVertexRef,      ApplySnapVerticesToGrid },  // SnapVerticesToGrid
     { IsEdgeRef,        ApplyBridgeEdges },         // BridgeEdges
+    { IsEdgeRef,        ApplySetEdgeSoftness },     // SetEdgeSoftness
 } };
 }
 
@@ -748,11 +798,12 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
 
     if (want == SelectableKind::Face)
     {
-        // Resolve sources and their post-extrude caps up front by identity: each
-        // extrude repairs/reindexes, so neither the source nor the cap can be
-        // addressed by a fixed index across the loop. The cap is the source loop
-        // translated rigidly by offset (centroid + offset, same normal).
-        std::vector<FaceKey> sourceKeys;
+        // One region extrude for the whole face set: interior edges between
+        // selected faces stay internal (no swept walls); only the region
+        // boundary is walled. Caps are resolved afterwards by identity (the
+        // source loop translated rigidly: centroid + offset, same normal)
+        // because the repair inside the extrude can reindex.
+        std::vector<std::uint32_t> region;
         std::vector<FaceKey> capKeys;
         for (const SelectableRef& ref : elements)
         {
@@ -760,23 +811,16 @@ std::optional<MeshEditService::ExtrudeResult> MeshEditService::ExtrudeElements(
                 continue;
             if (ref.ElementId >= base.Faces.size())
                 return std::nullopt;
-            const Vec3d centroid = BrushFaceCentroid(base, base.Faces[ref.ElementId]);
-            const Vec3d normal = BrushComputeFaceNormal(base, base.Faces[ref.ElementId]);
-            sourceKeys.push_back(FaceKey{ centroid, normal });
-            capKeys.push_back(FaceKey{ centroid + offset, normal });
+            region.push_back(ref.ElementId);
+            capKeys.push_back(FaceKey{
+                BrushFaceCentroid(base, base.Faces[ref.ElementId]) + offset,
+                BrushComputeFaceNormal(base, base.Faces[ref.ElementId]) });
         }
-        if (sourceKeys.empty())
+        if (region.empty())
             return std::nullopt;
 
-        BrushMesh after = base;
-        int applied = 0;
-        for (const FaceKey& key : sourceKeys)
-            if (const std::optional<std::uint32_t> index = FindFace(after, key))
-            {
-                after = BrushOps::ExtrudeFaceAlong(after, *index, offset);
-                ++applied;
-            }
-        if (applied == 0 || !BrushValidateAndRepair(after).Ok)
+        BrushMesh after = BrushOps::ExtrudeFacesAlong(base, region, offset);
+        if (after.Faces.size() <= base.Faces.size() || !BrushValidateAndRepair(after).Ok)
             return std::nullopt;
 
         std::vector<std::uint32_t> ids;

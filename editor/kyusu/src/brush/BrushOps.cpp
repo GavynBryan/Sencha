@@ -2006,6 +2006,14 @@ namespace
             };
             wall.Material = material;
             wall.Normal = BrushComputeFaceNormal(out, wall);
+            // The cap's projection axes lie in the cap plane; a tunnel wall is
+            // perpendicular to it, so inheriting them verbatim stretches the
+            // texture edge-on. Re-derive axes for the wall's own normal, keeping
+            // the cap's scale/offset/rotation (same rule as ExtrudeFaceAlong).
+            wall.Material.Uv = UvProjectionForNormal(wall.Normal, material.Uv.WorldAligned);
+            wall.Material.Uv.Scale = material.Uv.Scale;
+            wall.Material.Uv.Offset = material.Uv.Offset;
+            wall.Material.Uv.Rotation = material.Uv.Rotation;
             out.Faces.push_back(std::move(wall));
         }
         return out;
@@ -2493,14 +2501,25 @@ namespace
 
         // Tunnel walls everywhere except the open sides: non-flush sides and
         // seam sides (where the surface continues past the flush edge) both
-        // bound the channel with a wall.
+        // bound the channel with a wall. The walls are perpendicular to the
+        // cap, so the cap's projection axes would stretch edge-on: re-derive
+        // axes per wall normal, keeping scale/offset/rotation (the same rule
+        // as BridgeCapsIntoTunnel and ExtrudeFaceAlong).
         for (int k = 0; k < 4; ++k)
         {
             if (openSide[static_cast<std::size_t>(k)])
                 continue;
             const std::size_t i = static_cast<std::size_t>(k);
             const std::size_t j = static_cast<std::size_t>((k + 1) % 4);
-            appendQuad({ rectIdx[i], rectIdx[j], targetIdx[j], targetIdx[i] }, sourceMaterial);
+            BrushFace wall;
+            wall.Loop = { rectIdx[i], rectIdx[j], targetIdx[j], targetIdx[i] };
+            wall.Material = sourceMaterial;
+            wall.Normal = BrushComputeFaceNormal(out, wall);
+            wall.Material.Uv = UvProjectionForNormal(wall.Normal, sourceMaterial.Uv.WorldAligned);
+            wall.Material.Uv.Scale = sourceMaterial.Uv.Scale;
+            wall.Material.Uv.Offset = sourceMaterial.Uv.Offset;
+            wall.Material.Uv.Rotation = sourceMaterial.Uv.Rotation;
+            out.Faces.push_back(std::move(wall));
         }
 
         // A channel across subdivided planes mints crossing vertices on other
@@ -2510,6 +2529,16 @@ namespace
         for (std::size_t f = 0; f < out.Faces.size(); ++f)
             AbsorbCollinearVertices(out, static_cast<std::uint32_t>(f));
         return out;
+    }
+
+    // Closed solid: every undirected edge shared by exactly two faces.
+    bool MeshIsClosed(const BrushMesh& mesh)
+    {
+        const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+        for (const auto& entry : edgeFaces)
+            if (entry.second.size() != 2)
+                return false;
+        return true;
     }
 }
 
@@ -2556,7 +2585,18 @@ BrushMesh BrushOps::CarveFaceRectThrough(const BrushMesh& mesh, std::uint32_t fa
     const std::optional<ThroughFaceCandidate> target =
         FindThroughFace(mesh, face, sourceNormal, sourceCorners, /*allowFlush*/ anyFlush);
     if (!target.has_value())
-        return mesh;
+    {
+        // An open host (a plane) has no opposite face to tunnel to; there the
+        // pierce degrades to punching the rect out of the face itself. Closed
+        // solids keep the refusal: a blind hole would silently open the solid.
+        if (MeshIsClosed(mesh))
+            return mesh;
+        BrushMesh out = CarveFaceRect(mesh, face, sourceMin, sourceMax);
+        if (out.Faces.size() <= mesh.Faces.size())
+            return mesh;
+        out.Faces.pop_back(); // the center rect is appended last; removing it opens the hole
+        return out;
+    }
 
     if (anyFlush)
     {
@@ -2637,7 +2677,22 @@ BrushMesh BrushOps::InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint
     const std::optional<ThroughFaceCandidate> target =
         FindThroughFace(mesh, face, sourceNormal, sourceCorners, /*allowFlush*/ anyFlush);
     if (!target.has_value())
-        return mesh;
+    {
+        // Open host (a plane): no opposite face to tunnel to, so the pierce
+        // degrades to cutting the loops and removing the bounded rect face.
+        // Closed solids keep the refusal (same rule as CarveFaceRectThrough).
+        if (MeshIsClosed(mesh))
+            return mesh;
+        BrushMesh out = InsertFaceLoopBounds(mesh, face, sourceMin, sourceMax);
+        if (out.Faces.size() == mesh.Faces.size() && out.Vertices.size() == mesh.Vertices.size())
+            return mesh;
+        const std::optional<std::uint32_t> cap =
+            FindRectFaceInFrame(out, *sourceFrame, sourceMin, sourceMax);
+        if (!cap.has_value())
+            return mesh;
+        out.Faces.erase(out.Faces.begin() + static_cast<std::ptrdiff_t>(*cap));
+        return out;
+    }
     const std::optional<BrushRectFaceFrame> targetFrame = RectFaceFrame(mesh, target->Face);
     if (!targetFrame.has_value())
         return mesh;
@@ -2836,4 +2891,420 @@ BrushMesh BrushOps::InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint
         AbsorbCollinearVertices(*tunnel,
                                 static_cast<std::uint32_t>(tunnel->Faces.size() - 1 - static_cast<std::size_t>(w)));
     return std::move(*tunnel);
+}
+
+namespace
+{
+    // Region extrude shared by the normal-blend and directional variants:
+    // mints one moved duplicate per region vertex at `offsetOf(v)`, walls only
+    // the boundary edges of the selected region (interior edges shared by two
+    // selected faces move as one shell), then retargets the caps. Wall
+    // materials continue the unselected neighbor across each boundary edge
+    // with UV axes re-derived per wall normal (the ExtrudeFaceAlong rule).
+    template <typename OffsetOf>
+    BrushMesh ExtrudeFaceRegion(const BrushMesh& mesh,
+                                const std::vector<std::uint32_t>& region,
+                                const std::vector<bool>& selected,
+                                const OffsetOf& offsetOf)
+    {
+        BrushMesh out = mesh;
+
+        // Moved duplicates, minted in region traversal order (deterministic).
+        constexpr std::uint32_t kUnmoved = std::numeric_limits<std::uint32_t>::max();
+        std::vector<std::uint32_t> moved(mesh.Vertices.size(), kUnmoved);
+        for (std::uint32_t f : region)
+            for (std::uint32_t v : mesh.Faces[f].Loop)
+            {
+                if (moved[v] != kUnmoved)
+                    continue;
+                moved[v] = static_cast<std::uint32_t>(out.Vertices.size());
+                out.Vertices.push_back(BrushVertex{ mesh.Vertices[v].Position + offsetOf(v) });
+            }
+
+        // Walls on the region boundary only, before the caps are retargeted
+        // (the walls span old ring -> moved ring).
+        const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+        for (std::uint32_t f : region)
+        {
+            const std::vector<std::uint32_t>& baseLoop = mesh.Faces[f].Loop;
+            const std::size_t n = baseLoop.size();
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const std::uint32_t a = baseLoop[i];
+                const std::uint32_t b = baseLoop[(i + 1) % n];
+                const auto it = edgeFaces.find(UndirectedEdge(a, b));
+                if (it == edgeFaces.end())
+                    continue;
+
+                bool interior = false;
+                const BrushFace* seed = nullptr;
+                for (const auto& [neighbor, unusedEdgeIndex] : it->second)
+                {
+                    if (neighbor == f)
+                        continue;
+                    if (selected[neighbor])
+                        interior = true;
+                    else if (seed == nullptr)
+                        seed = &mesh.Faces[neighbor];
+                }
+                if (interior)
+                    continue;
+
+                BrushFace wall;
+                wall.Loop = { a, b, moved[b], moved[a] };
+                const FaceMaterial& material = seed != nullptr ? seed->Material : mesh.Faces[f].Material;
+                wall.Material.Material = material.Material;
+                wall.Normal = BrushComputeFaceNormal(out, wall);
+
+                // Coplanar with the continuing neighbor: carry its projection
+                // whole so the texture flows onto the new strip. Otherwise
+                // re-derive the axes for the wall's own plane.
+                const Vec3d seedNormal = seed != nullptr ? BrushComputeFaceNormal(mesh, *seed)
+                                                         : Vec3d{ 0.0f, 0.0f, 0.0f };
+                const bool coplanar = seed != nullptr
+                    && wall.Normal.SqrMagnitude() > 0.0f
+                    && seedNormal.SqrMagnitude() > 0.0f
+                    && std::abs(wall.Normal.Normalized().Dot(seedNormal.Normalized())) > 0.999f;
+                if (coplanar)
+                {
+                    wall.Material.Uv = material.Uv;
+                }
+                else
+                {
+                    wall.Material.Uv = UvProjectionForNormal(wall.Normal, material.Uv.WorldAligned);
+                    wall.Material.Uv.Scale = material.Uv.Scale;
+                    wall.Material.Uv.Offset = material.Uv.Offset;
+                    wall.Material.Uv.Rotation = material.Uv.Rotation;
+                }
+                out.Faces.push_back(std::move(wall));
+            }
+        }
+
+        for (std::uint32_t f : region)
+            for (std::uint32_t& v : out.Faces[f].Loop)
+                v = moved[v];
+
+        BrushValidateAndRepair(out);
+        return out;
+    }
+
+    // Validated, deduplicated region in first-seen order plus a selection mask.
+    bool GatherFaceRegion(const BrushMesh& mesh,
+                          std::span<const std::uint32_t> faces,
+                          std::vector<std::uint32_t>& region,
+                          std::vector<bool>& selected)
+    {
+        selected.assign(mesh.Faces.size(), false);
+        for (std::uint32_t f : faces)
+        {
+            if (f >= mesh.Faces.size() || selected[f])
+                continue;
+            selected[f] = true;
+            region.push_back(f);
+        }
+        return !region.empty();
+    }
+}
+
+BrushMesh BrushOps::ExtrudeFacesAlongNormals(const BrushMesh& mesh,
+                                             std::span<const std::uint32_t> faces,
+                                             float distance)
+{
+    std::vector<std::uint32_t> region;
+    std::vector<bool> selected;
+    if (!GatherFaceRegion(mesh, faces, region, selected) || distance == 0.0f)
+        return mesh;
+
+    // Blended normal per region vertex: the normalized sum of the unit
+    // normals of the selected faces using it.
+    std::vector<Vec3d> vertexNormal(mesh.Vertices.size(), Vec3d{ 0.0f, 0.0f, 0.0f });
+    for (std::uint32_t f : region)
+    {
+        const Vec3d normal = BrushComputeFaceNormal(mesh, mesh.Faces[f]);
+        if (normal.SqrMagnitude() <= 0.0f)
+            return mesh; // degenerate cap: nothing sensible to offset along
+        for (std::uint32_t v : mesh.Faces[f].Loop)
+            vertexNormal[v] += normal.Normalized();
+    }
+
+    return ExtrudeFaceRegion(mesh, region, selected, [&](std::uint32_t v)
+    {
+        const Vec3d sum = vertexNormal[v];
+        return sum.SqrMagnitude() > 0.0f ? sum.Normalized() * distance
+                                         : Vec3d{ 0.0f, 0.0f, 0.0f };
+    });
+}
+
+BrushMesh BrushOps::ExtrudeFacesAlong(const BrushMesh& mesh,
+                                      std::span<const std::uint32_t> faces,
+                                      Vec3d offset)
+{
+    std::vector<std::uint32_t> region;
+    std::vector<bool> selected;
+    if (!GatherFaceRegion(mesh, faces, region, selected) || offset.SqrMagnitude() <= 0.0f)
+        return mesh;
+    return ExtrudeFaceRegion(mesh, region, selected, [&](std::uint32_t) { return offset; });
+}
+
+BrushMesh BrushOps::BevelEdges(const BrushMesh& mesh,
+                               std::span<const std::array<std::uint32_t, 2>> edges,
+                               float width,
+                               int segments)
+{
+    segments = std::max(1, segments);
+    if (width <= 0.0f || edges.empty())
+        return mesh;
+
+    // Canonical selected edges, deduplicated, in first-seen order.
+    std::vector<UndirectedEdge> sel;
+    for (const std::array<std::uint32_t, 2>& e : edges)
+    {
+        if (e[0] == e[1] || e[0] >= mesh.Vertices.size() || e[1] >= mesh.Vertices.size())
+            continue;
+        const UndirectedEdge canonical(e[0], e[1]);
+        if (std::find_if(sel.begin(), sel.end(), [&](const UndirectedEdge& s)
+                         { return s.U == canonical.U && s.V == canonical.V; }) == sel.end())
+            sel.push_back(canonical);
+    }
+    if (sel.empty())
+        return mesh;
+
+    std::vector<Vec3d> faceNormal(mesh.Faces.size());
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
+        faceNormal[f] = BrushComputeFaceNormal(mesh, mesh.Faces[f]).Normalized();
+
+    // Each selected edge must be manifold, and its faces must actually bend
+    // (a coplanar pair has no profile to round).
+    struct BevelEdge
+    {
+        std::uint32_t U = 0;
+        std::uint32_t V = 0;
+        std::uint32_t SideA = 0; // face index
+        std::uint32_t SideB = 0;
+    };
+    const EdgeFaces edgeFaces = BuildEdgeFaces(mesh);
+    std::vector<BevelEdge> chain;
+    chain.reserve(sel.size());
+    for (const UndirectedEdge& e : sel)
+    {
+        const auto it = edgeFaces.find(e);
+        if (it == edgeFaces.end() || it->second.size() != 2)
+            return mesh;
+        const std::uint32_t f0 = it->second[0].first;
+        const std::uint32_t f1 = it->second[1].first;
+        if (std::abs(faceNormal[f0].Dot(faceNormal[f1])) > 0.999f)
+            return mesh;
+        chain.push_back(BevelEdge{ e.U, e.V, f0, f1 });
+    }
+
+    // A vertex fanned by 3+ selected edges has no single profile: refused.
+    std::vector<std::vector<std::uint32_t>> incident(mesh.Vertices.size());
+    for (std::uint32_t i = 0; i < chain.size(); ++i)
+    {
+        incident[chain[i].U].push_back(i);
+        incident[chain[i].V].push_back(i);
+    }
+    for (const std::vector<std::uint32_t>& list : incident)
+        if (list.size() > 2)
+            return mesh;
+
+    // Chain-consistent side assignment: walking across a shared vertex keeps
+    // side A on the face (or failing an exact match, the closest normal), so
+    // one side of the whole run replaces with row 0 and the other with row N.
+    {
+        std::vector<bool> oriented(chain.size(), false);
+        std::vector<std::uint32_t> stack;
+        for (std::uint32_t seed = 0; seed < chain.size(); ++seed)
+        {
+            if (oriented[seed])
+                continue;
+            oriented[seed] = true;
+            stack.push_back(seed);
+            while (!stack.empty())
+            {
+                const std::uint32_t i = stack.back();
+                stack.pop_back();
+                for (const std::uint32_t v : { chain[i].U, chain[i].V })
+                    for (const std::uint32_t j : incident[v])
+                    {
+                        if (j == i || oriented[j])
+                            continue;
+                        // A face shared by both edges (a rim loop's cap) must
+                        // carry the same side label on both; only unshared
+                        // sides fall back to normal similarity.
+                        bool swapSides;
+                        if (chain[j].SideA == chain[i].SideA || chain[j].SideB == chain[i].SideB)
+                            swapSides = false;
+                        else if (chain[j].SideA == chain[i].SideB || chain[j].SideB == chain[i].SideA)
+                            swapSides = true;
+                        else
+                        {
+                            const float keep = faceNormal[chain[j].SideA].Dot(faceNormal[chain[i].SideA])
+                                             + faceNormal[chain[j].SideB].Dot(faceNormal[chain[i].SideB]);
+                            const float crossed = faceNormal[chain[j].SideA].Dot(faceNormal[chain[i].SideB])
+                                                + faceNormal[chain[j].SideB].Dot(faceNormal[chain[i].SideA]);
+                            swapSides = crossed > keep;
+                        }
+                        if (swapSides)
+                            std::swap(chain[j].SideA, chain[j].SideB);
+                        oriented[j] = true;
+                        stack.push_back(j);
+                    }
+            }
+        }
+    }
+
+    // In-plane retreat direction at `v` away from edge (v -> other), inside
+    // face `f`: the face-centroid direction with the edge component removed.
+    const auto sideDirection = [&](std::uint32_t v, std::uint32_t other, std::uint32_t f)
+        -> std::optional<Vec3d>
+    {
+        const Vec3d edgeDir = (mesh.Vertices[other].Position - mesh.Vertices[v].Position);
+        if (edgeDir.SqrMagnitude() <= 0.0f)
+            return std::nullopt;
+        const Vec3d unit = edgeDir.Normalized();
+        const Vec3d toCentroid = BrushFaceCentroid(mesh, mesh.Faces[f]) - mesh.Vertices[v].Position;
+        const Vec3d inPlane = toCentroid - unit * toCentroid.Dot(unit);
+        if (inPlane.SqrMagnitude() <= 1.0e-12f)
+            return std::nullopt;
+        return inPlane.Normalized();
+    };
+
+    // Profile rows per chain vertex: row 0 sits `width` into side A, row N
+    // `width` into side B, intermediate rows on the normalized blend (a
+    // circular arc of radius `width` about the original vertex).
+    BrushMesh out = mesh;
+    std::vector<std::vector<std::uint32_t>> rows(mesh.Vertices.size());
+    for (std::uint32_t v = 0; v < mesh.Vertices.size(); ++v)
+    {
+        if (incident[v].empty())
+            continue;
+        Vec3d dirA{ 0.0f, 0.0f, 0.0f };
+        Vec3d dirB{ 0.0f, 0.0f, 0.0f };
+        for (std::uint32_t i : incident[v])
+        {
+            const std::uint32_t other = chain[i].U == v ? chain[i].V : chain[i].U;
+            const std::optional<Vec3d> a = sideDirection(v, other, chain[i].SideA);
+            const std::optional<Vec3d> b = sideDirection(v, other, chain[i].SideB);
+            if (!a.has_value() || !b.has_value())
+                return mesh;
+            dirA += *a;
+            dirB += *b;
+        }
+        if (dirA.SqrMagnitude() <= 1.0e-12f || dirB.SqrMagnitude() <= 1.0e-12f)
+            return mesh;
+        dirA = dirA.Normalized();
+        dirB = dirB.Normalized();
+
+        // Quadratic profile tangent to both faces: rows run from the face-A
+        // retreat point to the face-B one, bulging toward the original corner
+        // (the round). A constant-radius arc about the old vertex would dip
+        // INTO the solid instead (the caved-in bevel).
+        rows[v].reserve(static_cast<std::size_t>(segments) + 1);
+        for (int r = 0; r <= segments; ++r)
+        {
+            const float t = static_cast<float>(r) / static_cast<float>(segments);
+            const Vec3d offset = dirA * (width * (1.0f - t) * (1.0f - t))
+                               + dirB * (width * t * t);
+            rows[v].push_back(static_cast<std::uint32_t>(out.Vertices.size()));
+            out.Vertices.push_back(BrushVertex{ mesh.Vertices[v].Position + offset });
+        }
+    }
+
+    // Rewrite every face touching a beveled vertex. Side A faces retreat to
+    // row 0, side B to row N; any other face (a chain-end cap) absorbs the
+    // whole profile, ordered so the row nearest its preceding loop vertex
+    // comes first.
+    for (std::uint32_t f = 0; f < out.Faces.size(); ++f)
+    {
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        bool touches = false;
+        for (std::uint32_t v : loop)
+            if (v < rows.size() && !rows[v].empty())
+                touches = true;
+        if (!touches)
+            continue;
+
+        std::vector<std::uint32_t> rebuilt;
+        rebuilt.reserve(loop.size() + static_cast<std::size_t>(segments));
+        for (std::size_t i = 0; i < loop.size(); ++i)
+        {
+            const std::uint32_t v = loop[i];
+            if (v >= rows.size() || rows[v].empty())
+            {
+                rebuilt.push_back(v);
+                continue;
+            }
+
+            bool isA = false;
+            bool isB = false;
+            for (std::uint32_t e : incident[v])
+            {
+                isA |= chain[e].SideA == f;
+                isB |= chain[e].SideB == f;
+            }
+            if (isA && isB)
+                return mesh; // the chain folds both sides onto one face
+            if (isA)
+            {
+                rebuilt.push_back(rows[v].front());
+                continue;
+            }
+            if (isB)
+            {
+                rebuilt.push_back(rows[v].back());
+                continue;
+            }
+
+            // Cap: insert the profile facing the loop's traversal direction.
+            const Vec3d prev = mesh.Vertices[loop[(i + loop.size() - 1) % loop.size()]].Position;
+            const Vec3d first = out.Vertices[rows[v].front()].Position;
+            const Vec3d last = out.Vertices[rows[v].back()].Position;
+            if ((first - prev).SqrMagnitude() <= (last - prev).SqrMagnitude())
+                rebuilt.insert(rebuilt.end(), rows[v].begin(), rows[v].end());
+            else
+                rebuilt.insert(rebuilt.end(), rows[v].rbegin(), rows[v].rend());
+        }
+        out.Faces[f].Loop = std::move(rebuilt);
+    }
+
+    // Chamfer strips, wound to continue side A's traversal of the seed edge.
+    for (const BevelEdge& e : chain)
+    {
+        std::uint32_t u = e.U;
+        std::uint32_t v = e.V;
+        const std::vector<std::uint32_t>& aLoop = mesh.Faces[e.SideA].Loop;
+        for (std::size_t i = 0; i < aLoop.size(); ++i)
+        {
+            if (aLoop[i] == e.V && aLoop[(i + 1) % aLoop.size()] == e.U)
+            {
+                std::swap(u, v);
+                break;
+            }
+            if (aLoop[i] == e.U && aLoop[(i + 1) % aLoop.size()] == e.V)
+                break;
+        }
+
+        const FaceMaterial& material = mesh.Faces[e.SideA].Material;
+        for (int r = 0; r < segments; ++r)
+        {
+            BrushFace strip;
+            strip.Loop = {
+                rows[v][static_cast<std::size_t>(r)],
+                rows[u][static_cast<std::size_t>(r)],
+                rows[u][static_cast<std::size_t>(r) + 1],
+                rows[v][static_cast<std::size_t>(r) + 1],
+            };
+            strip.Material.Material = material.Material;
+            strip.Normal = BrushComputeFaceNormal(out, strip);
+            strip.Material.Uv = UvProjectionForNormal(strip.Normal, material.Uv.WorldAligned);
+            strip.Material.Uv.Scale = material.Uv.Scale;
+            strip.Material.Uv.Offset = material.Uv.Offset;
+            strip.Material.Uv.Rotation = material.Uv.Rotation;
+            out.Faces.push_back(std::move(strip));
+        }
+    }
+
+    BrushValidateAndRepair(out);
+    return out;
 }

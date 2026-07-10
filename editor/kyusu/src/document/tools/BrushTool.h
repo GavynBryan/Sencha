@@ -4,6 +4,7 @@
 
 #include "selection/SelectableRef.h"
 
+#include <core/assets/AssetRef.h>
 #include <ecs/EntityId.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
@@ -73,6 +74,10 @@ public:
     // Rebuilds the pending preview after a BrushCreationSettings edit.
     void RefreshPending(ToolContext& ctx);
 
+    // True when the active material changed after the pending preview was last
+    // built; a RefreshPending restyles the preview with it.
+    [[nodiscard]] bool PendingMaterialStale(const ToolContext& ctx) const;
+
     // Commits the pending brush as one undoable create and drops the preview.
     void CommitPending(ToolContext& ctx);
     void CancelPending(ToolContext& ctx);
@@ -81,5 +86,6 @@ private:
     BrushToolState State = BrushToolState::Idle;
     PendingBrush Pending;
     EntityId PendingEntity = {};
+    AssetRef PendingMaterial; // the active material the last rebuild stamped
     std::vector<SelectableRef> PendingPreviousSelection;
 };

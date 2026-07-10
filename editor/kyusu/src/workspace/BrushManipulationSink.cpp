@@ -105,8 +105,16 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
 {
     if (sources.empty())
         return;
+    // Offset before executing: the command leaves the sources untouched, but
+    // reading them first keeps the observer independent of command internals.
+    std::optional<Vec3d> offset;
+    if (!transforms.empty())
+        if (const Transform3f* source = Scene.TryGetTransform(sources.front()))
+            offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
         sources, transforms, Scene, Document, Selection));
+    if (DuplicateObserver && offset.has_value())
+        DuplicateObserver(*offset);
 }
 
 std::optional<MeshEditTargetMesh> BrushManipulationSink::Resolve(EntityId entity) const

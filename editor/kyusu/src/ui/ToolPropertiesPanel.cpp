@@ -216,14 +216,7 @@ void ToolPropertiesPanel::DrawFaceVerbs()
         }
     };
 
-    ImGui::DragFloat("Distance", &ExtrudeDistance, 0.05f);
     ButtonFlow flow;
-    if (flow.Button("Extrude"))
-    {
-        MeshEditParams params;
-        params.Distance = ExtrudeDistance;
-        applyVerb(MeshEditVerb::Extrude, params);
-    }
     if (flow.Button("Delete"))
         applyVerb(MeshEditVerb::Delete, {});
     if (flow.Button("Flip Normals"))
@@ -232,6 +225,33 @@ void ToolPropertiesPanel::DrawFaceVerbs()
         Objects.SeparateFaces();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Split these faces into a new brush (the source opens where they were).");
+
+    // Inset: extrude the selected faces along their own normals as one shell.
+    // Collapsed to one button until clicked; the pending preview expands into
+    // its options (distance regenerates live) until Apply/Cancel.
+    const bool pendingInset = Objects.HasPendingInset && Objects.HasPendingInset();
+    if (!pendingInset)
+    {
+        if (flow.Button("Inset...") && Objects.BeginInset)
+            Objects.BeginInset(InsetDistance);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Extrude the selected faces along their own normals\n"
+                              "(a rim outward, a recess inward); adjustable until applied.");
+    }
+    else
+    {
+        ImGui::SeparatorText("Inset");
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragFloat("Distance", &InsetDistance, 0.05f) && Objects.SetInsetDistance)
+            Objects.SetInsetDistance(InsetDistance);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Along each face's normal: positive out (a rim), negative in (a recess)");
+        if (ImGui::Button("Apply##inset") && Objects.CommitElementEdit)
+            Objects.CommitElementEdit();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##inset") && Objects.CancelElementEdit)
+            Objects.CancelElementEdit();
+    }
 
     DrawTextureTools();
 
@@ -251,7 +271,7 @@ void ToolPropertiesPanel::DrawTextureTools()
     ButtonFlow flow;
     if (!ActiveMaterial.Active.IsValid())
         ImGui::BeginDisabled();
-    if (flow.Button("Apply"))
+    if (flow.Button("Apply##texture"))
         ApplyMaterialToSelectedFaces(Target(), Selection, Commands, ActiveMaterial.Active);
     if (!ActiveMaterial.Active.IsValid())
         ImGui::EndDisabled();
@@ -282,24 +302,25 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
         return;
     }
 
-    // Edge cut: author where along the edge to cut, and whether it rings the whole
-    // loop or splits just this edge.
-    ImGui::SliderFloat("Cut position", &CutPosition, 0.0f, 1.0f, "%.2f");
-    ImGui::Checkbox("Loop cut", &CutLoop);
-    ImGui::SameLine();
-    ImGui::TextDisabled(CutLoop ? "(full ring)" : "(single edge)");
     ButtonFlow flow;
-    if (flow.Button("Insert Cut"))
+    if (flow.Button("Soften"))
     {
         MeshEditParams params;
-        params.CutPosition = CutPosition;
-        params.LoopCut = CutLoop;
-        if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::InsertEdgeLoop, params))
-        {
+        params.Soften = true;
+        if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::SetEdgeSoftness, params))
             Commands.Execute(std::move(command));
-            Selection.ClearMeshElementSelections();
-        }
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shade smooth across the selected edges (green wireframe)");
+    if (flow.Button("Harden"))
+    {
+        MeshEditParams params;
+        params.Soften = false;
+        if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::SetEdgeSoftness, params))
+            Commands.Execute(std::move(command));
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Back to hard (per-face) shading across the selected edges");
     if (flow.Button("Dissolve"))
     {
         if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::DissolveEdge, {}))
@@ -311,51 +332,116 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Merge the two faces sharing each selected edge.  [Backspace]");
 
-    ImGui::SeparatorText("Bridge");
-    const bool pendingBridge = Objects.HasPendingBridge && Objects.HasPendingBridge();
-    ImGui::SetNextItemWidth(120.0f);
-    if (ImGui::DragInt("Segments", &BridgeSegments, 0.25f, 1, 64))
+    // Bevel: replace the selected edges with chamfer strips. Collapsed to one
+    // button until clicked; the pending preview expands into its options
+    // (width/segments regenerate live) until Apply/Cancel.
+    const bool pendingBevel = Objects.HasPendingBevel && Objects.HasPendingBevel();
+    if (!pendingBevel)
     {
-        BridgeSegments = std::clamp(BridgeSegments, 1, 64);
-        // A pending bridge previews the new count live.
-        if (pendingBridge && Objects.SetBridgeSegments)
-            Objects.SetBridgeSegments(BridgeSegments);
-    }
-    if (!pendingBridge)
-    {
-        if (ImGui::Button("Bridge"))
-        {
-            if (Objects.BridgeEdges)
-            {
-                Objects.BridgeEdges(BridgeSegments);
-            }
-            else
-            {
-                MeshEditParams params;
-                params.BridgeSegments = BridgeSegments;
-                if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::BridgeEdges, params))
-                {
-                    Commands.Execute(std::move(command));
-                    Selection.ClearMeshElementSelections();
-                }
-            }
-        }
+        if (flow.Button("Bevel...") && Objects.BeginBevel)
+            Objects.BeginBevel(BevelWidth, BevelSegments);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Span two selected edge runs with quads.\n"
-                              "More segments bow the bridge for curved hallways.\n"
-                              "A cross-brush bridge previews until Apply.");
+            ImGui::SetTooltip("Chamfer the selected edges; width and roundness\n"
+                              "stay adjustable until applied.");
     }
     else
     {
-        if (ImGui::Button("Apply") && Objects.CommitBridge)
-            Objects.CommitBridge();
+        ImGui::SeparatorText("Bevel");
+        bool bevelChanged = false;
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragFloat("Width", &BevelWidth, 0.05f, 0.0f, 1000.0f))
+            bevelChanged = true;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Commit the previewed bridge brush.");
+            ImGui::SetTooltip("How far the bevel retreats into each adjacent face");
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragInt("Segments", &BevelSegments, 0.1f, 1, 16))
+        {
+            BevelSegments = std::clamp(BevelSegments, 1, 16);
+            bevelChanged = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Strips across the profile (1 = flat chamfer, more = rounder)");
+        if (bevelChanged && Objects.SetBevelParams)
+            Objects.SetBevelParams(BevelWidth, BevelSegments);
+        if (ImGui::Button("Apply##bevel") && Objects.CommitElementEdit)
+            Objects.CommitElementEdit();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel") && Objects.CancelBridge)
-            Objects.CancelBridge();
+        if (ImGui::Button("Cancel##bevel") && Objects.CancelElementEdit)
+            Objects.CancelElementEdit();
+    }
+
+    // Bridge: collapsed to one button until clicked; expanding reveals the
+    // segment count before anything runs (a same-brush bridge commits
+    // immediately, so its options must be authorable up front; a cross-brush
+    // bridge previews pending with the count live until Apply).
+    const bool pendingBridge = Objects.HasPendingBridge && Objects.HasPendingBridge();
+    if (!pendingBridge && !BridgeOptionsOpen)
+    {
+        if (flow.Button("Bridge..."))
+            BridgeOptionsOpen = true;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Drop the previewed bridge.  [Ctrl+Z]");
+            ImGui::SetTooltip("Span two selected edge runs with quads.\n"
+                              "More segments bow the bridge for curved hallways.");
+    }
+    else
+    {
+        ImGui::SeparatorText("Bridge");
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragInt("Segments", &BridgeSegments, 0.25f, 1, 64))
+        {
+            BridgeSegments = std::clamp(BridgeSegments, 1, 64);
+            // A pending bridge previews the new count live.
+            if (pendingBridge && Objects.SetBridgeSegments)
+                Objects.SetBridgeSegments(BridgeSegments);
+        }
+        if (!pendingBridge)
+        {
+            if (ImGui::Button("Bridge"))
+            {
+                if (Objects.BridgeEdges)
+                {
+                    Objects.BridgeEdges(BridgeSegments);
+                }
+                else
+                {
+                    MeshEditParams params;
+                    params.BridgeSegments = BridgeSegments;
+                    if (auto command = MeshEdit.ApplyVerb(Target(), Selection.GetSnapshot(), MeshEditVerb::BridgeEdges, params))
+                    {
+                        Commands.Execute(std::move(command));
+                        Selection.ClearMeshElementSelections();
+                    }
+                }
+                // A same-brush bridge commits right here; only a cross-brush
+                // preview keeps the options open (for the live count + Apply).
+                if (!(Objects.HasPendingBridge && Objects.HasPendingBridge()))
+                    BridgeOptionsOpen = false;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Bridge the selected edge runs.\n"
+                                  "A cross-brush bridge previews until Apply.");
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel##bridge"))
+                BridgeOptionsOpen = false;
+        }
+        else
+        {
+            if (ImGui::Button("Apply##bridge") && Objects.CommitBridge)
+            {
+                Objects.CommitBridge();
+                BridgeOptionsOpen = false;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Commit the previewed bridge brush.");
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel##bridge2") && Objects.CancelBridge)
+            {
+                Objects.CancelBridge();
+                BridgeOptionsOpen = false;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Drop the previewed bridge.  [Ctrl+Z]");
+        }
     }
 }
 
@@ -519,6 +605,11 @@ void ToolPropertiesPanel::DrawBrushProperties()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Inside-out brush (all normals flipped), for rooms seen from within");
+
+    // A material picked while the brush is pending restyles the preview: the
+    // uncommitted brush should always carry the current active material.
+    if (pending && brush->PendingMaterialStale(tools->GetContext()))
+        changed = true;
 
     if (changed && pending)
         brush->RefreshPending(tools->GetContext());

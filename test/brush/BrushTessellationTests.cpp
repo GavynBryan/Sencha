@@ -197,3 +197,40 @@ TEST(BrushTessellate, CollinearLoopVerticesEmitNoInvertedTriangles)
     }
     EXPECT_NEAR(area, 4.0f, 1e-4f);
 }
+
+TEST(BrushTessellate, SoftEdgeSharesVertexNormalsAcrossItsFaces)
+{
+    BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    // Soften one edge: the two faces meeting there must emit the averaged
+    // normal at that edge's vertices, and the hard faces stay flat.
+    const std::uint32_t a = box.Faces[0].Loop[0];
+    const std::uint32_t b = box.Faces[0].Loop[1];
+    BrushSetEdgeSoft(box, a, b, true);
+
+    const Vec3d pa = box.Vertices[a].Position;
+    const Vec3d pb = box.Vertices[b].Position;
+    bool sawBlended = false;
+    for (const CollectedFace& face : Collect(box, Transform3f::Identity()))
+        for (const BrushTriVertex& v : face.Vertices)
+        {
+            if ((v.Position - pa).SqrMagnitude() > 1e-8f
+                && (v.Position - pb).SqrMagnitude() > 1e-8f)
+                continue;
+            const bool axisAligned = std::abs(v.Normal.X) > 0.99f
+                                  || std::abs(v.Normal.Y) > 0.99f
+                                  || std::abs(v.Normal.Z) > 0.99f;
+            if (!axisAligned)
+            {
+                EXPECT_NEAR(v.Normal.Magnitude(), 1.0f, 1e-4f);
+                sawBlended = true;
+            }
+        }
+    EXPECT_TRUE(sawBlended);
+
+    // Hard mesh control: every emitted normal stays axis-aligned.
+    const BrushMesh hard = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    for (const CollectedFace& face : Collect(hard, Transform3f::Identity()))
+        for (const BrushTriVertex& v : face.Vertices)
+            EXPECT_TRUE(std::abs(v.Normal.X) > 0.99f || std::abs(v.Normal.Y) > 0.99f
+                        || std::abs(v.Normal.Z) > 0.99f);
+}

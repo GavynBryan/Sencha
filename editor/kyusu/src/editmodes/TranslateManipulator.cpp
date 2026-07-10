@@ -31,6 +31,10 @@ constexpr float kAxisHitPixels = 12.0f;
 constexpr int kAxisX = 1;
 constexpr int kAxisY = 2;
 constexpr int kAxisZ = 3;
+// The center square: dragging it moves in the view plane (all axes at once).
+constexpr int kCenterPart = 4;
+constexpr float kCenterHitPixels = 14.0f;
+constexpr float kCenterBoxPixels = 12.0f;
 
 // Axis directions come from the session-resolved gizmo frame (world, grid, or
 // local space); the part id indexes into it.
@@ -434,6 +438,98 @@ private:
     std::unique_ptr<ITranslateApply> Apply;
 };
 
+// Center drag: free translation in the view plane through the pivot. Grid
+// snapping works per grid-frame axis exactly like the single-axis drag: each
+// component snaps so its on-lattice reference coordinate (an on-lattice
+// selection vertex when one exists, else the pivot) lands back on a grid
+// line, so on-grid geometry stays on-grid. An element snap target overrides
+// with the picked point.
+class PlaneTranslateDrag : public IInteraction
+{
+public:
+    PlaneTranslateDrag(Vec3d pivot, Vec3d planeNormal, Vec3d startHit,
+                       const std::array<Vec3d, 3>& snapAxes,
+                       const std::array<double, 3>& snapCoords,
+                       std::unique_ptr<ITranslateApply> apply)
+        : Pivot(pivot), Normal(planeNormal), StartHit(startHit)
+        , SnapAxes(snapAxes), SnapCoords(snapCoords), Apply(std::move(apply)) {}
+
+    void OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
+    {
+        if (UpdateDelta(ctx, viewport, pointer.Position))
+        {
+            Apply->Preview(LastDelta);
+            DragReadout& readout = ctx.Overlay.Readout;
+            readout.From = Pivot;
+            readout.To = Pivot + LastDelta;
+            readout.Text = FormatUnits(LastDelta.Magnitude());
+            readout.Viewport = viewport.Id;
+        }
+    }
+
+    void OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override
+    {
+        UpdateDelta(ctx, viewport, pointer.Position);
+        Apply->Commit(LastDelta);
+        ctx.Overlay.Readout.Clear();
+    }
+
+    void OnCancel(ToolContext& ctx) override
+    {
+        Apply->Cancel();
+        ctx.Overlay.Readout.Clear();
+    }
+
+private:
+    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
+    {
+        const std::optional<Vec3d> hit = GizmoMath::RayPlanePoint(
+            ViewportProjection(viewport).RayThroughPixel(pos), Pivot, Normal);
+        if (!hit.has_value())
+            return false;
+
+        Vec3d delta = *hit - StartHit;
+        const GridPlane grid = viewport.GetGrid(ctx.Grid);
+        if (grid.SnapEnabled)
+        {
+            if (ctx.Grid.Target != SnapTarget::Grid)
+            {
+                if (const std::optional<Vec3d> target = ElementSnapPoint(ctx, viewport, pos))
+                    delta = *target - Pivot;
+            }
+            else if (grid.Spacing > 0.0f)
+            {
+                Vec3d snapped{ 0.0f, 0.0f, 0.0f };
+                for (std::size_t i = 0; i < SnapAxes.size(); ++i)
+                {
+                    const double raw = delta.Dot(SnapAxes[i]);
+                    // An axis the view plane cannot move along must not get
+                    // dragged onto the lattice sideways; snap only where the
+                    // plane actually moves.
+                    if (std::abs(SnapAxes[i].Dot(Normal)) > 0.999f)
+                    {
+                        snapped += SnapAxes[i] * static_cast<float>(raw);
+                        continue;
+                    }
+                    snapped += SnapAxes[i] * static_cast<float>(GizmoMath::SnapAxisOffset(
+                        raw, SnapCoords[i], grid.Origin.Dot(SnapAxes[i]), grid.Spacing));
+                }
+                delta = snapped;
+            }
+        }
+        LastDelta = delta;
+        return true;
+    }
+
+    Vec3d Pivot;
+    Vec3d Normal;
+    Vec3d StartHit;
+    std::array<Vec3d, 3> SnapAxes;   // grid frame: U, V, and their normal
+    std::array<double, 3> SnapCoords; // per-axis snap reference coordinates
+    Vec3d LastDelta = {};
+    std::unique_ptr<ITranslateApply> Apply;
+};
+
 std::unique_ptr<ITranslateApply> MakeObjectApply(const ManipulatorContext& ctx)
 {
     // Move every selected entity — one drag, one undo, all of them.
@@ -513,6 +609,32 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
             out.Lines.push_back({ .A = ring[c], .B = ring[(c + 1) % ring.size()], .Color = color });
         }
     }
+
+    // Center square (view-facing): dragging it moves in the view plane.
+    {
+        Vec3d right;
+        Vec3d up;
+        if (viewport.Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+        {
+            right = viewport.Camera.GetOrthoRightVector();
+            up = viewport.Camera.GetOrthoUpVector();
+        }
+        else
+        {
+            right = viewport.Camera.GetRightVector();
+            up = viewport.Camera.GetUpVector();
+        }
+        const float half = ViewportProjection(viewport).WorldSizeForPixels(*pivot, kCenterBoxPixels) * 0.5f;
+        const Vec4 color = (hoveredPart == kCenterPart) ? EditorTheme::Hover : EditorTheme::Handle;
+        const std::array<Vec3d, 4> corners = {
+            *pivot + right * half + up * half,
+            *pivot - right * half + up * half,
+            *pivot - right * half - up * half,
+            *pivot + right * half - up * half,
+        };
+        for (std::size_t c = 0; c < corners.size(); ++c)
+            out.Lines.push_back({ .A = corners[c], .B = corners[(c + 1) % corners.size()], .Color = color });
+    }
 }
 
 int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
@@ -546,6 +668,15 @@ int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
             best = axis;
         }
     }
+
+    // The center square wins ties against the axis stalks that meet in it.
+    {
+        const float dx = screenPos.x - origin->Pixel.x;
+        const float dy = screenPos.y - origin->Pixel.y;
+        const float toCenter = std::sqrt(dx * dx + dy * dy);
+        if (toCenter <= kCenterHitPixels && (best == 0 || toCenter <= bestPixels))
+            best = kCenterPart;
+    }
     return best;
 }
 
@@ -557,7 +688,7 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     ModifierFlags modifiers) const
 {
     const Vec3d axisDir = AxisDirection(ctx, part);
-    if (part == 0 || axisDir.SqrMagnitude() == 0.0f)
+    if (part == 0 || (part != kCenterPart && axisDir.SqrMagnitude() == 0.0f))
         return nullptr;
 
     const MeshElementKind kind = ctx.Service.GetElementKind();
@@ -565,10 +696,24 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     if (!pivot.has_value())
         return nullptr;
 
-    const std::optional<double> startParam =
-        GizmoMath::ClosestAxisParam(*pivot, axisDir, ViewportProjection(viewport).RayThroughPixel(screenPos));
-    if (!startParam.has_value())
-        return nullptr;
+    std::optional<double> startParam;
+    std::optional<Vec3d> planeStart;
+    Vec3d planeNormal{};
+    if (part == kCenterPart)
+    {
+        const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(screenPos);
+        planeNormal = ray.Direction;
+        planeStart = GizmoMath::RayPlanePoint(ray, *pivot, planeNormal);
+        if (!planeStart.has_value())
+            return nullptr;
+    }
+    else
+    {
+        startParam = GizmoMath::ClosestAxisParam(
+            *pivot, axisDir, ViewportProjection(viewport).RayThroughPixel(screenPos));
+        if (!startParam.has_value())
+            return nullptr;
+    }
 
     // Grid-origin and pivot edit retarget the drag off the selection. Otherwise
     // Shift turns the drag into duplicate (object) or extrude (face/edge); vertex
@@ -591,6 +736,26 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     // Grid-origin and pivot edits move a point, so the pivot is the right snap
     // reference; selection drags prefer an on-lattice selection vertex so
     // on-grid geometry stays on-grid.
+    if (part == kCenterPart)
+    {
+        const GridPlane grid = viewport.GetGrid(ctx.Grid);
+        const std::array<Vec3d, 3> snapAxes = {
+            grid.AxisU, grid.AxisV, grid.AxisU.Cross(grid.AxisV).Normalized(),
+        };
+        std::array<double, 3> snapCoords{};
+        for (std::size_t i = 0; i < snapAxes.size(); ++i)
+        {
+            snapCoords[i] = pivot->Dot(snapAxes[i]);
+            if (ctx.EditGridOrigin || ctx.Pivot.Editing)
+                continue;
+            if (const std::optional<double> vertexCoord = OnLatticeVertexCoord(
+                    ctx, kind, snapAxes[i], grid.Origin.Dot(snapAxes[i]), grid.Spacing))
+                snapCoords[i] = *vertexCoord;
+        }
+        return std::make_unique<PlaneTranslateDrag>(*pivot, planeNormal, *planeStart,
+                                                    snapAxes, snapCoords, std::move(apply));
+    }
+
     double snapCoord = pivot->Dot(axisDir);
     if (!ctx.EditGridOrigin && !ctx.Pivot.Editing)
     {
@@ -599,6 +764,5 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
                 OnLatticeVertexCoord(ctx, kind, axisDir, grid.Origin.Dot(axisDir), grid.Spacing))
             snapCoord = *vertexCoord;
     }
-
     return std::make_unique<TranslateDrag>(*pivot, axisDir, *startParam, snapCoord, std::move(apply));
 }

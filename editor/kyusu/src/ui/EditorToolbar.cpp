@@ -256,12 +256,11 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(96.0f);
-    static const float kGridSizes[] = { 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f, 32.0f, 64.0f };
     char preview[32];
     std::snprintf(preview, sizeof(preview), ICON_FA_BORDER_ALL "  %g", Grid.Spacing);
     if (ImGui::BeginCombo("##gridsize", preview))
     {
-        for (float size : kGridSizes)
+        for (float size : GridSettings::kSpacingSteps)
         {
             char item[16];
             std::snprintf(item, sizeof(item), "%g", size);

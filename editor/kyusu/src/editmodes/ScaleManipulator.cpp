@@ -30,6 +30,10 @@ namespace
 constexpr float kStalkPixels = 80.0f;   // screen-constant axis length
 constexpr float kBoxPixels = 6.0f;      // end-box half size
 constexpr float kHitPixels = 10.0f;     // cursor-to-handle tolerance
+// The uniform-scale center box: larger than the axis end boxes, both drawn
+// and hit, so the highest-traffic handle is not the hardest one to grab.
+constexpr float kCenterBoxPixels = 10.0f;
+constexpr float kCenterHitPixels = 14.0f;
 constexpr float kMinFactor = 0.01f;     // never invert/collapse the geometry
 constexpr int kUniformPart = 4;
 
@@ -424,7 +428,7 @@ void ScaleManipulator::BuildVisual(const ManipulatorContext& ctx,
 
     // Center box for uniform scale.
     const Vec4 centerColor = (hoveredPart == kUniformPart) ? EditorTheme::Hover : EditorTheme::Handle;
-    AppendBox(out, *pivot, projection.WorldSizeForPixels(*pivot, kBoxPixels), centerColor);
+    AppendBox(out, *pivot, projection.WorldSizeForPixels(*pivot, kCenterBoxPixels), centerColor);
 }
 
 int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
@@ -463,7 +467,7 @@ int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
     if (const std::optional<ProjectedPoint> center = projection.WorldToPixel(*pivot))
     {
         const float toCenter = ScreenDistance(screenPos, center->Pixel);
-        if (toCenter <= bestPixels)
+        if (toCenter <= kCenterHitPixels && (best == 0 || toCenter <= bestPixels))
         {
             bestPixels = toCenter;
             best = kUniformPart;

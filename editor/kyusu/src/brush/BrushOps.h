@@ -83,6 +83,48 @@ struct BrushOps
                                                std::uint32_t a, std::uint32_t b, Vec3d offset,
                                                const FaceMaterial* inherit = nullptr);
 
+    // Extrude a set of faces along their own normals as one shell: every
+    // selected cap translates `distance` along the blended normal at each of
+    // its vertices (a vertex shared by several selected faces moves along
+    // their normalized normal sum, so an adjacent ring extrudes together
+    // without tearing), and side walls are minted only on the region
+    // boundary. Positive distance pushes outward along the normals, negative
+    // pulls inward. Wall materials continue the unselected neighbor across
+    // each boundary edge, with UV axes re-derived per wall normal (the
+    // ExtrudeFaceAlong rule). Invalid or duplicate face indices are ignored;
+    // zero distance or an empty set is a no-op. Repairs the result.
+    [[nodiscard]] static BrushMesh ExtrudeFacesAlongNormals(const BrushMesh& mesh,
+                                                            std::span<const std::uint32_t> faces,
+                                                            float distance);
+
+    // Directional region extrude: every selected cap translates by the same
+    // `offset` (the gizmo drag vector) as one shell. Shares the region rules
+    // of ExtrudeFacesAlongNormals: interior edges between selected faces stay
+    // internal topology (no walls); only the region boundary is walled. This
+    // is the multi-face form the gizmo extrude must use; composing
+    // ExtrudeFaceAlong per face would sweep the shared edges into internal
+    // walls. Repairs the result.
+    [[nodiscard]] static BrushMesh ExtrudeFacesAlong(const BrushMesh& mesh,
+                                                     std::span<const std::uint32_t> faces,
+                                                     Vec3d offset);
+
+    // Bevel the selected undirected edges: each edge is replaced by a chamfer
+    // strip of `segments` quads spanning `width` world units into each
+    // adjacent face, with intermediate rows on a circular blend between the
+    // two face planes (segments = 1 is a flat chamfer). Selected edges must
+    // be manifold (exactly two faces) and not near-coplanar, and may chain
+    // through shared vertices into runs and closed rings (a box rim bevels
+    // watertight); a vertex incident to more than two selected edges (a
+    // corner fan) is refused. Faces neither side of a beveled edge that touch
+    // a chain-end vertex absorb the profile rows into their loop (the cap
+    // ngon). Strip materials continue each edge's first face with UV axes
+    // re-derived per quad normal. Returns the mesh unchanged on refusal.
+    // Repairs the result.
+    [[nodiscard]] static BrushMesh BevelEdges(const BrushMesh& mesh,
+                                              std::span<const std::array<std::uint32_t, 2>> edges,
+                                              float width,
+                                              int segments);
+
     // Remove a face, opening the solid (allowed during authoring).
     [[nodiscard]] static BrushMesh DeleteFace(const BrushMesh& mesh, std::uint32_t face);
 
@@ -258,10 +300,12 @@ struct BrushOps
     // the cuts themselves. A rect side flush with the face edge opens a notch
     // instead of walling: the strip the loops cut through that side's
     // bordering face is removed and the wall omitted (requires box-like flat
-    // rectangular sides). Returns the mesh unchanged when no eligible opposite
-    // face exists, the loops do not reach it cleanly (e.g. blocked by non-quad
-    // side topology), the rect covers the face, or only an opposite pair of
-    // sides is flush (the channel would split the brush in two).
+    // rectangular sides). On an OPEN mesh (a plane) with no opposite face the
+    // pierce degrades to cutting the loops and removing the bounded rect face
+    // (a hole). Returns the mesh unchanged when a closed solid has no eligible
+    // opposite face, the loops do not reach it cleanly (e.g. blocked by
+    // non-quad side topology), the rect covers the face, or only an opposite
+    // pair of sides is flush (the channel would split the brush in two).
     [[nodiscard]] static BrushMesh InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint32_t face,
                                                                Vec2d rectMin, Vec2d rectMax);
 
@@ -289,8 +333,10 @@ struct BrushOps
     // tolerance) opens a notch instead of walling: the bordering face on that
     // side is cut so the channel is open (requires box-like flat rectangular
     // sides bordering both caps; source and target must be flush on matching
-    // sides). Returns the mesh unchanged when no eligible opposite face
-    // exists, the projected rectangle is not aligned to that face's frame, the
+    // sides). On an OPEN mesh (a plane) with no opposite face the pierce
+    // degrades to CarveFaceRect with the center face removed (a hole).
+    // Returns the mesh unchanged when a closed solid has no eligible opposite
+    // face, the projected rectangle is not aligned to that face's frame, the
     // rect covers the face, or only an opposite pair of sides is flush (the
     // channel would split the brush in two).
     [[nodiscard]] static BrushMesh CarveFaceRectThrough(const BrushMesh& mesh, std::uint32_t face,

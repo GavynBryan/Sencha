@@ -31,6 +31,7 @@ enum class MeshEditVerb : uint8_t
     WeldVertices,
     SnapVerticesToGrid,
     BridgeEdges,
+    SetEdgeSoftness,
 };
 
 struct MeshEditParams
@@ -45,6 +46,7 @@ struct MeshEditParams
     bool LoopCut = true;       // InsertEdgeLoop: full loop (true) or single edge (false)
     float WeldDistance = 0.1f; // WeldVertices: max merge distance (mesh-local units)
     int BridgeSegments = 1;    // BridgeEdges: quad rows spanning the gap (>1 bows the bridge)
+    bool Soften = true;        // SetEdgeSoftness: true marks the edges soft, false hard
     // SnapVerticesToGrid: the world grid frame to quantize against (mirrors
     // GridSettings; N = AxisV x AxisU completes the lattice).
     Vec3d GridOrigin = {};

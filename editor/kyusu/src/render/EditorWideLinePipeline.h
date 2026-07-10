@@ -6,11 +6,12 @@
 
 #include <span>
 #include <string_view>
-#include <vector>
 
 // One world-space line segment with a screen-space pixel width. Unlike the 1px
 // LINE_LIST EditorLinePipeline, the wide-line pipeline expands each segment into a
 // camera-facing quad, so strokes have an exact pixel width and analytic AA.
+// Also the GPU instance record: the vertex shader expands each segment into six
+// vertices, so the upload is one of these per segment (no CPU expansion).
 struct EditorLineSegment
 {
     Vec3d A;
@@ -19,20 +20,11 @@ struct EditorLineSegment
     float WidthPx = 1.0f; // full stroke width in pixels
 };
 
-// Per-corner vertex the wide-line shader expands. Carries both endpoints so the
-// vertex shader can build the screen-space perpendicular, plus the side and width.
-struct EditorWideLineVertex
-{
-    Vec3d Position;          // this endpoint
-    Vec3d Other;             // opposite endpoint
-    Vec4  Color;
-    float HalfWidthPx = 0.0f;
-    float Side = 0.0f;       // -1 or +1
-};
-
-// Screen-space expanded line pipeline: a TRIANGLE_LIST, alpha-blended configuration
-// of the shared EditorImmediatePipeline. Producers gather EditorLineSegment lists
-// and call Submit; the pipeline expands each segment to two triangles on the CPU.
+// Screen-space expanded line pipeline: an instanced TRIANGLE_LIST, alpha-blended
+// configuration of the shared EditorImmediatePipeline. Producers gather
+// EditorLineSegment lists and call Submit; each segment is one instance and the
+// vertex shader builds the ribbon quad. Oversized submissions are split into
+// scratch-sized chunks rather than dropped.
 class EditorWideLinePipeline
 {
 public:
@@ -47,8 +39,5 @@ public:
     void Teardown();
 
 private:
-    Logger* Log = nullptr;
-    bool LoggedOversizedSubmit = false;
-    EditorImmediatePipeline<EditorWideLineVertex> Pipeline;
-    std::vector<EditorWideLineVertex> Expanded; // reused per Submit to avoid per-frame allocs
+    EditorImmediatePipeline<EditorLineSegment> Pipeline;
 };

@@ -130,6 +130,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     BloomParamsCache.Radius    = readFloatCvar("editor.bloom.radius", 2.0f);
 
     Targets.BeginFrame(frame.FrameInFlightIndex);
+    Highlight.BeginFrame();
 
     // Build the scene draw queues once per frame; the per-viewport camera is applied at
     // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush

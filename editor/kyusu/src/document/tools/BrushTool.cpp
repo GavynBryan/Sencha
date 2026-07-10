@@ -209,6 +209,7 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
     BrushMesh mesh = BuildPendingMesh(ctx.BrushCreate, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
     ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
+    PendingMaterial = ctx.ActiveMaterial.Active;
     PendingEntity = ctx.Scene.CreateBrushFromMesh(transform, std::move(mesh));
     ctx.Preview.Clear();
     ctx.Selection.SetSelection({
@@ -262,6 +263,7 @@ void BrushTool::RefreshPending(ToolContext& ctx)
     BrushMesh mesh = BuildPendingMesh(ctx.BrushCreate, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
     ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
+    PendingMaterial = ctx.ActiveMaterial.Active;
 
     // Only a primitive-class depth change moves the entity beyond the adopted
     // recenter, and relatively, so the rest side stays where the drag put it.
@@ -276,6 +278,13 @@ void BrushTool::RefreshPending(ToolContext& ctx)
     if (moveEntity)
         ctx.Scene.SetTransform(PendingEntity, moved);
     ctx.Scene.SetBrushMesh(PendingEntity, std::move(mesh));
+}
+
+bool BrushTool::PendingMaterialStale(const ToolContext& ctx) const
+{
+    return State == BrushToolState::Pending
+        && ctx.ActiveMaterial.Active.IsValid()
+        && ctx.ActiveMaterial.Active.Path != PendingMaterial.Path;
 }
 
 void BrushTool::CommitPending(ToolContext& ctx)

@@ -111,6 +111,17 @@ JsonValue BrushMeshToJson(const BrushMesh& mesh)
     JsonValue::Object obj;
     obj.emplace_back("vertices", JsonValue(std::move(vertices)));
     obj.emplace_back("faces", JsonValue(std::move(faces)));
+    if (!mesh.SoftEdges.empty())
+    {
+        JsonValue::Array soft;
+        soft.reserve(mesh.SoftEdges.size() * 2);
+        for (const std::array<std::uint32_t, 2>& edge : mesh.SoftEdges)
+        {
+            soft.push_back(JsonValue(static_cast<int>(edge[0])));
+            soft.push_back(JsonValue(static_cast<int>(edge[1])));
+        }
+        obj.emplace_back("soft_edges", JsonValue(std::move(soft)));
+    }
     return JsonValue(std::move(obj));
 }
 
@@ -149,6 +160,15 @@ BrushMesh BrushMeshFromJson(const JsonValue& value)
             }
             mesh.Faces.push_back(std::move(face));
         }
+    }
+    // Flat pair list [a0, b0, a1, b1, ...]; absent in older documents (all hard).
+    if (const JsonValue* soft = value.Find("soft_edges"); soft && soft->IsArray())
+    {
+        const JsonValue::Array& a = soft->AsArray();
+        for (std::size_t i = 0; i + 1 < a.size(); i += 2)
+            mesh.SoftEdges.push_back(BrushSoftEdgeKey(
+                static_cast<std::uint32_t>(a[i].AsNumber()),
+                static_cast<std::uint32_t>(a[i + 1].AsNumber())));
     }
     return mesh;
 }
