@@ -81,9 +81,15 @@ wire. (b) Validation of requests is the same data that drives gameplay (AbilityK
 tag/cost checks, `MovementProfile` limits), so server-side validation is the
 simulation itself, not a parallel rule set (directive 3). (c) Interest is zone-scoped,
 so a client is never told about state outside its granted zones, capping wallhack
-class leaks at zone granularity. On top of that: hardened pure decoders with fuzz
-tests, a stateless handshake cookie, rate and byte budgets, and transport encryption
-as an owner decision (Section 10).
+class leaks at zone granularity. The trust boundary is symmetric: the client treats
+authority bytes as hostile too, and the wire carries values, never code, content,
+or commands, so a compromised server has no channel through which to run anything
+on a client; server build identity is graded honestly (mutual verification always,
+build signatures if server binaries stay first-party, platform attestation as the
+only strong form) and client safety never depends on identity claims
+(Section 10.4). On top of that: hardened pure decoders with fuzz tests in both
+directions, a stateless handshake cookie, rate and byte budgets, and transport
+encryption as an owner decision (Section 10).
 
 **5. Cvars: one new enforced axis (who may write in a session), one existing axis
 finished (Cheat), and the editor question dissolves.** The console already has the
@@ -257,7 +263,7 @@ grounds plus whole-world state capture per tick. It stays a non-goal (Section 13
   across worker counts and across runs, the same way `ZoneDemandTests` asserts
   identical demand records. Netcode inherits the engine's strongest testing idiom.
 - **Cheap desync detection.** Authority hashes replicated component state per zone
-  at intervals; clients hash their applied view and compare (Section 10.6). Any
+  at intervals; clients hash their applied view and compare (Section 10.7). Any
   mismatch is a replication defect caught in development, not a mystery.
 
 ### 2.3 Session roles and topologies
@@ -363,7 +369,7 @@ lands first (overlay or replication) builds it; the other consumes it. Minting t
 schemes is the overview's stop-condition ("a second id scheme") and would be this
 plan's first architectural defect.
 
-### 3.5 Posture rules for scripting, AI, and CI
+### 3.5 Posture rules for scripting, AI, the HUD, and CI
 
 - **Scripting (Track A item 3):** scripts that mutate authoritative state run inside
   fixed-tick systems on the authority; client-side scripts are presentation-only.
@@ -373,9 +379,18 @@ plan's first architectural defect.
 - **AI (Track A item 7):** perception facts and behavior selections are components
   and tags (already the plan), which makes AI state replicate and save for free.
   Nothing extra to build; just do not violate 3.2.
+- **Game UI/HUD (Track A item 9):** the HUD binds component fields through
+  reflection (its own plan), and in a session those fields are simply the client's
+  replicated (or locally predicted) view, so the HUD gains no networking awareness
+  at all: HUD rendering is always client-side, HUD truth is always authority-side,
+  and there is no HUD protocol. Per-player private readouts (cooldowns, resource
+  internals) ride the `.OwnerOnly()` field annotation (Section 6.2), which keeps
+  them off other clients' wires. A headless host runs no HUD because nothing
+  registers one there. The posture rule item 9 inherits: the HUD reads components,
+  never system internals (rule 3.2 again).
 - **CI and determinism gates (Track E items 1 and 2):** these stop being
   quality-of-life and become networking prerequisites. The serial-vs-parallel
-  state-hash gate is the same machinery as desync detection (Section 10.6); build it
+  state-hash gate is the same machinery as desync detection (Section 10.7); build it
   once there.
 - **Randomness:** gameplay currently uses none (runtime mints no random ids,
   overview rule 9). When seeded randomness arrives (scripting item), it must be a
@@ -459,7 +474,7 @@ Above the seam, `NetSession` implements exactly two channel classes over datagra
 
 Scope honesty: this is a small, well-understood reliability layer for 2..8 peers and
 kilobyte-scale control traffic, not a general congestion-controlled stream; a
-per-peer token-bucket send budget (Section 10.5) stands in for congestion control at
+per-peer token-bucket send budget (Section 10.6) stands in for congestion control at
 this scale. MTU is pinned conservatively (1200 bytes) with fragmentation only on the
 reliable channel. If the owner prefers a proven dependency for this layer instead,
 the seam is where it swaps in; the recommendation is to own it, matching the
@@ -484,7 +499,11 @@ Join flow, all messages length-prefixed and cap-checked (Section 10.2):
    `LoadManifest` time over the cooked manifest bytes plus each zone's cooked scene
    and collision bytes as loaded; the existing `content_hash` is a cook-freshness
    signal, not a content identity (Section 1), so the session mints its own.
-   Mismatch refuses with a reason string.
+   Mismatch refuses with a reason string. The gate is mutual: the server's accept
+   carries its own identity tuple and the client refuses a mismatch the same way,
+   before applying any state (Section 10.4 grades what identity can and cannot
+   promise; the optional build signature slots into this exchange when the hosting
+   model justifies it, Open question 10).
 3. **Table sync.** The wire speaks compact ids; the handshake makes them safe:
    - **Gameplay tags and attributes:** ids are per-World registration-order values
      (Section 1). The authority sends its ordered name list hash; matching binaries
@@ -715,6 +734,20 @@ Two operating modes, both shipped, selected by cvar:
   tested against.
 - **Prediction mode** (Section 7.4).
 
+What latency does and does not affect, stated plainly, because "clients send only
+inputs" is a statement about wire authority, not about what the client computes.
+Remote entities render from the interpolation buffer, so their motion is smooth at
+any RTT; latency only ages the view (other players appear interp-delay plus
+half-RTT in the past), and it is jitter beyond the buffer, not latency itself, that
+stutters. The local pawn in prediction mode simulates on the client's own inputs
+the tick they are pressed, so own-movement feel carries zero added latency at any
+RTT; latency's remaining cost is confined to corrections when the authority
+disagrees (something pushed the pawn that the client could not yet know about) and
+to the round trip before the player's actions affect shared state (a door opens
+when the authority says so). Input-delay mode is the one configuration where the
+player's own movement feels the wire, which is why it is the LAN and couch default
+and prediction is the internet answer.
+
 Requests that are not per-tick movement (interact, purchase, drop) travel reliable as
 intent records; the authority validates them with the same data gameplay already
 uses: AbilityKit activation (tag query, cost) is the validator for ability requests,
@@ -930,16 +963,24 @@ read identical values for any given tick, preserving prediction replay.
 
 In scope: a malicious or compromised client (forged, malformed, replayed, or flooded
 packets; impossible inputs; request spam; information harvesting), an on-path
-observer (LAN or internet), and a griefing peer (DoS attempts against host
-bandwidth or CPU). Out of scope for the engine: a malicious authority (players
-choose whom they join; a cheating host is a social problem), platform-level bans,
-and anti-tamper of the client binary (an engine cannot promise it; the design
-instead makes client tampering unable to affect other players' state).
+observer (LAN or internet), a griefing peer (DoS attempts against host bandwidth or
+CPU), and a malicious or compromised authority attacking client integrity: crafted
+messages aimed at client code execution, crashes, or resource exhaustion
+(Section 10.4). Out of scope for the engine: an authority lying about gameplay
+(deciding game state is what an authority is; dishonest hosting is bounded to the
+session, and the trust signals in Section 10.4 plus the player's choice of whom to
+join are the mitigations), platform-level bans, and anti-tamper of the client binary
+(an engine cannot promise it; the design instead makes client tampering unable to
+affect other players' state).
 
 ### 10.2 The decode boundary
 
 Every byte from the wire crosses exactly one boundary: `NetProtocol`'s pure
-decoders. Rules, enforced by review and tests:
+decoders. The boundary is symmetric: the client decodes authority bytes under the
+same rules, and the client-facing surface is the larger one (baselines, deltas, and
+table syncs are the most complex messages in the protocol), so the fuzz corpus
+weights authority-to-client messages accordingly. Strikes on a client disconnect it
+from the offending session. Rules, enforced by review and tests:
 
 - Length-prefixed everything; every count validated against remaining bytes and
   against a per-message-type cap table (max peers, max zones per grant, max
@@ -974,7 +1015,63 @@ outcomes. Consequences, enumerated because they are the anti-cheat surface:
   culling of replication is a recorded non-goal until a target game demonstrates
   the need.
 
-### 10.4 Transport privacy and authenticity (owner decision)
+### 10.4 Client integrity against a hostile authority
+
+Joining a session must never hand the server the client machine. The defense is
+structural first, then the Section 10.2 hardening discipline pointed the other way:
+
+- **The wire carries values, never code and never content.** No message transfers a
+  file, an asset, a script, a shader, or a console command. Both sides already own
+  identical cooked content (the world identity gate, Section 5); replication
+  payloads are field values for schema-known component types; table syncs are
+  grammar-validated dotted names; cvar syncs are values for cvars the client itself
+  flagged `Replicated`, passed through the client's own validator and range checks
+  before commit. A compromised server that wants to run something on a client has
+  no channel to send it through. If server-provided content (community maps, server
+  mods) ever becomes a product decision, it arrives as its own reviewed design with
+  signing and sandboxing requirements, never as a relaxation of this invariant
+  (recorded trigger; see the matching non-goal).
+- **No remote execution surface.** The protocol defines no "run command", "set
+  arbitrary cvar", or "load path" message. Cvar sync rejects names the client has
+  not flagged `Replicated` (strike); reason and display strings are length-capped
+  and rendered as text, never interpreted.
+- **Apply-layer validation.** Decoded values are validated again where they touch
+  the world: unquantized continuous floats must be finite (quantized fields are
+  bounded by construction, since dequantization cannot produce NaN or out-of-range
+  values, and encodings derive from the client's local schema, never from the
+  wire); enum payloads must be in range; entity references must resolve in the
+  identity map, with spawns applied before references within a message; replicated
+  parent links are cycle-checked before the transform system sees them. A malformed
+  message is never partially applied; violations strike and disconnect.
+- **Bounded client resources.** Grant counts, per-zone entity caps, snapshot ring
+  depth, reliable-window sizes, and event rates bound what a hostile authority can
+  make a client allocate; exceeding a cap is a protocol violation, not a growth
+  path.
+- **Session identity is mutual, and it is an assertion, not a proof.** The
+  handshake's compatibility gate runs both directions: the client refuses an
+  authority whose reported protocol, engine, fingerprint, or world identity differs
+  from its own (Section 5). That stops accidents and downgrade confusion. It cannot
+  prove the server runs unmodified code: any self-reported identity, hashed or
+  signed by a key the attacker also possesses, can be forged by a machine the
+  attacker controls. Client safety therefore never depends on identity claims; the
+  mechanisms above hold against arbitrary bytes from a fully hostile peer.
+- **Server build identity, graded honestly.** Three grades, increasing strength and
+  cost. (1) The mutual identity gate above: compatibility and accident prevention,
+  ships in G1 regardless. (2) A build signature: the authority signs its identity
+  tuple plus the handshake challenge; the client verifies against a public key
+  shipped with the game and surfaces an "official build" trust signal. Meaningful
+  when dedicated server binaries stay in the developer's hands, because the private
+  key never leaves the developer's infrastructure; only a speed bump once server
+  binaries are publicly distributed, because a distributed binary's embedded key
+  can be extracted. The decision therefore rides the hosting model (Open questions
+  4 and 10). (3) Remote attestation (platform-run servers, or hardware-backed
+  attestation where a platform provides it) is the only strong form and is a
+  platform-service feature behind the existing auth-token seam (recorded trigger: a
+  shipping target on a platform that offers it). At every grade, the trust signal
+  gates UI and matchmaking presentation, never the hardening: the client stays safe
+  against a server that fails or fakes every identity check.
+
+### 10.5 Transport privacy and authenticity (owner decision)
 
 Recommendation: encrypt and authenticate all post-handshake traffic with libsodium
 (XChaCha20-Poly1305 AEAD; keys from an X25519 exchange folded into the Section 5
@@ -987,7 +1084,7 @@ behind `net/` the way Jolt hides behind physics. The genuinely open question is
 dependency appetite, not design (Open question 3). Plaintext LAN mode remains a
 cvar for development capture and CI determinism diffs.
 
-### 10.5 Availability
+### 10.6 Availability
 
 The cookie handshake (Section 5) kills spoofed-source floods and amplification
 (responses before verification are never larger than requests). Post-admission:
@@ -998,7 +1095,7 @@ rejection at the transport, and no per-packet heap allocation in steady state
 a dedicated box's only special posture is that it starts sessions rather than
 joining them.
 
-### 10.6 Desync detection
+### 10.7 Desync detection
 
 Dev-mode (cvar-gated) state hashing: the authority folds each zone scope's
 replicated, quantized component state into a 64-bit hash every K ticks and
@@ -1010,7 +1107,7 @@ build the folding once. It exists to catch replication defects and
 nondeterminism regressions in development and soak, not to police cheaters
 (Section 10.3 already did).
 
-### 10.7 Shipping posture
+### 10.8 Shipping posture
 
 Shipping builds keep: the decode boundary, budgets, crypto, interest scoping (all
 of it is the protocol, not dev tooling). Shipping builds drop: the console (already
@@ -1093,11 +1190,14 @@ mechanism (overview rule 12). Dependencies name existing roadmap items.
   reconciliation and error smoothing. Depends on G2 and Track A item 1 (input
   actions); prediction depends on G0's 3.2 fix.
 - **G5. Session semantics.** Cvar flag enforcement and sync (Section 9); event/cue
-  replication (Section 6.4); desync hashing (Section 10.6); a net stats debug
+  replication (Section 6.4); desync hashing (Section 10.7); a net stats debug
   panel (rates, RTT, budget occupancy, per-zone scope sizes) on the existing
   `IDebugPanel` seam. Depends on G2.
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
-  budgets and strike enforcement; malformed-traffic soak; interest-leak audit
+  budgets and strike enforcement; malformed-traffic soak in both directions
+  (hostile client against an authority, hostile authority against a live client,
+  per Section 10.4); build-signature verification if Open question 10 selects it;
+  interest-leak audit
   (assert no un-granted state ever serialized per peer); shipping-config posture
   checks. Depends on G1..G5 surface existing.
 - **G7. Dedicated host and tooling.** Packaged headless host configuration;
@@ -1144,6 +1244,11 @@ system's semantics until composition wires them in.
 - **Script-defined wire messages.** Scripts act through components, intents, and
   cues, which already replicate; a script-visible message API is a second behavior
   channel (directive 3) until a concrete need survives review.
+- **Server-distributed content or code.** Nothing loadable or executable ever
+  arrives over the wire (Section 10.4's invariant): no map downloads, no server
+  mods, no script push. Trigger to revisit: community-server content distribution
+  as a product decision, which then arrives with its own signing and sandboxing
+  design, not as a protocol relaxation.
 - **A second demand policy or an `IZonePopulationStrategy` revival.** Multi-source
   demand parameterizes the one concrete policy with data, per the standing
   deferral.
@@ -1188,3 +1293,11 @@ system's semantics until composition wires them in.
    with Track C item 5 (overlay-first) or with G2 (replication-first)? Either
    order works; the decision is who writes the cook-stamping code and when, so the
    other consumes it.
+10. **Server build identity grade (Section 10.4).** Mutual identity verification
+    ships in G1 regardless. Decide whether the build-signature grade is wanted,
+    which couples to Open question 4: it is meaningful if dedicated server
+    binaries stay first-party and near-worthless once they are publicly
+    distributed. Decide before G1 lands so the handshake either carries the
+    signature exchange from day one or its absence is an explicit choice (adding
+    it later is a protocol version bump, cheap before any release, not free
+    after). Platform attestation stays a recorded trigger either way.
