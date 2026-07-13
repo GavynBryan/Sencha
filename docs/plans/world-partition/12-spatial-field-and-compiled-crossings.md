@@ -2,7 +2,15 @@
 
 Status: proposed design (2026-07-13). Owner review before any stage starts. This
 document reverses and amends standing decisions on the record (Section 0.4); none
-of those reversals are in force until this design is accepted. Read
+of those reversals are in force until this design is accepted.
+
+AMENDED by `13-zone-ontology-review.md` (2026-07-13): the ontology review keeps
+this document's machinery (sampling passes, determinism regime, crossing
+extraction, gate contract) but revises its ontology for open and large places:
+whole-envelope sampling is scoped down, crossings stop being the sole source of
+adjacency (contiguity records join them), large places compile into many
+resident child zones under one region, and the stage plan is superseded by 13's.
+Where the two documents disagree, 13 wins. Read
 `00-execution-overview.md`, `09-retire-portals-doors-as-world-content.md`,
 `10-per-region-streaming-and-topology-labels.md`, and
 `11-zone-architecture-review.md` first.
