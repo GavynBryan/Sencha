@@ -28,7 +28,8 @@ and ask, not to improvise (see "Stop conditions" below).
 | `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
 | `09-retire-portals-doors-as-world-content.md` | (reversal) | Portals removed entirely; connections authored zone-to-zone only; doors recorded as future world-scene content. Reverses D9, D15, D19, D20. IMPLEMENTED 2026-07-05. |
 | `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. IMPLEMENTED 2026-07-05. |
-| `11-zone-architecture-review.md` | (assessment) | Containment focus handoff, containment-aware overlap validation, cook-measured cost budgets, Teleport preload participation, graph panel, transition anchors. Assessment and phase proposals; owner review before anything starts. |
+| `11-zone-architecture-review.md` | (assessment) | Containment focus handoff, containment-aware overlap validation, cook-measured cost budgets, Teleport preload participation, graph panel, transition anchors. Assessment and phase proposals; owner review before anything starts. Anchors and the containment focus fix are superseded by `12-` if that design is accepted. |
+| `12-spatial-field-and-compiled-crossings.md` | (proposed design) | Compiled zone shape from a labeled free-space field baked by the world cook; crossings extracted from traversable adjacency and compiled into transition records; field-based focus resolution; shared substrate for the future navmesh. Reverses P-D2 for geometric edges and demotes AABB bounds to broad phase. Owner review before anything starts. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
