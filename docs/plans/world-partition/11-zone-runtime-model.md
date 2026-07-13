@@ -1,23 +1,39 @@
-# Zone Runtime Model: Zones, Regions, Demand, and Containment
+# Zone Runtime Model: Zones, Regions, Topology, Demand, and Containment
 
 Status: proposed design (2026-07-13), owner review before any stage starts.
-Canonical: this document and `12-spatial-compilation.md` together replace the
-earlier 11 through 13 review chain (reasoning history lives in git). This
-document owns the runtime model: what a zone and a region are, how demand
-composes, how focus and containment resolve, and which runtime systems remain
-unchanged. Doc 12 owns everything compiled: subdivision, spatial evidence,
-contacts, transition promotion, and the containment artifact.
+Canonical: this document and `12-spatial-compilation.md` are the current zone
+architecture (reasoning history lives in git). This document owns the runtime
+model: what zones and regions are, the world topology store and its
+evaluation under world state, mutation rules, the query surface, demand
+composition, the reconfiguration lifecycle, containment, and the honest
+runtime boundaries. Doc 12 owns everything compiled: subdivision, spatial
+evidence, contact records, capability compilation, spatial-configuration
+cooking, artifacts, the editor surface, and the stage plan.
 
 ## Why
 
-Sencha's world must serve enclosed, bottlenecked space (rooms, caves,
-courtyards, stairwells) and open, distance-streamed space (fields, gardens,
-cliffsides, villages) with one architecture, where the difference between them
-is data, never a mode, and where no place category is the exception. The model
-below does that with the two concepts the engine already has, one new authored
-value, and one recorded policy extension. It requires no new runtime tier and
-no rewrite of the streaming machinery; the substantial new work is
-compilational and lives in doc 12.
+Sencha's world must serve enclosed, bottlenecked space and open,
+distance-streamed space with one architecture, and it must keep working when
+the world itself moves: doors, drawbridges, elevators, rotating halls,
+floodgates, destructible walls. Two ideas organize the model:
+
+1. **The compiled world graph is runtime data with a query surface**,
+   philosophically aligned with the ECS: the ECS is the queryable dataset of
+   things and their properties; the world topology is the queryable dataset
+   of places and their relationships. Streaming is its first consumer, not
+   its owner.
+2. **Topology is evaluated, not fixed.** The cook compiles potential
+   physical relationships from geometry; runtime world state (tags and
+   declared spatial configurations) decides what each relationship currently
+   permits, per consumer. Nothing rebakes at runtime, and nothing invents
+   physical edges at runtime.
+
+The scope discipline that keeps this from becoming a speculative universal
+world simulator: the store ships with exactly the consumers that exist
+(streaming demand, editor preview and validation), exactly two evaluated
+capabilities (Section 3.3), one graph algorithm, and no caches. Every other
+consumer named in this document is a recorded attachment point, added when
+its system lands, never before.
 
 ---
 
@@ -25,257 +41,389 @@ compilational and lives in doc 12.
 
 | Concept | Meaning | Status |
 | --- | --- | --- |
-| **Zone** | The residency atom, exactly as built: one `Registry`, one `ZoneParticipation`, loaded and unloaded as a unit, flat in `ZoneRuntime`, compiled into `FrameRegistryView` spans. Also the containment answer: every playable position resolves to one zone. | exists, unchanged |
-| **Authored zone (source)** | What a designer authors: one document, one identity, one place. A small place (room, cave, courtyard) compiles to one resident zone. A large place declares `ResidencyCellSize` and compiles to many resident child zones (doc 12 Section 3). | exists + one new optional field |
-| **Compiled zone** | A cooked `ZoneHeader` the runtime streams. For a subdivided place, children carry `SourceZone` provenance back to their authored source. For everything else the compiled zone is the authored zone. | new (cook output) |
-| **Region** | A named group of zones carrying demand configuration: streaming shape (doc 10) plus spatial-demand eligibility (Section 3.3). A demand-policy grouping first; it may coincide with a semantic place but is not required to. | exists + one new optional field |
+| **Zone** | The residency and containment atom, exactly as built: one `Registry`, one `ZoneParticipation`, loaded and unloaded as a unit, flat in `ZoneRuntime`. | exists, unchanged |
+| **Authored zone (source)** | What a designer authors: one document, one identity, one place. A large place declares `ResidencyCellSize` and compiles to many resident child zones (doc 12 Section 3). | exists + one optional field |
+| **Region** | A named group of zones carrying demand configuration: streaming shape (doc 10) plus `JoinsSpatialDemand` (Section 5.3). A demand-policy grouping; it may coincide with a semantic place but is not required to (a village legitimately splits into a radius street region and a graph-only interior region). Place identity is `SourceZone`, not region. | exists + one optional field |
+| **Contact** | A compiled or authored relationship between two zones: a physical opening or frontier discovered by the spatial compiler, or an authored logical link (teleport, elevator route). Carries potential capabilities, an optional controller, and predicates (doc 12 Section 6). | new (replaces the transition array) |
+| **World topology store** | The runtime dataset of zones, regions, sources, and contacts, with indexes, an evaluated state array, and a revision counter. Owned by the world runtime, read by systems, mutated only through declared state inputs. | new |
 
-### 1.1 Identity, honestly
+Identity remains three-fold and honest: compiled zone id (residency,
+containment), `SourceZone` (authored place), region (demand grouping).
+Gameplay consumers key on whichever answers their question; the first to
+land documents its choice.
 
-Three identities exist and they answer different questions:
-
-- **Residency and containment identity**: the compiled zone id. What is
-  loaded, what participates, what contains this position.
-- **Place identity**: the authored source. For compiled children this is
-  `SourceZone`; for everything else it is the zone itself. This is the id
-  that means "the Palace Garden" regardless of how many pieces stream it, and
-  it is what map discovery, music, or telemetry grouping should key on when
-  they mean the authored place.
-- **Demand grouping**: the region. Regions configure how residency is
-  requested and may legitimately cut across places: the canonical example is
-  a village whose exterior streets sit in a radius-shaped region while its
-  house interiors sit in a graph-only region, all semantically one village.
-  Because that example is real, this design does not claim region equals
-  place. Region is policy; place is `SourceZone`; gameplay consumers pick the
-  id that answers their question, and the first gameplay consumer to land
-  documents which one it reads.
-
-`SourceZone` lives directly on the cooked `ZoneHeader` (cooked-only field,
-invalid means "authored directly"), not in a side table: it is one id, every
-consumer that groups children wants it (demand records, preview, telemetry,
-future save state), and a provenance table would be indirection with no
-second use. Child display names derive from the source name plus cell
-coordinates.
-
-### 1.2 Invariants (unchanged, restated because they force the design)
-
-- Zones are flat. No hierarchical participation, no parent registries, no
-  runtime nesting (`world-partition-authoring.md` Section 2.1). A place
-  needing independently resident pieces therefore compiles into sibling
-  zones, with the place identity carried as data, and this is forced by the
-  span model, not chosen for convenience.
-- Every entity lives in exactly one registry.
-- The manifest is O(zones + transitions). Compiled children multiply the
-  zone count (bounded by content, hundreds at v1 scale); volumetric data
-  lives in cooked artifacts beside the manifest, never in it.
-- The engine mints no random ids. The editor mints authored ids randomly
-  (D4); the cook mints compiled ids (children, contacts) as deterministic
-  content-derived hashes, re-salted deterministically on collision. This is
-  a recorded amendment to D4's wording, not to its intent.
+Invariants, restated because they force the design: zones are flat (no
+hierarchical participation; `world-partition-authoring.md` Section 2.1);
+every entity lives in exactly one registry; the manifest stays
+O(zones + contacts); the editor mints authored ids randomly, the cook mints
+compiled ids as deterministic content hashes (the D4 amendment).
 
 ---
 
 ## 2. What the runtime keeps, verbatim
 
 `ZoneRuntime` (registries, participation, frame view), `AsyncZoneLoader` and
-the detached-build recipe seam (`ZoneLoadRecipeFn`, D10), participation spans
-and every span consumer (render, physics, logic, audio), pins, linger, the
-resident cap, tag gating (`RequiredTags` + `SetWorldTags`), per-region
-streaming shape resolution (doc 10), the template game's world load path and
-the pawn-in-`Global()` model. None of these change shape in this design.
-Compiled children are ordinary `ZoneHeader`s to all of them.
+the recipe seam (D10), participation spans and every span consumer, pins,
+linger, the resident cap, per-region streaming shapes (doc 10), the template
+game's world load path, and the pawn-in-`Global()` model. The pure-policy
+pattern (plain-data functions shared by runtime and editor preview, D18)
+extends to topology evaluation. `WorldPartitionIndex` retires: its sorted
+arrays, offset tables, and span lookups are the storage pattern the topology
+store generalizes, and the store's incident-contact index replaces it.
 
 ---
 
-## 3. Demand
+## 3. The world topology store
 
-Two demand sources, OR'd, exactly as implemented today, with their inputs
-sharpened:
+### 3.1 Shape
 
-### 3.1 Spatial demand
+A dedicated indexed dataset, deliberately not ECS entities. The decisive
+argument: topology must describe zones that are not resident, and an entity
+lives in a registry that may be unloaded, so the graph cannot be made of
+entities without inventing a never-unloaded meta-registry. The scale
+argument seconds it: hundreds of zones and contacts want sorted arrays and
+spans, not archetypes. What carries over from the ECS is the philosophy:
+plain-data records, `StrongId` handles, allocation-free span iteration,
+immutable views while systems run, one explicit mutation point per frame.
 
-Radius from the focus position demands any zone whose **residency coverage**
-falls inside the radius (`ZoneDemand.cpp:274-307` mechanics, with coverage
-replacing derived content bounds as the tested box; doc 12 Section 3.4).
-Spatial demand is the carrier for open space: subdivided children stream
-around the player with zero edges, across region boundaries, because
-point-to-box distance never cared about grouping. Per-region radius, cap,
-and hop values resolve from the focus zone's region as shipped (doc 10).
+Contents (record shapes and the cooked artifact live in doc 12 Sections 6
+and 9): zone and region tables from the cooked manifest, `SourceZone`
+provenance, the contact array (physical and logical), predicate and
+controller tables, and indexes: zone to incident contacts, zone pair to
+contacts, controller to controlled contacts, source to children. Beside the
+static records sits one evaluated array (Section 3.4) and a revision
+counter.
 
-### 3.2 Graph demand
+### 3.2 State inputs (engine language only)
 
-Hop ranks BFS over `TransitionRecord`s: promoted contacts plus authored
-logical links (Section 4). Because open frontiers no longer inject edges,
-hop counts regain their honest meaning: rooms away through real openings.
-`PreloadDepth`, `PreloadPriority`, and tag gates behave as shipped.
+Two declared inputs, both explicit, serializable, deterministic, cheap, and
+shared verbatim by runtime and editor preview:
 
-### 3.3 Spatial eligibility (the recorded doc 10 trade, pulled in)
+- **World tags**: the existing dotted-name set pushed by the game
+  (`SetWorldTags`). Broad boolean facts: `power.on`,
+  `security.lockdown`, `quest.east_wing`. The engine never interprets a
+  name.
+- **Spatial configurations**: a map from `ConfigurationSetId` to
+  `ConfigurationStateId`, one entry per topology-relevant assembly
+  (doc 12 Section 8): which arrangement a rotating hall, elevator,
+  drawbridge, door, or destructible wall is currently in. Finite,
+  enumerated, authored; never a transform stream. Local enumerated state
+  lives here rather than exploding into pseudo-exclusive tags.
 
-`RegionStreamingConfig` gains one optional field:
+Gameplay logic of any complexity resolves into these two inputs before
+evaluation. The evaluator never calls scripts, never reads components, and
+never observes animation state; a mechanism's gameplay commits its declared
+state when the arrangement is physically true (Section 7).
+
+### 3.3 Capabilities (two now, grown by consumers)
+
+Each contact compiles **potential capabilities** and evaluates **active
+capabilities** under the current inputs:
 
 ```cpp
-// Absent or true: zones of this region join spatial (radius) demand.
-// False: they are demanded only by focus, graph edges, or pins. Interiors
-// use this so proximity does not pull them through their walls.
-std::optional<bool> JoinsSpatialDemand;
+enum class ContactCapability : uint8_t
+{
+    Demand,     // may graph demand traverse this contact
+    Traversal,  // can the declared profile physically cross it now
+};
+using CapabilityMask = uint8_t; // bit per capability
 ```
 
-This is the escape hatch doc 10 recorded as a deliberate later trade
-(`10-per-region-streaming-and-topology-labels.md:221`): a zone's own region
-now governs whether that zone may be demanded spatially, which requires
-`ComputeZoneDemand` to consume the region table as policy input rather than
-one focus-resolved config. That amendment to S-D3's single-config signature
-is accepted here on the record. Everything stays pure and preview-shared
-(D18).
+Exactly these two ship, because exactly these two have consumers today:
+graph demand (streaming) and traversal truth (editor reachability
+validation, the contact inspector's explanations, and the fixture suite;
+physical blocking itself is enforced by collision, not by this bit). The
+growth rule is an invariant: a capability is added in the same change that
+lands its consuming system (Navigation with the navmesh links, Visibility
+with the portal work, Audio and Map likewise), never speculatively. The
+mask, the predicate table, and the artifact format are shaped so that
+growth is additive data, not a format break.
 
-The composition this buys, with no special case anywhere: village streets in
-a radius region stream by proximity; house interiors in a
-`JoinsSpatialDemand = false` region stay cold behind their walls; each front
-door's promoted contact preloads its house at one hop when the player nears
-the right street cell. Exterior spatial and interior topological demand run
-in the same policy pass.
+The split earns itself immediately: a closed bedroom door keeps `Demand`
+active (the room behind it preloads) while `Traversal` is inactive; a
+quest-sealed wing authors a `Demand` predicate so it does not preload
+until its tag arrives; a barred grate never compiles pawn `Traversal`
+potential at all. One active bit could not express any of these without
+lying to somebody.
 
-### 3.4 Participation and cost
+### 3.4 Evaluation, revision, and deltas
 
-- Focus zone: full participation. Graph and spatial neighbors:
-  `{NeighborVisible, NeighborPhysics}` per config, as shipped (D17).
-- Neighbors reached only through a Teleport edge preload dormant: a
-  discontinuous transition has no sightline or threshold a dormant attach
-  could pop. This gives topology exactly one streaming behavior and changes
-  doc 10's S4 label text in the same commit that changes the behavior
-  (owner decision recorded in Section 7).
-- Cost-aware residency: the world cook emits per-zone cost facts on Track C
-  item 1's `ZoneBudgetRecord` (asset bytes, collision bytes, entity counts;
-  the record family's planned shape already covers this). The demand policy
-  gains an optional `CostBudget` (config base plus per-region override)
-  enforced in the existing eviction pass beside the count cap: focus and
-  pins never evict, absent cost data leaves behavior byte-identical.
-  Hop horizons then become generous ceilings rather than hand-tuned
-  constraints, and heavy zones preload shallower than cheap chains without
-  per-edge authoring.
-
-### 3.5 Recorded extensions, not built
-
-Multiple simultaneous focuses (the pure policy generalizes to a focus span;
-trigger: split-screen, multiplayer, or scripted cameras needing residency),
-visibility-driven demand (v2.0 portals item), and a spatial index over zone
-coverage when zone counts reach v3 open-field scale.
+`EvaluateWorldTopology(records, tags, configurations)` is pure: it produces
+the active-capability array (one `CapabilityMask` per contact, SoA beside
+the static records) plus a delta (contact ids whose mask changed). The
+runtime evaluates at one point per frame, at the top of the world update,
+before demand; consumers read one consistent evaluated view for the rest of
+the frame. That is the existing frame discipline (mutations at drain
+points, views stable within the frame) applied to topology; no snapshot
+type, no structural sharing, no copy of the graph. A `uint64_t Revision`
+increments when any mask changes, and the delta record
+`{PreviousRevision, Revision, changed contact ids}` is retained for the
+frame. Streaming does not need it (demand recomputes each update); it
+exists for telemetry, the editor's change highlighting, and the future
+consumers that cache (navigation links, route caches), whose invalidation
+contract is "revision changed, diff the delta." If profiling ever shows
+re-evaluation cost (it is a linear pass over hundreds of predicates),
+evaluation goes incremental by indexing predicates by tag and controller;
+that is an optimization with a recorded trigger, not a v1 structure.
 
 ---
 
-## 4. Transitions: what an edge is
+## 4. Mutation rules (invariants)
 
-A `TransitionRecord` exists for exactly two reasons:
-
-1. **A logical link was authored** (`ConnectZones`): teleports, elevators,
-   any connection geometry cannot witness. Unchanged.
-2. **A physical contact was promoted.** The cook compiles contact records
-   wherever traversable free space crosses a zone or place boundary (doc 12
-   Section 6), and promotes a contact into transition records only when
-   demand semantics require an edge there:
-   - a gate controls the contact (the opening is conditional content:
-     `Doorway`),
-   - either side's region has `JoinsSpatialDemand = false` (an ineligible
-     zone's only demand path is topological, so every contact into it must
-     be an edge or it is unreachable by streaming),
-   - an authored annotation promotes it (the designer wants topological
-     preload or future transition timing across a specific contact:
-     `Seam`).
-
-Geometry is evidence; demand semantics are the authority. Width and
-constriction are compiled as contact metadata (useful for diagnostics,
-prefetch weighting, and future timing volumes) but never decide topology:
-a hundred-meter frontier between two radius regions stays a contact with
-summary metrics and streams by proximity; a narrow canyon between two
-radius regions also stays a contact, because an edge would add nothing
-radius does not already do; a forty-meter temple mouth into a graph-only
-interior is promoted despite its width, because nothing else would ever
-demand the interior. Non-promoted contacts still serve reachability
-validation (reachable = edges, contacts, and radius-region cliques),
-overlays, and later nav and map products.
-
-Consequences for the vocabulary: `Doorway` means gate-bound promoted
-contact, `Seam` means gateless promoted contact, `Teleport` means authored
-logical link. The topology labels finally describe provenance and behavior
-truthfully, completing what doc 10's honest-labels pass started.
+1. **Potential physical topology is compiled.** The cook discovers every
+   physical relationship, including every declared spatial configuration's
+   relationships (doc 12 Section 8).
+2. **Runtime selects among compiled possibilities.** Systems change
+   topology by setting tags, setting configuration states, or authored
+   logical-link availability; there is no `AddEdge`, no runtime contact
+   minting, no runtime geometry analysis. Destructibles fit as
+   configuration states (intact and destroyed are compiled arrangements).
+   Genuinely procedural or runtime-generated worlds would need a runtime
+   compilation path (the bake kernels run against runtime geometry); that
+   is a recorded future capability with its own design burden, not an
+   escape hatch this plan opens.
+3. **Topology state commits atomically** at the evaluation point; no
+   consumer observes a half-applied change (Section 3.4).
+4. **Game logic resolves into declared facts before evaluation**
+   (Section 3.2).
 
 ---
 
-## 5. Containment and focus
+## 5. Demand
 
-### 5.1 The lookup contract
+Demand becomes the topology store's first consumer. The policy remains
+pure, per-frame, and preview-shared; its edge set changes meaning.
 
+### 5.1 Graph demand
+
+`ComputeZoneHopRanks` BFS traverses contacts whose evaluated mask has
+`Demand` active, in both compiled and authored (logical link) forms. The
+former `RequiredTags` edge gating becomes a `Demand` predicate on the
+contact with identical semantics (doc 12 Section 7.4 migrates it), so
+"do not preload behind this quest seal" and "preload behind this ordinary
+door" are both expressible (Section 3.3). `PreloadPriority` and
+`PreloadDepth` remain contact annotations consumed by rank ordering.
+
+### 5.2 Spatial demand
+
+Unchanged: radius from the focus position over `ResidencyCoverage`
+(doc 12 Section 3.3), OR'd with graph demand, per-region shapes resolved
+from the focus region (doc 10).
+
+### 5.3 Eligibility
+
+`JoinsSpatialDemand` (optional bool on `RegionStreamingConfig`, absent =
+true): a region whose zones never join spatial demand, so interiors are
+not pulled through their walls by proximity. This is the escape hatch
+doc 10 recorded as a deliberate later trade (`10-...md:221`); adopting it
+amends S-D3's single-resolved-config signature on the record
+(`ComputeZoneDemand` consumes the region table). Every contact into an
+ineligible zone compiles `Demand` potential (doc 12 Section 7.1), because
+topological demand is that zone's only path to residency.
+
+### 5.4 Participation and cost
+
+Focus full; neighbors `{NeighborVisible, NeighborPhysics}` (D17); logical
+links (teleport kind) preload their targets dormant, since a discontinuous
+arrival has nothing a dormant attach can pop (this ends doc 10's
+"topology labels never affect streaming" story honestly; the S4 label text
+changes in the same commit). Cost-aware residency rides Track C item 1's
+`ZoneBudgetRecord` with an optional `CostBudget` enforced beside the count
+cap in the existing eviction pass; absent data leaves behavior
+byte-identical.
+
+### 5.5 Demand reasons
+
+`ZoneDemandRecord` sources gain the topology vocabulary: demanded through
+contact X, pinned by prepare handle Y (Section 7), spatial, focus,
+lingering. "Why is this zone resident" stays answerable from a log and
+from the inspector without new machinery.
+
+---
+
+## 6. The query surface
+
+Two API categories, deliberately separate, both over the store's spans and
+the evaluated array, both allocation-free, both usable identically by
+engine systems, the editor, and (when it lands) the scripting runtime as a
+read-only declared seam (Track A's rule: scripts see declared seams only).
+
+### 6.1 Selection
+
+Filtered iteration over indexed records; O(incident contacts) or
+O(contacts) with early filters, never hidden graph work:
+
+```cpp
+struct ContactFilter
+{
+    ZoneId               Touching;        // invalid = any
+    ConfigurationSetId   Controller;      // invalid = any
+    CapabilityMask       ActiveAll   = 0; // all listed bits active
+    CapabilityMask       PotentialAll = 0;
+    CapabilityMask       InactiveAll  = 0; // potential but not active
+    ContactKindMask      Kinds = ContactKindMask::All;
+};
+
+// Iterate matching contacts; fn receives (const WorldContact&,
+// CapabilityMask active). Deterministic order: ascending contact id.
+void ForEachContact(const ContactFilter&, Fn&&) const;
+std::span<const uint32_t> Incident(ZoneId) const; // indices, sorted
+```
+
+This answers the working set: exits of the focus zone traversable now,
+contacts controlled by assembly X, contacts with `Demand` potential into a
+graph-only region, contacts potentially traversable but currently blocked.
+
+### 6.2 Algorithms
+
+Explicit pure functions with visible cost, in the `ComputeZoneHopRanks`
+family; v1 ships exactly one, shared by runtime queries and editor
+validation:
+
+```cpp
+// Flood over contacts with `capability` active (or potential, by flag).
+// O(zones + contacts). Ascending zone id.
+[[nodiscard]] std::vector<ZoneId>
+ComputeReachableZones(const WorldTopology&, ZoneId from,
+                      ContactCapability capability, bool potential = false);
+
+[[nodiscard]] bool CanReach(const WorldTopology&, ZoneId from, ZoneId to,
+                            ContactCapability capability);
+```
+
+Routes, blocking-set analysis ("which contacts sever all paths"),
+conditional planning ("what state change would connect these"), cost
+models, caching, and asynchronous execution are recorded for the systems
+that need them (the cross-zone planner, AI), keyed on the revision for
+invalidation. They are not disguised as cheap iteration and they are not
+built now.
+
+### 6.3 Explanation
+
+```cpp
+// Why is `capability` inactive on this contact: the predicate view
+// (required tags present and missing, required configuration and its
+// current state) plus the controller id. Compact ids only; the editor
+// renders rich text from indexed metadata.
+[[nodiscard]] ContactExplanation
+Explain(const WorldTopology&, ContactId, ContactCapability);
+```
+
+Runtime artifacts carry predicate and controller ids, never prose. The
+inspector's "requires power.on; SecurityGate14 must be Open; blocked by
+security.lockdown" renders editor-side from the same records
+(doc 12 Section 10).
+
+---
+
+## 7. Reconfiguration lifecycle
+
+A topology-changing assembly must not expose an unloaded destination: the
+rotating hall may not dock against a west wing whose collision is not
+resident. The engine exposes facts and a small lifecycle; gameplay owns
+motion, animation, timing, and occupants.
+
+```cpp
+// On the world runtime, over existing pin machinery.
+PrepareHandle PrepareConfiguration(ConfigurationSetId, ConfigurationStateId);
+bool IsPrepared(PrepareHandle) const;   // all implied zones resident at
+                                        // the prepared participation
+void CommitConfiguration(PrepareHandle); // sets the input; evaluation
+                                        // applies it at the next frame's
+                                        // evaluation point
+void ReleaseConfiguration(PrepareHandle); // also the cancel path
+```
+
+- **Prepare**: the runtime evaluates which zones the target state's
+  `Demand`-active contacts expose (a pure what-if evaluation against the
+  target configuration) and pins them at `{Visible, Physics}`: the dock
+  must render and collide the moment it exists; logic and audio flip on
+  focus as always.
+- **Transit**: gameplay begins motion only after `IsPrepared`; the
+  assembly's declared state during motion is its authored transit state
+  (no dock contacts), so topology never claims a half-docked passage.
+  Occupants ride as gameplay and physics concerns (the cab's contents are
+  ordinary entities in the assembly's zone); the engine's only promise is
+  that both docks' zones stay resident while pinned.
+- **Commit**: gameplay declares the target state when physically docked;
+  the declared state and therefore collision-relevant adjacency and
+  demand all flip at the same evaluation point next frame.
+- **Release**: pins drop; normal linger and eviction resume. Cancel at
+  any point is `ReleaseConfiguration` plus gameplay returning to a safe
+  declared state. A failed or cancelled load simply never reports
+  prepared; gameplay decides whether to wait, abort, or play a stall.
+
+Multiplayer synchronization of prepare and commit is recorded as future
+work alongside whatever replication model Sencha eventually adopts;
+nothing here presumes one.
+
+---
+
+## 8. Containment and focus
+
+Unchanged from the accepted model, restated for self-containment.
 `LabelAt(position)` resolves through three layers, first hit wins
-(mechanics and artifact format in doc 12 Sections 5 and 9):
+(artifact mechanics in doc 12 Section 9): sampled bespoke and frontier
+space (3D labels, correct for caves under gardens, interiors in village
+cells, bridges, stacked floors), then analytic subdivision grids
+(coverage cell arithmetic, deterministic tie-breaks), then recovery
+(nearest by `ResidencyCoverage`). Focus keeps the previous zone unless
+the pawn's capsule-center sample resolves elsewhere with margin
+(label depth in sampled space, cell-edge distance in grids).
+`SetFocus(ZoneId)` remains for spawn, restore, and scripted warps. The
+editor preview resolves through the same functions against the last bake
+with the stale-cook badge; the runtime refuses a cooked world with a
+missing or stale containment artifact.
 
-1. **Sampled space**: bespoke place envelopes and place frontiers carry
-   baked 3D labels. Where present and assigned, they are the answer; this
-   is what makes caves under gardens, interiors inside village cells,
-   bridges over roads, stacked floors, and rooftops resolve correctly in Y
-   rather than pretending the world is two-dimensional.
-2. **Analytic subdivision grids**: inside a subdivided place's residency
-   coverage, the child is computed from the cell coordinate (zero storage,
-   exact). Overlapping grid candidates (stacked or adjacent places whose
-   coverage boxes intersect) tie-break deterministically: containing
-   coverage, then nearest content bounds, then source id.
-3. **Recovery**: nearest zone by residency coverage (the existing
-   nearest-bounds rule re-pointed at coverage), for airborne, falling,
-   spawning, and out-of-envelope positions.
-
-### 5.2 Focus resolution
-
-The game supplies the pawn's capsule-center position through
-`SetFocus(Vec3d)` once per frame, exactly as today. Focus keeps the previous
-zone unless the sample resolves to a different zone with confidence:
-label-depth margin in sampled space, distance-to-cell-boundary margin in
-grids (equivalent roles, both config). `SetFocus(ZoneId)` remains for
-spawn, save restore, and scripted warps; teleport arrivals and
-falling-out-of-world resolve through `LabelAt` plus recovery. The editor
-preview resolves through the same pure functions against the last bake and
-wears the existing stale-cook badge when hashes mismatch; the runtime
-refuses a cooked world whose containment artifact is missing or stale,
-the same contract as a missing `CookedSceneRef`.
+One topology note: containment is deliberately not state-dependent in
+v1. A rotating hall's interior is one zone in every configuration; what
+changes is its contacts. A mechanism whose containment itself must
+change with state has no fixture yet and is recorded as a deferral.
 
 ---
 
-## 6. Dynamic entities: the honest boundary of this design
+## 9. Dynamic entities and controller residency
 
-No total runtime refactor is required to support **static** subdivided
-residency with the current flat-zone model. That claim is deliberately
-narrow. Entities that move across child boundaries at runtime are a real,
-unsolved category: NPCs that chase, physics props, dropped items, corpses,
-vehicles, projectiles, moving platforms, destructibles. There is no
-cross-registry migration at runtime today; the working precedents are
-anchored content owned by its child and the pawn living in `Global()`.
-Putting every roamer in `Global()` works at small counts and degrades with
-scale (its registry never unloads, so budgeting, lifetime, and
-participation pressure accumulate).
+No total runtime refactor is required for **static** subdivided residency
+and **declared** reconfiguration under this model. That claim stays
+deliberately narrow. Entities that roam across child boundaries (NPCs,
+props, vehicles, projectiles, dropped items) still have no cross-registry
+migration; the working precedents are anchored content owned by its child
+and the pawn in `Global()`. This remains owned future work homed at Track
+C item 5 (stateful detach and serialized entity identity), a prerequisite
+for shipping wanderers in subdivided places, not for this design.
 
-Position, plainly: this design ships static subdivision and treats runtime
-zone migration as owned future work, not an incidental edge case. Its
-natural home is Track C item 5 (stateful detach and the serialized entity
-identity scheme), which already owns entity state crossing the
-loaded/unloaded boundary; runtime child-to-child handoff is the same
-mechanism pointed sideways. A game shipping roaming NPCs inside subdivided
-places needs that work first, and the fixture suite gains a scripted
-roaming case the day it lands.
+Controller entities (the door, the hall machinery) sit between the zones
+they connect. `Global()` residency is the accepted first implementation
+(the doc 09 world-scene direction: resident whenever either side is).
+The recorded successor, when door counts make `Global()` heavy, is
+boundary residency: content resident whenever either endpoint zone is
+resident, which is the same dependency-retention mechanism recorded for
+large-influence entities (doc 12 Section 3.4). Controllers are discovered
+by identity, not by entity reference: the authored component carries its
+editor-minted `ConfigurationSetId`, contacts carry the controlling id,
+and the runtime system that owns the entity pushes state by that id, so
+no entity-identity scheme is required for binding (doc 12 Section 8.2).
 
 ---
 
-## 7. Owner decisions collected here
+## 10. Owner decisions collected here
 
-1. **Teleport dormant preload** (Section 3.4): accepts giving topology one
-   real streaming behavior and re-teaching the S4 label text in the same
-   commit.
-2. **`JoinsSpatialDemand` shape** (Section 3.3): optional bool as proposed,
-   or fold into the streaming-shape combo as a third derived character in
-   the panel. Either way values, never a stored mode.
-3. **Cost budget units** (Section 3.4): cooked bytes now, harness-measured
-   milliseconds joining later on the same record.
-4. **`PreloadDepth` retirement watch**: after budgets and honest hop
-   meanings land, authored depth may have zero remaining uses; revisit
-   then, no action now.
-5. **Roaming-entity policy** (Section 6): confirm Global-for-few now plus
-   Track C item 5 as the future home, or pull migration work forward.
-6. **Multi-focus demand** (Section 3.5): confirm it stays recorded until a
-   real consumer names itself.
+1. **Capability set v1** (`Demand`, `Traversal`) and the
+   consumer-lands-its-capability growth rule: confirm.
+2. **Teleport dormant preload** (Section 5.4): accepts ending the
+   "topology never affects streaming" label story; text changes in the
+   same commit.
+3. **`JoinsSpatialDemand` shape** (Section 5.3): optional bool as
+   proposed, or a third derived character in the panel's shape combo.
+4. **Cost budget units** (Section 5.4): cooked bytes now, measured
+   milliseconds later on the same record.
+5. **Prepare participation** (Section 7): `{Visible, Physics}` proposed
+   for prepared destinations; confirm, or make it a parameter of
+   `PrepareConfiguration`.
+6. **Roaming-entity policy** (Section 9): confirm Global-for-few now
+   plus Track C item 5 as the future home.
+7. **Scripting exposure** (Section 6): the read API and the two state
+   inputs as declared script seams when the scripting runtime lands;
+   confirm that boundary (no script-visible mutation beyond tags,
+   configurations, and pins).
