@@ -1,8 +1,9 @@
 # Renderer Phase 3: Lighting, Shading, Shadows, Baked Irradiance, and Renderer Profiling
 
-Status: PROPOSED, revision 2, 2026-07-10. Plan only; no implementation has
-landed. Revision 2 incorporates a cross-agent design review; the disposition
-of that review is recorded in Section 0.
+Status: PROPOSED, revision 3, 2026-07-10. Plan only; no implementation has
+landed. Revision 2 incorporated a cross-agent design review; revision 3 works
+baked ambient occlusion into the plan after a second adversarial pass. The
+disposition of both reviews is recorded in Section 0 (revision 3 first).
 
 This document is the lighting portion of the "render ladder plan" that
 `docs/assets/pipeline.md` repeatedly defers to ("Decision L ships the data, not
@@ -25,9 +26,16 @@ Scope summary of the standing decisions:
 - Point shadows: a small depth cube-map array (D16, 512 per face, budgeted at 4
   lights), the same filter adapted to directions.
 - Baked lighting: zone-scoped irradiance probe volumes storing L1 spherical
-  harmonics, baked in the editor against static render geometry, dilated at
-  bake time so runtime sampling is plain hardware trilinear, streamed with
-  zones.
+  harmonics, baked in the editor against static render geometry (with a
+  read-only neighbor halo), dilated at bake time so runtime sampling is plain
+  hardware trilinear, streamed with zones.
+- Baked ambient occlusion: room-scale enclosure is already carried by the
+  probe irradiance (no separate probe visibility payload, no bent normal in
+  v1); the one new baked datum is a per-vertex AO scalar packed into the
+  `.smesh` vertex, produced by the same bake, welded across duplicate render
+  vertices, made seamless across zones by the halo, and densified only near
+  occluders by occluder-gated adaptive tessellation. AO modulates the ambient
+  term only and is never a substitute for a shadow map (Section 7A).
 - Profiling: an explicit instrumentation mode ladder (Off / Counters / Gpu /
   Capture) whose Off path performs no profiling work, plus a compile-time
   option that removes instrumentation, debug labels, debug pipelines, and
@@ -36,12 +44,72 @@ Scope summary of the standing decisions:
 Delivery is split into four independently mergeable phases: 3.0 (renderer
 instrumentation, a preliminary standalone change), 3A (the dynamic-lighting
 renderer: StandardLit, spot lights, spot and point shadows), 3B (baked
-irradiance), and 3C (the evidence-based performance review). 3A is a complete,
-shippable renderer without 3B.
+irradiance and baked AO), and 3C (the evidence-based performance review). 3A
+is a complete, shippable renderer without 3B, and within 3B the vertex-AO
+sub-stage (3B.3) is independently mergeable and can even ship against the
+hemispheric-ambient fallback without probes.
 
 ---
 
-## 0. Revision 2 disposition
+## 0. Disposition
+
+### 0.0 Revision 3: baked ambient occlusion
+
+**Verdict on the proposed probe-AO + cooked-vertex-AO split.** Accept the
+vertex scale; reject the probe scale as a *separate baked payload*. Room-scale
+ambient visibility and ambient direction are already carried by the Phase 3B
+L1 SH probe irradiance (its magnitude is enclosure, its band-1 is a
+bent-normal-equivalent), so no second per-probe visibility grid and no
+octahedral bent normal are baked in v1. The one genuinely new baked datum is a
+per-vertex AO scalar for sub-probe-cell contact darkening. Full argument in
+Section 7A.1.
+
+**Assumptions from the brief that I rejected or simplified:**
+
+- Rejected the separate probe ambient-visibility payload and the probe bent
+  normal for v1 (redundant with L1 SH irradiance; the only consumer that would
+  need a sharp bent normal, ambient specular, does not exist yet). 7A.1.
+- Rejected "the AO baker can lean on a cell-grid tessellation baseline": the
+  cook buckets whole brushes into cells and never splits them
+  (`BrushClustering.h:22,49`), so large faces stay sparse and there is no free
+  baseline. This *promotes* adaptive tessellation from optional to required
+  for the mechanism to work at all, while the occluder-proximity gate keeps it
+  cheap. 7A.5.
+- Simplified the composition question to a bounded dialed multiply
+  (scale-separated radius + strength + floor) rather than an authored
+  composition model, and deferred the physically-motivated residual-ambient
+  model because it would reintroduce the rejected probe visibility payload.
+  7A.7.
+- Deferred prop self-AO / authored object-space cavity AO to a follow-up
+  (needs a mesh-asset cook, not the world cook); v1 props take placement
+  grounding from probes and carry neutral vertex AO. 7A.8.
+
+**Problems found independently in this pass:**
+
+- The Phase 3B probe bake had a latent zone-boundary defect: a per-zone BVH
+  gives boundary probes a one-sided enclosure and a lighting seam between
+  zones. Fixed by a read-only neighbor halo that both the probe and AO bakes
+  now share (amended into Section 7.2). This is a correctness fix for probes
+  that the AO review surfaced, not AO-specific.
+- The AO bake, the probe bake, and their halo, ray kernel, determinism, and
+  incremental-invalidation keys are the same machinery; consolidated into one
+  `LightingBake` per zone that builds the BVH once and emits `.sprobe` plus the
+  v4 `.smesh` AO channel together, rather than two bake systems (7A.9).
+- `StaticMeshVertex` is 48 bytes and float-backed (`Vec.h:381-382`), so AO
+  packs cleanly as a 4-byte `R8G8B8A8_UNORM` attribute at offset 48 (stride
+  52, no padding), `.smesh` v3 -> v4, old files neutral. Precision and
+  alignment checked, not assumed (7A.6).
+
+**Consequences for the deferred directional light (Section 15).** AO modulates
+ambient only, so it structurally cannot contain sunlight or replace a
+directional shadow map: the future sun disc is a direct term shadowed by CSM,
+and applying AO to it is explicitly forbidden. The trap and the rule are
+recorded in the deferral list.
+
+**Direct-shadow doctrine is unchanged.** Runtime shadow maps remain the only
+authoritative direct-shadow representation. Nothing in Sections 4-6 changed.
+
+Revisions 1 and 2 are preserved below unchanged for history.
 
 ### 0.1 Decisions retained from revision 1
 
@@ -611,8 +679,11 @@ Per fragment, in linear space:
 
 ```
 N        = normalize(TBN * reconstructZ(sampleBC5(normalMap)))   (or vertex N)
-ambient  = probeIrradiance(N)  if a probe volume covers the point (Phase 3B)
+ambientC = probeIrradiance(N)  if a probe volume covers the point (Phase 3B)
            else hemiAmbient(N)                    (existing sky/ground blend)
+aoFactor = 1.0                                    (Phase 3A: AO absent)
+           mix(1.0, mix(ao_min, 1.0, vertexAo), ao_strength)   (Phase 3B.3)
+ambient  = ambientC * aoFactor                    (AO touches ambient ONLY)
 diffuse  = sum over lights: wrap(N, L) * atten * shadow * lightColor
 specular = sum over lights: normBlinnPhong(N, H, exponent) * specIntensity
            * specTint * atten * shadow * lightColor
@@ -620,6 +691,15 @@ emission = emissiveFactor.rgb * emissiveStrength * emissiveTex
 color    = baseColor * (ambient + diffuse) + specular + emission
 out      = kneeShoulder(color * exposure)
 ```
+
+The single doctrinal invariant for baked AO lives in this equation: `aoFactor`
+multiplies `ambientC` and nothing else. It never appears in `diffuse`,
+`specular`, or `emission`. Direct light is shadowed only by runtime shadow
+maps (Sections 4-6); AO is physically incapable of darkening a direct light
+term because it is not a factor on any of them. This is what makes "AO
+disabled proves direct lighting and runtime shadows are unaffected" a
+one-line proof rather than a test campaign: with AO off, `aoFactor = 1.0` and
+the equation is byte-identical to Phase 3A. The full AO design is Section 7A.
 
 Component decisions:
 
@@ -654,6 +734,17 @@ Component decisions:
   (`mesh_forward.frag.glsl:68-72`); it is correct, local, and already tuned.
   Spot lights multiply the same attenuation by the cone falloff (Section
   3A.2 / Section 4).
+- **Ambient occlusion (Phase 3B.3).** `vertexAo` is a per-vertex baked scalar
+  in [0,1] (1 = fully open, neutral), interpolated to the fragment. It is
+  bounded to `[ao_min, 1]` (cvar `render.ao.min`, default 0.15, so corners
+  never crush to pure black) then dialed by `render.ao.strength` (default
+  0.75). Room-scale enclosure is already carried by `ambientC` itself
+  (probe irradiance darkens in corners at bake time, or the hemi fallback);
+  `vertexAo` adds only sub-probe-cell contact darkening, so the multiply is
+  between two scales that mostly do not overlap. Absent AO (Phase 3A, or a
+  mesh with neutral AO, or `render.ao.enabled 0`), `aoFactor = 1.0` and the
+  ambient term is unchanged. Full rationale and the double-darkening analysis
+  are in Section 7A.
 - **Exposure and tonemap: identity below a knee, shoulder above it.**
   Applied per channel at the end of the fragment shader, after exposure:
 
@@ -698,6 +789,12 @@ by the pipelines exactly as the editor already polls ambient
 | `render.tonemap.knee` | 0.8 | Identity-region upper bound |
 | `render.shadow.darkness` | 1.0 | Global shadow attenuation scale (1 = fully dark shadows) |
 | `render.shadow.softness` | 1.0 | Global multiplier on per-light softness |
+| `render.ao.enabled` | true | Master toggle for baked ambient occlusion (Phase 3B.3) |
+| `render.ao.strength` | 0.75 | How strongly `vertexAo` modulates ambient (0 = neutral) |
+| `render.ao.min` | 0.15 | Floor on the AO factor (corners never crush to black) |
+
+Bake-time AO parameters (read by the editor bake, not per-frame runtime knobs)
+live under `render.bake.ao.*` and are listed in Section 7A.6.
 
 Light-response ramp textures are rejected for this phase: a global ramp adds a
 sampler binding and an authoring pipeline for one stylistic degree of freedom
@@ -1211,11 +1308,29 @@ acceleration structure:
   discarded. CPU-only, no new engine subsystem, no physics dependency (a
   layering win: the render bake no longer touches the physics module at
   all).
+- **Read-only neighbor halo (added in revision 3).** A per-zone BVH built
+  from only that zone's geometry gives probes near a zone boundary a wrong,
+  one-sided view of enclosure, producing a lighting seam between adjacent
+  zones. So the BVH also ingests, as read-only occluders that receive no
+  samples, the cooked geometry of every spatially adjacent zone within the
+  bake's maximum ray distance of this zone's bounds. Zone bounds are AABBs in
+  the manifest (`WorldPartitionManifest.h:56`), and the world cook has every
+  zone's manifest in hand (`WorldCook.cpp`), so "which zones are within
+  distance D of zone Z" is a trivial offline AABB-expansion query, not the
+  runtime cross-zone spatial query the world-partition invariant forbids
+  (`world-partition-authoring.md:167-169`). The halo geometry is assembled in
+  a deterministic order (sorted by cooked-mesh content hash) so two zones that
+  share a boundary see byte-identical halo triangles and, with the fixed ray
+  table, compute byte-identical boundary results. This halo is shared with the
+  vertex-AO bake (Section 7A) and is the reason both bakes can be per-zone yet
+  seamless. It was a latent defect for probes in revision 2; the AO review
+  surfaced it.
 - Content identity: the bake input hash = per-cell `.smesh` content hashes
-  (already tracked by the cook index, `DocumentCook.cpp:312-320`) + static
-  light state + volume placement/params + bake settings. This keys staleness
-  detection and incremental rebakes, and it is stable because it hashes
-  cooked artifacts, not live editor state.
+  (already tracked by the cook index, `DocumentCook.cpp:312-320`) + the halo
+  zones' `.smesh` hashes + static light state + volume placement/params + bake
+  settings. Hashing the halo means editing zone B correctly invalidates zone
+  A's boundary bake. It is stable because it hashes cooked artifacts, not live
+  editor state.
 - Using Jolt collision instead was rejected rather than kept as a first step:
   binding the physics query API is not meaningfully less work than a small
   BVH over `MeshGeometry`, and the BVH also provides exact triangle normals
@@ -1294,6 +1409,275 @@ them. Normal-dependent response comes from L1 SH evaluation.
 - Runtime load rides `ZoneLoadRecipe`: bytes read and parsed in `Build`
   (off-thread), GPU volume textures created and registered in `Finalize`
   (main thread at `DrainAsyncTasks`), residency dropped on zone destroy.
+
+---
+
+## 7A. Baked ambient occlusion
+
+Added in revision 3. AO lives inside the baked-lighting phase, not beside it:
+it reuses Section 7's triangle BVH, ray kernel, halo, and determinism, and it
+extends the same `LightingBake` orchestrator. This section is the canonical AO
+design; Sections 3.2, 9.6, 10, 11, 12, 13, 14, 15 carry the threaded
+consequences.
+
+### 7A.1 Architectural verdict
+
+Two scales, but not the two the brief proposed. The proposed split was
+"probe ambient visibility with a bent normal" plus "cooked vertex AO." I
+**reject the separate probe visibility payload** and keep only the second
+scale as new baked data:
+
+- **Room-scale enclosure is already baked, in the L1 SH probe irradiance
+  (Section 7).** A probe deep in a corner already receives fewer sky and
+  bounce rays, so its irradiance is already darker; a large room already
+  darkens gradually toward its walls in the probe field. That is precisely
+  the "broad room-scale enclosure so cooked vertex density is not needed for a
+  large room gradually darkening" requirement, and it is met by data the plan
+  already stores. Storing a *second* per-probe scalar visibility grid at the
+  same cell density would re-derive occlusion the irradiance already encodes,
+  at the same resolution, buying nothing: a sub-cell alcove is unresolved by
+  either grid, and the fix for sub-cell features is the vertex scale, not a
+  denser second probe payload.
+- **The bent normal is redundant with the SH we already store.** L1 SH is a
+  constant term (band 0) plus a linear directional gradient (band 1, three
+  coefficients that encode a dominant direction and magnitude). Because probes
+  bake sky plus one indirect bounce and hold no direct local light (the hybrid
+  split, Section 7.1), the SH band-1 dominant direction is, to the fidelity
+  this renderer targets, the direction of greatest openness: a
+  bent-normal-equivalent, free. The only consumer that would demand a sharper,
+  separately stored bent normal is ambient specular, and StandardLit has no
+  ambient specular in v1 (specular is direct-light only, Section 3.2). So the
+  bent normal is deferred with ambient specular, and the "bent-normal
+  direction" debug view visualizes the SH band-1 direction, labeled honestly.
+
+So the AO work that is genuinely new is entirely at the surface/contact scale:
+**cooked per-vertex AO** for corners, recesses, wall-floor contacts,
+undersides, carved openings, and permanent architectural intersections. The
+probe scale needs a doctrine note (Section 11, Phase 3B.2) and the halo fix
+(Section 7.2), not new payload.
+
+This verdict keeps the solution Sencha-scale: one new baked scalar per vertex,
+one shared bake, no second volume format, no bent-normal encoding to validate.
+
+### 7A.2 Doctrine (the hard boundaries)
+
+- AO represents ambient visibility and static geometric enclosure only.
+- It modulates the ambient term only (Section 3.2, `aoFactor`), never diffuse,
+  specular, or emission.
+- It is never baked direct lighting, never a shadow mask, never a stand-in for
+  a point, spot, or (future) directional shadow map. Runtime shadow maps stay
+  the only authoritative direct-shadow representation (the Section 4-6
+  doctrine is unchanged).
+- No lightmap textures, no secondary lightmap UVs, no chart generation, no
+  atlas packing, no offline direct-shadow artifacts. AO rides existing vertex
+  attributes, produced by derived cook data.
+
+The rejection list in Section 15 makes these enforceable, not aspirational.
+
+### 7A.3 Bake-time shading topology (the weld) and hard edges
+
+Runtime vertex identity is not AO topology. Kyusu and the cooker duplicate
+geometrically coincident vertices for section/material splits, batching, UV
+seams, hard-normal splits, and abutting-brush cell boundaries (brushes are
+bucketed whole into cells and never split, `BrushClustering.h:22,49`, so cell
+boundaries create coincidence only between *different* abutting brushes, never
+within one face). Baking AO independently per render vertex would give
+duplicates on one continuous surface slightly different values, i.e. a visible
+seam down a flat floor split into two draw calls.
+
+The bake therefore constructs a transient **AO sample topology** independent of
+the final GPU vertex layout:
+
+- Weld render vertices into one AO sample when they share: quantized world
+  position (a global quantization grid, quantum `render.bake.ao.weld_quantum`,
+  default 1 mm, so a boundary vertex quantizes identically in either zone's
+  bake), a compatible shading normal (same hemisphere and within
+  `weld_normal_degrees`, default 25), the same surface side, and continuous
+  geometric context.
+- Bake one AO value per welded sample, then scatter it back into every
+  contributing render vertex. Coplanar sections and cross-zone boundary
+  duplicates therefore carry identical AO by construction, not by luck.
+- **Hard edges stay independent.** A wall and a floor sharing a position but
+  using different normals fail the normal-compatibility test, so they are
+  separate samples, sample different hemispheres, and may correctly receive
+  different AO. This is the same "smooth-group" boundary the normal split
+  already encodes; the weld reuses it rather than inventing a new one.
+
+The weld is deterministic (quantized keys, stable sort), so it composes with
+the bit-identical-bake requirement (Section 7.1).
+
+### 7A.4 Cross-zone seams
+
+Per-zone cooking would give a continuous surface split across a zone boundary
+two independent AO solutions. Three mechanisms, all already needed for probes,
+make boundaries seamless with no inter-zone data flow at cook time:
+
+- The read-only neighbor halo (Section 7.2) means a boundary sample in zone A
+  sees zone B's occluders and vice versa, so neither computes a one-sided AO.
+- The global weld quantization (7A.3) means both zones place the shared
+  boundary sample at the identical quantized position.
+- Determinism (fixed ray table, sorted halo, no RNG) means both zones, seeing
+  the same sample position and the same halo triangles, compute byte-identical
+  AO. No shared-authority handshake, no boundary-owner zone, no cook ordering
+  dependency.
+
+A shared-boundary-authority scheme (one zone bakes the edge, neighbors copy)
+was rejected: it adds cook-order coupling and an inter-zone data channel to
+buy what determinism-plus-halo already gives for free.
+
+### 7A.5 Adaptive tessellation for sparse geometry
+
+Because brushes are never split (`BrushClustering.h:49`), a massive floor is
+one brush with a handful of vertices in one cell. Baking AO at those vertices
+captures nothing of a wall crossing the middle, and there is no free cell-grid
+baseline to lean on. So render-only densification is **required**, not
+optional, for cooked vertex AO to mean anything on Kyusu's large faces, and it
+cannot be uniform (a fine uniform tessellation of a warehouse floor is
+unacceptable) nor demand manual tiling.
+
+The cooker adds render-only vertices without touching Kyusu's editable brush
+(the cooked mesh is generated fresh, so inserting vertices there is already
+within the cook's remit). The refinement is occluder-gated error-driven
+subdivision:
+
+1. Bake AO at the triangle's existing vertices.
+2. **Gate:** skip the triangle entirely unless at least one vertex is within
+   `render.bake.ao.radius` of some occluder in the BVH. An open floor slab far
+   from any wall is never touched. This is the mechanism that satisfies "a
+   large open floor stays nearly untouched" and "extra vertices cluster around
+   walls, pillars, recesses, stairs, contacts."
+3. For a gated triangle, bake AO at candidate points (edge midpoints first,
+   then the centroid) and compare against the value linearly interpolated from
+   the current vertices.
+4. Subdivide (insert the candidate, retriangulate) only where the error
+   exceeds `render.bake.ao.tess_tolerance` (default 0.1 in AO units).
+5. Recurse to `render.bake.ao.tess_max_depth` (default 2) or until an edge is
+   shorter than `render.bake.ao.tess_min_edge` (default 0.25 world units).
+6. Edge midpoints are inserted at the deterministic quantized average of the
+   endpoints, so a shared edge between two cooked meshes (or across a zone
+   boundary) subdivides identically on both sides and stays watertight and
+   weldable.
+
+Verdict on complexity: error-driven adaptive tessellation is worth it for v1
+here specifically because the "never split brushes" cook makes the sparse
+degenerate case the common case, and the occluder-proximity gate keeps it
+cheap and local. The conservative escape is real and supported: setting
+`tess_max_depth = 0` disables refinement entirely and ships vertex AO at raw
+brush-vertex density (useful only on already-dense authored geometry). The
+recommended v1 default is depth 2; the debug density view (9.6) shows where
+vertices were added so the tolerance can be tuned against real levels.
+
+### 7A.6 Storage, packing, and memory
+
+- `StaticMeshVertex` (48 bytes today: `Vec3d` position + `Vec3d` normal +
+  `Vec2d` uv + `Vec4` tangent, all float-backed since `Vec3d = Vec<3>` float,
+  `Vec.h:381-382`) gains a 4-byte `R8G8B8A8_UNORM` attribute at offset 48
+  (stride 48 -> 52, still 4-byte aligned, no padding): byte 0 = AO (unorm8),
+  bytes 1-3 reserved (default 0xFF; a future octahedral vertex bent normal
+  could take bytes 1-2 if ambient specular ever lands). Vertex attribute
+  location 8 (0-2 base, 3-6 instance matrix, 7 tangent from 3A.1, 8 AO).
+- unorm8 precision: 256 levels over [0,1]. AO is smooth and low-frequency, it
+  modulates an already-dim ambient term, and it passes through the
+  `ao_strength`/`ao_min` dials, so 1/256 banding is below perceptible. Checked,
+  as required, rather than assumed: a full float AO channel would cost 4x the
+  bytes for no visible gain at this use.
+- `.smesh` bumps `kSmeshFormatVersion` 3 -> 4 (`StaticMeshFormat.h:16`). v3
+  files load with AO defaulted to 1.0 (neutral): old cooked meshes render
+  exactly as before. The cook regenerates meshes at v4.
+- Memory: +4 bytes per render vertex, across static and skinned rest geometry
+  (the shared `MeshGeometry`, Decision M). A cooked room of ~50k render
+  vertices costs +200 KiB on disk and in VRAM; adaptive tessellation is capped
+  so a zone cannot exceed `render.bake.ao.max_vertex_growth` (default 2.0x
+  base vertices, logged if hit). Prop assets that never bake AO still pay the
+  4 bytes at neutral; that is the price of one uniform vertex format and one
+  draw path, and it is negligible.
+- No new streamed file for vertex AO: it rides the `.smesh` the zone already
+  cooks and streams. Only the probe payload keeps its own `.sprobe`.
+
+### 7A.7 Composition with probe visibility
+
+`ambient = ambientC * aoFactor` with `aoFactor = mix(1.0, mix(ao_min, 1.0,
+vertexAo), ao_strength)` (Section 3.2). The double-darkening the brief warns
+about (probe irradiance already dark in a corner, then multiplied again by
+vertex AO) is bounded three ways, deliberately rather than by a heavier model:
+
+- **Scale separation.** `render.bake.ao.radius` (default 0.5 world units) is
+  kept well below the probe cell size (default 1.0+). Vertex AO then captures
+  occlusion finer than the probe grid resolves, so the two mostly darken
+  disjoint bands and the multiply is close to correct rather than a literal
+  double count.
+- **Strength dial.** `ao_strength` (0.75) pulls the whole effect back from a
+  literal multiply.
+- **Floor.** `ao_min` (0.15) and the existing additive `render.style.min_ambient`
+  keep corners legible instead of crushed black.
+
+A physically-motivated composition (treating vertex AO as modulating only the
+residual ambient the probe could not resolve) was considered and deferred: it
+needs a stored per-probe visibility to know the residual, which reintroduces
+the payload 7A.1 rejected. The dialed multiply is the deliberate v1 model; the
+"probe + vertex AO without crushed blacks" validation scene (Section 13) is
+what tunes the two defaults against real content, and a richer authored
+composition is an explicit later option, not a v1 obligation.
+
+### 7A.8 Static instances and dynamic objects
+
+The instancing path (one shared vertex buffer drawn many times, Section 1.2)
+must not be broken by placement AO.
+
+- **Cooked level geometry is not instanced.** Brush cells cook to unique
+  per-cell meshes (`BrushClustering.h`), so world-space vertex AO baked into
+  them costs no instancing: they were always unique. This is the primary and
+  only v1 carrier of world-placement AO.
+- **Placed props are instanced, and get no world AO.** A reusable mesh placed
+  many times shares one vertex buffer; baking placement AO per instance would
+  fork that buffer per placement and kill the instanced run. So props carry
+  neutral vertex AO (1.0) and take their placement grounding from the probe
+  irradiance they already sample per fragment (Section 7.4). A crate in a dark
+  corner is grounded by the probe field, not by baked vertex AO.
+- **Self-AO** (a mesh's own concavities, intrinsic to the asset and identical
+  in every placement) can later be baked once into the shared `.smesh` from
+  the isolated mesh and shared by all instances without breaking instancing.
+  This is the same mechanism as authored object-space cavity AO for props and
+  characters. It is deferred to a follow-up (it needs a mesh-asset cook step,
+  not the world cook) and is not required for v1.
+- **Dynamic objects** sample probe irradiance per fragment and may carry
+  authored self/cavity AO in their asset, but never receive world-placement
+  vertex AO baked for one static pose. The rule is structural: world AO is
+  written only into cooked cell meshes, which dynamic objects are not.
+
+### 7A.9 Bake implementation and incremental invalidation
+
+The AO bake reuses Section 7's authority verbatim: cooked render triangles, the
+transient renderer-owned BVH with the neighbor halo, no collision/Jolt
+dependency, finite-distance cosine-weighted hemisphere sampling over the
+shading normal, normal-offset ray origins against self-intersection,
+`render.bake.ao.rays` (default 128) directions from the same fixed table the
+probe bake uses, and deterministic output. Thin-wall/backface policy: rays are
+traced only into the sample's own upper hemisphere and only to
+`render.bake.ao.radius`; a hit within radius (including a backface hit, which
+is real geometry) contributes occlusion with a smooth distance falloff to
+neutral at the radius; rays never tunnel to far geometry, so a carved window or
+a thin door frame does not pull dirty occlusion from the opposite wall.
+
+Incremental invalidation composes with the probe staleness key (7.2): a zone's
+AO output is stale when its own cell `.smesh` hashes, its halo zones' `.smesh`
+hashes, or the AO bake settings change. Editing one zone rebakes that zone plus
+the spatially adjacent zones whose halo included it, not the world. Because AO
+and probe irradiance share the BVH, the halo, and the ray kernel, they are
+produced in one pass of the `LightingBake` orchestrator per zone: build the
+BVH once, cast for probes and for vertex-AO samples, emit `.sprobe` and the
+v4 `.smesh` AO channel together.
+
+### 7A.10 Debug views (Section 9.6 additions)
+
+Through the development-only debug shader and the editor line/overlay batch:
+raw vertex AO (grayscale), probe visibility (probe irradiance luminance),
+bent-normal / ambient direction (SH band-1 dominant direction, labeled as the
+SH-derived proxy), final combined ambient visibility (`ambientC * aoFactor`),
+and AO sample density / adaptive tessellation (added-vertex heat or wireframe
+over the base brush edges, so a reviewer sees refinement clustering at walls
+and absent on open floor). Plus the doctrine proof view: AO term isolated, to
+confirm by eye it never bleeds into a direct-lit surface.
 
 ---
 
@@ -1484,7 +1868,11 @@ geometric vs mapped normal delta, diffuse only, specular only, emission only,
 roughness/exponent, light complexity (it runs the light loop itself and
 counts), shadow term only, raw shadow compare without the filter (for tuning
 bias independently of softness), probe ambient only, baked-vs-dynamic split,
-and probe volume selection id.
+probe volume selection id, and the Section 7A.10 AO set: raw vertex AO, probe
+visibility (probe irradiance luminance), SH-derived ambient direction (labeled
+as the bent-normal proxy), combined ambient visibility (`ambientC * aoFactor`),
+and the AO term isolated (the doctrine-proof view: it must never appear on a
+purely direct-lit surface).
 
 Selection is at pass level: when `render.debug.view != 0` (or the editor's
 per-viewport override is set), `MeshForwardPass` substitutes the debug
@@ -1494,10 +1882,11 @@ existing `EnsurePipeline` pattern (`MeshForwardPass.cpp:55-99`), and the
 debug SPIR-V, the selection code, and the pipelines are all compiled out of
 shipping builds (9.8). Overdraw remains a separate additive-blend counting
 pipeline under the same gates. Atlas contents, shadow-caster bounds, and
-probe placement/validity/weights are overlay- or blit-level views (editor
-line batch and a blit quad), not shader branches. The runtime exposes view
-selection through `RenderStatsPanel`; the editor through `WorldViewSettings`
-(Section 10).
+probe placement/validity/weights and AO sample density / adaptive-tessellation
+(added-vertex heat or wireframe over base brush edges) are overlay- or
+blit-level views (editor line batch and a blit quad), not shader branches. The
+runtime exposes view selection through `RenderStatsPanel`; the editor through
+`WorldViewSettings` (Section 10).
 
 ### 9.7 Phase 3.0 validation (disabled-path proof)
 
@@ -1586,16 +1975,23 @@ is not free.
     cell-size guidance against wall thickness (7.3), bake staleness (input
     hash vs `.sprobe` stored hash), Bake Zone / Bake World buttons, progress
     bar, cancel.
+  - AO section (Phase 3B.3): added-vertex count and the per-zone vertex growth
+    ratio against `render.bake.ao.max_vertex_growth` (with a warning row if a
+    zone hit the cap and refinement was clamped), AO memory delta, and the
+    same Bake Zone / Bake World controls (AO and probes bake together, one
+    progress bar). The AO density debug view (9.6) is the visual counterpart.
 - **Bake execution.** Kyusu-side `LightingBake` orchestrator: snapshot the
-  zone's static lights + cooked geometry list, submit per-volume bake work
-  through `engine.Tasks()` (`AsyncTaskQueue`), report progress via an atomic
-  counter polled in `EditorServices::ProcessFrame`
-  (`EditorServices.cpp:651-701`), write `.sprobe` + update the zone header on
-  commit, and mark the world document dirty. Bake math lives engine-side
-  (`ProbeBakeMath`) so it is testable without the editor; the editor owns
-  orchestration, IO, and UI. The cooked-manifest path (`WorldCook.cpp:69-85`)
-  invokes the same bake when `CookedProbeContentHash` is stale, so PIE and
-  cooked runs stay fresh.
+  zone's static lights + cooked geometry list + halo zone list, submit per-zone
+  bake work through `engine.Tasks()` (`AsyncTaskQueue`) that builds the BVH
+  once and emits both probe SH and the v4 `.smesh` AO channel, report progress
+  via an atomic counter polled in `EditorServices::ProcessFrame`
+  (`EditorServices.cpp:651-701`), write `.sprobe` + the re-cooked `.smesh` +
+  update the zone header on commit, and mark the world document dirty. Bake math
+  lives engine-side (`ProbeBakeMath` for SH, `AoBakeMath` for the weld / halo /
+  tessellation / hemisphere AO, both over the shared `BakeBvh`) so it is
+  testable without the editor; the editor owns orchestration, IO, and UI. The
+  cooked-manifest path (`WorldCook.cpp:69-85`) invokes the same bake when the
+  probe or AO content hash is stale, so PIE and cooked runs stay fresh.
 - **Shudei.** Hand-written rows for the v2 material fields in
   `MaterialInspectorPanel::OnDraw` beside the Surface section
   (`MaterialInspectorPanel.cpp:196-203`): specular intensity slider, emissive
@@ -1825,24 +2221,30 @@ lighting anywhere in the build.
   degrades per policy with the editor warning naming the losers. **This
   completes Phase 3A: a shippable dynamic-lighting renderer.**
 
-### Phase 3B: Baked irradiance probe volumes
+### Phase 3B: Baked irradiance and baked ambient occlusion
 
 Depends on 3.0, 3A.1 (shader structure), and 3A.2 (spot lights exist as bake
 inputs). Independent of 3A.3-3A.5; it can merge before, after, or in parallel
 with the shadow stages, and shipping without it is a supported configuration
-(hemispheric ambient remains).
+(hemispheric ambient remains). Within 3B, the shared bake core (3B.1) lands
+first; probe streaming (3B.2) and vertex AO (3B.3) are independently mergeable
+consumers of it, and 3B.3 works against the hemi-ambient fallback even if 3B.2
+never ships.
 
-#### 3B.1: Grid math, bake math, format (M)
+#### 3B.1: Shared bake core, grid math, probe format (M)
 
-- **Goal.** Everything CPU-testable lands first: grid mapping, BVH, SH
+- **Goal.** Everything CPU-testable lands first: grid mapping, the shared
+  triangle BVH + neighbor halo + hemisphere ray kernel + determinism, SH
   projection, dilation, `.sprobe` IO. No editor UI, no GPU residency, no
   shader changes yet.
 - **Dependencies.** 3.0 (none functionally; counters for bake timing), 3A.2
   (light records as bake input shapes).
 - **Systems affected.** `math/spatial` (new `GridTransform3d`), new
-  `render/probes/ProbeBakeMath` (ray table, BVH build/trace, classification,
-  dilation, SH projection), new `assets/probes/ProbeVolumeFormat`.
-- **New data structures.** `GridTransform3d`, `IrradianceProbeGrid`,
+  `render/probes/BakeBvh` (median-split triangle BVH, halo assembly, cosine
+  hemisphere sampler, fixed ray table, shared by SH and AO), new
+  `render/probes/ProbeBakeMath` (classification, dilation, SH projection over
+  `BakeBvh`), new `assets/probes/ProbeVolumeFormat`.
+- **New data structures.** `GridTransform3d`, `BakeBvh`, `IrradianceProbeGrid`,
   `IrradianceVolumeComponent` (chunk `'IRVL'`, registered in the manifest),
   `.sprobe` chunks.
 - **GPU resources.** None.
@@ -1850,12 +2252,14 @@ with the shadow stages, and shipping without it is a supported configuration
 - **ECS changes.** New component in `ComponentManifest.h:33-39` (UI arrives
   free; it renders nothing yet).
 - **Editor changes.** None yet (component edits already work via schema).
-- **Validation.** Unit tests: grid mapping and trilinear weights; SH
-  projection of analytic inputs; dilation fill order and volume-boundary
-  containment; serial vs parallel bake bit-identical; `.sprobe` round trip
-  and unknown-chunk skip.
+- **Validation.** Unit tests: grid mapping and trilinear weights; BVH trace on
+  hand-built geometry; halo assembly determinism (a boundary sample computes
+  identically given either zone's halo); SH projection of analytic inputs;
+  dilation fill order and volume-boundary containment; serial vs parallel bake
+  bit-identical; `.sprobe` round trip and unknown-chunk skip.
 - **Completion criteria.** A headless test bakes a synthetic two-room volume
-  and asserts the dark room's probes stay dark; suite green.
+  and asserts the dark room's probes stay dark; a boundary-halo test asserts
+  two adjacent zones compute an identical shared-boundary sample; suite green.
 
 #### 3B.2: Editor bake, streaming, runtime sampling (L)
 
@@ -1889,7 +2293,43 @@ with the shadow stages, and shipping without it is a supported configuration
 - **Completion criteria.** Template-game world bakes from the lighting panel
   with progress, streams per zone, renders probe ambient within budget
   (Section 14), and survives editor geometry edit -> staleness warning ->
-  rebake round trip.
+  rebake round trip. Also fold the read-only neighbor halo (Section 7.2) into
+  the probe bake here, with a two-zone boundary scene proving no lighting seam.
+
+#### 3B.3: Cooked vertex ambient occlusion (L)
+
+- **Goal.** Sub-probe-cell contact darkening from the same bake: welded,
+  seamless across zones, densified only near occluders, packed into the vertex,
+  modulating the ambient term only.
+- **Dependencies.** 3B.1 (`BakeBvh`, halo, ray kernel). Independent of 3B.2:
+  vertex AO multiplies whatever ambient exists (probe or hemi fallback).
+- **Systems affected.** New `render/probes/AoBakeMath` (weld topology,
+  occluder-gated adaptive tessellation, hemisphere AO, scatter-to-vertex),
+  `StaticMeshVertex` + `.smesh` format (v3 -> v4, packed AO attribute),
+  `MeshLoader`/`MeshSerializer` (read/write/default the AO channel),
+  `MeshForwardPass` (vertex attribute location 8, AO into StandardLit ambient),
+  `RenderExtractionSystem`/instancing untouched, `DocumentCook`/`WorldCook`
+  (AO bake integrated into the per-zone `LightingBake`), kyusu lighting panel
+  AO section + density debug view.
+- **New data structures.** AO sample-topology (transient bake weld set), the
+  4-byte packed vertex attribute, `render.bake.ao.*` bake cvars, `render.ao.*`
+  runtime cvars.
+- **GPU resources.** None (rides the existing `.smesh` vertex buffer).
+- **Shader changes.** Vertex shader passes the AO varying; StandardLit and
+  Unlit apply `aoFactor` to the ambient term (Section 3.2); the AO debug views
+  land in the development shader (9.6).
+- **ECS changes.** None (AO is mesh data, not a component).
+- **Editor changes.** AO section in the lighting panel (added-vertex counts,
+  growth-cap warning), AO density / tessellation debug view.
+- **Validation.** The Section 13 AO test set (weld, hard-edge split, cross-zone
+  determinism, occluder-gated refinement, open-floor near-zero growth,
+  thin-wall/window policy, instance neutrality, composition without crushed
+  blacks, AO-disabled equals Phase 3A ambient); `.smesh` v3 files load neutral.
+- **Completion criteria.** A coplanar floor split across two draw calls and
+  across a zone boundary shows no AO seam; a massive floor beside one wall
+  refines only near the wall; AO composes with probes without crushed corners;
+  toggling `render.ao.enabled 0` yields byte-identical direct lighting and
+  shadows; suite green.
 
 ### Phase 3C: Evidence-based forward-renderer review and tuning (M)
 
@@ -1943,7 +2383,9 @@ New engine files:
 | `engine/{include,src}/render/probes/IrradianceProbeGrid.{h,cpp}` | Grid3d + GridTransform3d composition |
 | `engine/include/render/probes/IrradianceVolumeComponent.h` | Component + schema (`'IRVL'`) |
 | `engine/{include,src}/render/probes/ProbeVolumeSet.{h,cpp}` | Resident volumes, GPU upload |
-| `engine/{include,src}/render/probes/ProbeBakeMath.{h,cpp}` | Ray table, triangle BVH, classification, dilation, SH projection |
+| `engine/{include,src}/render/probes/BakeBvh.{h,cpp}` | Shared triangle BVH, neighbor halo, cosine hemisphere ray kernel, fixed ray table |
+| `engine/{include,src}/render/probes/ProbeBakeMath.{h,cpp}` | Classification, dilation, SH projection over `BakeBvh` |
+| `engine/{include,src}/render/probes/AoBakeMath.{h,cpp}` | Vertex-AO weld topology, occluder-gated adaptive tessellation, hemisphere AO, scatter-to-vertex |
 | `engine/{include,src}/assets/probes/ProbeVolumeFormat.{h,cpp}` | `.sprobe` chunked binary IO |
 | `engine/include/math/spatial/GridTransform3d.h` | World-cell mapping value type |
 | `engine/{include,src}/graphics/vulkan/GpuTimestampPool.{h,cpp}` | Lazily created timestamp queries |
@@ -1968,7 +2410,10 @@ Modified engine files (primary): `render/RenderLight.h`,
 `engine/CMakeLists.txt`, `cmake/SenchaOptions.cmake`,
 `engine/shaders/mesh_forward.{vert,frag}.glsl`,
 `render/Camera.h` and `render/Camera.cpp` (comments only),
-`template/src/TemplateGame.cpp` (probe recipe).
+`template/src/TemplateGame.cpp` (probe recipe),
+`render/static_mesh/StaticMeshVertex.h` (packed AO attribute, +4 bytes),
+`assets/static_mesh/{StaticMeshFormat.h,MeshSerializer.{h,cpp},MeshLoader.cpp}`
+(`.smesh` v4 AO channel, v3 loads neutral).
 
 Editor files: kyusu `render/LightVisualRenderer.{h,cpp}` (new),
 `render/EditorRenderFeature.{h,cpp}`, `render/SceneRenderQueueBuilder.cpp`,
@@ -2031,6 +2476,24 @@ into existing globbed directories (`test/CMakeLists.txt:32-34`).
 - `test/core/ProbeVolumeFormatTests.cpp`: `.sprobe` write/read round trip,
   unknown-chunk skip, version rejection, validity chunk ignored by the
   runtime reader.
+- `test/engine_features/AoBakeTests.cpp` (the AO correctness set, all CPU):
+  the weld groups coincident + normal-compatible render vertices into one
+  sample and splits a genuine hard wall/floor corner into two (face-appropriate
+  independent AO); two coplanar sections split into separate meshes carry
+  byte-identical welded AO (no seam); a continuous surface split across a
+  simulated zone boundary computes byte-identical boundary AO given either
+  zone's halo (cross-zone determinism); occluder-gated adaptive tessellation
+  refines a sparse floor near one wall and adds near-zero vertices to an open
+  floor far from occluders, respecting max depth / min edge / growth cap;
+  deterministic edge-midpoint insertion keeps shared edges watertight across
+  meshes; thin-wall / carved-window rays do not pull occlusion from the
+  opposite side (finite radius, own-hemisphere); a reusable mesh instanced in
+  several placements keeps one shared vertex buffer with neutral AO (instancing
+  preserved); the composition `mix` never crushes below `ao_min`; and
+  `render.ao.enabled 0` reproduces the Phase 3A ambient exactly.
+- `test/core/StaticMeshFormatTests.cpp` (extended): `.smesh` v3 loads with AO
+  defaulted to 1.0; v4 round-trips the packed AO channel; the 52-byte vertex
+  stride and attribute offset are asserted.
 - `test/engine_features/TonemapCurveTests.cpp`: the CPU reference of
   `kneeShoulder` (mirrored by the shader): exact identity at and below the
   knee, continuity and C1 at the knee, monotonicity, asymptote below 1.
@@ -2045,9 +2508,15 @@ into existing globbed directories (`test/CMakeLists.txt:32-34`).
   blocks in `MeshForwardPass.cpp:15-31`.
 
 GPU-dependent behavior (bias tuning, filter look, guard-band proof scene,
-barrier correctness, the 9.7 disabled-path protocol) is validated by the
-staged scenes under the Vulkan validation layer plus RenderDoc inspection,
-recorded per stage in Section 11. If llvmpipe CI lands later
+barrier correctness, the 9.7 disabled-path protocol, and the AO visual scenes:
+coplanar split floor with no seam, cross-zone-boundary continuous surface, hard
+corner, sparse floor beside one wall with localized refinement, open floor with
+almost no added vertices, carved windows / thin door frames without opposite-wall
+dirt, a static instance in several placements, probe + vertex AO composition
+without crushed black, dynamic objects crossing differently enclosed probe
+regions, and AO disabled proving direct lighting and shadows unaffected) is
+validated by the staged scenes under the Vulkan validation layer plus RenderDoc
+inspection, recorded per stage in Section 11. If llvmpipe CI lands later
 (engine-roadmap.md:523), the capture tool doubles as its assertion source.
 
 ---
@@ -2065,6 +2534,9 @@ GPU frame <= 12 ms leaving headroom.
 | One 512 spot view | <= 0.15 ms |
 | One 512 point cube update (6 faces, per-face cull) | <= 0.8 ms |
 | Probe sampling added cost (fragment, volumes resident) | <= 0.3 ms full-screen |
+| Vertex AO runtime cost (one varying + `aoFactor` on ambient) | negligible (<= 0.02 ms) |
+| Vertex AO disk/VRAM cost | +4 B/vertex; ~+200 KiB per 50k-vertex room |
+| AO adaptive-tessellation vertex growth per zone | <= 2.0x base (`max_vertex_growth`, logged if hit) |
 | Shadow memory (atlas 8 MiB + cubes 12 MiB) | <= 20 MiB fixed |
 | Probe memory per zone (default density) | <= 2 MiB (typical room volume ~50 KiB) |
 | Frame UBO | <= 8 KiB (16 KiB hard line, `RenderLight.h:42-44`) |
@@ -2078,7 +2550,7 @@ GPU frame <= 12 ms leaving headroom.
 | Capture ring memory (Capture mode only, lazily allocated) | <= 16 MiB default |
 | Visible lights after cull (design guidance) | <= 24 typical, 64 hard cap |
 | Shadowed lights simultaneously | 8 spot + 4 point (cvars) |
-| Editor bake, default density, per zone | <= 30 s, editor responsive throughout |
+| Editor bake (probes + AO together), default density, per zone | <= 30 s, editor responsive throughout |
 
 Escalation triggers (from 3C, restated as the standing rule):
 
@@ -2122,8 +2594,21 @@ Risks and mitigations:
   next frame), never by corruption (6.5).
 - **`.smat` v2 vs older tooling.** Version gate is explicit and loud by
   design; shudei and loaders land in the same stage.
-- **Editor bake blocking on huge worlds.** The bake is per-volume tasked and
-  cancelable; Bake Zone exists precisely so Bake World is optional.
+- **Editor bake blocking on huge worlds.** The bake is per-volume/per-zone
+  tasked and cancelable; Bake Zone exists precisely so Bake World is optional.
+- **AO double-darkening in corners.** Bounded by scale-separated radius,
+  strength dial, and floor (7A.7); the "probe + vertex AO without crushed
+  black" scene tunes the defaults; the crushed-black debug view catches
+  regressions.
+- **Adaptive tessellation exploding vertex count on pathological geometry.**
+  Capped by `max_vertex_growth` (default 2.0x, logged), min-edge, and max-depth;
+  the occluder-proximity gate makes open surfaces free; `tess_max_depth 0` is
+  the conservative escape (raw brush-vertex AO).
+- **Cross-zone AO seam if determinism breaks.** The halo must be assembled in a
+  stable order and the ray table fixed; the cross-zone determinism unit test
+  (Section 13) fails loudly if a nondeterministic input creeps in.
+- **`.smesh` v4 vs older tooling.** Version gate is explicit; v3 loads neutral,
+  so the failure mode is "AO absent," never corruption.
 - **Instrumentation cost regressions over time.** The 9.7 A/B protocol is
   rerun whenever the instrumentation surface changes; the granularity policy
   (9.2) gives reviewers a bright line.
@@ -2142,13 +2627,33 @@ validity-weighted runtime interpolation (7.3); per-instance probe volume
 indices (7.4); a generalized spatial-field/voxel framework (Section 8);
 duplicated or templated profiled/unprofiled render passes (9.2); a debug-view
 branch inside the production StandardLit shader (9.6); Forward+/clustered now
-(Sections 11/14); reversed-Z migration (Section 2).
+(Sections 11/14); reversed-Z migration (Section 2). AO-specific rejections
+(Section 7A): a separate per-probe ambient-visibility payload and a probe bent
+normal for v1 (redundant with L1 SH irradiance, 7A.1); AO lightmap textures,
+secondary lightmap UVs, chart/atlas generation, and any offline direct-shadow
+artifact (banned by doctrine, 7A.2); uniform tessellation and any dependence on
+manual tiling (7A.5); a shared-boundary-authority cross-zone scheme
+(determinism-plus-halo replaces it, 7A.4); per-instance world-placement vertex
+AO (breaks instancing, probes ground props instead, 7A.8); a full-float vertex
+AO channel (unorm8 suffices, 7A.6); a physically-motivated residual-ambient
+composition (reintroduces the rejected probe visibility, 7A.7); and runtime
+contact AO / SSAO (deferred until real scenes prove it necessary).
 
 Deferred work, anchored to triggers:
 
 - **Directional lights + cascaded shadow maps**: explicitly out of Phase 3 by
   request; the `GpuLight` type enum and the shadow-slot mechanism are already
-  shaped to receive them (roadmap Track B row to be updated).
+  shaped to receive them (roadmap Track B row to be updated). **AO consequence
+  (binding rule for that future work):** the directional sun is a *direct* term
+  and is contained only by its cascaded shadow maps and by geometry, never by
+  AO. Baked AO modulates the ambient term exclusively (Section 3.2), so it
+  structurally cannot darken the sun disc. The specific trap to forbid in
+  review: "reuse AO to keep sunlight out of interiors" (multiplying the sun
+  contribution, or a sky/sun ambient that leaks into the direct sum, by AO).
+  An interior stays dark from the sun because CSM shadows it or because the sun
+  never reaches it, not because AO attenuates a direct term. The probe
+  irradiance and vertex AO may modulate the *sky ambient* (indirect); the sun
+  key light may not.
 - **Skinned shadow casters**: blocked on skinned rendering (Track B item 1,
   engine-roadmap.md:318-322); `ShadowDepthPass` takes a second vertex shader
   when posed buffers exist (Decision N).
@@ -2166,6 +2671,19 @@ Deferred work, anchored to triggers:
   light cookies via the spot atlas**: each waits for a content-driven need;
   cookies in particular are a natural atlas extension already anticipated by
   the slot record's scale/bias addressing.
+- **Prop self-AO / authored object-space cavity AO** (bake a reusable mesh's
+  own concavities once into its shared `.smesh`, shared by all instances,
+  usable by dynamic objects): deferred to a follow-up mesh-asset cook; v1 props
+  carry neutral vertex AO and take grounding from probes (7A.8). The vertex AO
+  channel and the bake kernel already exist, so this is additive.
+- **Probe bent normal and probe ambient-visibility scalar** (a sharper
+  ambient direction / cone than the SH band-1 proxy): land only with ambient
+  specular, which would be their first real consumer (7A.1). The vertex AO
+  attribute reserves 3 bytes for a future octahedral vertex bent normal if that
+  need reaches surface scale.
+- **Richer AO composition** (authored per-material AO strength, occlusion-aware
+  probe/vertex blend): the dialed multiply is the v1 model; a stronger model
+  waits for content that the defaults cannot satisfy (7A.7).
 - **`Changed<>` prefilter for the caster diff, static/dynamic caster split**:
   measure-first (0.5).
 - **Multi-viewport editor shadow preview** (context zones + all viewports):
