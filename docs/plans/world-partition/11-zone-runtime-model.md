@@ -89,10 +89,11 @@ immutable views while systems run, one explicit mutation point per frame.
 Contents (record shapes and the cooked artifact live in doc 12 Sections 6
 and 9): zone and region tables from the cooked manifest, `SourceZone`
 provenance, the contact array (physical and logical), predicate and
-controller tables, and indexes: zone to incident contacts, zone pair to
-contacts, controller to controlled contacts, source to children. Beside the
-static records sits one evaluated array (Section 3.4) and a revision
-counter.
+controller tables, the residency-dependency index (dependent child to
+owner plus participation mask, Section 5.6), and indexes: zone to incident
+contacts, zone pair to contacts, controller to controlled contacts, source
+to children. Beside the static records sits one evaluated array
+(Section 3.4) and a revision counter.
 
 ### 3.2 State inputs (engine language only)
 
@@ -219,7 +220,13 @@ doc 10 recorded as a deliberate later trade (`10-...md:221`); adopting it
 amends S-D3's single-resolved-config signature on the record
 (`ComputeZoneDemand` consumes the region table). Every contact into an
 ineligible zone compiles `Demand` potential (doc 12 Section 7.1), because
-topological demand is that zone's only path to residency.
+topological demand is that zone's only path to residency. This covers a
+subdivided graph-only place cleanly: its children are spatially
+ineligible, but the sibling contacts between them (doc 12 Section 6.1) are
+contacts into ineligible zones, so each compiles `Demand` potential and
+graph demand walks child to child as focus moves through the place, the
+same way a room-graph place streams through doorways. The sibling contacts
+are the streaming mechanism; no special case is needed.
 
 ### 5.4 Participation and cost
 
@@ -235,9 +242,43 @@ byte-identical.
 ### 5.5 Demand reasons
 
 `ZoneDemandRecord` sources gain the topology vocabulary: demanded through
-contact X, pinned by prepare handle Y (Section 7), spatial, focus,
-lingering. "Why is this zone resident" stays answerable from a log and
-from the inspector without new machinery.
+contact X, pinned by prepare handle Y (Section 7), retained as a residency
+dependency of zone Z at a stated participation mask (Section 5.6),
+spatial, focus, lingering. "Why is this zone resident" stays answerable
+from a log and from the inspector without new machinery.
+
+### 5.6 Residency-dependency closure
+
+An object spanning several child zones is owned by one and retained by the
+others (doc 12 Section 3.4); the cook emits a residency-dependency index,
+`dependent -> (owner, participation mask)`, into the topology store. After
+the base demand set is computed (focus, neighbors, spatial, pins, graph),
+the policy runs **dependency closure** over that index:
+
+- For each zone in the demand set, add every owner it depends on, `OR`-ing
+  the edge's participation mask into that owner's desired participation
+  (never below what the owner already has). The propagated participation
+  is the spanning object's own need, not the dependent's: retaining a
+  wall's owner for `{Visible, Physics}` never makes it `Logic`-hot.
+- Iterate to a fixpoint: an owner pulled in this way is itself closed over
+  its own dependencies. Termination is guaranteed because mask union is
+  monotone over a finite zone set. A dependency **cycle** (A owns an
+  object spanning into B, B owns one spanning into A) is valid and
+  converges to both resident at the union of the two masks, in
+  deterministic zone-id order.
+- A zone present only as a dependency carries `Sources.Dependency` and the
+  owner id in its record (Section 5.5).
+
+Closure runs before the cap and cost pass, so dependency residency
+**counts** toward both. Dependency-pulled zones join focus and pins as
+**non-evictable**: the cap's eviction candidates exclude them, because
+evicting an owner while a dependent is resident would drop the spanning
+object from a cell that still shows it. If focus, pins, and dependencies
+together exceed the cap, the cap is honestly exceeded (the existing
+focus-plus-pins overage rule). When the last dependent leaves the demand
+set, the owner is no longer pulled and returns to ordinary linger and
+eviction. This is ordinary demand closure over flat zones: no hierarchy,
+no second streaming system, no new participation tier.
 
 ---
 
@@ -385,13 +426,21 @@ change with state has no fixture yet and is recorded as a deferral.
 ## 9. Dynamic entities and controller residency
 
 No total runtime refactor is required for **static** subdivided residency
-and **declared** reconfiguration under this model. That claim stays
-deliberately narrow. Entities that roam across child boundaries (NPCs,
-props, vehicles, projectiles, dropped items) still have no cross-registry
-migration; the working precedents are anchored content owned by its child
-and the pawn in `Global()`. This remains owned future work homed at Track
-C item 5 (stateful detach and serialized entity identity), a prerequisite
-for shipping wanderers in subdivided places, not for this design.
+and **declared** reconfiguration under this model, and that claim stays
+deliberately narrow. Explicitly:
+
+- the player can remain in `Global()` (the shipped model), so the focus
+  pawn crosses child zones freely today;
+- static subdivision can land before any entity-migration work;
+- ordinary NPCs, props, projectiles, and dropped items **cannot** freely
+  cross child registries: an entity lives in exactly one registry and
+  there is no cross-registry migration yet, so the precedents are anchored
+  content owned by its child and the pawn in `Global()`;
+- a subdivided *populated* world is therefore not fully production-ready
+  until entity migration exists.
+
+That migration is owned future work homed at Track C item 5 (stateful
+detach and serialized entity identity); these documents do not solve it.
 
 Controller entities (the door, the hall machinery) sit between the zones
 they connect. `Global()` residency is the accepted first implementation

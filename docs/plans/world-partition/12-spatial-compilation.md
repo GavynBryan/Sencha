@@ -146,11 +146,17 @@ Aabb3d ContentBounds;     // AABB of actually cooked content: diagnostics,
 ```
 
 A cell with one fence post near its far edge still loads on approach,
-because demand tests the full footprint. **Emptiness**: a child exists iff
-any content buckets into its cell (brush geometry, which includes floors
-by construction; collision; any passthrough entity). Contentless air cells
-produce no child and resolve through recovery; phantom coverage-only
-children for flying profiles are a recorded deferral.
+because demand tests the full footprint. **Existence versus ownership**: a
+child exists if any content *overlaps* its cell (a brush's geometry, a
+collision shape, or an entity's influence intersects the cell box), not
+merely if content is anchored there. So a large floor spanning three cells
+makes all three children exist, even though the floor is owned (anchored,
+Section 3.4) by one of them; the other two are real zones carrying a
+residency dependency on the owner. Determining existence from overlap
+before assigning ownership from the anchor is what stops a large floor
+from producing only its anchor child. A cell with no overlapping content
+at all produces no zone and resolves through recovery; phantom
+coverage-only children for flying profiles are a recorded deferral.
 
 ### 3.4 Content assignment
 
@@ -163,17 +169,21 @@ The common case; nothing further.
 
 **Spans several cells** (a long wall, a bridge, a big rock, a floor slab,
 a light or trigger whose influence reaches past its cell): kept whole,
-assigned to one owning cell, with every cell it overlaps declaring a
-**residency dependency** on that owner: whenever an overlapped cell is
-demanded, the owner is demanded too, so the object is resident and
-complete from every cell it touches. No split, no seam, no duplicated
-geometry, one registry per object (the flat-zone invariant holds). The
-cost is co-residency of the owner with its overlappers, bounded and cheap
-while the span is a handful of cells. This is the dependency-retention
-mechanism the dynamic-entity work also needs (doc 11 Section 9);
-subdivision is its first consumer, and it replaces the earlier
-influence-exceeds-cell warning: an object reaching past its cell is a
-retention fact, not a diagnostic.
+assigned to one owning cell (its anchor), with every *other* cell it
+overlaps emitting a **residency-dependency edge** to that owner. The cook
+writes these into a residency-dependency index in the topology artifact
+(Section 9.1), `dependent child -> (owner child, participation mask)`,
+where the mask is only the participation the spanning object itself
+contributes: `Visible` for renderable geometry, `Physics` for collision,
+`Logic` for a trigger or gameplay object, `Audio` for audio influence (a
+plain wall is `{Visible, Physics}`; a trigger volume is `{Logic}`). An
+object overlapping N cells emits N-1 edges to its owner; multiple objects
+merge by `OR`-ing the mask per dependent-owner pair. Emission is
+deterministic (dependent id, then owner id). No split, no seam, no
+duplicated geometry, one registry per object (the flat-zone invariant
+holds). The runtime closure, eviction, cap, and cost contract is doc 11
+Section 5.6. This replaces the earlier influence-exceeds-cell warning:
+reaching past a cell is a retention fact, not a diagnostic.
 
 **Spans many cells** (a region-scale terrain surface) is not a
 subdivision problem and must not become one: retention would pin the
@@ -233,10 +243,15 @@ open field through the kernels with no zone bake involved.
 ### 4.2 The zone compiler's domains
 
 Bespoke place envelopes (geometry plus clearance-and-radius margin),
-frontier bands where places meet, and, per spatial configuration state,
-the assembly's affected bounds (Section 8.4). Not sampled: subdivided
-interiors (analytic containment) and empty space beyond envelopes. A
-domain-size assertion per fixture keeps it scoped.
+frontier bands where places meet, **thin bands along the internal cell
+boundaries of subdivided places** (so sibling traversability is tested,
+Section 6.1), and, per spatial configuration state, the assembly's
+affected bounds (Section 8.4). Not sampled: the *interiors* of subdivided
+cells (containment there stays analytic, Section 9.3) and empty space
+beyond envelopes. Sampling a subdivided place is therefore boundary-only,
+not volumetric: one clearance-radius band at each shared cell face,
+bounded work per edge. A domain-size assertion per fixture keeps it
+scoped.
 
 ### 4.3 Traversal profiles
 
@@ -314,8 +329,16 @@ Wherever traversable free space crosses a boundary between different
 resolved owners (bespoke-to-bespoke, bespoke-to-grid, grid-to-grid across
 place frontiers), boundary faces group into connected components per
 unordered zone pair; each component is one contact. Two doors between the
-same pair are two contacts. Same-source sibling adjacency is implicit in
-the grid and compiles nothing. Extraction runs per spatial-configuration
+same pair are two contacts. **Same-source sibling boundaries are tested,
+not assumed**: the shared face between two children of one subdivided
+place is sampled like any other boundary (Section 4.2), and a traversable
+stretch emits an ordinary compiled contact while a walled one emits none.
+Neighboring grid coordinates are never presumed connected. These sibling
+contacts are ordinary `Compiled` contacts, so every algorithm that walks
+contacts (reachability, graph demand, editor validation, future
+navigation attachment points) walks them with no special case; the editor
+hides contacts whose endpoints share a `SourceZone` unless subdivision
+debugging is on (Section 10.5). Extraction runs per spatial-configuration
 state within assembly domains (Section 8.4), so a contact knows which
 states it exists in.
 
@@ -445,9 +468,11 @@ Tag names intern to ids at artifact load (registration-order tag ids are
 never serialized, per the `core/gameplay_tags` rule; the artifact stores
 dotted names in a string table). Evaluation is a linear pass: for each
 predicate row, membership tests against the tag set and the
-configuration map (doc 11 Section 3.4). Multi-mechanism contacts carry a
-requirement list (Section 8.4); combined-alignment paths are route
-composition at query time, never compiled products.
+configuration map (doc 11 Section 3.4). A contact has at most one
+controller, so its predicate references at most one configuration set; a
+passage that depends on two mechanisms is two contacts on a route
+(Section 8.4), and their conjunction is computed by reachability at query
+time, never folded into one contact.
 
 ### 7.3 Kind and label vocabulary
 
@@ -554,7 +579,11 @@ enters per-state evaluation instead) and are never split or re-bucketed
 away from their root by subdivision. The assembly's entities live where
 authored (typically the world scene for boundary-straddling mechanisms,
 per doc 11 Section 9); their zone residency is independent of which
-configuration is active.
+configuration is active. A brush inside an assembly is not a
+moving-geometry problem: the cook compiles it into an independently
+transformable local-space static mesh and collision asset (the ordinary
+per-brush bake, simply not merged into stationary cell geometry), and a
+configuration pose is a transform on that asset.
 
 ### 8.4 Cooking states
 
@@ -567,14 +596,21 @@ same location across states is one record whose `StateMask` accumulates;
 dock contacts unique to a state carry that state alone; a `Transit`
 state contributes no dock contacts by construction.
 
-Interacting mechanisms: when two sets' affected bounds overlap, the cook
-evaluates the cross product of only those overlapping sets' states
-within the intersection, and a contact needing both carries a
-requirement list entry per set. Cartesian explosion is avoided because
-evaluation is per overlapping cluster, clusters are small and rare, and
-independent mechanisms never multiply: a path that exists only when two
-independent mechanisms align is two contacts and a route-time
-conjunction, not a compiled product (fixture 9).
+One controller per contact. When two assemblies' affected bounds overlap,
+the cook may still locally co-evaluate their combined geometry to decide
+which contacts physically exist (that local evaluation is fine and
+expected), but **every emitted contact is attributed to at most one
+controlling set**: the assembly whose geometry forms that opening.
+Multiple mechanisms compose along a **route**, not inside one contact: a
+corridor gated by a rotating hall and then a bridge is two contacts, each
+single-controlled, and the route is traversable only when both are
+active, which reachability computes at query time (fixture 9). If an
+opening genuinely exists only when two assemblies align at one location,
+that is one mechanism authored as two assemblies: fold them into a single
+`SpatialConfigurations` set (one controller, combined states) rather than
+emit a dual-controlled contact (`spatial.configuration.shared_opening`,
+Warning). There is no requirement list and no state cross-product in the
+record.
 
 Cost note: per-state domains are local (a door's domain is meters), so
 state count multiplies small bakes, not the world. The domain-size
@@ -586,6 +622,9 @@ assertion covers assemblies too.
 contact: probably not topology-relevant; Info),
 `spatial.configuration.state_unreachable_geometry` (a state whose posed
 members collide with static world geometry; Warning),
+`spatial.configuration.shared_opening` (an opening whose existence
+depends on two assemblies aligning at one location: fold them into one
+assembly, Section 8.4; Warning),
 `spatial.configuration.dock_unresident_risk` is not a cook diagnostic
 (the runtime prepare lifecycle owns it, doc 11 Section 7), and
 `spatial.annotation.orphaned` covers stale references as everywhere
@@ -602,9 +641,10 @@ restored-directly precedent), referenced from the cooked manifest with a
 content hash, loaded once at world start into the topology store
 (doc 11 Section 3): contact records (SoA), predicate rows, the tag-name
 string table, configuration-set table (ids, state ids, names, defaults),
-annotation results, and the indexes (zone to incident contacts, zone
-pair, controller to contacts, source to children). Evaluated state is
-runtime-only and never ships.
+annotation results, the residency-dependency index (dependent child to
+owner plus participation mask, Section 3.4), and the indexes (zone to
+incident contacts, zone pair, controller to contacts, source to
+children). Evaluated state is runtime-only and never ships.
 
 ### 9.2 The manifest
 
@@ -725,7 +765,12 @@ seam), a large-influence light (retention), a canyon between two radius
 regions (compiled contact, no `Demand`), a wide temple mouth into a
 graph-only interior (`Demand` regardless of width), one continuous room
 split into two bespoke zones (a wide-open contact on a deterministic
-ambiguous boundary). Vertical set: Section 9.3's list.
+ambiguous boundary). Subdivision set: a subdivided place with an internal
+wall (one sibling cell boundary open, one walled: child adjacency tested,
+not assumed), a dependency cycle (two multi-cell objects owned by
+adjacent children each spanning into the other), a subdivided graph-only
+place (children stream child-to-child through sibling contacts).
+Vertical set: Section 9.3's list.
 Topology set: (1) closed gate: `Demand` active, `Traversal` inactive,
 opening activates without recook; (2) barred grate: no pawn `Traversal`
 potential in any state (visibility recorded for its future capability);
@@ -736,9 +781,11 @@ creates it, opposite side preloadable before lowering; (6) destructible
 wall: inclusion-flag states, intact and destroyed; (7) powered security
 door: tag-plus-configuration predicate, inspector explains the failure;
 (8) wide graph-only entrance: `Demand` potential regardless of width;
-(9) two overlapping mechanisms: pairwise state evaluation, no global
-product, combined path answered by route conjunction; (10) scenario
-diff: two scenarios produce a deterministic contact and demand diff.
+(9) two mechanisms in sequence (rotating hall then bridge): each forms
+its own single-controller contact, the route is traversable only when
+both contacts are active (reachability conjunction at query time), and no
+contact carries two controllers; (10) scenario diff: two scenarios
+produce a deterministic contact and demand diff.
 
 ### 12.2 Stages
 
@@ -751,18 +798,25 @@ throughout; overview binding rules apply.
   child-id stability under content edits; coverage-based radius demand
   (the sparse-cell fixture loads on approach); dependency retention keeps
   the multi-cell slab and bridge whole and resident from every overlapped
-  cell, with no split and no seam; `SourceZone` across cook, records,
-  preview; the field fixture streams by radius with zero contacts
-  compiled and zero sampling run.
+  cell, with no split and no seam; a large floor produces all overlapped
+  children, not only its anchor; dependency residency counts toward the
+  cap and cost, dependency zones are non-evictable, and the dependency
+  cycle converges deterministically (doc 11 Section 5.6); `SourceZone`
+  across cook, records, preview; the field fixture streams by radius with
+  zero contacts compiled and zero sampling run.
 - **Stage 2: spatial eligibility.** `JoinsSpatialDemand` through
   config, policy, preview. Gate: village interiors cold from street
-  radius; S-D3 amendment recorded.
+  radius; a subdivided graph-only place streams child-to-child through
+  its sibling contacts as focus moves (no spatial demand needed);
+  S-D3 amendment recorded.
 - **Stage 3: evidence kernels.** Section 4 over explicit domains;
   determinism gates; the open-field kernel-reuse gate.
 - **Stage 4: labeling and contacts.** Sections 5 and 6 for static
   geometry (no configurations yet). Gates: every indoor fixture labels
   and contacts as written; grotto beats garden grid; decoy island
-  absorbs; drop ledge one-way; ambiguity flags exactly once.
+  absorbs; drop ledge one-way; ambiguity flags exactly once; the
+  internal-wall fixture emits a sibling contact on the open cell face and
+  none on the walled face (adjacency tested, not assumed).
 - **Stage 5: topology artifact, capabilities, evaluator, demand.**
   Sections 7 and 9.1, doc 11 Sections 3 through 5: potentials,
   predicates, `.sztopo`, the store, `EvaluateWorldTopology`, revision,
@@ -785,8 +839,10 @@ throughout; overview binding rules apply.
   component, capture, per-state cooking, controller ids, state input,
   prepare/commit lifecycle. Gates: fixtures 3 through 7 and 9 as
   written; the rotating corridor refuses motion until prepared and
-  commits dock adjacency and demand at one evaluation point; pairwise
-  overlap evaluation bounded (assert evaluated state-pair count).
+  commits dock adjacency and demand at one evaluation point; every
+  emitted contact has at most one controller, and a co-located
+  dual-mechanism opening is reported (`shared_opening`) rather than
+  emitted with two controllers.
 - **Stage 8: editor surface.** Section 10. Gate: the manual
   walkthrough (select scenario, flip a tag, watch reflow; inspect a
   blocked contact and read why; capture a two-state door and preview
