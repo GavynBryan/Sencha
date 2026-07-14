@@ -154,27 +154,49 @@ children for flying profiles are a recorded deferral.
 
 ### 3.4 Content assignment
 
-**Splittable static geometry (brushes).** Whole-brush by center (the
-existing rule) while the brush fits its cell plus tolerance; oversized
-brushes split at residency planes by a **cook split kernel**: a pure
-function, specified and gated independently of the editor clip verb.
-Contract: output pieces partition the input triangles exactly, preserve
-per-face `FaceMaterial` and UV projection, preserve source-brush
-provenance, and remain sealed where the input was sealed. Gate: the union
-of split cooked triangles hashes identical to the unsplit cook, and the
-scripted mover crosses the seam with no behavioral difference. Future
-splittable data (terrain chunks, lighting, nav tiles) rides the same
-plane-partition contract when those systems land.
+Nothing is ever hand-split: authoring keeps every object whole, and the
+cook's default keeps it whole too. Assignment is by span, not by editing.
 
-**Non-splittable anchored content (passthrough entities).** Anchor
-ownership by transform position. Entities whose declared influence extent
-exceeds their cell (light range, audio range, trigger volume) keep anchor
-ownership and trip `partition.entity.influence_exceeds_cell` (Warning);
-resolutions: shrink, move, or place in the world scene (`Global()`), the
-supported escape hatch. Recorded future mechanism: multi-cell dependency
-retention, shared with the dynamic-entity work (doc 11 Section 9).
-Members of a `SpatialConfigurations` assembly are never split and never
-bucketed away from their assembly (Section 8.3).
+**Fits within one cell.** Assigned to the cell containing its anchor (a
+brush by its center, an entity by its transform), the existing cook rule.
+The common case; nothing further.
+
+**Spans several cells** (a long wall, a bridge, a big rock, a floor slab,
+a light or trigger whose influence reaches past its cell): kept whole,
+assigned to one owning cell, with every cell it overlaps declaring a
+**residency dependency** on that owner: whenever an overlapped cell is
+demanded, the owner is demanded too, so the object is resident and
+complete from every cell it touches. No split, no seam, no duplicated
+geometry, one registry per object (the flat-zone invariant holds). The
+cost is co-residency of the owner with its overlappers, bounded and cheap
+while the span is a handful of cells. This is the dependency-retention
+mechanism the dynamic-entity work also needs (doc 11 Section 9);
+subdivision is its first consumer, and it replaces the earlier
+influence-exceeds-cell warning: an object reaching past its cell is a
+retention fact, not a diagnostic.
+
+**Spans many cells** (a region-scale terrain surface) is not a
+subdivision problem and must not become one: retention would pin the
+whole region resident, and plane-splitting a continuous surface buys
+render seams (tangent and normal discontinuities, T-junctions) for no win
+its own tiling would not do better. True terrain is its own residency
+citizen with its own LOD and tiling (Track C item 9, v3.0); this design
+reserves the slot and builds none of it. A moderate v1.x ground built
+from brushes rides the retention rule above, and a designer is never
+asked to tile a floor to match the grid.
+
+**The split kernel is deferred, not default.** Splitting an oversized
+object at cell planes stays a valid cook optimization for the narrow case
+where co-residency is measurably too expensive and seams are acceptable
+(collision-only geometry, which does not render; or a future consumer
+that tolerates cuts). When it lands it is a pure cook function with a
+gated contract (exact triangle partition, `FaceMaterial` and UV
+preservation, source provenance, sealed-where-sealed, mover-equivalent
+across the seam). It is out of v1: retention makes it unnecessary for
+correctness, and adding it early would buy seams for no capability.
+
+**Configuration assemblies** (Section 8.3) are never split and never
+bucketed away from their assembly root regardless of span.
 
 ---
 
@@ -300,10 +322,16 @@ states it exists in.
 ### 6.2 The record
 
 ```cpp
-enum class ContactKind : uint8_t { Opening, Frontier, Link };
-// Opening: compiled physical relationship (doorway-shaped or not).
-// Frontier: compiled broad contiguity (open boundary between places).
-// Link: authored logical relationship (teleport, scripted route).
+enum class ContactKind : uint8_t { Compiled, Link };
+// Compiled: a physical relationship the spatial compiler found where two
+//   zones' traversable free space meets. A narrow doorway and a broad
+//   open frontier are the SAME kind; their geometric character lives in
+//   Metrics (constriction, width), read by each consumer at its own
+//   threshold, never frozen into a stored opening-versus-frontier enum
+//   that would force one threshold on every consumer.
+// Link: an authored logical relationship (teleport, scripted route),
+//   no geometry, no metrics. Compiled-versus-authored is the one real
+//   provenance boundary and the only reason a kind field survives.
 
 struct WorldContact
 {
@@ -327,10 +355,13 @@ SoA in the artifact and the runtime store (hot evaluation reads
 predicates and masks; metrics are cold), AoS in this document for
 legibility. The former `TransitionRecord` array dissolves into this
 family: graph demand traverses contacts, and the manifest carries no
-separate transition list (Section 9.2). Frontier records replace nothing
-and demand nothing by default; they exist for reachability validation,
-overlays, approach metadata, and future nav and map products. Width and
-constriction are metadata, never topology authority.
+separate transition list (Section 9.2). A compiled contact between two
+spatially eligible zones demands nothing by default (Section 7.1); it
+still serves reachability validation, overlays, approach metadata, and
+future nav and map products. Width and constriction are metadata, never
+topology authority: opening-versus-frontier is a display and
+future-consumer reading of those metrics (Section 7.3), not a compiled
+decision, so no threshold is baked and no runtime behavior turns on it.
 
 ### 6.3 Identity
 
@@ -371,10 +402,14 @@ Each contact compiles which capabilities it can ever offer:
      the opening's width),
   3. an annotation grants it (authored topological preload across a
      specific contact),
-  4. `Link` kind (authored logical relationships always participate).
-  Frontiers between spatially eligible zones compile no `Demand`
-  potential: proximity carries them, and hop counts keep meaning "rooms
-  away through real openings."
+  4. `Link` (authored logical relationships always participate).
+  A compiled contact between two spatially eligible zones with no
+  controller and no annotation compiles no `Demand` potential: proximity
+  carries them, and hop counts keep meaning "rooms away through real
+  openings." This is width-independent (a wide temple mouth into a
+  graph-only interior promotes by rule 2; a narrow canyon between two
+  radius regions does not), which is exactly why opening-versus-frontier
+  is not a compiled kind.
 
 Future capabilities (Navigation, Visibility, Audio, Map) compile in the
 change that lands their consumer, per doc 11 Section 3.3's growth rule;
@@ -416,10 +451,17 @@ composition at query time, never compiled products.
 
 ### 7.3 Kind and label vocabulary
 
-`Opening` with a controller displays as Doorway; `Opening` without,
-where `Demand` potential exists, as Seam; `Frontier` as contiguity;
-`Link` as its authored label (Teleport first). The display derives from
-data; no stored topology enum remains.
+Display labels are derived editor-side from data, never stored: a
+`Compiled` contact with a controller reads Doorway; without one, a narrow
+contact (constriction below the editor's display threshold) reads Seam
+and a broad one reads Frontier; a `Link` reads by its authored label
+(Teleport first). The threshold is a cosmetic editor setting, not a
+compiled fact, and nothing runtime turns on it. When a real consumer
+(visibility leaks, audio transmission, a map door icon) needs a
+narrow-versus-broad decision it reads `Metrics.constriction` at the
+threshold its own need dictates; if several consumers converge on one
+threshold, that is when a stored classification is earned (directive 4),
+not before.
 
 ### 7.4 Migration
 
@@ -661,10 +703,14 @@ stairwell, wrap-around with interior room, thin wall, sub-pawn slot,
 drop ledge, two-doors-same-pair, wide-open two-owner boundary. Place
 set: courtyard (bespoke, controlled arches), palace garden (subdivided,
 bespoke grotto and orangery inside), field region (subdivided, walled
-gate exit, unwalled frontier), village (subdivided streets, graph-only
-interiors), cliffside into cave. Assignment set: oversized slab,
-large-influence entity, canyon between radius regions, wide temple
-mouth into a graph-only interior. Vertical set: Section 9.3's list.
+gate exit, unwalled open boundary), village (subdivided streets,
+graph-only interiors), cliffside into cave. Assignment set: a multi-cell
+slab and a multi-cell bridge (dependency retention, whole, no split, no
+seam), a large-influence light (retention), a canyon between two radius
+regions (compiled contact, no `Demand`), a wide temple mouth into a
+graph-only interior (`Demand` regardless of width), one continuous room
+split into two bespoke zones (a wide-open contact on a deterministic
+ambiguous boundary). Vertical set: Section 9.3's list.
 Topology set: (1) closed gate: `Demand` active, `Traversal` inactive,
 opening activates without recook; (2) barred grate: no pawn `Traversal`
 potential in any state (visibility recorded for its future capability);
@@ -688,10 +734,11 @@ throughout; overview binding rules apply.
   brick IR; artifact headers round-trip; golden-hash harness.
 - **Stage 1: subdivision compilation.** Section 3 complete. Gates:
   child-id stability under content edits; coverage-based radius demand
-  (the sparse-cell fixture loads on approach); split-kernel triangle
-  conservation and mover equivalence; influence warning; `SourceZone`
-  across cook, records, preview; the field fixture streams by radius
-  with zero contacts compiled and zero sampling run.
+  (the sparse-cell fixture loads on approach); dependency retention keeps
+  the multi-cell slab and bridge whole and resident from every overlapped
+  cell, with no split and no seam; `SourceZone` across cook, records,
+  preview; the field fixture streams by radius with zero contacts
+  compiled and zero sampling run.
 - **Stage 2: spatial eligibility.** `JoinsSpatialDemand` through
   config, policy, preview. Gate: village interiors cold from street
   radius; S-D3 amendment recorded.
@@ -707,7 +754,9 @@ throughout; overview binding rules apply.
   demand over `Demand`-active contacts, `RequiredTags` migration, the
   selection API and `ComputeReachableZones`, validation swap. Gates:
   the temple mouth carries `Demand` and streams the interior; the
-  canyon compiles `Frontier` only and streams by radius; fixture 1's
+  canyon compiles a plain contact with no `Demand` and streams by
+  radius; the room split into two bespoke zones yields one wide-open
+  contact on a deterministic boundary; fixture 1's
   gate flips `Traversal` by state with zero recook; fixture 10's diff
   is deterministic; the migrated fixture world runs with no authored
   geometric edges and byte-identical demand under authored-default
