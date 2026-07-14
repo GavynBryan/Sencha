@@ -22,7 +22,6 @@ jobs:
 
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
-      CTEST_PARALLEL_LEVEL: 2
 
     steps:
       - name: Check out source
@@ -65,7 +64,7 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          ctest --preset ci --parallel 2 2>&1 | tee test-ci.log
+          ctest --preset ci 2>&1 | tee test-ci.log
 
       - name: Upload failed test log
         if: failure()
