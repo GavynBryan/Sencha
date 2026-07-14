@@ -63,4 +63,15 @@ jobs:
           retention-days: 7
 
       - name: Test
-        run: ctest --preset ci --parallel 2
+        run: |
+          set -o pipefail
+          ctest --preset ci --parallel 2 2>&1 | tee test-ci.log
+
+      - name: Upload failed test log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-test-log
+          path: test-ci.log
+          if-no-files-found: error
+          retention-days: 7
