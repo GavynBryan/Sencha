@@ -20,7 +20,7 @@
 #include "viewport/GridSettings.h"
 #include "viewport/Picking.h"
 
-#include <SDL2/SDL_keycode.h>
+#include <SDL3/SDL_keycode.h>
 
 #include <algorithm>
 #include <cmath>
