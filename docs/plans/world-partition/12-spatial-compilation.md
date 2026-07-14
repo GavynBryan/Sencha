@@ -451,17 +451,32 @@ composition at query time, never compiled products.
 
 ### 7.3 Kind and label vocabulary
 
-Display labels are derived editor-side from data, never stored: a
-`Compiled` contact with a controller reads Doorway; without one, a narrow
-contact (constriction below the editor's display threshold) reads Seam
-and a broad one reads Frontier; a `Link` reads by its authored label
-(Teleport first). The threshold is a cosmetic editor setting, not a
-compiled fact, and nothing runtime turns on it. When a real consumer
-(visibility leaks, audio transmission, a map door icon) needs a
-narrow-versus-broad decision it reads `Metrics.constriction` at the
-threshold its own need dictates; if several consumers converge on one
-threshold, that is when a stored classification is earned (directive 4),
-not before.
+Display labels are derived editor-side from data, never stored, and they
+read along two different axes that must not be flattened into one peer
+list of Doorway/Seam/Frontier (that flattening would imply the width
+split is the same kind of distinction as the controller split; it is
+not):
+
+- **The mechanical axis is the controller.** A `Compiled` contact with a
+  controller reads Controlled (the inspector names it; "Doorway" is the
+  one-word badge when a graph node wants one); without one it reads
+  Uncontrolled. This is the real line: it is exactly the
+  controlled-versus-uncontrolled split that drives `Demand` and
+  `Traversal` (Sections 7.1, 7.2), and it is queryable
+  (`ContactFilter.Controller`).
+- **The cosmetic axis is width, and only on uncontrolled contacts.** A
+  narrow one (constriction below the editor's display threshold) reads
+  Seam, a broad one Frontier. This turns nothing: the threshold is a
+  cosmetic editor setting, and a Seam and a Frontier are the same record
+  with the same behavior.
+
+So the surface leads with controlled-versus-uncontrolled and treats width
+as a secondary readout on the uncontrolled ones; a `Link` reads by its
+authored label (Teleport first). When a real consumer (visibility leaks,
+audio transmission, a map door icon) needs the narrow-versus-broad
+decision it reads `Metrics.constriction` at the threshold its own need
+dictates; if several consumers converge on one threshold, that is when a
+stored classification is earned (directive 4), not before.
 
 ### 7.4 Migration
 
