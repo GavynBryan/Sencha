@@ -49,7 +49,18 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}"
 
       - name: Build
-        run: cmake --build --preset ci --parallel 2
+        run: |
+          set -o pipefail
+          cmake --build --preset ci --parallel 2 2>&1 | tee build-ci.log
+
+      - name: Upload failed build log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-build-log
+          path: build-ci.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Test
         run: ctest --preset ci --parallel 2
