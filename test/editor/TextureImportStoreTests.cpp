@@ -31,7 +31,15 @@ namespace
     protected:
         void SetUp() override
         {
-            Root = std::filesystem::temp_directory_path() / "sencha_texture_import_store_tests";
+            const ::testing::TestInfo* test =
+                ::testing::UnitTest::GetInstance()->current_test_info();
+            ASSERT_NE(test, nullptr);
+
+            // gtest_discover_tests exposes each TEST_F as an independent CTest
+            // test, so CTest may execute fixture cases concurrently. A fixed
+            // directory lets one case's TearDown delete another case's files.
+            Root = std::filesystem::temp_directory_path()
+                / (std::string("sencha_texture_import_store_tests_") + test->name());
             std::filesystem::remove_all(Root);
             std::filesystem::create_directories(Root / "textures");
             std::ofstream png(Root / "textures/pixel.png", std::ios::binary);
