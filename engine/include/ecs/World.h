@@ -21,6 +21,7 @@
 
 // Forward declarations — defined in their own headers.
 class CommandBuffer;
+class World;
 template <typename... Accessors> class Query;
 
 // ─── ComponentMeta ──────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ struct ComponentMeta
     size_t           Size;
     size_t           Alignment;
     bool             IsTag;     // zero-size marker; no per-entity column
+    void (*OnRemove)(const void*, World&, EntityId) = nullptr;
 };
 
 struct ComponentBatchItem
@@ -88,6 +90,7 @@ public:
     World() = default;
     ~World()
     {
+        ClearEntities();
         ClearOwnedTypeErased(Resources);
     }
 
@@ -103,6 +106,7 @@ public:
     {
         if (this != &other)
         {
+            ClearEntities();
             ClearOwnedTypeErased(Resources);
             MoveFrom(std::move(other));
         }
@@ -153,6 +157,12 @@ public:
         meta.Size      = size;
         meta.Alignment = align;
         meta.IsTag     = std::is_empty_v<T>;
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
+        {
+            meta.OnRemove = [](const void* ptr, World& world, EntityId entity) {
+                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), world, entity);
+            };
+        }
         ComponentMetas.push_back(meta);
 
         return id;
@@ -226,12 +236,22 @@ public:
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
+        InvokeRemoveHooks(entity, arch, loc);
 
         EntityIndex moved = arch.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
 
         Entities.Destroy(entity);
+    }
+
+    void ClearEntities()
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "ClearEntities called while a query/lifecycle hook is active.");
+        const std::vector<EntityId> alive = Entities.GetAliveEntities();
+        for (EntityId entity : alive)
+            DestroyEntity(entity);
     }
 
     // ── Structural mutations ─────────────────────────────────────────────────
@@ -863,6 +883,25 @@ private:
         other.QueryDepth = 0;
         other.LifecycleHookDepth = 0;
         other.EntityCreated = false;
+    }
+
+    void InvokeRemoveHooks(EntityId entity,
+                           const Archetype& archetype,
+                           EntityLocation location)
+    {
+        const Chunk& chunk = *archetype.Chunks[location.ChunkIndex];
+        for (const ComponentMeta& meta : ComponentMetas)
+        {
+            if (meta.OnRemove == nullptr || !archetype.Signature.test(meta.Id))
+                continue;
+
+            const uint32_t column = chunk.FindColumn(meta.Id);
+            assert(column != UINT32_MAX && "Lifecycle component column missing");
+            const void* component = chunk.ColumnData(column)
+                + location.RowIndex * chunk.Columns[column].Stride;
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnRemove(component, *this, entity);
+        }
     }
 
     uint32_t GenerationForIndex(EntityIndex index) const
