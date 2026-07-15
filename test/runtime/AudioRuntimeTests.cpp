@@ -128,7 +128,7 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     Registry src;
     src.Components.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = src.Entities.Create();
+    EntityId entity = src.Components.CreateEntity();
     src.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Gain = 0.5f, .Pan = -0.25f,
         .Looping = true, .PlayOnActive = false });
@@ -179,7 +179,7 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
     registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     // OnAdd retained -> refcount 2. Drop the test's own ref so the component
@@ -252,10 +252,10 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
     registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
-    EntityId loop = registry.Entities.Create();
+    EntityId loop = registry.Components.CreateEntity();
     registry.Components.AddComponent(loop, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    EntityId oneShot = registry.Entities.Create();
+    EntityId oneShot = registry.Components.CreateEntity();
     registry.Components.AddComponent(oneShot, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
 
@@ -300,7 +300,7 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
     registry.Components.AddResource<AudioSourceRuntime>(&cache, nullptr);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true, .PlayOnActive = false });
 
