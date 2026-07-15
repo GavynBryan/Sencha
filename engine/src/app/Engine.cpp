@@ -340,6 +340,10 @@ int Engine::Run(Game& game)
         FrameDriverInstance->Run();
     }
 
+    // Component hooks may reference game-owned assets and engine services.
+    // Tear entity storage down before either owner begins shutdown.
+    ZoneRuntimeState.ClearEntities();
+
     GameShutdownContext shutdown{
         .Config = Configuration,
     };
@@ -358,7 +362,7 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     ConsoleRegistry& registry = console.Registry();
     EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
-    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(console.Registry(), RuntimeLoop, Configuration.Runtime);
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }
