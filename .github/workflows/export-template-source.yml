@@ -1,23 +1,42 @@
-name: Export Template Source
+name: Apply Template CI Fix
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - agent/runtime-world-stabilization
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export-template-source:
+  patch-template-source:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
-
-      - name: Upload template source
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: template-source
-          path: template/src/TemplateGame.cpp
-          if-no-files-found: error
+          ref: agent/runtime-world-stabilization
+
+      - name: Replace removed facade calls
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("template/src/TemplateGame.cpp")
+          text = path.read_text()
+          old = "registry.Entities.GetAliveEntities()"
+          replacement = "registry.Components.GetAliveEntities()"
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f"expected exactly 2 stale facade calls, found {count}")
+          path.write_text(text.replace(old, replacement))
+          PY
+
+      - name: Commit source fix and remove temporary workflow
+        run: |
+          rm .github/workflows/export-template-source.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add template/src/TemplateGame.cpp .github/workflows/export-template-source.yml
+          git commit -m "Fix template entity storage access"
+          git push origin HEAD:agent/runtime-world-stabilization
