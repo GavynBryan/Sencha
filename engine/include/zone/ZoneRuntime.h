@@ -63,6 +63,11 @@ public:
     // Spans therefore never contain null entries.
     FrameRegistryView BuildFrameView();
 
+    // Clears entity storage without destroying registry identity or participation.
+    // Shutdown uses this while game and engine resources still outlive component
+    // removal hooks.
+    void ClearEntities();
+
     // Advances the ECS change epoch of the global registry and every loaded
     // zone exactly once. Dormant zones advance too: participation determines
     // which systems run, not the registry's change-detection timeline.
