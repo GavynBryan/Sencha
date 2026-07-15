@@ -100,7 +100,7 @@ TEST(CaptionSystemScene, ActiveZoneStartsSourceAndCaptionTogether)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     registry.Components.AddComponent(entity, WorldCC("cc.hum"));
@@ -145,12 +145,12 @@ TEST(CaptionSystemScene, DormancyRetiresCaptionAndLoopReentryRecaptions)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId loop = registry.Entities.Create();
+    EntityId loop = registry.Components.CreateEntity();
     registry.Components.AddComponent(loop, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     registry.Components.AddComponent(loop, WorldCC("cc.loop"));
 
-    EntityId oneShot = registry.Entities.Create();
+    EntityId oneShot = registry.Components.CreateEntity();
     registry.Components.AddComponent(oneShot, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
     registry.Components.AddComponent(oneShot, WorldCC("cc.oneshot"));
@@ -199,7 +199,7 @@ TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     registry.Components.AddComponent(entity, WorldCC("cc.door"));
@@ -227,7 +227,7 @@ TEST(CaptionSystemScene, OrphanCaptionComponentIsInert)
     Registry registry;
     SetupRegistry(registry, nullptr, nullptr, &captions);
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, WorldCC("cc.orphan"));
 
     CaptionSystem captionSystem;
@@ -265,7 +265,7 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId speech = registry.Entities.Create();
+    EntityId speech = registry.Components.CreateEntity();
     registry.Components.AddComponent(speech, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
     registry.Components.AddComponent(speech, AudioCaptionComponent{
@@ -275,7 +275,7 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
         .Text = "line.rejected",
     });
 
-    EntityId slam = registry.Entities.Create();
+    EntityId slam = registry.Components.CreateEntity();
     registry.Components.AddComponent(slam, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
     registry.Components.AddComponent(slam, WorldCC("cc.rejected"));
@@ -309,7 +309,7 @@ TEST(CaptionSystemDegrade, NoAudioServiceStillSubtitlesActiveSources)
     Registry registry;
     SetupRegistry(registry, &cache, nullptr, &captions);
 
-    EntityId entity = registry.Entities.Create();
+    EntityId entity = registry.Components.CreateEntity();
     registry.Components.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
     registry.Components.AddComponent(entity, AudioCaptionComponent{
@@ -342,7 +342,7 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
 
     Registry src;
     src.Components.RegisterComponent<AudioCaptionComponent>();
-    EntityId entity = src.Entities.Create();
+    EntityId entity = src.Components.CreateEntity();
     src.Components.AddComponent(entity, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "Radio",
@@ -426,7 +426,7 @@ TEST(CaptionGate, ThreeContextsRouteFilterAndOrderDeterministically)
     // World SFX: scene-authored closed caption.
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
-    EntityId door = registry.Entities.Create();
+    EntityId door = registry.Components.CreateEntity();
     registry.Components.AddComponent(door, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     registry.Components.AddComponent(door, WorldCC("cc.door.slam"));
