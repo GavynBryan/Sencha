@@ -2,8 +2,7 @@
 
 This file used to be the step-by-step plan for replacing the old sparse-set ECS.
 That migration is complete. The purpose of this document now is to explain what
-landed, what compatibility seams remain, and where future agents should look
-before changing ECS behavior.
+landed and where future agents should look before changing ECS behavior.
 
 For day-to-day ECS usage, read `overview.md`, `queries.md`,
 `command-buffers.md`, and `component-traits.md` first. Use this document when
@@ -111,6 +110,9 @@ path batches contiguous hook-free add/remove runs for the same component type,
 but hook-bearing components execute one command at a time to preserve lifecycle
 ordering.
 
+Both `Query::ForEachChunk` and `World::ForEachComponent` hold an RAII query
+scope. Structural mutation remains forbidden when a callback exits by throwing.
+
 ---
 
 ## Entity Handles In Chunks
@@ -135,9 +137,11 @@ When a system needs valid handles, use `ForEachComponent<T>()`, store an
 Each chunk stores a last-written frame for every component column. Mutable access
 bumps the column version conservatively:
 
-- `Write<T>` bumps once after the chunk callback returns.
+- `Write<T>` bumps once when the visited chunk scope exits, including when the
+  callback throws.
 - non-const `World::TryGet<T>()` bumps immediately.
-- non-const `World::ForEachComponent<T>()` bumps each visited chunk.
+- non-const `World::ForEachComponent<T>()` bumps when each visited chunk scope
+  exits, including when the callback throws.
 
 Const access does not bump. Use `std::as_const(world)` when a read-only
 convenience iterator must not register as a change.
@@ -147,7 +151,7 @@ the chunk, so downstream systems must not assume every row changed.
 
 ---
 
-## Resources And Compatibility Seams
+## Resources
 
 `World` owns resources keyed by type:
 
@@ -158,20 +162,8 @@ MeshCache* maybe = world.TryGetResource<MeshCache>();
 
 Resources are the current home for per-world state such as propagation caches,
 asset/cache references, and other singleton data that is not an entity
-component.
-
-`World` also still contains a migration-only legacy store bag:
-
-```cpp
-world.Register<T>();
-world.Ensure<T>();
-world.Get<T>();
-world.TryGet<T>();
-```
-
-Those methods exist to keep older tests and call sites compiling while the rest
-of the engine finishes moving to archetype components and resources. They are
-not ECS component APIs. Do not use them for new systems.
+component. Duplicate registration is rejected instead of replacing the existing
+resource.
 
 ---
 
@@ -216,7 +208,8 @@ measured dispatch floor, runtime knobs, and deferred chunk-parallel query design
 - ECS public API: `engine/include/ecs`
 - ECS implementation: `engine/src/ecs`
 - Core ECS tests: `test/ecs/EcsTests.cpp`
-- Command-buffer tests: `test/ecs/EcsTests.cpp`
+- Query scope tests: `test/ecs/QueryScopeTests.cpp`
+- Component iteration tests: `test/ecs/WorldIterationTests.cpp`
 - Job-system tests: `test/jobs/JobSystemTests.cpp`
 - Async task tests: `test/jobs/AsyncTaskQueueTests.cpp`
 - Zone load tests: `test/runtime/AsyncZoneLoadTests.cpp`
