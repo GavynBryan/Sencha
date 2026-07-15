@@ -1,0 +1,45 @@
+name: Fix TimeService Include
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix-time-service-include:
+    if: github.head_ref == 'agent/runtime-world-stabilization'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+        with:
+          ref: agent/runtime-world-stabilization
+
+      - name: Patch stale include
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('test/runtime/WorldPartitionRuntimeTests.cpp')
+          text = path.read_text()
+          old = '#include <core/time/TimeService.h>'
+          new = '#include <time/TimeService.h>'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one stale include, found {count}')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/fix-time-service-include.yml
+
+      - name: Commit fix
+        run: |
+          git config user.name 'sencha-ci-fix'
+          git config user.email 'actions@users.noreply.github.com'
+          git add test/runtime/WorldPartitionRuntimeTests.cpp .github/workflows/fix-time-service-include.yml
+          git commit -m 'Fix TimeService test include'
+          git push origin HEAD:agent/runtime-world-stabilization
