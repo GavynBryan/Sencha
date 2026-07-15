@@ -3,7 +3,7 @@
 #include <ecs/EntityId.h>
 
 // ComponentTraits<T>: opt-in specialization point for lifecycle hooks.
-// Default specialization is trivial — zero overhead for components without hooks.
+// Default specialization is trivial: zero overhead for components without hooks.
 //
 // To add hooks for a component type T, specialize this template near T's definition:
 //
@@ -14,9 +14,10 @@
 //       static void OnRemove(const MyComponent& component, World& world, EntityId entity) { ... }
 //   };
 //
-// Hooks run synchronously at command-buffer flush.
-// Hooks must not perform structural ECS mutations (AddComponent, RemoveComponent,
-// CreateEntity, DestroyEntity) — see docs/ecs/component-traits.md.
+// Hooks run synchronously during direct mutation, command-buffer flush, entity
+// destruction, and registry teardown. Hooks must not perform structural ECS
+// mutations (AddComponent, RemoveComponent, CreateEntity, DestroyEntity). See
+// docs/ecs/component-traits.md.
 
 class World;
 
@@ -31,6 +32,7 @@ concept ComponentHasOnAdd =
     {
         ComponentTraits<T>::OnAdd(component, world, entity);
     };
+
 
 template <typename T>
 concept ComponentHasOnRemove =
