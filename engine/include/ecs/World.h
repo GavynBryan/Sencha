@@ -278,7 +278,10 @@ public:
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if constexpr (!std::is_empty_v<T>)
+        {
             dst->WriteComponent(dci, dri, id, value);
+            MarkComponentWritten(*dst, dci, id);
+        }
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
@@ -640,12 +643,14 @@ public:
         auto [dci, dri] = dst->AddRow(entity.Index);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
-        if (size > 0 && blob)
+        if (size > 0)
         {
             Chunk*         ch  = dst->Chunks[dci].get();
             const uint32_t col = ch->FindColumn(id);
             assert(col != UINT32_MAX);
-            std::memcpy(ch->ColumnData(col) + dri * size, blob, size);
+            if (blob != nullptr)
+                std::memcpy(ch->ColumnData(col) + dri * size, blob, size);
+            ch->BumpColumnVersion(col, FrameCounter);
         }
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
@@ -741,12 +746,14 @@ public:
             auto [dci, dri] = dst->AddRow(entity.Index);
             dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
-            if (size > 0 && items[i].Blob)
+            if (size > 0)
             {
                 Chunk* ch = dst->Chunks[dci].get();
                 const uint32_t col = ch->FindColumn(id);
                 assert(col != UINT32_MAX);
-                std::memcpy(ch->ColumnData(col) + dri * size, items[i].Blob, size);
+                if (items[i].Blob != nullptr)
+                    std::memcpy(ch->ColumnData(col) + dri * size, items[i].Blob, size);
+                ch->BumpColumnVersion(col, FrameCounter);
             }
 
             moves.push_back(Move{
@@ -902,6 +909,16 @@ private:
             ScopedLifecycleHook hookScope(*this);
             meta.OnRemove(component, *this, entity);
         }
+    }
+
+    void MarkComponentWritten(Archetype& archetype,
+                              uint32_t chunkIndex,
+                              ComponentId component)
+    {
+        Chunk& chunk = *archetype.Chunks[chunkIndex];
+        const uint32_t column = chunk.FindColumn(component);
+        assert(column != UINT32_MAX && "Written component column missing");
+        chunk.BumpColumnVersion(column, FrameCounter);
     }
 
     uint32_t GenerationForIndex(EntityIndex index) const
