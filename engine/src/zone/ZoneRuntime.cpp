@@ -203,6 +203,13 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
     };
 }
 
+void ZoneRuntime::AdvanceFrameEpochs()
+{
+    GlobalRegistry->Components.AdvanceFrame();
+    for (const auto& loaded : Zones)
+        loaded->ZoneRegistry->Components.AdvanceFrame();
+}
+
 ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone)
 {
     for (const auto& loaded : Zones)
