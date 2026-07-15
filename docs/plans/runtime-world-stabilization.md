@@ -1,6 +1,6 @@
 # Runtime World Stabilization Plan
 
-Status: active implementation plan
+Status: active implementation plan; runtime correctness and compatibility cleanup landed
 
 This plan is runtime-only. Kyusu editor decomposition lives on the separate `agent/editor-decomposition-plan` branch.
 
@@ -10,33 +10,22 @@ Stabilize the runtime contracts currently concentrated inside `ecs::World`, then
 
 The order matters: correctness first, ownership second, naming and extraction third. A large rename before the invariants are executable would only spread the same defects across more files.
 
-## Confirmed problems
+## Landed invariants
 
-### ECS change epochs are not advanced by the runtime
+- The runtime owns ECS epoch advancement, and structural additions stamp their destination columns.
+- Query and component iteration scopes restore their guards and publish partial writes when callbacks throw.
+- Component metadata is the sole authority for type-erased layout and lifecycle dispatch.
+- Removal hooks run for direct and buffered removal, entity destruction, registry clear, zone destruction, and engine shutdown.
+- Registry entities are cleared while registry resources, engine services, and game-owned assets are still alive.
+- The legacy store bag and `RegistryEntityFacade` have been removed, with callers migrated directly to `World`.
 
-`World::CurrentFrame()` and `AdvanceFrame()` back `Changed<T>` and transform column-version logic, but the engine frame loop does not advance registry worlds. Tests and benchmarks do so manually.
-
-Column version zero is also the documented "never written" sentinel, while a default `World` begins at frame zero. Initial registry construction therefore wrote component columns at the sentinel value and made them invisible to `Changed<T>` with reference frame zero.
-
-The first implementation slice gives runtime registries a nonzero initial epoch, makes subsequent epoch advancement a `ZoneRuntime` responsibility, and invokes it once per outer frame after scheduled end-frame systems have consumed the current epoch.
-
-### Entity and registry destruction skip component removal hooks
-
-`DestroyEntity` removes archetype storage without dispatching `ComponentTraits<T>::OnRemove`. Registry and zone destruction therefore skip asset release, audio voice shutdown, caption cleanup, and other documented component lifetime work.
+## Remaining confirmed problem
 
 ### Registry-local resources have two owners
 
 `Registry` owns `ResourceRegistry`, while its embedded `World` owns a second type-indexed resource map. Lifecycle hooks receive only `World&`, forcing some registry-local dependencies into the wrong owner.
 
-### Query mutation guards are incomplete
-
-Chunk queries manually push and pop query scope without RAII. `World::ForEachComponent` does not enter query scope at all, so structural mutation during iteration is not uniformly prevented.
-
-### Migration compatibility remains in the runtime model
-
-`RegistryEntityFacade` and `World`'s legacy store bag remain after the archetype ECS migration is otherwise described as complete.
-
-## Phase 0: Runtime correctness
+## Phase 0: Runtime correctness - complete
 
 1. Make registry epoch initialization and advancement explicit and engine-owned.
 2. Add runtime tests proving initial writes are visible and global, active, and dormant registries advance exactly once.
@@ -57,11 +46,16 @@ Chunk queries manually push and pop query scope without RAII. `World::ForEachCom
 
 ## Phase 2: Finish the ECS migration
 
+Completed:
+
 1. Remove `RegistryEntityFacade` after migrating callers.
 2. Remove the legacy store bag from `World`.
-3. Rename `World` to `EntityStore` or another mechanically honest name.
-4. Rename `Registry::Components` to `Registry::Entities`.
-5. Remove forwarding methods that add no policy, including `EngineSchedule::BuildFrameView` if no new responsibility appears.
+
+Remaining:
+
+1. Rename `World` to `EntityStore` or another mechanically honest name.
+2. Rename `Registry::Components` to `Registry::Entities`.
+3. Remove forwarding methods that add no policy, including `EngineSchedule::BuildFrameView` if no new responsibility appears.
 
 Do this atomically. Do not leave permanent redirector headers or type aliases.
 
@@ -93,14 +87,6 @@ Classify state explicitly:
 
 Do not duplicate immutable gameplay definition registries in every streamed zone unless per-zone identity is an intentional requirement.
 
-## First implementation slice
+## Next implementation slice
 
-The first landed change is deliberately small:
-
-- make every runtime `Registry` begin at ECS epoch one so zero remains the unwritten sentinel
-- add `ZoneRuntime::AdvanceFrameEpochs()`
-- advance the global registry and every loaded zone exactly once, regardless of participation flags
-- call it from the engine's `EndFrame` phase after scheduled end-frame systems and before ending the frame view
-- add runtime tests covering initial `Changed<T>` visibility plus global, active, dormant, and repeated advancement
-
-This fixes the immediate `Changed<T>`/column-version ownership hole without beginning the larger lifecycle and resource migration in the same patch.
+Unify registry-local resource ownership before renaming the ECS facade. The slice must establish one owner for lifecycle dependencies, preserve teardown order, and remove `World`'s resource map without introducing an interface hierarchy or service locator.
