@@ -1,922 +1,554 @@
-# Spatial Compilation: Subdivision, Evidence, Contacts, Configurations, and Artifacts
+# World Graph Authoring and Compilation: Zone Shapes, Docks, Links, and Kyusu
 
-Status: proposed design (2026-07-13), owner review before any stage starts.
-Canonical: this document and `11-zone-runtime-model.md` are the current zone
-architecture (reasoning history lives in git). Doc 11 owns the runtime model
-this compiles for: the topology store, capabilities, evaluation, mutation
-rules, demand, queries, and the reconfiguration lifecycle. This document owns
-everything the cook produces and the editor authors: residency subdivision,
-spatial evidence, contact records, capability compilation, predicates,
-spatial-configuration variants, artifacts and indexes, the editor surface,
-fixtures, and stages.
+Status: proposed replacement design (2026-07-15), owner review before implementation.
+Canonical: this document and `11-zone-runtime-model.md` replace the previous
+spatial-compilation design. Doc 11 owns runtime graphs, endpoint records,
+focus, demand, and gate boundaries. This document owns the authored surface,
+Kyusu behavior, cooking, diagnostics, migration, and execution order.
 
-## Why
+## Why this plan replaces the previous one
 
-Zone shape and zone connectivity are today hand-maintained approximations (a
-derived AABB and an authored edge list) that cannot check each other and
-cannot describe a world that moves. The compiler below recovers real shapes,
-discovers every potential physical relationship (including every declared
-arrangement of moving architecture), and emits them as data the runtime
-evaluates under world state. The designer authors places, content, the
-gameplay objects that actually exist, and declared arrangements of the ones
-that move; Sencha derives the topology consequences. Nothing infers
-connectivity from bounds contact, nothing duplicates gameplay objects with
-portal-like proxies, and nothing rebakes at runtime.
+The previous plan tried to infer exact ownership and physical contacts by
+rasterizing world geometry, growing labels through free space, evaluating
+captured mechanism states, and reconciling generated contact ids after
+remodels. That moved ordinary level authorship into a large compiler whose
+mistakes would be difficult to predict or repair.
 
----
+The replacement is explicit where intent matters and derived where derivation
+is safe:
 
-## 1. Grounding (verified against the tree)
+- the designer authors zone ownership geometry;
+- the designer authors a dock where crossing changes zones;
+- Kyusu helps resolve the zones on each side;
+- the cook emits reciprocal endpoint records and broad-phase data;
+- runtime graph policy decides residency;
+- doors and gates may bind to docks but do not define topology.
 
-- **Brush geometry** is indexed face-vertex polygons, explicitly non-convex
-  (`editor/kyusu/src/brush/BrushMesh.h:11-34`), triangulated at cook time;
-  no per-face semantic flags exist (`BrushClustering.h:20` records
-  "classify: future").
-- **The level cook** (`DocumentCook.cpp:128-329`) collects world-space
-  triangles per brush (`BrushCookInput.cpp:9-45`), clusters whole brushes
-  into 16m cells by center (`BrushClustering.cpp:11-18`, cvar
-  `editor.cook.cell_size`), and bakes per cell one `.smesh` and one Jolt
-  triangle-mesh `.scol` from the same triangles
-  (`CollisionShapeCook.cpp:14-57`). Render and collision are one triangle
-  stream; props contribute no collision (`ZoneCollisionLoader.cpp:95-99` is
-  the only production `Collider` emitter).
-- **The world cook** (`WorldCook.cpp:13-139`) cooks each zone scene by file
-  path and fills cooked-only manifest fields. Cook kernels are synchronous
-  and pure by stated contract; `JobSystem::ParallelFor` in the texture cook
-  (`TextureCook.cpp:52`) is the cook-parallelism precedent, and kyusu links
-  the job system (`EditorServices.cpp:612`).
-- **Cooked binary artifacts** (`.smesh`, `.stex`, `.scol`) ship with
-  magic-and-version headers and are restored directly; Track F's binary
-  scene work does not block new binary artifacts.
-- **The runtime world path** loads the cooked manifest and world scene
-  synchronously at world start into `ZoneRuntime::Global()`
-  (`TemplateGame.cpp:731-763`): the slot where world-level cooked artifacts
-  load once. World tags already flow `SetWorldTags` to the pure demand
-  policy (`WorldPartitionRuntime.cpp:117-136`).
-- **Movement truth**: `CharacterController` (radius 0.3, height 1.8, slope
-  50; `CharacterController.h:19-21`) over Jolt `CharacterVirtual` with
-  default stair handling (`CharacterMover.cpp:62`). No step-height field
-  exists anywhere yet.
-- **Math**: `Vec3d` is `Vec<3, float>` (`Vec.h:382`); no triangle-box test,
-  voxel, Morton, or SDF utility exists; `Grid3d<T>`
-  (`math/spatial/Grid3d.h`) is a dense grid template with no consumers.
-- **Navigation is docs-only** (navmesh v1.0 as a cook sibling over the same
-  collision; cross-zone planner v2.0; `engine-roadmap.md:263-273`).
-  Open-field cell streaming, HLOD, impostors are Track C item 9, v3.0
-  (`engine-roadmap.md:391`).
+This keeps Metroid Prime's useful separation between area, dock, door, and
+streaming while removing reciprocal dock editing and raw index management from
+the designer.
 
 ---
 
-## 2. The authored surface
+## 1. Authored surface
 
-Authored (the first two exist today):
+The normal designer touches four things:
 
-1. **Places**: zone documents with identity, names, and structural content
-   ownership.
-2. **Logical links and annotations**: `ConnectZones` mints teleport-kind
-   contacts; annotation records attach names, priorities, depths, and
-   predicates to compiled contacts by contact id.
-3. **`ResidencyCellSize`** on a zone header: the one value that turns a
-   place into a subdivided residency source (Section 3).
-4. **`SpatialConfigurations`** on an assembly root entity: the one
-   mechanism for everything whose arrangement changes topology: doors,
-   gates, drawbridges, rotating halls, elevators, floodgates, destructible
-   walls (Section 8). There is no separate gate component and no portal
-   proxy object; the designer authors the gameplay object that exists and
-   captures its arrangements.
-5. **Labeling hints**, rare: an interior seed marker or influence volume,
-   added only where the ambiguity overlay shows the compiler cannot know
-   (Section 5.3).
-6. **Preview scenarios**: named, game-authored bundles of tag and
-   configuration overrides for editor evaluation (Section 10.1). The
-   engine never interprets the names.
+1. **Graphs** in the world partition panel.
+2. **Zones** assigned to one graph and owning their content documents.
+3. **Zone shapes** describing ownership and minimap geometry.
+4. **World docks or world links** connecting specific zone endpoints.
 
-Never authored: portal planes, zone-bound boxes, hand-maintained doorway
-links, streaming shells, per-cell anything, runtime edges.
+Optional gameplay objects may bind to a dock as gates. They are not part of the
+world topology authoring transaction.
+
+Never authored:
+
+- reciprocal endpoint records;
+- raw dock indices;
+- graph adjacency spreadsheets;
+- preload shells around every doorway;
+- containment voxels;
+- contacts inferred from touching AABBs;
+- duplicate transitions for A to B and B to A.
 
 ---
 
-## 3. Residency subdivision
+## 2. Kyusu document ownership
 
-### 3.1 The field and the frame
+### 2.1 World scene
+
+World docks and links are world-scene entities because they express
+relationships between zone documents. They remain available while the world is
+open in Kyusu and do not structurally belong to either zone.
 
 ```cpp
-// On ZoneHeader, authored, optional. Present: the cook expands this zone
-// into independently resident child zones on the world-aligned horizontal
-// residency grid of this pitch (meters). Must be a positive multiple of
-// the cook cell size. Absent: the zone compiles as one residency unit.
-std::optional<double> ResidencyCellSize;
+struct WorldDock
+{
+    DockId       Id;
+    ZoneId       ZoneA;
+    ZoneId       ZoneB;
+    Vec2d        HalfExtents;       // bounded plane rectangle
+    Aabb3d       SideAArmBounds;    // dock-local
+    Aabb3d       SideBArmBounds;    // dock-local
+    uint8_t      Directions;
+    int32_t      PreloadPriority;
+    int32_t      PreloadDepth;
+    TagQuery     DemandCondition;
+};
+
+struct WorldLink
+{
+    LinkId       Id;
+    ZoneId       ZoneA;
+    ZoneId       ZoneB;
+    LinkKind     Kind;              // Teleport first
+    uint8_t      Directions;
+    int32_t      PreloadPriority;
+    int32_t      PreloadDepth;
+    TagQuery     DemandCondition;
+};
 ```
 
-The frame is world-aligned with origin at the world origin, the cook-cell
-convention (`cell = floor(pos / pitch)` per horizontal axis). It depends on
-nothing content edits can move: adding a brush never renumbers children.
-An authored per-place grid origin is rejected as an id-invalidating knob
-(builders align content to the world grid, which snapping already serves);
-recorded trigger: a real world that cannot. Subdivision is horizontal;
-vertical structure resolves through containment layering (Section 9), and
-3D subdivision is a recorded deferral.
+The entity transform supplies the dock plane origin and orientation. Its normal
+points from Side A toward Side B. `HalfExtents` bound the actual crossing
+surface. The side arm bounds are editable AABBs and may have different depth
+and size.
 
-### 3.2 Child identity and stability
+### 2.2 Zone document
+
+A zone document owns ordinary entities and brushes plus its authored zone
+shape. The shape belongs to zone metadata rather than a gameplay entity so it
+cannot be duplicated accidentally.
+
+```cpp
+struct AuthoredZoneShape
+{
+    std::vector<ConvexPrism> Cells;
+};
+
+struct ConvexPrism
+{
+    std::vector<Vec2d> Footprint; // convex and ordered
+    double             MinY;
+    double             MaxY;
+};
+```
+
+A zone shape is the union of its cells. Convex prisms handle diagonal halls,
+L and T layouts through multiple cells, stacked areas through height ranges,
+and a useful minimap footprint. A later general convex-polyhedron format is
+permitted only if real sloped-volume cases prove prisms insufficient. The
+runtime contract is union of convex cells, not prisms forever.
+
+---
+
+## 3. Generic editor creation recipes
+
+`ZoneA = active zone` is contextual authoring behavior. It must not live in a
+component constructor, runtime system, or dock-specific branch in Kyusu.
+
+Kyusu gains a generic creation-recipe seam:
+
+```cpp
+struct EditorCreateContext
+{
+    WorldDocument* World;
+    ZoneId         ActiveZone;
+    GraphId        ActiveGraph;
+    Vec3d          PlacementPoint;
+    Vec3d          PlacementNormal;
+    SelectionView  Selection;
+};
+
+class IEditorEntityRecipe
+{
+public:
+    virtual EntitySnapshot Build(const EditorCreateContext&) const = 0;
+};
+```
+
+The create tool invokes a registered recipe, receives a complete entity
+snapshot, and commits it through the command stack. Kyusu does not inspect the
+component type to apply contextual defaults.
+
+### 3.1 World dock recipe
+
+The dock recipe:
+
+1. mints a `DockId`;
+2. creates the entity in the world scene;
+3. initializes Zone A from `context.ActiveZone`;
+4. probes from the placement plane toward Side B and suggests Zone B;
+5. derives an initial orientation from the picked surface or camera;
+6. initializes a bounded plane and two conservative arm AABBs;
+7. leaves Zone B unresolved when probing is ambiguous;
+8. returns one snapshot for one undoable create command.
+
+Creation behavior runs only for explicit recipe creation. It does not run when
+loading, duplicating, pasting, restoring undo, importing, or manually adding a
+`WorldDock` component. Those operations preserve or remap stored data through
+the normal snapshot pipeline.
+
+The recipe seam is intentionally general. Future recipes may use the same
+context for lights, nav links, spawn points, generated graph cells, or paired
+gate views.
+
+---
+
+## 4. Dock viewport and inspector
+
+A selected dock renders:
+
+- a filled or outlined bounded plane;
+- a labeled arrow on Side A and Side B;
+- the resolved Zone A and Zone B names beside the arrows;
+- a translucent editable AABB on each side;
+- warnings for unresolved or geometrically inconsistent assignments;
+- an optional line to selected gate bindings.
+
+The dock supports:
+
+- transform gizmo for position and rotation;
+- plane width and height handles;
+- independent bounds manipulation for each side AABB;
+- `Swap Sides`, which swaps zone references, flips the normal, swaps bounds,
+  and remaps one-way flags;
+- `Fit Plane To Selection`;
+- `Reset Arm Bounds`;
+- `Resolve Zones From Shape`.
+
+Horizontal and diagonal docks are ordinary rotations. No code may assume a
+dock is vertical or axis-aligned.
+
+The inspector presents direct zone editing and separates evidence from truth:
 
 ```text
-childId = Hash64(sourceZoneId, cellX, cellZ)
+Dock
+  Id                 0x...
+  Zone A             West Corridor
+  Zone B             Reactor Hall
+  Directions         Both
+  Surface            2.0 x 3.0 m
+  Side A Arm Bounds  [edit]
+  Side B Arm Bounds  [edit]
+
+Residency Hints
+  Priority           0
+  Preload Depth      inherit
+  Demand Condition   none
+
+Validation
+  Side A probe       West Corridor
+  Side B probe       Reactor Hall
+  Gate bindings      1
 ```
 
-re-salted deterministically on collision. **Stable under** all content
-edits, renames, region changes, and bake-config changes. **Intentionally
-invalidated by** pitch changes, source re-minting, and future
-coordinate-space migration (the artifact header carries a space id,
-invalid in v1). Pitch changes are content-migration events: when Track C
-item 5's persistent state lands, its tooling rebuckets state by position;
-contact annotations survive independently (contact ids do not key on
-pitch). Child headers carry `SourceZone`, inherited `Region`, derived
-names ("Garden 2,1"), per-child cooked refs, and both bounds below; the
-source header is not itself loadable, and the compilation sidecar records
-provenance.
-
-### 3.3 Residency coverage versus content bounds
-
-```cpp
-Aabb3d ResidencyCoverage; // stable footprint: cell box (XZ) crossed with
-                          // the source's vertical band; bespoke zones use
-                          // their envelope. Spatial demand, analytic
-                          // containment, and recovery test this.
-Aabb3d ContentBounds;     // AABB of actually cooked content: diagnostics,
-                          // cost analysis, tie-breaks.
-```
-
-A cell with one fence post near its far edge still loads on approach,
-because demand tests the full footprint. **Existence versus ownership**: a
-child exists if any content *overlaps* its cell (a brush's geometry, a
-collision shape, or an entity's influence intersects the cell box), not
-merely if content is anchored there. So a large floor spanning three cells
-makes all three children exist, even though the floor is owned (anchored,
-Section 3.4) by one of them; the other two are real zones carrying a
-residency dependency on the owner. Determining existence from overlap
-before assigning ownership from the anchor is what stops a large floor
-from producing only its anchor child. A cell with no overlapping content
-at all produces no zone and resolves through recovery; phantom
-coverage-only children for flying profiles are a recorded deferral.
-
-### 3.4 Content assignment
-
-Nothing is ever hand-split: authoring keeps every object whole, and the
-cook's default keeps it whole too. Assignment is by span, not by editing.
-
-**Fits within one cell.** Assigned to the cell containing its anchor (a
-brush by its center, an entity by its transform), the existing cook rule.
-The common case; nothing further.
-
-**Spans several cells** (a long wall, a bridge, a big rock, a floor slab,
-a light or trigger whose influence reaches past its cell): kept whole,
-assigned to one owning cell (its anchor), with every *other* cell it
-overlaps emitting a **residency-dependency edge** to that owner. The cook
-writes these into a residency-dependency index in the topology artifact
-(Section 9.1), `dependent child -> (owner child, participation mask)`,
-where the mask is only the participation the spanning object itself
-contributes: `Visible` for renderable geometry, `Physics` for collision,
-`Logic` for a trigger or gameplay object, `Audio` for audio influence (a
-plain wall is `{Visible, Physics}`; a trigger volume is `{Logic}`). An
-object overlapping N cells emits N-1 edges to its owner; multiple objects
-merge by `OR`-ing the mask per dependent-owner pair. Emission is
-deterministic (dependent id, then owner id). No split, no seam, no
-duplicated geometry, one registry per object (the flat-zone invariant
-holds). The runtime closure, eviction, cap, and cost contract is doc 11
-Section 5.6. This replaces the earlier influence-exceeds-cell warning:
-reaching past a cell is a retention fact, not a diagnostic.
-
-**Spans many cells** (a region-scale terrain surface) is not a
-subdivision problem and must not become one: retention would pin the
-whole region resident, and plane-splitting a continuous surface buys
-render seams (tangent and normal discontinuities, T-junctions) for no win
-its own tiling would not do better. True terrain is its own residency
-citizen with its own LOD and tiling (Track C item 9, v3.0); this design
-reserves the slot and builds none of it. A moderate v1.x ground built
-from brushes rides the retention rule above, and a designer is never
-asked to tile a floor to match the grid.
-
-**The split kernel is deferred, not default.** Splitting an oversized
-object at cell planes stays a valid cook optimization for the narrow case
-where co-residency is measurably too expensive and seams are acceptable
-(collision-only geometry, which does not render; or a future consumer
-that tolerates cuts). When it lands it is a pure cook function with a
-gated contract (exact triangle partition, `FaceMaterial` and UV
-preservation, source provenance, sealed-where-sealed, mover-equivalent
-across the seam). It is out of v1: retention makes it unnecessary for
-correctness, and adding it early would buy seams for no capability.
-
-**Configuration assemblies** (Section 8.3) are never split and never
-bucketed away from their assembly root regardless of span.
+Zone A and Zone B remain editable even when probes disagree. Probe results are
+validation evidence, not authority.
 
 ---
 
-## 4. Spatial evidence: shared kernels, per-product domains
+## 5. Zone shape authoring
 
-### 4.1 The kernel library
+A zone begins with one convex prism. The designer edits its top-down footprint
+and vertical range, then adds cells around corners, branches, or stacked
+sections.
 
-Beside the other cook kernels (same "pure: no logging, no threads, no
-disk" contract), data types in `engine/{include,src}/spatial/`, kernels in
-`engine/include/assets/cook/`:
+Required tools:
 
-- zone-tagged triangle gathering (file-based, header-only zones included),
-- conservative rasterization (cell Solid or Mixed if any triangle
-  intersects its box; a triangle-box separating-axis primitive joins
-  `math/geometry/3d/` with its own tests),
-- clearance (integer chamfer transform, truncated),
-- support and slope extraction,
-- traversal-profile evaluation (Section 4.3),
-- the sparse brick IR (sorted `Vec3i` keys over dense 16^3 payloads;
-  `Grid3d<T>` earns its first consumer), canonical iteration, per-brick
-  hashing,
-- fixtures and the golden-hash harness.
+- draw convex footprint;
+- edit vertices with grid snap;
+- edit vertical range;
+- split a cell;
+- add adjacent cell;
+- merge cells when the union remains convex;
+- duplicate a height band;
+- select and focus shapes from the partition panel;
+- ghost neighboring shapes while editing one.
 
-**No persistent world-wide shared field artifact exists.** Each compiler
-drives the kernels over its own domain and emits its own product: this
-compiler samples bespoke envelopes, place frontiers, and configuration
-assembly domains; the future navmesh compiler rasterizes every navigable
-surface at its own resolution and emits polygon tiles; map and query
-products filter their own. Runtime navigation never queries the zone
-containment artifact and zone lookup never touches a navmesh. Standing
-gate: the kernel API takes an explicit domain, and a fixture rasterizes an
-open field through the kernels with no zone bake involved.
+Adjacent cells do not need identical vertex storage. The cook canonicalizes
+planes and may union their minimap projection.
 
-### 4.2 The zone compiler's domains
+### 5.1 Optional first draft
 
-Bespoke place envelopes (geometry plus clearance-and-radius margin),
-frontier bands where places meet, **thin bands along the internal cell
-boundaries of subdivided places** (so sibling traversability is tested,
-Section 6.1), and, per spatial configuration state, the assembly's
-affected bounds (Section 8.4). Not sampled: the *interiors* of subdivided
-cells (containment there stays analytic, Section 9.3) and empty space
-beyond envelopes. Sampling a subdivided place is therefore boundary-only,
-not volumetric: one clearance-radius band at each shared cell face,
-bounded work per edge. A domain-size assertion per fixture keeps it
-scoped.
+Kyusu may generate a first draft from selected zone geometry. The result is
+ordinary editable cells and never hidden compiler truth.
 
-### 4.3 Traversal profiles
+A safe first version gathers selected zone geometry, projects coarse occupancy
+through useful height bands, traces outlines, convex-decomposes them, and
+presents an uncommitted preview. The designer accepts, simplifies, edits, or
+discards it. Generator failure cannot block manual authoring or cooking.
 
-```cpp
-struct TraversalProfile
-{
-    float Radius;
-    float Height;
-    float StepHeight;
-    float MaxSlopeDegrees;
-};
-```
+### 5.2 Broad bounds
 
-Bake-config data; v1 ships one ("pawn"), seeded from `CharacterController`
-plus `StepHeight` 0.4 (Jolt's walk-stairs default). This is the engine's
-first authoritative step height; the roadmap's `LoftSteps` and
-traversal-probe items read it when they land (their current text assumes a
-`MovementProfile` field that does not exist). Standing gate: a scripted
-mover walk agrees with baked traversability on every fixture. Per-cell
-products: standing room, radius clearance, slope acceptance, step validity
-(drops beyond `StepHeight` are one-way downward), no diagonal corner
-cutting. Camera and projectile profiles are rejected; creature profiles
-are data additions.
+The cook derives one AABB over the complete exact shape. It is used for:
 
-### 4.4 Determinism regime
+- broad-phase containment rejection;
+- editor framing and selection;
+- spatial-radius demand;
+- coarse diagnostics.
 
-Accumulating arithmetic in integer cell units; float only in
-order-independent predicates. Canonical iteration everywhere; the labeling
-queue is an indexed priority structure with total-order ties; no unordered
-container reaches an output. Parallelism is `ParallelFor` over bricks with
-index-order reduction; `worker_count == 0` is the byte-identical
-reference. Artifacts record their full bake config and enter
-`CookedCacheIndex` by content hash. Standing test: golden hash per
-fixture, identical across reruns and worker counts.
+It never decides adjacency. Overlapping broad AABBs are legal when exact shapes
+do not overlap.
 
 ---
 
-## 5. Labeling (bespoke places and frontiers)
+## 6. Side resolution
 
-### 5.1 Sources
-
-Free cells adjacent to solid cells seed with the solid's owner at cost
-zero; ownership is authored fact, not heuristic (every blocking triangle
-is a brush in exactly one place document). Props never seed. Cells inside
-any configuration assembly's affected bounds seed only from geometry
-present in the state under evaluation (Section 8.4). Seed markers and
-influence volumes are override sources only.
-
-### 5.2 Growth and posts
-
-Multi-source shortest path over free cells: cost = integer chamfer step +
-narrowness penalty (fronts meet inside throats, not across rooms) +
-passage penalty inside assembly openings. Post passes: sub-threshold
-enclosed islands absorb; a place labeling disconnected components reports
-`spatial.zone.split_label` (Warning); unreached cells stay Unassigned
-(not an error). Subdivided interiors are never grown; sampled labels win
-over grids in frontier bands (Section 9).
-
-### 5.3 Ambiguity, kept low-stakes
-
-Per-cell margin between best and second-best source; low-margin boundary
-runs flag Ambiguous (overlay plus Info diagnostic
-`spatial.label.ambiguous_boundary`). Deterministic either way. Where open
-places meet without a bottleneck the exact meter is explicitly
-low-stakes: demand is spatial there, focus has margin, place identity is
-the source. Hints exist for the designer who cares.
-
----
-
-## 6. Contacts: one record family
-
-### 6.1 Extraction
-
-Wherever traversable free space crosses a boundary between different
-resolved owners (bespoke-to-bespoke, bespoke-to-grid, grid-to-grid across
-place frontiers), boundary faces group into connected components per
-unordered zone pair; each component is one contact. Two doors between the
-same pair are two contacts. **Same-source sibling boundaries are tested,
-not assumed**: the shared face between two children of one subdivided
-place is sampled like any other boundary (Section 4.2), and a traversable
-stretch emits an ordinary compiled contact while a walled one emits none.
-Neighboring grid coordinates are never presumed connected. These sibling
-contacts are ordinary `Compiled` contacts, so every algorithm that walks
-contacts (reachability, graph demand, editor validation, future
-navigation attachment points) walks them with no special case; the editor
-hides contacts whose endpoints share a `SourceZone` unless subdivision
-debugging is on (Section 10.5). Extraction runs per spatial-configuration
-state within assembly domains (Section 8.4), so a contact knows which
-states it exists in.
-
-### 6.2 The record
-
-```cpp
-enum class ContactKind : uint8_t { Compiled, Link };
-// Compiled: a physical relationship the spatial compiler found where two
-//   zones' traversable free space meets. A narrow doorway and a broad
-//   open frontier are the SAME kind; their geometric character lives in
-//   Metrics (constriction, width), read by each consumer at its own
-//   threshold, never frozen into a stored opening-versus-frontier enum
-//   that would force one threshold on every consumer.
-// Link: an authored logical relationship (teleport, scripted route),
-//   no geometry, no metrics. Compiled-versus-authored is the one real
-//   provenance boundary and the only reason a kind field survives.
-
-struct WorldContact
-{
-    ContactId          Id;
-    ZoneId             A, B;            // unordered, A = lower id
-    ContactKind        Kind;
-    uint8_t            Directions;      // A->B, B->A, both (drops one-way)
-    uint8_t            Profiles;        // traversal profiles that cross
-    CapabilityMask     Potential;       // compiled capability potentials
-    ConfigurationSetId Controller;      // invalid = uncontrolled
-    uint32_t           StateMask;       // controller states containing it
-    PredicateRef       Predicates;      // per-capability predicate rows
-    Vec3d              Representative;  // area-weighted boundary center
-    Aabb3d             Bounds;
-    ContactMetrics     Metrics;         // area, min width, frontier
-                                        // length, constriction, normal
-};
-```
-
-SoA in the artifact and the runtime store (hot evaluation reads
-predicates and masks; metrics are cold), AoS in this document for
-legibility. The former `TransitionRecord` array dissolves into this
-family: graph demand traverses contacts, and the manifest carries no
-separate transition list (Section 9.2). A compiled contact between two
-spatially eligible zones demands nothing by default (Section 7.1); it
-still serves reachability validation, overlays, approach metadata, and
-future nav and map products. Width and constriction are metadata, never
-topology authority: opening-versus-frontier is a display and
-future-consumer reading of those metrics (Section 7.3), not a compiled
-decision, so no threshold is baked and no runtime behavior turns on it.
-
-### 6.3 Identity
+A dock stores explicit Zone A and Zone B references. Kyusu may suggest and
+validate them by sampling just beyond the plane:
 
 ```text
-ContactId = Hash64(worldSalt, zoneA, zoneB,
-                   quantize(representative, 2m), ordinalInBucket)
+A sample = origin - normal * distance
+B sample = origin + normal * distance
 ```
 
-with deterministic re-salt on collision. Contacts between compiled
-children hash source ids, so re-pitching does not churn bespoke-border
-contacts. A contact existing in several configuration states is one
-record (same location, same id, `StateMask` union); different docks of a
-rotating hall are different locations and therefore different contacts.
-Sub-2m moves keep ids; remodels produce a reconciliation report
-(unmatched old, unannotated new, nearest suggestion), never a silent
-rebind. Controlled contacts additionally key on their controller id,
-which is editor-minted and survives every remodel (Section 8.2), making
-gate-adjacent annotation churn rare by construction.
+Each sample first rejects by broad AABB, then tests exact convex-cell
+containment.
+
+- exactly one zone: suggest or validate that side;
+- no zone: unresolved warning;
+- several zones: ambiguity error with a candidate list.
+
+Sample points may be adjusted within their side arm bounds and are visible in a
+debug overlay.
+
+Explicit references remain authoritative because a dock may sit in deliberately
+unowned air, broad bounds may overlap, generated destination cells may not be
+open in the editor, and non-spatial links cannot be discovered by probing.
 
 ---
 
-## 7. Capability compilation and predicates
+## 7. Cooking
 
-### 7.1 Potentials
+### 7.1 Inputs
 
-Each contact compiles which capabilities it can ever offer:
+The world cook consumes:
 
-- **`Traversal` potential**: the contact has traversable cells for a
-  profile in at least one configuration state. A barred grate whose gaps
-  are below the pawn radius never compiles pawn traversal potential in
-  any state.
-- **`Demand` potential** (which contacts graph demand may traverse), the
-  successor of the previous promotion rules, verbatim in effect:
-  1. the contact has a controller (a governed opening is conditional
-     content; the room behind a door preloads by default),
-  2. either endpoint's region has `JoinsSpatialDemand = false` (the
-     ineligible side's only demand path is topological, regardless of
-     the opening's width),
-  3. an annotation grants it (authored topological preload across a
-     specific contact),
-  4. `Link` (authored logical relationships always participate).
-  A compiled contact between two spatially eligible zones with no
-  controller and no annotation compiles no `Demand` potential: proximity
-  carries them, and hop counts keep meaning "rooms away through real
-  openings." This is width-independent (a wide temple mouth into a
-  graph-only interior promotes by rule 2; a narrow canyon between two
-  radius regions does not), which is exactly why opening-versus-frontier
-  is not a compiled kind.
+- graph records;
+- zone headers and authored shapes;
+- world dock entities;
+- world link entities;
+- existing zone-content cooks;
+- optional demand conditions and residency hints.
 
-Future capabilities (Navigation, Visibility, Audio, Map) compile in the
-change that lands their consumer, per doc 11 Section 3.3's growth rule;
-the mask and tables are shaped for additive growth.
+It does not rasterize world collision or flood free space to discover topology.
 
-### 7.2 Predicates
+### 7.2 Zone-shape product
+
+Each shape cooks into:
+
+- canonical convex-cell data;
+- one broad AABB;
+- optional merged 2D minimap contours;
+- a content hash.
+
+This product loads independently of zone entity content because containment and
+map queries may target unloaded zones.
+
+### 7.3 Dock compilation
+
+For every valid world dock, the cook:
+
+1. resolves Zone A and Zone B headers;
+2. reads each zone's GraphId;
+3. transforms plane, surface, and arm geometry into the chosen artifact space;
+4. emits a Side A endpoint into Zone A's header;
+5. emits a Side B endpoint into Zone B's header;
+6. copies the shared DockId and reciprocal zone and graph ids;
+7. reverses direction and orientation for the B endpoint;
+8. builds deterministic incident-endpoint indexes;
+9. records a debug map from DockId to authored world entity id.
+
+The designer never edits endpoint records directly.
+
+World links use the same identity and endpoint-index path without geometric
+fields. Teleport is the first supported link kind.
+
+Outputs sort by stable graph id, zone id, endpoint id, and side. Authored array
+order never becomes identity. An unchanged cook produces byte-identical shape
+and endpoint products.
+
+---
+
+## 8. Validation
+
+Validation runs live in Kyusu and again as a hard cook gate.
+
+### 8.1 Graph and zone rules
+
+- every zone references one valid graph;
+- graph streaming values are valid;
+- every exact zone shape contains at least one valid convex cell;
+- every prism footprint is convex and non-self-intersecting;
+- every prism has `MinY < MaxY`;
+- broad bounds contain all exact cells;
+- exact zone shapes in the same coordinate space do not overlap unless a
+  narrow explicit exception exists.
+
+### 8.2 Dock rules
+
+- DockId is valid and unique;
+- Zone A and Zone B are valid and distinct;
+- surface extents are finite and nondegenerate;
+- each arm AABB is finite and lies on the expected side;
+- direction flags are valid;
+- probe results agree with explicit assignments unless a narrow override is
+  acknowledged;
+- strongly overlapping duplicate docks for the same pair warn;
+- gate bindings reference a live DockId;
+- demand conditions resolve registered tag names.
+
+### 8.3 Link and graph checks
+
+- link endpoint zones are valid;
+- one-way and two-way semantics are valid;
+- unsupported link kinds fail cooking;
+- graph-local and cross-graph reachability run over explicit endpoints;
+- one-way sinks and graph islands report clearly;
+- resident-cap and destination-cost risks report against the same pure demand
+  policy used by runtime.
+
+Reachability never invents edges from proximity.
+
+---
+
+## 9. Door and gate boundary
+
+The initial gameplay seam is:
 
 ```cpp
-struct ContactPredicate            // one row per (contact, capability)
-{                                  // that needs gating; absent row =
-    TagSetRef  AllOf;              // unconditionally active when
-    TagSetRef  NoneOf;             // potential exists
-    ConfigurationRequirementRef Config; // list of (set id, state mask),
-                                        // usually length zero or one
+struct DockGateBinding
+{
+    DockId Id;
 };
 ```
 
-Compiled defaults, overridable by annotation:
+It may live on a door, force field, breakable wall, or other gameplay entity.
+More than one entity may share a DockId. The world dock stores no entity
+reference, avoiding cross-document lifetime and identity problems.
 
-- Controlled `Traversal`: requires the controller in a state whose
-  geometry opens the contact (`StateMask` membership), plus any authored
-  tags. A powered security door authors
-  `AllOf {power.on}, NoneOf {security.lockdown}` and inherits the
-  configuration requirement.
-- Controlled `Demand`: unconditional by default (preload behind closed
-  doors); an authored predicate expresses "do not preload the sealed
-  wing until quest tags arrive," which preserves the shipped
-  `RequiredTags` semantics as the authored case rather than the only
-  case.
-- Uncontrolled contacts: no predicate rows unless authored.
+A gate entity is owned by one zone or deliberately by the world scene. If two
+side-local presentations are required, two entities may bind to the same dock
+and share gameplay state. Kyusu may later provide a paired-gate recipe, but the
+runtime and topology model do not require duplicate doors.
 
-Tag names intern to ids at artifact load (registration-order tag ids are
-never serialized, per the `core/gameplay_tags` rule; the artifact stores
-dotted names in a string table). Evaluation is a linear pass: for each
-predicate row, membership tests against the tag set and the
-configuration map (doc 11 Section 3.4). A contact has at most one
-controller, so its predicate references at most one configuration set; a
-passage that depends on two mechanisms is two contacts on a route
-(Section 8.4), and their conjunction is computed by reachability at query
-time, never folded into one contact.
-
-### 7.3 Kind and label vocabulary
-
-Display labels are derived editor-side from data, never stored, and they
-read along two different axes that must not be flattened into one peer
-list of Doorway/Seam/Frontier (that flattening would imply the width
-split is the same kind of distinction as the controller split; it is
-not):
-
-- **The mechanical axis is the controller.** A `Compiled` contact with a
-  controller reads Controlled (the inspector names it; "Doorway" is the
-  one-word badge when a graph node wants one); without one it reads
-  Uncontrolled. This is the real line: it is exactly the
-  controlled-versus-uncontrolled split that drives `Demand` and
-  `Traversal` (Sections 7.1, 7.2), and it is queryable
-  (`ContactFilter.Controller`).
-- **The cosmetic axis is width, and only on uncontrolled contacts.** A
-  narrow one (constriction below the editor's display threshold) reads
-  Seam, a broad one Frontier. This turns nothing: the threshold is a
-  cosmetic editor setting, and a Seam and a Frontier are the same record
-  with the same behavior.
-
-So the surface leads with controlled-versus-uncontrolled and treats width
-as a secondary readout on the uncontrolled ones; a `Link` reads by its
-authored label (Teleport first). When a real consumer (visibility leaks,
-audio transmission, a map door icon) needs the narrow-versus-broad
-decision it reads `Metrics.constriction` at the threshold its own need
-dictates; if several consumers converge on one threshold, that is when a
-stored classification is earned (directive 4), not before.
-
-### 7.4 Migration
-
-One cook flag per world. The migration cook maps the authored transition
-list onto compiled contacts: matched geometric edges become annotations
-(name, priority, depth carried over; `RequiredTags` become `Demand`
-predicates, preserving shipped behavior exactly) and are deleted;
-Teleport edges become `Link` contacts; unmatched authored edges and
-unannotated discovered contacts are reported. After migration the
-authored file contains places, links, annotations, scenarios, and
-hints. Validation swaps accordingly: `partition.bounds.overlap` and
-unpaired-edge rules retire; reachability floods edges, contacts, and
-radius cliques under the authored-default scenario;
-`spatial.annotation.orphaned`, `spatial.zone.split_label`, and the
-configuration diagnostics (Section 8.5) join.
+The cook validates bindings but does not duplicate, migrate, or globally retain
+gate entities in the first implementation.
 
 ---
 
-## 8. Spatial configurations
+## 10. Graph panel and hybrid worlds
 
-### 8.1 The mechanism
+The partition panel groups zones under graphs and keeps connections at world
+level:
 
-One authored component covers every topology-relevant arrangement
-change: doors, gates, portcullises, drawbridges, rotating corridors,
-elevators, floodgates, docking platforms, destructible walls. The
-designer authors the gameplay object that exists, adds the component to
-its assembly root, and captures arrangements; Sencha derives the
-topology consequences. Only connectivity-relevant motion declares
-states: fans, pistons, and decorative movers never appear here.
-
-```cpp
-struct SpatialConfigurationState
-{
-    ConfigurationStateId Id;        // small index, stable per set
-    std::string          Name;      // "Open", "NorthSouth", "Raised"
-    // Captured arrangement of the assembly subtree:
-    std::vector<MemberPose>  Poses;    // local transforms per member
-    std::vector<MemberFlag>  Included; // per-member inclusion (present
-                                       // or absent in this state);
-                                       // destructibles use this
-    bool                 Transit = false; // an arrangement that docks
-                                          // nothing (mid-motion truth)
-};
-
-struct SpatialConfigurations       // component on the assembly root
-{
-    ConfigurationSetId   Id;       // editor-minted StrongId, durable
-    std::vector<SpatialConfigurationState> States;
-    ConfigurationStateId Default;
-};
+```text
+World
+  Graphs
+    Exterior
+      Cell 411
+      Cell 412
+    Facility
+      Entrance
+      Lobby
+      Reactor Hall
+  Connections
+    Dock: Cell 412 <-> Entrance
+    Dock: Entrance <-> Lobby
+    Link: Reactor Hall -> Instance B
 ```
 
-Capture is transform-and-inclusion snapshotting of the subtree: robust,
-serializable, previewable, and cook-evaluable. Component-state-driven or
-callback-driven variants are rejected for the cook (nondeterministic,
-game code in the bake); gameplay that wants logic-driven geometry
-resolves it into inclusion flags and poses.
+A graph row edits hop count, radius, resident cap, and future policy values. The
+old Region UI migrates rather than coexisting.
 
-### 8.2 Controller identity without entity identity
-
-`ConfigurationSetId` is minted by the editor into the component data
-(the zone-id precedent) and survives every remodel, rename, and move.
-Contacts carry the controlling id; the runtime gameplay system that owns
-the entity pushes state by that id (`SetConfiguration(id, state)`); the
-editor and queries find controlled contacts through the
-controller-to-contacts index. No serialized entity reference exists
-anywhere in the topology data, so gate binding does not wait on Track C
-item 5. Where the controller entity resides (world scene first,
-boundary residency later) is doc 11 Section 9.
-
-### 8.3 Assemblies and residency
-
-Assembly members are excluded from the static bake (their geometry
-enters per-state evaluation instead) and are never split or re-bucketed
-away from their root by subdivision. The assembly's entities live where
-authored (typically the world scene for boundary-straddling mechanisms,
-per doc 11 Section 9); their zone residency is independent of which
-configuration is active. A brush inside an assembly is not a
-moving-geometry problem: the cook compiles it into an independently
-transformable local-space static mesh and collision asset (the ordinary
-per-brush bake, simply not merged into stationary cell geometry), and a
-configuration pose is a transform on that asset.
-
-### 8.4 Cooking states
-
-Per set, the cook computes the **affected bounds**: the union of member
-geometry bounds across all states plus the standard margin. Within that
-domain, per state: member geometry is posed and included per the
-capture, evidence passes rerun, labels resolve, and contacts extract.
-Results merge into the one contact family: a contact discovered at the
-same location across states is one record whose `StateMask` accumulates;
-dock contacts unique to a state carry that state alone; a `Transit`
-state contributes no dock contacts by construction.
-
-One controller per contact. When two assemblies' affected bounds overlap,
-the cook may still locally co-evaluate their combined geometry to decide
-which contacts physically exist (that local evaluation is fine and
-expected), but **every emitted contact is attributed to at most one
-controlling set**: the assembly whose geometry forms that opening.
-Multiple mechanisms compose along a **route**, not inside one contact: a
-corridor gated by a rotating hall and then a bridge is two contacts, each
-single-controlled, and the route is traversable only when both are
-active, which reachability computes at query time (fixture 9). If an
-opening genuinely exists only when two assemblies align at one location,
-that is one mechanism authored as two assemblies: fold them into a single
-`SpatialConfigurations` set (one controller, combined states) rather than
-emit a dual-controlled contact (`spatial.configuration.shared_opening`,
-Warning). There is no requirement list and no state cross-product in the
-record.
-
-Cost note: per-state domains are local (a door's domain is meters), so
-state count multiplies small bakes, not the world. The domain-size
-assertion covers assemblies too.
-
-### 8.5 Diagnostics
-
-`spatial.configuration.no_contacts` (a set whose states never produce a
-contact: probably not topology-relevant; Info),
-`spatial.configuration.state_unreachable_geometry` (a state whose posed
-members collide with static world geometry; Warning),
-`spatial.configuration.shared_opening` (an opening whose existence
-depends on two assemblies aligning at one location: fold them into one
-assembly, Section 8.4; Warning),
-`spatial.configuration.dock_unresident_risk` is not a cook diagnostic
-(the runtime prepare lifecycle owns it, doc 11 Section 7), and
-`spatial.annotation.orphaned` covers stale references as everywhere
-else.
+A future cell compiler may generate zones under `Exterior`. Generated cells use
+the same zone header, exact-shape, and endpoint contracts. A world dock can
+connect a generated cell to an authored interior zone without either graph
+adopting the other's policy.
 
 ---
 
-## 9. Artifacts and what ships
+## 11. Migration from existing transitions
 
-### 9.1 The topology artifact
+For each current `TransitionRecord`:
 
-`.cooked/worlds/<stem>.sztopo` (binary, magic and version, the `.scol`
-restored-directly precedent), referenced from the cooked manifest with a
-content hash, loaded once at world start into the topology store
-(doc 11 Section 3): contact records (SoA), predicate rows, the tag-name
-string table, configuration-set table (ids, state ids, names, defaults),
-annotation results, the residency-dependency index (dependent child to
-owner plus participation mask, Section 3.4), and the indexes (zone to
-incident contacts, zone pair, controller to contacts, source to
-children). Evaluated state is runtime-only and never ships.
+1. `Teleport` becomes a world link with the same direction, tags, priority,
+   depth, and name.
+2. A geometric transition with a linked marker becomes a world dock at the
+   marker transform.
+3. A reverse pair collapses into one bilateral dock.
+4. An unpaired geometric transition becomes a one-way dock.
+5. A transition without sufficient geometry becomes an unresolved migration
+   item rather than a guessed plane.
+6. Stable gate associations become `DockGateBinding`.
+7. The report lists created docks, links, collapsed pairs, unresolved records,
+   and orphaned markers.
 
-### 9.2 The manifest
-
-Zones (with `SourceZone`, `ResidencyCoverage`, `ContentBounds`, cooked
-refs), regions (shape config plus `JoinsSpatialDemand`), scenarios, and
-artifact references. **No transition array**: the authored `.sworld`
-carries links, annotations, hints, and scenarios in authored form; the
-cook compiles all relationship data into the topology artifact. The
-manifest stays O(zones); relationships are O(contacts) in the artifact.
-
-### 9.3 The containment artifact
-
-`.cooked/worlds/<stem>.szfield`, unchanged in role: sampled bricks
-(palette labels, label depth) over bespoke and frontier domains, grid
-parameters and child tables per subdivided source. Lookup precedence,
-deterministic: sampled assigned cells first (label-depth hysteresis),
-analytic grids second (coverage containment; ties: containing coverage,
-nearest `ContentBounds`, source id; cell-edge margin hysteresis),
-recovery third (nearest `ResidencyCoverage`). The vertical fixture set
-(cave under garden, interior in village cell, bridge over road, stacked
-floors, rooftop, falling, XZ-coincident Y-distinct places) pins the
-precedence; the rooftop's answer is deterministic and documented, with
-an influence volume as the override. Containment is not
-state-dependent in v1 (doc 11 Section 8); assembly interiors label from
-their default state.
-
-Size expectations: bricks near architecture and frontiers only; fixture
-worlds in tens of KB, content-scale mixed worlds in hundreds of KB,
-measured and gated before anything grows.
+Migration is an explicit world command. Saving afterward writes only graphs,
+docks, and links.
 
 ---
 
-## 10. Editor surface
+## 12. Implementation stages
 
-Everything below runs the same pure evaluator as the runtime against the
-last bake, with the existing stale-cook badge on hash mismatch. No PIE
-required for any of it.
+### A1. Graph terminology
 
-### 10.1 Preview scenarios and the state inspector
+Rename Region UI, manifest fields, serializers, validation, and document verbs
+to Graph while preserving implemented behavior. Read legacy manifests for one
+migration window.
 
-The world authors named scenarios (tag overrides plus configuration
-overrides; engine-opaque names): "Authored Default", "All Open",
-"Power Offline", whatever the game means by them. The partition panel
-gains a scenario selector (plus "Custom" scratch state, and a recorded
-future "Follow PIE" once telemetry streams live state). The state
-inspector lists world tags (toggle) and every configuration set with its
-states (dropdown); edits re-evaluate immediately and every surface
-reflows: topology overlays, streaming preview, demand records, contact
-rows, reachability diagnostics.
+### A2. Zone shapes
 
-### 10.2 The contact inspector
+Add convex-cell metadata, viewport rendering, basic editing, exact containment,
+broad-bound derivation, serialization, and fixtures for L halls, diagonal
+corridors, T junctions, and stacked rooms.
 
-Selecting a contact (list, graph panel, or viewport marker) shows: kind,
-endpoints (and their sources), controller and its current state,
-potential and active capabilities, per-capability predicate rendered as
-requirements with pass or fail marks ("requires power.on: present;
-SecurityGate14 = Open: currently Closed; blocked by security.lockdown:
-absent"), directions, profiles, metrics, demand consequences ("counts
-toward Demand: yes; East Hall resident because of this contact"), and
-the annotation editor. It answers, in place: why is this zone resident,
-why is this contact not traversable, what would activate it, which
-entity controls it.
+### A3. Creation recipes
 
-### 10.3 Configuration authoring
+Add generic recipe registration, `EditorCreateContext`, snapshot creation, and
+undo integration. Prove contextual defaults run only during explicit creation.
 
-Select the assembly root, add `SpatialConfigurations`, Capture State
-(snapshots subtree poses and inclusion), arrange with the ordinary
-gizmos, capture again, mark a transit state, request a local rebake
-(the assembly domain only; seconds, not a world cook), and step through
-states in the preview watching contacts appear and disappear with their
-capability readouts. Per-state contact deltas display beside the state
-list.
+### A4. World docks
 
-### 10.4 Scenario comparison (v1 scope)
+Add component, recipe, plane and arrow rendering, side-AABB manipulators,
+inspector, side swap, probes, and validation.
 
-Pick scenarios A and B: the panel lists contacts activated and
-deactivated per capability, and zones newly demanded or released (the
-demand policy run under both states with the same focus). Deterministic,
-cheap, and the fixture for state-diff testing. Route diffs, budget
-deltas, and the reconfiguration timeline simulator (prepare, ready,
-transit, commit, release with memory peaks) are recorded editor features
-for when routes and budgets exist as consumers.
+### A5. World links
 
-### 10.5 Overlays and panel hygiene
+Add non-spatial connections and Teleport without fake plane controls.
 
-Label slices, contact markers styled by kind and active state,
-capability badges, ambiguity heat, coverage grids, and the graph panel
-(nodes from compiled shapes grouped by source; edges styled by kind,
-controller, and current capability; the long-deferred node-link view,
-whose recorded trigger has fired, now drawing evaluated truth). Demand
-records and lists group children by `SourceZone`.
+### A6. Cooked products
+
+Cook exact shapes, broad bounds, reciprocal dock endpoints, link endpoints,
+indexes, debug maps, and deterministic hashes.
+
+### A7. Runtime integration
+
+Land doc 11's graph-local policy and dock crossing against the cooked products.
+Kyusu preview consumes the same pure policy kernels.
+
+### A8. Migration and retirement
+
+Add transition migration, migrate fixtures, remove legacy geometric transition
+authoring, and delete obsolete automatic-contact plans and code.
+
+### A9. First-draft shape generation
+
+Only after manual shape authoring is proven usable, add preview-only draft
+generation from selected geometry.
 
 ---
 
-## 11. Streaming facts
+## 13. Manual UX gates
 
-Contact metrics ship with the records; approach distances (coarse
-per-zone geodesic to each `Demand`-potential contact and region exit)
-ship quantized for lead-time prefetch; residency costs ship on Track C
-item 1's `ZoneBudgetRecord`. Facts only; every decision stays in the
-demand policy (doc 11 Section 5).
+A level designer must be able to do all of the following without editing JSON:
 
----
-
-## 12. Fixtures and stages
-
-### 12.1 Fixture suite (stage 0, the acceptance vocabulary)
-
-Indoor set: curved hallway, L-rooms, T-junction, stacked-sealed,
-stairwell, wrap-around with interior room, thin wall, sub-pawn slot,
-drop ledge, two-doors-same-pair, wide-open two-owner boundary. Place
-set: courtyard (bespoke, controlled arches), palace garden (subdivided,
-bespoke grotto and orangery inside), field region (subdivided, walled
-gate exit, unwalled open boundary), village (subdivided streets,
-graph-only interiors), cliffside into cave. Assignment set: a multi-cell
-slab and a multi-cell bridge (dependency retention, whole, no split, no
-seam), a large-influence light (retention), a canyon between two radius
-regions (compiled contact, no `Demand`), a wide temple mouth into a
-graph-only interior (`Demand` regardless of width), one continuous room
-split into two bespoke zones (a wide-open contact on a deterministic
-ambiguous boundary). Subdivision set: a subdivided place with an internal
-wall (one sibling cell boundary open, one walled: child adjacency tested,
-not assumed), a dependency cycle (two multi-cell objects owned by
-adjacent children each spanning into the other), a subdivided graph-only
-place (children stream child-to-child through sibling contacts).
-Vertical set: Section 9.3's list.
-Topology set: (1) closed gate: `Demand` active, `Traversal` inactive,
-opening activates without recook; (2) barred grate: no pawn `Traversal`
-potential in any state (visibility recorded for its future capability);
-(3) rotating corridor: three states, per-state dock contacts, transit
-exposes none, prepare-before-commit; (4) elevator: cab local, dock
-contacts per state; (5) drawbridge: raised blocks traversal, lowered
-creates it, opposite side preloadable before lowering; (6) destructible
-wall: inclusion-flag states, intact and destroyed; (7) powered security
-door: tag-plus-configuration predicate, inspector explains the failure;
-(8) wide graph-only entrance: `Demand` potential regardless of width;
-(9) two mechanisms in sequence (rotating hall then bridge): each forms
-its own single-controller contact, the route is traversable only when
-both contacts are active (reachability conjunction at query time), and no
-contact carries two controllers; (10) scenario diff: two scenarios
-produce a deterministic contact and demand diff.
-
-### 12.2 Stages
-
-Each stage one execution-spec lane when accepted; suite green
-throughout; overview binding rules apply.
-
-- **Stage 0: fixtures and formats.** The suite above; `spatial/` types;
-  brick IR; artifact headers round-trip; golden-hash harness.
-- **Stage 1: subdivision compilation.** Section 3 complete. Gates:
-  child-id stability under content edits; coverage-based radius demand
-  (the sparse-cell fixture loads on approach); dependency retention keeps
-  the multi-cell slab and bridge whole and resident from every overlapped
-  cell, with no split and no seam; a large floor produces all overlapped
-  children, not only its anchor; dependency residency counts toward the
-  cap and cost, dependency zones are non-evictable, and the dependency
-  cycle converges deterministically (doc 11 Section 5.6); `SourceZone`
-  across cook, records, preview; the field fixture streams by radius with
-  zero contacts compiled and zero sampling run.
-- **Stage 2: spatial eligibility.** `JoinsSpatialDemand` through
-  config, policy, preview. Gate: village interiors cold from street
-  radius; a subdivided graph-only place streams child-to-child through
-  its sibling contacts as focus moves (no spatial demand needed);
-  S-D3 amendment recorded.
-- **Stage 3: evidence kernels.** Section 4 over explicit domains;
-  determinism gates; the open-field kernel-reuse gate.
-- **Stage 4: labeling and contacts.** Sections 5 and 6 for static
-  geometry (no configurations yet). Gates: every indoor fixture labels
-  and contacts as written; grotto beats garden grid; decoy island
-  absorbs; drop ledge one-way; ambiguity flags exactly once; the
-  internal-wall fixture emits a sibling contact on the open cell face and
-  none on the walled face (adjacency tested, not assumed).
-- **Stage 5: topology artifact, capabilities, evaluator, demand.**
-  Sections 7 and 9.1, doc 11 Sections 3 through 5: potentials,
-  predicates, `.sztopo`, the store, `EvaluateWorldTopology`, revision,
-  demand over `Demand`-active contacts, `RequiredTags` migration, the
-  selection API and `ComputeReachableZones`, validation swap. Gates:
-  the temple mouth carries `Demand` and streams the interior; the
-  canyon compiles a plain contact with no `Demand` and streams by
-  radius; the room split into two bespoke zones yields one wide-open
-  contact on a deterministic boundary; fixture 1's
-  gate flips `Traversal` by state with zero recook; fixture 10's diff
-  is deterministic; the migrated fixture world runs with no authored
-  geometric edges and byte-identical demand under authored-default
-  state.
-- **Stage 6: runtime containment.** Section 9.3, doc 11 Section 8.
-  Gates: the vertical set resolves as written; the traversal harness
-  crosses village and cliff-cave fixtures with focus flips exactly at
-  boundaries and zero missed ticks; the mover-agreement gate; artifact
-  sizes in budget.
-- **Stage 7: spatial configurations.** Section 8 and doc 11 Section 7:
-  component, capture, per-state cooking, controller ids, state input,
-  prepare/commit lifecycle. Gates: fixtures 3 through 7 and 9 as
-  written; the rotating corridor refuses motion until prepared and
-  commits dock adjacency and demand at one evaluation point; every
-  emitted contact has at most one controller, and a co-located
-  dual-mechanism opening is reported (`shared_opening`) rather than
-  emitted with two controllers.
-- **Stage 8: editor surface.** Section 10. Gate: the manual
-  walkthrough (select scenario, flip a tag, watch reflow; inspect a
-  blocked contact and read why; capture a two-state door and preview
-  both; compare two scenarios).
-- **Stage 9: streaming facts.** Section 11 emission and doc 11
-  Section 5.4 consumption; lead-time and ordering gates in preview and
-  records.
-- **Stage 10: incremental bake.** Brick-hash dirty tracking, margin
-  expansion, frontier-outward relabel, full-rebake backstop; scheduled
-  when measured bake time hurts; byte-identity gate.
-
-Recorded, not scheduled: navigation capability and navmesh back end
-(Track A item 5 over the stage-3 kernels), visibility capability
-(portal work, v2.0), audio and map capabilities with their systems,
-route and blocking-set algorithms with caches (planner, AI), the
-reconfiguration timeline simulator, "Follow PIE" preview state,
-aperture polygon refinement, 3D subdivision, phantom air cells,
-per-region artifact splitting, adaptive resolution, runtime compilation
-for procedural worlds.
+1. Create a graph and assign zones.
+2. Draw an L-shaped zone with multiple convex cells.
+3. Create a dock while Zone A is active and see Zone A filled automatically.
+4. Rotate the dock diagonally and horizontally.
+5. Resize the plane and both side AABBs independently.
+6. Swap sides without repairing direction flags manually.
+7. Override an incorrect Zone B suggestion and understand the warning.
+8. Create two separate doors between the same zone pair.
+9. Create a teleport without plane controls.
+10. Preview residency from either side of a cross-graph dock.
+11. Select a connection from the world list and focus it in the viewport.
+12. Delete a door without deleting its dock.
 
 ---
-
-## 13. Risks
-
-1. **Scope gravity.** A topology store invites every system to demand
-   features early. The guards are the capability growth rule (doc 11
-   Section 3.3), the one-algorithm v1, and the recorded-not-scheduled
-   list; enforcement is review against this document.
-2. **Pose-capture drift**: a captured state can go stale against
-   remodeled assembly geometry. The per-state local rebake is cheap and
-   the state-unreachable-geometry diagnostic catches collisions;
-   re-capture is one click. Residual risk accepted and documented.
-3. **Split-kernel fidelity**: gated, not assumed (Section 3.4).
-4. **Contact id churn**: mitigated by coarse quantization, source-keyed
-   child borders, controller-keyed controlled contacts, reconciliation
-   reports, sparse annotations.
-5. **Roaming entities and controller residency**: owned honestly in
-   doc 11 Section 9.
-6. **Pitch changes invalidate child ids**: rare, deliberate, with
-   recorded migration expectations.
-7. **Float determinism**: confined to order-independent predicates;
-   golden hashes watch it.
-8. **Terrain stays brush-shaped in v1.x**; Track C item 9 owns the
-   rest and this design reserves its slots.
-9. **Evaluation cost**: linear in predicate rows; the incremental
-   indexing optimization has a recorded trigger (measured cost), not a
-   v1 structure.
 
 ## 14. Non-goals
 
-- No third runtime tier, no hierarchical participation, no mode enums,
-  no genre vocabulary.
-- No topology from bounds contact; no promotion by geometry alone; no
-  runtime edge minting; no scripts inside evaluation.
-- No whole-world sampling; no persistent shared field artifact; no
-  runtime query facade beyond doc 11 Section 6; no navmesh, no map
-  meshes, no route caches here.
-- No dictated gameplay: the engine never animates a door, times a
-  bridge, or decides when motion starts.
-- No auto-bake daemon.
-
-## 15. Open questions for the owner
-
-1. **Defaults**: residency pitch 64m, sample cell 0.25m, pawn
-   `StepHeight` 0.4, coverage vertical margin, prepare participation
-   `{Visible, Physics}`: confirm against content scale.
-2. **Scenario storage**: authored in the `.sworld` (shared, versioned)
-   as proposed, or a sibling authored file?
-3. **Migration posture**: per-world cook flag with the reviewable diff,
-   or hard cutover once fixtures pass?
-4. **Ambiguity severity**: Info forever, or per-world promotable to
-   Error?
-5. **Transit capture**: require an explicit authored transit state for
-   every multi-dock set (proposed: yes, validation warns when absent),
-   or synthesize an implicit no-dock state?
-6. **Emptiness and flying**: accept no-child-for-empty-cells until a
-   flying profile exists?
+- no invisible adjacency inference;
+- no spreadsheet editor for endpoint ids;
+- no requirement that broad AABBs touch;
+- no runtime constructive-solid-geometry union;
+- no automatic door duplication;
+- no per-door streaming implementation;
+- no world-wide voxel field;
+- no dynamic topology compiler;
+- no navmesh, PVS, or minimap renderer implementation here;
+- no assumption that all graphs share one policy.
