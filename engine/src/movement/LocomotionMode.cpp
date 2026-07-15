@@ -93,13 +93,13 @@ void ApplyLocomotionModes(World& world)
         if (r.Current != r.Desired)
         {
             if (r.Current != InvalidComponentId)
-                world.RemoveComponentRaw(r.Entity, r.Current, nullptr);
+                world.RemoveComponentRaw(r.Entity, r.Current);
             if (!world.HasComponent(r.Entity, r.Desired))
-                world.AddComponentRaw(r.Entity, r.Desired, nullptr, 0, 1, nullptr);
+                world.AddComponentRaw(r.Entity, r.Desired, nullptr);
         }
 
         // Project exactly the current mode's gameplay tag (mutual exclusion),
-        // idempotently -- so gating tags are correct even without a marker change.
+        // idempotently, so gating tags are correct even without a marker change.
         if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(r.Entity))
         {
             const GameplayTagId desiredTag = registry->TagFor(r.DesiredType);
