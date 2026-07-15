@@ -98,7 +98,7 @@ namespace
 
     EntityId FindFirstCamera(Registry& registry)
     {
-        for (EntityId entity : registry.Entities.GetAliveEntities())
+        for (EntityId entity : registry.Components.GetAliveEntities())
             if (registry.Components.TryGet<CameraComponent>(entity) != nullptr)
                 return entity;
         return EntityId{};
@@ -165,7 +165,7 @@ namespace
         Vec3d spawnPosition{ 0.0f, 2.0f, 0.0f };
         const World& spawnLookup = registry.Components;
         bool foundStart = false;
-        for (EntityId entity : registry.Entities.GetAliveEntities())
+        for (EntityId entity : registry.Components.GetAliveEntities())
         {
             if (!spawnLookup.HasComponent<PlayerStartComponent>(entity))
                 continue;
