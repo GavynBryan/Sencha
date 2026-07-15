@@ -47,6 +47,12 @@ struct Registry
         Components.AdvanceFrame();
     }
 
+    ~Registry()
+    {
+        // Run component teardown while both registry resource owners still live.
+        Components.ClearEntities();
+    }
+
     Registry(Registry&& other) noexcept
         : Id(other.Id)
         , Kind(other.Kind)
