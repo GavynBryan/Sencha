@@ -5,8 +5,8 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
-#include <world/partition/WorldPartitionManifest.h>
-#include <world/partition/WorldPartitionRuntime.h>
+#include <zone/WorldPartitionManifest.h>
+#include <zone/WorldPartitionRuntime.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/ZoneRuntime.h>
 
