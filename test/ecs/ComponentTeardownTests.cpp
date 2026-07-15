@@ -7,6 +7,7 @@
 
 struct ComponentTeardownState
 {
+    int* AddCount = nullptr;
     int* RemoveCount = nullptr;
     int* LastValue = nullptr;
     bool* EntityWasAlive = nullptr;
@@ -22,6 +23,17 @@ SENCHA_DECLARE_COMPONENT_TYPE(ComponentTeardownProbe, "test.component_teardown_p
 template <>
 struct ComponentTraits<ComponentTeardownProbe>
 {
+    static void OnAdd(ComponentTeardownProbe& component,
+                      World& world,
+                      EntityId)
+    {
+        ComponentTeardownState& state = world.GetResource<ComponentTeardownState>();
+        if (state.AddCount != nullptr)
+            ++*state.AddCount;
+        if (state.LastValue != nullptr)
+            *state.LastValue = component.Value;
+    }
+
     static void OnRemove(const ComponentTeardownProbe& component,
                          World& world,
                          EntityId entity)
@@ -41,10 +53,12 @@ namespace
     void PrepareWorld(World& world,
                       int& removeCount,
                       int& lastValue,
-                      bool& entityWasAlive)
+                      bool& entityWasAlive,
+                      int* addCount = nullptr)
     {
         world.RegisterComponent<ComponentTeardownProbe>();
         world.AddResource<ComponentTeardownState>(ComponentTeardownState{
+            .AddCount = addCount,
             .RemoveCount = &removeCount,
             .LastValue = &lastValue,
             .EntityWasAlive = &entityWasAlive,
@@ -98,6 +112,54 @@ TEST(ComponentTeardown, CommandBufferDestroyRunsRemoveHook)
     EXPECT_FALSE(world.IsAlive(entity));
 }
 
+TEST(ComponentTeardown, RawMutationUsesRegisteredLifecycleMetadata)
+{
+    int addCount = 0;
+    int removeCount = 0;
+    int lastValue = 0;
+    bool entityWasAlive = false;
+    World world;
+    PrepareWorld(world, removeCount, lastValue, entityWasAlive, &addCount);
+
+    const EntityId entity = world.CreateEntity();
+    const ComponentId component = world.GetComponentId<ComponentTeardownProbe>();
+    const ComponentTeardownProbe value{ 29 };
+
+    world.AddComponentRaw(entity, component, &value);
+    EXPECT_EQ(addCount, 1);
+    EXPECT_EQ(lastValue, 29);
+
+    world.RemoveComponentRaw(entity, component);
+    EXPECT_EQ(removeCount, 1);
+    EXPECT_EQ(lastValue, 29);
+    EXPECT_TRUE(entityWasAlive);
+}
+
+TEST(ComponentTeardown, CommandBufferUsesRegisteredLifecycleMetadata)
+{
+    int addCount = 0;
+    int removeCount = 0;
+    int lastValue = 0;
+    bool entityWasAlive = false;
+    World world;
+    PrepareWorld(world, removeCount, lastValue, entityWasAlive, &addCount);
+
+    const EntityId entity = world.CreateEntity();
+    CommandBuffer commands(world);
+    commands.AddComponent(entity, ComponentTeardownProbe{ 31 });
+    commands.Flush();
+
+    EXPECT_EQ(addCount, 1);
+    EXPECT_EQ(lastValue, 31);
+
+    commands.RemoveComponent<ComponentTeardownProbe>(entity);
+    commands.Flush();
+
+    EXPECT_EQ(removeCount, 1);
+    EXPECT_EQ(lastValue, 31);
+    EXPECT_TRUE(entityWasAlive);
+}
+
 TEST(ComponentTeardown, ClearEntitiesRunsEveryHookAndPreservesWorldSetup)
 {
     int removeCount = 0;
@@ -129,11 +191,11 @@ TEST(ComponentTeardown, WorldDestructorRunsHooksBeforeWorldResourcesDie)
     {
         World world;
         PrepareWorld(world, removeCount, lastValue, entityWasAlive);
-        AddProbe(world, 31);
+        AddProbe(world, 37);
     }
 
     EXPECT_EQ(removeCount, 1);
-    EXPECT_EQ(lastValue, 31);
+    EXPECT_EQ(lastValue, 37);
     EXPECT_TRUE(entityWasAlive);
 }
 
@@ -145,11 +207,11 @@ TEST(ComponentTeardown, RegistryDestructorRunsHooksBeforeRegistryResourcesDie)
     {
         Registry registry = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
         PrepareWorld(registry.Components, removeCount, lastValue, entityWasAlive);
-        AddProbe(registry.Components, 37);
+        AddProbe(registry.Components, 41);
     }
 
     EXPECT_EQ(removeCount, 1);
-    EXPECT_EQ(lastValue, 37);
+    EXPECT_EQ(lastValue, 41);
     EXPECT_TRUE(entityWasAlive);
 }
 
@@ -161,12 +223,12 @@ TEST(ComponentTeardown, DestroyZoneRunsHooks)
     ZoneRuntime runtime;
     Registry& zone = runtime.CreateZone(ZoneId{ 1 });
     PrepareWorld(zone.Components, removeCount, lastValue, entityWasAlive);
-    AddProbe(zone.Components, 41);
+    AddProbe(zone.Components, 43);
 
     EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
 
     EXPECT_EQ(removeCount, 1);
-    EXPECT_EQ(lastValue, 41);
+    EXPECT_EQ(lastValue, 43);
     EXPECT_TRUE(entityWasAlive);
 }
 
