@@ -83,7 +83,7 @@ namespace
 
     EntityId FindFirstCamera(Registry& registry)
     {
-        for (EntityId entity : registry.Entities.GetAliveEntities())
+        for (EntityId entity : registry.Components.GetAliveEntities())
             if (registry.Components.TryGet<CameraComponent>(entity) != nullptr)
                 return entity;
         return EntityId{};
@@ -178,7 +178,6 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     // this hook (ConsolePhase::GameLoaded), landing in LoadMap.
     engine.Console().SetMapHandler(
         [this](std::string_view mapName) { return LoadMap(mapName); });
-
 #ifdef SENCHA_ENABLE_DEBUG_UI
     DebugService& debug = engine.Debug();
     SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
