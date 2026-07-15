@@ -113,7 +113,7 @@ public:
         assert((referenceFrame == 0 || ChangedSig.any())
                && "referenceFrame passed to a query with no Changed<T> accessor.");
 
-        W->PushQueryScope();
+        QueryScope queryScope(*W);
         RebuildIfStale();
 
         const uint32_t frame = W->CurrentFrame();
@@ -136,13 +136,10 @@ public:
                 if (!PassesChangedFilter(chunk, referenceFrame)) continue;
 
                 view.RawChunk = &chunk;
+                WriteVersionScope writeVersionScope(*this, chunk, view, frame);
                 fn(view);
-
-                BumpWriteVersions(chunk, view, frame, std::index_sequence_for<Accessors...>{});
             }
         }
-
-        W->PopQueryScope();
     }
 
     void RebuildMatchingArchetypes()
@@ -158,6 +155,47 @@ public:
     }
 
 private:
+    struct QueryScope
+    {
+        explicit QueryScope(const World& world)
+            : Target(world)
+        {
+            Target.PushQueryScope();
+        }
+
+        ~QueryScope()
+        {
+            Target.PopQueryScope();
+        }
+
+        const World& Target;
+    };
+
+    struct WriteVersionScope
+    {
+        WriteVersionScope(Query& owner,
+                          Chunk& chunk,
+                          const ChunkView<Accessors...>& view,
+                          uint32_t frame)
+            : Owner(owner)
+            , Target(chunk)
+            , View(view)
+            , Frame(frame)
+        {
+        }
+
+        ~WriteVersionScope()
+        {
+            Owner.BumpWriteVersions(
+                Target, View, Frame, std::index_sequence_for<Accessors...>{});
+        }
+
+        Query& Owner;
+        Chunk& Target;
+        const ChunkView<Accessors...>& View;
+        uint32_t Frame;
+    };
+
     const World* W;
 
     ArchetypeSignature RequiredSig;
