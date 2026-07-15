@@ -1,20 +1,16 @@
 #include <gtest/gtest.h>
 
 #include <core/json/JsonParser.h>
-#include <time/TimeService.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
-#include <zone/WorldPartitionManifest.h>
-#include <zone/WorldPartitionRuntime.h>
+#include <world/registry/Registry.h>
 #include <zone/AsyncZoneLoader.h>
+#include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneRuntime.h>
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
+#include <atomic>
+#include <chrono>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,56 +19,49 @@
 namespace
 {
 
-constexpr ZoneId kHub{ 0xa1 };
-constexpr ZoneId kHallway{ 0xa2 };
-constexpr ZoneId kArena{ 0xa3 };
-
+// The canonical hand-written cooked fixture: three zones in a doorway chain
+// Hub <-> Hallway <-> Arena, one elevated preload priority. The recipes never
+// open the cooked paths; they exist so LoadManifest accepts the manifest.
 constexpr const char* kFixtureJson = R"({
   "format_version": 1,
-  "name": "StreamingFixture",
+  "name": "TraversalFixture",
   "start_zone": "00000000000000a1",
-  "regions": [
-    { "id": "00000000000000b1", "name": "Rooms" }
-  ],
+  "regions": [ { "id": "00000000000000b1", "name": "Fixture Region" } ],
   "zones": [
-    {
-      "id": "00000000000000a1",
-      "name": "Hub",
-      "region": "00000000000000b1",
+    { "id": "00000000000000a1", "name": "Hub", "region": "00000000000000b1",
       "scene": "levels/hub.level.json",
       "bounds": { "min": [-8, 0, -8], "max": [8, 4, 8] },
       "cooked_scene": "levels/hub.cooked.json",
       "cooked_collision": "levels/hub.collision.json",
-      "content_hash": "00000000000000d1"
-    },
-    {
-      "id": "00000000000000a2",
-      "name": "Hallway",
-      "region": "00000000000000b1",
+      "content_hash": "00000000000000d1" },
+    { "id": "00000000000000a2", "name": "Hallway", "region": "00000000000000b1",
       "scene": "levels/hallway.level.json",
       "bounds": { "min": [9, 0, -2], "max": [20, 4, 2] },
       "cooked_scene": "levels/hallway.cooked.json",
       "cooked_collision": "levels/hallway.collision.json",
-      "content_hash": "00000000000000d2"
-    },
-    {
-      "id": "00000000000000a3",
-      "name": "Arena",
-      "region": "00000000000000b1",
+      "content_hash": "00000000000000d2" },
+    { "id": "00000000000000a3", "name": "Arena", "region": "00000000000000b1",
       "scene": "levels/arena.level.json",
       "bounds": { "min": [21, 0, -8], "max": [40, 8, 8] },
       "cooked_scene": "levels/arena.cooked.json",
       "cooked_collision": "levels/arena.collision.json",
-      "content_hash": "00000000000000d3"
-    }
+      "content_hash": "00000000000000d3" }
   ],
   "transitions": [
-    { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2" },
-    { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1" },
-    { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3" },
-    { "id": "00000000000000c4", "from": "00000000000000a3", "to": "00000000000000a2" }
+    { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2",
+      "topology": "doorway", "preload_priority": 1 },
+    { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1",
+      "topology": "doorway" },
+    { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3",
+      "topology": "doorway" },
+    { "id": "00000000000000c4", "from": "00000000000000a3", "to": "00000000000000a2",
+      "topology": "doorway" }
   ]
 })";
+
+constexpr ZoneId kHub{ 0xa1 };
+constexpr ZoneId kHallway{ 0xa2 };
+constexpr ZoneId kArena{ 0xa3 };
 
 WorldPartitionManifest FixtureManifest()
 {
@@ -84,583 +73,530 @@ WorldPartitionManifest FixtureManifest()
     return *manifest;
 }
 
-ZoneLoadRecipe MakeRecipe(std::vector<std::string>* events = nullptr,
-                          std::shared_ptr<AssetPreload> preload = {})
+class WorldPartitionRuntimeTest : public ::testing::Test
 {
-    ZoneLoadRecipe recipe;
-    recipe.Preload = std::move(preload);
-    recipe.Build = [events](Registry& registry)
-    {
-        registry.Components.CreateEntity();
-        if (events != nullptr)
-            events->push_back("build:" + ZoneIdToString(registry.Zone));
-    };
-    recipe.Finalize = [events](Registry& registry)
-    {
-        if (events != nullptr)
-            events->push_back("finalize:" + ZoneIdToString(registry.Zone));
-    };
-    return recipe;
-}
-
-void PumpAll(AsyncTaskQueue& tasks)
-{
-    while (tasks.PumpWork() != 0)
+protected:
+    WorldPartitionRuntimeTest()
+        : Tasks(0)
+        , Loader(Tasks, Zones, Runtime)
+        , Partition(MakeRecipe(), WorldPartitionStreamingConfig{})
     {
     }
-    tasks.DrainCompletions();
-}
 
-void Converge(WorldPartitionRuntime& partition,
-              AsyncZoneLoader& loader,
-              ZoneRuntime& zones,
-              AsyncTaskQueue& tasks,
-              double deltaSeconds = 0.016)
-{
-    partition.Update(deltaSeconds, loader, zones);
-    PumpAll(tasks);
-    partition.Update(0.0, loader, zones);
-}
-
-bool HasDemand(const WorldPartitionRuntime& partition, ZoneId zone)
-{
-    for (const ZoneDemandRecord& record : partition.DemandRecords())
-        if (record.Zone == zone)
-            return true;
-    return false;
-}
-
-bool DemandRecordsExplainResidency(const WorldPartitionRuntime& partition,
-                                   const ZoneRuntime& zones)
-{
-    if (!partition.HasFocus())
-        return partition.DemandRecords().empty();
-
-    const WorldPartitionManifest* manifest = partition.Manifest();
-    if (manifest == nullptr)
-        return zones.ZoneCount() == 0;
-
-    bool complete = true;
-    zones.VisitZones([&](ZoneId zone, const Registry&, ZoneParticipation)
+    struct FinalizeObservation
     {
-        if (manifest->FindZone(zone) != nullptr && !HasDemand(partition, zone))
-            complete = false;
-    });
-    return complete;
+        ZoneId Zone;
+        ZoneParticipation Participation;
+    };
+
+    [[nodiscard]] ZoneLoadRecipeFn MakeRecipe()
+    {
+        return [this](const ZoneHeader& header)
+        {
+            const ZoneId zone = header.Id;
+            ZoneLoadRecipe recipe;
+            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Finalize = [this, zone](Registry&)
+            { Finalized.push_back({ zone, Zones.GetParticipation(zone) }); };
+            return recipe;
+        };
+    }
+
+    void LoadFixture(WorldPartitionStreamingConfig config = {})
+    {
+        Partition = WorldPartitionRuntime(MakeRecipe(), config);
+        std::string error;
+        ASSERT_TRUE(Partition.LoadManifest(FixtureManifest(), &error)) << error;
+    }
+
+    // One frame: policy update, then the zero-thread queue's work and drain.
+    void Step(double dt = 0.0)
+    {
+        Partition.Update(dt, Loader, Zones);
+        Tasks.PumpWork();
+        Tasks.DrainCompletions();
+    }
+
+    AsyncTaskQueue Tasks;
+    ZoneRuntime Zones;
+    RuntimeFrameLoop Runtime;
+    AsyncZoneLoader Loader;
+    WorldPartitionRuntime Partition;
+    std::vector<FinalizeObservation> Finalized;
+};
+
+} // namespace
+
+TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesUncookedZones)
+{
+    WorldPartitionManifest manifest = FixtureManifest();
+    manifest.Zones[1].CookedSceneRef.clear();
+
+    std::string error;
+    EXPECT_FALSE(Partition.LoadManifest(std::move(manifest), &error));
+    EXPECT_NE(error.find("cooked"), std::string::npos);
+    EXPECT_FALSE(Partition.HasManifest());
 }
 
+TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesErrorValidation)
+{
+    WorldPartitionManifest manifest = FixtureManifest();
+    TransitionRecord dangling;
+    dangling.Id = TransitionId{ 0xc9 };
+    dangling.From = kHub;
+    dangling.To = ZoneId{ 0xff };   // names no zone
+    manifest.Transitions.push_back(dangling);
+
+    std::string error;
+    EXPECT_FALSE(Partition.LoadManifest(std::move(manifest), &error));
+    EXPECT_NE(error.find("partition.transition.endpoint_missing"), std::string::npos);
+}
+
+TEST_F(WorldPartitionRuntimeTest, NeighborLoadsDormantOnUpdate)
+{
+    LoadFixture();
+    Partition.SetFocus(kHub);
+    Step();
+
+    ASSERT_TRUE(Zones.IsZoneLoaded(kHallway));
+    bool sawHallway = false;
+    for (const FinalizeObservation& observation : Finalized)
+        if (observation.Zone == kHallway)
+        {
+            sawHallway = true;
+            EXPECT_FALSE(observation.Participation.Any());   // dormant at attach
+        }
+    EXPECT_TRUE(sawHallway);
+}
+
+TEST_F(WorldPartitionRuntimeTest, FocusZoneParticipationIsFull)
+{
+    LoadFixture();
+    Partition.SetFocus(kHub);
+    Step();   // loads attach dormant
+    Step();   // participation converges
+
+    const ZoneParticipation participation = Zones.GetParticipation(kHub);
+    EXPECT_TRUE(participation.Visible);
+    EXPECT_TRUE(participation.Physics);
+    EXPECT_TRUE(participation.Logic);
+    EXPECT_TRUE(participation.Audio);
+    // The neighbor render-preloads: visible, collidable, inert.
+    const ZoneParticipation neighbor = Zones.GetParticipation(kHallway);
+    EXPECT_TRUE(neighbor.Visible);
+    EXPECT_TRUE(neighbor.Physics);
+    EXPECT_FALSE(neighbor.Logic);
+    EXPECT_FALSE(neighbor.Audio);
+}
+
+TEST_F(WorldPartitionRuntimeTest, FocusChangeDemotesOldFocusToDormant)
+{
+    LoadFixture();
+    Partition.SetFocus(kHub);
+    Step();
+    Step();
+    ASSERT_TRUE(Zones.GetParticipation(kHub).Visible);
+
+    Partition.SetFocus(kHallway);
+    Step();
+
+    EXPECT_TRUE(Zones.GetParticipation(kHallway).Logic);   // promoted to full
+    // The old focus demotes to the neighbor render preload, still resident.
+    EXPECT_TRUE(Zones.GetParticipation(kHub).Visible);
+    EXPECT_FALSE(Zones.GetParticipation(kHub).Logic);
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHub));
+}
+
+TEST_F(WorldPartitionRuntimeTest, LingerThenDestroy)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 3.0 });
+    Partition.SetFocus(kHub);
+    Partition.PinZone(kHallway, ZoneParticipation{});
+    Step();
+    ASSERT_TRUE(Zones.IsZoneLoaded(kHallway));
+
+    Partition.UnpinZone(kHallway);
+    Step(1.0);   // linger 1.0: resident
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHallway));
+    Step(1.9);   // linger 2.9: resident
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHallway));
+    Step(0.1);   // linger 3.0: at the budget, destroyed
+    EXPECT_FALSE(Zones.IsZoneLoaded(kHallway));
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHub));
+}
+
+TEST_F(WorldPartitionRuntimeTest, LingerClockResetsOnRedemand)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 3.0 });
+    Partition.SetFocus(kHub);
+    Partition.PinZone(kHallway, ZoneParticipation{});
+    Step();
+
+    Partition.UnpinZone(kHallway);
+    Step(2.0);   // linger 2.0
+    ASSERT_TRUE(Zones.IsZoneLoaded(kHallway));
+
+    Partition.PinZone(kHallway, ZoneParticipation{});
+    Step();      // demanded again: clock drops
+    Partition.UnpinZone(kHallway);
+    Step(2.0);   // linger restarts at 2.0, below the budget
+
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHallway));
+    Step(1.0);   // 3.0: destroyed
+    EXPECT_FALSE(Zones.IsZoneLoaded(kHallway));
+}
+
+TEST_F(WorldPartitionRuntimeTest, PinKeepsZoneResidentPastLinger)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 3.0 });
+    Partition.SetFocus(kHub);
+    Partition.PinZone(kArena, ZoneParticipation{ .Logic = true });
+    Step();
+    Step();
+
+    for (int i = 0; i < 10; ++i)
+        Step(10.0);
+
+    EXPECT_TRUE(Zones.IsZoneLoaded(kArena));
+    EXPECT_TRUE(Zones.GetParticipation(kArena).Logic);
+}
+
+TEST_F(WorldPartitionRuntimeTest, UndemandedInFlightLoadIsCancelled)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0 });
+    Partition.SetFocus(kHub);
+    Partition.PinZone(kHallway, ZoneParticipation{});
+    Partition.Update(0.0, Loader, Zones);   // issues both loads, nothing pumped
+    ASSERT_TRUE(Loader.IsLoading(kHallway));
+
+    Partition.UnpinZone(kHallway);
+    Partition.Update(0.0, Loader, Zones);   // zero-thread queue: cancel succeeds
+
+    EXPECT_FALSE(Loader.IsLoading(kHallway));
+    Tasks.PumpWork();
+    Tasks.DrainCompletions();
+    EXPECT_FALSE(Zones.IsZoneLoaded(kHallway));
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHub));
+}
+
+TEST_F(WorldPartitionRuntimeTest, UncancellableInFlightLoadRetriesAndReportsLingering)
+{
+    // A one-thread queue plus a build gated on an atomic: CancelLoad fails
+    // while the build runs, the runtime reports the zone Lingering and retries.
+    AsyncTaskQueue tasks(1);
+    ZoneRuntime zones;
+    RuntimeFrameLoop runtime;
+    AsyncZoneLoader loader(tasks, zones, runtime);
+
+    std::atomic<bool> started{ false };
+    std::atomic<bool> release{ false };
+    WorldPartitionRuntime partition(
+        [&](const ZoneHeader& header) -> ZoneLoadRecipe
+        {
+            ZoneLoadRecipe recipe;
+            if (header.Id == kHallway)
+                recipe.Build = [&](Registry&)
+                {
+                    started = true;
+                    while (!release)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                };
+            else
+                recipe.Build = [](Registry&) {};
+            return recipe;
+        },
+        WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 0.0 });
+    std::string error;
+    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
+
+    partition.SetFocus(kHub);
+    partition.PinZone(kHallway, ZoneParticipation{});
+    partition.Update(0.0, loader, zones);
+    while (!started)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    partition.UnpinZone(kHallway);
+    partition.Update(0.0, loader, zones);   // CancelLoad fails mid-build
+
+    EXPECT_TRUE(loader.IsLoading(kHallway));
+    bool reported = false;
+    for (const ZoneDemandRecord& record : partition.DemandRecords())
+        if (record.Zone == kHallway)
+            reported = record.Sources.Lingering;
+    EXPECT_TRUE(reported);
+
+    release = true;
+    // The build finishes and attaches; the runtime then destroys the
+    // unwanted zone through the (zero-length) linger path.
+    for (int i = 0; i < 100 && loader.IsLoading(kHallway); ++i)
+    {
+        tasks.DrainCompletions();
+        partition.Update(0.1, loader, zones);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    partition.Update(0.1, loader, zones);
+    tasks.DrainCompletions();   // destruction lands at the drain, as in a frame
+    EXPECT_FALSE(zones.IsZoneLoaded(kHallway));
+}
+
+TEST_F(WorldPartitionRuntimeTest, FocusResolutionPrefersCurrentZoneOnOverlap)
+{
+    // Hallway's bounds stretched to overlap Hub over x in [7, 8].
+    WorldPartitionManifest manifest = FixtureManifest();
+    manifest.Zones[1].Bounds = Aabb3d::FromMinMax(Vec3d{ 7, 0, -2 }, Vec3d{ 20, 4, 2 });
+    std::string error;
+    ASSERT_TRUE(Partition.LoadManifest(std::move(manifest), &error)) << error;
+
+    Partition.SetFocus(kHub);
+    Partition.SetFocus(Vec3d{ 7.5, 1.0, 0.0 });   // inside both
+    EXPECT_EQ(Partition.FocusZone(), kHub);
+
+    Partition.SetFocus(kHallway);
+    Partition.SetFocus(Vec3d{ 7.5, 1.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kHallway);
+}
+
+TEST_F(WorldPartitionRuntimeTest, PositionInNoZoneFocusesNearestZone)
+{
+    LoadFixture();
+    Partition.SetFocus(kHub);
+    // Far east of every bounds: the nearest zone (Arena, x up to 40) wins;
+    // the stale previous focus does not survive.
+    Partition.SetFocus(Vec3d{ 1000.0, 0.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kArena);
+    // Hovering above the Hub's box focuses the Hub: the floor-slab case
+    // (derived bounds hug geometry; the pawn transform rides above them).
+    Partition.SetFocus(Vec3d{ 0.0, 10.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kHub);
+}
+
+TEST_F(WorldPartitionRuntimeTest, SmallestVolumeWinsTiesById)
+{
+    // Hallway stretched over the sample point; Hub is far larger, so the
+    // smaller Hallway wins when the current focus (Arena) is no candidate.
+    WorldPartitionManifest manifest = FixtureManifest();
+    manifest.Zones[1].Bounds = Aabb3d::FromMinMax(Vec3d{ 7, 0, -2 }, Vec3d{ 20, 4, 2 });
+    std::string error;
+    ASSERT_TRUE(Partition.LoadManifest(std::move(manifest), &error)) << error;
+    Partition.SetFocus(kArena);
+    Partition.SetFocus(Vec3d{ 7.5, 1.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kHallway);
+
+    // Identical bounds tie: the lower zone id wins.
+    WorldPartitionManifest tie = FixtureManifest();
+    tie.Zones[1].Bounds = tie.Zones[0].Bounds;
+    ASSERT_TRUE(Partition.LoadManifest(std::move(tie), &error)) << error;
+    Partition.SetFocus(kArena);
+    Partition.SetFocus(Vec3d{ 0.0, 1.0, 0.0 });
+    EXPECT_EQ(Partition.FocusZone(), kHub);
+}
+
+TEST_F(WorldPartitionRuntimeTest, FocusZoneIsNeverUnloaded)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 0.0,
+                                               .ResidentZoneCap = 1 });
+    Partition.SetFocus(kHub);
+    Step();
+    Step();
+
+    for (int i = 0; i < 20; ++i)
+        Step(100.0);
+
+    EXPECT_TRUE(Zones.IsZoneLoaded(kHub));
+    EXPECT_TRUE(Zones.GetParticipation(kHub).Visible);
+}
+
+TEST_F(WorldPartitionRuntimeTest, DemandRecordsAreDeterministicallyOrdered)
+{
+    LoadFixture();
+    Partition.SetFocus(kHallway);
+    Step();
+    Step();
+
+    const auto snapshot = [&]
+    {
+        std::vector<ZoneDemandRecord> records;
+        for (const ZoneDemandRecord& record : Partition.DemandRecords())
+            records.push_back(record);
+        return records;
+    };
+    Partition.Update(0.0, Loader, Zones);
+    const auto first = snapshot();
+    Partition.Update(0.0, Loader, Zones);
+    const auto second = snapshot();
+
+    ASSERT_EQ(first.size(), second.size());
+    ASSERT_GE(first.size(), 3u);   // Hallway plus both neighbors
+    for (size_t i = 0; i < first.size(); ++i)
+    {
+        EXPECT_EQ(first[i].Zone, second[i].Zone);
+        if (i > 0)
+            EXPECT_LT(first[i - 1].Zone.Value, first[i].Zone.Value);
+        EXPECT_EQ(first[i].Sources.Focus, second[i].Sources.Focus);
+        EXPECT_EQ(first[i].Sources.Neighbor, second[i].Sources.Neighbor);
+        EXPECT_EQ(first[i].Sources.Lingering, second[i].Sources.Lingering);
+    }
+}
+
+//=============================================================================
+// R4: the traversal gate, headless. When the traversal-hitch harness lands,
+// this scripted walk becomes one of its scripts; coordinate, do not duplicate.
+//=============================================================================
+
+namespace
+{
+
+// Scripted Hub-to-Arena walk. Every step sets focus from the position, runs
+// one Update, then settles all in-flight loads, so the residency event
+// sequence depends only on policy, never on task-thread timing.
 struct TraversalRun
 {
     std::vector<std::string> Events;
+    std::vector<std::pair<ZoneId, double>> AttachPositions;   // zone, x at attach
+    std::vector<ZoneParticipation> AttachParticipations;
     bool RecordsExplainedResidency = true;
 };
 
-TraversalRun RunScriptedTraversal(uint32_t taskThreads)
+TraversalRun RunScriptedTraversal(unsigned taskThreads)
 {
-    TraversalRun run;
     AsyncTaskQueue tasks(taskThreads);
     ZoneRuntime zones;
     RuntimeFrameLoop runtime;
     AsyncZoneLoader loader(tasks, zones, runtime);
 
+    TraversalRun run;
+    double currentX = 0.0;
+
     WorldPartitionRuntime partition(
-        [&](const ZoneHeader& header)
+        [&](const ZoneHeader& header) -> ZoneLoadRecipe
         {
+            run.Events.push_back("issue:" + ZoneIdToString(header.Id));
+            const ZoneId zone = header.Id;
             ZoneLoadRecipe recipe;
-            recipe.Build = [&, id = header.Id](Registry& registry)
+            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Finalize = [&run, &zones, &currentX, zone](Registry&)
             {
-                registry.Components.CreateEntity();
-                run.Events.push_back("build:" + ZoneIdToString(id));
-            };
-            recipe.Finalize = [&, id = header.Id](Registry&)
-            {
-                run.Events.push_back("finalize:" + ZoneIdToString(id));
+                run.Events.push_back("attach:" + ZoneIdToString(zone));
+                run.AttachPositions.push_back({ zone, currentX });
+                run.AttachParticipations.push_back(zones.GetParticipation(zone));
             };
             return recipe;
         },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.05 });
-
-    partition.SetObserver([&](const WorldPartitionEvent& event)
-    {
-        if (event.Kind == WorldPartitionEventKind::ParticipationChanged)
-        {
-            run.Events.push_back(
-                "part:" + ZoneIdToString(event.Zone)
-                + ":" + (event.Participation.Visible ? "V" : "-")
-                + (event.Participation.Physics ? "P" : "-")
-                + (event.Participation.Logic ? "L" : "-")
-                + (event.Participation.Audio ? "A" : "-"));
-        }
-        else if (event.Kind == WorldPartitionEventKind::ZoneDestroyed)
-        {
-            run.Events.push_back("destroy:" + ZoneIdToString(event.Zone));
-        }
-    });
-
+        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.5 });
     std::string error;
-    EXPECT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    const auto step = [&](const Vec3d& position, double dt)
+    if (!partition.LoadManifest(FixtureManifest(), &error))
     {
-        partition.SetFocus(position);
-        partition.Update(dt, loader, zones);
-        if (taskThreads == 0)
-            tasks.PumpWork();
-        else
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (tasks.ActiveTaskCount() != 0 && std::chrono::steady_clock::now() < deadline)
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        tasks.DrainCompletions();
-        partition.Update(0.0, loader, zones);
-        run.RecordsExplainedResidency =
-            run.RecordsExplainedResidency && DemandRecordsExplainResidency(partition, zones);
+        ADD_FAILURE() << error;
+        return run;
+    }
+    partition.SetFocus(kHub);
+
+    const ZoneId zoneOrder[] = { kHub, kHallway, kArena };
+    bool wasLoaded[3] = { false, false, false };
+    ZoneParticipation lastParticipation[3];
+
+    const auto participationTag = [](const ZoneParticipation& p)
+    {
+        std::string tag = "----";
+        if (p.Visible) tag[0] = 'V';
+        if (p.Physics) tag[1] = 'P';
+        if (p.Logic) tag[2] = 'L';
+        if (p.Audio) tag[3] = 'A';
+        return tag;
     };
 
-    step(Vec3d{ 0, 1, 0 }, 0.016);    // Hub
-    step(Vec3d{ 10, 1, 0 }, 0.016);   // Hallway
-    step(Vec3d{ 22, 1, 0 }, 0.016);   // Arena
-    step(Vec3d{ 22, 1, 0 }, 0.060);   // Expire Hub
+    for (int step = 0; step <= 60; ++step)
+    {
+        currentX = 0.5 * step;   // Hub center to Arena center
+        partition.SetFocus(Vec3d{ currentX, 1.0, 0.0 });
+        partition.Update(0.25, loader, zones);
 
+        // Settle: all in-flight loads attach before the step's observations.
+        const auto anyLoading = [&]
+        {
+            for (ZoneId zone : zoneOrder)
+                if (loader.IsLoading(zone))
+                    return true;
+            return false;
+        };
+        if (taskThreads == 0)
+        {
+            do
+            {
+                tasks.PumpWork();
+                tasks.DrainCompletions();
+            } while (anyLoading());
+        }
+        else
+        {
+            do
+            {
+                tasks.DrainCompletions();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } while (anyLoading());
+        }
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            const ZoneId zone = zoneOrder[i];
+            const bool loaded = zones.IsZoneLoaded(zone);
+            if (loaded != wasLoaded[i])
+                run.Events.push_back((loaded ? "load:" : "destroy:") + ZoneIdToString(zone));
+            const ZoneParticipation participation =
+                loaded ? zones.GetParticipation(zone) : ZoneParticipation{};
+            if (participationTag(participation) != participationTag(lastParticipation[i]))
+                run.Events.push_back("part:" + ZoneIdToString(zone) + ":"
+                                     + participationTag(participation));
+            wasLoaded[i] = loaded;
+            lastParticipation[i] = participation;
+
+            if (loaded)
+            {
+                bool explained = false;
+                for (const ZoneDemandRecord& record : partition.DemandRecords())
+                    if (record.Zone == zone)
+                        explained = record.Sources.Focus || record.Sources.Pinned
+                            || record.Sources.Neighbor || record.Sources.Lingering;
+                run.RecordsExplainedResidency &= explained;
+            }
+        }
+    }
     return run;
 }
 
 } // namespace
 
-TEST(WorldPartitionRuntime, ManifestLoadInitializesStartFocus)
-{
-    WorldPartitionRuntime partition;
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    EXPECT_TRUE(partition.HasFocus());
-    EXPECT_EQ(partition.FocusZone(), kHub);
-    EXPECT_EQ(partition.Manifest()->Name, "StreamingFixture");
-}
-
-TEST(WorldPartitionRuntime, InvalidFocusIsRejected)
-{
-    WorldPartitionRuntime partition;
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    EXPECT_FALSE(partition.SetFocus(ZoneId{ 0xdead }));
-    EXPECT_EQ(partition.FocusZone(), kHub);
-}
-
-TEST(WorldPartitionRuntime, PositionFocusUsesZoneBounds)
-{
-    WorldPartitionRuntime partition;
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    EXPECT_TRUE(partition.SetFocus(Vec3d{ 12.0, 1.0, 0.0 }));
-    EXPECT_EQ(partition.FocusZone(), kHallway);
-}
-
-TEST(WorldPartitionRuntime, InitialFocusLoadsFullZoneAndNeighborPreload)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-
-    ASSERT_TRUE(zones.IsZoneLoaded(kHub));
-    ASSERT_TRUE(zones.IsZoneLoaded(kHallway));
-    EXPECT_FALSE(zones.IsZoneLoaded(kArena));
-
-    const ZoneParticipation hub = zones.GetParticipation(kHub);
-    EXPECT_TRUE(hub.Visible);
-    EXPECT_TRUE(hub.Physics);
-    EXPECT_TRUE(hub.Logic);
-    EXPECT_TRUE(hub.Audio);
-
-    const ZoneParticipation hallway = zones.GetParticipation(kHallway);
-    EXPECT_TRUE(hallway.Visible);
-    EXPECT_TRUE(hallway.Physics);
-    EXPECT_FALSE(hallway.Logic);
-    EXPECT_FALSE(hallway.Audio);
-}
-
-TEST(WorldPartitionRuntime, FocusMovePromotesNewZoneAndDemotesOldFocus)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-
-    partition.SetFocus(kHallway);
-    Converge(partition, loader, zones, tasks);
-
-    const ZoneParticipation hallway = zones.GetParticipation(kHallway);
-    EXPECT_TRUE(hallway.Visible);
-    EXPECT_TRUE(hallway.Physics);
-    EXPECT_TRUE(hallway.Logic);
-    EXPECT_TRUE(hallway.Audio);
-
-    const ZoneParticipation hub = zones.GetParticipation(kHub);
-    EXPECT_TRUE(hub.Visible);
-    EXPECT_TRUE(hub.Physics);
-    EXPECT_FALSE(hub.Logic);
-    EXPECT_FALSE(hub.Audio);
-
-    EXPECT_TRUE(zones.IsZoneLoaded(kArena));
-    const ZoneParticipation arena = zones.GetParticipation(kArena);
-    EXPECT_TRUE(arena.Visible);
-    EXPECT_TRUE(arena.Physics);
-    EXPECT_FALSE(arena.Logic);
-    EXPECT_FALSE(arena.Audio);
-}
-
-TEST(WorldPartitionRuntime, LingerKeepsThenEvictsUndemandedZone)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-    partition.SetFocus(kArena);
-    Converge(partition, loader, zones, tasks, 0.04);
-
-    ASSERT_TRUE(zones.IsZoneLoaded(kHub));
-    const ZoneParticipation lingering = zones.GetParticipation(kHub);
-    EXPECT_FALSE(lingering.Visible);
-    EXPECT_FALSE(lingering.Physics);
-    EXPECT_FALSE(lingering.Logic);
-    EXPECT_FALSE(lingering.Audio);
-
-    partition.Update(0.07, loader, zones);
-    EXPECT_FALSE(zones.IsZoneLoaded(kHub));
-}
-
-TEST(WorldPartitionRuntime, FocusZoneNeverEvictedByLinger)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 0.01 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-    partition.Update(100.0, loader, zones);
-
-    EXPECT_TRUE(zones.IsZoneLoaded(kHub));
-    const ZoneParticipation focus = zones.GetParticipation(kHub);
-    EXPECT_TRUE(focus.Visible);
-    EXPECT_TRUE(focus.Physics);
-    EXPECT_TRUE(focus.Logic);
-    EXPECT_TRUE(focus.Audio);
-}
-
-TEST(WorldPartitionRuntime, InFlightZoneIsNotIssuedTwice)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    std::vector<ZoneId> issued;
-    WorldPartitionRuntime partition(
-        [&](const ZoneHeader& header)
-        {
-            issued.push_back(header.Id);
-            return MakeRecipe();
-        },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    partition.Update(0.0, loader, zones);
-    partition.Update(0.0, loader, zones);
-
-    EXPECT_EQ(issued.size(), 2u);
-    EXPECT_EQ(std::count(issued.begin(), issued.end(), kHub), 1);
-    EXPECT_EQ(std::count(issued.begin(), issued.end(), kHallway), 1);
-}
-
-TEST(WorldPartitionRuntime, LoadOrderIsDeterministicByRankThenPriorityThenId)
-{
-    WorldPartitionManifest manifest = FixtureManifest();
-    ASSERT_EQ(manifest.Transitions.size(), 4u);
-    manifest.Transitions[0].PreloadPriority = 0;
-    manifest.Transitions[1].PreloadPriority = 0;
-    manifest.Transitions[2].PreloadPriority = 9;
-    manifest.Transitions[3].PreloadPriority = 9;
-
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    std::vector<ZoneId> issued;
-    WorldPartitionRuntime partition(
-        [&](const ZoneHeader& header)
-        {
-            issued.push_back(header.Id);
-            return MakeRecipe();
-        },
-        WorldPartitionStreamingConfig{ .HopCount = 2, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(std::move(manifest), &error)) << error;
-
-    partition.SetFocus(kHub);
-    partition.Update(0.0, loader, zones);
-
-    const std::vector<ZoneId> expected{ kHub, kHallway, kArena };
-    EXPECT_EQ(issued, expected);
-}
-
-TEST(WorldPartitionRuntime, PreloadTokenGatesAttachAndParticipation)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    std::shared_ptr<AssetPreload> hallwayPreload = std::make_shared<AssetPreload>();
-    std::vector<std::string> events;
-
-    WorldPartitionRuntime partition(
-        [&](const ZoneHeader& header)
-        {
-            return MakeRecipe(&events, header.Id == kHallway ? hallwayPreload : nullptr);
-        },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    partition.Update(0.0, loader, zones);
-    PumpAll(tasks);
-    partition.Update(0.0, loader, zones);
-
-    EXPECT_TRUE(zones.IsZoneLoaded(kHub));
-    EXPECT_FALSE(zones.IsZoneLoaded(kHallway));
-    EXPECT_TRUE(loader.IsLoading(kHallway));
-    EXPECT_TRUE(hallwayPreload->IsPending());
-
-    hallwayPreload->MarkReady();
-    tasks.DrainCompletions();
-    partition.Update(0.0, loader, zones);
-
-    EXPECT_TRUE(zones.IsZoneLoaded(kHallway));
-    const ZoneParticipation hallway = zones.GetParticipation(kHallway);
-    EXPECT_TRUE(hallway.Visible);
-    EXPECT_TRUE(hallway.Physics);
-    EXPECT_FALSE(hallway.Logic);
-    EXPECT_FALSE(hallway.Audio);
-}
-
-TEST(WorldPartitionRuntime, FailedPreloadCancelsLoadAndAllowsRetry)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    std::shared_ptr<AssetPreload> failed = std::make_shared<AssetPreload>();
-    int hallwayAttempts = 0;
-
-    WorldPartitionRuntime partition(
-        [&](const ZoneHeader& header)
-        {
-            if (header.Id == kHallway)
-            {
-                ++hallwayAttempts;
-                return MakeRecipe(nullptr, hallwayAttempts == 1 ? failed : nullptr);
-            }
-            return MakeRecipe();
-        },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    partition.Update(0.0, loader, zones);
-    PumpAll(tasks);
-    partition.Update(0.0, loader, zones);
-
-    ASSERT_TRUE(loader.IsLoading(kHallway));
-    failed->MarkFailed("fixture failure");
-    partition.Update(0.0, loader, zones);
-
-    EXPECT_FALSE(loader.IsLoading(kHallway));
-    EXPECT_FALSE(zones.IsZoneLoaded(kHallway));
-
-    partition.Update(0.0, loader, zones);
-    PumpAll(tasks);
-    partition.Update(0.0, loader, zones);
-
-    EXPECT_EQ(hallwayAttempts, 2);
-    EXPECT_TRUE(zones.IsZoneLoaded(kHallway));
-}
-
-TEST(WorldPartitionRuntime, ObserverReportsParticipationBeforeDestroy)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    std::vector<WorldPartitionEvent> events;
-
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.05 });
-    partition.SetObserver([&](const WorldPartitionEvent& event) { events.push_back(event); });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-    partition.SetFocus(kArena);
-    Converge(partition, loader, zones, tasks, 0.0);
-    partition.Update(0.06, loader, zones);
-
-    std::optional<size_t> dormantIndex;
-    std::optional<size_t> destroyIndex;
-    for (size_t i = 0; i < events.size(); ++i)
-    {
-        if (events[i].Zone != kHub)
-            continue;
-        if (events[i].Kind == WorldPartitionEventKind::ParticipationChanged
-            && events[i].Participation == ZoneParticipation{})
-        {
-            dormantIndex = i;
-        }
-        else if (events[i].Kind == WorldPartitionEventKind::ZoneDestroyed)
-        {
-            destroyIndex = i;
-        }
-    }
-
-    ASSERT_TRUE(dormantIndex.has_value());
-    ASSERT_TRUE(destroyIndex.has_value());
-    EXPECT_LT(*dormantIndex, *destroyIndex);
-}
-
-TEST(WorldPartitionRuntime, DemandRecordsMatchLoadedAndInFlightZones)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    partition.Update(0.0, loader, zones);
-
-    ASSERT_EQ(partition.DemandRecords().size(), 2u);
-    EXPECT_EQ(partition.DemandRecords()[0].Zone, kHub);
-    EXPECT_TRUE(partition.DemandRecords()[0].InFlight);
-    EXPECT_EQ(partition.DemandRecords()[1].Zone, kHallway);
-    EXPECT_TRUE(partition.DemandRecords()[1].InFlight);
-
-    PumpAll(tasks);
-    partition.Update(0.0, loader, zones);
-
-    ASSERT_EQ(partition.DemandRecords().size(), 2u);
-    EXPECT_EQ(partition.DemandRecords()[0].Zone, kHub);
-    EXPECT_TRUE(partition.DemandRecords()[0].Loaded);
-    EXPECT_FALSE(partition.DemandRecords()[0].InFlight);
-    EXPECT_EQ(partition.DemandRecords()[1].Zone, kHallway);
-    EXPECT_TRUE(partition.DemandRecords()[1].Loaded);
-    EXPECT_FALSE(partition.DemandRecords()[1].InFlight);
-}
-
-TEST(WorldPartitionRuntime, LingerRecordsExplainLoadedUndemandedZone)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-    partition.SetFocus(kArena);
-    Converge(partition, loader, zones, tasks, 0.04);
-
-    ASSERT_TRUE(zones.IsZoneLoaded(kHub));
-    ASSERT_TRUE(HasDemand(partition, kHub));
-
-    const ZoneDemandRecord* hubRecord = nullptr;
-    for (const ZoneDemandRecord& record : partition.DemandRecords())
-        if (record.Zone == kHub)
-            hubRecord = &record;
-    ASSERT_NE(hubRecord, nullptr);
-    EXPECT_TRUE(hubRecord->Loaded);
-    EXPECT_TRUE(hubRecord->Lingering);
-    EXPECT_EQ(hubRecord->Kind, ZoneDemandKind::Dormant);
-    EXPECT_GT(hubRecord->LingerSecondsRemaining, 0.0);
-    EXPECT_TRUE(DemandRecordsExplainResidency(partition, zones));
-}
-
-TEST(WorldPartitionRuntime, ClearFocusEmptiesDemandAfterLinger)
-{
-    AsyncTaskQueue tasks(0);
-    ZoneRuntime zones;
-    RuntimeFrameLoop runtime;
-    AsyncZoneLoader loader(tasks, zones, runtime);
-    WorldPartitionRuntime partition(
-        [](const ZoneHeader&) { return MakeRecipe(); },
-        WorldPartitionStreamingConfig{ .HopCount = 0, .LingerSeconds = 0.01 });
-    std::string error;
-    ASSERT_TRUE(partition.LoadManifest(FixtureManifest(), &error)) << error;
-
-    partition.SetFocus(kHub);
-    Converge(partition, loader, zones, tasks);
-    partition.ClearFocus();
-    partition.Update(0.02, loader, zones);
-
-    EXPECT_FALSE(partition.HasFocus());
-    EXPECT_FALSE(zones.IsZoneLoaded(kHub));
-    EXPECT_TRUE(partition.DemandRecords().empty());
-}
-
-TEST(WorldPartitionTraversal, TraversalEventsHaveCoherentOrdering)
+TEST(WorldPartitionTraversal, TraversalAttachesDormantAheadOfCrossing)
 {
     const TraversalRun run = RunScriptedTraversal(0);
 
-    const auto indexOf = [&](const std::string& value) -> ptrdiff_t
+    for (const ZoneParticipation& participation : run.AttachParticipations)
+        EXPECT_FALSE(participation.Any());   // never visible-on-attach
+
+    // Ahead of the crossing: each zone attached before the position reached it.
+    for (const auto& [zone, x] : run.AttachPositions)
     {
-        const auto it = std::find(run.Events.begin(), run.Events.end(), value);
-        if (it == run.Events.end())
-            return -1;
-        return std::distance(run.Events.begin(), it);
+        if (zone == kHallway)
+            EXPECT_LT(x, 9.0);
+        if (zone == kArena)
+            EXPECT_LT(x, 21.0);
+    }
+    bool arenaAttached = false;
+    for (const auto& [zone, x] : run.AttachPositions)
+        arenaAttached |= zone == kArena;
+    EXPECT_TRUE(arenaAttached);
+}
+
+TEST(WorldPartitionTraversal, TraversalFlipsParticipationOnEntryAndUnloadsBehind)
+{
+    const TraversalRun run = RunScriptedTraversal(0);
+
+    const auto indexOf = [&](const std::string& event)
+    {
+        for (size_t i = 0; i < run.Events.size(); ++i)
+            if (run.Events[i] == event)
+                return static_cast<ptrdiff_t>(i);
+        return static_cast<ptrdiff_t>(-1);
     };
 
     const ptrdiff_t hallwayFull = indexOf("part:" + ZoneIdToString(kHallway) + ":VPLA");
