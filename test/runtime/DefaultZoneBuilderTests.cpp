@@ -30,7 +30,7 @@ TEST(DefaultZoneBuilder, CreateEntityAddsTransformComponents)
     EntityId entity = CreateDefaultEntity(registry, Transform3f(
         Vec3d(1.0f, 2.0f, 3.0f), Quatf::Identity(), Vec3d::One()));
 
-    EXPECT_TRUE(registry.Entities.IsAlive(entity));
+    EXPECT_TRUE(registry.Components.IsAlive(entity));
     EXPECT_TRUE(registry.Components.HasComponent<LocalTransform>(entity));
     EXPECT_TRUE(registry.Components.HasComponent<WorldTransform>(entity));
 }
