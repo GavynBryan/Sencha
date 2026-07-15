@@ -29,7 +29,7 @@ namespace
         registry.Components.RegisterComponent<ZoneLoadMarker>();
         for (int i = 0; i < entityCount; ++i)
         {
-            const EntityId entity = registry.Entities.Create();
+            const EntityId entity = registry.Components.CreateEntity();
             registry.Components.AddComponent<ZoneLoadMarker>(entity, { i });
         }
     }
@@ -54,7 +54,7 @@ TEST(ZoneRuntimeAttach, DetachedRegistryAttachesAndIsVisible)
     EXPECT_TRUE(zones.IsZoneLoaded(zone));
     EXPECT_EQ(zones.FindZone(zone), &attached);
     EXPECT_EQ(zones.FindRegistry(reserved), &attached);
-    EXPECT_EQ(attached.Entities.Count(), 16u);
+    EXPECT_EQ(attached.Components.EntityCount(), 16u);
     EXPECT_TRUE(zones.GetParticipation(zone).Logic);
 
     FrameRegistryView view = zones.BuildFrameView();
@@ -109,7 +109,7 @@ TEST(AsyncZoneLoad, ZeroThreadEndToEnd)
 
     Registry* attached = zones.FindZone(zone);
     ASSERT_NE(attached, nullptr);
-    EXPECT_EQ(attached->Entities.Count(), 64u);
+    EXPECT_EQ(attached->Components.EntityCount(), 64u);
     EXPECT_TRUE(zones.GetParticipation(zone).Visible);
 
     // Component data built off-frame is intact.
@@ -140,13 +140,13 @@ TEST(AsyncZoneLoad, FinalizeRunsOnOwnerThreadAfterAttachBeforeDiscontinuity)
             // The zone is already attached and queryable when finalize runs...
             EXPECT_TRUE(zones.IsZoneLoaded(zone));
             EXPECT_EQ(zones.FindZone(zone), &registry);
-            EXPECT_EQ(registry.Entities.Count(), 5u);
+            EXPECT_EQ(registry.Components.EntityCount(), 5u);
             // ...but the discontinuity has not been marked yet.
             EXPECT_NE(runtime.GetCurrentFrame().DiscontinuityReason,
                       TemporalDiscontinuityReason::ZoneLoad);
             // Finalize is the main-thread publish step: ambient state and
             // further registry mutation are both legal here.
-            registry.Entities.Create();
+            registry.Components.CreateEntity();
         },
         // Participating attach: the ZoneLoad discontinuity fires after finalize.
         ZoneParticipation{ .Logic = true });
@@ -156,7 +156,7 @@ TEST(AsyncZoneLoad, FinalizeRunsOnOwnerThreadAfterAttachBeforeDiscontinuity)
 
     tasks.DrainCompletions();
     EXPECT_TRUE(finalized);
-    EXPECT_EQ(zones.FindZone(zone)->Entities.Count(), 6u);
+    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 6u);
     EXPECT_EQ(runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::ZoneLoad);
 }
@@ -250,7 +250,7 @@ TEST(AsyncZoneLoad, ReloadAfterDestroyUsesAFreshRegistry)
     tasks.PumpWork();
     tasks.DrainCompletions();
     ASSERT_TRUE(zones.IsZoneLoaded(zone));
-    EXPECT_EQ(zones.FindZone(zone)->Entities.Count(), 9u);
+    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 9u);
 }
 
 //=============================================================================
@@ -285,7 +285,7 @@ TEST(AsyncZoneLoad, ThreadedLoadCompletesViaPolling)
 
     EXPECT_NE(buildThread, std::this_thread::get_id());
     EXPECT_FALSE(loader.IsLoading(zone));
-    EXPECT_EQ(zones.FindZone(zone)->Entities.Count(), 32u);
+    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 32u);
     EXPECT_EQ(runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::ZoneLoad);
 }
