@@ -13,19 +13,15 @@ void CommandBuffer::Flush()
     {
         Command& cmd = Commands[i];
 
-        if (cmd.Kind == CommandKind::AddComponent && cmd.Payload.OnAddHook == nullptr)
+        if (cmd.Kind == CommandKind::AddComponent && !cmd.Payload.HasLifecycleHook)
         {
             const ComponentId id = cmd.Payload.Id;
-            const size_t size = cmd.Payload.Size;
-            const size_t align = cmd.Payload.Align;
 
             size_t end = i + 1;
             while (end < Commands.size()
                    && Commands[end].Kind == CommandKind::AddComponent
                    && Commands[end].Payload.Id == id
-                   && Commands[end].Payload.Size == size
-                   && Commands[end].Payload.Align == align
-                   && Commands[end].Payload.OnAddHook == nullptr)
+                   && !Commands[end].Payload.HasLifecycleHook)
             {
                 ++end;
             }
@@ -43,13 +39,13 @@ void CommandBuffer::Flush()
                     });
                 }
                 if (!items.empty())
-                    W->AddComponentsRawBatch(id, items.data(), items.size(), size, align);
+                    W->AddComponentsRawBatch(id, items.data(), items.size());
                 i = end;
                 continue;
             }
         }
 
-        if (cmd.Kind == CommandKind::RemoveComponent && cmd.Payload.OnRemoveHook == nullptr)
+        if (cmd.Kind == CommandKind::RemoveComponent && !cmd.Payload.HasLifecycleHook)
         {
             const ComponentId id = cmd.Payload.Id;
 
@@ -57,7 +53,7 @@ void CommandBuffer::Flush()
             while (end < Commands.size()
                    && Commands[end].Kind == CommandKind::RemoveComponent
                    && Commands[end].Payload.Id == id
-                   && Commands[end].Payload.OnRemoveHook == nullptr)
+                   && !Commands[end].Payload.HasLifecycleHook)
             {
                 ++end;
             }
@@ -86,19 +82,13 @@ void CommandBuffer::Flush()
             W->AddComponentRaw(
                 cmd.Entity,
                 cmd.Payload.Id,
-                PayloadData(cmd.Payload),
-                cmd.Payload.Size,
-                cmd.Payload.Align,
-                cmd.Payload.OnAddHook);
+                PayloadData(cmd.Payload));
             break;
         }
         case CommandKind::RemoveComponent:
         {
             if (!W->IsAlive(cmd.Entity)) break;
-            W->RemoveComponentRaw(
-                cmd.Entity,
-                cmd.Payload.Id,
-                cmd.Payload.OnRemoveHook);
+            W->RemoveComponentRaw(cmd.Entity, cmd.Payload.Id);
             break;
         }
         case CommandKind::DestroyEntity:
