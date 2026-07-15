@@ -1,0 +1,49 @@
+name: Fix World Partition Includes
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix-world-partition-includes:
+    if: github.head_ref == 'agent/runtime-world-stabilization'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+        with:
+          ref: agent/runtime-world-stabilization
+
+      - name: Patch stale includes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('test/runtime/WorldPartitionRuntimeTests.cpp')
+          text = path.read_text()
+          replacements = {
+              '#include <world/partition/WorldPartitionManifest.h>': '#include <zone/WorldPartitionManifest.h>',
+              '#include <world/partition/WorldPartitionRuntime.h>': '#include <zone/WorldPartitionRuntime.h>',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one occurrence of {old}, found {count}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/fix-world-partition-includes.yml
+
+      - name: Commit fix
+        run: |
+          git config user.name 'sencha-ci-fix'
+          git config user.email 'actions@users.noreply.github.com'
+          git add test/runtime/WorldPartitionRuntimeTests.cpp .github/workflows/fix-world-partition-includes.yml
+          git commit -m 'Fix world partition test includes'
+          git push origin HEAD:agent/runtime-world-stabilization
