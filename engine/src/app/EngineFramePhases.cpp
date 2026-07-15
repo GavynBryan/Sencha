@@ -235,6 +235,12 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
+
+        // End-frame systems consume the current change epoch. Once they finish,
+        // every loaded registry advances exactly once, including dormant zones,
+        // before the frame view and its spans are retired.
+        engine.Zones().AdvanceFrameEpochs();
+
         // The frame view dies with the frame; the drain phase mutates zone
         // lifecycle before the next one is built.
         engine.Zones().EndFrameView();
