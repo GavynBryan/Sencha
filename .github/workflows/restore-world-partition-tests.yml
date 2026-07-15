@@ -28,11 +28,15 @@ jobs:
           base = 'fad05ea133d36b969d6a706c3a34420feaf18956'
           path = 'test/runtime/WorldPartitionRuntimeTests.cpp'
           content = subprocess.check_output(['git', 'show', f'{base}:{path}'], text=True)
-          old = 'registry.Entities.Create()'
-          count = content.count(old)
-          if count != 1:
-              raise SystemExit(f'expected one legacy entity create call, found {count}')
-          content = content.replace(old, 'registry.Components.CreateEntity()')
+          replacements = {
+              '.Entities.Create()': '.Components.CreateEntity()',
+              '.Entities.Destroy(': '.Components.DestroyEntity(',
+              '.Entities.IsAlive(': '.Components.IsAlive(',
+              '.Entities.Count()': '.Components.EntityCount()',
+              '.Entities.GetAliveEntities()': '.Components.GetAliveEntities()',
+          }
+          for old, new in replacements.items():
+              content = content.replace(old, new)
           Path(path).write_text(content)
           PY
 
