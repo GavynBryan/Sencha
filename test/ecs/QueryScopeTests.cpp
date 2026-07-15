@@ -64,10 +64,11 @@ TEST(QueryScope, ThrowingWriteCallbackStillPublishesColumnVersion)
     }
 
     EXPECT_TRUE(threw);
-    ASSERT_NE(world.TryGet<QueryScopeProbe>(entity), nullptr);
-    EXPECT_EQ(world.TryGet<QueryScopeProbe>(entity)->Value, 9);
+    const World& readWorld = world;
+    ASSERT_NE(readWorld.TryGet<QueryScopeProbe>(entity), nullptr);
+    EXPECT_EQ(readWorld.TryGet<QueryScopeProbe>(entity)->Value, 9);
 
-    Query<Changed<QueryScopeProbe>> changed(world);
+    Query<Changed<QueryScopeProbe>> changed(readWorld);
     int matchingChunks = 0;
     changed.ForEachChunk([&](auto&) { ++matchingChunks; }, 0);
 
