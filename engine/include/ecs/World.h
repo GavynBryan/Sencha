@@ -8,7 +8,6 @@
 #include <ecs/EntityId.h>
 #include <ecs/EntityRegistry.h>
 
-#include <any>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -58,12 +57,38 @@ class World
         World& W;
     };
 
+    struct ScopedQuery
+    {
+        explicit ScopedQuery(const World& world) : W(world) { W.PushQueryScope(); }
+        ~ScopedQuery() { W.PopQueryScope(); }
+
+        const World& W;
+    };
+
+    struct ScopedColumnWrite
+    {
+        ScopedColumnWrite(Chunk& chunk, uint32_t column, uint32_t frame)
+            : Target(chunk)
+            , Column(column)
+            , Frame(frame)
+        {
+        }
+
+        ~ScopedColumnWrite()
+        {
+            Target.BumpColumnVersion(Column, Frame);
+        }
+
+        Chunk& Target;
+        uint32_t Column;
+        uint32_t Frame;
+    };
+
 public:
     World() = default;
     ~World()
     {
         ClearOwnedTypeErased(Resources);
-        ClearOwnedTypeErased(LegacyStores);
     }
 
     World(const World&) = delete;
@@ -79,7 +104,6 @@ public:
         if (this != &other)
         {
             ClearOwnedTypeErased(Resources);
-            ClearOwnedTypeErased(LegacyStores);
             MoveFrom(std::move(other));
         }
         return *this;
@@ -380,6 +404,7 @@ public:
     template <typename T, typename F>
     void ForEachComponent(F&& fn)
     {
+        ScopedQuery queryScope(*this);
         const ComponentId id = GetComponentId<T>();
         for (auto& archPtr : ArchetypeList)
         {
@@ -397,12 +422,11 @@ public:
                 if (col == UINT32_MAX)
                     continue;
 
+                ScopedColumnWrite writeScope(chunk, col, FrameCounter);
                 auto values = chunk.ColumnSpan<T>(col);
                 const EntityIndex* entities = chunk.EntityIndices();
                 for (uint32_t row = 0; row < chunk.RowCount; ++row)
                     fn(EntityId{ entities[row], GenerationForIndex(entities[row]) }, values[row]);
-
-                chunk.BumpColumnVersion(col, FrameCounter);
             }
         }
     }
@@ -410,6 +434,7 @@ public:
     template <typename T, typename F>
     void ForEachComponent(F&& fn) const
     {
+        ScopedQuery queryScope(*this);
         const ComponentId id = GetComponentId<T>();
         for (const auto& archPtr : ArchetypeList)
         {
@@ -509,12 +534,18 @@ public:
     template <typename T, typename... Args>
     T& AddResource(Args&&... args)
     {
+        const auto type = std::type_index(typeid(T));
+        auto existing = Resources.find(type);
+        assert(existing == Resources.end() && "Duplicate World resource registration");
+        if (existing != Resources.end())
+            return *static_cast<T*>(existing->second.first);
+
         auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
-        T*   raw = ptr.get();
-        Resources[std::type_index(typeid(T))] = {
+        T* raw = ptr.get();
+        Resources.emplace(type, std::pair<void*, std::function<void(void*)>>{
             raw,
             [](void* p) { delete static_cast<T*>(p); }
-        };
+        });
         ptr.release();
         return *raw;
     }
@@ -545,69 +576,6 @@ public:
     bool HasResource() const
     {
         return Resources.count(std::type_index(typeid(T))) > 0;
-    }
-
-    // ── Migration-only legacy store bag ──────────────────────────────────────
-    //
-    // Phase 2 keeps older tests and examples compiling while production call
-    // sites move to archetype components. Do not use these methods for new ECS
-    // code; systems should use RegisterComponent/AddComponent/Query instead.
-
-    template <typename T, typename... Args>
-    T& Register(Args&&... args)
-    {
-        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
-        T* raw = ptr.get();
-        LegacyStores[std::type_index(typeid(T))] = {
-            raw,
-            [](void* p) { delete static_cast<T*>(p); }
-        };
-        ptr.release();
-        return *raw;
-    }
-
-    template <typename T, typename... Args>
-    T& Ensure(Args&&... args)
-    {
-        if (T* existing = TryGet<T>())
-            return *existing;
-        return Register<T>(std::forward<Args>(args)...);
-    }
-
-    template <typename T>
-    T& Get()
-    {
-        T* value = TryGet<T>();
-        assert(value != nullptr && "Legacy store not registered");
-        return *value;
-    }
-
-    template <typename T>
-    const T& Get() const
-    {
-        const T* value = TryGet<T>();
-        assert(value != nullptr && "Legacy store not registered");
-        return *value;
-    }
-
-    template <typename T>
-    T* TryGet()
-    {
-        auto it = LegacyStores.find(std::type_index(typeid(T)));
-        return it != LegacyStores.end() ? static_cast<T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    const T* TryGet() const
-    {
-        auto it = LegacyStores.find(std::type_index(typeid(T)));
-        return it != LegacyStores.end() ? static_cast<const T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    bool Has() const
-    {
-        return LegacyStores.count(std::type_index(typeid(T))) > 0;
     }
 
     // ── Entity introspection ─────────────────────────────────────────────────
@@ -858,9 +826,6 @@ private:
     std::unordered_map<
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> Resources;
-    std::unordered_map<
-        std::type_index,
-        std::pair<void*, std::function<void(void*)>>> LegacyStores;
 
     mutable uint32_t QueryDepth = 0;
     uint32_t LifecycleHookDepth = 0;
@@ -888,7 +853,6 @@ private:
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
         Resources = std::move(other.Resources);
-        LegacyStores = std::move(other.LegacyStores);
         QueryDepth = other.QueryDepth;
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
@@ -896,7 +860,6 @@ private:
         EntityCreated = other.EntityCreated;
 
         other.Resources.clear();
-        other.LegacyStores.clear();
         other.QueryDepth = 0;
         other.LifecycleHookDepth = 0;
         other.EntityCreated = false;
