@@ -63,7 +63,7 @@ bool FinalizeDemoScene(DemoScene& scene,
     }
 
     // Entities are loaded in JSON array order: 0=camera, 1=center cube, 2=center cube child.
-    const auto entities = registry.Entities.GetAliveEntities();
+    const auto entities = registry.Components.GetAliveEntities();
     assert(entities.size() >= 3 && "Demo scene must have at least 3 entities");
 
     scene.Camera          = entities[0];
