@@ -100,10 +100,11 @@ TEST(WorldIteration, ThrowingMutableCallbackStillPublishesColumnVersion)
     }
 
     EXPECT_TRUE(threw);
-    ASSERT_NE(world.TryGet<WorldIterationProbe>(entity), nullptr);
-    EXPECT_EQ(world.TryGet<WorldIterationProbe>(entity)->Value, 9);
+    const World& readWorld = world;
+    ASSERT_NE(readWorld.TryGet<WorldIterationProbe>(entity), nullptr);
+    EXPECT_EQ(readWorld.TryGet<WorldIterationProbe>(entity)->Value, 9);
 
-    Query<Changed<WorldIterationProbe>> changed(world);
+    Query<Changed<WorldIterationProbe>> changed(readWorld);
     int matchingChunks = 0;
     changed.ForEachChunk([&](auto&) { ++matchingChunks; }, 0);
 
