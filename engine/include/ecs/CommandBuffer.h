@@ -5,9 +5,11 @@
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // ─── Command kinds ───────────────────────────────────────────────────────────
