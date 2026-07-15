@@ -62,6 +62,12 @@ public:
     // mutations belong at the drain point, before the frame's view is built.
     // Spans therefore never contain null entries.
     FrameRegistryView BuildFrameView();
+
+    // Advances the ECS change epoch of the global registry and every loaded
+    // zone exactly once. Dormant zones advance too: participation determines
+    // which systems run, not the registry's change-detection timeline.
+    void AdvanceFrameEpochs();
+
     void EndFrameView();
 
 private:
