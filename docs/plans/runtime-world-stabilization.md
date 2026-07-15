@@ -16,7 +16,9 @@ The order matters: correctness first, ownership second, naming and extraction th
 
 `World::CurrentFrame()` and `AdvanceFrame()` back `Changed<T>` and transform column-version logic, but the engine frame loop does not advance registry worlds. Tests and benchmarks do so manually.
 
-The first implementation slice makes epoch advancement a `ZoneRuntime` responsibility and invokes it once per outer frame after scheduled end-frame systems have consumed the current epoch.
+Column version zero is also the documented "never written" sentinel, while a default `World` begins at frame zero. Initial registry construction therefore wrote component columns at the sentinel value and made them invisible to `Changed<T>` with reference frame zero.
+
+The first implementation slice gives runtime registries a nonzero initial epoch, makes subsequent epoch advancement a `ZoneRuntime` responsibility, and invokes it once per outer frame after scheduled end-frame systems have consumed the current epoch.
 
 ### Entity and registry destruction skip component removal hooks
 
@@ -36,8 +38,8 @@ Chunk queries manually push and pop query scope without RAII. `World::ForEachCom
 
 ## Phase 0: Runtime correctness
 
-1. Make registry epoch advancement explicit and engine-owned.
-2. Add runtime tests proving global, active, and dormant registries advance exactly once.
+1. Make registry epoch initialization and advancement explicit and engine-owned.
+2. Add runtime tests proving initial writes are visible and global, active, and dormant registries advance exactly once.
 3. Add RAII query guards to every iteration path.
 4. Store type-erased lifecycle operations in component metadata.
 5. Route component removal, entity destruction, registry clear, and zone destruction through one lifecycle path.
@@ -95,9 +97,10 @@ Do not duplicate immutable gameplay definition registries in every streamed zone
 
 The first landed change is deliberately small:
 
+- make every runtime `Registry` begin at ECS epoch one so zero remains the unwritten sentinel
 - add `ZoneRuntime::AdvanceFrameEpochs()`
 - advance the global registry and every loaded zone exactly once, regardless of participation flags
 - call it from the engine's `EndFrame` phase after scheduled end-frame systems and before ending the frame view
-- add `ZoneRuntimeTests` covering global, active, dormant, and repeated advancement
+- add runtime tests covering initial `Changed<T>` visibility plus global, active, dormant, and repeated advancement
 
 This fixes the immediate `Changed<T>`/column-version ownership hole without beginning the larger lifecycle and resource migration in the same patch.
