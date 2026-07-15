@@ -34,6 +34,7 @@ struct ComponentMeta
     size_t           Size;
     size_t           Alignment;
     bool             IsTag;     // zero-size marker; no per-entity column
+    void (*OnAdd)(void*, World&, EntityId) = nullptr;
     void (*OnRemove)(const void*, World&, EntityId) = nullptr;
 };
 
@@ -157,6 +158,12 @@ public:
         meta.Size      = size;
         meta.Alignment = align;
         meta.IsTag     = std::is_empty_v<T>;
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
+        {
+            meta.OnAdd = [](void* ptr, World& world, EntityId entity) {
+                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), world, entity);
+            };
+        }
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
             meta.OnRemove = [](const void* ptr, World& world, EntityId entity) {
@@ -613,25 +620,20 @@ public:
         return &ComponentMetas[id];
     }
 
-    // ── Type-erased mutation (used by CommandBuffer::Flush) ──────────────────
+    // ── Type-erased mutation ─────────────────────────────────────────────────
     //
-    // These accept raw bytes and function pointers rather than templates so that
-    // CommandBuffer can call them without knowing T at call time.
-    // OnAddHook / OnRemoveHook may be null.
+    // Storage layout and lifecycle dispatch come from registered ComponentMeta.
+    // Callers provide identity and bytes only; they cannot override or skip hooks.
 
-    void AddComponentRaw(
-        EntityId entity,
-        ComponentId id,
-        const void* blob,
-        size_t size,
-        size_t /*align*/,
-        void (*onAdd)(void*, World&, EntityId))
+    void AddComponentRaw(EntityId entity, ComponentId id, const void* blob)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
+        assert(id < ComponentMetas.size() && "Raw add requires a registered component id.");
         ++StructuralCounter;
 
+        const ComponentMeta& meta = ComponentMetas[id];
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
         assert(!src.Signature.test(id) && "Entity already has component.");
@@ -643,13 +645,17 @@ public:
         auto [dci, dri] = dst->AddRow(entity.Index);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
-        if (size > 0)
+        if (meta.Size > 0)
         {
+            assert(blob != nullptr && "Non-tag raw add requires component bytes.");
             Chunk*         ch  = dst->Chunks[dci].get();
             const uint32_t col = ch->FindColumn(id);
             assert(col != UINT32_MAX);
+            uint8_t* destination = ch->ColumnData(col) + dri * meta.Size;
             if (blob != nullptr)
-                std::memcpy(ch->ColumnData(col) + dri * size, blob, size);
+                std::memcpy(destination, blob, meta.Size);
+            else
+                std::memset(destination, 0, meta.Size);
             ch->BumpColumnVersion(col, FrameCounter);
         }
 
@@ -659,40 +665,37 @@ public:
 
         Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
 
-        if (onAdd && size > 0)
+        if (meta.OnAdd != nullptr)
         {
             Chunk*         ch  = dst->Chunks[dci].get();
             const uint32_t col = ch->FindColumn(id);
             ScopedLifecycleHook hookScope(*this);
-            onAdd(ch->ColumnData(col) + dri * size, *this, entity);
+            meta.OnAdd(ch->ColumnData(col) + dri * meta.Size, *this, entity);
         }
     }
 
-    void RemoveComponentRaw(
-        EntityId entity,
-        ComponentId id,
-        void (*onRemove)(const void*, World&, EntityId))
+    void RemoveComponentRaw(EntityId entity, ComponentId id)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
+        assert(id < ComponentMetas.size() && "Raw remove requires a registered component id.");
         ++StructuralCounter;
 
+        const ComponentMeta& meta = ComponentMetas[id];
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
         assert(src.Signature.test(id) && "Entity does not have component.");
 
-        if (onRemove)
+        if (meta.OnRemove != nullptr)
         {
             const Chunk*   ch  = src.Chunks[loc.ChunkIndex].get();
             const uint32_t col = ch->FindColumn(id);
-            if (col != UINT32_MAX)
-            {
-                const void* ptr = ch->ColumnData(col) +
-                                  loc.RowIndex * ch->Columns[col].Stride;
-                ScopedLifecycleHook hookScope(*this);
-                onRemove(ptr, *this, entity);
-            }
+            assert(col != UINT32_MAX);
+            const void* ptr = ch->ColumnData(col)
+                + loc.RowIndex * ch->Columns[col].Stride;
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnRemove(ptr, *this, entity);
         }
 
         ArchetypeSignature newSig = src.Signature;
@@ -712,12 +715,13 @@ public:
     void AddComponentsRawBatch(
         ComponentId id,
         const ComponentBatchItem* items,
-        size_t count,
-        size_t size,
-        size_t /*align*/)
+        size_t count)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
+        assert(id < ComponentMetas.size() && "Raw batch add requires a registered component id.");
+        const ComponentMeta& meta = ComponentMetas[id];
+        assert(meta.OnAdd == nullptr && "Hooked components cannot use raw batch add.");
         ++StructuralCounter;
 
         struct Move
@@ -746,13 +750,17 @@ public:
             auto [dci, dri] = dst->AddRow(entity.Index);
             dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
-            if (size > 0)
+            if (meta.Size > 0)
             {
+                assert(items[i].Blob != nullptr && "Non-tag raw batch add requires component bytes.");
                 Chunk* ch = dst->Chunks[dci].get();
                 const uint32_t col = ch->FindColumn(id);
                 assert(col != UINT32_MAX);
+                uint8_t* destination = ch->ColumnData(col) + dri * meta.Size;
                 if (items[i].Blob != nullptr)
-                    std::memcpy(ch->ColumnData(col) + dri * size, items[i].Blob, size);
+                    std::memcpy(destination, items[i].Blob, meta.Size);
+                else
+                    std::memset(destination, 0, meta.Size);
                 ch->BumpColumnVersion(col, FrameCounter);
             }
 
@@ -776,6 +784,9 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
+        assert(id < ComponentMetas.size() && "Raw batch remove requires a registered component id.");
+        assert(ComponentMetas[id].OnRemove == nullptr
+               && "Hooked components cannot use raw batch remove.");
         ++StructuralCounter;
 
         struct Move
