@@ -1,6 +1,6 @@
 # Runtime ECS Resource Inventory
 
-Status: Phase 0 inventory for `agent/runtime-world-stabilization`.
+Status: Phase 0 inventory complete; baseline CI validation in progress.
 
 This inventory records current ownership and the intended destination before resource migration begins. It is not a compatibility contract. The code remains the source of truth until each row is migrated and tested.
 
