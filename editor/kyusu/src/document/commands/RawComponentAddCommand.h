@@ -35,7 +35,7 @@ public:
         const void* blob = (meta->Size > 0 && InitialBytes.size() == meta->Size)
             ? InitialBytes.data()
             : nullptr;
-        world.AddComponentRaw(Entity, Component, blob, meta->Size, meta->Alignment, nullptr);
+        world.AddComponentRaw(Entity, Component, blob);
         Document.MarkDirty();
     }
 
@@ -44,7 +44,7 @@ public:
         World& world = Scene.GetRegistry().Components;
         if (world.HasComponent(Entity, Component))
         {
-            world.RemoveComponentRaw(Entity, Component, nullptr);
+            world.RemoveComponentRaw(Entity, Component);
             Document.MarkDirty();
         }
     }
