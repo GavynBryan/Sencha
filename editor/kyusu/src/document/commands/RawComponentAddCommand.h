@@ -32,9 +32,10 @@ public:
         const ComponentMeta* meta = world.GetMeta(Component);
         if (meta == nullptr || world.HasComponent(Entity, Component))
             return;
-        const void* blob = (meta->Size > 0 && InitialBytes.size() == meta->Size)
-            ? InitialBytes.data()
-            : nullptr;
+        if (meta->Size > 0 && InitialBytes.size() != meta->Size)
+            return;
+
+        const void* blob = meta->Size > 0 ? InitialBytes.data() : nullptr;
         world.AddComponentRaw(Entity, Component, blob);
         Document.MarkDirty();
     }
