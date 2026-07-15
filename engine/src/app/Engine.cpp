@@ -146,6 +146,10 @@ void Engine::Shutdown()
     if (!Initialized)
         return;
 
+    // Component hooks can reference game-owned assets and engine services.
+    // Clear every registry before systems and services begin teardown.
+    ZoneRuntimeState.ClearEntities();
+
     EngineSystems.Shutdown();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
