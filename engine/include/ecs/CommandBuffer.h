@@ -28,9 +28,7 @@ struct ComponentPayload
     size_t      Align      = 1;
     size_t      DataOffset = 0;
     bool        HasData    = false;
-
-    void (*OnAddHook)(void*, World&, EntityId) = nullptr;
-    void (*OnRemoveHook)(const void*, World&, EntityId) = nullptr;
+    bool        HasLifecycleHook = false;
 
     ComponentPayload() = default;
 };
@@ -85,11 +83,7 @@ public:
         }
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
-        {
-            cmd.Payload.OnAddHook = [](void* ptr, World& w, EntityId e) {
-                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), w, e);
-            };
-        }
+            cmd.Payload.HasLifecycleHook = true;
 
         Commands.push_back(std::move(cmd));
     }
@@ -104,11 +98,7 @@ public:
         cmd.Payload.Size = std::is_empty_v<T> ? 0 : sizeof(T);
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
-        {
-            cmd.Payload.OnRemoveHook = [](const void* ptr, World& w, EntityId e) {
-                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);
-            };
-        }
+            cmd.Payload.HasLifecycleHook = true;
 
         Commands.push_back(std::move(cmd));
     }
