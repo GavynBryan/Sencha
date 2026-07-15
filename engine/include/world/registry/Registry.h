@@ -39,7 +39,13 @@ struct RegistryEntityFacade
 
 struct Registry
 {
-    Registry() = default;
+    Registry()
+    {
+        // Column version 0 is the "never written" sentinel used by Changed<T>.
+        // Runtime registries therefore begin at epoch 1 so components created
+        // during initial or detached-zone construction record a real write.
+        Components.AdvanceFrame();
+    }
 
     Registry(Registry&& other) noexcept
         : Id(other.Id)
