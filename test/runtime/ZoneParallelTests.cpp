@@ -62,8 +62,8 @@ namespace
             ASSERT_NE(ra, nullptr);
             ASSERT_NE(rb, nullptr);
 
-            const auto entities = ra->Entities.GetAliveEntities();
-            ASSERT_EQ(entities.size(), rb->Entities.GetAliveEntities().size());
+            const auto entities = ra->Components.GetAliveEntities();
+            ASSERT_EQ(entities.size(), rb->Components.GetAliveEntities().size());
             for (EntityId entity : entities)
             {
                 const WorldTransform* wa = std::as_const(ra->Components).TryGet<WorldTransform>(entity);
@@ -213,7 +213,7 @@ TEST(ZoneParallelPropagation, ChildChainsResolveThroughParents)
     {
         Registry* registry = zones.FindZone(ZoneId{ static_cast<uint16_t>(i + 1) });
         ASSERT_NE(registry, nullptr);
-        const auto entities = registry->Entities.GetAliveEntities();
+        const auto entities = registry->Components.GetAliveEntities();
         ASSERT_GE(entities.size(), 3u);
 
         const float base = static_cast<float>(i) * 100.0f;
@@ -239,7 +239,7 @@ TEST(ZoneParallelPropagation, DuplicateSpanEntriesPropagateOnce)
     // race one World across jobs.
     PropagateTransforms(jobs, duplicated);
 
-    const auto entities = registry->Entities.GetAliveEntities();
+    const auto entities = registry->Components.GetAliveEntities();
     const WorldTransform* root =
         std::as_const(registry->Components).TryGet<WorldTransform>(entities[0]);
     ASSERT_NE(root, nullptr);
