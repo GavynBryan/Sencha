@@ -39,6 +39,9 @@ The normal designer touches four things:
 3. **Zone shapes** describing ownership and minimap geometry.
 4. **World docks or world links** connecting specific zone endpoints.
 
+Connections are viewed and selected primarily through a dedicated dockable 3D
+Graph Viewer, not through a long Connections section in the World panel.
+
 Optional gameplay objects may bind to a dock as gates. They are not part of the
 world topology authoring transaction.
 
@@ -229,7 +232,106 @@ validation evidence, not authority.
 
 ---
 
-## 5. Zone shape authoring
+## 5. Dockable 3D Graph Viewer
+
+Kyusu gains a dedicated `Graph Viewer` panel that can be docked or tabbed like
+other editor panels. It is the primary overview and connection-selection
+surface. The World panel no longer contains a Connections section.
+
+### 5.1 Spatial layout
+
+Each zone is displayed as a sphere positioned at the center of its derived
+broad bounds:
+
+```cpp
+Vec3d nodePosition = zone.BroadBounds.Center();
+```
+
+This is a derived view, not stored layout data. Moving a graph node does not
+move the zone, change topology, or edit world content.
+
+Node spheres use a fixed or clamped screen-space presentation size so a tiny
+zone and a huge exterior cell remain equally selectable. Optional translucent
+bounds or shape outlines may be displayed around a selected node, but the
+sphere remains the main graph glyph.
+
+Labels show zone name and optionally graph name. Graph membership controls
+node tint and filtering, but graph colors are presentation state only.
+
+### 5.2 Edge presentation
+
+Every world dock and link produces one selectable graph edge:
+
+- bidirectional dock: line or curve with arrows at both ends;
+- one-way dock: one directional arrow;
+- teleport or other link: visually distinct dashed or styled curve;
+- cross-graph edge: graph-boundary styling at the edge or endpoints;
+- invalid or unresolved connection: warning style and incomplete endpoint.
+
+Multiple docks between the same zone pair must remain individually selectable.
+The viewer offsets them as shallow parallel curves rather than collapsing them
+into one pair record. At distant zoom it may group them visually with a count,
+but selection or zoom expands the individual edges.
+
+Edge identity is the underlying `DockId` or `LinkId`. The viewer owns no second
+connection model.
+
+### 5.3 Selection and navigation
+
+Selection is shared with the rest of Kyusu:
+
+- select a node: select and focus the zone in the World panel;
+- double-click a node: open or focus its zone document;
+- select a dock edge: select the world dock entity and show its inspector;
+- double-click a dock edge: focus the physical dock in the 3D world viewport;
+- select a link edge: select its world link entity;
+- selection made in the World panel or viewport highlights the corresponding
+  node or edge in the Graph Viewer.
+
+The panel supports orbit, pan, zoom, frame selection, frame graph, and orthographic
+view presets. It may reuse editor camera and line-rendering infrastructure, but
+it is a separate scene/view from the level viewport.
+
+### 5.4 Filters and overlays
+
+Minimum useful filters:
+
+- all graphs or selected graphs;
+- loaded, resident, active, or unloaded state during preview;
+- docks, links, or both;
+- one-way only;
+- cross-graph only;
+- validation severity;
+- zone-name and connection-name search.
+
+Useful overlays:
+
+- preview residency around a selected focus zone;
+- hop rank or spatial-radius membership;
+- estimated RAM and VRAM cost;
+- graph island and reachability diagnostics;
+- gate state when runtime preview is connected.
+
+These consume the same pure demand and validation results as the existing
+preview. The viewer does not implement its own streaming simulation.
+
+### 5.5 Editing boundary
+
+The first version is primarily a viewer and selector. It may offer these narrow
+world-document verbs:
+
+- select two nodes and create a `WorldLink`;
+- select an edge and reverse or change direction;
+- delete the underlying dock or link through the normal command path.
+
+Creating a spatial dock still happens in the world viewport because the dock
+requires physical plane and arm geometry. The graph viewer may initiate the
+operation and prefill Zone A and Zone B, then hand placement to the world
+viewport. It must not invent a dock at the midpoint between graph nodes.
+
+---
+
+## 6. Zone shape authoring
 
 A zone begins with one convex prism. The designer edits its top-down footprint
 and vertical range, then adds cells around corners, branches, or stacked
@@ -250,7 +352,7 @@ Required tools:
 Adjacent cells do not need identical vertex storage. The cook canonicalizes
 planes and may union their minimap projection.
 
-### 5.1 Optional first draft
+### 6.1 Optional first draft
 
 Kyusu may generate a first draft from selected zone geometry. The result is
 ordinary editable cells and never hidden compiler truth.
@@ -260,12 +362,13 @@ through useful height bands, traces outlines, convex-decomposes them, and
 presents an uncommitted preview. The designer accepts, simplifies, edits, or
 discards it. Generator failure cannot block manual authoring or cooking.
 
-### 5.2 Broad bounds
+### 6.2 Broad bounds
 
 The cook derives one AABB over the complete exact shape. It is used for:
 
 - broad-phase containment rejection;
 - editor framing and selection;
+- graph-node placement;
 - spatial-radius demand;
 - coarse diagnostics.
 
@@ -274,7 +377,7 @@ do not overlap.
 
 ---
 
-## 6. Side resolution
+## 7. Side resolution
 
 A dock stores explicit Zone A and Zone B references. Kyusu may suggest and
 validate them by sampling just beyond the plane:
@@ -300,9 +403,9 @@ open in the editor, and non-spatial links cannot be discovered by probing.
 
 ---
 
-## 7. Cooking
+## 8. Cooking
 
-### 7.1 Inputs
+### 8.1 Inputs
 
 The world cook consumes:
 
@@ -315,7 +418,7 @@ The world cook consumes:
 
 It does not rasterize world collision or flood free space to discover topology.
 
-### 7.2 Zone-shape product
+### 8.2 Zone-shape product
 
 Each shape cooks into:
 
@@ -324,10 +427,10 @@ Each shape cooks into:
 - optional merged 2D minimap contours;
 - a content hash.
 
-This product loads independently of zone entity content because containment and
-map queries may target unloaded zones.
+This product loads independently of zone entity content because containment,
+graph layout, and map queries may target unloaded zones.
 
-### 7.3 Dock compilation
+### 8.3 Dock compilation
 
 For every valid world dock, the cook:
 
@@ -352,11 +455,11 @@ and endpoint products.
 
 ---
 
-## 8. Validation
+## 9. Validation
 
 Validation runs live in Kyusu and again as a hard cook gate.
 
-### 8.1 Graph and zone rules
+### 9.1 Graph and zone rules
 
 - every zone references one valid graph;
 - graph streaming values are valid;
@@ -367,7 +470,7 @@ Validation runs live in Kyusu and again as a hard cook gate.
 - exact zone shapes in the same coordinate space do not overlap unless a
   narrow explicit exception exists.
 
-### 8.2 Dock rules
+### 9.2 Dock rules
 
 - DockId is valid and unique;
 - Zone A and Zone B are valid and distinct;
@@ -380,7 +483,7 @@ Validation runs live in Kyusu and again as a hard cook gate.
 - gate bindings reference a live DockId;
 - demand conditions resolve registered tag names.
 
-### 8.3 Link and graph checks
+### 9.3 Link and graph checks
 
 - link endpoint zones are valid;
 - one-way and two-way semantics are valid;
@@ -394,7 +497,7 @@ Reachability never invents edges from proximity.
 
 ---
 
-## 9. Door and gate boundary
+## 10. Door and gate boundary
 
 The initial gameplay seam is:
 
@@ -419,10 +522,9 @@ gate entities in the first implementation.
 
 ---
 
-## 10. Graph panel and hybrid worlds
+## 11. World panel, Graph Viewer, and hybrid worlds
 
-The partition panel groups zones under graphs and keeps connections at world
-level:
+The World panel returns to structural organization:
 
 ```text
 World
@@ -434,23 +536,29 @@ World
       Entrance
       Lobby
       Reactor Hall
-  Connections
-    Dock: Cell 412 <-> Entrance
-    Dock: Entrance <-> Lobby
-    Link: Reactor Hall -> Instance B
+```
+
+It owns graph creation, graph policy, zone membership, zone document state, and
+validation badges. It does not repeat a flat Connections list.
+
+The separate Graph Viewer displays the same world spatially:
+
+```text
+Cell 411  o----o  Cell 412  o====o  Entrance  o----o  Lobby
+             ExteriorGraph              FacilityGraph
 ```
 
 A graph row edits hop count, radius, resident cap, and future policy values. The
 old Region UI migrates rather than coexisting.
 
 A future cell compiler may generate zones under `Exterior`. Generated cells use
-the same zone header, exact-shape, and endpoint contracts. A world dock can
-connect a generated cell to an authored interior zone without either graph
-adopting the other's policy.
+the same zone header, exact-shape, graph-node, and endpoint contracts. A world
+dock can connect a generated cell to an authored interior zone without either
+graph adopting the other's policy.
 
 ---
 
-## 11. Migration from existing transitions
+## 12. Migration from existing transitions
 
 For each current `TransitionRecord`:
 
@@ -471,7 +579,7 @@ docks, and links.
 
 ---
 
-## 12. Implementation stages
+## 13. Implementation stages
 
 ### A1. Graph terminology
 
@@ -495,55 +603,72 @@ undo integration. Prove contextual defaults run only during explicit creation.
 Add component, recipe, plane and arrow rendering, side-AABB manipulators,
 inspector, side swap, probes, and validation.
 
-### A5. World links
+### A5. 3D Graph Viewer
 
-Add non-spatial connections and Teleport without fake plane controls.
+Add the dockable panel, derived sphere nodes at zone-bounds centers, individual
+selectable dock and link edges, shared selection, viewport focus, graph filters,
+and validation overlays. Remove the World panel's Connections section.
 
-### A6. Cooked products
+Gate: multiple docks between the same pair remain individually selectable and
+selecting an edge focuses the underlying world object.
+
+### A6. World links
+
+Add non-spatial connections and Teleport without fake plane controls. Display
+them through the same Graph Viewer edge path.
+
+### A7. Cooked products
 
 Cook exact shapes, broad bounds, reciprocal dock endpoints, link endpoints,
 indexes, debug maps, and deterministic hashes.
 
-### A7. Runtime integration
+### A8. Runtime integration
 
 Land doc 11's graph-local policy and dock crossing against the cooked products.
-Kyusu preview consumes the same pure policy kernels.
+Kyusu preview and the Graph Viewer consume the same pure policy kernels.
 
-### A8. Migration and retirement
+### A9. Migration and retirement
 
 Add transition migration, migrate fixtures, remove legacy geometric transition
-authoring, and delete obsolete automatic-contact plans and code.
+authoring, delete the Connections section, and delete obsolete automatic-contact
+plans and code.
 
-### A9. First-draft shape generation
+### A10. First-draft shape generation
 
 Only after manual shape authoring is proven usable, add preview-only draft
 generation from selected geometry.
 
 ---
 
-## 13. Manual UX gates
+## 14. Manual UX gates
 
 A level designer must be able to do all of the following without editing JSON:
 
 1. Create a graph and assign zones.
 2. Draw an L-shaped zone with multiple convex cells.
-3. Create a dock while Zone A is active and see Zone A filled automatically.
-4. Rotate the dock diagonally and horizontally.
-5. Resize the plane and both side AABBs independently.
-6. Swap sides without repairing direction flags manually.
-7. Override an incorrect Zone B suggestion and understand the warning.
-8. Create two separate doors between the same zone pair.
-9. Create a teleport without plane controls.
-10. Preview residency from either side of a cross-graph dock.
-11. Select a connection from the world list and focus it in the viewport.
-12. Delete a door without deleting its dock.
+3. Open the Graph Viewer as a docked tab and see zones at their bounds centers.
+4. Select a graph node and focus the corresponding zone document.
+5. Create a dock while Zone A is active and see Zone A filled automatically.
+6. Rotate the dock diagonally and horizontally.
+7. Resize the plane and both side AABBs independently.
+8. Swap sides without repairing direction flags manually.
+9. Override an incorrect Zone B suggestion and understand the warning.
+10. See two separate docks between the same zone pair as separate graph edges.
+11. Select a graph edge and focus its physical dock in the world viewport.
+12. Create a teleport without plane controls.
+13. Preview residency from either side of a cross-graph dock in the Graph Viewer.
+14. Filter the viewer to one graph or cross-graph connections only.
+15. Delete a door without deleting its dock.
+16. Manage graphs and zones in the World panel without an ugly Connections list.
 
 ---
 
-## 14. Non-goals
+## 15. Non-goals
 
 - no invisible adjacency inference;
 - no spreadsheet editor for endpoint ids;
+- no stored freeform graph-node layout in the first version;
+- no dragging graph nodes to move zone content;
 - no requirement that broad AABBs touch;
 - no runtime constructive-solid-geometry union;
 - no automatic door duplication;
