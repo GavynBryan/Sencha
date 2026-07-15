@@ -5,7 +5,6 @@
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -23,27 +22,17 @@ enum class CommandKind : uint8_t
 
 struct ComponentPayload
 {
-    ComponentId Id         = InvalidComponentId;
-    size_t      Size       = 0;
-    size_t      Align      = 1;
-    size_t      DataOffset = 0;
-    bool        HasData    = false;
-    bool        HasLifecycleHook = false;
-
-    ComponentPayload() = default;
+    ComponentId Id = InvalidComponentId;
+    size_t DataOffset = 0;
+    bool HasData = false;
+    bool HasLifecycleHook = false;
 };
 
 struct Command
 {
-    CommandKind      Kind;
-    EntityId         Entity;
+    CommandKind Kind;
+    EntityId Entity;
     ComponentPayload Payload;
-
-    std::vector<ComponentPayload> InitialComponents; // for CreateEntity
-
-    Command() = default;
-    Command(Command&&) = default;
-    Command& operator=(Command&&) = default;
 };
 
 // ─── CommandBuffer ───────────────────────────────────────────────────────────
@@ -71,10 +60,7 @@ public:
         Command cmd;
         cmd.Kind   = CommandKind::AddComponent;
         cmd.Entity = entity;
-
-        cmd.Payload.Id    = W->template GetComponentId<T>();
-        cmd.Payload.Size  = std::is_empty_v<T> ? 0 : sizeof(T);
-        cmd.Payload.Align = std::is_empty_v<T> ? 1 : alignof(T);
+        cmd.Payload.Id = W->template GetComponentId<T>();
 
         if constexpr (!std::is_empty_v<T>)
         {
@@ -94,8 +80,7 @@ public:
         Command cmd;
         cmd.Kind   = CommandKind::RemoveComponent;
         cmd.Entity = entity;
-        cmd.Payload.Id   = W->template GetComponentId<T>();
-        cmd.Payload.Size = std::is_empty_v<T> ? 0 : sizeof(T);
+        cmd.Payload.Id = W->template GetComponentId<T>();
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
             cmd.Payload.HasLifecycleHook = true;
@@ -126,8 +111,8 @@ public:
     // Must be called outside any active query.
     void Flush();
 
-    bool   IsEmpty() const { return Commands.empty(); }
-    size_t Count()   const { return Commands.size(); }
+    bool IsEmpty() const { return Commands.empty(); }
+    size_t Count() const { return Commands.size(); }
 
     void Clear()
     {
@@ -136,7 +121,7 @@ public:
     }
 
 private:
-    World*               W;
+    World* W;
     std::vector<Command> Commands;
     std::vector<uint8_t> PayloadArena;
 
