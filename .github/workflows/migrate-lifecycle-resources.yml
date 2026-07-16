@@ -93,3 +93,5 @@ jobs:
           git add -A
           git commit -m 'Fix stable registry callers'
           git push origin HEAD:agent/runtime-world-stabilization
+
+# This registered workflow path runs once and deletes itself.
