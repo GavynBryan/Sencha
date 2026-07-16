@@ -321,7 +321,7 @@ TEST(ZoneRuntime, BuildFrameViewGlobalParticipatesInAllSpans)
 
 TEST(Registry, GlobalKindRequiresInvalidZoneId)
 {
-    Registry registry = MakeGlobalRegistry(RegistryId::Global());
+    Registry registry(RegistryId::Global(), RegistryKind::Global);
 
     EXPECT_EQ(registry.Kind, RegistryKind::Global);
     EXPECT_FALSE(registry.Zone.IsValid());
@@ -329,21 +329,25 @@ TEST(Registry, GlobalKindRequiresInvalidZoneId)
 
 TEST(Registry, ZoneKindRequiresValidZoneId)
 {
-    Registry registry = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
+    Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
 
     EXPECT_EQ(registry.Kind, RegistryKind::Zone);
     EXPECT_TRUE(registry.Zone.IsValid());
 }
 
 #ifndef NDEBUG
-TEST(Registry, MakeGlobalRegistryNonGlobalIdAsserts)
+TEST(Registry, GlobalKindNonGlobalIdAsserts)
 {
-    EXPECT_DEATH(MakeGlobalRegistry(RegistryId{ 2, 1 }), "RegistryId::Global");
+    EXPECT_DEATH(
+        Registry(RegistryId{ 2, 1 }, RegistryKind::Global),
+        "Global registry requires the global id");
 }
 
-TEST(Registry, MakeZoneRegistryInvalidZoneIdAsserts)
+TEST(Registry, ZoneKindInvalidZoneIdAsserts)
 {
-    EXPECT_DEATH(MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{}), "valid ZoneId");
+    EXPECT_DEATH(
+        Registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{}),
+        "Zone registry requires a non-global id and a valid zone id");
 }
 #endif
 

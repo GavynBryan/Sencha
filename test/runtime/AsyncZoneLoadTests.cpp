@@ -325,6 +325,6 @@ TEST(AsyncZoneLoadContracts, AttachingDuplicateZoneDies)
     zones.CreateZone(ZoneId{ 3 });
 
     auto duplicate = std::make_unique<Registry>(
-        MakeZoneRegistry(zones.ReserveRegistryId(), ZoneId{ 3 }));
+        zones.ReserveRegistryId(), RegistryKind::Zone, ZoneId{ 3 });
     EXPECT_DEATH(zones.AttachZone(std::move(duplicate)), "duplicate zone");
 }
