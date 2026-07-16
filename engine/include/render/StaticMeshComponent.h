@@ -25,22 +25,14 @@
 struct StaticMeshComponent
 {
     StaticMeshHandle Mesh;
-    // Per-section material binding, instance-level: the mesh's sections index
-    // this set by MaterialSlot (a section beyond the set falls back to the last
-    // member). One handle keeps the component trivially copyable; the variable-
-    // length list lives in MaterialSetCache.
     MaterialSetHandle Materials;
     bool Visible = true;
+    bool CastShadows = true;
+    bool AffectsBakedLighting = true;
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SectionMask = 0xFFFFFFFFu;
 };
 
-//=============================================================================
-// StaticMeshComponentAssets
-//
-// Registry-local asset-cache pointers used by StaticMeshComponent lifecycle
-// hooks. A zone without render asset caches may leave either pointer null.
-//=============================================================================
 struct StaticMeshComponentAssets
 {
     StaticMeshComponentAssets() = default;
@@ -51,8 +43,6 @@ struct StaticMeshComponentAssets
     }
 
     StaticMeshCache* Meshes = nullptr;
-    // The set owns references to its member materials, so retaining the set is
-    // all the component lifecycle needs to do for material lifetime.
     MaterialSetCache* MaterialSets = nullptr;
 };
 
@@ -97,6 +87,8 @@ struct TypeSchema<StaticMeshComponent>
             MakeField("materials", &StaticMeshComponent::Materials)
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &StaticMeshComponent::Visible),
+            MakeField("cast_shadows", &StaticMeshComponent::CastShadows),
+            MakeField("affects_baked_lighting", &StaticMeshComponent::AffectsBakedLighting),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),
         };
