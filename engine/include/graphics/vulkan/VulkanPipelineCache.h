@@ -14,31 +14,8 @@ class VulkanDeviceService;
 // VulkanPipelineCache
 //
 // Caches VkPipeline objects by content-hashing a GraphicsPipelineDesc. The
-// cache owns every pipeline it hands out; callers receive raw VkPipelines
-// and must not destroy them. Lifetime is service-scoped: pipelines live
-// until the cache is destroyed.
-//
-// Dynamic rendering only -- the desc captures color + depth + stencil
-// formats so the pipeline matches whatever render target the frame uses,
-// with no VkRenderPass in sight.
-//
-// Viewport and scissor are always dynamic state. Swapchain resize does not
-// invalidate the cache.
-//
-// Two layers of caching are in play:
-//
-//   1. The content-hashed VkPipeline table in this service. Second lookup
-//      of the same desc in the same process is a hash-table hit.
-//
-//   2. The driver-level VkPipelineCache that backs every vkCreate*Pipelines
-//      call. SaveToDisk / LoadFromDisk serialize this blob so a second
-//      launch of the game skips the driver-backend compile entirely. This
-//      is the single most important piece of shader-startup-stutter
-//      mitigation Sencha ships.
-//
-// Pipeline layouts are owned externally (by descriptor cache / feature
-// setup code) and passed in on the desc. The pipeline cache doesn't care
-// where they came from.
+// cache owns every pipeline it hands out; callers receive raw VkPipelines and
+// must not destroy them. Lifetime is service-scoped.
 //=============================================================================
 
 struct VertexInputBindingDesc
@@ -58,6 +35,14 @@ struct VertexInputAttributeDesc
     uint32_t Offset = 0;
 
     bool operator==(const VertexInputAttributeDesc&) const = default;
+};
+
+struct ShaderSpecializationConstant
+{
+    uint32_t Id = 0;
+    uint32_t Value = 0;
+
+    bool operator==(const ShaderSpecializationConstant&) const = default;
 };
 
 struct ColorBlendAttachmentDesc
@@ -82,6 +67,7 @@ struct GraphicsPipelineDesc
     ShaderHandle FragmentShader;
     VkPipelineLayout Layout = VK_NULL_HANDLE;
 
+    std::vector<ShaderSpecializationConstant> FragmentSpecializationConstants;
     std::vector<VertexInputBindingDesc> VertexBindings;
     std::vector<VertexInputAttributeDesc> VertexAttributes;
 
@@ -94,9 +80,6 @@ struct GraphicsPipelineDesc
     bool DepthWrite = false;
     VkCompareOp DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-    // Polygon offset. Negative values pull a coincident primitive toward the camera
-    // so it wins the depth test over the surface it traces (e.g. wireframe on solid).
-    // Default off, so pipelines that don't set it are byte-identical to before.
     bool DepthBiasEnable = false;
     float DepthBiasConstant = 0.0f;
     float DepthBiasSlope = 0.0f;
@@ -123,17 +106,8 @@ public:
     VulkanPipelineCache& operator=(VulkanPipelineCache&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return Valid; }
-
-    // Returns an existing pipeline for this desc or creates a new one.
-    // Returned VkPipeline is owned by the cache.
     [[nodiscard]] VkPipeline GetGraphicsPipeline(const GraphicsPipelineDesc& desc);
 
-    // -- Driver cache persistence -------------------------------------------
-    //
-    // Serialize / deserialize the underlying VkPipelineCache blob. Call
-    // LoadFromDisk once at startup before building any pipelines, and
-    // SaveToDisk at shutdown. Corrupt or version-mismatched blobs are
-    // handled by the driver and safely ignored.
     [[nodiscard]] bool LoadFromDisk(const std::filesystem::path& path);
     [[nodiscard]] bool SaveToDisk(const std::filesystem::path& path) const;
 
