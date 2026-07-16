@@ -40,7 +40,7 @@ namespace
 TEST_F(MaterialEditSessionTest, OpenLoadsSavedAndWorkingState)
 {
     const std::string file =
-        WriteSmat("red.smat", R"({"version": 1, "base_color_factor": [1.0, 0.0, 0.0, 1.0]})");
+        WriteSmat("red.smat", R"({"version": 2, "base_color_factor": [1.0, 0.0, 0.0, 1.0]})");
 
     MaterialEditSession session;
     std::string error;
@@ -55,9 +55,9 @@ TEST_F(MaterialEditSessionTest, OpenLoadsSavedAndWorkingState)
 TEST_F(MaterialEditSessionTest, OpenFailureKeepsPreviousMaterial)
 {
     const std::string good =
-        WriteSmat("good.smat", R"({"version": 1})");
+        WriteSmat("good.smat", R"({"version": 2})");
     const std::string bad =
-        WriteSmat("bad.smat", R"({"version": 1, "unknown_key": true})");
+        WriteSmat("bad.smat", R"({"version": 2, "unknown_key": true})");
 
     MaterialEditSession session;
     std::string error;
@@ -69,7 +69,7 @@ TEST_F(MaterialEditSessionTest, OpenFailureKeepsPreviousMaterial)
 
 TEST_F(MaterialEditSessionTest, DirtyTracksDivergenceFromSaved)
 {
-    const std::string file = WriteSmat("m.smat", R"({"version": 1})");
+    const std::string file = WriteSmat("m.smat", R"({"version": 2})");
 
     MaterialEditSession session;
     ASSERT_TRUE(session.Open("asset://materials/m.smat", file, nullptr));
@@ -87,7 +87,7 @@ TEST_F(MaterialEditSessionTest, DirtyTracksDivergenceFromSaved)
 
 TEST_F(MaterialEditSessionTest, VersionBumpsOnChangeNotOnNoOp)
 {
-    const std::string file = WriteSmat("m.smat", R"({"version": 1})");
+    const std::string file = WriteSmat("m.smat", R"({"version": 2})");
 
     MaterialEditSession session;
     ASSERT_TRUE(session.Open("asset://materials/m.smat", file, nullptr));
@@ -104,7 +104,7 @@ TEST_F(MaterialEditSessionTest, VersionBumpsOnChangeNotOnNoOp)
 
 TEST_F(MaterialEditSessionTest, SaveWritesWorkingAndClearsDirty)
 {
-    const std::string file = WriteSmat("m.smat", R"({"version": 1})");
+    const std::string file = WriteSmat("m.smat", R"({"version": 2})");
 
     MaterialEditSession session;
     ASSERT_TRUE(session.Open("asset://materials/m.smat", file, nullptr));
@@ -127,7 +127,7 @@ TEST_F(MaterialEditSessionTest, SaveWritesWorkingAndClearsDirty)
 TEST_F(MaterialEditSessionTest, SaveToDuplicatesWithoutSwitching)
 {
     const std::string file =
-        WriteSmat("src.smat", R"({"version": 1, "metallic_factor": 0.8})");
+        WriteSmat("src.smat", R"({"version": 2, "metallic_factor": 0.8})");
 
     MaterialEditSession session;
     ASSERT_TRUE(session.Open("asset://materials/src.smat", file, nullptr));
