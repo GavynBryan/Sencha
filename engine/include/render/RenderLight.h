@@ -4,6 +4,7 @@
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -50,9 +51,9 @@ inline constexpr std::uint32_t kMaxForwardLights = 64;
     const SpotLightComponent& light)
 {
     constexpr float degreesToRadians = 0.01745329251994329577f;
-    const float innerDegrees = std::clamp(
-        light.InnerAngleDegrees, 0.0f, light.OuterAngleDegrees);
     const float outerDegrees = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f);
+    const float innerDegrees = std::clamp(
+        light.InnerAngleDegrees, 0.0f, outerDegrees);
     const float cosInner = std::cos(innerDegrees * degreesToRadians);
     const float cosOuter = std::cos(outerDegrees * degreesToRadians);
     const float coneScale = 1.0f / std::max(cosInner - cosOuter, 1.0e-4f);
