@@ -67,13 +67,6 @@ TEST(WorldIteration, ThrowingCallbackReleasesStructuralMutationGuard)
         ".*");
 }
 
-TEST(WorldResources, DuplicateRegistrationAsserts)
-{
-    World world;
-    world.AddResource<int>(1);
-
-    EXPECT_DEATH(world.AddResource<int>(2), "Duplicate World resource registration");
-}
 #endif
 
 TEST(WorldIteration, ThrowingMutableCallbackStillPublishesColumnVersion)

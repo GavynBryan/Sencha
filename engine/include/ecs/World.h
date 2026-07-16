@@ -12,7 +12,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <memory>
 #include <typeindex>
 #include <type_traits>
@@ -98,7 +97,6 @@ public:
     ~World()
     {
         ClearEntities();
-        ClearOwnedTypeErased(Resources);
     }
 
     World(const World&) = delete;
@@ -114,7 +112,6 @@ public:
         if (this != &other)
         {
             ClearEntities();
-            ClearOwnedTypeErased(Resources);
             MoveFrom(std::move(other));
         }
         return *this;
@@ -572,55 +569,6 @@ public:
                  loc.RowIndex };
     }
 
-    // ── Resources ────────────────────────────────────────────────────────────
-
-    template <typename T, typename... Args>
-    T& AddResource(Args&&... args)
-    {
-        const auto type = std::type_index(typeid(T));
-        auto existing = Resources.find(type);
-        assert(existing == Resources.end() && "Duplicate World resource registration");
-        if (existing != Resources.end())
-            return *static_cast<T*>(existing->second.first);
-
-        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
-        T* raw = ptr.get();
-        Resources.emplace(type, std::pair<void*, std::function<void(void*)>>{
-            raw,
-            [](void* p) { delete static_cast<T*>(p); }
-        });
-        ptr.release();
-        return *raw;
-    }
-
-    template <typename T>
-    T& GetResource()
-    {
-        auto it = Resources.find(std::type_index(typeid(T)));
-        assert(it != Resources.end() && "Resource not registered");
-        return *static_cast<T*>(it->second.first);
-    }
-
-    template <typename T>
-    T* TryGetResource()
-    {
-        auto it = Resources.find(std::type_index(typeid(T)));
-        return it != Resources.end() ? static_cast<T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    const T* TryGetResource() const
-    {
-        auto it = Resources.find(std::type_index(typeid(T)));
-        return it != Resources.end() ? static_cast<const T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    bool HasResource() const
-    {
-        return Resources.count(std::type_index(typeid(T))) > 0;
-    }
-
     // ── Entity introspection ─────────────────────────────────────────────────
 
     bool   IsAlive(EntityId entity) const { return Entities.IsAlive(entity); }
@@ -874,10 +822,6 @@ private:
     std::unordered_map<ComponentTypeId, ComponentId>   TypeToId;
     ComponentId NextComponentId = 0;
 
-    std::unordered_map<
-        std::type_index,
-        std::pair<void*, std::function<void(void*)>>> Resources;
-
     ResourceStore* LifecycleResources = nullptr;
 
     mutable uint32_t QueryDepth = 0;
@@ -885,17 +829,6 @@ private:
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;
     bool     EntityCreated = false;
-
-    static void ClearOwnedTypeErased(
-        std::unordered_map<std::type_index, std::pair<void*, std::function<void(void*)>>>& map)
-    {
-        for (auto& [_, value] : map)
-        {
-            if (value.first != nullptr && value.second)
-                value.second(value.first);
-        }
-        map.clear();
-    }
 
     void MoveFrom(World&& other)
     {
@@ -905,7 +838,6 @@ private:
         ComponentMetas = std::move(other.ComponentMetas);
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
-        Resources = std::move(other.Resources);
         LifecycleResources = other.LifecycleResources;
         QueryDepth = other.QueryDepth;
         LifecycleHookDepth = other.LifecycleHookDepth;
@@ -913,7 +845,6 @@ private:
         StructuralCounter = other.StructuralCounter;
         EntityCreated = other.EntityCreated;
 
-        other.Resources.clear();
         other.LifecycleResources = nullptr;
         other.QueryDepth = 0;
         other.LifecycleHookDepth = 0;

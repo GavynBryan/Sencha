@@ -744,40 +744,6 @@ TEST_F(EcsTest, HookedComponentRegistrationRequiresResourceStore)
 #endif
 }
 
-// ─── Resources ───────────────────────────────────────────────────────────────
-
-struct GameConfig { int MaxEnemies = 100; };
-struct AudioSettings { float Volume = 0.8f; };
-
-TEST_F(EcsTest, AddAndGetResource)
-{
-    world.AddResource<GameConfig>();
-    GameConfig& cfg = world.GetResource<GameConfig>();
-    EXPECT_EQ(cfg.MaxEnemies, 100);
-    cfg.MaxEnemies = 200;
-    EXPECT_EQ(world.GetResource<GameConfig>().MaxEnemies, 200);
-}
-
-TEST_F(EcsTest, HasResourceReturnsFalseBeforeAdd)
-{
-    EXPECT_FALSE(world.HasResource<GameConfig>());
-    world.AddResource<GameConfig>();
-    EXPECT_TRUE(world.HasResource<GameConfig>());
-}
-
-TEST_F(EcsTest, TryGetResourceReturnsNullWhenMissing)
-{
-    EXPECT_EQ(world.TryGetResource<AudioSettings>(), nullptr);
-}
-
-TEST_F(EcsTest, MultipleResourceTypes)
-{
-    world.AddResource<GameConfig>(GameConfig{ 50 });
-    world.AddResource<AudioSettings>(AudioSettings{ 0.5f });
-    EXPECT_EQ(world.GetResource<GameConfig>().MaxEnemies, 50);
-    EXPECT_EQ(world.GetResource<AudioSettings>().Volume, 0.5f);
-}
-
 // ─── Golden invariant tests (G2) ─────────────────────────────────────────────
 
 TEST_F(EcsTest, Invariant_StructuralChangeDuringQueryFails)

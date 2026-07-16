@@ -75,14 +75,12 @@ TEST(GameplayTagContainer, InvalidAndZeroStackAreNoOps)
     EXPECT_FALSE(c.Revoke(f.Dash));           // revoke absent tag
 }
 
-TEST(GameplayTagContainer, IntegratesAsEcsComponentAndRegistryAsResource)
+TEST(GameplayTagContainer, IntegratesAsEcsComponent)
 {
     World world;
     world.RegisterComponent<GameplayTagContainer>();
-    GameplayTagRegistry& reg = world.AddResource<GameplayTagRegistry>();
+    GameplayTagRegistry reg;
     const GameplayTagId burning = *reg.RegisterTag("State.Burning");
-
-    EXPECT_EQ(world.TryGetResource<GameplayTagRegistry>(), &reg);
 
     EntityId e = world.CreateEntity();
     world.AddComponent<GameplayTagContainer>(e);
