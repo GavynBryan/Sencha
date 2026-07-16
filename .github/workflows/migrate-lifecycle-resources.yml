@@ -19,7 +19,15 @@ jobs:
           ref: agent/runtime-world-stabilization
 
       - name: Migrate lifecycle resources
-        run: python .github/scripts/migrate_lifecycle_resources.py
+        run: |
+          set +e
+          python .github/scripts/migrate_lifecycle_resources.py > /tmp/migration.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tac /tmp/migration.log
+            exit "$status"
+          fi
+          cat /tmp/migration.log
 
       - name: Remove temporary migration files
         run: |
