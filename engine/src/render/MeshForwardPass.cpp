@@ -36,8 +36,8 @@ static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
 static_assert(offsetof(GpuLight, Type) == 48);
 static_assert(offsetof(GpuLight, ShadowIndex) == 52);
-static_assert(offsetof(GpuLight, Pad0) == 56);
-static_assert(offsetof(GpuLight, Pad1) == 60);
+static_assert(offsetof(GpuLight, ConeScale) == 56);
+static_assert(offsetof(GpuLight, ConeOffset) == 60);
 
 void MeshForwardPass::Setup(const RendererServices& services)
 {
