@@ -3,6 +3,8 @@
 
 #include "mesh_frame.glsli"
 
+layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
+
 layout(location = 0) in vec3 inWorldNormal;
 layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
@@ -57,6 +59,16 @@ vec3 ResolveWorldNormal()
     return normalize(mat3(tangent, bitangent, normal) * vec3(mappedXy, mappedZ));
 }
 
+vec3 ResolveEmission()
+{
+    vec3 emissiveTexture = vec3(1.0);
+    if (pushData.EmissiveTextureIndex != 0xFFFFFFFFu)
+        emissiveTexture = texture(BindlessTextures[pushData.EmissiveTextureIndex], inUv0).rgb;
+    return pushData.EmissiveFactor.rgb
+         * max(pushData.EmissiveFactor.a, 0.0)
+         * emissiveTexture;
+}
+
 vec3 ApplyShoulder(vec3 color, float knee)
 {
     float clampedKnee = clamp(knee, 0.0, 0.999);
@@ -72,9 +84,25 @@ vec3 ApplyShoulder(vec3 color, float knee)
     return result;
 }
 
+vec3 ResolveOutput(vec3 color)
+{
+    color *= max(frame.StyleParams.z, 0.0);
+    if (frame.TonemapEnabled != 0u)
+        return ApplyShoulder(color, frame.StyleParams.w);
+    return clamp(color, 0.0, 1.0);
+}
+
 void main()
 {
     vec4 baseColor = SampleBaseColor();
+    vec3 emission = ResolveEmission();
+
+    if (MATERIAL_UNLIT)
+    {
+        outColor = vec4(ResolveOutput(baseColor.rgb + emission), baseColor.a);
+        return;
+    }
+
     vec3 orm = SampleOrm();
     vec3 normal = ResolveWorldNormal();
     vec3 viewDirection = normalize(frame.ViewPositionTime.xyz - inWorldPos);
@@ -122,18 +150,5 @@ void main()
         lit += specularTint * specular * radiance;
     }
 
-    vec3 emissiveTexture = vec3(1.0);
-    if (pushData.EmissiveTextureIndex != 0xFFFFFFFFu)
-        emissiveTexture = texture(BindlessTextures[pushData.EmissiveTextureIndex], inUv0).rgb;
-    vec3 emission = pushData.EmissiveFactor.rgb
-                  * max(pushData.EmissiveFactor.a, 0.0)
-                  * emissiveTexture;
-
-    vec3 color = (lit + emission) * max(frame.StyleParams.z, 0.0);
-    if (frame.TonemapEnabled != 0u)
-        color = ApplyShoulder(color, frame.StyleParams.w);
-    else
-        color = clamp(color, 0.0, 1.0);
-
-    outColor = vec4(color, baseColor.a);
+    outColor = vec4(ResolveOutput(lit + emission), baseColor.a);
 }
