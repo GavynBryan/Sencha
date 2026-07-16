@@ -19,11 +19,20 @@ namespace
     }
 }
 
-TEST(MaterialV2, VersionOneUsesStandardLitDefaults)
+TEST(MaterialV2, RejectsVersionOne)
 {
     MaterialDescription description;
     MaterialParseError error;
-    ASSERT_TRUE(ParseMaterialJson(ParseMaterialText(R"({"version": 1})"),
+    EXPECT_FALSE(ParseMaterialJson(ParseMaterialText(R"({"version": 1})"),
+                                   description, &error));
+    EXPECT_FALSE(error.Message.empty());
+}
+
+TEST(MaterialV2, CurrentVersionUsesStandardLitDefaults)
+{
+    MaterialDescription description;
+    MaterialParseError error;
+    ASSERT_TRUE(ParseMaterialJson(ParseMaterialText(R"({"version": 2})"),
                                   description, &error)) << error.Message;
 
     EXPECT_FLOAT_EQ(description.SpecularIntensity, 0.5f);
@@ -42,17 +51,6 @@ TEST(MaterialV2, ParsesStandardLitFields)
 
     EXPECT_FLOAT_EQ(description.SpecularIntensity, 0.25f);
     EXPECT_FLOAT_EQ(description.EmissiveStrength, 4.0f);
-}
-
-TEST(MaterialV2, RejectsNewFieldsInVersionOne)
-{
-    MaterialDescription description;
-    MaterialParseError error;
-    EXPECT_FALSE(ParseMaterialJson(ParseMaterialText(R"({
-        "version": 1,
-        "specular_factor": 0.25
-    })"), description, &error));
-    EXPECT_FALSE(error.Message.empty());
 }
 
 TEST(MaterialV2, ValidatesStandardLitFieldRanges)
