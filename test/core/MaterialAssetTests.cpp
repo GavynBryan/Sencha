@@ -115,6 +115,8 @@ TEST(MaterialLoader, VersionOnlyYieldsNeutralDefaults)
     EXPECT_FLOAT_EQ(desc.NormalScale, 1.0f);
     EXPECT_FLOAT_EQ(desc.RoughnessFactor, 1.0f);
     EXPECT_FLOAT_EQ(desc.MetallicFactor, 0.0f);
+    EXPECT_FLOAT_EQ(desc.SpecularIntensity, 0.5f);
+    EXPECT_FLOAT_EQ(desc.EmissiveStrength, 1.0f);
     EXPECT_EQ(desc.AlphaMode, MaterialAlphaMode::Opaque);
     EXPECT_FLOAT_EQ(desc.AlphaCutoff, 0.5f);
 }
@@ -132,7 +134,7 @@ TEST(MaterialLoader, RejectsMissingOrWrongVersion)
 {
     MaterialDescription desc;
     EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({})"), desc));
-    EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({"version": 2})"), desc));
+    EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({"version": 3})"), desc));
 }
 
 TEST(MaterialLoader, RejectsWrongFactorArity)
@@ -353,8 +355,10 @@ TEST(MaterialWriter, FullDescriptionRoundTrips)
     desc.OrmTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/orm.png" };
     desc.RoughnessFactor = 0.4f;
     desc.MetallicFactor = 0.9f;
+    desc.SpecularIntensity = 0.7f;
     desc.EmissiveFactor = Vec4(0.1f, 0.2f, 0.3f, 0.0f);
     desc.EmissiveTexture = AssetRef{ AssetType::Texture, "asset://textures/dev/glow.png" };
+    desc.EmissiveStrength = 3.0f;
     desc.AlphaMode = MaterialAlphaMode::Mask;
     desc.AlphaCutoff = 0.35f;
 
@@ -371,9 +375,11 @@ TEST(MaterialWriter, FullDescriptionRoundTrips)
     EXPECT_EQ(parsed.OrmTexture.Path, desc.OrmTexture.Path);
     EXPECT_FLOAT_EQ(parsed.RoughnessFactor, 0.4f);
     EXPECT_FLOAT_EQ(parsed.MetallicFactor, 0.9f);
+    EXPECT_FLOAT_EQ(parsed.SpecularIntensity, 0.7f);
     EXPECT_FLOAT_EQ(parsed.EmissiveFactor.X, 0.1f);
     EXPECT_FLOAT_EQ(parsed.EmissiveFactor.Z, 0.3f);
     EXPECT_EQ(parsed.EmissiveTexture.Path, desc.EmissiveTexture.Path);
+    EXPECT_FLOAT_EQ(parsed.EmissiveStrength, 3.0f);
     EXPECT_EQ(parsed.AlphaMode, MaterialAlphaMode::Mask);
     EXPECT_FLOAT_EQ(parsed.AlphaCutoff, 0.35f);
 }
@@ -391,6 +397,8 @@ TEST(MaterialWriter, DefaultDescriptionWritesOnlyVersion)
     ASSERT_TRUE(ParseMaterialJson(json, parsed, &error)) << error.Message;
     EXPECT_FLOAT_EQ(parsed.BaseColorFactor.X, 1.0f);
     EXPECT_TRUE(parsed.BaseColorTexture.Path.empty());
+    EXPECT_FLOAT_EQ(parsed.SpecularIntensity, 0.5f);
+    EXPECT_FLOAT_EQ(parsed.EmissiveStrength, 1.0f);
     EXPECT_EQ(parsed.AlphaMode, MaterialAlphaMode::Opaque);
 }
 
