@@ -9,6 +9,8 @@
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/ShadowCasterExtractionSystem.h>
+#include <render/ShadowCasterSet.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 struct GraphicsServices;
@@ -42,6 +44,7 @@ public:
 private:
     RenderQueue Queue;
     RenderLightSet Lights;
+    ShadowCasterSet ShadowCasters;
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
@@ -52,5 +55,6 @@ private:
     VulkanSwapchainService* Swapchain = nullptr;
 
     LightExtractionSystem LightExtractor;
+    ShadowCasterExtractionSystem ShadowCasterExtractor;
     RenderExtractionSystem RenderExtractor;
 };
