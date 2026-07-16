@@ -27,7 +27,7 @@ namespace
         {
             const std::filesystem::path path = Dir / name;
             std::ofstream out(path);
-            out << R"({"version": 1})";
+            out << R"({"version": 2})";
             return path.string();
         }
 
