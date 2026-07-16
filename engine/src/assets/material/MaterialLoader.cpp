@@ -17,6 +17,15 @@ namespace
         return false;
     }
 
+    bool ReadBool(const JsonValue& value, std::string_view key,
+                  bool& out, MaterialParseError* error)
+    {
+        if (!value.IsBool())
+            return Fail(error, std::format("'{}' must be a boolean", key));
+        out = value.AsBool();
+        return true;
+    }
+
     bool ReadFloat(const JsonValue& value, std::string_view key,
                    float& out, MaterialParseError* error)
     {
@@ -58,6 +67,18 @@ namespace
         return true;
     }
 
+    bool ReadShading(const JsonValue& value, MaterialShading& out, MaterialParseError* error)
+    {
+        if (!value.IsString())
+            return Fail(error, "'shading' must be a string");
+
+        const std::string& shading = value.AsString();
+        if (shading == "standard_lit") { out = MaterialShading::StandardLit; return true; }
+        if (shading == "unlit")        { out = MaterialShading::Unlit; return true; }
+        return Fail(error, std::format(
+            "unknown shading '{}' (expected standard_lit or unlit)", shading));
+    }
+
     bool ReadAlphaMode(const JsonValue& value, MaterialAlphaMode& out, MaterialParseError* error)
     {
         if (!value.IsString())
@@ -65,9 +86,10 @@ namespace
 
         const std::string& mode = value.AsString();
         if (mode == "opaque") { out = MaterialAlphaMode::Opaque; return true; }
-        if (mode == "mask")   { out = MaterialAlphaMode::Mask;   return true; }
-        if (mode == "blend")  { out = MaterialAlphaMode::Blend;  return true; }
-        return Fail(error, std::format("unknown alpha_mode '{}' (expected opaque, mask, or blend)", mode));
+        if (mode == "mask")   { out = MaterialAlphaMode::Mask; return true; }
+        if (mode == "blend")  { out = MaterialAlphaMode::Blend; return true; }
+        return Fail(error, std::format(
+            "unknown alpha_mode '{}' (expected opaque, mask, or blend)", mode));
     }
 } // namespace
 
@@ -91,6 +113,8 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         bool ok = true;
         if (key == "version")
             continue;
+        else if (key == "shading")
+            ok = ReadShading(value, desc.Shading, error);
         else if (key == "base_color_factor")
             ok = ReadFactor(value, key, 4, desc.BaseColorFactor, error);
         else if (key == "base_color_texture")
@@ -117,6 +141,12 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
             ok = ReadAlphaMode(value, desc.AlphaMode, error);
         else if (key == "alpha_cutoff")
             ok = ReadFloat(value, key, desc.AlphaCutoff, error);
+        else if (key == "double_sided")
+            ok = ReadBool(value, key, desc.DoubleSided, error);
+        else if (key == "receive_shadows")
+            ok = ReadBool(value, key, desc.ReceiveShadows, error);
+        else if (key == "cast_shadows")
+            ok = ReadBool(value, key, desc.CastShadows, error);
         else
             return Fail(error, std::format("unknown material key '{}'", key));
 
