@@ -81,8 +81,8 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         return Fail(error, "missing or non-numeric 'version'");
 
     const uint32_t version = static_cast<uint32_t>(versionValue->AsNumber());
-    if (version != 1 && version != kSmatVersion)
-        return Fail(error, std::format("unsupported material version {} (expected 1 or {})",
+    if (version != kSmatVersion)
+        return Fail(error, std::format("unsupported material version {} (expected {})",
                                        versionValue->AsNumber(), kSmatVersion));
 
     MaterialDescription desc;
@@ -106,21 +106,13 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         else if (key == "metallic_factor")
             ok = ReadFloat(value, key, desc.MetallicFactor, error);
         else if (key == "specular_factor")
-        {
-            if (version < 2)
-                return Fail(error, "'specular_factor' requires material version 2");
             ok = ReadFloat(value, key, desc.SpecularIntensity, error);
-        }
         else if (key == "emissive_factor")
             ok = ReadFactor(value, key, 3, desc.EmissiveFactor, error);
         else if (key == "emissive_texture")
             ok = ReadTextureRef(value, key, desc.EmissiveTexture, error);
         else if (key == "emissive_strength")
-        {
-            if (version < 2)
-                return Fail(error, "'emissive_strength' requires material version 2");
             ok = ReadFloat(value, key, desc.EmissiveStrength, error);
-        }
         else if (key == "alpha_mode")
             ok = ReadAlphaMode(value, desc.AlphaMode, error);
         else if (key == "alpha_cutoff")
