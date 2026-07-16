@@ -72,9 +72,9 @@ void RegisterLocomotionMode(LocomotionModeRegistry& registry, GameplayTagId acti
 void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker, int priority);
 
 // The arbiter: apply each character's winning request by swapping its mode marker
-// (type-erased, via the World's registered mode set) and its projected gameplay
+// (type-erased, via the caller-supplied mode set) and its projected gameplay
 // tag, then clear the request. Mode-agnostic; adding a mode never touches this.
-void ApplyLocomotionModes(World& world);
+void ApplyLocomotionModes(World& world, const LocomotionModeRegistry& registry);
 
 // Schedule adapter: run the arbiter over each active logic registry per fixed tick.
 class LocomotionModeArbiter

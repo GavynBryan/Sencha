@@ -13,9 +13,9 @@ class EffectFixture : public ::testing::Test
 {
 protected:
     World world;
-    GameplayTagRegistry* tags = nullptr;
-    AttributeRegistry* attrs = nullptr;
-    EffectRegistry* fx = nullptr;
+    GameplayTagRegistry tags;
+    AttributeRegistry attrs;
+    EffectRegistry fx;
 
     AttributeId health;
     AttributeId speed;
@@ -25,12 +25,9 @@ protected:
         world.RegisterComponent<GameplayTagContainer>();
         world.RegisterComponent<AttributeSet>();
         world.RegisterComponent<ActiveEffect>();
-        tags = &world.AddResource<GameplayTagRegistry>();
-        attrs = &world.AddResource<AttributeRegistry>();
-        fx = &world.AddResource<EffectRegistry>();
 
-        health = attrs->RegisterAttribute("Health", 0.0f, 100.0f, 100.0f);
-        speed = attrs->RegisterAttribute("Speed");
+        health = attrs.RegisterAttribute("Health", 0.0f, 100.0f, 100.0f);
+        speed = attrs.RegisterAttribute("Speed");
     }
 
     EntityId MakeActor(float hp, float spd)
@@ -44,7 +41,7 @@ protected:
         return e;
     }
 
-    EffectId Define(const char* name, EffectDefinition def) { return fx->Register(name, std::move(def)); }
+    EffectId Define(const char* name, EffectDefinition def) { return fx.Register(name, std::move(def)); }
     AttributeSet& Set(EntityId e) { return *world.TryGet<AttributeSet>(e); }
     GameplayTagContainer& Tags(EntityId e) { return *world.TryGet<GameplayTagContainer>(e); }
 };
@@ -57,20 +54,20 @@ TEST_F(EffectFixture, InstantEffectModifiesBaseAndClamps)
     const EffectId damage = Define("Damage10", d);
 
     EntityId hero = MakeActor(100.0f, 5.0f);
-    ApplyEffect(world, hero, damage);
+    ApplyEffect(world, hero, damage, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetBase(health), 90.0f);
 
     for (int i = 0; i < 20; ++i)
-        ApplyEffect(world, hero, damage); // would go negative; clamps at 0
+        ApplyEffect(world, hero, damage, fx, attrs); // would go negative; clamps at 0
     EXPECT_FLOAT_EQ(Set(hero).GetBase(health), 0.0f);
 
-    ResolveAttributesWithEffects(world);
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(health), 0.0f);
 }
 
 TEST_F(EffectFixture, ContinuousBuffFoldsIntoCurrentStacksAndExpires)
 {
-    const GameplayTagId haste = *tags->RegisterTag("Buff.Haste");
+    const GameplayTagId haste = *tags.RegisterTag("Buff.Haste");
     EffectDefinition d{};
     d.Duration = EffectDuration::Duration;
     d.DurationSeconds = 5.0f;
@@ -80,25 +77,25 @@ TEST_F(EffectFixture, ContinuousBuffFoldsIntoCurrentStacksAndExpires)
 
     EntityId hero = MakeActor(100.0f, 5.0f);
 
-    ApplyEffect(world, hero, hasteFx);
-    ResolveAttributesWithEffects(world);
+    ApplyEffect(world, hero, hasteFx, fx, attrs);
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 7.0f);
     EXPECT_TRUE(Tags(hero).HasExact(haste));
 
-    ApplyEffect(world, hero, hasteFx); // stack
-    ResolveAttributesWithEffects(world);
+    ApplyEffect(world, hero, hasteFx, fx, attrs); // stack
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 9.0f);
     EXPECT_EQ(Tags(hero).StackCount(haste), 2u);
 
-    TickEffects(world, 5.0f); // both expire
-    ResolveAttributesWithEffects(world);
+    TickEffects(world, 5.0f, fx, attrs); // both expire
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 5.0f);
     EXPECT_FALSE(Tags(hero).HasExact(haste));
 }
 
 TEST_F(EffectFixture, PeriodicEffectTicksBaseAndManagesGrantedTag)
 {
-    const GameplayTagId burning = *tags->RegisterTag("State.Burning");
+    const GameplayTagId burning = *tags.RegisterTag("State.Burning");
     EffectDefinition d{};
     d.Duration = EffectDuration::Duration;
     d.DurationSeconds = 2.0f;
@@ -108,14 +105,14 @@ TEST_F(EffectFixture, PeriodicEffectTicksBaseAndManagesGrantedTag)
     const EffectId poison = Define("Poison", d);
 
     EntityId hero = MakeActor(100.0f, 5.0f);
-    ApplyEffect(world, hero, poison);
+    ApplyEffect(world, hero, poison, fx, attrs);
     EXPECT_TRUE(Tags(hero).HasExact(burning));
 
-    TickEffects(world, 1.0f);
+    TickEffects(world, 1.0f, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetBase(health), 97.0f);
     EXPECT_TRUE(Tags(hero).HasExact(burning));
 
-    TickEffects(world, 1.0f); // second tick applies -3 and expires
+    TickEffects(world, 1.0f, fx, attrs); // second tick applies -3 and expires
     EXPECT_FLOAT_EQ(Set(hero).GetBase(health), 94.0f);
     EXPECT_FALSE(Tags(hero).HasExact(burning));
 }
@@ -131,33 +128,33 @@ TEST_F(EffectFixture, FoldAppliesAddThenMultiplyThenOverride)
 
     EntityId hero = MakeActor(100.0f, 5.0f);
 
-    ApplyEffect(world, hero, addFx);
-    ApplyEffect(world, hero, mulFx);
-    ResolveAttributesWithEffects(world);
+    ApplyEffect(world, hero, addFx, fx, attrs);
+    ApplyEffect(world, hero, mulFx, fx, attrs);
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 30.0f); // (5 + 10) * 2
 
-    ApplyEffect(world, hero, ovrFx);
-    ResolveAttributesWithEffects(world);
+    ApplyEffect(world, hero, ovrFx, fx, attrs);
+    ResolveAttributesWithEffects(world, fx, attrs);
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 50.0f); // override wins last
 }
 
 TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
 {
-    const GameplayTagId marked = *tags->RegisterTag("State.Marked");
+    const GameplayTagId marked = *tags.RegisterTag("State.Marked");
     EffectDefinition shortMark{}; shortMark.Duration = EffectDuration::Duration; shortMark.DurationSeconds = 1.0f; shortMark.GrantedTags = { marked };
     EffectDefinition longMark{};  longMark.Duration = EffectDuration::Duration;  longMark.DurationSeconds = 5.0f;  longMark.GrantedTags = { marked };
     const EffectId shortFx = Define("ShortMark", shortMark);
     const EffectId longFx = Define("LongMark", longMark);
 
     EntityId hero = MakeActor(100.0f, 5.0f);
-    ApplyEffect(world, hero, shortFx);
-    ApplyEffect(world, hero, longFx);
+    ApplyEffect(world, hero, shortFx, fx, attrs);
+    ApplyEffect(world, hero, longFx, fx, attrs);
     EXPECT_EQ(Tags(hero).StackCount(marked), 2u);
 
-    TickEffects(world, 1.0f); // short expires, long remains
+    TickEffects(world, 1.0f, fx, attrs); // short expires, long remains
     EXPECT_TRUE(Tags(hero).HasExact(marked));
     EXPECT_EQ(Tags(hero).StackCount(marked), 1u);
 
-    TickEffects(world, 5.0f); // long expires
+    TickEffects(world, 5.0f, fx, attrs); // long expires
     EXPECT_FALSE(Tags(hero).HasExact(marked));
 }

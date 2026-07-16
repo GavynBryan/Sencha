@@ -53,17 +53,17 @@ TEST(AttributeResolve, ClampsCurrentFromBaseViaRegistry)
 {
     World world;
     world.RegisterComponent<AttributeSet>();
-    AttributeRegistry& reg = world.AddResource<AttributeRegistry>();
+    AttributeRegistry reg;
     const AttributeId hp = reg.RegisterAttribute("Health", 0.0f, 100.0f, 100.0f);
 
     EntityId e = world.CreateEntity();
     world.AddComponent<AttributeSet>(e);
     ASSERT_TRUE(world.TryGet<AttributeSet>(e)->Add(hp, 250.0f)); // above max
 
-    ResolveAttributes(world);
+    ResolveAttributes(world, reg);
     EXPECT_FLOAT_EQ(world.TryGet<AttributeSet>(e)->GetCurrent(hp), 100.0f);
 
     ASSERT_TRUE(world.TryGet<AttributeSet>(e)->SetBase(hp, -5.0f)); // below min
-    ResolveAttributes(world);
+    ResolveAttributes(world, reg);
     EXPECT_FLOAT_EQ(world.TryGet<AttributeSet>(e)->GetCurrent(hp), 0.0f);
 }

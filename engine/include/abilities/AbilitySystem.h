@@ -4,11 +4,18 @@
 #include <abilities/AbilityId.h>
 
 class World;
+class AbilityRegistry;
+class GameplayTagRegistry;
+class EffectRegistry;
+class AttributeRegistry;
+struct AbilityActivationQueue;
 
 //=============================================================================
 // Ability activation (free functions; a game can wrap them in a scheduled system).
 //
-// Resources used: AbilityRegistry, EffectRegistry, GameplayTagRegistry.
+// Definitions (AbilityRegistry, EffectRegistry, AttributeRegistry, and the
+// GameplayTagRegistry) are passed in by the caller, which resolves them once
+// from the session's global resources.
 // Components used: AbilitySet, GameplayTagContainer, AttributeSet.
 //=============================================================================
 
@@ -18,7 +25,16 @@ class World;
 // affordable from the actor's AttributeSet (Base). On success applies the Cost,
 // Cooldown, and OnActivate effects. Performs structural changes (effect
 // entities); call outside query iteration.
-bool TryActivateAbility(World& world, EntityId actor, AbilityId ability);
+bool TryActivateAbility(World& world, EntityId actor, AbilityId ability,
+                        const AbilityRegistry& abilities,
+                        const GameplayTagRegistry& tags,
+                        const EffectRegistry& effects,
+                        const AttributeRegistry& attributes);
 
-// Drain the AbilityActivationQueue resource, attempting each pending intent.
-void ProcessAbilityActivations(World& world);
+// Drain the activation queue, attempting each pending intent.
+void ProcessAbilityActivations(World& world,
+                               AbilityActivationQueue& queue,
+                               const AbilityRegistry& abilities,
+                               const GameplayTagRegistry& tags,
+                               const EffectRegistry& effects,
+                               const AttributeRegistry& attributes);

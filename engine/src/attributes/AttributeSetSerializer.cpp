@@ -54,7 +54,7 @@ namespace
         bool Save(IWriteArchive& archive,
                   EntityId entity,
                   const Registry& registry,
-                  SceneSerializationContext&) const override
+                  SceneSerializationContext& context) const override
         {
             if (!registry.Components.IsRegistered<AttributeSet>())
                 return true;
@@ -62,7 +62,7 @@ namespace
             if (!set)
                 return true;
 
-            const AttributeRegistry* reg = registry.Components.TryGetResource<AttributeRegistry>();
+            const AttributeRegistry* reg = context.Attributes;
             if (!reg)
                 return false;
 
@@ -72,9 +72,9 @@ namespace
         bool Load(IReadArchive& archive,
                   EntityId entity,
                   Registry& registry,
-                  SceneSerializationContext&) override
+                  SceneSerializationContext& context) override
         {
-            AttributeRegistry* reg = registry.Components.TryGetResource<AttributeRegistry>();
+            AttributeRegistry* reg = context.Attributes;
             if (!reg)
                 return false;
 

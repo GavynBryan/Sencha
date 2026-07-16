@@ -57,7 +57,7 @@ namespace
         bool Save(IWriteArchive& archive,
                   EntityId entity,
                   const Registry& registry,
-                  SceneSerializationContext&) const override
+                  SceneSerializationContext& context) const override
         {
             if (!registry.Components.IsRegistered<GameplayTagContainer>())
                 return true;
@@ -65,9 +65,9 @@ namespace
             if (!tags)
                 return true; // entity has no tag component: nothing to write
 
-            const GameplayTagRegistry* reg = registry.Components.TryGetResource<GameplayTagRegistry>();
+            const GameplayTagRegistry* reg = context.GameplayTags;
             if (!reg)
-                return false; // cannot persist names without the registry resource
+                return false; // cannot persist names without the tag registry
 
             return WriteGameplayTags(archive, *tags, *reg);
         }
@@ -75,9 +75,9 @@ namespace
         bool Load(IReadArchive& archive,
                   EntityId entity,
                   Registry& registry,
-                  SceneSerializationContext&) override
+                  SceneSerializationContext& context) override
         {
-            GameplayTagRegistry* reg = registry.Components.TryGetResource<GameplayTagRegistry>();
+            GameplayTagRegistry* reg = context.GameplayTags;
             if (!reg)
                 return false;
 

@@ -38,20 +38,17 @@ namespace
     }
 }
 
-void ApplyEffect(World& world, EntityId target, EffectId effect)
+void ApplyEffect(World& world, EntityId target, EffectId effect,
+                 const EffectRegistry& effects, const AttributeRegistry& attributes)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
-        return;
-    const EffectDefinition* def = effReg->Get(effect);
+    const EffectDefinition* def = effects.Get(effect);
     if (def == nullptr)
         return;
 
     if (def->Duration == EffectDuration::Instant)
     {
-        const AttributeRegistry* attrReg = std::as_const(world).TryGetResource<AttributeRegistry>();
         if (AttributeSet* set = world.TryGet<AttributeSet>(target))
-            ApplyModifiersToBase(*set, *def, attrReg);
+            ApplyModifiersToBase(*set, *def, &attributes);
         return;
     }
 
@@ -70,17 +67,18 @@ void ApplyEffect(World& world, EntityId target, EffectId effect)
             tags->Grant(tag);
 }
 
-void TickEffects(World& world, float dt)
+void TickEffects(World& world, float dt,
+                 const EffectRegistry& effects, const AttributeRegistry& attributes)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
+    // A frame span includes registries with no effect components (the global
+    // registry holds session definitions, not per-entity effect state).
+    if (!world.IsRegistered<ActiveEffect>())
         return;
-    const AttributeRegistry* attrReg = std::as_const(world).TryGetResource<AttributeRegistry>();
 
     std::vector<EntityId> expired;
     world.ForEachComponent<ActiveEffect>([&](EntityId entity, ActiveEffect& ae)
     {
-        const EffectDefinition* def = effReg->Get(ae.Def);
+        const EffectDefinition* def = effects.Get(ae.Def);
         if (def == nullptr)
         {
             expired.push_back(entity); // definition gone: drop the orphan
@@ -94,7 +92,7 @@ void TickEffects(World& world, float dt)
             while (ae.PeriodTimer <= 0.0f && guard++ < 64)
             {
                 if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
-                    ApplyModifiersToBase(*set, *def, attrReg);
+                    ApplyModifiersToBase(*set, *def, &attributes);
                 ae.PeriodTimer += def->Period;
             }
         }
@@ -110,7 +108,7 @@ void TickEffects(World& world, float dt)
     for (EntityId entity : expired)
     {
         if (const ActiveEffect* ae = world.TryGet<ActiveEffect>(entity))
-            if (const EffectDefinition* def = effReg->Get(ae->Def))
+            if (const EffectDefinition* def = effects.Get(ae->Def))
                 if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(ae->Target))
                     for (GameplayTagId tag : def->GrantedTags)
                         tags->Revoke(tag);
@@ -119,18 +117,17 @@ void TickEffects(World& world, float dt)
     }
 }
 
-void FoldActiveEffects(World& world)
+void FoldActiveEffects(World& world, const EffectRegistry& effects)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
+    if (!world.IsRegistered<ActiveEffect>())
         return;
 
-    auto foldPass = [&world, effReg](ModifierOp op)
+    auto foldPass = [&world, &effects](ModifierOp op)
     {
         std::as_const(world).ForEachComponent<ActiveEffect>(
-            [&world, effReg, op](EntityId, const ActiveEffect& ae)
+            [&world, &effects, op](EntityId, const ActiveEffect& ae)
         {
-            const EffectDefinition* def = effReg->Get(ae.Def);
+            const EffectDefinition* def = effects.Get(ae.Def);
             if (def == nullptr || def->Period > 0.0f)
                 return; // periodic effects modify Base, not Current
             AttributeSet* set = world.TryGet<AttributeSet>(ae.Target);
@@ -158,9 +155,11 @@ void FoldActiveEffects(World& world)
     foldPass(ModifierOp::Override);
 }
 
-void ResolveAttributesWithEffects(World& world)
+void ResolveAttributesWithEffects(World& world,
+                                  const EffectRegistry& effects,
+                                  const AttributeRegistry& attributes)
 {
     ResetAttributesToBase(world);
-    FoldActiveEffects(world);
-    ClampAttributes(world);
+    FoldActiveEffects(world, effects);
+    ClampAttributes(world, attributes);
 }

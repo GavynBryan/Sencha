@@ -31,13 +31,6 @@ namespace movement
 {
     inline constexpr float kDefaultMoveSpeed = 6.0f;
 
-    inline AttributeId MoveSpeedId(const World& world)
-    {
-        if (const MovementDefs* defs = world.TryGetResource<MovementDefs>())
-            return defs->MoveSpeed;
-        return AttributeId{};
-    }
-
     template <typename Policy>
     void StepPlanarLocomotion(MovementState& state,
                               const MovementIntent& intent,
@@ -72,11 +65,12 @@ namespace movement
         void FixedLogic(FixedLogicContext& ctx)
         {
             const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
+            const MovementDefs& defs = ctx.Registries.Global->Resources.Get<MovementDefs>();
             for (Registry* reg : ctx.ActiveRegistries)
-                Step(reg->Components, dt);
+                Step(reg->Components, dt, defs);
         }
 
-        void Step(World& world, float dt)
+        void Step(World& world, float dt, const MovementDefs& defs)
         {
             if (!world.IsRegistered<MovementState>() || !world.IsRegistered<MovementIntent>()
                 || !world.IsRegistered<MovementProfile>() || !world.IsRegistered<AttributeSet>()
@@ -90,7 +84,7 @@ namespace movement
                 CachedQuery.emplace(world);
                 LastWorld = &world;
             }
-            const AttributeId moveSpeed = MoveSpeedId(std::as_const(world));
+            const AttributeId moveSpeed = defs.MoveSpeed;
 
             CachedQuery->ForEachChunk([&](auto& view)
             {

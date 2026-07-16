@@ -38,12 +38,13 @@ namespace
     }
 }
 
-bool TryActivateAbility(World& world, EntityId actor, AbilityId ability)
+bool TryActivateAbility(World& world, EntityId actor, AbilityId ability,
+                        const AbilityRegistry& abilities,
+                        const GameplayTagRegistry& tags,
+                        const EffectRegistry& effects,
+                        const AttributeRegistry& attributes)
 {
-    const AbilityRegistry* abilities = std::as_const(world).TryGetResource<AbilityRegistry>();
-    if (abilities == nullptr)
-        return false;
-    const AbilityDefinition* def = abilities->Get(ability);
+    const AbilityDefinition* def = abilities.Get(ability);
     if (def == nullptr)
         return false;
 
@@ -53,40 +54,39 @@ bool TryActivateAbility(World& world, EntityId actor, AbilityId ability)
         return false;
 
     // Activation requirements: require/block tags (the cooldown tag is a block).
-    if (const GameplayTagRegistry* tagReg = std::as_const(world).TryGetResource<GameplayTagRegistry>())
     {
-        const GameplayTagContainer* tags = std::as_const(world).TryGet<GameplayTagContainer>(actor);
+        const GameplayTagContainer* actorTags = std::as_const(world).TryGet<GameplayTagContainer>(actor);
         const GameplayTagContainer empty{};
-        if (!def->ActivationRequirements.Matches(tags != nullptr ? *tags : empty, *tagReg))
+        if (!def->ActivationRequirements.Matches(actorTags != nullptr ? *actorTags : empty, tags))
             return false;
     }
 
     // Cost affordability.
-    if (const EffectRegistry* effects = std::as_const(world).TryGetResource<EffectRegistry>())
-        if (!CanAfford(std::as_const(world), actor, def->Cost, *effects))
-            return false;
+    if (!CanAfford(std::as_const(world), actor, def->Cost, effects))
+        return false;
 
     // Commit: pay cost, start cooldown, run behavior — all via the effect system.
     if (def->Cost.IsValid())
-        ApplyEffect(world, actor, def->Cost);
+        ApplyEffect(world, actor, def->Cost, effects, attributes);
     if (def->Cooldown.IsValid())
-        ApplyEffect(world, actor, def->Cooldown);
+        ApplyEffect(world, actor, def->Cooldown, effects, attributes);
     if (def->OnActivate.IsValid())
-        ApplyEffect(world, actor, def->OnActivate);
+        ApplyEffect(world, actor, def->OnActivate, effects, attributes);
     return true;
 }
 
-void ProcessAbilityActivations(World& world)
+void ProcessAbilityActivations(World& world,
+                               AbilityActivationQueue& queue,
+                               const AbilityRegistry& abilities,
+                               const GameplayTagRegistry& tags,
+                               const EffectRegistry& effects,
+                               const AttributeRegistry& attributes)
 {
-    AbilityActivationQueue* queue = world.TryGetResource<AbilityActivationQueue>();
-    if (queue == nullptr)
-        return;
-
     // Move out before processing so intents pushed during activation are handled
     // next drain, not this one.
-    std::vector<AbilityActivation> pending = std::move(queue->Pending);
-    queue->Pending.clear();
+    std::vector<AbilityActivation> pending = std::move(queue.Pending);
+    queue.Pending.clear();
 
     for (const AbilityActivation& intent : pending)
-        TryActivateAbility(world, intent.Actor, intent.Ability);
+        TryActivateAbility(world, intent.Actor, intent.Ability, abilities, tags, effects, attributes);
 }

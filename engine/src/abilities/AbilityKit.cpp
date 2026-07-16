@@ -7,6 +7,7 @@
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
+#include <core/ResourceStore.h>
 #include <ecs/World.h>
 #include <effects/ActiveEffect.h>
 #include <effects/AttributeResolveSystem.h>
@@ -15,7 +16,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
-void RegisterAbilityKit(World& world)
+void RegisterAbilityComponents(World& world)
 {
     if (!world.IsRegistered<GameplayTagContainer>())
         world.RegisterComponent<GameplayTagContainer>();
@@ -25,17 +26,19 @@ void RegisterAbilityKit(World& world)
         world.RegisterComponent<AbilitySet>();
     if (!world.IsRegistered<ActiveEffect>())
         world.RegisterComponent<ActiveEffect>();
+}
 
-    if (!world.HasResource<GameplayTagRegistry>())
-        world.AddResource<GameplayTagRegistry>();
-    if (!world.HasResource<AttributeRegistry>())
-        world.AddResource<AttributeRegistry>();
-    if (!world.HasResource<EffectRegistry>())
-        world.AddResource<EffectRegistry>();
-    if (!world.HasResource<AbilityRegistry>())
-        world.AddResource<AbilityRegistry>();
-    if (!world.HasResource<AbilityActivationQueue>())
-        world.AddResource<AbilityActivationQueue>();
+void RegisterAbilityDefinitions(ResourceStore& sessionResources)
+{
+    sessionResources.Ensure<GameplayTagRegistry>();
+    sessionResources.Ensure<AttributeRegistry>();
+    sessionResources.Ensure<EffectRegistry>();
+    sessionResources.Ensure<AbilityRegistry>();
+}
+
+void RegisterAbilityRuntime(ResourceStore& registryResources)
+{
+    registryResources.Ensure<AbilityActivationQueue>();
 }
 
 void RegisterAbilityKitSystems(EngineSchedule& schedule)

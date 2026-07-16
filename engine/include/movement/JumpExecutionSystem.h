@@ -8,6 +8,7 @@
 #include <optional>
 
 struct FixedLogicContext;
+struct MovementTags;
 class World;
 
 //=============================================================================
@@ -20,7 +21,7 @@ class JumpExecutionSystem
 {
 public:
     void FixedLogic(FixedLogicContext& ctx);
-    void Step(World& world);
+    void Step(World& world, const MovementTags& tags);
 
 private:
     const World* LastWorld = nullptr;

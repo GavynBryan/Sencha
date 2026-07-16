@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <core/ResourceStore.h>
 #include <ecs/World.h>
 #include <abilities/AbilityKit.h>
 #include <movement/LocomotionMode.h>
@@ -29,15 +30,28 @@ namespace
     struct MovementWorld
     {
         World world;
+        ResourceStore session;      // session definitions, as the global registry would hold them
+        AbilityActivationQueue queue;
         MovementDefs defs;
         MovementTags tags;
 
         MovementWorld()
         {
             world.RegisterComponent<CharacterController>();
-            RegisterMovement(world);
-            defs = world.GetResource<MovementDefs>();
-            tags = world.GetResource<MovementTags>();
+            RegisterMovementDefinitions(session);
+            RegisterMovementComponents(world);
+            defs = session.Get<MovementDefs>();
+            tags = session.Get<MovementTags>();
+        }
+
+        LocomotionModeRegistry& Modes() { return session.Get<LocomotionModeRegistry>(); }
+        GameplayTagRegistry& TagRegistry() { return session.Get<GameplayTagRegistry>(); }
+        void ApplyModes() { ApplyLocomotionModes(world, Modes()); }
+        void Process()
+        {
+            ProcessAbilityActivations(world, queue,
+                session.Get<AbilityRegistry>(), session.Get<GameplayTagRegistry>(),
+                session.Get<EffectRegistry>(), session.Get<AttributeRegistry>());
         }
 
         EntityId SpawnPawn(bool grounded = true)
@@ -81,7 +95,7 @@ TEST(GroundLocomotionTest, AcceleratesTowardWishAndClampsToMoveSpeed)
     mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
 
     GroundLocomotionSystem sys;
-    sys.Step(mw.world, kTick);
+    sys.Step(mw.world, kTick, mw.defs);
 
     EXPECT_GT(mw.State(pawn).PlanarVelocity.X, 0.0f);
     EXPECT_LE(mw.State(pawn).PlanarVelocity.X, 6.0f);
@@ -96,7 +110,7 @@ TEST(GroundLocomotionTest, ConvergesToMoveSpeedAttribute)
 
     GroundLocomotionSystem sys; // one runner, many ticks: exercises cached-query rebind
     for (int i = 0; i < 600; ++i)
-        sys.Step(mw.world, kTick);
+        sys.Step(mw.world, kTick, mw.defs);
 
     EXPECT_NEAR(mw.State(pawn).PlanarVelocity.X, 6.0f, 1e-2f);
 }
@@ -109,7 +123,7 @@ TEST(GroundLocomotionTest, FrictionStopsIdleCharacter)
 
     GroundLocomotionSystem sys;
     for (int i = 0; i < 600; ++i)
-        sys.Step(mw.world, kTick);
+        sys.Step(mw.world, kTick, mw.defs);
 
     EXPECT_NEAR(mw.State(pawn).PlanarVelocity.X, 0.0f, 1e-2f);
 }
@@ -120,21 +134,21 @@ TEST(AirLocomotionTest, ReducedControlAndNoFriction)
     const EntityId g = ground.SpawnPawn();
     ground.SetWish(g, Vec3d(1.0f, 0.0f, 0.0f));
     GroundLocomotionSystem groundSys;
-    groundSys.Step(ground.world, kTick);
+    groundSys.Step(ground.world, kTick, ground.defs);
 
     MovementWorld air;
     const EntityId a = air.SpawnPawn();
     air.MakeAirborne(a);
     air.SetWish(a, Vec3d(1.0f, 0.0f, 0.0f));
     AirLocomotionSystem airSys;
-    airSys.Step(air.world, kTick);
+    airSys.Step(air.world, kTick, air.defs);
 
     EXPECT_GT(air.State(a).PlanarVelocity.X, 0.0f);
     EXPECT_LT(air.State(a).PlanarVelocity.X, ground.State(g).PlanarVelocity.X);
 
     air.State(a).PlanarVelocity = Vec3d(3.0f, 0.0f, 0.0f);
     air.SetWish(a, Vec3d::Zero());
-    airSys.Step(air.world, kTick);
+    airSys.Step(air.world, kTick, air.defs);
     EXPECT_FLOAT_EQ(air.State(a).PlanarVelocity.X, 3.0f);
 }
 
@@ -148,7 +162,7 @@ TEST(AirLocomotionTest, StrafeGainsSpeed)
 
     mw.SetWish(pawn, Vec3d(0.0f, 0.0f, 1.0f));
     AirLocomotionSystem sys;
-    sys.Step(mw.world, kTick);
+    sys.Step(mw.world, kTick, mw.defs);
 
     EXPECT_GT(mw.State(pawn).PlanarVelocity.Z, 0.0f);
     EXPECT_GT(mw.State(pawn).PlanarVelocity.Magnitude(), before);
@@ -160,17 +174,17 @@ TEST(LocomotionModeTest, GroundingRequestsAndArbiterProjectsTagsAndMarkers)
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
 
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
     EXPECT_TRUE(mw.world.HasComponent<OnGround>(pawn));
     EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
 
     GameplayTagQuery query;
     query.AddAll(mw.tags.Grounded, GameplayTagMatchMode::Hierarchical);
-    EXPECT_TRUE(query.Matches(mw.Tags(pawn), mw.world.GetResource<GameplayTagRegistry>()));
+    EXPECT_TRUE(query.Matches(mw.Tags(pawn), mw.TagRegistry()));
 
     mw.Controller(pawn).Grounded = false;
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
     EXPECT_TRUE(mw.world.HasComponent<InAir>(pawn));
     EXPECT_FALSE(mw.world.HasComponent<OnGround>(pawn));
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
@@ -185,7 +199,7 @@ TEST(LocomotionModeTest, ProjectionIsMutuallyExclusiveAndDoesNotStack)
     for (int i = 0; i < 16; ++i)
     {
         RequestGroundingLocomotionModes(mw.world);
-        ApplyLocomotionModes(mw.world);
+        mw.ApplyModes();
     }
 
     EXPECT_EQ(mw.Tags(pawn).StackCount(mw.tags.Grounded), 1);
@@ -193,7 +207,7 @@ TEST(LocomotionModeTest, ProjectionIsMutuallyExclusiveAndDoesNotStack)
 
     mw.Controller(pawn).Grounded = false;
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
     EXPECT_EQ(mw.Tags(pawn).StackCount(mw.tags.Airborne), 1);
 }
@@ -203,22 +217,22 @@ TEST(JumpExecutionTest, GroundedActivationSetsPendingSpeedAndSingleFires)
     MovementWorld mw;
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world); // grant movement.grounded so Jump can activate
+    mw.ApplyModes(); // grant movement.grounded so Jump can activate
 
-    mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
-    ProcessAbilityActivations(mw.world);
+    mw.queue.Pending.push_back({ pawn, mw.defs.Jump });
+    mw.Process();
     EXPECT_TRUE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
 
     JumpExecutionSystem jump;
-    jump.Step(mw.world);
+    jump.Step(mw.world, mw.tags);
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 5.5f);
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
 
     mw.Controller(pawn).PendingJumpSpeed = 0.0f;
-    mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
-    ProcessAbilityActivations(mw.world); // cooldown blocks
+    mw.queue.Pending.push_back({ pawn, mw.defs.Jump });
+    mw.Process(); // cooldown blocks
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
-    jump.Step(mw.world);
+    jump.Step(mw.world, mw.tags);
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 0.0f);
 }
 
@@ -229,14 +243,14 @@ TEST(JumpExecutionTest, AirborneActivationIsGatedOut)
     mw.MakeAirborne(pawn);
     mw.Controller(pawn).Grounded = false;
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
     ASSERT_FALSE(mw.Tags(pawn).HasExact(mw.tags.Grounded));
 
-    mw.world.GetResource<AbilityActivationQueue>().Pending.push_back({ pawn, mw.defs.Jump });
-    ProcessAbilityActivations(mw.world);
+    mw.queue.Pending.push_back({ pawn, mw.defs.Jump });
+    mw.Process();
 
     JumpExecutionSystem jump;
-    jump.Step(mw.world);
+    jump.Step(mw.world, mw.tags);
     EXPECT_FALSE(mw.Tags(pawn).HasExact(mw.tags.JumpRequested));
     EXPECT_FLOAT_EQ(mw.Controller(pawn).PendingJumpSpeed, 0.0f);
 }
@@ -250,18 +264,18 @@ TEST(LocomotionModeTest, GameModeExtendsWithoutEngineEdits)
     MovementWorld mw;
     mw.world.RegisterComponent<Climbing>();
     const GameplayTagId climbingTag =
-        *mw.world.GetResource<GameplayTagRegistry>().RegisterTag("game.movement.climbing");
-    RegisterLocomotionMode<Climbing>(mw.world.GetResource<LocomotionModeRegistry>(), climbingTag);
+        *mw.TagRegistry().RegisterTag("game.movement.climbing");
+    RegisterLocomotionMode<Climbing>(mw.Modes(), climbingTag);
 
     const EntityId pawn = mw.SpawnPawn(/*grounded*/ true);
     RequestGroundingLocomotionModes(mw.world);
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
     ASSERT_TRUE(mw.world.HasComponent<OnGround>(pawn));
 
     // A game "transition" requests Climbing above the ground priority.
     RequestLocomotionMode(mw.world, pawn, ResolveComponentTypeId<Climbing>(), /*priority*/ 10);
     RequestGroundingLocomotionModes(mw.world); // ground still requests OnGround at priority 1, and loses
-    ApplyLocomotionModes(mw.world);
+    mw.ApplyModes();
 
     EXPECT_TRUE(mw.world.HasComponent<Climbing>(pawn));
     EXPECT_FALSE(mw.world.HasComponent<OnGround>(pawn));
@@ -272,6 +286,6 @@ TEST(LocomotionModeTest, GameModeExtendsWithoutEngineEdits)
     mw.State(pawn).PlanarVelocity = Vec3d::Zero();
     mw.SetWish(pawn, Vec3d(1.0f, 0.0f, 0.0f));
     GroundLocomotionSystem engineGround;
-    engineGround.Step(mw.world, kTick);
+    engineGround.Step(mw.world, kTick, mw.defs);
     EXPECT_FLOAT_EQ(mw.State(pawn).PlanarVelocity.X, 0.0f);
 }

@@ -117,9 +117,11 @@ namespace
         // add at reconcile time, so they cannot be forgotten.
         RegisterPhysicsComponents(registry.Components);
         // Gameplay components (movement, tags, attributes, abilities, camera
-        // rig) plus their resources, registered here for the same reason:
-        // storage must exist before the finalize pass spawns entities.
-        RegisterMovement(registry.Components);
+        // rig) plus this registry's activation queue, registered here for the
+        // same reason: storage must exist before the finalize pass spawns
+        // entities. Session definitions live once in the global registry.
+        RegisterMovementComponents(registry.Components);
+        RegisterAbilityRuntime(registry.Resources);
         RegisterCameraComponents(registry.Components);
         parsed = ParseSceneFile(scenePath);
     }
@@ -157,7 +159,7 @@ namespace
     // content. The map path spawns it into its single zone; the world path
     // spawns it once into the global registry, where zone unloads never
     // touch it. Returns the pawn.
-    EntityId SpawnPlayerAvatar(Registry& registry, Logger& log)
+    EntityId SpawnPlayerAvatar(Registry& registry, ResourceStore& sessionResources, Logger& log)
     {
         // The authored spawn point: the first player_start entity in this
         // registry (world scene content on the world path). Entities load in
@@ -215,21 +217,19 @@ namespace
         // walks (that only needs the OnGround marker) but can never jump.
         pawnWorld.AddComponent<LocomotionModeRequest>(pawn, LocomotionModeRequest{});
 
-        const MovementDefs* movementDefs = pawnWorld.TryGetResource<MovementDefs>();
+        const MovementDefs& movementDefs = sessionResources.Get<MovementDefs>();
+        const MovementTags& movementTags = sessionResources.Get<MovementTags>();
 
         GameplayTagContainer pawnTags{};
-        if (const MovementTags* movementTags = pawnWorld.TryGetResource<MovementTags>())
-            pawnTags.Grant(movementTags->Controlled);
+        pawnTags.Grant(movementTags.Controlled);
         pawnWorld.AddComponent<GameplayTagContainer>(pawn, pawnTags);
 
         AttributeSet pawnAttributes{};
-        if (movementDefs != nullptr)
-            pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
+        pawnAttributes.Add(movementDefs.MoveSpeed, 2.0f);
         pawnWorld.AddComponent<AttributeSet>(pawn, pawnAttributes);
 
         AbilitySet pawnAbilities{};
-        if (movementDefs != nullptr)
-            pawnAbilities.Grant(movementDefs->Jump);
+        pawnAbilities.Grant(movementDefs.Jump);
         pawnWorld.AddComponent<AbilitySet>(pawn, pawnAbilities);
 
         // Point the camera at the pawn. Mode is data: first-person here, but
@@ -295,9 +295,12 @@ namespace
             World& world = RegistryInstance->Components;
             if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
                 return;
-            const MovementTags* ids = world.TryGetResource<MovementTags>();
-            const MovementDefs* defs = world.TryGetResource<MovementDefs>();
-            AbilityActivationQueue* activations = world.TryGetResource<AbilityActivationQueue>();
+            // Session definitions live in the global registry; the activation
+            // queue is local to the pawn's registry.
+            Registry& global = *ctx.Registries.Global;
+            const MovementTags* ids = global.Resources.TryGet<MovementTags>();
+            const MovementDefs* defs = global.Resources.TryGet<MovementDefs>();
+            AbilityActivationQueue* activations = RegistryInstance->Resources.TryGet<AbilityActivationQueue>();
             if (ids == nullptr || defs == nullptr)
                 return;
 
@@ -616,7 +619,9 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 return;
 
             // Single-zone life: the avatar lives and dies with the map's zone.
-            (void)SpawnPlayerAvatar(registry, logging.GetLogger<TemplateGame>());
+            // Session definitions come from the global registry's resources.
+            (void)SpawnPlayerAvatar(registry, GetEngine().Zones().Global().Resources,
+                                    logging.GetLogger<TemplateGame>());
 
             ActiveZoneRegistry = &registry;
             ZoneActive = true;
@@ -733,7 +738,13 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         Registry& global = engine.Zones().Global();
         InitializeDefault3DRegistry(global, meshes, materialSets);
         RegisterPhysicsComponents(global.Components);
-        RegisterMovement(global.Components);
+        // Movement/ability definitions are session-wide: register them once in
+        // the global registry's resources. Components and the activation queue are
+        // registry-local, so the global registry (which hosts the avatar) gets
+        // those too.
+        RegisterMovementDefinitions(global.Resources);
+        RegisterMovementComponents(global.Components);
+        RegisterAbilityRuntime(global.Resources);
         RegisterCameraComponents(global.Components);
 
         // The world scene: authored global content, loaded synchronously into
@@ -758,7 +769,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 PendingWorldSceneCollision = collisionPath;
         }
 
-        WorldPawn = SpawnPlayerAvatar(global, logging.GetLogger<TemplateGame>());
+        WorldPawn = SpawnPlayerAvatar(global, global.Resources, logging.GetLogger<TemplateGame>());
         ActiveZoneRegistry = &global;   // the input and spin systems read this
     }
 

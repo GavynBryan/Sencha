@@ -8,16 +8,13 @@
 #include <cstdint>
 #include <utility>
 
-void JumpExecutionSystem::Step(World& world)
+void JumpExecutionSystem::Step(World& world, const MovementTags& movementTags)
 {
     if (!world.IsRegistered<GameplayTagContainer>() || !world.IsRegistered<CharacterController>()
         || !world.IsRegistered<MovementProfile>())
     {
         return;
     }
-    const MovementTags* ids = std::as_const(world).TryGetResource<MovementTags>();
-    if (ids == nullptr)
-        return;
 
     if (LastWorld != &world)
     {
@@ -32,16 +29,17 @@ void JumpExecutionSystem::Step(World& world)
         const auto profiles = view.template Read<MovementProfile>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            if (!tags[i].HasExact(ids->JumpRequested))
+            if (!tags[i].HasExact(movementTags.JumpRequested))
                 continue;
             controllers[i].PendingJumpSpeed = profiles[i].JumpSpeed;
-            tags[i].Revoke(ids->JumpRequested);
+            tags[i].Revoke(movementTags.JumpRequested);
         }
     });
 }
 
 void JumpExecutionSystem::FixedLogic(FixedLogicContext& ctx)
 {
+    const MovementTags& tags = ctx.Registries.Global->Resources.Get<MovementTags>();
     for (Registry* reg : ctx.ActiveRegistries)
-        Step(reg->Components);
+        Step(reg->Components, tags);
 }

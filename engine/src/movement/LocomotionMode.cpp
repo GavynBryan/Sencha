@@ -42,12 +42,9 @@ void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker
     }
 }
 
-void ApplyLocomotionModes(World& world)
+void ApplyLocomotionModes(World& world, const LocomotionModeRegistry& registry)
 {
     if (!world.IsRegistered<LocomotionModeRequest>())
-        return;
-    const LocomotionModeRegistry* registry = std::as_const(world).TryGetResource<LocomotionModeRegistry>();
-    if (registry == nullptr)
         return;
 
     // Marker swaps are structural, so collect during iteration and apply after
@@ -76,7 +73,7 @@ void ApplyLocomotionModes(World& world)
             return; // marker not registered in this World
 
         ComponentId current = InvalidComponentId;
-        for (const LocomotionModeEntry& entry : registry->Entries())
+        for (const LocomotionModeEntry& entry : registry.Entries())
         {
             const ComponentId id = world.GetComponentIdByType(entry.Marker);
             if (id != InvalidComponentId && world.HasComponent(entity, id))
@@ -102,8 +99,8 @@ void ApplyLocomotionModes(World& world)
         // idempotently, so gating tags are correct even without a marker change.
         if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(r.Entity))
         {
-            const GameplayTagId desiredTag = registry->TagFor(r.DesiredType);
-            for (const LocomotionModeEntry& entry : registry->Entries())
+            const GameplayTagId desiredTag = registry.TagFor(r.DesiredType);
+            for (const LocomotionModeEntry& entry : registry.Entries())
                 if (entry.Marker != r.DesiredType && entry.ActiveTag.IsValid())
                     tags->Revoke(entry.ActiveTag);
             if (desiredTag.IsValid() && !tags->HasExact(desiredTag))
@@ -114,6 +111,8 @@ void ApplyLocomotionModes(World& world)
 
 void LocomotionModeArbiter::FixedLogic(FixedLogicContext& ctx)
 {
+    const LocomotionModeRegistry& registry =
+        ctx.Registries.Global->Resources.Get<LocomotionModeRegistry>();
     for (Registry* reg : ctx.ActiveRegistries)
-        ApplyLocomotionModes(reg->Components);
+        ApplyLocomotionModes(reg->Components, registry);
 }

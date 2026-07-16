@@ -2,6 +2,7 @@
 
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
+#include <core/ResourceStore.h>
 #include <abilities/AbilityKit.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
@@ -43,30 +44,30 @@ namespace
 
         void FixedLogic(FixedLogicContext& ctx)
         {
+            const MovementDefs& defs = ctx.Registries.Global->Resources.Get<MovementDefs>();
             for (Registry* reg : ctx.ActiveRegistries)
             {
                 World& world = reg->Components;
                 if (MovementIntent* intent = world.TryGet<MovementIntent>(Pawn))
                     intent->WishDir = Vec3d(1.0f, 0.0f, 0.0f);
 
-                const MovementDefs* defs = world.TryGetResource<MovementDefs>();
-                AbilityActivationQueue* queue = world.TryGetResource<AbilityActivationQueue>();
-                if (defs != nullptr && queue != nullptr)
-                    queue->Pending.push_back({ Pawn, defs->Jump });
+                if (AbilityActivationQueue* queue = reg->Resources.TryGet<AbilityActivationQueue>())
+                    queue->Pending.push_back({ Pawn, defs.Jump });
             }
         }
 
         EntityId Pawn;
     };
 
-    EntityId SpawnControlledPawn(Registry& registry)
+    EntityId SpawnControlledPawn(Registry& registry, ResourceStore& session)
     {
         World& world = registry.Components;
         world.RegisterComponent<CharacterController>();
-        RegisterMovement(world);
+        RegisterMovementComponents(world);
+        RegisterAbilityRuntime(registry.Resources);
 
-        const MovementDefs& defs = world.GetResource<MovementDefs>();
-        const MovementTags& tags = world.GetResource<MovementTags>();
+        const MovementDefs& defs = session.Get<MovementDefs>();
+        const MovementTags& tags = session.Get<MovementTags>();
 
         const EntityId pawn = world.CreateEntity();
         CharacterController controller;
@@ -96,8 +97,9 @@ namespace
 TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
 {
     GameplayScheduleHarness harness;
+    RegisterMovementDefinitions(harness.Zones.Global().Resources);
     Registry& registry = harness.CreateLogicZone();
-    const EntityId pawn = SpawnControlledPawn(registry);
+    const EntityId pawn = SpawnControlledPawn(registry, harness.Zones.Global().Resources);
 
     RegisterAbilityKitSystems(harness.Schedule);
     RegisterMovementSystems(harness.Schedule);
@@ -117,7 +119,7 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     harness.Schedule.RunFixedLogic(ctx);
 
     World& world = registry.Components;
-    const MovementTags& tags = world.GetResource<MovementTags>();
+    const MovementTags& tags = harness.Zones.Global().Resources.Get<MovementTags>();
     const auto* tagContainer = world.TryGet<GameplayTagContainer>(pawn);
     const auto* controller = world.TryGet<CharacterController>(pawn);
     const auto* state = world.TryGet<MovementState>(pawn);

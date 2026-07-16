@@ -53,19 +53,17 @@ void MovementTuningSystem::FixedLogic(FixedLogicContext& ctx)
     const float maxAirSpeed = read("movement.max_air_speed", 1.0f);
     const float jumpSpeed = read("movement.jump_speed", 5.5f);
 
+    const MovementTags& ids = ctx.Registries.Global->Resources.Get<MovementTags>();
     for (Registry* reg : ctx.ActiveRegistries)
     {
         World& world = reg->Components;
         if (!world.IsRegistered<MovementProfile>() || !world.IsRegistered<GameplayTagContainer>())
             continue;
-        const MovementTags* ids = world.TryGetResource<MovementTags>();
-        if (ids == nullptr)
-            continue;
 
         world.ForEachComponent<MovementProfile>([&](EntityId entity, MovementProfile& profile)
         {
             const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(entity);
-            if (tags == nullptr || !tags->HasExact(ids->Controlled))
+            if (tags == nullptr || !tags->HasExact(ids.Controlled))
                 return;
             profile.GroundAcceleration = groundAccel;
             profile.AirAcceleration = airAccel;

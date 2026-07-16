@@ -22,23 +22,20 @@ void ResetAttributesToBase(World& world)
     });
 }
 
-void ClampAttributes(World& world)
+void ClampAttributes(World& world, const AttributeRegistry& attributes)
 {
     if (!world.IsRegistered<AttributeSet>())
         return;
-    const AttributeRegistry* registry = std::as_const(world).TryGetResource<AttributeRegistry>();
-    if (registry == nullptr)
-        return;
 
-    world.ForEachComponent<AttributeSet>([registry](EntityId, AttributeSet& set)
+    world.ForEachComponent<AttributeSet>([&attributes](EntityId, AttributeSet& set)
     {
         for (int i = 0; i < set.Count; ++i)
-            set.Current[i] = registry->Clamp(set.Ids[i], set.Current[i]);
+            set.Current[i] = attributes.Clamp(set.Ids[i], set.Current[i]);
     });
 }
 
-void ResolveAttributes(World& world)
+void ResolveAttributes(World& world, const AttributeRegistry& attributes)
 {
     ResetAttributesToBase(world);
-    ClampAttributes(world);
+    ClampAttributes(world, attributes);
 }

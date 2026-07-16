@@ -5,6 +5,7 @@
 #include <abilities/AbilityRegistry.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
+#include <core/ResourceStore.h>
 #include <ecs/World.h>
 #include <effects/AttributeResolveSystem.h>
 #include <effects/EffectDefinition.h>
@@ -25,20 +26,11 @@
 namespace
 {
     constexpr float kDefaultMoveSpeed = 6.0f;
-
-    MovementTags EnsureMovementTags(World& world)
-    {
-        GameplayTagRegistry& tagReg = world.GetResource<GameplayTagRegistry>();
-        const MovementTags tags = RegisterMovementTags(tagReg);
-        if (!world.HasResource<MovementTags>())
-            world.AddResource<MovementTags>(tags);
-        return world.GetResource<MovementTags>();
-    }
 }
 
 void RegisterMovementComponents(World& world)
 {
-    RegisterAbilityKit(world);
+    RegisterAbilityComponents(world);
 
     if (!world.IsRegistered<MovementIntent>())
         world.RegisterComponent<MovementIntent>();
@@ -52,27 +44,28 @@ void RegisterMovementComponents(World& world)
         world.RegisterComponent<InAir>();
     if (!world.IsRegistered<LocomotionModeRequest>())
         world.RegisterComponent<LocomotionModeRequest>();
+}
 
-    const MovementTags tags = EnsureMovementTags(world);
+void RegisterMovementDefinitions(ResourceStore& sessionResources)
+{
+    RegisterAbilityDefinitions(sessionResources);
+    if (sessionResources.Has<MovementDefs>())
+        return; // movement definitions are session-wide: assign their ids once
+
+    GameplayTagRegistry& tagReg = sessionResources.Get<GameplayTagRegistry>();
+    const MovementTags tags = RegisterMovementTags(tagReg);
+    sessionResources.Register<MovementTags>(tags);
 
     // The built-in locomotion modes, each mapping its marker to the gameplay tag
     // it projects while active. A game registers its own modes the same way; the
     // arbiter stays mode-agnostic.
-    LocomotionModeRegistry& modes = world.HasResource<LocomotionModeRegistry>()
-        ? world.GetResource<LocomotionModeRegistry>()
-        : world.AddResource<LocomotionModeRegistry>();
+    LocomotionModeRegistry& modes = sessionResources.Ensure<LocomotionModeRegistry>();
     RegisterLocomotionMode<OnGround>(modes, tags.Grounded);
     RegisterLocomotionMode<InAir>(modes, tags.Airborne);
-}
 
-void RegisterDefaultMovementAbilities(World& world)
-{
-    RegisterMovementComponents(world);
-
-    AttributeRegistry& attrReg = world.GetResource<AttributeRegistry>();
-    EffectRegistry& effReg = world.GetResource<EffectRegistry>();
-    AbilityRegistry& abilityReg = world.GetResource<AbilityRegistry>();
-    const MovementTags tags = EnsureMovementTags(world);
+    AttributeRegistry& attrReg = sessionResources.Get<AttributeRegistry>();
+    EffectRegistry& effReg = sessionResources.Get<EffectRegistry>();
+    AbilityRegistry& abilityReg = sessionResources.Get<AbilityRegistry>();
 
     MovementDefs defs;
     defs.MoveSpeed = attrReg.RegisterAttribute("MoveSpeed", 0.0f, 100.0f, kDefaultMoveSpeed);
@@ -101,13 +94,7 @@ void RegisterDefaultMovementAbilities(World& world)
     jump.OnActivate = requestFx;
     defs.Jump = abilityReg.Register("movement.jump", jump);
 
-    if (!world.HasResource<MovementDefs>())
-        world.AddResource<MovementDefs>(defs);
-}
-
-void RegisterMovement(World& world)
-{
-    RegisterDefaultMovementAbilities(world);
+    sessionResources.Register<MovementDefs>(defs);
 }
 
 void RegisterMovementSystems(EngineSchedule& schedule)

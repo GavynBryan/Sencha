@@ -35,13 +35,21 @@
 #include <abilities/AbilitySystem.h>
 
 class World;
+class ResourceStore;
 class EngineSchedule;
 
-// Register the ability-kit component/resource set (tag container, attribute set,
-// ability set, active effects, and the tag/attribute/effect/ability registries plus
-// the activation queue) on a World. Idempotent; call once per World. Any feature
-// built on the kit (movement) calls this so callers cannot forget a piece.
-void RegisterAbilityKit(World& world);
+// Component storage for the ability kit (tag container, attribute set, ability
+// set, active effects). Registered in every registry that may hold these
+// components. Idempotent.
+void RegisterAbilityComponents(World& world);
+
+// Session definitions (tag, attribute, effect, and ability registries). Registered
+// once, in the global registry's resources, and shared by every zone. Idempotent.
+void RegisterAbilityDefinitions(ResourceStore& sessionResources);
+
+// Registry-local runtime state (the activation queue). Registered in every
+// registry that drains ability activations. Idempotent.
+void RegisterAbilityRuntime(ResourceStore& registryResources);
 
 // Register the ability-kit fixed-tick systems (ability activation, then attribute
 // resolve, then effect lifetime). This is the kit's standalone order; the movement
