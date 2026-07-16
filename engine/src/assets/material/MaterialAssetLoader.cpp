@@ -138,6 +138,8 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
     material.NormalScale = desc.NormalScale;
     material.RoughnessFactor = desc.RoughnessFactor;
     material.MetallicFactor = desc.MetallicFactor;
+    material.SpecularIntensity = desc.SpecularIntensity;
+    material.EmissiveStrength = desc.EmissiveStrength;
     material.AlphaMode = desc.AlphaMode;
     material.AlphaCutoff = desc.AlphaCutoff;
 
@@ -193,6 +195,6 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     }
 
     outIndex = bindless.Value;
-    // LoadTexture already incremented the refcount -- wrap without attaching.
+    // LoadTexture already incremented the refcount. Wrap without attaching.
     owned.emplace_back(Textures, handle, TextureCacheHandle::NoAttachTag{});
 }
