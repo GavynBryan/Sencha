@@ -6,12 +6,20 @@
 #include <render/MaterialCache.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/SpotShadowResources.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+
+struct GpuSpotShadow
+{
+    Mat4 ViewProjection;
+    Vec4 AtlasScaleBias;
+    Vec4 BiasSoftness;
+};
 
 struct MeshFrameUniforms
 {
@@ -25,6 +33,11 @@ struct MeshFrameUniforms
     std::uint32_t Pad0 = 0;
     std::uint32_t Pad1 = 0;
     GpuLight Lights[kMaxForwardLights];
+    std::uint32_t SpotShadowCount = 0;
+    std::uint32_t ShadowPad0 = 0;
+    std::uint32_t ShadowPad1 = 0;
+    std::uint32_t ShadowPad2 = 0;
+    GpuSpotShadow SpotShadows[kMaxSpotShadows];
 };
 
 struct MeshPushConstants
@@ -41,17 +54,10 @@ struct MeshPushConstants
     std::uint32_t EmissiveTextureIndex = UINT32_MAX;
 };
 
-//=============================================================================
-// MeshForwardPass
-//
-// Records opaque static-mesh draws through the forward material pipelines. The
-// four pipelines are the cross product of shading family and cull mode. They
-// share one vertex shader and one specialized fragment shader module.
-//=============================================================================
 class MeshForwardPass
 {
 public:
-    void Setup(const RendererServices& services);
+    void Setup(const RendererServices& services, SpotShadowResources& shadows);
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
               const RenderLightSet& lights,
@@ -82,6 +88,8 @@ private:
     VulkanFrameScratch* Scratch = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
+    SpotShadowResources* Shadows = nullptr;
+    VkDevice Device = VK_NULL_HANDLE;
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
