@@ -6,7 +6,7 @@
 
 #include <ecs/World.h>
 #include <world/registry/RegistryId.h>
-#include <world/ResourceRegistry.h>
+#include <core/ResourceStore.h>
 #include <zone/ZoneId.h>
 
 enum class RegistryKind : uint8_t
@@ -60,7 +60,7 @@ struct Registry
     ZoneId Zone;
 
     World Components;
-    ResourceRegistry Resources;
+    ResourceStore Resources;
 };
 
 inline Registry MakeGlobalRegistry(RegistryId id = RegistryId::Global())
