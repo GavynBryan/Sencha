@@ -52,18 +52,12 @@ bool Engine::Initialize()
     RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
     if (Configuration.Console.OpenOnStart)
         DebugState->Open();
-    EngineSystems.Register<DefaultRenderPipeline>(&LoggingState);
+    EngineSystems.Register<DefaultRenderPipeline>(
+        &LoggingState, &ConsoleState->Registry());
 
-    // Audio backend + the system that drives scene AudioSourceComponents
-    // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
-    // is non-fatal: the system no-ops, the engine runs silent.
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
     EngineSystems.Register<AudioSystem>(AudioState.get());
 
-    // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
-    // No device dependency — always valid, headless included. CaptionSystem
-    // registers after AudioSystem so voices started or swept this frame are
-    // captioned/retired the same frame.
     CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
@@ -88,8 +82,6 @@ bool Engine::Initialize()
     RuntimeLoop.SetResizeSettleSeconds(Configuration.Runtime.ResizeSettleSeconds);
     RuntimeLoop.GetSimulationClock().SetFixedTickRate(Configuration.Runtime.FixedTickRate);
 
-    // Task threads block on IO, so they never compete with the frame. The
-    // count is config: 1 suits room-scale streaming, open worlds raise it.
     TaskQueueInstance = std::make_unique<AsyncTaskQueue>(
         static_cast<uint32_t>(Configuration.Runtime.AsyncTaskThreadCount));
 
@@ -298,7 +290,6 @@ void Engine::RegisterFramePhases(Game& game)
         return;
 
     RegisterDefaultEngineFramePhases(*this, game, *FrameDriverInstance);
-
     FramePhasesRegistered = true;
 }
 
@@ -307,12 +298,7 @@ int Engine::Run(Game& game)
     if (!Initialize())
         return 1;
 
-    // Bind once, before any hook, so lifecycle contexts carry data only.
     game.AttachEngine(*this);
-
-    // Components before content: register the game's serializers (a module game
-    // registers its own here) so the first scene load resolves them. Same hook
-    // the editor calls standalone to edit scenes without running the game.
     game.OnRegisterComponents(DefaultComponentSerializerRegistry());
 
     ConsoleService& console = Console();
@@ -344,11 +330,6 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
-
-    // Symmetric teardown of OnRegisterComponents above: retract the game's
-    // serializers while the module is still mapped (the host unloads it after Run
-    // returns). A module-owned serializer left in the registry would be freed at
-    // exit, after dlclose, against unmapped code.
     game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
     return 0;
 }
@@ -358,7 +339,8 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     ConsoleRegistry& registry = console.Registry();
     EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
-    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(
+        registry, Configuration.Runtime, FrameDriverInstance);
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }
