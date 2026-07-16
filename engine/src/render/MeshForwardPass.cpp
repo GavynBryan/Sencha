@@ -2,7 +2,6 @@
 
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
-#include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
@@ -24,7 +23,6 @@ static_assert(offsetof(MeshPushConstants, OrmTextureIndex) == 56);
 static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
 static_assert(sizeof(MeshPushConstants) == 64);
 
-// std140 layout the mesh_forward shaders assume for set 0, binding 0.
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
 static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
 static_assert(offsetof(MeshFrameUniforms, AmbientSky) == 80);
@@ -48,7 +46,6 @@ void MeshForwardPass::Setup(const RendererServices& services)
     Scratch = services.Scratch;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
-    Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
 
     VertexShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
@@ -63,51 +60,65 @@ void MeshForwardPass::Setup(const RendererServices& services)
     Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
 }
 
-bool MeshForwardPass::EnsurePipeline(const FrameContext& frame)
+bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
 {
-    if (Pipeline != VK_NULL_HANDLE
+    bool complete = true;
+    for (VkPipeline pipeline : OpaquePipelines)
+        complete = complete && pipeline != VK_NULL_HANDLE;
+    if (complete
         && CachedColorFormat == frame.TargetFormat
         && CachedDepthFormat == frame.DepthFormat)
+    {
         return true;
+    }
 
-    GraphicsPipelineDesc desc{};
-    desc.VertexShader = VertexShader;
-    desc.FragmentShader = FragmentShader;
-    desc.Layout = PipelineLayout;
-    desc.VertexBindings = {
+    GraphicsPipelineDesc base{};
+    base.VertexShader = VertexShader;
+    base.FragmentShader = FragmentShader;
+    base.Layout = PipelineLayout;
+    base.VertexBindings = {
         { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        // Binding 1: the per-instance world matrix stream, written into the
-        // frame scratch each Draw in draw order. Instancing via a vertex
-        // stream keeps the global descriptor layouts untouched.
         { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
     };
-    desc.VertexAttributes = {
+    base.VertexAttributes = {
         { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
         { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
         { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        // World matrix columns occupy locations 3 through 6.
         { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
         { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
     };
-    desc.CullMode = VK_CULL_MODE_BACK_BIT;
-    desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    desc.DepthTest = true;
-    desc.DepthWrite = true;
-    desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-    desc.ColorBlend = { ColorBlendAttachmentDesc{} };
-    desc.ColorFormats = { frame.TargetFormat };
-    desc.DepthFormat = frame.DepthFormat;
-    Pipeline = Pipelines->GetGraphicsPipeline(desc);
+    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    base.DepthTest = true;
+    base.DepthWrite = true;
+    base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+    base.ColorBlend = { ColorBlendAttachmentDesc{} };
+    base.ColorFormats = { frame.TargetFormat };
+    base.DepthFormat = frame.DepthFormat;
+
+    for (uint32_t index = 0; index < OpaquePipelines.size(); ++index)
+    {
+        GraphicsPipelineDesc desc = base;
+        const bool unlit = index >= static_cast<uint32_t>(OpaquePipelineId::UnlitBack);
+        const bool doubleSided = (index & 1u) != 0;
+        desc.FragmentSpecializationConstants = {
+            ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u }
+        };
+        desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        OpaquePipelines[index] = Pipelines->GetGraphicsPipeline(desc);
+        if (OpaquePipelines[index] == VK_NULL_HANDLE)
+            return false;
+    }
+
     CachedColorFormat = frame.TargetFormat;
     CachedDepthFormat = frame.DepthFormat;
-    return Pipeline != VK_NULL_HANDLE;
+    return true;
 }
 
-std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRenderData& camera,
-                                                                  const RenderLightSet& lights)
+std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
+    const CameraRenderData& camera, const RenderLightSet& lights)
 {
     MeshFrameUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();
@@ -115,10 +126,11 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRen
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
     uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
     uniforms.StyleParams = Vec4(lights.DiffuseWrap, lights.MinAmbient,
-                               lights.Exposure, lights.TonemapKnee);
+                                lights.Exposure, lights.TonemapKnee);
     uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
 
-    const std::uint32_t lightCount = lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
+    const std::uint32_t lightCount =
+        lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
     uniforms.LightCount = lightCount;
     std::memcpy(uniforms.Lights, lights.Lights, sizeof(GpuLight) * lightCount);
 
@@ -131,9 +143,6 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRen
 
 bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const RenderQueue& queue)
 {
-    // Per-instance world matrices, written once in draw order: instance N of
-    // the frame is OpaqueOrder()[N], so a run draws instances [First, First +
-    // Count) with plain firstInstance addressing and no per-draw upload.
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
 
@@ -153,26 +162,22 @@ bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const Render
 void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset)
 {
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
     viewport.width = static_cast<float>(frame.TargetExtent.width);
     viewport.height = static_cast<float>(frame.TargetExtent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
     scissor.extent = frame.TargetExtent;
 
-    vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
     vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
     vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
 
     const uint32_t dynamicOffset = static_cast<uint32_t>(uniformOffset);
-    VkDescriptorSet frameSet = Descriptors->GetFrameSet();
+    const VkDescriptorSet frameSet = Descriptors->GetFrameSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             0, 1, &frameSet, 1, &dynamicOffset);
-    VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
+    const VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             1, 1, &bindlessSet, 0, nullptr);
 }
@@ -182,8 +187,10 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
+    VkPipeline lastPipeline = VK_NULL_HANDLE;
     VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
+
     for (const RenderQueueRun& run : queue.OpaqueRuns())
     {
         const RenderQueueItem& item = items[order[run.First]];
@@ -192,13 +199,23 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
             continue;
 
+        const uint32_t pipelineIndex = static_cast<uint32_t>(item.Pipeline);
+        if (pipelineIndex >= OpaquePipelines.size())
+            continue;
+        const VkPipeline pipeline = OpaquePipelines[pipelineIndex];
+        if (pipeline != lastPipeline)
+        {
+            vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            lastPipeline = pipeline;
+        }
+
         const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
-        VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
-        VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+        const VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        const VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
 
         MeshPushConstants push{};
         push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
-                              material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
+                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
         push.EmissiveFactor = Vec4(material->EmissiveFactor.X,
                                    material->EmissiveFactor.Y,
                                    material->EmissiveFactor.Z,
@@ -226,9 +243,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        // MeshGeometry uses global indices into the shared vertex buffer.
-        // Section.VertexOffset remains metadata until sections use local indices.
-        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count, section.IndexOffset, 0, run.First);
+        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count,
+                         section.IndexOffset, 0, run.First);
         ++LastStats.DrawCalls;
     }
 }
@@ -241,13 +257,16 @@ void MeshForwardPass::Draw(const FrameContext& frame,
                            MaterialCache& materials,
                            Vec4 tint)
 {
-    LastStats = DrawStats{ .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()), .DrawCalls = 0 };
+    LastStats = DrawStats{
+        .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()),
+        .DrawCalls = 0,
+    };
 
     if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
         return;
     if (queue.OpaqueOrder().empty())
         return;
-    if (!EnsurePipeline(frame))
+    if (!EnsurePipelines(frame))
         return;
 
     const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
@@ -269,5 +288,8 @@ void MeshForwardPass::Teardown()
     }
     VertexShader = {};
     FragmentShader = {};
-    Pipeline = VK_NULL_HANDLE;
+    OpaquePipelines.fill(VK_NULL_HANDLE);
+    PipelineLayout = VK_NULL_HANDLE;
+    CachedColorFormat = VK_FORMAT_UNDEFINED;
+    CachedDepthFormat = VK_FORMAT_UNDEFINED;
 }
