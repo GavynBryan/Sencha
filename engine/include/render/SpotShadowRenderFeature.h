@@ -40,5 +40,6 @@ private:
     const ShadowCasterSet& Casters;
     StaticMeshCache& Meshes;
     ShadowResidency& Residency;
+    const RenderInstrumentation* Instrumentation = nullptr;
     SpotShadowDepthPass Pass;
 };

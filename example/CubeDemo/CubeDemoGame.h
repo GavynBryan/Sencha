@@ -19,7 +19,6 @@
 #include <assets/hotreload/AssetSourceWatcher.h>
 #endif
 
-class ImGuiDebugOverlay;
 
 class CubeDemoGame final : public Game
 {
@@ -58,5 +57,4 @@ private:
     std::optional<AssetHotReloader> Reloader;
 #endif
 
-    ImGuiDebugOverlay* DebugOverlay = nullptr;
 };

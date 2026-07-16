@@ -5,11 +5,18 @@
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
+#include <profiling/RenderInstrumentation.h>
+#include <profiling/RenderStats.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <profiling/RenderCapture.h>
+#endif
+
 #include <memory>
+#include <vector>
 
 class AsyncTaskQueue;
 class AudioService;
@@ -18,7 +25,9 @@ class ConsoleService;
 class DebugService;
 class FrameDriver;
 class Game;
+class GpuTimestampPool;
 struct GraphicsServices;
+class IDebugPanel;
 class ImGuiDebugOverlay;
 class JobSystem;
 struct PlatformServices;
@@ -116,15 +125,39 @@ public:
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
     [[nodiscard]] const TimingHistory& Timing() const { return TimingData; }
 
+    // The renderer instrumentation bundle. Always present; its members are
+    // non-null exactly while their render.profile.mode tier is active (all
+    // null when profiling is compiled out).
+    [[nodiscard]] const RenderInstrumentation& Instrumentation() const
+    {
+        return InstrumentationBundle;
+    }
+    [[nodiscard]] RenderProfileMode ActiveRenderProfileMode() const
+    {
+        return ActiveProfileMode;
+    }
+    // Applies the pending render.profile.mode once, at the top of the
+    // extract phase, so one frame never sees two modes; resets the frame's
+    // stats while counters are active.
+    void ApplyPendingRenderProfileMode();
+    // Pushes the finished frame's stats into the history ring; called after
+    // the render phase so pass publishes are included. No-op below Counters.
+    void PushRenderStatsFrame();
+
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The runtime debug overlay (console + timing panels, grave-key toggle).
-    // Created by Run when windowed and Config().Console.UiEnabled; games add
-    // their own panels through it. Null when headless, opted out, or before
-    // Run. Owned by the renderer as a render feature.
+    // Created by Run when windowed and Config().Console.UiEnabled. Null when
+    // headless, opted out, or before Run.  Owned by the renderer as a render
+    // feature.
     [[nodiscard]] ImGuiDebugOverlay* GetDebugOverlay() { return DebugOverlayFeature; }
+    // Adds a game panel to the overlay. Valid any time after Initialize: the
+    // overlay itself is created after the game's startup hooks (so it draws
+    // over every scene feature), and panels added before then are queued and
+    // attached at creation. Dropped when the overlay is opted out or absent.
+    void AddDebugPanel(std::unique_ptr<IDebugPanel> panel);
 #endif
 
 private:
@@ -163,10 +196,31 @@ private:
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     TimingHistory TimingData;
+    // Instrumentation storage beside the timing history. The bundle's
+    // pointers select into these per the active mode; the objects exist in
+    // every build so consumers stay #ifdef-free at the publish points.
+    RenderInstrumentation InstrumentationBundle;
+    RenderStats FrameRenderStats;
+    RenderStatsHistory RenderStatsRing;
+    RenderProfileMode ActiveProfileMode = RenderProfileMode::Off;
+    // Written by the render.profile.mode cvar; consumed by the frame latch.
+    RenderProfileMode PendingProfileMode = RenderProfileMode::Off;
+    std::uint64_t RenderStatsFrameIndex = 0;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    RenderCapture RenderCaptureStore;
+#endif
+#if defined(SENCHA_ENABLE_RENDER_PROFILING) && defined(SENCHA_ENABLE_VULKAN)
+    // Behind a pointer so the module ABI surface stays free of Vulkan types.
+    // Created with graphics; its query pools are created lazily on the first
+    // Gpu-mode frame and destroyed in Shutdown while the device is alive.
+    std::unique_ptr<GpuTimestampPool> GpuTimestampsPool;
+#endif
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // Borrowed view of the renderer-owned overlay feature (event forwarding
     // and panel registration); cleared when graphics tear down.
     ImGuiDebugOverlay* DebugOverlayFeature = nullptr;
+    // Panels added before the overlay exists, attached at creation.
+    std::vector<std::unique_ptr<IDebugPanel>> PendingDebugPanels;
 #endif
     // Declared last: destroyed first, so task/worker threads are joined (and
     // pending commits dropped) before the zones and services they reference.

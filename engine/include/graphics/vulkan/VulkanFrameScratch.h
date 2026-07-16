@@ -91,6 +91,8 @@ public:
     [[nodiscard]] VkDeviceSize GetBytesPerFrame() const { return BytesPerFrame; }
     [[nodiscard]] VkDeviceSize GetUniformAlignment() const { return UniformAlignment; }
     [[nodiscard]] uint32_t GetFramesInFlight() const { return FramesInFlight; }
+    // Largest per-frame cursor ever reached, for sizing BytesPerFrame.
+    [[nodiscard]] VkDeviceSize GetHighWaterBytes() const { return HighWater; }
 
 private:
     Logger& Log;
@@ -106,4 +108,5 @@ private:
 
     uint32_t CurrentFrame = 0;
     VkDeviceSize Cursor = 0; // Offset within the current slice.
+    VkDeviceSize HighWater = 0;
 };

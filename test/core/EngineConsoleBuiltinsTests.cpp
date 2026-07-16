@@ -3,13 +3,20 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
+#include <profiling/RenderCapture.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
 
 namespace
 {
@@ -75,6 +82,73 @@ TEST(EngineConsoleBuiltins, ShadowBudgetsReadCVarsAndDefaultWithoutARegistry)
     EXPECT_EQ(budgets.MaxViewsPerFrame, 0u);
     EXPECT_EQ(budgets.MinInvalidatedViewsPerFrame, 2u);
 }
+
+TEST(EngineConsoleBuiltins, ProfileModeCVarWritesThePendingModeAndIgnoresUnknowns)
+{
+    ConsoleRegistry registry;
+    RenderProfileMode pending = RenderProfileMode::Off;
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, pending);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "gpu" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Gpu);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "bogus" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Gpu);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "off" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Off);
+}
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+TEST(EngineConsoleBuiltins, CaptureCommandsGateOnModeAndWriteParseableJson)
+{
+    ConsoleService console;
+    console.AdvancePhase(ConsolePhase::EngineReady);
+    RenderCapture capture;
+    RenderProfileMode pendingMode = RenderProfileMode::Off;
+    EngineConsoleBuiltins::RegisterCaptureCommands(
+        console.Registry(), capture, pendingMode);
+
+    ConsoleResult denied = console.ExecuteTokens(
+        { "render.capture.start" }, { "test" });
+    EXPECT_NE(denied.Status, ConsoleStatus::Ok);
+    EXPECT_FALSE(capture.IsRecording());
+
+    pendingMode = RenderProfileMode::Capture;
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.start", "8" }, { "test" }).Succeeded());
+    EXPECT_TRUE(capture.IsRecording());
+
+    TimingFrameSample timing;
+    timing.RawDtSeconds = 0.008;
+    RenderStats stats;
+    stats.FrameIndex = 42;
+    capture.Append(timing, stats);
+
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.stop" }, { "test" }).Succeeded());
+    EXPECT_FALSE(capture.IsRecording());
+    EXPECT_EQ(capture.Size(), 1u);
+
+    const std::string path = (std::filesystem::temp_directory_path()
+        / "sencha_capture_test.json").string();
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.write", path }, { "test" }).Succeeded());
+
+    std::ifstream file(path);
+    ASSERT_TRUE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    JsonParseError error;
+    const std::optional<JsonValue> parsed = JsonParse(buffer.str(), &error);
+    ASSERT_TRUE(parsed.has_value()) << error.Message;
+    EXPECT_EQ(parsed->Find("frame_count")->AsNumber(), 1.0);
+    std::filesystem::remove(path);
+}
+#endif
 
 TEST(EngineConsoleBuiltins, ConfigAssignmentsSetRegisteredAndQueueUnknownCVars)
 {

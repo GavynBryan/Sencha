@@ -7,6 +7,13 @@
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <profiling/RenderCapture.h>
+
+#include <charconv>
+#include <fstream>
+#endif
+
 #include <algorithm>
 #include <span>
 #include <string_view>
@@ -218,6 +225,143 @@ namespace EngineConsoleBuiltins
             },
         });
     }
+
+    void RegisterProfilingCVars(ConsoleRegistry& registry,
+                                RenderProfileMode& pendingMode)
+    {
+        registry.RegisterCVar({
+            .Name = "render.profile.mode",
+            .Owner = "engine",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{ "off" },
+            .CurrentValue = std::string{ ToString(pendingMode) },
+            .Flags = CVarFlags::Transient,
+            .Help = "Renderer instrumentation: off, counters, gpu, or capture. "
+                    "Applied at the next frame; each mode includes the ones below it.",
+            .Source = { "renderer defaults" },
+            .OnChange = [&pendingMode](const CVarChangeContext& ctx) {
+                RenderProfileMode parsed = pendingMode;
+                if (ParseRenderProfileMode(std::get<std::string>(ctx.NewValue), parsed))
+                    pendingMode = parsed;
+            },
+        });
+    }
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    void RegisterCaptureCommands(ConsoleRegistry& registry,
+                                 RenderCapture& capture,
+                                 const RenderProfileMode& pendingMode)
+    {
+        registry.RegisterCommand({
+            .Name = "render.capture.start",
+            .Owner = "engine",
+            .Usage = "render.capture.start [frames]",
+            .Help = "Begin buffering per-frame render records (requires "
+                    "render.profile.mode capture). Zero or no count runs until "
+                    "stop or the ring capacity.",
+            .Callback = [&capture, &pendingMode](ConsoleExecutionContext&,
+                                                 std::span<const std::string> args) {
+                ConsoleResult result;
+                if (pendingMode < RenderProfileMode::Capture)
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("requires render.profile.mode capture");
+                    return result;
+                }
+                std::size_t frames = 0;
+                if (!args.empty())
+                {
+                    const std::string& text = args.front();
+                    const auto parsed = std::from_chars(
+                        text.data(), text.data() + text.size(), frames);
+                    if (parsed.ec != std::errc{})
+                    {
+                        result.Status = ConsoleStatus::InvalidArguments;
+                        result.Error("frame count must be a non-negative integer");
+                        return result;
+                    }
+                }
+                capture.Start(frames);
+                result.Info(frames == 0
+                    ? std::string("capture recording until stop")
+                    : "capture recording " + std::to_string(frames) + " frames");
+                return result;
+            },
+        });
+
+        registry.RegisterCommand({
+            .Name = "render.capture.stop",
+            .Owner = "engine",
+            .Usage = "render.capture.stop",
+            .Help = "Stop buffering render records.",
+            .Callback = [&capture](ConsoleExecutionContext&,
+                                   std::span<const std::string>) {
+                capture.Stop();
+                ConsoleResult result;
+                result.Info("capture stopped with "
+                            + std::to_string(capture.Size()) + " frames buffered");
+                return result;
+            },
+        });
+
+        registry.RegisterCommand({
+            .Name = "render.capture.write",
+            .Owner = "engine",
+            .Usage = "render.capture.write <path>",
+            .Help = "Serialize the buffered records: CSV when the path ends in "
+                    ".csv, else a schema-versioned JSON envelope with a cvar "
+                    "snapshot.",
+            .Callback = [&capture](ConsoleExecutionContext& ctx,
+                                   std::span<const std::string> args) {
+                ConsoleResult result;
+                if (args.size() != 1)
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("expected exactly one path argument");
+                    return result;
+                }
+                const std::string& path = args.front();
+                const bool csv = path.size() >= 4
+                    && path.compare(path.size() - 4, 4, ".csv") == 0;
+
+                std::string payload;
+                if (csv)
+                {
+                    payload = capture.SerializeCsv();
+                }
+                else
+                {
+                    std::vector<RenderCapture::MetadataPair> cvars;
+                    for (const CVarMetadata* cvar : ctx.Registry.ListCVars())
+                    {
+                        std::string value;
+                        if (const auto* b = std::get_if<bool>(&cvar->CurrentValue))
+                            value = *b ? "true" : "false";
+                        else if (const auto* i = std::get_if<std::int64_t>(&cvar->CurrentValue))
+                            value = std::to_string(*i);
+                        else if (const auto* d = std::get_if<double>(&cvar->CurrentValue))
+                            value = std::to_string(*d);
+                        else if (const auto* s = std::get_if<std::string>(&cvar->CurrentValue))
+                            value = *s;
+                        cvars.emplace_back(cvar->Name, std::move(value));
+                    }
+                    payload = capture.SerializeJson(cvars);
+                }
+
+                std::ofstream file(path, std::ios::binary | std::ios::trunc);
+                if (!file.is_open() || !(file << payload))
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("failed to write '" + path + "'");
+                    return result;
+                }
+                result.Info("wrote " + std::to_string(capture.Size()) + " frames ("
+                            + std::to_string(payload.size()) + " bytes) to " + path);
+                return result;
+            },
+        });
+    }
+#endif
 
     ShadowResidencyBudgets ReadShadowResidencyBudgets(const ConsoleRegistry* registry)
     {

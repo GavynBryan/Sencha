@@ -2,6 +2,7 @@
 
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
+#include <profiling/RenderStats.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -117,6 +118,36 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 #endif
 }
 
+void DefaultRenderPipeline::PublishExtractionStats(
+    RenderStats& stats, const LightExtractionCounts& lightCounts) const
+{
+    stats.LightsVisible = lightCounts.Packed;
+    stats.LightsDroppedAtCap = lightCounts.DroppedAtCap();
+    stats.ShadowCastingLights = static_cast<std::uint32_t>(ShadowRequests.size());
+    stats.CasterDiffEvents = static_cast<std::uint32_t>(CasterEvents.size());
+
+    const SpotShadowFrameStats& shadow = Residency.FrameStats();
+    stats.ShadowSlotsHeld = shadow.HeldRequests;
+    stats.ShadowCacheHits = shadow.CachedSlots;
+    stats.ShadowRequestsDenied = shadow.DeniedRequests;
+
+    for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
+    {
+        const SpotShadowSlotInfo info = Residency.SlotInfo(slot);
+        if (!info.Live || !info.Allocation.IsValid())
+            continue;
+        // D16 tiles: two bytes per texel.
+        stats.ShadowTileBytes += static_cast<std::uint64_t>(info.Allocation.Size)
+                               * info.Allocation.Size * 2u;
+        if (info.Allocation.Size >= 1024)
+            ++stats.AtlasTiles1024;
+        else if (info.Allocation.Size >= 512)
+            ++stats.AtlasTiles512;
+        else
+            ++stats.AtlasTiles256;
+    }
+}
+
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 {
     if (Meshes == nullptr || Materials == nullptr || MaterialSets == nullptr)
@@ -175,7 +206,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     Lights.Reset();
     ApplyRendererCVars(Console, Lights);
-    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests);
+    LightExtractionCounts lightCounts;
+    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
+                           &lightCounts);
     ShadowCasterExtractor.Extract(
         ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
 
@@ -187,6 +220,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     Residency.Update(ShadowRequests, CasterEvents,
                      EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
     Residency.ApplyGrants(Lights);
+
+    if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
+        PublishExtractionStats(*Instrumentation->Stats, lightCounts);
 
     if (Log != nullptr)
     {

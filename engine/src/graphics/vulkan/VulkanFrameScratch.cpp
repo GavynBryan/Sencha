@@ -105,6 +105,8 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, V
 
     const VkDeviceSize globalOffset = static_cast<VkDeviceSize>(CurrentFrame) * BytesPerFrame + alignedCursor;
     Cursor = alignedCursor + size;
+    if (Cursor > HighWater)
+        HighWater = Cursor;
 
     Allocation out;
     out.Buffer = RingBuffer;

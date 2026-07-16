@@ -1,5 +1,7 @@
 #pragma once
 
+#include <profiling/RenderInstrumentation.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -30,6 +32,9 @@ struct TimingFrameSample
     int PresentMode = 0;
     bool SwapchainRecreated = false;
     bool PresentationReset = false;
+    // GPU scope spans collected for this slot's previous submission; all
+    // invalid while render.profile.mode is below Gpu.
+    GpuScopeSpan GpuScopes[kGpuScopeCount] = {};
 };
 
 class TimingHistory

@@ -74,10 +74,18 @@ public:
               Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
     void Teardown();
 
+    // Pass-local totals, maintained unconditionally at run granularity (the
+    // 9.2 cost policy) and copied into RenderStats by the owning feature
+    // when counters are active. Also a consumed test seam.
     struct DrawStats
     {
         uint32_t QueueItems = 0;
         uint32_t DrawCalls = 0;
+        uint32_t Triangles = 0;
+        uint32_t PipelineSwitches = 0;
+        // Push-constant uploads. Equal to DrawCalls until the pass skips
+        // redundant material state; the counter exists to show exactly that.
+        uint32_t MaterialSwitches = 0;
     };
     [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
 

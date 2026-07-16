@@ -50,6 +50,21 @@ if(NOT SENCHA_ENABLE_COOK)
     endforeach()
 endif()
 
+if(NOT SENCHA_ENABLE_RENDER_PROFILING)
+    # The mode enum, RenderInstrumentation (always-null when disabled), the
+    # RenderStats aggregate, and the pass-local counter accumulation stay
+    # compiled in every build; only the instrumentation bodies are removed.
+    foreach(_pattern
+        "[/\\\\]graphics[/\\\\]vulkan[/\\\\]GpuTimestampPool\\."
+        "[/\\\\]graphics[/\\\\]vulkan[/\\\\]VulkanDebugLabels\\."
+        "[/\\\\]profiling[/\\\\]RenderCapture\\."
+        "[/\\\\]debug[/\\\\]RenderStatsPanel\\."
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
 set(SENCHA_ENGINE_GENERATED_HEADERS)
 
 if(SENCHA_ENABLE_VULKAN)
@@ -397,6 +412,10 @@ if(SENCHA_ENABLE_VULKAN)
     if(SENCHA_ENABLE_DEBUG_UI)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
     endif()
+endif()
+
+if(SENCHA_ENABLE_RENDER_PROFILING)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_RENDER_PROFILING)
 endif()
 
 add_library(engine ALIAS sencha_engine)

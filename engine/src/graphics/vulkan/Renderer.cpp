@@ -15,6 +15,13 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
+#include <profiling/RenderInstrumentation.h>
+#include <profiling/RenderStats.h>
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <graphics/vulkan/GpuTimestampPool.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
+#endif
 
 #include <chrono>
 
@@ -147,10 +154,50 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     // any feature draws -- feature code allocates transient UBOs from it.
     Services.Scratch->BeginFrame();
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    GpuTimestampPool* gpuScopes = Services.Instrumentation != nullptr
+        ? Services.Instrumentation->GpuTimestamps
+        : nullptr;
+    if (gpuScopes != nullptr)
+        gpuScopes->BeginFrame(frame.CommandBuffer, frame.FrameIndex);
+#endif
+
     const auto recordStart = RendererClock::now();
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
+                                      ToString(GpuScope::PhaseOffscreen));
+        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
+    }
+#endif
     RecordOffscreenPhase(frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
+        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
+                                      ToString(GpuScope::PhaseMainColor));
+        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
+    }
+#endif
     RecordMainColorPhase(frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
+        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+    }
+#endif
     LastTiming.RecordSeconds = SecondsSince(recordStart);
+
+    if (Services.Instrumentation != nullptr
+        && Services.Instrumentation->Stats != nullptr)
+    {
+        Services.Instrumentation->Stats->ScratchHighWaterBytes =
+            Services.Scratch->GetHighWaterBytes();
+    }
 
     const VulkanFrameStatus end = Frames.EndFrame(frame);
     LastTiming.TotalSeconds = SecondsSince(totalStart);

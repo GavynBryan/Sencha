@@ -201,6 +201,10 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     });
 
     driver.Register(FramePhase::ExtractRenderPacket, [&engine, &config](PhaseContext& ctx) {
+        // Before any extraction or recording reads the bundle, so one frame
+        // sees exactly one profile mode.
+        engine.ApplyPendingRenderProfileMode();
+
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
@@ -235,7 +239,10 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             frames.GetLastTiming(),
             swapchain.GetState(),
             swapchain.GetRecreateCount(),
-            renderResult);
+            renderResult,
+            engine.Instrumentation().GpuTimestamps);
+        // After the render phase, so pass-exit publishes are in the frame.
+        engine.PushRenderStatsFrame();
     });
 
     driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {

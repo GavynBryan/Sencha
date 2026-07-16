@@ -24,6 +24,7 @@ class VulkanDescriptorCache;
 class VulkanFrameScratch;
 class VulkanUploadContextService;
 class VulkanDepthTarget;
+struct RenderInstrumentation;
 
 //=============================================================================
 // Renderer
@@ -83,6 +84,10 @@ struct RendererServices
     VulkanFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
+    // The engine's instrumentation bundle. The pointer is stable for the
+    // renderer's life; the members flip with render.profile.mode, so cache
+    // the bundle and re-read its members per frame, never the members.
+    const RenderInstrumentation* Instrumentation = nullptr;
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to
@@ -194,6 +199,13 @@ public:
 
     // Reset per-swapchain-image tracking after VulkanSwapchainService::Recreate.
     void NotifySwapchainRecreated();
+
+    // Installs the engine's instrumentation bundle. Must run before any
+    // AddFeature so every feature Setup sees it in RendererServices.
+    void SetInstrumentation(const RenderInstrumentation* instrumentation)
+    {
+        Services.Instrumentation = instrumentation;
+    }
 
 private:
     Logger& Log;

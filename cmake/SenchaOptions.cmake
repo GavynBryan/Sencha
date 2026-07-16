@@ -26,6 +26,10 @@ option(SENCHA_ENABLE_COOK
     "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
     ON)
 
+option(SENCHA_ENABLE_RENDER_PROFILING
+    "Build the renderer instrumentation ladder (render.profile.mode counters/gpu/capture: GPU timestamp pools, debug labels, capture export, stats panel). OFF removes those bodies entirely; the pass-local counter accumulation and RenderStats stay compiled as a test seam. OFF in the shipping preset."
+    ON)
+
 option(SENCHA_ENABLE_TSAN
     "Build with ThreadSanitizer (GCC/Clang only). Used to run the test suites against the job system's concurrent core; see docs/ecs/parallelization.md."
     OFF)

@@ -3,6 +3,7 @@
 #include <core/config/ConsoleConfig.h>
 #include <core/config/RuntimeConfig.h>
 #include <core/console/ConsoleTypes.h>
+#include <profiling/RenderInstrumentation.h>
 #include <render/ShadowResidency.h>
 
 #include <functional>
@@ -43,6 +44,23 @@ namespace EngineConsoleBuiltins
     // the registered defaults.
     [[nodiscard]] ShadowResidencyBudgets ReadShadowResidencyBudgets(
         const ConsoleRegistry* registry);
+
+    // render.profile.mode: writes the parsed mode into `pendingMode`; the
+    // engine's frame latch applies it at the top of the next extract phase.
+    // Registered only when render profiling is compiled in.
+    void RegisterProfilingCVars(ConsoleRegistry& registry,
+                                RenderProfileMode& pendingMode);
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // render.capture.start [n] / stop / write <path>. Arming gates on the
+    // PENDING mode so a launch line can set the mode and arm in one breath;
+    // records only append once the latch makes Capture active. Write
+    // serializes whatever is buffered (JSON, or CSV when the path ends in
+    // .csv) with a cvar snapshot.
+    void RegisterCaptureCommands(ConsoleRegistry& registry,
+                                 RenderCapture& capture,
+                                 const RenderProfileMode& pendingMode);
+#endif
 
     ConsoleResult ApplyConfigAssignments(ConsoleService& console,
                                          const EngineConsoleConfig& config);

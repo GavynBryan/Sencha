@@ -1,5 +1,7 @@
 #include <graphics/vulkan/TimingSampler.h>
 
+#include <graphics/vulkan/GpuTimestampPool.h>
+
 namespace
 {
     TimingFrameSample BuildBaseSample(const RuntimeFrameSnapshot& frame,
@@ -34,10 +36,17 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
                                     const VulkanFrameTiming& vulkanTiming,
                                     const SwapchainState& swapchain,
                                     uint64_t swapchainRecreateCount,
-                                    RenderFrameResult renderResult)
+                                    RenderFrameResult renderResult,
+                                    const GpuTimestampPool* gpuTimestamps)
 {
     TimingFrameSample sample =
         BuildBaseSample(frame, swapchain, swapchainRecreateCount);
+    if (gpuTimestamps != nullptr)
+    {
+        const auto& scopes = gpuTimestamps->LastScopes();
+        for (std::uint32_t index = 0; index < kGpuScopeCount; ++index)
+            sample.GpuScopes[index] = scopes[index];
+    }
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
     sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;

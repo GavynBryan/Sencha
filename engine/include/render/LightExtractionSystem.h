@@ -9,6 +9,18 @@
 
 struct Registry;
 
+// Aggregates the extraction already tracks, exposed for the frame counters.
+struct LightExtractionCounts
+{
+    std::uint32_t FrustumCandidates = 0;
+    std::uint32_t Packed = 0;
+
+    [[nodiscard]] std::uint32_t DroppedAtCap() const
+    {
+        return FrustumCandidates - Packed;
+    }
+};
+
 // Gathers visible point and spot lights across the active registry set, ranks
 // them deterministically, and packs the fixed forward-light budget. Every
 // packed spot light that asks for a shadow emits one request, in pack order
@@ -19,5 +31,6 @@ public:
     void Extract(std::span<Registry*> registries,
                  const CameraRenderData& camera,
                  RenderLightSet& lights,
-                 std::vector<SpotShadowRequest>& shadowRequests) const;
+                 std::vector<SpotShadowRequest>& shadowRequests,
+                 LightExtractionCounts* counts = nullptr) const;
 };

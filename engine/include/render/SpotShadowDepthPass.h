@@ -35,6 +35,15 @@ public:
               ShadowResidency* residency);
     void Teardown();
 
+    // Pass-local totals at view/draw granularity, maintained unconditionally
+    // and copied into RenderStats by the owning feature when counters run.
+    struct DrawStats
+    {
+        std::uint32_t ViewsRendered = 0;
+        std::uint32_t CasterDraws = 0;
+    };
+    [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
+
 private:
     [[nodiscard]] bool EnsurePipelines(const RenderLightSet& lights);
     [[nodiscard]] bool BindInstanceStream(const FrameContext& frame,
@@ -56,4 +65,5 @@ private:
     VkPipeline DoubleSidedPipeline = VK_NULL_HANDLE;
     float CachedBiasConstant = -1.0f;
     float CachedBiasSlope = -1.0f;
+    DrawStats LastStats;
 };

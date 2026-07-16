@@ -6,16 +6,21 @@
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 
+class GpuTimestampPool;
+
 class TimingSampler
 {
 public:
+    // `gpuTimestamps` may be null (mode below Gpu, or profiling compiled
+    // out); the sample's scope spans then stay invalid.
     static void PushRenderFrame(TimingHistory& history,
                                 const RuntimeFrameSnapshot& frame,
                                 const RendererFrameTiming& rendererTiming,
                                 const VulkanFrameTiming& vulkanTiming,
                                 const SwapchainState& swapchain,
                                 uint64_t swapchainRecreateCount,
-                                RenderFrameResult renderResult);
+                                RenderFrameResult renderResult,
+                                const GpuTimestampPool* gpuTimestamps = nullptr);
 
     static void PushLifecycleFrame(TimingHistory& history,
                                    const RuntimeFrameSnapshot& frame,

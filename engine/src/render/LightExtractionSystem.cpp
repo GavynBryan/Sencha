@@ -37,7 +37,8 @@ namespace
 void LightExtractionSystem::Extract(std::span<Registry*> registries,
                                     const CameraRenderData& camera,
                                     RenderLightSet& lights,
-                                    std::vector<SpotShadowRequest>& shadowRequests) const
+                                    std::vector<SpotShadowRequest>& shadowRequests,
+                                    LightExtractionCounts* counts) const
 {
     shadowRequests.clear();
     std::vector<LightCandidate> candidates;
@@ -144,5 +145,11 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
             .SamplingParams = candidate.Shadow.SamplingParams,
             .Bounds = candidate.ShadowBounds,
         });
+    }
+
+    if (counts != nullptr)
+    {
+        counts->FrustumCandidates = static_cast<std::uint32_t>(candidates.size());
+        counts->Packed = lights.Count;
     }
 }

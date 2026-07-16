@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <core/logging/LoggingProvider.h>
+#include <profiling/RenderInstrumentation.h>
 #include <render/Camera.h>
 #include <render/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
@@ -44,11 +45,21 @@ public:
     bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
+    // The engine's instrumentation bundle; extraction publishes its frame
+    // counters through it while the mode is Counters or above.
+    void SetInstrumentation(const RenderInstrumentation* instrumentation)
+    {
+        Instrumentation = instrumentation;
+    }
+
     // Marks every cached shadow slot for re-render (the
     // render.shadow.invalidate console command).
     void InvalidateShadows() { Residency.InvalidateAll(); }
 
 private:
+    void PublishExtractionStats(RenderStats& stats,
+                                const LightExtractionCounts& lightCounts) const;
+
     RenderQueue Queue;
     RenderLightSet Lights;
     ShadowCasterSet ShadowCasters;
@@ -62,6 +73,7 @@ private:
     MaterialSetCache* MaterialSets = nullptr;
     Logger* Log = nullptr;
     const ConsoleRegistry* Console = nullptr;
+    const RenderInstrumentation* Instrumentation = nullptr;
     bool LightCapWarned = false;
     VulkanSwapchainService* Swapchain = nullptr;
 

@@ -36,5 +36,6 @@ private:
     const CameraRenderData* Camera = nullptr;
     const RenderLightSet* Lights = nullptr;
     std::shared_ptr<LightBindings> Bindings;
+    const RenderInstrumentation* Instrumentation = nullptr;
     MeshForwardPass Pass;
 };

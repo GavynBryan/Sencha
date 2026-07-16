@@ -49,6 +49,13 @@ public:
 		return *raw;
 	}
 
+	IDebugPanel& AddPanel(std::unique_ptr<IDebugPanel> panel)
+	{
+		auto* raw = panel.get();
+		Panels.push_back(std::move(panel));
+		return *raw;
+	}
+
 	[[nodiscard]] bool IsValid() const { return Valid; }
 
 private:

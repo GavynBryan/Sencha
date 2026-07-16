@@ -3,6 +3,7 @@
 #include <graphics/vulkan/VulkanAllocatorService.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
 
@@ -174,6 +175,9 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     if (info.DebugName != nullptr)
     {
         vmaSetAllocationName(Allocator, allocation, info.DebugName);
+        VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_IMAGE,
+                                      reinterpret_cast<std::uint64_t>(image),
+                                      info.DebugName);
     }
 
     uint32_t index;

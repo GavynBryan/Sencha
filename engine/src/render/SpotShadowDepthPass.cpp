@@ -123,6 +123,7 @@ void SpotShadowDepthPass::Draw(const FrameContext& frame,
                                StaticMeshCache& meshes,
                                ShadowResidency* residency)
 {
+    LastStats = DrawStats{};
     if (Bindings == nullptr || !Bindings->HasAtlas() || views.empty())
         return;
 
@@ -181,6 +182,7 @@ void SpotShadowDepthPass::Draw(const FrameContext& frame,
         rendering.layerCount = 1;
         rendering.pDepthAttachment = &depthAttachment;
         vkCmdBeginRendering(frame.Cmd, &rendering);
+        ++LastStats.ViewsRendered;
 
         if (!canDrawCasters)
         {
@@ -243,6 +245,7 @@ void SpotShadowDepthPass::Draw(const FrameContext& frame,
             const StaticMeshSection& section = mesh->Sections[caster.SectionIndex];
             vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1,
                              section.IndexOffset, 0, casterIndex);
+            ++LastStats.CasterDraws;
         }
         vkCmdEndRendering(frame.Cmd);
     }

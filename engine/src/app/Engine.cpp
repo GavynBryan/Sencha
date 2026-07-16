@@ -17,12 +17,19 @@
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <graphics/vulkan/GpuTimestampPool.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
+#endif
 #endif
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/ImGuiDebugOverlay.h>
 #include <debug/TimingPanel.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <debug/RenderStatsPanel.h>
+#endif
 #endif
 
 #include <platform/PlatformServices.h>
@@ -62,6 +69,8 @@ bool Engine::Initialize()
         &LoggingState, &ConsoleState->Registry());
     EngineConsoleBuiltins::RegisterRenderCommands(
         ConsoleState->Registry(), *EngineSystems.Get<DefaultRenderPipeline>());
+    EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
+        &InstrumentationBundle);
 
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
     EngineSystems.Register<AudioSystem>(AudioState.get());
@@ -129,6 +138,18 @@ bool Engine::Initialize()
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
     }
+    // Before any feature is added, so every feature Setup sees the bundle.
+    GraphicsState->MainRenderer.SetInstrumentation(&InstrumentationBundle);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // A zero timestampPeriod means the device cannot timestamp; the pool
+    // stays permanently inert and Gpu mode degrades to Counters behavior.
+    GpuTimestampsPool = std::make_unique<GpuTimestampPool>();
+    GpuTimestampsPool->Configure(
+        GraphicsState->Device.GetDevice(),
+        GraphicsState->PhysicalDevice.GetProperties().limits.timestampPeriod,
+        GraphicsState->Frames.GetFramesInFlight());
+    VulkanDebugLabels::Load(GraphicsState->Instance.GetInstance());
+#endif
 
     RuntimeLoop.SetSurfaceExtent(window->GetExtent());
     FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
@@ -153,8 +174,24 @@ void Engine::Shutdown()
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The renderer owns the feature; only the borrowed view is cleared here.
     DebugOverlayFeature = nullptr;
+    PendingDebugPanels.clear();
 #endif
 #ifdef SENCHA_ENABLE_VULKAN
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // Query pools die before the device they were created from. ~Renderer
+    // has already waited for device idle by the time GraphicsState resets,
+    // but the pools are engine members, so their teardown is explicit.
+    if (GpuTimestampsPool != nullptr && GraphicsState != nullptr
+        && GraphicsState->Device.GetDevice() != VK_NULL_HANDLE)
+    {
+        vkDeviceWaitIdle(GraphicsState->Device.GetDevice());
+        GpuTimestampsPool->Destroy();
+    }
+    GpuTimestampsPool.reset();
+    InstrumentationBundle = RenderInstrumentation{};
+    ActiveProfileMode = RenderProfileMode::Off;
+    PendingProfileMode = RenderProfileMode::Off;
+#endif
     GraphicsState.reset();
 #endif
     PlatformState.reset();
@@ -348,6 +385,47 @@ int Engine::Run(Game& game)
     return 0;
 }
 
+void Engine::ApplyPendingRenderProfileMode()
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ActiveProfileMode = PendingProfileMode;
+    const bool counters = ActiveProfileMode >= RenderProfileMode::Counters;
+    InstrumentationBundle.Stats = counters ? &FrameRenderStats : nullptr;
+    InstrumentationBundle.StatsHistory = counters ? &RenderStatsRing : nullptr;
+#ifdef SENCHA_ENABLE_VULKAN
+    InstrumentationBundle.GpuTimestamps =
+        ActiveProfileMode >= RenderProfileMode::Gpu && GpuTimestampsPool != nullptr
+            ? GpuTimestampsPool.get()
+            : nullptr;
+#endif
+    InstrumentationBundle.Capture =
+        ActiveProfileMode >= RenderProfileMode::Capture ? &RenderCaptureStore : nullptr;
+    if (counters)
+    {
+        FrameRenderStats = RenderStats{};
+        FrameRenderStats.FrameIndex = ++RenderStatsFrameIndex;
+    }
+#endif
+}
+
+void Engine::PushRenderStatsFrame()
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (InstrumentationBundle.Stats != nullptr
+        && InstrumentationBundle.StatsHistory != nullptr)
+    {
+        InstrumentationBundle.StatsHistory->Push(FrameRenderStats);
+    }
+    if (InstrumentationBundle.Capture != nullptr
+        && InstrumentationBundle.Capture->IsRecording())
+    {
+        // The timing sample for this frame was pushed just before this call.
+        if (const TimingFrameSample* timing = TimingData.Latest())
+            InstrumentationBundle.Capture->Append(*timing, FrameRenderStats);
+    }
+#endif
+}
+
 void Engine::CreateDebugOverlay()
 {
 #if defined(SENCHA_ENABLE_DEBUG_UI) && defined(SENCHA_ENABLE_VULKAN)
@@ -365,10 +443,28 @@ void Engine::CreateDebugOverlay()
         *DebugState, *window, GraphicsState->Instance, GraphicsState->Frames);
     overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
     overlay->AddPanel<TimingPanel>(TimingData);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    overlay->AddPanel<RenderStatsPanel>(ActiveProfileMode, RenderStatsRing);
+#endif
+    for (auto& panel : PendingDebugPanels)
+        overlay->AddPanel(std::move(panel));
+    PendingDebugPanels.clear();
     DebugOverlayFeature = static_cast<ImGuiDebugOverlay*>(
         GraphicsState->MainRenderer.AddFeature(std::move(overlay)));
 #endif
 }
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+void Engine::AddDebugPanel(std::unique_ptr<IDebugPanel> panel)
+{
+    if (panel == nullptr)
+        return;
+    if (DebugOverlayFeature != nullptr)
+        DebugOverlayFeature->AddPanel(std::move(panel));
+    else
+        PendingDebugPanels.push_back(std::move(panel));
+}
+#endif
 
 void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug)
 {
@@ -377,6 +473,11 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
     EngineConsoleBuiltins::RegisterFramePacingCVars(
         registry, Configuration.Runtime, FrameDriverInstance);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, PendingProfileMode);
+    EngineConsoleBuiltins::RegisterCaptureCommands(
+        registry, RenderCaptureStore, PendingProfileMode);
+#endif
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }

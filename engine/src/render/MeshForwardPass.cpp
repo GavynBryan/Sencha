@@ -1,5 +1,6 @@
 #include <render/MeshForwardPass.h>
 
+#include <graphics/vulkan/VulkanDebugLabels.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -129,6 +130,12 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
     base.ColorFormats = { frame.TargetFormat };
     base.DepthFormat = frame.DepthFormat;
 
+    static constexpr const char* kPipelineNames[4] = {
+        "Forward/StandardLitBack",
+        "Forward/StandardLitDoubleSided",
+        "Forward/UnlitBack",
+        "Forward/UnlitDoubleSided",
+    };
     for (uint32_t index = 0; index < OpaquePipelines.size(); ++index)
     {
         GraphicsPipelineDesc desc = base;
@@ -141,6 +148,10 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
         OpaquePipelines[index] = Pipelines->GetGraphicsPipeline(desc);
         if (OpaquePipelines[index] == VK_NULL_HANDLE)
             return false;
+        VulkanDebugLabels::NameObject(
+            Device, VK_OBJECT_TYPE_PIPELINE,
+            reinterpret_cast<std::uint64_t>(OpaquePipelines[index]),
+            kPipelineNames[index]);
     }
 
     CachedColorFormat = frame.TargetFormat;
@@ -257,6 +268,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         {
             vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             lastPipeline = pipeline;
+            ++LastStats.PipelineSwitches;
         }
 
         const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
@@ -294,9 +306,11 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
+        ++LastStats.MaterialSwitches;
         vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count,
                          section.IndexOffset, 0, run.First);
         ++LastStats.DrawCalls;
+        LastStats.Triangles += section.IndexCount / 3u * run.Count;
     }
 }
 
@@ -310,7 +324,6 @@ void MeshForwardPass::Draw(const FrameContext& frame,
 {
     LastStats = DrawStats{
         .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()),
-        .DrawCalls = 0,
     };
 
     if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
