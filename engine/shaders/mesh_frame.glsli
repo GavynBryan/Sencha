@@ -1,5 +1,6 @@
-// Keep in sync with kMaxForwardLights in engine/include/render/RenderLight.h.
+// Keep these caps in sync with engine/include/render/RenderLight.h.
 const uint MAX_LIGHTS = 64u;
+const uint MAX_SPOT_SHADOWS = 8u;
 
 struct GpuLight
 {
@@ -12,6 +13,13 @@ struct GpuLight
     float ConeOffset;
 };
 
+struct GpuSpotShadow
+{
+    mat4 ViewProjection;
+    vec4 AtlasScaleBias;
+    vec4 SamplingParams; // world texel size, softness in texels, bias scale, unused
+};
+
 layout(set = 0, binding = 0) uniform MeshFrame
 {
     mat4 ViewProjection;
@@ -21,7 +29,12 @@ layout(set = 0, binding = 0) uniform MeshFrame
     vec4 StyleParams; // diffuse wrap, minimum ambient, exposure, tonemap knee
     uint LightCount;
     uint TonemapEnabled;
-    uint Pad0;
+    float ShadowDarkness;
     uint Pad1;
     GpuLight Lights[MAX_LIGHTS];
+    uint SpotShadowCount;
+    uint ShadowPad0;
+    uint ShadowPad1;
+    uint ShadowPad2;
+    GpuSpotShadow SpotShadows[MAX_SPOT_SHADOWS];
 } frame;

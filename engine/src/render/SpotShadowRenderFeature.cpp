@@ -5,10 +5,10 @@
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <math/geometry/3d/Frustum.h>
-#include <render/MeshForwardPass.h>
-#include <shaders/kMeshForwardFragSpv.h>
-#include <shaders/kMeshForwardVertSpv.h>
+#include <shaders/kShadowDepthFragSpv.h>
+#include <shaders/kShadowDepthVertSpv.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 
@@ -43,22 +43,25 @@ void SpotShadowRenderFeature::Setup(const RendererServices& services)
     }
 
     VertexShader = Shaders->CreateModuleFromSpirv(
-        kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Spot shadow vertex");
+        kShadowDepthVertSpv, kShadowDepthVertSpvWordCount, "Spot shadow vertex");
     FragmentShader = Shaders->CreateModuleFromSpirv(
-        kMeshForwardFragSpv, kMeshForwardFragSpvWordCount, "Spot shadow fragment");
+        kShadowDepthFragSpv, kShadowDepthFragSpvWordCount, "Spot shadow fragment");
 
-    VkPushConstantRange push{};
-    push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    push.offset = 0;
-    push.size = sizeof(MeshPushConstants);
-    PipelineLayout = Descriptors->GetPipelineLayout({ push });
-    Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
+    PipelineLayout = Descriptors->GetDefaultPipelineLayout();
+    Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(Mat4));
 }
 
 bool SpotShadowRenderFeature::EnsurePipelines()
 {
-    if (BackPipeline != VK_NULL_HANDLE && DoubleSidedPipeline != VK_NULL_HANDLE)
+    const float biasConstant = std::max(Lights.ShadowBiasConstant, 0.0f);
+    const float biasSlope = std::max(Lights.ShadowBiasSlope, 0.0f);
+    if (BackPipeline != VK_NULL_HANDLE
+        && DoubleSidedPipeline != VK_NULL_HANDLE
+        && CachedBiasConstant == biasConstant
+        && CachedBiasSlope == biasSlope)
+    {
         return true;
+    }
     if (!Resources->IsValid() || PipelineLayout == VK_NULL_HANDLE)
         return false;
 
@@ -66,37 +69,38 @@ bool SpotShadowRenderFeature::EnsurePipelines()
     base.VertexShader = VertexShader;
     base.FragmentShader = FragmentShader;
     base.Layout = PipelineLayout;
-    base.FragmentSpecializationConstants = {
-        ShaderSpecializationConstant{ .Id = 0, .Value = 1u }
-    };
     base.VertexBindings = {
         { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
         { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
     };
     base.VertexAttributes = {
         { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
-        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
         { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
         { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
-        { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = true;
     base.DepthWrite = true;
     base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
     base.DepthBiasEnable = true;
-    base.DepthBiasConstant = 1.25f;
-    base.DepthBiasSlope = 1.75f;
+    base.DepthBiasConstant = biasConstant;
+    base.DepthBiasSlope = biasSlope;
     base.DepthFormat = VK_FORMAT_D16_UNORM;
 
     base.CullMode = VK_CULL_MODE_BACK_BIT;
-    BackPipeline = PipelineCache->GetGraphicsPipeline(base);
+    const VkPipeline backPipeline = PipelineCache->GetGraphicsPipeline(base);
     base.CullMode = VK_CULL_MODE_NONE;
-    DoubleSidedPipeline = PipelineCache->GetGraphicsPipeline(base);
-    return BackPipeline != VK_NULL_HANDLE && DoubleSidedPipeline != VK_NULL_HANDLE;
+    const VkPipeline doubleSidedPipeline = PipelineCache->GetGraphicsPipeline(base);
+    if (backPipeline == VK_NULL_HANDLE || doubleSidedPipeline == VK_NULL_HANDLE)
+        return false;
+
+    BackPipeline = backPipeline;
+    DoubleSidedPipeline = doubleSidedPipeline;
+    CachedBiasConstant = biasConstant;
+    CachedBiasSlope = biasSlope;
+    return true;
 }
 
 bool SpotShadowRenderFeature::BindInstanceStream(const FrameContext& frame)
@@ -116,12 +120,11 @@ bool SpotShadowRenderFeature::BindInstanceStream(const FrameContext& frame)
 
 VkDeviceSize SpotShadowRenderFeature::UploadView(const SpotShadowView& shadow)
 {
-    MeshFrameUniforms uniforms{};
-    uniforms.ViewProjection = shadow.ViewProjection.Transposed();
-    auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
+    const Mat4 viewProjection = shadow.ViewProjection.Transposed();
+    auto allocation = Scratch->AllocateUniform(sizeof(viewProjection));
     if (!allocation.IsValid())
         return VK_WHOLE_SIZE;
-    std::memcpy(allocation.Mapped, &uniforms, sizeof(uniforms));
+    std::memcpy(allocation.Mapped, &viewProjection, sizeof(viewProjection));
     return allocation.Offset;
 }
 
@@ -131,17 +134,16 @@ void SpotShadowRenderFeature::BindView(const FrameContext& frame, VkDeviceSize u
     const VkDescriptorSet frameSet = Descriptors->GetFrameSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             0, 1, &frameSet, 1, &dynamicOffset);
-    const VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
-    vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
-                            1, 1, &bindlessSet, 0, nullptr);
 }
 
 void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
 {
-    if (Lights.SpotShadowCount == 0 || Casters.Items.empty())
+    if (Lights.SpotShadowCount == 0 || !Resources->IsValid())
         return;
-    if (!EnsurePipelines() || !BindInstanceStream(frame))
-        return;
+
+    const bool canDrawCasters = !Casters.Items.empty()
+        && EnsurePipelines()
+        && BindInstanceStream(frame);
 
     Resources->TransitionForWrite(frame.Cmd);
 
@@ -153,17 +155,6 @@ void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
 
-    VkRenderingInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea.extent = { kSpotShadowAtlasExtent, kSpotShadowAtlasExtent };
-    rendering.layerCount = 1;
-    rendering.pDepthAttachment = &depthAttachment;
-    vkCmdBeginRendering(frame.Cmd, &rendering);
-
-    MeshPushConstants push{};
-    push.BaseColor = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
-    push.EmissiveFactor = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
-
     VkPipeline lastPipeline = VK_NULL_HANDLE;
     VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
@@ -173,13 +164,37 @@ void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
          ++shadowIndex)
     {
         const SpotShadowView& shadow = Lights.SpotShadows[shadowIndex];
+        const std::uint32_t column = shadowIndex % kSpotShadowAtlasColumns;
+        const std::uint32_t row = shadowIndex / kSpotShadowAtlasColumns;
+
+        VkRenderingInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering.renderArea.offset = {
+            static_cast<std::int32_t>(column * kSpotShadowTileExtent),
+            static_cast<std::int32_t>(row * kSpotShadowTileExtent),
+        };
+        rendering.renderArea.extent = {
+            kSpotShadowTileExtent,
+            kSpotShadowTileExtent,
+        };
+        rendering.layerCount = 1;
+        rendering.pDepthAttachment = &depthAttachment;
+        vkCmdBeginRendering(frame.Cmd, &rendering);
+
+        if (!canDrawCasters)
+        {
+            vkCmdEndRendering(frame.Cmd);
+            continue;
+        }
+
         const VkDeviceSize uniformOffset = UploadView(shadow);
         if (uniformOffset == VK_WHOLE_SIZE)
+        {
+            vkCmdEndRendering(frame.Cmd);
             continue;
+        }
         BindView(frame, uniformOffset);
 
-        const std::uint32_t column = shadowIndex % 4u;
-        const std::uint32_t row = shadowIndex / 4u;
         VkViewport viewport{};
         viewport.x = static_cast<float>(
             column * kSpotShadowTileExtent + kSpotShadowGuardTexels);
@@ -235,16 +250,13 @@ void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
                 lastIndexBuffer = indexBuffer;
             }
 
-            vkCmdPushConstants(frame.Cmd, PipelineLayout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(push), &push);
             const StaticMeshSection& section = mesh->Sections[caster.SectionIndex];
             vkCmdDrawIndexed(frame.Cmd, section.IndexCount, 1,
                              section.IndexOffset, 0, casterIndex);
         }
+        vkCmdEndRendering(frame.Cmd);
     }
 
-    vkCmdEndRendering(frame.Cmd);
     Resources->TransitionForRead(frame.Cmd);
 }
 
@@ -259,6 +271,8 @@ void SpotShadowRenderFeature::Teardown()
     FragmentShader = {};
     BackPipeline = VK_NULL_HANDLE;
     DoubleSidedPipeline = VK_NULL_HANDLE;
+    CachedBiasConstant = -1.0f;
+    CachedBiasSlope = -1.0f;
     PipelineLayout = VK_NULL_HANDLE;
     Resources->Teardown();
 }

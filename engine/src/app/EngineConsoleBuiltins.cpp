@@ -106,6 +106,15 @@ namespace EngineConsoleBuiltins
         registerRenderDouble("render.tonemap.knee", 0.8,
                              "Output shoulder knee. Values below the knee remain unchanged.",
                              0.0, 0.999);
+        registerRenderDouble("render.shadow.darkness", 1.0,
+                             "Global shadow attenuation. One preserves full shadow darkness.",
+                             0.0, 1.0);
+        registerRenderDouble("render.shadow.softness", 1.0,
+                             "Global multiplier for spot shadow filter width.", 0.0);
+        registerRenderDouble("render.shadow.bias_const", 4.0,
+                             "Constant depth bias for spot shadow caster rendering.", 0.0);
+        registerRenderDouble("render.shadow.bias_slope", 2.0,
+                             "Slope-scaled depth bias for spot shadow caster rendering.", 0.0);
 
         registry.RegisterCVar({
             .Name = "render.tonemap",

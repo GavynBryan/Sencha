@@ -11,6 +11,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -185,6 +186,115 @@ TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeTieBreaks)
     EXPECT_FLOAT_EQ(reverse.Lights[0].ColorIntensity.X, 1.0f);
     EXPECT_EQ(forward.Lights[0].ColorIntensity, reverse.Lights[0].ColorIntensity);
     EXPECT_EQ(forward.Lights[1].ColorIntensity, reverse.Lights[1].ColorIntensity);
+}
+
+TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeSpotShadowGrants)
+{
+    Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
+    Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
+
+    SpotLightComponent blue{};
+    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
+    blue.CastShadows = true;
+    MakeSpot(zoneTwo, Vec<3>(0.0f, 0.0f, -2.0f), blue);
+
+    SpotLightComponent red{};
+    red.Color = Vec<3>(1.0f, 0.0f, 0.0f);
+    red.CastShadows = true;
+    MakeSpot(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
+
+    RenderLightSet forward;
+    std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
+    Extract(forwardOrder, forward);
+
+    RenderLightSet reverse;
+    std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
+    Extract(reverseOrder, reverse);
+
+    ASSERT_EQ(forward.SpotShadowCount, 2u);
+    ASSERT_EQ(reverse.SpotShadowCount, 2u);
+    for (std::uint32_t index = 0; index < 2u; ++index)
+    {
+        EXPECT_EQ(forward.Lights[index].ShadowIndex, index);
+        EXPECT_EQ(reverse.Lights[index].ShadowIndex, index);
+        EXPECT_EQ(forward.SpotShadows[index].AtlasScaleBias,
+                  reverse.SpotShadows[index].AtlasScaleBias);
+        EXPECT_EQ(forward.SpotShadows[index].LightIndex,
+                  reverse.SpotShadows[index].LightIndex);
+    }
+}
+
+TEST(LightExtraction, GrantsAtMostTheFixedSpotShadowBudget)
+{
+    Registry registry = MakeLightRegistry(RegistryId::Global());
+    constexpr std::uint32_t candidateCount = kMaxSpotShadows + 3u;
+    for (std::uint32_t index = 0; index < candidateCount; ++index)
+    {
+        SpotLightComponent light{};
+        light.CastShadows = true;
+        MakeSpot(registry, Vec<3>(0.0f, 0.0f, -2.0f), light);
+    }
+
+    RenderLightSet lights;
+    std::vector<Registry*> registries{ &registry };
+    Extract(registries, lights);
+
+    ASSERT_EQ(lights.Count, candidateCount);
+    ASSERT_EQ(lights.SpotShadowCount, kMaxSpotShadows);
+    for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
+    {
+        EXPECT_EQ(lights.Lights[index].ShadowIndex, index);
+        EXPECT_EQ(lights.SpotShadows[index].LightIndex, index);
+    }
+    for (std::uint32_t index = kMaxSpotShadows; index < candidateCount; ++index)
+        EXPECT_EQ(lights.Lights[index].ShadowIndex, UINT32_MAX);
+}
+
+TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
+{
+    Registry registry = MakeLightRegistry(RegistryId::Global());
+    SpotLightComponent spot{};
+    spot.Range = 20.0f;
+    spot.OuterAngleDegrees = 45.0f;
+    spot.CastShadows = true;
+    spot.ShadowSoftness = 3.0f;
+    spot.ShadowBiasScale = 1.75f;
+    MakeSpot(registry, Vec<3>(0.0f, 0.0f, -2.0f), spot);
+
+    RenderLightSet lights;
+    lights.ShadowSoftness = 2.0f;
+    std::vector<Registry*> registries{ &registry };
+    Extract(registries, lights);
+
+    ASSERT_EQ(lights.SpotShadowCount, 1u);
+    const Vec4& params = lights.SpotShadows[0].SamplingParams;
+    EXPECT_NEAR(params.X, 40.0f / static_cast<float>(kSpotShadowInnerExtent), 1.0e-6f);
+    EXPECT_FLOAT_EQ(params.Y, kSpotShadowSoftnessMaxTexels);
+    EXPECT_FLOAT_EQ(params.Z, 1.75f);
+    EXPECT_FLOAT_EQ(params.W, 0.0f);
+}
+
+TEST(SpotShadowAtlas, InsetsFixedSlotsAndContainsFilterReach)
+{
+    const Vec4 first = SpotShadowAtlasScaleBias(0u);
+    const Vec4 lastGranted = SpotShadowAtlasScaleBias(kMaxSpotShadows - 1u);
+    const float atlas = static_cast<float>(kSpotShadowAtlasExtent);
+
+    EXPECT_FLOAT_EQ(first.X, static_cast<float>(kSpotShadowInnerExtent) / atlas);
+    EXPECT_FLOAT_EQ(first.Y, static_cast<float>(kSpotShadowInnerExtent) / atlas);
+    EXPECT_FLOAT_EQ(first.Z, static_cast<float>(kSpotShadowGuardTexels) / atlas);
+    EXPECT_FLOAT_EQ(first.W, static_cast<float>(kSpotShadowGuardTexels) / atlas);
+    EXPECT_FLOAT_EQ(lastGranted.Z,
+                    static_cast<float>(3u * kSpotShadowTileExtent
+                        + kSpotShadowGuardTexels) / atlas);
+    EXPECT_FLOAT_EQ(lastGranted.W,
+                    static_cast<float>(kSpotShadowTileExtent
+                        + kSpotShadowGuardTexels) / atlas);
+
+    const auto derivedReach = static_cast<std::uint32_t>(
+        std::ceil(1.5f * kSpotShadowSoftnessMaxTexels)) + 1u;
+    EXPECT_EQ(kSpotShadowFilterReachTexels, derivedReach);
+    EXPECT_LT(kSpotShadowFilterReachTexels, kSpotShadowGuardTexels);
 }
 
 TEST(RenderLightSet, AddDropsBeyondCapAndResetClearsCount)

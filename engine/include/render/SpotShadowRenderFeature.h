@@ -44,4 +44,6 @@ private:
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline BackPipeline = VK_NULL_HANDLE;
     VkPipeline DoubleSidedPipeline = VK_NULL_HANDLE;
+    float CachedBiasConstant = -1.0f;
+    float CachedBiasSlope = -1.0f;
 };

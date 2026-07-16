@@ -18,7 +18,7 @@ struct GpuSpotShadow
 {
     Mat4 ViewProjection;
     Vec4 AtlasScaleBias;
-    Vec4 BiasSoftness;
+    Vec4 SamplingParams;
 };
 
 struct MeshFrameUniforms
@@ -30,7 +30,7 @@ struct MeshFrameUniforms
     Vec4 StyleParams;
     std::uint32_t LightCount = 0;
     std::uint32_t TonemapEnabled = 1;
-    std::uint32_t Pad0 = 0;
+    float ShadowDarkness = 1.0f;
     std::uint32_t Pad1 = 0;
     GpuLight Lights[kMaxForwardLights];
     std::uint32_t SpotShadowCount = 0;
@@ -52,6 +52,10 @@ struct MeshPushConstants
     std::uint32_t NormalTextureIndex = UINT32_MAX;
     std::uint32_t OrmTextureIndex = UINT32_MAX;
     std::uint32_t EmissiveTextureIndex = UINT32_MAX;
+    std::uint32_t ReceiveShadows = 1;
+    std::uint32_t Pad0 = 0;
+    std::uint32_t Pad1 = 0;
+    std::uint32_t Pad2 = 0;
 };
 
 class MeshForwardPass

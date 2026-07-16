@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "mesh_frame.glsli"
+#include "shadow_sampling.glsli"
 
 layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
 
@@ -23,6 +24,10 @@ layout(push_constant) uniform MeshPush
     uint NormalTextureIndex;
     uint OrmTextureIndex;
     uint EmissiveTextureIndex;
+    uint ReceiveShadows;
+    uint Pad0;
+    uint Pad1;
+    uint Pad2;
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
@@ -104,6 +109,7 @@ void main()
     }
 
     vec3 orm = SampleOrm();
+    vec3 geometricNormal = normalize(inWorldNormal);
     vec3 normal = ResolveWorldNormal();
     vec3 viewDirection = normalize(frame.ViewPositionTime.xyz - inWorldPos);
 
@@ -143,7 +149,16 @@ void main()
         float attenuation = coneAttenuation
                           * (window * window)
                           / (distanceToLight * distanceToLight + 1e-4);
+        float shadowVisibility = 1.0;
+        if (pushData.ReceiveShadows != 0u && light.Type == 1u)
+        {
+            float filteredVisibility = SampleSpotShadow(
+                light.ShadowIndex, inWorldPos, geometricNormal);
+            shadowVisibility = mix(
+                1.0, filteredVisibility, clamp(frame.ShadowDarkness, 0.0, 1.0));
+        }
         vec3 radiance = light.ColorIntensity.rgb * (light.ColorIntensity.w * attenuation);
+        radiance *= shadowVisibility;
 
         float diffuse = clamp((dot(normal, lightDirection) + diffuseWrap)
                               / (1.0 + diffuseWrap), 0.0, 1.0);

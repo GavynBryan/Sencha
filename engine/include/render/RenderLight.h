@@ -32,18 +32,41 @@ struct GpuLight
 static_assert(sizeof(GpuLight) == 64, "GpuLight must match the std140 light record");
 
 inline constexpr std::uint32_t kMaxForwardLights = 64;
-inline constexpr std::uint32_t kMaxSpotShadows = 16;
+inline constexpr std::uint32_t kMaxSpotShadows = 8;
 inline constexpr std::uint32_t kSpotShadowAtlasExtent = 2048;
 inline constexpr std::uint32_t kSpotShadowTileExtent = 512;
+inline constexpr std::uint32_t kSpotShadowAtlasColumns =
+    kSpotShadowAtlasExtent / kSpotShadowTileExtent;
 inline constexpr std::uint32_t kSpotShadowGuardTexels = 8;
 inline constexpr std::uint32_t kSpotShadowInnerExtent =
     kSpotShadowTileExtent - 2u * kSpotShadowGuardTexels;
+inline constexpr float kSpotShadowSoftnessMinTexels = 0.5f;
+inline constexpr float kSpotShadowSoftnessMaxTexels = 4.0f;
+// The outer tent tap reaches 1.5 * 4 texels. Linear comparison sampling adds
+// one texel of footprint, so the guard must exceed seven texels.
+inline constexpr std::uint32_t kSpotShadowFilterReachTexels = 7;
+static_assert(kSpotShadowFilterReachTexels < kSpotShadowGuardTexels);
+static_assert(kSpotShadowAtlasExtent % kSpotShadowTileExtent == 0);
+static_assert(kMaxSpotShadows <= kSpotShadowAtlasColumns * kSpotShadowAtlasColumns);
+
+[[nodiscard]] inline Vec4 SpotShadowAtlasScaleBias(std::uint32_t slot)
+{
+    constexpr float atlas = static_cast<float>(kSpotShadowAtlasExtent);
+    const std::uint32_t column = slot % kSpotShadowAtlasColumns;
+    const std::uint32_t row = slot / kSpotShadowAtlasColumns;
+    const float scale = static_cast<float>(kSpotShadowInnerExtent) / atlas;
+    const float biasX = static_cast<float>(
+        column * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
+    const float biasY = static_cast<float>(
+        row * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
+    return Vec4(scale, scale, biasX, biasY);
+}
 
 struct SpotShadowView
 {
     Mat4 ViewProjection = Mat4::Identity();
     Vec4 AtlasScaleBias;
-    Vec4 BiasSoftness;
+    Vec4 SamplingParams;
     std::uint32_t LightIndex = UINT32_MAX;
 };
 
@@ -96,6 +119,10 @@ struct RenderLightSet
     float Exposure = 1.0f;
     float TonemapKnee = 0.8f;
     bool TonemapEnabled = true;
+    float ShadowDarkness = 1.0f;
+    float ShadowSoftness = 1.0f;
+    float ShadowBiasConstant = 4.0f;
+    float ShadowBiasSlope = 2.0f;
 
     std::uint32_t Count = 0;
     GpuLight Lights[kMaxForwardLights];

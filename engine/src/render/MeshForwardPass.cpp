@@ -22,7 +22,8 @@ static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 48);
 static_assert(offsetof(MeshPushConstants, NormalTextureIndex) == 52);
 static_assert(offsetof(MeshPushConstants, OrmTextureIndex) == 56);
 static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
-static_assert(sizeof(MeshPushConstants) == 64);
+static_assert(offsetof(MeshPushConstants, ReceiveShadows) == 64);
+static_assert(sizeof(MeshPushConstants) == 80);
 
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
 static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
@@ -31,10 +32,15 @@ static_assert(offsetof(MeshFrameUniforms, AmbientGround) == 96);
 static_assert(offsetof(MeshFrameUniforms, StyleParams) == 112);
 static_assert(offsetof(MeshFrameUniforms, LightCount) == 128);
 static_assert(offsetof(MeshFrameUniforms, TonemapEnabled) == 132);
+static_assert(offsetof(MeshFrameUniforms, ShadowDarkness) == 136);
 static_assert(offsetof(MeshFrameUniforms, Lights) == 144);
 static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
 static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
 static_assert(sizeof(GpuSpotShadow) == 96);
+static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
+static_assert(offsetof(GpuSpotShadow, AtlasScaleBias) == 64);
+static_assert(offsetof(GpuSpotShadow, SamplingParams) == 80);
+static_assert(sizeof(MeshFrameUniforms) == 5024);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -148,6 +154,7 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     uniforms.StyleParams = Vec4(lights.DiffuseWrap, lights.MinAmbient,
                                 lights.Exposure, lights.TonemapKnee);
     uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
+    uniforms.ShadowDarkness = lights.ShadowDarkness;
 
     const std::uint32_t lightCount =
         lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
@@ -165,8 +172,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
             lights.SpotShadows[index].ViewProjection.Transposed();
         uniforms.SpotShadows[index].AtlasScaleBias =
             lights.SpotShadows[index].AtlasScaleBias;
-        uniforms.SpotShadows[index].BiasSoftness =
-            lights.SpotShadows[index].BiasSoftness;
+        uniforms.SpotShadows[index].SamplingParams =
+            lights.SpotShadows[index].SamplingParams;
     }
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
@@ -266,6 +273,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.NormalTextureIndex = material->NormalTextureIndex;
         push.OrmTextureIndex = material->OrmTextureIndex;
         push.EmissiveTextureIndex = material->EmissiveTextureIndex;
+        push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
 
         if (vertexBuffer != lastVertexBuffer)
         {

@@ -62,6 +62,14 @@ namespace
             console, "render.tonemap.knee", lights.TonemapKnee);
         lights.TonemapEnabled = ReadBoolCVar(
             console, "render.tonemap", lights.TonemapEnabled);
+        lights.ShadowDarkness = ReadDoubleCVar(
+            console, "render.shadow.darkness", lights.ShadowDarkness);
+        lights.ShadowSoftness = ReadDoubleCVar(
+            console, "render.shadow.softness", lights.ShadowSoftness);
+        lights.ShadowBiasConstant = ReadDoubleCVar(
+            console, "render.shadow.bias_const", lights.ShadowBiasConstant);
+        lights.ShadowBiasSlope = ReadDoubleCVar(
+            console, "render.shadow.bias_slope", lights.ShadowBiasSlope);
     }
 }
 

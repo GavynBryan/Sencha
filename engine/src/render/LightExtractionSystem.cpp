@@ -71,9 +71,13 @@ namespace
 
     SpotShadowView MakeSpotShadowView(
         const Transform3f& worldTransform,
-        const SpotLightComponent& light)
+        const SpotLightComponent& light,
+        float globalSoftness)
     {
-        const float nearPlane = std::max(0.05f, light.Range * 0.001f);
+        constexpr float degreesToRadians = 0.01745329251994329577f;
+        const float outerAngle = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f)
+                               * degreesToRadians;
+        const float nearPlane = std::max(0.05f, light.Range * 0.02f);
         const Transform3f lightTransform(
             worldTransform.Position,
             worldTransform.Rotation,
@@ -84,25 +88,19 @@ namespace
 
         SpotShadowView shadow;
         shadow.ViewProjection = projection * view;
-        shadow.BiasSoftness = Vec4(
-            0.0015f * light.ShadowBiasScale,
-            0.0030f * light.ShadowBiasScale,
-            light.ShadowSoftness,
-            1.0f / static_cast<float>(kSpotShadowInnerExtent));
+        const float texelWorldSize =
+            2.0f * light.Range * std::tan(outerAngle)
+            / static_cast<float>(kSpotShadowInnerExtent);
+        const float softness = std::clamp(
+            light.ShadowSoftness * globalSoftness,
+            kSpotShadowSoftnessMinTexels,
+            kSpotShadowSoftnessMaxTexels);
+        shadow.SamplingParams = Vec4(
+            texelWorldSize,
+            softness,
+            std::max(light.ShadowBiasScale, 0.0f),
+            0.0f);
         return shadow;
-    }
-
-    Vec4 AtlasScaleBias(std::uint32_t slot)
-    {
-        constexpr float atlas = static_cast<float>(kSpotShadowAtlasExtent);
-        const std::uint32_t column = slot % 4u;
-        const std::uint32_t row = slot / 4u;
-        const float scale = static_cast<float>(kSpotShadowInnerExtent) / atlas;
-        const float biasX = static_cast<float>(
-            column * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
-        const float biasY = static_cast<float>(
-            row * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
-        return Vec4(scale, scale, biasX, biasY);
     }
 }
 
@@ -173,7 +171,10 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                         .WantsSpotShadow = light.CastShadows,
                     };
                     if (candidate.WantsSpotShadow)
-                        candidate.Shadow = MakeSpotShadowView(transform->Value, light);
+                    {
+                        candidate.Shadow = MakeSpotShadowView(
+                            transform->Value, light, lights.ShadowSoftness);
+                    }
                     candidates.push_back(candidate);
                 });
         }
@@ -202,7 +203,7 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
 
         const std::uint32_t shadowIndex = lights.SpotShadowCount++;
         candidate.Shadow.LightIndex = lightIndex;
-        candidate.Shadow.AtlasScaleBias = AtlasScaleBias(shadowIndex);
+        candidate.Shadow.AtlasScaleBias = SpotShadowAtlasScaleBias(shadowIndex);
         lights.SpotShadows[shadowIndex] = candidate.Shadow;
         lights.Lights[lightIndex].ShadowIndex = shadowIndex;
     }

@@ -24,6 +24,10 @@ layout(push_constant) uniform MeshPush
     uint NormalTextureIndex;
     uint OrmTextureIndex;
     uint EmissiveTextureIndex;
+    uint ReceiveShadows;
+    uint Pad0;
+    uint Pad1;
+    uint Pad2;
 } pushData;
 
 layout(location = 0) out vec3 outWorldNormal;

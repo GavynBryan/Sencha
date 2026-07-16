@@ -40,6 +40,10 @@ TEST(EngineConsoleBuiltins, RegistersExpectedEngineCVars)
     EXPECT_NE(registry.FindCVar("r.target_fps"), nullptr);
     EXPECT_NE(registry.FindCVar("time.timescale"), nullptr);
     EXPECT_NE(registry.FindCVar("time.fixed_tick_rate"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.darkness"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.softness"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.bias_const"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.bias_slope"), nullptr);
 }
 
 TEST(EngineConsoleBuiltins, ConfigAssignmentsSetRegisteredAndQueueUnknownCVars)

@@ -1,0 +1,42 @@
+layout(set = 2, binding = 0) uniform sampler2DShadow SpotShadowAtlas;
+
+float SampleSpotShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.SpotShadowCount)
+        return 1.0;
+
+    GpuSpotShadow shadow = frame.SpotShadows[shadowIndex];
+    vec3 receiverPosition = worldPosition
+        + normalize(geometricNormal) * shadow.SamplingParams.x * shadow.SamplingParams.z;
+    vec4 clipPosition = shadow.ViewProjection * vec4(receiverPosition, 1.0);
+    if (clipPosition.w <= 0.0)
+        return 1.0;
+
+    vec3 projected = clipPosition.xyz / clipPosition.w;
+    vec2 logicalUv = projected.xy * 0.5 + 0.5;
+    if (projected.z < 0.0 || projected.z > 1.0
+        || any(lessThan(logicalUv, vec2(0.0)))
+        || any(greaterThan(logicalUv, vec2(1.0))))
+    {
+        return 1.0;
+    }
+
+    vec2 atlasUv = logicalUv * shadow.AtlasScaleBias.xy
+                 + shadow.AtlasScaleBias.zw;
+    float softness = clamp(shadow.SamplingParams.y, 0.5, 4.0);
+    vec2 atlasTexel = 1.0 / vec2(textureSize(SpotShadowAtlas, 0));
+    const float offsets[3] = float[](-1.5, 0.0, 1.5);
+    const float weights[3] = float[](1.0, 2.0, 1.0);
+
+    float visibility = 0.0;
+    for (int y = 0; y < 3; ++y)
+    {
+        for (int x = 0; x < 3; ++x)
+        {
+            vec2 offset = vec2(offsets[x], offsets[y]) * softness * atlasTexel;
+            visibility += weights[x] * weights[y]
+                        * texture(SpotShadowAtlas, vec3(atlasUv + offset, projected.z));
+        }
+    }
+    return visibility * (1.0 / 16.0);
+}
