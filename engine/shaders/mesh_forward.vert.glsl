@@ -12,16 +12,22 @@ layout(location = 3) in vec4 inWorld0;
 layout(location = 4) in vec4 inWorld1;
 layout(location = 5) in vec4 inWorld2;
 layout(location = 6) in vec4 inWorld3;
+layout(location = 7) in vec4 inTangent;
 
 layout(push_constant) uniform MeshPush
 {
     vec4 BaseColor;
     uint BaseColorTextureIndex;
+    uint NormalTextureIndex;
+    float NormalScale;
+    uint Pad0;
 } pushData;
 
 layout(location = 0) out vec3 outWorldNormal;
 layout(location = 1) out vec2 outUv0;
 layout(location = 2) out vec3 outWorldPos;
+layout(location = 3) out vec3 outWorldTangent;
+layout(location = 4) out float outTangentSign;
 
 void main()
 {
@@ -35,8 +41,14 @@ void main()
     float orientation = dot(linear[0], cofactor0) < 0.0 ? -1.0 : 1.0;
     mat3 normalMatrix = mat3(cofactor0, cofactor1, cofactor2) * orientation;
 
-    outWorldNormal = normalize(normalMatrix * inNormal);
+    vec3 worldNormal = normalize(normalMatrix * inNormal);
+    vec3 worldTangent = linear * inTangent.xyz;
+    worldTangent = normalize(worldTangent - worldNormal * dot(worldNormal, worldTangent));
+
+    outWorldNormal = worldNormal;
     outUv0 = inUv0;
     outWorldPos = worldPosition.xyz;
+    outWorldTangent = worldTangent;
+    outTangentSign = inTangent.w * orientation;
     gl_Position = frame.ViewProjection * worldPosition;
 }
