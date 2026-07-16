@@ -66,6 +66,28 @@ namespace EngineConsoleBuiltins
                               RuntimeFrameLoop& runtimeLoop,
                               EngineRuntimeConfig& runtimeConfig)
     {
+        const auto registerAmbientChannel = [&registry](const char* name,
+                                                        double defaultValue,
+                                                        const char* help) {
+            registry.RegisterCVar({
+                .Name = name,
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = defaultValue,
+                .CurrentValue = defaultValue,
+                .Flags = CVarFlags::Archive,
+                .Help = help,
+                .Source = { "renderer defaults" },
+                .Min = 0.0,
+            });
+        };
+        registerAmbientChannel("render.ambient.sky_r", 0.10, "Ambient sky tint red channel in linear space.");
+        registerAmbientChannel("render.ambient.sky_g", 0.12, "Ambient sky tint green channel in linear space.");
+        registerAmbientChannel("render.ambient.sky_b", 0.15, "Ambient sky tint blue channel in linear space.");
+        registerAmbientChannel("render.ambient.ground_r", 0.04, "Ambient ground tint red channel in linear space.");
+        registerAmbientChannel("render.ambient.ground_g", 0.03, "Ambient ground tint green channel in linear space.");
+        registerAmbientChannel("render.ambient.ground_b", 0.02, "Ambient ground tint blue channel in linear space.");
+
         registry.RegisterCVar({
             .Name = "time.timescale",
             .Owner = "engine",
