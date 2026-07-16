@@ -3,10 +3,10 @@ const uint MAX_LIGHTS = 64u;
 
 struct GpuLight
 {
-    vec4 PositionRange;  // xyz world position, w range
-    vec4 DirectionCone;  // xyz direction, w cos(outer), reserved
-    vec4 ColorIntensity; // rgb linear color, w intensity
-    uvec4 TypeShadow;    // x type, y shadow index, zw pad
+    vec4 PositionRange;
+    vec4 DirectionCone;
+    vec4 ColorIntensity;
+    uvec4 TypeShadow;
 };
 
 layout(set = 0, binding = 0) uniform MeshFrame
@@ -15,9 +15,10 @@ layout(set = 0, binding = 0) uniform MeshFrame
     vec4 ViewPositionTime;
     vec4 AmbientSky;
     vec4 AmbientGround;
+    vec4 StyleParams; // diffuse wrap, minimum ambient, exposure, tonemap knee
     uint LightCount;
+    uint TonemapEnabled;
     uint Pad0;
     uint Pad1;
-    uint Pad2;
     GpuLight Lights[MAX_LIGHTS];
 } frame;
