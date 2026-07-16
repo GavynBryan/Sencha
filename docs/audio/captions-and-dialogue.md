@@ -61,7 +61,7 @@ The engine currently has:
   copyable, with traits that retain on add and stop-then-release on remove.
 - `AudioSystem`: runs in the audio lane (`FramePhase::Update`), ticks the
   service, sweeps voices for dormant registries, starts active scene sources.
-- `AudioSourceRuntime`: the World resource carrying `{AudioClipCache*,
+- `AudioSourceRuntime`: the registry resource carrying `{AudioClipCache*,
   AudioService*}` that component hooks reach through.
 - Zone audio participation: dormant preloaded zones are silent by
   construction — absent from `FrameRegistryView::Audio`.

@@ -1,6 +1,9 @@
 # Runtime ECS Resource Inventory
 
-Status: Phase 0 complete. `ResourceStore`, stable registry ownership, and resource-only component lifecycle hooks are implemented; exact-head CI validation is in progress.
+Status: migration complete. Every resource below has moved to its final owner:
+registry-local state to `Registry::Resources`, session definitions to the global
+registry's `ResourceStore`, and the entity-store resource map is deleted. The
+table records the pre-migration ownership for reference.
 
 This inventory records current ownership and the intended destination before resource migration begins. It is not a compatibility contract. The code remains the source of truth until each row is migrated and tested.
 

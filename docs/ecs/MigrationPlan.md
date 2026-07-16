@@ -153,17 +153,20 @@ the chunk, so downstream systems must not assume every row changed.
 
 ## Resources
 
-`World` owns resources keyed by type:
+Non-component state lives on `Registry`, not on entity storage. Each registry
+owns a `ResourceStore` (`Registry::Resources`) keyed by type:
 
 ```cpp
-auto& cache = world.AddResource<MeshCache>(...);
-MeshCache* maybe = world.TryGetResource<MeshCache>();
+auto& cache = registry.Resources.Ensure<MeshCache>(...);
+MeshCache* maybe = registry.Resources.TryGet<MeshCache>();
 ```
 
-Resources are the current home for per-world state such as propagation caches,
-asset/cache references, and other singleton data that is not an entity
-component. Duplicate registration is rejected instead of replacing the existing
-resource.
+Registry-local state (propagation caches, physics scene, mover pool, the ability
+activation queue) lives in each registry's `ResourceStore`. Session definitions
+shared across zones (the tag/attribute/effect/ability registries, movement
+definitions) live once in the global registry's `ResourceStore`. Duplicate
+registration is rejected instead of replacing the existing resource. Entity
+storage (`World`) owns no resources.
 
 ---
 

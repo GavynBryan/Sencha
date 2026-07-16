@@ -36,7 +36,7 @@ The asset layer is real but narrow. An honest map:
 | `AudioClipCache` / `AudioClipLoader` | Parallel universe: own handle type, own loader, not registered with `AssetSystem`. `AssetType::Audio` exists in the enum only. |
 | Shaders (`VulkanShaderCache`) | Own pipeline with dev-only hot reload (glslang behind `SENCHA_ENABLE_HOT_RELOAD`). Deliberately outside the asset registry. |
 | Scenes | JSON via `SceneSerializer`; `SceneSerializationContext` resolves `AssetRef`s through `AssetSystem` — which **acquires from caches**, hence main-thread-only, hence the `finalize` callback on `AsyncZoneLoader::BeginLoad`. |
-| Lifetime | Component traits retain/release through World resources (e.g. `StaticMeshComponentAssets`); refcount-zero frees immediately; runtime Vulkan destruction goes through the deletion queue. |
+| Lifetime | Component traits retain/release through registry resources (e.g. `StaticMeshComponentAssets`); refcount-zero frees immediately; runtime Vulkan destruction goes through the deletion queue. |
 | First consumer | CubeDemo loads its zone async but **pre-registers procedural assets on the main thread before submitting** — the exact gap this plan closes. |
 
 ## The inherited ledger

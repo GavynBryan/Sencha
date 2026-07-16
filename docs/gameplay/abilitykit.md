@@ -48,9 +48,11 @@ What exists and is reused:
   **not** as components), and `GameplayTagQuery` (All/Any/None, Exact/Hierarchical
   match). Has unit tests; not yet wired to the ECS.
 - **ECS** (`engine/include/ecs/World.h`): POD components
-  (`static_assert(is_trivially_copyable)`), `RegisterComponent`,
-  `AddResource`/`GetResource`/`TryGetResource<T>` (registry-local resources),
-  `Changed<T>` change detection, `CommandBuffer` for deferred structural change.
+  (`static_assert(is_trivially_copyable)`), `RegisterComponent`, `Changed<T>`
+  change detection, `CommandBuffer` for deferred structural change. Non-component
+  state lives in `Registry::Resources` (`ResourceStore`), not on entity storage:
+  session definitions (tag/attribute/effect/ability registries) in the global
+  registry, registry-local state (the ability activation queue) per registry.
 - **Scheduling** (`EngineSchedule`, `GameContexts.h`): systems are plain types
   with concept-detected phase methods (`FixedLogic(FixedLogicContext&)` …),
   registered via `Register<T>`, ordered with `After<T, TDep>`; contexts carry

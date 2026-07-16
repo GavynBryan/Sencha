@@ -24,7 +24,7 @@ More than expected — the engine pre-built the audio lane and never used it:
 | `AudioService` | Complete v1 backend: buses with voice budgets and steal policies (`Reject`/`StealOldest`), gain/pan/**looping**, pause/resume, generational `VoiceId`s, `Tick()` retires drained voices. Owned by `Engine` as `Engine::Audio()` and driven by `AudioSystem` (which calls `Tick` each frame); AudioTest also builds it by hand for isolated tests. |
 | Clip assets (Stage 4d) | `.sclip` container, headless `AudioClipCache`, `AssetSystem::LoadAudioClip`/`TryAcquire`/`Release`, preload wave 1, WAV/OGG cook. Done. |
 | The audio frame lane | `ZoneParticipation.Audio` → `FrameRegistryView.Audio` (dormant zones excluded by construction) → `AudioContext` + `EngineSchedule::RunAudio` + the `HasAudio` system concept, invoked in `FramePhase::Update` after `RunFrameUpdate`. **No system registers for it.** |
-| Component machinery | `ComponentTraits` retain/release through World resources (the `StaticMeshComponentAssets` pattern), `TypeSchema` + `SceneFieldCodec` (handle codecs resolve through `AssetSystem`), `RegisterComponent<T>()`. A new component is a stamped template. |
+| Component machinery | `ComponentTraits` retain/release through registry resources (the `StaticMeshComponentAssets` pattern), `TypeSchema` + `SceneFieldCodec` (handle codecs resolve through `AssetSystem`), `RegisterComponent<T>()`. A new component is a stamped template. |
 | Manifests | `CollectAssetPaths` is schema-agnostic: the first component that serializes an audio ref is preloadable with **zero** new manifest code — and closes the Stage 4d gate gap (manifest-driven audio preload through a real zone). |
 
 The genuinely new work is one component, one system, one service
@@ -98,7 +98,7 @@ contract ("the clip must remain valid for the duration of playback"):
 
 Division of labor, mirroring the render components:
 
-- **Traits own the asset edge.** A World resource
+- **Traits own the asset edge.** A registry resource
   `AudioSourceRuntime { AudioClipCache* Clips; AudioService* Audio; }`
   (the `StaticMeshComponentAssets` pattern; either pointer may be null in
   headless worlds). `OnAdd` retains the clip — and never plays: the zone
@@ -202,7 +202,7 @@ a display (below).
 - `audio/AudioSourceComponent.h` — the component (Decision B), its
   `ComponentTraits` (Decision C: `OnAdd` retains the clip and never plays;
   `OnRemove` stops the voice **then** releases the clip), `TypeSchema`, and
-  the `AudioSourceRuntime` World resource carrying `{AudioClipCache*,
+  the `AudioSourceRuntime` registry resource carrying `{AudioClipCache*,
   AudioService*}`. `SceneFieldCodec<AudioClipHandle>` resolves through the
   asset front door (`GetPathForAudioClip` closes the 4d parity gap), and a
   templated `SceneFieldCodec<InlineString<N>>` persists bus names as plain
