@@ -2,6 +2,7 @@
 
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
+#include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
@@ -31,6 +32,9 @@ static_assert(offsetof(MeshFrameUniforms, StyleParams) == 112);
 static_assert(offsetof(MeshFrameUniforms, LightCount) == 128);
 static_assert(offsetof(MeshFrameUniforms, TonemapEnabled) == 132);
 static_assert(offsetof(MeshFrameUniforms, Lights) == 144);
+static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
+static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
+static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -39,13 +43,15 @@ static_assert(offsetof(GpuLight, ShadowIndex) == 52);
 static_assert(offsetof(GpuLight, ConeScale) == 56);
 static_assert(offsetof(GpuLight, ConeOffset) == 60);
 
-void MeshForwardPass::Setup(const RendererServices& services)
+void MeshForwardPass::Setup(const RendererServices& services, SpotShadowResources& shadows)
 {
     Buffers = services.Buffers;
     Descriptors = services.Descriptors;
     Scratch = services.Scratch;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
+    Shadows = &shadows;
+    Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
 
     VertexShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
@@ -56,7 +62,21 @@ void MeshForwardPass::Setup(const RendererServices& services)
     push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     push.offset = 0;
     push.size = sizeof(MeshPushConstants);
-    PipelineLayout = Descriptors->GetPipelineLayout({ push });
+
+    const VkDescriptorSetLayout setLayouts[] = {
+        Descriptors->GetFrameSetLayout(),
+        Descriptors->GetBindlessSetLayout(),
+        shadows.GetSetLayout(),
+    };
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 3;
+    layoutInfo.pSetLayouts = setLayouts;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &push;
+    if (vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
+        PipelineLayout = VK_NULL_HANDLE;
+
     Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
 }
 
@@ -134,6 +154,21 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     uniforms.LightCount = lightCount;
     std::memcpy(uniforms.Lights, lights.Lights, sizeof(GpuLight) * lightCount);
 
+    const std::uint32_t shadowCount =
+        lights.SpotShadowCount < kMaxSpotShadows
+            ? lights.SpotShadowCount
+            : kMaxSpotShadows;
+    uniforms.SpotShadowCount = shadowCount;
+    for (std::uint32_t index = 0; index < shadowCount; ++index)
+    {
+        uniforms.SpotShadows[index].ViewProjection =
+            lights.SpotShadows[index].ViewProjection.Transposed();
+        uniforms.SpotShadows[index].AtlasScaleBias =
+            lights.SpotShadows[index].AtlasScaleBias;
+        uniforms.SpotShadows[index].BiasSoftness =
+            lights.SpotShadows[index].BiasSoftness;
+    }
+
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
     if (!allocation.IsValid())
         return std::nullopt;
@@ -180,6 +215,9 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
     const VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             1, 1, &bindlessSet, 0, nullptr);
+    const VkDescriptorSet shadowSet = Shadows->GetSet();
+    vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
+                            2, 1, &shadowSet, 0, nullptr);
 }
 
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
@@ -289,7 +327,11 @@ void MeshForwardPass::Teardown()
     VertexShader = {};
     FragmentShader = {};
     OpaquePipelines.fill(VK_NULL_HANDLE);
+    if (PipelineLayout != VK_NULL_HANDLE && Device != VK_NULL_HANDLE)
+        vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
     PipelineLayout = VK_NULL_HANDLE;
     CachedColorFormat = VK_FORMAT_UNDEFINED;
     CachedDepthFormat = VK_FORMAT_UNDEFINED;
+    Shadows = nullptr;
+    Device = VK_NULL_HANDLE;
 }
