@@ -25,7 +25,7 @@ namespace
     }
 
     // Stand-in for TextureCache on the far side of TextureCacheHandle:
-    // counts lifetime traffic so the material→texture release chain can be
+    // counts lifetime traffic so the material-to-texture release chain can be
     // asserted without a GPU.
     class CountingLifetimeOwner final : public ILifetimeOwner
     {
@@ -64,7 +64,7 @@ namespace
 TEST(MaterialLoader, ParsesFullSchema)
 {
     const JsonValue json = ParseOrDie(R"({
-        "version": 1,
+        "version": 2,
         "base_color_factor": [0.5, 0.25, 0.75, 1.0],
         "base_color_texture": "asset://textures/dev/base.png",
         "normal_texture": "asset://textures/dev/normal.png",
@@ -104,7 +104,7 @@ TEST(MaterialLoader, ParsesFullSchema)
 TEST(MaterialLoader, VersionOnlyYieldsNeutralDefaults)
 {
     MaterialDescription desc;
-    ASSERT_TRUE(ParseMaterialJson(ParseOrDie(R"({"version": 1})"), desc));
+    ASSERT_TRUE(ParseMaterialJson(ParseOrDie(R"({"version": 2})"), desc));
 
     EXPECT_FLOAT_EQ(desc.BaseColorFactor.X, 1.0f);
     EXPECT_FLOAT_EQ(desc.BaseColorFactor.W, 1.0f);
@@ -126,7 +126,7 @@ TEST(MaterialLoader, RejectsUnknownKey)
     MaterialDescription desc;
     MaterialParseError error;
     EXPECT_FALSE(ParseMaterialJson(
-        ParseOrDie(R"({"version": 1, "base_colour_factor": [1, 1, 1, 1]})"), desc, &error));
+        ParseOrDie(R"({"version": 2, "base_colour_factor": [1, 1, 1, 1]})"), desc, &error));
     EXPECT_NE(error.Message.find("base_colour_factor"), std::string::npos);
 }
 
@@ -134,6 +134,7 @@ TEST(MaterialLoader, RejectsMissingOrWrongVersion)
 {
     MaterialDescription desc;
     EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({})"), desc));
+    EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({"version": 1})"), desc));
     EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({"version": 3})"), desc));
 }
 
@@ -141,18 +142,18 @@ TEST(MaterialLoader, RejectsWrongFactorArity)
 {
     MaterialDescription desc;
     EXPECT_FALSE(ParseMaterialJson(
-        ParseOrDie(R"({"version": 1, "base_color_factor": [1, 1, 1]})"), desc));
+        ParseOrDie(R"({"version": 2, "base_color_factor": [1, 1, 1]})"), desc));
     EXPECT_FALSE(ParseMaterialJson(
-        ParseOrDie(R"({"version": 1, "emissive_factor": [1, 1, 1, 1]})"), desc));
+        ParseOrDie(R"({"version": 2, "emissive_factor": [1, 1, 1, 1]})"), desc));
 }
 
 TEST(MaterialLoader, RejectsInvalidTexturePathAndAlphaMode)
 {
     MaterialDescription desc;
     EXPECT_FALSE(ParseMaterialJson(
-        ParseOrDie(R"({"version": 1, "base_color_texture": "textures/no_prefix.png"})"), desc));
+        ParseOrDie(R"({"version": 2, "base_color_texture": "textures/no_prefix.png"})"), desc));
     EXPECT_FALSE(ParseMaterialJson(
-        ParseOrDie(R"({"version": 1, "alpha_mode": "translucent"})"), desc));
+        ParseOrDie(R"({"version": 2, "alpha_mode": "translucent"})"), desc));
 }
 
 TEST(MaterialLoader, LoadFromFileReportsMissingFile)
@@ -214,7 +215,7 @@ TEST(MaterialCacheOwnership, CacheDestructionReleasesOwnedTextures)
     EXPECT_EQ(textures.Detached, 1);
 }
 
-// -- MaterialCache hot reload (Stage 6c) ---------------------------------------
+// -- MaterialCache hot reload -------------------------------------------------
 
 TEST(MaterialCacheReload, ReloadInPlaceSwapsValueAndReleasesOldTextures)
 {
@@ -264,7 +265,7 @@ TEST(MaterialCacheReload, ReloadInPlaceOnAbsentEntryReleasesIncomingAndReturnsFa
     EXPECT_EQ(textures.Detached, 1);
 }
 
-// -- AssetSystem .smat file loading --------------------------------------------
+// -- AssetSystem .smat file loading ------------------------------------------
 
 namespace
 {
@@ -283,7 +284,7 @@ namespace
 TEST(AssetSystemMaterial, LoadsSmatFileWithNeutralTextureSlots)
 {
     const TempFile file(R"({
-        "version": 1,
+        "version": 2,
         "base_color_factor": [1.0, 0.15, 0.1, 1.0],
         "base_color_texture": "asset://textures/dev/checker.png",
         "alpha_mode": "blend"
@@ -312,7 +313,7 @@ TEST(AssetSystemMaterial, LoadsSmatFileWithNeutralTextureSlots)
 
 TEST(AssetSystemMaterial, SecondLoadReturnsSameHandle)
 {
-    const TempFile file(R"({"version": 1, "base_color_factor": [0.1, 0.85, 0.45, 1.0]})");
+    const TempFile file(R"({"version": 2, "base_color_factor": [0.1, 0.85, 0.45, 1.0]})");
 
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -330,7 +331,7 @@ TEST(AssetSystemMaterial, SecondLoadReturnsSameHandle)
 
 TEST(AssetSystemMaterial, MalformedSmatFailsCleanly)
 {
-    const TempFile file(R"({"version": 1, "unknown_key": true})");
+    const TempFile file(R"({"version": 2, "unknown_key": true})");
 
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -343,7 +344,7 @@ TEST(AssetSystemMaterial, MalformedSmatFailsCleanly)
     EXPECT_FALSE(assets.LoadMaterial("asset://materials/dev/bad.smat").IsValid());
 }
 
-// -- MaterialWriter -------------------------------------------------------------
+// -- MaterialWriter -----------------------------------------------------------
 
 TEST(MaterialWriter, FullDescriptionRoundTrips)
 {
@@ -391,7 +392,7 @@ TEST(MaterialWriter, DefaultDescriptionWritesOnlyVersion)
     ASSERT_EQ(json.AsObject().size(), 1u);
     EXPECT_EQ(json.AsObject()[0].first, "version");
 
-    // And that minimal form still parses back to the defaults.
+    // The minimal form still parses back to the defaults.
     MaterialDescription parsed;
     MaterialParseError error;
     ASSERT_TRUE(ParseMaterialJson(json, parsed, &error)) << error.Message;
