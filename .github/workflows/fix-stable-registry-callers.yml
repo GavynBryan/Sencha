@@ -91,3 +91,5 @@ jobs:
           git add -A
           git commit -m 'Fix stable registry callers'
           git push origin HEAD:agent/runtime-world-stabilization
+
+# One-shot migration. This file deletes itself after a successful run.
