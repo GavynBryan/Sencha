@@ -119,7 +119,7 @@ public:
             if (*it == nullptr)
                 continue;
 
-            Lookup.erase(**it)->Type);
+            Lookup.erase((*it)->Type);
             it->reset();
         }
 
