@@ -21,8 +21,9 @@
 // child. BFS guarantees every parent entry is emitted before any of its children,
 // satisfying the forward-sweep invariant in Propagate().
 
-void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
+void TransformPropagationSystem::RebuildCache()
 {
+    PropagationOrderCache& cache = Cache;
     auto& order = cache.GetOrder();
     order.clear();
     const uint64_t structuralVersion = Target.StructuralVersion();
@@ -194,11 +195,7 @@ void TransformPropagationSystem::Propagate()
         return;
     }
 
-    // Ensure the cache resource exists.
-    if (!Target.HasResource<PropagationOrderCache>())
-        Target.AddResource<PropagationOrderCache>();
-
-    PropagationOrderCache& cache = Target.GetResource<PropagationOrderCache>();
+    PropagationOrderCache& cache = Cache;
 
     if (!cache.IsDirty()
         && !cache.StructuralVersionMatches(Target.StructuralVersion()))
@@ -231,7 +228,7 @@ void TransformPropagationSystem::Propagate()
     }
 
     if (cache.IsDirty())
-        RebuildCache(cache);
+        RebuildCache();
 
     auto& order = cache.GetOrder();
     const bool fullSweep = cache.ConsumeFullSweepPending();
@@ -285,7 +282,8 @@ void PropagateTransforms(std::span<Registry*> registries)
         if (registry == nullptr || !seen.insert(registry).second)
             continue;
 
-        PropagateTransforms(registry->Components);
+        PropagateTransforms(registry->Components,
+                            registry->Resources.Ensure<PropagationOrderCache>());
     }
 }
 
@@ -304,6 +302,8 @@ void PropagateTransforms(JobSystem& jobs, std::span<Registry*> registries)
 
     ForEachRegistryParallel(jobs, std::span<Registry* const>(unique),
                             [](Registry& registry) {
-                                PropagateTransforms(registry.Components);
+                                PropagateTransforms(
+                                    registry.Components,
+                                    registry.Resources.Ensure<PropagationOrderCache>());
                             });
 }

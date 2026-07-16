@@ -46,6 +46,7 @@ TEST(TransformPropagation, SkipsRegistriesWithoutTransformResources)
 TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -55,7 +56,7 @@ TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
     world.AddComponent(entity, LocalTransform{ local });
     world.AddComponent(entity, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* worldTransform = world.TryGet<WorldTransform>(entity);
     ASSERT_NE(worldTransform, nullptr);
@@ -65,6 +66,7 @@ TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
 TEST(TransformPropagation, ChildInheritsParentInEcsWorld)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -81,7 +83,7 @@ TEST(TransformPropagation, ChildInheritsParentInEcsWorld)
     world.AddComponent(child, WorldTransform{});
     world.AddComponent(child, Parent{ parent });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* childWorld = world.TryGet<WorldTransform>(child);
     ASSERT_NE(childWorld, nullptr);
@@ -91,6 +93,7 @@ TEST(TransformPropagation, ChildInheritsParentInEcsWorld)
 TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -100,7 +103,7 @@ TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
     world.AddComponent(entity, WorldTransform{});
 
     world.AdvanceFrame();
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     uint32_t changedRows = 0;
     Query<Read<WorldTransform>, Changed<WorldTransform>> changed(world);
@@ -115,6 +118,7 @@ TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
 TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -129,12 +133,12 @@ TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
     world.AddComponent(child, WorldTransform{});
     world.AddComponent(child, Parent{ parent });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     world.AddComponent(child, ExtraComponent{ 7 });
     world.TryGet<LocalTransform>(child)->Value.Position = Vec3d(3.0f, 0.0f, 0.0f);
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* childWorld = world.TryGet<WorldTransform>(child);
     ASSERT_NE(childWorld, nullptr);
@@ -144,6 +148,7 @@ TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
 TEST(TransformPropagation, ThreeLevelHierarchyInEcsWorld)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -161,7 +166,7 @@ TEST(TransformPropagation, ThreeLevelHierarchyInEcsWorld)
     world.AddComponent(leaf, WorldTransform{});
     world.AddComponent(leaf, Parent{ mid });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* leafWorld = world.TryGet<WorldTransform>(leaf);
     ASSERT_NE(leafWorld, nullptr);
@@ -171,6 +176,7 @@ TEST(TransformPropagation, ThreeLevelHierarchyInEcsWorld)
 TEST(TransformPropagation, ScaleComposesInEcsWorld)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -184,7 +190,7 @@ TEST(TransformPropagation, ScaleComposesInEcsWorld)
     world.AddComponent(child, WorldTransform{});
     world.AddComponent(child, Parent{ parent });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* childWorld = world.TryGet<WorldTransform>(child);
     ASSERT_NE(childWorld, nullptr);
@@ -197,6 +203,7 @@ TEST(TransformPropagation, ScaleComposesInEcsWorld)
 TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -217,7 +224,7 @@ TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
     world.AddComponent(child, WorldTransform{});
     world.AddComponent(child, Parent{ parent });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     const WorldTransform* childWorld = world.TryGet<WorldTransform>(child);
     ASSERT_NE(childWorld, nullptr);
@@ -236,6 +243,7 @@ TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
 TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -252,13 +260,13 @@ TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
     world.AddComponent(c, LocalTransform{ Transform3f(Vec3d(3.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(c, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     world.DestroyEntity(a); // c moves into a's row; archetype count unchanged
     world.AdvanceFrame();
     world.TryGet<LocalTransform>(c)->Value.Position = Vec3d(30.0f, 0.0f, 0.0f);
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     EXPECT_EQ(world.TryGet<WorldTransform>(b)->Value.Position, Vec3d(2.0f, 0.0f, 0.0f));
     EXPECT_EQ(world.TryGet<WorldTransform>(c)->Value.Position, Vec3d(30.0f, 0.0f, 0.0f));
@@ -267,6 +275,7 @@ TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -283,13 +292,13 @@ TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
     world.AddComponent(a, LocalTransform{ Transform3f(Vec3d(5.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(a, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     world.AddComponent(a, ExtraComponent{ 2 }); // moves a between existing archetypes
     world.AdvanceFrame();
     world.TryGet<LocalTransform>(a)->Value.Position = Vec3d(50.0f, 0.0f, 0.0f);
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     EXPECT_EQ(world.TryGet<WorldTransform>(a)->Value.Position, Vec3d(50.0f, 0.0f, 0.0f));
 }
@@ -297,6 +306,7 @@ TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
 TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -305,14 +315,14 @@ TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
     world.AddComponent(a, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(a, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     // b lands in the same archetype: no new archetype, no Parent write.
     EntityId b = world.CreateEntity();
     world.AddComponent(b, LocalTransform{ Transform3f(Vec3d(7.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(b, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     EXPECT_EQ(world.TryGet<WorldTransform>(b)->Value.Position, Vec3d(7.0f, 0.0f, 0.0f));
 }
@@ -323,6 +333,7 @@ TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
     // non-const TryGet with no structural change. Relies on the D4.4
     // conservative bump in non-const World::TryGet.
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -331,12 +342,12 @@ TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
     world.AddComponent(a, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(a, WorldTransform{});
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     world.AdvanceFrame();
     world.TryGet<LocalTransform>(a)->Value.Position = Vec3d(4.0f, 0.0f, 0.0f);
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
 
     EXPECT_EQ(world.TryGet<WorldTransform>(a)->Value.Position, Vec3d(4.0f, 0.0f, 0.0f));
 }
@@ -344,6 +355,7 @@ TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
 TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -360,7 +372,7 @@ TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
     world.AddComponent(child, WorldTransform{});
     world.AddComponent(child, Parent{ parentA });
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
     EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position, Vec3d(11.0f, 0.0f, 0.0f));
 
     // Re-target the existing Parent value — no structural change, no
@@ -369,13 +381,14 @@ TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
     world.AdvanceFrame();
     world.TryGet<Parent>(child)->Entity = parentB;
 
-    PropagateTransforms(world);
+    PropagateTransforms(world, cache);
     EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position, Vec3d(101.0f, 0.0f, 0.0f));
 }
 
 TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
 {
     World world;
+    PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
@@ -392,11 +405,11 @@ TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
     world.AddComponent(b, ExtraComponent{ 1 });
 
     world.AdvanceFrame(); // frame 1
-    PropagateTransforms(world); // full sweep — both chunks bumped at frame 1
+    PropagateTransforms(world, cache); // full sweep — both chunks bumped at frame 1
 
     world.AdvanceFrame(); // frame 2
     world.TryGet<LocalTransform>(a)->Value.Position = Vec3d(3.0f, 0.0f, 0.0f);
-    PropagateTransforms(world); // only a's chunk should be rewritten
+    PropagateTransforms(world, cache); // only a's chunk should be rewritten
 
     uint32_t changedRows = 0;
     Query<Read<WorldTransform>, Changed<WorldTransform>> changed(world);

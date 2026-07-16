@@ -115,10 +115,11 @@ namespace
             entities.push_back(entity);
         }
 
+        PropagationOrderCache cache;
         world.AdvanceFrame();
         for (size_t iteration = 0; iteration < WarmupIterations; ++iteration)
         {
-            PropagateTransforms(world);
+            PropagateTransforms(world, cache);
             world.AdvanceFrame();
         }
 
@@ -128,14 +129,13 @@ namespace
         {
             std::atomic_signal_fence(std::memory_order_seq_cst);
             const auto start = Clock::now();
-            PropagateTransforms(world);
+            PropagateTransforms(world, cache);
             const auto end = Clock::now();
             std::atomic_signal_fence(std::memory_order_seq_cst);
             steadySamples.push_back(ElapsedUs(start, end));
             world.AdvanceFrame();
         }
 
-        PropagationOrderCache& cache = world.GetResource<PropagationOrderCache>();
         std::vector<double> rebuildSamples;
         rebuildSamples.reserve(MeasureIterations);
         for (size_t iteration = 0; iteration < MeasureIterations; ++iteration)
@@ -143,7 +143,7 @@ namespace
             cache.Invalidate();
             std::atomic_signal_fence(std::memory_order_seq_cst);
             const auto start = Clock::now();
-            PropagateTransforms(world);
+            PropagateTransforms(world, cache);
             const auto end = Clock::now();
             std::atomic_signal_fence(std::memory_order_seq_cst);
             rebuildSamples.push_back(ElapsedUs(start, end));

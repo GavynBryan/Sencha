@@ -28,8 +28,9 @@ class Registry;
 class TransformPropagationSystem
 {
 public:
-    explicit TransformPropagationSystem(World& world)
+    TransformPropagationSystem(World& world, PropagationOrderCache& cache)
         : Target(world)
+        , Cache(cache)
     {
     }
 
@@ -42,15 +43,16 @@ public:
 
 private:
     World& Target;
+    PropagationOrderCache& Cache;
 
-    // Rebuilds the PropagationOrderCache from the current Parent graph.
+    // Rebuilds the order cache from the current Parent graph.
     // Called when the cache is dirty (Changed<Parent> fired, or first frame).
-    void RebuildCache(PropagationOrderCache& cache);
+    void RebuildCache();
 };
 
-inline void PropagateTransforms(World& world)
+inline void PropagateTransforms(World& world, PropagationOrderCache& cache)
 {
-    TransformPropagationSystem propagation(world);
+    TransformPropagationSystem propagation(world, cache);
     propagation.Propagate();
 }
 
