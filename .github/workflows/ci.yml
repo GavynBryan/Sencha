@@ -105,88 +105,12 @@ jobs:
                   candidate.unlink()
           PY
 
-          cat > .github/workflows/ci.yml <<'EOF'
-          name: CI
-
-          on:
-            push:
-              branches:
-                - main
-            pull_request:
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: ci-${{ github.workflow }}-${{ github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            linux:
-              name: Linux / GCC / Vulkan
-              runs-on: ubuntu-24.04
-              timeout-minutes: 60
-
-              env:
-                CMAKE_BUILD_PARALLEL_LEVEL: 2
-
-              steps:
-                - name: Check out source
-                  uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
-
-                - name: Install build and Vulkan dependencies
-                  run: |
-                    sudo apt-get update
-                    sudo apt-get install --no-install-recommends --yes \
-                      glslc \
-                      libvulkan-dev \
-                      ninja-build
-
-                - name: Build and install SDL3
-                  id: sdl
-                  uses: libsdl-org/setup-sdl@a966470e7d9b6a5c93eec3f08d5dac370325c860
-                  with:
-                    version: 3.4.12
-                    install-linux-dependencies: true
-
-                - name: Configure
-                  run: >-
-                    cmake --preset ci
-                    -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}"
-
-                - name: Build
-                  run: |
-                    set -o pipefail
-                    cmake --build --preset ci --parallel 2 2>&1 | tee build-ci.log
-
-                - name: Upload failed build log
-                  if: failure()
-                  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-                  with:
-                    name: linux-build-log
-                    path: build-ci.log
-                    if-no-files-found: error
-                    retention-days: 7
-
-                - name: Test
-                  run: |
-                    set -o pipefail
-                    ctest --preset ci 2>&1 | tee test-ci.log
-
-                - name: Upload failed test log
-                  if: failure()
-                  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-                  with:
-                    name: linux-test-log
-                    path: test-ci.log
-                    if-no-files-found: error
-                    retention-days: 7
-          EOF
-
           git config user.name 'sencha-runtime-agent'
           git config user.email 'actions@users.noreply.github.com'
-          git add -A
+          git add test/runtime/SceneSerializerTests.cpp \
+                  example/EcsBenchmark/EcsBenchmark.cpp \
+                  .github/workflows/migrate-lifecycle-resources.yml \
+                  .github/workflows/fix-stable-registry-callers.yml
           git commit -m 'Fix stable registry callers'
           git push origin HEAD:agent/runtime-world-stabilization
 
