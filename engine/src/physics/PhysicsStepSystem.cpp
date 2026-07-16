@@ -5,16 +5,6 @@
 #include <physics/PhysicsScene.h>
 #include <world/registry/Registry.h>
 
-namespace
-{
-PhysicsScene& EnsureScene(World& world, PhysicsWorld& physics)
-{
-    if (world.HasResource<PhysicsScene>())
-        return world.GetResource<PhysicsScene>();
-    return world.AddResource<PhysicsScene>(physics);
-}
-} // namespace
-
 PhysicsStepSystem::PhysicsStepSystem()
 {
     Simulation.SetShapeCache(&Shapes);
@@ -29,7 +19,7 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
     for (Registry* reg : ctx.ActiveRegistries)
     {
         World& world = reg->Components;
-        EnsureScene(world, Simulation).SyncToPhysics(world);
+        reg->Resources.Ensure<PhysicsScene>(Simulation).SyncToPhysics(world);
     }
 
     Simulation.Step(dt, CollisionSteps);
@@ -37,7 +27,7 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
     for (Registry* reg : ctx.ActiveRegistries)
     {
         World& world = reg->Components;
-        if (PhysicsScene* scene = world.TryGetResource<PhysicsScene>())
+        if (PhysicsScene* scene = reg->Resources.TryGet<PhysicsScene>())
             scene->SyncFromPhysics(world);
     }
 }

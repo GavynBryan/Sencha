@@ -50,7 +50,7 @@ TEST(PhysicsScene, DynamicEntityRestsOnStaticFloor)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId floor = SpawnAt(ecs, Vec3d(0.0f, 0.0f, 0.0f));
     ecs.AddComponent<Collider>(floor, Collider{ CollisionShape::MakeBox(Vec3d(50.0f, 0.5f, 50.0f)) });
@@ -72,7 +72,7 @@ TEST(PhysicsScene, RemovingColliderRemovesBody)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
     ecs.AddComponent<Collider>(box, Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
@@ -94,7 +94,7 @@ TEST(PhysicsScene, DestructorRemovesBodiesFromSharedWorld)
     {
         World ecs;
         SetUpPhysics(ecs);
-        PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+        PhysicsScene scene(physics);
 
         EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
         ecs.AddComponent<Collider>(box, Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
@@ -110,7 +110,7 @@ TEST(PhysicsScene, KinematicBodyFollowsAuthoredTransform)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId platform = SpawnAt(ecs, Vec3d(0.0f, 0.0f, 0.0f));
     ecs.AddComponent<Collider>(platform, Collider{ CollisionShape::MakeBox(Vec3d(1.0f, 0.25f, 1.0f)) });
@@ -135,7 +135,7 @@ TEST(PhysicsScene, ReconcileSkipsWhenNothingStructuralChanged)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
     ecs.AddComponent<Collider>(box, Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
@@ -166,7 +166,7 @@ TEST(PhysicsScene, BodyLinkTracksColliderLifetime)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
     ecs.AddComponent<Collider>(box, Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
@@ -189,7 +189,7 @@ TEST(PhysicsScene, DestroyingEntityRemovesBody)
     PhysicsWorld physics;
     World ecs;
     SetUpPhysics(ecs);
-    PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+    PhysicsScene scene(physics);
 
     EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
     ecs.AddComponent<Collider>(box, Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
@@ -211,7 +211,7 @@ TEST(PhysicsScene, DeterministicAcrossIdenticalRuns)
         PhysicsWorld physics;
         World ecs;
         SetUpPhysics(ecs);
-        PhysicsScene& scene = ecs.AddResource<PhysicsScene>(physics);
+        PhysicsScene scene(physics);
 
         EntityId floor = SpawnAt(ecs, Vec3d(0.0f, 0.0f, 0.0f));
         ecs.AddComponent<Collider>(floor, Collider{ CollisionShape::MakeBox(Vec3d(50.0f, 0.5f, 50.0f)) });
