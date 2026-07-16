@@ -19,8 +19,7 @@ public:
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
     void Setup(const RendererServices& services) override;
-    void PrepareFrame(const FrameContext& frame) override;
-    void Record(const FrameContext& frame) override;
+    void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 
 private:

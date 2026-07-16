@@ -82,7 +82,9 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Backdrop.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
-    Forward.Setup(services);
+    if (!Shadows.Setup(services) && Log != nullptr)
+        Log->Warn("Spot shadow resources failed to set up; forward pass disabled");
+    Forward.Setup(services, Shadows);
     Lines.Setup(services);
     WideLines.Setup(services);
     Fills.Setup(services);
@@ -471,6 +473,7 @@ void EditorRenderFeature::Teardown()
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();
+    Shadows.Teardown();
     Lines.Teardown();
     WideLines.Teardown();
     Fills.Teardown();

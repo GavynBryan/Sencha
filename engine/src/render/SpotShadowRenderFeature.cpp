@@ -33,7 +33,14 @@ void SpotShadowRenderFeature::Setup(const RendererServices& services)
     Shaders = services.Shaders;
 
     if (!Resources->Setup(services))
+    {
+        if (services.Logging != nullptr)
+        {
+            services.Logging->GetLogger<SpotShadowRenderFeature>().Warn(
+                "Spot shadow resources failed to set up; spot shadows disabled");
+        }
         return;
+    }
 
     VertexShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Spot shadow vertex");
@@ -46,10 +53,6 @@ void SpotShadowRenderFeature::Setup(const RendererServices& services)
     push.size = sizeof(MeshPushConstants);
     PipelineLayout = Descriptors->GetPipelineLayout({ push });
     Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
-}
-
-void SpotShadowRenderFeature::PrepareFrame(const FrameContext&)
-{
 }
 
 bool SpotShadowRenderFeature::EnsurePipelines()
@@ -133,7 +136,7 @@ void SpotShadowRenderFeature::BindView(const FrameContext& frame, VkDeviceSize u
                             1, 1, &bindlessSet, 0, nullptr);
 }
 
-void SpotShadowRenderFeature::Record(const FrameContext& frame)
+void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
 {
     if (Lights.SpotShadowCount == 0 || Casters.Items.empty())
         return;

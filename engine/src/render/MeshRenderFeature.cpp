@@ -4,18 +4,20 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      StaticMeshCache& meshes,
                                      MaterialCache& materials,
                                      const CameraRenderData& camera,
-                                     const RenderLightSet& lights)
+                                     const RenderLightSet& lights,
+                                     std::shared_ptr<SpotShadowResources> shadows)
     : Queue(&queue)
     , Meshes(&meshes)
     , Materials(&materials)
     , Camera(&camera)
     , Lights(&lights)
+    , Shadows(std::move(shadows))
 {
 }
 
 void MeshRenderFeature::Setup(const RendererServices& services)
 {
-    Pass.Setup(services);
+    Pass.Setup(services, *Shadows);
 }
 
 void MeshRenderFeature::OnDraw(const FrameContext& frame)

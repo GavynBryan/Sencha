@@ -2,24 +2,51 @@
 
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
+#include <graphics/vulkan/VulkanUploadContextService.h>
 #include <render/RenderLight.h>
 
 bool SpotShadowResources::Setup(const RendererServices& services)
 {
     Images = services.Images;
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
-    if (Images == nullptr || Device == VK_NULL_HANDLE)
+    if (Images == nullptr || Device == VK_NULL_HANDLE || services.Upload == nullptr)
         return false;
 
     Atlas = Images->Create(ImageCreateInfo{
-        .Extent = { kSpotShadowAtlasExtent, kSpotShadowAtlasExtent },
         .Format = VK_FORMAT_D16_UNORM,
+        .Extent = { kSpotShadowAtlasExtent, kSpotShadowAtlasExtent },
         .Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
         .DebugName = "Spot shadow atlas",
     });
     if (!Atlas.IsValid())
         return false;
+
+    // Park the fresh atlas in the sampled layout so the descriptor set is
+    // valid to bind even on frames that render no shadow tiles (zero shadowed
+    // lights, or viewports with no shadow pass at all).
+    VkCommandBuffer initCmd = services.Upload->Begin();
+    if (initCmd == VK_NULL_HANDLE)
+    {
+        Teardown();
+        return false;
+    }
+    VulkanBarriers::ImageTransition initTransition{};
+    initTransition.Image = GetImage();
+    initTransition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    initTransition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    initTransition.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    initTransition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    initTransition.SrcAccess = 0;
+    initTransition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    initTransition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    VulkanBarriers::TransitionImage(initCmd, initTransition);
+    if (!services.Upload->Submit(initCmd))
+    {
+        Teardown();
+        return false;
+    }
+    Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -142,14 +169,10 @@ void SpotShadowResources::TransitionForWrite(VkCommandBuffer commandBuffer)
     transition.Image = GetImage();
     transition.OldLayout = Layout;
     transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    transition.SrcStage = Layout == VK_IMAGE_LAYOUT_UNDEFINED
-        ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
-        : VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     transition.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                         | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-    transition.SrcAccess = Layout == VK_IMAGE_LAYOUT_UNDEFINED
-        ? 0
-        : VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    transition.SrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
     transition.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                          | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;

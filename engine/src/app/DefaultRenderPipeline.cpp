@@ -9,6 +9,7 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/MeshRenderFeature.h>
+#include <render/SpotShadowRenderFeature.h>
 #endif
 
 #include <memory>
@@ -87,8 +88,19 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
         return false;
 
     Swapchain = &graphics.Swapchain;
-    return graphics.MainRenderer.AddFeature(
-        std::make_unique<MeshRenderFeature>(Queue, *Meshes, *Materials, Camera, Lights)) != nullptr;
+
+    // The shadow feature renders the atlas the forward pass samples. Adding it
+    // first runs its Setup first, so the shadow descriptor set layout exists
+    // when the forward pass builds its pipeline layout; Offscreen also records
+    // before MainColor, so tiles are written before they are read.
+    auto shadows = std::make_shared<SpotShadowResources>();
+    if (graphics.MainRenderer.AddFeature(std::make_unique<SpotShadowRenderFeature>(
+            shadows, Lights, ShadowCasters, *Meshes)) == nullptr)
+    {
+        return false;
+    }
+    return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
+        Queue, *Meshes, *Materials, Camera, Lights, std::move(shadows))) != nullptr;
 #else
     (void)graphics;
     return false;
