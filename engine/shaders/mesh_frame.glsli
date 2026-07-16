@@ -6,7 +6,10 @@ struct GpuLight
     vec4 PositionRange;
     vec4 DirectionCone;
     vec4 ColorIntensity;
-    uvec4 TypeShadow;
+    uint Type;
+    uint ShadowIndex;
+    float ConeScale;
+    float ConeOffset;
 };
 
 layout(set = 0, binding = 0) uniform MeshFrame
