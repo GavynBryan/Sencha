@@ -2,6 +2,7 @@
 
 #include <math/Mat.h>
 #include <math/Vec.h>
+#include <math/geometry/3d/Sphere.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -43,9 +44,10 @@ inline constexpr std::uint32_t kSpotShadowMinTileExtent = 256;
 // until probe content is uploaded.
 inline constexpr std::uint32_t kMaxActiveProbeVolumes = 8;
 inline constexpr std::uint32_t kSpotShadowAtlasExtent = 2048;
+// The reference tier: shadow-view sampling parameters are derived for this
+// tile edge and rescaled to the granted allocation's interior at schedule
+// time. Also the default request tile size.
 inline constexpr std::uint32_t kSpotShadowTileExtent = 512;
-inline constexpr std::uint32_t kSpotShadowAtlasColumns =
-    kSpotShadowAtlasExtent / kSpotShadowTileExtent;
 inline constexpr std::uint32_t kSpotShadowGuardTexels = 8;
 inline constexpr std::uint32_t kSpotShadowInnerExtent =
     kSpotShadowTileExtent - 2u * kSpotShadowGuardTexels;
@@ -56,20 +58,6 @@ inline constexpr float kSpotShadowSoftnessMaxTexels = 4.0f;
 inline constexpr std::uint32_t kSpotShadowFilterReachTexels = 7;
 static_assert(kSpotShadowFilterReachTexels < kSpotShadowGuardTexels);
 static_assert(kSpotShadowAtlasExtent % kSpotShadowTileExtent == 0);
-static_assert(kMaxSpotShadows <= kSpotShadowAtlasColumns * kSpotShadowAtlasColumns);
-
-[[nodiscard]] inline Vec4 SpotShadowAtlasScaleBias(std::uint32_t slot)
-{
-    constexpr float atlas = static_cast<float>(kSpotShadowAtlasExtent);
-    const std::uint32_t column = slot % kSpotShadowAtlasColumns;
-    const std::uint32_t row = slot / kSpotShadowAtlasColumns;
-    const float scale = static_cast<float>(kSpotShadowInnerExtent) / atlas;
-    const float biasX = static_cast<float>(
-        column * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
-    const float biasY = static_cast<float>(
-        row * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
-    return Vec4(scale, scale, biasX, biasY);
-}
 
 struct SpotShadowView
 {
@@ -132,6 +120,37 @@ struct SpotShadowView
         std::max(light.ShadowBiasScale, 0.0f),
         0.0f);
     return shadow;
+}
+
+// Ranks a light against a view origin for packing and shadow-slot
+// arbitration: intensity scaled by the squared saturated range/distance
+// reach, so a light whose volume contains the origin outranks an equally
+// bright distant one. The game and the editor must rank identically for the
+// editor's budget readout to predict the game's grants.
+[[nodiscard]] inline float LightImportanceScore(const Vec<3>& lightPosition,
+                                                float range,
+                                                float intensity,
+                                                const Vec<3>& viewOrigin)
+{
+    const float distance = Vec<3>::Distance(lightPosition, viewOrigin);
+    const float reach = std::clamp(range / std::max(distance, 1.0e-4f), 0.0f, 1.0f);
+    return intensity * reach * reach;
+}
+
+// Bounding sphere of a spot cone from apex to range cap, used for view-frustum
+// culling and for intersecting caster-diff event bounds.
+[[nodiscard]] inline Sphere MakeSpotBoundingSphere(const Vec<3>& position,
+                                                   const Vec<3>& direction,
+                                                   float range,
+                                                   float outerAngleDegrees)
+{
+    constexpr float degreesToRadians = 0.01745329251994329577f;
+    const float angle = std::clamp(outerAngleDegrees, 0.01f, 89.9f)
+                      * degreesToRadians;
+    const float halfRange = range * 0.5f;
+    const float coneRadius = range * std::tan(angle);
+    const float radius = std::sqrt(halfRange * halfRange + coneRadius * coneRadius);
+    return Sphere(position + direction * halfRange, radius);
 }
 
 [[nodiscard]] inline GpuLight MakePointGpuLight(
@@ -217,20 +236,5 @@ struct RenderLightSet
                  const SpotLightComponent& light)
     {
         (void)Add(MakeSpotGpuLight(worldPosition, worldDirection, light));
-    }
-
-    // Grants the next fixed atlas slot to an already-packed light, wiring
-    // the slot's inset scale/bias and the light's shadow index. Returns the
-    // slot, or UINT32_MAX when the budget is exhausted or the index invalid.
-    std::uint32_t GrantSpotShadow(std::uint32_t lightIndex, SpotShadowView view)
-    {
-        if (lightIndex >= Count || SpotShadowCount >= kMaxSpotShadows)
-            return UINT32_MAX;
-        const std::uint32_t slot = SpotShadowCount++;
-        view.LightIndex = lightIndex;
-        view.AtlasScaleBias = SpotShadowAtlasScaleBias(slot);
-        SpotShadows[slot] = view;
-        Lights[lightIndex].ShadowIndex = slot;
-        return slot;
     }
 };

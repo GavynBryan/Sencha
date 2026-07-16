@@ -1,5 +1,6 @@
 #include <app/DefaultRenderPipeline.h>
 
+#include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -183,23 +184,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     CasterEvents.clear();
     CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
 
-    ShadowResidencyBudgets shadowBudgets;
-    shadowBudgets.MaxSlots = static_cast<std::uint32_t>(std::clamp(
-        ReadDoubleCVar(Console, "render.shadow.max_spot",
-                       static_cast<float>(kMaxSpotShadows)),
-        0.0f, static_cast<float>(kMaxSpotShadows)));
-    shadowBudgets.MaxViewsPerFrame = static_cast<std::uint32_t>(std::max(
-        ReadDoubleCVar(Console, "render.shadow.max_views_per_frame", 12.0f), 0.0f));
-    shadowBudgets.MinInvalidatedViewsPerFrame = static_cast<std::uint32_t>(std::max(
-        ReadDoubleCVar(Console, "render.shadow.min_invalidated_views_per_frame", 1.0f),
-        0.0f));
-    Residency.Update(ShadowRequests, CasterEvents, shadowBudgets);
-
-    for (const SpotShadowGrant& grant : Residency.Grants())
-        Lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
-    Lights.SpotShadowCount = Residency.SlotHighWater();
-    for (std::uint32_t slot = 0; slot < Lights.SpotShadowCount; ++slot)
-        Lights.SpotShadows[slot] = Residency.SlotRecord(slot);
+    Residency.Update(ShadowRequests, CasterEvents,
+                     EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
+    Residency.ApplyGrants(Lights);
 
     if (Log != nullptr)
     {

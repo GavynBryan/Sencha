@@ -3,6 +3,7 @@
 #include <core/config/ConsoleConfig.h>
 #include <core/config/RuntimeConfig.h>
 #include <core/console/ConsoleTypes.h>
+#include <render/ShadowResidency.h>
 
 #include <functional>
 #include <memory>
@@ -35,6 +36,13 @@ namespace EngineConsoleBuiltins
     // once the pipeline exists.
     void RegisterRenderCommands(ConsoleRegistry& registry,
                                 DefaultRenderPipeline& pipeline);
+
+    // The render.shadow.* budget cvars with their registration clamps applied;
+    // the game pipeline and the editor preview read the same budgets so the
+    // editor's readout predicts the game's arbitration. A null registry yields
+    // the registered defaults.
+    [[nodiscard]] ShadowResidencyBudgets ReadShadowResidencyBudgets(
+        const ConsoleRegistry* registry);
 
     ConsoleResult ApplyConfigAssignments(ConsoleService& console,
                                          const EngineConsoleConfig& config);

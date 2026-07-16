@@ -3,6 +3,7 @@
 #include "PreviewBuffer.h"
 
 #include "document/EditorDocument.h"
+#include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 
 #include "EditorTheme.h"
@@ -10,9 +11,11 @@
 #include "viewport/WorldViewSettings.h"
 #include "viewport/ViewportShading.h"
 
+#include <app/EngineConsoleBuiltins.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
+#include <world/registry/Registry.h>
 
 #include <graphics/vulkan/VulkanBarriers.h>
 
@@ -186,27 +189,10 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                         *LoggingRef);
                 builder->Build(document);
             });
-        // Record the focus scene's shadow atlas once per frame, before any
-        // viewport rendering scope opens. Every Solid viewport then samples
-        // the same tiles. The editor re-renders its fixed always-update
-        // grants each frame, so the view list is rebuilt from the fixed
-        // 512 grid; the pass is a no-op when no spot light holds a grant.
-        const RenderLightSet& sceneLights = QueueBuilder->Lights();
-        ShadowJobs.clear();
-        for (std::uint32_t slot = 0; slot < sceneLights.SpotShadowCount; ++slot)
-        {
-            ShadowJobs.push_back(SpotShadowViewJob{
-                .SlotIndex = slot,
-                .Allocation = ShadowAtlasAllocation{
-                    .X = (slot % kSpotShadowAtlasColumns) * kSpotShadowTileExtent,
-                    .Y = (slot / kSpotShadowAtlasColumns) * kSpotShadowTileExtent,
-                    .Size = kSpotShadowTileExtent,
-                },
-                .ViewProjection = sceneLights.SpotShadows[slot].ViewProjection,
-            });
-        }
-        ShadowPass.Draw(frame, sceneLights, ShadowJobs, QueueBuilder->Casters(),
-                        *MeshCache, nullptr);
+        // Arbitrate and record the focus scene's shadow atlas once per frame,
+        // before any viewport rendering scope opens. Every Solid viewport
+        // then samples the same tiles.
+        UpdateShadowResidency(frame);
     }
 
     // Render every viewport that is actually on screen. A hidden panel zeroes its
@@ -230,6 +216,96 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     // Drop targets for viewports the layout no longer shows.
     Targets.Prune(liveIds);
+}
+
+void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
+{
+    RenderLightSet& lights = QueueBuilder->Lights();
+
+    // A different focus scene means different entity keys; reset instead of
+    // aging the old scene's slot holders out through steal hysteresis.
+    const RegistryId sceneRegistry = World.FocusDocument().GetScene().GetRegistry().Id;
+    if (!(sceneRegistry == ShadowSceneRegistry))
+    {
+        Residency.Reset();
+        ShadowSceneRegistry = sceneRegistry;
+    }
+
+    // Depth bias bakes into tiles at record time, so cached tiles keep an old
+    // bias until re-rendered; a bias cvar edit invalidates them all.
+    if (lights.ShadowBiasConstant != ShadowBiasConstant
+        || lights.ShadowBiasSlope != ShadowBiasSlope)
+    {
+        Residency.InvalidateAll();
+        ShadowBiasConstant = lights.ShadowBiasConstant;
+        ShadowBiasSlope = lights.ShadowBiasSlope;
+    }
+
+    const std::span<const SpotShadowRequest> requests =
+        QueueBuilder->BuildShadowRequests(ShadowScoreOrigin());
+
+    // The diff always swaps its tables so a later OnChange acquisition sees
+    // current history; events are only worth emitting while someone caches.
+    CasterEvents.clear();
+    CasterDiff.Apply(QueueBuilder->Casters().Records,
+                     Residency.HasOnChangeSlots(), CasterEvents);
+
+    const ShadowResidencyBudgets budgets =
+        EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console);
+    Residency.Update(requests, CasterEvents, budgets);
+    Residency.ApplyGrants(lights);
+
+    ShadowPass.Draw(frame, lights, Residency.ScheduledViews(),
+                    QueueBuilder->Casters(), *MeshCache, &Residency);
+
+    ShadowFrame.Active = Lighting.HasAtlas();
+    ShadowFrame.FocusRegistry = sceneRegistry;
+    ShadowFrame.Stats = Residency.FrameStats();
+    ShadowFrame.Budgets = budgets;
+    for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
+        ShadowFrame.Slots[slot] = Residency.SlotInfo(slot);
+    ShadowFrame.Rows.clear();
+    ShadowFrame.Rows.reserve(requests.size());
+    for (const SpotShadowRequest& request : requests)
+    {
+        ShadowResidencyReadout::LightRow row;
+        row.Entity = request.Key.Entity;
+        row.Score = request.Score;
+        row.TileSize = request.TileSize;
+        row.Policy = request.Policy;
+        for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
+        {
+            const SpotShadowSlotInfo& info = ShadowFrame.Slots[slot];
+            if (info.Live && info.Owner == request.Key)
+            {
+                row.Held = true;
+                row.Slot = slot;
+                break;
+            }
+        }
+        ShadowFrame.Rows.push_back(row);
+    }
+}
+
+Vec<3> EditorRenderFeature::ShadowScoreOrigin() const
+{
+    const EditorViewport* reference = Layout.Active();
+    if (reference == nullptr
+        || reference->Orientation != ViewportOrientation::Perspective)
+    {
+        for (const auto& viewport : Layout.All())
+        {
+            if (viewport != nullptr
+                && viewport->Orientation == ViewportOrientation::Perspective)
+            {
+                reference = &*viewport;
+                break;
+            }
+        }
+    }
+    if (reference == nullptr)
+        return Vec<3>(0.0f, 0.0f, 0.0f);
+    return reference->Camera.Position;
 }
 
 void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,

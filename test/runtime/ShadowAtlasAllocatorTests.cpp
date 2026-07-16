@@ -67,15 +67,15 @@ TEST(ShadowAtlasAllocator, RejectsInvalidTileSizes)
     EXPECT_FALSE(atlas.Allocate(0).IsValid());
 }
 
-TEST(ShadowAtlasAllocator, InsetScaleBiasMatchesTheFixedGridForFullTiles)
+TEST(ShadowAtlasAllocator, InsetScaleBiasKeepsGuardOnFullTiles)
 {
-    // The fixed-grant grid the editor still uses is the special case of a
-    // 512 tile at slot-major placement; both paths must express the same
-    // logical interior.
     const ShadowAtlasAllocation allocation{ 512, 0, 512 };
-    const Vec4 fromAllocator = ShadowAtlasAllocator::InsetScaleBias(allocation);
-    const Vec4 fromFixedGrid = SpotShadowAtlasScaleBias(1u);
-    EXPECT_EQ(fromAllocator, fromFixedGrid);
+    const Vec4 scaleBias = ShadowAtlasAllocator::InsetScaleBias(allocation);
+    constexpr float atlas = static_cast<float>(kSpotShadowAtlasExtent);
+    EXPECT_FLOAT_EQ(scaleBias.X, (512.0f - 16.0f) / atlas);
+    EXPECT_FLOAT_EQ(scaleBias.Y, (512.0f - 16.0f) / atlas);
+    EXPECT_FLOAT_EQ(scaleBias.Z, (512.0f + 8.0f) / atlas);
+    EXPECT_FLOAT_EQ(scaleBias.W, 8.0f / atlas);
 }
 
 TEST(ShadowAtlasAllocator, InsetScaleBiasKeepsGuardOnEveryTier)

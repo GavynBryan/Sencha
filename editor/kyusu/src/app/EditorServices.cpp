@@ -21,6 +21,7 @@
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/InspectorPanel.h"
+#include "ui/LightingPanel.h"
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
@@ -471,6 +472,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands));
+    UiFeature->AddPanel(std::make_unique<LightingPanel>(
+        RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
+        [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Tools.get(); },

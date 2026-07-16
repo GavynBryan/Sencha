@@ -14,10 +14,12 @@
 #include <render/PointLightComponent.h>
 #include <render/ShadowCasterExtractionSystem.h>
 #include <render/SpotLightComponent.h>
+#include <render/RenderEntityKey.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <utility>
@@ -245,9 +247,11 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
     // shadow-view gather below reads ShadowSoftness, which is why the stamp
     // has to happen first.
     SceneLights.Reset();
+    ShadowCandidates.clear();
 
     const EditorScene& scene = document.GetScene();
-    const World& world = scene.GetRegistry().Components;
+    const Registry& registry = scene.GetRegistry();
+    const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))
@@ -270,38 +274,100 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
             continue;
         }
 
+        const Vec<3> direction = transform->Forward();
         const std::uint32_t lightIndex = SceneLights.Add(
-            MakeSpotGpuLight(transform->Position, transform->Forward(), *spot));
+            MakeSpotGpuLight(transform->Position, direction, *spot));
         if (lightIndex != UINT32_MAX && spot->CastShadows)
         {
-            // Fixed grants in scene order, the editor's deterministic
-            // equivalent of the game's score-ordered assignment.
-            (void)SceneLights.GrantSpotShadow(
-                lightIndex,
-                MakeSpotShadowView(*transform, *spot, SceneLights.ShadowSoftness));
+            ShadowCandidates.push_back(SpotShadowCandidate{
+                .Key = MakeRenderEntityKey(registry, entity),
+                .LightIndex = lightIndex,
+                .Position = transform->Position,
+                .Range = spot->Range,
+                .Intensity = spot->Intensity,
+                .View = MakeSpotShadowView(*transform, *spot, SceneLights.ShadowSoftness),
+                .Bounds = MakeSpotBoundingSphere(
+                    transform->Position, direction, spot->Range,
+                    spot->OuterAngleDegrees),
+                .TileSize = static_cast<std::uint32_t>(spot->ShadowResolution),
+                .Policy = spot->ShadowUpdate,
+            });
         }
     }
+}
+
+std::span<const SpotShadowRequest> SceneRenderQueueBuilder::BuildShadowRequests(
+    const Vec<3>& viewOrigin)
+{
+    ShadowRequests.clear();
+    ShadowRequests.reserve(ShadowCandidates.size());
+    for (const SpotShadowCandidate& candidate : ShadowCandidates)
+    {
+        ShadowRequests.push_back(SpotShadowRequest{
+            .Key = candidate.Key,
+            .LightIndex = candidate.LightIndex,
+            .Score = LightImportanceScore(
+                candidate.Position, candidate.Range, candidate.Intensity, viewOrigin),
+            .TileSize = candidate.TileSize,
+            .Policy = candidate.Policy,
+            .StateHash = HashSpotShadowState(candidate.View, candidate.TileSize),
+            .ViewProjection = candidate.View.ViewProjection,
+            .SamplingParams = candidate.View.SamplingParams,
+            .Bounds = candidate.Bounds,
+        });
+    }
+    std::sort(ShadowRequests.begin(), ShadowRequests.end(),
+        [](const SpotShadowRequest& a, const SpotShadowRequest& b)
+        {
+            if (a.Score != b.Score)
+                return a.Score > b.Score;
+            return a.Key < b.Key;
+        });
+    return ShadowRequests;
 }
 
 void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
 {
     SceneCasters.Reset();
 
+    const EditorScene& scene = document.GetScene();
+    const Registry& registry = scene.GetRegistry();
+
     // Brush geometry is baked in world space at identity, so its mesh bounds
     // are already world bounds. Every section is offered; the engine caster
-    // policy drops sections whose material opts out.
+    // policy drops sections whose material opts out. Cooked brushes have no
+    // entity, so their diff records key on the bake ordinal in a high-bit
+    // index namespace real entities cannot reach; a rebake recreates every
+    // brush mesh handle, so any brush edit reads as changed records over the
+    // affected bounds.
+    std::uint32_t brushOrdinal = 0;
     for (const CachedBrushMesh& entry : BrushMeshes)
     {
         const GpuStaticMesh* mesh = Meshes.Get(entry.Mesh);
         if (mesh == nullptr)
             continue;
-        AppendShadowCasterSections(entry.Mesh, *mesh, entry.SlotMaterials, Materials,
-                                   ~0u, Mat4::Identity(), mesh->LocalBounds,
-                                   SceneCasters);
+        const ShadowCasterGatherResult gathered = AppendShadowCasterSections(
+            entry.Mesh, *mesh, entry.SlotMaterials, Materials,
+            ~0u, Mat4::Identity(), mesh->LocalBounds, SceneCasters);
+        const std::uint32_t ordinal = brushOrdinal++;
+        if (gathered.EffectiveSectionMask == 0)
+            continue;
+
+        RenderEntityKey key = MakeRenderEntityKey(
+            registry, EntityId{ .Index = 0x80000000u | ordinal, .Generation = 0 });
+        SceneCasters.Records.push_back(ShadowCasterRecord{
+            .Key = key,
+            .State = ShadowCasterState{
+                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                .Mesh = entry.Mesh,
+                .Materials = MaterialSetHandle{},
+                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                .ShadowMaterialStateHash = gathered.MaterialStateHash,
+            },
+        });
     }
 
-    const EditorScene& scene = document.GetScene();
-    const World& world = scene.GetRegistry().Components;
+    const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))
@@ -316,8 +382,22 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         if (mesh == nullptr || sectionMaterials == nullptr || transform == nullptr)
             continue;
 
-        AppendShadowCasters(*renderer, *mesh, *sectionMaterials, Materials,
-                            transform->ToMat4(), SceneCasters);
+        const ShadowCasterGatherResult gathered = AppendShadowCasters(
+            *renderer, *mesh, *sectionMaterials, Materials,
+            transform->ToMat4(), SceneCasters);
+        if (gathered.EffectiveSectionMask == 0)
+            continue;
+
+        SceneCasters.Records.push_back(ShadowCasterRecord{
+            .Key = MakeRenderEntityKey(registry, entity),
+            .State = ShadowCasterState{
+                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                .Mesh = renderer->Mesh,
+                .Materials = renderer->Materials,
+                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                .ShadowMaterialStateHash = gathered.MaterialStateHash,
+            },
+        });
     }
 }
 

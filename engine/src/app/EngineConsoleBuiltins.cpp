@@ -7,7 +7,10 @@
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
 
+#include <algorithm>
 #include <span>
+#include <string_view>
+#include <variant>
 
 namespace EngineConsoleBuiltins
 {
@@ -214,6 +217,30 @@ namespace EngineConsoleBuiltins
                 return result;
             },
         });
+    }
+
+    ShadowResidencyBudgets ReadShadowResidencyBudgets(const ConsoleRegistry* registry)
+    {
+        const auto readDouble = [registry](std::string_view name, float fallback)
+        {
+            if (registry == nullptr)
+                return fallback;
+            const CVarMetadata* metadata = registry->FindCVar(name);
+            if (metadata == nullptr)
+                return fallback;
+            const double* value = std::get_if<double>(&metadata->CurrentValue);
+            return value != nullptr ? static_cast<float>(*value) : fallback;
+        };
+
+        ShadowResidencyBudgets budgets;
+        budgets.MaxSlots = static_cast<std::uint32_t>(std::clamp(
+            readDouble("render.shadow.max_spot", static_cast<float>(kMaxSpotShadows)),
+            0.0f, static_cast<float>(kMaxSpotShadows)));
+        budgets.MaxViewsPerFrame = static_cast<std::uint32_t>(std::max(
+            readDouble("render.shadow.max_views_per_frame", 12.0f), 0.0f));
+        budgets.MinInvalidatedViewsPerFrame = static_cast<std::uint32_t>(std::max(
+            readDouble("render.shadow.min_invalidated_views_per_frame", 1.0f), 0.0f));
+        return budgets;
     }
 
     ConsoleResult ApplyConfigAssignments(ConsoleService& console,

@@ -4,9 +4,11 @@
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/ShadowCasterSet.h>
+#include <render/ShadowResidency.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 class EditorDocument;
@@ -32,10 +34,13 @@ class Logger;
 // placed meshes draw in every viewport. Both are camera-independent and built
 // once per frame; the per-viewport camera is applied at draw time.
 //
-// The light set carries the scene's packed lights plus fixed spot shadow
-// grants, and the caster set gathers the brush and placed-mesh sections that
-// cast (engine caster policy), so the shadow depth pass renders the same
-// atlas the game would for this scene.
+// The light set carries the scene's packed lights; shadowed spots are
+// gathered as candidates and emitted as residency requests on demand
+// (BuildShadowRequests), so the editor runs the same arbiter the game does.
+// The caster set gathers the brush and placed-mesh sections that cast
+// (engine caster policy) plus the per-entity diff records driving OnChange
+// invalidation, so the shadow depth pass renders the same atlas the game
+// would for this scene.
 //
 // CPU/asset only (no Vulkan) so it can be unit-tested headlessly.
 //=============================================================================
@@ -60,11 +65,20 @@ public:
     // the asset system, not here).
     void Build(const EditorDocument& document);
 
+    // Scores the gathered shadow candidates against the given origin (the
+    // focus viewport's camera) and emits residency requests, score descending
+    // with stable key ties: the order the arbiter treats as priority. Unlike
+    // the game's extraction there is no frustum cull; every viewport samples
+    // the one atlas, so the camera only ranks, never excludes.
+    [[nodiscard]] std::span<const SpotShadowRequest> BuildShadowRequests(
+        const Vec<3>& viewOrigin);
+
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
     [[nodiscard]] const RenderLightSet& Lights() const { return SceneLights; }
     [[nodiscard]] RenderLightSet& Lights() { return SceneLights; }
     [[nodiscard]] const ShadowCasterSet& Casters() const { return SceneCasters; }
+    [[nodiscard]] ShadowCasterSet& Casters() { return SceneCasters; }
 
 private:
     // One cooked brush's GPU mesh, owned here (Create/Destroy), plus the material
@@ -73,6 +87,21 @@ private:
     {
         StaticMeshHandle Mesh;
         std::vector<MaterialHandle> SlotMaterials;
+    };
+
+    // One shadow-casting spot light gathered by BuildLights, scored and
+    // emitted by BuildShadowRequests once the frame's view origin is known.
+    struct SpotShadowCandidate
+    {
+        RenderEntityKey Key;
+        std::uint32_t LightIndex = UINT32_MAX;
+        Vec<3> Position;
+        float Range = 0.0f;
+        float Intensity = 0.0f;
+        SpotShadowView View;
+        Sphere Bounds;
+        std::uint32_t TileSize = 0;
+        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
     };
 
     void RebuildBrushMeshes(const EditorDocument& document);
@@ -97,4 +126,6 @@ private:
     RenderQueue PlacedMeshes;
     RenderLightSet SceneLights;
     ShadowCasterSet SceneCasters;
+    std::vector<SpotShadowCandidate> ShadowCandidates;
+    std::vector<SpotShadowRequest> ShadowRequests;
 };

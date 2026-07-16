@@ -306,23 +306,8 @@ TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
     EXPECT_EQ(requests[0].Policy, ShadowUpdatePolicy::OnChange);
 }
 
-TEST(SpotShadowAtlas, InsetsFixedSlotsAndContainsFilterReach)
+TEST(SpotShadowAtlas, FilterReachStaysInsideTheGuardBand)
 {
-    const Vec4 first = SpotShadowAtlasScaleBias(0u);
-    const Vec4 lastGranted = SpotShadowAtlasScaleBias(kMaxSpotShadows - 1u);
-    const float atlas = static_cast<float>(kSpotShadowAtlasExtent);
-
-    EXPECT_FLOAT_EQ(first.X, static_cast<float>(kSpotShadowInnerExtent) / atlas);
-    EXPECT_FLOAT_EQ(first.Y, static_cast<float>(kSpotShadowInnerExtent) / atlas);
-    EXPECT_FLOAT_EQ(first.Z, static_cast<float>(kSpotShadowGuardTexels) / atlas);
-    EXPECT_FLOAT_EQ(first.W, static_cast<float>(kSpotShadowGuardTexels) / atlas);
-    EXPECT_FLOAT_EQ(lastGranted.Z,
-                    static_cast<float>(3u * kSpotShadowTileExtent
-                        + kSpotShadowGuardTexels) / atlas);
-    EXPECT_FLOAT_EQ(lastGranted.W,
-                    static_cast<float>(kSpotShadowTileExtent
-                        + kSpotShadowGuardTexels) / atlas);
-
     const auto derivedReach = static_cast<std::uint32_t>(
         std::ceil(1.5f * kSpotShadowSoftnessMaxTexels)) + 1u;
     EXPECT_EQ(kSpotShadowFilterReachTexels, derivedReach);

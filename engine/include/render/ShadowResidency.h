@@ -30,6 +30,13 @@ struct SpotShadowRequest
     Sphere Bounds;
 };
 
+// Hash of every extracted value the rendered depth view depends on, for
+// SpotShadowRequest::StateHash. The game extraction and the editor's scene
+// gather must produce identical hashes for identical light state, so this is
+// the one implementation.
+[[nodiscard]] std::uint64_t HashSpotShadowState(const SpotShadowView& view,
+                                                std::uint32_t tileSize);
+
 // One depth render scheduled this frame: which slot, where in the atlas, and
 // the view-projection to render with.
 struct SpotShadowViewJob
@@ -54,6 +61,32 @@ struct ShadowResidencyBudgets
     // Views reserved each frame for the oldest invalidated cached slots, so
     // saturated EveryFrame demand cannot starve them.
     std::uint32_t MinInvalidatedViewsPerFrame = 1;
+};
+
+// Read-only view of one arbiter slot, for budget readouts and atlas debug
+// displays. Ages are in Update calls (frames); FramesSinceRendered is
+// meaningful only while EverRendered.
+struct SpotShadowSlotInfo
+{
+    bool Live = false;
+    RenderEntityKey Owner;
+    ShadowAtlasAllocation Allocation;
+    ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
+    bool EverRendered = false;
+    bool Invalid = false;
+    std::uint32_t FramesSinceAcquired = 0;
+    std::uint32_t FramesSinceRendered = 0;
+};
+
+// Counters for the last Update: how demand met the budgets and how well the
+// cache held (a cached slot is a held request whose tile needed no re-render).
+struct SpotShadowFrameStats
+{
+    std::uint32_t RequestCount = 0;
+    std::uint32_t HeldRequests = 0;
+    std::uint32_t DeniedRequests = 0;
+    std::uint32_t ViewsScheduled = 0;
+    std::uint32_t CachedSlots = 0;
 };
 
 //=============================================================================
@@ -93,12 +126,18 @@ public:
     [[nodiscard]] std::span<const SpotShadowGrant> Grants() const { return FrameGrants; }
     [[nodiscard]] std::span<const SpotShadowViewJob> ScheduledViews() const { return FrameViews; }
 
+    // Writes the frame's grants onto the packed light set: shadow indices for
+    // granted lights, the slot high water, and the last-rendered slot records.
+    void ApplyGrants(RenderLightSet& lights) const;
+
     // The GPU record for one slot as last rendered; meaningful only for
     // slots referenced by a grant.
     [[nodiscard]] const SpotShadowView& SlotRecord(std::uint32_t slot) const
     {
         return Slots[slot].Rendered;
     }
+    [[nodiscard]] SpotShadowSlotInfo SlotInfo(std::uint32_t slot) const;
+    [[nodiscard]] const SpotShadowFrameStats& FrameStats() const { return Stats; }
     // Upper bound for the frame's uniform slot array (highest live slot + 1).
     [[nodiscard]] std::uint32_t SlotHighWater() const;
     [[nodiscard]] bool HasOnChangeSlots() const;
@@ -125,6 +164,7 @@ private:
         bool EverRendered = false;
         bool Invalid = false;
         std::uint32_t AcquiredFrame = 0;
+        std::uint32_t LastRenderedFrame = 0;
         std::uint32_t InvalidatedFrame = 0;
         std::uint32_t OutscoredFrames = 0;
 
@@ -156,5 +196,6 @@ private:
     ShadowAtlasAllocator Atlas;
     std::vector<SpotShadowGrant> FrameGrants;
     std::vector<SpotShadowViewJob> FrameViews;
+    SpotShadowFrameStats Stats;
     std::uint32_t FrameNumber = 0;
 };

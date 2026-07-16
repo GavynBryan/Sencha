@@ -2,6 +2,31 @@
 
 #include <algorithm>
 
+namespace
+{
+    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+    void HashBytes(std::uint64_t& hash, const void* data, std::size_t size)
+    {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index)
+        {
+            hash ^= bytes[index];
+            hash *= kFnvPrime;
+        }
+    }
+}
+
+std::uint64_t HashSpotShadowState(const SpotShadowView& view, std::uint32_t tileSize)
+{
+    std::uint64_t hash = kFnvOffset;
+    HashBytes(hash, &view.ViewProjection, sizeof(view.ViewProjection));
+    HashBytes(hash, &view.SamplingParams, sizeof(view.SamplingParams));
+    HashBytes(hash, &tileSize, sizeof(tileSize));
+    return hash;
+}
+
 void ShadowResidency::Update(std::span<const SpotShadowRequest> requests,
                              std::span<const ShadowCasterEvent> events,
                              const ShadowResidencyBudgets& budgets)
@@ -17,6 +42,19 @@ void ShadowResidency::Update(std::span<const SpotShadowRequest> requests,
     ApplyHysteresisAndSteals(requests);
     ScheduleViews(requests, budgets);
     BuildGrants(requests);
+
+    Stats = SpotShadowFrameStats{};
+    Stats.RequestCount = static_cast<std::uint32_t>(requests.size());
+    Stats.ViewsScheduled = static_cast<std::uint32_t>(FrameViews.size());
+    for (const Slot& slot : Slots)
+    {
+        if (!slot.Live || slot.RequestIndex == UINT32_MAX)
+            continue;
+        ++Stats.HeldRequests;
+        if (slot.EverRendered && !slot.ScheduledThisFrame)
+            ++Stats.CachedSlots;
+    }
+    Stats.DeniedRequests = Stats.RequestCount - Stats.HeldRequests;
 }
 
 void ShadowResidency::IntakeEvents(std::span<const ShadowCasterEvent> events)
@@ -214,6 +252,7 @@ void ShadowResidency::ScheduleViews(std::span<const SpotShadowRequest> requests,
         slot.EverRendered = true;
         slot.Invalid = false;
         slot.ScheduledThisFrame = true;
+        slot.LastRenderedFrame = FrameNumber;
         --budget;
     };
 
@@ -352,6 +391,34 @@ bool ShadowResidency::IsRequestGranted(std::uint32_t requestIndex) const
     return false;
 }
 
+void ShadowResidency::ApplyGrants(RenderLightSet& lights) const
+{
+    for (const SpotShadowGrant& grant : FrameGrants)
+        lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
+    lights.SpotShadowCount = SlotHighWater();
+    for (std::uint32_t slot = 0; slot < lights.SpotShadowCount; ++slot)
+        lights.SpotShadows[slot] = Slots[slot].Rendered;
+}
+
+SpotShadowSlotInfo ShadowResidency::SlotInfo(std::uint32_t slot) const
+{
+    if (slot >= kMaxSpotShadows)
+        return {};
+    const Slot& state = Slots[slot];
+    return SpotShadowSlotInfo{
+        .Live = state.Live,
+        .Owner = state.Owner,
+        .Allocation = state.Allocation,
+        .Policy = state.Policy,
+        .EverRendered = state.EverRendered,
+        .Invalid = state.Invalid,
+        .FramesSinceAcquired = FrameNumber - state.AcquiredFrame,
+        .FramesSinceRendered = state.EverRendered
+            ? FrameNumber - state.LastRenderedFrame
+            : 0u,
+    };
+}
+
 std::uint32_t ShadowResidency::SlotHighWater() const
 {
     std::uint32_t highWater = 0;
@@ -405,5 +472,6 @@ void ShadowResidency::Reset()
     Atlas.Reset();
     FrameGrants.clear();
     FrameViews.clear();
+    Stats = SpotShadowFrameStats{};
     FrameNumber = 0;
 }

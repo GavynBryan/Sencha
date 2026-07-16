@@ -383,3 +383,98 @@ TEST(ShadowResidency, TierChangeReacquiresTheSlotInPlace)
     EXPECT_EQ(residency.SlotRecord(slot).AtlasScaleBias,
               ShadowAtlasAllocator::InsetScaleBias(residency.ScheduledViews()[0].Allocation));
 }
+
+TEST(ShadowResidency, FrameStatsCountDemandViewsAndCacheHits)
+{
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> requests{
+        MakeRequest(1, 0, 3.0f, ShadowUpdatePolicy::OnChange),
+        MakeRequest(2, 1, 2.0f, ShadowUpdatePolicy::OnChange),
+        MakeRequest(3, 2, 1.0f, ShadowUpdatePolicy::OnChange),
+    };
+    const ShadowResidencyBudgets twoSlots{
+        .MaxSlots = 2,
+        .MaxViewsPerFrame = 0,
+        .MinInvalidatedViewsPerFrame = 1,
+    };
+
+    residency.Update(requests, {}, twoSlots);
+    EXPECT_EQ(residency.FrameStats().RequestCount, 3u);
+    EXPECT_EQ(residency.FrameStats().HeldRequests, 2u);
+    EXPECT_EQ(residency.FrameStats().DeniedRequests, 1u);
+    EXPECT_EQ(residency.FrameStats().ViewsScheduled, 2u);
+    EXPECT_EQ(residency.FrameStats().CachedSlots, 0u);
+
+    // Steady state: both tiles cache, nothing renders.
+    residency.Update(requests, {}, twoSlots);
+    EXPECT_EQ(residency.FrameStats().ViewsScheduled, 0u);
+    EXPECT_EQ(residency.FrameStats().CachedSlots, 2u);
+    EXPECT_EQ(residency.FrameStats().DeniedRequests, 1u);
+}
+
+TEST(ShadowResidency, SlotInfoTracksAllocationAndAges)
+{
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> requests{
+        MakeRequest(1, 0, 4.0f, ShadowUpdatePolicy::OnChange, 1024),
+    };
+    residency.Update(requests, {}, kUnlimited);
+    std::uint32_t slot = UINT32_MAX;
+    ASSERT_TRUE(HasGrantForLight(residency, 0, &slot));
+
+    SpotShadowSlotInfo info = residency.SlotInfo(slot);
+    EXPECT_TRUE(info.Live);
+    EXPECT_TRUE(info.EverRendered);
+    EXPECT_FALSE(info.Invalid);
+    EXPECT_EQ(info.Owner, MakeKey(1));
+    EXPECT_EQ(info.Allocation.Size, 1024u);
+    EXPECT_EQ(info.Policy, ShadowUpdatePolicy::OnChange);
+    EXPECT_EQ(info.FramesSinceAcquired, 0u);
+    EXPECT_EQ(info.FramesSinceRendered, 0u);
+
+    residency.Update(requests, {}, kUnlimited);
+    residency.Update(requests, {}, kUnlimited);
+    info = residency.SlotInfo(slot);
+    EXPECT_EQ(info.FramesSinceAcquired, 2u);
+    EXPECT_EQ(info.FramesSinceRendered, 2u);
+
+    // A re-render resets the rendered age but not the acquisition age.
+    residency.InvalidateAll();
+    residency.Update(requests, {}, kUnlimited);
+    info = residency.SlotInfo(slot);
+    EXPECT_EQ(info.FramesSinceAcquired, 3u);
+    EXPECT_EQ(info.FramesSinceRendered, 0u);
+
+    EXPECT_FALSE(residency.SlotInfo(slot + 1).Live);
+    EXPECT_FALSE(residency.SlotInfo(kMaxSpotShadows).Live);
+}
+
+TEST(ShadowResidency, ApplyGrantsWiresLightsToRenderedSlotRecords)
+{
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> requests{
+        MakeRequest(1, 0, 3.0f),
+        MakeRequest(2, 2, 1.0f),
+    };
+    residency.Update(requests, {}, kUnlimited);
+    ASSERT_EQ(residency.Grants().size(), 2u);
+
+    RenderLightSet lights;
+    (void)lights.Add(GpuLight{});
+    (void)lights.Add(GpuLight{});
+    (void)lights.Add(GpuLight{});
+    residency.ApplyGrants(lights);
+
+    std::uint32_t slotForLight0 = UINT32_MAX;
+    std::uint32_t slotForLight2 = UINT32_MAX;
+    ASSERT_TRUE(HasGrantForLight(residency, 0, &slotForLight0));
+    ASSERT_TRUE(HasGrantForLight(residency, 2, &slotForLight2));
+
+    EXPECT_EQ(lights.Lights[0].ShadowIndex, slotForLight0);
+    EXPECT_EQ(lights.Lights[1].ShadowIndex, UINT32_MAX);
+    EXPECT_EQ(lights.Lights[2].ShadowIndex, slotForLight2);
+    EXPECT_EQ(lights.SpotShadowCount, residency.SlotHighWater());
+    EXPECT_EQ(lights.SpotShadows[slotForLight0].AtlasScaleBias,
+              residency.SlotRecord(slotForLight0).AtlasScaleBias);
+    EXPECT_EQ(lights.SpotShadows[slotForLight0].LightIndex, 0u);
+}
