@@ -122,7 +122,7 @@ void main()
     for (uint i = 0u; i < count; ++i)
     {
         GpuLight light = frame.Lights[i];
-        if (light.TypeShadow.x != 0u)
+        if (light.Type > 1u)
             continue;
 
         vec3 toLight = light.PositionRange.xyz - inWorldPos;
@@ -130,8 +130,19 @@ void main()
         float range = light.PositionRange.w;
         vec3 lightDirection = toLight / max(distanceToLight, 1e-4);
 
+        float coneAttenuation = 1.0;
+        if (light.Type == 1u)
+        {
+            float coneCosine = dot(-lightDirection, light.DirectionCone.xyz);
+            coneAttenuation = clamp(
+                coneCosine * light.ConeScale + light.ConeOffset, 0.0, 1.0);
+            coneAttenuation *= coneAttenuation;
+        }
+
         float window = clamp(1.0 - pow(distanceToLight / max(range, 1e-4), 4.0), 0.0, 1.0);
-        float attenuation = (window * window) / (distanceToLight * distanceToLight + 1e-4);
+        float attenuation = coneAttenuation
+                          * (window * window)
+                          / (distanceToLight * distanceToLight + 1e-4);
         vec3 radiance = light.ColorIntensity.rgb * (light.ColorIntensity.w * attenuation);
 
         float diffuse = clamp((dot(normal, lightDirection) + diffuseWrap)
