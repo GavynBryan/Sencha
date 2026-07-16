@@ -2,7 +2,6 @@
 
 #include <graphics/vulkan/VulkanDeviceService.h>
 
-#include <cstring>
 #include <fstream>
 #include <system_error>
 
@@ -14,18 +13,18 @@ namespace
 
         void Feed(const void* data, size_t size)
         {
-            const auto* p = static_cast<const uint8_t*>(data);
+            const auto* bytes = static_cast<const uint8_t*>(data);
             for (size_t i = 0; i < size; ++i)
             {
-                Value ^= p[i];
+                Value ^= bytes[i];
                 Value *= 1099511628211ull;
             }
         }
 
         template <typename T>
-        void FeedPod(const T& v)
+        void FeedPod(const T& value)
         {
-            Feed(&v, sizeof(T));
+            Feed(&value, sizeof(T));
         }
     };
 }
@@ -58,12 +57,8 @@ VulkanPipelineCache::VulkanPipelineCache(LoggingProvider& logging,
 VulkanPipelineCache::~VulkanPipelineCache()
 {
     for (auto& entry : Entries)
-    {
         if (entry.Pipeline != VK_NULL_HANDLE)
-        {
             vkDestroyPipeline(Device, entry.Pipeline, nullptr);
-        }
-    }
     Entries.clear();
 
     if (DriverCache != VK_NULL_HANDLE)
@@ -75,60 +70,66 @@ VulkanPipelineCache::~VulkanPipelineCache()
 
 uint64_t VulkanPipelineCache::HashDesc(const GraphicsPipelineDesc& desc) const
 {
-    Fnv1a h;
-    h.FeedPod(desc.VertexShader);
-    h.FeedPod(desc.FragmentShader);
-    h.FeedPod(desc.Layout);
+    Fnv1a hash;
+    hash.FeedPod(desc.VertexShader);
+    hash.FeedPod(desc.FragmentShader);
+    hash.FeedPod(desc.Layout);
+
+    const uint32_t specializationCount =
+        static_cast<uint32_t>(desc.FragmentSpecializationConstants.size());
+    hash.FeedPod(specializationCount);
+    for (const auto& constant : desc.FragmentSpecializationConstants)
+        hash.FeedPod(constant);
 
     const uint32_t bindingCount = static_cast<uint32_t>(desc.VertexBindings.size());
-    h.FeedPod(bindingCount);
-    for (const auto& b : desc.VertexBindings) h.FeedPod(b);
+    hash.FeedPod(bindingCount);
+    for (const auto& binding : desc.VertexBindings)
+        hash.FeedPod(binding);
 
-    const uint32_t attrCount = static_cast<uint32_t>(desc.VertexAttributes.size());
-    h.FeedPod(attrCount);
-    for (const auto& a : desc.VertexAttributes) h.FeedPod(a);
+    const uint32_t attributeCount = static_cast<uint32_t>(desc.VertexAttributes.size());
+    hash.FeedPod(attributeCount);
+    for (const auto& attribute : desc.VertexAttributes)
+        hash.FeedPod(attribute);
 
-    h.FeedPod(desc.Topology);
-    h.FeedPod(desc.CullMode);
-    h.FeedPod(desc.FrontFace);
-    h.FeedPod(desc.PolygonMode);
-
-    h.FeedPod(desc.DepthTest);
-    h.FeedPod(desc.DepthWrite);
-    h.FeedPod(desc.DepthCompare);
-    h.FeedPod(desc.DepthBiasEnable);
-    h.FeedPod(desc.DepthBiasConstant);
-    h.FeedPod(desc.DepthBiasSlope);
+    hash.FeedPod(desc.Topology);
+    hash.FeedPod(desc.CullMode);
+    hash.FeedPod(desc.FrontFace);
+    hash.FeedPod(desc.PolygonMode);
+    hash.FeedPod(desc.DepthTest);
+    hash.FeedPod(desc.DepthWrite);
+    hash.FeedPod(desc.DepthCompare);
+    hash.FeedPod(desc.DepthBiasEnable);
+    hash.FeedPod(desc.DepthBiasConstant);
+    hash.FeedPod(desc.DepthBiasSlope);
 
     const uint32_t blendCount = static_cast<uint32_t>(desc.ColorBlend.size());
-    h.FeedPod(blendCount);
-    for (const auto& cb : desc.ColorBlend) h.FeedPod(cb);
+    hash.FeedPod(blendCount);
+    for (const auto& blend : desc.ColorBlend)
+        hash.FeedPod(blend);
 
     const uint32_t colorFormatCount = static_cast<uint32_t>(desc.ColorFormats.size());
-    h.FeedPod(colorFormatCount);
-    for (const auto& f : desc.ColorFormats) h.FeedPod(f);
+    hash.FeedPod(colorFormatCount);
+    for (const auto& format : desc.ColorFormats)
+        hash.FeedPod(format);
 
-    h.FeedPod(desc.DepthFormat);
-    h.FeedPod(desc.StencilFormat);
-
-    return h.Value;
+    hash.FeedPod(desc.DepthFormat);
+    hash.FeedPod(desc.StencilFormat);
+    return hash.Value;
 }
 
 VkPipeline VulkanPipelineCache::GetGraphicsPipeline(const GraphicsPipelineDesc& desc)
 {
-    if (!Valid) return VK_NULL_HANDLE;
+    if (!Valid)
+        return VK_NULL_HANDLE;
 
     const uint64_t hash = HashDesc(desc);
     for (auto& entry : Entries)
-    {
         if (entry.Hash == hash && entry.Desc == desc)
-        {
             return entry.Pipeline;
-        }
-    }
 
     VkPipeline pipeline = CreateGraphicsPipeline(desc);
-    if (pipeline == VK_NULL_HANDLE) return VK_NULL_HANDLE;
+    if (pipeline == VK_NULL_HANDLE)
+        return VK_NULL_HANDLE;
 
     Entries.push_back({ hash, desc, pipeline });
     return pipeline;
@@ -136,9 +137,9 @@ VkPipeline VulkanPipelineCache::GetGraphicsPipeline(const GraphicsPipelineDesc& 
 
 VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc)
 {
-    VkShaderModule vsModule = Shaders->GetModule(desc.VertexShader);
-    VkShaderModule fsModule = Shaders->GetModule(desc.FragmentShader);
-    if (vsModule == VK_NULL_HANDLE || fsModule == VK_NULL_HANDLE)
+    const VkShaderModule vertexModule = Shaders->GetModule(desc.VertexShader);
+    const VkShaderModule fragmentModule = Shaders->GetModule(desc.FragmentShader);
+    if (vertexModule == VK_NULL_HANDLE || fragmentModule == VK_NULL_HANDLE)
     {
         Log.Error("CreateGraphicsPipeline: invalid shader handle(s)");
         return VK_NULL_HANDLE;
@@ -149,41 +150,68 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
         return VK_NULL_HANDLE;
     }
 
+    std::vector<VkSpecializationMapEntry> specializationEntries;
+    std::vector<uint32_t> specializationValues;
+    specializationEntries.reserve(desc.FragmentSpecializationConstants.size());
+    specializationValues.reserve(desc.FragmentSpecializationConstants.size());
+    for (uint32_t index = 0;
+         index < static_cast<uint32_t>(desc.FragmentSpecializationConstants.size());
+         ++index)
+    {
+        const ShaderSpecializationConstant& constant =
+            desc.FragmentSpecializationConstants[index];
+        specializationEntries.push_back(VkSpecializationMapEntry{
+            .constantID = constant.Id,
+            .offset = index * static_cast<uint32_t>(sizeof(uint32_t)),
+            .size = sizeof(uint32_t),
+        });
+        specializationValues.push_back(constant.Value);
+    }
+
+    VkSpecializationInfo fragmentSpecialization{};
+    if (!specializationEntries.empty())
+    {
+        fragmentSpecialization.mapEntryCount =
+            static_cast<uint32_t>(specializationEntries.size());
+        fragmentSpecialization.pMapEntries = specializationEntries.data();
+        fragmentSpecialization.dataSize = specializationValues.size() * sizeof(uint32_t);
+        fragmentSpecialization.pData = specializationValues.data();
+    }
+
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = vsModule;
+    stages[0].module = vertexModule;
     stages[0].pName = "main";
     stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = fsModule;
+    stages[1].module = fragmentModule;
     stages[1].pName = "main";
+    stages[1].pSpecializationInfo = specializationEntries.empty()
+        ? nullptr
+        : &fragmentSpecialization;
 
-    std::vector<VkVertexInputBindingDescription> vkBindings;
-    vkBindings.reserve(desc.VertexBindings.size());
-    for (const auto& b : desc.VertexBindings)
-    {
-        vkBindings.push_back({ b.Binding, b.Stride, b.InputRate });
-    }
+    std::vector<VkVertexInputBindingDescription> bindings;
+    bindings.reserve(desc.VertexBindings.size());
+    for (const auto& binding : desc.VertexBindings)
+        bindings.push_back({ binding.Binding, binding.Stride, binding.InputRate });
 
-    std::vector<VkVertexInputAttributeDescription> vkAttrs;
-    vkAttrs.reserve(desc.VertexAttributes.size());
-    for (const auto& a : desc.VertexAttributes)
-    {
-        vkAttrs.push_back({ a.Location, a.Binding, a.Format, a.Offset });
-    }
+    std::vector<VkVertexInputAttributeDescription> attributes;
+    attributes.reserve(desc.VertexAttributes.size());
+    for (const auto& attribute : desc.VertexAttributes)
+        attributes.push_back({ attribute.Location, attribute.Binding,
+                               attribute.Format, attribute.Offset });
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount = static_cast<uint32_t>(vkBindings.size());
-    vertexInput.pVertexBindingDescriptions = vkBindings.data();
-    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(vkAttrs.size());
-    vertexInput.pVertexAttributeDescriptions = vkAttrs.data();
+    vertexInput.vertexBindingDescriptionCount = static_cast<uint32_t>(bindings.size());
+    vertexInput.pVertexBindingDescriptions = bindings.data();
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+    vertexInput.pVertexAttributeDescriptions = attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     inputAssembly.topology = desc.Topology;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewport{};
     viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -209,23 +237,21 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
     depthStencil.depthTestEnable = desc.DepthTest ? VK_TRUE : VK_FALSE;
     depthStencil.depthWriteEnable = desc.DepthWrite ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = desc.DepthCompare;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
 
     std::vector<VkPipelineColorBlendAttachmentState> blendStates;
     blendStates.reserve(desc.ColorBlend.size());
-    for (const auto& cb : desc.ColorBlend)
+    for (const auto& blend : desc.ColorBlend)
     {
-        VkPipelineColorBlendAttachmentState s{};
-        s.blendEnable = cb.BlendEnable ? VK_TRUE : VK_FALSE;
-        s.srcColorBlendFactor = cb.SrcColor;
-        s.dstColorBlendFactor = cb.DstColor;
-        s.colorBlendOp = cb.ColorOp;
-        s.srcAlphaBlendFactor = cb.SrcAlpha;
-        s.dstAlphaBlendFactor = cb.DstAlpha;
-        s.alphaBlendOp = cb.AlphaOp;
-        s.colorWriteMask = cb.WriteMask;
-        blendStates.push_back(s);
+        VkPipelineColorBlendAttachmentState state{};
+        state.blendEnable = blend.BlendEnable ? VK_TRUE : VK_FALSE;
+        state.srcColorBlendFactor = blend.SrcColor;
+        state.dstColorBlendFactor = blend.DstColor;
+        state.colorBlendOp = blend.ColorOp;
+        state.srcAlphaBlendFactor = blend.SrcAlpha;
+        state.dstAlphaBlendFactor = blend.DstAlpha;
+        state.alphaBlendOp = blend.AlphaOp;
+        state.colorWriteMask = blend.WriteMask;
+        blendStates.push_back(state);
     }
 
     VkPipelineColorBlendStateCreateInfo colorBlend{};
@@ -263,8 +289,6 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
     pipelineInfo.pColorBlendState = &colorBlend;
     pipelineInfo.pDynamicState = &dynamic;
     pipelineInfo.layout = desc.Layout;
-    pipelineInfo.renderPass = VK_NULL_HANDLE; // dynamic rendering
-    pipelineInfo.subpass = 0;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     const VkResult result = vkCreateGraphicsPipelines(
@@ -274,20 +298,17 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
         Log.Error("vkCreateGraphicsPipelines failed ({})", static_cast<int>(result));
         return VK_NULL_HANDLE;
     }
-
     return pipeline;
 }
 
 bool VulkanPipelineCache::LoadFromDisk(const std::filesystem::path& path)
 {
-    if (!Valid) return false;
-
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec))
-    {
-        // Missing cache file is the normal first-run case.
+    if (!Valid)
         return false;
-    }
+
+    std::error_code error;
+    if (!std::filesystem::exists(path, error))
+        return false;
 
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open())
@@ -296,23 +317,19 @@ bool VulkanPipelineCache::LoadFromDisk(const std::filesystem::path& path)
         return false;
     }
 
-    const std::streamsize bytes = file.tellg();
-    if (bytes <= 0)
-    {
+    const std::streamsize byteCount = file.tellg();
+    if (byteCount <= 0)
         return false;
-    }
     file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> blob(static_cast<size_t>(bytes));
-    file.read(reinterpret_cast<char*>(blob.data()), bytes);
+
+    std::vector<uint8_t> blob(static_cast<size_t>(byteCount));
+    file.read(reinterpret_cast<char*>(blob.data()), byteCount);
     if (!file.good() && !file.eof())
     {
         Log.Warn("PipelineCache: short read from {}", path.generic_string());
         return false;
     }
 
-    // Recreate the driver cache seeded with the blob. If the driver rejects
-    // the data (version mismatch, different GPU, etc.), it either ignores
-    // the seed or fails -- in either case we fall back to an empty cache.
     VkPipelineCache newCache = VK_NULL_HANDLE;
     VkPipelineCacheCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
@@ -327,33 +344,28 @@ bool VulkanPipelineCache::LoadFromDisk(const std::filesystem::path& path)
     }
 
     if (DriverCache != VK_NULL_HANDLE)
-    {
         vkDestroyPipelineCache(Device, DriverCache, nullptr);
-    }
     DriverCache = newCache;
     return true;
 }
 
 bool VulkanPipelineCache::SaveToDisk(const std::filesystem::path& path) const
 {
-    if (!Valid || DriverCache == VK_NULL_HANDLE) return false;
-
-    size_t bytes = 0;
-    VkResult result = vkGetPipelineCacheData(Device, DriverCache, &bytes, nullptr);
-    if (result != VK_SUCCESS || bytes == 0)
-    {
+    if (!Valid || DriverCache == VK_NULL_HANDLE)
         return false;
-    }
 
-    std::vector<uint8_t> blob(bytes);
-    result = vkGetPipelineCacheData(Device, DriverCache, &bytes, blob.data());
+    size_t byteCount = 0;
+    VkResult result = vkGetPipelineCacheData(Device, DriverCache, &byteCount, nullptr);
+    if (result != VK_SUCCESS || byteCount == 0)
+        return false;
+
+    std::vector<uint8_t> blob(byteCount);
+    result = vkGetPipelineCacheData(Device, DriverCache, &byteCount, blob.data());
     if (result != VK_SUCCESS)
-    {
         return false;
-    }
 
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
 
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file.is_open())
