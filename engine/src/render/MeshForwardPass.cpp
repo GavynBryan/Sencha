@@ -14,6 +14,10 @@
 
 static_assert(offsetof(MeshPushConstants, BaseColor) == 0);
 static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 16);
+static_assert(offsetof(MeshPushConstants, NormalTextureIndex) == 20);
+static_assert(offsetof(MeshPushConstants, NormalScale) == 24);
+static_assert(offsetof(MeshPushConstants, Pad0) == 28);
+static_assert(sizeof(MeshPushConstants) == 32);
 
 // std140 layout the mesh_forward shaders assume for set 0, binding 0.
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
@@ -74,15 +78,12 @@ bool MeshForwardPass::EnsurePipeline(const FrameContext& frame)
         { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
         { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
         { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        // Tangents (Decision M) ride the vertex via the binding stride
-        // but get no attribute until a shader consumes them (normal
-        // mapping is render-ladder work) — the validation layer warns
-        // on attributes the shader ignores.
-        // World matrix columns (locations 3-6, one vec4 each).
+        // World matrix columns occupy locations 3 through 6.
         { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
         { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+        { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
     };
     desc.CullMode = VK_CULL_MODE_BACK_BIT;
     desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -99,7 +100,7 @@ bool MeshForwardPass::EnsurePipeline(const FrameContext& frame)
 }
 
 std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRenderData& camera,
-                                                                 const RenderLightSet& lights)
+                                                                  const RenderLightSet& lights)
 {
     MeshFrameUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();  // GLSL expects column-major
@@ -195,6 +196,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
                                material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
         push.BaseColorTextureIndex = material->BaseColorTextureIndex;
+        push.NormalTextureIndex = material->NormalTextureIndex;
+        push.NormalScale = material->NormalScale;
 
         if (vertexBuffer != lastVertexBuffer)
         {
