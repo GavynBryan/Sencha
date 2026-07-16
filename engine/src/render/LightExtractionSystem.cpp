@@ -18,6 +18,8 @@ namespace
         RenderEntityKey Key;
         float Score = 0.0f;
         GpuLight Light;
+        bool WantsSpotShadow = false;
+        SpotShadowView Shadow;
     };
 
     float LightScore(const Vec<3>& position,
@@ -50,6 +52,57 @@ namespace
         const float coneRadius = range * std::tan(angle);
         const float radius = std::sqrt(halfRange * halfRange + coneRadius * coneRadius);
         return Sphere(position + direction * halfRange, radius);
+    }
+
+    Mat4 MakeSpotProjection(float outerAngleDegrees, float nearPlane, float farPlane)
+    {
+        constexpr float degreesToRadians = 0.01745329251994329577f;
+        const float fov = std::clamp(outerAngleDegrees * 2.0f, 0.02f, 179.8f)
+                        * degreesToRadians;
+        const float tanHalfFov = std::tan(fov * 0.5f);
+        Mat4 result;
+        result[0][0] = 1.0f / tanHalfFov;
+        result[1][1] = -1.0f / tanHalfFov;
+        result[2][2] = farPlane / (nearPlane - farPlane);
+        result[2][3] = (farPlane * nearPlane) / (nearPlane - farPlane);
+        result[3][2] = -1.0f;
+        return result;
+    }
+
+    SpotShadowView MakeSpotShadowView(
+        const Transform3f& worldTransform,
+        const SpotLightComponent& light)
+    {
+        const float nearPlane = std::max(0.05f, light.Range * 0.001f);
+        const Transform3f lightTransform(
+            worldTransform.Position,
+            worldTransform.Rotation,
+            Vec3d(1.0f, 1.0f, 1.0f));
+        const Mat4 view = lightTransform.ToMat4().AffineInverse();
+        const Mat4 projection = MakeSpotProjection(
+            light.OuterAngleDegrees, nearPlane, light.Range);
+
+        SpotShadowView shadow;
+        shadow.ViewProjection = projection * view;
+        shadow.BiasSoftness = Vec4(
+            0.0015f * light.ShadowBiasScale,
+            0.0030f * light.ShadowBiasScale,
+            light.ShadowSoftness,
+            1.0f / static_cast<float>(kSpotShadowInnerExtent));
+        return shadow;
+    }
+
+    Vec4 AtlasScaleBias(std::uint32_t slot)
+    {
+        constexpr float atlas = static_cast<float>(kSpotShadowAtlasExtent);
+        const std::uint32_t column = slot % 4u;
+        const std::uint32_t row = slot / 4u;
+        const float scale = static_cast<float>(kSpotShadowInnerExtent) / atlas;
+        const float biasX = static_cast<float>(
+            column * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
+        const float biasY = static_cast<float>(
+            row * kSpotShadowTileExtent + kSpotShadowGuardTexels) / atlas;
+        return Vec4(scale, scale, biasX, biasY);
     }
 }
 
@@ -113,11 +166,15 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                         return;
                     }
 
-                    candidates.push_back(LightCandidate{
+                    LightCandidate candidate{
                         .Key = MakeRenderEntityKey(*registry, entity),
                         .Score = LightScore(position, light.Range, light.Intensity, camera),
                         .Light = MakeSpotGpuLight(position, direction, light),
-                    });
+                        .WantsSpotShadow = light.CastShadows,
+                    };
+                    if (candidate.WantsSpotShadow)
+                        candidate.Shadow = MakeSpotShadowView(transform->Value, light);
+                    candidates.push_back(candidate);
                 });
         }
     }
@@ -133,5 +190,20 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
     const std::size_t count = std::min<std::size_t>(
         candidates.size(), kMaxForwardLights);
     for (std::size_t index = 0; index < count; ++index)
-        lights.Add(candidates[index].Light);
+    {
+        LightCandidate candidate = candidates[index];
+        const std::uint32_t lightIndex = lights.Add(candidate.Light);
+        if (lightIndex == UINT32_MAX
+            || !candidate.WantsSpotShadow
+            || lights.SpotShadowCount >= kMaxSpotShadows)
+        {
+            continue;
+        }
+
+        const std::uint32_t shadowIndex = lights.SpotShadowCount++;
+        candidate.Shadow.LightIndex = lightIndex;
+        candidate.Shadow.AtlasScaleBias = AtlasScaleBias(shadowIndex);
+        lights.SpotShadows[shadowIndex] = candidate.Shadow;
+        lights.Lights[lightIndex].ShadowIndex = shadowIndex;
+    }
 }
