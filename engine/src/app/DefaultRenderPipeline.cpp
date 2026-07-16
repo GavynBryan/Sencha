@@ -153,8 +153,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     Lights.Reset();
     ApplyRendererCVars(Console, Lights);
-    for (Registry* registry : ctx.ActiveRegistries)
-        LightExtractor.Extract(registry->Components, Lights);
+    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights);
 
     if (Log != nullptr)
     {
