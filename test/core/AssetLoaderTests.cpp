@@ -80,7 +80,7 @@ namespace
     }
 } // namespace
 
-// -- FileAssetSource ------------------------------------------------------------
+// -- FileAssetSource ----------------------------------------------------------
 
 TEST(AssetSource, FileSourceReadsBytes)
 {
@@ -121,7 +121,7 @@ TEST(AssetSource, ReadAssetBytesFallsBackToVirtualPath)
     EXPECT_EQ(bytes.size(), 1u);
 }
 
-// -- AssetInFlightTable ----------------------------------------------------------
+// -- AssetInFlightTable -------------------------------------------------------
 
 TEST(AssetInFlightTable, FirstBeginStartsLaterBeginsJoin)
 {
@@ -149,7 +149,7 @@ TEST(AssetInFlightTable, FinishReturnsAllWaitersAndClears)
     EXPECT_TRUE(table.Finish("asset://never").empty());
 }
 
-// -- StaticMeshAssetLoader --------------------------------------------------------
+// -- StaticMeshAssetLoader ----------------------------------------------------
 
 TEST(StaticMeshAssetLoader, StagesSerializedMeshFromMemory)
 {
@@ -193,7 +193,7 @@ TEST(StaticMeshAssetLoader, StagingFailsOnMissingAndMalformedBytes)
     EXPECT_FALSE(malformed.Error.empty());
 }
 
-// -- TextureAssetLoader ------------------------------------------------------------
+// -- TextureAssetLoader -------------------------------------------------------
 
 TEST(TextureAssetLoader, StagesPngFromMemoryWithUsageColorspace)
 {
@@ -216,7 +216,7 @@ TEST(TextureAssetLoader, StagesPngFromMemoryWithUsageColorspace)
     ASSERT_TRUE(linear.IsValid()) << linear.Error;
     EXPECT_EQ(std::any_cast<Image>(&linear.Payload)->Format, PixelFormat::RGBA8);
 
-    // The generic (driver-facing) overload assumes sRGB until .stex usage tags.
+    // The generic driver-facing overload assumes sRGB until .stex usage tags.
     AssetStaging generic = static_cast<IAssetLoader&>(loader).LoadStaged(record, source);
     ASSERT_TRUE(generic.IsValid());
     EXPECT_EQ(std::any_cast<Image>(&generic.Payload)->Format, PixelFormat::RGBA8_SRGB);
@@ -238,7 +238,7 @@ TEST(TextureAssetLoader, StagingFailsOnUndecodableBytes)
     EXPECT_FALSE(staging.Error.empty());
 }
 
-// -- MaterialAssetLoader (full stage + commit, headless) ----------------------------
+// -- MaterialAssetLoader ------------------------------------------------------
 
 TEST(MaterialAssetLoader, StageAndCommitRoundTripHeadless)
 {
@@ -250,7 +250,7 @@ TEST(MaterialAssetLoader, StageAndCommitRoundTripHeadless)
 
     MemoryAssetSource source;
     source.Add("asset://materials/dev/test.smat", R"({
-        "version": 1,
+        "version": 2,
         "base_color_factor": [0.25, 0.5, 0.75, 1.0],
         "base_color_texture": "asset://textures/dev/checker.png",
         "metallic_factor": 0.6
@@ -280,7 +280,7 @@ TEST(MaterialAssetLoader, StagingReportsParseErrors)
     MaterialAssetLoader loader(logging, assets, &materials, nullptr);
 
     MemoryAssetSource source;
-    source.Add("asset://materials/dev/bad.smat", R"({"version": 1, "typo_key": 1})");
+    source.Add("asset://materials/dev/bad.smat", R"({"version": 2, "typo_key": 1})");
 
     AssetStaging staging = loader.LoadStaged(
         MakeFileRecord(AssetType::Material, "asset://materials/dev/bad.smat"), source);
@@ -288,7 +288,7 @@ TEST(MaterialAssetLoader, StagingReportsParseErrors)
     EXPECT_NE(staging.Error.find("typo_key"), std::string::npos);
 }
 
-// -- Contract: commits reject foreign payloads ---------------------------------------
+// -- Contract: commits reject foreign payloads -------------------------------
 
 TEST(AssetLoaderContract, CommitRejectsMismatchedPayload)
 {
