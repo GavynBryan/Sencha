@@ -13,19 +13,26 @@
 #include <cstring>
 
 static_assert(offsetof(MeshPushConstants, BaseColor) == 0);
-static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 16);
-static_assert(offsetof(MeshPushConstants, NormalTextureIndex) == 20);
-static_assert(offsetof(MeshPushConstants, NormalScale) == 24);
-static_assert(offsetof(MeshPushConstants, Pad0) == 28);
-static_assert(sizeof(MeshPushConstants) == 32);
+static_assert(offsetof(MeshPushConstants, EmissiveFactor) == 16);
+static_assert(offsetof(MeshPushConstants, NormalScale) == 32);
+static_assert(offsetof(MeshPushConstants, RoughnessFactor) == 36);
+static_assert(offsetof(MeshPushConstants, MetallicFactor) == 40);
+static_assert(offsetof(MeshPushConstants, SpecularIntensity) == 44);
+static_assert(offsetof(MeshPushConstants, BaseColorTextureIndex) == 48);
+static_assert(offsetof(MeshPushConstants, NormalTextureIndex) == 52);
+static_assert(offsetof(MeshPushConstants, OrmTextureIndex) == 56);
+static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
+static_assert(sizeof(MeshPushConstants) == 64);
 
 // std140 layout the mesh_forward shaders assume for set 0, binding 0.
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
 static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
 static_assert(offsetof(MeshFrameUniforms, AmbientSky) == 80);
 static_assert(offsetof(MeshFrameUniforms, AmbientGround) == 96);
-static_assert(offsetof(MeshFrameUniforms, LightCount) == 112);
-static_assert(offsetof(MeshFrameUniforms, Lights) == 128);
+static_assert(offsetof(MeshFrameUniforms, StyleParams) == 112);
+static_assert(offsetof(MeshFrameUniforms, LightCount) == 128);
+static_assert(offsetof(MeshFrameUniforms, TonemapEnabled) == 132);
+static_assert(offsetof(MeshFrameUniforms, Lights) == 144);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -103,10 +110,13 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(const CameraRen
                                                                   const RenderLightSet& lights)
 {
     MeshFrameUniforms uniforms{};
-    uniforms.ViewProjection = camera.ViewProjection.Transposed();  // GLSL expects column-major
+    uniforms.ViewProjection = camera.ViewProjection.Transposed();
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
     uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
+    uniforms.StyleParams = Vec4(lights.DiffuseWrap, lights.MinAmbient,
+                               lights.Exposure, lights.TonemapKnee);
+    uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
 
     const std::uint32_t lightCount = lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
     uniforms.LightCount = lightCount;
@@ -133,7 +143,7 @@ bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const Render
 
     Mat4* transforms = static_cast<Mat4*>(stream.Mapped);
     for (size_t i = 0; i < order.size(); ++i)
-        transforms[i] = items[order[i]].WorldMatrix.Transposed(); // GLSL column-major
+        transforms[i] = items[order[i]].WorldMatrix.Transposed();
 
     VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Buffer);
     vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Offset);
@@ -170,10 +180,6 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
                                StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint)
 {
-    // Walk the instanced runs (consecutive order entries sharing mesh, section,
-    // and material collapse into one draw; a run of one is the ordinary case).
-    // Track the last-bound buffers so back-to-back runs on one mesh don't
-    // rebind identical buffers.
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
     VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
@@ -184,9 +190,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
         const Material* material = materials.Get(item.Material);
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
-        {
             continue;
-        }
 
         const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
         VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
@@ -194,10 +198,19 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 
         MeshPushConstants push{};
         push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
-                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
+                              material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
+        push.EmissiveFactor = Vec4(material->EmissiveFactor.X,
+                                   material->EmissiveFactor.Y,
+                                   material->EmissiveFactor.Z,
+                                   material->EmissiveStrength);
+        push.NormalScale = material->NormalScale;
+        push.RoughnessFactor = material->RoughnessFactor;
+        push.MetallicFactor = material->MetallicFactor;
+        push.SpecularIntensity = material->SpecularIntensity;
         push.BaseColorTextureIndex = material->BaseColorTextureIndex;
         push.NormalTextureIndex = material->NormalTextureIndex;
-        push.NormalScale = material->NormalScale;
+        push.OrmTextureIndex = material->OrmTextureIndex;
+        push.EmissiveTextureIndex = material->EmissiveTextureIndex;
 
         if (vertexBuffer != lastVertexBuffer)
         {
@@ -213,9 +226,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        // MeshGeometry v1 uses global indices into the shared vertex buffer.
-        // section.VertexOffset is metadata only in this phase. Do not pass it as
-        // Vulkan vertexOffset unless sections are converted to local-index ranges.
+        // MeshGeometry uses global indices into the shared vertex buffer.
+        // Section.VertexOffset remains metadata until sections use local indices.
         vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count, section.IndexOffset, 0, run.First);
         ++LastStats.DrawCalls;
     }
