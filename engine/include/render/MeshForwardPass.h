@@ -19,12 +19,13 @@ struct MeshFrameUniforms
 {
     Mat4 ViewProjection;
     Vec4 ViewPositionTime;
-    Vec4 AmbientSky;     // rgb sky tint, w unused
-    Vec4 AmbientGround;  // rgb ground tint, w unused
+    Vec4 AmbientSky;
+    Vec4 AmbientGround;
+    Vec4 StyleParams; // diffuse wrap, minimum ambient, exposure, tonemap knee
     std::uint32_t LightCount = 0;
+    std::uint32_t TonemapEnabled = 1;
     std::uint32_t Pad0 = 0;
     std::uint32_t Pad1 = 0;
-    std::uint32_t Pad2 = 0;
     GpuLight Lights[kMaxForwardLights];
 };
 
@@ -33,10 +34,15 @@ struct MeshFrameUniforms
 struct MeshPushConstants
 {
     Vec4 BaseColor;
-    uint32_t BaseColorTextureIndex = UINT32_MAX;
-    uint32_t NormalTextureIndex = UINT32_MAX;
+    Vec4 EmissiveFactor;
     float NormalScale = 1.0f;
-    uint32_t Pad0 = 0;
+    float RoughnessFactor = 1.0f;
+    float MetallicFactor = 0.0f;
+    float SpecularIntensity = 0.5f;
+    std::uint32_t BaseColorTextureIndex = UINT32_MAX;
+    std::uint32_t NormalTextureIndex = UINT32_MAX;
+    std::uint32_t OrmTextureIndex = UINT32_MAX;
+    std::uint32_t EmissiveTextureIndex = UINT32_MAX;
 };
 
 //=============================================================================
