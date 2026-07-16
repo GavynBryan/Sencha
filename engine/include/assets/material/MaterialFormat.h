@@ -34,4 +34,4 @@ struct MaterialDescription
     float AlphaCutoff = 0.5f;
 };
 
-inline constexpr uint32_t kSmatVersion = 1;
+inline constexpr uint32_t kSmatVersion = 2;
