@@ -1,18 +1,7 @@
-// Phase 4 ECS benchmark
-//
-// Measures: transform propagation throughput vs pre-migration baseline,
-// render extraction chunk-query throughput, RenderQueueItem sort time,
-// archetype count and memory footprint under representative scenes.
-//
-// Build (from repo root):
-//   g++-14 -std=c++20 -O2 -march=native -DNDEBUG -DSENCHA_ENABLE_VULKAN \
-//     -I engine/include \
-//     -I build-verify/_deps/vulkanmemoryallocator-src/include \
-//     example/EcsBenchmark/EcsBenchmark.cpp \
-//     build-verify/engine/libsencha_engine.a \
-//     -lSDL3 -lvulkan \
-//     -o build-verify/EcsBenchmark
+// ECS benchmark for transform propagation, render extraction, queue sorting,
+// and representative archetype footprints.
 
+#include <core/ResourceStore.h>
 #include <ecs/Ecs.h>
 #include <render/RenderQueue.h>
 #include <render/StaticMeshComponent.h>
@@ -32,413 +21,381 @@
 
 namespace
 {
+    using Clock = std::chrono::steady_clock;
 
-using Clock = std::chrono::steady_clock;
-
-double ElapsedUs(Clock::time_point start, Clock::time_point end)
-{
-    return std::chrono::duration<double, std::micro>(end - start).count();
-}
-
-struct SampleStats
-{
-    double MeanUs      = 0.0;
-    double MedianUs    = 0.0;
-    double P95Us       = 0.0;
-    double NsPerEntity = 0.0;
-};
-
-SampleStats ComputeStats(std::vector<double>& samples, size_t entityCount)
-{
-    std::sort(samples.begin(), samples.end());
-    SampleStats s;
-    s.MeanUs      = std::accumulate(samples.begin(), samples.end(), 0.0) / samples.size();
-    s.MedianUs    = samples[samples.size() / 2];
-    const size_t p95Idx = static_cast<size_t>(samples.size() * 0.95);
-    s.P95Us       = samples[std::min(p95Idx, samples.size() - 1)];
-    s.NsPerEntity = (s.MeanUs * 1000.0) / static_cast<double>(entityCount);
-    return s;
-}
-
-Transform3f MakeTransform(size_t i)
-{
-    const float x = static_cast<float>(i % 17) * 0.1f;
-    const float y = static_cast<float>((i * 7) % 19) * 0.1f;
-    const float z = static_cast<float>((i * 11) % 23) * 0.1f;
-    return Transform3f(
-        Vec3d(x, y, z),
-        Quatf::FromAxisAngle(Vec3d(0, 1, 0), static_cast<float>(i % 31) * 0.01f),
-        Vec3d(1, 1, 1));
-}
-
-size_t ParentFor(size_t i, size_t bf) { return (i - 1) / bf; }
-
-// ─── B1: Transform propagation ────────────────────────────────────────────────
-//
-// 100k entities in a 4-ary tree.
-// Steady-state: cached-sweep cost (no hierarchy change each frame).
-// Rebuild: force PropagationOrderCache dirty before each measurement.
-
-void BenchmarkTransformPropagation()
-{
-    constexpr size_t N       = 100'000;
-    constexpr size_t BF      = 4;
-    constexpr size_t WARMUP  = 10;
-    constexpr size_t MEASURE = 50;
-
-    World world;
-    world.RegisterComponent<LocalTransform>();
-    world.RegisterComponent<WorldTransform>();
-    world.RegisterComponent<Parent>();
-
-    std::vector<EntityId> entities;
-    entities.reserve(N);
-
+    struct SampleStats
     {
+        double MeanUs = 0.0;
+        double MedianUs = 0.0;
+        double P95Us = 0.0;
+        double NsPerEntity = 0.0;
+    };
+
+    struct BenchmarkWorld
+    {
+        ResourceStore Resources;
+        World Entities{ Resources };
+    };
+
+    double ElapsedUs(Clock::time_point start, Clock::time_point end)
+    {
+        return std::chrono::duration<double, std::micro>(end - start).count();
+    }
+
+    SampleStats ComputeStats(std::vector<double>& samples, size_t entityCount)
+    {
+        std::sort(samples.begin(), samples.end());
+        SampleStats stats;
+        stats.MeanUs =
+            std::accumulate(samples.begin(), samples.end(), 0.0) / samples.size();
+        stats.MedianUs = samples[samples.size() / 2];
+        const size_t p95Index = static_cast<size_t>(samples.size() * 0.95);
+        stats.P95Us = samples[std::min(p95Index, samples.size() - 1)];
+        stats.NsPerEntity =
+            (stats.MeanUs * 1000.0) / static_cast<double>(entityCount);
+        return stats;
+    }
+
+    Transform3f MakeTransform(size_t index)
+    {
+        const float x = static_cast<float>(index % 17) * 0.1f;
+        const float y = static_cast<float>((index * 7) % 19) * 0.1f;
+        const float z = static_cast<float>((index * 11) % 23) * 0.1f;
+        return Transform3f(
+            Vec3d(x, y, z),
+            Quatf::FromAxisAngle(
+                Vec3d(0, 1, 0),
+                static_cast<float>(index % 31) * 0.01f),
+            Vec3d(1, 1, 1));
+    }
+
+    size_t ParentFor(size_t index, size_t branchingFactor)
+    {
+        return (index - 1) / branchingFactor;
+    }
+
+    void PrintStats(std::string_view label, const SampleStats& stats)
+    {
+        std::cout << label << "\n";
+        std::cout << "  mean_us:   " << stats.MeanUs << "\n";
+        std::cout << "  median_us: " << stats.MedianUs << "\n";
+        std::cout << "  p95_us:    " << stats.P95Us << "\n";
+        std::cout << "  ns/item:   " << stats.NsPerEntity << "\n";
+    }
+
+    void BenchmarkTransformPropagation()
+    {
+        constexpr size_t EntityCount = 100'000;
+        constexpr size_t BranchingFactor = 4;
+        constexpr size_t WarmupIterations = 10;
+        constexpr size_t MeasureIterations = 50;
+
+        BenchmarkWorld storage;
+        World& world = storage.Entities;
+        world.RegisterComponent<LocalTransform>();
+        world.RegisterComponent<WorldTransform>();
+        world.RegisterComponent<Parent>();
+
+        std::vector<EntityId> entities;
+        entities.reserve(EntityCount);
+
         EntityId root = world.CreateEntity();
         world.AddComponent<LocalTransform>(root, { MakeTransform(0) });
         world.AddComponent<WorldTransform>(root, {});
         entities.push_back(root);
-    }
 
-    for (size_t i = 1; i < N; ++i)
-    {
-        EntityId e = world.CreateEntity();
-        world.AddComponent<LocalTransform>(e, { MakeTransform(i) });
-        world.AddComponent<WorldTransform>(e, {});
-        world.AddComponent<Parent>(e, { entities[ParentFor(i, BF)] });
-        entities.push_back(e);
-    }
-
-    world.AdvanceFrame();
-
-    for (size_t i = 0; i < WARMUP; ++i)
-    {
-        PropagateTransforms(world);
-        world.AdvanceFrame();
-    }
-
-    // Steady-state: hierarchy is unchanged, cache is hot.
-    std::vector<double> steadySamples;
-    steadySamples.reserve(MEASURE);
-
-    for (size_t i = 0; i < MEASURE; ++i)
-    {
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        const auto t0 = Clock::now();
-        PropagateTransforms(world);
-        const auto t1 = Clock::now();
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        steadySamples.push_back(ElapsedUs(t0, t1));
-        world.AdvanceFrame();
-    }
-
-    // Rebuild cost: invalidate cache before each call.
-    std::vector<double> rebuildSamples;
-    rebuildSamples.reserve(MEASURE);
-
-    PropagationOrderCache& cache = world.GetResource<PropagationOrderCache>();
-
-    for (size_t i = 0; i < MEASURE; ++i)
-    {
-        cache.Invalidate();
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        const auto t0 = Clock::now();
-        PropagateTransforms(world);
-        const auto t1 = Clock::now();
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        rebuildSamples.push_back(ElapsedUs(t0, t1));
-        world.AdvanceFrame();
-    }
-
-    const auto steady  = ComputeStats(steadySamples, N);
-    const auto rebuild = ComputeStats(rebuildSamples, N);
-
-    std::cout << "\n=== B1: Transform Propagation (ECS, 100k entities, 4-ary tree) ===\n";
-    std::cout << "Steady-state cached sweep:\n";
-    std::cout << "  mean_us:      " << steady.MeanUs   << "\n";
-    std::cout << "  median_us:    " << steady.MedianUs << "\n";
-    std::cout << "  p95_us:       " << steady.P95Us    << "\n";
-    std::cout << "  ns/transform: " << steady.NsPerEntity << "\n";
-    std::cout << "Rebuild + sweep (cache dirty each iteration):\n";
-    std::cout << "  mean_us:      " << rebuild.MeanUs   << "\n";
-    std::cout << "  median_us:    " << rebuild.MedianUs << "\n";
-    std::cout << "  p95_us:       " << rebuild.P95Us    << "\n";
-    std::cout << "  ns/transform: " << rebuild.NsPerEntity << "\n";
-}
-
-// ─── B2: Render extraction chunk-query iteration ──────────────────────────────
-//
-// Measures the chunk-query pass over Read<WorldTransform> + Read<StaticMeshComponent>.
-// This is the hot inner loop of RenderExtractionSystem::Extract (minus the GPU
-// resource lookups that require Vulkan). We accumulate a checksum to prevent
-// the compiler from eliding the work.
-//
-// Pre-migration baseline: ForEachComponent<StaticMeshComponent> followed by
-// TryGet<WorldTransform> per entity — two passes, per-entity hash map probes.
-// New path: single archetype chunk query, both columns contiguous.
-
-void BenchmarkRenderExtractionQuery()
-{
-    constexpr size_t N       = 10'000;
-    constexpr size_t WARMUP  = 5;
-    constexpr size_t MEASURE = 50;
-
-    World world;
-    world.RegisterComponent<WorldTransform>();
-    world.RegisterComponent<StaticMeshComponent>();
-
-    for (size_t i = 0; i < N; ++i)
-    {
-        EntityId e = world.CreateEntity();
-        WorldTransform wt;
-        wt.Value = MakeTransform(i);
-        world.AddComponent<WorldTransform>(e, wt);
-        StaticMeshComponent smc;
-        smc.Visible = (i % 10 != 0); // 90% visible
-        world.AddComponent<StaticMeshComponent>(e, smc);
-    }
-
-    Query<Read<WorldTransform>, Read<StaticMeshComponent>> query(world);
-
-    volatile double checksum = 0.0;
-
-    // Warmup
-    for (size_t w = 0; w < WARMUP; ++w)
-    {
-        double localSum = 0.0;
-        query.ForEachChunk([&](auto& view)
+        for (size_t index = 1; index < EntityCount; ++index)
         {
-            const auto transforms = view.template Read<WorldTransform>();
-            const auto renderers  = view.template Read<StaticMeshComponent>();
-            for (uint32_t i = 0; i < view.Count(); ++i)
-            {
-                if (!renderers[i].Visible) continue;
-                localSum += static_cast<double>(transforms[i].Value.Position.X);
-            }
-        });
-        checksum = localSum;
-    }
+            EntityId entity = world.CreateEntity();
+            world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
+            world.AddComponent<WorldTransform>(entity, {});
+            world.AddComponent<Parent>(
+                entity,
+                { entities[ParentFor(index, BranchingFactor)] });
+            entities.push_back(entity);
+        }
 
-    std::vector<double> samples;
-    samples.reserve(MEASURE);
-
-    for (size_t m = 0; m < MEASURE; ++m)
-    {
-        double localSum = 0.0;
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        const auto t0 = Clock::now();
-        query.ForEachChunk([&](auto& view)
+        world.AdvanceFrame();
+        for (size_t iteration = 0; iteration < WarmupIterations; ++iteration)
         {
-            const auto transforms = view.template Read<WorldTransform>();
-            const auto renderers  = view.template Read<StaticMeshComponent>();
-            for (uint32_t i = 0; i < view.Count(); ++i)
+            PropagateTransforms(world);
+            world.AdvanceFrame();
+        }
+
+        std::vector<double> steadySamples;
+        steadySamples.reserve(MeasureIterations);
+        for (size_t iteration = 0; iteration < MeasureIterations; ++iteration)
+        {
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            const auto start = Clock::now();
+            PropagateTransforms(world);
+            const auto end = Clock::now();
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            steadySamples.push_back(ElapsedUs(start, end));
+            world.AdvanceFrame();
+        }
+
+        PropagationOrderCache& cache = world.GetResource<PropagationOrderCache>();
+        std::vector<double> rebuildSamples;
+        rebuildSamples.reserve(MeasureIterations);
+        for (size_t iteration = 0; iteration < MeasureIterations; ++iteration)
+        {
+            cache.Invalidate();
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            const auto start = Clock::now();
+            PropagateTransforms(world);
+            const auto end = Clock::now();
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            rebuildSamples.push_back(ElapsedUs(start, end));
+            world.AdvanceFrame();
+        }
+
+        std::cout << "\n=== Transform Propagation: 100k entities ===\n";
+        PrintStats(
+            "Steady-state cached sweep:",
+            ComputeStats(steadySamples, EntityCount));
+        PrintStats(
+            "Rebuild and sweep:",
+            ComputeStats(rebuildSamples, EntityCount));
+    }
+
+    void BenchmarkRenderExtractionQuery()
+    {
+        constexpr size_t EntityCount = 10'000;
+        constexpr size_t WarmupIterations = 5;
+        constexpr size_t MeasureIterations = 50;
+
+        BenchmarkWorld storage;
+        World& world = storage.Entities;
+        world.RegisterComponent<WorldTransform>();
+        world.RegisterComponent<StaticMeshComponent>();
+
+        for (size_t index = 0; index < EntityCount; ++index)
+        {
+            EntityId entity = world.CreateEntity();
+            WorldTransform transform;
+            transform.Value = MakeTransform(index);
+            world.AddComponent<WorldTransform>(entity, transform);
+
+            StaticMeshComponent mesh;
+            mesh.Visible = index % 10 != 0;
+            world.AddComponent<StaticMeshComponent>(entity, mesh);
+        }
+
+        Query<Read<WorldTransform>, Read<StaticMeshComponent>> query(world);
+        volatile double checksum = 0.0;
+
+        for (size_t iteration = 0; iteration < WarmupIterations; ++iteration)
+        {
+            double localSum = 0.0;
+            query.ForEachChunk([&](auto& view)
             {
-                if (!renderers[i].Visible) continue;
-                localSum += static_cast<double>(transforms[i].Value.Position.X);
-            }
-        });
-        const auto t1 = Clock::now();
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        checksum = localSum;
-        samples.push_back(ElapsedUs(t0, t1));
+                const auto transforms = view.template Read<WorldTransform>();
+                const auto meshes = view.template Read<StaticMeshComponent>();
+                for (uint32_t row = 0; row < view.Count(); ++row)
+                {
+                    if (meshes[row].Visible)
+                        localSum += transforms[row].Value.Position.X;
+                }
+            });
+            checksum = localSum;
+        }
+
+        std::vector<double> samples;
+        samples.reserve(MeasureIterations);
+        for (size_t iteration = 0; iteration < MeasureIterations; ++iteration)
+        {
+            double localSum = 0.0;
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            const auto start = Clock::now();
+            query.ForEachChunk([&](auto& view)
+            {
+                const auto transforms = view.template Read<WorldTransform>();
+                const auto meshes = view.template Read<StaticMeshComponent>();
+                for (uint32_t row = 0; row < view.Count(); ++row)
+                {
+                    if (meshes[row].Visible)
+                        localSum += transforms[row].Value.Position.X;
+                }
+            });
+            const auto end = Clock::now();
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            checksum = localSum;
+            samples.push_back(ElapsedUs(start, end));
+        }
+
+        std::cout << "\n=== Render Extraction Query: 10k entities ===\n";
+        PrintStats("Chunk query:", ComputeStats(samples, EntityCount));
+        std::cout << "  checksum: " << checksum << "\n";
     }
 
-    const auto s = ComputeStats(samples, N);
-
-    std::cout << "\n=== B2: Render Extraction Chunk Query (10k entities) ===\n";
-    std::cout << "  mean_us:   " << s.MeanUs      << "\n";
-    std::cout << "  median_us: " << s.MedianUs    << "\n";
-    std::cout << "  p95_us:    " << s.P95Us       << "\n";
-    std::cout << "  ns/entity: " << s.NsPerEntity << "\n";
-    std::cout << "  checksum:  " << checksum      << "  (non-zero = work not elided)\n";
-}
-
-// ─── B3: RenderQueueItem sort ─────────────────────────────────────────────────
-//
-// Sort a pre-populated queue of 10k items with varied sort keys.
-
-void BenchmarkRenderQueueSort()
-{
-    constexpr size_t N       = 10'000;
-    constexpr size_t MEASURE = 50;
-
-    // Build reference items with varied sort keys (reverse-depth order).
-    std::vector<RenderQueueItem> refItems;
-    refItems.reserve(N);
-    for (size_t i = 0; i < N; ++i)
+    void BenchmarkRenderQueueSort()
     {
-        RenderQueueItem item{};
-        item.CameraDepth = static_cast<float>(N - i);
-        item.Pass = ShaderPassId::ForwardOpaque;
-        item.SortKey = BuildOpaqueSortKey(item);
-        refItems.push_back(item);
+        constexpr size_t ItemCount = 10'000;
+        constexpr size_t MeasureIterations = 50;
+
+        std::vector<RenderQueueItem> reference;
+        reference.reserve(ItemCount);
+        for (size_t index = 0; index < ItemCount; ++index)
+        {
+            RenderQueueItem item{};
+            item.CameraDepth = static_cast<float>(ItemCount - index);
+            item.Pass = ShaderPassId::ForwardOpaque;
+            item.SortKey = BuildOpaqueSortKey(item);
+            reference.push_back(item);
+        }
+
+        std::vector<double> samples;
+        samples.reserve(MeasureIterations);
+        for (size_t iteration = 0; iteration < MeasureIterations; ++iteration)
+        {
+            RenderQueue queue;
+            for (const RenderQueueItem& item : reference)
+                queue.AddOpaque(item);
+
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            const auto start = Clock::now();
+            queue.SortOpaque();
+            const auto end = Clock::now();
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            samples.push_back(ElapsedUs(start, end));
+        }
+
+        std::cout << "\n=== Render Queue Sort: 10k items ===\n";
+        PrintStats("Opaque sort:", ComputeStats(samples, ItemCount));
     }
 
-    std::vector<double> samples;
-    samples.reserve(MEASURE);
-
-    for (size_t m = 0; m < MEASURE; ++m)
+    void PrintFootprint(
+        std::string_view label,
+        const World& world,
+        size_t registeredComponents)
     {
-        RenderQueue q;
-        for (const auto& item : refItems)
-            q.AddOpaque(item);
-
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        const auto t0 = Clock::now();
-        q.SortOpaque();
-        const auto t1 = Clock::now();
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        samples.push_back(ElapsedUs(t0, t1));
-    }
-
-    const auto s = ComputeStats(samples, N);
-
-    std::cout << "\n=== B3: RenderQueueItem Sort (" << N << " items) ===\n";
-    std::cout << "  mean_us:   " << s.MeanUs      << "\n";
-    std::cout << "  median_us: " << s.MedianUs    << "\n";
-    std::cout << "  p95_us:    " << s.P95Us       << "\n";
-    std::cout << "  ns/item:   " << s.NsPerEntity << "\n";
-}
-
-// ─── B4: Archetype count and memory footprint ─────────────────────────────────
-//
-// Representative scenes showing archetype counts and chunk overhead.
-
-void BenchmarkArchetypeFootprint()
-{
-    auto PrintFootprint = [](const char* label, const World& w, size_t registered) {
         size_t chunkCount = 0;
-        for (const auto& arch : w.GetArchetypes())
-            chunkCount += arch->Chunks.size();
-        const size_t chunkDataBytes = chunkCount * ChunkSizeBytes;
+        for (const auto& archetype : world.GetArchetypes())
+            chunkCount += archetype->Chunks.size();
 
         std::cout << "\n=== " << label << " ===\n";
-        std::cout << "  registered_components: " << registered << "\n";
-        std::cout << "  archetype_count:       " << w.GetArchetypes().size() << "\n";
-        std::cout << "  chunk_count:           " << chunkCount << "\n";
-        std::cout << "  chunk_data_bytes:      " << chunkDataBytes << "\n";
-        std::cout << "  entities:              " << w.EntityCount() << "\n";
+        std::cout << "  registered_components: " << registeredComponents << "\n";
+        std::cout << "  archetype_count: " << world.GetArchetypes().size() << "\n";
+        std::cout << "  chunk_count: " << chunkCount << "\n";
+        std::cout << "  chunk_data_bytes: " << chunkCount * ChunkSizeBytes << "\n";
+        std::cout << "  entities: " << world.EntityCount() << "\n";
 
-        for (const auto& arch : w.GetArchetypes())
+        for (const auto& archetype : world.GetArchetypes())
         {
             size_t rows = 0;
-            for (const auto& chunk : arch->Chunks) rows += chunk->RowCount;
-            if (rows == 0) continue;
-            std::cout << "    sig_popcount=" << arch->Signature.count()
-                      << "  rows_per_chunk=" << arch->RowsPerChunk
-                      << "  chunks=" << arch->Chunks.size()
-                      << "  entity_rows=" << rows
-                      << "\n";
-        }
-    };
+            for (const auto& chunk : archetype->Chunks)
+                rows += chunk->RowCount;
+            if (rows == 0)
+                continue;
 
-    // Scene A: 100 flat-transform entities
-    {
-        World w;
-        w.RegisterComponent<LocalTransform>();
-        w.RegisterComponent<WorldTransform>();
-        for (size_t i = 0; i < 100; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(i) });
-            w.AddComponent<WorldTransform>(e, {});
+            std::cout << "    sig_popcount=" << archetype->Signature.count()
+                      << " rows_per_chunk=" << archetype->RowsPerChunk
+                      << " chunks=" << archetype->Chunks.size()
+                      << " entity_rows=" << rows << "\n";
         }
-        PrintFootprint("B4a: Scene A — 100 flat-transform entities", w, 2);
     }
 
-    // Scene B: 1000 renderable entities (LocalTransform + WorldTransform + StaticMeshComponent)
+    void RegisterRenderableComponents(World& world, bool withParent)
     {
-        World w;
-        w.RegisterComponent<LocalTransform>();
-        w.RegisterComponent<WorldTransform>();
-        w.RegisterComponent<StaticMeshComponent>();
-        for (size_t i = 0; i < 1000; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(i) });
-            w.AddComponent<WorldTransform>(e, {});
-            w.AddComponent<StaticMeshComponent>(e, {});
-        }
-        PrintFootprint("B4b: Scene B — 1000 renderable entities", w, 3);
+        world.RegisterComponent<LocalTransform>();
+        world.RegisterComponent<WorldTransform>();
+        if (withParent)
+            world.RegisterComponent<Parent>();
+        world.RegisterComponent<StaticMeshComponent>();
     }
 
-    // Scene C: 500 root + 500 parented renderables (two archetypes: with/without Parent)
+    void AddRenderable(World& world, size_t index, EntityId parent = {})
     {
-        World w;
-        w.RegisterComponent<LocalTransform>();
-        w.RegisterComponent<WorldTransform>();
-        w.RegisterComponent<Parent>();
-        w.RegisterComponent<StaticMeshComponent>();
-
-        std::vector<EntityId> roots;
-        for (size_t i = 0; i < 500; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(i) });
-            w.AddComponent<WorldTransform>(e, {});
-            w.AddComponent<StaticMeshComponent>(e, {});
-            roots.push_back(e);
-        }
-        for (size_t i = 0; i < 500; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(500 + i) });
-            w.AddComponent<WorldTransform>(e, {});
-            w.AddComponent<StaticMeshComponent>(e, {});
-            w.AddComponent<Parent>(e, { roots[i % 500] });
-        }
-        PrintFootprint("B4c: Scene C — 500 root + 500 parented renderables", w, 4);
+        EntityId entity = world.CreateEntity();
+        world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
+        world.AddComponent<WorldTransform>(entity, {});
+        world.AddComponent<StaticMeshComponent>(entity, {});
+        if (parent.IsValid())
+            world.AddComponent<Parent>(entity, { parent });
     }
 
-    // Scene D: 10k entities, mixed signatures (renderable roots, parented, light-only)
+    void BenchmarkArchetypeFootprint()
     {
-        World w;
-        w.RegisterComponent<LocalTransform>();
-        w.RegisterComponent<WorldTransform>();
-        w.RegisterComponent<Parent>();
-        w.RegisterComponent<StaticMeshComponent>();
-
-        std::vector<EntityId> roots;
-
-        // 5000 renderable roots
-        for (size_t i = 0; i < 5000; ++i)
         {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(i) });
-            w.AddComponent<WorldTransform>(e, {});
-            w.AddComponent<StaticMeshComponent>(e, {});
-            roots.push_back(e);
-        }
-        // 4000 parented renderables
-        for (size_t i = 0; i < 4000; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(5000 + i) });
-            w.AddComponent<WorldTransform>(e, {});
-            w.AddComponent<StaticMeshComponent>(e, {});
-            w.AddComponent<Parent>(e, { roots[i % 5000] });
-        }
-        // 1000 transform-only (no StaticMesh — pivot / dummy entities)
-        for (size_t i = 0; i < 1000; ++i)
-        {
-            EntityId e = w.CreateEntity();
-            w.AddComponent<LocalTransform>(e, { MakeTransform(9000 + i) });
-            w.AddComponent<WorldTransform>(e, {});
+            BenchmarkWorld storage;
+            World& world = storage.Entities;
+            world.RegisterComponent<LocalTransform>();
+            world.RegisterComponent<WorldTransform>();
+            for (size_t index = 0; index < 100; ++index)
+            {
+                EntityId entity = world.CreateEntity();
+                world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
+                world.AddComponent<WorldTransform>(entity, {});
+            }
+            PrintFootprint("100 flat-transform entities", world, 2);
         }
 
-        PrintFootprint("B4d: Scene D — 10k entities, mixed signatures", w, 4);
+        {
+            BenchmarkWorld storage;
+            World& world = storage.Entities;
+            RegisterRenderableComponents(world, false);
+            for (size_t index = 0; index < 1000; ++index)
+                AddRenderable(world, index);
+            PrintFootprint("1000 renderable entities", world, 3);
+        }
+
+        {
+            BenchmarkWorld storage;
+            World& world = storage.Entities;
+            RegisterRenderableComponents(world, true);
+
+            std::vector<EntityId> roots;
+            roots.reserve(500);
+            for (size_t index = 0; index < 500; ++index)
+            {
+                EntityId entity = world.CreateEntity();
+                world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
+                world.AddComponent<WorldTransform>(entity, {});
+                world.AddComponent<StaticMeshComponent>(entity, {});
+                roots.push_back(entity);
+            }
+            for (size_t index = 0; index < 500; ++index)
+                AddRenderable(world, 500 + index, roots[index]);
+
+            PrintFootprint("500 root and 500 parented renderables", world, 4);
+        }
+
+        {
+            BenchmarkWorld storage;
+            World& world = storage.Entities;
+            RegisterRenderableComponents(world, true);
+
+            std::vector<EntityId> roots;
+            roots.reserve(5000);
+            for (size_t index = 0; index < 5000; ++index)
+            {
+                EntityId entity = world.CreateEntity();
+                world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
+                world.AddComponent<WorldTransform>(entity, {});
+                world.AddComponent<StaticMeshComponent>(entity, {});
+                roots.push_back(entity);
+            }
+            for (size_t index = 0; index < 4000; ++index)
+                AddRenderable(world, 5000 + index, roots[index % roots.size()]);
+            for (size_t index = 0; index < 1000; ++index)
+            {
+                EntityId entity = world.CreateEntity();
+                world.AddComponent<LocalTransform>(
+                    entity,
+                    { MakeTransform(9000 + index) });
+                world.AddComponent<WorldTransform>(entity, {});
+            }
+
+            PrintFootprint("10k entities with mixed signatures", world, 4);
+        }
     }
 }
-
-} // namespace
 
 int main()
 {
     std::cout << std::fixed << std::setprecision(3);
-    std::cout << "Sencha ECS Phase 4 Benchmark\n";
-    std::cout << "Build: g++-14 -O2 -march=native -DNDEBUG\n";
-    std::cout << "Platform: Linux 6.6 WSL2\n";
+    std::cout << "Sencha ECS benchmark\n";
 
     BenchmarkTransformPropagation();
     BenchmarkRenderExtractionQuery();
