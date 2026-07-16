@@ -6,11 +6,13 @@ SpotShadowRenderFeature::SpotShadowRenderFeature(
     std::shared_ptr<LightBindings> bindings,
     const RenderLightSet& lights,
     const ShadowCasterSet& casters,
-    StaticMeshCache& meshes)
+    StaticMeshCache& meshes,
+    ShadowResidency& residency)
     : Bindings(std::move(bindings))
     , Lights(lights)
     , Casters(casters)
     , Meshes(meshes)
+    , Residency(residency)
 {
 }
 
@@ -34,7 +36,7 @@ void SpotShadowRenderFeature::Setup(const RendererServices& services)
 
 void SpotShadowRenderFeature::OnDraw(const FrameContext& frame)
 {
-    Pass.Draw(frame, Lights, Casters, Meshes);
+    Pass.Draw(frame, Lights, Residency.ScheduledViews(), Casters, Meshes, &Residency);
 }
 
 void SpotShadowRenderFeature::Teardown()

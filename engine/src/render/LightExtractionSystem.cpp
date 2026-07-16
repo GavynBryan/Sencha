@@ -20,7 +20,34 @@ namespace
         GpuLight Light;
         bool WantsSpotShadow = false;
         SpotShadowView Shadow;
+        Sphere ShadowBounds;
+        std::uint32_t ShadowTileSize = 0;
+        ShadowUpdatePolicy ShadowPolicy = ShadowUpdatePolicy::OnChange;
     };
+
+    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+    void HashBytes(std::uint64_t& hash, const void* data, std::size_t size)
+    {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index)
+        {
+            hash ^= bytes[index];
+            hash *= kFnvPrime;
+        }
+    }
+
+    // Hashes every extracted value the rendered depth view depends on; the
+    // residency arbiter re-renders an OnChange slot when this changes.
+    std::uint64_t HashShadowState(const SpotShadowView& shadow, std::uint32_t tileSize)
+    {
+        std::uint64_t hash = kFnvOffset;
+        HashBytes(hash, &shadow.ViewProjection, sizeof(shadow.ViewProjection));
+        HashBytes(hash, &shadow.SamplingParams, sizeof(shadow.SamplingParams));
+        HashBytes(hash, &tileSize, sizeof(tileSize));
+        return hash;
+    }
 
     float LightScore(const Vec<3>& position,
                      float range,
@@ -58,8 +85,10 @@ namespace
 
 void LightExtractionSystem::Extract(std::span<Registry*> registries,
                                     const CameraRenderData& camera,
-                                    RenderLightSet& lights) const
+                                    RenderLightSet& lights,
+                                    std::vector<SpotShadowRequest>& shadowRequests) const
 {
+    shadowRequests.clear();
     std::vector<LightCandidate> candidates;
 
     for (Registry* registry : registries)
@@ -109,12 +138,10 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
 
                     const Vec<3>& position = transform->Value.Position;
                     const Vec<3> direction = transform->Value.Forward();
-                    if (!camera.ViewFrustum.IntersectsSphere(
-                            SpotBounds(position, direction, light.Range,
-                                       light.OuterAngleDegrees)))
-                    {
+                    const Sphere bounds = SpotBounds(
+                        position, direction, light.Range, light.OuterAngleDegrees);
+                    if (!camera.ViewFrustum.IntersectsSphere(bounds))
                         return;
-                    }
 
                     LightCandidate candidate{
                         .Key = MakeRenderEntityKey(*registry, entity),
@@ -126,6 +153,10 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                     {
                         candidate.Shadow = MakeSpotShadowView(
                             transform->Value, light, lights.ShadowSoftness);
+                        candidate.ShadowBounds = bounds;
+                        candidate.ShadowTileSize =
+                            static_cast<std::uint32_t>(light.ShadowResolution);
+                        candidate.ShadowPolicy = light.ShadowUpdate;
                     }
                     candidates.push_back(candidate);
                 });
@@ -146,7 +177,19 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
     {
         const LightCandidate& candidate = candidates[index];
         const std::uint32_t lightIndex = lights.Add(candidate.Light);
-        if (lightIndex != UINT32_MAX && candidate.WantsSpotShadow)
-            (void)lights.GrantSpotShadow(lightIndex, candidate.Shadow);
+        if (lightIndex == UINT32_MAX || !candidate.WantsSpotShadow)
+            continue;
+
+        shadowRequests.push_back(SpotShadowRequest{
+            .Key = candidate.Key,
+            .LightIndex = lightIndex,
+            .Score = candidate.Score,
+            .TileSize = candidate.ShadowTileSize,
+            .Policy = candidate.ShadowPolicy,
+            .StateHash = HashShadowState(candidate.Shadow, candidate.ShadowTileSize),
+            .ViewProjection = candidate.Shadow.ViewProjection,
+            .SamplingParams = candidate.Shadow.SamplingParams,
+            .Bounds = candidate.ShadowBounds,
+        });
     }
 }

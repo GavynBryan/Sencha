@@ -84,6 +84,10 @@ Renderer::~Renderer()
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
     // the caches own the VkDevice objects, and the device service outlives us.
+    // Features destroy some Vulkan objects directly (descriptor pools,
+    // samplers), so no submitted frame may still be executing when they do.
+    if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
+        vkDeviceWaitIdle(Services.Device->GetDevice());
     for (auto& feature : OwnedFeatures)
     {
         if (feature) feature->Teardown();

@@ -98,13 +98,13 @@ bool SpotShadowDepthPass::BindInstanceStream(const FrameContext& frame,
     return true;
 }
 
-VkDeviceSize SpotShadowDepthPass::UploadView(const SpotShadowView& shadow)
+VkDeviceSize SpotShadowDepthPass::UploadView(const Mat4& viewProjection)
 {
-    const Mat4 viewProjection = shadow.ViewProjection.Transposed();
-    auto allocation = Scratch->AllocateUniform(sizeof(viewProjection));
+    const Mat4 transposed = viewProjection.Transposed();
+    auto allocation = Scratch->AllocateUniform(sizeof(transposed));
     if (!allocation.IsValid())
         return VK_WHOLE_SIZE;
-    std::memcpy(allocation.Mapped, &viewProjection, sizeof(viewProjection));
+    std::memcpy(allocation.Mapped, &transposed, sizeof(transposed));
     return allocation.Offset;
 }
 
@@ -118,15 +118,28 @@ void SpotShadowDepthPass::BindView(const FrameContext& frame, VkDeviceSize unifo
 
 void SpotShadowDepthPass::Draw(const FrameContext& frame,
                                const RenderLightSet& lights,
+                               std::span<const SpotShadowViewJob> views,
                                const ShadowCasterSet& casters,
-                               StaticMeshCache& meshes)
+                               StaticMeshCache& meshes,
+                               ShadowResidency* residency)
 {
-    if (Bindings == nullptr || !Bindings->HasAtlas() || lights.SpotShadowCount == 0)
+    if (Bindings == nullptr || !Bindings->HasAtlas() || views.empty())
         return;
 
-    const bool canDrawCasters = !casters.Items.empty()
-        && EnsurePipelines(lights)
-        && BindInstanceStream(frame, casters);
+    // An empty caster set still renders its views: a cleared tile is the
+    // correct depth for "nothing occludes". Only a recording failure leaves
+    // tiles untouched, reported so cached content is not sampled as fresh.
+    bool canDrawCasters = !casters.Items.empty();
+    if (canDrawCasters
+        && (!EnsurePipelines(lights) || !BindInstanceStream(frame, casters)))
+    {
+        if (residency != nullptr)
+        {
+            for (const SpotShadowViewJob& view : views)
+                residency->MarkViewFailed(view.SlotIndex);
+        }
+        return;
+    }
 
     Bindings->TransitionAtlasForWrite(frame.Cmd);
 
@@ -142,24 +155,29 @@ void SpotShadowDepthPass::Draw(const FrameContext& frame,
     VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
 
-    for (std::uint32_t shadowIndex = 0;
-         shadowIndex < lights.SpotShadowCount;
-         ++shadowIndex)
+    for (const SpotShadowViewJob& view : views)
     {
-        const SpotShadowView& shadow = lights.SpotShadows[shadowIndex];
-        const std::uint32_t column = shadowIndex % kSpotShadowAtlasColumns;
-        const std::uint32_t row = shadowIndex / kSpotShadowAtlasColumns;
+        VkDeviceSize uniformOffset = VK_WHOLE_SIZE;
+        if (canDrawCasters)
+        {
+            uniformOffset = UploadView(view.ViewProjection);
+            if (uniformOffset == VK_WHOLE_SIZE)
+            {
+                // Skipped before the tile is touched: old contents stay
+                // valid for whatever still samples them.
+                if (residency != nullptr)
+                    residency->MarkViewFailed(view.SlotIndex);
+                continue;
+            }
+        }
 
         VkRenderingInfo rendering{};
         rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         rendering.renderArea.offset = {
-            static_cast<std::int32_t>(column * kSpotShadowTileExtent),
-            static_cast<std::int32_t>(row * kSpotShadowTileExtent),
+            static_cast<std::int32_t>(view.Allocation.X),
+            static_cast<std::int32_t>(view.Allocation.Y),
         };
-        rendering.renderArea.extent = {
-            kSpotShadowTileExtent,
-            kSpotShadowTileExtent,
-        };
+        rendering.renderArea.extent = { view.Allocation.Size, view.Allocation.Size };
         rendering.layerCount = 1;
         rendering.pDepthAttachment = &depthAttachment;
         vkCmdBeginRendering(frame.Cmd, &rendering);
@@ -169,35 +187,24 @@ void SpotShadowDepthPass::Draw(const FrameContext& frame,
             vkCmdEndRendering(frame.Cmd);
             continue;
         }
-
-        const VkDeviceSize uniformOffset = UploadView(shadow);
-        if (uniformOffset == VK_WHOLE_SIZE)
-        {
-            vkCmdEndRendering(frame.Cmd);
-            continue;
-        }
         BindView(frame, uniformOffset);
 
         VkViewport viewport{};
-        viewport.x = static_cast<float>(
-            column * kSpotShadowTileExtent + kSpotShadowGuardTexels);
-        viewport.y = static_cast<float>(
-            row * kSpotShadowTileExtent + kSpotShadowGuardTexels);
-        viewport.width = static_cast<float>(kSpotShadowInnerExtent);
-        viewport.height = static_cast<float>(kSpotShadowInnerExtent);
+        viewport.x = static_cast<float>(view.Allocation.X + kSpotShadowGuardTexels);
+        viewport.y = static_cast<float>(view.Allocation.Y + kSpotShadowGuardTexels);
+        viewport.width = static_cast<float>(
+            view.Allocation.Size - 2u * kSpotShadowGuardTexels);
+        viewport.height = viewport.width;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
 
         VkRect2D scissor{};
-        scissor.offset = {
-            static_cast<std::int32_t>(column * kSpotShadowTileExtent),
-            static_cast<std::int32_t>(row * kSpotShadowTileExtent),
-        };
-        scissor.extent = { kSpotShadowTileExtent, kSpotShadowTileExtent };
+        scissor.offset = rendering.renderArea.offset;
+        scissor.extent = rendering.renderArea.extent;
         vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
 
-        const Frustum shadowFrustum = Frustum::FromViewProjection(shadow.ViewProjection);
+        const Frustum shadowFrustum = Frustum::FromViewProjection(view.ViewProjection);
         for (std::uint32_t casterIndex = 0;
              casterIndex < static_cast<std::uint32_t>(casters.Items.size());
              ++casterIndex)

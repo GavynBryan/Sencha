@@ -44,6 +44,9 @@ TEST(EngineConsoleBuiltins, RegistersExpectedEngineCVars)
     EXPECT_NE(registry.FindCVar("render.shadow.softness"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.bias_const"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.bias_slope"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_spot"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_views_per_frame"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.min_invalidated_views_per_frame"), nullptr);
 }
 
 TEST(EngineConsoleBuiltins, ConfigAssignmentsSetRegisteredAndQueueUnknownCVars)

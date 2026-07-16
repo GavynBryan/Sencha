@@ -12,6 +12,7 @@
 #include <render/SpotShadowRenderFeature.h>
 #endif
 
+#include <algorithm>
 #include <memory>
 #include <variant>
 
@@ -103,7 +104,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     // MainColor, so tiles are written before they are read.
     auto bindings = std::make_shared<LightBindings>();
     if (graphics.MainRenderer.AddFeature(std::make_unique<SpotShadowRenderFeature>(
-            bindings, Lights, ShadowCasters, *Meshes)) == nullptr)
+            bindings, Lights, ShadowCasters, *Meshes, Residency)) == nullptr)
     {
         return false;
     }
@@ -173,9 +174,32 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     Lights.Reset();
     ApplyRendererCVars(Console, Lights);
-    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights);
+    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests);
     ShadowCasterExtractor.Extract(
         ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
+
+    // The diff always swaps its tables so a later OnChange acquisition sees
+    // current history; events are only worth emitting while someone caches.
+    CasterEvents.clear();
+    CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
+
+    ShadowResidencyBudgets shadowBudgets;
+    shadowBudgets.MaxSlots = static_cast<std::uint32_t>(std::clamp(
+        ReadDoubleCVar(Console, "render.shadow.max_spot",
+                       static_cast<float>(kMaxSpotShadows)),
+        0.0f, static_cast<float>(kMaxSpotShadows)));
+    shadowBudgets.MaxViewsPerFrame = static_cast<std::uint32_t>(std::max(
+        ReadDoubleCVar(Console, "render.shadow.max_views_per_frame", 12.0f), 0.0f));
+    shadowBudgets.MinInvalidatedViewsPerFrame = static_cast<std::uint32_t>(std::max(
+        ReadDoubleCVar(Console, "render.shadow.min_invalidated_views_per_frame", 1.0f),
+        0.0f));
+    Residency.Update(ShadowRequests, CasterEvents, shadowBudgets);
+
+    for (const SpotShadowGrant& grant : Residency.Grants())
+        Lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
+    Lights.SpotShadowCount = Residency.SlotHighWater();
+    for (std::uint32_t slot = 0; slot < Lights.SpotShadowCount; ++slot)
+        Lights.SpotShadows[slot] = Residency.SlotRecord(slot);
 
     if (Log != nullptr)
     {

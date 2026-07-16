@@ -198,10 +198,16 @@ void ShadowResidency::ScheduleViews(std::span<const SpotShadowRequest> requests,
             .Allocation = slot.Allocation,
             .ViewProjection = request.ViewProjection,
         });
+        // The request's receiver-offset texel size was derived for the
+        // reference tier; rescale it to the granted tile's logical interior
+        // so a downgraded tile offsets by its real (coarser) texels.
+        Vec4 samplingParams = request.SamplingParams;
+        samplingParams.X *= static_cast<float>(kSpotShadowInnerExtent)
+            / static_cast<float>(slot.Allocation.Size - 2u * kSpotShadowGuardTexels);
         slot.Rendered = SpotShadowView{
             .ViewProjection = request.ViewProjection,
             .AtlasScaleBias = ShadowAtlasAllocator::InsetScaleBias(slot.Allocation),
-            .SamplingParams = request.SamplingParams,
+            .SamplingParams = samplingParams,
             .LightIndex = request.LightIndex,
         };
         slot.StateHash = request.StateHash;

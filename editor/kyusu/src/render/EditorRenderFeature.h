@@ -31,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 class EditorScene;
 class EditorDocument;
@@ -126,6 +127,9 @@ private:
     // would render. Context zones draw with shadow-free light sets.
     LightBindings          Lighting;
     SpotShadowDepthPass    ShadowPass;
+    // Rebuilt per frame from the scene's fixed grants (one 512 tile per
+    // granted slot, re-rendered every frame).
+    std::vector<SpotShadowViewJob> ShadowJobs;
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
     std::optional<SceneSolidRenderer>      SceneSolid;

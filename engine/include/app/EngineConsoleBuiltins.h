@@ -10,6 +10,7 @@
 class ConsoleRegistry;
 class ConsoleService;
 class DebugService;
+class DefaultRenderPipeline;
 class FrameDriver;
 class RuntimeFrameLoop;
 
@@ -29,6 +30,11 @@ namespace EngineConsoleBuiltins
 
     void RegisterHostCommands(ConsoleService& console,
                               std::function<void()> quitHandler);
+
+    // Commands that reach into the render pipeline; registered by the engine
+    // once the pipeline exists.
+    void RegisterRenderCommands(ConsoleRegistry& registry,
+                                DefaultRenderPipeline& pipeline);
 
     ConsoleResult ApplyConfigAssignments(ConsoleService& console,
                                          const EngineConsoleConfig& config);

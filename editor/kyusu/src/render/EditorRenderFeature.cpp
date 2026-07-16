@@ -188,10 +188,25 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
             });
         // Record the focus scene's shadow atlas once per frame, before any
         // viewport rendering scope opens. Every Solid viewport then samples
-        // the same tiles; the pass is a no-op when no spot light holds a
-        // grant or the atlas is unavailable.
-        ShadowPass.Draw(frame, QueueBuilder->Lights(), QueueBuilder->Casters(),
-                        *MeshCache);
+        // the same tiles. The editor re-renders its fixed always-update
+        // grants each frame, so the view list is rebuilt from the fixed
+        // 512 grid; the pass is a no-op when no spot light holds a grant.
+        const RenderLightSet& sceneLights = QueueBuilder->Lights();
+        ShadowJobs.clear();
+        for (std::uint32_t slot = 0; slot < sceneLights.SpotShadowCount; ++slot)
+        {
+            ShadowJobs.push_back(SpotShadowViewJob{
+                .SlotIndex = slot,
+                .Allocation = ShadowAtlasAllocation{
+                    .X = (slot % kSpotShadowAtlasColumns) * kSpotShadowTileExtent,
+                    .Y = (slot / kSpotShadowAtlasColumns) * kSpotShadowTileExtent,
+                    .Size = kSpotShadowTileExtent,
+                },
+                .ViewProjection = sceneLights.SpotShadows[slot].ViewProjection,
+            });
+        }
+        ShadowPass.Draw(frame, sceneLights, ShadowJobs, QueueBuilder->Casters(),
+                        *MeshCache, nullptr);
     }
 
     // Render every viewport that is actually on screen. A hidden panel zeroes its

@@ -72,10 +72,14 @@ namespace
         return entity;
     }
 
-    void Extract(std::vector<Registry*>& registries, RenderLightSet& lights)
+    void Extract(std::vector<Registry*>& registries,
+                 RenderLightSet& lights,
+                 std::vector<SpotShadowRequest>* requestsOut = nullptr)
     {
         LightExtractionSystem extractor;
-        extractor.Extract(registries, MakeCamera(), lights);
+        std::vector<SpotShadowRequest> requests;
+        extractor.Extract(registries, MakeCamera(), lights,
+                          requestsOut != nullptr ? *requestsOut : requests);
     }
 }
 
@@ -188,7 +192,7 @@ TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeTieBreaks)
     EXPECT_EQ(forward.Lights[1].ColorIntensity, reverse.Lights[1].ColorIntensity);
 }
 
-TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeSpotShadowGrants)
+TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeShadowRequestsOrGrants)
 {
     Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
     Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
@@ -204,27 +208,45 @@ TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeSpotShadowGrants)
     MakeSpot(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
 
     RenderLightSet forward;
+    std::vector<SpotShadowRequest> forwardRequests;
     std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
-    Extract(forwardOrder, forward);
+    Extract(forwardOrder, forward, &forwardRequests);
 
     RenderLightSet reverse;
+    std::vector<SpotShadowRequest> reverseRequests;
     std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
-    Extract(reverseOrder, reverse);
+    Extract(reverseOrder, reverse, &reverseRequests);
 
-    ASSERT_EQ(forward.SpotShadowCount, 2u);
-    ASSERT_EQ(reverse.SpotShadowCount, 2u);
+    ASSERT_EQ(forwardRequests.size(), 2u);
+    ASSERT_EQ(reverseRequests.size(), 2u);
     for (std::uint32_t index = 0; index < 2u; ++index)
     {
-        EXPECT_EQ(forward.Lights[index].ShadowIndex, index);
-        EXPECT_EQ(reverse.Lights[index].ShadowIndex, index);
-        EXPECT_EQ(forward.SpotShadows[index].AtlasScaleBias,
-                  reverse.SpotShadows[index].AtlasScaleBias);
-        EXPECT_EQ(forward.SpotShadows[index].LightIndex,
-                  reverse.SpotShadows[index].LightIndex);
+        EXPECT_EQ(forwardRequests[index].Key, reverseRequests[index].Key);
+        EXPECT_EQ(forwardRequests[index].LightIndex, reverseRequests[index].LightIndex);
+        EXPECT_EQ(forwardRequests[index].StateHash, reverseRequests[index].StateHash);
+    }
+
+    // Identical request sequences produce identical residency decisions.
+    ShadowResidency forwardResidency;
+    ShadowResidency reverseResidency;
+    const ShadowResidencyBudgets budgets{};
+    forwardResidency.Update(forwardRequests, {}, budgets);
+    reverseResidency.Update(reverseRequests, {}, budgets);
+
+    ASSERT_EQ(forwardResidency.Grants().size(), 2u);
+    ASSERT_EQ(reverseResidency.Grants().size(), 2u);
+    for (std::size_t index = 0; index < 2u; ++index)
+    {
+        EXPECT_EQ(forwardResidency.Grants()[index].LightIndex,
+                  reverseResidency.Grants()[index].LightIndex);
+        EXPECT_EQ(forwardResidency.Grants()[index].SlotIndex,
+                  reverseResidency.Grants()[index].SlotIndex);
+        EXPECT_EQ(forwardResidency.SlotRecord(index).AtlasScaleBias,
+                  reverseResidency.SlotRecord(index).AtlasScaleBias);
     }
 }
 
-TEST(LightExtraction, GrantsAtMostTheFixedSpotShadowBudget)
+TEST(LightExtraction, ResidencyGrantsAtMostTheSlotBudget)
 {
     Registry registry = MakeLightRegistry(RegistryId::Global());
     constexpr std::uint32_t candidateCount = kMaxSpotShadows + 3u;
@@ -236,16 +258,22 @@ TEST(LightExtraction, GrantsAtMostTheFixedSpotShadowBudget)
     }
 
     RenderLightSet lights;
+    std::vector<SpotShadowRequest> requests;
     std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(registries, lights, &requests);
 
+    // Extraction emits every packed request; the budget belongs to residency.
     ASSERT_EQ(lights.Count, candidateCount);
-    ASSERT_EQ(lights.SpotShadowCount, kMaxSpotShadows);
+    ASSERT_EQ(requests.size(), candidateCount);
+
+    ShadowResidency residency;
+    residency.Update(requests, {}, ShadowResidencyBudgets{});
+    for (const SpotShadowGrant& grant : residency.Grants())
+        lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
+
+    ASSERT_EQ(residency.Grants().size(), kMaxSpotShadows);
     for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
-    {
         EXPECT_EQ(lights.Lights[index].ShadowIndex, index);
-        EXPECT_EQ(lights.SpotShadows[index].LightIndex, index);
-    }
     for (std::uint32_t index = kMaxSpotShadows; index < candidateCount; ++index)
         EXPECT_EQ(lights.Lights[index].ShadowIndex, UINT32_MAX);
 }
@@ -263,15 +291,19 @@ TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
 
     RenderLightSet lights;
     lights.ShadowSoftness = 2.0f;
+    std::vector<SpotShadowRequest> requests;
     std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(registries, lights, &requests);
 
-    ASSERT_EQ(lights.SpotShadowCount, 1u);
-    const Vec4& params = lights.SpotShadows[0].SamplingParams;
+    ASSERT_EQ(requests.size(), 1u);
+    const Vec4& params = requests[0].SamplingParams;
     EXPECT_NEAR(params.X, 40.0f / static_cast<float>(kSpotShadowInnerExtent), 1.0e-6f);
     EXPECT_FLOAT_EQ(params.Y, kSpotShadowSoftnessMaxTexels);
     EXPECT_FLOAT_EQ(params.Z, 1.75f);
     EXPECT_FLOAT_EQ(params.W, 0.0f);
+    EXPECT_EQ(requests[0].TileSize,
+              static_cast<std::uint32_t>(ShadowResolutionTier::Medium));
+    EXPECT_EQ(requests[0].Policy, ShadowUpdatePolicy::OnChange);
 }
 
 TEST(SpotShadowAtlas, InsetsFixedSlotsAndContainsFilterReach)

@@ -1,10 +1,13 @@
 #include <app/EngineConsoleBuiltins.h>
 
+#include <app/DefaultRenderPipeline.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <debug/DebugService.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
+
+#include <span>
 
 namespace EngineConsoleBuiltins
 {
@@ -115,6 +118,13 @@ namespace EngineConsoleBuiltins
                              "Constant depth bias for spot shadow caster rendering.", 0.0);
         registerRenderDouble("render.shadow.bias_slope", 2.0,
                              "Slope-scaled depth bias for spot shadow caster rendering.", 0.0);
+        registerRenderDouble("render.shadow.max_spot", 8.0,
+                             "Resident spot shadow slot budget.", 0.0, 8.0);
+        registerRenderDouble("render.shadow.max_views_per_frame", 12.0,
+                             "Shadow depth views rendered per frame. Zero removes the clamp.",
+                             0.0);
+        registerRenderDouble("render.shadow.min_invalidated_views_per_frame", 1.0,
+                             "Views reserved per frame for invalidated cached shadows.", 0.0);
 
         registry.RegisterCVar({
             .Name = "render.tonemap",
@@ -186,6 +196,24 @@ namespace EngineConsoleBuiltins
                               std::function<void()> quitHandler)
     {
         console.SetQuitHandler(std::move(quitHandler));
+    }
+
+    void RegisterRenderCommands(ConsoleRegistry& registry,
+                                DefaultRenderPipeline& pipeline)
+    {
+        registry.RegisterCommand({
+            .Name = "render.shadow.invalidate",
+            .Owner = "engine",
+            .Usage = "render.shadow.invalidate",
+            .Help = "Re-render every cached shadow slot.",
+            .Callback = [&pipeline](ConsoleExecutionContext&,
+                                    std::span<const std::string>) {
+                pipeline.InvalidateShadows();
+                ConsoleResult result;
+                result.Info("shadow slots invalidated");
+                return result;
+            },
+        });
     }
 
     ConsoleResult ApplyConfigAssignments(ConsoleService& console,

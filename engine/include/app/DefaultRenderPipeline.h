@@ -11,7 +11,10 @@
 #include <render/RenderQueue.h>
 #include <render/ShadowCasterExtractionSystem.h>
 #include <render/ShadowCasterSet.h>
+#include <render/ShadowResidency.h>
 #include <render/static_mesh/StaticMeshCache.h>
+
+#include <vector>
 
 struct GraphicsServices;
 class ConsoleRegistry;
@@ -41,10 +44,18 @@ public:
     bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
+    // Marks every cached shadow slot for re-render (the
+    // render.shadow.invalidate console command).
+    void InvalidateShadows() { Residency.InvalidateAll(); }
+
 private:
     RenderQueue Queue;
     RenderLightSet Lights;
     ShadowCasterSet ShadowCasters;
+    ShadowResidency Residency;
+    ShadowCasterDiff CasterDiff;
+    std::vector<ShadowCasterEvent> CasterEvents;
+    std::vector<SpotShadowRequest> ShadowRequests;
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;

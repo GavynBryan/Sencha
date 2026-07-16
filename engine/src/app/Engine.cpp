@@ -54,6 +54,8 @@ bool Engine::Initialize()
         DebugState->Open();
     EngineSystems.Register<DefaultRenderPipeline>(
         &LoggingState, &ConsoleState->Registry());
+    EngineConsoleBuiltins::RegisterRenderCommands(
+        ConsoleState->Registry(), *EngineSystems.Get<DefaultRenderPipeline>());
 
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
     EngineSystems.Register<AudioSystem>(AudioState.get());
