@@ -34,6 +34,10 @@ static_assert(sizeof(GpuLight) == 64, "GpuLight must match the std140 light reco
 
 inline constexpr std::uint32_t kMaxForwardLights = 64;
 inline constexpr std::uint32_t kMaxSpotShadows = 8;
+// Smallest quadtree tile tier. ShadowResolutionTier values are literal tile
+// sizes, so the tiers are kSpotShadowMinTileExtent up to the atlas extent by
+// powers of two.
+inline constexpr std::uint32_t kSpotShadowMinTileExtent = 256;
 // Per-camera cap on active irradiance probe volumes. Sizes the probe-volume
 // binding array in the lighting descriptor set, which stays dummy-filled
 // until probe content is uploaded.

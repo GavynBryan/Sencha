@@ -20,19 +20,32 @@ namespace
         }
         return result;
     }
+
+    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+    void HashByte(std::uint64_t& hash, std::uint8_t value)
+    {
+        hash ^= value;
+        hash *= kFnvPrime;
+    }
 }
 
-void AppendShadowCasterSections(StaticMeshHandle meshHandle,
-                                const GpuStaticMesh& mesh,
-                                std::span<const MaterialHandle> sectionMaterials,
-                                const MaterialCache& materials,
-                                std::uint32_t sectionMask,
-                                const Mat4& worldMatrix,
-                                const Aabb3d& worldBounds,
-                                ShadowCasterSet& casters)
+ShadowCasterGatherResult AppendShadowCasterSections(
+    StaticMeshHandle meshHandle,
+    const GpuStaticMesh& mesh,
+    std::span<const MaterialHandle> sectionMaterials,
+    const MaterialCache& materials,
+    std::uint32_t sectionMask,
+    const Mat4& worldMatrix,
+    const Aabb3d& worldBounds,
+    ShadowCasterSet& casters)
 {
+    ShadowCasterGatherResult result;
+    result.MaterialStateHash = kFnvOffset;
+    result.WorldBounds = worldBounds;
     if (sectionMaterials.empty())
-        return;
+        return result;
 
     for (std::uint32_t sectionIndex = 0;
          sectionIndex < static_cast<std::uint32_t>(mesh.Sections.size());
@@ -46,9 +59,20 @@ void AppendShadowCasterSections(StaticMeshHandle meshHandle,
             ? sectionMaterials[slot]
             : sectionMaterials.back();
         const Material* material = materials.Get(materialHandle);
-        if (material == nullptr || !material->CastShadows)
+        if (material == nullptr)
             continue;
 
+        // Every resolvable masked section feeds the hash, so a section whose
+        // material stops or starts casting reads as a state change even
+        // before the mask difference is considered.
+        HashByte(result.MaterialStateHash, static_cast<std::uint8_t>(sectionIndex));
+        HashByte(result.MaterialStateHash, material->CastShadows ? 1u : 0u);
+        HashByte(result.MaterialStateHash, material->DoubleSided ? 1u : 0u);
+
+        if (!material->CastShadows)
+            continue;
+
+        result.EffectiveSectionMask |= 1u << sectionIndex;
         casters.Items.push_back(ShadowCasterItem{
             .Mesh = meshHandle,
             .Material = materialHandle,
@@ -58,22 +82,24 @@ void AppendShadowCasterSections(StaticMeshHandle meshHandle,
             .DoubleSided = material->DoubleSided,
         });
     }
+    return result;
 }
 
-void AppendShadowCasters(const StaticMeshComponent& renderer,
-                         const GpuStaticMesh& mesh,
-                         std::span<const MaterialHandle> sectionMaterials,
-                         const MaterialCache& materials,
-                         const Mat4& worldMatrix,
-                         ShadowCasterSet& casters)
+ShadowCasterGatherResult AppendShadowCasters(
+    const StaticMeshComponent& renderer,
+    const GpuStaticMesh& mesh,
+    std::span<const MaterialHandle> sectionMaterials,
+    const MaterialCache& materials,
+    const Mat4& worldMatrix,
+    ShadowCasterSet& casters)
 {
     if (!renderer.Visible || !renderer.CastShadows)
-        return;
+        return {};
 
-    AppendShadowCasterSections(renderer.Mesh, mesh, sectionMaterials, materials,
-                               renderer.SectionMask, worldMatrix,
-                               TransformBounds(mesh.LocalBounds, worldMatrix),
-                               casters);
+    return AppendShadowCasterSections(renderer.Mesh, mesh, sectionMaterials, materials,
+                                      renderer.SectionMask, worldMatrix,
+                                      TransformBounds(mesh.LocalBounds, worldMatrix),
+                                      casters);
 }
 
 void ShadowCasterExtractionSystem::Extract(
@@ -110,8 +136,22 @@ void ShadowCasterExtractionSystem::Extract(
                 if (transform == nullptr || mesh == nullptr || sectionMaterials == nullptr)
                     return;
 
-                AppendShadowCasters(renderer, *mesh, *sectionMaterials, materials,
-                                    transform->Value.ToMat4(), casters);
+                const ShadowCasterGatherResult gathered = AppendShadowCasters(
+                    renderer, *mesh, *sectionMaterials, materials,
+                    transform->Value.ToMat4(), casters);
+                if (gathered.EffectiveSectionMask == 0)
+                    return;
+
+                casters.Records.push_back(ShadowCasterRecord{
+                    .Key = MakeRenderEntityKey(*registry, entity),
+                    .State = ShadowCasterState{
+                        .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                        .Mesh = renderer.Mesh,
+                        .Materials = renderer.Materials,
+                        .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                        .ShadowMaterialStateHash = gathered.MaterialStateHash,
+                    },
+                });
             });
     }
 }
