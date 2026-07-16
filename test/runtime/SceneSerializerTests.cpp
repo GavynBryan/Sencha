@@ -15,6 +15,7 @@
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
@@ -79,6 +80,7 @@ namespace
         registry.Components.RegisterComponent<Parent>();
         registry.Components.RegisterComponent<StaticMeshComponent>();
         registry.Components.RegisterComponent<PointLightComponent>();
+        registry.Components.RegisterComponent<SpotLightComponent>();
         registry.Components.RegisterComponent<CameraComponent>();
         registry.Components.RegisterComponent<AudioSourceComponent>();
         registry.Components.RegisterComponent<AudioCaptionComponent>();
