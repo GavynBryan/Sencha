@@ -28,10 +28,9 @@ namespace
         return it != haystack.end();
     }
 
-    // Source textures only. The registry also holds the physical cooked
-    // artifacts (asset://...png.stex from the .cooked scan); materials must
-    // reference the SOURCE path, which the asset system serves cooked bytes
-    // for, so the cooked spellings never belong in the picker.
+    // Source textures only. The registry also holds physical cooked artifacts.
+    // Materials reference the source path, which the asset system resolves to
+    // cooked bytes, so cooked spellings never belong in the picker.
     bool IsPickableTexture(const AssetRecord& record)
     {
         if (record.Type != AssetType::Texture)
@@ -60,7 +59,6 @@ void MaterialInspectorPanel::CommitWidgetEdit(MaterialEditTab& tab, MaterialDesc
         BaselineCaptured = true;
     }
 
-    // Live-apply during the drag so the preview tracks the widget.
     if (!SameMaterialDescription(edited, tab.Session.Working()))
         tab.Session.SetWorking(edited);
 
@@ -96,8 +94,6 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
 
     if (ImGui::BeginPopup("texture_picker"))
     {
-        // "Set" edits happen inside a popup, not a drag, so commit directly:
-        // snapshot, apply, push the command in one step.
         const auto apply = [&](const std::string& path)
         {
             const MaterialDescription before = tab.Session.Working();
@@ -120,14 +116,13 @@ void MaterialInspectorPanel::DrawTextureSlot(MaterialEditTab& tab, const char* i
             apply(std::string{});
         ImGui::Separator();
 
-        // A game ships hundreds of textures: fixed-height scrolling list under
-        // the filter, never a screen-tall popup.
         if (ImGui::BeginChild("##texlist", ImVec2(320.0f, 300.0f)))
         {
             const std::string_view filter = TextureFilterText;
             int shown = 0;
             for (const auto& [path, record] : Registry.Records())
             {
+                (void)path;
                 if (!IsPickableTexture(record))
                     continue;
                 if (!ContainsCaseInsensitive(record.Path, filter))
@@ -182,6 +177,32 @@ void MaterialInspectorPanel::OnDraw()
     ImGui::Separator();
 
     MaterialDescription edited = tab->Session.Working();
+    const auto commitDiscrete = [&](const MaterialDescription& value)
+    {
+        const MaterialDescription before = tab->Session.Working();
+        tab->Session.SetWorking(value);
+        if (!SameMaterialDescription(before, tab->Session.Working()))
+            tab->Commands.Execute(std::make_unique<EditMaterialCommand>(
+                tab->Session, before, tab->Session.Working()));
+    };
+
+    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        static constexpr const char* kShadingNames[] = { "Standard Lit", "Unlit" };
+        int shading = static_cast<int>(edited.Shading);
+        if (ImGui::Combo("Shading", &shading, kShadingNames, 2))
+        {
+            edited.Shading = static_cast<MaterialShading>(shading);
+            commitDiscrete(edited);
+        }
+
+        if (ImGui::Checkbox("Double Sided", &edited.DoubleSided))
+            commitDiscrete(edited);
+        if (ImGui::Checkbox("Cast Shadows", &edited.CastShadows))
+            commitDiscrete(edited);
+        if (ImGui::Checkbox("Receive Shadows", &edited.ReceiveShadows))
+            commitDiscrete(edited);
+    }
 
     if (ImGui::CollapsingHeader("Base Color", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -193,16 +214,20 @@ void MaterialInspectorPanel::OnDraw()
         DrawTextureSlot(*tab, "base_color_texture", "Texture", edited.BaseColorTexture, edited);
     }
 
-    if (ImGui::CollapsingHeader("Surface", ImGuiTreeNodeFlags_DefaultOpen))
+    if (edited.Shading == MaterialShading::StandardLit
+        && ImGui::CollapsingHeader("Surface", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::SliderFloat("Roughness", &edited.RoughnessFactor, 0.0f, 1.0f);
         CommitWidgetEdit(*tab, edited);
         ImGui::SliderFloat("Metallic", &edited.MetallicFactor, 0.0f, 1.0f);
         CommitWidgetEdit(*tab, edited);
+        ImGui::SliderFloat("Specular", &edited.SpecularIntensity, 0.0f, 1.0f);
+        CommitWidgetEdit(*tab, edited);
         DrawTextureSlot(*tab, "orm_texture", "ORM Texture", edited.OrmTexture, edited);
     }
 
-    if (ImGui::CollapsingHeader("Normal", ImGuiTreeNodeFlags_DefaultOpen))
+    if (edited.Shading == MaterialShading::StandardLit
+        && ImGui::CollapsingHeader("Normal", ImGuiTreeNodeFlags_DefaultOpen))
     {
         DrawTextureSlot(*tab, "normal_texture", "Texture", edited.NormalTexture, edited);
         ImGui::SliderFloat("Scale", &edited.NormalScale, 0.0f, 2.0f);
@@ -217,6 +242,8 @@ void MaterialInspectorPanel::OnDraw()
                           ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         edited.EmissiveFactor = Vec4(emissive[0], emissive[1], emissive[2], 0.0f);
         CommitWidgetEdit(*tab, edited);
+        ImGui::DragFloat("Strength", &edited.EmissiveStrength, 0.05f, 0.0f, 1000.0f);
+        CommitWidgetEdit(*tab, edited);
         DrawTextureSlot(*tab, "emissive_texture", "Texture", edited.EmissiveTexture, edited);
     }
 
@@ -226,11 +253,8 @@ void MaterialInspectorPanel::OnDraw()
         int mode = static_cast<int>(edited.AlphaMode);
         if (ImGui::Combo("Mode", &mode, kModes, 3))
         {
-            const MaterialDescription before = tab->Session.Working();
             edited.AlphaMode = static_cast<MaterialAlphaMode>(mode);
-            tab->Session.SetWorking(edited);
-            tab->Commands.Execute(std::make_unique<EditMaterialCommand>(
-                tab->Session, before, tab->Session.Working()));
+            commitDiscrete(edited);
         }
         if (edited.AlphaMode == MaterialAlphaMode::Mask)
         {
@@ -238,5 +262,4 @@ void MaterialInspectorPanel::OnDraw()
             CommitWidgetEdit(*tab, edited);
         }
     }
-
 }
