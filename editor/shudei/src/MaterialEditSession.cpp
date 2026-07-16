@@ -13,17 +13,23 @@ namespace
 
 bool SameMaterialDescription(const MaterialDescription& a, const MaterialDescription& b)
 {
-    return SameVec4(a.BaseColorFactor, b.BaseColorFactor)
+    return a.Shading == b.Shading
+        && SameVec4(a.BaseColorFactor, b.BaseColorFactor)
         && a.BaseColorTexture.Path == b.BaseColorTexture.Path
         && a.NormalTexture.Path == b.NormalTexture.Path
         && a.NormalScale == b.NormalScale
         && a.OrmTexture.Path == b.OrmTexture.Path
         && a.RoughnessFactor == b.RoughnessFactor
         && a.MetallicFactor == b.MetallicFactor
+        && a.SpecularIntensity == b.SpecularIntensity
         && SameVec4(a.EmissiveFactor, b.EmissiveFactor)
         && a.EmissiveTexture.Path == b.EmissiveTexture.Path
+        && a.EmissiveStrength == b.EmissiveStrength
         && a.AlphaMode == b.AlphaMode
-        && a.AlphaCutoff == b.AlphaCutoff;
+        && a.AlphaCutoff == b.AlphaCutoff
+        && a.DoubleSided == b.DoubleSided
+        && a.ReceiveShadows == b.ReceiveShadows
+        && a.CastShadows == b.CastShadows;
 }
 
 bool MaterialEditSession::Open(std::string virtualPath, std::string filePath, std::string* error)
