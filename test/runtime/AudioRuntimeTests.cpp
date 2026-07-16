@@ -176,7 +176,7 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
     AudioClipHandle clip = cache.Register("asset://audio/boop.wav", MakeClip()); // refcount 1
 
     Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
+    registry.Resources.Register<AudioSourceRuntime>(&cache, &audio);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
     EntityId entity = registry.Components.CreateEntity();
@@ -249,7 +249,7 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
     AudioClipHandle clip = cache.Register("asset://audio/ambient.wav", MakeClip());
 
     Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
+    registry.Resources.Register<AudioSourceRuntime>(&cache, &audio);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
     EntityId loop = registry.Components.CreateEntity();
@@ -297,7 +297,7 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
     AudioClipHandle clip = cache.Register("asset://audio/ambient.wav", MakeClip());
 
     Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, nullptr);
+    registry.Resources.Register<AudioSourceRuntime>(&cache, nullptr);
     registry.Components.RegisterComponent<AudioSourceComponent>();
 
     EntityId entity = registry.Components.CreateEntity();

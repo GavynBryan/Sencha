@@ -67,7 +67,7 @@ namespace
     void SetupRegistry(Registry& registry, AudioClipCache* cache,
                        AudioService* audio, CaptionRuntime* captions)
     {
-        registry.Components.AddResource<AudioSourceRuntime>(cache, audio, captions);
+        registry.Resources.Register<AudioSourceRuntime>(cache, audio, captions);
         registry.Components.RegisterComponent<AudioSourceComponent>();
         registry.Components.RegisterComponent<AudioCaptionComponent>();
     }

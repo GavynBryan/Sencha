@@ -4,7 +4,7 @@
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
-#include <ecs/World.h>
+#include <core/ResourceStore.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
@@ -59,9 +59,9 @@ struct StaticMeshComponentAssets
 template <>
 struct ComponentTraits<StaticMeshComponent>
 {
-    static void OnAdd(StaticMeshComponent& component, World& world, EntityId)
+    static void OnAdd(StaticMeshComponent& component, ResourceStore& resources, EntityId)
     {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
+        auto* assets = resources.TryGet<StaticMeshComponentAssets>();
         if (assets == nullptr)
             return;
 
@@ -71,9 +71,9 @@ struct ComponentTraits<StaticMeshComponent>
             assets->MaterialSets->Retain(component.Materials);
     }
 
-    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId)
+    static void OnRemove(const StaticMeshComponent& component, ResourceStore& resources, EntityId)
     {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
+        auto* assets = resources.TryGet<StaticMeshComponentAssets>();
         if (assets == nullptr)
             return;
 

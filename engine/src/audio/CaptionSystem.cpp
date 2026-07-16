@@ -69,7 +69,7 @@ void CaptionSystem::DriveRegistry(CaptionRuntime& captions, Registry& registry,
     if (!registry.Components.IsRegistered<AudioCaptionComponent>())
         return;
 
-    auto* runtime = registry.Components.TryGetResource<AudioSourceRuntime>();
+    auto* runtime = registry.Resources.TryGet<AudioSourceRuntime>();
     const AudioClipCache* clips = runtime ? runtime->Clips : nullptr;
     const bool hasSources = registry.Components.IsRegistered<AudioSourceComponent>();
 

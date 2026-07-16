@@ -60,7 +60,7 @@ void AudioSystem::DriveRegistry(AudioService& audio, Registry& registry,
 
     // The clip cache lives on the same per-registry resource the component
     // hooks use; without it we cannot resolve PCM to hand AudioService.
-    auto* runtime = registry.Components.TryGetResource<AudioSourceRuntime>();
+    auto* runtime = registry.Resources.TryGet<AudioSourceRuntime>();
     AudioClipCache* clips = runtime ? runtime->Clips : nullptr;
     if (clips == nullptr)
         return;

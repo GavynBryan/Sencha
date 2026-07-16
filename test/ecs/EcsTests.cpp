@@ -1,3 +1,4 @@
+#include <core/ResourceStore.h>
 #include <ecs/Ecs.h>
 
 #include <gtest/gtest.h>
@@ -21,27 +22,18 @@ static int g_OnAddCount    = 0;
 static int g_OnRemoveCount = 0;
 
 struct Tracked { int Id = 0; };
-struct HookAddsMass { int Id = 0; };
 
 template <>
 struct ComponentTraits<Tracked>
 {
-    static void OnAdd(Tracked& /*c*/, World& /*w*/, EntityId /*e*/)
+    static void OnAdd(Tracked&, ResourceStore&, EntityId)
     {
         ++g_OnAddCount;
     }
-    static void OnRemove(const Tracked& /*c*/, World& /*w*/, EntityId /*e*/)
+
+    static void OnRemove(const Tracked&, ResourceStore&, EntityId)
     {
         ++g_OnRemoveCount;
-    }
-};
-
-template <>
-struct ComponentTraits<HookAddsMass>
-{
-    static void OnAdd(HookAddsMass& /*c*/, World& w, EntityId e)
-    {
-        w.AddComponent<Mass>(e, { 10.f });
     }
 };
 
@@ -54,7 +46,6 @@ SENCHA_DECLARE_COMPONENT_TYPE(Mass,         "test.mass");
 SENCHA_DECLARE_COMPONENT_TYPE(TagFrozen,    "test.tag_frozen");
 SENCHA_DECLARE_COMPONENT_TYPE(TagPlayer,    "test.tag_player");
 SENCHA_DECLARE_COMPONENT_TYPE(Tracked,      "test.tracked");
-SENCHA_DECLARE_COMPONENT_TYPE(HookAddsMass, "test.hook_adds_mass");
 SENCHA_DECLARE_COMPONENT_TYPE(float,        "test.float");
 SENCHA_DECLARE_COMPONENT_TYPE(double,       "test.double");
 
@@ -75,10 +66,10 @@ protected:
         world.RegisterComponent<TagFrozen>();
         world.RegisterComponent<TagPlayer>();
         world.RegisterComponent<Tracked>();
-        world.RegisterComponent<HookAddsMass>();
     }
 
-    World world;
+    ResourceStore resources;
+    World world{ resources };
 };
 
 // ─── Component registration ──────────────────────────────────────────────────
@@ -742,14 +733,14 @@ TEST_F(EcsTest, OnRemoveHook_FiresOnCommandBufferFlush)
     EXPECT_EQ(g_OnRemoveCount, 1);
 }
 
-TEST_F(EcsTest, LifecycleHook_StructuralMutationAssertsInDebug)
+TEST_F(EcsTest, HookedComponentRegistrationRequiresResourceStore)
 {
-    EntityId e = world.CreateEntity();
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
-    EXPECT_DEATH(world.AddComponent<HookAddsMass>(e, { 1 }),
-                 "lifecycle hook is active");
+    World unbound;
+    EXPECT_DEATH(unbound.RegisterComponent<Tracked>(),
+                 "requires a ResourceStore");
 #endif
 }
 

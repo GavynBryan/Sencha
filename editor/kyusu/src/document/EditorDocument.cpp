@@ -102,9 +102,9 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
 
     // The lifecycle hooks for StaticMeshComponent retain/release through this
     // resource; without it an authored mesh handle would not hold its asset.
-    World& world = Registry_.Components;
-    if (!world.HasResource<StaticMeshComponentAssets>())
-        world.AddResource<StaticMeshComponentAssets>(&assets.StaticMeshes, &assets.MaterialSets);
+    if (!Registry_.Resources.Has<StaticMeshComponentAssets>())
+        Registry_.Resources.Register<StaticMeshComponentAssets>(
+            &assets.StaticMeshes, &assets.MaterialSets);
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)

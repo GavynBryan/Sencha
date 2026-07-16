@@ -9,7 +9,7 @@
 #include <core/text/InlineString.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
-#include <ecs/World.h>
+#include <core/ResourceStore.h>
 
 #include <string_view>
 #include <tuple>
@@ -89,9 +89,9 @@ struct ComponentTraits<AudioSourceComponent>
 {
     // OnAdd retains the clip and nothing more: deserialization is not
     // activation, and the zone may be dormant. AudioSystem starts playback.
-    static void OnAdd(AudioSourceComponent& component, World& world, EntityId)
+    static void OnAdd(AudioSourceComponent& component, ResourceStore& resources, EntityId)
     {
-        auto* runtime = world.TryGetResource<AudioSourceRuntime>();
+        auto* runtime = resources.TryGet<AudioSourceRuntime>();
         if (runtime == nullptr || runtime->Clips == nullptr)
             return;
 
@@ -102,9 +102,9 @@ struct ComponentTraits<AudioSourceComponent>
     // Decision C): a voice never outlives the clip reference that feeds it.
     // Stop first, then release — in that order, in this hook, which fires on
     // both entity destruction and zone detach.
-    static void OnRemove(const AudioSourceComponent& component, World& world, EntityId)
+    static void OnRemove(const AudioSourceComponent& component, ResourceStore& resources, EntityId)
     {
-        auto* runtime = world.TryGetResource<AudioSourceRuntime>();
+        auto* runtime = resources.TryGet<AudioSourceRuntime>();
         if (runtime == nullptr)
             return;
 

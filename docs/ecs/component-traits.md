@@ -20,12 +20,12 @@ struct ComponentTraits
 // Concept checks used by World and CommandBuffer to detect hooks:
 template <typename T>
 concept ComponentHasOnAdd =
-    requires(T& component, World& world, EntityId entity)
+    requires(T& component, ResourceStore& world, EntityId entity)
     { ComponentTraits<T>::OnAdd(component, world, entity); };
 
 template <typename T>
 concept ComponentHasOnRemove =
-    requires(const T& component, World& world, EntityId entity)
+    requires(const T& component, ResourceStore& world, EntityId entity)
     { ComponentTraits<T>::OnRemove(component, world, entity); };
 ```
 
@@ -49,7 +49,7 @@ Specialize `ComponentTraits<T>` in a header **near the component type definition
 template <>
 struct ComponentTraits<StaticMeshComponent>
 {
-    static void OnAdd(StaticMeshComponent& component, World& world, EntityId)
+    static void OnAdd(StaticMeshComponent& component, ResourceStore& world, EntityId)
     {
         auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
         if (assets == nullptr) return;
@@ -57,7 +57,7 @@ struct ComponentTraits<StaticMeshComponent>
         if (assets->Materials)  assets->Materials->Retain(component.Material);
     }
 
-    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId)
+    static void OnRemove(const StaticMeshComponent& component, ResourceStore& world, EntityId)
     {
         auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
         if (assets == nullptr) return;
@@ -71,11 +71,11 @@ Hook signatures:
 
 ```cpp
 // OnAdd receives a mutable reference to the just-added component.
-static void OnAdd(T& component, World& world, EntityId entity);
+static void OnAdd(T& component, ResourceStore& world, EntityId entity);
 
 // OnRemove receives a const reference. The component still exists and the
 // entity is still alive while the hook runs.
-static void OnRemove(const T& component, World& world, EntityId entity);
+static void OnRemove(const T& component, ResourceStore& world, EntityId entity);
 ```
 
 ---

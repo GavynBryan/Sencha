@@ -21,6 +21,7 @@
 
 // Forward declarations — defined in their own headers.
 class CommandBuffer;
+class ResourceStore;
 class World;
 template <typename... Accessors> class Query;
 
@@ -34,8 +35,8 @@ struct ComponentMeta
     size_t           Size;
     size_t           Alignment;
     bool             IsTag;     // zero-size marker; no per-entity column
-    void (*OnAdd)(void*, World&, EntityId) = nullptr;
-    void (*OnRemove)(const void*, World&, EntityId) = nullptr;
+    void (*OnAdd)(void*, ResourceStore&, EntityId) = nullptr;
+    void (*OnRemove)(const void*, ResourceStore&, EntityId) = nullptr;
 };
 
 struct ComponentBatchItem
@@ -46,8 +47,8 @@ struct ComponentBatchItem
 
 // ─── World ──────────────────────────────────────────────────────────────────
 //
-// Owns: entity registry, archetype table, archetype graph, resources,
-// and the query-scope guard.
+// Owns the entity registry, component metadata, archetype storage, change epochs,
+// structural versioning, and query guards. Registry-scoped resources live outside it.
 // Single entry point for all ECS operations.
 
 class World
@@ -89,6 +90,11 @@ class World
 
 public:
     World() = default;
+    explicit World(ResourceStore& lifecycleResources)
+        : LifecycleResources(&lifecycleResources)
+    {
+    }
+
     ~World()
     {
         ClearEntities();
@@ -127,6 +133,13 @@ public:
         assert(!EntityCreated
                && "Component registration after entity creation is forbidden (v1).");
 
+        if constexpr (!std::is_empty_v<T>
+                      && (ComponentHasOnAdd<T> || ComponentHasOnRemove<T>))
+        {
+            assert(LifecycleResources != nullptr
+                   && "Lifecycle component registration requires a ResourceStore");
+        }
+
         const ComponentTypeId key = ResolveComponentTypeId<T>();
 
         const size_t size  = std::is_empty_v<T> ? 0 : sizeof(T);
@@ -160,14 +173,14 @@ public:
         meta.IsTag     = std::is_empty_v<T>;
         if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
-            meta.OnAdd = [](void* ptr, World& world, EntityId entity) {
-                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), world, entity);
+            meta.OnAdd = [](void* ptr, ResourceStore& resources, EntityId entity) {
+                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), resources, entity);
             };
         }
         if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
         {
-            meta.OnRemove = [](const void* ptr, World& world, EntityId entity) {
-                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), world, entity);
+            meta.OnRemove = [](const void* ptr, ResourceStore& resources, EntityId entity) {
+                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), resources, entity);
             };
         }
         ComponentMetas.push_back(meta);
@@ -302,7 +315,7 @@ public:
             const uint32_t c = ch->FindColumn(id);
             T* ptr = reinterpret_cast<T*>(const_cast<uint8_t*>(ch->ColumnData(c))) + dri;
             ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnAdd(*ptr, *this, entity);
+            ComponentTraits<T>::OnAdd(*ptr, LifecycleResourceStore(), entity);
         }
     }
 
@@ -326,7 +339,7 @@ public:
             const T*       ptr = reinterpret_cast<const T*>(
                 src.Chunks[loc.ChunkIndex]->ColumnData(c)) + loc.RowIndex;
             ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnRemove(*ptr, *this, entity);
+            ComponentTraits<T>::OnRemove(*ptr, LifecycleResourceStore(), entity);
         }
 
         ArchetypeSignature newSig = src.Signature;
@@ -670,7 +683,7 @@ public:
             Chunk*         ch  = dst->Chunks[dci].get();
             const uint32_t col = ch->FindColumn(id);
             ScopedLifecycleHook hookScope(*this);
-            meta.OnAdd(ch->ColumnData(col) + dri * meta.Size, *this, entity);
+            meta.OnAdd(ch->ColumnData(col) + dri * meta.Size, LifecycleResourceStore(), entity);
         }
     }
 
@@ -695,7 +708,7 @@ public:
             const void* ptr = ch->ColumnData(col)
                 + loc.RowIndex * ch->Columns[col].Stride;
             ScopedLifecycleHook hookScope(*this);
-            meta.OnRemove(ptr, *this, entity);
+            meta.OnRemove(ptr, LifecycleResourceStore(), entity);
         }
 
         ArchetypeSignature newSig = src.Signature;
@@ -865,6 +878,8 @@ private:
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> Resources;
 
+    ResourceStore* LifecycleResources = nullptr;
+
     mutable uint32_t QueryDepth = 0;
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
@@ -891,6 +906,7 @@ private:
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
         Resources = std::move(other.Resources);
+        LifecycleResources = other.LifecycleResources;
         QueryDepth = other.QueryDepth;
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
@@ -898,9 +914,17 @@ private:
         EntityCreated = other.EntityCreated;
 
         other.Resources.clear();
+        other.LifecycleResources = nullptr;
         other.QueryDepth = 0;
         other.LifecycleHookDepth = 0;
         other.EntityCreated = false;
+    }
+
+    ResourceStore& LifecycleResourceStore()
+    {
+        assert(LifecycleResources != nullptr
+               && "Lifecycle dispatch requires a ResourceStore");
+        return *LifecycleResources;
     }
 
     void InvokeRemoveHooks(EntityId entity,
@@ -918,7 +942,7 @@ private:
             const void* component = chunk.ColumnData(column)
                 + location.RowIndex * chunk.Columns[column].Stride;
             ScopedLifecycleHook hookScope(*this);
-            meta.OnRemove(component, *this, entity);
+            meta.OnRemove(component, LifecycleResourceStore(), entity);
         }
     }
 

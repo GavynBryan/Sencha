@@ -8,7 +8,7 @@
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
-#include <ecs/World.h>
+#include <core/ResourceStore.h>
 
 #include <string_view>
 #include <tuple>
@@ -67,9 +67,9 @@ struct ComponentTraits<AudioCaptionComponent>
     // OnRemove ends the active caption (entity destruction and zone detach
     // both fire it). Stale-safe: an already-retired caption is a no-op, and
     // ordering against the sibling source's own OnRemove does not matter.
-    static void OnRemove(const AudioCaptionComponent& component, World& world, EntityId)
+    static void OnRemove(const AudioCaptionComponent& component, ResourceStore& resources, EntityId)
     {
-        auto* runtime = world.TryGetResource<AudioSourceRuntime>();
+        auto* runtime = resources.TryGet<AudioSourceRuntime>();
         if (runtime == nullptr || runtime->Captions == nullptr)
             return;
 

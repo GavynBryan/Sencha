@@ -29,14 +29,14 @@ void InitializeDefault3DRegistry(Registry& registry,
                                  CaptionRuntime* captions)
 {
     registry.Resources.Register<ActiveCameraService>();
+    registry.Resources.Register<StaticMeshComponentAssets>(meshes, materialSets);
+    registry.Resources.Register<AudioSourceRuntime>(audioClips, audio, captions);
     // Storage traits, not raw RegisterComponent: LocalTransform's traits also
     // register WorldTransform and Parent.
     ForEachSceneComponent([&](auto tag)
     {
         ComponentStorageTraits<typename decltype(tag)::Type>::Register(registry);
     });
-    registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materialSets);
-    registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio, captions);
 }
 
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)

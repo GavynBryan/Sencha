@@ -19,6 +19,7 @@ enum class RegistryKind : uint8_t
 struct Registry
 {
     Registry()
+        : Components(Resources)
     {
         Components.AdvanceFrame();
     }
@@ -27,6 +28,7 @@ struct Registry
         : Id(id)
         , Kind(kind)
         , Zone(zone)
+        , Components(Resources)
     {
         assert((kind != RegistryKind::Global
                 || (id.IsGlobal() && !zone.IsValid()))
@@ -38,10 +40,7 @@ struct Registry
         Components.AdvanceFrame();
     }
 
-    ~Registry()
-    {
-        Components.ClearEntities();
-    }
+    ~Registry() = default;
 
     Registry(const Registry&) = delete;
     Registry& operator=(const Registry&) = delete;
