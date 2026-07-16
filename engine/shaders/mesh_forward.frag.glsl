@@ -6,16 +6,36 @@
 layout(location = 0) in vec3 inWorldNormal;
 layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
+layout(location = 3) in vec3 inWorldTangent;
+layout(location = 4) in float inTangentSign;
 
 layout(push_constant) uniform MeshPush
 {
     vec4 BaseColor;
     uint BaseColorTextureIndex;
+    uint NormalTextureIndex;
+    float NormalScale;
+    uint Pad0;
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
 
 layout(location = 0) out vec4 outColor;
+
+vec3 ResolveWorldNormal()
+{
+    vec3 normal = normalize(inWorldNormal);
+    if (pushData.NormalTextureIndex == 0xFFFFFFFFu)
+        return normal;
+
+    vec2 mappedXy = texture(BindlessTextures[pushData.NormalTextureIndex], inUv0).xy * 2.0 - 1.0;
+    mappedXy *= pushData.NormalScale;
+    float mappedZ = sqrt(max(1.0 - dot(mappedXy, mappedXy), 0.0));
+
+    vec3 tangent = normalize(inWorldTangent);
+    vec3 bitangent = normalize(cross(normal, tangent)) * inTangentSign;
+    return normalize(mat3(tangent, bitangent, normal) * vec3(mappedXy, mappedZ));
+}
 
 void main()
 {
@@ -25,7 +45,7 @@ void main()
         baseColor *= texture(BindlessTextures[pushData.BaseColorTextureIndex], inUv0);
     }
 
-    vec3 N = normalize(inWorldNormal);
+    vec3 N = ResolveWorldNormal();
 
     // Hemispheric ambient is the no-bake indirect fill. Sky tint applies to
     // upward-facing surfaces and ground tint applies to downward-facing ones.
