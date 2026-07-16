@@ -133,6 +133,7 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
 {
     Material material;
     material.Pass = ShaderPassId::ForwardOpaque;
+    material.Shading = desc.Shading;
     material.BaseColor = desc.BaseColorFactor;
     material.EmissiveFactor = desc.EmissiveFactor;
     material.NormalScale = desc.NormalScale;
@@ -142,6 +143,9 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
     material.EmissiveStrength = desc.EmissiveStrength;
     material.AlphaMode = desc.AlphaMode;
     material.AlphaCutoff = desc.AlphaCutoff;
+    material.DoubleSided = desc.DoubleSided;
+    material.ReceiveShadows = desc.ReceiveShadows;
+    material.CastShadows = desc.CastShadows;
 
     if (material.AlphaMode == MaterialAlphaMode::Blend)
     {
