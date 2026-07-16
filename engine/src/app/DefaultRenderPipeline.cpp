@@ -154,6 +154,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     Lights.Reset();
     ApplyRendererCVars(Console, Lights);
     LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights);
+    ShadowCasterExtractor.Extract(
+        ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
 
     if (Log != nullptr)
     {
