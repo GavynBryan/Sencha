@@ -20,9 +20,15 @@ enum class ShaderPassId : uint16_t
     ForwardOpaque = 0
 };
 
-// Authored alpha behavior (docs/assets/pipeline.md, Decision L). Blend maps
-// to a transparent phase that has no pipeline yet: loaders accept it, warn,
-// and the material renders opaque until that phase exists.
+enum class MaterialShading : uint8_t
+{
+    StandardLit = 0,
+    Unlit = 1,
+};
+
+// Authored alpha behavior. Blend maps to a transparent phase that has no
+// pipeline yet: loaders accept it, warn, and the material renders opaque until
+// that phase exists.
 enum class MaterialAlphaMode : uint8_t
 {
     Opaque = 0,
@@ -43,6 +49,7 @@ enum class MaterialAlphaMode : uint8_t
 struct Material
 {
     ShaderPassId Pass = ShaderPassId::ForwardOpaque;
+    MaterialShading Shading = MaterialShading::StandardLit;
 
     Vec4 BaseColor = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
     Vec4 EmissiveFactor = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -60,4 +67,7 @@ struct Material
 
     MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
     float AlphaCutoff = 0.5f;
+    bool DoubleSided = false;
+    bool ReceiveShadows = true;
+    bool CastShadows = true;
 };
