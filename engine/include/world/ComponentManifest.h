@@ -4,6 +4,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <components/CameraComponent.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>
 
@@ -14,32 +15,18 @@
 // ComponentManifest
 //
 // The single authoritative list of the engine's serializable scene components.
-// Adding a component to the engine means adding it here — nowhere else. Both
-// InitSceneSerializer() and InitializeDefault3DRegistry() fold over this list,
-// so serializer registration and storage registration can never drift apart.
-//
-// Everything else about a component lives in its own header: the struct,
-// ComponentTraits lifecycle hooks, and TypeSchema (JSON name, SceneChunkId,
-// fields). See docs/ecs/component-registration-plan.md.
-//
-// This header is deliberately the one cross-module aggregation point in
-// world/ — it must name every component, wherever it lives. Do not add
-// audio/ or render/ includes to any other world/ header.
-//
-// Game-specific components are not listed here: games call
-// RegisterComponent<T>() after InitSceneSerializer() and register storage in
-// their own zone setup.
+// Adding a component to the engine means adding it here. Serializer and storage
+// registration both fold over this list so they cannot drift apart.
 //=============================================================================
 using EngineSceneComponents = std::tuple<
     LocalTransform,
     CameraComponent,
     StaticMeshComponent,
     PointLightComponent,
+    SpotLightComponent,
     AudioSourceComponent,
     AudioCaptionComponent>;
 
-// Tag passed to ForEachSceneComponent visitors; carries the component type
-// without constructing a component.
 template <typename T>
 struct ComponentTag
 {
@@ -55,7 +42,6 @@ namespace ComponentManifestDetail
     }
 }
 
-// Calls fn(ComponentTag<T>{}) for every component in EngineSceneComponents.
 template <typename Fn>
 void ForEachSceneComponent(Fn&& fn)
 {
