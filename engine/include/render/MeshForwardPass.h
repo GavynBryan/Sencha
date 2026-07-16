@@ -28,12 +28,15 @@ struct MeshFrameUniforms
     GpuLight Lights[kMaxForwardLights];
 };
 
-// Per-run push constants: base-color material inputs. The world matrix rides a
-// per-instance vertex stream (see Draw), so one push covers an instanced run.
+// Per-run push constants. The world matrix rides a per-instance vertex stream,
+// so one push covers an instanced run.
 struct MeshPushConstants
 {
     Vec4 BaseColor;
     uint32_t BaseColorTextureIndex = UINT32_MAX;
+    uint32_t NormalTextureIndex = UINT32_MAX;
+    float NormalScale = 1.0f;
+    uint32_t Pad0 = 0;
 };
 
 //=============================================================================
@@ -82,7 +85,7 @@ private:
     // world-matrix stream in draw order, then record the per-run draws.
     [[nodiscard]] bool EnsurePipeline(const FrameContext& frame);
     [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(const CameraRenderData& camera,
-                                                                  const RenderLightSet& lights);
+                                                                   const RenderLightSet& lights);
     [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
