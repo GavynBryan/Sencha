@@ -66,9 +66,11 @@ namespace EngineConsoleBuiltins
                               RuntimeFrameLoop& runtimeLoop,
                               EngineRuntimeConfig& runtimeConfig)
     {
-        const auto registerAmbientChannel = [&registry](const char* name,
-                                                        double defaultValue,
-                                                        const char* help) {
+        const auto registerRenderDouble = [&registry](const char* name,
+                                                       double defaultValue,
+                                                       const char* help,
+                                                       std::optional<double> min = {},
+                                                       std::optional<double> max = {}) {
             registry.RegisterCVar({
                 .Name = name,
                 .Owner = "engine",
@@ -78,15 +80,43 @@ namespace EngineConsoleBuiltins
                 .Flags = CVarFlags::Archive,
                 .Help = help,
                 .Source = { "renderer defaults" },
-                .Min = 0.0,
+                .Min = min,
+                .Max = max,
             });
         };
-        registerAmbientChannel("render.ambient.sky_r", 0.10, "Ambient sky tint red channel in linear space.");
-        registerAmbientChannel("render.ambient.sky_g", 0.12, "Ambient sky tint green channel in linear space.");
-        registerAmbientChannel("render.ambient.sky_b", 0.15, "Ambient sky tint blue channel in linear space.");
-        registerAmbientChannel("render.ambient.ground_r", 0.04, "Ambient ground tint red channel in linear space.");
-        registerAmbientChannel("render.ambient.ground_g", 0.03, "Ambient ground tint green channel in linear space.");
-        registerAmbientChannel("render.ambient.ground_b", 0.02, "Ambient ground tint blue channel in linear space.");
+
+        registerRenderDouble("render.ambient.sky_r", 0.10,
+                             "Ambient sky tint red channel in linear space.", 0.0);
+        registerRenderDouble("render.ambient.sky_g", 0.12,
+                             "Ambient sky tint green channel in linear space.", 0.0);
+        registerRenderDouble("render.ambient.sky_b", 0.15,
+                             "Ambient sky tint blue channel in linear space.", 0.0);
+        registerRenderDouble("render.ambient.ground_r", 0.04,
+                             "Ambient ground tint red channel in linear space.", 0.0);
+        registerRenderDouble("render.ambient.ground_g", 0.03,
+                             "Ambient ground tint green channel in linear space.", 0.0);
+        registerRenderDouble("render.ambient.ground_b", 0.02,
+                             "Ambient ground tint blue channel in linear space.", 0.0);
+        registerRenderDouble("render.style.diffuse_wrap", 0.25,
+                             "Diffuse wrap applied to direct lighting.", 0.0, 1.0);
+        registerRenderDouble("render.style.min_ambient", 0.0,
+                             "Minimum ambient channel value after hemispheric lighting.", 0.0);
+        registerRenderDouble("render.exposure", 1.0,
+                             "Linear exposure multiplier applied before output mapping.", 0.0);
+        registerRenderDouble("render.tonemap.knee", 0.8,
+                             "Output shoulder knee. Values below the knee remain unchanged.",
+                             0.0, 0.999);
+
+        registry.RegisterCVar({
+            .Name = "render.tonemap",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = true,
+            .CurrentValue = true,
+            .Flags = CVarFlags::Archive,
+            .Help = "Enables the renderer output shoulder.",
+            .Source = { "renderer defaults" },
+        });
 
         registry.RegisterCVar({
             .Name = "time.timescale",
