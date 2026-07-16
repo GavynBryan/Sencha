@@ -1,5 +1,6 @@
 #include <app/DefaultRenderPipeline.h>
 
+#include <core/console/ConsoleRegistry.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -11,11 +12,64 @@
 #endif
 
 #include <memory>
-#include <unordered_set>
+#include <variant>
 
-DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging)
+namespace
+{
+    float ReadDoubleCVar(const ConsoleRegistry* console,
+                         std::string_view name,
+                         float fallback)
+    {
+        if (console == nullptr)
+            return fallback;
+        const CVarMetadata* metadata = console->FindCVar(name);
+        if (metadata == nullptr)
+            return fallback;
+        const double* value = std::get_if<double>(&metadata->CurrentValue);
+        return value != nullptr ? static_cast<float>(*value) : fallback;
+    }
+
+    bool ReadBoolCVar(const ConsoleRegistry* console,
+                      std::string_view name,
+                      bool fallback)
+    {
+        if (console == nullptr)
+            return fallback;
+        const CVarMetadata* metadata = console->FindCVar(name);
+        if (metadata == nullptr)
+            return fallback;
+        const bool* value = std::get_if<bool>(&metadata->CurrentValue);
+        return value != nullptr ? *value : fallback;
+    }
+
+    void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
+    {
+        lights.AmbientSky = Vec<3>(
+            ReadDoubleCVar(console, "render.ambient.sky_r", lights.AmbientSky.X),
+            ReadDoubleCVar(console, "render.ambient.sky_g", lights.AmbientSky.Y),
+            ReadDoubleCVar(console, "render.ambient.sky_b", lights.AmbientSky.Z));
+        lights.AmbientGround = Vec<3>(
+            ReadDoubleCVar(console, "render.ambient.ground_r", lights.AmbientGround.X),
+            ReadDoubleCVar(console, "render.ambient.ground_g", lights.AmbientGround.Y),
+            ReadDoubleCVar(console, "render.ambient.ground_b", lights.AmbientGround.Z));
+        lights.DiffuseWrap = ReadDoubleCVar(
+            console, "render.style.diffuse_wrap", lights.DiffuseWrap);
+        lights.MinAmbient = ReadDoubleCVar(
+            console, "render.style.min_ambient", lights.MinAmbient);
+        lights.Exposure = ReadDoubleCVar(console, "render.exposure", lights.Exposure);
+        lights.TonemapKnee = ReadDoubleCVar(
+            console, "render.tonemap.knee", lights.TonemapKnee);
+        lights.TonemapEnabled = ReadBoolCVar(
+            console, "render.tonemap", lights.TonemapEnabled);
+    }
+}
+
+DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
+                                             const ConsoleRegistry* console)
     : Log(logging ? &logging->GetLogger<DefaultRenderPipeline>() : nullptr)
-{}
+    , Console(console)
+{
+}
 
 void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
@@ -63,13 +117,13 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     for (Registry* registry : ctx.ActiveRegistries)
     {
-
         auto* activeCamera = registry->Resources.TryGet<ActiveCameraService>();
-
         if (activeCamera == nullptr
             || !registry->Components.IsRegistered<CameraComponent>()
             || !registry->Components.IsRegistered<WorldTransform>())
+        {
             continue;
+        }
 
         hasCamera = CameraRenderDataSystem::Build(
             *activeCamera, registry->Components, extent, Camera);
@@ -85,27 +139,29 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     for (Registry* registry : ctx.ActiveRegistries)
     {
-
         if (!registry->Components.IsRegistered<WorldTransform>()
             || !registry->Components.IsRegistered<StaticMeshComponent>())
+        {
             continue;
+        }
 
-        RenderExtractor.Extract(registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
+        RenderExtractor.Extract(
+            registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
     }
 
     Queue.SortOpaque();
 
     Lights.Reset();
+    ApplyRendererCVars(Console, Lights);
     for (Registry* registry : ctx.ActiveRegistries)
-    {
         LightExtractor.Extract(registry->Components, Lights);
-    }
 
     if (Log != nullptr)
     {
         if (Lights.Count == kMaxForwardLights && !LightCapWarned)
         {
-            Log->Warn("Light cap ({}) reached; lights beyond cap dropped this frame", kMaxForwardLights);
+            Log->Warn("Light cap ({}) reached; lights beyond cap dropped this frame",
+                      kMaxForwardLights);
             LightCapWarned = true;
         }
         else if (Lights.Count < kMaxForwardLights)
