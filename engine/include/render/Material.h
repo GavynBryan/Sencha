@@ -33,15 +33,12 @@ enum class MaterialAlphaMode : uint8_t
 //=============================================================================
 // Material
 //
-// CPU-side material descriptor: the runtime form of the .smat PBR schema
-// (glTF metallic-roughness model; docs/assets/pipeline.md, Decision L).
-// Owned and versioned by MaterialCache; accessed via MaterialHandle.
+// CPU-side material descriptor: the runtime form of the .smat material data.
+// Owned and versioned by MaterialCache; accessed through MaterialHandle.
 //
 // Texture slots hold bindless descriptor indices. UINT32_MAX means no texture.
 // Shaders substitute the slot's neutral default and apply the factors, so a
-// material with no textures remains complete. The forward shader currently
-// consumes base color and normal inputs. ORM and emissive remain available for
-// the expanded lighting evaluation.
+// material with no textures remains complete.
 //=============================================================================
 struct Material
 {
@@ -58,6 +55,8 @@ struct Material
     float NormalScale = 1.0f;
     float RoughnessFactor = 1.0f;
     float MetallicFactor = 0.0f;
+    float SpecularIntensity = 0.5f;
+    float EmissiveStrength = 1.0f;
 
     MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
     float AlphaCutoff = 0.5f;
