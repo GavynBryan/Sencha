@@ -1,0 +1,95 @@
+name: Migrate Lifecycle Resources
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix-stable-registry-callers:
+    if: github.head_ref == 'agent/runtime-world-stabilization'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+        with:
+          ref: agent/runtime-world-stabilization
+
+      - name: Fix stable registry callers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('test/runtime/SceneSerializerTests.cpp')
+          text = path.read_text()
+          old = '''    Registry MakeSceneRegistry()
+    {
+        Registry registry;
+        registry.Components.RegisterComponent<LocalTransform>();
+        registry.Components.RegisterComponent<WorldTransform>();
+        registry.Components.RegisterComponent<Parent>();
+        registry.Components.RegisterComponent<StaticMeshComponent>();
+        registry.Components.RegisterComponent<PointLightComponent>();
+        registry.Components.RegisterComponent<CameraComponent>();
+        registry.Components.RegisterComponent<AudioSourceComponent>();
+        registry.Components.RegisterComponent<AudioCaptionComponent>();
+        return registry;
+    }
+'''
+          new = '''    void InitializeSceneRegistry(Registry& registry)
+    {
+        registry.Components.RegisterComponent<LocalTransform>();
+        registry.Components.RegisterComponent<WorldTransform>();
+        registry.Components.RegisterComponent<Parent>();
+        registry.Components.RegisterComponent<StaticMeshComponent>();
+        registry.Components.RegisterComponent<PointLightComponent>();
+        registry.Components.RegisterComponent<CameraComponent>();
+        registry.Components.RegisterComponent<AudioSourceComponent>();
+        registry.Components.RegisterComponent<AudioCaptionComponent>();
+    }
+'''
+          if text.count(old) != 1:
+              raise SystemExit('expected one MakeSceneRegistry definition')
+          text = text.replace(old, new)
+          pattern = re.compile(r'Registry (\w+) = MakeSceneRegistry\(\);')
+          matches = pattern.findall(text)
+          if not matches:
+              raise SystemExit('expected MakeSceneRegistry callers')
+          text = pattern.sub(lambda match: f'Registry {match.group(1)};\n    InitializeSceneRegistry({match.group(1)});', text)
+          if 'MakeSceneRegistry' in text:
+              raise SystemExit('MakeSceneRegistry reference remains')
+          path.write_text(text)
+
+          path = Path('example/EcsBenchmark/EcsBenchmark.cpp')
+          text = path.read_text()
+          include = '#include <ecs/Ecs.h>\n'
+          if text.count(include) != 1:
+              raise SystemExit('unexpected EcsBenchmark include shape')
+          text = text.replace(include, '#include <core/ResourceStore.h>\n#include <ecs/Ecs.h>\n')
+          marker = 'void BenchmarkRenderExtractionQuery()\n{'
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit('render benchmark not found')
+          world = text.find('    World world;', start)
+          if world < 0:
+              raise SystemExit('render benchmark World not found')
+          text = text[:world] + '    ResourceStore resources;\n    World world(resources);' + text[world + len('    World world;'):]
+          path.write_text(text)
+          PY
+
+      - name: Remove temporary workflows
+        run: |
+          rm .github/workflows/migrate-lifecycle-resources.yml
+          rm .github/workflows/fix-stable-registry-callers.yml
+
+      - name: Commit caller fixes
+        run: |
+          git config user.name 'sencha-runtime-agent'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix stable registry callers'
+          git push origin HEAD:agent/runtime-world-stabilization
