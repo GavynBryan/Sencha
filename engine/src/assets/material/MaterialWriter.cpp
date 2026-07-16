@@ -57,11 +57,15 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
         root.emplace_back("roughness_factor", JsonValue(static_cast<double>(description.RoughnessFactor)));
     if (description.MetallicFactor != defaults.MetallicFactor)
         root.emplace_back("metallic_factor", JsonValue(static_cast<double>(description.MetallicFactor)));
+    if (description.SpecularIntensity != defaults.SpecularIntensity)
+        root.emplace_back("specular_factor", JsonValue(static_cast<double>(description.SpecularIntensity)));
 
     if (!SameVec4(description.EmissiveFactor, defaults.EmissiveFactor))
         root.emplace_back("emissive_factor", FactorArray(description.EmissiveFactor, 3));
     if (!description.EmissiveTexture.Path.empty())
         root.emplace_back("emissive_texture", JsonValue(description.EmissiveTexture.Path));
+    if (description.EmissiveStrength != defaults.EmissiveStrength)
+        root.emplace_back("emissive_strength", JsonValue(static_cast<double>(description.EmissiveStrength)));
 
     if (description.AlphaMode != defaults.AlphaMode)
         root.emplace_back("alpha_mode", JsonValue(AlphaModeName(description.AlphaMode)));
