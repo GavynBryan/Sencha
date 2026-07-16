@@ -1,0 +1,23 @@
+// Keep in sync with kMaxForwardLights in engine/include/render/RenderLight.h.
+const uint MAX_LIGHTS = 64u;
+
+struct GpuLight
+{
+    vec4 PositionRange;  // xyz world position, w range
+    vec4 DirectionCone;  // xyz direction, w cos(outer), reserved
+    vec4 ColorIntensity; // rgb linear color, w intensity
+    uvec4 TypeShadow;    // x type, y shadow index, zw pad
+};
+
+layout(set = 0, binding = 0) uniform MeshFrame
+{
+    mat4 ViewProjection;
+    vec4 ViewPositionTime;
+    vec4 AmbientSky;
+    vec4 AmbientGround;
+    uint LightCount;
+    uint Pad0;
+    uint Pad1;
+    uint Pad2;
+    GpuLight Lights[MAX_LIGHTS];
+} frame;
