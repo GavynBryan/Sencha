@@ -54,13 +54,16 @@ struct TypeSchema<SpotLightComponent>
                 .Default(defaults.Enabled),
             MakeField("cast_shadows", &SpotLightComponent::CastShadows)
                 .Default(defaults.CastShadows),
-            MakeField("shadow_resolution", &SpotLightComponent::ShadowResolution),
-            MakeField("shadow_update", &SpotLightComponent::ShadowUpdate),
+            MakeField("shadow_resolution", &SpotLightComponent::ShadowResolution)
+                .Default(defaults.ShadowResolution),
+            MakeField("shadow_update", &SpotLightComponent::ShadowUpdate)
+                .Default(defaults.ShadowUpdate),
             MakeField("shadow_softness", &SpotLightComponent::ShadowSoftness)
                 .Default(defaults.ShadowSoftness),
             MakeField("shadow_bias_scale", &SpotLightComponent::ShadowBiasScale)
                 .Default(defaults.ShadowBiasScale),
-            MakeField("bake_contribution", &SpotLightComponent::BakeContribution),
+            MakeField("bake_contribution", &SpotLightComponent::BakeContribution)
+                .Default(defaults.BakeContribution),
         };
     }
 };

@@ -560,7 +560,7 @@ bool LoadSceneJson(const JsonValue& root,
             if (!entry->Load(archive, entity, registry, context) || !archive.Ok())
             {
                 RollbackLoadedEntities(registry, entities);
-                SetError(error, "Failed to load JSON component.");
+                SetError(error, "Failed to load JSON component '" + key + "'.");
                 return false;
             }
         }

@@ -82,13 +82,18 @@ struct TypeSchema<StaticMeshComponent>
 
     static auto Fields()
     {
+        // The shadow and bake fields default so scenes cooked before they
+        // existed keep loading.
+        const StaticMeshComponent defaults;
         return std::tuple{
             MakeField("mesh", &StaticMeshComponent::Mesh).AsAsset(AssetType::StaticMesh),
             MakeField("materials", &StaticMeshComponent::Materials)
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &StaticMeshComponent::Visible),
-            MakeField("cast_shadows", &StaticMeshComponent::CastShadows),
-            MakeField("affects_baked_lighting", &StaticMeshComponent::AffectsBakedLighting),
+            MakeField("cast_shadows", &StaticMeshComponent::CastShadows)
+                .Default(defaults.CastShadows),
+            MakeField("affects_baked_lighting", &StaticMeshComponent::AffectsBakedLighting)
+                .Default(defaults.AffectsBakedLighting),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),
         };

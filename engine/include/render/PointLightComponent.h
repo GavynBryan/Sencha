@@ -48,13 +48,16 @@ struct TypeSchema<PointLightComponent>
                 .Default(defaults.Enabled),
             MakeField("cast_shadows", &PointLightComponent::CastShadows)
                 .Default(defaults.CastShadows),
-            MakeField("shadow_resolution", &PointLightComponent::ShadowResolution),
-            MakeField("shadow_update", &PointLightComponent::ShadowUpdate),
+            MakeField("shadow_resolution", &PointLightComponent::ShadowResolution)
+                .Default(defaults.ShadowResolution),
+            MakeField("shadow_update", &PointLightComponent::ShadowUpdate)
+                .Default(defaults.ShadowUpdate),
             MakeField("shadow_softness", &PointLightComponent::ShadowSoftness)
                 .Default(defaults.ShadowSoftness),
             MakeField("shadow_bias_scale", &PointLightComponent::ShadowBiasScale)
                 .Default(defaults.ShadowBiasScale),
-            MakeField("bake_contribution", &PointLightComponent::BakeContribution),
+            MakeField("bake_contribution", &PointLightComponent::BakeContribution)
+                .Default(defaults.BakeContribution),
         };
     }
 };
