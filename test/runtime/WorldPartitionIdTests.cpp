@@ -15,10 +15,10 @@ TEST(WorldPartitionId, ZoneIdHexRoundTrip)
     EXPECT_EQ(*parsed, id);
 }
 
-TEST(WorldPartitionId, RegionIdHexRoundTrip)
+TEST(WorldPartitionId, GraphIdHexRoundTrip)
 {
-    const RegionId id{ 0x00000000000000b1ULL };
-    const auto parsed = RegionIdFromString(RegionIdToString(id));
+    const GraphId id{ 0x00000000000000b1ULL };
+    const auto parsed = GraphIdFromString(GraphIdToString(id));
 
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(*parsed, id);

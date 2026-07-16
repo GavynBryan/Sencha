@@ -3,6 +3,7 @@
 #include "EscapePolicy.h"
 
 #include "EditorTheme.h"
+#include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "brush/BrushOps.h"
 #include "document/EditorScene.h"
@@ -29,6 +30,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <map>
 
@@ -192,7 +194,10 @@ void EditorWorkspace::BuildInteractionState()
     // All scene mutation during manipulation goes through this one sink; the
     // session, manipulators, and the edge-cut tool stay scene-agnostic. Built first
     // so the tool context can hold it.
-    Sink = std::make_unique<BrushManipulationSink>(document.GetScene(), document, *Commands, Selection);
+    Sink = std::make_unique<BrushManipulationSink>(
+        document.GetScene(), document, *Commands, Selection,
+        [this](std::vector<EntitySnapshot>& snapshots)
+        { RemapWorldConnectionDuplicateSnapshots(World, snapshots); });
     // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
     // action: Ctrl+R re-duplicates the current selection at the same offset.
     Sink->SetDuplicateObserver([this](Vec3d offset)
@@ -238,7 +243,8 @@ void EditorWorkspace::BuildInteractionState()
     // The session reads selection and element mode live on each pointer-down, so
     // it never needs rebuilding when the selection or mode changes. It consumes a
     // click only when a manipulator is hit; otherwise the select tool picks.
-    auto session = std::make_unique<ManipulatorSession>(Selection, MeshEdit, *Sink, Grid, Pivot);
+    auto session = std::make_unique<ManipulatorSession>(
+        Selection, MeshEdit, *Sink, Grid, Pivot, *Affordances);
     Manipulators = session.get();
     Sessions.SetSession(std::move(session));
 
@@ -250,8 +256,10 @@ void EditorWorkspace::BuildInteractionState()
             for (const SelectableRef& ref : Selection.GetSelection())
                 if (ref.IsEntity() && scene.TryGetBrushMesh(ref.Entity) != nullptr)
                     return true;
-            return false;
+            return Affordances->HasEditTargets();
         });
+    Manipulators->SetScaleAllowedQuery(
+        [this] { return Affordances->AllowsScaleForSelection(); });
 }
 
 void EditorWorkspace::ResetInteractionState()
@@ -282,6 +290,14 @@ void EditorWorkspace::ResetInteractionState()
 void EditorWorkspace::Init(CommandStack& commands)
 {
     Commands = &commands;
+
+    Affordances = std::make_unique<EditorAffordanceService>(
+        World, Selection, commands, Grid);
+    Affordances->Registry().Register(MakeWorldDockEditorAdapter());
+    CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
+    Picking.SetEntityProxyProvider(
+        [this](const Ray3d& ray, const EditorScene& scene)
+        { return Affordances->Pick(ray, scene); });
 
     BuildInteractionState();
 
@@ -437,7 +453,9 @@ void EditorWorkspace::DuplicateSelection(bool asInstance)
         return;
 
     Commands->Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, ActiveDocument().GetScene(), ActiveDocument(), Selection, asInstance));
+        sources, transforms, ActiveDocument().GetScene(), ActiveDocument(), Selection,
+        asInstance, [this](std::vector<EntitySnapshot>& snapshots)
+        { RemapWorldConnectionDuplicateSnapshots(World, snapshots); }));
 }
 
 void EditorWorkspace::RepeatLastAction()
@@ -735,6 +753,15 @@ void EditorWorkspace::UpdateOverlay()
             label.Text = zone.Name;
             Overlay.Labels.push_back(std::move(label));
         }
+    }
+
+    if (Affordances)
+    {
+        ViewportAffordanceOutput affordances;
+        Affordances->Build(affordances);
+        Overlay.Labels.insert(Overlay.Labels.end(),
+                              std::make_move_iterator(affordances.Labels.begin()),
+                              std::make_move_iterator(affordances.Labels.end()));
     }
 }
 

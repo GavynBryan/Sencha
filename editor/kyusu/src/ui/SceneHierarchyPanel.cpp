@@ -5,7 +5,6 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
-#include "document/TransitionConnect.h"
 #include "document/commands/CreateEntityCommand.h"
 #include "document/commands/DeleteEntityCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"

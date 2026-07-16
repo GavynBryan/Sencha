@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,6 +10,67 @@
 #include <zone/ZoneId.h>
 
 class JsonValue;
+
+enum class DockSide : uint8_t
+{
+    A,
+    B,
+};
+
+struct DockEndpoint
+{
+    DockId Id;
+    ZoneId OwnerZone;
+    GraphId OwnerGraph;
+    ZoneId OtherZone;
+    GraphId OtherGraph;
+    DockSide Side = DockSide::A;
+    Vec3d Origin;
+    Vec3d Normal = Vec3d::Forward();
+    Vec3d Right = Vec3d::Right();
+    Vec3d Up = Vec3d::Up();
+    Vec2d HalfExtents{ 1.0f, 1.5f };
+    Aabb3d OwnerArmBoundsLocal; // endpoint frame; owner side is local z <= 0
+    uint32_t Directions = 3;
+    int32_t PreloadPriority = 0;
+    int32_t PreloadDepth = 0;
+    std::vector<std::string> RequiredTags;
+
+    friend bool operator==(const DockEndpoint&, const DockEndpoint&) = default;
+};
+
+struct LinkEndpoint
+{
+    LinkId Id;
+    ZoneId OwnerZone;
+    GraphId OwnerGraph;
+    ZoneId OtherZone;
+    GraphId OtherGraph;
+    DockSide Side = DockSide::A;
+    uint32_t Kind = 0;
+    uint32_t Directions = 3;
+    int32_t PreloadPriority = 0;
+    int32_t PreloadDepth = 0;
+    std::vector<std::string> RequiredTags;
+
+    friend bool operator==(const LinkEndpoint&, const LinkEndpoint&) = default;
+};
+
+struct DockDebugRecord
+{
+    DockId Id;
+    uint64_t AuthoredEntity = 0;
+
+    friend bool operator==(const DockDebugRecord&, const DockDebugRecord&) = default;
+};
+
+struct LinkDebugRecord
+{
+    LinkId Id;
+    uint64_t AuthoredEntity = 0;
+
+    friend bool operator==(const LinkDebugRecord&, const LinkDebugRecord&) = default;
+};
 
 enum class TransitionTopology : uint8_t
 {
@@ -24,42 +86,44 @@ struct TransitionFlags
     friend bool operator==(const TransitionFlags&, const TransitionFlags&) = default;
 };
 
-// Per-region overrides of the streaming demand shape. Each field optional:
+// Per-graph overrides of the streaming demand shape. Each field optional:
 // absent inherits the world/global base (EngineRuntimeConfig). Graph versus
 // radius character is derived from the values: Radius == 0 is graph-only.
-struct RegionStreamingConfig
+struct GraphStreamingConfig
 {
     std::optional<int32_t> HopCount;        // >= 0
     std::optional<double>  Radius;          // finite, >= 0
     std::optional<int32_t> ResidentZoneCap; // >= 1
 
-    friend bool operator==(const RegionStreamingConfig&,
-                           const RegionStreamingConfig&) = default;
+    friend bool operator==(const GraphStreamingConfig&,
+                           const GraphStreamingConfig&) = default;
 };
 
-struct RegionRecord
+struct GraphRecord
 {
-    RegionId              Id;
-    std::string           Name;
-    RegionStreamingConfig Streaming;
+    GraphId              Id;
+    std::string          Name;
+    GraphStreamingConfig Streaming;
 
-    friend bool operator==(const RegionRecord&, const RegionRecord&) = default;
+    friend bool operator==(const GraphRecord&, const GraphRecord&) = default;
 };
 
 struct ZoneHeader
 {
     ZoneId      Id;
     std::string Name;
-    RegionId    Region;                    // exactly one, validated
+    GraphId    Graph;                     // exactly one, validated
     std::string SceneRef;                  // project-relative authored scene path
-    Aabb3d      Bounds;                    // world coordinates (single implicit space in v1.0)
-    bool        BoundsOverridden = false;  // true: designer-set, cook must not recompute
+    Aabb3d      Bounds;
+    bool        BoundsOverridden = false;
 
     // Cooked-manifest-only fields; zero/empty in authored manifests. The world cook
     // fills them; the runtime loading policy consumes them.
     std::string CookedSceneRef;
     std::string CookedCollisionRef;
     uint64_t    CookedContentHash = 0;
+    std::vector<DockEndpoint> Docks;
+    std::vector<LinkEndpoint> Links;
 
     friend bool operator==(const ZoneHeader&, const ZoneHeader&) = default;
 };
@@ -94,7 +158,7 @@ struct WorldPartitionManifest
     // The world scene: authored global content loaded once at world start and
     // never streamed. A project-relative scene path like a zone's SceneRef;
     // empty means the world has none. It is not a zone: no id, no bounds, no
-    // region, no participation in the index or the demand policy.
+    // graph, no participation in the index or the demand policy.
     std::string WorldSceneRef;
     // Cooked-manifest-only, the ZoneHeader trio's world-scene counterpart:
     // zero/empty in authored manifests, filled by the world cook, consumed by
@@ -102,9 +166,11 @@ struct WorldPartitionManifest
     std::string CookedWorldSceneRef;
     std::string CookedWorldCollisionRef;
     uint64_t    CookedWorldContentHash = 0;
-    std::vector<RegionRecord>     Regions;
+    std::vector<GraphRecord>     Graphs;
     std::vector<ZoneHeader>       Zones;
     std::vector<TransitionRecord> Transitions;
+    std::vector<DockDebugRecord> DockDebugMap;
+    std::vector<LinkDebugRecord> LinkDebugMap;
 
     friend bool operator==(const WorldPartitionManifest&, const WorldPartitionManifest&) = default;
 };

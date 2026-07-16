@@ -2,6 +2,8 @@
 
 #include <zone/ZoneDemand.h>
 
+#include <algorithm>
+#include <initializer_list>
 #include <vector>
 
 namespace
@@ -15,28 +17,57 @@ ZoneHeader MakeZone(uint64_t id)
     return header;
 }
 
-TransitionRecord MakeEdge(uint64_t id, uint64_t from, uint64_t to, int32_t priority = 0)
+void SetZoneBounds(ZoneHeader& zone, Aabb3d bounds)
 {
-    TransitionRecord record;
-    record.Id = TransitionId{ id };
-    record.From = ZoneId{ from };
-    record.To = ZoneId{ to };
-    record.PreloadPriority = priority;
-    return record;
+    zone.Bounds = bounds;
 }
 
-// A -> B -> C -> D chain with paired edges (every doorway is two directed
-// records, the authored shape).
+LinkEndpoint MakeEdge(uint64_t id, uint64_t from, uint64_t to, int32_t priority = 0)
+{
+    LinkEndpoint endpoint;
+    endpoint.Id = LinkId{ id };
+    endpoint.OwnerZone = ZoneId{ from };
+    endpoint.OtherZone = ZoneId{ to };
+    endpoint.Side = DockSide::A;
+    endpoint.Directions = 1;
+    endpoint.PreloadPriority = priority;
+    return endpoint;
+}
+
+void SetEdges(WorldPartitionManifest& manifest, std::initializer_list<LinkEndpoint> endpoints)
+{
+    for (const LinkEndpoint& endpoint : endpoints)
+    {
+        const auto zone = std::find_if(manifest.Zones.begin(), manifest.Zones.end(),
+                                       [&](const ZoneHeader& header)
+                                       { return header.Id == endpoint.OwnerZone; });
+        ASSERT_NE(zone, manifest.Zones.end());
+        zone->Links.push_back(endpoint);
+    }
+}
+
+LinkEndpoint& FindEdge(WorldPartitionManifest& manifest, uint64_t id)
+{
+    for (ZoneHeader& zone : manifest.Zones)
+        for (LinkEndpoint& endpoint : zone.Links)
+            if (endpoint.Id == LinkId{ id })
+                return endpoint;
+    ADD_FAILURE() << "missing edge " << id;
+    static LinkEndpoint missing;
+    return missing;
+}
+
+// A -> B -> C -> D chain with endpoint pairs.
 WorldPartitionManifest ChainManifest()
 {
     WorldPartitionManifest manifest;
     manifest.Name = "Chain";
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4) };
-    manifest.Transitions = {
+    SetEdges(manifest, {
         MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa2, 0xa1),
         MakeEdge(0xc3, 0xa2, 0xa3), MakeEdge(0xc4, 0xa3, 0xa2),
         MakeEdge(0xc5, 0xa3, 0xa4), MakeEdge(0xc6, 0xa4, 0xa3),
-    };
+    });
     return manifest;
 }
 
@@ -114,7 +145,7 @@ TEST(ZoneDemand, OneWayInboundEdgeDoesNotPreloadSource)
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2) };
     // One directed edge INTO the focus; no outgoing edge from it.
-    manifest.Transitions = { MakeEdge(0xc1, 0xa2, 0xa1) };
+    SetEdges(manifest, { MakeEdge(0xc1, 0xa2, 0xa1) });
 
     const auto records = Demand(manifest, ZoneId{ 0xa1 }, {},
                                 WorldPartitionStreamingConfig{ .HopCount = 1 });
@@ -156,12 +187,12 @@ TEST(ZoneDemand, CapEvictsByHopThenPriorityThenId)
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4),
                        MakeZone(0xa5) };
-    manifest.Transitions = {
+    SetEdges(manifest, {
         MakeEdge(0xc1, 0xa1, 0xa2, 5),
         MakeEdge(0xc2, 0xa1, 0xa3, 1),
         MakeEdge(0xc3, 0xa2, 0xa4, 2),
         MakeEdge(0xc4, 0xa3, 0xa5, 0),
-    };
+    });
 
     // Cap 4: one eviction, deepest hop first, lowest priority within it: 0xa5.
     auto records = Demand(manifest, ZoneId{ 0xa1 }, {},
@@ -187,7 +218,7 @@ TEST(ZoneDemand, CapEvictsByHopThenPriorityThenId)
     // Equal hop and priority: higher id evicts first.
     WorldPartitionManifest tie;
     tie.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3) };
-    tie.Transitions = { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3) };
+    SetEdges(tie, { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3) });
     records = Demand(tie, ZoneId{ 0xa1 }, {},
                      WorldPartitionStreamingConfig{ .HopCount = 1, .ResidentZoneCap = 2 });
     ASSERT_EQ(records.size(), 2u);
@@ -217,7 +248,7 @@ TEST(ZoneDemand, RecordsAscendByZoneId)
     // Manifest authored out of id order; the records still ascend.
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa9), MakeZone(0xa1), MakeZone(0xa5) };
-    manifest.Transitions = { MakeEdge(0xc1, 0xa5, 0xa9), MakeEdge(0xc2, 0xa5, 0xa1) };
+    SetEdges(manifest, { MakeEdge(0xc1, 0xa5, 0xa9), MakeEdge(0xc2, 0xa5, 0xa1) });
 
     const auto records = Demand(manifest, ZoneId{ 0xa5 }, {},
                                 WorldPartitionStreamingConfig{ .HopCount = 1 });
@@ -238,9 +269,9 @@ TEST(ZoneDemand, ResolveFocusZonePrefersContainmentWithHysteresis)
 {
     WorldPartitionManifest manifest;
     ZoneHeader big = MakeZone(0xa1);
-    big.Bounds = Aabb3d::FromMinMax(Vec3d{ -10, 0, -10 }, Vec3d{ 10, 4, 10 });
+    SetZoneBounds(big, Aabb3d::FromMinMax(Vec3d{ -10, 0, -10 }, Vec3d{ 10, 4, 10 }));
     ZoneHeader small = MakeZone(0xa2);
-    small.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 4, 4, 4 });
+    SetZoneBounds(small, Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 4, 4, 4 }));
     manifest.Zones = { big, small };
 
     // No previous focus: the smallest containing volume wins.
@@ -259,9 +290,9 @@ TEST(ZoneDemand, ResolveFocusZoneFallsToNearestOutsideAllBounds)
     // rides above the slab must still focus the cell it stands on.
     WorldPartitionManifest manifest;
     ZoneHeader west = MakeZone(0xa1);
-    west.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 1, 10 });
+    SetZoneBounds(west, Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 1, 10 }));
     ZoneHeader east = MakeZone(0xa2);
-    east.Bounds = Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 1, 10 });
+    SetZoneBounds(east, Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 1, 10 }));
     manifest.Zones = { west, east };
 
     EXPECT_EQ(ResolveFocusZone(manifest, Vec3d{ 5, 2, 5 }, ZoneId{ 0xa2 }), ZoneId{ 0xa1 });
@@ -280,17 +311,17 @@ TEST(ZoneDemand, ResolveFocusZoneFallsToNearestOutsideAllBounds)
 namespace
 {
 
-// A 1x3 strip of bounded zones with NO transitions: proximity is the only
+// A 1x3 strip of bounded zones with no endpoints: proximity is the only
 // demand path.
 WorldPartitionManifest StripManifest()
 {
     WorldPartitionManifest manifest;
     ZoneHeader a = MakeZone(0xa1);
-    a.Bounds = Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 4, 10 });
+    SetZoneBounds(a, Aabb3d::FromMinMax(Vec3d{ 0, 0, 0 }, Vec3d{ 10, 4, 10 }));
     ZoneHeader b = MakeZone(0xa2);
-    b.Bounds = Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 4, 10 });
+    SetZoneBounds(b, Aabb3d::FromMinMax(Vec3d{ 10, 0, 0 }, Vec3d{ 20, 4, 10 }));
     ZoneHeader c = MakeZone(0xa3);
-    c.Bounds = Aabb3d::FromMinMax(Vec3d{ 100, 0, 0 }, Vec3d{ 110, 4, 10 });
+    SetZoneBounds(c, Aabb3d::FromMinMax(Vec3d{ 100, 0, 0 }, Vec3d{ 110, 4, 10 }));
     manifest.Zones = { a, b, c };
     return manifest;
 }
@@ -332,7 +363,7 @@ TEST(ZoneDemand, SpatialEvictsAfterGraphNeighbors)
     // One graph neighbor plus one spatial-only zone, cap 2: the spatial zone
     // (ranked one hop past the horizon) evicts first.
     WorldPartitionManifest manifest = StripManifest();
-    manifest.Transitions = { MakeEdge(0xc1, 0xa1, 0xa3) };
+    SetEdges(manifest, { MakeEdge(0xc1, 0xa1, 0xa3) });
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const Vec3d position{ 5, 1, 5 };
 
@@ -348,7 +379,7 @@ TEST(ZoneDemand, SpatialEvictsAfterGraphNeighbors)
 TEST(ZoneDemand, GatedEdgeInvisibleWithoutTag)
 {
     WorldPartitionManifest manifest = ChainManifest();
-    manifest.Transitions[0].RequiredTags = { "quest.bridge" };   // A -> B gated
+    FindEdge(manifest, 0xc1).RequiredTags = { "quest.bridge" };   // A -> B gated
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
@@ -368,9 +399,9 @@ TEST(ZoneDemand, GatingNeverRemovesReachableZones)
     // Two routes to 0xa2: gated direct edge plus an open detour via 0xa3.
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3) };
-    manifest.Transitions = { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3),
-                             MakeEdge(0xc3, 0xa3, 0xa2) };
-    manifest.Transitions[0].RequiredTags = { "locked.door" };
+    SetEdges(manifest, { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3),
+                         MakeEdge(0xc3, 0xa3, 0xa2) });
+    FindEdge(manifest, 0xc1).RequiredTags = { "locked.door" };
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
@@ -383,7 +414,7 @@ TEST(ZoneDemand, DepthExtendsThroughEdge)
     // Global horizon 1; the A -> B edge carries depth 3, so the chain preloads
     // three deep through it while nothing else exceeds one hop.
     WorldPartitionManifest manifest = ChainManifest();
-    manifest.Transitions[0].PreloadDepth = 3;
+    FindEdge(manifest, 0xc1).PreloadDepth = 3;
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
@@ -400,11 +431,11 @@ TEST(ZoneDemand, DepthDoesNotLeakSideways)
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4),
                        MakeZone(0xa5) };
-    manifest.Transitions = {
+    SetEdges(manifest, {
         MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa2, 0xa3),   // deep corridor
         MakeEdge(0xc3, 0xa1, 0xa4), MakeEdge(0xc4, 0xa4, 0xa5),   // plain corridor
-    };
-    manifest.Transitions[0].PreloadDepth = 2;
+    });
+    FindEdge(manifest, 0xc1).PreloadDepth = 2;
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
@@ -418,11 +449,11 @@ TEST(ZoneDemand, DepthDoesNotLeakSideways)
 TEST(ZoneDemand, ResolverOverridesPresentFieldsAndInheritsAbsent)
 {
     WorldPartitionManifest manifest = ChainManifest();
-    RegionRecord region{ RegionId{ 0xb1 }, "Fields" };
-    region.Streaming.HopCount = 3;
-    region.Streaming.ResidentZoneCap = 16;
-    manifest.Regions.push_back(region);
-    manifest.Zones[0].Region = RegionId{ 0xb1 };
+    GraphRecord graph{ GraphId{ 0xb1 }, "Fields" };
+    graph.Streaming.HopCount = 3;
+    graph.Streaming.ResidentZoneCap = 16;
+    manifest.Graphs.push_back(graph);
+    manifest.Zones[0].Graph = GraphId{ 0xb1 };
 
     WorldPartitionStreamingConfig base;
     base.HopCount = 1;
@@ -430,27 +461,72 @@ TEST(ZoneDemand, ResolverOverridesPresentFieldsAndInheritsAbsent)
     base.ResidentZoneCap = 8;
     base.LingerSeconds = 7.0;
 
-    const auto resolved = ResolveRegionStreamingConfig(manifest, ZoneId{ 0xa1 }, base);
+    const auto resolved = ResolveGraphStreamingConfig(manifest, ZoneId{ 0xa1 }, base);
     EXPECT_EQ(resolved.HopCount, 3);
     EXPECT_EQ(resolved.Radius, 50.0);
     EXPECT_EQ(resolved.ResidentZoneCap, 16);
     EXPECT_EQ(resolved.LingerSeconds, 7.0);
 }
 
-TEST(ZoneDemand, ResolverReturnsBaseForUnknownOrRegionlessFocus)
+TEST(ZoneDemand, ResolverReturnsBaseForUnknownOrGraphlessFocus)
 {
     WorldPartitionManifest manifest = ChainManifest();
-    RegionRecord region{ RegionId{ 0xb1 }, "Fields" };
-    region.Streaming.HopCount = 3;
-    manifest.Regions.push_back(region);
-    manifest.Zones[0].Region = RegionId{ 0xb1 };
+    GraphRecord graph{ GraphId{ 0xb1 }, "Fields" };
+    graph.Streaming.HopCount = 3;
+    manifest.Graphs.push_back(graph);
+    manifest.Zones[0].Graph = GraphId{ 0xb1 };
 
     const WorldPartitionStreamingConfig base;
 
     // Focus outside the manifest entirely.
-    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{ 0xff }, base), base);
-    // Focus in a zone whose region reference resolves to no region record.
-    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{ 0xa2 }, base), base);
+    EXPECT_EQ(ResolveGraphStreamingConfig(manifest, ZoneId{ 0xff }, base), base);
+    // Focus in a zone whose graph reference resolves to no graph record.
+    EXPECT_EQ(ResolveGraphStreamingConfig(manifest, ZoneId{ 0xa2 }, base), base);
     // Invalid focus.
-    EXPECT_EQ(ResolveRegionStreamingConfig(manifest, ZoneId{}, base), base);
+    EXPECT_EQ(ResolveGraphStreamingConfig(manifest, ZoneId{}, base), base);
+}
+
+TEST(ZoneDemand, CrossGraphDockRecordsEntryAndApproachEvidence)
+{
+    WorldPartitionManifest manifest;
+    manifest.Graphs = { GraphRecord{ .Id = GraphId{ 0xb1 }, .Name = "Rooms" },
+                        GraphRecord{ .Id = GraphId{ 0xb2 }, .Name = "Exterior" } };
+    ZoneHeader a = MakeZone(0xa1);
+    ZoneHeader b = MakeZone(0xa2);
+    a.Graph = manifest.Graphs[0].Id;
+    b.Graph = manifest.Graphs[1].Id;
+    DockEndpoint endpoint{
+        .Id = DockId{ 0xd1 },
+        .OwnerZone = a.Id,
+        .OwnerGraph = a.Graph,
+        .OtherZone = b.Id,
+        .OtherGraph = b.Graph,
+        .Side = DockSide::A,
+        .OwnerArmBoundsLocal = Aabb3d::FromMinMax(Vec3d{ -2, -2, -2 }, Vec3d{ 2, 2, 0 }),
+    };
+    a.Docks.push_back(endpoint);
+    endpoint.OwnerZone = b.Id;
+    endpoint.OwnerGraph = b.Graph;
+    endpoint.OtherZone = a.Id;
+    endpoint.OtherGraph = a.Graph;
+    endpoint.Side = DockSide::B;
+    endpoint.Normal = -endpoint.Normal;
+    endpoint.Right = -endpoint.Right;
+    b.Docks.push_back(endpoint);
+    manifest.Zones = { a, b };
+
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    const Vec3d focusPosition{};
+    const auto records = ComputeZoneDemand(
+        manifest, index, a.Id, {}, WorldPartitionStreamingConfig{}, &focusPosition);
+    const ZoneDemandRecord* entry = FindRecord(records, b.Id.Value);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_TRUE(entry->Sources.CrossGraphEntry);
+    EXPECT_TRUE(entry->Sources.DockApproach);
+    EXPECT_TRUE(std::any_of(entry->Reasons.begin(), entry->Reasons.end(),
+                            [](const ZoneDemandReasonRecord& reason)
+                            {
+                                return reason.Reason == ZoneDemandReason::CrossGraphEntry
+                                    && reason.SourceEndpoint == 0xd1;
+                            }));
 }

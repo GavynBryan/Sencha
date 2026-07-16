@@ -5,7 +5,7 @@ ResolvePreviewStreamingConfig(const WorldPartitionManifest& manifest, ZoneId foc
                               const WorldViewSettings& view)
 {
     WorldPartitionStreamingConfig config =
-        ResolveRegionStreamingConfig(manifest, focus, WorldPartitionStreamingConfig{});
+        ResolveGraphStreamingConfig(manifest, focus, WorldPartitionStreamingConfig{});
     if (view.PreviewHopCount)
         config.HopCount = *view.PreviewHopCount;
     if (view.PreviewRadius)

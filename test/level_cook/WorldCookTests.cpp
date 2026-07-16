@@ -12,6 +12,7 @@
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <zone/WorldPartitionManifest.h>
+#include <zone/WorldConnectionComponents.h>
 
 #include <filesystem>
 #include <fstream>
@@ -78,7 +79,9 @@ TEST_F(WorldCookTest, CooksTwoZoneWorldToCookedManifest)
         WorldDocument world(Logging);
         world.NewWorld("TestWorld");
         first = world.Manifest().Zones[0].Id;
-        second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+        ASSERT_TRUE(world.SetZoneBounds(second,
+            Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
         world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
         ASSERT_TRUE(world.SetFocusZone(second));
         world.FocusDocument().GetScene().CreateBrush(Vec3d{ 32, 0, 0 });
@@ -102,11 +105,43 @@ TEST_F(WorldCookTest, CooksTwoZoneWorldToCookedManifest)
     }
 }
 
+TEST_F(WorldCookTest, RefusesGateBindingToMissingDock)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    EditorDocument& worldScene = world.WorldSceneDocument();
+    const EntityId gate = worldScene.GetScene().CreateEntity(Vec3d{});
+    worldScene.GetScene().GetRegistry().Components.AddComponent(
+        gate, DockGateBinding{ DockId{ 0xdead } });
+    worldScene.MarkDirty();
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("references missing dock"), std::string::npos);
+}
+
+TEST_F(WorldCookTest, RefusesLiveWorldValidationErrors)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+    ASSERT_TRUE(world.SetZoneBounds(second,
+        Aabb3d::FromMinMax(Vec3d{}, Vec3d{})));
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("partition.zone.bounds_invalid"), std::string::npos);
+}
+
 TEST_F(WorldCookTest, RecookWithoutEditsIsByteIdenticalAndEditsChangeOneHash)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+    ASSERT_TRUE(world.SetZoneBounds(second,
+        Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
     ASSERT_TRUE(world.SetFocusZone(second));
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 32, 0, 0 });
@@ -152,7 +187,9 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+    ASSERT_TRUE(world.SetZoneBounds(second,
+        Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
     ASSERT_TRUE(world.LoadZone(second));
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
     // Far from the first brush: its geometry cooks to its own cell, so the move
@@ -280,7 +317,7 @@ TEST_F(WorldCookTest, NeighborZoneGeometryOccludesTheProbeBake)
     // in the world cook, B's slab joins A's occlusion set through the halo.
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 },
                                                  Vec3d{ 4.0, 0.25, 4.0 });
     const EntityId volumeEntity =
@@ -326,8 +363,8 @@ TEST_F(WorldCookTest, NeighborEditRestalesOnlyZonesWithinBakeReach)
     // sits beyond it.
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId near = world.AddZone(world.Manifest().Regions[0].Id, "Near");
-    const ZoneId far = world.AddZone(world.Manifest().Regions[0].Id, "Far");
+    const ZoneId near = world.AddZone(world.Manifest().Graphs[0].Id, "Near");
+    const ZoneId far = world.AddZone(world.Manifest().Graphs[0].Id, "Far");
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 },
                                                  Vec3d{ 4.0, 0.25, 4.0 });
     const EntityId volumeEntity =

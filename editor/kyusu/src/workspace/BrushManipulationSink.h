@@ -2,6 +2,7 @@
 
 #include "meshedit/IMeshEditTarget.h"
 #include "meshedit/ManipulationSink.h"
+#include "document/EntitySnapshot.h"
 
 #include <functional>
 #include <utility>
@@ -24,7 +25,8 @@ class BrushManipulationSink : public ManipulationSink, public IMeshEditTarget
 {
 public:
     BrushManipulationSink(EditorScene& scene, EditorDocument& document, CommandStack& commands,
-                          SelectionService& selection);
+                          SelectionService& selection,
+                          std::function<void(std::vector<EntitySnapshot>&)> duplicateRemap = {});
 
     // ManipulationSink
     [[nodiscard]] std::optional<Transform3f> ResolveTransform(EntityId entity) const override;
@@ -61,4 +63,5 @@ private:
     CommandStack& Commands;
     SelectionService& Selection;
     std::function<void(Vec3d)> DuplicateObserver;
+    std::function<void(std::vector<EntitySnapshot>&)> DuplicateRemap;
 };

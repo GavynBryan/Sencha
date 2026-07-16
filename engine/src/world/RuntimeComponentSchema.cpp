@@ -26,6 +26,7 @@
 #include <render/ZoneLightmapComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/WorldConnectionComponents.h>
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 {
@@ -43,6 +44,9 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     schema.Add<SpotLightComponent>();
     schema.Add<AudioSourceComponent>();
     schema.Add<AudioCaptionComponent>();
+    schema.Add<WorldDock>();
+    schema.Add<WorldLink>();
+    schema.Add<DockGateBinding>();
 
     // Physics component and runtime-link family.
     schema.Add<Collider>();

@@ -5,6 +5,7 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
+#include "authoring/EditorComponentAdapter.h"
 #include "document/AssetFieldIo.h"
 #include "document/commands/AssetFieldEditCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
@@ -200,10 +201,12 @@ namespace
 
 InspectorPanel::InspectorPanel(WorldDocument& world,
                                SelectionService& selection,
-                               CommandStack& commands)
+                               CommandStack& commands,
+                               EditorComponentAdapterRegistry& adapters)
     : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
+    , Adapters(adapters)
 {
 }
 
@@ -269,6 +272,25 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
         return;
 
     ImGui::PushID(key.c_str());
+
+    if (const IEditorComponentAdapter* adapter = Adapters.Find(serializer.TypeId());
+        adapter != nullptr)
+    {
+        EditorDocument& document = WorldDoc.FocusDocument();
+        EditorComponentInspectorContext context{
+                .World = WorldDoc,
+                .Document = document,
+                .Scene = document.GetScene(),
+                .Selection = Selection,
+                .Commands = Commands,
+                .Entity = entity,
+            };
+        if (adapter->DrawInspector(context))
+        {
+            ImGui::PopID();
+            return;
+        }
+    }
 
     // Work on a copy of the component's bytes so reads don't churn change
     // tracking every frame; write back only when a widget actually edits.

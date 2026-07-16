@@ -1,6 +1,7 @@
 #include "ManipulatorSession.h"
 
 #include "BoundsManipulator.h"
+#include "AffordanceManipulator.h"
 #include "RotateManipulator.h"
 #include "ScaleManipulator.h"
 #include "TranslateManipulator.h"
@@ -19,16 +20,19 @@ ManipulatorSession::ManipulatorSession(SelectionService& selection,
                                        MeshEditService& service,
                                        ManipulationSink& sink,
                                        GridSettings& grid,
-                                       PivotState& pivot)
+                                       PivotState& pivot,
+                                       EditorAffordanceService& affordances)
     : Selection(selection)
     , Service(service)
     , Sink(sink)
     , Grid(grid)
     , Pivot(pivot)
+    , Affordances(affordances)
 {
     // The only registration site: new manipulators land here and nowhere else. The
     // active TransformMode filters to one gizmo, so order only matters among same
     // mode manipulators (none today).
+    Manipulators.push_back(std::make_unique<AffordanceManipulator>());
     Manipulators.push_back(std::make_unique<BoundsManipulator>());
     Manipulators.push_back(std::make_unique<TranslateManipulator>());
     Manipulators.push_back(std::make_unique<RotateManipulator>());
@@ -88,6 +92,7 @@ ManipulatorContext ManipulatorSession::MakeContext(const SelectionSnapshot& snap
         .Selection = snapshot,
         .Service = Service,
         .Sink = Sink,
+        .Affordances = &Affordances,
         .Grid = Grid,
         .Pivot = Pivot,
         .Axes = GizmoAxes(),
@@ -101,6 +106,9 @@ TransformMode ManipulatorSession::EffectiveMode() const
     // other gizmos have no grid meaning and yield to Move.
     if (GridOriginEditing
         && ActiveMode != TransformMode::Move && ActiveMode != TransformMode::Rotate)
+        return TransformMode::Move;
+    if (ActiveMode == TransformMode::Scale
+        && ScaleAllowedQuery && !ScaleAllowedQuery())
         return TransformMode::Move;
     if (ActiveMode != TransformMode::Resize)
         return ActiveMode;

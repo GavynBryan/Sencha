@@ -16,6 +16,14 @@ bool SameParticipation(const ZoneParticipation& a, const ZoneParticipation& b)
     return a.Visible == b.Visible && a.Physics == b.Physics && a.Logic == b.Logic
         && a.Audio == b.Audio;
 }
+
+void AddRuntimeReason(ZoneDemandRecord& record, ZoneDemandReasonRecord reason)
+{
+    if (std::find(record.Reasons.begin(), record.Reasons.end(), reason)
+        == record.Reasons.end())
+        record.Reasons.push_back(std::move(reason));
+}
+
 } // namespace
 
 WorldPartitionRuntime::WorldPartitionRuntime(ZoneLoadRecipeFn recipe,
@@ -27,6 +35,12 @@ WorldPartitionRuntime::WorldPartitionRuntime(ZoneLoadRecipeFn recipe,
 
 bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::string* error)
 {
+    if (!manifest.Transitions.empty())
+    {
+        if (error != nullptr)
+            *error = "legacy transitions must be migrated to cooked docks or links";
+        return false;
+    }
     for (const ZoneHeader& zone : manifest.Zones)
     {
         if (zone.CookedSceneRef.empty())
@@ -52,7 +66,11 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Index_ = std::move(index);
     HasManifest_ = true;
     Focus_ = ZoneId{};
+    ArmedDock_ = {};
+    LastCrossing_.reset();
     HasFocusPosition_ = false;
+    HasPendingFocusPosition_ = false;
+    TraversalGrace_ = {};
     Pins_.clear();
 
     // Reloading a manifest invalidates every outstanding lease without allowing
@@ -96,21 +114,85 @@ void WorldPartitionRuntime::SetFocus(Vec3d position)
 {
     if (!HasManifest_)
         return;
-    Focus_ = ResolveFocusZone(Manifest_, position, Focus_);
+    if (!Focus_.IsValid())
+    {
+        Focus_ = ResolveFocusZone(Manifest_, position, {});
+        FocusPosition_ = position;
+        DockSweepPosition_ = position;
+        HasFocusPosition_ = true;
+        HasPendingFocusPosition_ = false;
+    }
+    else
+    {
+        PendingFocusPosition_ = position;
+        HasPendingFocusPosition_ = true;
+    }
+}
+
+void WorldPartitionRuntime::RelocateFocus(Vec3d position)
+{
+    if (!HasManifest_)
+        return;
+    Focus_ = ResolveFocusZone(Manifest_, position, {});
     FocusPosition_ = position;
+    DockSweepPosition_ = position;
     HasFocusPosition_ = true;
+    HasPendingFocusPosition_ = false;
+    ArmedDock_ = {};
+    LastCrossing_.reset();
+    TraversalGrace_ = {};
 }
 
 void WorldPartitionRuntime::SetFocus(ZoneId zone)
 {
     assert(HasManifest_ && FindHeader(zone) != nullptr && "SetFocus: unknown zone");
     Focus_ = zone;
+    ArmedDock_ = {};
+    LastCrossing_.reset();
+    TraversalGrace_ = {};
+    HasPendingFocusPosition_ = false;
     if (const ZoneHeader* header = FindHeader(zone); header != nullptr
         && header->Bounds.IsValid())
     {
         FocusPosition_ = header->Bounds.Center();
+        DockSweepPosition_ = FocusPosition_;
         HasFocusPosition_ = true;
     }
+}
+
+std::span<const DockEndpoint> WorldPartitionRuntime::DocksFrom(ZoneId zone) const
+{
+    return Index_.DocksFrom(zone);
+}
+
+std::span<const LinkEndpoint> WorldPartitionRuntime::LinksFrom(ZoneId zone) const
+{
+    return Index_.LinksFrom(zone);
+}
+
+const GraphRecord* WorldPartitionRuntime::FindGraph(GraphId graph) const
+{
+    for (const GraphRecord& record : Manifest_.Graphs)
+        if (record.Id == graph)
+            return &record;
+    return nullptr;
+}
+
+const ZoneHeader* WorldPartitionRuntime::FindZone(ZoneId zone) const
+{
+    return FindHeader(zone);
+}
+
+std::optional<ZoneId> WorldPartitionRuntime::ZoneAt(Vec3d position) const
+{
+    const ZoneContainmentResult result = ::ResolveZoneAt(Manifest_, position, {});
+    return result.Chosen.IsValid() ? std::optional<ZoneId>{ result.Chosen } : std::nullopt;
+}
+
+ZoneContainmentResult WorldPartitionRuntime::ResolveZoneAt(
+    Vec3d position, ZoneId preferred) const
+{
+    return ::ResolveZoneAt(Manifest_, position, preferred);
 }
 
 void WorldPartitionRuntime::PinZone(ZoneId zone, ZoneParticipation minimum)
@@ -255,12 +337,41 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 {
     ReconcileFailedLoads(loader);
 
+    LastCrossing_.reset();
+    if (HasManifest_ && Focus_.IsValid() && HasPendingFocusPosition_)
+    {
+        std::vector<ZoneId> residentPhysicsZones;
+        for (const ZoneHeader& zone : Manifest_.Zones)
+        {
+            const RuntimeZoneRecord* resident = world.FindZone(zone.Id);
+            if (resident != nullptr && resident->Participation.Physics)
+                residentPhysicsZones.push_back(zone.Id);
+        }
+
+        ZoneFocusState state{ Focus_, {}, ArmedDock_, DockSweepPosition_ };
+        LastCrossing_ = AdvanceZoneFocus(
+            state, Index_, PendingFocusPosition_,
+            DockCrossingOptions{
+                .FocusHalfExtent = {},
+                .ResidentPhysicsZones = residentPhysicsZones,
+                .RequireResidentDestination = true,
+            });
+        Focus_ = state.Current;
+        ArmedDock_ = state.ArmedDock;
+        DockSweepPosition_ = state.PreviousPosition;
+        FocusPosition_ = PendingFocusPosition_;
+        HasFocusPosition_ = true;
+        HasPendingFocusPosition_ = false;
+        if (LastCrossing_)
+            TraversalGrace_ = { LastCrossing_->From, 0.0 };
+    }
+
     std::vector<ZoneDemandRecord> demand;
     std::vector<ZoneHopRank> ranks;
     if (HasManifest_ && Focus_.IsValid())
     {
         const WorldPartitionStreamingConfig resolved =
-            ResolveRegionStreamingConfig(Manifest_, Focus_, Config_);
+            ResolveGraphStreamingConfig(Manifest_, Focus_, Config_);
         ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, resolved.HopCount, WorldTags_);
 
         // Leases use the existing pin-shaped pure demand input, but remain
@@ -275,6 +386,42 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         demand = ComputeZoneDemand(Manifest_, Index_, Focus_, effectivePins, resolved,
                                    HasFocusPosition_ ? &FocusPosition_ : nullptr, WorldTags_);
     }
+
+    if (TraversalGrace_.Zone.IsValid())
+    {
+        TraversalGrace_.Seconds += deltaSeconds;
+        if (TraversalGrace_.Seconds <= std::max(0.0, Config_.LingerSeconds))
+        {
+            ZoneDemandRecord* previous = nullptr;
+            for (ZoneDemandRecord& record : demand)
+                if (record.Zone == TraversalGrace_.Zone)
+                    previous = &record;
+            if (previous == nullptr)
+            {
+                ZoneDemandRecord record;
+                record.Zone = TraversalGrace_.Zone;
+                record.Desired = ZoneParticipation{
+                    .Visible = Config_.NeighborVisible,
+                    .Physics = Config_.NeighborPhysics,
+                };
+                demand.push_back(std::move(record));
+                previous = &demand.back();
+            }
+            previous->Sources.TraversalGrace = true;
+            AddRuntimeReason(*previous,
+                             { ZoneDemandReason::TraversalGrace, Focus_,
+                               LastCrossing_ ? LastCrossing_->Dock.Value : 0,
+                               0, {} });
+        }
+        else
+        {
+            TraversalGrace_ = {};
+        }
+    }
+
+    std::sort(demand.begin(), demand.end(),
+              [](const ZoneDemandRecord& a, const ZoneDemandRecord& b)
+              { return a.Zone.Value < b.Zone.Value; });
 
     const auto findDemand = [&](ZoneId zone) -> const ZoneDemandRecord*
     {
@@ -397,6 +544,8 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         ZoneDemandRecord record;
         record.Zone = zone;
         record.Sources.Lingering = true;
+        record.Sources.Linger = true;
+        AddRuntimeReason(record, { ZoneDemandReason::Linger, Focus_, 0, 0, {} });
         Records_.push_back(record);
     }
     for (ZoneId zone : Issued_)
@@ -409,6 +558,8 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         ZoneDemandRecord record;
         record.Zone = zone;
         record.Sources.Lingering = true;
+        record.Sources.Linger = true;
+        AddRuntimeReason(record, { ZoneDemandReason::Linger, Focus_, 0, 0, {} });
         Records_.push_back(record);
     }
     std::sort(Records_.begin(), Records_.end(),

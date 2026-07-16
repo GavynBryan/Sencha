@@ -29,6 +29,7 @@
 #include "ui/ToolPropertiesPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
+#include "ui/GraphViewerPanel.h"
 #include "ui/ViewportPanel.h"
 
 #include <SDL3/SDL.h>
@@ -343,6 +344,7 @@ void EditorServices::BuildViewportRendering()
     auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
         Workspace->World,
+        *Workspace->Affordances,
         Workspace->Selection,
         Workspace->MeshEdit,
         Workspace->Overlay,
@@ -507,11 +509,15 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     ConsolePanel->SetVisible(consoleOpenOnStart);
     UiFeature->AddPanel(std::move(editorConsole));
     UiFeature->AddPanel(std::make_unique<WorldPartitionPanel>(
+        Workspace->World, Workspace->Selection, *Commands,
+        Workspace->CreationRecipes));
+    UiFeature->AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
-        Workspace->World, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands,
+        Workspace->Affordances->Registry()));
     auto cookProfiles = std::make_unique<CookProfilesPanel>(
         Project ? &*Project : nullptr);
     CookProfiles = cookProfiles.get();

@@ -1,97 +1,78 @@
-# World Graph Runtime: Graphs, Zones, Docks, Demand, and Focus
+# World Graph Runtime: Graphs, Zone AABBs, Docks, Demand, and Focus
 
-Status: proposed replacement design (2026-07-15), owner review before implementation.
-Canonical: this document and `12-spatial-compilation.md` replace the previous
-zone topology design. This document owns the runtime model. Doc 12 owns Kyusu
-authoring, cooking, validation, and migration.
+Status: implemented corrective replacement (2026-07-15). This remains the
+canonical runtime contract for the implementation.
 
-## Why this plan replaces the previous one
+Canonical: this document and `12-spatial-compilation.md` replace every earlier
+zone-shape and inferred-topology design. This document owns runtime data,
+crossing, containment fallback, and streaming policy. Document 12 owns authored
+data, Kyusu affordances, cooking, migration, validation, tests, and execution
+order.
 
-The previous design asked a spatial compiler to recover exact zone shape,
-discover contacts, evaluate moving configurations, and become a general
-queryable topology store. That was technically ambitious but authoring-hostile,
-difficult to validate, and too far ahead of Sencha's actual consumers.
-
-The replacement takes the useful parts of Metroid Prime's area model and makes
-them easier to author:
-
-- zones remain the residency atom;
-- explicit dock boundaries decide ordinary zone crossings;
-- topology remains resident even while zone contents are unloaded;
-- doors and gates do not define topology;
-- loading remains policy-driven and normally keeps more than two zones resident;
-- the designer authors one bilateral world dock, while the cook emits two
-  zone-local endpoints.
-
-The other correction is terminology. Sencha does not need regions. It needs
-**graphs**. A graph is a topology and residency-policy domain containing zones.
-Graphs may connect through edges between specific zones, which allows a future
-cell-partitioned exterior to connect to a hand-authored interior without making
-either use the other's partition policy.
+The branch previously contained a partial implementation of the superseded
+design. It was treated as evidence, not a compatibility constraint.
+`AuthoredZoneShape`, convex-prism cells, exact-shape containment, and the cooked
+shape hash/product were rejected and removed.
 
 ---
 
-## 1. Verdicts
+## 1. Decisions
 
 Accepted:
 
 1. A world contains one or more graphs.
 2. Every zone belongs to exactly one graph.
-3. A zone is still one streamed registry and one participation state.
-4. A dock is authored once at world level and compiled into two zone endpoint
-   records.
-5. Ordinary focus changes are caused by crossing dock geometry, not by AABB
-   containment.
-6. Zone shapes remain useful for ownership queries, minimap geometry, spawn and
-   teleport resolution, and recovery.
-7. Graph policy decides residency. A dock can contribute priority, but it does
-   not issue raw load or unload commands.
-8. Cross-graph travel is an edge between two zone endpoints. Graphs never link
-   as anonymous wholes.
-9. The topology needed by streaming stays resident in the world header.
-10. Door and gate entities are ordinary gameplay entities that may bind to a
-    dock, but they never become the topology source of truth.
+3. A zone is one streamed registry and one participation state.
+4. Every zone has exactly one finite, nondegenerate world-space AABB.
+5. Zone AABBs are coarse data. They may overlap and need not tile the world.
+6. One authored world dock is one logical graph edge.
+7. A bilateral dock is authored once; the cook emits two zone-local endpoint
+   views carrying the same `DockId`.
+8. Ordinary movement changes zones only by crossing an explicit dock.
+9. AABB containment is reserved for initial placement, teleport, save restore,
+   recovery, diagnostics, editor framing, suggestions, and coarse queries.
+10. Graph policy decides residency and normally retains more than two zones.
+11. Doors and gates may bind to a `DockId` but do not define topology.
+12. Spatial-radius demand continues to measure point-to-AABB distance. This is
+    the already-working streaming policy and must remain behaviorally stable.
 
 Rejected:
 
-- inferred doorway topology from zone bounds;
-- automatic contact discovery from world collision;
-- a runtime voxel label field for normal focus changes;
-- a universal spatial-configuration compiler for doors, elevators, rotating
-  halls, destructibles, and every future mechanism;
-- making the door component own Zone A and Zone B;
-- a global `if (just created a dock)` editor special case;
-- treating the current focus graph's policy as the policy for every graph in a
-  hybrid world;
-- requiring hand-authored preload volumes for every connection.
+- convex-cell lists, editable polygon footprints, height bands, split/merge cell
+  workflows, and adjacent-cell authoring;
+- exact cooked zone geometry, exact-shape hashes, minimap contours derived from
+  a zone ownership shape, and any renamed equivalent of those products;
+- requiring an AABB to trace an L-shaped hallway or form a perfect partition;
+- inferring a graph edge from touching, intersecting, or overlapping bounds;
+- polling AABB containment to perform ordinary zone transitions;
+- reciprocal authored dock records;
+- making a door or gate the topology owner;
+- editor handles, labels, snapping state, or adapter data in runtime components
+  or cooked artifacts.
 
-Deferred until a real consumer lands:
+Deferred until a concrete consumer exists:
 
-- dynamic nav links and route-cache invalidation;
-- visibility and audio capabilities on connections;
-- runtime-generated graphs;
-- boundary-resident entity compilation;
-- cell and terrain graph generation;
-- non-Euclidean coordinate-space transforms.
+- nav, visibility, audio, or minimap products on graph edges;
+- runtime-generated graphs and exterior cell compilation;
+- dynamic topology rebakes;
+- non-Euclidean coordinate transforms;
+- boundary-resident entity compilation.
 
 ---
 
-## 2. Vocabulary
+## 2. Vocabulary and identity
 
-| Concept | Meaning |
+| Term | Meaning |
 | --- | --- |
-| **World** | Owns graph records, zone headers, endpoint records, world-scene content, and the residency runtime. |
-| **Graph** | A set of zones evaluated under one residency-policy configuration. It is a policy and topology domain, not a spatial territory. |
-| **Zone** | The residency and entity-ownership atom: one registry, one participation state, one cooked content package. |
-| **Zone shape** | Authored ownership geometry for containment, minimap, diagnostics, and broad spatial queries. It is not the ordinary crossing mechanism. |
-| **Dock** | A bounded spatial boundary connecting two zones. Authored once in the world scene and compiled into reciprocal endpoints. |
-| **Link** | A non-spatial edge between zone endpoints: teleport, scripted relocation, instance entrance, world-map travel. |
-| **Endpoint** | The zone-local cooked view of a dock or link. Endpoint records stay resident in zone headers. |
-| **Gate binding** | Optional gameplay binding between one or more entities and a dock id. It controls passage, not topology identity. |
-| **Focus zone** | The zone currently containing the primary focus source for participation and policy. |
-| **Demand** | A reasoned request that a zone become or remain resident. Multiple reasons merge before budget resolution. |
-
-### 2.1 Identity
+| World | Owns graph records, zone headers, world-scene content, and resident topology. |
+| Graph | A topology and residency-policy domain containing zones; not a spatial territory. |
+| Zone | Residency and entity-ownership atom with exactly one coarse AABB. |
+| Zone AABB | Coarse world-space bounds used for radius demand, placement fallback, diagnostics, editor framing, and graph-node placement. |
+| Dock | Bounded oriented plane connecting two explicit zones. Authored once in the world scene. |
+| Link | Non-spatial edge such as a teleport. It has no fake plane or arm volume. |
+| Endpoint | Cooked zone-local view of one authored dock or link. Two views are not two logical edges. |
+| Focus zone | Current topology/residency focus. Ordinary changes occur through docks. |
+| Demand | A reasoned request for zone residency or participation. |
 
 ```cpp
 using GraphId = StrongId<struct GraphIdTag, uint64_t>;
@@ -100,16 +81,75 @@ using DockId  = StrongId<struct DockIdTag,  uint64_t>;
 using LinkId  = StrongId<struct LinkIdTag,  uint64_t>;
 ```
 
-Authored ids are editor-minted, nonzero, and stable across renames. A compiled
-cell graph may derive zone ids deterministically from the source graph and cell
-coordinate when that compiler eventually exists.
+Authored ids are nonzero, editor-minted, stable across renames, and validated for
+uniqueness within their own identity domain.
 
 ---
 
-## 3. Manifest and resident topology
+## 3. Authored and cooked zone headers
 
-The current `RegionRecord` becomes `GraphRecord`. This is a semantic rename of
-the implemented policy grouping, not a second grouping layer.
+The exact authored contract is:
+
+```cpp
+struct AuthoredZoneHeader
+{
+    ZoneId      Id;
+    GraphId     Graph;
+    std::string Name;
+    std::string SceneRef;
+    Aabb3d      Bounds;            // exactly one world-space AABB
+    bool        BoundsOverridden;  // false = derived cache, true = explicit value
+};
+```
+
+`BoundsOverridden == false` means Kyusu refreshes `Bounds` from boundable zone
+content when that content is available. `Bounds` is still persisted: it is the
+cached value for closed zones and the fallback for an empty zone. A new zone gets
+a valid starter AABB. If a derived zone has no boundable entities, refresh keeps
+its last valid value rather than manufacturing an empty/invalid box.
+
+`BoundsOverridden == true` means content edits do not recompute the value. The
+designer can return to derived mode explicitly. Editing a derived box in the
+viewport first creates an override using the current box; this mode change and
+the edit are one undoable operation.
+
+The cooked header contains the same single AABB and no shape product:
+
+```cpp
+struct CookedZoneHeader
+{
+    ZoneId                    Id;
+    GraphId                   Graph;
+    std::string               Name;
+    Aabb3d                    Bounds;
+    std::string               CookedSceneRef;
+    std::string               CookedCollisionRef;
+    uint64_t                  CookedContentHash;
+    std::vector<DockEndpoint> Docks;
+    std::vector<LinkEndpoint> Links;
+};
+```
+
+The repository may continue using one `ZoneHeader` C++ type with authored-only
+and cooked-only fields, as it does now, but serialization must preserve the
+separation above. There is no `Shape`, `BroadBounds`, `CookedShapeHash`, shape
+reference, or exact containment payload.
+
+### 3.1 AABB validity and overlap
+
+An authored/cooked zone AABB is valid only when every coordinate is finite and
+each full extent is greater than the shared authoring epsilon. `Aabb3d::IsValid()`
+alone is insufficient because it permits zero thickness and infinities.
+
+Overlapping zone AABBs are valid. No overlap, contact, nearest-neighbor, or
+containment relation creates adjacency. Validation must have an explicit test
+that overlapping AABBs produce no topology record and no overlap error.
+
+---
+
+## 4. Resident topology and dock endpoints
+
+Graph records retain the implemented value-driven policy configuration:
 
 ```cpp
 struct GraphStreamingConfig
@@ -121,372 +161,222 @@ struct GraphStreamingConfig
 
 struct GraphRecord
 {
-    GraphId               Id;
-    std::string           Name;
-    GraphStreamingConfig  Streaming;
-};
-
-struct ZoneHeader
-{
-    ZoneId                      Id;
-    GraphId                     Graph;
-    std::string                 Name;
-    Aabb3d                      BroadBounds;
-    CookedZoneShapeRef          Shape;
-    CookedZoneContentRef        Content;
-    std::vector<DockEndpoint>   Docks;
-    std::vector<LinkEndpoint>   Links;
+    GraphId              Id;
+    std::string          Name;
+    GraphStreamingConfig Streaming;
 };
 ```
 
-The graph table and every zone header load at world start. Zone content remains
-streamed. Endpoint records must be header data because policy needs adjacency
-before either side's registry is resident.
-
-### 3.1 Dock endpoints
+One valid authored dock always cooks to exactly two endpoint records:
 
 ```cpp
+enum class DockSide : uint8_t { A, B };
+
 struct DockEndpoint
 {
-    DockId       Id;              // same id in both endpoints
+    DockId       Id;                 // identical in both endpoint views
     ZoneId       OwnerZone;
     GraphId      OwnerGraph;
     ZoneId       OtherZone;
     GraphId      OtherGraph;
-    DockSide     Side;            // A or B
-    Plane3d      Plane;           // world or graph-space plane
-    Rect2d       SurfaceBounds;   // bounded area on the plane
-    Aabb3d       ArmBounds;       // editable side-local volume
-    uint8_t      Directions;      // A->B, B->A, or both
+    DockSide     Side;
+
+    Vec3d        Origin;
+    Vec3d        Normal;             // unit vector: owner -> other
+    Vec3d        Right;              // unit endpoint-frame +X
+    Vec3d        Up;                 // unit endpoint-frame +Y
+    Vec2d        HalfExtents;        // bounded plane in Right/Up
+    Aabb3d       OwnerArmBoundsLocal;// endpoint-frame box, owner side is z <= 0
+
+    uint32_t     Directions;         // authored A->B/B->A bits, unchanged
     int32_t      PreloadPriority;
     int32_t      PreloadDepth;
-    TagQueryRef  DemandCondition; // optional, existing tag-gate semantics
+    std::vector<std::string> RequiredTags;
 };
 ```
 
-`OwnerZone` is redundant inside a zone header but retained in debug builds and
-artifact inspection. The cook verifies that the two endpoint records agree.
+For an endpoint, a world point maps to local coordinates with dot products
+against `Right`, `Up`, and `Normal`. The endpoint's owner arm is always on local
+negative Z. The B endpoint reverses normal and right and transforms the authored
+Side B box into that owner-local frame. Keeping the local AABB avoids the current
+prototype's loss of orientation when it expands a rotated box into a world AABB.
 
-### 3.2 Links
+The endpoint pair is deterministic and reciprocal:
 
-A link uses the same endpoint pattern without crossing geometry. A one-way link
-emits one outgoing endpoint and one incoming reference if needed for queries. A
-bidirectional link emits reciprocal endpoints.
+- A owns A's view and names B as `OtherZone`;
+- B owns B's view and names A as `OtherZone`;
+- both use the same `DockId`, half extents, policy hints, and direction bits;
+- the two endpoint frames face out of their owner toward the other zone;
+- endpoint records are locality views, never counted as two edges.
 
-There is no graph-to-graph connection table. A cross-graph edge is simply a
-dock or link whose endpoint records name zones in different graphs.
+Multiple different `DockId` values may connect the same ordered or unordered zone
+pair. Indexing and graph display must retain every one.
+
+Links use the same identity and reciprocal locality pattern but omit origin,
+frame, plane extents, and arm bounds.
 
 ---
 
-## 4. Focus and crossing
+## 5. Focus and containment
 
-### 4.1 Ordinary movement
+### 5.1 Ordinary movement
 
-Containment is not polled every frame to guess whether the pawn changed zones.
-The current zone's dock endpoints are the authoritative transition surface.
-
-For each moving focus source, runtime state retains:
+Ordinary movement is authoritative through the current zone's dock endpoints:
 
 ```cpp
 struct ZoneFocusState
 {
-    ZoneId    Current;
-    ZoneId    Previous;
-    DockId    ArmedDock;
-    Vec3d     PreviousPosition;
+    ZoneId Current;
+    ZoneId Previous;
+    DockId ArmedDock;
+    Vec3d  PreviousPosition;
 };
 ```
 
-A dock crossing succeeds when:
+A crossing from an endpoint succeeds when:
 
-1. the swept focus bounds intersect the endpoint's `ArmBounds`;
-2. the previous and current positions lie on opposite signed sides of the
-   plane with an epsilon band;
-3. the swept intersection point lies inside `SurfaceBounds`;
-4. the endpoint direction permits the crossing;
-5. the destination is resident enough for the transition contract.
+1. the swept focus bounds intersect that endpoint's local owner arm;
+2. the previous point is on the owner's side and the current point is on the
+   other side of the plane, with the existing epsilon/jitter rules;
+3. the swept plane intersection lies within both plane half extents;
+4. the authored direction permits travel from this endpoint;
+5. the destination meets the existing residency/physics contract.
 
-On success the runtime:
+On success runtime emits one transient `ZoneCrossingRecord`, changes focus to
+`OtherZone`, arms the same `DockId` against jitter, and layers traversal grace
+through demand. It does not issue arbitrary loads or unloads.
 
-1. emits a transient `ZoneCrossingRecord`;
-2. changes `Current` to `OtherZone`;
-3. retains the source through linger or an explicit traversal-grace reason;
-4. does not directly evict or load arbitrary zones.
+Horizontal, diagonal, and vertical docks use the same endpoint-frame math. No
+axis or upright assumption is allowed.
 
-`ZoneCrossingRecord` remains a frame-local event record. It is not topology and
-is never serialized.
+### 5.2 Placement, teleport, save restore, and recovery
 
-### 4.2 Non-ordinary placement
-
-Zone-shape lookup remains necessary for:
-
-- world start and save restore;
-- editor placement;
-- teleport and scripted relocation;
-- falling out of the world and recovery;
-- spatial queries and minimap location.
-
-The lookup uses each zone's broad AABB first and exact cooked shape second. An
-ambiguous or unassigned point reports a diagnostic and uses the existing
-explicit fallback path. It never silently rewrites topology.
-
----
-
-## 5. Demand is graph policy, not dock ownership
-
-Sencha assumes more than two zones may be resident. The baseline policy is:
-
-- focus zone: pinned and fully active;
-- same-graph neighbors: resident according to hop, radius, participation, and
-  budget;
-- previous zone: retained for traversal grace;
-- explicit pins and gameplay demands: merged;
-- cross-graph destination entry: preloaded when the connecting endpoint enters
-  the current demand frontier;
-- dock approach: a priority boost, not the only reason the destination loads.
-
-### 5.1 Per-graph evaluation
-
-The implemented per-region policy becomes per-graph policy. Each graph expands
-its own seeds using its own resolved config. The current graph's config is not
-applied to every graph in the world.
-
-A demand pass conceptually performs:
-
-```text
-focus sources and pins
-    -> seed zones
-    -> graph-local expansion using that graph's config
-    -> cross-graph endpoint seeds, bounded by cross-graph preload depth
-    -> destination graph-local entry expansion
-    -> merge reasons
-    -> resolve global RAM and VRAM budgets
-```
-
-The destination graph decides how much of itself to preload. A cell exterior
-can use radius demand while an interior graph uses hop demand. Crossing between
-them does not force either graph to adopt the other's partition rules.
-
-Cross-graph propagation is bounded. Default depth is one graph boundary from a
-focus source. An endpoint may raise or lower that depth explicitly. The demand
-pass never recursively wakes every graph reachable in the world.
-
-### 5.2 Demand reasons
+These exceptional paths may query zone AABBs. Because overlaps are legal, the
+query must expose ambiguity internally rather than pretending containment is
+unique:
 
 ```cpp
-enum class ZoneDemandReason : uint8_t
+struct ZoneContainmentResult
 {
-    Focus,
-    SameGraphHop,
-    SpatialRadius,
-    DockApproach,
-    CrossGraphEntry,
-    ExplicitPin,
-    Gameplay,
-    TraversalGrace,
-    Linger,
+    ZoneId              Chosen;
+    std::vector<ZoneId> Candidates; // ascending id
+    bool                Ambiguous;
+};
+
+ZoneContainmentResult ResolveZoneAt(
+    const WorldPartitionManifest&, Vec3d position, ZoneId preferred);
+```
+
+Resolution is deterministic:
+
+1. collect every valid AABB containing the point;
+2. retain `preferred` if it is a candidate;
+3. otherwise choose smallest volume, then lowest `ZoneId`;
+4. if no AABB contains the point, use the existing nearest-AABB fallback with
+   the same volume/id tie breaks;
+5. report ambiguity or out-of-bounds recovery through diagnostics/telemetry.
+
+The public convenience `ZoneAt` may return `Chosen`, but callers that make
+placement decisions must retain/report `Ambiguous`. This is coarse recovery, not
+a route for ordinary focus changes and not a promise of exact spatial ownership.
+
+---
+
+## 6. Demand policy remains graph-driven
+
+The implemented policy remains the baseline:
+
+- focus zone is pinned and fully active;
+- same-graph neighbors are demanded by hop policy;
+- zones in a proximity graph are demanded by point-to-AABB radius;
+- the previous zone receives traversal grace/linger;
+- explicit pins and gameplay demands merge;
+- a cross-graph endpoint seeds the destination graph under the destination
+  graph's configuration;
+- a dock arm may add prediction/priority but is not the sole preload mechanism.
+
+Each graph resolves its own `HopCount`, `Radius`, and `ResidentZoneCap`. A radius
+exterior connected to a hop interior does not make either graph inherit the
+other's policy.
+
+Radius behavior must keep using closest-point distance from the focus position to
+`ZoneHeader::Bounds`; it must not regress to center distance. Graph Viewer nodes,
+by contrast, are deliberately placed at `Bounds.Center()`.
+
+Demand reasons remain explicit (`Focus`, `SameGraphHop`, `SpatialRadius`,
+`DockApproach`, `CrossGraphEntry`, `ExplicitPin`, `Gameplay`,
+`TraversalGrace`, and `Linger`) so residency remains explainable.
+
+---
+
+## 7. Gates and runtime boundaries
+
+```cpp
+struct DockGateBinding
+{
+    DockId Id;
 };
 ```
 
-Every candidate records its reason, source zone or endpoint, rank, and optional
-cost. This preserves the existing "why is this zone resident" requirement.
+A door, force field, breakable, or other gameplay entity may bind to a dock.
+Several entities may share one `DockId`. Physics controls whether traversal is
+physically possible; the dock controls what a crossing means; demand controls
+residency.
 
-### 5.3 Approach bounds
+Deleting a gate does not delete a dock. Deleting a dock leaves bindings dangling
+and validation reports them; it does not cascade-delete gameplay content.
 
-The dock's side AABBs serve three purposes:
-
-- reliable arming of the crossing test;
-- editor visualization of the physical transition neighborhood;
-- optional predictive priority for expensive destinations.
-
-They are not mandatory preload shells. A normal graph with `HopCount >= 1`
-already keeps its immediate neighbors resident. Approach only improves ordering
-when several candidates compete or a cross-graph destination is expensive.
+No runtime editor adapter, gizmo, label, snap value, selected sub-handle, or
+creation context is permitted in `WorldDock`, `DockEndpoint`, or runtime systems.
 
 ---
 
-## 6. Doors and gates
+## 8. Runtime query surface
 
-Metroid Prime stores doors as area-local script objects. Each loaded area
-instantiates its own door. Opposite-side doors are separate objects and find
-each other through reciprocal dock topology rather than a shared persistent
-door id.
-
-Sencha keeps the useful separation but does not require Prime's duplication as
-a topology rule:
-
-- a door is an ordinary gameplay entity in exactly one registry;
-- a door may carry `DockGateBinding { DockId }`;
-- one or more entities may bind to the same dock;
-- physics decides whether the actor can physically cross;
-- the dock decides which zone crossing means;
-- demand decides which zones stay resident.
-
-An ordinary door may live in either endpoint zone because immediate neighbors
-are normally resident from both approaches. A content author may use two
-zone-local door views sharing gameplay state when independent side residency is
-required. A truly global mechanism may live in the world scene deliberately.
-Neither choice changes the dock record.
-
-The first door implementation must not invent a global door registry, shared
-entity id, or mandatory paired-door abstraction. If repeated content proves
-paired authoring painful, Kyusu may add a paired-gate creation recipe over the
-same `DockId` binding.
-
----
-
-## 7. Runtime query surface
-
-The initial query surface stays small:
+The initial query surface stays narrow:
 
 ```cpp
 std::span<const DockEndpoint> DocksFrom(ZoneId zone) const;
 std::span<const LinkEndpoint> LinksFrom(ZoneId zone) const;
 const GraphRecord*            FindGraph(GraphId graph) const;
-const ZoneHeader*             FindZone(ZoneId zone) const;
+const CookedZoneHeader*       FindZone(ZoneId zone) const;
 std::optional<ZoneId>         ZoneAt(Vec3d position) const;
+ZoneContainmentResult         ResolveZoneAt(Vec3d position, ZoneId preferred) const;
 ```
 
-Graph algorithms remain explicit pure functions:
-
-```cpp
-ComputeGraphHopRanks(...);
-ComputeWorldDemand(...);
-```
-
-Navigation, visibility, map, and audio add their own endpoint products and
-queries when their consumers land. The runtime does not ship speculative
-capability masks now.
+Graph algorithms remain pure functions over headers and endpoint indexes.
+Navigation, visibility, map, and audio add their own products only when their
+consumers land.
 
 ---
 
-## 8. Hybrid-world consequence
+## 9. Runtime acceptance tests
 
-A future exterior cell graph can compile terrain cells into ordinary zone
-headers. Its cells use spatial-radius policy. A facility interior remains a
-hand-authored graph using dock-hop policy.
+The runtime/data correction is accepted only when headless tests prove:
 
-```text
-ExteriorGraph / Cell 412
-    <-> Dock 71
-FacilityGraph / Entrance
-```
-
-Approaching Dock 71 keeps the exterior ring according to `ExteriorGraph`, seeds
-the facility entrance, and lets `FacilityGraph` preload its own configured
-entry neighborhood. On crossing, the facility becomes the focus graph while
-traversal grace and linger retain the exterior long enough for retreat.
-
-No runtime mode switch is required. The graphs differ by data and by the zone
-producer used at cook time.
+1. overlapping AABBs are legal and create no edge;
+2. previous-focus containment wins in an overlap and all other tie breaks are
+   deterministic;
+3. initial placement and relocation use only the AABB path;
+4. ordinary movement cannot change focus without crossing a dock;
+5. spatial-radius demand still uses point-to-AABB distance;
+6. a bounded plane rejects a crossing outside its width/height;
+7. vertical, horizontal, and diagonal docks share one crossing path;
+8. local arm AABBs remain correctly oriented for rotated docks;
+9. one authored bilateral dock produces two reciprocal endpoints with one id;
+10. two distinct docks between the same zones remain two logical edges;
+11. a closed door can block physics without removing demand/topology;
+12. topology remains queryable when connected zone registries are unloaded.
 
 ---
 
-## 9. Migration from the current implementation
+## 10. Runtime non-goals
 
-The source branch currently has `RegionRecord`, `TransitionRecord`, region
-streaming overrides, graph BFS, spatial-radius demand, and a world-level
-connection editor. Preserve the working machinery and migrate its vocabulary
-and ownership.
-
-1. `RegionId` -> `GraphId`.
-2. `RegionRecord` -> `GraphRecord`.
-3. `ZoneHeader.Region` -> `ZoneHeader.Graph`.
-4. `RegionStreamingConfig` -> `GraphStreamingConfig`.
-5. Keep the value-driven hop/radius/cap model. Do not add a graph-mode enum.
-6. Replace authored geometric `TransitionRecord`s with world docks.
-7. Replace teleports and scripted transitions with world links.
-8. Cook docks and links into zone header endpoints.
-9. Replace containment-driven focus changes with dock crossing.
-10. Keep legacy JSON readable for one migration window; save writes the new
-    graph and endpoint vocabulary.
-
-The implemented doc 10 remains historical evidence for the existing policy.
-Its `Region` name is superseded by this plan.
-
----
-
-## 10. Implementation stages
-
-Each stage is one reviewable commit with runtime and editor tests kept green.
-
-### R1. Graph vocabulary migration
-
-Rename manifest, ids, serializers, validation, panel labels, and pure policy
-helpers. Preserve behavior byte-for-byte. Add legacy read coverage.
-
-Gate: existing per-region streaming fixtures pass under graph names.
-
-### R2. Endpoint data model
-
-Add authored dock and link records to the world document, cooked endpoint
-records to zone headers, resident indexes, serialization, and validation.
-Keep current transitions readable but no longer writable.
-
-Gate: one authored bilateral dock cooks to exactly two reciprocal endpoints;
-one cross-graph dock indexes correctly from both zones.
-
-### R3. Policy migration
-
-Make demand evaluate graph-local configs and seed immediate cross-graph entry
-policy without unbounded transitive propagation.
-
-Gate: a radius exterior connected to a hop interior keeps the correct sets on
-both sides and preloads the interior entrance before crossing.
-
-### R4. Dock crossing
-
-Implement swept arm-volume plus bounded-plane crossing and transient crossing
-records. Retain shape lookup for placement and recovery.
-
-Gate: vertical doorway, horizontal floor opening, diagonal hallway, fast swept
-crossing, reversal, and plane-jitter fixtures.
-
-### R5. Transition retirement
-
-Migrate existing geometric transitions to docks, teleports to links, remove the
-legacy transition authoring surface and runtime branch.
-
-Gate: no ordinary focus change depends on AABB containment or transition labels.
-
-### R6. Gate binding seam
-
-Add `DockGateBinding` as a narrow gameplay-facing component and a test door
-fixture. Do not build paired-door editor sugar yet.
-
-Gate: a closed door prevents physical crossing while its destination remains
-resident by graph policy; opening it permits the existing dock crossing without
-changing topology.
-
----
-
-## 11. Fitness tests
-
-The design is accepted only if these remain simple:
-
-1. A two-room doorway needs one authored dock and no hand-maintained reverse
-   record.
-2. A hole in the floor uses a horizontal dock with the same runtime code.
-3. A diagonal hallway uses an oriented plane without inflating the zone shape.
-4. A curved hallway uses one chosen cross-section and ordinary graph adjacency.
-5. A locked door does not define or delete its connection.
-6. Three or more neighboring zones may remain resident.
-7. A radius cell graph preloads a hop interior through one cross-graph dock.
-8. Duplicate, paste, undo, load, and component-add never rerun contextual dock
-   initialization.
-9. Teleports do not pretend to be planes.
-10. Topology remains queryable while all connected zone registries are unloaded.
-
----
-
-## 12. Non-goals
-
-- no automatic topology inference from collision;
-- no recursive zones;
-- no graph object containing another graph;
-- no global door ownership rule;
-- no requirement that zone broad AABBs touch;
-- no streaming policy embedded in door gameplay code;
-- no runtime topology rebake;
-- no spreadsheet-style adjacency authoring;
-- no navmesh, PVS, map, or audio implementation in these stages.
+- no exact zone geometry under a new type name;
+- no AABB contact graph;
+- no perfect spatial partition requirement;
+- no containment-driven ordinary transitions;
+- no per-door streaming policy;
+- no runtime topology authoring or rebake;
+- no generic capability mask for future subsystems;
+- no editor code or editor state in runtime artifacts.

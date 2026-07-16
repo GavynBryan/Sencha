@@ -16,6 +16,7 @@ struct ToolContext;
 struct EditorViewport;
 class SelectionService;
 class MeshEditService;
+class EditorAffordanceService;
 struct ManipulationSink;
 struct GridSettings;
 
@@ -29,7 +30,8 @@ class ManipulatorSession
 {
 public:
     ManipulatorSession(SelectionService& selection, MeshEditService& service, ManipulationSink& sink,
-                       GridSettings& grid, PivotState& pivot);
+                       GridSettings& grid, PivotState& pivot,
+                       EditorAffordanceService& affordances);
 
     InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
 
@@ -65,6 +67,8 @@ public:
     // least one brush). Set by the workspace, which owns scene access; unset, the
     // Resize fallback only considers the element kind.
     void SetResizableQuery(std::function<bool()> query) { ResizableQuery = std::move(query); }
+    void SetScaleAllowedQuery(std::function<bool()> query)
+    { ScaleAllowedQuery = std::move(query); }
 
     // True once the pivot has been moved off the computed center (so "set origin to
     // pivot" has something to do).
@@ -117,8 +121,10 @@ private:
     ManipulationSink& Sink;
     GridSettings& Grid;
     PivotState& Pivot;
+    EditorAffordanceService& Affordances;
     std::vector<std::unique_ptr<IManipulator>> Manipulators;
     std::function<bool()> ResizableQuery;
+    std::function<bool()> ScaleAllowedQuery;
     TransformModeMemory Memory;
     TransformSpace Space = TransformSpace::Grid;
     bool GridOriginEditing = false;

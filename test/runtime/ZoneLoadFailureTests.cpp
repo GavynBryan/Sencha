@@ -19,6 +19,8 @@
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneLoadPackage.h>
 
+#include "ZoneDockFixture.h"
+
 #include <cstdio>
 #include <map>
 #include <optional>
@@ -55,9 +57,6 @@ std::string ManifestJson(std::uint64_t hubHash)
         R"("cooked_scene":"levels/hall.cooked.json",)"
         R"("cooked_collision":"levels/hall.collision.json",)"
         R"("content_hash":"00000000000000d2"})"
-        R"(],"transitions":[)"
-        R"({"id":"00000000000000c1","from":"00000000000000a1","to":"00000000000000a2","topology":"doorway"},)"
-        R"({"id":"00000000000000c2","from":"00000000000000a2","to":"00000000000000a1","topology":"doorway"})"
         R"(]})";
 }
 
@@ -69,6 +68,7 @@ WorldPartitionManifest Manifest(std::uint64_t hubHash = 0xd1)
     std::optional<WorldPartitionManifest> manifest =
         ReadWorldPartitionManifest(*json, &error);
     EXPECT_TRUE(manifest.has_value()) << error;
+    AddFixtureDockPair(*manifest, 0xc1, kHub, kHallway, Vec3d{ 8.5, 2, 0 });
     return *manifest;
 }
 

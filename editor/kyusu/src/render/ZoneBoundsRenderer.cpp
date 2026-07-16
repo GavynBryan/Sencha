@@ -3,7 +3,7 @@
 #include "EditorTheme.h"
 #include "OverlayBoxEdges.h"
 
-#include "document/TransitionConnect.h"
+#include "document/WorldTagList.h"
 #include "document/WorldDocument.h"
 #include "viewport/WorldViewSettings.h"
 
@@ -40,7 +40,7 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         // showing nothing.
         if (!view.PreviewFocus.IsValid())
             view.PreviewFocus = world.FocusZone();
-        const std::vector<std::string> activeTags = SplitTagList(view.PreviewTags);
+        const std::vector<std::string> activeTags = SplitWorldTagList(view.PreviewTags);
         previewConfig =
             ResolvePreviewStreamingConfig(world.Manifest(), view.PreviewFocus, view);
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
@@ -103,28 +103,6 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         ring(Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f });
         ring(Vec3d{ 1.0f, 0.0f, 0.0f }, Vec3d{ 0.0f, 1.0f, 0.0f });
         ring(Vec3d{ 0.0f, 1.0f, 0.0f }, Vec3d{ 0.0f, 0.0f, 1.0f });
-    }
-
-    // The transition graph over the bounds: one line per edge between zone
-    // centers (a symmetric pair overlaps into one visual line).
-    if (view.StreamingPreview)
-    {
-        const auto zoneCenter = [&](ZoneId zone) -> std::optional<Vec3d>
-        {
-            for (const ZoneHeader& header : world.Manifest().Zones)
-                if (header.Id == zone && header.Bounds.IsValid())
-                    return header.Bounds.Center();
-            return std::nullopt;
-        };
-        for (const TransitionRecord& record : world.Manifest().Transitions)
-        {
-            const auto from = zoneCenter(record.From);
-            const auto to = zoneCenter(record.To);
-            if (!from.has_value() || !to.has_value())
-                continue;
-            segments.push_back(EditorLineSegment{ *from, *to, EditorTheme::TransitionLine,
-                                                  EditorTheme::OverlayLinePixels });
-        }
     }
 
     // Preview lines draw on top: the author is usually INSIDE a zone, where

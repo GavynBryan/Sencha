@@ -24,6 +24,20 @@ struct ZoneViewState
     bool VisibleInEditor = true;
 };
 
+struct MigratedTransitionLink
+{
+    TransitionId Forward;
+    TransitionId Reverse;
+    LinkId Link;
+};
+
+struct LegacyTransitionMigrationReport
+{
+    std::vector<MigratedTransitionLink> Links;
+    std::vector<TransitionId> Unresolved;
+    std::size_t CollapsedPairs = 0;
+};
+
 // The container above EditorDocument: the authored partition manifest plus the set
 // of open zone documents. Exactly one of two modes at a time:
 //   Legacy: no manifest; one anonymous zone document (a bare .level.json). Every
@@ -65,7 +79,7 @@ public:
     // Enforces the .sworld extension (replacing whatever the dialog produced)
     // so saved worlds always round-trip through the extension fast path.
     bool SaveWorldAs(std::string_view path);
-    void NewWorld(std::string_view name);            // one minted region and zone, focus on it
+    void NewWorld(std::string_view name);            // one minted graph and zone, focus on it
 
     // True when Save can write without asking for a path: the world file in
     // world mode, the focus document's file otherwise.
@@ -147,33 +161,31 @@ public:
     // already in the manifest. Editor-side only by design; the engine mints
     // no random ids.
     [[nodiscard]] ZoneId MintZoneId();
-    [[nodiscard]] RegionId MintRegionId();
-    [[nodiscard]] TransitionId MintTransitionId();
+    [[nodiscard]] GraphId MintGraphId();
+    [[nodiscard]] DockId MintDockId();
+    [[nodiscard]] LinkId MintLinkId();
 
     // Manifest edits go through verbs so the index rebuild and dirty flag cannot
     // be forgotten. Nothing writes Manifest() fields raw.
-    ZoneId AddZone(RegionId region, std::string name);        // mints id, empty SceneRef until first save
-    RegionId AddRegion(std::string name);
+    ZoneId AddZone(GraphId graph, std::string name);        // mints id, empty SceneRef until first save
+    GraphId AddGraph(std::string name);
     bool RenameZone(ZoneId zone, std::string name);
-    bool RenameRegion(RegionId region, std::string name);
+    bool SetZoneGraph(ZoneId zone, GraphId graph);
+    bool SetZoneBounds(ZoneId zone, Aabb3d bounds, bool overridden = true);
+    bool UseDerivedZoneBounds(ZoneId zone);
+    bool RenameGraph(GraphId graph, std::string name);
 
-    // Region streaming overrides; nullopt clears the field back to inherited.
-    bool SetRegionHopCount(RegionId region, std::optional<int32_t> hopCount);
-    bool SetRegionRadius(RegionId region, std::optional<double> radius);
-    bool SetRegionResidentCap(RegionId region, std::optional<int32_t> cap);
+    // Graph streaming overrides; nullopt clears the field back to inherited.
+    bool SetGraphHopCount(GraphId graph, std::optional<int32_t> hopCount);
+    bool SetGraphRadius(GraphId graph, std::optional<double> radius);
+    bool SetGraphResidentCap(GraphId graph, std::optional<int32_t> cap);
 
-    // Transition verbs, same non-undoable discipline. AddTransition mints the
-    // edge and nothing else; reverse pairing is the caller's explicit second
-    // call. Returns the new id.
-    TransitionId AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
-                               bool oneWay, int32_t preloadPriority);
-    bool RemoveTransition(TransitionId transition);
-    bool RenameTransition(TransitionId transition, std::string name);
-    bool SetTransitionTopology(TransitionId transition, TransitionTopology topology);
-    bool SetTransitionOneWay(TransitionId transition, bool oneWay);
-    bool SetTransitionPreloadPriority(TransitionId transition, int32_t priority);
-    bool SetTransitionRequiredTags(TransitionId transition, std::vector<std::string> tags);
-    bool SetTransitionPreloadDepth(TransitionId transition, int32_t depth);
+    // Explicit migration window for v1 manifests. Teleports have enough data
+    // to become non-spatial world links. Geometric records have no plane
+    // transform in the legacy format and remain unresolved instead of being
+    // guessed. New-format saves refuse unresolved records.
+    LegacyTransitionMigrationReport MigrateLegacyTransitions();
+    bool DiscardLegacyTransition(TransitionId transition);
 
     // Refreshes derived zone bounds, then reruns validation. Manifest verbs
     // revalidate themselves; content edits (moving entities) call this
@@ -211,8 +223,7 @@ private:
     void MarkManifestEdited();
     void AssignSceneRefsForNewZones();
     void RunValidation();
-    // Recomputes non-overridden zone bounds from live content in open zones, so
-    // validation and the manifest write see current spans.
+    // Recomputes every broad-phase bound from its authored exact zone shape.
     void RefreshDerivedZoneBounds();
     // A fresh world scene document with its own registry identity, loaded from
     // the manifest's WorldSceneRef when that resolves to a file.

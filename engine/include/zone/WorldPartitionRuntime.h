@@ -4,11 +4,13 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 #include <zone/AsyncZoneLoader.h>
+#include <zone/DockCrossing.h>
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneDemand.h>
@@ -50,9 +52,28 @@ public:
     [[nodiscard]] bool HasManifest() const { return HasManifest_; }
     [[nodiscard]] const WorldPartitionManifest& Manifest() const;
 
+    // The one policy input. The first position resolves against exact zone
+    // shapes. Later movement is swept through authored dock planes during
+    // Update, where destination physics residency can be verified.
     void SetFocus(Vec3d position);
+    // Explicit placement/recovery path for teleports, save restore, and
+    // out-of-world fallback. Resolves exact shapes instead of sweeping docks.
+    void RelocateFocus(Vec3d position);
+    // For when position is not meaningful (menus, scripted warps). Asserts the
+    // zone exists in the manifest.
     void SetFocus(ZoneId zone);
     [[nodiscard]] ZoneId FocusZone() const { return Focus_; }
+    [[nodiscard]] std::span<const DockEndpoint> DocksFrom(ZoneId zone) const;
+    [[nodiscard]] std::span<const LinkEndpoint> LinksFrom(ZoneId zone) const;
+    [[nodiscard]] const GraphRecord* FindGraph(GraphId graph) const;
+    [[nodiscard]] const ZoneHeader* FindZone(ZoneId zone) const;
+    [[nodiscard]] std::optional<ZoneId> ZoneAt(Vec3d position) const;
+    [[nodiscard]] ZoneContainmentResult ResolveZoneAt(
+        Vec3d position, ZoneId preferred = {}) const;
+    [[nodiscard]] const std::optional<ZoneCrossingRecord>& LastCrossing() const
+    {
+        return LastCrossing_;
+    }
 
     // Authored/scripted long-lived floor. Existing semantics remain last-writer-
     // wins because this API names one pin per zone.
@@ -127,6 +148,12 @@ private:
     ZoneId Focus_;
     Vec3d FocusPosition_{};
     bool HasFocusPosition_ = false;
+    Vec3d DockSweepPosition_{};
+    Vec3d PendingFocusPosition_{};
+    bool HasPendingFocusPosition_ = false;
+    DockId ArmedDock_;
+    std::optional<ZoneCrossingRecord> LastCrossing_;
+    LingerState TraversalGrace_;
     std::vector<ZonePin> Pins_;
     std::vector<ParticipationLeaseSlot> LeaseSlots_;
     std::vector<uint32_t> FreeLeaseSlots_;

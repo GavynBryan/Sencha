@@ -44,17 +44,43 @@ std::optional<ZoneId> ZoneIdFromString(std::string_view text)
     return ZoneId{ *value };
 }
 
-std::string RegionIdToString(RegionId id)
+std::string GraphIdToString(GraphId id)
 {
     return HexEncode(id.Value);
 }
 
-std::optional<RegionId> RegionIdFromString(std::string_view text)
+std::optional<GraphId> GraphIdFromString(std::string_view text)
 {
     const auto value = HexDecode(text);
     if (!value)
         return std::nullopt;
-    return RegionId{ *value };
+    return GraphId{ *value };
+}
+
+std::string DockIdToString(DockId id)
+{
+    return HexEncode(id.Value);
+}
+
+std::optional<DockId> DockIdFromString(std::string_view text)
+{
+    const auto value = HexDecode(text);
+    if (!value)
+        return std::nullopt;
+    return DockId{ *value };
+}
+
+std::string LinkIdToString(LinkId id)
+{
+    return HexEncode(id.Value);
+}
+
+std::optional<LinkId> LinkIdFromString(std::string_view text)
+{
+    const auto value = HexDecode(text);
+    if (!value)
+        return std::nullopt;
+    return LinkId{ *value };
 }
 
 std::string TransitionIdToString(TransitionId id)

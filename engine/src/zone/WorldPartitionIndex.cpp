@@ -58,6 +58,38 @@ WorldPartitionIndex WorldPartitionIndex::Build(const WorldPartitionManifest& man
     }
     index.IncomingOffsets_.push_back(static_cast<uint32_t>(index.Indices_.size()));
 
+    index.DockOffsets_.reserve(zoneCount + 1);
+    index.LinkOffsets_.reserve(zoneCount + 1);
+    for (uint64_t zoneValue : index.ZoneIds_)
+    {
+        index.DockOffsets_.push_back(static_cast<uint32_t>(index.Docks_.size()));
+        index.LinkOffsets_.push_back(static_cast<uint32_t>(index.Links_.size()));
+        for (const ZoneHeader& zone : manifest.Zones)
+        {
+            if (zone.Id.Value != zoneValue)
+                continue;
+            index.Docks_.insert(index.Docks_.end(), zone.Docks.begin(), zone.Docks.end());
+            index.Links_.insert(index.Links_.end(), zone.Links.begin(), zone.Links.end());
+            break;
+        }
+        std::sort(index.Docks_.begin() + index.DockOffsets_.back(), index.Docks_.end(),
+                  [](const DockEndpoint& a, const DockEndpoint& b)
+                  {
+                      if (a.Id.Value != b.Id.Value)
+                          return a.Id.Value < b.Id.Value;
+                      return a.Side < b.Side;
+                  });
+        std::sort(index.Links_.begin() + index.LinkOffsets_.back(), index.Links_.end(),
+                  [](const LinkEndpoint& a, const LinkEndpoint& b)
+                  {
+                      if (a.Id.Value != b.Id.Value)
+                          return a.Id.Value < b.Id.Value;
+                      return a.Side < b.Side;
+                  });
+    }
+    index.DockOffsets_.push_back(static_cast<uint32_t>(index.Docks_.size()));
+    index.LinkOffsets_.push_back(static_cast<uint32_t>(index.Links_.size()));
+
     return index;
 }
 
@@ -85,6 +117,24 @@ std::span<const uint32_t> WorldPartitionIndex::Incoming(ZoneId zone) const
         return {};
     return { Indices_.data() + IncomingOffsets_[slot],
              Indices_.data() + IncomingOffsets_[slot + 1] };
+}
+
+std::span<const DockEndpoint> WorldPartitionIndex::DocksFrom(ZoneId zone) const
+{
+    const size_t slot = FindSlot(zone);
+    if (slot == ZoneIds_.size())
+        return {};
+    return { Docks_.data() + DockOffsets_[slot],
+             Docks_.data() + DockOffsets_[slot + 1] };
+}
+
+std::span<const LinkEndpoint> WorldPartitionIndex::LinksFrom(ZoneId zone) const
+{
+    const size_t slot = FindSlot(zone);
+    if (slot == ZoneIds_.size())
+        return {};
+    return { Links_.data() + LinkOffsets_[slot],
+             Links_.data() + LinkOffsets_[slot + 1] };
 }
 
 bool WorldPartitionIndex::ContainsZone(ZoneId zone) const

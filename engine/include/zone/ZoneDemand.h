@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -19,6 +20,39 @@ struct ZoneDemandSources
     bool Neighbor = false;
     bool Spatial = false;
     bool Lingering = false;
+    bool SameGraphHop = false;
+    bool SpatialRadius = false;
+    bool DockApproach = false;
+    bool CrossGraphEntry = false;
+    bool ExplicitPin = false;
+    bool Gameplay = false;
+    bool TraversalGrace = false;
+    bool Linger = false;
+};
+
+enum class ZoneDemandReason : uint8_t
+{
+    Focus,
+    SameGraphHop,
+    SpatialRadius,
+    DockApproach,
+    CrossGraphEntry,
+    ExplicitPin,
+    Gameplay,
+    TraversalGrace,
+    Linger,
+};
+
+struct ZoneDemandReasonRecord
+{
+    ZoneDemandReason Reason = ZoneDemandReason::Focus;
+    ZoneId SourceZone;
+    uint64_t SourceEndpoint = 0;
+    int32_t Rank = 0;
+    std::optional<double> Cost;
+
+    friend bool operator==(const ZoneDemandReasonRecord&,
+                           const ZoneDemandReasonRecord&) = default;
 };
 
 // One zone's desired residency this update. The data contract the kyusu demand
@@ -28,9 +62,10 @@ struct ZoneDemandRecord
     ZoneId            Zone;
     ZoneParticipation Desired;
     ZoneDemandSources Sources;
+    std::vector<ZoneDemandReasonRecord> Reasons;
 };
 
-// A script- or transition-driven residency demand beyond the policy. Data, not
+// An explicit script- or gameplay-driven residency demand beyond policy. Data, not
 // subclasses.
 struct ZonePin
 {
@@ -58,15 +93,15 @@ struct WorldPartitionStreamingConfig
 };
 
 // The streaming config in force while `focus` is resident: the focus zone's
-// region overrides applied over `base`, field by field. Pure; the runtime and
-// the editor preview both resolve through it. Invalid or region-less focus
+// graph overrides applied over `base`, field by field. Pure; the runtime and
+// the editor preview both resolve through it. Invalid or graph-less focus
 // returns base unchanged.
 [[nodiscard]] WorldPartitionStreamingConfig
-ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
+ResolveGraphStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
                              const WorldPartitionStreamingConfig& base);
 
 // One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
-// the highest PreloadPriority among the transition edges that discovered the
+// the highest PreloadPriority among the endpoint edges that discovered the
 // zone at its shortest hop (minimum for the focus). Eviction and load-issue
 // ordering read these; ComputeZoneDemand's traversal is this one.
 struct ZoneHopRank
@@ -74,6 +109,9 @@ struct ZoneHopRank
     ZoneId  Zone;
     int32_t Hop = 0;
     int32_t Priority = std::numeric_limits<int32_t>::min();
+    ZoneDemandReason Reason = ZoneDemandReason::Focus;
+    ZoneId SourceZone;
+    uint64_t SourceEndpoint = 0;
 };
 
 // Pure. BFS over outgoing edges only, up to hopCount hops from the focus.
@@ -87,16 +125,27 @@ ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                     int32_t hopCount,
                     std::span<const std::string> activeTags = {});
 
-// Pure focus resolution from a position: candidates are zones whose Bounds
-// contain the position; the previous focus wins while it remains a candidate
-// (hysteresis at doorway thresholds); otherwise the smallest-volume candidate,
+struct ZoneContainmentResult
+{
+    ZoneId Chosen;
+    std::vector<ZoneId> Candidates;
+    bool Ambiguous = false;
+};
+
+// Pure placement and recovery resolution from a position. The preferred zone
+// wins while it remains an AABB candidate; otherwise the smallest-volume candidate,
 // ties by ascending zone id. A position inside no zone resolves to the
 // NEAREST zone by closest-point distance (ties: smaller volume, then id):
 // derived bounds hug authored geometry, so a pawn standing on a floor slab or
 // airborne routinely sits outside its zone's box, and keeping the previous
 // focus would freeze streaming on whatever zone was entered last. `previous`
-// survives only when no zone has valid bounds. Shared by
+// survives only when no zone has valid bounds. Candidates contain only actual
+// containing AABBs, sorted by id, so callers can diagnose overlap ambiguity.
+// Shared by
 // WorldPartitionRuntime and the editor's streaming preview.
+[[nodiscard]] ZoneContainmentResult ResolveZoneAt(
+    const WorldPartitionManifest& manifest, Vec3d position, ZoneId preferred);
+
 [[nodiscard]] ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest,
                                       Vec3d position, ZoneId previous);
 

@@ -4,16 +4,73 @@
 #include "EditorDocument.h"
 #include "WorldDocument.h"
 
+#include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <world/transform/TransformComponents.h>
+#include <zone/WorldConnectionComponents.h>
 #include <zone/WorldPartitionIds.h>
+#include <zone/WorldTopologyCook.h>
 
+#include <algorithm>
 #include <fstream>
+#include <iterator>
+#include <optional>
 #include <span>
 #include <system_error>
 #include <utility>
 #include <vector>
+
+namespace
+{
+
+bool ValidateGateBindingsInScene(const std::filesystem::path& path,
+                                 const std::vector<DockId>& docks,
+                                 std::string* error)
+{
+    std::ifstream file(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+    const auto root = JsonParse(text);
+    if (!root)
+    {
+        if (error != nullptr)
+            *error = "cannot inspect gate bindings in '" + path.generic_string() + "'";
+        return false;
+    }
+    const JsonValue* entities = root->Find("entities");
+    if (entities == nullptr || !entities->IsArray())
+        return true;
+
+    for (std::size_t index = 0; index < entities->AsArray().size(); ++index)
+    {
+        const JsonValue* components = entities->AsArray()[index].Find("components");
+        const JsonValue* binding = components != nullptr
+            ? components->Find("Dock Gate Binding") : nullptr;
+        const JsonValue* dockValue = binding != nullptr ? binding->Find("dock") : nullptr;
+        if (dockValue == nullptr)
+            continue;
+        if (!dockValue->IsString())
+        {
+            if (error != nullptr)
+                *error = "gate binding in '" + path.generic_string()
+                    + "' has a malformed dock id";
+            return false;
+        }
+        const std::optional<DockId> dock = DockIdFromString(dockValue->AsString());
+        if (dock && std::find(docks.begin(), docks.end(), *dock) != docks.end())
+            continue;
+        if (error != nullptr)
+            *error = "gate binding in '" + path.generic_string()
+                + "' entity " + std::to_string(index) + " references missing dock "
+                + dockValue->AsString();
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 struct WorldCookInput::Data
 {
@@ -60,6 +117,8 @@ std::optional<WorldCookInput> CollectWorldCookInput(
 
     if (!world.IsWorld())
         return fail("CookWorld: no world is open");
+    if (!world.Manifest().Transitions.empty())
+        return fail("CookWorld: unresolved legacy transitions must be migrated or discarded");
 
     std::string blocked;
     world.VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
@@ -78,6 +137,15 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     }
     if (!blocked.empty())
         return fail("CookWorld: unsaved zone documents: " + blocked);
+
+    world.Revalidate();
+    for (const ContentRiskRecord& record : world.ValidationRecords())
+    {
+        if (record.Severity != ContentRiskSeverity::Error)
+            continue;
+        return fail("CookWorld: validation failed: " + record.RuleId + ": "
+            + record.Message);
+    }
 
     auto data = std::make_unique<WorldCookInput::Data>();
     data->Manifest = world.Manifest();
@@ -171,6 +239,51 @@ std::optional<WorldCookInput> CollectWorldCookInput(
             .SourceRel = fs::relative(scenePath, assetsRoot, ec).generic_string(),
             .Input = std::move(*input),
         });
+    }
+
+    // Docks and links are authored as world-scene entities; the cooked manifest
+    // carries the topology they compile to, so it is resolved here alongside the
+    // rest of the authored input.
+    std::vector<AuthoredDockCookInput> dockInputs;
+    std::vector<AuthoredLinkCookInput> linkInputs;
+    const EditorScene& worldScene = world.WorldSceneDocument().GetScene();
+    const Registry& registry = world.WorldSceneDocument().GetRegistry();
+    for (EntityId entity : worldScene.GetAllEntities())
+    {
+        const uint64_t authoredEntity = (static_cast<uint64_t>(entity.Generation) << 32)
+            | entity.Index;
+        if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+        {
+            const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(entity);
+            if (transform == nullptr)
+                return fail("CookWorld: a world dock has no transform");
+            dockInputs.push_back({ *dock, transform->Value, authoredEntity });
+        }
+        if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+            linkInputs.push_back({ *link, authoredEntity });
+    }
+    std::string topologyError;
+    if (!CookWorldTopology(data->Manifest, dockInputs, linkInputs, &topologyError))
+        return fail("CookWorld: " + topologyError);
+
+    std::vector<DockId> authoredDocks;
+    authoredDocks.reserve(dockInputs.size());
+    for (const AuthoredDockCookInput& dockInput : dockInputs)
+        authoredDocks.push_back(dockInput.Dock.Id);
+    for (const ZoneHeader& zone : world.Manifest().Zones)
+    {
+        std::string bindingError;
+        if (!ValidateGateBindingsInScene(world.ResolveScenePath(zone.SceneRef),
+                                         authoredDocks, &bindingError))
+            return fail("CookWorld: " + bindingError);
+    }
+    if (!world.Manifest().WorldSceneRef.empty())
+    {
+        std::string bindingError;
+        if (!ValidateGateBindingsInScene(
+                world.ResolveScenePath(world.Manifest().WorldSceneRef),
+                authoredDocks, &bindingError))
+            return fail("CookWorld: " + bindingError);
     }
     return WorldCookInput(std::move(data));
 }

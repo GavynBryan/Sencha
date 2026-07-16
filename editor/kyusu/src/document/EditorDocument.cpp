@@ -359,6 +359,8 @@ bool EditorDocument::HasFilePath() const
 void EditorDocument::MarkDirty(bool dirty)
 {
     Dirty = dirty;
+    if (dirty && OnEdited)
+        OnEdited();
 }
 
 EditorScene& EditorDocument::GetScene()

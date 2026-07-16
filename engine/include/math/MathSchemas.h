@@ -7,6 +7,7 @@
 #include <math/Quat.h>
 #include <math/Vec.h>
 #include <math/geometry/2d/Transform2d.h>
+#include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Transform3d.h>
 
 #include <string_view>
@@ -127,6 +128,20 @@ struct TypeSchema<Transform2d<T>>
             MakeField("position", &Transform2d<T>::Position),
             MakeField("rotation", &Transform2d<T>::Rotation),
             MakeField("scale", &Transform2d<T>::Scale),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<Aabb3d>
+{
+    static constexpr std::string_view Name = "Aabb3d";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("min", &Aabb3d::Min),
+            MakeField("max", &Aabb3d::Max),
         };
     }
 };

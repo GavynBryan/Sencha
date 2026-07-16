@@ -25,9 +25,9 @@ struct WorldViewSettings
     // tint by demand state around a preview focus resolved from the
     // perspective viewport's camera, no cook or play session involved.
     bool StreamingPreview = false;
-    // Explicit per-field preview overrides over the resolved per-region shape
+    // Explicit per-field preview overrides over the resolved per-graph shape
     // (absent = inherit, the manifest's own model). Never seeded from the
-    // resolved config: a re-seed on region change would clobber the user's
+    // resolved config: a re-seed on graph change would clobber the user's
     // tweak, and a one-time seed decays into an absolute knob that hides the
     // authored shape.
     std::optional<int>   PreviewHopCount;
@@ -42,7 +42,7 @@ struct WorldViewSettings
     std::string PreviewTags;
 };
 
-// The preview's config in force: the focus zone's per-region shape resolved
+// The preview's config in force: the focus zone's per-graph shape resolved
 // over the engine defaults, with any explicit per-field preview overrides
 // applied on top. Both preview consumers (demand list, bounds tint) resolve
 // through this so they always show the same shape.

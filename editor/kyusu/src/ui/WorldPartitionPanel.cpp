@@ -5,11 +5,15 @@
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
-#include "document/TransitionConnect.h"
+#include "document/EditorEntityRecipe.h"
+#include "document/WorldTagList.h"
 #include "document/WorldDocument.h"
+#include "document/ZoneBounds.h"
+#include "document/commands/CreateSnapshotEntityCommand.h"
+#include "document/commands/SetZoneBoundsCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 #include "selection/SelectionService.h"
-#include "ui/TransitionInlineEditor.h"
+#include "selection/commands/SelectCommand.h"
 #include "viewport/WorldViewSettings.h"
 
 #include <core/logging/LoggingProvider.h>
@@ -24,10 +28,12 @@
 #include <vector>
 
 WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world, SelectionService& selection,
-                                         CommandStack& commands)
+                                         CommandStack& commands,
+                                         EditorEntityRecipeRegistry& recipes)
     : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
+    , Recipes(recipes)
 {
 }
 
@@ -45,37 +51,24 @@ void WorldPartitionPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    // Deferred connect from a zone row's Connect To submenu (see the header).
-    if (PendingConnectFrom_.IsValid())
-    {
-        ZoneId target = PendingConnectTo_;
-        if (!target.IsValid() && PendingConnectNewRegion_.IsValid())
-            target = WorldDoc.AddZone(PendingConnectNewRegion_, "New Zone");
-        if (target.IsValid())
-            SelectedTransitionRow_ =
-                ConnectZones(WorldDoc, PendingConnectFrom_, target, /*oneWay*/ false);
-        PendingConnectFrom_ = ZoneId{};
-        PendingConnectTo_ = ZoneId{};
-        PendingConnectNewRegion_ = RegionId{};
-    }
-
     DrawHeaderButtons();
+    DrawLegacyTransitionMigration();
     ImGui::Separator();
 
     DrawWorldSceneRow();
 
-    for (const RegionRecord& region : WorldDoc.Manifest().Regions)
-        DrawRegion(region);
+    for (const GraphRecord& graph : WorldDoc.Manifest().Graphs)
+        DrawGraph(graph);
 
-    // Zones whose region reference resolves to no region record still need a
+    // Zones whose graph reference resolves to no graph record still need a
     // home in the tree, or they would be unreachable for repair.
     bool orphanHeader = false;
     for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
     {
         const bool known = [&]
         {
-            for (const RegionRecord& region : WorldDoc.Manifest().Regions)
-                if (region.Id == zone.Region)
+            for (const GraphRecord& graph : WorldDoc.Manifest().Graphs)
+                if (graph.Id == zone.Graph)
                     return true;
             return false;
         }();
@@ -91,7 +84,6 @@ void WorldPartitionPanel::OnDraw()
         DrawZoneRow(zone);
     }
 
-    DrawConnections();
     DrawStreamingPreview();
 
     ImGui::Separator();
@@ -118,21 +110,21 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return;
     }
 
-    // The config in force: focus selects the region whose shape is active.
-    // This line is what makes that rule legible at region boundaries.
-    const RegionRecord* focusRegion = nullptr;
+    // The config in force: focus selects the graph whose shape is active.
+    // This line is what makes that rule legible at graph boundaries.
+    const GraphRecord* focusGraph = nullptr;
     for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
         if (header.Id == previewFocus)
-            for (const RegionRecord& region : WorldDoc.Manifest().Regions)
-                if (region.Id == header.Region)
-                    focusRegion = &region;
-    const WorldPartitionStreamingConfig resolved = ResolveRegionStreamingConfig(
+            for (const GraphRecord& graph : WorldDoc.Manifest().Graphs)
+                if (graph.Id == header.Graph)
+                    focusGraph = &graph;
+    const WorldPartitionStreamingConfig resolved = ResolveGraphStreamingConfig(
         WorldDoc.Manifest(), previewFocus, WorldPartitionStreamingConfig{});
     {
-        const RegionStreamingConfig authored =
-            focusRegion != nullptr ? focusRegion->Streaming : RegionStreamingConfig{};
-        std::string line = focusRegion != nullptr
-            ? std::format("Shape from \"{}\":", focusRegion->Name)
+        const GraphStreamingConfig authored =
+            focusGraph != nullptr ? focusGraph->Streaming : GraphStreamingConfig{};
+        std::string line = focusGraph != nullptr
+            ? std::format("Shape from \"{}\":", focusGraph->Name)
             : std::string{ "Shape from world base:" };
         line += std::format(" Hop {}{}", resolved.HopCount,
                             authored.HopCount ? "" : " (inherited)");
@@ -202,7 +194,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return "<unknown>";
     };
 
-    const std::vector<std::string> activeTags = SplitTagList(view->PreviewTags);
+    const std::vector<std::string> activeTags = SplitWorldTagList(view->PreviewTags);
     const auto records = ComputeZoneDemand(
         WorldDoc.Manifest(), WorldDoc.Index(), previewFocus, {},
         ResolvePreviewStreamingConfig(WorldDoc.Manifest(), previewFocus, *view),
@@ -219,8 +211,13 @@ void WorldPartitionPanel::DrawStreamingPreview()
             why += name;
         };
         tag(record.Sources.Focus, "focus");
-        tag(record.Sources.Neighbor, "neighbor");
-        tag(record.Sources.Spatial, "near");
+        tag(record.Sources.SameGraphHop, "graph hop");
+        tag(record.Sources.CrossGraphEntry, "cross-graph entry");
+        tag(record.Sources.DockApproach, "dock approach");
+        tag(record.Sources.SpatialRadius, "radius");
+        tag(record.Sources.ExplicitPin, "pin");
+        tag(record.Sources.TraversalGrace, "traversal grace");
+        tag(record.Sources.Linger, "linger");
         why += record.Sources.Focus ? ", live"
              : record.Desired.Visible ? ", render preload"
                                       : ", dormant preload";
@@ -271,210 +268,101 @@ void WorldPartitionPanel::DrawWorldSceneRow()
 
 void WorldPartitionPanel::DrawHeaderButtons()
 {
-    if (ImGui::Button(ICON_FA_PLUS "  Region"))
-        (void)WorldDoc.AddRegion("New Region");
+    if (ImGui::Button(ICON_FA_PLUS "  Graph"))
+        (void)WorldDoc.AddGraph("New Graph");
 
-    // New zones land in the focus zone's region (fallback: the first region).
-    RegionId zoneRegion;
+    // New zones land in the focus zone's graph (fallback: the first graph).
+    GraphId activeGraph;
     for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
         if (zone.Id == WorldDoc.FocusZone())
-            zoneRegion = zone.Region;
-    if (!zoneRegion.IsValid() && !WorldDoc.Manifest().Regions.empty())
-        zoneRegion = WorldDoc.Manifest().Regions[0].Id;
+            activeGraph = zone.Graph;
+    if (!activeGraph.IsValid() && !WorldDoc.Manifest().Graphs.empty())
+        activeGraph = WorldDoc.Manifest().Graphs[0].Id;
     ImGui::SameLine();
-    ImGui::BeginDisabled(!zoneRegion.IsValid());
+    ImGui::BeginDisabled(!activeGraph.IsValid());
     if (ImGui::Button(ICON_FA_PLUS "  Zone"))
-        (void)WorldDoc.AddZone(zoneRegion, "New Zone");
+        (void)WorldDoc.AddZone(activeGraph, "New Zone");
+    ImGui::EndDisabled();
+
+    const ZoneHeader* activeZone = nullptr;
+    for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+        if (zone.Id == WorldDoc.FocusZone())
+            activeZone = &zone;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(activeZone == nullptr);
+    if (ImGui::Button(ICON_FA_PLUS "  Dock") && activeZone != nullptr)
+    {
+        const Vec3d center = activeZone->Bounds.Center();
+        EditorCreateContext context{
+            .World = &WorldDoc,
+            .ActiveZone = activeZone->Id,
+            .ActiveGraph = activeZone->Graph,
+            .PlacementPoint = { center.X, center.Y, activeZone->Bounds.Min.Z },
+            .PlacementNormal = Vec3d::Forward(),
+            .Selection = Selection.GetSelection(),
+        };
+        const IEditorEntityRecipe* recipe = Recipes.Find("world_dock");
+        EntitySnapshot snapshot = recipe != nullptr ? recipe->Build(context)
+                                                     : EntitySnapshot{};
+        if (snapshot.Components.IsObject())
+        {
+            auto create = std::make_unique<CreateSnapshotEntityCommand>(
+                WorldDoc.WorldSceneDocument(), std::move(snapshot));
+            CreateSnapshotEntityCommand* raw = create.get();
+            Commands.Execute(std::move(create));
+            (void)WorldDoc.FocusWorldScene();
+            Commands.Execute(std::make_unique<SelectCommand>(
+                Selection, SelectableRef::EntitySelection(
+                    WorldDoc.WorldSceneDocument().GetRegistry().Id,
+                    raw->CreatedEntity())));
+        }
+    }
     ImGui::EndDisabled();
 }
 
-void WorldPartitionPanel::DrawConnections()
+void WorldPartitionPanel::DrawLegacyTransitionMigration()
 {
-    ImGui::Separator();
-    ImGui::TextColored(EditorUi::Accent, ICON_FA_ARROW_RIGHT "  Connections");
-
-    // One row per connection: a symmetric pair (swapped endpoints, same
-    // topology, both two-way) collapses into a single undirected row keyed by
-    // its lower-id edge. Ids copied first: row menus edit the vector.
-    struct ConnectionRow
+    if (WorldDoc.Manifest().Transitions.empty())
     {
-        TransitionId Representative;
-        TransitionId Partner;   // invalid for a one-way or unpaired edge
-    };
-    std::vector<ConnectionRow> rows;
-    std::vector<uint64_t> consumed;
-    for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
-    {
-        bool skip = false;
-        for (uint64_t id : consumed)
-            skip |= id == record.Id.Value;
-        if (skip)
-            continue;
-        ConnectionRow row{ record.Id, TransitionId{} };
-        if (!record.Flags.OneWay)
-        {
-            for (const TransitionRecord& other : WorldDoc.Manifest().Transitions)
-            {
-                if (other.Id == record.Id || other.Flags.OneWay
-                    || other.Topology != record.Topology || other.From != record.To
-                    || other.To != record.From)
-                    continue;
-                row.Partner = other.Id;
-                consumed.push_back(other.Id.Value);
-                break;
-            }
-        }
-        rows.push_back(row);
+        if (!MigrationSummary_.empty())
+            ImGui::TextColored(EditorUi::Success, "%s", MigrationSummary_.c_str());
+        return;
     }
 
-    if (rows.empty())
-        ImGui::TextDisabled("None: use Connect on a zone row");
-    for (const ConnectionRow& row : rows)
-        DrawConnectionRow(row.Representative, row.Partner);
-}
-
-void WorldPartitionPanel::DrawConnectionRow(TransitionId representative, TransitionId partner)
-{
-    const auto findRecord = [&](TransitionId id) -> const TransitionRecord*
+    ImGui::Separator();
+    ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION
+                       "  Legacy transitions block new-format saves");
+    ImGui::TextWrapped("Teleport records can become world links. Geometric records lack a "
+                       "plane transform and must be replaced with authored docks or discarded.");
+    if (ImGui::Button("Migrate Teleports"))
     {
-        for (const TransitionRecord& record : WorldDoc.Manifest().Transitions)
-            if (record.Id == id)
-                return &record;
-        return nullptr;
-    };
-    const TransitionRecord* record = findRecord(representative);
-    if (record == nullptr)
-        return;
+        const LegacyTransitionMigrationReport report =
+            WorldDoc.MigrateLegacyTransitions();
+        MigrationSummary_ = std::format(
+            "Created {} links, collapsed {} reverse pairs, {} geometric records unresolved",
+            report.Links.size(), report.CollapsedPairs, report.Unresolved.size());
+    }
 
-    ImGui::PushID(static_cast<int>(representative.Value & 0x7fffffff));
-
-    if (RenamingTransition_ == representative)
+    TransitionId discard;
+    for (const TransitionRecord& transition : WorldDoc.Manifest().Transitions)
     {
-        DrawRenameField(true);
-        if (ImGui::IsItemDeactivated())
+        ImGui::PushID(static_cast<int>(transition.Id.Value & 0x7fffffff));
+        const char* kind = transition.Topology == TransitionTopology::Teleport
+            ? "Teleport" : "Needs dock geometry";
+        ImGui::TextDisabled("%s  %s -> %s", kind,
+                            ZoneIdToString(transition.From).c_str(),
+                            ZoneIdToString(transition.To).c_str());
+        if (ImGui::BeginPopupContextItem("##legacy_transition"))
         {
-            // Both directions carry the connection's name.
-            (void)WorldDoc.RenameTransition(representative, RenameBuffer_);
-            if (partner.IsValid())
-                (void)WorldDoc.RenameTransition(partner, RenameBuffer_);
-            RenamingTransition_ = TransitionId{};
+            if (ImGui::MenuItem(ICON_FA_TRASH "  Discard Legacy Record"))
+                discard = transition.Id;
+            ImGui::EndPopup();
         }
         ImGui::PopID();
-        return;
     }
-
-    // Inline severity: the worst transition-kind record naming either edge.
-    const ContentRiskRecord* worst = nullptr;
-    for (const ContentRiskRecord& riskRecord : WorldDoc.ValidationRecords())
-    {
-        if (riskRecord.Kind != ContentRiskSourceKind::Transition
-            || (riskRecord.SourceId != representative.Value
-                && riskRecord.SourceId != partner.Value))
-            continue;
-        if (worst == nullptr || riskRecord.Severity == ContentRiskSeverity::Error)
-            worst = &riskRecord;
-    }
-    if (worst != nullptr)
-    {
-        switch (worst->Severity)
-        {
-        case ContentRiskSeverity::Error:
-            ImGui::TextColored(EditorUi::Danger, ICON_FA_CIRCLE_XMARK);
-            break;
-        case ContentRiskSeverity::Warning:
-            ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION);
-            break;
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", worst->Message.c_str());
-        ImGui::SameLine();
-    }
-
-    const char* badge = "D";
-    const char* badgeName = "Doorway";
-    if (record->Topology == TransitionTopology::Seam)
-    {
-        badge = "S";
-        badgeName = "Seam";
-    }
-    else if (record->Topology == TransitionTopology::Teleport)
-    {
-        badge = "T";
-        badgeName = "Teleport";
-    }
-    ImGui::TextColored(EditorUi::TextDim, "%s", badge);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s: %s", badgeName, TransitionTopologyHelp(record->Topology));
-    ImGui::SameLine();
-
-    const auto zoneName = [&](ZoneId zone) -> std::string
-    {
-        for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
-            if (header.Id == zone)
-                return header.Name;
-        return ZoneIdToString(zone);
-    };
-    std::string label;
-    if (!record->Name.empty())
-        label = record->Name;
-    else
-        label = zoneName(record->From)
-              + (partner.IsValid() ? " " ICON_FA_ARROWS_LEFT_RIGHT " " : " " ICON_FA_ARROW_RIGHT " ")
-              + zoneName(record->To);
-    if (!record->RequiredTags.empty())
-        label += "  " ICON_FA_LOCK;
-    label += "##connection_row";
-    const bool highlighted = SelectedTransitionRow_ == representative
-        || (partner.IsValid() && SelectedTransitionRow_ == partner);
-    ImGui::Selectable(label.c_str(), highlighted);
-
-    if (ImGui::BeginPopupContextItem("##connection_ctx"))
-    {
-        // Every property edit applies to both directions of a pair: a
-        // connection is one thing, however the streaming graph stores it.
-        DrawTransitionInlineEditor(WorldDoc, representative, partner);
-        ImGui::Separator();
-
-        if (partner.IsValid())
-        {
-            if (ImGui::MenuItem("Make One-way"))
-            {
-                (void)WorldDoc.RemoveTransition(partner);
-                (void)WorldDoc.SetTransitionOneWay(representative, true);
-            }
-        }
-        else if (ImGui::MenuItem("Make Two-way"))
-        {
-            (void)WorldDoc.SetTransitionOneWay(representative, false);
-            const TransitionId reverse = WorldDoc.AddTransition(
-                record->To, record->From, record->Topology, false, record->PreloadPriority);
-            (void)WorldDoc.SetTransitionPreloadDepth(reverse, record->PreloadDepth);
-            (void)WorldDoc.SetTransitionRequiredTags(reverse, record->RequiredTags);
-        }
-
-        if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
-        {
-            RenamingTransition_ = representative;
-            std::strncpy(RenameBuffer_, record->Name.c_str(), sizeof(RenameBuffer_) - 1);
-            RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
-        }
-
-        if (ImGui::BeginMenu(ICON_FA_TRASH "  Remove"))
-        {
-            if (ImGui::MenuItem("Confirm Remove"))
-            {
-                (void)WorldDoc.RemoveTransition(representative);
-                if (partner.IsValid())
-                    (void)WorldDoc.RemoveTransition(partner);
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::EndPopup();
-    }
-
-    ImGui::PopID();
+    if (discard.IsValid())
+        (void)WorldDoc.DiscardLegacyTransition(discard);
 }
-
 
 bool WorldPartitionPanel::DrawRenameField(bool active)
 {
@@ -486,40 +374,40 @@ bool WorldPartitionPanel::DrawRenameField(bool active)
     return true;
 }
 
-void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
+void WorldPartitionPanel::DrawGraph(const GraphRecord& graph)
 {
-    ImGui::PushID(static_cast<int>(region.Id.Value & 0x7fffffff));
+    ImGui::PushID(static_cast<int>(graph.Id.Value & 0x7fffffff));
 
-    if (RenamingRegion_ == region.Id)
+    if (RenamingGraph_ == graph.Id)
     {
         DrawRenameField(true);
         if (ImGui::IsItemDeactivated())
         {
             if (RenameBuffer_[0] != '\0')
-                (void)WorldDoc.RenameRegion(region.Id, RenameBuffer_);
-            RenamingRegion_ = RegionId{};
+                (void)WorldDoc.RenameGraph(graph.Id, RenameBuffer_);
+            RenamingGraph_ = GraphId{};
         }
         ImGui::PopID();
         return;
     }
 
-    if (NavigateRegion_ == region.Id)
+    if (NavigateGraph_ == graph.Id)
     {
         ImGui::SetNextItemOpen(true);
-        NavigateRegion_ = RegionId{};
+        NavigateGraph_ = GraphId{};
     }
-    const bool open = ImGui::TreeNodeEx(region.Name.c_str(),
+    const bool open = ImGui::TreeNodeEx(graph.Name.c_str(),
                                         ImGuiTreeNodeFlags_DefaultOpen
                                             | ImGuiTreeNodeFlags_SpanAvailWidth);
 
-    if (ImGui::BeginPopupContextItem("##region_ctx"))
+    if (ImGui::BeginPopupContextItem("##graph_ctx"))
     {
         if (ImGui::MenuItem(ICON_FA_PLUS "  New Zone"))
-            (void)WorldDoc.AddZone(region.Id, "New Zone");
+            (void)WorldDoc.AddZone(graph.Id, "New Zone");
         if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
         {
-            RenamingRegion_ = region.Id;
-            std::strncpy(RenameBuffer_, region.Name.c_str(), sizeof(RenameBuffer_) - 1);
+            RenamingGraph_ = graph.Id;
+            std::strncpy(RenameBuffer_, graph.Name.c_str(), sizeof(RenameBuffer_) - 1);
             RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
         }
         ImGui::EndPopup();
@@ -527,10 +415,10 @@ void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
 
     if (open)
     {
-        DrawRegionStreaming(region);
+        DrawGraphStreaming(graph);
         for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
         {
-            if (zone.Region == region.Id)
+            if (zone.Graph == graph.Id)
                 DrawZoneRow(zone);
         }
         ImGui::TreePop();
@@ -542,17 +430,17 @@ void WorldPartitionPanel::DrawRegion(const RegionRecord& region)
 namespace
 {
 
-// Starter radius when a region switches to the Proximity shape: the largest
-// horizontal half-extent among the region's zone bounds, so from a cell
+// Starter radius when a graph switches to the Proximity shape: the largest
+// horizontal half-extent among the graph's zone bounds, so from a cell
 // center the first preview sphere reaches the neighboring cells' near faces
-// and the designer tunes from something visible. 100 when the region has no
+// and the designer tunes from something visible. 100 when the graph has no
 // measurable zones yet.
-double SeedRegionRadius(const WorldPartitionManifest& manifest, RegionId region)
+double SeedGraphRadius(const WorldPartitionManifest& manifest, GraphId graph)
 {
     double largest = 0.0;
     for (const ZoneHeader& zone : manifest.Zones)
     {
-        if (zone.Region != region || !zone.Bounds.IsValid())
+        if (zone.Graph != graph || !zone.Bounds.IsValid())
             continue;
         const Vec3d extent = zone.Bounds.Extent();
         largest = std::max({ largest, static_cast<double>(extent[0]),
@@ -563,20 +451,20 @@ double SeedRegionRadius(const WorldPartitionManifest& manifest, RegionId region)
 
 } // namespace
 
-void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
+void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
 {
-    ImGui::PushID("region_streaming");
+    ImGui::PushID("graph_streaming");
 
     const WorldPartitionStreamingConfig base{};
-    const bool proximity = region.Streaming.Radius.value_or(base.Radius) > 0.0;
-    const bool inheritedShape = !region.Streaming.Radius.has_value();
+    const bool proximity = graph.Streaming.Radius.value_or(base.Radius) > 0.0;
+    const bool inheritedShape = !graph.Streaming.Radius.has_value();
 
     // The shape combo is presentation over the radius value: Graph authors an
     // explicit 0, Proximity authors a starter radius, Inherited clears the
     // field. Nothing stores a mode; the runtime reads only the values.
     ImGui::SetNextItemWidth(160.0f);
     if (ImGui::BeginCombo("Streaming",
-                          RegionStreamingShapeLabel(region.Streaming, base.Radius)))
+                          GraphStreamingShapeLabel(graph.Streaming, base.Radius)))
     {
         const auto option = [&](const char* label, bool selected, const char* help,
                                 auto apply)
@@ -589,23 +477,23 @@ void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
         };
         option("Inherited", inheritedShape,
                "Use the world's default shape.",
-               [&] { (void)WorldDoc.SetRegionRadius(region.Id, std::nullopt); });
+               [&] { (void)WorldDoc.SetGraphRadius(graph.Id, std::nullopt); });
         option("Graph", !inheritedShape && !proximity,
                "Zones load through authored connections: rooms behind doorways. "
                "Only connected zones preload; distance never matters.",
-               [&] { (void)WorldDoc.SetRegionRadius(region.Id, 0.0); });
+               [&] { (void)WorldDoc.SetGraphRadius(graph.Id, 0.0); });
         option("Proximity", !inheritedShape && proximity,
                "Zones load by distance from the player: an open area tiled into "
                "grid cells needs no connections, and diagonal neighbors load too.",
                [&]
                {
-                   (void)WorldDoc.SetRegionRadius(
-                       region.Id, SeedRegionRadius(WorldDoc.Manifest(), region.Id));
+                   (void)WorldDoc.SetGraphRadius(
+                       graph.Id, SeedGraphRadius(WorldDoc.Manifest(), graph.Id));
                });
         ImGui::EndCombo();
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("How this region decides which zones load around the player");
+        ImGui::SetTooltip("How this graph decides which zones load around the player");
 
     // Inherited fields display the engine-default base; an edit authors the
     // override, the clear button returns the field to inherited. Clamps
@@ -634,10 +522,10 @@ void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
     if (proximity)
     {
         ImGui::SetNextItemWidth(70.0f);
-        float radius = static_cast<float>(region.Streaming.Radius.value_or(base.Radius));
+        float radius = static_cast<float>(graph.Streaming.Radius.value_or(base.Radius));
         (void)ImGui::InputFloat("Load radius", &radius, 0.0f, 0.0f, "%.0f");
         if (ImGui::IsItemDeactivatedAfterEdit())
-            (void)WorldDoc.SetRegionRadius(region.Id,
+            (void)WorldDoc.SetGraphRadius(graph.Id,
                                            radius < 0.0f ? 0.0 : static_cast<double>(radius));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("World units. Zones within this distance of the player load, "
@@ -645,26 +533,26 @@ void WorldPartitionPanel::DrawRegionStreaming(const RegionRecord& region)
     }
 
     ImGui::SetNextItemWidth(70.0f);
-    int hops = region.Streaming.HopCount.value_or(base.HopCount);
+    int hops = graph.Streaming.HopCount.value_or(base.HopCount);
     if (ImGui::InputInt("Preload hops", &hops))
-        (void)WorldDoc.SetRegionHopCount(region.Id, hops < 0 ? 0 : hops);
+        (void)WorldDoc.SetGraphHopCount(graph.Id, hops < 0 ? 0 : hops);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How many connections ahead zones preload: 1 keeps every "
                           "adjacent room loaded, 2 the rooms behind those. Connections "
-                          "still apply in a Proximity region (its entrances).");
-    clearOrInherited(region.Streaming.HopCount.has_value(), "clear_hops",
-                     [&] { (void)WorldDoc.SetRegionHopCount(region.Id, std::nullopt); });
+                          "still apply in a Proximity graph (its entrances).");
+    clearOrInherited(graph.Streaming.HopCount.has_value(), "clear_hops",
+                     [&] { (void)WorldDoc.SetGraphHopCount(graph.Id, std::nullopt); });
 
     ImGui::SetNextItemWidth(70.0f);
-    int cap = region.Streaming.ResidentZoneCap.value_or(base.ResidentZoneCap);
+    int cap = graph.Streaming.ResidentZoneCap.value_or(base.ResidentZoneCap);
     if (ImGui::InputInt("Zone cap", &cap))
-        (void)WorldDoc.SetRegionResidentCap(region.Id, cap < 1 ? 1 : cap);
+        (void)WorldDoc.SetGraphResidentCap(graph.Id, cap < 1 ? 1 : cap);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Most zones kept loaded at once while the player is in this "
-                          "region; the farthest preloads unload first. The player's zone "
+                          "graph; the farthest preloads unload first. The player's zone "
                           "and pinned zones never unload.");
-    clearOrInherited(region.Streaming.ResidentZoneCap.has_value(), "clear_cap",
-                     [&] { (void)WorldDoc.SetRegionResidentCap(region.Id, std::nullopt); });
+    clearOrInherited(graph.Streaming.ResidentZoneCap.has_value(), "clear_cap",
+                     [&] { (void)WorldDoc.SetGraphResidentCap(graph.Id, std::nullopt); });
 
     ImGui::PopID();
 }
@@ -719,6 +607,14 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
     if (isFocus || isOpen)
         ImGui::SameLine();
 
+    ImGui::TextColored(zone.BoundsOverridden ? EditorUi::Warning : EditorUi::TextDim,
+                       zone.BoundsOverridden ? "AABB*" : "AABB");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(zone.BoundsOverridden
+            ? "Explicit AABB override. Clear the entity selection and use Resize to edit it."
+            : "AABB derived from open zone content. Clear the entity selection and use Resize to override it.");
+    ImGui::SameLine();
+
     const bool headerOnly = !isOpen;
     if (headerOnly)
         ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
@@ -768,29 +664,23 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
             std::strncpy(RenameBuffer_, zone.Name.c_str(), sizeof(RenameBuffer_) - 1);
             RenameBuffer_[sizeof(RenameBuffer_) - 1] = '\0';
         }
-        if (ImGui::BeginMenu(ICON_FA_ARROW_RIGHT "  Connect To"))
+        if (zone.BoundsOverridden
+            && ImGui::MenuItem("Use Derived AABB", nullptr, false, isOpen))
         {
-            // One click mints a two-way Doorway pair with defaults; the
-            // transition row's menu adjusts topology/one-way/priority after.
-            for (const ZoneHeader& target : WorldDoc.Manifest().Zones)
+            Aabb3d derived = zone.Bounds;
+            if (EditorDocument* document = WorldDoc.ZoneDocument(zone.Id))
+                if (const auto bounds = ComputeZoneBounds(document->GetScene()))
+                    derived = *bounds;
+            Commands.Execute(std::make_unique<SetZoneBoundsCommand>(
+                WorldDoc, zone.Id, zone.Bounds, true, derived, false));
+        }
+        if (ImGui::BeginMenu("Move To Graph"))
+        {
+            for (const GraphRecord& graph : WorldDoc.Manifest().Graphs)
             {
-                if (target.Id == zone.Id)
-                    continue;
-                if (ImGui::MenuItem(target.Name.c_str()))
-                {
-                    PendingConnectFrom_ = zone.Id;
-                    PendingConnectTo_ = target.Id;
-                }
-            }
-            ImGui::Separator();
-            for (const RegionRecord& region : WorldDoc.Manifest().Regions)
-            {
-                const std::string label = "New Zone In " + region.Name;
-                if (ImGui::MenuItem(label.c_str()))
-                {
-                    PendingConnectFrom_ = zone.Id;
-                    PendingConnectNewRegion_ = region.Id;
-                }
+                if (ImGui::MenuItem(graph.Name.c_str(), nullptr, graph.Id == zone.Graph,
+                                    graph.Id != zone.Graph))
+                    (void)WorldDoc.SetZoneGraph(zone.Id, graph.Id);
             }
             ImGui::EndMenu();
         }
@@ -840,14 +730,12 @@ void WorldPartitionPanel::DrawValidation()
 
 void WorldPartitionPanel::NavigateToRecord(const ContentRiskRecord& record)
 {
-    if (record.Kind == ContentRiskSourceKind::Region)
+    if (record.Kind == ContentRiskSourceKind::Graph)
     {
-        NavigateRegion_ = RegionId{ record.SourceId };
+        NavigateGraph_ = GraphId{ record.SourceId };
         return;
     }
 
-    // Transition records navigate to the From zone's row and highlight the
-    // transition child row under it.
     ZoneId zone{};
     if (record.Kind == ContentRiskSourceKind::Transition)
     {
@@ -857,12 +745,10 @@ void WorldPartitionPanel::NavigateToRecord(const ContentRiskRecord& record)
                 zone = candidate.From;
         if (!zone.IsValid())
             return;
-        SelectedTransitionRow_ = transition;
     }
     else if (record.Kind == ContentRiskSourceKind::Zone)
     {
         zone = ZoneId{ record.SourceId };
-        SelectedTransitionRow_ = TransitionId{};
     }
     else
     {
@@ -874,7 +760,7 @@ void WorldPartitionPanel::NavigateToRecord(const ContentRiskRecord& record)
     {
         if (header.Id == zone)
         {
-            NavigateRegion_ = header.Region;
+            NavigateGraph_ = header.Graph;
             return;
         }
     }

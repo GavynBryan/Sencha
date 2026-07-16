@@ -178,6 +178,21 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
     std::vector<PickCandidate> candidates;
     candidates.reserve(6);
 
+    if (AllowsEntities(request) && ProxyProvider)
+    {
+        if (const auto proxy = ProxyProvider(ray, scene);
+            proxy && (!request.RestrictTo.IsValid()
+                      || proxy->first.Entity == request.RestrictTo))
+        {
+            bestCandidate = {
+                .Ref = proxy->first,
+                .Distance = proxy->second,
+                .Priority = PriorityFor(request, proxy->first.Kind),
+            };
+            hasBestCandidate = true;
+        }
+    }
+
     for (EntityId entity : scene.GetAllEntities())
     {
         if (request.RestrictTo.IsValid() && entity != request.RestrictTo)

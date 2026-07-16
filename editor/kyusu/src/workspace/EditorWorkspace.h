@@ -2,7 +2,9 @@
 
 #include "BrushManipulationSink.h"
 
+#include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
+#include "document/EditorEntityRecipe.h"
 #include "editmodes/EditSessionHost.h"
 #include "editmodes/ManipulatorSession.h"
 #include "input/ViewportToolDispatcher.h"
@@ -159,6 +161,8 @@ public:
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
+    std::unique_ptr<EditorAffordanceService> Affordances;
+    EditorEntityRecipeRegistry CreationRecipes;
     MeshEditService MeshEdit;
     // Editor-wide texturing state: the browser and viewport sampling write it,
     // the apply verbs read it.

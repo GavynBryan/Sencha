@@ -35,6 +35,8 @@
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneLoadPackage.h>
 
+#include "ZoneDockFixture.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <optional>
@@ -94,27 +96,8 @@ inline std::string ChainManifestJson()
             json += ",";
     }
 
-    json += R"(],"transitions":[)";
-    int transition = 0;
-    for (int index = 0; index + 1 < kZoneCount; ++index)
-    {
-        char buffer[384];
-        std::snprintf(
-            buffer,
-            sizeof(buffer),
-            R"({"id":"%016lx","from":"%016lx","to":"%016lx","topology":"doorway"},)"
-            R"({"id":"%016lx","from":"%016lx","to":"%016lx","topology":"doorway"})",
-            static_cast<unsigned long>(0xc0 + transition),
-            static_cast<unsigned long>(0xa0 + index),
-            static_cast<unsigned long>(0xa0 + index + 1),
-            static_cast<unsigned long>(0xc0 + transition + 1),
-            static_cast<unsigned long>(0xa0 + index + 1),
-            static_cast<unsigned long>(0xa0 + index));
-        transition += 2;
-        json += buffer;
-        if (index + 2 < kZoneCount)
-            json += ",";
-    }
+    // The chain's edges are added as cooked docks after parsing, so the JSON
+    // carries only what a designer authors.
     json += "]}";
     return json;
 }
@@ -191,7 +174,15 @@ public:
             ReadWorldPartitionManifest(*json, &error);
         if (!manifest.has_value())
             return "manifest rejected: " + error;
-        if (!Partition_.LoadManifest(*manifest, &error))
+
+        WorldPartitionManifest cooked = *manifest;
+        for (int index = 0; index + 1 < kZoneCount; ++index)
+            AddFixtureDockPair(cooked,
+                               static_cast<std::uint64_t>(0xc0 + index),
+                               ZoneAt(index), ZoneAt(index + 1),
+                               Vec3d{ static_cast<double>(index + 1) * kZoneSpan,
+                                      2, 0 });
+        if (!Partition_.LoadManifest(std::move(cooked), &error))
             return "manifest load failed: " + error;
         return {};
     }
