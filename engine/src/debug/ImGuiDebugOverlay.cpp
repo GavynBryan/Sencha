@@ -126,6 +126,9 @@ bool ImGuiDebugOverlay::InitImGui(const RendererServices& services)
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	// No layout persistence: the overlay ships in every game build and must
+	// not shed an imgui.ini into the game's working directory.
+	io.IniFilename = nullptr;
 	ImGui::StyleColorsDark();
 
 	const std::array<VkDescriptorPoolSize, 11> poolSizes{{

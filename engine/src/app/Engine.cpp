@@ -19,6 +19,12 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #endif
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/ConsolePanel.h>
+#include <debug/ImGuiDebugOverlay.h>
+#include <debug/TimingPanel.h>
+#endif
+
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
@@ -144,6 +150,10 @@ void Engine::Shutdown()
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // The renderer owns the feature; only the borrowed view is cleared here.
+    DebugOverlayFeature = nullptr;
+#endif
 #ifdef SENCHA_ENABLE_VULKAN
     GraphicsState.reset();
 #endif
@@ -321,6 +331,8 @@ int Engine::Run(Game& game)
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
+    CreateDebugOverlay();
+
     if (FrameDriverInstance != nullptr)
     {
         RegisterFramePhases(game);
@@ -334,6 +346,28 @@ int Engine::Run(Game& game)
     game.OnShutdown(shutdown);
     game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
     return 0;
+}
+
+void Engine::CreateDebugOverlay()
+{
+#if defined(SENCHA_ENABLE_DEBUG_UI) && defined(SENCHA_ENABLE_VULKAN)
+    // Opt-out for hosts that own their own ImGui frontend (the editors); one
+    // process can hold only one ImGui context over a window.
+    if (!Configuration.Console.UiEnabled)
+        return;
+    if (GraphicsState == nullptr || PlatformState == nullptr)
+        return;
+    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    if (window == nullptr)
+        return;
+
+    auto overlay = std::make_unique<ImGuiDebugOverlay>(
+        *DebugState, *window, GraphicsState->Instance, GraphicsState->Frames);
+    overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
+    overlay->AddPanel<TimingPanel>(TimingData);
+    DebugOverlayFeature = static_cast<ImGuiDebugOverlay*>(
+        GraphicsState->MainRenderer.AddFeature(std::move(overlay)));
+#endif
 }
 
 void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug)

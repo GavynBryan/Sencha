@@ -19,6 +19,7 @@ class DebugService;
 class FrameDriver;
 class Game;
 struct GraphicsServices;
+class ImGuiDebugOverlay;
 class JobSystem;
 struct PlatformServices;
 class ThreadPoolJobSystem;
@@ -118,9 +119,21 @@ public:
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // The runtime debug overlay (console + timing panels, grave-key toggle).
+    // Created by Run when windowed and Config().Console.UiEnabled; games add
+    // their own panels through it. Null when headless, opted out, or before
+    // Run. Owned by the renderer as a render feature.
+    [[nodiscard]] ImGuiDebugOverlay* GetDebugOverlay() { return DebugOverlayFeature; }
+#endif
+
 private:
     void RegisterFramePhases(Game& game);
     void RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug);
+    // Adds the default debug overlay to the main renderer. Called by Run after
+    // the game's startup hooks so the overlay's MainColor draw follows every
+    // scene feature the game registered.
+    void CreateDebugOverlay();
 
     EngineConfig Configuration;
     // Foundation: declared before every service and system so that -- members
@@ -150,6 +163,11 @@ private:
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     TimingHistory TimingData;
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // Borrowed view of the renderer-owned overlay feature (event forwarding
+    // and panel registration); cleared when graphics tear down.
+    ImGuiDebugOverlay* DebugOverlayFeature = nullptr;
+#endif
     // Declared last: destroyed first, so task/worker threads are joined (and
     // pending commits dropped) before the zones and services they reference.
     std::unique_ptr<AsyncTaskQueue> TaskQueueInstance;

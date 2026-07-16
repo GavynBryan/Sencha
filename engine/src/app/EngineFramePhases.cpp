@@ -7,6 +7,10 @@
 #include <runtime/FrameDriver.h>
 #include <world/transform/TransformPropagation.h>
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/ImGuiDebugOverlay.h>
+#endif
+
 #include <SDL3/SDL.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -29,13 +33,24 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     auto& renderer = engine.Graphics().MainRenderer;
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
-    driver.Register(FramePhase::PumpPlatform, [&game, &config, &windows, windowId](PhaseContext& ctx) {
+    driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             windows.HandleEvent(event);
             SdlInputCapture::Accept(*ctx.Input, event);
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+            // The overlay claims input first: the grave toggle always, and
+            // keyboard/mouse while the console is open, so an open console
+            // never leaks its keystrokes into gameplay handlers.
+            if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+                overlay != nullptr && overlay->ProcessSdlEvent(event))
+            {
+                continue;
+            }
+#endif
 
             PlatformEventContext eventCtx{
                 .Config = config,

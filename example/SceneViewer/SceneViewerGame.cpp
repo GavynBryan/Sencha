@@ -19,17 +19,6 @@
 #include <world/serialization/SceneSerializer.h>
 #include <zone/DefaultZoneBuilder.h>
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
-#include <debug/ConsolePanel.h>
-#include <debug/DebugLogSink.h>
-#include <debug/DebugService.h>
-#include <debug/ImGuiDebugOverlay.h>
-#include <debug/TimingPanel.h>
-#include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanFrameService.h>
-#include <graphics/vulkan/VulkanInstanceService.h>
-#endif
-
 #include <SDL3/SDL.h>
 
 #include <cassert>
@@ -179,17 +168,6 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     engine.Console().SetMapHandler(
         [this](std::string_view mapName) { return LoadMap(mapName); });
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    DebugService& debug = engine.Debug();
-    SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
-    auto overlay = std::make_unique<ImGuiDebugOverlay>(
-        debug, *window, graphics.Instance, graphics.Frames);
-    overlay->AddPanel<ConsolePanel>(debug.GetLogSink(), engine.Console());
-    overlay->AddPanel<TimingPanel>(engine.Timing());
-    DebugOverlay = overlay.get();
-    graphics.MainRenderer.AddFeature(std::move(overlay));
-#endif
-
     std::printf("Sencha scene viewer\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
     std::printf("  Right mouse: look | WASD: move | Q/E: down/up | Shift: fast | Escape: quit\n");
@@ -290,13 +268,6 @@ void SceneViewerGame::OnRegisterSystems(SystemRegisterContext& ctx)
 
 void SceneViewerGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    if (DebugOverlay != nullptr && DebugOverlay->ProcessSdlEvent(ctx.Event))
-        ctx.Handled = true;
-#endif
-    if (ctx.Handled)
-        return;
-
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
         SetRelativeMouseMode(true);
@@ -309,9 +280,6 @@ void SceneViewerGame::OnPlatformEvent(PlatformEventContext& ctx)
 
 void SceneViewerGame::OnShutdown(GameShutdownContext&)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    DebugOverlay = nullptr;
-#endif
     SetRelativeMouseMode(false);
 
     if (ZoneLoader && ZoneLoader->IsLoading(kPlayZone))

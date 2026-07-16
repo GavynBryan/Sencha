@@ -12,6 +12,10 @@ LauncherApp::~LauncherApp() = default;
 void LauncherApp::OnConfigure(GameConfigureContext& ctx)
 {
     ctx.Config.Window.Title = "Kettle - Project Launcher";
+    // The editor is its own ImGui host; a process can hold only one ImGui
+    // context over a window, so the engine's default debug overlay must not
+    // be created.
+    ctx.Config.Console.UiEnabled = false;
 }
 
 void LauncherApp::OnStart(GameStartupContext&)

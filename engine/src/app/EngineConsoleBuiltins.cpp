@@ -25,7 +25,7 @@ namespace EngineConsoleBuiltins
             .DefaultValue = config.UiEnabled,
             .CurrentValue = config.UiEnabled,
             .Flags = CVarFlags::Archive,
-            .Help = "Enables the graphical console frontend when a host provides one.",
+            .Help = "Whether the engine creates its debug overlay frontend. Read once at startup.",
             .Source = { "engine config" },
         });
 

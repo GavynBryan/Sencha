@@ -19,8 +19,8 @@ option(SENCHA_ENABLE_HOT_RELOAD
     OFF)
 
 option(SENCHA_ENABLE_DEBUG_UI
-    "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
-    OFF)
+    "Build the ImGui-based runtime debug overlay (console + timing panels, grave-key toggle). ON by default: game builds ship it so the runtime is tunable in the field; a host opts out per-process via EngineConfig.Console.UiEnabled. Requires SENCHA_ENABLE_VULKAN."
+    ON)
 
 option(SENCHA_ENABLE_COOK
     "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
