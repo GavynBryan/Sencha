@@ -1,6 +1,6 @@
 # Runtime ECS Resource Inventory
 
-Status: Phase 0 complete. `ResourceStore` and stable registry ownership are implemented; CI validation is in progress.
+Status: Phase 0 complete. `ResourceStore`, stable registry ownership, and resource-only component lifecycle hooks are implemented; exact-head CI validation is in progress.
 
 This inventory records current ownership and the intended destination before resource migration begins. It is not a compatibility contract. The code remains the source of truth until each row is migrated and tested.
 
@@ -25,8 +25,8 @@ The migration removes the second owner. `Registry::Resources` remains the only r
 | Resource | Current owner | Registration site | Primary consumers | Final classification | Final owner | Construction requirement | Destruction requirement |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `ActiveCameraService` | `Registry::Resources` | default 3D registry and editor document initialization | camera setup, input, render extraction | registry-local state | each registry that owns camera selection | before camera activation | after entities stop referencing active camera ids |
-| `StaticMeshComponentAssets` | `World` resource map | default 3D registry and editor asset environment | `StaticMeshComponent` add and remove hooks | external dependency binding | registry `ResourceStore` | before any static mesh component is added or deserialized | after every static mesh component removal hook runs |
-| `AudioSourceRuntime` | `World` resource map | default 3D registry initialization | audio source and caption hooks, audio and caption systems | external dependency binding | registry `ResourceStore` | before audio source or caption components are added or deserialized | after every audio and caption removal hook runs |
+| `StaticMeshComponentAssets` | `Registry::Resources` | default 3D registry and editor asset environment | `StaticMeshComponent` add and remove hooks | external dependency binding | registry `ResourceStore` | before any static mesh component is added or deserialized | after every static mesh component removal hook runs |
+| `AudioSourceRuntime` | `Registry::Resources` | default 3D registry initialization | audio source and caption hooks, audio and caption systems | external dependency binding | registry `ResourceStore` | before audio source or caption components are added or deserialized | after every audio and caption removal hook runs |
 | `PropagationOrderCache` | `World` resource map | lazy transform propagation | transform propagation | registry-local state | registry `ResourceStore` | lazy before first propagation is valid | before entity storage disappears is acceptable because it owns only cached ids and pointers; it must never outlive its registry |
 | `PhysicsScene` | `World` resource map | lazy physics step | physics synchronization | registry-local state | registry `ResourceStore` | before the registry first participates in physics | before the system-owned `PhysicsWorld` it references is destroyed |
 | `CharacterMoverPool` | `World` resource map | lazy character controller system | character controller reconciliation and drive | registry-local state | registry `ResourceStore` | before first character-controller physics pass | before the system-owned `PhysicsWorld` it references is destroyed |
@@ -64,12 +64,11 @@ Detached zone loading must capture the same session definition pointers used by 
 
 ## Editor boundary
 
-Kyusu owns a transient `Registry` and currently installs `StaticMeshComponentAssets` into its `World` resource map when an asset environment is attached.
+Kyusu owns a transient `Registry`. Static mesh lifecycle bindings are installed in that registry's `ResourceStore` when an asset environment is attached.
 
 The runtime resource migration must preserve the editor boundary mechanically:
 
 - the editor registry receives its own `ResourceStore`
-- static mesh lifecycle bindings move to that store
 - editor component storage remains isolated from runtime registries
 - no runtime-only service is introduced into the editor executable
 
@@ -98,9 +97,9 @@ void RegisterMovementDefinitions(ResourceStore& sessionResources);
 
 ## Phase 0 acceptance checks
 
-Before moving resources:
+Before moving non-lifecycle resources:
 
-- baseline CI must pass
+- exact-head CI must pass
 - every production resource above has a final owner
 - lifecycle resources have explicit construction and teardown requirements
 - serializers have an explicit definition path
