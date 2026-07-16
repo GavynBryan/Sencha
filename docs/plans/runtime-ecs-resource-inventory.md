@@ -1,6 +1,6 @@
 # Runtime ECS Resource Inventory
 
-Status: Phase 0 inventory complete; baseline CI validation in progress.
+Status: Phase 0 complete. `ResourceStore` and stable registry ownership are implemented; CI validation is in progress.
 
 This inventory records current ownership and the intended destination before resource migration begins. It is not a compatibility contract. The code remains the source of truth until each row is migrated and tested.
 
@@ -15,10 +15,10 @@ This inventory records current ownership and the intended destination before res
 
 The runtime currently has two type-indexed owners:
 
-1. `Registry::Resources`, implemented by `ResourceRegistry`.
+1. `Registry::Resources`, implemented by `ResourceStore`.
 2. The private resource map inside `World`.
 
-The migration removes the second owner. `Registry::Resources` becomes `ResourceStore` and remains the only registry resource owner.
+The migration removes the second owner. `Registry::Resources` remains the only registry resource owner.
 
 ## Production resource inventory
 
