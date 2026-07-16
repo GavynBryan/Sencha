@@ -147,8 +147,7 @@ private:
                 grid.Origin.Dot(H.WorldAxis), grid.Spacing);
         const double coordinate = Get(H.Local, H.Axis) + worldOffset / H.AxisScale;
         return AffordanceHandleMath::ResizeAabbFace(
-            Target.Value, H.Axis, H.Maximum, coordinate,
-            Target.MinimumLimits[H.Axis], Target.MaximumLimits[H.Axis]);
+            Target.Value, H.Axis, H.Maximum, coordinate);
     }
 
     AabbEditTarget Target;
@@ -160,7 +159,7 @@ class RectangleDrag final : public IInteraction
 {
 public:
     RectangleDrag(RectEditTarget target, AffordanceHandle handle,
-                  std::unique_ptr<IValueEditTransaction<Vec2d>> transaction)
+                  std::unique_ptr<IValueEditTransaction<RectangleEditValue>> transaction)
         : Target(std::move(target)), H(handle), Transaction(std::move(transaction)) {}
 
     void OnPointerMove(ToolContext& context, EditorViewport& viewport,
@@ -177,8 +176,9 @@ public:
     void OnCancel(ToolContext&) override { Transaction->Cancel(); }
 
 private:
-    std::optional<Vec2d> Compute(ToolContext& context, EditorViewport& viewport,
-                                 const PointerEvent& pointer) const
+    std::optional<RectangleEditValue> Compute(
+        ToolContext& context, EditorViewport& viewport,
+        const PointerEvent& pointer) const
     {
         const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(pointer.Position);
         const auto parameter = GizmoMath::ClosestAxisParam(H.World, H.WorldAxis, ray);
@@ -191,13 +191,19 @@ private:
                 worldOffset, H.World.Dot(H.WorldAxis),
                 grid.Origin.Dot(H.WorldAxis), grid.Spacing);
         const double edge = Get(H.Local, H.Axis) + worldOffset / H.AxisScale;
-        return AffordanceHandleMath::ResizeRectangleEdge(
-            Target.HalfExtents, H.Axis, edge);
+        const auto bounds = AffordanceHandleMath::ResizeRectangleEdge(
+            Target.HalfExtents, H.Axis, H.Maximum, edge);
+        if (!bounds)
+            return std::nullopt;
+        return RectangleEditValue{
+            .CenterOffset = bounds->Center(),
+            .HalfExtents = bounds->HalfExtent(),
+        };
     }
 
     RectEditTarget Target;
     AffordanceHandle H;
-    std::unique_ptr<IValueEditTransaction<Vec2d>> Transaction;
+    std::unique_ptr<IValueEditTransaction<RectangleEditValue>> Transaction;
 };
 }
 

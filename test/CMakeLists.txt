@@ -236,7 +236,6 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/EditorLightGather.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldTagList.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp

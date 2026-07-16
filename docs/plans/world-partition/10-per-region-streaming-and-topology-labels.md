@@ -137,7 +137,7 @@ ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focu
   the resolved config to both calls. Resolving only the demand call would demand zones
   past the base hop count that the ranks BFS never reaches; rank-less zones sort last
   in load ordering (hop = INT_MAX), so exactly the zones a region preloads deeper
-  would load last and ignore `PreloadPriority`. The cap needs nothing extra: it is
+  would load last. The cap needs nothing extra: it is
   applied inside `ComputeZoneDemand`. No other runtime change.
 - Editor preview: the two build sites (`WorldPartitionPanel.cpp` demand list,
   `ZoneBoundsRenderer.cpp` bounds tint) resolve through the same function against the

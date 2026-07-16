@@ -6,7 +6,6 @@
 
 #include "commands/CommandStack.h"
 #include "document/EditorEntityRecipe.h"
-#include "document/WorldTagList.h"
 #include "document/WorldDocument.h"
 #include "document/ZoneBounds.h"
 #include "document/commands/CreateSnapshotEntityCommand.h"
@@ -22,7 +21,6 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <cstring>
 #include <format>
 #include <string>
 #include <vector>
@@ -176,16 +174,6 @@ void WorldPartitionPanel::DrawStreamingPreview()
                           "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewResidentCap, "clear_cap");
 
-    // Scratch world tags: preview how gated connections reflow without play.
-    char tagBuffer[256];
-    std::strncpy(tagBuffer, view->PreviewTags.c_str(), sizeof(tagBuffer) - 1);
-    tagBuffer[sizeof(tagBuffer) - 1] = '\0';
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##preview_tags", tagBuffer, sizeof(tagBuffer)))
-        view->PreviewTags = tagBuffer;
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Active world tags for the preview (comma separated)");
-
     const auto zoneName = [&](ZoneId zone) -> const char*
     {
         for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
@@ -194,11 +182,10 @@ void WorldPartitionPanel::DrawStreamingPreview()
         return "<unknown>";
     };
 
-    const std::vector<std::string> activeTags = SplitWorldTagList(view->PreviewTags);
     const auto records = ComputeZoneDemand(
         WorldDoc.Manifest(), WorldDoc.Index(), previewFocus, {},
         ResolvePreviewStreamingConfig(WorldDoc.Manifest(), previewFocus, *view),
-        &view->PreviewFocusPosition, activeTags);
+        &view->PreviewFocusPosition);
     for (const ZoneDemandRecord& record : records)
     {
         std::string why;
@@ -213,7 +200,6 @@ void WorldPartitionPanel::DrawStreamingPreview()
         tag(record.Sources.Focus, "focus");
         tag(record.Sources.SameGraphHop, "graph hop");
         tag(record.Sources.CrossGraphEntry, "cross-graph entry");
-        tag(record.Sources.DockApproach, "dock approach");
         tag(record.Sources.SpatialRadius, "radius");
         tag(record.Sources.ExplicitPin, "pin");
         tag(record.Sources.TraversalGrace, "traversal grace");
@@ -268,6 +254,24 @@ void WorldPartitionPanel::DrawWorldSceneRow()
 
 void WorldPartitionPanel::DrawHeaderButtons()
 {
+    const auto createWorldEntity = [&](EntitySnapshot snapshot)
+    {
+        if (!snapshot.Components.IsObject())
+            return false;
+        // Focus swaps the active document and clears its command stack, so do
+        // it before recording creation. Undo must retain the create.
+        (void)WorldDoc.FocusWorldScene();
+        auto create = std::make_unique<CreateSnapshotEntityCommand>(
+            WorldDoc.WorldSceneDocument(), std::move(snapshot));
+        CreateSnapshotEntityCommand* raw = create.get();
+        Commands.Execute(std::move(create));
+        Commands.Execute(std::make_unique<SelectCommand>(
+            Selection, SelectableRef::EntitySelection(
+                WorldDoc.WorldSceneDocument().GetRegistry().Id,
+                raw->CreatedEntity())));
+        return true;
+    };
+
     if (ImGui::Button(ICON_FA_PLUS "  Graph"))
         (void)WorldDoc.AddGraph("New Graph");
 
@@ -304,20 +308,87 @@ void WorldPartitionPanel::DrawHeaderButtons()
         const IEditorEntityRecipe* recipe = Recipes.Find("world_dock");
         EntitySnapshot snapshot = recipe != nullptr ? recipe->Build(context)
                                                      : EntitySnapshot{};
-        if (snapshot.Components.IsObject())
-        {
-            auto create = std::make_unique<CreateSnapshotEntityCommand>(
-                WorldDoc.WorldSceneDocument(), std::move(snapshot));
-            CreateSnapshotEntityCommand* raw = create.get();
-            Commands.Execute(std::move(create));
-            (void)WorldDoc.FocusWorldScene();
-            Commands.Execute(std::make_unique<SelectCommand>(
-                Selection, SelectableRef::EntitySelection(
-                    WorldDoc.WorldSceneDocument().GetRegistry().Id,
-                    raw->CreatedEntity())));
-        }
+        (void)createWorldEntity(std::move(snapshot));
     }
     ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(activeZone == nullptr
+                         || WorldDoc.Manifest().Zones.size() < 2);
+    if (ImGui::Button(ICON_FA_PLUS "  Teleport Link") && activeZone != nullptr)
+    {
+        TeleportSource_ = activeZone->Id;
+        if (TeleportDestination_ == TeleportSource_
+            || !TeleportDestination_.IsValid())
+        {
+            TeleportDestination_ = {};
+            for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+                if (zone.Id != TeleportSource_)
+                {
+                    TeleportDestination_ = zone.Id;
+                    break;
+                }
+        }
+        ImGui::OpenPopup("Create Teleport Link");
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("A teleport is a WorldLink between two Zones; rooms need no "
+                          "eligibility flag. Focus a source Zone and ensure another "
+                          "Zone exists.");
+
+    if (ImGui::BeginPopup("Create Teleport Link"))
+    {
+        const ZoneHeader* source = nullptr;
+        const ZoneHeader* destination = nullptr;
+        for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+        {
+            if (zone.Id == TeleportSource_)
+                source = &zone;
+            if (zone.Id == TeleportDestination_)
+                destination = &zone;
+        }
+        ImGui::TextWrapped("Create a non-spatial graph edge. This does not add Dock "
+                           "geometry and does not change either Zone's AABB.");
+        ImGui::Text("Source: %s", source != nullptr
+            ? source->Name.c_str() : "<missing Zone>");
+        const char* destinationName = destination != nullptr
+            ? destination->Name.c_str() : "<select destination>";
+        if (ImGui::BeginCombo("Destination", destinationName))
+        {
+            for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+                if (zone.Id != TeleportSource_)
+                    if (ImGui::Selectable(zone.Name.c_str(),
+                                          zone.Id == TeleportDestination_))
+                        TeleportDestination_ = zone.Id;
+            ImGui::EndCombo();
+        }
+        ImGui::Checkbox("Bidirectional", &TeleportBidirectional_);
+        if (!TeleportBidirectional_)
+            ImGui::TextDisabled("One way: source to destination");
+
+        ImGui::BeginDisabled(source == nullptr || destination == nullptr
+                             || source == destination);
+        if (ImGui::Button("Create WorldLink"))
+        {
+            EditorCreateContext context{
+                .World = &WorldDoc,
+                .ActiveZone = TeleportSource_,
+                .ActiveGraph = source != nullptr ? source->Graph : GraphId{},
+                .Selection = Selection.GetSelection(),
+            };
+            WorldLinkRecipe recipe(
+                TeleportDestination_, TeleportBidirectional_
+                    ? DockDirectionBoth : DockDirectionAToB);
+            if (createWorldEntity(recipe.Build(context)))
+                ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
 }
 
 void WorldPartitionPanel::DrawLegacyTransitionMigration()
@@ -332,9 +403,20 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
     ImGui::Separator();
     ImGui::TextColored(EditorUi::Warning, ICON_FA_TRIANGLE_EXCLAMATION
                        "  Legacy transitions block new-format saves");
-    ImGui::TextWrapped("Teleport records can become world links. Geometric records lack a "
-                       "plane transform and must be replaced with authored docks or discarded.");
-    if (ImGui::Button("Migrate Teleports"))
+    ImGui::TextWrapped(
+        "These rows are old connections, not room eligibility flags. Existing "
+        "Teleport rows can become WorldLinks automatically. Doorway and Seam rows "
+        "have no usable plane geometry: create one Dock with + Dock, set its Zone "
+        "A/B references, place its bounded plane at the crossing, then discard the "
+        "legacy row(s) it replaces. If a row was actually non-spatial, explicitly "
+        "convert it to a Teleport Link below.");
+    const bool hasTeleport = std::any_of(
+        WorldDoc.Manifest().Transitions.begin(),
+        WorldDoc.Manifest().Transitions.end(),
+        [](const TransitionRecord& transition)
+        { return transition.Topology == TransitionTopology::Teleport; });
+    ImGui::BeginDisabled(!hasTeleport);
+    if (ImGui::Button("Migrate Existing Teleport Rows"))
     {
         const LegacyTransitionMigrationReport report =
             WorldDoc.MigrateLegacyTransitions();
@@ -342,23 +424,48 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
             "Created {} links, collapsed {} reverse pairs, {} geometric records unresolved",
             report.Links.size(), report.CollapsedPairs, report.Unresolved.size());
     }
+    ImGui::EndDisabled();
 
+    const auto zoneName = [&](ZoneId id)
+    {
+        for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
+            if (zone.Id == id)
+                return zone.Name.empty() ? ZoneIdToString(id) : zone.Name;
+        return std::string{ "<missing " } + ZoneIdToString(id) + ">";
+    };
+    TransitionId convert;
     TransitionId discard;
     for (const TransitionRecord& transition : WorldDoc.Manifest().Transitions)
     {
         ImGui::PushID(static_cast<int>(transition.Id.Value & 0x7fffffff));
         const char* kind = transition.Topology == TransitionTopology::Teleport
-            ? "Teleport" : "Needs dock geometry";
-        ImGui::TextDisabled("%s  %s -> %s", kind,
-                            ZoneIdToString(transition.From).c_str(),
-                            ZoneIdToString(transition.To).c_str());
-        if (ImGui::BeginPopupContextItem("##legacy_transition"))
+            ? "Teleport" : transition.Topology == TransitionTopology::Doorway
+                ? "Doorway" : "Seam";
+        const std::string from = zoneName(transition.From);
+        const std::string to = zoneName(transition.To);
+        ImGui::Text("%s: %s -> %s%s", kind, from.c_str(), to.c_str(),
+                    transition.Flags.OneWay ? " (one way)" : "");
+        if (transition.Topology != TransitionTopology::Teleport)
         {
-            if (ImGui::MenuItem(ICON_FA_TRASH "  Discard Legacy Record"))
-                discard = transition.Id;
-            ImGui::EndPopup();
+            if (ImGui::SmallButton("Convert to Teleport Link"))
+                convert = transition.Id;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Use only when this legacy connection is truly "
+                                  "non-spatial. A reciprocal row is collapsed into "
+                                  "the same bidirectional WorldLink.");
+            ImGui::SameLine();
         }
+        if (ImGui::SmallButton(ICON_FA_TRASH "  Discard Replaced Row"))
+            discard = transition.Id;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Discard only after a WorldDock or WorldLink replaces "
+                              "this legacy connection.");
         ImGui::PopID();
+    }
+    if (convert.IsValid())
+    {
+        if (WorldDoc.ConvertLegacyTransitionToTeleport(convert))
+            MigrationSummary_ = "Converted the selected legacy connection to a WorldLink";
     }
     if (discard.IsValid())
         (void)WorldDoc.DiscardLegacyTransition(discard);
@@ -623,13 +730,19 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
     if (dirty)
         label += " " ICON_FA_CIRCLE_DOT;
     label += "##zone_row";
-    const bool selected = isFocus || SelectedZoneRow_ == zone.Id;
-    ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+    const bool selected = WorldDoc.SelectedZone() == zone.Id;
+    const bool clicked = ImGui::Selectable(
+        label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
     if (headerOnly)
         ImGui::PopStyleColor();
 
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-        (void)WorldDoc.SetFocusZone(zone.Id);
+    if (clicked)
+    {
+        Selection.ClearSelection();
+        (void)WorldDoc.SelectZone(zone.Id);
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            (void)WorldDoc.SetFocusZone(zone.Id);
+    }
 
     if (ImGui::BeginPopupContextItem("##zone_ctx"))
     {
@@ -755,7 +868,8 @@ void WorldPartitionPanel::NavigateToRecord(const ContentRiskRecord& record)
         return;
     }
 
-    SelectedZoneRow_ = zone;
+    Selection.ClearSelection();
+    (void)WorldDoc.SelectZone(zone);
     for (const ZoneHeader& header : WorldDoc.Manifest().Zones)
     {
         if (header.Id == zone)

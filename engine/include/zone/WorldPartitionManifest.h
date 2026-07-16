@@ -21,20 +21,14 @@ struct DockEndpoint
 {
     DockId Id;
     ZoneId OwnerZone;
-    GraphId OwnerGraph;
     ZoneId OtherZone;
-    GraphId OtherGraph;
     DockSide Side = DockSide::A;
     Vec3d Origin;
     Vec3d Normal = Vec3d::Forward();
     Vec3d Right = Vec3d::Right();
     Vec3d Up = Vec3d::Up();
     Vec2d HalfExtents{ 1.0f, 1.5f };
-    Aabb3d OwnerArmBoundsLocal; // endpoint frame; owner side is local z <= 0
     uint32_t Directions = 3;
-    int32_t PreloadPriority = 0;
-    int32_t PreloadDepth = 0;
-    std::vector<std::string> RequiredTags;
 
     friend bool operator==(const DockEndpoint&, const DockEndpoint&) = default;
 };
@@ -43,15 +37,10 @@ struct LinkEndpoint
 {
     LinkId Id;
     ZoneId OwnerZone;
-    GraphId OwnerGraph;
     ZoneId OtherZone;
-    GraphId OtherGraph;
     DockSide Side = DockSide::A;
     uint32_t Kind = 0;
     uint32_t Directions = 3;
-    int32_t PreloadPriority = 0;
-    int32_t PreloadDepth = 0;
-    std::vector<std::string> RequiredTags;
 
     friend bool operator==(const LinkEndpoint&, const LinkEndpoint&) = default;
 };
@@ -136,15 +125,6 @@ struct TransitionRecord
     ZoneId             To;
     TransitionTopology Topology = TransitionTopology::Doorway;
     TransitionFlags    Flags;
-    int32_t            PreloadPriority = 0; // higher loads earlier within the neighbor set
-    // Authored reach: crossing this edge grants the BFS at least this many
-    // further hops, letting one critical corridor preload deeper than the
-    // global horizon. 0 = inherit the remaining budget.
-    int32_t            PreloadDepth = 0;
-    // Gate: ALL listed gameplay-tag names must be active in the world state for
-    // this edge to exist for streaming; empty = always open. Stored as dotted
-    // NAMES (tag ids are registration-order runtime values, never serialized).
-    std::vector<std::string> RequiredTags;
     // No content reference: an edge is topological. Content that realizes it
     // (a door) references the edge, never the reverse.
 

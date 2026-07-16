@@ -45,7 +45,6 @@ private:
     std::unique_ptr<SceneSerializationContext> SceneContext;
     std::optional<AsyncZoneLoader> ZoneLoader;
     std::optional<WorldPartitionRuntime> Partition;
-    std::vector<std::string> WorldTags;
     ZoneId PendingZoneFocus;
     EntityId PlayerPawn;
     std::string PendingWorldSceneCollision;

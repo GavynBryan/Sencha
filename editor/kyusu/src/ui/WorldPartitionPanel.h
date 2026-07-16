@@ -29,10 +29,10 @@ struct ContentRiskRecord;
 }
 
 // The partition tree: graphs containing zone rows in manifest order, with the
-// per-zone state (focus/context/hidden/header-only), open/visible controls, and
-// the stored validation records. Every mutation routes through the WorldDocument
-// verbs; the panel owns nothing beyond ImGui transients (the inline-rename
-// buffer and the validation-click navigation target). Draws nothing in legacy
+// per-zone state (focus/context/hidden/header-only), shared Zone selection,
+// open/visible controls, and the stored validation records. Every mutation
+// routes through WorldDocument verbs; the panel owns only ImGui transients.
+// Draws nothing in legacy
 // mode: the partition vocabulary only exists for manifest-backed worlds.
 class WorldPartitionPanel : public IEditorPanel
 {
@@ -76,8 +76,10 @@ private:
     // ImGui transients only (never document state).
     ZoneId   RenamingZone_;
     GraphId RenamingGraph_;
+    ZoneId TeleportSource_;
+    ZoneId TeleportDestination_;
+    bool TeleportBidirectional_ = true;
     char     RenameBuffer_[128] = {};
     GraphId NavigateGraph_;   // graph to force-open after a validation click
-    ZoneId   SelectedZoneRow_;  // zone row a validation click highlighted
     std::string MigrationSummary_;
 };

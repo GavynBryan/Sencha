@@ -4,9 +4,7 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
-#include <core/text/InlineString.h>
 #include <math/MathSchemas.h>
-#include <math/geometry/3d/Aabb3d.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <zone/WorldPartitionIds.h>
 
@@ -35,20 +33,13 @@ enum DockDirection : std::uint32_t
     DockDirectionBoth = DockDirectionAToB | DockDirectionBToA,
 };
 
-using WorldDemandCondition = InlineString<128>;
-
 struct WorldDock
 {
     DockId Id;
     ZoneId ZoneA;
     ZoneId ZoneB;
     Vec2d HalfExtents{ 1.0f, 1.5f };
-    Aabb3d SideAArmBounds{ { -1.0f, -1.5f, -2.0f }, { 1.0f, 1.5f, 0.0f } };
-    Aabb3d SideBArmBounds{ { -1.0f, -1.5f, 0.0f }, { 1.0f, 1.5f, 2.0f } };
     std::uint32_t Directions = DockDirectionBoth;
-    std::int32_t PreloadPriority = 0;
-    std::int32_t PreloadDepth = 0;
-    WorldDemandCondition DemandCondition;
 };
 
 struct WorldLink
@@ -58,9 +49,6 @@ struct WorldLink
     ZoneId ZoneB;
     LinkKind Kind = LinkKind::Teleport;
     std::uint32_t Directions = DockDirectionBoth;
-    std::int32_t PreloadPriority = 0;
-    std::int32_t PreloadDepth = 0;
-    WorldDemandCondition DemandCondition;
 };
 
 struct DockGateBinding
@@ -81,12 +69,7 @@ struct TypeSchema<WorldDock>
             MakeField("zone_a", &WorldDock::ZoneA),
             MakeField("zone_b", &WorldDock::ZoneB),
             MakeField("half_extents", &WorldDock::HalfExtents),
-            MakeField("side_a_arm_bounds", &WorldDock::SideAArmBounds),
-            MakeField("side_b_arm_bounds", &WorldDock::SideBArmBounds),
             MakeField("directions", &WorldDock::Directions),
-            MakeField("preload_priority", &WorldDock::PreloadPriority),
-            MakeField("preload_depth", &WorldDock::PreloadDepth),
-            MakeField("demand_condition", &WorldDock::DemandCondition),
         };
     }
 };
@@ -105,9 +88,6 @@ struct TypeSchema<WorldLink>
             MakeField("zone_b", &WorldLink::ZoneB),
             MakeField("kind", &WorldLink::Kind),
             MakeField("directions", &WorldLink::Directions),
-            MakeField("preload_priority", &WorldLink::PreloadPriority),
-            MakeField("preload_depth", &WorldLink::PreloadDepth),
-            MakeField("demand_condition", &WorldLink::DemandCondition),
         };
     }
 };

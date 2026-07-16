@@ -340,6 +340,13 @@ void EditorWorkspace::Init(CommandStack& commands)
             MeshEdit.SetElementKind(MeshElementKind::Object);
         });
 
+    ZoneSelectionObserver = Selection.Subscribe(
+        [this](const SelectionSnapshot& snapshot)
+        {
+            if (!snapshot.Items.empty())
+                (void)World.SelectZone(ZoneId{});
+        });
+
     // Element-kind changes carry the selection into the new kind, then restore
     // the gizmo last used in the entered context. Resolves this->Manipulators at
     // fire time, so it survives session rebuilds.

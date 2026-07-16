@@ -10,25 +10,36 @@ struct ZoneFocusState
 {
     ZoneId Current;
     ZoneId Previous;
-    DockId ArmedDock;
+    DockId SuppressedDock;
     Vec3d PreviousPosition;
 };
 
-struct ZoneCrossingRecord
+enum class DockTraversalStatus : uint8_t
 {
+    None,
+    Crossed,
+    BlockedDestinationNotReady,
+};
+
+struct DockTraversalResult
+{
+    DockTraversalStatus Status = DockTraversalStatus::None;
     DockId Dock;
     ZoneId From;
     ZoneId To;
-    Vec3d Position;
+    Vec3d CrossingPoint;
+    Vec3d SafeSourcePosition;
+    Vec3d PlaneNormal;
 };
 
 struct DockCrossingOptions
 {
-    Vec3d FocusHalfExtent;
+    float CapsuleRadius = 0.0f;
+    float CapsuleHalfHeight = 0.0f;
     std::span<const ZoneId> ResidentPhysicsZones;
     bool RequireResidentDestination = false;
 };
 
-[[nodiscard]] std::optional<ZoneCrossingRecord>
+[[nodiscard]] DockTraversalResult
 AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
                  Vec3d position, DockCrossingOptions options = {});

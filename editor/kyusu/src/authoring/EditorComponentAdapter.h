@@ -11,7 +11,6 @@
 #include <math/geometry/3d/Transform3d.h>
 
 #include <functional>
-#include <array>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -41,11 +40,15 @@ struct AabbEditTarget
     uint64_t Key = 0;
     Transform3f LocalToWorld;
     Aabb3d Value;
-    // Optional coordinate clamps. They express reusable local-space constraints
-    // such as a volume that must remain on one side of a plane.
-    std::array<std::optional<float>, 3> MinimumLimits;
-    std::array<std::optional<float>, 3> MaximumLimits;
     std::function<std::unique_ptr<IValueEditTransaction<Aabb3d>>()> BeginEdit;
+};
+
+struct RectangleEditValue
+{
+    // Offset from the rectangle's center at the start of the edit, expressed
+    // in its local right/up basis.
+    Vec2d CenterOffset;
+    Vec2d HalfExtents;
 };
 
 struct RectEditTarget
@@ -53,17 +56,16 @@ struct RectEditTarget
     uint64_t Key = 0;
     Transform3f LocalToWorld;
     Vec2d HalfExtents;
-    std::function<std::unique_ptr<IValueEditTransaction<Vec2d>>()> BeginEdit;
+    std::function<std::unique_ptr<IValueEditTransaction<RectangleEditValue>>()> BeginEdit;
 };
 
 struct EditorPickProxy
 {
-    enum class Kind : uint8_t { Rectangle, Box };
+    enum class Kind : uint8_t { Rectangle };
     Kind Shape = Kind::Rectangle;
     EntityId Entity;
     Transform3f LocalToWorld;
     Vec2d HalfExtents;
-    Aabb3d Bounds;
 };
 
 struct ViewportAffordanceOutput

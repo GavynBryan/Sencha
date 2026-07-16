@@ -131,6 +131,11 @@ public:
     bool FocusWorldScene();
     [[nodiscard]] bool IsWorldSceneFocused() const { return WorldSceneFocused_; }
     [[nodiscard]] ZoneId FocusZone() const { return FocusZone_; }
+    // Zone selection is shared presentation state, distinct from the active
+    // editing document. Single-clicking a graph/world row selects; explicit
+    // focus (normally double-click) loads and activates it.
+    bool SelectZone(ZoneId zone);
+    [[nodiscard]] ZoneId SelectedZone() const { return SelectedZone_; }
     [[nodiscard]] EditorDocument& FocusDocument();
     [[nodiscard]] const EditorDocument& FocusDocument() const;
 
@@ -185,6 +190,10 @@ public:
     // transform in the legacy format and remain unresolved instead of being
     // guessed. New-format saves refuse unresolved records.
     LegacyTransitionMigrationReport MigrateLegacyTransitions();
+    // Explicitly reclassifies one legacy record (and its reciprocal record, if
+    // present) as a non-spatial WorldLink. This is intentionally separate from
+    // automatic migration because Doorway/Seam records normally require Docks.
+    bool ConvertLegacyTransitionToTeleport(TransitionId transition);
     bool DiscardLegacyTransition(TransitionId transition);
 
     // Refreshes derived zone bounds, then reruns validation. Manifest verbs
@@ -223,7 +232,7 @@ private:
     void MarkManifestEdited();
     void AssignSceneRefsForNewZones();
     void RunValidation();
-    // Recomputes every broad-phase bound from its authored exact zone shape.
+    // Recomputes each non-overridden coarse AABB from open Zone content.
     void RefreshDerivedZoneBounds();
     // A fresh world scene document with its own registry identity, loaded from
     // the manifest's WorldSceneRef when that resolves to a file.
@@ -249,6 +258,7 @@ private:
     std::vector<ContentRiskRecord> ValidationRecords_;
 
     ZoneId FocusZone_;
+    ZoneId SelectedZone_;
     bool WorldSceneFocused_ = false;
     WorldViewSettings* ViewSettings_ = nullptr;
     std::unordered_map<ZoneId, OpenZone> OpenZones_;

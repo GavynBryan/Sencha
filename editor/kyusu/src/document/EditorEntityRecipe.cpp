@@ -1,5 +1,6 @@
 #include "EditorEntityRecipe.h"
 
+#include "document/WorldDockAuthoring.h"
 #include "document/WorldDocument.h"
 
 #include <core/serialization/JsonArchive.h>
@@ -87,16 +88,9 @@ ZoneId ResolveOtherSide(const WorldPartitionManifest& manifest, ZoneId active,
                         Vec3d point, Vec3d normal)
 {
     const Vec3d sample = point + normal.Normalized() * 1.0f;
-    ZoneId result;
-    for (const ZoneHeader& zone : manifest.Zones)
-    {
-        if (zone.Id == active || !zone.Bounds.Contains(sample))
-            continue;
-        if (result.IsValid())
-            return {};
-        result = zone.Id;
-    }
-    return result;
+    const std::vector<ZoneId> candidates =
+        WorldDockZoneCandidates(manifest, sample, active);
+    return candidates.size() == 1 ? candidates.front() : ZoneId{};
 }
 
 JsonValue* MutableFind(JsonValue& object, std::string_view key)
@@ -198,5 +192,6 @@ EntitySnapshot WorldLinkRecipe::Build(const EditorCreateContext& context) const
     link.Id = context.World->MintLinkId();
     link.ZoneA = context.ActiveZone;
     link.ZoneB = ZoneB;
+    link.Directions = Directions;
     return BuildSnapshot(*context.World, link);
 }

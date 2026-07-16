@@ -9,6 +9,8 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
 
+#include <algorithm>
+
 namespace
 {
 
@@ -80,6 +82,28 @@ TEST_F(EditorEntityRecipeTest, DockRecipeBuildsCompleteContextualSnapshot)
     EXPECT_NEAR(dockNormal.Z, Vec3d::Forward().Z, 1e-5f);
 }
 
+TEST_F(EditorEntityRecipeTest, AmbiguousAabbSuggestionLeavesZoneBUnresolved)
+{
+    const ZoneId overlapping = World.AddZone(
+        World.Manifest().Graphs[0].Id, "Overlapping Zone");
+    ASSERT_TRUE(World.SetZoneBounds(overlapping,
+        Aabb3d::FromMinMax(Vec3d{ -5, -5, -10 }, Vec3d{ 5, 5, 0 })));
+
+    const EntitySnapshot snapshot = WorldDockRecipe{}.Build(Context());
+    const EntityId entity = World.WorldSceneDocument().RestoreEntity(snapshot);
+    const WorldDock* dock = World.WorldSceneDocument().GetRegistry()
+                                .Components.TryGet<WorldDock>(entity);
+    ASSERT_NE(dock, nullptr);
+    EXPECT_EQ(dock->ZoneA, ZoneA);
+    EXPECT_FALSE(dock->ZoneB.IsValid());
+
+    const std::vector<ZoneId> candidates = WorldDockZoneCandidates(
+        World.Manifest(), Vec3d{ 0, 0, -1 }, ZoneA);
+    ASSERT_EQ(candidates.size(), 2u);
+    EXPECT_NE(std::find(candidates.begin(), candidates.end(), ZoneB), candidates.end());
+    EXPECT_NE(std::find(candidates.begin(), candidates.end(), overlapping), candidates.end());
+}
+
 TEST_F(EditorEntityRecipeTest, ExplicitCreatesMintIdsWhileSnapshotRestorePreservesStoredId)
 {
     const EntitySnapshot first = WorldDockRecipe{}.Build(Context());
@@ -134,7 +158,8 @@ TEST_F(EditorEntityRecipeTest, DuplicateBatchMintsIdentityOnceAndRemapsGateBindi
 
 TEST_F(EditorEntityRecipeTest, LinkRecipeHasNoFakeSpatialTransform)
 {
-    const EntitySnapshot snapshot = WorldLinkRecipe(ZoneB).Build(Context());
+    const EntitySnapshot snapshot = WorldLinkRecipe(
+        ZoneB, DockDirectionAToB).Build(Context());
     const EntityId entity = World.WorldSceneDocument().RestoreEntity(snapshot);
     const Registry& registry = World.WorldSceneDocument().GetRegistry();
     const WorldLink* link = registry.Components.TryGet<WorldLink>(entity);
@@ -143,6 +168,7 @@ TEST_F(EditorEntityRecipeTest, LinkRecipeHasNoFakeSpatialTransform)
     EXPECT_TRUE(link->Id.IsValid());
     EXPECT_EQ(link->ZoneA, ZoneA);
     EXPECT_EQ(link->ZoneB, ZoneB);
+    EXPECT_EQ(link->Directions, DockDirectionAToB);
     EXPECT_EQ(registry.Components.TryGet<LocalTransform>(entity), nullptr);
 }
 
@@ -153,7 +179,7 @@ TEST_F(EditorEntityRecipeTest, InvalidContextReturnsEmptySnapshot)
     EXPECT_FALSE(WorldLinkRecipe(ZoneB).Build(invalid).Components.IsObject());
 }
 
-TEST_F(EditorEntityRecipeTest, DockValidationNamesEndpointPlaneAndArmFailures)
+TEST_F(EditorEntityRecipeTest, DockValidationNamesEndpointAndPlaneFailures)
 {
     const EntityId entity = CreateDock();
     Registry& registry = World.WorldSceneDocument().GetScene().GetRegistry();
@@ -162,11 +188,9 @@ TEST_F(EditorEntityRecipeTest, DockValidationNamesEndpointPlaneAndArmFailures)
 
     dock->ZoneB = ZoneId{ 0xdead };
     dock->HalfExtents.X = 0.0f;
-    dock->SideAArmBounds.Max.Z = 1.0f;
     World.Revalidate();
     EXPECT_TRUE(HasRule("partition.dock.zone_unresolved"));
     EXPECT_TRUE(HasRule("partition.dock.plane_degenerate"));
-    EXPECT_TRUE(HasRule("partition.dock.arm_bounds_wrong_side"));
 
     dock->ZoneB = dock->ZoneA;
     World.Revalidate();
@@ -191,32 +215,64 @@ TEST_F(EditorEntityRecipeTest, DuplicateDockIdsAreRejectedButParallelEdgesAreLeg
     EXPECT_TRUE(HasRule("partition.dock.id_duplicate"));
 }
 
-TEST(WorldDockAuthoring, SwapSidesPreservesWorldArmPlacementAndReversesSemantics)
+TEST_F(EditorEntityRecipeTest, UnresolvedZoneReferenceSurvivesSnapshotRestore)
+{
+    EditorDocument& document = World.WorldSceneDocument();
+    const EntityId entity = CreateDock();
+    WorldDock* dock = document.GetScene().GetRegistry()
+                          .Components.TryGet<WorldDock>(entity);
+    ASSERT_NE(dock, nullptr);
+    dock->ZoneB = {};
+
+    const EntitySnapshot snapshot = document.CaptureEntity(entity);
+    document.GetScene().DestroyEntity(entity);
+    const EntityId restored = document.RestoreEntity(snapshot);
+    const WorldDock* after =
+        document.GetRegistry().Components.TryGet<WorldDock>(restored);
+    ASSERT_NE(after, nullptr);
+    EXPECT_FALSE(after->ZoneB.IsValid());
+    World.Revalidate();
+    EXPECT_TRUE(HasRule("partition.dock.zone_unresolved"));
+}
+
+TEST(WorldDockAuthoring, SwapSidesReversesPlaneAndSemantics)
 {
     WorldDock dock;
     dock.ZoneA = ZoneId{ 1 };
     dock.ZoneB = ZoneId{ 2 };
     dock.Directions = DockDirectionAToB;
-    dock.SideAArmBounds = Aabb3d::FromMinMax({ -1, -2, -4 }, { 2, 3, 0 });
-    dock.SideBArmBounds = Aabb3d::FromMinMax({ -3, -1, 0 }, { 4, 5, 6 });
+    dock.HalfExtents = { 3, 4 };
     Transform3f transform;
     transform.Position = { 10, 4, -2 };
     transform.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), 0.37f);
 
-    const Vec3d oldBMinimumWorld = transform.TransformPoint(dock.SideBArmBounds.Min);
+    const Vec3d oldNormal = -transform.Forward();
     SwapWorldDockSides(dock, transform);
 
     EXPECT_EQ(dock.ZoneA, ZoneId{ 2 });
     EXPECT_EQ(dock.ZoneB, ZoneId{ 1 });
     EXPECT_EQ(dock.Directions, DockDirectionBToA);
-    EXPECT_LE(dock.SideAArmBounds.Max.Z, 0.0f);
-    EXPECT_GE(dock.SideBArmBounds.Min.Z, 0.0f);
-    const Vec3d newCornerWorld = transform.TransformPoint({
-        dock.SideAArmBounds.Max.X,
-        dock.SideAArmBounds.Min.Y,
-        dock.SideAArmBounds.Max.Z,
-    });
-    EXPECT_NEAR(newCornerWorld.X, oldBMinimumWorld.X, 1.0e-4f);
-    EXPECT_NEAR(newCornerWorld.Y, oldBMinimumWorld.Y, 1.0e-4f);
-    EXPECT_NEAR(newCornerWorld.Z, oldBMinimumWorld.Z, 1.0e-4f);
+    EXPECT_EQ(dock.HalfExtents, Vec2d(3, 4));
+    const Vec3d newNormal = -transform.Forward();
+    EXPECT_NEAR(oldNormal.Dot(newNormal), -1.0f, 1.0e-4f);
+}
+
+TEST(WorldDockAuthoring, PlaneResizeMovesCenterAndKeepsOppositeEdgeFixed)
+{
+    WorldDock dock;
+    dock.HalfExtents = { 1, 2 };
+    Transform3f transform;
+    transform.Position = { 10, 4, -2 };
+    transform.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), 0.37f);
+
+    const Vec3d fixedLeft = transform.Position
+        - transform.Right() * dock.HalfExtents.X;
+    ApplyWorldDockPlaneResize(dock, transform, { 1.25f, 0.0f }, { 2.25f, 2.0f });
+
+    EXPECT_EQ(dock.HalfExtents, Vec2d(2.25f, 2.0f));
+    const Vec3d resizedLeft = transform.Position
+        - transform.Right() * dock.HalfExtents.X;
+    EXPECT_NEAR(resizedLeft.X, fixedLeft.X, 1.0e-5f);
+    EXPECT_NEAR(resizedLeft.Y, fixedLeft.Y, 1.0e-5f);
+    EXPECT_NEAR(resizedLeft.Z, fixedLeft.Z, 1.0e-5f);
 }

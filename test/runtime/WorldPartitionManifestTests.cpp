@@ -39,8 +39,7 @@ constexpr const char* CanonicalFixture = R"json(
       "from": "00000000000000a1",
       "to": "00000000000000a2",
       "topology": "doorway",
-      "one_way": false,
-      "preload_priority": 0
+      "one_way": false
     }
   ]
 }
@@ -86,11 +85,11 @@ TEST(WorldPartitionManifest, ManifestJsonRoundTrip)
 TEST(WorldPartitionManifest, ReadRejectsUnsupportedFormatVersion)
 {
     std::string error;
-    const auto manifest = TryParse(R"({ "format_version": 4 })", &error);
+    const auto manifest = TryParse(R"({ "format_version": 5 })", &error);
 
     EXPECT_FALSE(manifest.has_value());
     EXPECT_NE(error.find("format_version"), std::string::npos);
-    EXPECT_NE(error.find('4'), std::string::npos);
+    EXPECT_NE(error.find('5'), std::string::npos);
 }
 
 TEST(WorldPartitionManifest, ReadRejectsMalformedZoneId)
@@ -187,7 +186,6 @@ TEST(WorldPartitionManifest, ReadAcceptsMissingOptionals)
     ASSERT_TRUE(manifest.has_value()) << error;
     EXPECT_FALSE(manifest->StartZone.IsValid());
     EXPECT_FALSE(manifest->Transitions[0].Flags.OneWay);
-    EXPECT_EQ(manifest->Transitions[0].PreloadPriority, 0);
     EXPECT_FALSE(manifest->Zones[0].BoundsOverridden);
 }
 
@@ -198,7 +196,6 @@ TEST(WorldPartitionManifest, WriteOmitsEmptyCookedFields)
 
     EXPECT_EQ(text.find("cooked_scene"), std::string::npos);
     EXPECT_EQ(text.find("cooked_collision"), std::string::npos);
-    EXPECT_EQ(text.find("shape_hash"), std::string::npos);
     EXPECT_EQ(text.find("content_hash"), std::string::npos);
 }
 
@@ -243,20 +240,14 @@ TEST(WorldPartitionManifest, EndpointAndDebugMapsRoundTrip)
     DockEndpoint dock{
         .Id = DockId{ 0xd1 },
         .OwnerZone = ZoneId{ 0xa1 },
-        .OwnerGraph = GraphId{ 0xb1 },
         .OtherZone = ZoneId{ 0xa2 },
-        .OtherGraph = GraphId{ 0xb1 },
         .Side = DockSide::A,
         .Origin = { 8, 2, 0 },
         .Normal = { 1, 0, 0 },
         .Right = { 0, 0, 1 },
         .Up = { 0, 1, 0 },
         .HalfExtents = { 2, 3 },
-        .OwnerArmBoundsLocal = { { -2, -1, -2 }, { 2, 5, 0 } },
         .Directions = 3,
-        .PreloadPriority = 4,
-        .PreloadDepth = 2,
-        .RequiredTags = { "quest.bridge" },
     };
     DockEndpoint reverse = dock;
     reverse.OwnerZone = ZoneId{ 0xa2 };
@@ -271,14 +262,10 @@ TEST(WorldPartitionManifest, EndpointAndDebugMapsRoundTrip)
     LinkEndpoint link{
         .Id = LinkId{ 0xe1 },
         .OwnerZone = ZoneId{ 0xa1 },
-        .OwnerGraph = GraphId{ 0xb1 },
         .OtherZone = ZoneId{ 0xa2 },
-        .OtherGraph = GraphId{ 0xb1 },
         .Side = DockSide::A,
         .Kind = 0,
         .Directions = 1,
-        .PreloadPriority = 8,
-        .PreloadDepth = 1,
     };
     LinkEndpoint reverseLink = link;
     reverseLink.OwnerZone = ZoneId{ 0xa2 };
@@ -328,42 +315,29 @@ TEST(WorldPartitionManifest, LegacyGraphVocabularyReadsAndNewVocabularyWrites)
     const WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
     const std::string text = JsonStringify(WriteWorldPartitionManifest(manifest));
 
-    EXPECT_NE(text.find("\"format_version\":3"), std::string::npos);
+    EXPECT_NE(text.find("\"format_version\":4"), std::string::npos);
     EXPECT_NE(text.find("\"graphs\""), std::string::npos);
     EXPECT_NE(text.find("\"graph\""), std::string::npos);
     EXPECT_EQ(text.find("\"regions\""), std::string::npos);
     EXPECT_EQ(text.find("\"region\""), std::string::npos);
 }
 
-TEST(WorldPartitionManifest, VersionTwoShapeDataMigratesToOneAabbAndIsDropped)
+TEST(WorldPartitionManifest, VersionTwoOwnershipSchemaIsRejected)
 {
-    const WorldPartitionManifest manifest = ParseFixture(R"json(
+    std::string error;
+    const auto manifest = TryParse(R"json(
     {
       "format_version": 2,
       "graphs": [{ "id": "00000000000000b1", "name": "Graph" }],
       "zones": [{
         "id": "00000000000000a1",
         "graph": "00000000000000b1",
-        "broad_bounds": { "min": [-2,-3,-4], "max": [5,6,7] },
-        "broad_bounds_overridden": true,
-        "shape": {
-          "cells": [{ "footprint": [[0,0],[1,0],[1,1]], "min_y": 0, "max_y": 2 }]
-        },
-        "shape_hash": "0000000000001234"
+        "bounds": { "min": [-2,-3,-4], "max": [5,6,7] }
       }]
-    })json");
+    })json", &error);
 
-    ASSERT_EQ(manifest.Zones.size(), 1u);
-    EXPECT_EQ(manifest.Zones[0].Bounds.Min, Vec3d(-2, -3, -4));
-    EXPECT_EQ(manifest.Zones[0].Bounds.Max, Vec3d(5, 6, 7));
-    EXPECT_TRUE(manifest.Zones[0].BoundsOverridden);
-
-    const std::string written = JsonStringify(WriteWorldPartitionManifest(manifest));
-    EXPECT_NE(written.find("\"format_version\":3"), std::string::npos);
-    EXPECT_NE(written.find("\"bounds\""), std::string::npos);
-    EXPECT_EQ(written.find("broad_bounds"), std::string::npos);
-    EXPECT_EQ(written.find("\"shape\""), std::string::npos);
-    EXPECT_EQ(written.find("shape_hash"), std::string::npos);
+    EXPECT_FALSE(manifest.has_value());
+    EXPECT_NE(error.find("format_version"), std::string::npos);
 }
 
 TEST(WorldPartitionManifest, ReadRejectsMalformedGraphStreaming)

@@ -7,17 +7,17 @@
 #include <zone/ZoneId.h>
 
 #include <string>
-#include <vector>
 
 class CommandStack;
 class SelectionService;
+class ViewportLayout;
 class WorldDocument;
 
 class GraphViewerPanel final : public IEditorPanel
 {
 public:
     GraphViewerPanel(WorldDocument& world, SelectionService& selection,
-                     CommandStack& commands);
+                     CommandStack& commands, ViewportLayout& viewports);
 
     std::string_view GetTitle() const override { return "Graph Viewer"; }
     void OnDraw() override;
@@ -28,6 +28,7 @@ private:
     WorldDocument& World;
     SelectionService& Selection;
     CommandStack& Commands;
+    ViewportLayout& Viewports;
     float Yaw = 0.65f;
     float Pitch = -0.35f;
     float Zoom = 1.0f;
@@ -36,11 +37,8 @@ private:
     bool ShowLinks = true;
     bool CrossGraphOnly = false;
     bool OneWayOnly = false;
-    bool PreviewResidency = false;
     bool PerspectiveProjection = true;
-    int ResidencyFilter = 0;
     int ValidationFilter = 0;
     GraphId FilterGraph;
     char Search[96] = {};
-    std::vector<ZoneId> SelectedNodes;
 };

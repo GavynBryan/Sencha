@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <span>
 #include <vector>
@@ -22,7 +21,6 @@ struct ZoneDemandSources
     bool Lingering = false;
     bool SameGraphHop = false;
     bool SpatialRadius = false;
-    bool DockApproach = false;
     bool CrossGraphEntry = false;
     bool ExplicitPin = false;
     bool Gameplay = false;
@@ -35,7 +33,6 @@ enum class ZoneDemandReason : uint8_t
     Focus,
     SameGraphHop,
     SpatialRadius,
-    DockApproach,
     CrossGraphEntry,
     ExplicitPin,
     Gameplay,
@@ -100,30 +97,26 @@ struct WorldPartitionStreamingConfig
 ResolveGraphStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
                              const WorldPartitionStreamingConfig& base);
 
-// One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
-// the highest PreloadPriority among the endpoint edges that discovered the
-// zone at its shortest hop (minimum for the focus). Eviction and load-issue
-// ordering read these; ComputeZoneDemand's traversal is this one.
+// One zone's BFS rank from the focus. Ordering is graph-policy evidence, never
+// an authored per-connection priority.
 struct ZoneHopRank
 {
     ZoneId  Zone;
     int32_t Hop = 0;
-    int32_t Priority = std::numeric_limits<int32_t>::min();
+    double Cost = 0.0; // runtime-derived distance/cost within one policy rank
     ZoneDemandReason Reason = ZoneDemandReason::Focus;
     ZoneId SourceZone;
     uint64_t SourceEndpoint = 0;
 };
 
-// Pure. BFS over outgoing edges only, up to hopCount hops from the focus.
-// Edges whose RequiredTags are not all present in activeTags do not exist for
-// the traversal (a gate removes the EDGE, never a zone reachable another way).
-// Empty for an invalid or unknown focus. Ascending zone id.
+// Pure. BFS over outgoing edges only, up to hopCount hops from the focus. Gate
+// state never removes topology or residency demand. Empty for an invalid or
+// unknown focus. Ascending zone id.
 [[nodiscard]] std::vector<ZoneHopRank>
 ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                     const WorldPartitionIndex& index,
                     ZoneId focus,
-                    int32_t hopCount,
-                    std::span<const std::string> activeTags = {});
+                    int32_t hopCount);
 
 struct ZoneContainmentResult
 {
@@ -161,5 +154,4 @@ ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   ZoneId focus,
                   std::span<const ZonePin> pins,
                   const WorldPartitionStreamingConfig& config,
-                  const Vec3d* focusPosition = nullptr,
-                  std::span<const std::string> activeTags = {});
+                  const Vec3d* focusPosition = nullptr);

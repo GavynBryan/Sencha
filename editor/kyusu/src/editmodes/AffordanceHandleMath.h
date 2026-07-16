@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/geometry/2d/Aabb2d.h>
 #include <math/geometry/3d/Aabb3d.h>
 
 #include <algorithm>
@@ -22,9 +23,7 @@ inline void SetAxis(Vec3d& value, int axis, double coordinate)
 }
 
 [[nodiscard]] inline std::optional<Aabb3d> ResizeAabbFace(
-    Aabb3d value, int axis, bool maximum, double coordinate,
-    std::optional<float> minimumLimit = {},
-    std::optional<float> maximumLimit = {})
+    Aabb3d value, int axis, bool maximum, double coordinate)
 {
     if (axis < 0 || axis > 2)
         return std::nullopt;
@@ -32,28 +31,36 @@ inline void SetAxis(Vec3d& value, int axis, double coordinate)
     {
         double bounded = std::max(coordinate,
                                   Axis(value.Min, axis) + MinimumThickness);
-        if (maximumLimit)
-            bounded = std::min(bounded, static_cast<double>(*maximumLimit));
         SetAxis(value.Max, axis, bounded);
     }
     else
     {
         double bounded = std::min(coordinate,
                                   Axis(value.Max, axis) - MinimumThickness);
-        if (minimumLimit)
-            bounded = std::max(bounded, static_cast<double>(*minimumLimit));
         SetAxis(value.Min, axis, bounded);
     }
     return value.IsValid() ? std::optional{ value } : std::nullopt;
 }
 
-[[nodiscard]] inline std::optional<Vec2d> ResizeRectangleEdge(
-    Vec2d halfExtents, int axis, double signedCoordinate)
+// Returns the edited local rectangle bounds. Unlike changing only a half
+// extent, editing one edge changes the bounds' center and keeps the opposite
+// edge fixed.
+[[nodiscard]] inline std::optional<Aabb2d> ResizeRectangleEdge(
+    Vec2d halfExtents, int axis, bool maximum, double coordinate)
 {
     if (axis < 0 || axis > 1)
         return std::nullopt;
-    (axis == 0 ? halfExtents.X : halfExtents.Y) = static_cast<float>(
-        std::max(MinimumThickness * 0.5, std::abs(signedCoordinate)));
-    return halfExtents;
+    Aabb2d bounds = Aabb2d::FromMinMax(
+        { -halfExtents.X, -halfExtents.Y }, halfExtents);
+    float& edited = axis == 0
+        ? (maximum ? bounds.Max.X : bounds.Min.X)
+        : (maximum ? bounds.Max.Y : bounds.Min.Y);
+    const double opposite = axis == 0
+        ? (maximum ? bounds.Min.X : bounds.Max.X)
+        : (maximum ? bounds.Min.Y : bounds.Max.Y);
+    edited = static_cast<float>(maximum
+        ? std::max(coordinate, opposite + MinimumThickness)
+        : std::min(coordinate, opposite - MinimumThickness));
+    return bounds.IsValid() ? std::optional{ bounds } : std::nullopt;
 }
 } // namespace AffordanceHandleMath

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace
@@ -31,17 +32,6 @@ GraphId GraphOf(const WorldPartitionManifest& manifest, ZoneId zone)
     return {};
 }
 
-bool TagsPresent(const std::vector<std::string>& required,
-                 std::span<const std::string> active)
-{
-    for (const std::string& tag : required)
-    {
-        if (std::find(active.begin(), active.end(), tag) == active.end())
-            return false;
-    }
-    return true;
-}
-
 bool EndpointAllowsOutgoing(DockSide side, uint32_t directions)
 {
     constexpr uint32_t aToB = 1u << 0;
@@ -61,13 +51,6 @@ double BoundsVolume(const Aabb3d& bounds)
     const Vec3d extent = bounds.Extent();
     return static_cast<double>(extent[0]) * static_cast<double>(extent[1])
         * static_cast<double>(extent[2]);
-}
-
-Vec3d ToEndpointLocal(const DockEndpoint& endpoint, Vec3d point)
-{
-    const Vec3d delta = point - endpoint.Origin;
-    return Vec3d{ delta.Dot(endpoint.Right), delta.Dot(endpoint.Up),
-                  delta.Dot(endpoint.Normal) };
 }
 
 } // namespace
@@ -178,8 +161,7 @@ ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
 std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                                              const WorldPartitionIndex& index,
                                              ZoneId focus,
-                                             int32_t hopCount,
-                                             std::span<const std::string> activeTags)
+                                             int32_t hopCount)
 {
     if (!focus.IsValid() || !ZoneExists(manifest, focus))
         return {};
@@ -187,19 +169,14 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     const GraphId focusGraph = GraphOf(manifest, focus);
 
     std::vector<ZoneHopRank> ranks;
-    ranks.push_back(ZoneHopRank{ focus, 0, std::numeric_limits<int32_t>::min(),
+    ranks.push_back(ZoneHopRank{ focus, 0, 0.0,
                                   ZoneDemandReason::Focus, focus, 0 });
 
     // Outgoing endpoints only: bilateral docks and links expose one endpoint
     // per zone and direction masks decide whether it can expand from this side.
-    //
-    // The traversal carries a remaining hop budget instead of running level by
-    // level: an edge may be crossed while budget remains OR when it carries an
-    // authored PreloadDepth, and the far side continues with
-    // max(budget - 1, PreloadDepth - 1), so one critical corridor preloads
-    // deeper than the global horizon. Hop values stay true BFS distances. A
-    // zone re-reached with a larger budget re-expands (FIFO order keeps the
-    // sequence deterministic).
+    // A cross-graph connection seeds the destination even at the current
+    // graph's hop boundary. The destination Graph then supplies its own hop
+    // policy. Expansion never walks onward into a third Graph in the same pass.
     struct Frontier
     {
         ZoneId  Zone;
@@ -219,21 +196,19 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     for (size_t head = 0; head < queue.size(); ++head)
     {
         const Frontier current = queue[head];
-        const auto consider = [&](ZoneId destination, int32_t priority, int32_t preloadDepth,
-                                  const std::vector<std::string>& requiredTags,
-                                  uint64_t endpointId)
+        const auto consider = [&](ZoneId destination, uint64_t endpointId)
         {
-            if (!ZoneExists(manifest, destination) || !TagsPresent(requiredTags, activeTags))
+            if (!ZoneExists(manifest, destination))
                 return;
             const GraphId currentGraph = GraphOf(manifest, current.Zone);
             const GraphId destinationGraph = GraphOf(manifest, destination);
             const bool crossGraph = currentGraph != destinationGraph;
             if (crossGraph && currentGraph != focusGraph)
                 return;
-            if (current.Remaining <= 0 && preloadDepth <= 0 && !crossGraph)
+            if (current.Remaining <= 0 && !crossGraph)
                 return;
 
-            int32_t farRemaining = std::max(current.Remaining - 1, preloadDepth - 1);
+            int32_t farRemaining = std::max(current.Remaining - 1, 0);
             if (crossGraph)
             {
                 WorldPartitionStreamingConfig destinationBase;
@@ -245,8 +220,6 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
 
             if (ZoneHopRank* existing = FindRank(ranks, destination))
             {
-                if (existing->Hop == farHop && priority > existing->Priority)
-                    existing->Priority = priority;
                 if (int32_t* known = remainingOf(destination);
                     known != nullptr && farRemaining > *known)
                 {
@@ -256,7 +229,7 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
                 return;
             }
             ranks.push_back(ZoneHopRank{
-                destination, farHop, priority,
+                destination, farHop, 0.0,
                 crossGraph ? ZoneDemandReason::CrossGraphEntry
                            : ZoneDemandReason::SameGraphHop,
                 current.Zone, endpointId });
@@ -266,12 +239,10 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
 
         for (const DockEndpoint& endpoint : index.DocksFrom(current.Zone))
             if (EndpointAllowsOutgoing(endpoint.Side, endpoint.Directions))
-                consider(endpoint.OtherZone, endpoint.PreloadPriority, endpoint.PreloadDepth,
-                         endpoint.RequiredTags, endpoint.Id.Value);
+                consider(endpoint.OtherZone, endpoint.Id.Value);
         for (const LinkEndpoint& endpoint : index.LinksFrom(current.Zone))
             if (EndpointAllowsOutgoing(endpoint.Side, endpoint.Directions))
-                consider(endpoint.OtherZone, endpoint.PreloadPriority, endpoint.PreloadDepth,
-                         endpoint.RequiredTags, endpoint.Id.Value);
+                consider(endpoint.OtherZone, endpoint.Id.Value);
     }
 
     std::sort(ranks.begin(), ranks.end(),
@@ -285,8 +256,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                                                 ZoneId focus,
                                                 std::span<const ZonePin> pins,
                                                 const WorldPartitionStreamingConfig& config,
-                                                const Vec3d* focusPosition,
-                                                std::span<const std::string> activeTags)
+                                                const Vec3d* focusPosition)
 {
     struct DemandEntry
     {
@@ -301,7 +271,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     const WorldPartitionStreamingConfig focusConfig =
         ResolveGraphStreamingConfig(manifest, focus, config);
     const std::vector<ZoneHopRank> ranks =
-        ComputeZoneHopRanks(manifest, index, focus, focusConfig.HopCount, activeTags);
+        ComputeZoneHopRanks(manifest, index, focus, focusConfig.HopCount);
     if (ranks.empty())
         return {};
 
@@ -340,27 +310,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                 return &entry;
         return nullptr;
     };
-
-    // Being inside an outgoing dock arm is a predictive ordering reason in
-    // addition to ordinary graph adjacency. It never creates topology.
-    if (focusPosition != nullptr)
-    {
-        for (const DockEndpoint& endpoint : index.DocksFrom(focus))
-        {
-            if (!EndpointAllowsOutgoing(endpoint.Side, endpoint.Directions)
-                || !TagsPresent(endpoint.RequiredTags, activeTags)
-                || !endpoint.OwnerArmBoundsLocal.Contains(
-                    ToEndpointLocal(endpoint, *focusPosition)))
-                continue;
-            if (DemandEntry* destination = find(endpoint.OtherZone))
-            {
-                destination->Sources.DockApproach = true;
-                AddReason(destination->Reasons,
-                          { ZoneDemandReason::DockApproach, focus,
-                            endpoint.Id.Value, 1, {} });
-            }
-        }
-    }
 
     // Proximity demand: zones whose bounds' closest point lies within Radius
     // of the focus position (point-to-box, not center-to-center: a huge field
@@ -432,7 +381,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
             DemandEntry entry;
             entry.Rank = ZoneHopRank{
                 header.Id, seed.Config.HopCount + 1,
-                -static_cast<int32_t>(std::lround(std::sqrt(distanceSq) * 100.0)),
+                std::sqrt(distanceSq),
                 ZoneDemandReason::SpatialRadius, seed.Zone, 0
             };
             entry.Desired = preload;
@@ -458,7 +407,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
             DemandEntry entry;
             entry.Rank = ZoneHopRank{
                 pin.Zone, std::numeric_limits<int32_t>::max(),
-                std::numeric_limits<int32_t>::min(),
+                0.0,
                 ZoneDemandReason::ExplicitPin, pin.Zone, 0 };
             entry.Desired = pin.Minimum;
             entry.Sources.Pinned = true;
@@ -482,8 +431,8 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         existing->Pinned = true;
     }
 
-    // Cap: evict non-focus non-pinned zones (hop descending, then priority
-    // ascending, then id descending) until the cap is met. Focus plus pins may
+    // Cap: evict non-focus non-pinned zones (hop descending, then derived cost
+    // descending, then id descending) until the cap is met. Focus plus pins may
     // exceed the cap: pins are explicit demands, silently dropping one would
     // be a policy lie.
     std::vector<bool> evicted(entries.size(), false);
@@ -520,8 +469,8 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                   {
                       if (entries[a].Rank.Hop != entries[b].Rank.Hop)
                           return entries[a].Rank.Hop > entries[b].Rank.Hop;
-                      if (entries[a].Rank.Priority != entries[b].Rank.Priority)
-                          return entries[a].Rank.Priority < entries[b].Rank.Priority;
+                      if (entries[a].Rank.Cost != entries[b].Rank.Cost)
+                          return entries[a].Rank.Cost > entries[b].Rank.Cost;
                       return entries[a].Rank.Zone.Value > entries[b].Rank.Zone.Value;
                   });
         for (size_t candidate : evictable)

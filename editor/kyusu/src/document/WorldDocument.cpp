@@ -37,16 +37,6 @@ ZoneId UniqueZoneAt(const WorldPartitionManifest& manifest, Vec3d point)
     return result;
 }
 
-bool IsFinitePositiveAabb(const Aabb3d& bounds)
-{
-    constexpr float epsilon = 1.0e-4f;
-    for (int axis = 0; axis < 3; ++axis)
-        if (!std::isfinite(bounds.Min[axis]) || !std::isfinite(bounds.Max[axis])
-            || bounds.Max[axis] - bounds.Min[axis] <= epsilon)
-            return false;
-    return true;
-}
-
 // Scene file names derive from zone names: lowercase, spaces to underscores,
 // ASCII alphanumerics/underscore/hyphen only. Empty after sanitizing falls
 // back to "zone".
@@ -129,6 +119,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldPath_.assign(path);
     Manifest_ = std::move(*manifest);
@@ -299,6 +290,7 @@ void WorldDocument::NewWorld(std::string_view name)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldPath_.clear();
     Manifest_ = {};
@@ -469,14 +461,28 @@ bool WorldDocument::SetFocusZone(ZoneId zone)
     if (!WorldMode_)
         return false;
     if (zone == FocusZone_ && IsZoneOpen(zone))
+    {
+        SelectedZone_ = zone;
         return true;
+    }
     if (!LoadZone(zone))
         return false;
 
     FocusZone_ = zone;
+    SelectedZone_ = zone;
     WorldSceneFocused_ = false;
     if (OnFocusChanged)
         OnFocusChanged();
+    return true;
+}
+
+bool WorldDocument::SelectZone(ZoneId zone)
+{
+    if (!WorldMode_)
+        return false;
+    if (zone.IsValid() && FindZoneHeader(zone) == nullptr)
+        return false;
+    SelectedZone_ = zone;
     return true;
 }
 
@@ -491,6 +497,7 @@ bool WorldDocument::FocusWorldScene()
     // unload while the world scene is edited.
     WorldSceneFocused_ = true;
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     if (OnFocusChanged)
         OnFocusChanged();
     return true;
@@ -617,10 +624,7 @@ LegacyTransitionMigrationReport WorldDocument::MigrateLegacyTransitions()
     {
         return b.Topology == TransitionTopology::Teleport
             && a.From == b.To && a.To == b.From
-            && !a.Flags.OneWay && !b.Flags.OneWay
-            && a.PreloadPriority == b.PreloadPriority
-            && a.PreloadDepth == b.PreloadDepth
-            && a.RequiredTags == b.RequiredTags;
+            && !a.Flags.OneWay && !b.Flags.OneWay;
     };
 
     EditorScene& scene = WorldScene_->GetScene();
@@ -653,16 +657,6 @@ LegacyTransitionMigrationReport WorldDocument::MigrateLegacyTransitions()
         link.ZoneB = transition->To;
         link.Kind = LinkKind::Teleport;
         link.Directions = reverse != nullptr ? DockDirectionBoth : DockDirectionAToB;
-        link.PreloadPriority = transition->PreloadPriority;
-        link.PreloadDepth = transition->PreloadDepth;
-        std::string condition;
-        for (const std::string& tag : transition->RequiredTags)
-        {
-            if (!condition.empty())
-                condition += ", ";
-            condition += tag;
-        }
-        link.DemandCondition.Assign(condition);
 
         const EntityId entity = registry.Components.CreateEntity();
         registry.Components.AddComponent(entity, link);
@@ -687,6 +681,48 @@ LegacyTransitionMigrationReport WorldDocument::MigrateLegacyTransitions()
     }
     RunValidation();
     return report;
+}
+
+bool WorldDocument::ConvertLegacyTransitionToTeleport(TransitionId id)
+{
+    assert(WorldMode_ && "ConvertLegacyTransitionToTeleport: world mode only");
+    const auto it = std::find_if(
+        Manifest_.Transitions.begin(), Manifest_.Transitions.end(),
+        [&](const TransitionRecord& record) { return record.Id == id; });
+    if (it == Manifest_.Transitions.end())
+        return false;
+
+    const TransitionRecord source = *it;
+    TransitionId reverseId;
+    if (!source.Flags.OneWay)
+        for (const TransitionRecord& candidate : Manifest_.Transitions)
+            if (candidate.Id != source.Id && !candidate.Flags.OneWay
+                && candidate.From == source.To && candidate.To == source.From)
+            {
+                reverseId = candidate.Id;
+                break;
+            }
+
+    WorldLink link;
+    link.Id = MintLinkId();
+    link.ZoneA = source.From;
+    link.ZoneB = source.To;
+    link.Kind = LinkKind::Teleport;
+    link.Directions = reverseId.IsValid()
+        ? DockDirectionBoth : DockDirectionAToB;
+
+    EditorScene& scene = WorldScene_->GetScene();
+    Registry& registry = scene.GetRegistry();
+    const EntityId entity = registry.Components.CreateEntity();
+    registry.Components.AddComponent(entity, link);
+    scene.TrackEntity(entity);
+
+    std::erase_if(Manifest_.Transitions, [&](const TransitionRecord& record)
+                  { return record.Id == source.Id || record.Id == reverseId; });
+    WorldScene_->MarkDirty();
+    MarkManifestEdited();
+    RunValidation();
+    return true;
 }
 
 bool WorldDocument::DiscardLegacyTransition(TransitionId transition)
@@ -986,22 +1022,9 @@ void WorldDocument::RunValidation()
                     addDockError("partition.dock.plane_degenerate",
                         std::format("world dock {} has non-positive plane dimensions",
                                     DockIdToString(dock->Id)));
-                const bool armsValid = IsFinitePositiveAabb(dock->SideAArmBounds)
-                    && IsFinitePositiveAabb(dock->SideBArmBounds);
-                if (!armsValid)
-                    addDockError("partition.dock.arm_bounds_invalid",
-                        std::format("world dock {} has invalid side-local AABBs",
-                                    DockIdToString(dock->Id)));
-                const bool armsOnSide = dock->SideAArmBounds.Max.Z <= 1e-4f
-                    && dock->SideBArmBounds.Min.Z >= -1e-4f;
-                if (!armsOnSide)
-                    addDockError("partition.dock.arm_bounds_wrong_side",
-                        std::format("world dock {} has an AABB extending through the wrong side",
-                                    DockIdToString(dock->Id)));
-                if (dock->Directions < 1u || dock->Directions > 3u
-                    || dock->PreloadDepth < 0)
+                if (dock->Directions < 1u || dock->Directions > 3u)
                     addDockError("partition.dock.semantics_invalid",
-                        std::format("world dock {} has invalid direction or preload semantics",
+                        std::format("world dock {} has invalid directionality",
                                     DockIdToString(dock->Id)));
 
                 bool transformValid = transform != nullptr;
@@ -1066,8 +1089,7 @@ void WorldDocument::RunValidation()
                     && link->ZoneA != link->ZoneB;
                 if (!link->Id.IsValid() || duplicate || !zonesKnown
                     || link->Kind != LinkKind::Teleport
-                    || link->Directions < 1u || link->Directions > 3u
-                    || link->PreloadDepth < 0)
+                    || link->Directions < 1u || link->Directions > 3u)
                 {
                     ValidationRecords_.push_back({
                         .Severity = ContentRiskSeverity::Error,
@@ -1305,6 +1327,7 @@ void WorldDocument::CloseWorldToLegacy()
     IndexDirty_ = true;
     WorldDirty_ = false;
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldScene_.reset();
     OpenZones_.clear();

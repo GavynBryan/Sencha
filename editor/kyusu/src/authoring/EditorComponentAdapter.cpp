@@ -80,36 +80,6 @@ std::optional<float> IntersectRectangle(const Ray3d& ray,
     return distance;
 }
 
-std::optional<float> IntersectBox(const Ray3d& ray, const EditorPickProxy& proxy)
-{
-    const Vec3d axes[3] = { proxy.LocalToWorld.Right(), proxy.LocalToWorld.Up(),
-                            -proxy.LocalToWorld.Forward() };
-    const Vec3d delta = ray.Origin - proxy.LocalToWorld.Position;
-    Vec3d origin{ delta.Dot(axes[0]), delta.Dot(axes[1]), delta.Dot(axes[2]) };
-    Vec3d direction{ ray.Direction.Dot(axes[0]), ray.Direction.Dot(axes[1]),
-                     ray.Direction.Dot(axes[2]) };
-    float near = 0.0f;
-    float far = 1.0e6f;
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        if (std::abs(direction[axis]) <= 1.0e-6f)
-        {
-            if (origin[axis] < proxy.Bounds.Min[axis]
-                || origin[axis] > proxy.Bounds.Max[axis])
-                return std::nullopt;
-            continue;
-        }
-        float a = (proxy.Bounds.Min[axis] - origin[axis]) / direction[axis];
-        float b = (proxy.Bounds.Max[axis] - origin[axis]) / direction[axis];
-        if (a > b)
-            std::swap(a, b);
-        near = std::max(near, a);
-        far = std::min(far, b);
-        if (near > far)
-            return std::nullopt;
-    }
-    return near;
-}
 }
 
 bool EditorComponentAdapterRegistry::Register(
@@ -174,8 +144,10 @@ void EditorAffordanceService::AppendZoneBoundsTarget(
     if (!World.IsWorld() || !Selection.GetSelection().empty())
         return;
     const ZoneHeader* zone = nullptr;
+    const ZoneId selectedZone = World.SelectedZone().IsValid()
+        ? World.SelectedZone() : World.FocusZone();
     for (const ZoneHeader& candidate : World.Manifest().Zones)
-        if (candidate.Id == World.FocusZone())
+        if (candidate.Id == selectedZone)
         {
             zone = &candidate;
             break;
@@ -207,8 +179,7 @@ std::optional<std::pair<SelectableRef, float>> EditorAffordanceService::Pick(
     std::optional<std::pair<SelectableRef, float>> best;
     for (const EditorPickProxy& proxy : output.PickProxies)
     {
-        const std::optional<float> distance = proxy.Shape == EditorPickProxy::Kind::Rectangle
-            ? IntersectRectangle(ray, proxy) : IntersectBox(ray, proxy);
+        const std::optional<float> distance = IntersectRectangle(ray, proxy);
         if (!distance || (best && best->second <= *distance))
             continue;
         best = std::pair{ SelectableRef::EntitySelection(scene.GetRegistry().Id,

@@ -52,12 +52,16 @@ public:
     [[nodiscard]] bool HasManifest() const { return HasManifest_; }
     [[nodiscard]] const WorldPartitionManifest& Manifest() const;
 
-    // The one policy input. The first position resolves against exact zone
-    // shapes. Later movement is swept through authored dock planes during
+    // The one policy input. The first position resolves against coarse Zone
+    // AABBs. Later movement is swept through authored dock planes during
     // Update, where destination physics residency can be verified.
     void SetFocus(Vec3d position);
+    // Optional runtime-only focus shape for conservative late-residency
+    // clamping. Height is the total capsule height; nothing is authored or
+    // serialized on a Dock.
+    void SetFocusCapsule(float radius, float height);
     // Explicit placement/recovery path for teleports, save restore, and
-    // out-of-world fallback. Resolves exact shapes instead of sweeping docks.
+    // out-of-world fallback. Resolves coarse AABBs instead of sweeping docks.
     void RelocateFocus(Vec3d position);
     // For when position is not meaningful (menus, scripted warps). Asserts the
     // zone exists in the manifest.
@@ -70,10 +74,15 @@ public:
     [[nodiscard]] std::optional<ZoneId> ZoneAt(Vec3d position) const;
     [[nodiscard]] ZoneContainmentResult ResolveZoneAt(
         Vec3d position, ZoneId preferred = {}) const;
-    [[nodiscard]] const std::optional<ZoneCrossingRecord>& LastCrossing() const
+    [[nodiscard]] const std::optional<DockTraversalResult>& LastCrossing() const
     {
         return LastCrossing_;
     }
+    [[nodiscard]] const DockTraversalResult& LastTraversal() const
+    {
+        return LastTraversal_;
+    }
+    [[nodiscard]] uint64_t LateTraversalCount() const { return LateTraversalCount_; }
 
     // Authored/scripted long-lived floor. Existing semantics remain last-writer-
     // wins because this API names one pin per zone.
@@ -96,8 +105,13 @@ public:
 
     [[nodiscard]] std::size_t ParticipationLeaseCount() const { return ActiveLeaseCount_; }
 
-    void SetWorldTags(std::vector<std::string> tags);
-
+    // Once per frame from the owning game system. Computes demand, layers
+    // linger state, and diffs desired against resident plus in-flight: issues
+    // dormant BeginLoad through the recipe, SetParticipation changes,
+    // CancelLoad for undemanded in-flight loads, and RequestDestroy for zones
+    // whose linger expired (destruction lands at the next commit drain, never
+    // mid-frame: the in-flight frame view stays untouched). Never touches the
+    // focus zone's residency.
     void Update(double deltaSeconds, AsyncZoneLoader& loader, RuntimeWorld& world);
 
     [[nodiscard]] std::span<const ZoneDemandRecord> DemandRecords() const { return Records_; }
@@ -151,14 +165,19 @@ private:
     Vec3d DockSweepPosition_{};
     Vec3d PendingFocusPosition_{};
     bool HasPendingFocusPosition_ = false;
-    DockId ArmedDock_;
-    std::optional<ZoneCrossingRecord> LastCrossing_;
+    float FocusCapsuleRadius_ = 0.0f;
+    float FocusCapsuleCylinderHalfHeight_ = 0.0f;
+    DockId SuppressedDock_;
+    DockTraversalResult LastTraversal_;
+    std::optional<DockTraversalResult> LastCrossing_;
+    uint64_t LateTraversalCount_ = 0;
     LingerState TraversalGrace_;
     std::vector<ZonePin> Pins_;
     std::vector<ParticipationLeaseSlot> LeaseSlots_;
     std::vector<uint32_t> FreeLeaseSlots_;
     std::size_t ActiveLeaseCount_ = 0;
-    std::vector<std::string> WorldTags_;
+    // Zones whose destruction is queued for the next drain; still resident
+    // until it runs, so Update must not re-request them.
     std::vector<ZoneId> PendingDestroys_;
     std::vector<ZoneId> Issued_;
     std::vector<LingerState> Lingering_;

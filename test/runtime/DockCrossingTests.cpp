@@ -18,16 +18,13 @@ WorldPartitionIndex CrossingIndex(Vec3d normal = Vec3d{ 1, 0, 0 },
     DockEndpoint a{
         .Id = Dock,
         .OwnerZone = ZoneA,
-        .OwnerGraph = GraphId{ 0xb1 },
         .OtherZone = ZoneB,
-        .OtherGraph = GraphId{ 0xb1 },
         .Side = DockSide::A,
         .Origin = {},
         .Normal = normal,
         .Right = right,
         .Up = up,
         .HalfExtents = { 2, 3 },
-        .OwnerArmBoundsLocal = { { -4, -4, -4 }, { 4, 4, 0 } },
         .Directions = directions,
     };
     DockEndpoint b = a;
@@ -57,12 +54,25 @@ TEST(DockCrossing, SweptCrossingHandlesFastMovement)
 
     const auto crossing = AdvanceZoneFocus(state, index, Vec3d{ 20, 0, 0 });
 
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->Dock, Dock);
-    EXPECT_EQ(crossing->From, ZoneA);
-    EXPECT_EQ(crossing->To, ZoneB);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.Dock, Dock);
+    EXPECT_EQ(crossing.From, ZoneA);
+    EXPECT_EQ(crossing.To, ZoneB);
     EXPECT_EQ(state.Current, ZoneB);
-    EXPECT_NEAR(crossing->Position.X, 0.0f, 1e-5f);
+    EXPECT_NEAR(crossing.CrossingPoint.X, 0.0f, 1e-5f);
+}
+
+TEST(DockCrossing, SampleLandingOnPlaneCrossesOnNextOutwardSample)
+{
+    const WorldPartitionIndex index = CrossingIndex();
+    ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -1, 0, 0 } };
+
+    EXPECT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 0, 0, 0 }).Status,
+              DockTraversalStatus::None);
+    const DockTraversalResult crossing = AdvanceZoneFocus(
+        state, index, Vec3d{ 1, 0, 0 });
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.CrossingPoint, Vec3d::Zero());
 }
 
 TEST(DockCrossing, BoundedPlaneRejectsCrossingOutsideSurface)
@@ -70,7 +80,8 @@ TEST(DockCrossing, BoundedPlaneRejectsCrossingOutsideSurface)
     const WorldPartitionIndex index = CrossingIndex();
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -2, 0, 10 } };
 
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 10 }).has_value());
+    EXPECT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 10 }).Status,
+              DockTraversalStatus::None);
     EXPECT_EQ(state.Current, ZoneA);
 }
 
@@ -80,19 +91,22 @@ TEST(DockCrossing, DirectionFlagsRejectReverseOnlyEndpoint)
         Vec3d{ 1, 0, 0 }, Vec3d{ 0, 0, 1 }, Vec3d{ 0, 1, 0 }, DockDirectionBToA);
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -2, 0, 0 } };
 
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 0 }).has_value());
+    EXPECT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 0 }).Status,
+              DockTraversalStatus::None);
 }
 
-TEST(DockCrossing, ResidentGateRetainsSweepUntilDestinationIsReady)
+TEST(DockCrossing, LateDestinationReturnsClampAndRetriesFromSafeSourcePosition)
 {
     const WorldPartitionIndex index = CrossingIndex();
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -2, 0, 0 } };
     const DockCrossingOptions blocked{ .RequireResidentDestination = true };
 
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 0 }, blocked).has_value());
+    const DockTraversalResult late = AdvanceZoneFocus(
+        state, index, Vec3d{ 2, 0, 0 }, blocked);
+    EXPECT_EQ(late.Status, DockTraversalStatus::BlockedDestinationNotReady);
     EXPECT_EQ(state.Current, ZoneA);
-    const Vec3d retainedStart{ -2, 0, 0 };
-    EXPECT_EQ(state.PreviousPosition, retainedStart);
+    EXPECT_LT(late.SafeSourcePosition.X, 0.0f);
+    EXPECT_EQ(state.PreviousPosition, late.SafeSourcePosition);
 
     const ZoneId resident[] = { ZoneB };
     const DockCrossingOptions ready{
@@ -100,8 +114,8 @@ TEST(DockCrossing, ResidentGateRetainsSweepUntilDestinationIsReady)
         .RequireResidentDestination = true,
     };
     const auto crossing = AdvanceZoneFocus(state, index, Vec3d{ 2, 0, 0 }, ready);
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->To, ZoneB);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.To, ZoneB);
 }
 
 TEST(DockCrossing, GatePhysicsControlsPassageWithoutChangingTopology)
@@ -118,14 +132,15 @@ TEST(DockCrossing, GatePhysicsControlsPassageWithoutChangingTopology)
     const bool doorClosed = true;
     const Vec3d blockedPosition = doorClosed ? Vec3d{ -0.1f, 0, 0 }
                                              : Vec3d{ 1, 0, 0 };
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, blockedPosition, ready).has_value());
+    EXPECT_EQ(AdvanceZoneFocus(state, index, blockedPosition, ready).Status,
+              DockTraversalStatus::None);
     EXPECT_EQ(state.Current, ZoneA);
     EXPECT_EQ(binding.Id, index.DocksFrom(ZoneA).front().Id);
 
     const auto crossing = AdvanceZoneFocus(state, index, Vec3d{ 1, 0, 0 }, ready);
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->To, ZoneB);
-    EXPECT_EQ(binding.Id, crossing->Dock);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.To, ZoneB);
+    EXPECT_EQ(binding.Id, crossing.Dock);
 }
 
 TEST(DockCrossing, HorizontalDockUsesItsAuthoredBasis)
@@ -135,8 +150,8 @@ TEST(DockCrossing, HorizontalDockUsesItsAuthoredBasis)
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { 0, -2, 0 } };
 
     const auto crossing = AdvanceZoneFocus(state, index, Vec3d{ 0, 2, 0 });
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->To, ZoneB);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.To, ZoneB);
 }
 
 TEST(DockCrossing, DiagonalDockUsesItsAuthoredBasis)
@@ -148,32 +163,36 @@ TEST(DockCrossing, DiagonalDockUsesItsAuthoredBasis)
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = -normal * 2.0f };
 
     const auto crossing = AdvanceZoneFocus(state, index, normal * 2.0f);
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->To, ZoneB);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.To, ZoneB);
 }
 
-TEST(DockCrossing, ArmedDockSuppressesThresholdJitter)
+TEST(DockCrossing, FixedPlaneHysteresisSuppressesThresholdJitter)
 {
     const WorldPartitionIndex index = CrossingIndex();
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -1, 0, 0 } };
-    ASSERT_TRUE(AdvanceZoneFocus(state, index, Vec3d{ 1, 0, 0 }).has_value());
+    ASSERT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 1, 0, 0 }).Status,
+              DockTraversalStatus::Crossed);
 
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, Vec3d{ -0.1f, 0, 0 }).has_value());
+    EXPECT_EQ(AdvanceZoneFocus(state, index, Vec3d{ -0.01f, 0, 0 }).Status,
+              DockTraversalStatus::None);
     EXPECT_EQ(state.Current, ZoneB);
-    EXPECT_EQ(state.ArmedDock, Dock);
+    EXPECT_EQ(state.SuppressedDock, Dock);
 }
 
-TEST(DockCrossing, LeavingArmRearmsDockForReversal)
+TEST(DockCrossing, ClearingPlaneHysteresisAllowsReversal)
 {
     const WorldPartitionIndex index = CrossingIndex();
     ZoneFocusState state{ .Current = ZoneA, .PreviousPosition = { -1, 0, 0 } };
-    ASSERT_TRUE(AdvanceZoneFocus(state, index, Vec3d{ 1, 0, 0 }).has_value());
+    ASSERT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 1, 0, 0 }).Status,
+              DockTraversalStatus::Crossed);
 
-    EXPECT_FALSE(AdvanceZoneFocus(state, index, Vec3d{ 10, 0, 0 }).has_value());
-    EXPECT_FALSE(state.ArmedDock.IsValid());
+    EXPECT_EQ(AdvanceZoneFocus(state, index, Vec3d{ 10, 0, 0 }).Status,
+              DockTraversalStatus::None);
+    EXPECT_FALSE(state.SuppressedDock.IsValid());
 
     const auto crossing = AdvanceZoneFocus(state, index, Vec3d{ -1, 0, 0 });
-    ASSERT_TRUE(crossing.has_value());
-    EXPECT_EQ(crossing->From, ZoneB);
-    EXPECT_EQ(crossing->To, ZoneA);
+    ASSERT_EQ(crossing.Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(crossing.From, ZoneB);
+    EXPECT_EQ(crossing.To, ZoneA);
 }

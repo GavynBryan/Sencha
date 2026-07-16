@@ -66,10 +66,14 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Index_ = std::move(index);
     HasManifest_ = true;
     Focus_ = ZoneId{};
-    ArmedDock_ = {};
+    SuppressedDock_ = {};
+    LastTraversal_ = {};
     LastCrossing_.reset();
     HasFocusPosition_ = false;
     HasPendingFocusPosition_ = false;
+    FocusCapsuleRadius_ = 0.0f;
+    FocusCapsuleCylinderHalfHeight_ = 0.0f;
+    LateTraversalCount_ = 0;
     TraversalGrace_ = {};
     Pins_.clear();
 
@@ -129,6 +133,13 @@ void WorldPartitionRuntime::SetFocus(Vec3d position)
     }
 }
 
+void WorldPartitionRuntime::SetFocusCapsule(float radius, float height)
+{
+    FocusCapsuleRadius_ = std::max(0.0f, radius);
+    FocusCapsuleCylinderHalfHeight_ = std::max(
+        0.0f, height * 0.5f - FocusCapsuleRadius_);
+}
+
 void WorldPartitionRuntime::RelocateFocus(Vec3d position)
 {
     if (!HasManifest_)
@@ -138,7 +149,8 @@ void WorldPartitionRuntime::RelocateFocus(Vec3d position)
     DockSweepPosition_ = position;
     HasFocusPosition_ = true;
     HasPendingFocusPosition_ = false;
-    ArmedDock_ = {};
+    SuppressedDock_ = {};
+    LastTraversal_ = {};
     LastCrossing_.reset();
     TraversalGrace_ = {};
 }
@@ -147,7 +159,8 @@ void WorldPartitionRuntime::SetFocus(ZoneId zone)
 {
     assert(HasManifest_ && FindHeader(zone) != nullptr && "SetFocus: unknown zone");
     Focus_ = zone;
-    ArmedDock_ = {};
+    SuppressedDock_ = {};
+    LastTraversal_ = {};
     LastCrossing_.reset();
     TraversalGrace_ = {};
     HasPendingFocusPosition_ = false;
@@ -288,11 +301,6 @@ std::size_t WorldPartitionRuntime::InvalidateParticipationLeases(ZoneId zone)
     return invalidated;
 }
 
-void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
-{
-    WorldTags_ = std::move(tags);
-}
-
 bool WorldPartitionRuntime::IsZoneLoadSuppressed(ZoneId zone) const
 {
     for (const FailedLoad& record : FailedLoads_)
@@ -338,6 +346,7 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     ReconcileFailedLoads(loader);
 
     LastCrossing_.reset();
+    LastTraversal_ = {};
     if (HasManifest_ && Focus_.IsValid() && HasPendingFocusPosition_)
     {
         std::vector<ZoneId> residentPhysicsZones;
@@ -348,18 +357,26 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 residentPhysicsZones.push_back(zone.Id);
         }
 
-        ZoneFocusState state{ Focus_, {}, ArmedDock_, DockSweepPosition_ };
-        LastCrossing_ = AdvanceZoneFocus(
+        ZoneFocusState state{ Focus_, {}, SuppressedDock_, DockSweepPosition_ };
+        LastTraversal_ = AdvanceZoneFocus(
             state, Index_, PendingFocusPosition_,
             DockCrossingOptions{
-                .FocusHalfExtent = {},
+                .CapsuleRadius = FocusCapsuleRadius_,
+                .CapsuleHalfHeight = FocusCapsuleCylinderHalfHeight_,
                 .ResidentPhysicsZones = residentPhysicsZones,
                 .RequireResidentDestination = true,
             });
+        if (LastTraversal_.Status == DockTraversalStatus::Crossed)
+            LastCrossing_ = LastTraversal_;
+        else if (LastTraversal_.Status
+                 == DockTraversalStatus::BlockedDestinationNotReady)
+            ++LateTraversalCount_;
         Focus_ = state.Current;
-        ArmedDock_ = state.ArmedDock;
+        SuppressedDock_ = state.SuppressedDock;
         DockSweepPosition_ = state.PreviousPosition;
-        FocusPosition_ = PendingFocusPosition_;
+        FocusPosition_ = LastTraversal_.Status
+                == DockTraversalStatus::BlockedDestinationNotReady
+            ? LastTraversal_.SafeSourcePosition : PendingFocusPosition_;
         HasFocusPosition_ = true;
         HasPendingFocusPosition_ = false;
         if (LastCrossing_)
@@ -372,7 +389,7 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     {
         const WorldPartitionStreamingConfig resolved =
             ResolveGraphStreamingConfig(Manifest_, Focus_, Config_);
-        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, resolved.HopCount, WorldTags_);
+        ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, resolved.HopCount);
 
         // Leases use the existing pin-shaped pure demand input, but remain
         // independently tokenized in the runtime. Duplicate entries are safe:
@@ -384,7 +401,7 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 effectivePins.push_back(ZonePin{ lease.Zone, lease.Minimum });
 
         demand = ComputeZoneDemand(Manifest_, Index_, Focus_, effectivePins, resolved,
-                                   HasFocusPosition_ ? &FocusPosition_ : nullptr, WorldTags_);
+                                   HasFocusPosition_ ? &FocusPosition_ : nullptr);
     }
 
     if (TraversalGrace_.Zone.IsValid())
@@ -438,6 +455,9 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         return nullptr;
     };
 
+    // Load: desired zones neither loaded nor in flight, closest policy rank
+    // first into the single task queue. Pinned zones beyond
+    // hop range have no rank and sort last among equals.
     std::vector<const ZoneDemandRecord*> toLoad;
     for (const ZoneDemandRecord& record : demand)
         if (!world.IsZoneResident(record.Zone) && !loader.IsLoading(record.Zone)
@@ -452,12 +472,10 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                   const int32_t hopB = rankB ? rankB->Hop : std::numeric_limits<int32_t>::max();
                   if (hopA != hopB)
                       return hopA < hopB;
-                  const int32_t priA =
-                      rankA ? rankA->Priority : std::numeric_limits<int32_t>::min();
-                  const int32_t priB =
-                      rankB ? rankB->Priority : std::numeric_limits<int32_t>::min();
-                  if (priA != priB)
-                      return priA > priB;
+                  const double costA = rankA ? rankA->Cost : 0.0;
+                  const double costB = rankB ? rankB->Cost : 0.0;
+                  if (costA != costB)
+                      return costA < costB;
                   return a->Zone.Value < b->Zone.Value;
               });
     for (const ZoneDemandRecord* record : toLoad)

@@ -3,7 +3,6 @@
 #include "EditorTheme.h"
 #include "OverlayBoxEdges.h"
 
-#include "document/WorldTagList.h"
 #include "document/WorldDocument.h"
 #include "viewport/WorldViewSettings.h"
 
@@ -40,11 +39,10 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         // showing nothing.
         if (!view.PreviewFocus.IsValid())
             view.PreviewFocus = world.FocusZone();
-        const std::vector<std::string> activeTags = SplitWorldTagList(view.PreviewTags);
         previewConfig =
             ResolvePreviewStreamingConfig(world.Manifest(), view.PreviewFocus, view);
         demand = ComputeZoneDemand(world.Manifest(), world.Index(), view.PreviewFocus, {},
-                                   previewConfig, &view.PreviewFocusPosition, activeTags);
+                                   previewConfig, &view.PreviewFocusPosition);
     }
     const auto demanded = [&](ZoneId zone)
     {

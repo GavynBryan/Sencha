@@ -23,13 +23,13 @@ and ask, not to improvise (see "Stop conditions" below).
 | `03-runtime-streaming.md` | Phase R | `WorldPartitionRuntime`, demand policy, streaming tunables, template game world path, PIE play-from-world. |
 | `04-move-selection-to-zone.md` | Phase E2 | Cross-zone entity moves with undo, UI entry points, bounds-containment validation. |
 | `05-transitions-and-portals.md` | Phase E3 | Portal marker brushes, transition verbs and panel UI, linkage validation, cook exclusion. |
-| `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). IMPLEMENTED 2026-07-05. |
+| `06-streaming-maturation.md` | retired | Historical demand experiment; connection-local policy was removed by Plans 11/12. |
 | `07-global-content.md` | Phase G | The world scene: authored global content loaded once into ZoneRuntime::Global(). IMPLEMENTED 2026-07-05. |
 | `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
 | `09-retire-portals-doors-as-world-content.md` | (reversal) | Portals removed entirely; connections authored zone-to-zone only; doors recorded as future world-scene content. Reverses D9, D15, D19, D20. IMPLEMENTED 2026-07-05. |
 | `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. IMPLEMENTED 2026-07-05. |
-| `11-zone-runtime-model.md` | (proposed design) | The zone runtime model: flat resident zones with `SourceZone` place identity and region demand grouping; the world topology store (contacts as queryable runtime data, evaluated under world tags and spatial configurations, two capabilities: Demand and Traversal); mutation invariants; the query surface; demand over evaluated topology with residency-dependency closure for multi-cell objects; the reconfiguration prepare/commit lifecycle; layered containment; dynamic-entity limits. Owner review before anything starts. |
-| `12-spatial-compilation.md` | (proposed design) | The spatial compilation design: residency subdivision with stable child ids, coverage bounds, and residency-dependency edges for multi-cell objects; tested sibling adjacency between subdivision children; scoped evidence kernels; labeling; one contact family (compiled contacts and authored links) with capability potentials and predicates; spatial-configuration variant cooking (doors through rotating halls) with one controller per contact; controller identity without entity identity; the topology and containment artifacts; editor scenarios and inspectors; fixtures and stages. Owner review before anything starts. |
+| `11-zone-runtime-model.md` | canonical correction | Implemented one-AABB Zone, graph-policy demand, bounded-plane crossing, and defined late-residency contract. |
+| `12-spatial-compilation.md` | canonical correction | Implemented Dock/Link authoring, narrow editor affordances, cook/lifecycle/validation, and read-only Graph Viewer v1. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
@@ -149,7 +149,7 @@ assets.
 **D10. The zone content recipe is a game-supplied function.** `WorldPartitionRuntime`
 decides which zones are resident; the game decides how a zone's cooked refs become a
 registry. The seam is one callable, `ZoneLoadRecipeFn`, returning per-zone build and
-finalize callbacks plus an optional asset preload (exact shape in `03-`). This is the
+finalize callbacks plus an optional asset preload (defined in `03-`). This is the
 game-binary boundary; it is a function, not an interface, because one implementation
 slot is all the boundary needs.
 

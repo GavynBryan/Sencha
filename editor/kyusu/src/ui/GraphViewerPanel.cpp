@@ -2,16 +2,15 @@
 
 #include "commands/CommandStack.h"
 #include "document/WorldDocument.h"
-#include "document/EditorEntityRecipe.h"
-#include "document/commands/CreateSnapshotEntityCommand.h"
 #include "selection/SelectionService.h"
 #include "selection/commands/SelectCommand.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "viewport/EditorViewport.h"
+#include "viewport/ViewportLayout.h"
 
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
-#include <zone/ZoneDemand.h>
 
 #include <imgui.h>
 
@@ -92,13 +91,30 @@ void DrawArrowhead(ImDrawList& draw, ImVec2 tip, ImVec2 tail, ImU32 color)
         ImVec2{ base.x - side.x * 4.0f, base.y - side.y * 4.0f }, color);
 }
 
+void FrameViewport(ViewportLayout& viewports, Vec3d center, float span)
+{
+    EditorViewport* viewport = viewports.Active();
+    if (viewport == nullptr)
+        return;
+    span = std::max(span, 1.0f);
+    if (viewport->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
+    {
+        viewport->Camera.OrthoCenter = center;
+        viewport->Camera.OrthoHeight = span * 1.5f;
+        return;
+    }
+    viewport->Camera.Position = center
+        - viewport->Camera.GetForwardVector() * (span * 1.75f);
+}
+
 } // namespace
 
 GraphViewerPanel::GraphViewerPanel(WorldDocument& world, SelectionService& selection,
-                                   CommandStack& commands)
+                                   CommandStack& commands, ViewportLayout& viewports)
     : World(world)
     , Selection(selection)
     , Commands(commands)
+    , Viewports(viewports)
 {
 }
 
@@ -118,9 +134,7 @@ void GraphViewerPanel::OnDraw()
         {
             if (!zone.Bounds.IsValid()
                 || (FilterGraph.IsValid() && zone.Graph != FilterGraph)
-                || (selectedOnly
-                    && std::find(SelectedNodes.begin(), SelectedNodes.end(), zone.Id)
-                        == SelectedNodes.end()))
+                || (selectedOnly && zone.Id != World.SelectedZone()))
                 continue;
             bounds.ExpandToInclude(zone.Bounds.Min);
             bounds.ExpandToInclude(zone.Bounds.Max);
@@ -140,8 +154,6 @@ void GraphViewerPanel::OnDraw()
     ImGui::Checkbox("Cross-graph", &CrossGraphOnly);
     ImGui::SameLine();
     ImGui::Checkbox("One-way", &OneWayOnly);
-    ImGui::SameLine();
-    ImGui::Checkbox("Residency", &PreviewResidency);
     ImGui::SameLine();
     const GraphRecord* filteredGraph = nullptr;
     for (const GraphRecord& graph : World.Manifest().Graphs)
@@ -190,38 +202,10 @@ void GraphViewerPanel::OnDraw()
         Pitch = 0.0f;
         PerspectiveProjection = false;
     }
-    if (PreviewResidency)
-    {
-        const char* states[] = { "All states", "Resident", "Active", "Unloaded" };
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::Combo("##residency_filter", &ResidencyFilter, states, 4);
-    }
     ImGui::SameLine();
     const char* validation[] = { "All validation", "Warnings + errors", "Errors" };
     ImGui::SetNextItemWidth(150.0f);
     ImGui::Combo("##validation_filter", &ValidationFilter, validation, 3);
-    if (SelectedNodes.size() == 2)
-    {
-        ImGui::SameLine();
-        if (ImGui::Button("Create Teleport"))
-        {
-            WorldLinkRecipe recipe(SelectedNodes[1]);
-            EditorCreateContext context{
-                .World = &World,
-                .ActiveZone = SelectedNodes[0],
-                .PlacementPoint = {},
-                .Selection = Selection.GetSelection(),
-            };
-            EntitySnapshot snapshot = recipe.Build(context);
-            if (snapshot.Components.IsObject())
-            {
-                Commands.Execute(std::make_unique<CreateSnapshotEntityCommand>(
-                    World.WorldSceneDocument(), std::move(snapshot)));
-                SelectedNodes.clear();
-            }
-        }
-    }
-
     const ImVec2 canvasMin = ImGui::GetCursorScreenPos();
     const ImVec2 canvasSize = ImGui::GetContentRegionAvail();
     if (canvasSize.x < 32.0f || canvasSize.y < 32.0f)
@@ -286,22 +270,6 @@ void GraphViewerPanel::OnDraw()
                           z1 };
     };
 
-    ZoneId previewFocus = !SelectedNodes.empty() ? SelectedNodes.front() : World.FocusZone();
-    std::vector<ZoneDemandRecord> previewDemand;
-    if (PreviewResidency && previewFocus.IsValid())
-    {
-        const ZoneHeader* focus = FindZone(manifest, previewFocus);
-        const Vec3d focusPosition = focus != nullptr && focus->Bounds.IsValid()
-            ? focus->Bounds.Center() : Vec3d{};
-        previewDemand = ComputeZoneDemand(
-            manifest, World.Index(), previewFocus, {},
-            WorldPartitionStreamingConfig{}, &focusPosition);
-    }
-    const auto demanded = [&](ZoneId zone)
-    {
-        return std::any_of(previewDemand.begin(), previewDemand.end(),
-                           [&](const ZoneDemandRecord& record) { return record.Zone == zone; });
-    };
     const auto severityFor = [&](ContentRiskSourceKind kind, uint64_t source)
     {
         int severity = 0;
@@ -324,15 +292,8 @@ void GraphViewerPanel::OnDraw()
     nodes.reserve(manifest.Zones.size());
     for (const ZoneHeader& zone : manifest.Zones)
     {
-        const bool resident = demanded(zone.Id);
-        const bool active = zone.Id == previewFocus;
-        const bool passesResidency = !PreviewResidency || ResidencyFilter == 0
-            || (ResidencyFilter == 1 && resident)
-            || (ResidencyFilter == 2 && active)
-            || (ResidencyFilter == 3 && !resident);
         if (!zone.Bounds.IsValid() || !NameMatches(zone, Search)
-            || (FilterGraph.IsValid() && zone.Graph != FilterGraph)
-            || !passesResidency)
+            || (FilterGraph.IsValid() && zone.Graph != FilterGraph))
             continue;
         const auto [pixel, depth] = project(zone.Bounds.Center());
         nodes.push_back({ &zone, pixel, depth });
@@ -403,7 +364,25 @@ void GraphViewerPanel::OnDraw()
         const float dx = b->Pixel.x - a->Pixel.x;
         const float dy = b->Pixel.y - a->Pixel.y;
         const float length = std::max(1.0f, std::hypot(dx, dy));
-        const float offsetIndex = static_cast<float>(static_cast<int>(i % 5) - 2);
+        const ZoneId low = edge.A.Value < edge.B.Value ? edge.A : edge.B;
+        const ZoneId high = edge.A.Value < edge.B.Value ? edge.B : edge.A;
+        std::size_t parallelCount = 0;
+        std::size_t parallelOrdinal = 0;
+        for (std::size_t candidateIndex = 0; candidateIndex < edges.size(); ++candidateIndex)
+        {
+            const GraphEdgeView& candidate = edges[candidateIndex];
+            const ZoneId candidateLow = candidate.A.Value < candidate.B.Value
+                ? candidate.A : candidate.B;
+            const ZoneId candidateHigh = candidate.A.Value < candidate.B.Value
+                ? candidate.B : candidate.A;
+            if (candidateLow != low || candidateHigh != high)
+                continue;
+            if (candidateIndex < i)
+                ++parallelOrdinal;
+            ++parallelCount;
+        }
+        const float offsetIndex = static_cast<float>(parallelOrdinal)
+            - static_cast<float>(parallelCount - 1) * 0.5f;
         const ImVec2 offset{ -dy / length * offsetIndex * 3.0f,
                              dx / length * offsetIndex * 3.0f };
         const ImVec2 p0{ a->Pixel.x + offset.x, a->Pixel.y + offset.y };
@@ -451,18 +430,11 @@ void GraphViewerPanel::OnDraw()
     float clickedNodeDistance = 14.0f;
     for (const GraphNodeView& node : nodes)
     {
-        const bool nodeSelected = std::find(SelectedNodes.begin(), SelectedNodes.end(),
-                                            node.Zone->Id) != SelectedNodes.end();
+        const bool nodeSelected = World.SelectedZone() == node.Zone->Id;
         const bool focused = World.FocusZone() == node.Zone->Id;
         const int nodeSeverity = severityFor(ContentRiskSourceKind::Zone,
                                              node.Zone->Id.Value);
         ImU32 nodeColor = ImGui::GetColorU32(EditorUi::Accent);
-        if (PreviewResidency)
-            nodeColor = node.Zone->Id == previewFocus
-                ? ImGui::GetColorU32(EditorUi::AccentHover)
-                : demanded(node.Zone->Id)
-                    ? ImGui::GetColorU32(EditorUi::SecondaryHover)
-                    : ImGui::GetColorU32(EditorUi::TextDim);
         if (nodeSeverity == 1)
             nodeColor = ImGui::GetColorU32(EditorUi::Warning);
         else if (nodeSeverity >= 2)
@@ -485,29 +457,32 @@ void GraphViewerPanel::OnDraw()
     {
         if (clickedEdge.IsValid() && clickedEdgeDistance < clickedNodeDistance)
         {
+            (void)World.SelectZone(ZoneId{});
             World.FocusWorldScene();
             Commands.Execute(std::make_unique<SelectCommand>(
                 Selection, SelectableRef::EntitySelection(registry.Id, clickedEdge)));
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            {
+                if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(clickedEdge))
+                    if (const LocalTransform* transform =
+                            registry.Components.TryGet<LocalTransform>(clickedEdge))
+                        FrameViewport(Viewports, transform->Value.Position,
+                                      std::max(dock->HalfExtents.X,
+                                               dock->HalfExtents.Y) * 2.0f);
+            }
         }
         else if (clickedZone.IsValid())
         {
-            if (io.KeyCtrl)
+            Selection.ClearSelection();
+            (void)World.SelectZone(clickedZone);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
-                const auto it = std::find(SelectedNodes.begin(), SelectedNodes.end(), clickedZone);
-                if (it == SelectedNodes.end())
-                {
-                    if (SelectedNodes.size() == 2)
-                        SelectedNodes.erase(SelectedNodes.begin());
-                    SelectedNodes.push_back(clickedZone);
-                }
-                else
-                    SelectedNodes.erase(it);
-            }
-            else
-            {
-                SelectedNodes = { clickedZone };
-                Selection.ClearSelection();
-                World.SetFocusZone(clickedZone);
+                if (const ZoneHeader* zone = FindZone(manifest, clickedZone))
+                    FrameViewport(Viewports, zone->Bounds.Center(),
+                                  std::max({ zone->Bounds.Extent().X,
+                                             zone->Bounds.Extent().Y,
+                                             zone->Bounds.Extent().Z }));
+                (void)World.SetFocusZone(clickedZone);
             }
         }
     }

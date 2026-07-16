@@ -187,6 +187,9 @@ public:
     // entities only (nothing brush-editable), so entity work never dead-ends in a
     // mesh-element mode.
     std::shared_ptr<SelectionService::ObserverFn> ModeObserver;
+    // Entity/mesh selection and Zone selection are mutually exclusive while
+    // still sharing one visible selection across panels and viewport affordances.
+    std::shared_ptr<SelectionService::ObserverFn> ZoneSelectionObserver;
     // Non-owning; the EditSessionHost owns the session. Held so the overlay
     // renderer can ask it for manipulator visuals.
     ManipulatorSession* Manipulators = nullptr;

@@ -148,6 +148,24 @@ TEST_F(WorldDocumentTest, SetFocusLoadsAndFiresObserverOnce)
     EXPECT_EQ(fired, 1);
 }
 
+TEST_F(WorldDocumentTest, ZoneSelectionIsSharedStateDistinctFromFocus)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId first = world.FocusZone();
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+
+    ASSERT_TRUE(world.SelectZone(second));
+    EXPECT_EQ(world.SelectedZone(), second);
+    EXPECT_EQ(world.FocusZone(), first);
+    EXPECT_FALSE(world.IsZoneOpen(second));
+
+    ASSERT_TRUE(world.SetFocusZone(second));
+    EXPECT_EQ(world.FocusZone(), second);
+    EXPECT_EQ(world.SelectedZone(), second);
+    EXPECT_FALSE(world.SelectZone(ZoneId{ 0xdead }));
+}
+
 TEST_F(WorldDocumentTest, UnloadRefusesDirtyZone)
 {
     WorldDocument world(Logging);

@@ -180,20 +180,6 @@ bool ReadBounds(const JsonValue& zone, const char* key, Aabb3d& out,
     return true;
 }
 
-bool ReadInt32(const JsonValue& object, const char* key, int32_t& out)
-{
-    const JsonValue* value = object.Find(key);
-    if (value == nullptr || !value->IsNumber())
-        return false;
-    const double number = value->AsNumber();
-    if (!std::isfinite(number) || number != std::floor(number)
-        || number < std::numeric_limits<int32_t>::min()
-        || number > std::numeric_limits<int32_t>::max())
-        return false;
-    out = static_cast<int32_t>(number);
-    return true;
-}
-
 bool ReadUint32(const JsonValue& object, const char* key, uint32_t& out)
 {
     const JsonValue* value = object.Find(key);
@@ -207,22 +193,6 @@ bool ReadUint32(const JsonValue& object, const char* key, uint32_t& out)
     return true;
 }
 
-bool ReadTags(const JsonValue& object, std::vector<std::string>& out)
-{
-    const JsonValue* tags = object.Find("required_tags");
-    if (tags == nullptr)
-        return true;
-    if (!tags->IsArray())
-        return false;
-    for (const JsonValue& tag : tags->AsArray())
-    {
-        if (!tag.IsString() || tag.AsString().empty())
-            return false;
-        out.push_back(tag.AsString());
-    }
-    return true;
-}
-
 bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
 {
     std::string ignored;
@@ -232,21 +202,12 @@ bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
     const JsonValue* right = value.Find("right");
     const JsonValue* up = value.Find("up");
     const JsonValue* halfExtents = value.Find("half_extents");
-    const JsonValue* armBounds = value.Find("owner_arm_bounds_local");
-    if (armBounds == nullptr)
-        armBounds = value.Find("arm_bounds"); // v2 cooked migration; authored worlds recook
-    const JsonValue* armMin = armBounds != nullptr ? armBounds->Find("min") : nullptr;
-    const JsonValue* armMax = armBounds != nullptr ? armBounds->Find("max") : nullptr;
     return value.IsObject()
         && ReadRequiredId(value, "id", DockIdFromString, out.Id, &ignored, "id")
         && ReadRequiredId(value, "owner_zone", ZoneIdFromString, out.OwnerZone,
                           &ignored, "owner_zone")
-        && ReadRequiredId(value, "owner_graph", GraphIdFromString, out.OwnerGraph,
-                          &ignored, "owner_graph")
         && ReadRequiredId(value, "other_zone", ZoneIdFromString, out.OtherZone,
                           &ignored, "other_zone")
-        && ReadRequiredId(value, "other_graph", GraphIdFromString, out.OtherGraph,
-                          &ignored, "other_graph")
         && side != nullptr && side->IsString()
         && (side->AsString() == "a" || side->AsString() == "b")
         && (out.Side = side->AsString() == "a" ? DockSide::A : DockSide::B, true)
@@ -255,13 +216,7 @@ bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
         && right != nullptr && ReadVec3(*right, out.Right)
         && up != nullptr && ReadVec3(*up, out.Up)
         && halfExtents != nullptr && ReadVec2(*halfExtents, out.HalfExtents)
-        && armBounds != nullptr && armBounds->IsObject()
-        && armMin != nullptr && ReadVec3(*armMin, out.OwnerArmBoundsLocal.Min)
-        && armMax != nullptr && ReadVec3(*armMax, out.OwnerArmBoundsLocal.Max)
-        && ReadUint32(value, "directions", out.Directions)
-        && ReadInt32(value, "preload_priority", out.PreloadPriority)
-        && ReadInt32(value, "preload_depth", out.PreloadDepth)
-        && ReadTags(value, out.RequiredTags);
+        && ReadUint32(value, "directions", out.Directions);
 }
 
 bool ReadLinkEndpoint(const JsonValue& value, LinkEndpoint& out)
@@ -272,20 +227,13 @@ bool ReadLinkEndpoint(const JsonValue& value, LinkEndpoint& out)
         && ReadRequiredId(value, "id", LinkIdFromString, out.Id, &ignored, "id")
         && ReadRequiredId(value, "owner_zone", ZoneIdFromString, out.OwnerZone,
                           &ignored, "owner_zone")
-        && ReadRequiredId(value, "owner_graph", GraphIdFromString, out.OwnerGraph,
-                          &ignored, "owner_graph")
         && ReadRequiredId(value, "other_zone", ZoneIdFromString, out.OtherZone,
                           &ignored, "other_zone")
-        && ReadRequiredId(value, "other_graph", GraphIdFromString, out.OtherGraph,
-                          &ignored, "other_graph")
         && side != nullptr && side->IsString()
         && (side->AsString() == "a" || side->AsString() == "b")
         && (out.Side = side->AsString() == "a" ? DockSide::A : DockSide::B, true)
         && ReadUint32(value, "kind", out.Kind)
-        && ReadUint32(value, "directions", out.Directions)
-        && ReadInt32(value, "preload_priority", out.PreloadPriority)
-        && ReadInt32(value, "preload_depth", out.PreloadDepth)
-        && ReadTags(value, out.RequiredTags);
+        && ReadUint32(value, "directions", out.Directions);
 }
 
 std::optional<TransitionTopology> TopologyFromString(std::string_view text)
@@ -308,40 +256,22 @@ JsonValue WriteVec3(const Vec3d& v)
     return JsonValue{ std::move(array) };
 }
 
-JsonValue WriteTags(const std::vector<std::string>& tags)
-{
-    JsonValue::Array values;
-    for (const std::string& tag : tags)
-        values.emplace_back(JsonValue{ tag });
-    return JsonValue{ std::move(values) };
-}
-
 JsonValue WriteDockEndpoint(const DockEndpoint& endpoint)
 {
-    JsonValue::Object armBounds;
-    armBounds.emplace_back("min", WriteVec3(endpoint.OwnerArmBoundsLocal.Min));
-    armBounds.emplace_back("max", WriteVec3(endpoint.OwnerArmBoundsLocal.Max));
     JsonValue::Array halfExtents;
     halfExtents.emplace_back(static_cast<double>(endpoint.HalfExtents.X));
     halfExtents.emplace_back(static_cast<double>(endpoint.HalfExtents.Y));
     JsonValue::Object value;
     value.emplace_back("id", JsonValue{ DockIdToString(endpoint.Id) });
     value.emplace_back("owner_zone", JsonValue{ ZoneIdToString(endpoint.OwnerZone) });
-    value.emplace_back("owner_graph", JsonValue{ GraphIdToString(endpoint.OwnerGraph) });
     value.emplace_back("other_zone", JsonValue{ ZoneIdToString(endpoint.OtherZone) });
-    value.emplace_back("other_graph", JsonValue{ GraphIdToString(endpoint.OtherGraph) });
     value.emplace_back("side", JsonValue{ endpoint.Side == DockSide::A ? "a" : "b" });
     value.emplace_back("origin", WriteVec3(endpoint.Origin));
     value.emplace_back("normal", WriteVec3(endpoint.Normal));
     value.emplace_back("right", WriteVec3(endpoint.Right));
     value.emplace_back("up", WriteVec3(endpoint.Up));
     value.emplace_back("half_extents", JsonValue{ std::move(halfExtents) });
-    value.emplace_back("owner_arm_bounds_local", JsonValue{ std::move(armBounds) });
     value.emplace_back("directions", JsonValue{ static_cast<double>(endpoint.Directions) });
-    value.emplace_back("preload_priority", JsonValue{ endpoint.PreloadPriority });
-    value.emplace_back("preload_depth", JsonValue{ endpoint.PreloadDepth });
-    if (!endpoint.RequiredTags.empty())
-        value.emplace_back("required_tags", WriteTags(endpoint.RequiredTags));
     return JsonValue{ std::move(value) };
 }
 
@@ -350,16 +280,10 @@ JsonValue WriteLinkEndpoint(const LinkEndpoint& endpoint)
     JsonValue::Object value;
     value.emplace_back("id", JsonValue{ LinkIdToString(endpoint.Id) });
     value.emplace_back("owner_zone", JsonValue{ ZoneIdToString(endpoint.OwnerZone) });
-    value.emplace_back("owner_graph", JsonValue{ GraphIdToString(endpoint.OwnerGraph) });
     value.emplace_back("other_zone", JsonValue{ ZoneIdToString(endpoint.OtherZone) });
-    value.emplace_back("other_graph", JsonValue{ GraphIdToString(endpoint.OtherGraph) });
     value.emplace_back("side", JsonValue{ endpoint.Side == DockSide::A ? "a" : "b" });
     value.emplace_back("kind", JsonValue{ static_cast<double>(endpoint.Kind) });
     value.emplace_back("directions", JsonValue{ static_cast<double>(endpoint.Directions) });
-    value.emplace_back("preload_priority", JsonValue{ endpoint.PreloadPriority });
-    value.emplace_back("preload_depth", JsonValue{ endpoint.PreloadDepth });
-    if (!endpoint.RequiredTags.empty())
-        value.emplace_back("required_tags", WriteTags(endpoint.RequiredTags));
     return JsonValue{ std::move(value) };
 }
 
@@ -381,13 +305,12 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
         return std::nullopt;
     }
     const double formatVersion = version->AsNumber();
-    if (formatVersion != 1.0 && formatVersion != 2.0 && formatVersion != 3.0)
+    if (formatVersion != 1.0 && formatVersion != 3.0 && formatVersion != 4.0)
     {
         SetError(error, std::format("unsupported format_version {}", formatVersion));
         return std::nullopt;
     }
     const bool legacy = formatVersion == 1.0;
-    const bool shapeV2 = formatVersion == 2.0;
 
     WorldPartitionManifest manifest;
 
@@ -504,13 +427,10 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadOptionalString(entry, "scene", header.SceneRef, error,
                                     std::format("zones[{}].scene", i)))
                 return std::nullopt;
-            const char* boundsKey = shapeV2 ? "broad_bounds" : "bounds";
-            if (!ReadBounds(entry, boundsKey, header.Bounds, error, i))
+            if (!ReadBounds(entry, "bounds", header.Bounds, error, i))
                 return std::nullopt;
-            const char* overrideKey = shapeV2
-                ? "broad_bounds_overridden" : "bounds_overridden";
-            if (!ReadOptionalBool(entry, overrideKey, header.BoundsOverridden,
-                                  error, std::format("zones[{}].{}", i, overrideKey)))
+            if (!ReadOptionalBool(entry, "bounds_overridden", header.BoundsOverridden,
+                                  error, std::format("zones[{}].bounds_overridden", i)))
                 return std::nullopt;
             if (!ReadOptionalString(entry, "cooked_scene", header.CookedSceneRef, error,
                                     std::format("zones[{}].cooked_scene", i)))
@@ -591,27 +511,6 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadOptionalString(entry, "name", record.Name, error,
                                     std::format("transitions[{}].name", i)))
                 return std::nullopt;
-            if (const JsonValue* tags = entry.Find("required_tags"))
-            {
-                if (!tags->IsArray())
-                {
-                    SetError(error, std::format("transitions[{}].required_tags must be an array",
-                                                i));
-                    return std::nullopt;
-                }
-                for (const JsonValue& tag : tags->AsArray())
-                {
-                    if (!tag.IsString() || tag.AsString().empty())
-                    {
-                        SetError(error,
-                                 std::format("transitions[{}].required_tags entries must be "
-                                             "nonempty strings",
-                                             i));
-                        return std::nullopt;
-                    }
-                    record.RequiredTags.push_back(tag.AsString());
-                }
-            }
             if (const JsonValue* topology = entry.Find("topology"))
             {
                 const auto parsed =
@@ -626,34 +525,6 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadOptionalBool(entry, "one_way", record.Flags.OneWay, error,
                                   std::format("transitions[{}].one_way", i)))
                 return std::nullopt;
-            if (const JsonValue* priority = entry.Find("preload_priority"))
-            {
-                const double number = priority->IsNumber()
-                    ? priority->AsNumber()
-                    : std::numeric_limits<double>::quiet_NaN();
-                if (!std::isfinite(number) || number != std::floor(number)
-                    || number < std::numeric_limits<int32_t>::min()
-                    || number > std::numeric_limits<int32_t>::max())
-                {
-                    SetError(error, std::format("transitions[{}].preload_priority must be a 32-bit integer", i));
-                    return std::nullopt;
-                }
-                record.PreloadPriority = static_cast<int32_t>(number);
-            }
-            if (const JsonValue* depth = entry.Find("preload_depth"))
-            {
-                const double number = depth->IsNumber()
-                    ? depth->AsNumber()
-                    : std::numeric_limits<double>::quiet_NaN();
-                if (!std::isfinite(number) || number != std::floor(number) || number < 0
-                    || number > std::numeric_limits<int32_t>::max())
-                {
-                    SetError(error, std::format(
-                        "transitions[{}].preload_depth must be a non-negative integer", i));
-                    return std::nullopt;
-                }
-                record.PreloadDepth = static_cast<int32_t>(number);
-            }
             manifest.Transitions.push_back(record);
         }
     }
@@ -723,7 +594,7 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
 JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
 {
     JsonValue::Object root;
-    root.emplace_back("format_version", JsonValue{ 3 });
+    root.emplace_back("format_version", JsonValue{ 4 });
     root.emplace_back("name", JsonValue{ manifest.Name });
     if (manifest.StartZone.IsValid())
         root.emplace_back("start_zone", JsonValue{ ZoneIdToString(manifest.StartZone) });

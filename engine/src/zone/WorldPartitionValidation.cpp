@@ -274,8 +274,12 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 valid = first.Side != second.Side
                     && first.OwnerZone == second.OtherZone
                     && first.OtherZone == second.OwnerZone
-                    && first.OwnerGraph == second.OtherGraph
-                    && first.OtherGraph == second.OwnerGraph;
+                    && first.Origin == second.Origin
+                    && first.HalfExtents == second.HalfExtents
+                    && first.Normal == -second.Normal
+                    && first.Right == -second.Right
+                    && first.Up == second.Up
+                    && first.Directions == second.Directions;
             }
             for (std::size_t i = begin; i < end && valid; ++i)
             {
@@ -290,12 +294,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                         other = &zone;
                 }
                 valid = owner != nullptr && other != nullptr && owner != other
-                    && owner->Graph == endpoint.OwnerGraph
-                    && other->Graph == endpoint.OtherGraph
                     && endpoint.HalfExtents.X > 0.0f && endpoint.HalfExtents.Y > 0.0f
                     && IsFinite(endpoint.Origin)
-                    && IsFinitePositiveAabb(endpoint.OwnerArmBoundsLocal)
-                    && endpoint.OwnerArmBoundsLocal.Max.Z <= 1.0e-4f
                     && IsUnit(endpoint.Normal) && IsUnit(endpoint.Right)
                     && IsUnit(endpoint.Up)
                     && std::abs(endpoint.Normal.Dot(endpoint.Right)) <= 1.0e-3f

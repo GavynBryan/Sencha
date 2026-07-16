@@ -512,7 +512,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->CreationRecipes));
     UiFeature->AddPanel(std::make_unique<GraphViewerPanel>(
-        Workspace->World, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(

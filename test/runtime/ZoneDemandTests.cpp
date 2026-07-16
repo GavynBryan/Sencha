@@ -22,7 +22,7 @@ void SetZoneBounds(ZoneHeader& zone, Aabb3d bounds)
     zone.Bounds = bounds;
 }
 
-LinkEndpoint MakeEdge(uint64_t id, uint64_t from, uint64_t to, int32_t priority = 0)
+LinkEndpoint MakeEdge(uint64_t id, uint64_t from, uint64_t to)
 {
     LinkEndpoint endpoint;
     endpoint.Id = LinkId{ id };
@@ -30,7 +30,6 @@ LinkEndpoint MakeEdge(uint64_t id, uint64_t from, uint64_t to, int32_t priority 
     endpoint.OtherZone = ZoneId{ to };
     endpoint.Side = DockSide::A;
     endpoint.Directions = 1;
-    endpoint.PreloadPriority = priority;
     return endpoint;
 }
 
@@ -44,17 +43,6 @@ void SetEdges(WorldPartitionManifest& manifest, std::initializer_list<LinkEndpoi
         ASSERT_NE(zone, manifest.Zones.end());
         zone->Links.push_back(endpoint);
     }
-}
-
-LinkEndpoint& FindEdge(WorldPartitionManifest& manifest, uint64_t id)
-{
-    for (ZoneHeader& zone : manifest.Zones)
-        for (LinkEndpoint& endpoint : zone.Links)
-            if (endpoint.Id == LinkId{ id })
-                return endpoint;
-    ADD_FAILURE() << "missing edge " << id;
-    static LinkEndpoint missing;
-    return missing;
 }
 
 // A -> B -> C -> D chain with endpoint pairs.
@@ -180,21 +168,20 @@ TEST(ZoneDemand, PinnedZoneCarriesItsMinimum)
     EXPECT_TRUE(near->Desired.Visible);     // the neighbor render preload
 }
 
-TEST(ZoneDemand, CapEvictsByHopThenPriorityThenId)
+TEST(ZoneDemand, CapEvictsByHopThenDerivedCostThenId)
 {
-    // Focus 0xa1; hop-1 neighbors 0xa2 (priority 5) and 0xa3 (priority 1);
-    // hop-2 zones 0xa4 (via 0xa2, priority 2) and 0xa5 (via 0xa3, priority 0).
+    // Graph hops have equal derived cost, so ties are deterministic by id.
     WorldPartitionManifest manifest;
     manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4),
                        MakeZone(0xa5) };
     SetEdges(manifest, {
-        MakeEdge(0xc1, 0xa1, 0xa2, 5),
-        MakeEdge(0xc2, 0xa1, 0xa3, 1),
-        MakeEdge(0xc3, 0xa2, 0xa4, 2),
-        MakeEdge(0xc4, 0xa3, 0xa5, 0),
+        MakeEdge(0xc1, 0xa1, 0xa2),
+        MakeEdge(0xc2, 0xa1, 0xa3),
+        MakeEdge(0xc3, 0xa2, 0xa4),
+        MakeEdge(0xc4, 0xa3, 0xa5),
     });
 
-    // Cap 4: one eviction, deepest hop first, lowest priority within it: 0xa5.
+    // Cap 4: one eviction, deepest hop and highest id first: 0xa5.
     auto records = Demand(manifest, ZoneId{ 0xa1 }, {},
                           WorldPartitionStreamingConfig{ .HopCount = 2, .ResidentZoneCap = 4 });
     ASSERT_EQ(records.size(), 4u);
@@ -208,14 +195,14 @@ TEST(ZoneDemand, CapEvictsByHopThenPriorityThenId)
     EXPECT_EQ(FindRecord(records, 0xa4), nullptr);
     EXPECT_EQ(FindRecord(records, 0xa5), nullptr);
 
-    // Cap 2: the hop-1 pair ties on hop; priority 1 evicts before priority 5.
+    // Cap 2: the hop-1 pair ties on hop and cost; higher id evicts first.
     records = Demand(manifest, ZoneId{ 0xa1 }, {},
                      WorldPartitionStreamingConfig{ .HopCount = 2, .ResidentZoneCap = 2 });
     ASSERT_EQ(records.size(), 2u);
     EXPECT_NE(FindRecord(records, 0xa2), nullptr);
     EXPECT_EQ(FindRecord(records, 0xa3), nullptr);
 
-    // Equal hop and priority: higher id evicts first.
+    // Equal hop and cost: higher id evicts first.
     WorldPartitionManifest tie;
     tie.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3) };
     SetEdges(tie, { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3) });
@@ -376,74 +363,30 @@ TEST(ZoneDemand, SpatialEvictsAfterGraphNeighbors)
     EXPECT_EQ(FindRecord(records, 0xa2), nullptr);   // the spatial zone evicts
 }
 
-TEST(ZoneDemand, GatedEdgeInvisibleWithoutTag)
+TEST(ZoneDemand, ClosedGateDoesNotEraseTopologyOrResidencyDemand)
 {
-    WorldPartitionManifest manifest = ChainManifest();
-    FindEdge(manifest, 0xc1).RequiredTags = { "quest.bridge" };   // A -> B gated
-
+    // Gate state is a traversal concern stored outside topology. Demand sees
+    // the connection and keeps the destination ready even while a gate is closed.
+    const WorldPartitionManifest manifest = ChainManifest();
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
-    auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
-                                     WorldPartitionStreamingConfig{ .HopCount = 1 });
-    ASSERT_EQ(records.size(), 1u);   // the gate hides the only edge out
-
-    const std::string active[] = { "quest.bridge" };
-    records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
-                                WorldPartitionStreamingConfig{ .HopCount = 1 }, nullptr,
-                                active);
+    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                           WorldPartitionStreamingConfig{ .HopCount = 1 });
     ASSERT_EQ(records.size(), 2u);
     EXPECT_NE(FindRecord(records, 0xa2), nullptr);
 }
 
-TEST(ZoneDemand, GatingNeverRemovesReachableZones)
+TEST(ZoneDemand, GraphHopPolicyAloneControlsNeighborhoodDepth)
 {
-    // Two routes to 0xa2: gated direct edge plus an open detour via 0xa3.
-    WorldPartitionManifest manifest;
-    manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3) };
-    SetEdges(manifest, { MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa1, 0xa3),
-                         MakeEdge(0xc3, 0xa3, 0xa2) });
-    FindEdge(manifest, 0xc1).RequiredTags = { "locked.door" };
-
+    const WorldPartitionManifest manifest = ChainManifest();
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
-    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
-                                           WorldPartitionStreamingConfig{ .HopCount = 2 });
-    EXPECT_NE(FindRecord(records, 0xa2), nullptr);   // still reachable via 0xa3
-}
+    auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                     WorldPartitionStreamingConfig{ .HopCount = 1 });
+    EXPECT_NE(FindRecord(records, 0xa2), nullptr);
+    EXPECT_EQ(FindRecord(records, 0xa3), nullptr);
 
-TEST(ZoneDemand, DepthExtendsThroughEdge)
-{
-    // Global horizon 1; the A -> B edge carries depth 3, so the chain preloads
-    // three deep through it while nothing else exceeds one hop.
-    WorldPartitionManifest manifest = ChainManifest();
-    FindEdge(manifest, 0xc1).PreloadDepth = 3;
-
-    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
-    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
-                                           WorldPartitionStreamingConfig{ .HopCount = 1 });
-
-    EXPECT_NE(FindRecord(records, 0xa2), nullptr);   // depth hop 1
-    EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // depth hop 2
-    EXPECT_NE(FindRecord(records, 0xa4), nullptr);   // depth hop 3
-}
-
-TEST(ZoneDemand, DepthDoesNotLeakSideways)
-{
-    // A hub with two corridors: only the deep edge's corridor extends.
-    WorldPartitionManifest manifest;
-    manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3), MakeZone(0xa4),
-                       MakeZone(0xa5) };
-    SetEdges(manifest, {
-        MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa2, 0xa3),   // deep corridor
-        MakeEdge(0xc3, 0xa1, 0xa4), MakeEdge(0xc4, 0xa4, 0xa5),   // plain corridor
-    });
-    FindEdge(manifest, 0xc1).PreloadDepth = 2;
-
-    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
-    const auto records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
-                                           WorldPartitionStreamingConfig{ .HopCount = 1 });
-
-    EXPECT_NE(FindRecord(records, 0xa3), nullptr);   // reached through the deep edge
-    EXPECT_NE(FindRecord(records, 0xa4), nullptr);   // plain hop-1 neighbor
-    EXPECT_EQ(FindRecord(records, 0xa5), nullptr);   // the plain corridor stops at 1
+    records = ComputeZoneDemand(manifest, index, ZoneId{ 0xa1 }, {},
+                                WorldPartitionStreamingConfig{ .HopCount = 3 });
+    EXPECT_NE(FindRecord(records, 0xa4), nullptr);
 }
 
 TEST(ZoneDemand, ResolverOverridesPresentFieldsAndInheritsAbsent)
@@ -486,34 +429,33 @@ TEST(ZoneDemand, ResolverReturnsBaseForUnknownOrGraphlessFocus)
     EXPECT_EQ(ResolveGraphStreamingConfig(manifest, ZoneId{}, base), base);
 }
 
-TEST(ZoneDemand, CrossGraphDockRecordsEntryAndApproachEvidence)
+TEST(ZoneDemand, CrossGraphDockSeedsDestinationGraphPolicy)
 {
     WorldPartitionManifest manifest;
     manifest.Graphs = { GraphRecord{ .Id = GraphId{ 0xb1 }, .Name = "Rooms" },
                         GraphRecord{ .Id = GraphId{ 0xb2 }, .Name = "Exterior" } };
+    manifest.Graphs[1].Streaming.HopCount = 1;
     ZoneHeader a = MakeZone(0xa1);
     ZoneHeader b = MakeZone(0xa2);
+    ZoneHeader c = MakeZone(0xa3);
     a.Graph = manifest.Graphs[0].Id;
     b.Graph = manifest.Graphs[1].Id;
+    c.Graph = manifest.Graphs[1].Id;
     DockEndpoint endpoint{
         .Id = DockId{ 0xd1 },
         .OwnerZone = a.Id,
-        .OwnerGraph = a.Graph,
         .OtherZone = b.Id,
-        .OtherGraph = b.Graph,
         .Side = DockSide::A,
-        .OwnerArmBoundsLocal = Aabb3d::FromMinMax(Vec3d{ -2, -2, -2 }, Vec3d{ 2, 2, 0 }),
     };
     a.Docks.push_back(endpoint);
     endpoint.OwnerZone = b.Id;
-    endpoint.OwnerGraph = b.Graph;
     endpoint.OtherZone = a.Id;
-    endpoint.OtherGraph = a.Graph;
     endpoint.Side = DockSide::B;
     endpoint.Normal = -endpoint.Normal;
     endpoint.Right = -endpoint.Right;
     b.Docks.push_back(endpoint);
-    manifest.Zones = { a, b };
+    b.Links.push_back(MakeEdge(0xc1, b.Id.Value, c.Id.Value));
+    manifest.Zones = { a, b, c };
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const Vec3d focusPosition{};
@@ -522,7 +464,7 @@ TEST(ZoneDemand, CrossGraphDockRecordsEntryAndApproachEvidence)
     const ZoneDemandRecord* entry = FindRecord(records, b.Id.Value);
     ASSERT_NE(entry, nullptr);
     EXPECT_TRUE(entry->Sources.CrossGraphEntry);
-    EXPECT_TRUE(entry->Sources.DockApproach);
+    EXPECT_NE(FindRecord(records, c.Id.Value), nullptr);
     EXPECT_TRUE(std::any_of(entry->Reasons.begin(), entry->Reasons.end(),
                             [](const ZoneDemandReasonRecord& reason)
                             {

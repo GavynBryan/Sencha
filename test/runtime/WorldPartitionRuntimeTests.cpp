@@ -55,7 +55,7 @@ constexpr const char* kFixtureJson = R"({
   ],
   "transitions": [
     { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2",
-      "topology": "doorway", "preload_priority": 1 },
+      "topology": "doorway" },
     { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1",
       "topology": "doorway" },
     { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3",
@@ -79,7 +79,7 @@ WorldPartitionManifest FixtureManifest()
     EXPECT_TRUE(manifest.has_value()) << error;
     WorldPartitionManifest cooked = *manifest;
     cooked.Transitions.clear();
-    AddFixtureDockPair(cooked, 0xd1, kHub, kHallway, Vec3d{ 8.5, 2, 0 }, 1);
+    AddFixtureDockPair(cooked, 0xd1, kHub, kHallway, Vec3d{ 8.5, 2, 0 });
     AddFixtureDockPair(cooked, 0xd2, kHallway, kArena, Vec3d{ 20.5, 2, 0 });
     return cooked;
 }
@@ -284,6 +284,10 @@ TEST_F(WorldPartitionRuntimeTest, DockCrossingWaitsForDestinationPhysicsResidenc
     Step();
     EXPECT_EQ(Partition.FocusZone(), kHub);
     EXPECT_FALSE(Partition.LastCrossing().has_value());
+    EXPECT_EQ(Partition.LastTraversal().Status,
+              DockTraversalStatus::BlockedDestinationNotReady);
+    EXPECT_LT(Partition.LastTraversal().SafeSourcePosition.X, 8.5f);
+    EXPECT_EQ(Partition.LateTraversalCount(), 1u);
 
     Partition.PinZone(kHallway, ZoneParticipation{ .Physics = true });
     Step();

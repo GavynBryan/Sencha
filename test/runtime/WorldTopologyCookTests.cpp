@@ -28,9 +28,6 @@ WorldDock MakeDock()
     dock.Id = DockId{ 0xd1 };
     dock.ZoneA = ZoneId{ 0xa1 };
     dock.ZoneB = ZoneId{ 0xa2 };
-    dock.PreloadPriority = 7;
-    dock.PreloadDepth = 2;
-    dock.DemandCondition.Assign("quest.open, player.ready");
     return dock;
 }
 
@@ -51,14 +48,13 @@ TEST(WorldTopologyCook, EmitsReciprocalCrossGraphDockEndpoints)
     EXPECT_EQ(a.Id, b.Id);
     EXPECT_EQ(a.OwnerZone, b.OtherZone);
     EXPECT_EQ(a.OtherZone, b.OwnerZone);
-    EXPECT_EQ(a.OwnerGraph, b.OtherGraph);
-    EXPECT_EQ(a.OtherGraph, b.OwnerGraph);
     EXPECT_EQ(a.Side, DockSide::A);
     EXPECT_EQ(b.Side, DockSide::B);
     EXPECT_EQ(a.Normal, -b.Normal);
-    EXPECT_EQ(a.PreloadPriority, 7);
-    EXPECT_EQ(a.RequiredTags,
-              (std::vector<std::string>{ "quest.open", "player.ready" }));
+    EXPECT_EQ(a.Right, -b.Right);
+    EXPECT_EQ(a.Up, b.Up);
+    EXPECT_EQ(a.Origin, b.Origin);
+    EXPECT_EQ(a.HalfExtents, b.HalfExtents);
     ASSERT_EQ(manifest.DockDebugMap.size(), 1u);
     EXPECT_EQ(manifest.DockDebugMap[0].AuthoredEntity, 42u);
 }

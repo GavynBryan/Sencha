@@ -22,6 +22,14 @@ bool LoadId(IReadArchive& archive, std::string_view key, Id& id, FromString from
     archive.Field(key, text);
     if (!archive.Ok())
         return false;
+    // Authored scenes must preserve unresolved references and invalid stable
+    // identities so the editor can decorate and repair them. Cooked manifests
+    // retain strict nonzero ID parsing in WorldPartitionManifest.cpp.
+    if (text == "0000000000000000")
+    {
+        id = Id{};
+        return true;
+    }
     const std::optional<Id> parsed = fromString(text);
     if (!parsed)
     {

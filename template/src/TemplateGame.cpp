@@ -34,6 +34,7 @@
 #include <movement/MovementState.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
+#include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsStepSystem.h>
 #include <physics/ZoneCollisionLoader.h>
@@ -334,18 +335,47 @@ struct WorldPartitionUpdateSystem
         if (!Partition || !Partition->HasManifest() || !Loader)
             return;
 
+        World& world = ctx.Entities;
         if (Pawn.IsValid())
         {
             if (const WorldTransform* transform =
-                    ctx.Entities.TryGet<WorldTransform>(Pawn))
+                    world.TryGet<WorldTransform>(Pawn))
             {
                 Partition->SetFocus(transform->Value.Position);
+            }
+            if (const CharacterController* controller =
+                    world.TryGet<CharacterController>(Pawn))
+            {
+                Partition->SetFocusCapsule(
+                    controller->Radius,
+                    controller->Height);
             }
         }
         Partition->Update(
             ctx.WallDeltaSeconds,
             *Loader,
             Runtime);
+
+        // A crossing the destination is not ready for leaves the pawn where the
+        // sweep last had it fully inside the source zone; without this the next
+        // physics tick would restore the position that entered the unloaded zone.
+        if (Pawn.IsValid()
+            && Partition->LastTraversal().Status
+                == DockTraversalStatus::BlockedDestinationNotReady)
+        {
+            const Vec3d safe = Partition->LastTraversal().SafeSourcePosition;
+            bool moved = false;
+            if (world.HasResource<CharacterMoverPool>())
+            {
+                moved = world.GetResource<CharacterMoverPool>().SetPosition(
+                    world, Pawn, safe);
+            }
+            if (!moved)
+                if (LocalTransform* transform = world.TryGet<LocalTransform>(Pawn))
+                    transform->Value.Position = safe;
+            if (WorldTransform* transform = world.TryGet<WorldTransform>(Pawn))
+                transform->Value.Position = safe;
+        }
     }
 
     std::optional<WorldPartitionRuntime>& Partition;
@@ -678,43 +708,6 @@ void TemplateGame::OnStart(GameStartupContext&)
         },
     });
 
-    engine.Console().Registry().RegisterCommand({
-        .Name = "worldtag",
-        .Owner = "game",
-        .Usage = "worldtag <dotted.tag.name>",
-        .Help = "Toggle a world-state tag used by streaming transitions.",
-        .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](
-            ConsoleExecutionContext&,
-            std::span<const std::string> args)
-        {
-            ConsoleResult result;
-            if (args.size() != 1 || args[0].empty())
-            {
-                result.Error("usage: worldtag <dotted.tag.name>");
-                return result;
-            }
-
-            const auto found = std::find(
-                WorldTags.begin(),
-                WorldTags.end(),
-                args[0]);
-            if (found != WorldTags.end())
-            {
-                WorldTags.erase(found);
-                result.Info("tag '" + args[0] + "' cleared");
-            }
-            else
-            {
-                WorldTags.push_back(args[0]);
-                result.Info("tag '" + args[0] + "' set");
-            }
-            if (Partition)
-                Partition->SetWorldTags(WorldTags);
-            return result;
-        },
-    });
-
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name>\n");
     std::printf("  Load a world: +world <name>\n");
@@ -1003,8 +996,6 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         result.Error("world refused: " + loadError);
         return result;
     }
-    Partition->SetWorldTags(WorldTags);
-
     const WorldPartitionManifest& loaded = Partition->Manifest();
     if (!loaded.CookedWorldSceneRef.empty())
     {

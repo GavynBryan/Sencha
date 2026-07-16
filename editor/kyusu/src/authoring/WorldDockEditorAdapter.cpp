@@ -15,14 +15,18 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <cstdio>
 #include <string>
 #include <string_view>
 
 namespace
 {
+struct DockEntityState
+{
+    WorldDock Dock;
+    Transform3f Transform;
+};
+
 template <typename Value>
 class DockValueTransaction final : public IValueEditTransaction<Value>
 {
@@ -68,6 +72,61 @@ private:
     ApplyFn Apply;
 };
 
+class DockRectangleTransaction final
+    : public IValueEditTransaction<RectangleEditValue>
+{
+public:
+    DockRectangleTransaction(EditorComponentContext context,
+                             DockEntityState before)
+        : Context(context), Before(std::move(before)) {}
+
+    void Preview(const RectangleEditValue& value) override
+    {
+        Apply(MakeAfter(value), false);
+    }
+
+    void Commit(const RectangleEditValue& value) override
+    {
+        const DockEntityState after = MakeAfter(value);
+        Apply(Before, true);
+        auto apply = [&scene = Context.Scene, &world = Context.World,
+                      entity = Context.Entity](const DockEntityState& state)
+        {
+            scene.SetComponent(entity, state.Dock);
+            scene.SetTransform(entity, state.Transform);
+            world.Revalidate();
+        };
+        Context.Commands.Execute(std::make_unique<ValueCommand<DockEntityState>>(
+            Before, after, std::move(apply), Context.Document));
+    }
+
+    void Cancel() override
+    {
+        Apply(Before, true);
+    }
+
+private:
+    [[nodiscard]] DockEntityState MakeAfter(
+        const RectangleEditValue& value) const
+    {
+        DockEntityState after = Before;
+        ApplyWorldDockPlaneResize(after.Dock, after.Transform,
+                                  value.CenterOffset, value.HalfExtents);
+        return after;
+    }
+
+    void Apply(const DockEntityState& state, bool revalidate)
+    {
+        Context.Scene.SetComponent(Context.Entity, state.Dock);
+        Context.Scene.SetTransform(Context.Entity, state.Transform);
+        if (revalidate)
+            Context.World.Revalidate();
+    }
+
+    EditorComponentContext Context;
+    DockEntityState Before;
+};
+
 void AppendLine(ViewportAffordanceOutput& output, Vec3d a, Vec3d b,
                 Vec4 color, float width = EditorTheme::OverlayLinePixels)
 {
@@ -99,40 +158,6 @@ void AppendArrow(ViewportAffordanceOutput& output, Vec3d from, Vec3d to,
     AppendLine(output, to, base - wing, color, 2.0f);
 }
 
-std::array<Vec3d, 8> BoxCorners(const Aabb3d& bounds,
-                                const Transform3f& transform)
-{
-    const Vec3d& lo = bounds.Min;
-    const Vec3d& hi = bounds.Max;
-    std::array<Vec3d, 8> corners = {
-        Vec3d{ lo.X, lo.Y, lo.Z }, Vec3d{ hi.X, lo.Y, lo.Z },
-        Vec3d{ hi.X, hi.Y, lo.Z }, Vec3d{ lo.X, hi.Y, lo.Z },
-        Vec3d{ lo.X, lo.Y, hi.Z }, Vec3d{ hi.X, lo.Y, hi.Z },
-        Vec3d{ hi.X, hi.Y, hi.Z }, Vec3d{ lo.X, hi.Y, hi.Z },
-    };
-    for (Vec3d& corner : corners)
-        corner = transform.TransformPoint(corner);
-    return corners;
-}
-
-void AppendBox(ViewportAffordanceOutput& output, const Aabb3d& bounds,
-               const Transform3f& transform, Vec4 lineColor, Vec4 fillColor)
-{
-    const auto c = BoxCorners(bounds, transform);
-    static constexpr int edges[12][2] = {
-        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4},
-        {0,4},{1,5},{2,6},{3,7},
-    };
-    for (const auto& edge : edges)
-        AppendLine(output, c[edge[0]], c[edge[1]], lineColor);
-    AppendQuad(output, c[0], c[1], c[2], c[3], fillColor);
-    AppendQuad(output, c[4], c[7], c[6], c[5], fillColor);
-    AppendQuad(output, c[0], c[4], c[5], c[1], fillColor);
-    AppendQuad(output, c[3], c[2], c[6], c[7], fillColor);
-    AppendQuad(output, c[0], c[3], c[7], c[4], fillColor);
-    AppendQuad(output, c[1], c[5], c[6], c[2], fillColor);
-}
-
 std::string ZoneName(const WorldPartitionManifest& manifest, ZoneId id)
 {
     for (const ZoneHeader& zone : manifest.Zones)
@@ -140,27 +165,6 @@ std::string ZoneName(const WorldPartitionManifest& manifest, ZoneId id)
             return zone.Name.empty() ? ZoneIdToString(id) : zone.Name;
     return "unresolved";
 }
-
-ZoneId UniqueZoneAt(const WorldPartitionManifest& manifest, Vec3d point,
-                    ZoneId exclude = {})
-{
-    ZoneId result;
-    for (const ZoneHeader& zone : manifest.Zones)
-    {
-        if (zone.Id == exclude || !zone.Bounds.Contains(point))
-            continue;
-        if (result.IsValid())
-            return {};
-        result = zone.Id;
-    }
-    return result;
-}
-
-struct DockEntityState
-{
-    WorldDock Dock;
-    Transform3f Transform;
-};
 
 class WorldDockEditorAdapter final : public IEditorComponentAdapter
 {
@@ -221,68 +225,24 @@ public:
             output.Labels.push_back({ origin + up * (dock->HalfExtents.Y + 0.35f), line,
                                       "Invalid Dock" });
 
-        const Vec4 boxFill{ line.X, line.Y, line.Z, 0.08f };
-        AppendBox(output, dock->SideAArmBounds, context.Transform, line, boxFill);
-        AppendBox(output, dock->SideBArmBounds, context.Transform, line, boxFill);
         output.PickProxies.push_back({
             .Shape = EditorPickProxy::Kind::Rectangle,
             .Entity = context.Entity,
             .LocalToWorld = context.Transform,
             .HalfExtents = dock->HalfExtents,
         });
-        output.PickProxies.push_back({
-            .Shape = EditorPickProxy::Kind::Box,
-            .Entity = context.Entity,
-            .LocalToWorld = context.Transform,
-            .Bounds = dock->SideAArmBounds,
-        });
-        output.PickProxies.push_back({
-            .Shape = EditorPickProxy::Kind::Box,
-            .Entity = context.Entity,
-            .LocalToWorld = context.Transform,
-            .Bounds = dock->SideBArmBounds,
-        });
-
         if (!context.Selected)
             return;
-        const WorldDock before = *dock;
+        const DockEntityState before{ *dock, context.Transform };
         output.Rectangles.push_back(RectEditTarget{
             .Key = (dock->Id.Value << 2) | 1u,
             .LocalToWorld = context.Transform,
             .HalfExtents = dock->HalfExtents,
             .BeginEdit = [context, before]
             {
-                return std::make_unique<DockValueTransaction<Vec2d>>(
-                    context, before, [](WorldDock& value, const Vec2d& next)
-                    { value.HalfExtents = next; });
+                return std::make_unique<DockRectangleTransaction>(context, before);
             },
         });
-        AabbEditTarget sideA{
-            .Key = (dock->Id.Value << 2) | 2u,
-            .LocalToWorld = context.Transform,
-            .Value = dock->SideAArmBounds,
-            .BeginEdit = [context, before]
-            {
-                return std::make_unique<DockValueTransaction<Aabb3d>>(
-                    context, before, [](WorldDock& value, const Aabb3d& next)
-                    { value.SideAArmBounds = next; });
-            },
-        };
-        sideA.MaximumLimits[2] = 0.0f;
-        output.Aabbs.push_back(std::move(sideA));
-        AabbEditTarget sideB{
-            .Key = (dock->Id.Value << 2) | 3u,
-            .LocalToWorld = context.Transform,
-            .Value = dock->SideBArmBounds,
-            .BeginEdit = [context, before]
-            {
-                return std::make_unique<DockValueTransaction<Aabb3d>>(
-                    context, before, [](WorldDock& value, const Aabb3d& next)
-                    { value.SideBArmBounds = next; });
-            },
-        };
-        sideB.MinimumLimits[2] = 0.0f;
-        output.Aabbs.push_back(std::move(sideB));
     }
 
     bool DrawInspector(EditorComponentInspectorContext& context) const override
@@ -349,46 +309,6 @@ public:
                                   std::max(0.025f, dimensions[1] * 0.5f) };
             applyDock(*dock, after);
         }
-        int priority = dock->PreloadPriority;
-        if (ImGui::InputInt("Priority", &priority))
-        { WorldDock after = *dock; after.PreloadPriority = priority; applyDock(*dock, after); }
-        int depth = dock->PreloadDepth;
-        if (ImGui::InputInt("Preload depth", &depth))
-        { WorldDock after = *dock; after.PreloadDepth = std::max(0, depth); applyDock(*dock, after); }
-
-        char condition[129]{};
-        const std::string_view current = dock->DemandCondition.View();
-        std::snprintf(condition, sizeof(condition), "%.*s",
-                      static_cast<int>(current.size()), current.data());
-        if (ImGui::InputText("Demand condition", condition, sizeof(condition)))
-        {
-            WorldDock after = *dock;
-            after.DemandCondition.Assign(condition);
-            applyDock(*dock, after);
-        }
-
-        const auto drawBounds = [&](const char* label, Aabb3d value, auto member)
-        {
-            if (!ImGui::TreeNode(label))
-                return;
-            float minimum[3]{ value.Min.X, value.Min.Y, value.Min.Z };
-            float maximum[3]{ value.Max.X, value.Max.Y, value.Max.Z };
-            bool changed = ImGui::DragFloat3("Min", minimum, 0.05f);
-            changed |= ImGui::DragFloat3("Max", maximum, 0.05f);
-            if (changed)
-            {
-                WorldDock after = *dock;
-                after.*member = Aabb3d{ { minimum[0], minimum[1], minimum[2] },
-                                        { maximum[0], maximum[1], maximum[2] } };
-                applyDock(*dock, after);
-            }
-            ImGui::TreePop();
-        };
-        drawBounds("Side A local AABB", dock->SideAArmBounds,
-                   &WorldDock::SideAArmBounds);
-        drawBounds("Side B local AABB", dock->SideBArmBounds,
-                   &WorldDock::SideBArmBounds);
-
         if (ImGui::Button("Swap Sides"))
         {
             DockEntityState before{ *dock, local->Value };
@@ -404,25 +324,93 @@ public:
                     world.Revalidate();
                 }, context.Document));
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Reset Arms"))
-        {
-            WorldDock after = *dock;
-            after.SideAArmBounds = { { -after.HalfExtents.X, -after.HalfExtents.Y, -2 },
-                                     { after.HalfExtents.X, after.HalfExtents.Y, 0 } };
-            after.SideBArmBounds = { { -after.HalfExtents.X, -after.HalfExtents.Y, 0 },
-                                     { after.HalfExtents.X, after.HalfExtents.Y, 2 } };
-            applyDock(*dock, after);
-        }
         if (ImGui::Button("Suggest Zones From AABBs"))
         {
             const Vec3d normal = -local->Value.Forward();
             WorldDock after = *dock;
-            after.ZoneA = UniqueZoneAt(context.World.Manifest(),
-                                       local->Value.Position - normal);
-            after.ZoneB = UniqueZoneAt(context.World.Manifest(),
-                                       local->Value.Position + normal, after.ZoneA);
-            applyDock(*dock, after);
+            const std::vector<ZoneId> sideA = WorldDockZoneCandidates(
+                context.World.Manifest(), local->Value.Position - normal);
+            if (sideA.size() == 1)
+                after.ZoneA = sideA.front();
+            const std::vector<ZoneId> sideB = WorldDockZoneCandidates(
+                context.World.Manifest(), local->Value.Position + normal,
+                after.ZoneA);
+            if (sideB.size() == 1)
+                after.ZoneB = sideB.front();
+            if (after.ZoneA != dock->ZoneA || after.ZoneB != dock->ZoneB)
+                applyDock(*dock, after);
+
+            SuggestionEntity = context.Entity;
+            AmbiguousA = sideA.size() > 1 ? sideA : std::vector<ZoneId>{};
+            AmbiguousB = sideB.size() > 1 ? sideB : std::vector<ZoneId>{};
+            CandidateA = {};
+            CandidateB = {};
+            SuggestionStatus.clear();
+            if (sideA.empty())
+                SuggestionStatus += "No Side A candidate. ";
+            if (sideB.empty())
+                SuggestionStatus += "No Side B candidate.";
+            if (!AmbiguousA.empty() || !AmbiguousB.empty())
+                ImGui::OpenPopup("Resolve ambiguous Dock sides");
+        }
+        if (!SuggestionStatus.empty() && SuggestionEntity == context.Entity)
+            ImGui::TextDisabled("%s", SuggestionStatus.c_str());
+
+        if (ImGui::BeginPopupModal("Resolve ambiguous Dock sides", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextWrapped("Overlapping Zone AABBs produced multiple candidates. "
+                               "Choose explicitly; the Dock references remain authoritative.");
+            const auto candidateCombo = [&](const char* label,
+                                            const std::vector<ZoneId>& candidates,
+                                            ZoneId& choice)
+            {
+                if (candidates.empty())
+                    return;
+                const std::string preview = choice.IsValid()
+                    ? ZoneName(context.World.Manifest(), choice) : "Select a Zone";
+                if (ImGui::BeginCombo(label, preview.c_str()))
+                {
+                    for (ZoneId candidate : candidates)
+                    {
+                        const std::string name = ZoneName(context.World.Manifest(), candidate);
+                        if (ImGui::Selectable(name.c_str(), choice == candidate))
+                            choice = candidate;
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+            candidateCombo("Side A", AmbiguousA, CandidateA);
+            candidateCombo("Side B", AmbiguousB, CandidateB);
+            const bool complete = (AmbiguousA.empty() || CandidateA.IsValid())
+                && (AmbiguousB.empty() || CandidateB.IsValid());
+            if (!complete)
+                ImGui::BeginDisabled();
+            if (ImGui::Button("Apply Explicit Candidates"))
+            {
+                if (WorldDock* current = registry.Components.TryGet<WorldDock>(context.Entity))
+                {
+                    WorldDock after = *current;
+                    if (CandidateA.IsValid())
+                        after.ZoneA = CandidateA;
+                    if (CandidateB.IsValid())
+                        after.ZoneB = CandidateB;
+                    applyDock(*current, after);
+                }
+                AmbiguousA.clear();
+                AmbiguousB.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!complete)
+                ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+            {
+                AmbiguousA.clear();
+                AmbiguousB.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
 
         bool decorated = false;
@@ -441,6 +429,14 @@ public:
             ImGui::TextDisabled("Dock assignments and geometry are valid");
         return true;
     }
+
+private:
+    mutable EntityId SuggestionEntity;
+    mutable std::vector<ZoneId> AmbiguousA;
+    mutable std::vector<ZoneId> AmbiguousB;
+    mutable ZoneId CandidateA;
+    mutable ZoneId CandidateB;
+    mutable std::string SuggestionStatus;
 };
 }
 

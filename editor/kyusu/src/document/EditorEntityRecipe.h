@@ -5,6 +5,7 @@
 #include "selection/SelectableRef.h"
 
 #include <math/Vec.h>
+#include <zone/WorldConnectionComponents.h>
 #include <zone/WorldPartitionIds.h>
 
 #include <memory>
@@ -57,8 +58,10 @@ public:
 class WorldLinkRecipe final : public IEditorEntityRecipe
 {
 public:
-    explicit WorldLinkRecipe(ZoneId zoneB)
+    explicit WorldLinkRecipe(ZoneId zoneB,
+                             uint8_t directions = DockDirectionBoth)
         : ZoneB(zoneB)
+        , Directions(directions)
     {
     }
 
@@ -66,4 +69,5 @@ public:
 
 private:
     ZoneId ZoneB;
+    uint8_t Directions = DockDirectionBoth;
 };

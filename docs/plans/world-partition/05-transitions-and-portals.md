@@ -163,11 +163,10 @@ portal entity and no `"portal"` key). Suite green.
 // Mints the edge (and nothing else; reverse pairing is the caller's explicit
 // second call). Returns the new id.
 TransitionId AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
-                           bool oneWay, int32_t preloadPriority);
+                           bool oneWay);
 bool RemoveTransition(TransitionId transition);
 bool SetTransitionTopology(TransitionId transition, TransitionTopology topology);
 bool SetTransitionOneWay(TransitionId transition, bool oneWay);
-bool SetTransitionPreloadPriority(TransitionId transition, int32_t priority);
 ```
 
 2. `engine/include/zone/ContentRiskRecord.h`: `ContentRiskSeverity` gains a third

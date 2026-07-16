@@ -30,46 +30,6 @@ void SetError(std::string* error, std::string message)
         *error = std::move(message);
 }
 
-bool PositiveAabb(const Aabb3d& bounds)
-{
-    constexpr float epsilon = 1.0e-4f;
-    const bool finite = std::isfinite(bounds.Min.X) && std::isfinite(bounds.Min.Y)
-        && std::isfinite(bounds.Min.Z) && std::isfinite(bounds.Max.X)
-        && std::isfinite(bounds.Max.Y) && std::isfinite(bounds.Max.Z);
-    return finite
-        && bounds.Max.X - bounds.Min.X > epsilon
-        && bounds.Max.Y - bounds.Min.Y > epsilon
-        && bounds.Max.Z - bounds.Min.Z > epsilon;
-}
-
-Aabb3d ReflectXZ(const Aabb3d& bounds)
-{
-    return Aabb3d::FromMinMax(
-        Vec3d{ -bounds.Max.X, bounds.Min.Y, -bounds.Max.Z },
-        Vec3d{ -bounds.Min.X, bounds.Max.Y, -bounds.Min.Z });
-}
-
-std::vector<std::string> ParseCondition(std::string_view condition)
-{
-    std::vector<std::string> tags;
-    std::size_t start = 0;
-    while (start < condition.size())
-    {
-        std::size_t end = condition.find(',', start);
-        if (end == std::string_view::npos)
-            end = condition.size();
-        std::size_t first = start;
-        while (first < end && condition[first] == ' ')
-            ++first;
-        while (end > first && condition[end - 1] == ' ')
-            --end;
-        if (first < end)
-            tags.emplace_back(condition.substr(first, end - first));
-        start = end + 1;
-    }
-    return tags;
-}
-
 bool Finite(Vec3d value)
 {
     return std::isfinite(value.X) && std::isfinite(value.Y) && std::isfinite(value.Z);
@@ -117,11 +77,7 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
         }
         if (!std::isfinite(dock.HalfExtents.X) || !std::isfinite(dock.HalfExtents.Y)
             || !(dock.HalfExtents.X > 0.0f) || !(dock.HalfExtents.Y > 0.0f)
-            || !PositiveAabb(dock.SideAArmBounds) || !PositiveAabb(dock.SideBArmBounds)
-            || dock.SideAArmBounds.Max.Z > 1e-4f
-            || dock.SideBArmBounds.Min.Z < -1e-4f
-            || dock.Directions < 1u || dock.Directions > 3u
-            || dock.PreloadDepth < 0)
+            || dock.Directions < 1u || dock.Directions > 3u)
         {
             SetError(error, std::format("dock {} has invalid geometry",
                                         DockIdToString(dock.Id)));
@@ -144,35 +100,25 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
             return false;
         }
 
-        const std::vector<std::string> requiredTags = ParseCondition(dock.DemandCondition.View());
         DockEndpoint endpointA{
             .Id = dock.Id,
             .OwnerZone = zoneA->Id,
-            .OwnerGraph = zoneA->Graph,
             .OtherZone = zoneB->Id,
-            .OtherGraph = zoneB->Graph,
             .Side = DockSide::A,
             .Origin = input.Transform.Position,
             .Normal = normal,
             .Right = right,
             .Up = up,
             .HalfExtents = dock.HalfExtents,
-            .OwnerArmBoundsLocal = dock.SideAArmBounds,
             .Directions = dock.Directions,
-            .PreloadPriority = dock.PreloadPriority,
-            .PreloadDepth = dock.PreloadDepth,
-            .RequiredTags = requiredTags,
         };
         DockEndpoint endpointB = endpointA;
         endpointB.OwnerZone = zoneB->Id;
-        endpointB.OwnerGraph = zoneB->Graph;
         endpointB.OtherZone = zoneA->Id;
-        endpointB.OtherGraph = zoneA->Graph;
         endpointB.Side = DockSide::B;
         endpointB.Normal = -normal;
         endpointB.Right = -right;
         endpointB.Up = up;
-        endpointB.OwnerArmBoundsLocal = ReflectXZ(dock.SideBArmBounds);
 
         FindZone(cooked, zoneA->Id)->Docks.push_back(std::move(endpointA));
         FindZone(cooked, zoneB->Id)->Docks.push_back(std::move(endpointB));
@@ -204,33 +150,24 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
             return false;
         }
         if (link.Kind != LinkKind::Teleport
-            || link.Directions < 1u || link.Directions > 3u
-            || link.PreloadDepth < 0)
+            || link.Directions < 1u || link.Directions > 3u)
         {
             SetError(error, std::format("link {} has unsupported semantics",
                                         LinkIdToString(link.Id)));
             return false;
         }
 
-        const std::vector<std::string> requiredTags = ParseCondition(link.DemandCondition.View());
         LinkEndpoint endpointA{
             .Id = link.Id,
             .OwnerZone = zoneA->Id,
-            .OwnerGraph = zoneA->Graph,
             .OtherZone = zoneB->Id,
-            .OtherGraph = zoneB->Graph,
             .Side = DockSide::A,
             .Kind = static_cast<uint32_t>(link.Kind),
             .Directions = link.Directions,
-            .PreloadPriority = link.PreloadPriority,
-            .PreloadDepth = link.PreloadDepth,
-            .RequiredTags = requiredTags,
         };
         LinkEndpoint endpointB = endpointA;
         endpointB.OwnerZone = zoneB->Id;
-        endpointB.OwnerGraph = zoneB->Graph;
         endpointB.OtherZone = zoneA->Id;
-        endpointB.OtherGraph = zoneA->Graph;
         endpointB.Side = DockSide::B;
 
         FindZone(cooked, zoneA->Id)->Links.push_back(std::move(endpointA));
