@@ -176,14 +176,14 @@ the dominant fixed cost is waking parked workers — **measured at ~300 µs per
 dispatch** on the dev machine (WSL2, 14 hardware threads, 12 workers; see Stage A
 results below), which is why Stage D is profile-gated rather than assumed to win.
 
-## Decision 2: ownership — the engine owns the pool, `World` stays data
+## Decision 2: ownership — the engine owns the pool, `EntityStore` stays data
 
 Unchanged from the draft, with placement made concrete:
 
 - `Engine` creates the concrete pool at startup and exposes it through the same
   service surface as other engine-owned singletons.
 - `EngineSchedule` and systems receive `JobSystem&`; queries receive it per call
-  (Decision 4). `World`, `Registry`, and `ZoneRuntime` never see it.
+  (Decision 4). `EntityStore`, `Registry`, and `ZoneRuntime` never see it.
 - Tests construct `ThreadPoolJobSystem(0)` for determinism.
 
 ## Decision 3: the async lane — `AsyncTaskQueue`
@@ -324,7 +324,7 @@ Semantics, all decided on the calling thread before the fork:
   adequate grain for an atomic-counter pool; no batching heuristics in v1.
 - Column-version bumps keep their serial semantics ("bumped once per chunk after
   the callback") and are safe because `Chunk::LastWrittenFrames` is per-chunk state
-  and each chunk is owned by exactly one job. `World::CurrentFrame()` is read-only
+  and each chunk is owned by exactly one job. `EntityStore::CurrentFrame()` is read-only
   during the sweep.
 - Structural safety is asserted, not assumed: debug builds capture the world's
   structural version at fork and assert it unchanged at join. Any command-buffer
@@ -399,7 +399,7 @@ and a flag to force it engine-wide for bisecting threading bugs.
 ### Stage C status (2026-06-11)
 
 Landed, test-verified (683 tests green, TSan clean including parallel
-propagation over live Worlds):
+propagation over live EntityStores):
 
 - `world/registry/RegistryParallel.h` — `ForEachRegistryParallel`, the one
   place the Decision 4 rules live. Spans of zero or one registries run inline
@@ -414,7 +414,7 @@ propagation over live Worlds):
   handle.
 - Transform propagation — the only millisecond-scale system — converted:
   `PropagateTransforms(JobSystem&, span)` deduplicates, then runs one zone per
-  job. Legal because the propagation order cache is a World resource and
+  job. Legal because the propagation order cache is a registry resource and
   parent-before-child is an intra-zone constraint. The frame's Simulate phase
   now uses it.
 - Render extraction deliberately not converted: it appends to a shared queue

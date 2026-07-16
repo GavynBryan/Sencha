@@ -91,8 +91,8 @@ q.ForEachChunk([dt](auto& view)
 `Write<T>` grants mutable access and **bumps the T column version once per chunk** after
 the callback returns — whether or not any row was actually written. This is conservative:
 a system that holds `Write<T>` but never modifies any row will still cause `Changed<T>`
-to match that chunk this frame. The same semantics apply to non-const `World::TryGet<T>`
-and non-const `World::ForEachComponent<T>`; use the const overloads for reads that must
+to match that chunk this frame. The same semantics apply to non-const `EntityStore::TryGet<T>`
+and non-const `EntityStore::ForEachComponent<T>`; use the const overloads for reads that must
 not register as changes.
 
 ---
@@ -260,8 +260,8 @@ q.ForEachChunk([&cmds](auto& view)
 ## Query scope guard
 
 `ForEachChunk` pushes a query-scope guard on entry and pops it on exit. While the guard
-is active, any direct call to `World::AddComponent`, `World::RemoveComponent`,
-`World::CreateEntity`, or `World::DestroyEntity` is an assertion failure in debug builds.
+is active, any direct call to `EntityStore::AddComponent`, `EntityStore::RemoveComponent`,
+`EntityStore::CreateEntity`, or `EntityStore::DestroyEntity` is an assertion failure in debug builds.
 Use `CommandBuffer` instead.
 
 ---

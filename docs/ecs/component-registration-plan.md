@@ -33,7 +33,7 @@ scene components is named in exactly one place.
   keys. Existing `.scene` files load unmodified. (This is what makes the
   refactor safe relative to the editor branch.)
 - `GetComponentSerializerEntries()` keeps its signature and semantics.
-- `World::RegisterComponent<T>` keeps its register-before-first-entity rule.
+- `EntityStore::RegisterComponent<T>` keeps its register-before-first-entity rule.
 - No static-initializer self-registration. The engine is a static library;
   registrar objects in unreferenced TUs get dead-stripped, init order is
   nondeterministic, and the component set becomes invisible. An explicit
@@ -66,7 +66,7 @@ The primary template implements the standard pattern every component but
 `LocalTransform` already uses:
 
 - `BinaryChunkId = TypeSchema<T>::SceneChunkId`
-- `Register`: idempotent `registry.Components.RegisterComponent<T>()`
+- `Register`: idempotent `registry.Entities.RegisterComponent<T>()`
 - `Add`: reject duplicates, then `AddComponent`
 
 Delete the `StaticMeshComponent`, `CameraComponent`, `AudioSourceComponent`,
@@ -120,7 +120,7 @@ a real game needs it; don't build it speculatively.
 
 ### 4. Safety nets
 
-- `World::RegisterComponent<T>` gains
+- `EntityStore::RegisterComponent<T>` gains
   `static_assert(std::is_trivially_copyable_v<T>)` — archetype chunks relocate
   with `memcpy`, so this is a structural requirement, enforced once. Delete
   the per-header asserts (e.g. `AudioCaptionComponent.h`).

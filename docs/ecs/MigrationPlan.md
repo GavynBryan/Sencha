@@ -18,12 +18,12 @@ Sencha uses a single archetype ECS implementation in `engine/include/ecs` and
 
 The core types are:
 
-- `World`: owns entity lifetime, component metadata, archetypes, resources,
+- `EntityStore`: owns entity lifetime, component metadata, archetypes, resources,
   query-scope guards, lifecycle-hook guards, and structural versioning.
 - `EntityId`: generational handle. Storage keeps only `EntityIndex`; generation
   is checked at API boundaries.
-- `ComponentId`: per-`World` small integer assigned by
-  `World::RegisterComponent<T>()`.
+- `ComponentId`: per-`EntityStore` small integer assigned by
+  `EntityStore::RegisterComponent<T>()`.
 - `ArchetypeSignature`: `std::bitset<256>` of component ids.
 - `Archetype`: metadata and chunks for one exact component signature.
 - `Chunk`: 16 KB storage block, component columns first and entity indices last.
@@ -54,7 +54,7 @@ This has a few important consequences:
 - Systems that might mutate structure during iteration must record commands in a
   `CommandBuffer`.
 - Query iteration is chunk-first. Hot systems should use `ForEachChunk`; simple
-  single-component sweeps may use `World::ForEachComponent<T>()`.
+  single-component sweeps may use `EntityStore::ForEachComponent<T>()`.
 - Tags are empty structs. They occupy a signature bit but no per-row storage.
 - Per-frame dirtiness should use `Changed<T>`, not add/remove tags.
 
@@ -62,7 +62,7 @@ This has a few important consequences:
 
 ## Component Registration
 
-Register every component type before creating the first entity in a `World`:
+Register every component type before creating the first entity in an `EntityStore`:
 
 ```cpp
 world.RegisterComponent<LocalTransform>();
@@ -82,7 +82,7 @@ The v1 component budget is 256 registered types per world.
 
 ## Structural Mutation Rules
 
-Use direct `World` methods during setup, loading commits, teardown, and other
+Use direct `EntityStore` methods during setup, loading commits, teardown, and other
 places where no query is active:
 
 ```cpp
@@ -94,7 +94,7 @@ world.AddComponent<WorldTransform>(entity, {});
 Use `CommandBuffer` from systems that iterate:
 
 ```cpp
-void MarkDead(World& world, CommandBuffer& cmds)
+void MarkDead(EntityStore& world, CommandBuffer& cmds)
 {
     std::as_const(world).ForEachComponent<Health>(
         [&cmds](EntityId entity, const Health& health)
@@ -110,7 +110,7 @@ path batches contiguous hook-free add/remove runs for the same component type,
 but hook-bearing components execute one command at a time to preserve lifecycle
 ordering.
 
-Both `Query::ForEachChunk` and `World::ForEachComponent` hold an RAII query
+Both `Query::ForEachChunk` and `EntityStore::ForEachComponent` hold an RAII query
 scope. Structural mutation remains forbidden when a callback exits by throwing.
 
 ---
@@ -139,8 +139,8 @@ bumps the column version conservatively:
 
 - `Write<T>` bumps once when the visited chunk scope exits, including when the
   callback throws.
-- non-const `World::TryGet<T>()` bumps immediately.
-- non-const `World::ForEachComponent<T>()` bumps when each visited chunk scope
+- non-const `EntityStore::TryGet<T>()` bumps immediately.
+- non-const `EntityStore::ForEachComponent<T>()` bumps when each visited chunk scope
   exits, including when the callback throws.
 
 Const access does not bump. Use `std::as_const(world)` when a read-only
@@ -166,7 +166,7 @@ activation queue) lives in each registry's `ResourceStore`. Session definitions
 shared across zones (the tag/attribute/effect/ability registries, movement
 definitions) live once in the global registry's `ResourceStore`. Duplicate
 registration is rejected instead of replacing the existing resource. Entity
-storage (`World`) owns no resources.
+storage (`EntityStore`) owns no resources.
 
 ---
 
@@ -180,7 +180,7 @@ Transforms are regular ECS components:
 
 Propagation lives in `engine/src/world/transform/TransformPropagation.cpp`.
 It maintains per-world cache data as a resource and keys pointer caches off
-`World::StructuralVersion()`, because entity moves can invalidate chunk/row
+`EntityStore::StructuralVersion()`, because entity moves can invalidate chunk/row
 addresses without creating new archetypes.
 
 Render extraction consumes ECS data through query-style access and copies

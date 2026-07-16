@@ -28,7 +28,7 @@ Three non-negotiable consequences of that framing, decided with the product owne
 
 2. **The reflection / component-identity system is rewritten to be boundary-safe.**
    Today component identity is `typeid(T)` keyed into a per-`World` map
-   ([engine/include/ecs/World.h:98](../../engine/include/ecs/World.h)). Across a module
+   ([engine/include/ecs/EntityStore.h:98](../../engine/include/ecs/EntityStore.h)). Across a module
    boundary that is fragile (depends on RTTI symbol merging, visibility flags, and STL
    implementation). We replace `typeid`-as-key with an **explicit stable component
    identity** baked identically into every module. This is a ground-up change to the
@@ -227,7 +227,7 @@ Inherited from `docs/SenchaEditor.md` and the engine, restated so they are not r
 - **Deferral needs a trigger.** Anything deferred is recorded with the concrete condition
   that revives it.
 - **Components are trivially copyable** (archetype chunks memcpy rows — see
-  [World.h:92](../../engine/include/ecs/World.h)). This constrains what a game component
+  [EntityStore.h:92](../../engine/include/ecs/EntityStore.h)). This constrains what a game component
   may contain; the prefab/asset-ref story in 02-/05- respects it.
 
 ---

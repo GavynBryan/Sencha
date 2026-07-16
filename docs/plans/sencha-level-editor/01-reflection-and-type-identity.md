@@ -14,7 +14,7 @@
 A component's runtime identity is established in `World` by **`typeid(T)`**:
 
 ```cpp
-// engine/include/ecs/World.h
+// engine/include/ecs/EntityStore.h
 template <typename T> ComponentId RegisterComponent() {
     const std::type_index ti(typeid(T));          // ← identity key
     auto it = TypeToId.find(ti);
@@ -35,7 +35,7 @@ The **per-`World` `ComponentId`** (a `uint16_t` assigned by `NextComponentId++`,
 [ComponentId.h](../../engine/include/ecs/ComponentId.h)) is *not* the problem — it is
 already per-instance and resolved at registration. **The lookup key, `std::type_index(typeid(T))`,
 is the problem.** `Resources` and `LegacyStores` use the same key
-([World.h:444,484](../../engine/include/ecs/World.h)).
+([EntityStore.h:444,484](../../engine/include/ecs/EntityStore.h)).
 
 ### Why `typeid` breaks across a module boundary
 
@@ -255,7 +255,7 @@ handful of template methods in one header.
 
 ### 3.2 Resources and legacy stores
 
-`Resources` and `LegacyStores` ([World.h:439-533](../../engine/include/ecs/World.h)) also
+`Resources` and `LegacyStores` ([EntityStore.h:439-533](../../engine/include/ecs/EntityStore.h)) also
 key on `std::type_index(typeid(T))`. Audit each:
 
 - **`Resources`** (`StaticMeshComponentAssets`, etc.) — engine-owned, instantiated and
@@ -372,7 +372,7 @@ Once S0 is green:
 
 Files that must change (non-exhaustive; verify during S1):
 
-- `engine/include/ecs/World.h` — the lookup methods, `ComponentMeta`, Resources/Legacy.
+- `engine/include/ecs/EntityStore.h` — the lookup methods, `ComponentMeta`, Resources/Legacy.
 - `engine/include/ecs/ComponentId.h` — unchanged (the small-int id stays).
 - **new** `engine/include/ecs/ComponentTypeId.h`.
 - `engine/include/world/serialization/IComponentSerializer.h` — add `TypeId()`.

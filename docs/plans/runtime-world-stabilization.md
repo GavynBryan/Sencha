@@ -1,12 +1,12 @@
 # Runtime ECS Completion Plan
 
-Status: phases 0 through 6 landed. `ResourceStore`, immobile registries with
+Status: phases 0 through 7 landed. `ResourceStore`, immobile registries with
 member-order teardown, resource-only component lifecycle hooks, registry-local
 runtime state (propagation cache, physics scene, mover pool, activation queue)
 on `Registry::Resources`, session definitions centralized in the global
-registry, and deletion of the entity-store resource map are all in. Remaining:
-the phase 7 rename (`World` to `EntityStore`, `Registry::Components` to
-`Registry::Entities`) and the phase 8 through 9 internal decomposition and API
+registry, deletion of the entity-store resource map, and the public rename of
+`World` to `EntityStore` (with `Registry::Components` now `Registry::Entities`)
+are all in. Remaining: the phase 8 through 9 internal decomposition and API
 pass.
 
 This plan is runtime-only. Kyusu editor decomposition remains on the separate `agent/editor-decomposition-plan` branch.

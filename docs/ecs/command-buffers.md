@@ -1,7 +1,7 @@
 # Sencha ECS: Command Buffers
 
 A `CommandBuffer` records structural mutations — adding/removing components, creating and
-destroying entities — during system execution. Commands are applied to the `World` at
+destroying entities — during system execution. Commands are applied to the `EntityStore` at
 flush time, which happens at explicit scheduler phase boundaries, outside any active query.
 
 ---
@@ -15,7 +15,7 @@ would be invalidated.
 
 The invariant: **no structural change may happen while a `ForEachChunk` callback is
 executing.** Command buffers enforce this by deferring every structural change to flush
-time. The `World` maintains a query-depth counter; any direct structural call while the
+time. The `EntityStore` maintains a query-depth counter; any direct structural call while the
 counter is non-zero is an assertion failure in debug builds.
 
 ---
@@ -26,7 +26,7 @@ counter is non-zero is an assertion failure in debug builds.
 CommandBuffer cmds(world);
 ```
 
-`CommandBuffer` does not own the `World`. The world must outlive the buffer.
+`CommandBuffer` does not own the `EntityStore`. The world must outlive the buffer.
 
 ---
 
@@ -69,7 +69,7 @@ cmds.CreateEntity(); // creates an entity in the empty archetype at flush
 The buffered `CreateEntity()` command does not return an `EntityId`. It is useful for
 fire-and-forget creation where another system can discover the entity later, but it is
 not the right API when the creator must immediately add components to that new entity.
-For fully initialized spawns, create directly with `World::CreateEntity()` outside query
+For fully initialized spawns, create directly with `EntityStore::CreateEntity()` outside query
 scope, or add a higher-level spawn queue that owns logical spawn requests and realizes
 them at a safe scheduler boundary.
 
@@ -81,7 +81,7 @@ them at a safe scheduler boundary.
 cmds.Flush();
 ```
 
-Executes all recorded commands against the `World` in record order. Flush must be called
+Executes all recorded commands against the `EntityStore` in record order. Flush must be called
 outside any active `ForEachChunk` callback. The scheduler calls flush at explicit phase
 boundaries; manual flush is also legal during init/teardown.
 
@@ -137,10 +137,10 @@ The following conditions are assertion failures in debug builds:
 
 | Invariant                                         | Mechanism                        |
 |---------------------------------------------------|----------------------------------|
-| Direct structural mutation inside `ForEachChunk`  | `World::QueryDepth` guard        |
-| Direct structural mutation inside a lifecycle hook| `World::LifecycleHookDepth` guard|
+| Direct structural mutation inside `ForEachChunk`  | `EntityStore::QueryDepth` guard        |
+| Direct structural mutation inside a lifecycle hook| `EntityStore::LifecycleHookDepth` guard|
 | Lifecycle hook calls structural mutation          | Same depth guard, checked on entry|
-| `Flush` called while a query is active            | `World::InQueryScope()` assertion |
+| `Flush` called while a query is active            | `EntityStore::InQueryScope()` assertion |
 
 In release builds these are documented as undefined behavior. The guards are compile-time
 `assert()`s that strip in NDEBUG builds.
@@ -162,7 +162,7 @@ The hook must not call `AddComponent<B>` itself — that would assertion-fail.
 ## Example: a full system with command buffer
 
 ```cpp
-void PruneDeadEntities(World& world, CommandBuffer& cmds)
+void PruneDeadEntities(EntityStore& world, CommandBuffer& cmds)
 {
     // For destruction we need full generational EntityIds, so use the
     // component convenience iterator instead of ChunkView::Entities().

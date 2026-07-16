@@ -249,7 +249,7 @@ longer name `T`. Two sub-pieces:
   that snapshots/restores a component's raw bytes (components are trivially copyable —
   01-/World guarantees memcpy-relocatable). A `RawComponentEditCommand` stores
   `ComponentId` + before/after byte buffers and applies via `World`'s raw component API
-  ([`AddComponentRaw`/raw accessors, World.h:554+](../../engine/include/ecs/World.h)).
+  ([`AddComponentRaw`/raw accessors, EntityStore.h:554+](../../engine/include/ecs/EntityStore.h)).
   This makes editing **any** component — engine or game — undoable without naming it.
 
 `SceneHierarchyPanel` gets the same treatment: it already lists entities by id; add a

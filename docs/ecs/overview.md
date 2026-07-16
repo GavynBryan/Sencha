@@ -34,7 +34,7 @@ slot. Storage only reads the index; generation is checked at API boundaries (`Tr
 ### ComponentId
 
 A small integer (`uint16_t`) assigned when a component type is registered. Stable for the
-lifetime of a `World`. Up to 256 component types per world (the v1 budget).
+lifetime of an `EntityStore`. Up to 256 component types per world (the v1 budget).
 
 ### ArchetypeSignature
 
@@ -64,11 +64,11 @@ Capacity (rows per chunk) = `16384 / (sum of component strides + 4)`. For a
 Metadata for one component signature: the column layout, rows-per-chunk, and the list of
 live chunks. Two or more chunks exist only when the first chunk is full.
 
-### World
+### EntityStore
 
 Owns the entity registry, all archetypes, resources, and the structural-change guard.
-Every ECS operation goes through `World`. There is no global state; each zone owns a
-`World` instance.
+Every ECS operation goes through `EntityStore`. There is no global state; each zone owns an
+`EntityStore` instance.
 
 ### Query
 
@@ -90,7 +90,7 @@ specialization is trivial — zero overhead for components without hooks. See
 
 ### Resources
 
-Singleton objects owned by `World`, keyed by type. Used for per-world state that is not
+Singleton objects owned by `EntityStore`, keyed by type. Used for per-world state that is not
 attached to any entity: the camera frustum, the frame clock, the propagation order cache,
 asset caches.
 
@@ -104,10 +104,10 @@ removing a component moves the entity to a different archetype. This is called a
 
 **Structural changes are never allowed mid-query.** All structural mutations from inside
 a system go through a `CommandBuffer` and flush at explicit scheduler phase boundaries.
-Calling `World::AddComponent` or `World::DestroyEntity` while a query is active is an
+Calling `EntityStore::AddComponent` or `EntityStore::DestroyEntity` while a query is active is an
 assertion failure in debug builds.
 
-During startup and teardown — before any query is active — `World` structural methods are
+During startup and teardown — before any query is active — `EntityStore` structural methods are
 called directly.
 
 ---
@@ -134,7 +134,7 @@ move between archetypes twice per frame just to flip a bit.
 Each chunk stores a per-column **last-written-frame counter**. When a `Write<T>` query
 finishes iterating a chunk, the counter for column T is bumped to the current frame
 (conservative bump — regardless of whether any row was actually written). Non-const
-`World::TryGet<T>` and non-const `World::ForEachComponent<T>` follow the same rule:
+`EntityStore::TryGet<T>` and non-const `EntityStore::ForEachComponent<T>` follow the same rule:
 granting mutable access counts as a write. Use the const overloads (e.g. via
 `std::as_const(world)`) for reads that must not register as changes.
 
@@ -195,7 +195,7 @@ cmds.AddComponent<Health>(entity, { .Current = 80.f, .Max = 100.f });
 
 ## Writing a new system
 
-A system is any code that receives a `World&` (or `CommandBuffer&`) and iterates a query.
+A system is any code that receives an `EntityStore&` (or `CommandBuffer&`) and iterates a query.
 There is no base class or registration requirement.
 
 **Example: regenerate health each frame for non-frozen entities**
@@ -204,7 +204,7 @@ There is no base class or registration requirement.
 #include <ecs/Query.h>
 #include <gameplay/Health.h>
 
-void HealthRegenSystem(World& world, float dt)
+void HealthRegenSystem(EntityStore& world, float dt)
 {
     Query<Write<Health>, Without<TagFrozen>> q(world);
     q.ForEachChunk([dt](auto& view)
@@ -229,12 +229,12 @@ Key points:
   `view.template Read<T>()` returns `std::span<const T>`.
 - `view.Count()` is the number of live rows in the chunk (≤ capacity).
 - Structural changes inside the callback must go through a `CommandBuffer` — not through
-  direct `World` methods.
+  direct `EntityStore` methods.
 
 **Example: mark entities as dead and queue destruction**
 
 ```cpp
-void DeathSystem(World& world, CommandBuffer& cmds)
+void DeathSystem(EntityStore& world, CommandBuffer& cmds)
 {
     std::as_const(world).ForEachComponent<Health>(
         [&cmds](EntityId entity, const Health& health)

@@ -47,7 +47,7 @@ What exists and is reused:
   `GameplayTagSet` / `CountedGameplayTagSet` (heap-backed; usable as world state,
   **not** as components), and `GameplayTagQuery` (All/Any/None, Exact/Hierarchical
   match). Has unit tests; not yet wired to the ECS.
-- **ECS** (`engine/include/ecs/World.h`): POD components
+- **ECS** (`engine/include/ecs/EntityStore.h`): POD components
   (`static_assert(is_trivially_copyable)`), `RegisterComponent`, `Changed<T>`
   change detection, `CommandBuffer` for deferred structural change. Non-component
   state lives in `Registry::Resources` (`ResourceStore`), not on entity storage:
@@ -116,7 +116,7 @@ What exists and is reused:
 
 ### D-A — Tag registry is a resource; per-entity tags are a POD component
 
-`GameplayTagRegistry` lives as a per-`World` (or global) resource — one instance,
+`GameplayTagRegistry` lives as a global registry resource — one instance,
 heap-backed storage is fine. Per-entity tags become a new POD component:
 
 ```cpp

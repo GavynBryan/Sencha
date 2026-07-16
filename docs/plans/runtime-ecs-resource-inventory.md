@@ -19,7 +19,7 @@ This inventory records current ownership and the intended destination before res
 The runtime currently has two type-indexed owners:
 
 1. `Registry::Resources`, implemented by `ResourceStore`.
-2. The private resource map inside `World`.
+2. The private resource map inside `EntityStore`.
 
 The migration removes the second owner. `Registry::Resources` remains the only registry resource owner.
 
@@ -30,17 +30,17 @@ The migration removes the second owner. `Registry::Resources` remains the only r
 | `ActiveCameraService` | `Registry::Resources` | default 3D registry and editor document initialization | camera setup, input, render extraction | registry-local state | each registry that owns camera selection | before camera activation | after entities stop referencing active camera ids |
 | `StaticMeshComponentAssets` | `Registry::Resources` | default 3D registry and editor asset environment | `StaticMeshComponent` add and remove hooks | external dependency binding | registry `ResourceStore` | before any static mesh component is added or deserialized | after every static mesh component removal hook runs |
 | `AudioSourceRuntime` | `Registry::Resources` | default 3D registry initialization | audio source and caption hooks, audio and caption systems | external dependency binding | registry `ResourceStore` | before audio source or caption components are added or deserialized | after every audio and caption removal hook runs |
-| `PropagationOrderCache` | `World` resource map | lazy transform propagation | transform propagation | registry-local state | registry `ResourceStore` | lazy before first propagation is valid | before entity storage disappears is acceptable because it owns only cached ids and pointers; it must never outlive its registry |
-| `PhysicsScene` | `World` resource map | lazy physics step | physics synchronization | registry-local state | registry `ResourceStore` | before the registry first participates in physics | before the system-owned `PhysicsWorld` it references is destroyed |
-| `CharacterMoverPool` | `World` resource map | lazy character controller system | character controller reconciliation and drive | registry-local state | registry `ResourceStore` | before first character-controller physics pass | before the system-owned `PhysicsWorld` it references is destroyed |
-| `AbilityActivationQueue` | `World` resource map | AbilityKit registration | ability activation producer and drain systems | registry-local state | registry `ResourceStore` | before a registry may enqueue activations | ordinary registry teardown; no external lifetime dependency |
-| `GameplayTagRegistry` | `World` resource map | AbilityKit registration | tag matching, movement tag registration, serializers | session definition | global registry `ResourceStore` | before any tag ids are assigned or scene tag data is loaded | after every registry and serializer operation using tag ids is complete |
-| `AttributeRegistry` | `World` resource map | AbilityKit registration | attribute registration, effect evaluation, serializers | session definition | global registry `ResourceStore` | before attribute ids are assigned or attribute data is loaded | after every registry using attribute ids is destroyed |
-| `EffectRegistry` | `World` resource map | AbilityKit registration | effect application and movement ability definitions | session definition | global registry `ResourceStore` | before effect ids are assigned or abilities reference them | after every registry using effect ids is destroyed |
-| `AbilityRegistry` | `World` resource map | AbilityKit registration | ability activation and movement definition registration | session definition | global registry `ResourceStore` | before ability ids are assigned or granted to entities | after every registry using ability ids is destroyed |
-| `MovementTags` | `World` resource map | movement registration | grounding, jumping, locomotion, template input | session definition | global registry `ResourceStore` | after gameplay tag registry creation and before movement simulation | after every movement registry is destroyed |
-| `MovementDefs` | `World` resource map | default movement ability registration | movement speed and jump ability consumers | session definition | global registry `ResourceStore` | after attribute, effect, and ability definitions are registered | after every registry using those ids is destroyed |
-| `LocomotionModeRegistry` | `World` resource map | movement component registration | locomotion mode arbiter | session definition | global registry `ResourceStore` | after movement tags and marker component identities are registered | after every registry using mode entries is destroyed |
+| `PropagationOrderCache` | `EntityStore` resource map | lazy transform propagation | transform propagation | registry-local state | registry `ResourceStore` | lazy before first propagation is valid | before entity storage disappears is acceptable because it owns only cached ids and pointers; it must never outlive its registry |
+| `PhysicsScene` | `EntityStore` resource map | lazy physics step | physics synchronization | registry-local state | registry `ResourceStore` | before the registry first participates in physics | before the system-owned `PhysicsWorld` it references is destroyed |
+| `CharacterMoverPool` | `EntityStore` resource map | lazy character controller system | character controller reconciliation and drive | registry-local state | registry `ResourceStore` | before first character-controller physics pass | before the system-owned `PhysicsWorld` it references is destroyed |
+| `AbilityActivationQueue` | `EntityStore` resource map | AbilityKit registration | ability activation producer and drain systems | registry-local state | registry `ResourceStore` | before a registry may enqueue activations | ordinary registry teardown; no external lifetime dependency |
+| `GameplayTagRegistry` | `EntityStore` resource map | AbilityKit registration | tag matching, movement tag registration, serializers | session definition | global registry `ResourceStore` | before any tag ids are assigned or scene tag data is loaded | after every registry and serializer operation using tag ids is complete |
+| `AttributeRegistry` | `EntityStore` resource map | AbilityKit registration | attribute registration, effect evaluation, serializers | session definition | global registry `ResourceStore` | before attribute ids are assigned or attribute data is loaded | after every registry using attribute ids is destroyed |
+| `EffectRegistry` | `EntityStore` resource map | AbilityKit registration | effect application and movement ability definitions | session definition | global registry `ResourceStore` | before effect ids are assigned or abilities reference them | after every registry using effect ids is destroyed |
+| `AbilityRegistry` | `EntityStore` resource map | AbilityKit registration | ability activation and movement definition registration | session definition | global registry `ResourceStore` | before ability ids are assigned or granted to entities | after every registry using ability ids is destroyed |
+| `MovementTags` | `EntityStore` resource map | movement registration | grounding, jumping, locomotion, template input | session definition | global registry `ResourceStore` | after gameplay tag registry creation and before movement simulation | after every movement registry is destroyed |
+| `MovementDefs` | `EntityStore` resource map | default movement ability registration | movement speed and jump ability consumers | session definition | global registry `ResourceStore` | after attribute, effect, and ability definitions are registered | after every registry using those ids is destroyed |
+| `LocomotionModeRegistry` | `EntityStore` resource map | movement component registration | locomotion mode arbiter | session definition | global registry `ResourceStore` | after movement tags and marker component identities are registered | after every registry using mode entries is destroyed |
 
 ## Scheduled-system-owned state
 
@@ -56,7 +56,7 @@ The migration removes the second owner. `Registry::Resources` remains the only r
 
 ## Serializer dependencies
 
-The gameplay tag and attribute serializers currently recover definition registries from `World`. They must instead receive definitions through `SceneSerializationContext`.
+The gameplay tag and attribute serializers currently recover definition registries from `EntityStore`. They must instead receive definitions through `SceneSerializationContext`.
 
 Initial explicit serializer dependencies:
 

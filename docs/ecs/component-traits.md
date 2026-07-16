@@ -10,7 +10,7 @@ A hook receives:
 - the owning registry's `ResourceStore`
 - the entity id associated with the component
 
-It does not receive `World`, `Registry`, `Engine`, or `ZoneRuntime`.
+It does not receive `EntityStore`, `Registry`, `Engine`, or `ZoneRuntime`.
 
 ```cpp
 // engine/include/ecs/ComponentTraits.h
@@ -85,13 +85,13 @@ struct ComponentTraits<StaticMeshComponent>
 
 ## Resource binding
 
-Every runtime `Registry` owns one `ResourceStore` and constructs its `World` with that store. Member order keeps the store alive while `World` destruction dispatches removal hooks.
+Every runtime `Registry` owns one `ResourceStore` and constructs its `EntityStore` with that store. Member order keeps the store alive while `EntityStore` destruction dispatches removal hooks.
 
-A standalone `World` may be default-constructed only when it registers components without hooks. Registering a hook-bearing component requires construction with a stable resource store:
+A standalone `EntityStore` may be default-constructed only when it registers components without hooks. Registering a hook-bearing component requires construction with a stable resource store:
 
 ```cpp
 ResourceStore resources;
-World world(resources);
+EntityStore world(resources);
 world.RegisterComponent<MyHookedComponent>();
 ```
 

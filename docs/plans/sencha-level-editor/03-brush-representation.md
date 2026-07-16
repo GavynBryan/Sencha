@@ -78,7 +78,7 @@ Notes:
 ### 2.2 The component
 
 `BrushComponent` changes from `{ HalfExtents }` to hold (or reference) a `BrushMesh`. Because
-**components must be trivially copyable** (archetype memcpy — [World.h:92](../../engine/include/ecs/World.h)),
+**components must be trivially copyable** (archetype memcpy — [EntityStore.h:92](../../engine/include/ecs/EntityStore.h)),
 and a `BrushMesh` has `std::vector`s, the brush **cannot store the mesh inline in an archetype
 component**. Two clean options; we pick the second:
 
