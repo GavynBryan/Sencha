@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <app/Engine.h>
+#include <core/ResourceStore.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/World.h>
 #include <world/registry/Registry.h>
@@ -26,10 +27,10 @@ template <>
 struct ComponentTraits<EngineShutdownProbe>
 {
     static void OnRemove(const EngineShutdownProbe&,
-                         World& world,
+                         ResourceStore& resources,
                          EntityId)
     {
-        EngineShutdownState& state = world.GetResource<EngineShutdownState>();
+        EngineShutdownState& state = resources.Get<EngineShutdownState>();
         if (state.RemoveCount != nullptr)
             ++*state.RemoveCount;
 
@@ -62,9 +63,10 @@ TEST(EngineShutdown, ClearsRegistryEntitiesBeforeServices)
     bool sawInitializedEngine = false;
     bool audioWasAccessible = false;
 
-    World& world = engine.Zones().Global().Components;
+    Registry& global = engine.Zones().Global();
+    World& world = global.Components;
     world.RegisterComponent<EngineShutdownProbe>();
-    world.AddResource<EngineShutdownState>(EngineShutdownState{
+    global.Resources.Register<EngineShutdownState>(EngineShutdownState{
         .Owner = &engine,
         .RemoveCount = &removeCount,
         .SawInitializedEngine = &sawInitializedEngine,
