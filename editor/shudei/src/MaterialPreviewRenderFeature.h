@@ -58,10 +58,11 @@ private:
     RuntimeAssets& Assets;
     ViewportTargetCache Targets;
     PreviewBackdropRenderer Backdrop;
-    // The forward pass requires shadow resources for its descriptor layout;
-    // the preview renders no shadow tiles, so the atlas stays in its sampled
-    // layout and the preview light set carries a zero spot-shadow count.
-    SpotShadowResources Shadows;
+    // The forward pass requires the lighting bindings for its descriptor
+    // layout. The preview never renders shadow tiles, so it skips atlas
+    // creation entirely: the set stays dummy-backed and the preview light
+    // set carries a zero spot-shadow count.
+    LightBindings Lighting;
     MeshForwardPass Forward;
     RenderQueue Queue;
     RenderLightSet Lights;

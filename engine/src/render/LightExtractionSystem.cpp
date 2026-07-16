@@ -54,54 +54,6 @@ namespace
         return Sphere(position + direction * halfRange, radius);
     }
 
-    Mat4 MakeSpotProjection(float outerAngleDegrees, float nearPlane, float farPlane)
-    {
-        constexpr float degreesToRadians = 0.01745329251994329577f;
-        const float fov = std::clamp(outerAngleDegrees * 2.0f, 0.02f, 179.8f)
-                        * degreesToRadians;
-        const float tanHalfFov = std::tan(fov * 0.5f);
-        Mat4 result;
-        result[0][0] = 1.0f / tanHalfFov;
-        result[1][1] = -1.0f / tanHalfFov;
-        result[2][2] = farPlane / (nearPlane - farPlane);
-        result[2][3] = (farPlane * nearPlane) / (nearPlane - farPlane);
-        result[3][2] = -1.0f;
-        return result;
-    }
-
-    SpotShadowView MakeSpotShadowView(
-        const Transform3f& worldTransform,
-        const SpotLightComponent& light,
-        float globalSoftness)
-    {
-        constexpr float degreesToRadians = 0.01745329251994329577f;
-        const float outerAngle = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f)
-                               * degreesToRadians;
-        const float nearPlane = std::max(0.05f, light.Range * 0.02f);
-        const Transform3f lightTransform(
-            worldTransform.Position,
-            worldTransform.Rotation,
-            Vec3d(1.0f, 1.0f, 1.0f));
-        const Mat4 view = lightTransform.ToMat4().AffineInverse();
-        const Mat4 projection = MakeSpotProjection(
-            light.OuterAngleDegrees, nearPlane, light.Range);
-
-        SpotShadowView shadow;
-        shadow.ViewProjection = projection * view;
-        const float texelWorldSize =
-            2.0f * light.Range * std::tan(outerAngle)
-            / static_cast<float>(kSpotShadowInnerExtent);
-        const float softness = std::clamp(
-            light.ShadowSoftness * globalSoftness,
-            kSpotShadowSoftnessMinTexels,
-            kSpotShadowSoftnessMaxTexels);
-        shadow.SamplingParams = Vec4(
-            texelWorldSize,
-            softness,
-            std::max(light.ShadowBiasScale, 0.0f),
-            0.0f);
-        return shadow;
-    }
 }
 
 void LightExtractionSystem::Extract(std::span<Registry*> registries,
@@ -192,19 +144,9 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
         candidates.size(), kMaxForwardLights);
     for (std::size_t index = 0; index < count; ++index)
     {
-        LightCandidate candidate = candidates[index];
+        const LightCandidate& candidate = candidates[index];
         const std::uint32_t lightIndex = lights.Add(candidate.Light);
-        if (lightIndex == UINT32_MAX
-            || !candidate.WantsSpotShadow
-            || lights.SpotShadowCount >= kMaxSpotShadows)
-        {
-            continue;
-        }
-
-        const std::uint32_t shadowIndex = lights.SpotShadowCount++;
-        candidate.Shadow.LightIndex = lightIndex;
-        candidate.Shadow.AtlasScaleBias = SpotShadowAtlasScaleBias(shadowIndex);
-        lights.SpotShadows[shadowIndex] = candidate.Shadow;
-        lights.Lights[lightIndex].ShadowIndex = shadowIndex;
+        if (lightIndex != UINT32_MAX && candidate.WantsSpotShadow)
+            (void)lights.GrantSpotShadow(lightIndex, candidate.Shadow);
     }
 }

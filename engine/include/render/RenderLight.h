@@ -2,6 +2,7 @@
 
 #include <math/Mat.h>
 #include <math/Vec.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 
@@ -33,6 +34,10 @@ static_assert(sizeof(GpuLight) == 64, "GpuLight must match the std140 light reco
 
 inline constexpr std::uint32_t kMaxForwardLights = 64;
 inline constexpr std::uint32_t kMaxSpotShadows = 8;
+// Per-camera cap on active irradiance probe volumes. Sizes the probe-volume
+// binding array in the lighting descriptor set, which stays dummy-filled
+// until probe content is uploaded.
+inline constexpr std::uint32_t kMaxActiveProbeVolumes = 8;
 inline constexpr std::uint32_t kSpotShadowAtlasExtent = 2048;
 inline constexpr std::uint32_t kSpotShadowTileExtent = 512;
 inline constexpr std::uint32_t kSpotShadowAtlasColumns =
@@ -69,6 +74,61 @@ struct SpotShadowView
     Vec4 SamplingParams;
     std::uint32_t LightIndex = UINT32_MAX;
 };
+
+[[nodiscard]] inline Mat4 MakeSpotShadowProjection(
+    float outerAngleDegrees, float nearPlane, float farPlane)
+{
+    constexpr float degreesToRadians = 0.01745329251994329577f;
+    const float fov = std::clamp(outerAngleDegrees * 2.0f, 0.02f, 179.8f)
+                    * degreesToRadians;
+    const float tanHalfFov = std::tan(fov * 0.5f);
+    Mat4 result;
+    result[0][0] = 1.0f / tanHalfFov;
+    result[1][1] = -1.0f / tanHalfFov;
+    result[2][2] = farPlane / (nearPlane - farPlane);
+    result[2][3] = (farPlane * nearPlane) / (nearPlane - farPlane);
+    result[3][2] = -1.0f;
+    return result;
+}
+
+// Builds the depth-render and sampling record for one shadowed spot light:
+// scale-free light view, near plane clamped against the range, world-space
+// texel size at the far plane for the receiver offset, and softness clamped
+// to the filter's guard-band budget. AtlasScaleBias and LightIndex are
+// assigned at grant time.
+[[nodiscard]] inline SpotShadowView MakeSpotShadowView(
+    const Transform3f& worldTransform,
+    const SpotLightComponent& light,
+    float globalSoftness)
+{
+    constexpr float degreesToRadians = 0.01745329251994329577f;
+    const float outerAngle = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f)
+                           * degreesToRadians;
+    const float nearPlane = std::max(0.05f, light.Range * 0.02f);
+    const Transform3f lightTransform(
+        worldTransform.Position,
+        worldTransform.Rotation,
+        Vec3d(1.0f, 1.0f, 1.0f));
+    const Mat4 view = lightTransform.ToMat4().AffineInverse();
+    const Mat4 projection = MakeSpotShadowProjection(
+        light.OuterAngleDegrees, nearPlane, light.Range);
+
+    SpotShadowView shadow;
+    shadow.ViewProjection = projection * view;
+    const float texelWorldSize =
+        2.0f * light.Range * std::tan(outerAngle)
+        / static_cast<float>(kSpotShadowInnerExtent);
+    const float softness = std::clamp(
+        light.ShadowSoftness * globalSoftness,
+        kSpotShadowSoftnessMinTexels,
+        kSpotShadowSoftnessMaxTexels);
+    shadow.SamplingParams = Vec4(
+        texelWorldSize,
+        softness,
+        std::max(light.ShadowBiasScale, 0.0f),
+        0.0f);
+    return shadow;
+}
 
 [[nodiscard]] inline GpuLight MakePointGpuLight(
     const Vec<3>& worldPosition, const PointLightComponent& light)
@@ -153,5 +213,20 @@ struct RenderLightSet
                  const SpotLightComponent& light)
     {
         (void)Add(MakeSpotGpuLight(worldPosition, worldDirection, light));
+    }
+
+    // Grants the next fixed atlas slot to an already-packed light, wiring
+    // the slot's inset scale/bias and the light's shadow index. Returns the
+    // slot, or UINT32_MAX when the budget is exhausted or the index invalid.
+    std::uint32_t GrantSpotShadow(std::uint32_t lightIndex, SpotShadowView view)
+    {
+        if (lightIndex >= Count || SpotShadowCount >= kMaxSpotShadows)
+            return UINT32_MAX;
+        const std::uint32_t slot = SpotShadowCount++;
+        view.LightIndex = lightIndex;
+        view.AtlasScaleBias = SpotShadowAtlasScaleBias(slot);
+        SpotShadows[slot] = view;
+        Lights[lightIndex].ShadowIndex = slot;
+        return slot;
     }
 };

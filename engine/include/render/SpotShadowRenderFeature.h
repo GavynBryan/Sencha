@@ -1,18 +1,28 @@
 #pragma once
 
 #include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanShaderCache.h>
+#include <render/LightBindings.h>
 #include <render/RenderLight.h>
 #include <render/ShadowCasterSet.h>
-#include <render/SpotShadowResources.h>
+#include <render/SpotShadowDepthPass.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <memory>
 
+//=============================================================================
+// SpotShadowRenderFeature
+//
+// IRenderFeature that owns the lighting bindings' lifetime for the game
+// renderer and records the spot shadow atlas each frame through
+// SpotShadowDepthPass. Runs in Offscreen so tiles are written before the
+// MainColor forward pass samples them. The bindings are shared with
+// MeshRenderFeature, whose Setup must run after this feature's so the set
+// layout exists when the forward pipeline layout is created.
+//=============================================================================
 class SpotShadowRenderFeature final : public IRenderFeature
 {
 public:
-    SpotShadowRenderFeature(std::shared_ptr<SpotShadowResources> resources,
+    SpotShadowRenderFeature(std::shared_ptr<LightBindings> bindings,
                             const RenderLightSet& lights,
                             const ShadowCasterSet& casters,
                             StaticMeshCache& meshes);
@@ -23,27 +33,9 @@ public:
     void Teardown() override;
 
 private:
-    [[nodiscard]] bool EnsurePipelines();
-    [[nodiscard]] bool BindInstanceStream(const FrameContext& frame);
-    [[nodiscard]] VkDeviceSize UploadView(const SpotShadowView& shadow);
-    void BindView(const FrameContext& frame, VkDeviceSize uniformOffset);
-
-    std::shared_ptr<SpotShadowResources> Resources;
+    std::shared_ptr<LightBindings> Bindings;
     const RenderLightSet& Lights;
     const ShadowCasterSet& Casters;
     StaticMeshCache& Meshes;
-
-    VulkanBufferService* Buffers = nullptr;
-    VulkanDescriptorCache* Descriptors = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
-    VulkanPipelineCache* PipelineCache = nullptr;
-    VulkanShaderCache* Shaders = nullptr;
-
-    ShaderHandle VertexShader;
-    ShaderHandle FragmentShader;
-    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline BackPipeline = VK_NULL_HANDLE;
-    VkPipeline DoubleSidedPipeline = VK_NULL_HANDLE;
-    float CachedBiasConstant = -1.0f;
-    float CachedBiasSlope = -1.0f;
+    SpotShadowDepthPass Pass;
 };

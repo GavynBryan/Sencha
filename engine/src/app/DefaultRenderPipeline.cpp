@@ -98,17 +98,17 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     Swapchain = &graphics.Swapchain;
 
     // The shadow feature renders the atlas the forward pass samples. Adding it
-    // first runs its Setup first, so the shadow descriptor set layout exists
-    // when the forward pass builds its pipeline layout; Offscreen also records
-    // before MainColor, so tiles are written before they are read.
-    auto shadows = std::make_shared<SpotShadowResources>();
+    // first runs its Setup first, so the lighting set layout exists when the
+    // forward pass builds its pipeline layout; Offscreen also records before
+    // MainColor, so tiles are written before they are read.
+    auto bindings = std::make_shared<LightBindings>();
     if (graphics.MainRenderer.AddFeature(std::make_unique<SpotShadowRenderFeature>(
-            shadows, Lights, ShadowCasters, *Meshes)) == nullptr)
+            bindings, Lights, ShadowCasters, *Meshes)) == nullptr)
     {
         return false;
     }
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
-        Queue, *Meshes, *Materials, Camera, Lights, std::move(shadows))) != nullptr;
+        Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings))) != nullptr;
 #else
     (void)graphics;
     return false;

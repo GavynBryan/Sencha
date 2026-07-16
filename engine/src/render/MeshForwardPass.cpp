@@ -49,20 +49,25 @@ static_assert(offsetof(GpuLight, ShadowIndex) == 52);
 static_assert(offsetof(GpuLight, ConeScale) == 56);
 static_assert(offsetof(GpuLight, ConeOffset) == 60);
 
-void MeshForwardPass::Setup(const RendererServices& services, SpotShadowResources& shadows)
+void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bindings)
 {
     Buffers = services.Buffers;
     Descriptors = services.Descriptors;
     Scratch = services.Scratch;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
-    Shadows = &shadows;
+    Bindings = &bindings;
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
 
     VertexShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
     FragmentShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardFragSpv, kMeshForwardFragSpvWordCount, "Mesh forward fragment");
+
+    // Without valid lighting bindings there is no legal set-2 layout to
+    // build against; leaving PipelineLayout null keeps Draw inert.
+    if (!bindings.IsValid())
+        return;
 
     VkPushConstantRange push{};
     push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -72,7 +77,7 @@ void MeshForwardPass::Setup(const RendererServices& services, SpotShadowResource
     const VkDescriptorSetLayout setLayouts[] = {
         Descriptors->GetFrameSetLayout(),
         Descriptors->GetBindlessSetLayout(),
-        shadows.GetSetLayout(),
+        bindings.GetSetLayout(),
     };
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -222,9 +227,9 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
     const VkDescriptorSet bindlessSet = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
                             1, 1, &bindlessSet, 0, nullptr);
-    const VkDescriptorSet shadowSet = Shadows->GetSet();
+    const VkDescriptorSet lightingSet = Bindings->GetSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
-                            2, 1, &shadowSet, 0, nullptr);
+                            2, 1, &lightingSet, 0, nullptr);
 }
 
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
@@ -340,6 +345,6 @@ void MeshForwardPass::Teardown()
     PipelineLayout = VK_NULL_HANDLE;
     CachedColorFormat = VK_FORMAT_UNDEFINED;
     CachedDepthFormat = VK_FORMAT_UNDEFINED;
-    Shadows = nullptr;
+    Bindings = nullptr;
     Device = VK_NULL_HANDLE;
 }

@@ -24,6 +24,7 @@
 
 #include <graphics/vulkan/Renderer.h>
 #include <render/MeshForwardPass.h>
+#include <render/SpotShadowDepthPass.h>
 
 #include <array>
 #include <functional>
@@ -119,10 +120,12 @@ private:
     // materials. Active whenever an asset environment is present (essentially always);
     // BrushSolid/Meshes above are the procedural-checker fallback, kept until the
     // owner's pixel-diff confirms the editor composite is gamma-correct (then removed).
-    // The forward pass requires shadow resources for its descriptor layout; the
-    // editor renders no shadow tiles yet, so the atlas stays in its sampled
-    // layout and viewport light sets carry a zero spot-shadow count.
-    SpotShadowResources    Shadows;
+    // Lighting owns the set-2 bindings plus the spot shadow atlas; ShadowPass
+    // records the focus scene's granted tiles once per frame before the
+    // viewport loop, so every Solid viewport samples the same atlas the game
+    // would render. Context zones draw with shadow-free light sets.
+    LightBindings          Lighting;
+    SpotShadowDepthPass    ShadowPass;
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
     std::optional<SceneSolidRenderer>      SceneSolid;

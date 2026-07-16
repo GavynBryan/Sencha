@@ -3,6 +3,7 @@
 #include <render/MaterialCache.h>   // MaterialHandle
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/ShadowCasterSet.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
@@ -31,6 +32,11 @@ class Logger;
 // placed meshes draw in every viewport. Both are camera-independent and built
 // once per frame; the per-viewport camera is applied at draw time.
 //
+// The light set carries the scene's packed lights plus fixed spot shadow
+// grants, and the caster set gathers the brush and placed-mesh sections that
+// cast (engine caster policy), so the shadow depth pass renders the same
+// atlas the game would for this scene.
+//
 // CPU/asset only (no Vulkan) so it can be unit-tested headlessly.
 //=============================================================================
 class SceneRenderQueueBuilder
@@ -38,6 +44,7 @@ class SceneRenderQueueBuilder
 public:
     SceneRenderQueueBuilder(AssetSystem& assets,
                             StaticMeshCache& meshes,
+                            MaterialCache& materials,
                             MaterialSetCache& materialSets,
                             LoggingProvider& logging);
     ~SceneRenderQueueBuilder();
@@ -57,6 +64,7 @@ public:
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
     [[nodiscard]] const RenderLightSet& Lights() const { return SceneLights; }
     [[nodiscard]] RenderLightSet& Lights() { return SceneLights; }
+    [[nodiscard]] const ShadowCasterSet& Casters() const { return SceneCasters; }
 
 private:
     // One cooked brush's GPU mesh, owned here (Create/Destroy), plus the material
@@ -71,10 +79,12 @@ private:
     void EmitBrushQueue();
     void BuildMeshQueue(const EditorDocument& document);
     void BuildLights(const EditorDocument& document);
+    void BuildShadowCasters(const EditorDocument& document);
     void ReleaseBrushMeshes();
 
     AssetSystem& Assets;
     StaticMeshCache& Meshes;
+    MaterialCache& Materials;
     MaterialSetCache& MaterialSets;
     Logger& Log;
 
@@ -86,4 +96,5 @@ private:
     RenderQueue Brushes;
     RenderQueue PlacedMeshes;
     RenderLightSet SceneLights;
+    ShadowCasterSet SceneCasters;
 };

@@ -21,10 +21,11 @@ class VulkanUploadContextService;
 // addressed by opaque ImageHandle values with generational validation,
 // mirroring VulkanBufferService.
 //
-// The service deliberately handles only the 90% path: 2D color images,
+// The service deliberately centers on the 90% path: 2D color images,
 // single array layer, optional mip chain, default whole-image view.
-// Cubemap, volumetric, and non-default-view images are out of scope until
-// a feature actually needs them.
+// Cube-array and 3D images are supported only as far as the lighting
+// descriptor bindings need them (create, view, clear via command buffer);
+// Upload and mip generation remain 2D single-layer only.
 //
 // This service deals in Vulkan images, not "textures". A higher layer
 // (resource cache / asset system) composes ImageHandles with sampler
@@ -51,6 +52,12 @@ struct ImageCreateInfo
     VkImageAspectFlags AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     uint32_t MipLevels = 1;          // 0 or 1 => single mip. >1 => explicit chain length.
     bool GenerateMips = false;       // auto-blit mip chain from base after upload
+    // Image dimensionality, driven by the default view: 2D (the common
+    // case), CUBE_ARRAY (2D image, cube-compatible, ArrayLayers faces), or
+    // 3D (Depth slices). Other view types are rejected.
+    VkImageViewType ViewType = VK_IMAGE_VIEW_TYPE_2D;
+    uint32_t Depth = 1;              // 3D only: extent depth
+    uint32_t ArrayLayers = 1;        // CUBE_ARRAY only: total faces, multiple of 6
     const char* DebugName = nullptr;
 };
 
@@ -120,6 +127,8 @@ private:
         VkImageAspectFlags AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         uint32_t MipLevels = 1;
         bool GenerateMips = false;
+        VkImageViewType ViewType = VK_IMAGE_VIEW_TYPE_2D;
+        uint32_t ArrayLayers = 1;
         uint32_t Generation = 0;
     };
 

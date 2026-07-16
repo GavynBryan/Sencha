@@ -3,10 +3,10 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
+#include <render/LightBindings.h>
 #include <render/MaterialCache.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
-#include <render/SpotShadowResources.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <array>
@@ -61,7 +61,10 @@ struct MeshPushConstants
 class MeshForwardPass
 {
 public:
-    void Setup(const RendererServices& services, SpotShadowResources& shadows);
+    // `bindings` backs set 2 of the pipeline layout; it must be set up (at
+    // least dummy-backed) before this call, or the pass stays inert and
+    // draws nothing.
+    void Setup(const RendererServices& services, LightBindings& bindings);
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
               const RenderLightSet& lights,
@@ -92,7 +95,7 @@ private:
     VulkanFrameScratch* Scratch = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
-    SpotShadowResources* Shadows = nullptr;
+    LightBindings* Bindings = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
 
     ShaderHandle VertexShader;

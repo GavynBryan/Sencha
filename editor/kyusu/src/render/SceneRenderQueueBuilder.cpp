@@ -12,10 +12,13 @@
 #include <ecs/World.h>
 #include <render/MaterialSetCache.h>
 #include <render/PointLightComponent.h>
+#include <render/ShadowCasterExtractionSystem.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
 
+#include <cmath>
 #include <cstddef>
 #include <utility>
 
@@ -75,10 +78,12 @@ namespace
 
 SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  StaticMeshCache& meshes,
+                                                 MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging)
     : Assets(assets)
     , Meshes(meshes)
+    , Materials(materials)
     , MaterialSets(materialSets)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -95,6 +100,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
     EmitBrushQueue();
     BuildMeshQueue(document);
     BuildLights(document);
+    BuildShadowCasters(document);
 }
 
 void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
@@ -233,9 +239,11 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
 
 void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
 {
-    // Reset() clears only the light count; the ambient tints are owned by the
-    // caller (EditorRenderFeature sets them from render.ambient.* cvars), so we
-    // leave them untouched here.
+    // Reset() clears only the packed counts; the ambient tints and shadow
+    // tunables are owned by the caller (EditorRenderFeature stamps them from
+    // render.* cvars before Build), so we leave them untouched here. The
+    // shadow-view gather below reads ShadowSoftness, which is why the stamp
+    // has to happen first.
     SceneLights.Reset();
 
     const EditorScene& scene = document.GetScene();
@@ -244,14 +252,72 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
     {
         if (!scene.IsEntityVisible(entity))
             continue;
-        const PointLightComponent* light = world.TryGet<PointLightComponent>(entity);
-        if (light == nullptr || !light->Enabled)
-            continue;
         const Transform3f* transform = scene.TryGetTransform(entity);
         if (transform == nullptr)
             continue;
 
-        SceneLights.AddPoint(transform->Position, *light);
+        if (const PointLightComponent* point = world.TryGet<PointLightComponent>(entity);
+            point != nullptr && point->Enabled)
+        {
+            SceneLights.AddPoint(transform->Position, *point);
+        }
+
+        const SpotLightComponent* spot = world.TryGet<SpotLightComponent>(entity);
+        if (spot == nullptr || !spot->Enabled
+            || !std::isfinite(spot->Intensity) || !std::isfinite(spot->Range)
+            || spot->Intensity <= 0.0f || spot->Range <= 0.0f)
+        {
+            continue;
+        }
+
+        const std::uint32_t lightIndex = SceneLights.Add(
+            MakeSpotGpuLight(transform->Position, transform->Forward(), *spot));
+        if (lightIndex != UINT32_MAX && spot->CastShadows)
+        {
+            // Fixed grants in scene order, the editor's deterministic
+            // equivalent of the game's score-ordered assignment.
+            (void)SceneLights.GrantSpotShadow(
+                lightIndex,
+                MakeSpotShadowView(*transform, *spot, SceneLights.ShadowSoftness));
+        }
+    }
+}
+
+void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
+{
+    SceneCasters.Reset();
+
+    // Brush geometry is baked in world space at identity, so its mesh bounds
+    // are already world bounds. Every section is offered; the engine caster
+    // policy drops sections whose material opts out.
+    for (const CachedBrushMesh& entry : BrushMeshes)
+    {
+        const GpuStaticMesh* mesh = Meshes.Get(entry.Mesh);
+        if (mesh == nullptr)
+            continue;
+        AppendShadowCasterSections(entry.Mesh, *mesh, entry.SlotMaterials, Materials,
+                                   ~0u, Mat4::Identity(), mesh->LocalBounds,
+                                   SceneCasters);
+    }
+
+    const EditorScene& scene = document.GetScene();
+    const World& world = scene.GetRegistry().Components;
+    for (const EntityId entity : scene.GetAllEntities())
+    {
+        if (!scene.IsEntityVisible(entity))
+            continue;
+        const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
+        if (renderer == nullptr)
+            continue;
+        const GpuStaticMesh* mesh = Meshes.Get(renderer->Mesh);
+        const std::vector<MaterialHandle>* sectionMaterials =
+            MaterialSets.Get(renderer->Materials);
+        const Transform3f* transform = scene.TryGetTransform(entity);
+        if (mesh == nullptr || sectionMaterials == nullptr || transform == nullptr)
+            continue;
+
+        AppendShadowCasters(*renderer, *mesh, *sectionMaterials, Materials,
+                            transform->ToMat4(), SceneCasters);
     }
 }
 

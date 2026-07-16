@@ -62,7 +62,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         MeshCache = &runtimeAssets->StaticMeshes;
         MaterialStore = &runtimeAssets->Materials;
         QueueBuilder.emplace(runtimeAssets->Assets, runtimeAssets->StaticMeshes,
-                             runtimeAssets->MaterialSets, logging);
+                             runtimeAssets->Materials, runtimeAssets->MaterialSets,
+                             logging);
         SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
@@ -82,9 +83,20 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Backdrop.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
-    if (!Shadows.Setup(services) && Log != nullptr)
-        Log->Warn("Spot shadow resources failed to set up; forward pass disabled");
-    Forward.Setup(services, Shadows);
+    if (!Lighting.Setup(services))
+    {
+        if (Log != nullptr)
+            Log->Warn("Lighting bindings failed to set up; forward pass disabled");
+    }
+    else
+    {
+        if (!Lighting.CreateAtlas() && Log != nullptr)
+            Log->Warn("Spot shadow atlas creation failed; viewport shadows disabled");
+        ShadowPass.Setup(services, Lighting);
+    }
+    // After ShadowPass: the forward pass's frame-UBO range write must be the
+    // last one so every dynamic-offset bind covers the largest block.
+    Forward.Setup(services, Lighting);
     Lines.Setup(services);
     WideLines.Setup(services);
     Fills.Setup(services);
@@ -139,6 +151,22 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
     if (MaterialPath)
     {
+        // Stamp the live render.* tunables before Build: the shadow-view
+        // gather multiplies in ShadowSoftness, so it must be current when the
+        // lights are packed. Reset() inside Build preserves these fields.
+        // Defaults match RenderLightSet's neutral cool fill.
+        RenderLightSet& lights = QueueBuilder->Lights();
+        lights.AmbientSky = Vec<3>(readFloatCvar("render.ambient.sky_r", 0.10f),
+                                   readFloatCvar("render.ambient.sky_g", 0.12f),
+                                   readFloatCvar("render.ambient.sky_b", 0.15f));
+        lights.AmbientGround = Vec<3>(readFloatCvar("render.ambient.ground_r", 0.04f),
+                                      readFloatCvar("render.ambient.ground_g", 0.03f),
+                                      readFloatCvar("render.ambient.ground_b", 0.02f));
+        lights.ShadowDarkness = readFloatCvar("render.shadow.darkness", 1.0f);
+        lights.ShadowSoftness = readFloatCvar("render.shadow.softness", 1.0f);
+        lights.ShadowBiasConstant = readFloatCvar("render.shadow.bias_const", 4.0f);
+        lights.ShadowBiasSlope = readFloatCvar("render.shadow.bias_slope", 2.0f);
+
         QueueBuilder->Build(World.FocusDocument());
 
         // Context zones build their own queues so they render real materials.
@@ -154,21 +182,16 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                 if (builder == nullptr)
                     builder = std::make_unique<SceneRenderQueueBuilder>(
                         RuntimeAssetsRef->Assets, RuntimeAssetsRef->StaticMeshes,
-                        RuntimeAssetsRef->MaterialSets, *LoggingRef);
+                        RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
+                        *LoggingRef);
                 builder->Build(document);
             });
-        // Hemispheric ambient is live-tunable in the dev console, same path as the
-        // grid/bloom knobs above. BuildLights() leaves the tints alone, so set them
-        // after. Defaults match RenderLightSet's neutral cool fill.
-        const float skyR    = readFloatCvar("render.ambient.sky_r", 0.10f);
-        const float skyG    = readFloatCvar("render.ambient.sky_g", 0.12f);
-        const float skyB    = readFloatCvar("render.ambient.sky_b", 0.15f);
-        const float groundR = readFloatCvar("render.ambient.ground_r", 0.04f);
-        const float groundG = readFloatCvar("render.ambient.ground_g", 0.03f);
-        const float groundB = readFloatCvar("render.ambient.ground_b", 0.02f);
-        RenderLightSet& lights = QueueBuilder->Lights();
-        lights.AmbientSky    = Vec<3>(skyR, skyG, skyB);
-        lights.AmbientGround = Vec<3>(groundR, groundG, groundB);
+        // Record the focus scene's shadow atlas once per frame, before any
+        // viewport rendering scope opens. Every Solid viewport then samples
+        // the same tiles; the pass is a no-op when no spot light holds a
+        // grant or the atlas is unavailable.
+        ShadowPass.Draw(frame, QueueBuilder->Lights(), QueueBuilder->Casters(),
+                        *MeshCache);
     }
 
     // Render every viewport that is actually on screen. A hidden panel zeroes its
@@ -473,7 +496,8 @@ void EditorRenderFeature::Teardown()
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();
-    Shadows.Teardown();
+    ShadowPass.Teardown();
+    Lighting.Teardown();
     Lines.Teardown();
     WideLines.Teardown();
     Fills.Teardown();

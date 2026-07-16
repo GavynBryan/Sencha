@@ -1,6 +1,5 @@
 #include <render/ShadowCasterExtractionSystem.h>
 
-#include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -21,6 +20,60 @@ namespace
         }
         return result;
     }
+}
+
+void AppendShadowCasterSections(StaticMeshHandle meshHandle,
+                                const GpuStaticMesh& mesh,
+                                std::span<const MaterialHandle> sectionMaterials,
+                                const MaterialCache& materials,
+                                std::uint32_t sectionMask,
+                                const Mat4& worldMatrix,
+                                const Aabb3d& worldBounds,
+                                ShadowCasterSet& casters)
+{
+    if (sectionMaterials.empty())
+        return;
+
+    for (std::uint32_t sectionIndex = 0;
+         sectionIndex < static_cast<std::uint32_t>(mesh.Sections.size());
+         ++sectionIndex)
+    {
+        if ((sectionMask & (1u << sectionIndex)) == 0)
+            continue;
+
+        const std::uint32_t slot = mesh.Sections[sectionIndex].MaterialSlot;
+        const MaterialHandle materialHandle = slot < sectionMaterials.size()
+            ? sectionMaterials[slot]
+            : sectionMaterials.back();
+        const Material* material = materials.Get(materialHandle);
+        if (material == nullptr || !material->CastShadows)
+            continue;
+
+        casters.Items.push_back(ShadowCasterItem{
+            .Mesh = meshHandle,
+            .Material = materialHandle,
+            .SectionIndex = sectionIndex,
+            .WorldMatrix = worldMatrix,
+            .WorldBounds = worldBounds,
+            .DoubleSided = material->DoubleSided,
+        });
+    }
+}
+
+void AppendShadowCasters(const StaticMeshComponent& renderer,
+                         const GpuStaticMesh& mesh,
+                         std::span<const MaterialHandle> sectionMaterials,
+                         const MaterialCache& materials,
+                         const Mat4& worldMatrix,
+                         ShadowCasterSet& casters)
+{
+    if (!renderer.Visible || !renderer.CastShadows)
+        return;
+
+    AppendShadowCasterSections(renderer.Mesh, mesh, sectionMaterials, materials,
+                               renderer.SectionMask, worldMatrix,
+                               TransformBounds(mesh.LocalBounds, worldMatrix),
+                               casters);
 }
 
 void ShadowCasterExtractionSystem::Extract(
@@ -54,38 +107,11 @@ void ShadowCasterExtractionSystem::Extract(
                 const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
                 const std::vector<MaterialHandle>* sectionMaterials =
                     materialSets.Get(renderer.Materials);
-                if (transform == nullptr || mesh == nullptr
-                    || sectionMaterials == nullptr || sectionMaterials->empty())
-                {
+                if (transform == nullptr || mesh == nullptr || sectionMaterials == nullptr)
                     return;
-                }
 
-                const Mat4 worldMatrix = transform->Value.ToMat4();
-                const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
-                for (std::uint32_t sectionIndex = 0;
-                     sectionIndex < static_cast<std::uint32_t>(mesh->Sections.size());
-                     ++sectionIndex)
-                {
-                    if ((renderer.SectionMask & (1u << sectionIndex)) == 0)
-                        continue;
-
-                    const std::uint32_t slot = mesh->Sections[sectionIndex].MaterialSlot;
-                    const MaterialHandle materialHandle = slot < sectionMaterials->size()
-                        ? (*sectionMaterials)[slot]
-                        : sectionMaterials->back();
-                    const Material* material = materials.Get(materialHandle);
-                    if (material == nullptr || !material->CastShadows)
-                        continue;
-
-                    casters.Items.push_back(ShadowCasterItem{
-                        .Mesh = renderer.Mesh,
-                        .Material = materialHandle,
-                        .SectionIndex = sectionIndex,
-                        .WorldMatrix = worldMatrix,
-                        .WorldBounds = worldBounds,
-                        .DoubleSided = material->DoubleSided,
-                    });
-                }
+                AppendShadowCasters(renderer, *mesh, *sectionMaterials, materials,
+                                    transform->Value.ToMat4(), casters);
             });
     }
 }

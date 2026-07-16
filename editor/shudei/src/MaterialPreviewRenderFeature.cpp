@@ -37,12 +37,12 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
     Services = services;
     Targets.Setup(services);
     Backdrop.Setup(services);
-    if (!Shadows.Setup(services) && services.Logging != nullptr)
+    if (!Lighting.Setup(services) && services.Logging != nullptr)
     {
         services.Logging->GetLogger<MaterialPreviewRenderFeature>().Warn(
-            "Spot shadow resources failed to set up; preview forward pass disabled");
+            "Lighting bindings failed to set up; preview forward pass disabled");
     }
-    Forward.Setup(services, Shadows);
+    Forward.Setup(services, Lighting);
 
     for (std::size_t i = 0; i < Meshes.size(); ++i)
     {
@@ -55,7 +55,7 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
 void MaterialPreviewRenderFeature::Teardown()
 {
     Forward.Teardown();
-    Shadows.Teardown();
+    Lighting.Teardown();
     Backdrop.Teardown();
     Targets.Teardown();
 }

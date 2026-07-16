@@ -25,6 +25,9 @@ struct VulkanBootstrapPolicy
         // Decision L); BC is universal on desktop hardware, which is the
         // only target the Vulkan backend serves.
         DeviceFeatures.textureCompressionBC = VK_TRUE;
+        // The lighting descriptor set binds a cube-array shadow map (dummy
+        // until point shadows land). Universal on desktop hardware.
+        DeviceFeatures.imageCubeArray = VK_TRUE;
     }
 
     std::string AppName = "Sencha";
