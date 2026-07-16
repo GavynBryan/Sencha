@@ -19,15 +19,23 @@ jobs:
           ref: agent/runtime-world-stabilization
 
       - name: Migrate lifecycle resources
+        id: migrate
+        continue-on-error: true
         run: |
-          set +e
-          python .github/scripts/migrate_lifecycle_resources.py > /tmp/migration.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            tac /tmp/migration.log
-            exit "$status"
-          fi
-          cat /tmp/migration.log
+          python .github/scripts/migrate_lifecycle_resources.py > migration.log 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload migration log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: lifecycle-migration-log
+          path: migration.log
+          if-no-files-found: error
+
+      - name: Stop on migration failure
+        if: steps.migrate.outputs.status != '0'
+        run: exit 1
 
       - name: Remove temporary migration files
         run: |
