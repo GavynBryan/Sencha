@@ -1,6 +1,6 @@
 #pragma once
 
-class World;
+class EntityStore;
 class AttributeRegistry;
 
 //=============================================================================
@@ -14,10 +14,10 @@ class AttributeRegistry;
 // Free functions, so they run without the frame-context stack; a game can wrap
 // them in a scheduled system.
 //=============================================================================
-void ResolveAttributes(World& world, const AttributeRegistry& attributes);
+void ResolveAttributes(EntityStore& world, const AttributeRegistry& attributes);
 
 // Resolve primitives, so the effects module can insert its modifier fold between
 // the reset and the clamp without the attributes module knowing about effects.
 //   ResolveAttributes == ResetAttributesToBase + ClampAttributes.
-void ResetAttributesToBase(World& world);                             // Current = Base
-void ClampAttributes(World& world, const AttributeRegistry& attributes); // clamp via registry
+void ResetAttributesToBase(EntityStore& world);                             // Current = Base
+void ClampAttributes(EntityStore& world, const AttributeRegistry& attributes); // clamp via registry

@@ -38,8 +38,8 @@ struct ComponentStorageTraits<SceneCodecMaterialComponent>
 
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<SceneCodecMaterialComponent>())
-            registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
+        if (!registry.Entities.IsRegistered<SceneCodecMaterialComponent>())
+            registry.Entities.RegisterComponent<SceneCodecMaterialComponent>();
     }
 
     static bool Add(
@@ -47,9 +47,9 @@ struct ComponentStorageTraits<SceneCodecMaterialComponent>
         EntityId entity,
         SceneCodecMaterialComponent component)
     {
-        if (registry.Components.HasComponent<SceneCodecMaterialComponent>(entity))
+        if (registry.Entities.HasComponent<SceneCodecMaterialComponent>(entity))
             return false;
-        registry.Components.AddComponent(entity, component);
+        registry.Entities.AddComponent(entity, component);
         return true;
     }
 };
@@ -83,9 +83,9 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
         });
 
     Registry registry;
-    registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(
+    registry.Entities.RegisterComponent<SceneCodecMaterialComponent>();
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(
         entity,
         SceneCodecMaterialComponent{ .Material = material });
 

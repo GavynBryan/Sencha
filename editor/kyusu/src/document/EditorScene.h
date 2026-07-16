@@ -99,7 +99,7 @@ public:
     template <typename T>
     void SetComponent(EntityId entity, const T& value)
     {
-        if (T* existing = Registry_.Components.TryGet<T>(entity))
+        if (T* existing = Registry_.Entities.TryGet<T>(entity))
             *existing = value;
     }
 

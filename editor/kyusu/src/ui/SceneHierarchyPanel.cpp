@@ -63,7 +63,7 @@ void SceneHierarchyPanel::OnDraw()
     EditorScene& scene = document.GetScene();
     const SelectableRef current = Selection.GetPrimarySelection();
     const RegistryId registryId = scene.GetRegistry().Id;
-    const World& world = scene.GetRegistry().Components;
+    const EntityStore& world = scene.GetRegistry().Entities;
 
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.

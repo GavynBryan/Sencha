@@ -34,7 +34,7 @@ namespace
     struct BenchmarkWorld
     {
         ResourceStore Resources;
-        World Entities{ Resources };
+        EntityStore Entities{ Resources };
     };
 
     double ElapsedUs(Clock::time_point start, Clock::time_point end)
@@ -91,7 +91,7 @@ namespace
         constexpr size_t MeasureIterations = 50;
 
         BenchmarkWorld storage;
-        World& world = storage.Entities;
+        EntityStore& world = storage.Entities;
         world.RegisterComponent<LocalTransform>();
         world.RegisterComponent<WorldTransform>();
         world.RegisterComponent<Parent>();
@@ -166,7 +166,7 @@ namespace
         constexpr size_t MeasureIterations = 50;
 
         BenchmarkWorld storage;
-        World& world = storage.Entities;
+        EntityStore& world = storage.Entities;
         world.RegisterComponent<WorldTransform>();
         world.RegisterComponent<StaticMeshComponent>();
 
@@ -267,7 +267,7 @@ namespace
 
     void PrintFootprint(
         std::string_view label,
-        const World& world,
+        const EntityStore& world,
         size_t registeredComponents)
     {
         size_t chunkCount = 0;
@@ -296,7 +296,7 @@ namespace
         }
     }
 
-    void RegisterRenderableComponents(World& world, bool withParent)
+    void RegisterRenderableComponents(EntityStore& world, bool withParent)
     {
         world.RegisterComponent<LocalTransform>();
         world.RegisterComponent<WorldTransform>();
@@ -305,7 +305,7 @@ namespace
         world.RegisterComponent<StaticMeshComponent>();
     }
 
-    void AddRenderable(World& world, size_t index, EntityId parent = {})
+    void AddRenderable(EntityStore& world, size_t index, EntityId parent = {})
     {
         EntityId entity = world.CreateEntity();
         world.AddComponent<LocalTransform>(entity, { MakeTransform(index) });
@@ -319,7 +319,7 @@ namespace
     {
         {
             BenchmarkWorld storage;
-            World& world = storage.Entities;
+            EntityStore& world = storage.Entities;
             world.RegisterComponent<LocalTransform>();
             world.RegisterComponent<WorldTransform>();
             for (size_t index = 0; index < 100; ++index)
@@ -333,7 +333,7 @@ namespace
 
         {
             BenchmarkWorld storage;
-            World& world = storage.Entities;
+            EntityStore& world = storage.Entities;
             RegisterRenderableComponents(world, false);
             for (size_t index = 0; index < 1000; ++index)
                 AddRenderable(world, index);
@@ -342,7 +342,7 @@ namespace
 
         {
             BenchmarkWorld storage;
-            World& world = storage.Entities;
+            EntityStore& world = storage.Entities;
             RegisterRenderableComponents(world, true);
 
             std::vector<EntityId> roots;
@@ -363,7 +363,7 @@ namespace
 
         {
             BenchmarkWorld storage;
-            World& world = storage.Entities;
+            EntityStore& world = storage.Entities;
             RegisterRenderableComponents(world, true);
 
             std::vector<EntityId> roots;

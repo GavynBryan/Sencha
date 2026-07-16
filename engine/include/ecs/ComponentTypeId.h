@@ -26,7 +26,7 @@ using ComponentTypeId = StrongId<struct ComponentTypeIdTag, std::uint64_t>;
 // in every translation unit and every module by the language rules — there is
 // no external linkage to merge. Collisions between *distinct* names are
 // astronomically unlikely at 64 bits and are caught at registration when the
-// colliding components disagree on storage metadata (World::RegisterComponent).
+// colliding components disagree on storage metadata (EntityStore::RegisterComponent).
 constexpr ComponentTypeId MakeComponentTypeId(std::string_view name)
 {
     std::uint64_t h = 14695981039346656037ull;

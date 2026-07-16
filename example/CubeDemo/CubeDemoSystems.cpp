@@ -31,7 +31,7 @@ namespace
 
             FreeCam.TickFixed(
                 ctx.Input,
-                RegistryInstance->Components,
+                RegistryInstance->Entities,
                 static_cast<float>(ctx.Time.DeltaSeconds));
         }
 
@@ -53,7 +53,7 @@ namespace
                 return;
 
             LocalTransform* cube =
-                RegistryInstance->Components.TryGet<LocalTransform>(Scene.CenterCube);
+                RegistryInstance->Entities.TryGet<LocalTransform>(Scene.CenterCube);
             if (cube != nullptr)
             {
                 cube->Value.Rotation *= Quatf::FromAxisAngle(
@@ -80,7 +80,7 @@ namespace
                 return;
 
             FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(RegistryInstance->Components);
+            FreeCam.ApplyRotation(RegistryInstance->Entities);
         }
 
         Registry*& RegistryInstance;

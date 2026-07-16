@@ -3,11 +3,11 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <utility>
 
-void ResetAttributesToBase(World& world)
+void ResetAttributesToBase(EntityStore& world)
 {
     // A frame span may include worlds that host no attribute-bearing entities
     // (the global registry before a game registers components there).
@@ -22,7 +22,7 @@ void ResetAttributesToBase(World& world)
     });
 }
 
-void ClampAttributes(World& world, const AttributeRegistry& attributes)
+void ClampAttributes(EntityStore& world, const AttributeRegistry& attributes)
 {
     if (!world.IsRegistered<AttributeSet>())
         return;
@@ -34,7 +34,7 @@ void ClampAttributes(World& world, const AttributeRegistry& attributes)
     });
 }
 
-void ResolveAttributes(World& world, const AttributeRegistry& attributes)
+void ResolveAttributes(EntityStore& world, const AttributeRegistry& attributes)
 {
     ResetAttributesToBase(world);
     ClampAttributes(world, attributes);

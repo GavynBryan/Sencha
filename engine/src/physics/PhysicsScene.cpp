@@ -4,7 +4,7 @@
 
 #include <ecs/CommandBuffer.h>
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
@@ -24,7 +24,7 @@ CollisionLayer DeriveLayer(BodyMotion motion, bool isTrigger)
 // top-level entity (the MVP case: brush cells, player, loose dynamics) has
 // LocalTransform == WorldTransform here; WorldTransform is preferred when present
 // for the parented case. Used only at body creation (the rare path).
-BodyTransform ReadPose(const World& world, EntityId entity)
+BodyTransform ReadPose(const EntityStore& world, EntityId entity)
 {
     if (world.IsRegistered<WorldTransform>())
         if (const WorldTransform* wt = world.TryGet<WorldTransform>(entity))
@@ -40,7 +40,7 @@ BodyTransform ReadPose(const World& world, EntityId entity)
 // and the command buffer is reused (Flush clears it).
 struct PhysicsScene::SceneState
 {
-    explicit SceneState(World& world)
+    explicit SceneState(EntityStore& world)
         : Commands(world)
         , KinematicPush(world)
         , DynamicPull(world)
@@ -65,7 +65,7 @@ PhysicsScene::~PhysicsScene()
         Simulation->RemoveBody(rec.Body);
 }
 
-bool PhysicsScene::Ready(const World& world) const
+bool PhysicsScene::Ready(const EntityStore& world) const
 {
     // The bridge needs colliders to bind, the link component to mark bound
     // bodies, and a transform to place them. RigidBody gates the dynamic and
@@ -75,17 +75,17 @@ bool PhysicsScene::Ready(const World& world) const
         && world.IsRegistered<PhysicsBodyLink>() && world.IsRegistered<LocalTransform>();
 }
 
-PhysicsScene::SceneState& PhysicsScene::EnsureState(World& world)
+PhysicsScene::SceneState& PhysicsScene::EnsureState(EntityStore& world)
 {
     if (!State)
         State = std::make_unique<SceneState>(world);
     return *State;
 }
 
-void PhysicsScene::Reconcile(World& world, SceneState& state)
+void PhysicsScene::Reconcile(EntityStore& world, SceneState& state)
 {
     ++ReconcileCount;
-    const World& readOnly = world; // const iteration: do not mark colliders changed
+    const EntityStore& readOnly = world; // const iteration: do not mark colliders changed
 
     // Create a body for every collider that does not have one yet. ForEachComponent
     // yields the full (generational) EntityId the body's UserData and the Owned
@@ -146,7 +146,7 @@ void PhysicsScene::Reconcile(World& world, SceneState& state)
     state.Commands.Flush();
 }
 
-void PhysicsScene::SyncToPhysics(World& world)
+void PhysicsScene::SyncToPhysics(EntityStore& world)
 {
     // The likely misconfiguration: colliders registered but the runtime link
     // forgotten, which would re-create every body each step. Loud in debug;
@@ -184,7 +184,7 @@ void PhysicsScene::SyncToPhysics(World& world)
     });
 }
 
-void PhysicsScene::SyncFromPhysics(World& world)
+void PhysicsScene::SyncFromPhysics(EntityStore& world)
 {
     if (!Ready(world) || Owned.empty())
         return;

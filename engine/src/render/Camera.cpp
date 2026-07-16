@@ -40,7 +40,7 @@ namespace
 }
 
 bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
-                                   const World& world,
+                                   const EntityStore& world,
                                    VkExtent2D targetExtent,
                                    CameraRenderData& out)
 {

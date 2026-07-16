@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-class World;
+class EntityStore;
 struct FixedLogicContext;
 
 //=============================================================================
@@ -69,12 +69,12 @@ void RegisterLocomotionMode(LocomotionModeRegistry& registry, GameplayTagId acti
 
 // Request a mode for an entity this tick. No-op if the entity carries no
 // LocomotionModeRequest or a higher-priority request already won.
-void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker, int priority);
+void RequestLocomotionMode(EntityStore& world, EntityId entity, ComponentTypeId marker, int priority);
 
 // The arbiter: apply each character's winning request by swapping its mode marker
 // (type-erased, via the caller-supplied mode set) and its projected gameplay
 // tag, then clear the request. Mode-agnostic; adding a mode never touches this.
-void ApplyLocomotionModes(World& world, const LocomotionModeRegistry& registry);
+void ApplyLocomotionModes(EntityStore& world, const LocomotionModeRegistry& registry);
 
 // Schedule adapter: run the arbiter over each active logic registry per fixed tick.
 class LocomotionModeArbiter

@@ -48,7 +48,7 @@ struct ComponentTraits<ComponentTeardownProbe>
 
 namespace
 {
-    void PrepareWorld(World& world,
+    void PrepareWorld(EntityStore& world,
                       ResourceStore& resources,
                       int& removeCount,
                       int& lastValue,
@@ -62,7 +62,7 @@ namespace
         world.RegisterComponent<ComponentTeardownProbe>();
     }
 
-    EntityId AddProbe(World& world, int value)
+    EntityId AddProbe(EntityStore& world, int value)
     {
         const EntityId entity = world.CreateEntity();
         world.AddComponent(entity, ComponentTeardownProbe{ value });
@@ -75,7 +75,7 @@ TEST(ComponentTeardown, DestroyEntityRunsRemoveHookExactlyOnce)
     int removeCount = 0;
     int lastValue = 0;
     ResourceStore resources;
-    World world(resources);
+    EntityStore world(resources);
     PrepareWorld(world, resources, removeCount, lastValue);
 
     const EntityId entity = AddProbe(world, 17);
@@ -94,7 +94,7 @@ TEST(ComponentTeardown, CommandBufferDestroyRunsRemoveHook)
     int removeCount = 0;
     int lastValue = 0;
     ResourceStore resources;
-    World world(resources);
+    EntityStore world(resources);
     PrepareWorld(world, resources, removeCount, lastValue);
 
     const EntityId entity = AddProbe(world, 23);
@@ -113,7 +113,7 @@ TEST(ComponentTeardown, RawMutationUsesRegisteredLifecycleMetadata)
     int removeCount = 0;
     int lastValue = 0;
     ResourceStore resources;
-    World world(resources);
+    EntityStore world(resources);
     PrepareWorld(world, resources, removeCount, lastValue, &addCount);
 
     const EntityId entity = world.CreateEntity();
@@ -135,7 +135,7 @@ TEST(ComponentTeardown, CommandBufferUsesRegisteredLifecycleMetadata)
     int removeCount = 0;
     int lastValue = 0;
     ResourceStore resources;
-    World world(resources);
+    EntityStore world(resources);
     PrepareWorld(world, resources, removeCount, lastValue, &addCount);
 
     const EntityId entity = world.CreateEntity();
@@ -158,7 +158,7 @@ TEST(ComponentTeardown, ClearEntitiesRunsEveryHookAndPreservesSetup)
     int removeCount = 0;
     int lastValue = 0;
     ResourceStore resources;
-    World world(resources);
+    EntityStore world(resources);
     PrepareWorld(world, resources, removeCount, lastValue);
 
     AddProbe(world, 1);
@@ -182,7 +182,7 @@ TEST(ComponentTeardown, WorldDestructorRunsHooksBeforeBoundResourcesDie)
     int lastValue = 0;
     ResourceStore resources;
     {
-        World world(resources);
+        EntityStore world(resources);
         PrepareWorld(world, resources, removeCount, lastValue);
         AddProbe(world, 37);
     }
@@ -198,8 +198,8 @@ TEST(ComponentTeardown, RegistryDestructorRunsHooksBeforeRegistryResourcesDie)
     int lastValue = 0;
     {
         Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
-        PrepareWorld(registry.Components, registry.Resources, removeCount, lastValue);
-        AddProbe(registry.Components, 41);
+        PrepareWorld(registry.Entities, registry.Resources, removeCount, lastValue);
+        AddProbe(registry.Entities, 41);
     }
 
     EXPECT_EQ(removeCount, 1);
@@ -215,18 +215,18 @@ TEST(ComponentTeardown, RegistriesUseIsolatedLifecycleResources)
 
     Registry left(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
     Registry right(RegistryId{ 3, 1 }, RegistryKind::Zone, ZoneId{ 2 });
-    PrepareWorld(left.Components, left.Resources, leftRemoves, leftValue);
-    PrepareWorld(right.Components, right.Resources, rightRemoves, rightValue);
+    PrepareWorld(left.Entities, left.Resources, leftRemoves, leftValue);
+    PrepareWorld(right.Entities, right.Resources, rightRemoves, rightValue);
 
-    const EntityId leftEntity = AddProbe(left.Components, 11);
-    const EntityId rightEntity = AddProbe(right.Components, 22);
+    const EntityId leftEntity = AddProbe(left.Entities, 11);
+    const EntityId rightEntity = AddProbe(right.Entities, 22);
 
-    left.Components.DestroyEntity(leftEntity);
+    left.Entities.DestroyEntity(leftEntity);
     EXPECT_EQ(leftRemoves, 1);
     EXPECT_EQ(leftValue, 11);
     EXPECT_EQ(rightRemoves, 0);
 
-    right.Components.DestroyEntity(rightEntity);
+    right.Entities.DestroyEntity(rightEntity);
     EXPECT_EQ(rightRemoves, 1);
     EXPECT_EQ(rightValue, 22);
 }
@@ -237,8 +237,8 @@ TEST(ComponentTeardown, DestroyZoneRunsHooks)
     int lastValue = 0;
     ZoneRuntime runtime;
     Registry& zone = runtime.CreateZone(ZoneId{ 1 });
-    PrepareWorld(zone.Components, zone.Resources, removeCount, lastValue);
-    AddProbe(zone.Components, 43);
+    PrepareWorld(zone.Entities, zone.Resources, removeCount, lastValue);
+    AddProbe(zone.Entities, 43);
 
     EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
 
@@ -252,23 +252,23 @@ TEST(ComponentTeardown, ZoneRuntimeClearCoversGlobalActiveAndDormantRegistries)
     int lastValue = 0;
     ZoneRuntime runtime;
 
-    PrepareWorld(runtime.Global().Components, runtime.Global().Resources,
+    PrepareWorld(runtime.Global().Entities, runtime.Global().Resources,
                  removeCount, lastValue);
-    AddProbe(runtime.Global().Components, 1);
+    AddProbe(runtime.Global().Entities, 1);
 
     Registry& active = runtime.CreateZone(ZoneId{ 1 });
-    PrepareWorld(active.Components, active.Resources, removeCount, lastValue);
-    AddProbe(active.Components, 2);
+    PrepareWorld(active.Entities, active.Resources, removeCount, lastValue);
+    AddProbe(active.Entities, 2);
     runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Logic = true });
 
     Registry& dormant = runtime.CreateZone(ZoneId{ 2 });
-    PrepareWorld(dormant.Components, dormant.Resources, removeCount, lastValue);
-    AddProbe(dormant.Components, 3);
+    PrepareWorld(dormant.Entities, dormant.Resources, removeCount, lastValue);
+    AddProbe(dormant.Entities, 3);
 
     runtime.ClearEntities();
 
     EXPECT_EQ(removeCount, 3);
-    EXPECT_EQ(runtime.Global().Components.EntityCount(), 0u);
-    EXPECT_EQ(active.Components.EntityCount(), 0u);
-    EXPECT_EQ(dormant.Components.EntityCount(), 0u);
+    EXPECT_EQ(runtime.Global().Entities.EntityCount(), 0u);
+    EXPECT_EQ(active.Entities.EntityCount(), 0u);
+    EXPECT_EQ(dormant.Entities.EntityCount(), 0u);
 }

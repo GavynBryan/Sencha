@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <render/LightExtractionSystem.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
@@ -10,7 +10,7 @@
 
 namespace
 {
-    EntityId MakeLight(World& world, const Vec<3>& position, const PointLightComponent& light)
+    EntityId MakeLight(EntityStore& world, const Vec<3>& position, const PointLightComponent& light)
     {
         const EntityId entity = world.CreateEntity();
         WorldTransform transform{};
@@ -20,9 +20,9 @@ namespace
         return entity;
     }
 
-    World MakeLightWorld()
+    EntityStore MakeLightWorld()
     {
-        World world;
+        EntityStore world;
         world.RegisterComponent<WorldTransform>();
         world.RegisterComponent<PointLightComponent>();
         return world;
@@ -31,7 +31,7 @@ namespace
 
 TEST(LightExtraction, EmitsOnePointLightPerEnabledEntityAtWorldPosition)
 {
-    World world = MakeLightWorld();
+    EntityStore world = MakeLightWorld();
 
     PointLightComponent a{};
     a.Color = Vec<3>(0.2f, 0.4f, 0.6f);
@@ -57,7 +57,7 @@ TEST(LightExtraction, EmitsOnePointLightPerEnabledEntityAtWorldPosition)
 
 TEST(LightExtraction, SkipsDisabledLights)
 {
-    World world = MakeLightWorld();
+    EntityStore world = MakeLightWorld();
 
     PointLightComponent on{};
     PointLightComponent off{};
@@ -75,7 +75,7 @@ TEST(LightExtraction, SkipsDisabledLights)
 
 TEST(LightExtraction, ClampsAtTheForwardLightCap)
 {
-    World world = MakeLightWorld();
+    EntityStore world = MakeLightWorld();
     for (std::uint32_t i = 0; i < kMaxForwardLights + 10u; ++i)
         MakeLight(world, Vec<3>(static_cast<float>(i), 0.0f, 0.0f), PointLightComponent{});
 

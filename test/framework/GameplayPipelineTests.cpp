@@ -47,7 +47,7 @@ namespace
             const MovementDefs& defs = ctx.Registries.Global->Resources.Get<MovementDefs>();
             for (Registry* reg : ctx.ActiveRegistries)
             {
-                World& world = reg->Components;
+                EntityStore& world = reg->Entities;
                 if (MovementIntent* intent = world.TryGet<MovementIntent>(Pawn))
                     intent->WishDir = Vec3d(1.0f, 0.0f, 0.0f);
 
@@ -61,7 +61,7 @@ namespace
 
     EntityId SpawnControlledPawn(Registry& registry, ResourceStore& session)
     {
-        World& world = registry.Components;
+        EntityStore& world = registry.Entities;
         world.RegisterComponent<CharacterController>();
         RegisterMovementComponents(world);
         RegisterAbilityRuntime(registry.Resources);
@@ -118,7 +118,7 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     };
     harness.Schedule.RunFixedLogic(ctx);
 
-    World& world = registry.Components;
+    EntityStore& world = registry.Entities;
     const MovementTags& tags = harness.Zones.Global().Resources.Get<MovementTags>();
     const auto* tagContainer = world.TryGet<GameplayTagContainer>(pawn);
     const auto* controller = world.TryGet<CharacterController>(pawn);

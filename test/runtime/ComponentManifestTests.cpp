@@ -76,14 +76,14 @@ TEST(ComponentManifest, DefaultRegistryRegistersEveryManifestComponent)
     ForEachSceneComponent([&](auto tag)
     {
         using T = typename decltype(tag)::Type;
-        EXPECT_TRUE(registry.Components.IsRegistered<T>())
+        EXPECT_TRUE(registry.Entities.IsRegistered<T>())
             << TypeSchema<T>::Name << " missing from the default registry";
     });
 
     // LocalTransform's storage traits co-register the derived/hierarchy
     // components that don't serialize as their own chunks.
-    EXPECT_TRUE(registry.Components.IsRegistered<WorldTransform>());
-    EXPECT_TRUE(registry.Components.IsRegistered<Parent>());
+    EXPECT_TRUE(registry.Entities.IsRegistered<WorldTransform>());
+    EXPECT_TRUE(registry.Entities.IsRegistered<Parent>());
 }
 
 TEST(ComponentManifest, InitSceneSerializerIsIdempotentAndCoversManifest)

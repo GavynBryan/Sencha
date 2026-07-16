@@ -126,10 +126,10 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     AudioClipHandle clip = RegisterResidentClip(registry, cache, "asset://audio/ambient.wav");
 
     Registry src;
-    src.Components.RegisterComponent<AudioSourceComponent>();
+    src.Entities.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = src.Components.CreateEntity();
-    src.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = src.Entities.CreateEntity();
+    src.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Gain = 0.5f, .Pan = -0.25f,
         .Looping = true, .PlayOnActive = false });
 
@@ -137,13 +137,13 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     JsonValue json = SaveSceneJson(src, saveCtx);
 
     Registry dst;
-    dst.Components.RegisterComponent<AudioSourceComponent>();
+    dst.Entities.RegisterComponent<AudioSourceComponent>();
 
     SceneSerializationContext loadCtx(logging, &assets);
     ASSERT_TRUE(LoadSceneJson(json, dst, loadCtx));
 
     int count = 0;
-    dst.Components.ForEachComponent<AudioSourceComponent>(
+    dst.Entities.ForEachComponent<AudioSourceComponent>(
         [&](EntityId, AudioSourceComponent& source)
     {
         ++count;
@@ -177,10 +177,10 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
 
     Registry registry;
     registry.Resources.Register<AudioSourceRuntime>(&cache, &audio);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
+    registry.Entities.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
     // OnAdd retained -> refcount 2. Drop the test's own ref so the component
     // is the sole owner: now releasing first (before stopping) would free the
@@ -192,11 +192,11 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
     std::vector<Registry*> active{ &registry };
     system.Update(&audio, active);
 
-    VoiceId voice = registry.Components.TryGet<AudioSourceComponent>(entity)->Voice;
+    VoiceId voice = registry.Entities.TryGet<AudioSourceComponent>(entity)->Voice;
     ASSERT_TRUE(voice.IsValid());
     ASSERT_TRUE(audio.IsPlaying(voice));
 
-    registry.Components.RemoveComponent<AudioSourceComponent>(entity);
+    registry.Entities.RemoveComponent<AudioSourceComponent>(entity);
 
     // The voice was stopped, and only then was the last clip reference
     // released — the clip is now gone, and no voice outlived it.
@@ -250,13 +250,13 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
 
     Registry registry;
     registry.Resources.Register<AudioSourceRuntime>(&cache, &audio);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
+    registry.Entities.RegisterComponent<AudioSourceComponent>();
 
-    EntityId loop = registry.Components.CreateEntity();
-    registry.Components.AddComponent(loop, AudioSourceComponent{
+    EntityId loop = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(loop, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    EntityId oneShot = registry.Components.CreateEntity();
-    registry.Components.AddComponent(oneShot, AudioSourceComponent{
+    EntityId oneShot = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(oneShot, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
 
     AudioSystem system;
@@ -265,12 +265,12 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
 
     // Active: both start.
     system.Update(&audio, active);
-    VoiceId loopV1 = registry.Components.TryGet<AudioSourceComponent>(loop)->Voice;
-    VoiceId shotV1 = registry.Components.TryGet<AudioSourceComponent>(oneShot)->Voice;
+    VoiceId loopV1 = registry.Entities.TryGet<AudioSourceComponent>(loop)->Voice;
+    VoiceId shotV1 = registry.Entities.TryGet<AudioSourceComponent>(oneShot)->Voice;
     ASSERT_TRUE(loopV1.IsValid());
     ASSERT_TRUE(shotV1.IsValid());
     EXPECT_TRUE(audio.IsPlaying(loopV1));
-    EXPECT_TRUE(registry.Components.TryGet<AudioSourceComponent>(oneShot)->Started);
+    EXPECT_TRUE(registry.Entities.TryGet<AudioSourceComponent>(oneShot)->Started);
 
     // Dormant: the sweep stops both voices without touching components.
     system.Update(&audio, dormant);
@@ -280,12 +280,12 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
     // Reactivate: the loop starts a fresh voice; the one-shot stays silent
     // (Started latched — re-entry does not replay).
     system.Update(&audio, active);
-    VoiceId loopV2 = registry.Components.TryGet<AudioSourceComponent>(loop)->Voice;
+    VoiceId loopV2 = registry.Entities.TryGet<AudioSourceComponent>(loop)->Voice;
     EXPECT_TRUE(loopV2.IsValid());
     EXPECT_NE(loopV2, loopV1);
     EXPECT_TRUE(audio.IsPlaying(loopV2));
 
-    const AudioSourceComponent* shot = registry.Components.TryGet<AudioSourceComponent>(oneShot);
+    const AudioSourceComponent* shot = registry.Entities.TryGet<AudioSourceComponent>(oneShot);
     EXPECT_TRUE(shot->Started);
     EXPECT_FALSE(audio.IsPlaying(shot->Voice));
 }
@@ -298,10 +298,10 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
 
     Registry registry;
     registry.Resources.Register<AudioSourceRuntime>(&cache, nullptr);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
+    registry.Entities.RegisterComponent<AudioSourceComponent>();
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true, .PlayOnActive = false });
 
     AudioSystem system;
@@ -309,5 +309,5 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
 
     // Null service: the system is a clean no-op (headless).
     system.Update(nullptr, active);
-    EXPECT_FALSE(registry.Components.TryGet<AudioSourceComponent>(entity)->Voice.IsValid());
+    EXPECT_FALSE(registry.Entities.TryGet<AudioSourceComponent>(entity)->Voice.IsValid());
 }

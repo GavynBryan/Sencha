@@ -3,9 +3,9 @@
 #include <app/EngineSchedule.h>
 #include <camera/CameraFollowSystem.h>
 #include <camera/CameraRig.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
-void RegisterCameraComponents(World& world)
+void RegisterCameraComponents(EntityStore& world)
 {
     if (!world.IsRegistered<CameraRig>())
         world.RegisterComponent<CameraRig>();

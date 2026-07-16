@@ -3,7 +3,7 @@
 #include <app/Engine.h>
 #include <core/ResourceStore.h>
 #include <ecs/ComponentTraits.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <world/registry/Registry.h>
 
 #include <SDL3/SDL_hints.h>
@@ -64,7 +64,7 @@ TEST(EngineShutdown, ClearsRegistryEntitiesBeforeServices)
     bool audioWasAccessible = false;
 
     Registry& global = engine.Zones().Global();
-    World& world = global.Components;
+    EntityStore& world = global.Entities;
     world.RegisterComponent<EngineShutdownProbe>();
     global.Resources.Register<EngineShutdownState>(EngineShutdownState{
         .Owner = &engine,

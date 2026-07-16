@@ -13,4 +13,4 @@
 #include <ecs/EntityRegistry.h>
 #include <ecs/Query.h>
 #include <ecs/QueryAccessors.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>

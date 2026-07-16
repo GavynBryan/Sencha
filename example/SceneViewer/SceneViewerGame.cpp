@@ -83,8 +83,8 @@ namespace
 
     EntityId FindFirstCamera(Registry& registry)
     {
-        for (EntityId entity : registry.Components.GetAliveEntities())
-            if (registry.Components.TryGet<CameraComponent>(entity) != nullptr)
+        for (EntityId entity : registry.Entities.GetAliveEntities())
+            if (registry.Entities.TryGet<CameraComponent>(entity) != nullptr)
                 return entity;
         return EntityId{};
     }
@@ -102,7 +102,7 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
             FreeCam.UpdateLook(ctx.Input);
-            FreeCam.ApplyRotation(RegistryInstance->Components);
+            FreeCam.ApplyRotation(RegistryInstance->Entities);
         }
 
         Registry*& RegistryInstance;
@@ -122,7 +122,7 @@ namespace
             if (RegistryInstance == nullptr)
                 return;
             FreeCam.TickFixed(
-                ctx.Input, RegistryInstance->Components, static_cast<float>(ctx.Time.DeltaSeconds));
+                ctx.Input, RegistryInstance->Entities, static_cast<float>(ctx.Time.DeltaSeconds));
         }
 
         Registry*& RegistryInstance;

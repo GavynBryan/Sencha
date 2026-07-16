@@ -26,11 +26,11 @@ namespace
     // are safe off-thread because the registry is solely owned by the task.
     void BuildTestZone(Registry& registry, int entityCount)
     {
-        registry.Components.RegisterComponent<ZoneLoadMarker>();
+        registry.Entities.RegisterComponent<ZoneLoadMarker>();
         for (int i = 0; i < entityCount; ++i)
         {
-            const EntityId entity = registry.Components.CreateEntity();
-            registry.Components.AddComponent<ZoneLoadMarker>(entity, { i });
+            const EntityId entity = registry.Entities.CreateEntity();
+            registry.Entities.AddComponent<ZoneLoadMarker>(entity, { i });
         }
     }
 }
@@ -54,7 +54,7 @@ TEST(ZoneRuntimeAttach, DetachedRegistryAttachesAndIsVisible)
     EXPECT_TRUE(zones.IsZoneLoaded(zone));
     EXPECT_EQ(zones.FindZone(zone), &attached);
     EXPECT_EQ(zones.FindRegistry(reserved), &attached);
-    EXPECT_EQ(attached.Components.EntityCount(), 16u);
+    EXPECT_EQ(attached.Entities.EntityCount(), 16u);
     EXPECT_TRUE(zones.GetParticipation(zone).Logic);
 
     FrameRegistryView view = zones.BuildFrameView();
@@ -109,12 +109,12 @@ TEST(AsyncZoneLoad, ZeroThreadEndToEnd)
 
     Registry* attached = zones.FindZone(zone);
     ASSERT_NE(attached, nullptr);
-    EXPECT_EQ(attached->Components.EntityCount(), 64u);
+    EXPECT_EQ(attached->Entities.EntityCount(), 64u);
     EXPECT_TRUE(zones.GetParticipation(zone).Visible);
 
     // Component data built off-frame is intact.
     int markers = 0;
-    std::as_const(attached->Components).ForEachComponent<ZoneLoadMarker>(
+    std::as_const(attached->Entities).ForEachComponent<ZoneLoadMarker>(
         [&](EntityId, const ZoneLoadMarker& marker) { markers += (marker.Value >= 0) ? 1 : 0; });
     EXPECT_EQ(markers, 64);
 
@@ -140,13 +140,13 @@ TEST(AsyncZoneLoad, FinalizeRunsOnOwnerThreadAfterAttachBeforeDiscontinuity)
             // The zone is already attached and queryable when finalize runs...
             EXPECT_TRUE(zones.IsZoneLoaded(zone));
             EXPECT_EQ(zones.FindZone(zone), &registry);
-            EXPECT_EQ(registry.Components.EntityCount(), 5u);
+            EXPECT_EQ(registry.Entities.EntityCount(), 5u);
             // ...but the discontinuity has not been marked yet.
             EXPECT_NE(runtime.GetCurrentFrame().DiscontinuityReason,
                       TemporalDiscontinuityReason::ZoneLoad);
             // Finalize is the main-thread publish step: ambient state and
             // further registry mutation are both legal here.
-            registry.Components.CreateEntity();
+            registry.Entities.CreateEntity();
         },
         // Participating attach: the ZoneLoad discontinuity fires after finalize.
         ZoneParticipation{ .Logic = true });
@@ -156,7 +156,7 @@ TEST(AsyncZoneLoad, FinalizeRunsOnOwnerThreadAfterAttachBeforeDiscontinuity)
 
     tasks.DrainCompletions();
     EXPECT_TRUE(finalized);
-    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 6u);
+    EXPECT_EQ(zones.FindZone(zone)->Entities.EntityCount(), 6u);
     EXPECT_EQ(runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::ZoneLoad);
 }
@@ -250,7 +250,7 @@ TEST(AsyncZoneLoad, ReloadAfterDestroyUsesAFreshRegistry)
     tasks.PumpWork();
     tasks.DrainCompletions();
     ASSERT_TRUE(zones.IsZoneLoaded(zone));
-    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 9u);
+    EXPECT_EQ(zones.FindZone(zone)->Entities.EntityCount(), 9u);
 }
 
 //=============================================================================
@@ -285,7 +285,7 @@ TEST(AsyncZoneLoad, ThreadedLoadCompletesViaPolling)
 
     EXPECT_NE(buildThread, std::this_thread::get_id());
     EXPECT_FALSE(loader.IsLoading(zone));
-    EXPECT_EQ(zones.FindZone(zone)->Components.EntityCount(), 32u);
+    EXPECT_EQ(zones.FindZone(zone)->Entities.EntityCount(), 32u);
     EXPECT_EQ(runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::ZoneLoad);
 }

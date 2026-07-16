@@ -1,7 +1,7 @@
 #pragma once
 
 class EngineSchedule;
-class World;
+class EntityStore;
 
 //=============================================================================
 // RegisterPhysics
@@ -23,4 +23,4 @@ void RegisterPhysics(EngineSchedule& schedule);
 // component a zone never uses is harmless (no archetype exists until an entity
 // has it). Call once per World.
 //=============================================================================
-void RegisterPhysicsComponents(World& world);
+void RegisterPhysicsComponents(EntityStore& world);

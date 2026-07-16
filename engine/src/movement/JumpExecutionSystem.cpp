@@ -1,14 +1,14 @@
 #include <movement/JumpExecutionSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <movement/MovementTags.h>
 #include <world/registry/Registry.h>
 
 #include <cstdint>
 #include <utility>
 
-void JumpExecutionSystem::Step(World& world, const MovementTags& movementTags)
+void JumpExecutionSystem::Step(EntityStore& world, const MovementTags& movementTags)
 {
     if (!world.IsRegistered<GameplayTagContainer>() || !world.IsRegistered<CharacterController>()
         || !world.IsRegistered<MovementProfile>())
@@ -41,5 +41,5 @@ void JumpExecutionSystem::FixedLogic(FixedLogicContext& ctx)
 {
     const MovementTags& tags = ctx.Registries.Global->Resources.Get<MovementTags>();
     for (Registry* reg : ctx.ActiveRegistries)
-        Step(reg->Components, tags);
+        Step(reg->Entities, tags);
 }

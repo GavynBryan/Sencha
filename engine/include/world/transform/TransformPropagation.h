@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <world/transform/PropagationOrderCache.h>
 #include <world/transform/TransformComponents.h>
 
@@ -17,7 +17,7 @@ class Registry;
 // components, respecting the spatial hierarchy expressed by the Parent component.
 //
 // Uses a PropagationOrderCache World resource: a parent-before-child dense
-// ordered list rebuilt when World::StructuralVersion() moves (any entity
+// ordered list rebuilt when EntityStore::StructuralVersion() moves (any entity
 // create/destroy or component add/remove can relocate rows) or when
 // Changed<Parent> signals a hierarchy edit. Each frame the sweep is a single
 // forward pass with no hash lookups that recomputes only dirty subtrees
@@ -28,7 +28,7 @@ class Registry;
 class TransformPropagationSystem
 {
 public:
-    TransformPropagationSystem(World& world, PropagationOrderCache& cache)
+    TransformPropagationSystem(EntityStore& world, PropagationOrderCache& cache)
         : Target(world)
         , Cache(cache)
     {
@@ -42,7 +42,7 @@ public:
     }
 
 private:
-    World& Target;
+    EntityStore& Target;
     PropagationOrderCache& Cache;
 
     // Rebuilds the order cache from the current Parent graph.
@@ -50,7 +50,7 @@ private:
     void RebuildCache();
 };
 
-inline void PropagateTransforms(World& world, PropagationOrderCache& cache)
+inline void PropagateTransforms(EntityStore& world, PropagationOrderCache& cache)
 {
     TransformPropagationSystem propagation(world, cache);
     propagation.Propagate();

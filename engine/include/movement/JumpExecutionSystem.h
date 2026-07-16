@@ -9,7 +9,7 @@
 
 struct FixedLogicContext;
 struct MovementTags;
-class World;
+class EntityStore;
 
 //=============================================================================
 // Jump execution: consumes the movement.jump.requested tag into
@@ -21,10 +21,10 @@ class JumpExecutionSystem
 {
 public:
     void FixedLogic(FixedLogicContext& ctx);
-    void Step(World& world, const MovementTags& tags);
+    void Step(EntityStore& world, const MovementTags& tags);
 
 private:
-    const World* LastWorld = nullptr;
+    const EntityStore* LastWorld = nullptr;
     std::optional<Query<Write<GameplayTagContainer>, Write<CharacterController>,
                         Read<MovementProfile>>> CachedQuery;
 };

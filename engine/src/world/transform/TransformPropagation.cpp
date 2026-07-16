@@ -133,7 +133,7 @@ void TransformPropagationSystem::RebuildCache()
 
     for (PropagationEntry& entry : order)
     {
-        const World::EntityChunkLocation loc = Target.LocateEntity(entry.Child);
+        const EntityStore::EntityChunkLocation loc = Target.LocateEntity(entry.Child);
         if (loc.ChunkPtr != nullptr)
         {
             const uint32_t localCol = loc.ChunkPtr->FindColumn(localId);
@@ -167,7 +167,7 @@ void TransformPropagationSystem::RebuildCache()
 // ─── Propagate ────────────────────────────────────────────────────────────────
 //
 // 1. Ensure the PropagationOrderCache resource exists.
-// 2. Invalidate the cache when World::StructuralVersion() has moved — any
+// 2. Invalidate the cache when EntityStore::StructuralVersion() has moved — any
 //    entity create/destroy or component add/remove can relocate rows and stale
 //    the cached pointers (swap-removes and moves into existing archetypes do
 //    NOT change the archetype count, so the count is not a sufficient key).
@@ -282,7 +282,7 @@ void PropagateTransforms(std::span<Registry*> registries)
         if (registry == nullptr || !seen.insert(registry).second)
             continue;
 
-        PropagateTransforms(registry->Components,
+        PropagateTransforms(registry->Entities,
                             registry->Resources.Ensure<PropagationOrderCache>());
     }
 }
@@ -303,7 +303,7 @@ void PropagateTransforms(JobSystem& jobs, std::span<Registry*> registries)
     ForEachRegistryParallel(jobs, std::span<Registry* const>(unique),
                             [](Registry& registry) {
                                 PropagateTransforms(
-                                    registry.Components,
+                                    registry.Entities,
                                     registry.Resources.Ensure<PropagationOrderCache>());
                             });
 }

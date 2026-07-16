@@ -69,7 +69,7 @@ protected:
     }
 
     ResourceStore resources;
-    World world{ resources };
+    EntityStore world{ resources };
 };
 
 // ─── Component registration ──────────────────────────────────────────────────
@@ -85,7 +85,7 @@ TEST_F(EcsTest, DoubleRegistrationReturnsSameId)
 {
     // Registering the same type twice must return the same id.
     // We need a fresh world that hasn't had any entities yet.
-    World w2;
+    EntityStore w2;
     const ComponentId a = w2.RegisterComponent<Pos>();
     const ComponentId b = w2.RegisterComponent<Pos>();
     EXPECT_EQ(a, b);
@@ -738,7 +738,7 @@ TEST_F(EcsTest, HookedComponentRegistrationRequiresResourceStore)
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
-    World unbound;
+    EntityStore unbound;
     EXPECT_DEATH(unbound.RegisterComponent<Tracked>(),
                  "requires a ResourceStore");
 #endif

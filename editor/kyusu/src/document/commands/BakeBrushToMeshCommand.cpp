@@ -38,7 +38,7 @@ bool AttachStaticMeshComponent(EditorScene& scene, AssetSystem& assets, EntityId
         if (slot.IsValid())
             assets.ReleaseMaterial(slot); // the set holds its own member references
 
-    scene.GetRegistry().Components.AddComponent(
+    scene.GetRegistry().Entities.AddComponent(
         entity, StaticMeshComponent{ .Mesh = mesh, .Materials = set });
 
     assets.ReleaseStaticMesh(mesh);
@@ -59,7 +59,7 @@ public:
 
     void Execute() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         if (!AttachStaticMeshComponent(Scene, Assets, Entity, MeshPath, Materials))
             return;
         world.RemoveComponent<BrushComponent>(Entity);
@@ -69,7 +69,7 @@ public:
 
     void Undo() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         world.RemoveComponent<StaticMeshComponent>(Entity);
         world.RemoveComponent<BakedBrushComponent>(Entity);
         world.AddComponent(Entity, BrushComponent{ Brush });
@@ -99,7 +99,7 @@ public:
 
     void Execute() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         world.RemoveComponent<StaticMeshComponent>(Entity);
         world.RemoveComponent<BakedBrushComponent>(Entity);
         world.AddComponent(Entity, BrushComponent{ Brush });
@@ -108,7 +108,7 @@ public:
 
     void Undo() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         if (!AttachStaticMeshComponent(Scene, Assets, Entity, MeshPath, Materials))
             return;
         world.RemoveComponent<BrushComponent>(Entity);
@@ -204,7 +204,7 @@ std::unique_ptr<ICommand> MakeRevertBakedBrushCommand(EditorScene& scene,
     // Capture the component's asset paths so redo can re-attach them.
     std::string meshPath;
     std::vector<AssetRef> materials;
-    const World& world = std::as_const(scene).GetRegistry().Components;
+    const EntityStore& world = std::as_const(scene).GetRegistry().Entities;
     if (const StaticMeshComponent* component = world.TryGet<StaticMeshComponent>(entity))
     {
         meshPath = assets.GetPathForStaticMesh(component->Mesh);

@@ -30,7 +30,7 @@ These four pull against each other on purpose. Be decoupled, testable, and exten
 
 ## Naming
 
-- Plain, mechanical names. The tea theme (Kettle, Teapot, Infuser, Essenchal) is retired. Current names are Engine, ServiceHost, Renderer, World, Registry, ZoneRuntime, FrameDriver. Match that register.
+- Plain, mechanical names. The tea theme (Kettle, Teapot, Infuser, Essenchal) is retired. Current names are Engine, ServiceHost, Renderer, EntityStore, Registry, ZoneRuntime, FrameDriver. Match that register.
 - No `Manager`, `Helper`, `Util`, `Handler` grab-bags. If a type needs one of those words to describe it, it is doing too many things. Split it.
 - IDs are strongly typed via `StrongId<T>` (e.g. `StrongId<GameplayTagId>`). Do not pass a raw `uint32` or index where a strong id exists.
 - No cute, no clever, no genre words, no project codenames in engine identifiers.
@@ -38,8 +38,8 @@ These four pull against each other on purpose. Be decoupled, testable, and exten
 
 ## Layering and dependencies
 
-- Dependency direction flows one way. Engine / ServiceHost / FrameDriver host the frame; Renderer, World, Registry, ZoneRuntime sit under them. Lower layers do not reference higher ones.
-- `World` owns `Registry` owns archetype storage; `ZoneRuntime` sits over the partition. Respect this containment; do not reach across it.
+- Dependency direction flows one way. Engine / ServiceHost / FrameDriver host the frame; Renderer, EntityStore, Registry, ZoneRuntime sit under them. Lower layers do not reference higher ones.
+- `ZoneRuntime` owns the registries; `Registry` owns a `ResourceStore` and an `EntityStore`; `EntityStore` owns component catalog, entity identity, and archetype storage. Respect this containment; do not reach across it.
 - The editors are separate executables with their own Registry: `kyusu` (level editor), `shudei` (material editor), and `kettle` (project launcher), all over the `editor_common` shell library. Product names stay on executables and window titles only; internal types are mechanically named. Editor-only and cook-only code never links into the runtime. Cook paths stay gated behind `SENCHA_ENABLE_COOK` and are dev-only.
 
 ## Files and translation units

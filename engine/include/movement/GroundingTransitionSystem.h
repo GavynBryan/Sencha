@@ -1,7 +1,7 @@
 #pragma once
 
 struct FixedLogicContext;
-class World;
+class EntityStore;
 
 //=============================================================================
 // Grounding transition: the built-in ground/air eligibility. Reads
@@ -10,11 +10,11 @@ class World;
 // mode (slide, swim) without editing this.
 //=============================================================================
 
-void RequestGroundingLocomotionModes(World& world);
+void RequestGroundingLocomotionModes(EntityStore& world);
 
 class GroundingTransitionSystem
 {
 public:
     void FixedLogic(FixedLogicContext& ctx);
-    void Step(World& world);
+    void Step(EntityStore& world);
 };

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <core/ResourceStore.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <abilities/AbilityKit.h>
 #include <movement/LocomotionMode.h>
 #include <movement/AirLocomotionSystem.h>
@@ -29,7 +29,7 @@ namespace
 
     struct MovementWorld
     {
-        World world;
+        EntityStore world;
         ResourceStore session;      // session definitions, as the global registry would hold them
         AbilityActivationQueue queue;
         MovementDefs defs;

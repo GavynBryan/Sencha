@@ -44,15 +44,15 @@ struct ComponentStorageTraits<BrushComponent>
 
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<BrushComponent>())
-            registry.Components.RegisterComponent<BrushComponent>();
+        if (!registry.Entities.IsRegistered<BrushComponent>())
+            registry.Entities.RegisterComponent<BrushComponent>();
     }
 
     static bool Add(Registry& registry, EntityId entity, BrushComponent component)
     {
-        if (registry.Components.HasComponent<BrushComponent>(entity))
+        if (registry.Entities.HasComponent<BrushComponent>(entity))
             return false;
-        registry.Components.AddComponent(entity, component);
+        registry.Entities.AddComponent(entity, component);
         return true;
     }
 };
@@ -64,15 +64,15 @@ struct ComponentStorageTraits<BakedBrushComponent>
 
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<BakedBrushComponent>())
-            registry.Components.RegisterComponent<BakedBrushComponent>();
+        if (!registry.Entities.IsRegistered<BakedBrushComponent>())
+            registry.Entities.RegisterComponent<BakedBrushComponent>();
     }
 
     static bool Add(Registry& registry, EntityId entity, BakedBrushComponent component)
     {
-        if (registry.Components.HasComponent<BakedBrushComponent>(entity))
+        if (registry.Entities.HasComponent<BakedBrushComponent>(entity))
             return false;
-        registry.Components.AddComponent(entity, component);
+        registry.Entities.AddComponent(entity, component);
         return true;
     }
 };

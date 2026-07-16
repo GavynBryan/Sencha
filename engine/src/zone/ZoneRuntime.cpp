@@ -207,16 +207,16 @@ void ZoneRuntime::ClearEntities()
 {
     assert(!FrameViewLive_
            && "ClearEntities with a live frame view: teardown is drain-point-only");
-    GlobalRegistry->Components.ClearEntities();
+    GlobalRegistry->Entities.ClearEntities();
     for (const auto& loaded : Zones)
-        loaded->ZoneRegistry->Components.ClearEntities();
+        loaded->ZoneRegistry->Entities.ClearEntities();
 }
 
 void ZoneRuntime::AdvanceFrameEpochs()
 {
-    GlobalRegistry->Components.AdvanceFrame();
+    GlobalRegistry->Entities.AdvanceFrame();
     for (const auto& loaded : Zones)
-        loaded->ZoneRegistry->Components.AdvanceFrame();
+        loaded->ZoneRegistry->Entities.AdvanceFrame();
 }
 
 ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone)

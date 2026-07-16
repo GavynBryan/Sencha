@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <assets/cook/CollisionShapeCook.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsRegistration.h>
@@ -78,7 +78,7 @@ TEST(CollisionCook, DynamicBodyRestsOnCookedFloorThroughScene)
     const CollisionShapeHandle floorShape = cache.LoadBlob(blob);
     ASSERT_TRUE(floorShape.IsValid());
 
-    World ecs;
+    EntityStore ecs;
     ecs.RegisterComponent<LocalTransform>();
     RegisterPhysicsComponents(ecs);
     PhysicsScene scene(world);

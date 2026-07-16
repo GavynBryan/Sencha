@@ -5,7 +5,7 @@
 
 #include <math/Vec.h>
 
-class World;
+class EntityStore;
 class PhysicsWorld;
 
 //=============================================================================
@@ -35,12 +35,12 @@ public:
 
     // Create movers for new controllers and release movers for dead or removed
     // ones. Gated on the structural version: a steady frame is a single compare.
-    void Reconcile(World& world);
+    void Reconcile(EntityStore& world);
 
     // Advance every linked mover one tick and write resolved position + grounded
     // back. Contiguous column walk over (CharacterController, LocalTransform,
     // CharacterMoverLink); the only indirection is the slot into the pool.
-    void Drive(World& world, float dt, const Vec3d& gravity);
+    void Drive(EntityStore& world, float dt, const Vec3d& gravity);
 
     [[nodiscard]] size_t   MoverCount() const;
     [[nodiscard]] uint64_t ReconcilePasses() const { return ReconcileCount; }
@@ -48,8 +48,8 @@ public:
 private:
     struct State; // PIMPL: pool slots + free list + cached query + command buffer
 
-    bool   Ready(const World& world) const;
-    State& EnsureState(World& world);
+    bool   Ready(const EntityStore& world) const;
+    State& EnsureState(EntityStore& world);
 
     PhysicsWorld*          Simulation; // not owned; outlives this pool
     std::unique_ptr<State> S;

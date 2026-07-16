@@ -31,18 +31,18 @@ TEST(RegistryEpoch, RuntimeRegistryStartsAtOne)
 {
     Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
 
-    EXPECT_EQ(registry.Components.CurrentFrame(), 1u);
+    EXPECT_EQ(registry.Entities.CurrentFrame(), 1u);
 }
 
 TEST(RegistryEpoch, InitialComponentWriteIsVisibleToChangedFilter)
 {
     Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
-    registry.Components.RegisterComponent<RegistryEpochMarker>();
+    registry.Entities.RegisterComponent<RegistryEpochMarker>();
 
-    const EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, RegistryEpochMarker{ 7 });
+    const EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, RegistryEpochMarker{ 7 });
 
-    Query<Changed<RegistryEpochMarker>> changed(registry.Components);
+    Query<Changed<RegistryEpochMarker>> changed(registry.Entities);
     int matchingChunks = 0;
     changed.ForEachChunk([&](auto&) { ++matchingChunks; }, 0);
 
@@ -61,19 +61,19 @@ TEST(RegistryEpoch, ZoneRuntimeAdvancesGlobalActiveAndDormantRegistriesOnce)
         .Audio = true,
     });
 
-    ASSERT_EQ(runtime.Global().Components.CurrentFrame(), 1u);
-    ASSERT_EQ(active.Components.CurrentFrame(), 1u);
-    ASSERT_EQ(dormant.Components.CurrentFrame(), 1u);
+    ASSERT_EQ(runtime.Global().Entities.CurrentFrame(), 1u);
+    ASSERT_EQ(active.Entities.CurrentFrame(), 1u);
+    ASSERT_EQ(dormant.Entities.CurrentFrame(), 1u);
 
     runtime.AdvanceFrameEpochs();
 
-    EXPECT_EQ(runtime.Global().Components.CurrentFrame(), 2u);
-    EXPECT_EQ(active.Components.CurrentFrame(), 2u);
-    EXPECT_EQ(dormant.Components.CurrentFrame(), 2u);
+    EXPECT_EQ(runtime.Global().Entities.CurrentFrame(), 2u);
+    EXPECT_EQ(active.Entities.CurrentFrame(), 2u);
+    EXPECT_EQ(dormant.Entities.CurrentFrame(), 2u);
 
     runtime.AdvanceFrameEpochs();
 
-    EXPECT_EQ(runtime.Global().Components.CurrentFrame(), 3u);
-    EXPECT_EQ(active.Components.CurrentFrame(), 3u);
-    EXPECT_EQ(dormant.Components.CurrentFrame(), 3u);
+    EXPECT_EQ(runtime.Global().Entities.CurrentFrame(), 3u);
+    EXPECT_EQ(active.Entities.CurrentFrame(), 3u);
+    EXPECT_EQ(dormant.Entities.CurrentFrame(), 3u);
 }

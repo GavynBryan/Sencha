@@ -16,7 +16,7 @@ void FreeCamera::UpdateLook(const InputFrame& input)
     Pitch = SDL_clamp(Pitch, -1.5f, 1.5f);
 }
 
-void FreeCamera::TickFixed(const InputFrame& input, World& world, float fixedDt)
+void FreeCamera::TickFixed(const InputFrame& input, EntityStore& world, float fixedDt)
 {
     LocalTransform* transform = world.TryGet<LocalTransform>(Entity);
     if (transform == nullptr)
@@ -41,7 +41,7 @@ void FreeCamera::TickFixed(const InputFrame& input, World& world, float fixedDt)
     }
 }
 
-void FreeCamera::ApplyRotation(World& world) const
+void FreeCamera::ApplyRotation(EntityStore& world) const
 {
     LocalTransform* transform = world.TryGet<LocalTransform>(Entity);
     if (transform == nullptr)

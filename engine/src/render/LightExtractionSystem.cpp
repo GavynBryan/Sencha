@@ -1,6 +1,6 @@
 #include <render/LightExtractionSystem.h>
 
-void LightExtractionSystem::Extract(const World& world, RenderLightSet& lights)
+void LightExtractionSystem::Extract(const EntityStore& world, RenderLightSet& lights)
 {
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<PointLightComponent>())

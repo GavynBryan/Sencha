@@ -2,7 +2,7 @@
 
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <math/Mat.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Frustum.h>
@@ -39,7 +39,7 @@ class CameraRenderDataSystem
 {
 public:
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
-                                    const World& world,
+                                    const EntityStore& world,
                                     VkExtent2D targetExtent,
                                     CameraRenderData& out);
 };

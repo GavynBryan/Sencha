@@ -3,7 +3,7 @@
 #include <ecs/EntityId.h>
 #include <abilities/AbilityId.h>
 
-class World;
+class EntityStore;
 class AbilityRegistry;
 class GameplayTagRegistry;
 class EffectRegistry;
@@ -25,14 +25,14 @@ struct AbilityActivationQueue;
 // affordable from the actor's AttributeSet (Base). On success applies the Cost,
 // Cooldown, and OnActivate effects. Performs structural changes (effect
 // entities); call outside query iteration.
-bool TryActivateAbility(World& world, EntityId actor, AbilityId ability,
+bool TryActivateAbility(EntityStore& world, EntityId actor, AbilityId ability,
                         const AbilityRegistry& abilities,
                         const GameplayTagRegistry& tags,
                         const EffectRegistry& effects,
                         const AttributeRegistry& attributes);
 
 // Drain the activation queue, attempting each pending intent.
-void ProcessAbilityActivations(World& world,
+void ProcessAbilityActivations(EntityStore& world,
                                AbilityActivationQueue& queue,
                                const AbilityRegistry& abilities,
                                const GameplayTagRegistry& tags,

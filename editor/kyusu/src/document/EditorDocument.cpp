@@ -82,7 +82,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     Registry_.Resources.Register<ActiveCameraService>();
 
     // Component registration must happen before any entity is created.
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<BakedBrushComponent>();
@@ -109,7 +109,7 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)
 {
-    assert(Registry_.Components.EntityCount() == 0
+    assert(Registry_.Entities.EntityCount() == 0
            && "SetRegistryIdentity: document must be empty");
     Registry_.Id = id;
     Registry_.Zone = zone;
@@ -212,7 +212,7 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
 EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool freshMesh)
 {
     SceneSerializationContext context(Logging, Assets);
-    EntityId entity = Registry_.Components.CreateEntity();
+    EntityId entity = Registry_.Entities.CreateEntity();
 
     if (snapshot.Components.IsObject())
     {

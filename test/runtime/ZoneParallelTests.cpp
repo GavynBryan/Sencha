@@ -30,8 +30,8 @@ namespace
             registry, Transform3f(Vec3d(0.0f, 2.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
         EntityId grandchild = CreateDefaultEntity(
             registry, Transform3f(Vec3d(0.0f, 0.0f, 3.0f), Quatf::Identity(), Vec3d::One()));
-        registry.Components.AddComponent(child, Parent{ root });
-        registry.Components.AddComponent(grandchild, Parent{ child });
+        registry.Entities.AddComponent(child, Parent{ root });
+        registry.Entities.AddComponent(grandchild, Parent{ child });
 
         for (uint32_t i = 0; i < 8; ++i)
         {
@@ -62,12 +62,12 @@ namespace
             ASSERT_NE(ra, nullptr);
             ASSERT_NE(rb, nullptr);
 
-            const auto entities = ra->Components.GetAliveEntities();
-            ASSERT_EQ(entities.size(), rb->Components.GetAliveEntities().size());
+            const auto entities = ra->Entities.GetAliveEntities();
+            ASSERT_EQ(entities.size(), rb->Entities.GetAliveEntities().size());
             for (EntityId entity : entities)
             {
-                const WorldTransform* wa = std::as_const(ra->Components).TryGet<WorldTransform>(entity);
-                const WorldTransform* wb = std::as_const(rb->Components).TryGet<WorldTransform>(entity);
+                const WorldTransform* wa = std::as_const(ra->Entities).TryGet<WorldTransform>(entity);
+                const WorldTransform* wb = std::as_const(rb->Entities).TryGet<WorldTransform>(entity);
                 ASSERT_NE(wa, nullptr);
                 ASSERT_NE(wb, nullptr);
                 EXPECT_EQ(wa->Value.Position, wb->Value.Position)
@@ -213,12 +213,12 @@ TEST(ZoneParallelPropagation, ChildChainsResolveThroughParents)
     {
         Registry* registry = zones.FindZone(ZoneId{ static_cast<uint16_t>(i + 1) });
         ASSERT_NE(registry, nullptr);
-        const auto entities = registry->Components.GetAliveEntities();
+        const auto entities = registry->Entities.GetAliveEntities();
         ASSERT_GE(entities.size(), 3u);
 
         const float base = static_cast<float>(i) * 100.0f;
         const WorldTransform* grandchild =
-            std::as_const(registry->Components).TryGet<WorldTransform>(entities[2]);
+            std::as_const(registry->Entities).TryGet<WorldTransform>(entities[2]);
         ASSERT_NE(grandchild, nullptr);
         // root(base,1,0) + child(0,2,0) + grandchild(0,0,3), identity rotations.
         EXPECT_EQ(grandchild->Value.Position, Vec3d(base, 3.0f, 3.0f));
@@ -239,9 +239,9 @@ TEST(ZoneParallelPropagation, DuplicateSpanEntriesPropagateOnce)
     // race one World across jobs.
     PropagateTransforms(jobs, duplicated);
 
-    const auto entities = registry->Components.GetAliveEntities();
+    const auto entities = registry->Entities.GetAliveEntities();
     const WorldTransform* root =
-        std::as_const(registry->Components).TryGet<WorldTransform>(entities[0]);
+        std::as_const(registry->Entities).TryGet<WorldTransform>(entities[0]);
     ASSERT_NE(root, nullptr);
     EXPECT_EQ(root->Value.Position, Vec3d(0.0f, 1.0f, 0.0f));
 }

@@ -17,7 +17,7 @@ class GameplayTagRegistry;
 // GameplayTagSet / CountedGameplayTagSet, which are heap-backed (unordered_set /
 // unordered_map) and belong to world/global state, not to chunks.
 //
-// Mutate it through World::TryGet<GameplayTagContainer>(entity): mutable access
+// Mutate it through EntityStore::TryGet<GameplayTagContainer>(entity): mutable access
 // bumps the column version, so Changed<GameplayTagContainer> sees grant/revoke.
 // Hierarchical queries take the GameplayTagRegistry, which lives as a world
 // resource (the provenance "who granted this tag" is not stored here — the

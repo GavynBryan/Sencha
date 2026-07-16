@@ -55,7 +55,7 @@ struct AudioCaptionComponent
 };
 
 // Archetype storage relocates components with memcpy, so the component must
-// stay trivially copyable (enforced by World::RegisterComponent) — this is
+// stay trivially copyable (enforced by EntityStore::RegisterComponent) — this is
 // why the names are InlineStrings.
 
 template <>

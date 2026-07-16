@@ -34,14 +34,14 @@
 #include <abilities/AbilitySet.h>
 #include <abilities/AbilitySystem.h>
 
-class World;
+class EntityStore;
 class ResourceStore;
 class EngineSchedule;
 
 // Component storage for the ability kit (tag container, attribute set, ability
 // set, active effects). Registered in every registry that may hold these
 // components. Idempotent.
-void RegisterAbilityComponents(World& world);
+void RegisterAbilityComponents(EntityStore& world);
 
 // Session definitions (tag, attribute, effect, and ability registries). Registered
 // once, in the global registry's resources, and shared by every zone. Idempotent.

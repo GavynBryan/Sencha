@@ -50,7 +50,7 @@ public:
 private:
     void Write(const AssetFieldValue& value)
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         void* live = world.GetComponentRaw(Entity, Component);
         if (live == nullptr)
             return;

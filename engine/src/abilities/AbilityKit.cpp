@@ -8,7 +8,7 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <core/ResourceStore.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <effects/ActiveEffect.h>
 #include <effects/AttributeResolveSystem.h>
 #include <effects/EffectLifetimeSystem.h>
@@ -16,7 +16,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
-void RegisterAbilityComponents(World& world)
+void RegisterAbilityComponents(EntityStore& world)
 {
     if (!world.IsRegistered<GameplayTagContainer>())
         world.RegisterComponent<GameplayTagContainer>();

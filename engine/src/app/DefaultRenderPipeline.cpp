@@ -67,12 +67,12 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         auto* activeCamera = registry->Resources.TryGet<ActiveCameraService>();
 
         if (activeCamera == nullptr
-            || !registry->Components.IsRegistered<CameraComponent>()
-            || !registry->Components.IsRegistered<WorldTransform>())
+            || !registry->Entities.IsRegistered<CameraComponent>()
+            || !registry->Entities.IsRegistered<WorldTransform>())
             continue;
 
         hasCamera = CameraRenderDataSystem::Build(
-            *activeCamera, registry->Components, extent, Camera);
+            *activeCamera, registry->Entities, extent, Camera);
         if (hasCamera)
             break;
     }
@@ -86,11 +86,11 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     for (Registry* registry : ctx.ActiveRegistries)
     {
 
-        if (!registry->Components.IsRegistered<WorldTransform>()
-            || !registry->Components.IsRegistered<StaticMeshComponent>())
+        if (!registry->Entities.IsRegistered<WorldTransform>()
+            || !registry->Entities.IsRegistered<StaticMeshComponent>())
             continue;
 
-        RenderExtractor.Extract(registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
+        RenderExtractor.Extract(registry->Entities, *Meshes, *Materials, *MaterialSets, Camera, Queue);
     }
 
     Queue.SortOpaque();
@@ -98,7 +98,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     Lights.Reset();
     for (Registry* registry : ctx.ActiveRegistries)
     {
-        LightExtractor.Extract(registry->Components, Lights);
+        LightExtractor.Extract(registry->Entities, Lights);
     }
 
     if (Log != nullptr)

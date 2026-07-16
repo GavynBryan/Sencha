@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
 #include <world/transform/TransformComponents.h>
@@ -18,14 +18,14 @@
 // Camera-independent; the same set serves every view.
 //
 // The query is cached per instance to avoid rebuild-from-scratch every frame;
-// a World* sentinel detects world changes (relevant in multi-registry loops).
+// a EntityStore* sentinel detects world changes (relevant in multi-registry loops).
 //=============================================================================
 class LightExtractionSystem
 {
 public:
-    void Extract(const World& world, RenderLightSet& lights);
+    void Extract(const EntityStore& world, RenderLightSet& lights);
 
 private:
-    const World* LastWorld = nullptr;
+    const EntityStore* LastWorld = nullptr;
     std::optional<Query<Read<WorldTransform>, Read<PointLightComponent>>> CachedQuery;
 };

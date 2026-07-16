@@ -1,5 +1,5 @@
 #include <ecs/CommandBuffer.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <cassert>
 #include <vector>

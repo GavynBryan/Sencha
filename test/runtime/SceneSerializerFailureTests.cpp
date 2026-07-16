@@ -21,10 +21,10 @@ namespace
 
     void InitializeFailureRegistry(Registry& registry)
     {
-        registry.Components.RegisterComponent<LocalTransform>();
-        registry.Components.RegisterComponent<WorldTransform>();
-        registry.Components.RegisterComponent<Parent>();
-        registry.Components.RegisterComponent<CameraComponent>();
+        registry.Entities.RegisterComponent<LocalTransform>();
+        registry.Entities.RegisterComponent<WorldTransform>();
+        registry.Entities.RegisterComponent<Parent>();
+        registry.Entities.RegisterComponent<CameraComponent>();
     }
 
     void ResetSceneSerializers()
@@ -63,8 +63,8 @@ TEST(SceneSerializerFailure, JsonLoadRollsBackEntitiesAndComponents)
     SceneLoadError error;
     EXPECT_FALSE(LoadSceneJson(*parsed, loaded, &error));
 
-    EXPECT_EQ(loaded.Components.EntityCount(), 0u);
-    EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 0u);
+    EXPECT_EQ(loaded.Entities.EntityCount(), 0u);
+    EXPECT_EQ(loaded.Entities.CountComponents<LocalTransform>(), 0u);
 }
 
 TEST(SceneSerializerFailure, BinaryLoadRollsBackCreatedEntities)
@@ -102,8 +102,8 @@ TEST(SceneSerializerFailure, BinaryLoadRollsBackCreatedEntities)
     SceneLoadError error;
     EXPECT_FALSE(LoadSceneBinary(reader, loaded, &error));
 
-    EXPECT_EQ(loaded.Components.EntityCount(), 0u);
-    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 0u);
+    EXPECT_EQ(loaded.Entities.EntityCount(), 0u);
+    EXPECT_EQ(loaded.Entities.CountComponents<CameraComponent>(), 0u);
 }
 
 TEST(SceneSerializerFailure, BinarySkipsUnknownChunks)
@@ -150,8 +150,8 @@ TEST(SceneSerializerFailure, BinarySkipsUnknownChunks)
     Registry loaded;
     ASSERT_TRUE(LoadSceneBinary(reader, loaded));
 
-    EXPECT_EQ(loaded.Components.EntityCount(), 1u);
-    EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+    EXPECT_EQ(loaded.Entities.EntityCount(), 1u);
+    EXPECT_EQ(loaded.Entities.CountComponents<CameraComponent>(), 1u);
 }
 
 TEST(SceneSerializerFailure, HandlesEmptyRegistry)
@@ -166,10 +166,10 @@ TEST(SceneSerializerFailure, HandlesEmptyRegistry)
     BinaryReader reader(stream);
     Registry loaded;
     ASSERT_TRUE(LoadSceneBinary(reader, loaded));
-    EXPECT_EQ(loaded.Components.EntityCount(), 0u);
+    EXPECT_EQ(loaded.Entities.EntityCount(), 0u);
 
     JsonValue json = SaveSceneJson(source);
     Registry jsonLoaded;
     ASSERT_TRUE(LoadSceneJson(json, jsonLoaded));
-    EXPECT_EQ(jsonLoaded.Components.EntityCount(), 0u);
+    EXPECT_EQ(jsonLoaded.Entities.EntityCount(), 0u);
 }

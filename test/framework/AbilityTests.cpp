@@ -9,14 +9,14 @@
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <gtest/gtest.h>
 
 class AbilityFixture : public ::testing::Test
 {
 protected:
-    World world;
+    EntityStore world;
     GameplayTagRegistry tags;
     AttributeRegistry attrs;
     EffectRegistry effects;

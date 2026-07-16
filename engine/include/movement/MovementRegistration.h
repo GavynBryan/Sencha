@@ -5,7 +5,7 @@
 #include <movement/AirLocomotionSystem.h>
 #include <movement/GroundLocomotionSystem.h>
 
-class World;
+class EntityStore;
 class ResourceStore;
 
 //=============================================================================
@@ -20,7 +20,7 @@ class ResourceStore;
 
 // Movement components/markers plus the ability-kit components. Registered per
 // registry that hosts movement-driven pawns.
-void RegisterMovementComponents(World& world);
+void RegisterMovementComponents(EntityStore& world);
 
 // Movement session definitions: the movement.* tags, the built-in locomotion mode
 // entries (OnGround/InAir), the default MoveSpeed attribute, and the Jump

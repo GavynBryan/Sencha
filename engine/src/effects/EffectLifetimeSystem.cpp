@@ -14,5 +14,5 @@ void EffectLifetimeSystem::FixedLogic(FixedLogicContext& ctx)
     const auto& attributes = global.Resources.Get<AttributeRegistry>();
 
     for (Registry* reg : ctx.ActiveRegistries)
-        TickEffects(reg->Components, dt, effects, attributes);
+        TickEffects(reg->Entities, dt, effects, attributes);
 }

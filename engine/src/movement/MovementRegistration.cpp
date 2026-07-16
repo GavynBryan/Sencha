@@ -6,7 +6,7 @@
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <core/ResourceStore.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <effects/AttributeResolveSystem.h>
 #include <effects/EffectDefinition.h>
 #include <effects/EffectLifetimeSystem.h>
@@ -28,7 +28,7 @@ namespace
     constexpr float kDefaultMoveSpeed = 6.0f;
 }
 
-void RegisterMovementComponents(World& world)
+void RegisterMovementComponents(EntityStore& world)
 {
     RegisterAbilityComponents(world);
 

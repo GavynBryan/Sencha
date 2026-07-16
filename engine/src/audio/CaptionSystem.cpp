@@ -66,18 +66,18 @@ void CaptionSystem::Update(CaptionRuntime* captions, const AudioService* audio,
 void CaptionSystem::DriveRegistry(CaptionRuntime& captions, Registry& registry,
                                   bool noAudio)
 {
-    if (!registry.Components.IsRegistered<AudioCaptionComponent>())
+    if (!registry.Entities.IsRegistered<AudioCaptionComponent>())
         return;
 
     auto* runtime = registry.Resources.TryGet<AudioSourceRuntime>();
     const AudioClipCache* clips = runtime ? runtime->Clips : nullptr;
-    const bool hasSources = registry.Components.IsRegistered<AudioSourceComponent>();
+    const bool hasSources = registry.Entities.IsRegistered<AudioSourceComponent>();
 
-    registry.Components.ForEachComponent<AudioCaptionComponent>(
+    registry.Entities.ForEachComponent<AudioCaptionComponent>(
         [&](EntityId entity, AudioCaptionComponent& caption)
     {
         const AudioSourceComponent* source = hasSources
-            ? registry.Components.TryGet<AudioSourceComponent>(entity)
+            ? registry.Entities.TryGet<AudioSourceComponent>(entity)
             : nullptr;
         if (source == nullptr)
         {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
@@ -20,12 +20,12 @@
 // for use by the subsequent culling pass.
 //
 // The query is cached per instance to avoid rebuild-from-scratch every frame;
-// a World* sentinel detects world changes (relevant in multi-registry loops).
+// a EntityStore* sentinel detects world changes (relevant in multi-registry loops).
 //=============================================================================
 class RenderExtractionSystem
 {
 public:
-    void Extract(const World& world,
+    void Extract(const EntityStore& world,
                  const StaticMeshCache& meshes,
                  const MaterialCache& materials,
                  const MaterialSetCache& materialSets,
@@ -33,6 +33,6 @@ public:
                  RenderQueue& queue);
 
 private:
-    const World* LastWorld = nullptr;
+    const EntityStore* LastWorld = nullptr;
     std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> CachedQuery;
 };

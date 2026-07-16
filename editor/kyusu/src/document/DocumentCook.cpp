@@ -224,7 +224,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                 continue;
             }
             if (scene.TryGetBakedBrush(entity) != nullptr)
-                scene.GetRegistry().Components.RemoveComponent<BakedBrushComponent>(entity);
+                scene.GetRegistry().Entities.RemoveComponent<BakedBrushComponent>(entity);
         }
         for (EntityId entity : brushEntities)
             scene.DestroyEntity(entity);

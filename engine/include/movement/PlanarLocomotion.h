@@ -3,7 +3,7 @@
 #include <app/GameContexts.h>
 #include <attributes/AttributeSet.h>
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfile.h>
@@ -67,10 +67,10 @@ namespace movement
             const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
             const MovementDefs& defs = ctx.Registries.Global->Resources.Get<MovementDefs>();
             for (Registry* reg : ctx.ActiveRegistries)
-                Step(reg->Components, dt, defs);
+                Step(reg->Entities, dt, defs);
         }
 
-        void Step(World& world, float dt, const MovementDefs& defs)
+        void Step(EntityStore& world, float dt, const MovementDefs& defs)
         {
             if (!world.IsRegistered<MovementState>() || !world.IsRegistered<MovementIntent>()
                 || !world.IsRegistered<MovementProfile>() || !world.IsRegistered<AttributeSet>()
@@ -103,7 +103,7 @@ namespace movement
         }
 
     private:
-        const World* LastWorld = nullptr;
+        const EntityStore* LastWorld = nullptr;
         std::optional<Query<Write<MovementState>, Read<MovementIntent>, Read<MovementProfile>,
                             Read<AttributeSet>, Write<CharacterController>, With<Marker>>> CachedQuery;
     };

@@ -98,8 +98,8 @@ namespace
 
     EntityId FindFirstCamera(Registry& registry)
     {
-        for (EntityId entity : registry.Components.GetAliveEntities())
-            if (registry.Components.TryGet<CameraComponent>(entity) != nullptr)
+        for (EntityId entity : registry.Entities.GetAliveEntities())
+            if (registry.Entities.TryGet<CameraComponent>(entity) != nullptr)
                 return entity;
         return EntityId{};
     }
@@ -115,14 +115,14 @@ namespace
         // in this zone's World (build runs before finalize spawns entities).
         // The helper also registers the runtime link components the bridges
         // add at reconcile time, so they cannot be forgotten.
-        RegisterPhysicsComponents(registry.Components);
+        RegisterPhysicsComponents(registry.Entities);
         // Gameplay components (movement, tags, attributes, abilities, camera
         // rig) plus this registry's activation queue, registered here for the
         // same reason: storage must exist before the finalize pass spawns
         // entities. Session definitions live once in the global registry.
-        RegisterMovementComponents(registry.Components);
+        RegisterMovementComponents(registry.Entities);
         RegisterAbilityRuntime(registry.Resources);
-        RegisterCameraComponents(registry.Components);
+        RegisterCameraComponents(registry.Entities);
         parsed = ParseSceneFile(scenePath);
     }
 
@@ -150,7 +150,7 @@ namespace
         // Load the level's cooked brush collision: spawns the static colliders
         // the character walks on. No collision authoring; it rode the cook.
         if (shapes != nullptr)
-            LoadZoneCollision(registry.Components, *shapes, collisionSidecar,
+            LoadZoneCollision(registry.Entities, *shapes, collisionSidecar,
                               std::string(kCookedScanRoot));
         return true;
     }
@@ -165,9 +165,9 @@ namespace
         // registry (world scene content on the world path). Entities load in
         // scene order, so "first" is deterministic per cooked scene.
         Vec3d spawnPosition{ 0.0f, 2.0f, 0.0f };
-        const World& spawnLookup = registry.Components;
+        const EntityStore& spawnLookup = registry.Entities;
         bool foundStart = false;
-        for (EntityId entity : registry.Components.GetAliveEntities())
+        for (EntityId entity : registry.Entities.GetAliveEntities())
         {
             if (!spawnLookup.HasComponent<PlayerStartComponent>(entity))
                 continue;
@@ -203,7 +203,7 @@ namespace
         // as a granted ability. The framework resolves intent to a planar
         // DesiredVelocity; the engine's CharacterControllerSystem resolves that
         // against collision.
-        World& pawnWorld = registry.Components;
+        EntityStore& pawnWorld = registry.Entities;
         Transform3f pawnStart;
         pawnStart.Position = spawnPosition;
         const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
@@ -237,7 +237,7 @@ namespace
         CameraRig rig{};
         rig.Target = pawn;
         rig.Mode = CameraRigMode::FirstPerson;
-        registry.Components.AddComponent<CameraRig>(camera, rig);
+        registry.Entities.AddComponent<CameraRig>(camera, rig);
         return pawn;
     }
 
@@ -262,7 +262,7 @@ namespace
                 return;
             if (Pawn.IsValid())
             {
-                const World& world = Zones->Global().Components;
+                const EntityStore& world = Zones->Global().Entities;
                 if (world.IsRegistered<WorldTransform>())
                     if (const WorldTransform* transform = world.TryGet<WorldTransform>(Pawn))
                         Partition->SetFocus(transform->Value.Position);
@@ -292,7 +292,7 @@ namespace
         {
             if (RegistryInstance == nullptr)
                 return;
-            World& world = RegistryInstance->Components;
+            EntityStore& world = RegistryInstance->Entities;
             if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
                 return;
             // Session definitions live in the global registry; the activation
@@ -360,7 +360,7 @@ namespace
         {
             if (RegistryInstance == nullptr)
                 return;
-            World& world = RegistryInstance->Components;
+            EntityStore& world = RegistryInstance->Entities;
             if (!world.IsRegistered<SpinComponent>())
                 return;
 
@@ -737,15 +737,15 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     {
         Registry& global = engine.Zones().Global();
         InitializeDefault3DRegistry(global, meshes, materialSets);
-        RegisterPhysicsComponents(global.Components);
+        RegisterPhysicsComponents(global.Entities);
         // Movement/ability definitions are session-wide: register them once in
         // the global registry's resources. Components and the activation queue are
         // registry-local, so the global registry (which hosts the avatar) gets
         // those too.
         RegisterMovementDefinitions(global.Resources);
-        RegisterMovementComponents(global.Components);
+        RegisterMovementComponents(global.Entities);
         RegisterAbilityRuntime(global.Resources);
-        RegisterCameraComponents(global.Components);
+        RegisterCameraComponents(global.Entities);
 
         // The world scene: authored global content, loaded synchronously into
         // the global registry before the avatar spawns (a world load is a
@@ -836,7 +836,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // cache: complete its collision half now, still before the first frame.
     if (PhysicsShapes != nullptr && !PendingWorldSceneCollision.empty())
     {
-        LoadZoneCollision(GetEngine().Zones().Global().Components, *PhysicsShapes,
+        LoadZoneCollision(GetEngine().Zones().Global().Entities, *PhysicsShapes,
                           PendingWorldSceneCollision, std::string(kCookedScanRoot));
         PendingWorldSceneCollision.clear();
     }

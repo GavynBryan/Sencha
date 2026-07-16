@@ -3,7 +3,7 @@
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -54,7 +54,7 @@ struct Command
 class CommandBuffer
 {
 public:
-    explicit CommandBuffer(World& world) : W(&world) {}
+    explicit CommandBuffer(EntityStore& world) : W(&world) {}
 
     template <typename T>
     void AddComponent(EntityId entity, const T& value = T{})
@@ -123,7 +123,7 @@ public:
     }
 
 private:
-    World* W;
+    EntityStore* W;
     std::vector<Command> Commands;
     std::vector<uint8_t> PayloadArena;
 

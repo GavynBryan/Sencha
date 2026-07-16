@@ -2,7 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <components/ActiveCameraService.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <camera/CameraRig.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -13,7 +13,7 @@ void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
+        EntityStore& world = reg->Entities;
         if (!world.IsRegistered<CameraRig>())
             continue;
         const ActiveCameraService* cameraService = reg->Resources.TryGet<ActiveCameraService>();

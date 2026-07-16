@@ -3,7 +3,7 @@
 #include <app/GameContexts.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <movement/MovementProfile.h>
 #include <movement/MovementTags.h>
@@ -56,7 +56,7 @@ void MovementTuningSystem::FixedLogic(FixedLogicContext& ctx)
     const MovementTags& ids = ctx.Registries.Global->Resources.Get<MovementTags>();
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
+        EntityStore& world = reg->Entities;
         if (!world.IsRegistered<MovementProfile>() || !world.IsRegistered<GameplayTagContainer>())
             continue;
 

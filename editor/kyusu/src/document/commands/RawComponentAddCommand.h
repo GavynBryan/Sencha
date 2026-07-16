@@ -28,7 +28,7 @@ public:
 
     void Execute() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         const ComponentMeta* meta = world.GetMeta(Component);
         if (meta == nullptr || world.HasComponent(Entity, Component))
             return;
@@ -42,7 +42,7 @@ public:
 
     void Undo() override
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         if (world.HasComponent(Entity, Component))
         {
             world.RemoveComponentRaw(Entity, Component);

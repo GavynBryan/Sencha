@@ -22,7 +22,7 @@ EntityId EditorScene::CreateBrush(Vec3d position, Vec3d halfExtents)
 
 EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh)
 {
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
@@ -36,7 +36,7 @@ EntityId EditorScene::CreateCamera(Vec3d position)
     Transform3f transform = Transform3f::Identity();
     transform.Position = position;
 
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, CameraComponent{});
@@ -50,7 +50,7 @@ EntityId EditorScene::CreateEntity(Vec3d position)
     Transform3f transform = Transform3f::Identity();
     transform.Position = position;
 
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
 
@@ -60,7 +60,7 @@ EntityId EditorScene::CreateEntity(Vec3d position)
 
 void EditorScene::DestroyEntity(EntityId entity)
 {
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     if (!world.IsAlive(entity))
         return;
 
@@ -109,7 +109,7 @@ void EditorScene::TrackEntity(EntityId entity)
 
 void EditorScene::SetTransform(EntityId entity, const Transform3f& transform)
 {
-    if (LocalTransform* local = Registry_.Components.TryGet<LocalTransform>(entity))
+    if (LocalTransform* local = Registry_.Entities.TryGet<LocalTransform>(entity))
         local->Value = transform;
 }
 
@@ -120,13 +120,13 @@ void EditorScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
 
 void EditorScene::SetBrushMesh(EntityId entity, BrushMesh mesh)
 {
-    if (const BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
+    if (const BrushComponent* brush = Registry_.Entities.TryGet<BrushComponent>(entity))
         BrushMeshes.Set(brush->Id, std::move(mesh));
 }
 
 void EditorScene::Clear()
 {
-    World& world = Registry_.Components;
+    EntityStore& world = Registry_.Entities;
     for (EntityId entity : world.GetAliveEntities())
         world.DestroyEntity(entity);
     Entities.clear();
@@ -137,12 +137,12 @@ void EditorScene::Clear()
 
 void EditorScene::SyncFromRegistry()
 {
-    Entities = Registry_.Components.GetAliveEntities();
+    Entities = Registry_.Entities.GetAliveEntities();
 }
 
 bool EditorScene::HasEntity(EntityId entity) const
 {
-    return Registry_.Components.IsAlive(entity);
+    return Registry_.Entities.IsAlive(entity);
 }
 
 uint32_t EditorScene::GetEntityCount() const
@@ -157,14 +157,14 @@ std::span<const EntityId> EditorScene::GetAllEntities() const
 
 const Transform3f* EditorScene::TryGetTransform(EntityId entity) const
 {
-    const World& world = Registry_.Components;
+    const EntityStore& world = Registry_.Entities;
     const LocalTransform* local = world.TryGet<LocalTransform>(entity);
     return local != nullptr ? &local->Value : nullptr;
 }
 
 const BrushComponent* EditorScene::TryGetBrush(EntityId entity) const
 {
-    const World& world = Registry_.Components;
+    const EntityStore& world = Registry_.Entities;
     return world.TryGet<BrushComponent>(entity);
 }
 
@@ -176,7 +176,7 @@ const BrushMesh* EditorScene::TryGetBrushMesh(EntityId entity) const
 
 const BakedBrushComponent* EditorScene::TryGetBakedBrush(EntityId entity) const
 {
-    const World& world = Registry_.Components;
+    const EntityStore& world = Registry_.Entities;
     return world.TryGet<BakedBrushComponent>(entity);
 }
 
@@ -188,7 +188,7 @@ const BrushMesh* EditorScene::TryGetDormantBrushMesh(EntityId entity) const
 
 bool EditorScene::IsBrushInstanced(EntityId entity) const
 {
-    const World& world = Registry_.Components;
+    const EntityStore& world = Registry_.Entities;
     BrushId id{};
     if (const BrushComponent* brush = world.TryGet<BrushComponent>(entity))
         id = brush->Id;
@@ -212,7 +212,7 @@ bool EditorScene::IsBrushInstanced(EntityId entity) const
 
 const CameraComponent* EditorScene::TryGetCamera(EntityId entity) const
 {
-    const World& world = Registry_.Components;
+    const EntityStore& world = Registry_.Entities;
     return world.TryGet<CameraComponent>(entity);
 }
 

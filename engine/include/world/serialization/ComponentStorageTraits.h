@@ -28,15 +28,15 @@ struct ComponentStorageTraits
 
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<T>())
-            registry.Components.RegisterComponent<T>();
+        if (!registry.Entities.IsRegistered<T>())
+            registry.Entities.RegisterComponent<T>();
     }
 
     static bool Add(Registry& registry, EntityId entity, T component)
     {
-        if (registry.Components.HasComponent<T>(entity))
+        if (registry.Entities.HasComponent<T>(entity))
             return false;
-        registry.Components.AddComponent(entity, component);
+        registry.Entities.AddComponent(entity, component);
         return true;
     }
 };
@@ -52,22 +52,22 @@ struct ComponentStorageTraits<LocalTransform>
 
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<LocalTransform>())
-            registry.Components.RegisterComponent<LocalTransform>();
-        if (!registry.Components.IsRegistered<WorldTransform>())
-            registry.Components.RegisterComponent<WorldTransform>();
-        if (!registry.Components.IsRegistered<Parent>())
-            registry.Components.RegisterComponent<Parent>();
+        if (!registry.Entities.IsRegistered<LocalTransform>())
+            registry.Entities.RegisterComponent<LocalTransform>();
+        if (!registry.Entities.IsRegistered<WorldTransform>())
+            registry.Entities.RegisterComponent<WorldTransform>();
+        if (!registry.Entities.IsRegistered<Parent>())
+            registry.Entities.RegisterComponent<Parent>();
     }
 
     static bool Add(Registry& registry, EntityId entity, LocalTransform component)
     {
-        if (registry.Components.HasComponent<LocalTransform>(entity))
+        if (registry.Entities.HasComponent<LocalTransform>(entity))
             return false;
 
-        registry.Components.AddComponent(entity, component);
-        if (!registry.Components.HasComponent<WorldTransform>(entity))
-            registry.Components.AddComponent(entity, WorldTransform{ component.Value });
+        registry.Entities.AddComponent(entity, component);
+        if (!registry.Entities.HasComponent<WorldTransform>(entity))
+            registry.Entities.AddComponent(entity, WorldTransform{ component.Value });
         return true;
     }
 };

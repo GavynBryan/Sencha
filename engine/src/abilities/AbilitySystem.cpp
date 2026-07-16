@@ -11,7 +11,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <utility>
 
@@ -19,7 +19,7 @@ namespace
 {
     // Affordable if every negative additive cost modifier can be paid from the
     // attribute's Base (the pool the instant cost effect spends from).
-    bool CanAfford(const World& world, EntityId actor, EffectId cost, const EffectRegistry& effects)
+    bool CanAfford(const EntityStore& world, EntityId actor, EffectId cost, const EffectRegistry& effects)
     {
         if (!cost.IsValid())
             return true;
@@ -38,7 +38,7 @@ namespace
     }
 }
 
-bool TryActivateAbility(World& world, EntityId actor, AbilityId ability,
+bool TryActivateAbility(EntityStore& world, EntityId actor, AbilityId ability,
                         const AbilityRegistry& abilities,
                         const GameplayTagRegistry& tags,
                         const EffectRegistry& effects,
@@ -75,7 +75,7 @@ bool TryActivateAbility(World& world, EntityId actor, AbilityId ability,
     return true;
 }
 
-void ProcessAbilityActivations(World& world,
+void ProcessAbilityActivations(EntityStore& world,
                                AbilityActivationQueue& queue,
                                const AbilityRegistry& abilities,
                                const GameplayTagRegistry& tags,

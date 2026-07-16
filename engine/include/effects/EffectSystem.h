@@ -3,7 +3,7 @@
 #include <ecs/EntityId.h>
 #include <effects/EffectId.h>
 
-class World;
+class EntityStore;
 class EffectRegistry;
 class AttributeRegistry;
 
@@ -19,23 +19,23 @@ class AttributeRegistry;
 // Duration/Infinite -> spawns an ActiveEffect entity and grants the definition's
 // tags to the target's GameplayTagContainer (ref-counted). Performs structural
 // changes, so call outside query iteration.
-void ApplyEffect(World& world, EntityId target, EffectId effect,
+void ApplyEffect(EntityStore& world, EntityId target, EffectId effect,
                  const EffectRegistry& effects, const AttributeRegistry& attributes);
 
 // Advance active effects by dt: periodic effects apply their modifiers to Base
 // every Period; finite effects count down; expired effects revoke their granted
 // tags and are destroyed. Performs structural changes (destroy); call outside
 // query iteration.
-void TickEffects(World& world, float dt,
+void TickEffects(EntityStore& world, float dt,
                  const EffectRegistry& effects, const AttributeRegistry& attributes);
 
 // Fold active continuous (non-periodic) effect modifiers into AttributeSet
 // Current values, in Add -> Multiply -> Override order. Assumes Current has
 // already been reset to Base.
-void FoldActiveEffects(World& world, const EffectRegistry& effects);
+void FoldActiveEffects(EntityStore& world, const EffectRegistry& effects);
 
 // One-call per-frame attribute resolution with effects:
 //   ResetAttributesToBase + FoldActiveEffects + ClampAttributes.
-void ResolveAttributesWithEffects(World& world,
+void ResolveAttributesWithEffects(EntityStore& world,
                                   const EffectRegistry& effects,
                                   const AttributeRegistry& attributes);

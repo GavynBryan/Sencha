@@ -2,7 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <ecs/ComponentId.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <world/registry/Registry.h>
 
@@ -30,7 +30,7 @@ GameplayTagId LocomotionModeRegistry::TagFor(ComponentTypeId marker) const
     return GameplayTagId{};
 }
 
-void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker, int priority)
+void RequestLocomotionMode(EntityStore& world, EntityId entity, ComponentTypeId marker, int priority)
 {
     LocomotionModeRequest* request = world.TryGet<LocomotionModeRequest>(entity);
     if (request == nullptr)
@@ -42,7 +42,7 @@ void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker
     }
 }
 
-void ApplyLocomotionModes(World& world, const LocomotionModeRegistry& registry)
+void ApplyLocomotionModes(EntityStore& world, const LocomotionModeRegistry& registry)
 {
     if (!world.IsRegistered<LocomotionModeRequest>())
         return;
@@ -114,5 +114,5 @@ void LocomotionModeArbiter::FixedLogic(FixedLogicContext& ctx)
     const LocomotionModeRegistry& registry =
         ctx.Registries.Global->Resources.Get<LocomotionModeRegistry>();
     for (Registry* reg : ctx.ActiveRegistries)
-        ApplyLocomotionModes(reg->Components, registry);
+        ApplyLocomotionModes(reg->Entities, registry);
 }

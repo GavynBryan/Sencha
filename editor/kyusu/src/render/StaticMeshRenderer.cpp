@@ -75,7 +75,7 @@ void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         return;
 
     // const access: reading components for draw must not churn change tracking.
-    const World& world = scene.GetRegistry().Components;
+    const EntityStore& world = scene.GetRegistry().Entities;
 
     std::vector<EditorSolidVertex> vertices;
     for (EntityId entity : scene.GetAllEntities())

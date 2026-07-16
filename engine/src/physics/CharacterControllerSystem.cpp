@@ -1,7 +1,7 @@
 #include <physics/CharacterControllerSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsStepSystem.h>
 #include <physics/PhysicsWorld.h>
@@ -20,7 +20,7 @@ void CharacterControllerSystem::Physics(PhysicsContext& ctx)
 
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
+        EntityStore& world = reg->Entities;
         if (!world.IsRegistered<CharacterController>())
             continue;
 

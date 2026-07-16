@@ -1,7 +1,7 @@
 #include <physics/PhysicsStepSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/PhysicsScene.h>
 #include <world/registry/Registry.h>
 
@@ -18,7 +18,7 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
 
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
+        EntityStore& world = reg->Entities;
         reg->Resources.Ensure<PhysicsScene>(Simulation).SyncToPhysics(world);
     }
 
@@ -26,7 +26,7 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
 
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
+        EntityStore& world = reg->Entities;
         if (PhysicsScene* scene = reg->Resources.TryGet<PhysicsScene>())
             scene->SyncFromPhysics(world);
     }

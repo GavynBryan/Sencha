@@ -1,7 +1,7 @@
 #include <movement/GroundingTransitionSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementModes.h>
 #include <physics/components/CharacterController.h>
@@ -13,7 +13,7 @@ namespace
     constexpr int kGroundingPriority = 1;
 }
 
-void RequestGroundingLocomotionModes(World& world)
+void RequestGroundingLocomotionModes(EntityStore& world)
 {
     if (!world.IsRegistered<CharacterController>() || !world.IsRegistered<LocomotionModeRequest>())
         return;
@@ -34,10 +34,10 @@ void RequestGroundingLocomotionModes(World& world)
 void GroundingTransitionSystem::FixedLogic(FixedLogicContext& ctx)
 {
     for (Registry* reg : ctx.ActiveRegistries)
-        Step(reg->Components);
+        Step(reg->Entities);
 }
 
-void GroundingTransitionSystem::Step(World& world)
+void GroundingTransitionSystem::Step(EntityStore& world)
 {
     RequestGroundingLocomotionModes(world);
 }

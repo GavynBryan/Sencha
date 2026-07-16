@@ -2,7 +2,7 @@
 
 #include <string>
 
-class World;
+class EntityStore;
 class CollisionShapeCache;
 
 //=============================================================================
@@ -20,7 +20,7 @@ class CollisionShapeCache;
 // cookedRoot is the directory the sidecar's relative blob paths resolve against
 // (e.g. "assets/.cooked").
 //=============================================================================
-int LoadZoneCollision(World& world,
+int LoadZoneCollision(EntityStore& world,
                       CollisionShapeCache& cache,
                       const std::string& sidecarPath,
                       const std::string& cookedRoot);

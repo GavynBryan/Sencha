@@ -8,7 +8,7 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <utility>
 #include <vector>
@@ -38,7 +38,7 @@ namespace
     }
 }
 
-void ApplyEffect(World& world, EntityId target, EffectId effect,
+void ApplyEffect(EntityStore& world, EntityId target, EffectId effect,
                  const EffectRegistry& effects, const AttributeRegistry& attributes)
 {
     const EffectDefinition* def = effects.Get(effect);
@@ -67,7 +67,7 @@ void ApplyEffect(World& world, EntityId target, EffectId effect,
             tags->Grant(tag);
 }
 
-void TickEffects(World& world, float dt,
+void TickEffects(EntityStore& world, float dt,
                  const EffectRegistry& effects, const AttributeRegistry& attributes)
 {
     // A frame span includes registries with no effect components (the global
@@ -117,7 +117,7 @@ void TickEffects(World& world, float dt,
     }
 }
 
-void FoldActiveEffects(World& world, const EffectRegistry& effects)
+void FoldActiveEffects(EntityStore& world, const EffectRegistry& effects)
 {
     if (!world.IsRegistered<ActiveEffect>())
         return;
@@ -155,7 +155,7 @@ void FoldActiveEffects(World& world, const EffectRegistry& effects)
     foldPass(ModifierOp::Override);
 }
 
-void ResolveAttributesWithEffects(World& world,
+void ResolveAttributesWithEffects(EntityStore& world,
                                   const EffectRegistry& effects,
                                   const AttributeRegistry& attributes)
 {

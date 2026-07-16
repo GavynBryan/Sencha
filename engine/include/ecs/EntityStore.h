@@ -21,7 +21,7 @@
 // Forward declarations — defined in their own headers.
 class CommandBuffer;
 class ResourceStore;
-class World;
+class EntityStore;
 template <typename... Accessors> class Query;
 
 // ─── ComponentMeta ──────────────────────────────────────────────────────────
@@ -44,28 +44,28 @@ struct ComponentBatchItem
     const void* Blob = nullptr;
 };
 
-// ─── World ──────────────────────────────────────────────────────────────────
+// ─── EntityStore ──────────────────────────────────────────────────────────────────
 //
 // Owns the entity registry, component metadata, archetype storage, change epochs,
 // structural versioning, and query guards. Registry-scoped resources live outside it.
 // Single entry point for all ECS operations.
 
-class World
+class EntityStore
 {
     struct ScopedLifecycleHook
     {
-        explicit ScopedLifecycleHook(World& world) : W(world) { ++W.LifecycleHookDepth; }
+        explicit ScopedLifecycleHook(EntityStore& world) : W(world) { ++W.LifecycleHookDepth; }
         ~ScopedLifecycleHook() { --W.LifecycleHookDepth; }
 
-        World& W;
+        EntityStore& W;
     };
 
     struct ScopedQuery
     {
-        explicit ScopedQuery(const World& world) : W(world) { W.PushQueryScope(); }
+        explicit ScopedQuery(const EntityStore& world) : W(world) { W.PushQueryScope(); }
         ~ScopedQuery() { W.PopQueryScope(); }
 
-        const World& W;
+        const EntityStore& W;
     };
 
     struct ScopedColumnWrite
@@ -88,26 +88,26 @@ class World
     };
 
 public:
-    World() = default;
-    explicit World(ResourceStore& lifecycleResources)
+    EntityStore() = default;
+    explicit EntityStore(ResourceStore& lifecycleResources)
         : LifecycleResources(&lifecycleResources)
     {
     }
 
-    ~World()
+    ~EntityStore()
     {
         ClearEntities();
     }
 
-    World(const World&) = delete;
-    World& operator=(const World&) = delete;
+    EntityStore(const EntityStore&) = delete;
+    EntityStore& operator=(const EntityStore&) = delete;
 
-    World(World&& other) noexcept
+    EntityStore(EntityStore&& other) noexcept
     {
         MoveFrom(std::move(other));
     }
 
-    World& operator=(World&& other) noexcept
+    EntityStore& operator=(EntityStore&& other) noexcept
     {
         if (this != &other)
         {
@@ -202,7 +202,7 @@ public:
     // Runtime, type-erased identity lookup — for code paths that learned a
     // component only via its stable ComponentTypeId (loaded modules, the editor's
     // registry-driven inspector) and cannot name T. Returns InvalidComponentId if
-    // the type is not registered in this World.
+    // the type is not registered in this EntityStore.
     ComponentId GetComponentIdByType(ComponentTypeId type) const
     {
         auto it = TypeToId.find(type);
@@ -222,10 +222,10 @@ public:
                && "CreateEntity called while a query/lifecycle hook is active.");
         EntityCreated = true;
         ++StructuralCounter;
-        EntityId id   = Entities.Create();
+        EntityId id   = EntityIds.Create();
         Archetype* empty = GetOrCreateArchetype(ArchetypeSignature{});
         auto [ci, ri] = empty->AddRow(id.Index);
-        Entities.SetLocation(id, EntityLocation{ empty->Id, ci, ri });
+        EntityIds.SetLocation(id, EntityLocation{ empty->Id, ci, ri });
         return id;
     }
 
@@ -237,10 +237,10 @@ public:
                && "CreateEntityWithSignature called while a query/lifecycle hook is active.");
         EntityCreated = true;
         ++StructuralCounter;
-        EntityId id   = Entities.Create();
+        EntityId id   = EntityIds.Create();
         Archetype* arch = GetOrCreateArchetype(sig);
         auto [ci, ri] = arch->AddRow(id.Index);
-        Entities.SetLocation(id, EntityLocation{ arch->Id, ci, ri });
+        EntityIds.SetLocation(id, EntityLocation{ arch->Id, ci, ri });
         return id;
     }
 
@@ -248,25 +248,25 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "DestroyEntity called while a query/lifecycle hook is active — use CommandBuffer.");
-        assert(Entities.IsAlive(entity));
+        assert(EntityIds.IsAlive(entity));
         ++StructuralCounter;
 
-        EntityLocation loc  = Entities.GetLocation(entity);
+        EntityLocation loc  = EntityIds.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
         InvokeRemoveHooks(entity, arch, loc);
 
         EntityIndex moved = arch.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
+            EntityIds.SetLocationByIndex(moved, loc);
 
-        Entities.Destroy(entity);
+        EntityIds.Destroy(entity);
     }
 
     void ClearEntities()
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "ClearEntities called while a query/lifecycle hook is active.");
-        const std::vector<EntityId> alive = Entities.GetAliveEntities();
+        const std::vector<EntityId> alive = EntityIds.GetAliveEntities();
         for (EntityId entity : alive)
             DestroyEntity(entity);
     }
@@ -278,11 +278,11 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "AddComponent called while a query/lifecycle hook is active — use CommandBuffer.");
-        assert(Entities.IsAlive(entity));
+        assert(EntityIds.IsAlive(entity));
         ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
-        EntityLocation     loc = Entities.GetLocation(entity);
+        EntityLocation     loc = EntityIds.GetLocation(entity);
         Archetype&         src = *ArchetypeList[loc.ArchetypeId];
 
         assert(!src.Signature.test(id) && "Entity already has component T.");
@@ -302,9 +302,9 @@ public:
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
+            EntityIds.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        EntityIds.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
@@ -321,11 +321,11 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "RemoveComponent called while a query/lifecycle hook is active — use CommandBuffer.");
-        assert(Entities.IsAlive(entity));
+        assert(EntityIds.IsAlive(entity));
         ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
-        EntityLocation     loc = Entities.GetLocation(entity);
+        EntityLocation     loc = EntityIds.GetLocation(entity);
         Archetype&         src = *ArchetypeList[loc.ArchetypeId];
 
         assert(src.Signature.test(id) && "Entity does not have component T.");
@@ -348,9 +348,9 @@ public:
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
+            EntityIds.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        EntityIds.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
     }
 
     // ── Component access ─────────────────────────────────────────────────────
@@ -363,9 +363,9 @@ public:
     template <typename T>
     T* TryGet(EntityId entity)
     {
-        if (!Entities.IsAlive(entity)) return nullptr;
+        if (!EntityIds.IsAlive(entity)) return nullptr;
         const ComponentId  id  = GetComponentId<T>();
-        const EntityLocation loc = Entities.GetLocation(entity);
+        const EntityLocation loc = EntityIds.GetLocation(entity);
         const Archetype&   arch = *ArchetypeList[loc.ArchetypeId];
         if (!arch.Signature.test(id)) return nullptr;
         Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
@@ -379,9 +379,9 @@ public:
     const T* TryGet(EntityId entity) const
     {
         // Read-only access: no column-version bump (unlike the non-const overload).
-        if (!Entities.IsAlive(entity)) return nullptr;
+        if (!EntityIds.IsAlive(entity)) return nullptr;
         const ComponentId  id  = GetComponentId<T>();
-        const EntityLocation loc = Entities.GetLocation(entity);
+        const EntityLocation loc = EntityIds.GetLocation(entity);
         const Archetype&   arch = *ArchetypeList[loc.ArchetypeId];
         if (!arch.Signature.test(id)) return nullptr;
         const Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
@@ -393,16 +393,16 @@ public:
     template <typename T>
     bool HasComponent(EntityId entity) const
     {
-        if (!Entities.IsAlive(entity)) return false;
+        if (!EntityIds.IsAlive(entity)) return false;
         if (!IsRegistered<T>()) return false;
         const ComponentId id = GetComponentId<T>();
-        return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
+        return ArchetypeList[EntityIds.GetLocation(entity).ArchetypeId]->Signature.test(id);
     }
 
     bool HasComponent(EntityId entity, ComponentId id) const
     {
-        if (!Entities.IsAlive(entity)) return false;
-        return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
+        if (!EntityIds.IsAlive(entity)) return false;
+        return ArchetypeList[EntityIds.GetLocation(entity).ArchetypeId]->Signature.test(id);
     }
 
     // ── Type-erased component access (by ComponentId) ─────────────────────────
@@ -414,8 +414,8 @@ public:
     // bumps the column version (mutable access), matching TryGet<T>.
     void* GetComponentRaw(EntityId entity, ComponentId id)
     {
-        if (!Entities.IsAlive(entity)) return nullptr;
-        const EntityLocation loc = Entities.GetLocation(entity);
+        if (!EntityIds.IsAlive(entity)) return nullptr;
+        const EntityLocation loc = EntityIds.GetLocation(entity);
         Archetype& arch = *ArchetypeList[loc.ArchetypeId];
         if (!arch.Signature.test(id)) return nullptr;
         Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
@@ -427,8 +427,8 @@ public:
 
     const void* GetComponentRaw(EntityId entity, ComponentId id) const
     {
-        if (!Entities.IsAlive(entity)) return nullptr;
-        const EntityLocation loc = Entities.GetLocation(entity);
+        if (!EntityIds.IsAlive(entity)) return nullptr;
+        const EntityLocation loc = EntityIds.GetLocation(entity);
         const Archetype& arch = *ArchetypeList[loc.ArchetypeId];
         if (!arch.Signature.test(id)) return nullptr;
         const Chunk* chunk = arch.Chunks[loc.ChunkIndex].get();
@@ -563,17 +563,17 @@ public:
 
     EntityChunkLocation LocateEntity(EntityId entity)
     {
-        if (!Entities.IsAlive(entity)) return {};
-        const EntityLocation loc = Entities.GetLocation(entity);
+        if (!EntityIds.IsAlive(entity)) return {};
+        const EntityLocation loc = EntityIds.GetLocation(entity);
         return { ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get(),
                  loc.RowIndex };
     }
 
     // ── Entity introspection ─────────────────────────────────────────────────
 
-    bool   IsAlive(EntityId entity) const { return Entities.IsAlive(entity); }
-    size_t EntityCount()            const { return Entities.Count(); }
-    std::vector<EntityId> GetAliveEntities() const { return Entities.GetAliveEntities(); }
+    bool   IsAlive(EntityId entity) const { return EntityIds.IsAlive(entity); }
+    size_t EntityCount()            const { return EntityIds.Count(); }
+    std::vector<EntityId> GetAliveEntities() const { return EntityIds.GetAliveEntities(); }
 
     const ComponentMeta* GetMeta(ComponentId id) const
     {
@@ -590,12 +590,12 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
-        assert(Entities.IsAlive(entity));
+        assert(EntityIds.IsAlive(entity));
         assert(id < ComponentMetas.size() && "Raw add requires a registered component id.");
         ++StructuralCounter;
 
         const ComponentMeta& meta = ComponentMetas[id];
-        EntityLocation loc  = Entities.GetLocation(entity);
+        EntityLocation loc  = EntityIds.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
         assert(!src.Signature.test(id) && "Entity already has component.");
 
@@ -622,9 +622,9 @@ public:
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
+            EntityIds.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        EntityIds.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
 
         if (meta.OnAdd != nullptr)
         {
@@ -639,12 +639,12 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
-        assert(Entities.IsAlive(entity));
+        assert(EntityIds.IsAlive(entity));
         assert(id < ComponentMetas.size() && "Raw remove requires a registered component id.");
         ++StructuralCounter;
 
         const ComponentMeta& meta = ComponentMetas[id];
-        EntityLocation loc  = Entities.GetLocation(entity);
+        EntityLocation loc  = EntityIds.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
         assert(src.Signature.test(id) && "Entity does not have component.");
 
@@ -668,9 +668,9 @@ public:
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
-            Entities.SetLocationByIndex(moved, loc);
+            EntityIds.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        EntityIds.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
     }
 
     void AddComponentsRawBatch(
@@ -698,9 +698,9 @@ public:
         for (size_t i = 0; i < count; ++i)
         {
             const EntityId entity = items[i].Entity;
-            if (!Entities.IsAlive(entity)) continue;
+            if (!EntityIds.IsAlive(entity)) continue;
 
-            EntityLocation loc = Entities.GetLocation(entity);
+            EntityLocation loc = EntityIds.GetLocation(entity);
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
             assert(!src.Signature.test(id) && "Entity already has component.");
 
@@ -735,7 +735,7 @@ public:
         RemoveSourceRowsInReverse(moves);
 
         for (const Move& move : moves)
-            Entities.SetLocation(move.Entity, move.Destination);
+            EntityIds.SetLocation(move.Entity, move.Destination);
     }
 
     void RemoveComponentsRawBatch(
@@ -763,9 +763,9 @@ public:
         for (size_t i = 0; i < count; ++i)
         {
             const EntityId entity = entities[i];
-            if (!Entities.IsAlive(entity)) continue;
+            if (!EntityIds.IsAlive(entity)) continue;
 
-            EntityLocation loc = Entities.GetLocation(entity);
+            EntityLocation loc = EntityIds.GetLocation(entity);
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
             assert(src.Signature.test(id) && "Entity does not have component.");
 
@@ -786,11 +786,11 @@ public:
         RemoveSourceRowsInReverse(moves);
 
         for (const Move& move : moves)
-            Entities.SetLocation(move.Entity, move.Destination);
+            EntityIds.SetLocation(move.Entity, move.Destination);
     }
 
 private:
-    EntityRegistry                          Entities;
+    EntityRegistry                          EntityIds;
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 
     struct SigHash
@@ -830,9 +830,9 @@ private:
     uint64_t StructuralCounter = 0;
     bool     EntityCreated = false;
 
-    void MoveFrom(World&& other)
+    void MoveFrom(EntityStore&& other)
     {
-        Entities = std::move(other.Entities);
+        EntityIds = std::move(other.EntityIds);
         ArchetypeList = std::move(other.ArchetypeList);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
@@ -889,7 +889,7 @@ private:
 
     uint32_t GenerationForIndex(EntityIndex index) const
     {
-        return Entities.GenerationForIndex(index);
+        return EntityIds.GenerationForIndex(index);
     }
 
     template <typename Move>
@@ -898,11 +898,11 @@ private:
         for (size_t i = moves.size(); i > 0; --i)
         {
             const Move& move = moves[i - 1];
-            EntityLocation current = Entities.GetLocation(move.Entity);
+            EntityLocation current = EntityIds.GetLocation(move.Entity);
             Archetype& src = *ArchetypeList[current.ArchetypeId];
             EntityIndex moved = src.RemoveRow(current.ChunkIndex, current.RowIndex);
             if (moved != InvalidEntityIndex)
-                Entities.SetLocationByIndex(moved, current);
+                EntityIds.SetLocationByIndex(moved, current);
         }
     }
 

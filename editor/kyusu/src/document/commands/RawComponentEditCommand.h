@@ -37,7 +37,7 @@ public:
 private:
     void Apply(const std::vector<std::byte>& bytes)
     {
-        World& world = Scene.GetRegistry().Components;
+        EntityStore& world = Scene.GetRegistry().Entities;
         if (void* dst = world.GetComponentRaw(Entity, Component))
         {
             std::memcpy(dst, bytes.data(), bytes.size());

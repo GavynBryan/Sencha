@@ -147,7 +147,7 @@ void InspectorPanel::ResetEditState()
     // mutation.
     if (EditActive && EditingComponent != InvalidComponentId && !EditBefore.empty())
     {
-        World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+        EntityStore& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Entities;
         if (void* live = world.GetComponentRaw(EditingEntity, EditingComponent))
             std::memcpy(live, EditBefore.data(), EditBefore.size());
     }
@@ -159,7 +159,7 @@ void InspectorPanel::ResetEditState()
 
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
 {
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    EntityStore& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Entities;
     const ComponentId id = world.GetComponentIdByType(serializer.TypeId());
     if (id == InvalidComponentId)
         return;
@@ -322,7 +322,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
         return;
     }
 
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    EntityStore& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Entities;
     const void* base = world.GetComponentRaw(entity, component);
     if (base == nullptr)
         return;
@@ -402,7 +402,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
 void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 {
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    EntityStore& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Entities;
 
     // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
     // the popup before a selection can be made.
@@ -467,7 +467,7 @@ void InspectorPanel::OnDraw()
 
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    EntityStore& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Entities;
     for (const auto& serializer : GetComponentSerializerEntries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());

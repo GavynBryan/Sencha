@@ -44,14 +44,14 @@ namespace
 
         void RegisterStorage(Registry& registry) const override
         {
-            if (!registry.Components.IsRegistered<GameplayTagContainer>())
-                registry.Components.RegisterComponent<GameplayTagContainer>();
+            if (!registry.Entities.IsRegistered<GameplayTagContainer>())
+                registry.Entities.RegisterComponent<GameplayTagContainer>();
         }
 
         bool HasComponent(EntityId entity, const Registry& registry) const override
         {
-            return registry.Components.IsRegistered<GameplayTagContainer>()
-                && registry.Components.HasComponent<GameplayTagContainer>(entity);
+            return registry.Entities.IsRegistered<GameplayTagContainer>()
+                && registry.Entities.HasComponent<GameplayTagContainer>(entity);
         }
 
         bool Save(IWriteArchive& archive,
@@ -59,9 +59,9 @@ namespace
                   const Registry& registry,
                   SceneSerializationContext& context) const override
         {
-            if (!registry.Components.IsRegistered<GameplayTagContainer>())
+            if (!registry.Entities.IsRegistered<GameplayTagContainer>())
                 return true;
-            const GameplayTagContainer* tags = registry.Components.TryGet<GameplayTagContainer>(entity);
+            const GameplayTagContainer* tags = registry.Entities.TryGet<GameplayTagContainer>(entity);
             if (!tags)
                 return true; // entity has no tag component: nothing to write
 
@@ -88,16 +88,16 @@ namespace
             // Storage is registered up front by RegisterStorage (before entities
             // exist), so just attach; registering here would violate the
             // register-before-create rule.
-            registry.Components.AddComponent<GameplayTagContainer>(entity, tags);
+            registry.Entities.AddComponent<GameplayTagContainer>(entity, tags);
             return true;
         }
 
         bool Remove(EntityId entity, Registry& registry) const override
         {
-            if (registry.Components.IsRegistered<GameplayTagContainer>()
-                && registry.Components.HasComponent<GameplayTagContainer>(entity))
+            if (registry.Entities.IsRegistered<GameplayTagContainer>()
+                && registry.Entities.HasComponent<GameplayTagContainer>(entity))
             {
-                registry.Components.RemoveComponent<GameplayTagContainer>(entity);
+                registry.Entities.RemoveComponent<GameplayTagContainer>(entity);
             }
             return true;
         }

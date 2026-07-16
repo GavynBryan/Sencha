@@ -7,7 +7,7 @@
 #include <ecs/EntityId.h>
 #include <physics/PhysicsTypes.h>
 
-class World;
+class EntityStore;
 class PhysicsWorld;
 
 //=============================================================================
@@ -59,10 +59,10 @@ public:
 
     // Pre-step: reconcile body topology (gated on the structural version), then
     // push kinematic transforms into the simulation.
-    void SyncToPhysics(World& world);
+    void SyncToPhysics(EntityStore& world);
 
     // Post-step: write dynamic bodies' resolved transforms back to LocalTransform.
-    void SyncFromPhysics(World& world);
+    void SyncFromPhysics(EntityStore& world);
 
     [[nodiscard]] size_t BodyCount() const { return Owned.size(); }
 
@@ -80,9 +80,9 @@ private:
 
     struct SceneState; // PIMPL: cached queries + reusable command buffer (ECS-side)
 
-    bool        Ready(const World& world) const;
-    SceneState& EnsureState(World& world);
-    void        Reconcile(World& world, SceneState& state);
+    bool        Ready(const EntityStore& world) const;
+    SceneState& EnsureState(EntityStore& world);
+    void        Reconcile(EntityStore& world, SceneState& state);
 
     PhysicsWorld*               Simulation; // not owned; outlives this scene (see above)
     std::vector<BodyRecord>     Owned;

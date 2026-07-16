@@ -23,13 +23,13 @@ TEST(TransformPropagation, PropagatesDefaultRegistryTransforms)
     Registry& registry = CreateDefault3DZone(
         zones, ZoneId{ 1 }, ZoneParticipation{ .Logic = true });
     EntityId entity = CreateDefaultEntity(registry);
-    registry.Components.TryGet<LocalTransform>(entity)->Value =
+    registry.Entities.TryGet<LocalTransform>(entity)->Value =
         Transform3f(Vec3d(3.0f, 4.0f, 5.0f), Quatf::Identity(), Vec3d::One());
 
     std::array<Registry*, 1> registries{ &registry };
     PropagateTransforms(registries);
 
-    const WorldTransform* world = registry.Components.TryGet<WorldTransform>(entity);
+    const WorldTransform* world = registry.Entities.TryGet<WorldTransform>(entity);
     ASSERT_NE(world, nullptr);
     EXPECT_EQ(world->Value.Position, Vec3d(3.0f, 4.0f, 5.0f));
 }
@@ -45,7 +45,7 @@ TEST(TransformPropagation, SkipsRegistriesWithoutTransformResources)
 
 TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -65,7 +65,7 @@ TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
 
 TEST(TransformPropagation, ChildInheritsParentInEcsWorld)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -92,7 +92,7 @@ TEST(TransformPropagation, ChildInheritsParentInEcsWorld)
 
 TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -117,7 +117,7 @@ TEST(TransformPropagation, EcsPropagationBumpsWorldTransformChangedChunks)
 
 TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -147,7 +147,7 @@ TEST(TransformPropagation, RebuildsCachedPointersWhenArchetypeCountGrows)
 
 TEST(TransformPropagation, ThreeLevelHierarchyInEcsWorld)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -175,7 +175,7 @@ TEST(TransformPropagation, ThreeLevelHierarchyInEcsWorld)
 
 TEST(TransformPropagation, ScaleComposesInEcsWorld)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -202,7 +202,7 @@ TEST(TransformPropagation, ScaleComposesInEcsWorld)
 
 TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -242,7 +242,7 @@ TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
 
 TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -274,14 +274,14 @@ TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 
 TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
     world.RegisterComponent<ExtraComponent>();
 
-    // Pre-create the {Local, World, Extra} archetype so adding ExtraComponent
+    // Pre-create the {Local, WorldTransform, Extra} archetype so adding ExtraComponent
     // to `a` later moves it into an EXISTING archetype (count unchanged).
     EntityId pre = world.CreateEntity();
     world.AddComponent(pre, LocalTransform{ Transform3f(Vec3d(9.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
@@ -305,7 +305,7 @@ TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
 
 TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -331,8 +331,8 @@ TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
 {
     // The FreeCamera / editor-gizmo pattern: steady-state mutation through
     // non-const TryGet with no structural change. Relies on the D4.4
-    // conservative bump in non-const World::TryGet.
-    World world;
+    // conservative bump in non-const EntityStore::TryGet.
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -354,7 +354,7 @@ TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
 
 TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -387,7 +387,7 @@ TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
 
 TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
 {
-    World world;
+    EntityStore world;
     PropagationOrderCache cache;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();

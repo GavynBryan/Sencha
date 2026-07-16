@@ -67,13 +67,13 @@ namespace
 
     void SetParentComponent(Registry& registry, EntityId child, EntityId parent)
     {
-        if (!registry.Components.IsRegistered<Parent>())
+        if (!registry.Entities.IsRegistered<Parent>())
             return;
 
-        if (Parent* existing = registry.Components.TryGet<Parent>(child))
+        if (Parent* existing = registry.Entities.TryGet<Parent>(child))
             existing->Entity = parent;
         else
-            registry.Components.AddComponent(child, Parent{ parent });
+            registry.Entities.AddComponent(child, Parent{ parent });
     }
 
     bool SaveRegistryChunk(const std::vector<EntityId>& entities, BinaryWriter& writer)
@@ -101,9 +101,9 @@ namespace
     bool SaveHierarchyChunk(const Registry& registry, BinaryWriter& writer)
     {
         std::vector<std::pair<EntityId, EntityId>> pairs;
-        if (registry.Components.IsRegistered<Parent>())
+        if (registry.Entities.IsRegistered<Parent>())
         {
-            registry.Components.ForEachComponent<Parent>(
+            registry.Entities.ForEachComponent<Parent>(
                 [&](EntityId child, const Parent& parent)
                 {
                     if (parent.Entity.IsValid())
@@ -159,7 +159,7 @@ namespace
                 return false;
             }
 
-            EntityId runtime = registry.Components.CreateEntity();
+            EntityId runtime = registry.Entities.CreateEntity();
             remap[savedIndex] = runtime;
             loadedEntities.push_back(runtime);
         }
@@ -263,7 +263,7 @@ namespace
         {
             for (const auto& serializer : SerializerEntries())
                 serializer->Remove(*it, registry);
-            registry.Components.DestroyEntity(*it);
+            registry.Entities.DestroyEntity(*it);
         }
     }
 }
@@ -317,7 +317,7 @@ bool SaveSceneBinary(const Registry& registry,
                      SceneSerializationContext& context,
                      SceneSaveError* error)
 {
-    const auto entities = registry.Components.GetAliveEntities();
+    const auto entities = registry.Entities.GetAliveEntities();
 
     if (!WriteBinaryHeader(writer, SceneMagic, SceneVersion))
     {
@@ -441,7 +441,7 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
 {
     JsonValue::Array entitiesJson;
     JsonValue::Array hierarchyJson;
-    const auto entities = registry.Components.GetAliveEntities();
+    const auto entities = registry.Entities.GetAliveEntities();
     std::unordered_map<EntityIndex, std::uint32_t> entityToJsonIndex;
     entityToJsonIndex.reserve(entities.size());
 
@@ -467,11 +467,11 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
         });
     }
 
-    if (registry.Components.IsRegistered<Parent>())
+    if (registry.Entities.IsRegistered<Parent>())
     {
         for (EntityId child : entities)
         {
-            const Parent* p = registry.Components.TryGet<Parent>(child);
+            const Parent* p = registry.Entities.TryGet<Parent>(child);
             if (!p || !p->Entity.IsValid())
                 continue;
 
@@ -536,7 +536,7 @@ bool LoadSceneJson(const JsonValue& root,
             return false;
         }
 
-        EntityId entity = registry.Components.CreateEntity();
+        EntityId entity = registry.Entities.CreateEntity();
         entities.push_back(entity);
 
         const JsonValue* components = entityValue.Find("components");

@@ -68,8 +68,8 @@ namespace
                        AudioService* audio, CaptionRuntime* captions)
     {
         registry.Resources.Register<AudioSourceRuntime>(cache, audio, captions);
-        registry.Components.RegisterComponent<AudioSourceComponent>();
-        registry.Components.RegisterComponent<AudioCaptionComponent>();
+        registry.Entities.RegisterComponent<AudioSourceComponent>();
+        registry.Entities.RegisterComponent<AudioCaptionComponent>();
     }
 
     AudioCaptionComponent WorldCC(std::string_view text)
@@ -100,10 +100,10 @@ TEST(CaptionSystemScene, ActiveZoneStartsSourceAndCaptionTogether)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(entity, WorldCC("cc.hum"));
+    registry.Entities.AddComponent(entity, WorldCC("cc.hum"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
@@ -112,8 +112,8 @@ TEST(CaptionSystemScene, ActiveZoneStartsSourceAndCaptionTogether)
     audioSystem.Update(&audio, active);
     captionSystem.Update(&captions, &audio, active, 0.016f);
 
-    const auto* source = registry.Components.TryGet<AudioSourceComponent>(entity);
-    const auto* caption = registry.Components.TryGet<AudioCaptionComponent>(entity);
+    const auto* source = registry.Entities.TryGet<AudioSourceComponent>(entity);
+    const auto* caption = registry.Entities.TryGet<AudioCaptionComponent>(entity);
     ASSERT_TRUE(source->Voice.IsValid());
     ASSERT_TRUE(caption->Caption.IsValid());
     EXPECT_EQ(caption->CaptionedVoice, source->Voice);
@@ -145,15 +145,15 @@ TEST(CaptionSystemScene, DormancyRetiresCaptionAndLoopReentryRecaptions)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId loop = registry.Components.CreateEntity();
-    registry.Components.AddComponent(loop, AudioSourceComponent{
+    EntityId loop = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(loop, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(loop, WorldCC("cc.loop"));
+    registry.Entities.AddComponent(loop, WorldCC("cc.loop"));
 
-    EntityId oneShot = registry.Components.CreateEntity();
-    registry.Components.AddComponent(oneShot, AudioSourceComponent{
+    EntityId oneShot = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(oneShot, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(oneShot, WorldCC("cc.oneshot"));
+    registry.Entities.AddComponent(oneShot, WorldCC("cc.oneshot"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
@@ -180,7 +180,7 @@ TEST(CaptionSystemScene, DormancyRetiresCaptionAndLoopReentryRecaptions)
     ASSERT_EQ(visible.size(), 1u);
     EXPECT_EQ(visible[0].Payload.Text.View(), "cc.loop");
     EXPECT_EQ(visible[0].Voice,
-              registry.Components.TryGet<AudioSourceComponent>(loop)->Voice);
+              registry.Entities.TryGet<AudioSourceComponent>(loop)->Voice);
 }
 
 TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
@@ -199,10 +199,10 @@ TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(entity, WorldCC("cc.door"));
+    registry.Entities.AddComponent(entity, WorldCC("cc.door"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
@@ -210,12 +210,12 @@ TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
     audioSystem.Update(&audio, active);
     captionSystem.Update(&captions, &audio, active, 0.016f);
 
-    CaptionId id = registry.Components.TryGet<AudioCaptionComponent>(entity)->Caption;
+    CaptionId id = registry.Entities.TryGet<AudioCaptionComponent>(entity)->Caption;
     ASSERT_TRUE(captions.IsActive(id));
 
     // OnRemove ends the caption directly — entity destruction and zone
     // detach both fire it, and it does not wait for the next Tick.
-    registry.Components.RemoveComponent<AudioCaptionComponent>(entity);
+    registry.Entities.RemoveComponent<AudioCaptionComponent>(entity);
     EXPECT_FALSE(captions.IsActive(id));
 }
 
@@ -227,8 +227,8 @@ TEST(CaptionSystemScene, OrphanCaptionComponentIsInert)
     Registry registry;
     SetupRegistry(registry, nullptr, nullptr, &captions);
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, WorldCC("cc.orphan"));
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, WorldCC("cc.orphan"));
 
     CaptionSystem captionSystem;
     std::vector<Registry*> active{ &registry };
@@ -236,7 +236,7 @@ TEST(CaptionSystemScene, OrphanCaptionComponentIsInert)
     captionSystem.Update(&captions, nullptr, active, 0.016f);
 
     EXPECT_EQ(captions.ActiveCount(), 0u);
-    EXPECT_TRUE(registry.Components.TryGet<AudioCaptionComponent>(entity)->WarnedOrphan);
+    EXPECT_TRUE(registry.Entities.TryGet<AudioCaptionComponent>(entity)->WarnedOrphan);
 }
 
 // -- Decision C on the scene path -------------------------------------------------
@@ -265,20 +265,20 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
 
-    EntityId speech = registry.Components.CreateEntity();
-    registry.Components.AddComponent(speech, AudioSourceComponent{
+    EntityId speech = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(speech, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(speech, AudioCaptionComponent{
+    registry.Entities.AddComponent(speech, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "World",
         .Priority = CaptionPriority::Narrative,
         .Text = "line.rejected",
     });
 
-    EntityId slam = registry.Components.CreateEntity();
-    registry.Components.AddComponent(slam, AudioSourceComponent{
+    EntityId slam = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(slam, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(slam, WorldCC("cc.rejected"));
+    registry.Entities.AddComponent(slam, WorldCC("cc.rejected"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
@@ -309,10 +309,10 @@ TEST(CaptionSystemDegrade, NoAudioServiceStillSubtitlesActiveSources)
     Registry registry;
     SetupRegistry(registry, &cache, nullptr, &captions);
 
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(entity, AudioCaptionComponent{
+    registry.Entities.AddComponent(entity, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "World",
         .Text = "line.no.device",
@@ -341,9 +341,9 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
     LoggingProvider logging;
 
     Registry src;
-    src.Components.RegisterComponent<AudioCaptionComponent>();
-    EntityId entity = src.Components.CreateEntity();
-    src.Components.AddComponent(entity, AudioCaptionComponent{
+    src.Entities.RegisterComponent<AudioCaptionComponent>();
+    EntityId entity = src.Entities.CreateEntity();
+    src.Entities.AddComponent(entity, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "Radio",
         .Priority = CaptionPriority::Narrative,
@@ -365,12 +365,12 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
     EXPECT_EQ(chunk->Find("priority")->AsString(), "Narrative");
 
     Registry dst;
-    dst.Components.RegisterComponent<AudioCaptionComponent>();
+    dst.Entities.RegisterComponent<AudioCaptionComponent>();
     SceneSerializationContext loadCtx(logging);
     ASSERT_TRUE(LoadSceneJson(json, dst, loadCtx));
 
     int count = 0;
-    dst.Components.ForEachComponent<AudioCaptionComponent>(
+    dst.Entities.ForEachComponent<AudioCaptionComponent>(
         [&](EntityId, AudioCaptionComponent& caption)
     {
         ++count;
@@ -426,10 +426,10 @@ TEST(CaptionGate, ThreeContextsRouteFilterAndOrderDeterministically)
     // World SFX: scene-authored closed caption.
     Registry registry;
     SetupRegistry(registry, &cache, &audio, &captions);
-    EntityId door = registry.Components.CreateEntity();
-    registry.Components.AddComponent(door, AudioSourceComponent{
+    EntityId door = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(door, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(door, WorldCC("cc.door.slam"));
+    registry.Entities.AddComponent(door, WorldCC("cc.door.slam"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;

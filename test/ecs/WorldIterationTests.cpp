@@ -14,7 +14,7 @@ SENCHA_DECLARE_COMPONENT_TYPE(WorldIterationProbe, "test.world_iteration_probe")
 #ifndef NDEBUG
 TEST(WorldIteration, MutableForEachRejectsStructuralMutation)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<WorldIterationProbe>();
 
     const EntityId entity = world.CreateEntity();
@@ -28,12 +28,12 @@ TEST(WorldIteration, MutableForEachRejectsStructuralMutation)
 
 TEST(WorldIteration, ConstForEachRejectsStructuralMutation)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<WorldIterationProbe>();
 
     const EntityId entity = world.CreateEntity();
     world.AddComponent(entity, WorldIterationProbe{ 1 });
-    const World& readWorld = world;
+    const EntityStore& readWorld = world;
 
     EXPECT_DEATH(
         readWorld.ForEachComponent<WorldIterationProbe>(
@@ -45,7 +45,7 @@ TEST(WorldIteration, ThrowingCallbackReleasesStructuralMutationGuard)
 {
     EXPECT_EXIT(
         {
-            World world;
+            EntityStore world;
             world.RegisterComponent<WorldIterationProbe>();
 
             const EntityId entity = world.CreateEntity();
@@ -71,7 +71,7 @@ TEST(WorldIteration, ThrowingCallbackReleasesStructuralMutationGuard)
 
 TEST(WorldIteration, ThrowingMutableCallbackStillPublishesColumnVersion)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<WorldIterationProbe>();
 
     const EntityId entity = world.CreateEntity();
@@ -93,7 +93,7 @@ TEST(WorldIteration, ThrowingMutableCallbackStillPublishesColumnVersion)
     }
 
     EXPECT_TRUE(threw);
-    const World& readWorld = world;
+    const EntityStore& readWorld = world;
     ASSERT_NE(readWorld.TryGet<WorldIterationProbe>(entity), nullptr);
     EXPECT_EQ(readWorld.TryGet<WorldIterationProbe>(entity)->Value, 9);
 

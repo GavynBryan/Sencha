@@ -1,7 +1,7 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeResolve.h>
 #include <attributes/AttributeSet.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <gtest/gtest.h>
 
@@ -51,7 +51,7 @@ TEST(AttributeSet, AddSetGetStaysSorted)
 
 TEST(AttributeResolve, ClampsCurrentFromBaseViaRegistry)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<AttributeSet>();
     AttributeRegistry reg;
     const AttributeId hp = reg.RegisterAttribute("Health", 0.0f, 100.0f, 100.0f);

@@ -81,7 +81,7 @@ struct AudioSourceRuntime
 };
 
 // Archetype storage relocates components with memcpy, so the component must
-// stay trivially copyable (enforced by World::RegisterComponent) — this is
+// stay trivially copyable (enforced by EntityStore::RegisterComponent) — this is
 // why Bus is an InlineString, not std::string.
 
 template <>

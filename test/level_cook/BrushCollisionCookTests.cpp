@@ -12,7 +12,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsRegistration.h>
@@ -108,7 +108,7 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
     CollisionShapeCache cache;
     world.SetShapeCache(&cache);
 
-    World ecs;
+    EntityStore ecs;
     ecs.RegisterComponent<LocalTransform>();
     RegisterPhysicsComponents(ecs);
 

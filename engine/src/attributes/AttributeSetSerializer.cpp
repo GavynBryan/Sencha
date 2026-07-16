@@ -41,14 +41,14 @@ namespace
 
         void RegisterStorage(Registry& registry) const override
         {
-            if (!registry.Components.IsRegistered<AttributeSet>())
-                registry.Components.RegisterComponent<AttributeSet>();
+            if (!registry.Entities.IsRegistered<AttributeSet>())
+                registry.Entities.RegisterComponent<AttributeSet>();
         }
 
         bool HasComponent(EntityId entity, const Registry& registry) const override
         {
-            return registry.Components.IsRegistered<AttributeSet>()
-                && registry.Components.HasComponent<AttributeSet>(entity);
+            return registry.Entities.IsRegistered<AttributeSet>()
+                && registry.Entities.HasComponent<AttributeSet>(entity);
         }
 
         bool Save(IWriteArchive& archive,
@@ -56,9 +56,9 @@ namespace
                   const Registry& registry,
                   SceneSerializationContext& context) const override
         {
-            if (!registry.Components.IsRegistered<AttributeSet>())
+            if (!registry.Entities.IsRegistered<AttributeSet>())
                 return true;
-            const AttributeSet* set = registry.Components.TryGet<AttributeSet>(entity);
+            const AttributeSet* set = registry.Entities.TryGet<AttributeSet>(entity);
             if (!set)
                 return true;
 
@@ -82,16 +82,16 @@ namespace
             if (!ReadAttributes(archive, set, *reg))
                 return false;
 
-            registry.Components.AddComponent<AttributeSet>(entity, set);
+            registry.Entities.AddComponent<AttributeSet>(entity, set);
             return true;
         }
 
         bool Remove(EntityId entity, Registry& registry) const override
         {
-            if (registry.Components.IsRegistered<AttributeSet>()
-                && registry.Components.HasComponent<AttributeSet>(entity))
+            if (registry.Entities.IsRegistered<AttributeSet>()
+                && registry.Entities.HasComponent<AttributeSet>(entity))
             {
-                registry.Components.RemoveComponent<AttributeSet>(entity);
+                registry.Entities.RemoveComponent<AttributeSet>(entity);
             }
             return true;
         }

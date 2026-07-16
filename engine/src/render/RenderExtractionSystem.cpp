@@ -19,7 +19,7 @@ namespace
     }
 }
 
-void RenderExtractionSystem::Extract(const World& world,
+void RenderExtractionSystem::Extract(const EntityStore& world,
                                      const StaticMeshCache& meshes,
                                      const MaterialCache& materials,
                                      const MaterialSetCache& materialSets,

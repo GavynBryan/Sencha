@@ -22,7 +22,7 @@
 //
 // This is the seam that lets the editor's inspector draw and edit ANY component
 // — engine or game-module — by reading/writing scalars at offsets in the
-// component's raw bytes (World::GetComponentRaw), with NO ImGui dependency in
+// component's raw bytes (EntityStore::GetComponentRaw), with NO ImGui dependency in
 // the engine or in game modules. The editor owns all widget drawing; the engine
 // only describes the data. (docs/plans/sencha-level-editor/02-...md §5.3.)
 //=============================================================================

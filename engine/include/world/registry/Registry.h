@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include <core/ResourceStore.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <world/registry/RegistryId.h>
 #include <zone/ZoneId.h>
 
@@ -19,16 +19,16 @@ enum class RegistryKind : uint8_t
 struct Registry
 {
     Registry()
-        : Components(Resources)
+        : Entities(Resources)
     {
-        Components.AdvanceFrame();
+        Entities.AdvanceFrame();
     }
 
     Registry(RegistryId id, RegistryKind kind, ZoneId zone = {})
         : Id(id)
         , Kind(kind)
         , Zone(zone)
-        , Components(Resources)
+        , Entities(Resources)
     {
         assert((kind != RegistryKind::Global
                 || (id.IsGlobal() && !zone.IsValid()))
@@ -37,7 +37,7 @@ struct Registry
                 || (id.IsValid() && !id.IsGlobal() && zone.IsValid()))
                && "Zone registry requires a non-global id and a valid zone id");
 
-        Components.AdvanceFrame();
+        Entities.AdvanceFrame();
     }
 
     ~Registry() = default;
@@ -52,5 +52,5 @@ struct Registry
     ZoneId Zone;
 
     ResourceStore Resources;
-    World Components;
+    EntityStore Entities;
 };

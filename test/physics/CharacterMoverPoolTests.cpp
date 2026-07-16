@@ -1,12 +1,12 @@
 // CharacterMoverPool bridges CharacterController entities to CharacterMovers in a
 // dense pool (the character analogue of PhysicsScene). Tests drive it directly
-// with a bare ECS World; no engine frame harness, no Jolt headers.
+// with a bare ECS EntityStore; no engine frame harness, no Jolt headers.
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
@@ -19,13 +19,13 @@ namespace
 constexpr float kFixedDt = 1.0f / 60.0f;
 const Vec3d kGravity(0.0f, -9.81f, 0.0f);
 
-void SetUpPhysics(World& world)
+void SetUpPhysics(EntityStore& world)
 {
     world.RegisterComponent<LocalTransform>();
     RegisterPhysicsComponents(world);
 }
 
-EntityId SpawnCharacter(World& world, const Vec3d& position)
+EntityId SpawnCharacter(EntityStore& world, const Vec3d& position)
 {
     Transform3f t;
     t.Position = position;
@@ -50,7 +50,7 @@ TEST(CharacterMoverPool, CreatesLinkAndDrivesMoverOntoFloor)
     PhysicsWorld physics;
     AddStaticFloor(physics);
 
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 
@@ -76,7 +76,7 @@ TEST(CharacterMoverPool, PendingJumpSpeedLaunchesMoverUpward)
     PhysicsWorld physics;
     AddStaticFloor(physics);
 
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 
@@ -110,7 +110,7 @@ TEST(CharacterMoverPool, ReconcileGateHoldsWhenNothingStructuralChanged)
     PhysicsWorld physics;
     AddStaticFloor(physics);
 
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 
@@ -129,7 +129,7 @@ TEST(CharacterMoverPool, ReconcileGateHoldsWhenNothingStructuralChanged)
 TEST(CharacterMoverPool, ReleasesMoverWhenControllerRemoved)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 
@@ -146,7 +146,7 @@ TEST(CharacterMoverPool, ReleasesMoverWhenControllerRemoved)
 TEST(CharacterMoverPool, ReleasesMoverWhenEntityDestroyed)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 
@@ -162,7 +162,7 @@ TEST(CharacterMoverPool, ReleasesMoverWhenEntityDestroyed)
 TEST(CharacterMoverPool, SlotReusedAfterRelease)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     CharacterMoverPool pool(physics);
 

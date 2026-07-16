@@ -4,7 +4,7 @@
 #include <ecs/Chunk.h>
 #include <ecs/ComponentId.h>
 #include <ecs/QueryAccessors.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <array>
 #include <cassert>
@@ -93,7 +93,7 @@ class Query
 public:
     static constexpr size_t NAcc = sizeof...(Accessors);
 
-    explicit Query(const World& world) : W(&world)
+    explicit Query(const EntityStore& world) : W(&world)
     {
         BuildSignatures();
         RebuildMatchingArchetypes();
@@ -157,7 +157,7 @@ public:
 private:
     struct QueryScope
     {
-        explicit QueryScope(const World& world)
+        explicit QueryScope(const EntityStore& world)
             : Target(world)
         {
             Target.PushQueryScope();
@@ -168,7 +168,7 @@ private:
             Target.PopQueryScope();
         }
 
-        const World& Target;
+        const EntityStore& Target;
     };
 
     struct WriteVersionScope
@@ -196,7 +196,7 @@ private:
         uint32_t Frame;
     };
 
-    const World* W;
+    const EntityStore* W;
 
     ArchetypeSignature RequiredSig;
     ArchetypeSignature ExcludedSig;

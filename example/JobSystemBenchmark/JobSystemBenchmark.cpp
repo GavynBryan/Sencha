@@ -83,7 +83,7 @@ void PopulateZone(Registry& registry, uint32_t entityCount, std::vector<EntityId
         {
             EntityId child = CreateDefaultEntity(
                 registry, Transform3f(Vec3d(0.0f, 1.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
-            registry.Components.AddComponent(child, Parent{ root });
+            registry.Entities.AddComponent(child, Parent{ root });
         }
     }
 }
@@ -92,7 +92,7 @@ void DirtyRoots(Registry& registry, const std::vector<EntityId>& roots)
 {
     for (EntityId root : roots)
     {
-        if (LocalTransform* local = registry.Components.TryGet<LocalTransform>(root))
+        if (LocalTransform* local = registry.Entities.TryGet<LocalTransform>(root))
         {
             local->Value.Position.X += 0.001f;
         }

@@ -55,7 +55,7 @@ void AudioSystem::Update(AudioService* audio, std::span<Registry*> active)
 void AudioSystem::DriveRegistry(AudioService& audio, Registry& registry,
                                 std::vector<VoiceId>& playing)
 {
-    if (!registry.Components.IsRegistered<AudioSourceComponent>())
+    if (!registry.Entities.IsRegistered<AudioSourceComponent>())
         return;
 
     // The clip cache lives on the same per-registry resource the component
@@ -65,7 +65,7 @@ void AudioSystem::DriveRegistry(AudioService& audio, Registry& registry,
     if (clips == nullptr)
         return;
 
-    registry.Components.ForEachComponent<AudioSourceComponent>(
+    registry.Entities.ForEachComponent<AudioSourceComponent>(
         [&](EntityId, AudioSourceComponent& source)
     {
         const bool live = audio.IsPlaying(source.Voice) || audio.IsPaused(source.Voice);

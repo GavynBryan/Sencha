@@ -16,7 +16,7 @@ TEST(QueryScope, ThrowingCallbackReleasesStructuralMutationGuard)
 {
     EXPECT_EXIT(
         {
-            World world;
+            EntityStore world;
             world.RegisterComponent<QueryScopeProbe>();
 
             const EntityId entity = world.CreateEntity();
@@ -41,7 +41,7 @@ TEST(QueryScope, ThrowingCallbackReleasesStructuralMutationGuard)
 
 TEST(QueryScope, ThrowingWriteCallbackStillPublishesColumnVersion)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<QueryScopeProbe>();
 
     const EntityId entity = world.CreateEntity();
@@ -64,7 +64,7 @@ TEST(QueryScope, ThrowingWriteCallbackStillPublishesColumnVersion)
     }
 
     EXPECT_TRUE(threw);
-    const World& readWorld = world;
+    const EntityStore& readWorld = world;
     ASSERT_NE(readWorld.TryGet<QueryScopeProbe>(entity), nullptr);
     EXPECT_EQ(readWorld.TryGet<QueryScopeProbe>(entity)->Value, 9);
 

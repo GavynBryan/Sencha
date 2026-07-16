@@ -1,6 +1,6 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <gtest/gtest.h>
 
@@ -77,7 +77,7 @@ TEST(GameplayTagContainer, InvalidAndZeroStackAreNoOps)
 
 TEST(GameplayTagContainer, IntegratesAsEcsComponent)
 {
-    World world;
+    EntityStore world;
     world.RegisterComponent<GameplayTagContainer>();
     GameplayTagRegistry reg;
     const GameplayTagId burning = *reg.RegisterTag("State.Burning");

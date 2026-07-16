@@ -1,4 +1,4 @@
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <gtest/gtest.h>
 
@@ -11,13 +11,13 @@ SENCHA_DECLARE_COMPONENT_TYPE(StableB,   "test.stable_b");
 SENCHA_DECLARE_COMPONENT_TYPE(StableTag, "test.stable_tag");
 
 // A distinct C++ type that lies about sharing StableA's stable name with a
-// different storage layout — the cross-module aliasing case the World must catch.
+// different storage layout — the cross-module aliasing case the EntityStore must catch.
 struct StableAImpostor { double A = 0, B = 0, C = 0, D = 0; };
 SENCHA_DECLARE_COMPONENT_TYPE(StableAImpostor, "test.stable_a");
 
 TEST(WorldStableIdentity, RegisterLookupAddByStableName)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<StableA>();
     w.RegisterComponent<StableB>();
 
@@ -32,7 +32,7 @@ TEST(WorldStableIdentity, RegisterLookupAddByStableName)
 
 TEST(WorldStableIdentity, MetaCarriesStableIdentity)
 {
-    World w;
+    EntityStore w;
     const ComponentId id = w.RegisterComponent<StableA>();
     const ComponentMeta* meta = w.GetMeta(id);
     ASSERT_NE(meta, nullptr);
@@ -42,7 +42,7 @@ TEST(WorldStableIdentity, MetaCarriesStableIdentity)
 
 TEST(WorldStableIdentity, ArchetypeMovePreservesDataAcrossStableIds)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<StableA>();
     w.RegisterComponent<StableB>();
 
@@ -58,7 +58,7 @@ TEST(WorldStableIdentity, ArchetypeMovePreservesDataAcrossStableIds)
 
 TEST(WorldStableIdentity, TagComponentResolvesAndStores)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<StableTag>();
     const ComponentMeta* meta = w.GetMeta(w.GetComponentId<StableTag>());
     ASSERT_NE(meta, nullptr);
@@ -76,7 +76,7 @@ TEST(WorldStableIdentity, StorageContractConflictFires)
 #else
     EXPECT_DEATH(
         {
-            World w;
+            EntityStore w;
             w.RegisterComponent<StableA>();         // 4-byte layout
             w.RegisterComponent<StableAImpostor>(); // same stable name, 32-byte layout
         },

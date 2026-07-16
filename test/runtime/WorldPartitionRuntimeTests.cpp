@@ -95,7 +95,7 @@ protected:
         {
             const ZoneId zone = header.Id;
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             recipe.Finalize = [this, zone](Registry&)
             { Finalized.push_back({ zone, Zones.GetParticipation(zone) }); };
             return recipe;
@@ -473,7 +473,7 @@ TraversalRun RunScriptedTraversal(unsigned taskThreads)
             run.Events.push_back("issue:" + ZoneIdToString(header.Id));
             const ZoneId zone = header.Id;
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             recipe.Finalize = [&run, &zones, &currentX, zone](Registry&)
             {
                 run.Events.push_back("attach:" + ZoneIdToString(zone));
@@ -634,7 +634,7 @@ TEST(WorldPartitionTraversal, TraversalRunsFullTickBudget)
         [](const ZoneHeader&) -> ZoneLoadRecipe
         {
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             return recipe;
         },
         WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 0.1 });
@@ -681,7 +681,7 @@ TEST(WorldPartitionTraversal, TraversalNeighborIsVisibleBeforeCrossing)
         [](const ZoneHeader&) -> ZoneLoadRecipe
         {
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             return recipe;
         },
         WorldPartitionStreamingConfig{});
@@ -797,7 +797,7 @@ std::vector<ZoneId> DemandSetAt(WorldPartitionManifest manifest, ZoneId focus)
         [](const ZoneHeader&) -> ZoneLoadRecipe
         {
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             return recipe;
         },
         WorldPartitionStreamingConfig{});
@@ -864,7 +864,7 @@ TEST(WorldPartitionRegionStreaming, RegionHopOverrideOrdersDeepLoadsByRank)
         {
             issued.push_back(header.Id);
             ZoneLoadRecipe recipe;
-            recipe.Build = [](Registry& registry) { registry.Components.CreateEntity(); };
+            recipe.Build = [](Registry& registry) { registry.Entities.CreateEntity(); };
             return recipe;
         },
         WorldPartitionStreamingConfig{});   // base hop count stays 1

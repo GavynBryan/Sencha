@@ -1,7 +1,7 @@
 #include <physics/PhysicsRegistration.h>
 
 #include <app/EngineSchedule.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CharacterControllerSystem.h>
 #include <physics/PhysicsStepSystem.h>
 #include <physics/components/CharacterController.h>
@@ -17,7 +17,7 @@ void RegisterPhysics(EngineSchedule& schedule)
     schedule.After<CharacterControllerSystem, PhysicsStepSystem>();
 }
 
-void RegisterPhysicsComponents(World& world)
+void RegisterPhysicsComponents(EntityStore& world)
 {
     world.RegisterComponent<Collider>();
     world.RegisterComponent<RigidBody>();

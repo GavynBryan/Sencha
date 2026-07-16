@@ -5,7 +5,7 @@
 
 #include <ecs/CommandBuffer.h>
 #include <ecs/Query.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/CharacterMover.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
@@ -14,7 +14,7 @@
 
 namespace
 {
-Vec3d ReadPosition(const World& world, EntityId entity)
+Vec3d ReadPosition(const EntityStore& world, EntityId entity)
 {
     if (const LocalTransform* lt = world.TryGet<LocalTransform>(entity))
         return lt->Value.Position;
@@ -27,7 +27,7 @@ Vec3d ReadPosition(const World& world, EntityId entity)
 // Query.h and CharacterMover.h.
 struct CharacterMoverPool::State
 {
-    explicit State(World& world)
+    explicit State(EntityStore& world)
         : Commands(world)
         , Drive(world)
     {
@@ -77,21 +77,21 @@ size_t CharacterMoverPool::MoverCount() const
     return S ? S->Slots.size() - S->Free.size() : 0;
 }
 
-bool CharacterMoverPool::Ready(const World& world) const
+bool CharacterMoverPool::Ready(const EntityStore& world) const
 {
     return world.IsRegistered<CharacterController>()
         && world.IsRegistered<CharacterMoverLink>()
         && world.IsRegistered<LocalTransform>();
 }
 
-CharacterMoverPool::State& CharacterMoverPool::EnsureState(World& world)
+CharacterMoverPool::State& CharacterMoverPool::EnsureState(EntityStore& world)
 {
     if (!S)
         S = std::make_unique<State>(world);
     return *S;
 }
 
-void CharacterMoverPool::Reconcile(World& world)
+void CharacterMoverPool::Reconcile(EntityStore& world)
 {
     if (!Ready(world))
         return;
@@ -102,7 +102,7 @@ void CharacterMoverPool::Reconcile(World& world)
 
     State& state = EnsureState(world);
     ++ReconcileCount;
-    const World& readOnly = world;
+    const EntityStore& readOnly = world;
 
     // Create a mover for every controller that does not have one yet.
     readOnly.ForEachComponent<CharacterController>([&](EntityId entity, const CharacterController& controller)
@@ -137,7 +137,7 @@ void CharacterMoverPool::Reconcile(World& world)
     LastStructuralVersion = world.StructuralVersion(); // post-flush value
 }
 
-void CharacterMoverPool::Drive(World& world, float dt, const Vec3d& gravity)
+void CharacterMoverPool::Drive(EntityStore& world, float dt, const Vec3d& gravity)
 {
     if (!Ready(world) || !S)
         return;

@@ -13,7 +13,7 @@
 // World resource that caches a parent-before-child propagation order for the
 // transform hierarchy. Rebuilt lazily when either:
 //   - Changed<Parent> detects a hierarchy edit (parent added/removed/retargeted), or
-//   - World::StructuralVersion() differs from the version seen at last rebuild
+//   - EntityStore::StructuralVersion() differs from the version seen at last rebuild
 //     (any entity create/destroy or component add/remove can move rows and
 //     stale every cached pointer below — archetype count alone is NOT a
 //     sufficient key; see docs/ecs/decisions.md D4.4).

@@ -1,10 +1,10 @@
 // PhysicsScene bridges ECS entities (Collider + optional RigidBody + transform)
 // to bodies in the shared PhysicsWorld. Tests drive the bridge directly with a
-// bare ECS World; no engine frame harness, no Jolt headers.
+// bare ECS EntityStore; no engine frame harness, no Jolt headers.
 
 #include <gtest/gtest.h>
 
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsScene.h>
 #include <physics/PhysicsWorld.h>
@@ -19,13 +19,13 @@ constexpr float kFixedDt = 1.0f / 60.0f;
 
 // Registers the transform plus the full physics component set (colliders, rigid
 // bodies, and the runtime link components the bridge needs).
-void SetUpPhysics(World& world)
+void SetUpPhysics(EntityStore& world)
 {
     world.RegisterComponent<LocalTransform>();
     RegisterPhysicsComponents(world);
 }
 
-EntityId SpawnAt(World& world, const Vec3d& position)
+EntityId SpawnAt(EntityStore& world, const Vec3d& position)
 {
     Transform3f t;
     t.Position = position;
@@ -34,7 +34,7 @@ EntityId SpawnAt(World& world, const Vec3d& position)
     return e;
 }
 
-void Tick(PhysicsScene& scene, World& ecs, PhysicsWorld& physics, int steps)
+void Tick(PhysicsScene& scene, EntityStore& ecs, PhysicsWorld& physics, int steps)
 {
     for (int i = 0; i < steps; ++i)
     {
@@ -48,7 +48,7 @@ void Tick(PhysicsScene& scene, World& ecs, PhysicsWorld& physics, int steps)
 TEST(PhysicsScene, DynamicEntityRestsOnStaticFloor)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -70,7 +70,7 @@ TEST(PhysicsScene, DynamicEntityRestsOnStaticFloor)
 TEST(PhysicsScene, RemovingColliderRemovesBody)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -92,7 +92,7 @@ TEST(PhysicsScene, DestructorRemovesBodiesFromSharedWorld)
     PhysicsWorld physics;
 
     {
-        World ecs;
+        EntityStore ecs;
         SetUpPhysics(ecs);
         PhysicsScene scene(physics);
 
@@ -108,7 +108,7 @@ TEST(PhysicsScene, DestructorRemovesBodiesFromSharedWorld)
 TEST(PhysicsScene, KinematicBodyFollowsAuthoredTransform)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -133,7 +133,7 @@ TEST(PhysicsScene, KinematicBodyFollowsAuthoredTransform)
 TEST(PhysicsScene, ReconcileSkipsWhenNothingStructuralChanged)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -164,7 +164,7 @@ TEST(PhysicsScene, ReconcileSkipsWhenNothingStructuralChanged)
 TEST(PhysicsScene, BodyLinkTracksColliderLifetime)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -187,7 +187,7 @@ TEST(PhysicsScene, BodyLinkTracksColliderLifetime)
 TEST(PhysicsScene, DestroyingEntityRemovesBody)
 {
     PhysicsWorld physics;
-    World ecs;
+    EntityStore ecs;
     SetUpPhysics(ecs);
     PhysicsScene scene(physics);
 
@@ -209,7 +209,7 @@ TEST(PhysicsScene, DeterministicAcrossIdenticalRuns)
     auto run = [](Vec3d& out)
     {
         PhysicsWorld physics;
-        World ecs;
+        EntityStore ecs;
         SetUpPhysics(ecs);
         PhysicsScene scene(physics);
 

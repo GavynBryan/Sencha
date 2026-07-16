@@ -1,4 +1,4 @@
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 
 #include <gtest/gtest.h>
 
@@ -15,7 +15,7 @@ SENCHA_DECLARE_COMPONENT_TYPE(EditTarget, "test.edit_target");
 
 namespace
 {
-    std::vector<std::byte> Snapshot(const World& w, EntityId e, ComponentId id, std::size_t size)
+    std::vector<std::byte> Snapshot(const EntityStore& w, EntityId e, ComponentId id, std::size_t size)
     {
         const void* src = w.GetComponentRaw(e, id);
         std::vector<std::byte> bytes(size);
@@ -23,7 +23,7 @@ namespace
         return bytes;
     }
 
-    void ApplyRaw(World& w, EntityId e, ComponentId id, const std::vector<std::byte>& bytes)
+    void ApplyRaw(EntityStore& w, EntityId e, ComponentId id, const std::vector<std::byte>& bytes)
     {
         void* dst = w.GetComponentRaw(e, id);
         std::memcpy(dst, bytes.data(), bytes.size());
@@ -32,7 +32,7 @@ namespace
 
 TEST(TypeErasedComponentEdit, RawAccessRoundTripsByComponentId)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<EditTarget>();
     const EntityId e = w.CreateEntity();
     w.AddComponent<EditTarget>(e, { 1.5f, 7 });
@@ -49,7 +49,7 @@ TEST(TypeErasedComponentEdit, RawAccessRoundTripsByComponentId)
 
 TEST(TypeErasedComponentEdit, SnapshotMutateRestoreMatchesUndoRedo)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<EditTarget>();
     const EntityId e = w.CreateEntity();
     w.AddComponent<EditTarget>(e, { 1.5f, 7 });
@@ -80,7 +80,7 @@ TEST(TypeErasedComponentEdit, SnapshotMutateRestoreMatchesUndoRedo)
 
 TEST(TypeErasedComponentEdit, RawAccessIsNullForAbsentComponent)
 {
-    World w;
+    EntityStore w;
     w.RegisterComponent<EditTarget>();
     const EntityId e = w.CreateEntity(); // no component added
     EXPECT_EQ(w.GetComponentRaw(e, w.GetComponentId<EditTarget>()), nullptr);

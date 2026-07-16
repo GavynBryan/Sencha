@@ -3,7 +3,7 @@
 #include "FreeCamera.h"
 
 #include <core/json/JsonValue.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <ecs/EntityId.h>
 #include <render/Material.h>
 #include <render/static_mesh/StaticMeshHandle.h>

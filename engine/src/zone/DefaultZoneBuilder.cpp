@@ -41,9 +41,9 @@ void InitializeDefault3DRegistry(Registry& registry,
 
 EntityId CreateDefaultEntity(Registry& registry, const Transform3f& local)
 {
-    EntityId entity = registry.Components.CreateEntity();
-    registry.Components.AddComponent(entity, LocalTransform{ local });
-    registry.Components.AddComponent(entity, WorldTransform{ local });
+    EntityId entity = registry.Entities.CreateEntity();
+    registry.Entities.AddComponent(entity, LocalTransform{ local });
+    registry.Entities.AddComponent(entity, WorldTransform{ local });
     return entity;
 }
 
@@ -52,13 +52,13 @@ bool AddDefaultMeshRenderer(Registry& registry,
                             StaticMeshHandle mesh,
                             MaterialSetHandle materials)
 {
-    if (!registry.Components.IsAlive(entity)
-        || registry.Components.HasComponent<StaticMeshComponent>(entity))
+    if (!registry.Entities.IsAlive(entity)
+        || registry.Entities.HasComponent<StaticMeshComponent>(entity))
     {
         return false;
     }
 
-    registry.Components.AddComponent(entity, StaticMeshComponent{
+    registry.Entities.AddComponent(entity, StaticMeshComponent{
         .Mesh = mesh,
         .Materials = materials,
     });
@@ -70,13 +70,13 @@ bool AddDefaultCamera(Registry& registry,
                       const CameraComponent& camera,
                       bool makeActive)
 {
-    if (!registry.Components.IsAlive(entity)
-        || registry.Components.HasComponent<CameraComponent>(entity))
+    if (!registry.Entities.IsAlive(entity)
+        || registry.Entities.HasComponent<CameraComponent>(entity))
     {
         return false;
     }
 
-    registry.Components.AddComponent(entity, camera);
+    registry.Entities.AddComponent(entity, camera);
     if (makeActive)
         registry.Resources.Get<ActiveCameraService>().SetActive(entity);
     return true;

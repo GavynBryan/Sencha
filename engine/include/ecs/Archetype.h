@@ -34,7 +34,7 @@ struct Archetype
     std::vector<std::unique_ptr<Chunk>> Chunks;
 
     uint32_t RowsPerChunk = 0;
-    uint32_t Id           = 0; // index into World::ArchetypeList
+    uint32_t Id           = 0; // index into EntityStore::ArchetypeList
 
     // Build column layout from ComponentInfos (tags filtered out by zero Size).
     // Must be called once before creating any chunks.

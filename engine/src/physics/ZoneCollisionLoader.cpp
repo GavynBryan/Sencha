@@ -10,7 +10,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <ecs/ArchetypeSignature.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/components/Collider.h>
@@ -48,7 +48,7 @@ Vec3d ReadOrigin(const JsonValue& entry)
 }
 } // namespace
 
-int LoadZoneCollision(World& world,
+int LoadZoneCollision(EntityStore& world,
                       CollisionShapeCache& cache,
                       const std::string& sidecarPath,
                       const std::string& cookedRoot)

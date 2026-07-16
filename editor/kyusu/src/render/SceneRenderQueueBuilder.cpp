@@ -9,7 +9,7 @@
 #include <core/assets/AssetSystem.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <ecs/World.h>
+#include <ecs/EntityStore.h>
 #include <render/MaterialSetCache.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
@@ -184,7 +184,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     PlacedMeshes.Reset();
 
     const EditorScene& scene = document.GetScene();
-    const World& world = scene.GetRegistry().Components;
+    const EntityStore& world = scene.GetRegistry().Entities;
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))
@@ -239,7 +239,7 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
     SceneLights.Reset();
 
     const EditorScene& scene = document.GetScene();
-    const World& world = scene.GetRegistry().Components;
+    const EntityStore& world = scene.GetRegistry().Entities;
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))

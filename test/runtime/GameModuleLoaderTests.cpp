@@ -65,9 +65,9 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     // by its stable identity, with no host-side type name.
     Registry registry;
     s->RegisterStorage(registry);
-    const ComponentId id = registry.Components.GetComponentIdByType(s->TypeId());
+    const ComponentId id = registry.Entities.GetComponentIdByType(s->TypeId());
     ASSERT_NE(id, InvalidComponentId);
-    const ComponentMeta* meta = registry.Components.GetMeta(id);
+    const ComponentMeta* meta = registry.Entities.GetMeta(id);
     ASSERT_NE(meta, nullptr);
     EXPECT_EQ(meta->TypeId, MakeComponentTypeId("spike.grapple_hook"));
 
@@ -76,7 +76,7 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     LoggingProvider logging;
     SceneSerializationContext sctx{ logging };
 
-    const EntityId e = registry.Components.CreateEntity();
+    const EntityId e = registry.Entities.CreateEntity();
     auto parsed = JsonParse(R"({"anchor_x":1.0,"anchor_y":2.0,"anchor_z":3.0,"length":7.5})");
     ASSERT_TRUE(parsed.has_value());
     JsonReadArchive in{ *parsed };
@@ -150,7 +150,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
 
     LoggingProvider logging;
     SceneSerializationContext sctx{ logging };
-    const EntityId e = source.Components.CreateEntity();
+    const EntityId e = source.Entities.CreateEntity();
     auto parsed = JsonParse(R"({"anchor_x":1.0,"anchor_y":2.0,"anchor_z":3.0,"length":7.5})");
     ASSERT_TRUE(parsed.has_value());
     JsonReadArchive in{ *parsed };
@@ -163,12 +163,12 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     ASSERT_TRUE(LoadSceneJson(scene, loaded, &loadError)) << loadError.Message;
 
     // The game component came back, by its module-stable identity.
-    const ComponentId id = loaded.Components.GetComponentIdByType(gs->TypeId());
+    const ComponentId id = loaded.Entities.GetComponentIdByType(gs->TypeId());
     ASSERT_NE(id, InvalidComponentId);
     bool found = false;
-    for (const EntityId entity : loaded.Components.GetAliveEntities())
+    for (const EntityId entity : loaded.Entities.GetAliveEntities())
     {
-        if (loaded.Components.HasComponent(entity, id))
+        if (loaded.Entities.HasComponent(entity, id))
         {
             found = true;
             JsonWriteArchive out;

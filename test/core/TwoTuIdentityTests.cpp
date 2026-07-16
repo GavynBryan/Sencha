@@ -11,7 +11,7 @@ TEST(TwoTuIdentity, IdentityIndependentOfInstantiationSite)
 
 TEST(TwoTuIdentity, RegisterInOneUnitLookUpInAnother)
 {
-    World world;
+    EntityStore world;
 
     // Registered by the OTHER translation unit...
     const ComponentId idFromOtherUnit = RegisterTwoTuComponentInOtherUnit(world);

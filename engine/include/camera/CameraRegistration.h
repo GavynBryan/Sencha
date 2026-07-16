@@ -1,6 +1,6 @@
 #pragma once
 
-class World;
+class EntityStore;
 class EngineSchedule;
 
 //=============================================================================
@@ -10,6 +10,6 @@ class EngineSchedule;
 // places the active camera from it. A game that drives its own camera skips both.
 //=============================================================================
 
-void RegisterCameraComponents(World& world);
+void RegisterCameraComponents(EntityStore& world);
 
 void RegisterCameraSystem(EngineSchedule& schedule);

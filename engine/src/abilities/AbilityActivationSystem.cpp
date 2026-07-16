@@ -24,6 +24,6 @@ void AbilityActivationSystem::FixedLogic(FixedLogicContext& ctx)
         AbilityActivationQueue* queue = reg->Resources.TryGet<AbilityActivationQueue>();
         if (queue == nullptr)
             continue;
-        ProcessAbilityActivations(reg->Components, *queue, abilities, tags, effects, attributes);
+        ProcessAbilityActivations(reg->Entities, *queue, abilities, tags, effects, attributes);
     }
 }

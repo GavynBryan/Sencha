@@ -123,8 +123,8 @@ public:
 
     bool HasComponent(EntityId entity, const Registry& registry) const override
     {
-        return registry.Components.IsRegistered<Component>()
-            && registry.Components.HasComponent<Component>(entity);
+        return registry.Entities.IsRegistered<Component>()
+            && registry.Entities.HasComponent<Component>(entity);
     }
 
     bool Save(IWriteArchive& archive,
@@ -132,8 +132,8 @@ public:
               const Registry& registry,
               SceneSerializationContext& context) const override
     {
-        const Component* component = registry.Components.IsRegistered<Component>()
-            ? registry.Components.TryGet<Component>(entity)
+        const Component* component = registry.Entities.IsRegistered<Component>()
+            ? registry.Entities.TryGet<Component>(entity)
             : nullptr;
         if (!component)
             return true;
@@ -155,12 +155,12 @@ public:
 
     bool Remove(EntityId entity, Registry& registry) const override
     {
-        if (!registry.Components.IsRegistered<Component>()
-            || !registry.Components.HasComponent<Component>(entity))
+        if (!registry.Entities.IsRegistered<Component>()
+            || !registry.Entities.HasComponent<Component>(entity))
         {
             return true;
         }
-        registry.Components.RemoveComponent<Component>(entity);
+        registry.Entities.RemoveComponent<Component>(entity);
         return true;
     }
 };

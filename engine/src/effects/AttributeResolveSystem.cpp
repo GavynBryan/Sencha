@@ -13,5 +13,5 @@ void AttributeResolveSystem::FixedLogic(FixedLogicContext& ctx)
     const auto& attributes = global.Resources.Get<AttributeRegistry>();
 
     for (Registry* reg : ctx.ActiveRegistries)
-        ResolveAttributesWithEffects(reg->Components, effects, attributes);
+        ResolveAttributesWithEffects(reg->Entities, effects, attributes);
 }
