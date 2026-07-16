@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/Mat.h>
 #include <math/Vec.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -31,6 +32,20 @@ struct GpuLight
 static_assert(sizeof(GpuLight) == 64, "GpuLight must match the std140 light record");
 
 inline constexpr std::uint32_t kMaxForwardLights = 64;
+inline constexpr std::uint32_t kMaxSpotShadows = 16;
+inline constexpr std::uint32_t kSpotShadowAtlasExtent = 2048;
+inline constexpr std::uint32_t kSpotShadowTileExtent = 512;
+inline constexpr std::uint32_t kSpotShadowGuardTexels = 8;
+inline constexpr std::uint32_t kSpotShadowInnerExtent =
+    kSpotShadowTileExtent - 2u * kSpotShadowGuardTexels;
+
+struct SpotShadowView
+{
+    Mat4 ViewProjection = Mat4::Identity();
+    Vec4 AtlasScaleBias;
+    Vec4 BiasSoftness;
+    std::uint32_t LightIndex = UINT32_MAX;
+};
 
 [[nodiscard]] inline GpuLight MakePointGpuLight(
     const Vec<3>& worldPosition, const PointLightComponent& light)
@@ -84,24 +99,32 @@ struct RenderLightSet
 
     std::uint32_t Count = 0;
     GpuLight Lights[kMaxForwardLights];
+    std::uint32_t SpotShadowCount = 0;
+    SpotShadowView SpotShadows[kMaxSpotShadows];
 
-    void Reset() { Count = 0; }
-
-    void Add(const GpuLight& light)
+    void Reset()
     {
-        if (Count < kMaxForwardLights)
-            Lights[Count++] = light;
+        Count = 0;
+        SpotShadowCount = 0;
+    }
+
+    [[nodiscard]] std::uint32_t Add(const GpuLight& light)
+    {
+        if (Count >= kMaxForwardLights)
+            return UINT32_MAX;
+        Lights[Count] = light;
+        return Count++;
     }
 
     void AddPoint(const Vec<3>& worldPosition, const PointLightComponent& light)
     {
-        Add(MakePointGpuLight(worldPosition, light));
+        (void)Add(MakePointGpuLight(worldPosition, light));
     }
 
     void AddSpot(const Vec<3>& worldPosition,
                  const Vec<3>& worldDirection,
                  const SpotLightComponent& light)
     {
-        Add(MakeSpotGpuLight(worldPosition, worldDirection, light));
+        (void)Add(MakeSpotGpuLight(worldPosition, worldDirection, light));
     }
 };
