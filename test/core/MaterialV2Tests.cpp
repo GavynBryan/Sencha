@@ -35,22 +35,43 @@ TEST(MaterialV2, CurrentVersionUsesStandardLitDefaults)
     ASSERT_TRUE(ParseMaterialJson(ParseMaterialText(R"({"version": 2})"),
                                   description, &error)) << error.Message;
 
+    EXPECT_EQ(description.Shading, MaterialShading::StandardLit);
     EXPECT_FLOAT_EQ(description.SpecularIntensity, 0.5f);
     EXPECT_FLOAT_EQ(description.EmissiveStrength, 1.0f);
+    EXPECT_FALSE(description.DoubleSided);
+    EXPECT_TRUE(description.ReceiveShadows);
+    EXPECT_TRUE(description.CastShadows);
 }
 
-TEST(MaterialV2, ParsesStandardLitFields)
+TEST(MaterialV2, ParsesCompleteMaterialFields)
 {
     MaterialDescription description;
     MaterialParseError error;
     ASSERT_TRUE(ParseMaterialJson(ParseMaterialText(R"({
         "version": 2,
+        "shading": "unlit",
         "specular_factor": 0.25,
-        "emissive_strength": 4.0
+        "emissive_strength": 4.0,
+        "double_sided": true,
+        "receive_shadows": false,
+        "cast_shadows": false
     })"), description, &error)) << error.Message;
 
+    EXPECT_EQ(description.Shading, MaterialShading::Unlit);
     EXPECT_FLOAT_EQ(description.SpecularIntensity, 0.25f);
     EXPECT_FLOAT_EQ(description.EmissiveStrength, 4.0f);
+    EXPECT_TRUE(description.DoubleSided);
+    EXPECT_FALSE(description.ReceiveShadows);
+    EXPECT_FALSE(description.CastShadows);
+}
+
+TEST(MaterialV2, RejectsUnknownShading)
+{
+    MaterialDescription description;
+    EXPECT_FALSE(ParseMaterialJson(ParseMaterialText(R"({
+        "version": 2,
+        "shading": "lit_but_spooky"
+    })"), description));
 }
 
 TEST(MaterialV2, ValidatesStandardLitFieldRanges)
@@ -66,11 +87,15 @@ TEST(MaterialV2, ValidatesStandardLitFieldRanges)
     })"), description));
 }
 
-TEST(MaterialV2, WriterRoundTripsStandardLitFields)
+TEST(MaterialV2, WriterRoundTripsCompleteMaterialFields)
 {
     MaterialDescription written;
+    written.Shading = MaterialShading::Unlit;
     written.SpecularIntensity = 0.7f;
     written.EmissiveStrength = 3.5f;
+    written.DoubleSided = true;
+    written.ReceiveShadows = false;
+    written.CastShadows = false;
 
     const JsonValue json = WriteMaterialJson(written);
     const JsonValue* version = json.Find("version");
@@ -80,6 +105,10 @@ TEST(MaterialV2, WriterRoundTripsStandardLitFields)
     MaterialDescription parsed;
     MaterialParseError error;
     ASSERT_TRUE(ParseMaterialJson(json, parsed, &error)) << error.Message;
+    EXPECT_EQ(parsed.Shading, MaterialShading::Unlit);
     EXPECT_FLOAT_EQ(parsed.SpecularIntensity, 0.7f);
     EXPECT_FLOAT_EQ(parsed.EmissiveStrength, 3.5f);
+    EXPECT_TRUE(parsed.DoubleSided);
+    EXPECT_FALSE(parsed.ReceiveShadows);
+    EXPECT_FALSE(parsed.CastShadows);
 }
