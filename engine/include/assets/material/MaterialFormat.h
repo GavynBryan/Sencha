@@ -15,6 +15,8 @@
 //=============================================================================
 struct MaterialDescription
 {
+    MaterialShading Shading = MaterialShading::StandardLit;
+
     Vec4 BaseColorFactor = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
     AssetRef BaseColorTexture;
 
@@ -32,6 +34,9 @@ struct MaterialDescription
 
     MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
     float AlphaCutoff = 0.5f;
+    bool DoubleSided = false;
+    bool ReceiveShadows = true;
+    bool CastShadows = true;
 };
 
 inline constexpr uint32_t kSmatVersion = 2;
