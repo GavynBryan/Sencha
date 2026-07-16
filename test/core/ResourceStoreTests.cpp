@@ -63,8 +63,8 @@ namespace
 
 static_assert(!std::is_copy_constructible_v<ResourceStore>);
 static_assert(!std::is_copy_assignable_v<ResourceStore>);
-static_assert(std::is_nothrow_move_constructible_v<ResourceStore>);
-static_assert(std::is_nothrow_move_assignable_v<ResourceStore>);
+static_assert(!std::is_move_constructible_v<ResourceStore>);
+static_assert(!std::is_move_assignable_v<ResourceStore>);
 
 TEST(ResourceStore, RegisterAndGet)
 {
@@ -158,30 +158,3 @@ TEST(ResourceStore, LaterResourceCanReachEarlierResourceDuringDestruction)
     EXPECT_TRUE(sawAnchor);
 }
 
-TEST(ResourceStore, MoveConstructionTransfersOwnershipAndLookup)
-{
-    ResourceStore source;
-    PlainResource& original = source.Register<PlainResource>(17);
-
-    ResourceStore target(std::move(source));
-
-    EXPECT_EQ(source.TryGet<PlainResource>(), nullptr);
-    EXPECT_EQ(&target.Get<PlainResource>(), &original);
-    EXPECT_EQ(target.Get<PlainResource>().Value, 17);
-}
-
-TEST(ResourceStore, MoveAssignmentClearsTargetBeforeTransfer)
-{
-    std::vector<int> order;
-    ResourceStore source;
-    source.Register<PlainResource>(23);
-
-    ResourceStore target;
-    target.Register<DestructionResource<1>>(order);
-    target = std::move(source);
-
-    ASSERT_EQ(order.size(), 1u);
-    EXPECT_EQ(order[0], 1);
-    EXPECT_EQ(source.TryGet<PlainResource>(), nullptr);
-    EXPECT_EQ(target.Get<PlainResource>().Value, 23);
-}

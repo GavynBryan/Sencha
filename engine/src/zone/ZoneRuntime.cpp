@@ -6,7 +6,7 @@
 #include <span>
 
 ZoneRuntime::ZoneRuntime()
-    : GlobalRegistry(std::make_unique<Registry>(MakeGlobalRegistry(RegistryId::Global())))
+    : GlobalRegistry(std::make_unique<Registry>(RegistryId::Global(), RegistryKind::Global))
 {
 }
 
@@ -32,7 +32,7 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
     InvalidateFrameScratch();
 
     const RegistryId registryId = AllocateRegistryId();
-    auto registry = std::make_unique<Registry>(MakeZoneRegistry(registryId, zone));
+    auto registry = std::make_unique<Registry>(registryId, RegistryKind::Zone, zone);
 
     auto loaded = std::make_unique<LoadedZone>();
     loaded->Zone = zone;

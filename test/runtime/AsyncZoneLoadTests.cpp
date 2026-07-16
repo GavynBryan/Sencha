@@ -45,7 +45,7 @@ TEST(ZoneRuntimeAttach, DetachedRegistryAttachesAndIsVisible)
     const ZoneId zone{ 7 };
 
     const RegistryId reserved = zones.ReserveRegistryId();
-    auto registry = std::make_unique<Registry>(MakeZoneRegistry(reserved, zone));
+    auto registry = std::make_unique<Registry>(reserved, RegistryKind::Zone, zone);
     BuildTestZone(*registry, 16);
 
     EXPECT_FALSE(zones.IsZoneLoaded(zone));
@@ -70,7 +70,7 @@ TEST(ZoneRuntimeAttach, ReservedIdsNeverCollideWithCreateZone)
     Registry& created = zones.CreateZone(ZoneId{ 1 });
     EXPECT_NE(created.Id, reserved);
 
-    auto registry = std::make_unique<Registry>(MakeZoneRegistry(reserved, ZoneId{ 2 }));
+    auto registry = std::make_unique<Registry>(reserved, RegistryKind::Zone, ZoneId{ 2 });
     Registry& attached = zones.AttachZone(std::move(registry));
     EXPECT_NE(attached.Id, created.Id);
     EXPECT_EQ(zones.ZoneCount(), 2u);

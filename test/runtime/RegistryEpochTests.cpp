@@ -4,6 +4,8 @@
 #include <world/registry/Registry.h>
 #include <zone/ZoneRuntime.h>
 
+#include <type_traits>
+
 struct RegistryEpochMarker
 {
     int Value = 0;
@@ -11,16 +13,30 @@ struct RegistryEpochMarker
 
 SENCHA_DECLARE_COMPONENT_TYPE(RegistryEpochMarker, "test.registry_epoch_marker");
 
+static_assert(!std::is_copy_constructible_v<Registry>);
+static_assert(!std::is_copy_assignable_v<Registry>);
+static_assert(!std::is_move_constructible_v<Registry>);
+static_assert(!std::is_move_assignable_v<Registry>);
+
+TEST(RegistryIdentity, DefaultRegistryIsTransient)
+{
+    Registry registry;
+
+    EXPECT_EQ(registry.Kind, RegistryKind::Transient);
+    EXPECT_FALSE(registry.Id.IsValid());
+    EXPECT_FALSE(registry.Zone.IsValid());
+}
+
 TEST(RegistryEpoch, RuntimeRegistryStartsAtOne)
 {
-    Registry registry = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
+    Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
 
     EXPECT_EQ(registry.Components.CurrentFrame(), 1u);
 }
 
 TEST(RegistryEpoch, InitialComponentWriteIsVisibleToChangedFilter)
 {
-    Registry registry = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
+    Registry registry(RegistryId{ 2, 1 }, RegistryKind::Zone, ZoneId{ 1 });
     registry.Components.RegisterComponent<RegistryEpochMarker>();
 
     const EntityId entity = registry.Components.CreateEntity();

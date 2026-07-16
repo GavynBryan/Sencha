@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-// Type-indexed owner for state attached to one runtime Registry.
+// Type-indexed owner for state attached to one Registry.
 // Registration order defines dependency order: later resources are destroyed first.
 class ResourceStore
 {
@@ -17,27 +17,8 @@ public:
 
     ResourceStore(const ResourceStore&) = delete;
     ResourceStore& operator=(const ResourceStore&) = delete;
-
-    ResourceStore(ResourceStore&& other) noexcept
-        : Lookup(std::move(other.Lookup))
-        , Ownership(std::move(other.Ownership))
-    {
-        other.Lookup.clear();
-        other.Ownership.clear();
-    }
-
-    ResourceStore& operator=(ResourceStore&& other) noexcept
-    {
-        if (this != &other)
-        {
-            Clear();
-            Lookup = std::move(other.Lookup);
-            Ownership = std::move(other.Ownership);
-            other.Lookup.clear();
-            other.Ownership.clear();
-        }
-        return *this;
-    }
+    ResourceStore(ResourceStore&&) = delete;
+    ResourceStore& operator=(ResourceStore&&) = delete;
 
     template <typename T, typename... Args>
     T& Register(Args&&... args)
@@ -47,17 +28,25 @@ public:
         assert(existing == Lookup.end()
                && "ResourceStore: duplicate resource registration for this type");
         if (existing != Lookup.end())
-            return static_cast<Model<T>&>(*existing->second).Value;
+            return *static_cast<T*>(existing->second);
 
-        auto model = std::make_unique<Model<T>>(std::forward<Args>(args)...);
-        T* value = &model->Value;
-        Concept* erased = model.get();
-        Ownership.push_back(std::move(model));
+        auto resource = std::make_unique<T>(std::forward<Args>(args)...);
+        T* value = resource.get();
+        Ownership.push_back(Entry{
+            type,
+            value,
+            [](void* pointer) { delete static_cast<T*>(pointer); },
+        });
 
         try
         {
-            const bool inserted = Lookup.emplace(type, erased).second;
+            auto [it, inserted] = Lookup.emplace(type, value);
             assert(inserted && "ResourceStore: failed to index registered resource");
+            if (!inserted)
+            {
+                Ownership.pop_back();
+                return *static_cast<T*>(it->second);
+            }
         }
         catch (...)
         {
@@ -65,6 +54,7 @@ public:
             throw;
         }
 
+        resource.release();
         return *value;
     }
 
@@ -96,14 +86,14 @@ public:
     T* TryGet()
     {
         auto it = Lookup.find(std::type_index(typeid(T)));
-        return it != Lookup.end() ? &static_cast<Model<T>&>(*it->second).Value : nullptr;
+        return it != Lookup.end() ? static_cast<T*>(it->second) : nullptr;
     }
 
     template <typename T>
     const T* TryGet() const
     {
         auto it = Lookup.find(std::type_index(typeid(T)));
-        return it != Lookup.end() ? &static_cast<const Model<T>&>(*it->second).Value : nullptr;
+        return it != Lookup.end() ? static_cast<const T*>(it->second) : nullptr;
     }
 
     template <typename T>
@@ -116,11 +106,10 @@ public:
     {
         for (auto it = Ownership.rbegin(); it != Ownership.rend(); ++it)
         {
-            if (*it == nullptr)
-                continue;
-
-            Lookup.erase((*it)->Type);
-            it->reset();
+            Lookup.erase(it->Type);
+            if (it->Value != nullptr && it->Destroy != nullptr)
+                it->Destroy(it->Value);
+            it->Value = nullptr;
         }
 
         Ownership.clear();
@@ -129,31 +118,13 @@ public:
     }
 
 private:
-    struct Concept
+    struct Entry
     {
-        explicit Concept(std::type_index type)
-            : Type(type)
-        {
-        }
-
-        virtual ~Concept() = default;
-
         std::type_index Type;
+        void* Value = nullptr;
+        void (*Destroy)(void*) = nullptr;
     };
 
-    template <typename T>
-    struct Model final : Concept
-    {
-        template <typename... Args>
-        explicit Model(Args&&... args)
-            : Concept(std::type_index(typeid(T)))
-            , Value(std::forward<Args>(args)...)
-        {
-        }
-
-        T Value;
-    };
-
-    std::unordered_map<std::type_index, Concept*> Lookup;
-    std::vector<std::unique_ptr<Concept>> Ownership;
+    std::unordered_map<std::type_index, void*> Lookup;
+    std::vector<Entry> Ownership;
 };

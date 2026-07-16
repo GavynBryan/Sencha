@@ -44,7 +44,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(ZoneId zone, BuildFn build, FinalizeF
         // the task — so the build needs no synchronization.
         [registryId, zone, build = std::move(build)]() -> std::unique_ptr<Registry>
         {
-            auto registry = std::make_unique<Registry>(MakeZoneRegistry(registryId, zone));
+            auto registry = std::make_unique<Registry>(registryId, RegistryKind::Zone, zone);
             build(*registry);
             return registry;
         },
