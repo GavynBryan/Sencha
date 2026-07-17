@@ -9,6 +9,9 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <shaders/kMeshForwardFragSpv.h>
 #include <shaders/kMeshForwardVertSpv.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <shaders/kMeshDebugViewFragSpv.h>
+#endif
 
 #include <cstddef>
 #include <cstring>
@@ -39,6 +42,7 @@ static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
 static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
 static_assert(offsetof(MeshFrameUniforms, PointShadowCount) == 5024);
 static_assert(offsetof(MeshFrameUniforms, PointShadows) == 5040);
+static_assert(offsetof(MeshFrameUniforms, DebugView) == 5168);
 static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
 static_assert(offsetof(GpuSpotShadow, AtlasScaleBias) == 64);
@@ -46,7 +50,7 @@ static_assert(offsetof(GpuSpotShadow, SamplingParams) == 80);
 static_assert(sizeof(GpuPointShadow) == 32);
 static_assert(offsetof(GpuPointShadow, PositionFar) == 0);
 static_assert(offsetof(GpuPointShadow, Params) == 16);
-static_assert(sizeof(MeshFrameUniforms) == 5168);
+static_assert(sizeof(MeshFrameUniforms) == 5184);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -69,6 +73,11 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
     FragmentShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardFragSpv, kMeshForwardFragSpvWordCount, "Mesh forward fragment");
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    DebugFragmentShader = Shaders->CreateModuleFromSpirv(
+        kMeshDebugViewFragSpv, kMeshDebugViewFragSpvWordCount,
+        "Mesh debug-view fragment");
+#endif
 
     // Without valid lighting bindings there is no legal set-2 layout to
     // build against; leaving PipelineLayout null keeps Draw inert.
@@ -164,6 +173,92 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
     return true;
 }
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
+                                           bool overdraw)
+{
+    std::array<VkPipeline, 2>& pipelines = overdraw
+        ? OverdrawPipelines
+        : DebugPipelines;
+    VkFormat& cachedColor = overdraw
+        ? CachedOverdrawColorFormat
+        : CachedDebugColorFormat;
+    VkFormat& cachedDepth = overdraw
+        ? CachedOverdrawDepthFormat
+        : CachedDebugDepthFormat;
+
+    bool complete = true;
+    for (VkPipeline pipeline : pipelines)
+        complete = complete && pipeline != VK_NULL_HANDLE;
+    if (complete
+        && cachedColor == frame.TargetFormat
+        && cachedDepth == frame.DepthFormat)
+    {
+        return true;
+    }
+
+    GraphicsPipelineDesc base{};
+    base.VertexShader = VertexShader;
+    base.FragmentShader = DebugFragmentShader;
+    base.Layout = PipelineLayout;
+    base.VertexBindings = {
+        { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
+        { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
+    };
+    base.VertexAttributes = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
+        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
+        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
+        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
+        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
+        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
+        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+        { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
+    };
+    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    base.DepthTest = !overdraw;
+    base.DepthWrite = !overdraw;
+    base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+    ColorBlendAttachmentDesc blend{};
+    if (overdraw)
+    {
+        blend.BlendEnable = true;
+        blend.SrcColor = VK_BLEND_FACTOR_ONE;
+        blend.DstColor = VK_BLEND_FACTOR_ONE;
+        blend.SrcAlpha = VK_BLEND_FACTOR_ZERO;
+        blend.DstAlpha = VK_BLEND_FACTOR_ONE;
+    }
+    base.ColorBlend = { blend };
+    base.ColorFormats = { frame.TargetFormat };
+    base.DepthFormat = frame.DepthFormat;
+
+    static constexpr const char* kDebugNames[2] = {
+        "Forward/DebugBack",
+        "Forward/DebugDoubleSided",
+    };
+    static constexpr const char* kOverdrawNames[2] = {
+        "Forward/OverdrawBack",
+        "Forward/OverdrawDoubleSided",
+    };
+    for (std::uint32_t index = 0; index < pipelines.size(); ++index)
+    {
+        GraphicsPipelineDesc desc = base;
+        desc.CullMode = index == 0 ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        pipelines[index] = Pipelines->GetGraphicsPipeline(desc);
+        if (pipelines[index] == VK_NULL_HANDLE)
+            return false;
+        VulkanDebugLabels::NameObject(
+            Device, VK_OBJECT_TYPE_PIPELINE,
+            reinterpret_cast<std::uint64_t>(pipelines[index]),
+            overdraw ? kOverdrawNames[index] : kDebugNames[index]);
+    }
+
+    cachedColor = frame.TargetFormat;
+    cachedDepth = frame.DepthFormat;
+    return true;
+}
+#endif
+
 std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     const CameraRenderData& camera, const RenderLightSet& lights)
 {
@@ -209,6 +304,10 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
         uniforms.PointShadows[index].Params =
             lights.PointShadows[index].Params;
     }
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    uniforms.DebugView = static_cast<std::uint32_t>(lights.DebugView);
+#endif
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
     if (!allocation.IsValid())
@@ -278,10 +377,28 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
             continue;
 
-        const uint32_t pipelineIndex = static_cast<uint32_t>(item.Pipeline);
-        if (pipelineIndex >= OpaquePipelines.size())
+        uint32_t pipelineIndex = static_cast<uint32_t>(item.Pipeline);
+        const VkPipeline* pipelineSet = OpaquePipelines.data();
+        std::size_t pipelineCount = OpaquePipelines.size();
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        if (ActiveDebugView != RenderDebugView::None)
+        {
+            pipelineIndex &= 1u;
+            if (ActiveDebugView == RenderDebugView::Overdraw)
+            {
+                pipelineSet = OverdrawPipelines.data();
+                pipelineCount = OverdrawPipelines.size();
+            }
+            else
+            {
+                pipelineSet = DebugPipelines.data();
+                pipelineCount = DebugPipelines.size();
+            }
+        }
+#endif
+        if (pipelineIndex >= pipelineCount)
             continue;
-        const VkPipeline pipeline = OpaquePipelines[pipelineIndex];
+        const VkPipeline pipeline = pipelineSet[pipelineIndex];
         if (pipeline != lastPipeline)
         {
             vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -348,8 +465,22 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         return;
     if (queue.OpaqueOrder().empty())
         return;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ActiveDebugView = lights.DebugView;
+    if (ActiveDebugView == RenderDebugView::None)
+    {
+        if (!EnsurePipelines(frame))
+            return;
+    }
+    else if (!EnsureDebugPipelines(
+                 frame, ActiveDebugView == RenderDebugView::Overdraw))
+    {
+        return;
+    }
+#else
     if (!EnsurePipelines(frame))
         return;
+#endif
 
     const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
     if (!uniformOffset.has_value())
@@ -358,6 +489,19 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         return;
 
     BindFrameState(frame, *uniformOffset);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (ActiveDebugView == RenderDebugView::Overdraw)
+    {
+        VkClearAttachment clear{};
+        clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        clear.colorAttachment = 0;
+
+        VkClearRect rect{};
+        rect.rect.extent = frame.TargetExtent;
+        rect.layerCount = 1;
+        vkCmdClearAttachments(frame.Cmd, 1, &clear, 1, &rect);
+    }
+#endif
     DrawRuns(frame, queue, meshes, materials, tint);
 }
 
@@ -367,10 +511,25 @@ void MeshForwardPass::Teardown()
     {
         Shaders->Destroy(VertexShader);
         Shaders->Destroy(FragmentShader);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        Shaders->Destroy(DebugFragmentShader);
+#endif
     }
     VertexShader = {};
     FragmentShader = {};
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    DebugFragmentShader = {};
+#endif
     OpaquePipelines.fill(VK_NULL_HANDLE);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    DebugPipelines.fill(VK_NULL_HANDLE);
+    OverdrawPipelines.fill(VK_NULL_HANDLE);
+    ActiveDebugView = RenderDebugView::None;
+    CachedDebugColorFormat = VK_FORMAT_UNDEFINED;
+    CachedDebugDepthFormat = VK_FORMAT_UNDEFINED;
+    CachedOverdrawColorFormat = VK_FORMAT_UNDEFINED;
+    CachedOverdrawDepthFormat = VK_FORMAT_UNDEFINED;
+#endif
     if (PipelineLayout != VK_NULL_HANDLE && Device != VK_NULL_HANDLE)
         vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
     PipelineLayout = VK_NULL_HANDLE;

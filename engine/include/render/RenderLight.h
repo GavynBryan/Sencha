@@ -5,6 +5,9 @@
 #include <math/geometry/3d/Sphere.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/PointLightComponent.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <render/RenderDebugView.h>
+#endif
 #include <render/SpotLightComponent.h>
 
 #include <algorithm>
@@ -294,6 +297,9 @@ struct RenderLightSet
     float ShadowSoftness = 1.0f;
     float ShadowBiasConstant = 4.0f;
     float ShadowBiasSlope = 2.0f;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    RenderDebugView DebugView = RenderDebugView::None;
+#endif
 
     std::uint32_t Count = 0;
     GpuLight Lights[kMaxForwardLights];

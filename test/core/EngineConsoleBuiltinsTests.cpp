@@ -105,9 +105,32 @@ TEST(EngineConsoleBuiltins, ProfileModeCVarWritesThePendingModeAndIgnoresUnknown
     EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "off" },
                                  { "test" }, ConsolePhase::EngineReady).Succeeded());
     EXPECT_EQ(pending, RenderProfileMode::Off);
+#ifndef SENCHA_ENABLE_RENDER_PROFILING
+    EXPECT_EQ(registry.FindCVar("render.debug.view"), nullptr);
+#endif
 }
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+TEST(EngineConsoleBuiltins, DebugViewCVarAcceptsOnlyCompiledDiagnosticModes)
+{
+    ConsoleRegistry registry;
+    RenderProfileMode pending = RenderProfileMode::Off;
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, pending);
+
+    const CVarMetadata* debug = registry.FindCVar("render.debug.view");
+    ASSERT_NE(debug, nullptr);
+    EXPECT_TRUE(registry.SetCVar(
+        "render.debug.view", std::string{ "shadow_raw" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "shadow_raw");
+
+    const ConsoleResult invalid = registry.SetCVar(
+        "render.debug.view", std::string{ "probe_selection" }, { "test" },
+        ConsolePhase::EngineReady);
+    EXPECT_EQ(invalid.Status, ConsoleStatus::ValidationFailed);
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "shadow_raw");
+}
+
 TEST(EngineConsoleBuiltins, CaptureCommandsGateOnModeAndWriteParseableJson)
 {
     ConsoleService console;

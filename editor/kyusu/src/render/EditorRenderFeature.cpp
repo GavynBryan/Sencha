@@ -171,6 +171,9 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         lights.ShadowSoftness = readFloatCvar("render.shadow.softness", 1.0f);
         lights.ShadowBiasConstant = readFloatCvar("render.shadow.bias_const", 4.0f);
         lights.ShadowBiasSlope = readFloatCvar("render.shadow.bias_slope", 2.0f);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        lights.DebugView = WorldView.DebugViewMode;
+#endif
 
         QueueBuilder->Build(World.FocusDocument());
 
@@ -453,6 +456,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                     RenderLightSet contextLights;
                     contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
                     contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+                    contextLights.DebugView = WorldView.DebugViewMode;
+#endif
                     Forward.Draw(local, viewport.BuildRenderData(), contextLights,
                                  it->second->BrushQueue(), *MeshCache, *MaterialStore);
                     // Placed meshes cannot receive the brush-triangle wash, so

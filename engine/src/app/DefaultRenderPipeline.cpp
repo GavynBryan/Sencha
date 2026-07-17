@@ -46,6 +46,22 @@ namespace
         return value != nullptr ? *value : fallback;
     }
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    RenderDebugView ReadDebugViewCVar(const ConsoleRegistry* console)
+    {
+        if (console == nullptr)
+            return RenderDebugView::None;
+        const CVarMetadata* metadata = console->FindCVar("render.debug.view");
+        if (metadata == nullptr)
+            return RenderDebugView::None;
+        const std::string* value = std::get_if<std::string>(&metadata->CurrentValue);
+        RenderDebugView view = RenderDebugView::None;
+        if (value != nullptr)
+            (void)ParseRenderDebugView(*value, view);
+        return view;
+    }
+#endif
+
     void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
     {
         lights.AmbientSky = Vec<3>(
@@ -73,6 +89,9 @@ namespace
             console, "render.shadow.bias_const", lights.ShadowBiasConstant);
         lights.ShadowBiasSlope = ReadDoubleCVar(
             console, "render.shadow.bias_slope", lights.ShadowBiasSlope);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        lights.DebugView = ReadDebugViewCVar(console);
+#endif
     }
 }
 

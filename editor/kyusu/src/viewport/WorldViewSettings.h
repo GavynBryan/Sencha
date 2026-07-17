@@ -3,6 +3,9 @@
 #include <math/Vec.h>
 #include <zone/ZoneDemand.h>
 #include <zone/ZoneId.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <render/RenderDebugView.h>
+#endif
 
 #include <optional>
 #include <string>
@@ -12,6 +15,11 @@
 struct WorldViewSettings
 {
     bool ShowZoneBounds = true;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // Session-only override for Solid viewports. None follows the production
+    // forward pipeline; every other value substitutes the diagnostic shader.
+    RenderDebugView DebugViewMode = RenderDebugView::None;
+#endif
 
     // Live demand visualization from the pure streaming policy: zone bounds
     // tint by demand state around a preview focus resolved from the

@@ -444,7 +444,8 @@ void Engine::CreateDebugOverlay()
     overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
     overlay->AddPanel<TimingPanel>(TimingData);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    overlay->AddPanel<RenderStatsPanel>(ActiveProfileMode, RenderStatsRing);
+    overlay->AddPanel<RenderStatsPanel>(
+        ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());
 #endif
     for (auto& panel : PendingDebugPanels)
         overlay->AddPanel(std::move(panel));

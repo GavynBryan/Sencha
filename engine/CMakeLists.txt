@@ -59,6 +59,7 @@ if(NOT SENCHA_ENABLE_RENDER_PROFILING)
         "[/\\\\]graphics[/\\\\]vulkan[/\\\\]VulkanDebugLabels\\."
         "[/\\\\]profiling[/\\\\]RenderCapture\\."
         "[/\\\\]debug[/\\\\]RenderStatsPanel\\."
+        "[/\\\\]render[/\\\\]RenderDebugView\\."
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -88,6 +89,18 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kMeshForwardFragSpv
         OUT_HEADER _mesh_forward_frag_header
     )
+    if(SENCHA_ENABLE_RENDER_PROFILING)
+        sencha_compile_shader(
+            SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_debug_view.frag.glsl"
+            STAGE frag
+            OUTPUT_SPV _mesh_debug_view_frag_spv
+        )
+        sencha_embed_spirv(
+            SOURCE_SPV "${_mesh_debug_view_frag_spv}"
+            VAR_NAME kMeshDebugViewFragSpv
+            OUT_HEADER _mesh_debug_view_frag_header
+        )
+    endif()
     sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_depth.vert.glsl"
         STAGE vert
@@ -114,6 +127,11 @@ if(SENCHA_ENABLE_VULKAN)
         "${_shadow_depth_vert_header}"
         "${_shadow_depth_frag_header}"
     )
+    if(SENCHA_ENABLE_RENDER_PROFILING)
+        list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+            "${_mesh_debug_view_frag_header}"
+        )
+    endif()
 endif()
 
 # --- Game-module ABI fingerprint (docs/plans/sencha-level-editor/09-module-abi-hardening.md) ---

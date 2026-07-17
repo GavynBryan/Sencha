@@ -4,6 +4,8 @@
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 
+class ConsoleRegistry;
+
 //=============================================================================
 // RenderStatsPanel
 //
@@ -17,11 +19,13 @@ class RenderStatsPanel : public IDebugPanel
 {
 public:
 	RenderStatsPanel(const RenderProfileMode& activeMode,
-	                 const RenderStatsHistory& history);
+	                 const RenderStatsHistory& history,
+	                 ConsoleRegistry& console);
 
 	void Draw() override;
 
 private:
 	const RenderProfileMode& ActiveMode;
 	const RenderStatsHistory& History;
+	ConsoleRegistry& Console;
 };

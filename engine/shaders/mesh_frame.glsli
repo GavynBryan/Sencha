@@ -51,4 +51,8 @@ layout(set = 0, binding = 0) uniform MeshFrame
     uint PointShadowPad1;
     uint PointShadowPad2;
     GpuPointShadow PointShadows[MAX_POINT_SHADOWS];
+    uint DebugView;
+    uint DebugViewPad0;
+    uint DebugViewPad1;
+    uint DebugViewPad2;
 } frame;

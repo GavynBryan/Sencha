@@ -1,0 +1,66 @@
+struct DirectLightTerms
+{
+    vec3 Radiance;
+    float Attenuation;
+    float Diffuse;
+    float Specular;
+};
+
+float ResolveFilteredShadowVisibility(
+    GpuLight light, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (pushData.ReceiveShadows == 0u)
+        return 1.0;
+    float filteredVisibility = light.Type == 0u
+        ? SamplePointShadow(light.ShadowIndex, worldPosition, geometricNormal)
+        : SampleSpotShadow(light.ShadowIndex, worldPosition, geometricNormal);
+    return mix(1.0, filteredVisibility, clamp(frame.ShadowDarkness, 0.0, 1.0));
+}
+
+DirectLightTerms EvaluateDirectLight(
+    GpuLight light,
+    vec3 worldPosition,
+    vec3 normal,
+    vec3 viewDirection,
+    float diffuseWrap,
+    float specularExponent,
+    float shadowVisibility)
+{
+    DirectLightTerms result;
+    vec3 toLight = light.PositionRange.xyz - worldPosition;
+    float distanceToLight = length(toLight);
+    float range = light.PositionRange.w;
+    vec3 lightDirection = toLight / max(distanceToLight, 1e-4);
+
+    float coneAttenuation = 1.0;
+    if (light.Type == 1u)
+    {
+        float coneCosine = dot(-lightDirection, light.DirectionCone.xyz);
+        coneAttenuation = clamp(
+            coneCosine * light.ConeScale + light.ConeOffset, 0.0, 1.0);
+        coneAttenuation *= coneAttenuation;
+    }
+
+    float window = clamp(
+        1.0 - pow(distanceToLight / max(range, 1e-4), 4.0), 0.0, 1.0);
+    result.Attenuation = coneAttenuation
+                       * (window * window)
+                       / (distanceToLight * distanceToLight + 1e-4);
+    result.Radiance = light.ColorIntensity.rgb
+                    * (light.ColorIntensity.w * result.Attenuation)
+                    * shadowVisibility;
+
+    result.Diffuse = clamp(
+        (dot(normal, lightDirection) + diffuseWrap) / (1.0 + diffuseWrap),
+        0.0, 1.0);
+
+    vec3 halfVectorSum = lightDirection + viewDirection;
+    vec3 halfVector = dot(halfVectorSum, halfVectorSum) > 1e-8
+        ? normalize(halfVectorSum)
+        : normal;
+    float ndh = max(dot(normal, halfVector), 0.0);
+    result.Specular = ((specularExponent + 8.0) / 8.0)
+                    * pow(ndh, specularExponent)
+                    * max(pushData.SpecularIntensity, 0.0);
+    return result;
+}

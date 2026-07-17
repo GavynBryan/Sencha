@@ -18,6 +18,9 @@ class VulkanUploadContextService;
 //              (samplerCubeArrayShadow)
 //   binding 2: irradiance probe volumes, sampler3D[kMaxActiveProbeVolumes]
 //              (dummy-filled)
+// Development profiling builds additionally expose the same depth images
+// through nearest, non-comparison samplers at bindings 3 and 4. Only the
+// debug-view shader sees those bindings; shipping layouts stop at binding 2.
 //
 // Setup creates the layout, the set, and tiny always-valid dummy resources
 // for every binding: depth dummies clear to 1.0 so comparison samples read
@@ -76,6 +79,10 @@ private:
     VkSampler ShadowSampler = VK_NULL_HANDLE;       // comparison, border-clamped; binding 0
     VkSampler PointShadowSampler = VK_NULL_HANDLE;  // comparison, edge-clamped; binding 1
     VkSampler ProbeSampler = VK_NULL_HANDLE;        // linear; binding 2
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    VkSampler RawShadowSampler = VK_NULL_HANDLE;       // nearest depth; binding 3
+    VkSampler RawPointShadowSampler = VK_NULL_HANDLE;  // nearest cube depth; binding 4
+#endif
     VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
     VkDescriptorPool Pool = VK_NULL_HANDLE;
     VkDescriptorSet Set = VK_NULL_HANDLE;

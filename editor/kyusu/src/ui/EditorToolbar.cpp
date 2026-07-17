@@ -254,6 +254,27 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
                    WorldView.ShowZoneBounds, buttonSize))
         WorldView.ShowZoneBounds = !WorldView.ShowZoneBounds;
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(132.0f);
+    if (ImGui::BeginCombo("##renderdebugview",
+                          RenderDebugViewLabel(WorldView.DebugViewMode)))
+    {
+        for (std::uint32_t index = 0; index < kRenderDebugViewCount; ++index)
+        {
+            const RenderDebugView candidate = static_cast<RenderDebugView>(index);
+            const bool selected = candidate == WorldView.DebugViewMode;
+            if (ImGui::Selectable(RenderDebugViewLabel(candidate), selected))
+                WorldView.DebugViewMode = candidate;
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Development render channel for Solid viewports");
+#endif
+
     ImGui::SameLine();
     ImGui::SetNextItemWidth(96.0f);
     char preview[32];

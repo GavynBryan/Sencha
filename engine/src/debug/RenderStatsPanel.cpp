@@ -1,13 +1,18 @@
 #include <debug/RenderStatsPanel.h>
 
+#include <core/console/ConsoleRegistry.h>
+#include <render/RenderDebugView.h>
+
 #include <imgui.h>
 
 #include <cinttypes>
 
 RenderStatsPanel::RenderStatsPanel(const RenderProfileMode& activeMode,
-                                   const RenderStatsHistory& history)
+                                   const RenderStatsHistory& history,
+                                   ConsoleRegistry& console)
 	: ActiveMode(activeMode)
 	, History(history)
+	, Console(console)
 {
 }
 
@@ -20,6 +25,31 @@ void RenderStatsPanel::Draw()
 	}
 
 	ImGui::Text("render.profile.mode: %s", ToString(ActiveMode));
+
+	RenderDebugView debugView = RenderDebugView::None;
+	if (const CVarMetadata* cvar = Console.FindCVar("render.debug.view");
+	    cvar != nullptr && std::holds_alternative<std::string>(cvar->CurrentValue))
+	{
+		(void)ParseRenderDebugView(
+			std::get<std::string>(cvar->CurrentValue), debugView);
+	}
+	if (ImGui::BeginCombo("Debug view", RenderDebugViewLabel(debugView)))
+	{
+		for (std::uint32_t index = 0; index < kRenderDebugViewCount; ++index)
+		{
+			const RenderDebugView candidate = static_cast<RenderDebugView>(index);
+			const bool selected = candidate == debugView;
+			if (ImGui::Selectable(RenderDebugViewLabel(candidate), selected))
+			{
+				(void)Console.SetCVar(
+					"render.debug.view", std::string{ ToString(candidate) },
+					{ "Render Stats panel" }, ConsolePhase::GameplayStarted);
+			}
+			if (selected)
+				ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndCombo();
+	}
 
 	if (ActiveMode < RenderProfileMode::Counters)
 	{

@@ -4,6 +4,9 @@
 #include <profiling/RenderCapture.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <render/RenderDebugView.h>
+#endif
 
 #include <optional>
 #include <string>
@@ -27,6 +30,25 @@ TEST(RenderProfileMode, ParsesTheLadderAndRejectsUnknownNames)
 
     EXPECT_STREQ(ToString(RenderProfileMode::Capture), "capture");
 }
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+TEST(RenderDebugView, NamesRoundTripAndUnknownNamesPreserveTheSelection)
+{
+    for (std::uint32_t index = 0; index < kRenderDebugViewCount; ++index)
+    {
+        const RenderDebugView expected = static_cast<RenderDebugView>(index);
+        RenderDebugView parsed = RenderDebugView::None;
+        EXPECT_TRUE(ParseRenderDebugView(ToString(expected), parsed));
+        EXPECT_EQ(parsed, expected);
+        EXPECT_NE(RenderDebugViewLabel(expected), nullptr);
+    }
+
+    RenderDebugView view = RenderDebugView::ShadowRaw;
+    EXPECT_FALSE(ParseRenderDebugView("Shadow_Raw", view));
+    EXPECT_FALSE(ParseRenderDebugView("", view));
+    EXPECT_EQ(view, RenderDebugView::ShadowRaw);
+}
+#endif
 
 TEST(RenderStatsHistory, RingRetainsChronologyAndVersionCountsWrites)
 {

@@ -247,6 +247,26 @@ namespace EngineConsoleBuiltins
                     pendingMode = parsed;
             },
         });
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        registry.RegisterCVar({
+            .Name = "render.debug.view",
+            .Owner = "engine",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{ "none" },
+            .CurrentValue = std::string{ "none" },
+            .Flags = CVarFlags::Transient | CVarFlags::Developer,
+            .Help = "Development forward view: none, world_normals, normal_map, "
+                    "normal_delta, diffuse, specular, emission, roughness, "
+                    "light_complexity, shadow, shadow_raw, or overdraw.",
+            .Source = { "renderer defaults" },
+            .EnumValues = {
+                "none", "world_normals", "normal_map", "normal_delta",
+                "diffuse", "specular", "emission", "roughness",
+                "light_complexity", "shadow", "shadow_raw", "overdraw",
+            },
+        });
+#endif
     }
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING

@@ -49,6 +49,10 @@ struct MeshFrameUniforms
     std::uint32_t PointShadowPad1 = 0;
     std::uint32_t PointShadowPad2 = 0;
     GpuPointShadow PointShadows[kMaxPointShadows];
+    std::uint32_t DebugView = 0;
+    std::uint32_t DebugViewPad0 = 0;
+    std::uint32_t DebugViewPad1 = 0;
+    std::uint32_t DebugViewPad2 = 0;
 };
 
 struct MeshPushConstants
@@ -102,6 +106,10 @@ public:
 
 private:
     [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    [[nodiscard]] bool EnsureDebugPipelines(const FrameContext& frame,
+                                            bool overdraw);
+#endif
     [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(
         const CameraRenderData& camera, const RenderLightSet& lights);
     [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
@@ -119,8 +127,20 @@ private:
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ShaderHandle DebugFragmentShader;
+#endif
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     std::array<VkPipeline, 4> OpaquePipelines{};
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    std::array<VkPipeline, 2> DebugPipelines{};
+    std::array<VkPipeline, 2> OverdrawPipelines{};
+    RenderDebugView ActiveDebugView = RenderDebugView::None;
+    VkFormat CachedDebugColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedDebugDepthFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedOverdrawColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedOverdrawDepthFormat = VK_FORMAT_UNDEFINED;
+#endif
     VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat CachedDepthFormat = VK_FORMAT_UNDEFINED;
     DrawStats LastStats;

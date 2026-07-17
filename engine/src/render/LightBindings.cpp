@@ -38,6 +38,12 @@ bool LightBindings::Setup(const RendererServices& services)
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     WriteBinding(1, 0, PointShadowSampler, Images->GetView(DummyShadowCube),
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    WriteBinding(3, 0, RawShadowSampler, Images->GetView(DummyShadowMap),
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    WriteBinding(4, 0, RawPointShadowSampler, Images->GetView(DummyShadowCube),
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+#endif
     for (std::uint32_t volume = 0; volume < kMaxActiveProbeVolumes; ++volume)
     {
         WriteBinding(2, volume, ProbeSampler, Images->GetView(DummyProbeVolume),
@@ -69,6 +75,28 @@ bool LightBindings::CreateSamplers()
     {
         return false;
     }
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    VkSamplerCreateInfo rawShadowInfo = shadowInfo;
+    rawShadowInfo.magFilter = VK_FILTER_NEAREST;
+    rawShadowInfo.minFilter = VK_FILTER_NEAREST;
+    rawShadowInfo.compareEnable = VK_FALSE;
+    if (vkCreateSampler(Device, &rawShadowInfo, nullptr, &RawShadowSampler)
+        != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkSamplerCreateInfo rawPointShadowInfo = pointShadowInfo;
+    rawPointShadowInfo.magFilter = VK_FILTER_NEAREST;
+    rawPointShadowInfo.minFilter = VK_FILTER_NEAREST;
+    rawPointShadowInfo.compareEnable = VK_FALSE;
+    if (vkCreateSampler(Device, &rawPointShadowInfo, nullptr,
+                        &RawPointShadowSampler) != VK_SUCCESS)
+    {
+        return false;
+    }
+#endif
 
     VkSamplerCreateInfo probeInfo = MakeClampedLinearSampler();
     probeInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -195,11 +223,23 @@ bool LightBindings::CreateSetObjects()
           .descriptorCount = kMaxActiveProbeVolumes,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
           .pImmutableSamplers = nullptr },
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        { .binding = 3,
+          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = 1,
+          .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+          .pImmutableSamplers = nullptr },
+        { .binding = 4,
+          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = 1,
+          .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+          .pImmutableSamplers = nullptr },
+#endif
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 3;
+    layoutInfo.bindingCount = sizeof(bindings) / sizeof(bindings[0]);
     layoutInfo.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(Device, &layoutInfo, nullptr, &SetLayout) != VK_SUCCESS)
         return false;
@@ -207,6 +247,9 @@ bool LightBindings::CreateSetObjects()
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSize.descriptorCount = 2 + kMaxActiveProbeVolumes;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    poolSize.descriptorCount += 2;
+#endif
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -293,6 +336,10 @@ bool LightBindings::CreateAtlas()
 
     WriteBinding(0, 0, ShadowSampler, Images->GetView(Atlas),
                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    WriteBinding(3, 0, RawShadowSampler, Images->GetView(Atlas),
+                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+#endif
     return true;
 }
 
@@ -351,6 +398,10 @@ bool LightBindings::CreateCubePool()
 
     WriteBinding(1, 0, PointShadowSampler, Images->GetView(CubePool),
                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    WriteBinding(4, 0, RawPointShadowSampler, Images->GetView(CubePool),
+                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+#endif
     return true;
 }
 
@@ -382,6 +433,14 @@ void LightBindings::Teardown()
     if (ProbeSampler != VK_NULL_HANDLE)
         vkDestroySampler(Device, ProbeSampler, nullptr);
     ProbeSampler = VK_NULL_HANDLE;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (RawShadowSampler != VK_NULL_HANDLE)
+        vkDestroySampler(Device, RawShadowSampler, nullptr);
+    RawShadowSampler = VK_NULL_HANDLE;
+    if (RawPointShadowSampler != VK_NULL_HANDLE)
+        vkDestroySampler(Device, RawPointShadowSampler, nullptr);
+    RawPointShadowSampler = VK_NULL_HANDLE;
+#endif
     DestroyCubeFaceViews();
     if (Images != nullptr)
     {
@@ -414,6 +473,10 @@ bool LightBindings::IsValid() const
         && Set != VK_NULL_HANDLE
         && ShadowSampler != VK_NULL_HANDLE
         && PointShadowSampler != VK_NULL_HANDLE
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        && RawShadowSampler != VK_NULL_HANDLE
+        && RawPointShadowSampler != VK_NULL_HANDLE
+#endif
         && ProbeSampler != VK_NULL_HANDLE;
 }
 
