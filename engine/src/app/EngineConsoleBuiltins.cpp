@@ -123,13 +123,15 @@ namespace EngineConsoleBuiltins
                              "Global shadow attenuation. One preserves full shadow darkness.",
                              0.0, 1.0);
         registerRenderDouble("render.shadow.softness", 1.0,
-                             "Global multiplier for spot shadow filter width.", 0.0);
+                             "Global multiplier for shadow filter width.", 0.0);
         registerRenderDouble("render.shadow.bias_const", 4.0,
-                             "Constant depth bias for spot shadow caster rendering.", 0.0);
+                             "Constant depth bias for shadow caster rendering.", 0.0);
         registerRenderDouble("render.shadow.bias_slope", 2.0,
-                             "Slope-scaled depth bias for spot shadow caster rendering.", 0.0);
+                             "Slope-scaled depth bias for shadow caster rendering.", 0.0);
         registerRenderDouble("render.shadow.max_spot", 8.0,
                              "Resident spot shadow slot budget.", 0.0, 8.0);
+        registerRenderDouble("render.shadow.max_point", 4.0,
+                             "Resident point shadow cube budget.", 0.0, 4.0);
         registerRenderDouble("render.shadow.max_views_per_frame", 12.0,
                              "Shadow depth views rendered per frame. Zero removes the clamp.",
                              0.0);
@@ -380,6 +382,9 @@ namespace EngineConsoleBuiltins
         budgets.MaxSlots = static_cast<std::uint32_t>(std::clamp(
             readDouble("render.shadow.max_spot", static_cast<float>(kMaxSpotShadows)),
             0.0f, static_cast<float>(kMaxSpotShadows)));
+        budgets.MaxPointSlots = static_cast<std::uint32_t>(std::clamp(
+            readDouble("render.shadow.max_point", static_cast<float>(kMaxPointShadows)),
+            0.0f, static_cast<float>(kMaxPointShadows)));
         budgets.MaxViewsPerFrame = static_cast<std::uint32_t>(std::max(
             readDouble("render.shadow.max_views_per_frame", 12.0f), 0.0f));
         budgets.MinInvalidatedViewsPerFrame = static_cast<std::uint32_t>(std::max(

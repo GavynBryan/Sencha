@@ -35,6 +35,28 @@ namespace
         };
     }
 
+    PointShadowRequest MakePointRequest(
+        std::uint32_t entityIndex,
+        std::uint32_t lightIndex,
+        float score,
+        ShadowUpdatePolicy policy = ShadowUpdatePolicy::OnChange,
+        std::uint64_t stateHash = 1)
+    {
+        const float x = 10.0f * static_cast<float>(entityIndex);
+        return PointShadowRequest{
+            .Key = MakeKey(entityIndex),
+            .LightIndex = lightIndex,
+            .Score = score,
+            .Policy = policy,
+            .StateHash = stateHash,
+            .View = PointShadowView{
+                .PositionFar = Vec4(x, 0.0f, 0.0f, 20.0f),
+                .Params = Vec4(0.4f, 1.5f, 1.0f, 0.0f),
+            },
+            .Bounds = Sphere(Vec3d(x, 0.0f, 0.0f), 20.0f),
+        };
+    }
+
     const ShadowResidencyBudgets kUnlimited{
         .MaxSlots = kMaxSpotShadows,
         .MaxViewsPerFrame = 0,
@@ -56,6 +78,135 @@ namespace
         }
         return false;
     }
+
+    [[nodiscard]] bool HasPointGrantForLight(
+        const ShadowResidency& residency,
+        std::uint32_t lightIndex,
+        std::uint32_t* slotOut = nullptr)
+    {
+        for (const PointShadowGrant& grant : residency.PointGrants())
+        {
+            if (grant.LightIndex == lightIndex)
+            {
+                if (slotOut != nullptr)
+                    *slotOut = grant.SlotIndex;
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+TEST(ShadowResidency, NewPointCubeBurstsSixFacesAndThenGrants)
+{
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f),
+    };
+
+    residency.Update({}, points, {}, kUnlimited);
+
+    ASSERT_EQ(residency.ScheduledPointFaces().size(), kPointShadowFaceCount);
+    for (std::uint32_t face = 0; face < kPointShadowFaceCount; ++face)
+    {
+        EXPECT_EQ(residency.ScheduledPointFaces()[face].SlotIndex, 0u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[face].Face, face);
+    }
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+    EXPECT_EQ(residency.PointGrants()[0].LightIndex, 0u);
+    EXPECT_EQ(residency.PointGrants()[0].SlotIndex, 0u);
+}
+
+TEST(ShadowResidency, PointCubeStaysUngrantedUntilAllSplitFacesRender)
+{
+    ShadowResidencyBudgets split = kUnlimited;
+    split.MaxViewsPerFrame = 2;
+
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f),
+    };
+
+    for (std::uint32_t frame = 0; frame < 3; ++frame)
+    {
+        residency.Update({}, points, {}, split);
+        ASSERT_EQ(residency.ScheduledPointFaces().size(), 2u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, frame * 2u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[1].Face, frame * 2u + 1u);
+        EXPECT_EQ(HasPointGrantForLight(residency, 0), frame == 2u);
+    }
+}
+
+TEST(ShadowResidency, PointSlotBudgetDeniesLowerPriorityRequests)
+{
+    ShadowResidencyBudgets twoPoints = kUnlimited;
+    twoPoints.MaxPointSlots = 2;
+
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f),
+        MakePointRequest(2, 1, 2.0f),
+        MakePointRequest(3, 2, 1.0f),
+    };
+    residency.Update({}, points, {}, twoPoints);
+
+    EXPECT_EQ(residency.PointGrants().size(), 2u);
+    EXPECT_TRUE(HasPointGrantForLight(residency, 0));
+    EXPECT_TRUE(HasPointGrantForLight(residency, 1));
+    EXPECT_FALSE(HasPointGrantForLight(residency, 2));
+    EXPECT_EQ(residency.FrameStats().Point.DeniedRequests, 1u);
+}
+
+TEST(ShadowResidency, InvalidatedPointCubeDrainsUnderSaturatedSpotWork)
+{
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> spots;
+    for (std::uint32_t index = 0; index < 5; ++index)
+        spots.push_back(MakeRequest(index + 1, index, 10.0f));
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(20, 5, 5.0f, ShadowUpdatePolicy::OnChange),
+    };
+    residency.Update(spots, points, {}, kUnlimited);
+    ASSERT_TRUE(HasPointGrantForLight(residency, 5));
+
+    ShadowResidencyBudgets clamped = kUnlimited;
+    clamped.MaxViewsPerFrame = 6;
+    const ShadowCasterEvent overlap{
+        .Change = ShadowCasterEvent::Kind::Changed,
+        .Bounds = Aabb3d(
+            Vec3d(199.0f, -1.0f, -1.0f),
+            Vec3d(201.0f, 1.0f, 1.0f)),
+    };
+
+    for (std::uint32_t frame = 0; frame < kPointShadowFaceCount; ++frame)
+    {
+        const std::span<const ShadowCasterEvent> events = frame == 0
+            ? std::span<const ShadowCasterEvent>(&overlap, 1)
+            : std::span<const ShadowCasterEvent>();
+        residency.Update(spots, points, events, clamped);
+        EXPECT_EQ(residency.ScheduledViews().size(), 5u);
+        ASSERT_EQ(residency.ScheduledPointFaces().size(), 1u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, frame);
+        EXPECT_EQ(HasPointGrantForLight(residency, 5),
+                  frame + 1u == kPointShadowFaceCount);
+    }
+}
+
+TEST(ShadowResidency, PointHashCoversRenderedStateButNotPackedLightIndex)
+{
+    PointShadowView view;
+    view.PositionFar = Vec4(1.0f, 2.0f, 3.0f, 20.0f);
+    view.Params = Vec4(0.4f, 1.5f, 1.0f, 0.0f);
+    view.LightIndex = 3;
+    const std::uint64_t original = HashPointShadowState(view);
+
+    view.LightIndex = 9;
+    EXPECT_EQ(HashPointShadowState(view), original);
+    view.PositionFar.X += 1.0f;
+    EXPECT_NE(HashPointShadowState(view), original);
+    view.PositionFar.X -= 1.0f;
+    view.Params.Z += 0.5f;
+    EXPECT_NE(HashPointShadowState(view), original);
 }
 
 TEST(ShadowResidency, GrantsSlotsAndSchedulesNewViewsDeterministically)
@@ -359,9 +510,30 @@ TEST(ShadowResidency, FailedViewRecordingRequeues)
     const std::uint32_t slot = residency.ScheduledViews()[0].SlotIndex;
 
     residency.MarkViewFailed(slot);
+    EXPECT_TRUE(residency.Grants().empty());
     residency.Update(requests, {}, kUnlimited);
     ASSERT_EQ(residency.ScheduledViews().size(), 1u);
     EXPECT_EQ(residency.ScheduledViews()[0].SlotIndex, slot);
+}
+
+TEST(ShadowResidency, FailedPointFaceRecordingRevokesGrantAndRequeuesFace)
+{
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{ MakePointRequest(1, 0, 4.0f) };
+    residency.Update({}, points, {}, kUnlimited);
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+    const std::uint32_t slot = residency.PointGrants()[0].SlotIndex;
+
+    residency.MarkPointFaceFailed(slot, 4);
+    EXPECT_TRUE(residency.PointGrants().empty());
+
+    ShadowResidencyBudgets oneView = kUnlimited;
+    oneView.MaxViewsPerFrame = 1;
+    residency.Update({}, points, {}, oneView);
+    ASSERT_EQ(residency.ScheduledPointFaces().size(), 1u);
+    EXPECT_EQ(residency.ScheduledPointFaces()[0].SlotIndex, slot);
+    EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, 4u);
+    EXPECT_TRUE(HasPointGrantForLight(residency, 0));
 }
 
 TEST(ShadowResidency, TierChangeReacquiresTheSlotInPlace)
@@ -399,17 +571,17 @@ TEST(ShadowResidency, FrameStatsCountDemandViewsAndCacheHits)
     };
 
     residency.Update(requests, {}, twoSlots);
-    EXPECT_EQ(residency.FrameStats().RequestCount, 3u);
-    EXPECT_EQ(residency.FrameStats().HeldRequests, 2u);
-    EXPECT_EQ(residency.FrameStats().DeniedRequests, 1u);
+    EXPECT_EQ(residency.FrameStats().Spot.RequestCount, 3u);
+    EXPECT_EQ(residency.FrameStats().Spot.HeldRequests, 2u);
+    EXPECT_EQ(residency.FrameStats().Spot.DeniedRequests, 1u);
     EXPECT_EQ(residency.FrameStats().ViewsScheduled, 2u);
-    EXPECT_EQ(residency.FrameStats().CachedSlots, 0u);
+    EXPECT_EQ(residency.FrameStats().Spot.CachedSlots, 0u);
 
     // Steady state: both tiles cache, nothing renders.
     residency.Update(requests, {}, twoSlots);
     EXPECT_EQ(residency.FrameStats().ViewsScheduled, 0u);
-    EXPECT_EQ(residency.FrameStats().CachedSlots, 2u);
-    EXPECT_EQ(residency.FrameStats().DeniedRequests, 1u);
+    EXPECT_EQ(residency.FrameStats().Spot.CachedSlots, 2u);
+    EXPECT_EQ(residency.FrameStats().Spot.DeniedRequests, 1u);
 }
 
 TEST(ShadowResidency, SlotInfoTracksAllocationAndAges)
@@ -477,4 +649,30 @@ TEST(ShadowResidency, ApplyGrantsWiresLightsToRenderedSlotRecords)
     EXPECT_EQ(lights.SpotShadows[slotForLight0].AtlasScaleBias,
               residency.SlotRecord(slotForLight0).AtlasScaleBias);
     EXPECT_EQ(lights.SpotShadows[slotForLight0].LightIndex, 0u);
+}
+
+TEST(ShadowResidency, ApplyPointGrantsWiresLightsToRenderedCubeRecords)
+{
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 1, 3.0f),
+    };
+    residency.Update({}, points, {}, kUnlimited);
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+
+    RenderLightSet lights;
+    (void)lights.Add(GpuLight{});
+    (void)lights.Add(GpuLight{});
+    residency.ApplyGrants(lights);
+
+    std::uint32_t slot = UINT32_MAX;
+    ASSERT_TRUE(HasPointGrantForLight(residency, 1, &slot));
+    EXPECT_EQ(lights.Lights[0].ShadowIndex, UINT32_MAX);
+    EXPECT_EQ(lights.Lights[1].ShadowIndex, slot);
+    EXPECT_EQ(lights.PointShadowCount, residency.PointSlotHighWater());
+    EXPECT_EQ(lights.PointShadows[slot].PositionFar,
+              residency.PointSlotRecord(slot).PositionFar);
+    EXPECT_EQ(lights.PointShadows[slot].Params,
+              residency.PointSlotRecord(slot).Params);
+    EXPECT_EQ(lights.PointShadows[slot].LightIndex, 1u);
 }

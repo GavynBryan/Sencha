@@ -37,11 +37,16 @@ static_assert(offsetof(MeshFrameUniforms, ShadowDarkness) == 136);
 static_assert(offsetof(MeshFrameUniforms, Lights) == 144);
 static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
 static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
+static_assert(offsetof(MeshFrameUniforms, PointShadowCount) == 5024);
+static_assert(offsetof(MeshFrameUniforms, PointShadows) == 5040);
 static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
 static_assert(offsetof(GpuSpotShadow, AtlasScaleBias) == 64);
 static_assert(offsetof(GpuSpotShadow, SamplingParams) == 80);
-static_assert(sizeof(MeshFrameUniforms) == 5024);
+static_assert(sizeof(GpuPointShadow) == 32);
+static_assert(offsetof(GpuPointShadow, PositionFar) == 0);
+static_assert(offsetof(GpuPointShadow, Params) == 16);
+static_assert(sizeof(MeshFrameUniforms) == 5168);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -190,6 +195,19 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
             lights.SpotShadows[index].AtlasScaleBias;
         uniforms.SpotShadows[index].SamplingParams =
             lights.SpotShadows[index].SamplingParams;
+    }
+
+    const std::uint32_t pointShadowCount =
+        lights.PointShadowCount < kMaxPointShadows
+            ? lights.PointShadowCount
+            : kMaxPointShadows;
+    uniforms.PointShadowCount = pointShadowCount;
+    for (std::uint32_t index = 0; index < pointShadowCount; ++index)
+    {
+        uniforms.PointShadows[index].PositionFar =
+            lights.PointShadows[index].PositionFar;
+        uniforms.PointShadows[index].Params =
+            lights.PointShadows[index].Params;
     }
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));

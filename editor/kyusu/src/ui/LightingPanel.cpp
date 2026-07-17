@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -27,6 +28,11 @@ namespace
         case ShadowUpdatePolicy::Static:     return "Static";
         }
         return "?";
+    }
+
+    const char* LightTypeLabel(GpuLightType type)
+    {
+        return type == GpuLightType::Point ? "Point" : "Spot";
     }
 
     // "512 (496 usable)": physical tile edge with the guard-band interior the
@@ -80,7 +86,7 @@ void LightingPanel::OnDraw()
     if (!Readout.Active)
     {
         ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
-        ImGui::TextWrapped("Shadow preview inactive (no atlas). Lights render unshadowed.");
+        ImGui::TextWrapped("Shadow preview inactive (no shadow targets). Lights render unshadowed.");
         ImGui::PopStyleColor();
         return;
     }
@@ -96,10 +102,14 @@ void LightingPanel::OnDraw()
 
 void LightingPanel::DrawBudgetHeader()
 {
-    const SpotShadowFrameStats& stats = Readout.Stats;
-    ImGui::Text("Spot shadows: %u requested, %u shadowed",
-                stats.RequestCount, stats.HeldRequests);
-    ImGui::Text("Slots %u / %u", stats.HeldRequests, Readout.Budgets.MaxSlots);
+    const ShadowFrameStats& stats = Readout.Stats;
+    ImGui::Text("Spot shadows: %u requested, %u resident",
+                stats.Spot.RequestCount, stats.Spot.HeldRequests);
+    ImGui::Text("Point shadows: %u requested, %u resident",
+                stats.Point.RequestCount, stats.Point.HeldRequests);
+    ImGui::Text("Slots spot %u / %u, point %u / %u",
+                stats.Spot.HeldRequests, Readout.Budgets.MaxSlots,
+                stats.Point.HeldRequests, Readout.Budgets.MaxPointSlots);
     ImGui::SameLine();
     if (Readout.Budgets.MaxViewsPerFrame == 0)
         ImGui::Text("| views %u (unclamped)", stats.ViewsScheduled);
@@ -107,11 +117,11 @@ void LightingPanel::DrawBudgetHeader()
         ImGui::Text("| views %u / %u", stats.ViewsScheduled,
                     Readout.Budgets.MaxViewsPerFrame);
     ImGui::SameLine();
-    ImGui::Text("| cached %u", stats.CachedSlots);
+    ImGui::Text("| cached %u", stats.Spot.CachedSlots + stats.Point.CachedSlots);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Shadowed lights whose tile needed no re-render this frame.\n"
+        ImGui::SetTooltip("Resident lights whose shadow needed no re-render this frame.\n"
                           "A still scene of On change / Static lights should render 0 views.\n"
-                          "Budgets: render.shadow.max_spot / max_views_per_frame cvars.");
+                          "Budgets: render.shadow.max_spot / max_point / max_views_per_frame cvars.");
 
     if (ImGui::SmallButton("Re-render all"))
     {
@@ -119,17 +129,18 @@ void LightingPanel::DrawBudgetHeader()
             InvalidateShadows();
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Invalidate every cached tile (render.shadow.invalidate).");
+        ImGui::SetTooltip("Invalidate every cached shadow (render.shadow.invalidate).");
 }
 
 void LightingPanel::DrawDeniedWarning()
 {
-    if (Readout.Stats.DeniedRequests == 0)
+    const std::uint32_t denied = Readout.Stats.Spot.DeniedRequests
+                               + Readout.Stats.Point.DeniedRequests;
+    if (denied == 0)
         return;
 
     ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::Warning);
-    ImGui::TextWrapped("Over budget: %u spot light(s) render unshadowed:",
-                       Readout.Stats.DeniedRequests);
+    ImGui::TextWrapped("Over budget: %u light(s) render unshadowed:", denied);
     ImGui::PopStyleColor();
     for (const ShadowResidencyReadout::LightRow& row : Readout.Rows)
     {
@@ -137,8 +148,9 @@ void LightingPanel::DrawDeniedWarning()
             continue;
         ImGui::SameLine();
         char label[32];
-        std::snprintf(label, sizeof(label), "Spot %u##denied%u",
-                      row.Entity.Index, row.Entity.Index);
+        std::snprintf(label, sizeof(label), "%s %u##denied%u_%u",
+                      LightTypeLabel(row.Type), row.Entity.Index,
+                      row.Entity.Index, static_cast<unsigned>(row.Type));
         if (ImGui::SmallButton(label))
             SelectLight(row.Entity);
     }
@@ -149,7 +161,7 @@ void LightingPanel::DrawLightRows()
     if (Readout.Rows.empty())
     {
         ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
-        ImGui::TextUnformatted("No shadow-casting spot lights in the focus scene.");
+        ImGui::TextUnformatted("No shadow-casting lights in the focus scene.");
         ImGui::PopStyleColor();
         return;
     }
@@ -171,8 +183,9 @@ void LightingPanel::DrawLightRows()
         ImGui::TableNextColumn();
 
         char label[32];
-        std::snprintf(label, sizeof(label), "Spot %u##row%u",
-                      row.Entity.Index, row.Entity.Index);
+        std::snprintf(label, sizeof(label), "%s %u##row%u_%u",
+                      LightTypeLabel(row.Type), row.Entity.Index,
+                      row.Entity.Index, static_cast<unsigned>(row.Type));
         const bool isSelected = selected.IsEntity()
             && selected.Registry == Readout.FocusRegistry
             && selected.Entity == row.Entity;
@@ -181,7 +194,11 @@ void LightingPanel::DrawLightRows()
             SelectLight(row.Entity);
 
         ImGui::TableNextColumn();
-        if (row.Held && Readout.Slots[row.Slot].Allocation.Size != row.TileSize)
+        if (row.Type == GpuLightType::Point)
+        {
+            ImGui::Text("%u cube", kPointShadowFaceExtent);
+        }
+        else if (row.Held && Readout.Slots[row.Slot].Allocation.Size != row.TileSize)
         {
             // The arbiter downgraded the tier to fit the atlas.
             ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::Warning);
@@ -212,15 +229,30 @@ void LightingPanel::DrawLightRows()
         }
         else
         {
-            const SpotShadowSlotInfo& slot = Readout.Slots[row.Slot];
-            if (!slot.EverRendered)
-                ImGui::TextUnformatted("pending");
-            else if (slot.Invalid)
-                ImGui::TextUnformatted("queued");
-            else if (slot.FramesSinceRendered == 0)
-                ImGui::TextUnformatted("rendered");
+            if (row.Type == GpuLightType::Point)
+            {
+                const PointShadowSlotInfo& slot = Readout.PointSlots[row.Slot];
+                if (!slot.EverRendered)
+                    ImGui::Text("pending %u/6", 6u - std::popcount(slot.PendingFaces));
+                else if (slot.Invalid || slot.PendingFaces != 0)
+                    ImGui::Text("queued %u/6", 6u - std::popcount(slot.PendingFaces));
+                else if (slot.FramesSinceRendered == 0)
+                    ImGui::TextUnformatted("rendered");
+                else
+                    ImGui::Text("cached %uf", slot.FramesSinceRendered);
+            }
             else
-                ImGui::Text("cached %uf", slot.FramesSinceRendered);
+            {
+                const SpotShadowSlotInfo& slot = Readout.Slots[row.Slot];
+                if (!slot.EverRendered)
+                    ImGui::TextUnformatted("pending");
+                else if (slot.Invalid)
+                    ImGui::TextUnformatted("queued");
+                else if (slot.FramesSinceRendered == 0)
+                    ImGui::TextUnformatted("rendered");
+                else
+                    ImGui::Text("cached %uf", slot.FramesSinceRendered);
+            }
         }
     }
     ImGui::EndTable();
@@ -235,6 +267,17 @@ void LightingPanel::DrawSelectedCostLine()
     {
         if (!(row.Entity == selected.Entity))
             continue;
+        if (row.Type == GpuLightType::Point)
+        {
+            const float kilobytes = static_cast<float>(kPointShadowFaceExtent)
+                                  * static_cast<float>(kPointShadowFaceExtent)
+                                  * 2.0f * kPointShadowFaceCount / 1024.0f;
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
+            ImGui::Text("Selected: Point, %u: 6 views per update, %.0f KB",
+                        kPointShadowFaceExtent, kilobytes);
+            ImGui::PopStyleColor();
+            return;
+        }
         const std::uint32_t size = row.Held
             ? Readout.Slots[row.Slot].Allocation.Size
             : row.TileSize;
@@ -250,7 +293,7 @@ void LightingPanel::DrawSelectedCostLine()
 
 void LightingPanel::DrawAtlasMap()
 {
-    if (!ImGui::CollapsingHeader("Atlas", ImGuiTreeNodeFlags_DefaultOpen))
+    if (!ImGui::CollapsingHeader("Shadow pools", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
     // Occupancy by physical tier.
@@ -274,6 +317,9 @@ void LightingPanel::DrawAtlasMap()
     ImGui::Text("%ux%u D16, %.0f%% occupied (1024: %u, 512: %u, 256: %u)",
                 kSpotShadowAtlasExtent, kSpotShadowAtlasExtent, occupancy,
                 tierCounts[0], tierCounts[1], tierCounts[2]);
+    ImGui::Text("Point cube pool: %u / %u cubes, %u faces each",
+                Readout.Stats.Point.HeldRequests, Readout.Budgets.MaxPointSlots,
+                kPointShadowFaceCount);
 
     const float side = std::min(ImGui::GetContentRegionAvail().x, 240.0f);
     if (side < 64.0f)

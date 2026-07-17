@@ -248,6 +248,7 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
     // has to happen first.
     SceneLights.Reset();
     ShadowCandidates.clear();
+    PointShadowCandidates.clear();
 
     const EditorScene& scene = document.GetScene();
     const Registry& registry = scene.GetRegistry();
@@ -261,9 +262,26 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
             continue;
 
         if (const PointLightComponent* point = world.TryGet<PointLightComponent>(entity);
-            point != nullptr && point->Enabled)
+            point != nullptr && point->Enabled
+            && std::isfinite(point->Intensity) && std::isfinite(point->Range)
+            && point->Intensity > 0.0f && point->Range > 0.0f)
         {
-            SceneLights.AddPoint(transform->Position, *point);
+            const std::uint32_t lightIndex = SceneLights.Add(
+                MakePointGpuLight(transform->Position, *point));
+            if (lightIndex != UINT32_MAX && point->CastShadows)
+            {
+                PointShadowCandidates.push_back(PointShadowCandidate{
+                    .Key = MakeRenderEntityKey(registry, entity),
+                    .LightIndex = lightIndex,
+                    .Position = transform->Position,
+                    .Range = point->Range,
+                    .Intensity = point->Intensity,
+                    .View = MakePointShadowView(
+                        transform->Position, *point, SceneLights.ShadowSoftness),
+                    .Bounds = Sphere(transform->Position, point->Range),
+                    .Policy = point->ShadowUpdate,
+                });
+            }
         }
 
         const SpotLightComponent* spot = world.TryGet<SpotLightComponent>(entity);
@@ -324,6 +342,34 @@ std::span<const SpotShadowRequest> SceneRenderQueueBuilder::BuildShadowRequests(
             return a.Key < b.Key;
         });
     return ShadowRequests;
+}
+
+std::span<const PointShadowRequest> SceneRenderQueueBuilder::BuildPointShadowRequests(
+    const Vec<3>& viewOrigin)
+{
+    PointShadowRequests.clear();
+    PointShadowRequests.reserve(PointShadowCandidates.size());
+    for (const PointShadowCandidate& candidate : PointShadowCandidates)
+    {
+        PointShadowRequests.push_back(PointShadowRequest{
+            .Key = candidate.Key,
+            .LightIndex = candidate.LightIndex,
+            .Score = LightImportanceScore(
+                candidate.Position, candidate.Range, candidate.Intensity, viewOrigin),
+            .Policy = candidate.Policy,
+            .StateHash = HashPointShadowState(candidate.View),
+            .View = candidate.View,
+            .Bounds = candidate.Bounds,
+        });
+    }
+    std::sort(PointShadowRequests.begin(), PointShadowRequests.end(),
+        [](const PointShadowRequest& a, const PointShadowRequest& b)
+        {
+            if (a.Score != b.Score)
+                return a.Score > b.Score;
+            return a.Key < b.Key;
+        });
+    return PointShadowRequests;
 }
 
 void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)

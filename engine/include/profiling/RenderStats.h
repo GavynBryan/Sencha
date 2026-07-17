@@ -28,8 +28,10 @@ struct RenderStats
     std::uint32_t LightsDroppedAtCap = 0;
     std::uint32_t ShadowCastingLights = 0;
 
-    // Spot shadow residency and depth pass.
+    // Shadow residency and depth pass. Views and slot counters aggregate
+    // both pools; a point face is one view and a point cube is one slot.
     std::uint32_t ShadowViewsRendered = 0;
+    std::uint32_t PointShadowFacesRendered = 0;
     std::uint32_t ShadowCasterDraws = 0;
     std::uint32_t ShadowSlotsHeld = 0;
     std::uint32_t ShadowCacheHits = 0;
@@ -37,6 +39,7 @@ struct RenderStats
     std::uint32_t AtlasTiles1024 = 0;
     std::uint32_t AtlasTiles512 = 0;
     std::uint32_t AtlasTiles256 = 0;
+    std::uint32_t PointShadowCubesHeld = 0;
     std::uint64_t ShadowTileBytes = 0;
     std::uint32_t CasterDiffEvents = 0;
 

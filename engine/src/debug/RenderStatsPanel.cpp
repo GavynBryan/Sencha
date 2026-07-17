@@ -52,7 +52,7 @@ void RenderStatsPanel::Draw()
 	            stats->ShadowCastingLights);
 
 	ImGui::Separator();
-	ImGui::Text("Spot shadows");
+	ImGui::Text("Shadows");
 	ImGui::Text("  slots %u  denied %u  views rendered %u  caster draws %u",
 	            stats->ShadowSlotsHeld, stats->ShadowRequestsDenied,
 	            stats->ShadowViewsRendered, stats->ShadowCasterDraws);
@@ -67,6 +67,8 @@ void RenderStatsPanel::Draw()
 	ImGui::Text("  tiles 1024:%u 512:%u 256:%u  atlas %.1f MiB",
 	            stats->AtlasTiles1024, stats->AtlasTiles512, stats->AtlasTiles256,
 	            static_cast<float>(stats->ShadowTileBytes) / (1024.0f * 1024.0f));
+	ImGui::Text("  point cubes %u  faces rendered %u",
+	            stats->PointShadowCubesHeld, stats->PointShadowFacesRendered);
 
 	ImGui::Separator();
 	ImGui::Text("Frame services");

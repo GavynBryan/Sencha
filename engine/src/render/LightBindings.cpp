@@ -36,7 +36,7 @@ bool LightBindings::Setup(const RendererServices& services)
 
     WriteBinding(0, 0, ShadowSampler, Images->GetView(DummyShadowMap),
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    WriteBinding(1, 0, ShadowSampler, Images->GetView(DummyShadowCube),
+    WriteBinding(1, 0, PointShadowSampler, Images->GetView(DummyShadowCube),
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     for (std::uint32_t volume = 0; volume < kMaxActiveProbeVolumes; ++volume)
     {
@@ -57,6 +57,18 @@ bool LightBindings::CreateSamplers()
     shadowInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     if (vkCreateSampler(Device, &shadowInfo, nullptr, &ShadowSampler) != VK_SUCCESS)
         return false;
+
+    VkSamplerCreateInfo pointShadowInfo = MakeClampedLinearSampler();
+    pointShadowInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pointShadowInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pointShadowInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pointShadowInfo.compareEnable = VK_TRUE;
+    pointShadowInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    if (vkCreateSampler(Device, &pointShadowInfo, nullptr, &PointShadowSampler)
+        != VK_SUCCESS)
+    {
+        return false;
+    }
 
     VkSamplerCreateInfo probeInfo = MakeClampedLinearSampler();
     probeInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -232,6 +244,28 @@ void LightBindings::WriteBinding(std::uint32_t binding, std::uint32_t arrayEleme
     vkUpdateDescriptorSets(Device, 1, &write, 0, nullptr);
 }
 
+// Parks a fresh depth target in the sampled layout so its descriptor stays
+// valid to bind even on frames that render no shadow views (zero shadowed
+// lights, or viewports with no shadow pass at all).
+bool LightBindings::ParkDepthImage(VkImage image, std::uint32_t layerCount)
+{
+    VkCommandBuffer cmd = Upload->Begin();
+    if (cmd == VK_NULL_HANDLE)
+        return false;
+    VulkanBarriers::ImageTransition transition{};
+    transition.Image = image;
+    transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    transition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.SrcAccess = 0;
+    transition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    transition.LayerCount = layerCount;
+    VulkanBarriers::TransitionImage(cmd, transition);
+    return Upload->Submit(cmd);
+}
+
 bool LightBindings::CreateAtlas()
 {
     if (!IsValid())
@@ -249,27 +283,7 @@ bool LightBindings::CreateAtlas()
     if (!Atlas.IsValid())
         return false;
 
-    // Park the fresh atlas in the sampled layout so the descriptor stays
-    // valid to bind even on frames that render no shadow tiles (zero
-    // shadowed lights, or viewports with no shadow pass at all).
-    VkCommandBuffer cmd = Upload->Begin();
-    if (cmd == VK_NULL_HANDLE)
-    {
-        Images->Destroy(Atlas);
-        Atlas = {};
-        return false;
-    }
-    VulkanBarriers::ImageTransition transition{};
-    transition.Image = GetAtlasImage();
-    transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    transition.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-    transition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    transition.SrcAccess = 0;
-    transition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    VulkanBarriers::TransitionImage(cmd, transition);
-    if (!Upload->Submit(cmd))
+    if (!ParkDepthImage(GetAtlasImage(), 1))
     {
         Images->Destroy(Atlas);
         Atlas = {};
@@ -280,6 +294,74 @@ bool LightBindings::CreateAtlas()
     WriteBinding(0, 0, ShadowSampler, Images->GetView(Atlas),
                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     return true;
+}
+
+bool LightBindings::CreateCubePool()
+{
+    if (!IsValid())
+        return false;
+    if (CubePool.IsValid())
+        return true;
+
+    constexpr std::uint32_t layerCount = kMaxPointShadows * kPointShadowFaceCount;
+    CubePool = Images->Create(ImageCreateInfo{
+        .Format = VK_FORMAT_D16_UNORM,
+        .Extent = { kPointShadowFaceExtent, kPointShadowFaceExtent },
+        .Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+        .ViewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY,
+        .ArrayLayers = layerCount,
+        .DebugName = "Point shadow cube pool",
+    });
+    if (!CubePool.IsValid())
+        return false;
+
+    const auto destroyPool = [this]
+    {
+        DestroyCubeFaceViews();
+        Images->Destroy(CubePool);
+        CubePool = {};
+    };
+
+    for (std::uint32_t layer = 0; layer < layerCount; ++layer)
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = Images->GetImage(CubePool);
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_D16_UNORM;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = layer;
+        viewInfo.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(Device, &viewInfo, nullptr, &CubeFaceViews[layer])
+            != VK_SUCCESS)
+        {
+            destroyPool();
+            return false;
+        }
+    }
+
+    if (!ParkDepthImage(GetCubePoolImage(), layerCount))
+    {
+        destroyPool();
+        return false;
+    }
+    CubeLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    WriteBinding(1, 0, PointShadowSampler, Images->GetView(CubePool),
+                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    return true;
+}
+
+void LightBindings::DestroyCubeFaceViews()
+{
+    for (VkImageView& view : CubeFaceViews)
+    {
+        if (view != VK_NULL_HANDLE)
+            vkDestroyImageView(Device, view, nullptr);
+        view = VK_NULL_HANDLE;
+    }
 }
 
 void LightBindings::Teardown()
@@ -294,13 +376,19 @@ void LightBindings::Teardown()
     if (ShadowSampler != VK_NULL_HANDLE)
         vkDestroySampler(Device, ShadowSampler, nullptr);
     ShadowSampler = VK_NULL_HANDLE;
+    if (PointShadowSampler != VK_NULL_HANDLE)
+        vkDestroySampler(Device, PointShadowSampler, nullptr);
+    PointShadowSampler = VK_NULL_HANDLE;
     if (ProbeSampler != VK_NULL_HANDLE)
         vkDestroySampler(Device, ProbeSampler, nullptr);
     ProbeSampler = VK_NULL_HANDLE;
+    DestroyCubeFaceViews();
     if (Images != nullptr)
     {
         if (Atlas.IsValid())
             Images->Destroy(Atlas);
+        if (CubePool.IsValid())
+            Images->Destroy(CubePool);
         if (DummyShadowMap.IsValid())
             Images->Destroy(DummyShadowMap);
         if (DummyShadowCube.IsValid())
@@ -309,10 +397,12 @@ void LightBindings::Teardown()
             Images->Destroy(DummyProbeVolume);
     }
     Atlas = {};
+    CubePool = {};
     DummyShadowMap = {};
     DummyShadowCube = {};
     DummyProbeVolume = {};
     AtlasLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    CubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     Images = nullptr;
     Upload = nullptr;
     Device = VK_NULL_HANDLE;
@@ -323,6 +413,7 @@ bool LightBindings::IsValid() const
     return SetLayout != VK_NULL_HANDLE
         && Set != VK_NULL_HANDLE
         && ShadowSampler != VK_NULL_HANDLE
+        && PointShadowSampler != VK_NULL_HANDLE
         && ProbeSampler != VK_NULL_HANDLE;
 }
 
@@ -334,6 +425,20 @@ VkImage LightBindings::GetAtlasImage() const
 VkImageView LightBindings::GetAtlasView() const
 {
     return Images != nullptr ? Images->GetView(Atlas) : VK_NULL_HANDLE;
+}
+
+VkImage LightBindings::GetCubePoolImage() const
+{
+    return Images != nullptr ? Images->GetImage(CubePool) : VK_NULL_HANDLE;
+}
+
+VkImageView LightBindings::GetCubeFaceView(std::uint32_t slot,
+                                           std::uint32_t face) const
+{
+    const std::uint32_t layer = slot * kPointShadowFaceCount + face;
+    if (layer >= kMaxPointShadows * kPointShadowFaceCount)
+        return VK_NULL_HANDLE;
+    return CubeFaceViews[layer];
 }
 
 void LightBindings::TransitionAtlasForWrite(VkCommandBuffer commandBuffer)
@@ -367,4 +472,39 @@ void LightBindings::TransitionAtlasForRead(VkCommandBuffer commandBuffer)
     transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     VulkanBarriers::TransitionImage(commandBuffer, transition);
     AtlasLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+}
+
+void LightBindings::TransitionCubePoolForWrite(VkCommandBuffer commandBuffer)
+{
+    VulkanBarriers::ImageTransition transition{};
+    transition.Image = GetCubePoolImage();
+    transition.OldLayout = CubeLayout;
+    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                        | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+    transition.SrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    transition.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                         | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    transition.LayerCount = kMaxPointShadows * kPointShadowFaceCount;
+    VulkanBarriers::TransitionImage(commandBuffer, transition);
+    CubeLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+}
+
+void LightBindings::TransitionCubePoolForRead(VkCommandBuffer commandBuffer)
+{
+    VulkanBarriers::ImageTransition transition{};
+    transition.Image = GetCubePoolImage();
+    transition.OldLayout = CubeLayout;
+    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                        | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+    transition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    transition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    transition.LayerCount = kMaxPointShadows * kPointShadowFaceCount;
+    VulkanBarriers::TransitionImage(commandBuffer, transition);
+    CubeLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 }

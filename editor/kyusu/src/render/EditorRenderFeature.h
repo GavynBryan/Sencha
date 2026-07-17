@@ -27,7 +27,7 @@
 #include <render/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
-#include <render/SpotShadowDepthPass.h>
+#include <render/ShadowDepthPass.h>
 #include <world/registry/RegistryId.h>
 
 #include <array>
@@ -147,7 +147,7 @@ private:
     // viewport loop, so every Solid viewport samples the same atlas the game
     // would render. Context zones draw with shadow-free light sets.
     LightBindings          Lighting;
-    SpotShadowDepthPass    ShadowPass;
+    ShadowDepthPass        ShadowPass;
     // The same arbiter the game pipeline runs, scored against the focus
     // viewport's camera; the caster diff feeds its OnChange invalidation.
     ShadowResidency        Residency;

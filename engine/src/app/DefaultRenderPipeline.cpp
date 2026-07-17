@@ -11,7 +11,7 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/MeshRenderFeature.h>
-#include <render/SpotShadowRenderFeature.h>
+#include <render/ShadowRenderFeature.h>
 #endif
 
 #include <algorithm>
@@ -105,7 +105,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     // forward pass builds its pipeline layout; Offscreen also records before
     // MainColor, so tiles are written before they are read.
     auto bindings = std::make_shared<LightBindings>();
-    if (graphics.MainRenderer.AddFeature(std::make_unique<SpotShadowRenderFeature>(
+    if (graphics.MainRenderer.AddFeature(std::make_unique<ShadowRenderFeature>(
             bindings, Lights, ShadowCasters, *Meshes, Residency)) == nullptr)
     {
         return false;
@@ -123,13 +123,16 @@ void DefaultRenderPipeline::PublishExtractionStats(
 {
     stats.LightsVisible = lightCounts.Packed;
     stats.LightsDroppedAtCap = lightCounts.DroppedAtCap();
-    stats.ShadowCastingLights = static_cast<std::uint32_t>(ShadowRequests.size());
+    stats.ShadowCastingLights = static_cast<std::uint32_t>(
+        ShadowRequests.size() + PointShadowRequests.size());
     stats.CasterDiffEvents = static_cast<std::uint32_t>(CasterEvents.size());
 
-    const SpotShadowFrameStats& shadow = Residency.FrameStats();
-    stats.ShadowSlotsHeld = shadow.HeldRequests;
-    stats.ShadowCacheHits = shadow.CachedSlots;
-    stats.ShadowRequestsDenied = shadow.DeniedRequests;
+    const ShadowFrameStats& shadow = Residency.FrameStats();
+    stats.ShadowSlotsHeld = shadow.Spot.HeldRequests + shadow.Point.HeldRequests;
+    stats.ShadowCacheHits = shadow.Spot.CachedSlots + shadow.Point.CachedSlots;
+    stats.ShadowRequestsDenied =
+        shadow.Spot.DeniedRequests + shadow.Point.DeniedRequests;
+    stats.PointShadowCubesHeld = shadow.Point.HeldRequests;
 
     for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
     {
@@ -208,7 +211,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     ApplyRendererCVars(Console, Lights);
     LightExtractionCounts lightCounts;
     LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
-                           &lightCounts);
+                           PointShadowRequests, &lightCounts);
     ShadowCasterExtractor.Extract(
         ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
 
@@ -217,7 +220,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     CasterEvents.clear();
     CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
 
-    Residency.Update(ShadowRequests, CasterEvents,
+    Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,
                      EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
     Residency.ApplyGrants(Lights);
 

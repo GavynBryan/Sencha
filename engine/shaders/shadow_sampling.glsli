@@ -1,4 +1,5 @@
 layout(set = 2, binding = 0) uniform sampler2DShadow SpotShadowAtlas;
+layout(set = 2, binding = 1) uniform samplerCubeArrayShadow PointShadowCubes;
 
 float SampleSpotShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
 {
@@ -39,4 +40,60 @@ float SampleSpotShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNorma
         }
     }
     return visibility * (1.0 / 16.0);
+}
+
+float PointShadowDepthReference(float majorAxisDistance, float nearPlane, float farPlane)
+{
+    float distance = max(majorAxisDistance, nearPlane);
+    return farPlane * (distance - nearPlane)
+         / max((farPlane - nearPlane) * distance, 1e-6);
+}
+
+float SamplePointShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.PointShadowCount)
+        return 1.0;
+
+    GpuPointShadow shadow = frame.PointShadows[shadowIndex];
+    float nearPlane = shadow.Params.x;
+    float farPlane = shadow.PositionFar.w;
+    float worldTexelSize = (2.0 * farPlane)
+                         / float(textureSize(PointShadowCubes, 0).x);
+    vec3 receiverPosition = worldPosition
+        + normalize(geometricNormal) * worldTexelSize * shadow.Params.z;
+    vec3 fromLight = receiverPosition - shadow.PositionFar.xyz;
+    float majorAxisDistance = max(abs(fromLight.x), max(abs(fromLight.y), abs(fromLight.z)));
+    if (majorAxisDistance <= nearPlane || majorAxisDistance >= farPlane)
+        return 1.0;
+
+    float reference = PointShadowDepthReference(
+        majorAxisDistance, nearPlane, farPlane);
+    vec3 direction = normalize(fromLight);
+    vec3 basisAxis = abs(direction.y) < 0.99
+        ? vec3(0.0, 1.0, 0.0)
+        : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(direction, basisAxis));
+    vec3 bitangent = cross(direction, tangent);
+    float filterOffset = clamp(shadow.Params.y, 0.5, 4.0)
+                       * 2.0 / float(textureSize(PointShadowCubes, 0).x);
+
+    vec4 cubeCoordinate = vec4(direction, float(shadowIndex));
+    float visibility = texture(PointShadowCubes, cubeCoordinate, reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction + tangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction - tangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction + bitangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction - bitangent * filterOffset), float(shadowIndex)),
+        reference);
+    return visibility * 0.2;
 }

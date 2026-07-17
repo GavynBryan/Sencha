@@ -35,6 +35,12 @@ static_assert(sizeof(GpuLight) == 64, "GpuLight must match the std140 light reco
 
 inline constexpr std::uint32_t kMaxForwardLights = 64;
 inline constexpr std::uint32_t kMaxSpotShadows = 8;
+inline constexpr std::uint32_t kMaxPointShadows = 4;
+inline constexpr std::uint32_t kPointShadowFaceCount = 6;
+// Every cube face is this size: the cube pool is one fixed image, so faces
+// cannot vary per light the way atlas tiles can. Faces need no guard bands;
+// hardware cube filtering is seamless across them.
+inline constexpr std::uint32_t kPointShadowFaceExtent = 512;
 // Smallest quadtree tile tier. ShadowResolutionTier values are literal tile
 // sizes, so the tiers are kSpotShadowMinTileExtent up to the atlas extent by
 // powers of two.
@@ -64,6 +70,17 @@ struct SpotShadowView
     Mat4 ViewProjection = Mat4::Identity();
     Vec4 AtlasScaleBias;
     Vec4 SamplingParams;
+    std::uint32_t LightIndex = UINT32_MAX;
+};
+
+// GPU record for one shadowed point light. Holds the state the cube faces
+// were rendered with, not the light's current state, so cached faces are
+// always sampled consistently with their contents. The cube array layer is
+// the record's own slot index, so it needs no field here.
+struct PointShadowView
+{
+    Vec4 PositionFar;  // rendered light position, far plane (the range)
+    Vec4 Params;       // near plane, softness in texels, bias scale, unused
     std::uint32_t LightIndex = UINT32_MAX;
 };
 
@@ -120,6 +137,77 @@ struct SpotShadowView
         std::max(light.ShadowBiasScale, 0.0f),
         0.0f);
     return shadow;
+}
+
+// Builds the render and sampling record for one shadowed point light: near
+// plane clamped against the range, softness clamped to the same texel budget
+// as spot tiles. LightIndex is assigned at grant time. The game extraction
+// and the editor's scene gather share this so identical light state produces
+// identical records and hashes.
+[[nodiscard]] inline PointShadowView MakePointShadowView(
+    const Vec<3>& worldPosition,
+    const PointLightComponent& light,
+    float globalSoftness)
+{
+    const float nearPlane = std::max(0.05f, light.Range * 0.02f);
+    const float softness = std::clamp(
+        light.ShadowSoftness * globalSoftness,
+        kSpotShadowSoftnessMinTexels,
+        kSpotShadowSoftnessMaxTexels);
+    PointShadowView shadow;
+    shadow.PositionFar = Vec4(
+        worldPosition.X, worldPosition.Y, worldPosition.Z, light.Range);
+    shadow.Params = Vec4(
+        nearPlane, softness, std::max(light.ShadowBiasScale, 0.0f), 0.0f);
+    return shadow;
+}
+
+// View-projection for rendering one cube face: a 90 degree square frustum
+// from the light position down the face axis, in cube face order
+// +X -X +Y -Y +Z -Z. The bases follow the cube map texel convention, whose
+// T axis already runs down the image, so the projection keeps Y unflipped.
+// Relative to the engine's Y-flipping projections that mirrors triangle
+// winding: face renders must flip front-face state to compensate.
+[[nodiscard]] inline Mat4 MakePointShadowFaceViewProjection(
+    const Vec<3>& lightPosition,
+    std::uint32_t face,
+    float nearPlane,
+    float farPlane)
+{
+    // Right, up, forward triples per face.
+    static constexpr float kBases[kPointShadowFaceCount][9] = {
+        {  0.0f, 0.0f, -1.0f,   0.0f, -1.0f,  0.0f,    1.0f,  0.0f,  0.0f },
+        {  0.0f, 0.0f,  1.0f,   0.0f, -1.0f,  0.0f,   -1.0f,  0.0f,  0.0f },
+        {  1.0f, 0.0f,  0.0f,   0.0f,  0.0f,  1.0f,    0.0f,  1.0f,  0.0f },
+        {  1.0f, 0.0f,  0.0f,   0.0f,  0.0f, -1.0f,    0.0f, -1.0f,  0.0f },
+        {  1.0f, 0.0f,  0.0f,   0.0f, -1.0f,  0.0f,    0.0f,  0.0f,  1.0f },
+        { -1.0f, 0.0f,  0.0f,   0.0f, -1.0f,  0.0f,    0.0f,  0.0f, -1.0f },
+    };
+    const float* basis = kBases[face];
+
+    Mat4 view;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        view[0][axis] = basis[axis];
+        view[1][axis] = basis[3 + axis];
+        view[2][axis] = -basis[6 + axis];
+    }
+    const float position[3] = { lightPosition.X, lightPosition.Y, lightPosition.Z };
+    for (int row = 0; row < 3; ++row)
+    {
+        view[row][3] = -(view[row][0] * position[0]
+                         + view[row][1] * position[1]
+                         + view[row][2] * position[2]);
+    }
+    view[3][3] = 1.0f;
+
+    Mat4 projection;
+    projection[0][0] = 1.0f;
+    projection[1][1] = 1.0f;
+    projection[2][2] = farPlane / (nearPlane - farPlane);
+    projection[2][3] = (farPlane * nearPlane) / (nearPlane - farPlane);
+    projection[3][2] = -1.0f;
+    return projection * view;
 }
 
 // Ranks a light against a view origin for packing and shadow-slot
@@ -211,11 +299,14 @@ struct RenderLightSet
     GpuLight Lights[kMaxForwardLights];
     std::uint32_t SpotShadowCount = 0;
     SpotShadowView SpotShadows[kMaxSpotShadows];
+    std::uint32_t PointShadowCount = 0;
+    PointShadowView PointShadows[kMaxPointShadows];
 
     void Reset()
     {
         Count = 0;
         SpotShadowCount = 0;
+        PointShadowCount = 0;
     }
 
     [[nodiscard]] std::uint32_t Add(const GpuLight& light)

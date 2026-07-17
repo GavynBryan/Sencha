@@ -1,6 +1,7 @@
 // Keep these caps in sync with engine/include/render/RenderLight.h.
 const uint MAX_LIGHTS = 64u;
 const uint MAX_SPOT_SHADOWS = 8u;
+const uint MAX_POINT_SHADOWS = 4u;
 
 struct GpuLight
 {
@@ -20,6 +21,14 @@ struct GpuSpotShadow
     vec4 SamplingParams; // world texel size, softness in texels, bias scale, unused
 };
 
+// State the cube faces were rendered with; the cube array layer is the
+// record's own index.
+struct GpuPointShadow
+{
+    vec4 PositionFar; // rendered light position, far plane
+    vec4 Params;      // near plane, softness in texels, bias scale, unused
+};
+
 layout(set = 0, binding = 0) uniform MeshFrame
 {
     mat4 ViewProjection;
@@ -37,4 +46,9 @@ layout(set = 0, binding = 0) uniform MeshFrame
     uint ShadowPad1;
     uint ShadowPad2;
     GpuSpotShadow SpotShadows[MAX_SPOT_SHADOWS];
+    uint PointShadowCount;
+    uint PointShadowPad0;
+    uint PointShadowPad1;
+    uint PointShadowPad2;
+    GpuPointShadow PointShadows[MAX_POINT_SHADOWS];
 } frame;

@@ -57,6 +57,8 @@ namespace
         RenderCapture::FrameRecord record;
         record.Stats.FrameIndex = frame;
         record.Stats.DrawCalls = static_cast<std::uint32_t>(frame * 10);
+        record.Stats.PointShadowFacesRendered = static_cast<std::uint32_t>(frame * 2);
+        record.Stats.PointShadowCubesHeld = static_cast<std::uint32_t>(frame);
         record.Timing.RawDtSeconds = 0.016;
         record.Timing.GpuScopes[0] = GpuScopeSpan{ .Milliseconds = 1.5f, .Valid = true };
         return record;
@@ -110,7 +112,7 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 1.0);
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 2.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);
@@ -121,6 +123,10 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     const JsonValue& first = frames->AsArray().front();
     ASSERT_NE(first.Find("draw_calls_count"), nullptr);
     EXPECT_EQ(first.Find("draw_calls_count")->AsNumber(), 10.0);
+    ASSERT_NE(first.Find("point_shadow_faces_rendered_count"), nullptr);
+    EXPECT_EQ(first.Find("point_shadow_faces_rendered_count")->AsNumber(), 2.0);
+    ASSERT_NE(first.Find("point_shadow_cubes_held_count"), nullptr);
+    EXPECT_EQ(first.Find("point_shadow_cubes_held_count")->AsNumber(), 1.0);
     ASSERT_NE(first.Find("raw_dt_ms"), nullptr);
     EXPECT_NEAR(first.Find("raw_dt_ms")->AsNumber(), 16.0, 1.0e-6);
     // Scope 0 was collected; the frame carries its span in milliseconds.

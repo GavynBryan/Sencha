@@ -150,10 +150,11 @@ void main()
                           * (window * window)
                           / (distanceToLight * distanceToLight + 1e-4);
         float shadowVisibility = 1.0;
-        if (pushData.ReceiveShadows != 0u && light.Type == 1u)
+        if (pushData.ReceiveShadows != 0u)
         {
-            float filteredVisibility = SampleSpotShadow(
-                light.ShadowIndex, inWorldPos, geometricNormal);
+            float filteredVisibility = light.Type == 0u
+                ? SamplePointShadow(light.ShadowIndex, inWorldPos, geometricNormal)
+                : SampleSpotShadow(light.ShadowIndex, inWorldPos, geometricNormal);
             shadowVisibility = mix(
                 1.0, filteredVisibility, clamp(frame.ShadowDarkness, 0.0, 1.0));
         }

@@ -19,7 +19,9 @@ namespace
         float Score = 0.0f;
         GpuLight Light;
         bool WantsSpotShadow = false;
+        bool WantsPointShadow = false;
         SpotShadowView Shadow;
+        PointShadowView PointShadow;
         Sphere ShadowBounds;
         std::uint32_t ShadowTileSize = 0;
         ShadowUpdatePolicy ShadowPolicy = ShadowUpdatePolicy::OnChange;
@@ -38,9 +40,11 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                                     const CameraRenderData& camera,
                                     RenderLightSet& lights,
                                     std::vector<SpotShadowRequest>& shadowRequests,
+                                    std::vector<PointShadowRequest>& pointShadowRequests,
                                     LightExtractionCounts* counts) const
 {
     shadowRequests.clear();
+    pointShadowRequests.clear();
     std::vector<LightCandidate> candidates;
 
     for (Registry* registry : registries)
@@ -65,15 +69,25 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                         return;
 
                     const Vec<3>& position = transform->Value.Position;
-                    if (!camera.ViewFrustum.IntersectsSphere(Sphere(position, light.Range)))
+                    const Sphere bounds(position, light.Range);
+                    if (!camera.ViewFrustum.IntersectsSphere(bounds))
                         return;
 
-                    candidates.push_back(LightCandidate{
+                    LightCandidate candidate{
                         .Key = MakeRenderEntityKey(*registry, entity),
                         .Score = LightImportanceScore(
                             position, light.Range, light.Intensity, camera.Position),
                         .Light = MakePointGpuLight(position, light),
-                    });
+                        .WantsPointShadow = light.CastShadows,
+                    };
+                    if (candidate.WantsPointShadow)
+                    {
+                        candidate.PointShadow = MakePointShadowView(
+                            position, light, lights.ShadowSoftness);
+                        candidate.ShadowBounds = bounds;
+                        candidate.ShadowPolicy = light.ShadowUpdate;
+                    }
+                    candidates.push_back(candidate);
                 });
         }
 
@@ -131,20 +145,35 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
     {
         const LightCandidate& candidate = candidates[index];
         const std::uint32_t lightIndex = lights.Add(candidate.Light);
-        if (lightIndex == UINT32_MAX || !candidate.WantsSpotShadow)
+        if (lightIndex == UINT32_MAX)
             continue;
 
-        shadowRequests.push_back(SpotShadowRequest{
-            .Key = candidate.Key,
-            .LightIndex = lightIndex,
-            .Score = candidate.Score,
-            .TileSize = candidate.ShadowTileSize,
-            .Policy = candidate.ShadowPolicy,
-            .StateHash = HashSpotShadowState(candidate.Shadow, candidate.ShadowTileSize),
-            .ViewProjection = candidate.Shadow.ViewProjection,
-            .SamplingParams = candidate.Shadow.SamplingParams,
-            .Bounds = candidate.ShadowBounds,
-        });
+        if (candidate.WantsSpotShadow)
+        {
+            shadowRequests.push_back(SpotShadowRequest{
+                .Key = candidate.Key,
+                .LightIndex = lightIndex,
+                .Score = candidate.Score,
+                .TileSize = candidate.ShadowTileSize,
+                .Policy = candidate.ShadowPolicy,
+                .StateHash = HashSpotShadowState(candidate.Shadow, candidate.ShadowTileSize),
+                .ViewProjection = candidate.Shadow.ViewProjection,
+                .SamplingParams = candidate.Shadow.SamplingParams,
+                .Bounds = candidate.ShadowBounds,
+            });
+        }
+        else if (candidate.WantsPointShadow)
+        {
+            pointShadowRequests.push_back(PointShadowRequest{
+                .Key = candidate.Key,
+                .LightIndex = lightIndex,
+                .Score = candidate.Score,
+                .Policy = candidate.ShadowPolicy,
+                .StateHash = HashPointShadowState(candidate.PointShadow),
+                .View = candidate.PointShadow,
+                .Bounds = candidate.ShadowBounds,
+            });
+        }
     }
 
     if (counts != nullptr)

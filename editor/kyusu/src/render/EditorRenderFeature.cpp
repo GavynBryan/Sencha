@@ -95,6 +95,8 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     {
         if (!Lighting.CreateAtlas() && Log != nullptr)
             Log->Warn("Spot shadow atlas creation failed; viewport shadows disabled");
+        if (!Lighting.CreateCubePool() && Log != nullptr)
+            Log->Warn("Point shadow cube pool creation failed; viewport shadows disabled");
         ShadowPass.Setup(services, Lighting);
     }
     // After ShadowPass: the forward pass's frame-UBO range write must be the
@@ -243,6 +245,8 @@ void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
 
     const std::span<const SpotShadowRequest> requests =
         QueueBuilder->BuildShadowRequests(ShadowScoreOrigin());
+    const std::span<const PointShadowRequest> pointRequests =
+        QueueBuilder->BuildPointShadowRequests(ShadowScoreOrigin());
 
     // The diff always swaps its tables so a later OnChange acquisition sees
     // current history; events are only worth emitting while someone caches.
@@ -252,30 +256,54 @@ void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
 
     const ShadowResidencyBudgets budgets =
         EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console);
-    Residency.Update(requests, CasterEvents, budgets);
+    Residency.Update(requests, pointRequests, CasterEvents, budgets);
     Residency.ApplyGrants(lights);
 
     ShadowPass.Draw(frame, lights, Residency.ScheduledViews(),
+                    Residency.ScheduledPointFaces(),
                     QueueBuilder->Casters(), *MeshCache, &Residency);
 
-    ShadowFrame.Active = Lighting.HasAtlas();
+    ShadowFrame.Active = Lighting.HasAtlas() || Lighting.HasCubePool();
     ShadowFrame.FocusRegistry = sceneRegistry;
     ShadowFrame.Stats = Residency.FrameStats();
     ShadowFrame.Budgets = budgets;
     for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
         ShadowFrame.Slots[slot] = Residency.SlotInfo(slot);
+    for (std::uint32_t slot = 0; slot < kMaxPointShadows; ++slot)
+        ShadowFrame.PointSlots[slot] = Residency.PointSlotInfo(slot);
     ShadowFrame.Rows.clear();
-    ShadowFrame.Rows.reserve(requests.size());
+    ShadowFrame.Rows.reserve(requests.size() + pointRequests.size());
     for (const SpotShadowRequest& request : requests)
     {
         ShadowResidencyReadout::LightRow row;
         row.Entity = request.Key.Entity;
+        row.Type = GpuLightType::Spot;
         row.Score = request.Score;
         row.TileSize = request.TileSize;
         row.Policy = request.Policy;
         for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
         {
             const SpotShadowSlotInfo& info = ShadowFrame.Slots[slot];
+            if (info.Live && info.Owner == request.Key)
+            {
+                row.Held = true;
+                row.Slot = slot;
+                break;
+            }
+        }
+        ShadowFrame.Rows.push_back(row);
+    }
+    for (const PointShadowRequest& request : pointRequests)
+    {
+        ShadowResidencyReadout::LightRow row;
+        row.Entity = request.Key.Entity;
+        row.Type = GpuLightType::Point;
+        row.Score = request.Score;
+        row.TileSize = kPointShadowFaceExtent;
+        row.Policy = request.Policy;
+        for (std::uint32_t slot = 0; slot < kMaxPointShadows; ++slot)
+        {
+            const PointShadowSlotInfo& info = ShadowFrame.PointSlots[slot];
             if (info.Live && info.Owner == request.Key)
             {
                 row.Held = true;

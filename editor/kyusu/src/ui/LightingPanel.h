@@ -11,10 +11,9 @@ class SelectionService;
 struct ShadowResidencyReadout;
 
 // Shadow budget readout over the render feature's per-frame residency
-// snapshot: requested vs shadowed spot counts, a persistent warning row
-// naming denied lights (click to select), per-light rows with tier, policy,
-// slot, and tile age, the selected light's cost line, and an atlas map
-// showing tier placement, guard insets, and slot ages. Values only; every
+// snapshot: requested vs shadowed counts, a persistent warning row naming
+// denied lights (click to select), per-light rows with tier, policy, slot,
+// and age, selected-light cost, and the spot atlas map. Values only; every
 // number comes from the snapshot, and the editor runs the game's arbiter
 // with the game's budget cvars, so the readout predicts the game's grants.
 class LightingPanel : public IEditorPanel

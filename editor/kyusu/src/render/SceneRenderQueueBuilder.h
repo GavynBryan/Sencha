@@ -34,9 +34,9 @@ class Logger;
 // placed meshes draw in every viewport. Both are camera-independent and built
 // once per frame; the per-viewport camera is applied at draw time.
 //
-// The light set carries the scene's packed lights; shadowed spots are
-// gathered as candidates and emitted as residency requests on demand
-// (BuildShadowRequests), so the editor runs the same arbiter the game does.
+// The light set carries the scene's packed lights; shadowed point and spot
+// lights are gathered as candidates and emitted as residency requests on
+// demand, so the editor runs the same arbiter the game does.
 // The caster set gathers the brush and placed-mesh sections that cast
 // (engine caster policy) plus the per-entity diff records driving OnChange
 // invalidation, so the shadow depth pass renders the same atlas the game
@@ -72,6 +72,8 @@ public:
     // the one atlas, so the camera only ranks, never excludes.
     [[nodiscard]] std::span<const SpotShadowRequest> BuildShadowRequests(
         const Vec<3>& viewOrigin);
+    [[nodiscard]] std::span<const PointShadowRequest> BuildPointShadowRequests(
+        const Vec<3>& viewOrigin);
 
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
@@ -104,6 +106,18 @@ private:
         ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
     };
 
+    struct PointShadowCandidate
+    {
+        RenderEntityKey Key;
+        std::uint32_t LightIndex = UINT32_MAX;
+        Vec<3> Position;
+        float Range = 0.0f;
+        float Intensity = 0.0f;
+        PointShadowView View;
+        Sphere Bounds;
+        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
+    };
+
     void RebuildBrushMeshes(const EditorDocument& document);
     void EmitBrushQueue();
     void BuildMeshQueue(const EditorDocument& document);
@@ -127,5 +141,7 @@ private:
     RenderLightSet SceneLights;
     ShadowCasterSet SceneCasters;
     std::vector<SpotShadowCandidate> ShadowCandidates;
+    std::vector<PointShadowCandidate> PointShadowCandidates;
     std::vector<SpotShadowRequest> ShadowRequests;
+    std::vector<PointShadowRequest> PointShadowRequests;
 };

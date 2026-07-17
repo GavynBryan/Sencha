@@ -11,7 +11,7 @@
 // mesh_forward shader. Runs in RenderPhase::MainColor. A thin wrapper that
 // holds the game's queue/caches/camera and drives a MeshForwardPass; the draw
 // itself lives in the pass so the editor can reuse it. The lighting bindings
-// are shared with the SpotShadowRenderFeature that renders the atlas; that
+// are shared with the ShadowRenderFeature that renders the shadow targets; that
 // feature's Setup must run first so the descriptor set layout exists.
 //=============================================================================
 class MeshRenderFeature : public IRenderFeature

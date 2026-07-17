@@ -67,6 +67,7 @@ private:
     ShadowCasterDiff CasterDiff;
     std::vector<ShadowCasterEvent> CasterEvents;
     std::vector<SpotShadowRequest> ShadowRequests;
+    std::vector<PointShadowRequest> PointShadowRequests;
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;

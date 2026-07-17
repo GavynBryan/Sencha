@@ -74,12 +74,15 @@ namespace
 
     void Extract(std::vector<Registry*>& registries,
                  RenderLightSet& lights,
-                 std::vector<SpotShadowRequest>* requestsOut = nullptr)
+                 std::vector<SpotShadowRequest>* requestsOut = nullptr,
+                 std::vector<PointShadowRequest>* pointRequestsOut = nullptr)
     {
         LightExtractionSystem extractor;
         std::vector<SpotShadowRequest> requests;
+        std::vector<PointShadowRequest> pointRequests;
         extractor.Extract(registries, MakeCamera(), lights,
-                          requestsOut != nullptr ? *requestsOut : requests);
+                          requestsOut != nullptr ? *requestsOut : requests,
+                          pointRequestsOut != nullptr ? *pointRequestsOut : pointRequests);
     }
 }
 
@@ -304,6 +307,111 @@ TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
     EXPECT_EQ(requests[0].TileSize,
               static_cast<std::uint32_t>(ShadowResolutionTier::Medium));
     EXPECT_EQ(requests[0].Policy, ShadowUpdatePolicy::OnChange);
+}
+
+TEST(LightExtraction, PacksPointShadowRequestAndClampsSamplingState)
+{
+    Registry registry = MakeLightRegistry(RegistryId::Global());
+    PointLightComponent point{};
+    point.Range = 20.0f;
+    point.CastShadows = true;
+    point.ShadowUpdate = ShadowUpdatePolicy::EveryFrame;
+    point.ShadowSoftness = 3.0f;
+    point.ShadowBiasScale = 1.75f;
+    MakePoint(registry, Vec<3>(1.0f, 2.0f, -3.0f), point);
+
+    RenderLightSet lights;
+    lights.ShadowSoftness = 2.0f;
+    std::vector<SpotShadowRequest> spotRequests;
+    std::vector<PointShadowRequest> pointRequests;
+    std::vector<Registry*> registries{ &registry };
+    Extract(registries, lights, &spotRequests, &pointRequests);
+
+    EXPECT_TRUE(spotRequests.empty());
+    ASSERT_EQ(pointRequests.size(), 1u);
+    EXPECT_EQ(pointRequests[0].LightIndex, 0u);
+    EXPECT_EQ(pointRequests[0].Policy, ShadowUpdatePolicy::EveryFrame);
+    EXPECT_EQ(pointRequests[0].View.PositionFar, Vec4(1.0f, 2.0f, -3.0f, 20.0f));
+    EXPECT_FLOAT_EQ(pointRequests[0].View.Params.X, 0.4f);
+    EXPECT_FLOAT_EQ(pointRequests[0].View.Params.Y, kSpotShadowSoftnessMaxTexels);
+    EXPECT_FLOAT_EQ(pointRequests[0].View.Params.Z, 1.75f);
+    EXPECT_TRUE(pointRequests[0].Bounds.Contains(Vec<3>(1.0f, 2.0f, -3.0f)));
+}
+
+TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangePointShadowGrants)
+{
+    Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
+    Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
+
+    PointLightComponent blue{};
+    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
+    blue.CastShadows = true;
+    MakePoint(zoneTwo, Vec<3>(0.0f, 0.0f, -2.0f), blue);
+
+    PointLightComponent red{};
+    red.Color = Vec<3>(1.0f, 0.0f, 0.0f);
+    red.CastShadows = true;
+    MakePoint(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
+
+    RenderLightSet forward;
+    std::vector<SpotShadowRequest> forwardSpots;
+    std::vector<PointShadowRequest> forwardPoints;
+    std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
+    Extract(forwardOrder, forward, &forwardSpots, &forwardPoints);
+
+    RenderLightSet reverse;
+    std::vector<SpotShadowRequest> reverseSpots;
+    std::vector<PointShadowRequest> reversePoints;
+    std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
+    Extract(reverseOrder, reverse, &reverseSpots, &reversePoints);
+
+    ASSERT_EQ(forwardPoints.size(), 2u);
+    ASSERT_EQ(reversePoints.size(), 2u);
+    for (std::uint32_t index = 0; index < 2u; ++index)
+    {
+        EXPECT_EQ(forwardPoints[index].Key, reversePoints[index].Key);
+        EXPECT_EQ(forwardPoints[index].LightIndex, reversePoints[index].LightIndex);
+        EXPECT_EQ(forwardPoints[index].StateHash, reversePoints[index].StateHash);
+    }
+
+    ShadowResidency forwardResidency;
+    ShadowResidency reverseResidency;
+    forwardResidency.Update({}, forwardPoints, {}, ShadowResidencyBudgets{});
+    reverseResidency.Update({}, reversePoints, {}, ShadowResidencyBudgets{});
+    ASSERT_EQ(forwardResidency.PointGrants().size(), 2u);
+    ASSERT_EQ(reverseResidency.PointGrants().size(), 2u);
+    for (std::size_t index = 0; index < 2u; ++index)
+    {
+        EXPECT_EQ(forwardResidency.PointGrants()[index].LightIndex,
+                  reverseResidency.PointGrants()[index].LightIndex);
+        EXPECT_EQ(forwardResidency.PointGrants()[index].SlotIndex,
+                  reverseResidency.PointGrants()[index].SlotIndex);
+    }
+}
+
+TEST(PointShadowProjection, FaceAxesMapToFaceCenters)
+{
+    const std::array<Vec<3>, kPointShadowFaceCount> axes = {
+        Vec<3>(1.0f, 0.0f, 0.0f),
+        Vec<3>(-1.0f, 0.0f, 0.0f),
+        Vec<3>(0.0f, 1.0f, 0.0f),
+        Vec<3>(0.0f, -1.0f, 0.0f),
+        Vec<3>(0.0f, 0.0f, 1.0f),
+        Vec<3>(0.0f, 0.0f, -1.0f),
+    };
+    const Vec<3> origin(3.0f, 4.0f, 5.0f);
+    for (std::uint32_t face = 0; face < kPointShadowFaceCount; ++face)
+    {
+        const Mat4 viewProjection = MakePointShadowFaceViewProjection(
+            origin, face, 0.1f, 10.0f);
+        const Vec<3> point = origin + axes[face] * 5.0f;
+        const Vec4 clip = viewProjection * Vec4(point.X, point.Y, point.Z, 1.0f);
+        ASSERT_GT(clip.W, 0.0f);
+        EXPECT_NEAR(clip.X / clip.W, 0.0f, 1.0e-5f);
+        EXPECT_NEAR(clip.Y / clip.W, 0.0f, 1.0e-5f);
+        EXPECT_GT(clip.Z / clip.W, 0.0f);
+        EXPECT_LT(clip.Z / clip.W, 1.0f);
+    }
 }
 
 TEST(SpotShadowAtlas, FilterReachStaysInsideTheGuardBand)

@@ -21,6 +21,12 @@ struct GpuSpotShadow
     Vec4 SamplingParams;
 };
 
+struct GpuPointShadow
+{
+    Vec4 PositionFar;
+    Vec4 Params;
+};
+
 struct MeshFrameUniforms
 {
     Mat4 ViewProjection;
@@ -38,6 +44,11 @@ struct MeshFrameUniforms
     std::uint32_t ShadowPad1 = 0;
     std::uint32_t ShadowPad2 = 0;
     GpuSpotShadow SpotShadows[kMaxSpotShadows];
+    std::uint32_t PointShadowCount = 0;
+    std::uint32_t PointShadowPad0 = 0;
+    std::uint32_t PointShadowPad1 = 0;
+    std::uint32_t PointShadowPad2 = 0;
+    GpuPointShadow PointShadows[kMaxPointShadows];
 };
 
 struct MeshPushConstants

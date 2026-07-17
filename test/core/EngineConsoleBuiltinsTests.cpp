@@ -52,6 +52,7 @@ TEST(EngineConsoleBuiltins, RegistersExpectedEngineCVars)
     EXPECT_NE(registry.FindCVar("render.shadow.bias_const"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.bias_slope"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.max_spot"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_point"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.max_views_per_frame"), nullptr);
     EXPECT_NE(registry.FindCVar("render.shadow.min_invalidated_views_per_frame"), nullptr);
 }
@@ -61,6 +62,7 @@ TEST(EngineConsoleBuiltins, ShadowBudgetsReadCVarsAndDefaultWithoutARegistry)
     const ShadowResidencyBudgets defaults =
         EngineConsoleBuiltins::ReadShadowResidencyBudgets(nullptr);
     EXPECT_EQ(defaults.MaxSlots, 8u);
+    EXPECT_EQ(defaults.MaxPointSlots, 4u);
     EXPECT_EQ(defaults.MaxViewsPerFrame, 12u);
     EXPECT_EQ(defaults.MinInvalidatedViewsPerFrame, 1u);
 
@@ -71,6 +73,8 @@ TEST(EngineConsoleBuiltins, ShadowBudgetsReadCVarsAndDefaultWithoutARegistry)
 
     EXPECT_TRUE(registry.SetCVar("render.shadow.max_spot", 3.0, { "test" },
                                  ConsolePhase::EngineReady).Succeeded());
+    EXPECT_TRUE(registry.SetCVar("render.shadow.max_point", 2.0, { "test" },
+                                 ConsolePhase::EngineReady).Succeeded());
     EXPECT_TRUE(registry.SetCVar("render.shadow.max_views_per_frame", 0.0, { "test" },
                                  ConsolePhase::EngineReady).Succeeded());
     EXPECT_TRUE(registry.SetCVar("render.shadow.min_invalidated_views_per_frame", 2.0,
@@ -79,6 +83,7 @@ TEST(EngineConsoleBuiltins, ShadowBudgetsReadCVarsAndDefaultWithoutARegistry)
     const ShadowResidencyBudgets budgets =
         EngineConsoleBuiltins::ReadShadowResidencyBudgets(&registry);
     EXPECT_EQ(budgets.MaxSlots, 3u);
+    EXPECT_EQ(budgets.MaxPointSlots, 2u);
     EXPECT_EQ(budgets.MaxViewsPerFrame, 0u);
     EXPECT_EQ(budgets.MinInvalidatedViewsPerFrame, 2u);
 }
