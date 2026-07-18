@@ -137,8 +137,16 @@ TEST(EngineConsoleBuiltins, CaptureCommandsGateOnModeAndWriteParseableJson)
     console.AdvancePhase(ConsolePhase::EngineReady);
     RenderCapture capture;
     RenderProfileMode pendingMode = RenderProfileMode::Off;
+    std::string captureOutput;
     EngineConsoleBuiltins::RegisterCaptureCommands(
-        console.Registry(), capture, pendingMode);
+        console.Registry(), capture, pendingMode, captureOutput);
+
+    // render.capture.output stores the shutdown-flush path.
+    EXPECT_TRUE(captureOutput.empty());
+    EXPECT_TRUE(console.Registry().SetCVar(
+        "render.capture.output", std::string{ "run.json" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(captureOutput, "run.json");
 
     ConsoleResult denied = console.ExecuteTokens(
         { "render.capture.start" }, { "test" });

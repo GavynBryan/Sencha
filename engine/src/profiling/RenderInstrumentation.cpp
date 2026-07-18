@@ -49,3 +49,19 @@ bool ParseRenderProfileMode(std::string_view name, RenderProfileMode& mode)
     }
     return false;
 }
+
+RenderInstrumentation ResolveInstrumentationBundle(RenderProfileMode active,
+                                                   RenderStats* stats,
+                                                   RenderStatsHistory* statsHistory,
+                                                   GpuTimestampPool* gpuTimestamps,
+                                                   RenderCapture* capture)
+{
+    const bool counters = active >= RenderProfileMode::Counters;
+    RenderInstrumentation bundle;
+    bundle.Stats = counters ? stats : nullptr;
+    bundle.StatsHistory = counters ? statsHistory : nullptr;
+    bundle.GpuTimestamps =
+        active >= RenderProfileMode::Gpu ? gpuTimestamps : nullptr;
+    bundle.Capture = active >= RenderProfileMode::Capture ? capture : nullptr;
+    return bundle;
+}

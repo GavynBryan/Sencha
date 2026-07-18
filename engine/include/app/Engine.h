@@ -7,6 +7,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
+#include <runtime/FrameTrace.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -15,7 +16,9 @@
 #include <profiling/RenderCapture.h>
 #endif
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 class AsyncTaskQueue;
@@ -196,6 +199,15 @@ private:
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     TimingHistory TimingData;
+    // Run-control state, written by app.exit_after_frames / frame.trace.output.
+    // Zero and empty leave both facilities inert; the trace store is allocated
+    // only for a run that armed an output path.
+    std::uint64_t ExitAfterFrames = 0;
+    std::string FrameTraceOutputPath;
+    std::unique_ptr<ChromeJsonFrameTrace> FrameTraceStore;
+    // Written by render.capture.output; the render capture is flushed here at
+    // shutdown when profiling is compiled in and the run recorded in capture mode.
+    std::string RenderCaptureOutputPath;
     // Instrumentation storage beside the timing history. The bundle's
     // pointers select into these per the active mode; the objects exist in
     // every build so consumers stay #ifdef-free at the publish points.

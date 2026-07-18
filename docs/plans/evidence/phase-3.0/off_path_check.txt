@@ -1,0 +1,19 @@
+== Part A: source invariants ==
+PASS  timestamp/query commands confined to GpuTimestampPool.cpp
+PASS  debug-label commands confined to VulkanDebugLabels.cpp
+PASS  engine/CMakeLists.txt excludes GpuTimestampPool in the OFF build
+PASS  engine/CMakeLists.txt excludes VulkanDebugLabels in the OFF build
+PASS  engine/CMakeLists.txt excludes RenderCapture in the OFF build
+PASS  engine/CMakeLists.txt excludes RenderStatsPanel in the OFF build
+PASS  engine/CMakeLists.txt excludes RenderDebugView in the OFF build
+
+== Part B: compiled object files in the OFF build ==
+PASS  CMakeCache has SENCHA_ENABLE_RENDER_PROFILING=OFF
+PASS  not compiled: RenderCapture.cpp.o
+PASS  not compiled: GpuTimestampPool.cpp.o
+PASS  not compiled: VulkanDebugLabels.cpp.o
+PASS  not compiled: RenderStatsPanel.cpp.o
+PASS  not compiled: RenderDebugView.cpp.o
+PASS  tier policy compiled: RenderInstrumentation.cpp.o present
+
+RESULT  render profiling is fully compiled out (all checks passed)

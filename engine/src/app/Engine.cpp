@@ -155,7 +155,12 @@ bool Engine::Initialize()
     FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
     FrameDriverInstance->SetTimingHistory(&TimingData);
     FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
-    FrameDriverInstance->SetShouldExit([this] { return !Running; });
+    FrameDriverInstance->SetShouldExit([this] {
+        if (!Running)
+            return true;
+        return ExitAfterFrames != 0
+            && RuntimeLoop.GetCurrentFrame().WallTime.FrameIndex >= ExitAfterFrames;
+    });
 
     Initialized = true;
     return true;
@@ -373,8 +378,36 @@ int Engine::Run(Game& game)
     if (FrameDriverInstance != nullptr)
     {
         RegisterFramePhases(game);
+        if (!FrameTraceOutputPath.empty())
+        {
+            FrameTraceStore = std::make_unique<ChromeJsonFrameTrace>();
+            FrameDriverInstance->SetTrace(FrameTraceStore.get());
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Arm the render capture for the whole run; records only append once the
+        // mode latch makes Capture active (render.profile.mode capture), so this
+        // is inert unless both the path and the mode are set.
+        if (!RenderCaptureOutputPath.empty())
+            RenderCaptureStore.Start(0);
+#endif
         Running = true;
         FrameDriverInstance->Run();
+        if (FrameTraceStore != nullptr
+            && !FrameTraceStore->WriteTo(FrameTraceOutputPath))
+        {
+            std::fprintf(stderr, "Failed to write frame trace to '%s'.\n",
+                         FrameTraceOutputPath.c_str());
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        if (!RenderCaptureOutputPath.empty()
+            && !EngineConsoleBuiltins::WriteRenderCapture(
+                   RenderCaptureStore, Console().Registry(), RenderCaptureOutputPath,
+                   nullptr))
+        {
+            std::fprintf(stderr, "Failed to write render capture to '%s'.\n",
+                         RenderCaptureOutputPath.c_str());
+        }
+#endif
     }
 
     GameShutdownContext shutdown{
@@ -389,18 +422,14 @@ void Engine::ApplyPendingRenderProfileMode()
 {
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ActiveProfileMode = PendingProfileMode;
-    const bool counters = ActiveProfileMode >= RenderProfileMode::Counters;
-    InstrumentationBundle.Stats = counters ? &FrameRenderStats : nullptr;
-    InstrumentationBundle.StatsHistory = counters ? &RenderStatsRing : nullptr;
+    GpuTimestampPool* gpuTimestamps = nullptr;
 #ifdef SENCHA_ENABLE_VULKAN
-    InstrumentationBundle.GpuTimestamps =
-        ActiveProfileMode >= RenderProfileMode::Gpu && GpuTimestampsPool != nullptr
-            ? GpuTimestampsPool.get()
-            : nullptr;
+    gpuTimestamps = GpuTimestampsPool.get();
 #endif
-    InstrumentationBundle.Capture =
-        ActiveProfileMode >= RenderProfileMode::Capture ? &RenderCaptureStore : nullptr;
-    if (counters)
+    InstrumentationBundle = ResolveInstrumentationBundle(
+        ActiveProfileMode, &FrameRenderStats, &RenderStatsRing, gpuTimestamps,
+        &RenderCaptureStore);
+    if (InstrumentationBundle.Stats != nullptr)
     {
         FrameRenderStats = RenderStats{};
         FrameRenderStats.FrameIndex = ++RenderStatsFrameIndex;
@@ -474,10 +503,12 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
     EngineConsoleBuiltins::RegisterFramePacingCVars(
         registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterRunControlCVars(
+        registry, ExitAfterFrames, FrameTraceOutputPath);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     EngineConsoleBuiltins::RegisterProfilingCVars(registry, PendingProfileMode);
     EngineConsoleBuiltins::RegisterCaptureCommands(
-        registry, RenderCaptureStore, PendingProfileMode);
+        registry, RenderCaptureStore, PendingProfileMode, RenderCaptureOutputPath);
 #endif
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);

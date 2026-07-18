@@ -6,28 +6,34 @@
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
+#include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
 
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace
@@ -117,6 +123,52 @@ namespace
         Registry*& RegistryInstance;
         FreeCamera& FreeCam;
     };
+
+    // Drives the active camera along a fixed orbit as a pure function of an
+    // internal frame counter, so every run of a given build renders the exact
+    // same view sequence. Runs in FrameUpdate (after the fixed-tick free-cam),
+    // so it wins for the presented frame whenever armed. Off by default; free
+    // fly-cam is untouched unless sceneviewer.camera.scripted is set.
+    struct ScriptedCameraPathSystem
+    {
+        ScriptedCameraPathSystem(Registry*& registry, FreeCamera& freeCamera,
+                                 const bool& enabled)
+            : RegistryInstance(registry)
+            , FreeCam(freeCamera)
+            , Enabled(enabled)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext&)
+        {
+            if (!Enabled || RegistryInstance == nullptr)
+                return;
+            LocalTransform* transform =
+                RegistryInstance->Components.TryGet<LocalTransform>(FreeCam.Entity);
+            if (transform == nullptr)
+                return;
+
+            const double angle = static_cast<double>(FrameCounter) * kAngularStep;
+            transform->Value.Position = Vec3d{
+                std::cos(angle) * kRadius, kHeight, std::sin(angle) * kRadius };
+            const float yaw = static_cast<float>(angle) + kPi; // face the orbit center
+            transform->Value.Rotation =
+                Quatf::FromAxisAngle(Vec3d::Up(), yaw)
+                * Quatf::FromAxisAngle(Vec3d::Right(), kPitch);
+            ++FrameCounter;
+        }
+
+        Registry*& RegistryInstance;
+        FreeCamera& FreeCam;
+        const bool& Enabled;
+        std::uint64_t FrameCounter = 0;
+
+        static constexpr double kAngularStep = 0.012;
+        static constexpr double kRadius = 8.0;
+        static constexpr double kHeight = 3.0;
+        static constexpr float kPitch = -0.35f;
+        static constexpr float kPi = 3.14159265358979323846f;
+    };
 } // namespace
 
 void SceneViewerGame::OnRegisterComponents(ComponentSerializerRegistry&)
@@ -167,6 +219,21 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     // this hook (ConsolePhase::GameLoaded), landing in LoadMap.
     engine.Console().SetMapHandler(
         [this](std::string_view mapName) { return LoadMap(mapName); });
+
+    engine.Console().Registry().RegisterCVar({
+        .Name = "sceneviewer.camera.scripted",
+        .Owner = "sceneviewer",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        .Flags = CVarFlags::Transient,
+        .Help = "Drive the camera along a fixed deterministic orbit instead of "
+                "free-fly, so a run renders an identical view sequence.",
+        .Source = { "sceneviewer" },
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            ScriptedCameraEnabled = std::get<bool>(ctx.NewValue);
+        },
+    });
 
     std::printf("Sencha scene viewer\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
@@ -264,6 +331,8 @@ void SceneViewerGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
     ctx.Schedule.Register<FreeCameraMovementSystem>(ActiveZoneRegistry, FreeCam);
+    ctx.Schedule.Register<ScriptedCameraPathSystem>(
+        ActiveZoneRegistry, FreeCam, ScriptedCameraEnabled);
 }
 
 void SceneViewerGame::OnPlatformEvent(PlatformEventContext& ctx)

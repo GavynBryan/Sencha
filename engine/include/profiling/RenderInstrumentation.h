@@ -66,3 +66,15 @@ struct RenderInstrumentation
     GpuTimestampPool* GpuTimestamps = nullptr;
     RenderCapture* Capture = nullptr;
 };
+
+// The tier policy behind the mode latch, as a pure function so it can be tested
+// without booting the engine. Each member is live only at or above its tier;
+// Off yields an all-null bundle, which is the mechanism that makes the Off path
+// unable to push a stats frame or append a capture record. A candidate store
+// that is itself null (no timestamp support, profiling compiled out) stays null.
+[[nodiscard]] RenderInstrumentation ResolveInstrumentationBundle(
+    RenderProfileMode active,
+    RenderStats* stats,
+    RenderStatsHistory* statsHistory,
+    GpuTimestampPool* gpuTimestamps,
+    RenderCapture* capture);

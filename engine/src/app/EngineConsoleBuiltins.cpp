@@ -204,6 +204,44 @@ namespace EngineConsoleBuiltins
         });
     }
 
+    void RegisterRunControlCVars(ConsoleRegistry& registry,
+                                 std::uint64_t& exitAfterFrames,
+                                 std::string& frameTraceOutput)
+    {
+        registry.RegisterCVar({
+            .Name = "app.exit_after_frames",
+            .Owner = "engine",
+            .Type = CVarType::Int,
+            .DefaultValue = std::int64_t{ 0 },
+            .CurrentValue = std::int64_t{ 0 },
+            .Flags = CVarFlags::Transient,
+            .Help = "Request exit once this many frames have been driven. 0 runs "
+                    "until a quit request. For bounded, unattended runs.",
+            .Source = { "engine defaults" },
+            .Min = 0.0,
+            .OnChange = [&exitAfterFrames](const CVarChangeContext& ctx) {
+                const std::int64_t value = std::get<std::int64_t>(ctx.NewValue);
+                exitAfterFrames =
+                    value > 0 ? static_cast<std::uint64_t>(value) : 0;
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "frame.trace.output",
+            .Owner = "engine",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{},
+            .CurrentValue = std::string{},
+            .Flags = CVarFlags::Transient,
+            .Help = "When non-empty, frame phase timings are traced and written "
+                    "as chrome://tracing JSON to this path at shutdown.",
+            .Source = { "engine defaults" },
+            .OnChange = [&frameTraceOutput](const CVarChangeContext& ctx) {
+                frameTraceOutput = std::get<std::string>(ctx.NewValue);
+            },
+        });
+    }
+
     void RegisterHostCommands(ConsoleService& console,
                               std::function<void()> quitHandler)
     {
@@ -270,9 +308,50 @@ namespace EngineConsoleBuiltins
     }
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+    bool WriteRenderCapture(const RenderCapture& capture,
+                            ConsoleRegistry& registry,
+                            const std::string& path,
+                            std::size_t* bytesWritten)
+    {
+        const bool csv = path.size() >= 4
+            && path.compare(path.size() - 4, 4, ".csv") == 0;
+
+        std::string payload;
+        if (csv)
+        {
+            payload = capture.SerializeCsv();
+        }
+        else
+        {
+            std::vector<RenderCapture::MetadataPair> cvars;
+            for (const CVarMetadata* cvar : registry.ListCVars())
+            {
+                std::string value;
+                if (const auto* b = std::get_if<bool>(&cvar->CurrentValue))
+                    value = *b ? "true" : "false";
+                else if (const auto* i = std::get_if<std::int64_t>(&cvar->CurrentValue))
+                    value = std::to_string(*i);
+                else if (const auto* d = std::get_if<double>(&cvar->CurrentValue))
+                    value = std::to_string(*d);
+                else if (const auto* s = std::get_if<std::string>(&cvar->CurrentValue))
+                    value = *s;
+                cvars.emplace_back(cvar->Name, std::move(value));
+            }
+            payload = capture.SerializeJson(cvars);
+        }
+
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        if (!file.is_open() || !(file << payload))
+            return false;
+        if (bytesWritten != nullptr)
+            *bytesWritten = payload.size();
+        return true;
+    }
+
     void RegisterCaptureCommands(ConsoleRegistry& registry,
                                  RenderCapture& capture,
-                                 const RenderProfileMode& pendingMode)
+                                 const RenderProfileMode& pendingMode,
+                                 std::string& captureOutput)
     {
         registry.RegisterCommand({
             .Name = "render.capture.start",
@@ -343,43 +422,32 @@ namespace EngineConsoleBuiltins
                     return result;
                 }
                 const std::string& path = args.front();
-                const bool csv = path.size() >= 4
-                    && path.compare(path.size() - 4, 4, ".csv") == 0;
-
-                std::string payload;
-                if (csv)
-                {
-                    payload = capture.SerializeCsv();
-                }
-                else
-                {
-                    std::vector<RenderCapture::MetadataPair> cvars;
-                    for (const CVarMetadata* cvar : ctx.Registry.ListCVars())
-                    {
-                        std::string value;
-                        if (const auto* b = std::get_if<bool>(&cvar->CurrentValue))
-                            value = *b ? "true" : "false";
-                        else if (const auto* i = std::get_if<std::int64_t>(&cvar->CurrentValue))
-                            value = std::to_string(*i);
-                        else if (const auto* d = std::get_if<double>(&cvar->CurrentValue))
-                            value = std::to_string(*d);
-                        else if (const auto* s = std::get_if<std::string>(&cvar->CurrentValue))
-                            value = *s;
-                        cvars.emplace_back(cvar->Name, std::move(value));
-                    }
-                    payload = capture.SerializeJson(cvars);
-                }
-
-                std::ofstream file(path, std::ios::binary | std::ios::trunc);
-                if (!file.is_open() || !(file << payload))
+                std::size_t bytes = 0;
+                if (!WriteRenderCapture(capture, ctx.Registry, path, &bytes))
                 {
                     result.Status = ConsoleStatus::InvalidArguments;
                     result.Error("failed to write '" + path + "'");
                     return result;
                 }
                 result.Info("wrote " + std::to_string(capture.Size()) + " frames ("
-                            + std::to_string(payload.size()) + " bytes) to " + path);
+                            + std::to_string(bytes) + " bytes) to " + path);
                 return result;
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "render.capture.output",
+            .Owner = "engine",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{},
+            .CurrentValue = std::string{},
+            .Flags = CVarFlags::Transient,
+            .Help = "When non-empty (with render.profile.mode capture), per-frame "
+                    "records are written at shutdown: CSV if the path ends in .csv, "
+                    "else a schema-versioned JSON envelope with a cvar snapshot.",
+            .Source = { "renderer defaults" },
+            .OnChange = [&captureOutput](const CVarChangeContext& ctx) {
+                captureOutput = std::get<std::string>(ctx.NewValue);
             },
         });
     }
