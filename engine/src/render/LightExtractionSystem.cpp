@@ -63,6 +63,10 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                 {
                     if (!light.Enabled || !IsUsable(light.Intensity, light.Range))
                         return;
+                    // Baked-direct lights contribute only through the per-vertex
+                    // channel; they never enter the runtime forward set.
+                    if (light.BakeContribution == LightBakeContribution::Direct)
+                        return;
 
                     const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
                     if (transform == nullptr)
@@ -97,6 +101,10 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                 [&](EntityId entity, const SpotLightComponent& light)
                 {
                     if (!light.Enabled || !IsUsable(light.Intensity, light.Range))
+                        return;
+                    // Baked-direct lights contribute only through the per-vertex
+                    // channel; they never enter the runtime forward set.
+                    if (light.BakeContribution == LightBakeContribution::Direct)
                         return;
 
                     const WorldTransform* transform = world.TryGet<WorldTransform>(entity);

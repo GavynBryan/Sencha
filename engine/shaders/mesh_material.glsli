@@ -3,6 +3,7 @@ layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
 layout(location = 3) in vec3 inWorldTangent;
 layout(location = 4) in float inTangentSign;
+layout(location = 5) in vec3 inBakedDirect;
 
 layout(push_constant) uniform MeshPush
 {

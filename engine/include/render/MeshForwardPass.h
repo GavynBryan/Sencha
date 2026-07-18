@@ -37,7 +37,7 @@ struct MeshFrameUniforms
     std::uint32_t LightCount = 0;
     std::uint32_t TonemapEnabled = 1;
     float ShadowDarkness = 1.0f;
-    std::uint32_t Pad1 = 0;
+    std::uint32_t BakedDirectEnabled = 1;
     GpuLight Lights[kMaxForwardLights];
     std::uint32_t SpotShadowCount = 0;
     std::uint32_t ShadowPad0 = 0;

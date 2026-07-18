@@ -54,5 +54,11 @@ void main()
         lit += specularTint * terms.Specular * terms.Radiance;
     }
 
+    // Baked static direct diffuse (diffuse only, no specular). The lights that
+    // fed this term are excluded from the runtime set above, so it does not
+    // double-count. Zero on unbaked meshes.
+    if (frame.BakedDirectEnabled != 0u)
+        lit += baseColor.rgb * inBakedDirect;
+
     outColor = vec4(ResolveOutput(lit + emission), baseColor.a);
 }

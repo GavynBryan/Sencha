@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstring>
+
 #include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
+#include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
 #include <render/static_mesh/MeshValidation.h>
@@ -124,6 +128,61 @@ TEST(StaticMeshSerialization, BadMagicFails)
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
     bytes[0] = std::byte{'B'};
+
+    MeshGeometry loaded;
+    EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
+}
+
+TEST(StaticMeshSerialization, WritesVersion4AndStride52)
+{
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
+    ASSERT_GE(bytes.size(), sizeof(SmeshFileHeader));
+
+    SmeshFileHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    EXPECT_EQ(header.Version, kSmeshFormatVersion);
+    EXPECT_EQ(header.Version, 4u);
+    EXPECT_EQ(header.VertexStride, sizeof(StaticMeshVertex));
+    EXPECT_EQ(header.VertexStride, 52u);
+}
+
+TEST(StaticMeshSerialization, PreservesBakedDirectChannel)
+{
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
+
+    MeshGeometry source = MakeValidMesh();
+    for (std::size_t i = 0; i < source.Vertices.size(); ++i)
+        source.Vertices[i].BakedDirect = 0x11223344u + static_cast<std::uint32_t>(i);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(source, bytes));
+
+    MeshGeometry loaded;
+    ASSERT_TRUE(loader.LoadFromBytes(bytes, loaded));
+    ASSERT_EQ(loaded.Vertices.size(), source.Vertices.size());
+    for (std::size_t i = 0; i < source.Vertices.size(); ++i)
+        EXPECT_EQ(loaded.Vertices[i].BakedDirect, source.Vertices[i].BakedDirect);
+}
+
+TEST(StaticMeshSerialization, RejectsPriorVersion)
+{
+    // One version is live at a time: a v3 file (before the baked-direct
+    // channel) must fail rather than load with a mismatched vertex stride.
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
+    const std::uint32_t priorVersion = 3;
+    std::memcpy(bytes.data() + offsetof(SmeshFileHeader, Version),
+                &priorVersion, sizeof(priorVersion));
 
     MeshGeometry loaded;
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));

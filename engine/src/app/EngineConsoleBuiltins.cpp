@@ -150,6 +150,18 @@ namespace EngineConsoleBuiltins
         });
 
         registry.RegisterCVar({
+            .Name = "render.baked_direct.enabled",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = true,
+            .CurrentValue = true,
+            .Flags = CVarFlags::Archive,
+            .Help = "Adds the baked static direct diffuse vertex term in the "
+                    "forward shader. Off isolates dynamic lighting for A/B.",
+            .Source = { "renderer defaults" },
+        });
+
+        registry.RegisterCVar({
             .Name = "time.timescale",
             .Owner = "engine",
             .Type = CVarType::Double,

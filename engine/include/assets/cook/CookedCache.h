@@ -77,7 +77,7 @@ struct CookedSourceEntry
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
 // .sanim artifacts (Decisions J, M, N). A per-importer cook version is the
 // finer-grained eventual replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 3;
+inline constexpr uint32_t kCookedCacheIndexVersion = 4;
 
 class CookedCacheIndex
 {

@@ -135,6 +135,7 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
+        { 8, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = true;
@@ -214,6 +215,7 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
+        { 8, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = !overdraw;
@@ -271,6 +273,7 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
                                 lights.Exposure, lights.TonemapKnee);
     uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
     uniforms.ShadowDarkness = lights.ShadowDarkness;
+    uniforms.BakedDirectEnabled = lights.BakedDirectEnabled ? 1u : 0u;
 
     const std::uint32_t lightCount =
         lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;

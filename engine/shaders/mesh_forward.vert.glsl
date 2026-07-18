@@ -11,6 +11,7 @@ layout(location = 4) in vec4 inWorld1;
 layout(location = 5) in vec4 inWorld2;
 layout(location = 6) in vec4 inWorld3;
 layout(location = 7) in vec4 inTangent;
+layout(location = 8) in vec4 inBakedDirect; // RGBM-packed baked static direct diffuse.
 
 layout(push_constant) uniform MeshPush
 {
@@ -35,6 +36,7 @@ layout(location = 1) out vec2 outUv0;
 layout(location = 2) out vec3 outWorldPos;
 layout(location = 3) out vec3 outWorldTangent;
 layout(location = 4) out float outTangentSign;
+layout(location = 5) out vec3 outBakedDirect;
 
 void main()
 {
@@ -57,5 +59,9 @@ void main()
     outWorldPos = worldPosition.xyz;
     outWorldTangent = worldTangent;
     outTangentSign = inTangent.w * orientation;
+    // RGBM decode: rgb in [0,1] scaled by the shared multiplier. Neutral
+    // (zero) stays zero. Decoding here and interpolating the linear result is
+    // correct for the diffuse irradiance a bake stores.
+    outBakedDirect = inBakedDirect.rgb * (inBakedDirect.a * BAKED_DIRECT_RANGE);
     gl_Position = frame.ViewProjection * worldPosition;
 }

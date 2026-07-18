@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <math/Vec.h>
 
 // The base vertex shared by static and skinned meshes. Skinning influences
@@ -16,4 +18,11 @@ struct StaticMeshVertex
     // bitangent = cross(Normal, Tangent.xyz) * Tangent.W. Generated at cook
     // (MikkTSpace) when the source lacks them (Decision M).
     Vec4 Tangent;
+
+    // Baked static direct diffuse, RGBM-packed (R8G8B8A8): the summed
+    // contribution of lights authored LightBakeContribution::Direct, computed
+    // per vertex by the lighting bake. Zero is neutral (unbaked meshes add
+    // nothing). Read as VK_FORMAT_R8G8B8A8_UNORM and decoded rgb * a * range
+    // in the forward vertex shader.
+    std::uint32_t BakedDirect = 0;
 };

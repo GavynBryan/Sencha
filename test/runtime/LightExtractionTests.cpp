@@ -145,6 +145,35 @@ TEST(LightExtraction, SkipsDisabledAndCulledLights)
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
 }
 
+TEST(LightExtraction, ExcludesBakedDirectLights)
+{
+    Registry registry = MakeLightRegistry(RegistryId::Global());
+
+    // A baked-direct light contributes only through the per-vertex channel, so
+    // it must never enter the runtime set (no cost, no cap slot, no shadow),
+    // for either light type.
+    PointLightComponent bakedPoint{};
+    bakedPoint.Intensity = 5.0f;
+    bakedPoint.BakeContribution = LightBakeContribution::Direct;
+    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), bakedPoint);
+
+    SpotLightComponent bakedSpot{};
+    bakedSpot.Intensity = 5.0f;
+    bakedSpot.BakeContribution = LightBakeContribution::Direct;
+    MakeSpot(registry, Vec<3>(0.0f, 0.0f, -3.0f), bakedSpot);
+
+    PointLightComponent dynamicPoint{};
+    dynamicPoint.Intensity = 4.0f;
+    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), dynamicPoint);
+
+    RenderLightSet lights;
+    std::vector<Registry*> registries{ &registry };
+    Extract(registries, lights);
+
+    ASSERT_EQ(lights.Count, 1u);
+    EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
+}
+
 TEST(LightExtraction, PrioritizesInfluentialLightsBeforeTheCap)
 {
     Registry registry = MakeLightRegistry(RegistryId::Global());

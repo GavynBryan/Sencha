@@ -43,6 +43,10 @@ enum class LightBakeContribution : std::uint8_t
 {
     None,
     Indirect,
+    // The light's direct diffuse is baked into static geometry vertices and the
+    // light is removed from the runtime forward set (no per-frame cost, no cap
+    // slot, no shadow). For static fill/accent lights on static geometry.
+    Direct,
 };
 
 template <>
@@ -51,5 +55,6 @@ struct EnumSchema<LightBakeContribution>
     static constexpr std::array Values = {
         EnumValue{ LightBakeContribution::None, "none" },
         EnumValue{ LightBakeContribution::Indirect, "indirect" },
+        EnumValue{ LightBakeContribution::Direct, "direct" },
     };
 };

@@ -89,6 +89,8 @@ namespace
             console, "render.shadow.bias_const", lights.ShadowBiasConstant);
         lights.ShadowBiasSlope = ReadDoubleCVar(
             console, "render.shadow.bias_slope", lights.ShadowBiasSlope);
+        lights.BakedDirectEnabled = ReadBoolCVar(
+            console, "render.baked_direct.enabled", lights.BakedDirectEnabled);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         lights.DebugView = ReadDebugViewCVar(console);
 #endif

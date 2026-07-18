@@ -3,6 +3,10 @@ const uint MAX_LIGHTS = 64u;
 const uint MAX_SPOT_SHADOWS = 8u;
 const uint MAX_POINT_SHADOWS = 4u;
 
+// RGBM multiplier for the baked-static-direct vertex channel. Must match the
+// encoder in the lighting bake (engine-side DirectLightBakeMath).
+const float BAKED_DIRECT_RANGE = 16.0;
+
 struct GpuLight
 {
     vec4 PositionRange;
@@ -39,7 +43,7 @@ layout(set = 0, binding = 0) uniform MeshFrame
     uint LightCount;
     uint TonemapEnabled;
     float ShadowDarkness;
-    uint Pad1;
+    uint BakedDirectEnabled; // 1 = add the baked-static-direct vertex term.
     GpuLight Lights[MAX_LIGHTS];
     uint SpotShadowCount;
     uint ShadowPad0;
