@@ -39,6 +39,18 @@ Reproduce:
   all four corners, so every vertex samples near zero and interpolation yields a
   near-black plane. The light vanishes.
 
+## Phase 1 and 2 results (after the spike)
+
+- `phase1_direct_excluded.png`: lights authored `direct` vanish on GPU (excluded from the
+  runtime set), with the v4 baked channel still neutral (no bake yet). The correct Phase 1 state.
+- `phase1_parity_dynamic.png`: dynamic lights + neutral channel render identically to the
+  per-fragment reference (the v4 format and shader read change nothing when unbaked).
+- `phase2_baked_render.png`: three smooth colored pools that are the plane's *entire* lighting,
+  produced by the real `BakeDirectLighting` and stored in the v4 vertex channel, while all three
+  lights are authored `direct` and excluded from the runtime forward set. End-to-end proof: real
+  bake -> `.smesh` -> shader -> screen, zero runtime lights. (Dense 32x32 plane, so no smear;
+  a raw brush face would still smear until Phase 3 tessellation.)
+
 ## Verdict
 
 **Proceed with vertex-baked direct lighting; adaptive tessellation (plan Phase 3) is

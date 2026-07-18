@@ -119,6 +119,14 @@ bool MeshSerializer::WriteToWriter(BinaryWriter& writer,
     header.Magic[3] = 'H';
     header.Version = kSmeshFormatVersion;
     header.Flags = skinned ? kSmeshFlagSkinned : 0;
+    // Self-describing baked-direct hint for tooling; the runtime reads the
+    // channel regardless of the flag (neutral zero adds nothing).
+    for (const StaticMeshVertex& vertex : canonical.Vertices)
+        if (vertex.BakedDirect != 0)
+        {
+            header.Flags |= kSmeshFlagBakedDirect;
+            break;
+        }
     header.VertexCount = static_cast<uint32_t>(canonical.Vertices.size());
     header.IndexCount = static_cast<uint32_t>(canonical.Indices.size());
     header.SectionCount = static_cast<uint32_t>(canonical.Sections.size());

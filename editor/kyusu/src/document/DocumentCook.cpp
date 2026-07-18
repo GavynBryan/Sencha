@@ -3,14 +3,21 @@
 #include "BrushCookInput.h"
 #include "EditorDocument.h"
 
+#include <assets/cook/BakeBvh.h>
 #include <assets/cook/BrushClustering.h>
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
+#include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
 #include <assets/static_mesh/MeshSerializer.h>
+#include <render/LightComponentTypes.h>
+#include <render/PointLightComponent.h>
+#include <render/RenderLight.h>
+#include <render/SpotLightComponent.h>
+#include <world/transform/TransformComponents.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonStringify.h>
@@ -48,6 +55,27 @@ namespace
                 h = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
                     face.Triangles.data(), face.Triangles.size() }), h);
             }
+        return h;
+    }
+
+    // Fold the baked-direct light set into the cook hash so moving, recoloring,
+    // or retuning a Direct light restales the level and re-bakes the vertices.
+    uint64_t HashDirectLights(std::span<const BakeDirectLight> lights, uint64_t seed)
+    {
+        uint64_t h = seed;
+        for (const BakeDirectLight& light : lights)
+        {
+            const float values[] = {
+                light.Position.X, light.Position.Y, light.Position.Z,
+                light.Color.X, light.Color.Y, light.Color.Z,
+                light.Intensity, light.Range,
+                light.Direction.X, light.Direction.Y, light.Direction.Z,
+                light.ConeScale, light.ConeOffset,
+            };
+            h = HashBytes64(std::as_bytes(std::span<const float>{ values, std::size(values) }), h);
+            const std::uint8_t kind = static_cast<std::uint8_t>(light.Kind);
+            h = HashBytes64(std::as_bytes(std::span<const std::uint8_t>{ &kind, 1 }), h);
+        }
         return h;
     }
 
@@ -120,6 +148,68 @@ JsonValue BuildCellEntity(const Vec3d& origin,
 
 namespace
 {
+// Lights authored LightBakeContribution::Direct, resolved to world-space bake
+// inputs. Their direct diffuse is baked into cell vertices and they are
+// excluded from the runtime forward set, so a bake is the only thing that makes
+// them visible. Spot cone parameters reuse the runtime packing so the baked
+// cone matches the shader cone exactly.
+std::vector<BakeDirectLight> CollectDirectLights(const World& world)
+{
+    std::vector<BakeDirectLight> lights;
+    if (!world.IsRegistered<LocalTransform>())
+        return lights;
+
+    if (world.IsRegistered<PointLightComponent>())
+    {
+        world.ForEachComponent<PointLightComponent>(
+            [&](EntityId entity, const PointLightComponent& light)
+            {
+                if (light.BakeContribution != LightBakeContribution::Direct)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                if (transform == nullptr)
+                    return;
+                BakeDirectLight baked{};
+                baked.Kind = BakeLightKind::Point;
+                baked.Position = transform->Value.Position;
+                baked.Color = light.Color;
+                baked.Intensity = light.Intensity;
+                baked.Range = light.Range;
+                lights.push_back(baked);
+            });
+    }
+
+    if (world.IsRegistered<SpotLightComponent>())
+    {
+        world.ForEachComponent<SpotLightComponent>(
+            [&](EntityId entity, const SpotLightComponent& light)
+            {
+                if (light.BakeContribution != LightBakeContribution::Direct)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                if (transform == nullptr)
+                    return;
+                const Vec<3> direction = transform->Value.Forward();
+                const GpuLight packed =
+                    MakeSpotGpuLight(transform->Value.Position, direction, light);
+                BakeDirectLight baked{};
+                baked.Kind = BakeLightKind::Spot;
+                baked.Position = transform->Value.Position;
+                baked.Color = light.Color;
+                baked.Intensity = light.Intensity;
+                baked.Range = light.Range;
+                baked.Direction = Vec3d(packed.DirectionCone.X,
+                                        packed.DirectionCone.Y,
+                                        packed.DirectionCone.Z);
+                baked.ConeScale = packed.ConeScale;
+                baked.ConeOffset = packed.ConeOffset;
+                lights.push_back(baked);
+            });
+    }
+
+    return lights;
+}
+
 // The cook kernel. Operates on a mutable document it is free to mutate
 // destructively (it drops brush entities before serializing the passthrough
 // scene), so both callers hand it a throwaway: the file cook loads one from
@@ -138,7 +228,10 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     // Collect -> hash -> cluster. The hash is taken on the collected input so it
     // reflects exactly what gets baked.
     std::vector<CookBrushGeometry> brushes = CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
-    const uint64_t geometryHash = HashBrushInputs(brushes, cellSize);
+    const std::vector<BakeDirectLight> bakeLights =
+        CollectDirectLights(doc.GetRegistry().Components);
+    const uint64_t geometryHash =
+        HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
     const std::string stemStr(stem);
@@ -150,6 +243,17 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     std::unordered_set<std::string> seenMaterial;
     std::unordered_set<std::string> generatedMeshPaths;
     std::vector<CollisionEntry> collisionEntries;
+
+    // Cell meshes are written after the lighting bake, not inline: the bake
+    // needs every cell's geometry (for the shared occlusion BVH) before any
+    // cell's channel is final. Origin is the cell's world translation.
+    struct PendingCellMesh
+    {
+        std::filesystem::path Physical;
+        MeshGeometry Geometry;
+        Vec3d Origin;
+    };
+    std::vector<PendingCellMesh> pendingMeshes;
 
     for (const BrushCell& cell : cells)
     {
@@ -170,11 +274,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
         std::error_code ec;
         std::filesystem::create_directories(meshPhysical.parent_path(), ec);
-        if (!serializer.WriteToFile(meshPhysical.generic_string(), geometry))
-        {
-            result.Error = "CookDocument: could not write mesh '" + meshPhysical.generic_string() + "'";
-            return result;
-        }
+        pendingMeshes.push_back(PendingCellMesh{
+            meshPhysical, std::move(geometry), cell.Origin });
 
         cellEntities.push_back(BuildCellEntity(cell.Origin, meshAssetPath, order));
         artifacts.push_back(CookedArtifact{ meshAssetPath, meshRelPath, AssetType::StaticMesh });
@@ -205,6 +306,47 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                 artifacts.push_back(
                     CookedArtifact{ "asset://" + colRel, ".cooked/" + colRel, AssetType::Collision });
             }
+        }
+    }
+
+    // Bake static direct lighting into the cell vertices, then write the cell
+    // meshes. The lights were collected up front (folded into the cook hash);
+    // a single occlusion BVH over every cell's world triangles lets a light in
+    // one cell shadow onto its neighbors. No cross-zone halo yet (single-
+    // document cook).
+    if (!bakeLights.empty())
+    {
+        std::vector<BakeTriangle> occluders;
+        for (const PendingCellMesh& pending : pendingMeshes)
+        {
+            const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
+            const MeshGeometry& geometry = pending.Geometry;
+            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+            {
+                occluders.push_back(BakeTriangle{
+                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i]].Position),
+                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i + 1]].Position),
+                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i + 2]].Position) });
+            }
+        }
+        BakeBvh occlusionBvh;
+        occlusionBvh.Build(std::move(occluders));
+
+        const DirectLightBakeParams bakeParams{};
+        for (PendingCellMesh& pending : pendingMeshes)
+        {
+            BakeDirectLighting(pending.Geometry, Mat4::MakeTranslation(pending.Origin),
+                               bakeLights, occlusionBvh, bakeParams);
+        }
+    }
+
+    for (const PendingCellMesh& pending : pendingMeshes)
+    {
+        if (!serializer.WriteToFile(pending.Physical.generic_string(), pending.Geometry))
+        {
+            result.Error = "CookDocument: could not write mesh '"
+                + pending.Physical.generic_string() + "'";
+            return result;
         }
     }
 
