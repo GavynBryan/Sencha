@@ -51,11 +51,20 @@ Reproduce:
   bake -> `.smesh` -> shader -> screen, zero runtime lights. (Dense 32x32 plane, so no smear;
   a raw brush face would still smear until Phase 3 tessellation.)
 - `phase3_brush_tessellated.png`: the Phase 3 payoff. A real cooked box-brush floor (a top face
-  with four corners, the Phase 0 smear case) now shows smooth colored pools, because the cook
-  adaptively tessellated the floor near the `direct` lights before baking. Same exclusion (all
-  lights `direct`, none in the runtime set). Mild faceting at the brightest center is Phase 4
-  tuning (higher depth / lower tolerance). The smear the spike warned about is fixed on real
-  low-poly brush geometry.
+  with four corners, the Phase 0 smear case) shows smooth colored pools because the cook
+  subdivides cell triangles near `direct` lights before baking. Same exclusion (all lights
+  `direct`, none in the runtime set).
+
+  Tessellation scheme note: the first implementation was error-driven adaptive refinement
+  (renderer plan 7A.5 re-gated on lights). It produced irregular skinny triangles whose
+  interpolation streaked the smooth falloff; every good-looking capture in this ladder is a
+  regular lattice. It was replaced with distance-graded uniform subdivision: a pure per-edge
+  predicate (split while longer than distance-to-light x grading factor, gated on the closest
+  point ON the edge) that converges to a regular lattice near lights, needs no rays during
+  refinement, and conforms without T-junctions (verified watertight on the cooked mesh). The
+  stair-stepping visible on the far rim silhouette is rasterization aliasing (no MSAA in the
+  forward pass today), present on every hard edge at glancing angles; it is unrelated to the
+  bake.
 
 ## Verdict
 

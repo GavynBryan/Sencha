@@ -46,6 +46,21 @@ namespace
         light.Range = range;
         return light;
     }
+
+    float ShortestLitEdge(const MeshGeometry& mesh, const Vec3d& lightPos, float radius)
+    {
+        float shortest = 1e9f;
+        for (std::size_t t = 0; t + 2 < mesh.Indices.size(); t += 3)
+            for (int e = 0; e < 3; ++e)
+            {
+                const Vec3d& p0 = mesh.Vertices[mesh.Indices[t + e]].Position;
+                const Vec3d& p1 = mesh.Vertices[mesh.Indices[t + (e + 1) % 3]].Position;
+                const Vec3d mid = (p0 + p1) * 0.5f;
+                if ((lightPos - mid).Magnitude() < radius)
+                    shortest = std::min(shortest, (p1 - p0).Magnitude());
+            }
+        return shortest;
+    }
 }
 
 TEST(DirectLightTessellate, RefinesNearLight)
@@ -54,14 +69,29 @@ TEST(DirectLightTessellate, RefinesNearLight)
     const std::size_t before = mesh.Vertices.size();
 
     const std::array<BakeDirectLight, 1> lights{ PointAbove(Vec3d(0, 1.5f, 0), 4.0f) };
-    BakeBvh empty;
     const std::size_t added = TessellateForDirectBake(
-        mesh, Mat4::Identity(), lights, empty, DirectLightBakeParams{},
-        DirectTessellationParams{});
+        mesh, Mat4::Identity(), lights, DirectTessellationParams{});
 
     EXPECT_GT(added, 0u);
     EXPECT_EQ(mesh.Vertices.size(), before + added);
     EXPECT_TRUE(ValidateMeshGeometry(mesh).IsValid());
+}
+
+TEST(DirectLightTessellate, GradesFinerNearTheLight)
+{
+    MeshGeometry mesh = FlatQuad(6.0f);
+    const Vec3d lightPos(0, 1.5f, 0);
+    const std::array<BakeDirectLight, 1> lights{ PointAbove(lightPos, 4.0f) };
+    TessellateForDirectBake(mesh, Mat4::Identity(), lights,
+                            DirectTessellationParams{});
+
+    // Edges on the floor directly under the light are shorter than edges out
+    // near the range boundary (the grading), and both are refined below the
+    // base edge length of 12.
+    const float nearEdge = ShortestLitEdge(mesh, Vec3d(0, 0, 0), 1.0f);
+    const float farEdge = ShortestLitEdge(mesh, Vec3d(3.5f, 0, 0), 0.75f);
+    EXPECT_LT(nearEdge, farEdge);
+    EXPECT_LT(farEdge, 3.0f);
 }
 
 TEST(DirectLightTessellate, LeavesGeometryFarFromLightsUntouched)
@@ -71,10 +101,8 @@ TEST(DirectLightTessellate, LeavesGeometryFarFromLightsUntouched)
 
     // Light range 4 well away from a quad at the origin: no edge is near it.
     const std::array<BakeDirectLight, 1> lights{ PointAbove(Vec3d(100, 1.5f, 0), 4.0f) };
-    BakeBvh empty;
     const std::size_t added = TessellateForDirectBake(
-        mesh, Mat4::Identity(), lights, empty, DirectLightBakeParams{},
-        DirectTessellationParams{});
+        mesh, Mat4::Identity(), lights, DirectTessellationParams{});
 
     EXPECT_EQ(added, 0u);
     EXPECT_EQ(mesh.Vertices.size(), before);
@@ -86,14 +114,12 @@ TEST(DirectLightTessellate, RespectsVertexGrowthCap)
     const std::size_t before = mesh.Vertices.size();
 
     const std::array<BakeDirectLight, 1> lights{ PointAbove(Vec3d(0, 1.5f, 0), 8.0f) };
-    BakeBvh empty;
     DirectTessellationParams params{};
-    params.MaxDepth = 8;             // would explode without the cap
-    params.ErrorTolerance = 0.0f;    // split everything that is near a light
-    params.MinEdgeLength = 0.01f;
+    params.MaxDepth = 10;            // would explode without the cap
+    params.GradingFactor = 0.001f;   // demand near-zero edges everywhere lit
+    params.MinEdgeLength = 0.001f;
     params.MaxVertexGrowth = 3.0f;
-    TessellateForDirectBake(mesh, Mat4::Identity(), lights, empty,
-                            DirectLightBakeParams{}, params);
+    TessellateForDirectBake(mesh, Mat4::Identity(), lights, params);
 
     EXPECT_LE(mesh.Vertices.size(), before * 3 + 8);  // cap plus one level's slack
     EXPECT_TRUE(ValidateMeshGeometry(mesh).IsValid());
@@ -102,14 +128,11 @@ TEST(DirectLightTessellate, RespectsVertexGrowthCap)
 TEST(DirectLightTessellate, IsDeterministic)
 {
     const std::array<BakeDirectLight, 1> lights{ PointAbove(Vec3d(1, 1.5f, -0.5f), 5.0f) };
-    BakeBvh empty;
 
     MeshGeometry a = FlatQuad(6.0f);
     MeshGeometry b = FlatQuad(6.0f);
-    TessellateForDirectBake(a, Mat4::Identity(), lights, empty,
-                            DirectLightBakeParams{}, DirectTessellationParams{});
-    TessellateForDirectBake(b, Mat4::Identity(), lights, empty,
-                            DirectLightBakeParams{}, DirectTessellationParams{});
+    TessellateForDirectBake(a, Mat4::Identity(), lights, DirectTessellationParams{});
+    TessellateForDirectBake(b, Mat4::Identity(), lights, DirectTessellationParams{});
 
     ASSERT_EQ(a.Vertices.size(), b.Vertices.size());
     ASSERT_EQ(a.Indices.size(), b.Indices.size());
@@ -136,8 +159,8 @@ TEST(DirectLightTessellate, RefinedMeshBakesMoreDetailThanCoarse)
         coarseLit += v.BakedDirect != 0 ? 1 : 0;
 
     MeshGeometry refined = FlatQuad(6.0f);
-    TessellateForDirectBake(refined, Mat4::Identity(), lights, empty,
-                            DirectLightBakeParams{}, DirectTessellationParams{});
+    TessellateForDirectBake(refined, Mat4::Identity(), lights,
+                            DirectTessellationParams{});
     BakeDirectLighting(refined, Mat4::Identity(), lights, empty, DirectLightBakeParams{});
     std::size_t refinedLit = 0;
     for (const StaticMeshVertex& v : refined.Vertices)

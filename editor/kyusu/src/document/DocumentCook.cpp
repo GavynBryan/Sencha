@@ -338,12 +338,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         for (PendingCellMesh& pending : pendingMeshes)
         {
             const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
-            // Refine near the lights first (so the high-frequency falloff has
-            // vertices to land on), then bake the refined mesh. Occlusion uses
-            // the coarse BVH: tessellation only adds coplanar vertices, so the
-            // occluding surfaces are unchanged.
-            TessellateForDirectBake(pending.Geometry, toWorld, bakeLights,
-                                    occlusionBvh, bakeParams, tessParams);
+            // Refine near the lights first (so the falloff has vertices to
+            // land on), then bake the refined mesh. Occlusion uses the coarse
+            // BVH: tessellation only adds coplanar vertices, so the occluding
+            // surfaces are unchanged.
+            TessellateForDirectBake(pending.Geometry, toWorld, bakeLights, tessParams);
             BakeDirectLighting(pending.Geometry, toWorld, bakeLights,
                                occlusionBvh, bakeParams);
         }

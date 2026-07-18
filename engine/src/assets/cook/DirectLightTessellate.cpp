@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <assets/cook/BakeBvh.h>
 #include <assets/cook/DirectLightBake.h>
 #include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/MeshValidation.h>
@@ -27,19 +26,11 @@ namespace
     {
         return std::round(value / quantum) * quantum;
     }
-
-    float MaxChannelDiff(const Vec3d& a, const Vec3d& b)
-    {
-        return std::max({ std::abs(a.X - b.X), std::abs(a.Y - b.Y),
-                          std::abs(a.Z - b.Z) });
-    }
 }
 
 std::size_t TessellateForDirectBake(MeshGeometry& geometry,
                                     const Mat4& worldTransform,
                                     std::span<const BakeDirectLight> lights,
-                                    const BakeBvh& occluders,
-                                    const DirectLightBakeParams& bakeParams,
                                     const DirectTessellationParams& tessParams)
 {
     if (lights.empty() || geometry.Indices.empty() || geometry.Sections.empty())
@@ -52,21 +43,14 @@ std::size_t TessellateForDirectBake(MeshGeometry& geometry,
     auto worldPosOf = [&](std::uint32_t index) {
         return worldTransform.TransformPoint(geometry.Vertices[index].Position);
     };
-    auto worldNormalOf = [&](std::uint32_t index) {
-        return worldTransform.TransformVector(geometry.Vertices[index].Normal)
-            .Normalized();
-    };
-
-    // Per-vertex baked radiance, extended as midpoints are inserted.
-    std::vector<Vec3d> radiance(geometry.Vertices.size());
-    for (std::size_t i = 0; i < geometry.Vertices.size(); ++i)
-        radiance[i] = EvaluateBakedDirectRadiance(
-            worldPosOf(static_cast<std::uint32_t>(i)),
-            worldNormalOf(static_cast<std::uint32_t>(i)), lights, occluders, bakeParams);
 
     // Memoized split decision for one edge (one refinement level). Pure in the
-    // edge endpoints, so an edge shared within a section is decided once and
-    // both triangles get the same conforming midpoint (no T-junction).
+    // edge endpoints and the light set, so an edge shared within a section is
+    // decided once and both triangles get the same conforming midpoint (no
+    // T-junction). The edge splits while longer than the distance-graded
+    // target at its midpoint; the interior of a lit region converges to a
+    // regular lattice, and mixed-split triangles occur only along grading-band
+    // boundaries where the contribution is already dim.
     auto considerEdge = [&](std::unordered_map<std::uint64_t, std::uint32_t>& memo,
                             std::uint32_t a, std::uint32_t b) -> std::uint32_t {
         const std::uint64_t key = EdgeKey(a, b);
@@ -75,9 +59,7 @@ std::size_t TessellateForDirectBake(MeshGeometry& geometry,
             return found->second;
 
         std::uint32_t result = kNoMidpoint;
-        const float edgeLength = (worldPosOf(b) - worldPosOf(a)).Magnitude();
-        if (edgeLength >= tessParams.MinEdgeLength
-            && geometry.Vertices.size() < vertexCap)
+        if (geometry.Vertices.size() < vertexCap)
         {
             const StaticMeshVertex& va = geometry.Vertices[a];
             const StaticMeshVertex& vb = geometry.Vertices[b];
@@ -85,36 +67,43 @@ std::size_t TessellateForDirectBake(MeshGeometry& geometry,
             midLocal = Vec3d(Quantize(midLocal.X, tessParams.PositionQuantum),
                              Quantize(midLocal.Y, tessParams.PositionQuantum),
                              Quantize(midLocal.Z, tessParams.PositionQuantum));
-            const Vec3d midNormalLocal = (va.Normal + vb.Normal).Normalized();
-            const Vec3d midWorld = worldTransform.TransformPoint(midLocal);
-            const Vec3d midWorldNormal =
-                worldTransform.TransformVector(midNormalLocal).Normalized();
+            const Vec3d worldA = worldPosOf(a);
+            const Vec3d worldB = worldPosOf(b);
+            const Vec3d edge = worldB - worldA;
+            const float edgeLengthSq = edge.SqrMagnitude();
+            const float edgeLength = std::sqrt(edgeLengthSq);
 
-            bool nearLight = false;
+            // Distance from each light to the closest point ON the edge, not
+            // to its midpoint: a long edge with one end in a light's pool must
+            // still split, or a lit vertex stays connected to a far corner and
+            // interpolation streaks the light down the whole skinny triangle.
+            float targetEdge = std::numeric_limits<float>::infinity();
             for (const BakeDirectLight& light : lights)
-                if ((light.Position - midWorld).Magnitude()
-                    < light.Range + tessParams.LightProximityMargin)
-                {
-                    nearLight = true;
-                    break;
-                }
-
-            if (nearLight)
             {
-                const Vec3d midRadiance = EvaluateBakedDirectRadiance(
-                    midWorld, midWorldNormal, lights, occluders, bakeParams);
-                const Vec3d interpolated = (radiance[a] + radiance[b]) * 0.5f;
-                if (MaxChannelDiff(midRadiance, interpolated) > tessParams.ErrorTolerance)
-                {
-                    StaticMeshVertex mid{};
-                    mid.Position = midLocal;
-                    mid.Normal = midNormalLocal;
-                    mid.Uv0 = (va.Uv0 + vb.Uv0) * 0.5f;
-                    mid.Tangent = va.Tangent;
-                    result = static_cast<std::uint32_t>(geometry.Vertices.size());
-                    geometry.Vertices.push_back(mid);
-                    radiance.push_back(midRadiance);
-                }
+                float t = edgeLengthSq > 1e-12f
+                    ? (light.Position - worldA).Dot(edge) / edgeLengthSq
+                    : 0.0f;
+                t = std::clamp(t, 0.0f, 1.0f);
+                const float distance = (light.Position - (worldA + edge * t)).Magnitude();
+                if (distance < light.Range + tessParams.LightProximityMargin)
+                    targetEdge = std::min(
+                        targetEdge,
+                        std::max(tessParams.MinEdgeLength,
+                                 distance * tessParams.GradingFactor));
+            }
+
+            if (edgeLength > targetEdge)
+            {
+                const Vec3d normalSum = va.Normal + vb.Normal;
+                StaticMeshVertex mid{};
+                mid.Position = midLocal;
+                mid.Normal = normalSum.SqrMagnitude() > 1e-8f
+                    ? normalSum.Normalized()
+                    : va.Normal;
+                mid.Uv0 = (va.Uv0 + vb.Uv0) * 0.5f;
+                mid.Tangent = va.Tangent;
+                result = static_cast<std::uint32_t>(geometry.Vertices.size());
+                geometry.Vertices.push_back(mid);
             }
         }
 
