@@ -222,17 +222,32 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                                   const std::filesystem::path& assetsRoot,
                                   double cellSize,
                                   LoggingProvider& logging,
-                                  AssetSystem* assetSystem)
+                                  AssetSystem* assetSystem,
+                                  const DirectLightBakeParams& bakeParams,
+                                  const DirectTessellationParams& tessParams)
 {
     DocumentCookResult result;
 
     // Collect -> hash -> cluster. The hash is taken on the collected input so it
-    // reflects exactly what gets baked.
+    // reflects exactly what gets baked. Bake tuning is hashed only when direct
+    // lights exist, since the output is otherwise independent of it.
     std::vector<CookBrushGeometry> brushes = CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
     const std::vector<BakeDirectLight> bakeLights =
         CollectDirectLights(doc.GetRegistry().Components);
-    const uint64_t geometryHash =
+    uint64_t geometryHash =
         HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
+    if (!bakeLights.empty())
+    {
+        const float tuning[] = {
+            bakeParams.DiffuseWrap, bakeParams.NormalOffset,
+            tessParams.LightProximityMargin, tessParams.GradingFactor,
+            tessParams.MinEdgeLength, static_cast<float>(tessParams.MaxDepth),
+            tessParams.PositionQuantum, tessParams.MaxVertexGrowth,
+        };
+        geometryHash = HashBytes64(
+            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
+            geometryHash);
+    }
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
     const std::string stemStr(stem);
@@ -333,8 +348,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         BakeBvh occlusionBvh;
         occlusionBvh.Build(std::move(occluders));
 
-        const DirectLightBakeParams bakeParams{};
-        const DirectTessellationParams tessParams{};
+        result.DirectLightCount = bakeLights.size();
         for (PendingCellMesh& pending : pendingMeshes)
         {
             const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
@@ -342,7 +356,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             // land on), then bake the refined mesh. Occlusion uses the coarse
             // BVH: tessellation only adds coplanar vertices, so the occluding
             // surfaces are unchanged.
-            TessellateForDirectBake(pending.Geometry, toWorld, bakeLights, tessParams);
+            result.BakedVerticesAdded += TessellateForDirectBake(
+                pending.Geometry, toWorld, bakeLights, tessParams);
             BakeDirectLighting(pending.Geometry, toWorld, bakeLights,
                                occlusionBvh, bakeParams);
         }
@@ -483,7 +498,9 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
                           double cellSize,
                           LoggingProvider* logging,
-                          RuntimeAssets* assets)
+                          RuntimeAssets* assets,
+                          const DirectLightBakeParams& bakeParams,
+                          const DirectTessellationParams& tessParams)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -502,7 +519,8 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     const std::string sourceRel =
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
     return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
-                             assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr);
+                             assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr,
+                             bakeParams, tessParams);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -510,7 +528,9 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
                           const std::filesystem::path& assetsRoot,
                           double cellSize,
                           LoggingProvider& logging,
-                          RuntimeAssets* assets)
+                          RuntimeAssets* assets,
+                          const DirectLightBakeParams& bakeParams,
+                          const DirectTessellationParams& tessParams)
 {
     // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
     // free to mutate, leaving the editor's document untouched. The snapshot shares
@@ -527,5 +547,6 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
 
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
     return CookDocumentKernel(snapshot, levelName, sourceRel, assetsRoot, cellSize,
-                             logging, assets != nullptr ? &assets->Assets : nullptr);
+                             logging, assets != nullptr ? &assets->Assets : nullptr,
+                             bakeParams, tessParams);
 }

@@ -66,6 +66,36 @@ Reproduce:
   forward pass today), present on every hard edge at glancing angles; it is unrelated to the
   bake.
 
+## Phase 4: the closed loop (96-light validation)
+
+The baked counterpart of the original measurement (`docs/plans/evidence/point-light-cost/`):
+96 small accent point lights authored `bake_contribution: direct` over a floor brush, cooked
+through the real level cook (tessellate + bake), rendered with the same rig (RTX 4060, Release,
+IMMEDIATE present, capture export, 300-frame warmup dropped).
+
+| | dynamic 96 (original measurement) | baked 96 |
+| --- | --- | --- |
+| LightsVisible (median) | 64 (capped) | **0** |
+| LightsDroppedAtCap | **32 (lights vanish)** | **0** |
+| MainColor median | 5.08 ms | **0.041 ms** |
+| Triangles | 2116 | 49682 (tessellated) |
+
+All 96 pools render (`phase4_baked_stress_96.png`; the blown-white core is real energy: 96
+overlapping pools sum far past 1.0 into the tonemap shoulder, and summed radiance clips at the
+RGBM ceiling `kBakedDirectRange`). The cap wall is gone and the per-frame cost is noise, even
+at 23x the triangle count.
+
+Reproduce: build `level_cook_tests`, then
+`SENCHA_BAKED_STRESS_ROOT=$(pwd)/template/assets ./build/test/level_cook_tests
+--gtest_filter='BakedLightingStress.Generate'` and run SceneViewer on
+`levels/baked_stress_96` with the capture cvars above.
+
+`phase4_debug_view.png`: `render.debug.view baked_direct` isolates the baked vertex term (raw
+irradiance); dynamic-lit and unbaked surfaces read black. Bake tuning is exposed as archived
+editor cvars (`editor.cook.bake_grading`, `bake_min_edge`, `bake_max_depth`, `bake_margin`,
+`bake_growth_cap`), folded into the cook hash so retuning restales the level; the bake's
+diffuse wrap follows `render.style.diffuse_wrap`.
+
 ## Verdict
 
 **Proceed with vertex-baked direct lighting; adaptive tessellation (plan Phase 3) is

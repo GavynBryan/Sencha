@@ -1,5 +1,8 @@
 #pragma once
 
+#include <assets/cook/DirectLightBake.h>
+#include <assets/cook/DirectLightTessellate.h>
+
 #include <filesystem>
 #include <string>
 
@@ -27,4 +30,6 @@ struct WorldCookResult
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider& logging,
-                                        RuntimeAssets* assets);
+                                        RuntimeAssets* assets,
+                                        const DirectLightBakeParams& bakeParams = {},
+                                        const DirectTessellationParams& tessParams = {});

@@ -4,6 +4,7 @@
 
 #include <ecs/EntityId.h>
 
+#include <cstdint>
 #include <functional>
 
 class CommandStack;
@@ -22,7 +23,8 @@ public:
     LightingPanel(const ShadowResidencyReadout& readout,
                   SelectionService& selection,
                   CommandStack& commands,
-                  std::function<void()> invalidateShadows);
+                  std::function<void()> invalidateShadows,
+                  std::function<std::uint32_t()> countBakedDirectLights);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -43,4 +45,5 @@ private:
     SelectionService& Selection;
     CommandStack& Commands;
     std::function<void()> InvalidateShadows;
+    std::function<std::uint32_t()> CountBakedDirectLights;
 };

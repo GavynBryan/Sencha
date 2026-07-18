@@ -64,11 +64,13 @@ namespace
 LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
                              SelectionService& selection,
                              CommandStack& commands,
-                             std::function<void()> invalidateShadows)
+                             std::function<void()> invalidateShadows,
+                             std::function<std::uint32_t()> countBakedDirectLights)
     : Readout(readout)
     , Selection(selection)
     , Commands(commands)
     , InvalidateShadows(std::move(invalidateShadows))
+    , CountBakedDirectLights(std::move(countBakedDirectLights))
 {
 }
 
@@ -82,6 +84,21 @@ void LightingPanel::OnDraw()
     ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen())
         return;
+
+    // Baked lights never appear in the shadow readout (they hold no runtime
+    // slot), so their count is surfaced here to confirm the authoring took.
+    if (CountBakedDirectLights)
+    {
+        const std::uint32_t baked = CountBakedDirectLights();
+        if (baked > 0)
+        {
+            ImGui::Text("Baked direct lights: %u", baked);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Lights authored bake_contribution=direct: their diffuse\n"
+                                  "bakes into cell vertices at cook and they are excluded\n"
+                                  "from the runtime light set. Preview requires a cook.");
+        }
+    }
 
     if (!Readout.Active)
     {

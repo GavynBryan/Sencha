@@ -20,6 +20,7 @@ const uint DEBUG_LIGHT_COMPLEXITY = 8u;
 const uint DEBUG_SHADOW_FILTERED = 9u;
 const uint DEBUG_SHADOW_RAW = 10u;
 const uint DEBUG_OVERDRAW = 11u;
+const uint DEBUG_BAKED_DIRECT = 12u;
 
 vec3 HeatColor(float value)
 {
@@ -67,6 +68,13 @@ void main()
     if (frame.DebugView == DEBUG_OVERDRAW)
     {
         outColor = vec4(0.045, 0.012, 0.003, 1.0);
+        return;
+    }
+    if (frame.DebugView == DEBUG_BAKED_DIRECT)
+    {
+        // The baked-static-direct vertex term in isolation (raw irradiance,
+        // before base color). Dynamic-lit and unbaked surfaces read black.
+        outColor = vec4(ResolveOutput(inBakedDirect), 1.0);
         return;
     }
 

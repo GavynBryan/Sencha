@@ -1,5 +1,7 @@
 #pragma once
 
+#include <assets/cook/DirectLightBake.h>
+#include <assets/cook/DirectLightTessellate.h>
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <math/Vec.h>
@@ -34,6 +36,8 @@ struct DocumentCookResult
     std::filesystem::path    CollisionSidecarPath;
     uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
+    std::size_t              DirectLightCount = 0;     // lights baked into vertices this cook
+    std::size_t              BakedVerticesAdded = 0;   // tessellation growth across all cells
 };
 
 // Builds the cooked StaticMesh entity JSON for one cell: a Transform at the
@@ -61,7 +65,9 @@ struct RuntimeAssets;
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider* logging = nullptr,
-                                        RuntimeAssets* assets = nullptr);
+                                        RuntimeAssets* assets = nullptr,
+                                        const DirectLightBakeParams& bakeParams = {},
+                                        const DirectTessellationParams& tessParams = {});
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
@@ -76,4 +82,6 @@ struct RuntimeAssets;
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider& logging,
-                                        RuntimeAssets* assets = nullptr);
+                                        RuntimeAssets* assets = nullptr,
+                                        const DirectLightBakeParams& bakeParams = {},
+                                        const DirectTessellationParams& tessParams = {});

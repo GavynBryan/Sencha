@@ -38,10 +38,31 @@ std::string PieDriver::Cook(const std::string& levelName)
         return {};
     }
 
-    double cellSize = 16.0;
-    if (const CVarMetadata* cvar = Engine_.Console().Registry().FindCVar("editor.cook.cell_size");
-        cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
-        cellSize = std::get<double>(cvar->CurrentValue);
+    const auto readDouble = [this](const char* name, double fallback) {
+        const CVarMetadata* cvar = Engine_.Console().Registry().FindCVar(name);
+        if (cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
+            return std::get<double>(cvar->CurrentValue);
+        return fallback;
+    };
+    const double cellSize = readDouble("editor.cook.cell_size", 16.0);
+
+    // Bake tuning rides the cook so PIE always reflects the dialed values; the
+    // diffuse wrap comes from the renderer style cvar so baked and dynamic
+    // lighting share one shading model.
+    DirectLightBakeParams bakeParams{};
+    bakeParams.DiffuseWrap = static_cast<float>(
+        readDouble("render.style.diffuse_wrap", bakeParams.DiffuseWrap));
+    DirectTessellationParams tessParams{};
+    tessParams.GradingFactor = static_cast<float>(
+        readDouble("editor.cook.bake_grading", tessParams.GradingFactor));
+    tessParams.MinEdgeLength = static_cast<float>(
+        readDouble("editor.cook.bake_min_edge", tessParams.MinEdgeLength));
+    tessParams.MaxDepth = static_cast<int>(
+        readDouble("editor.cook.bake_max_depth", tessParams.MaxDepth));
+    tessParams.LightProximityMargin = static_cast<float>(
+        readDouble("editor.cook.bake_margin", tessParams.LightProximityMargin));
+    tessParams.MaxVertexGrowth = static_cast<float>(
+        readDouble("editor.cook.bake_growth_cap", tessParams.MaxVertexGrowth));
 
     if (Assets_ == nullptr)
     {
@@ -74,7 +95,8 @@ std::string PieDriver::Cook(const std::string& levelName)
         }
 
         const WorldCookResult cooked =
-            CookWorld(World_, assetsRoot, cellSize, Engine_.Logging(), Assets_);
+            CookWorld(World_, assetsRoot, cellSize, Engine_.Logging(), Assets_,
+                      bakeParams, tessParams);
         if (!cooked.Success)
         {
             log.Error("cook failed: " + cooked.Error);
@@ -99,7 +121,8 @@ std::string PieDriver::Cook(const std::string& levelName)
     }
 
     const DocumentCookResult cooked =
-        CookDocument(World_.FocusDocument(), name, assetsRoot, cellSize, Engine_.Logging(), Assets_);
+        CookDocument(World_.FocusDocument(), name, assetsRoot, cellSize, Engine_.Logging(), Assets_,
+                     bakeParams, tessParams);
     if (!cooked.Success)
     {
         log.Error("cook failed: " + cooked.Error);
@@ -111,6 +134,9 @@ std::string PieDriver::Cook(const std::string& levelName)
     LastCookedMap_ = "levels/" + name;
     log.Info("cooked '{}' ({} cells) -> {}",
              LastCookedMap_, cooked.CellCount, cooked.CookedScenePath.generic_string());
+    if (cooked.DirectLightCount > 0)
+        log.Info("cook: baked {} direct light(s); tessellation added {} vertices",
+                 cooked.DirectLightCount, cooked.BakedVerticesAdded);
     return LastCookedMap_;
 }
 
@@ -232,6 +258,36 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
         .Source = { "editor" },
         .Min = 0.0,
     });
+
+    const auto registerBakeDouble = [&registry](const char* name, double defaultValue,
+                                                const char* help, double min, double max) {
+        registry.RegisterCVar({
+            .Name = name,
+            .Owner = "editor",
+            .Type = CVarType::Double,
+            .DefaultValue = defaultValue,
+            .CurrentValue = defaultValue,
+            .Flags = CVarFlags::Archive,
+            .Help = help,
+            .Source = { "editor" },
+            .Min = min,
+            .Max = max,
+        });
+    };
+    registerBakeDouble("editor.cook.bake_grading", 0.15,
+                       "Baked-light tessellation target edge length as a fraction of "
+                       "distance to the light. Smaller is finer.", 0.01, 2.0);
+    registerBakeDouble("editor.cook.bake_min_edge", 0.25,
+                       "Baked-light tessellation never splits an edge below this world "
+                       "length.", 0.01, 16.0);
+    registerBakeDouble("editor.cook.bake_max_depth", 6.0,
+                       "Baked-light tessellation recursion depth cap per cook.", 0.0, 12.0);
+    registerBakeDouble("editor.cook.bake_margin", 1.0,
+                       "Distance beyond a baked light's range that still tessellates, so "
+                       "the refined region reaches past the falloff.", 0.0, 16.0);
+    registerBakeDouble("editor.cook.bake_growth_cap", 256.0,
+                       "Runaway backstop: per-cell vertex growth multiple where baked-light "
+                       "tessellation stops splitting.", 1.0, 4096.0);
 
     ConsoleCommandMetadata cook;
     cook.Name = "cook";

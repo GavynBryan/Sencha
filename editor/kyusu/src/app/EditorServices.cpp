@@ -38,6 +38,9 @@
 #include <app/Game.h>
 #include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
 #include <assets/cook/TextureCook.h>
+#include <render/LightComponentTypes.h>
+#include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
 #include <core/assets/AssetRegistry.h>
@@ -469,7 +472,25 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<LightingPanel>(
         RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
-        [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); }));
+        [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
+        [this]() -> std::uint32_t {
+            const World& world =
+                Workspace->World.FocusDocument().GetRegistry().Components;
+            std::uint32_t count = 0;
+            if (world.IsRegistered<PointLightComponent>())
+                world.ForEachComponent<PointLightComponent>(
+                    [&](EntityId, const PointLightComponent& light) {
+                        if (light.BakeContribution == LightBakeContribution::Direct)
+                            ++count;
+                    });
+            if (world.IsRegistered<SpotLightComponent>())
+                world.ForEachComponent<SpotLightComponent>(
+                    [&](EntityId, const SpotLightComponent& light) {
+                        if (light.BakeContribution == LightBakeContribution::Direct)
+                            ++count;
+                    });
+            return count;
+        }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Tools.get(); },

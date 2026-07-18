@@ -22,6 +22,7 @@ namespace
         { RenderDebugView::ShadowFiltered, "shadow", "Filtered shadow term" },
         { RenderDebugView::ShadowRaw, "shadow_raw", "Raw shadow compare" },
         { RenderDebugView::Overdraw, "overdraw", "Overdraw" },
+        { RenderDebugView::BakedDirect, "baked_direct", "Baked direct" },
     };
 
     static_assert(sizeof(kNames) / sizeof(kNames[0]) == kRenderDebugViewCount);
