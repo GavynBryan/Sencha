@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -105,6 +106,18 @@ int main(int argc, char** argv)
         config.Window.Title = "Sencha";
         config.Window.Width = 1280;
         config.Window.Height = 720;
+        // Optional resolution override for measurement/testing, e.g.
+        // SENCHA_WINDOW_SIZE=1920x1080. Ignored when unset or malformed.
+        if (const char* size = std::getenv("SENCHA_WINDOW_SIZE"))
+        {
+            int w = 0;
+            int h = 0;
+            if (std::sscanf(size, "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
+            {
+                config.Window.Width = static_cast<std::uint32_t>(w);
+                config.Window.Height = static_cast<std::uint32_t>(h);
+            }
+        }
         config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
         config.Runtime.ExitOnEscape = true;
         config.Runtime.TogglePauseOnF1 = true;
