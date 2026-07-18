@@ -1,9 +1,12 @@
 # Renderer Phase 3: Lighting, Shading, Shadows, Baked Irradiance, and Renderer Profiling
 
-Status: PROPOSED, revision 3, 2026-07-10. Plan only; no implementation has
-landed. Revision 2 incorporated a cross-agent design review; revision 3 works
-baked ambient occlusion into the plan after a second adversarial pass. The
-disposition of both reviews is recorded in Section 0 (revision 3 first).
+Status: IN EXECUTION, revision 4, 2026-07-18. No longer plan-only: Phase 3.0
+(instrumentation) and the Phase 3A dynamic-lighting and shadow ladder have
+landed in code, and revision 4 records the first shipped slice of Phase 3B
+territory, baked static direct lighting (Section 7B), added in response to the
+measured 64-light forward cap. Revision 2 incorporated a cross-agent design
+review; revision 3 worked baked ambient occlusion into the plan after a second
+adversarial pass. Dispositions are recorded in Section 0 (newest first).
 
 This document is the lighting portion of the "render ladder plan" that
 `docs/assets/pipeline.md` repeatedly defers to ("Decision L ships the data, not
@@ -12,9 +15,9 @@ the lighting", pipeline.md:643). It supersedes the ordering of
 scheduled directional cascaded shadows first: this plan ships spot and point
 shadows and no directional lights. It also pulls Track B item 8 ("GI (v2.0
 baked)", engine-roadmap.md:345-346) forward as a first zone-scoped baked
-irradiance solution. Both roadmap rows should be updated when this plan is
-accepted. Where this document and the code disagree, the code as cited was
-inspected on 2026-07-10 at commit 962a3aa.
+irradiance solution. Both roadmap rows were updated at revision 4. Where this
+document and the code disagree, the code as cited was inspected on 2026-07-10
+at commit 962a3aa; revision-4 additions cite code as of 2026-07-18.
 
 Scope summary of the standing decisions:
 
@@ -36,6 +39,12 @@ Scope summary of the standing decisions:
   vertices, made seamless across zones by the halo, and densified only near
   occluders by occluder-gated adaptive tessellation. AO modulates the ambient
   term only and is never a substitute for a shadow map (Section 7A).
+- Baked static direct lighting (shipped, revision 4): a light authored
+  `LightBakeContribution::Direct` has its diffuse baked into cooked cell
+  vertices (a second per-vertex RGBM attribute) and is excluded from the
+  runtime light set entirely, so it costs nothing per frame and never counts
+  against the 64-light cap. A separate channel and a separate additive term,
+  not the AO datum and not a shadow substitute (Section 7B).
 - Profiling: an explicit instrumentation mode ladder (Off / Counters / Gpu /
   Capture) whose Off path performs no profiling work, plus a compile-time
   option that removes instrumentation, debug labels, debug pipelines, and
@@ -53,7 +62,44 @@ hemispheric-ambient fallback without probes.
 
 ## 0. Disposition
 
-### 0.0 Revision 3: baked ambient occlusion
+### 0.0 Revision 4: baked static direct lighting (shipped)
+
+Not a design review: this revision records an implemented feature and its
+deviations. The measured investigation under
+`docs/plans/evidence/point-light-cost/` convicted the forward renderer's
+64-light cap as a correctness wall (96 visible lights silently drop 32) with a
+real ~80 us per light cost, and the owner chose per-vertex baked static direct
+lighting as the remedy. It shipped end to end (format, bake, tessellation,
+cook integration, tooling, validation) and is documented in the new Section
+7B. Consequences threaded into this document:
+
+- Direct lighting is no longer unconditionally dynamic: a light authored
+  `LightBakeContribution::Direct` bakes its diffuse into cooked cell vertices
+  and leaves the runtime light set entirely (amendment in 7.1, doctrine note
+  in 7A.2). Runtime shadow maps remain the only authoritative direct-shadow
+  representation; the AO doctrine is untouched.
+- The vertex slot 7A.6 reserved for AO (offset 48, attribute location 8,
+  `.smesh` v4) is now occupied by the baked-direct RGBM channel. Vertex AO,
+  when it lands, takes offset 52, location 9, `.smesh` v5 (amendment in 7A.6).
+  The "v3 loads neutral" compatibility row is superseded by the codebase's
+  single-version doctrine: the loader rejects prior versions and cooked
+  content recooks via `kCookedCacheIndexVersion` (amendment in Section 15).
+- 7A.5's error-driven adaptive tessellation was implemented for the direct
+  payload and rejected on screen: irregular refinement streaks smooth
+  interpolated falloffs. Distance-graded uniform subdivision replaced it
+  (details in 7B.4; amendment and a re-judgment obligation for AO in 7A.5).
+- Bake math lives in the engine under `assets/cook/` (`BakeBvh`,
+  `DirectLightBake`, `DirectLightTessellate`), gated behind
+  `SENCHA_ENABLE_COOK`, not under `render/probes/` as 3B.1 sketched: the bake
+  is cook infrastructure and must never link into the runtime. 3B modules
+  should follow this placement (amendment in Section 11, Phase 3B).
+- What 3B.1 can now reuse: the median-split triangle BVH with segment
+  occlusion, the cook-integration seam in `DocumentCook`/`WorldCook` with
+  staleness hashing, the vertex-format plumbing, and the tessellator. Still
+  unbuilt: grid math, the hemisphere ray table, SH projection, dilation,
+  `.sprobe` IO, the neighbor halo, and the weld.
+
+### 0.1 Revision 3: baked ambient occlusion
 
 **Verdict on the proposed probe-AO + cooked-vertex-AO split.** Accept the
 vertex scale; reject the probe scale as a *separate baked payload*. Room-scale
@@ -111,7 +157,7 @@ authoritative direct-shadow representation. Nothing in Sections 4-6 changed.
 
 Revisions 1 and 2 are preserved below unchanged for history.
 
-### 0.1 Decisions retained from revision 1
+### 0.2 Decisions retained from revision 1
 
 - The StandardLit material model over Decision L data, wrapped Lambert,
   normalized Blinn-Phong, roughness-to-exponent mapping, metallic as specular
@@ -128,7 +174,7 @@ Revisions 1 and 2 are preserved below unchanged for history.
   rejection of dual-paraboloid/octahedral projections (Section 5).
 - Renderer-owned shadow residency: budgets, scoring, hysteresis, tiers, update
   policies, per-frame view clamp (Section 6), with the invalidation mechanism
-  replaced (0.2).
+  replaced (0.3).
 - Zone-scoped L1 SH probe volumes, the `.sprobe` chunked sidecar following the
   collision precedent, `ZoneLoadRecipe` streaming, per-fragment volume
   selection over a small resident cap (Sections 7, 8).
@@ -142,7 +188,7 @@ Revisions 1 and 2 are preserved below unchanged for history.
 - Standard [0,1] Z retained; reversed-Z migration still rejected (Section 2
   item 1).
 
-### 0.2 Decisions changed by this review
+### 0.3 Decisions changed by this review
 
 1. **Profiling gained a disabled-path contract** (review item 1). Adopted the
    `RenderProfileMode { Off, Counters, Gpu, Capture }` ladder and a nullable
@@ -217,7 +263,7 @@ Revisions 1 and 2 are preserved below unchanged for history.
    shippable without baked irradiance (3B). 3B depends on 3.0, 3A.1, and
    3A.2 only, not on any shadow stage (Section 11).
 
-### 0.3 Additional problems found during this revision
+### 0.4 Additional problems found during this revision
 
 - **Set 2 needs always-valid descriptors before content exists.** The forward
   pipeline binds the lighting descriptor set from 3A.3 onward, including
@@ -250,7 +296,7 @@ Revisions 1 and 2 are preserved below unchanged for history.
   "For profiling and tests"), which is why pass-local counter accumulation
   survives in all modes while publication is gated (Section 9.2).
 
-### 0.4 Alternatives considered and rejected in this revision
+### 0.5 Alternatives considered and rejected in this revision
 
 - Per-tier shadow texture arrays instead of one guarded atlas (Section 15).
 - Validity-weighted manual trilinear probe filtering (8 texel fetches x 3
@@ -261,7 +307,7 @@ Revisions 1 and 2 are preserved below unchanged for history.
 - `Changed<WorldTransform>` as the caster-motion signal, and as a prefilter in
   front of the caster diff (Section 6.4; prefilter recorded as measure-first).
 
-### 0.5 Measure before committing
+### 0.6 Measure before committing
 
 - Per-registry query caches (finding 2.11): fix only if the Phase 3.0 rebuild
   counter shows real cost.
@@ -1197,7 +1243,7 @@ snapshots, entirely inside extraction:
   extraction; no ECS component calls into the renderer. If captures ever show
   the diff itself hot, the recorded escalations are a
   `Changed<WorldTransform>`-driven prefilter (now known to be precise,
-  finding 1.9) or a static/dynamic caster split, in that order (0.5).
+  finding 1.9) or a static/dynamic caster split, in that order (0.6).
 - Determinism: tables are sorted by key, events are emitted in key order, and
   invalidation processing follows slot index order, so identical world state
   produces identical cache behavior. The stable light identity used for
@@ -1258,6 +1304,9 @@ Compared against the alternatives, grounded in this codebase:
    density (brush-cooked cells are coarse), invalidates on every geometry
    cook, needs a vertex-format bump, and still leaves dynamic objects
    unsolved. Recorded as a possible later addition for hero static meshes.
+   (The shipped per-vertex *direct* payload, Section 7B, is a different term
+   with a different motivation and does not reopen this rejection: probes
+   remain the primary baked-ambient mechanism.)
 3. **Irradiance probes in zone-scoped volumes (chosen).** One mechanism
    covers static and dynamic receivers per directive 3 (behavior from data,
    one pipeline); storage is decoupled from geometry so a brush edit
@@ -1267,7 +1316,10 @@ Compared against the alternatives, grounded in this codebase:
 4. **Hybrid direct-dynamic / indirect-baked (chosen by construction).**
    Direct lighting stays fully dynamic (points, spots, their shadows); probes
    replace only the hemispheric ambient term. This is the smallest bake that
-   changes how rooms feel.
+   changes how rooms feel. (Amended in revision 4: direct stays dynamic *by
+   default*; a light explicitly authored `LightBakeContribution::Direct` bakes
+   its diffuse into cooked cell vertices and leaves the runtime set entirely,
+   Section 7B. Probes still replace only the ambient term.)
 
 What the first bake computes (deliberately modest): for each probe, N = 128
 rays in a fixed precomputed direction table; each ray traced against the bake
@@ -1472,6 +1524,13 @@ one shared bake, no second volume format, no bent-normal encoding to validate.
   atlas packing, no offline direct-shadow artifacts. AO rides existing vertex
   attributes, produced by derived cook data.
 
+Baked static direct lighting (Section 7B) shipped without touching these
+rules: it is a separate vertex channel and a separate additive diffuse term,
+not this AO datum. Its bake-time visibility ray prevents leaks through walls;
+it is not a shadow-map substitute, and sharp static shadows remain cached
+runtime maps (`ShadowUpdate::Static`). The AO scalar still never encodes
+direct light.
+
 The rejection list in Section 15 makes these enforceable, not aspirational.
 
 ### 7A.3 Bake-time shading topology (the weld) and hard edges
@@ -1567,7 +1626,30 @@ brush-vertex density (useful only on already-dense authored geometry). The
 recommended v1 default is depth 2; the debug density view (9.6) shows where
 vertices were added so the tolerance can be tuned against real levels.
 
+Amended in revision 4: the baked-direct payload implemented exactly this
+error-driven scheme first and rejected it on screen. Error-driven insertion
+produces irregular, skinny triangles, and interpolating a smooth signal across
+them streaks visibly; every acceptable capture came from a regular lattice.
+Direct light shipped with distance-graded uniform subdivision instead (a pure
+per-edge length predicate, proximity-gated, no rays during refinement; Section
+7B.4). AO differs in its favor (a scalar, lower-frequency, modulating an
+already-dim ambient term), so error-driven refinement may still be right here,
+but 3B.3 must judge it against a graded-uniform variant with a screenshot A/B
+before committing; `DirectLightTessellate` is the working reference for the
+graded shape. This does not collide with Section 15's rejection of "uniform
+tessellation": that rejects ungated global densification, while distance-graded
+subdivision keeps the proximity gate, so open surfaces still stay untouched.
+
 ### 7A.6 Storage, packing, and memory
+
+Amended in revision 4: the offset-48 / location-8 slot and the v3 to v4 bump
+described below were consumed by the baked-direct RGBM channel (Section 7B),
+which shipped first. Vertex AO therefore lands as a second 4-byte attribute at
+offset 52 (stride 52 to 56), location 9, `.smesh` v4 to v5, and the loader
+rejects prior versions outright per the single-version doctrine (cooked
+content recooks via `kCookedCacheIndexVersion`) instead of loading v3 as
+neutral. The packing analysis below otherwise stands (byte 0 = AO, bytes 1-3
+reserved).
 
 - `StaticMeshVertex` (48 bytes today: `Vec3d` position + `Vec3d` normal +
   `Vec2d` uv + `Vec4` tangent, all float-backed since `Vec3d = Vec<3>` float,
@@ -1666,7 +1748,7 @@ the spatially adjacent zones whose halo included it, not the world. Because AO
 and probe irradiance share the BVH, the halo, and the ray kernel, they are
 produced in one pass of the `LightingBake` orchestrator per zone: build the
 BVH once, cast for probes and for vertex-AO samples, emit `.sprobe` and the
-v4 `.smesh` AO channel together.
+`.smesh` AO channel (v5 after the 7A.6 amendment) together.
 
 ### 7A.10 Debug views (Section 9.6 additions)
 
@@ -1678,6 +1760,153 @@ and AO sample density / adaptive tessellation (added-vertex heat or wireframe
 over the base brush edges, so a reviewer sees refinement clustering at walls
 and absent on open floor). Plus the doctrine proof view: AO term isolated, to
 confirm by eye it never bleeds into a direct-lit surface.
+
+---
+
+## 7B. Baked static direct lighting (shipped, revision 4)
+
+Added and implemented in revision 4. Sections 7 and 7A describe designed but
+unbuilt payloads; this section describes shipped code and is written from it.
+Motivation: the measured investigation under
+`docs/plans/evidence/point-light-cost/` convicted the 64-light forward cap as
+a correctness wall (at 96 visible lights, 32 drop silently) with a real ~80 us
+per light cost, and the target art direction (dark rooms, dozens of small
+static accent lights per view) exceeds the cap in real levels. Baking a static
+light's diffuse into the vertices it reaches removes it from the runtime set
+entirely. Every claim below has a capture or a test under
+`docs/plans/evidence/baked-direct/`.
+
+### 7B.1 Authoring contract and limitations
+
+`LightBakeContribution` gained `Direct` (schema string "direct") alongside
+`None` and `Indirect`, on both point and spot lights. `Direct` means: this
+light's diffuse is baked into static cell vertices at cook, and the light is
+skipped at extraction (`LightExtractionSystem`), so it never scores against
+the budget, never packs into `frame.Lights`, never counts toward the 64 cap,
+and never requests a shadow tile. The runtime adds one view-independent term
+after the light loop, `lit += baseColor.rgb * bakedDirect`, gated by
+`render.baked_direct.enabled`; the unlit family skips it.
+
+The limitations are structural, not tuning, and bound what designers may
+author as `Direct`:
+
+- No specular from baked lights (the term is view-independent). Hero lights
+  that need a highlight stay dynamic.
+- Dynamic objects receive nothing from baked lights until 3B.2 probes exist
+  (the term lives on static cell vertices). Keep key lights dynamic; author
+  `Direct` lights as true static fill.
+- Baked lights cannot move, flicker, or animate.
+- Instanced props carry the channel at neutral (the 7A.8 instancing rule);
+  only unique per-cell cooked geometry is baked.
+
+### 7B.2 Storage
+
+`.smesh` v4: `StaticMeshVertex` grew from 48 to 52 bytes with an RGBM
+`R8G8B8A8_UNORM` attribute at offset 48, vertex attribute location 8
+(`StaticMeshFormat.h`, `MeshForwardPass.cpp`). Neutral is additive zero, so an
+unbaked mesh renders byte-identical to before (proven by the parity capture).
+`kSmeshFlagBakedDirect` marks a meaningful channel. The RGBM multiplier
+`kBakedDirectRange = 16` (`DirectLightBake.h`) must equal
+`BAKED_DIRECT_RANGE` (`mesh_frame.glsli`); summed radiance clips at that
+ceiling, visible only as a tonemap-shoulder white core under extreme pool
+overlap. Single version live, per codebase doctrine and against the 7A.6
+sketch: the loader rejects v3 outright and cooked content recooks via the
+`kCookedCacheIndexVersion` bump.
+
+### 7B.3 Bake and staleness
+
+The bake runs at cook time inside the document cook (`DocumentCook.cpp`), so
+PIE and cooked runs are always fresh with no interactive step. The math is
+engine-side and unit-tested under `assets/cook/` (`BakeBvh`,
+`DirectLightBake`), gated behind `SENCHA_ENABLE_COOK`; it deliberately does
+not live under `render/` because cook-only code never links into the runtime.
+Per cook: collect `Direct` point and spot lights from the live registry (spot
+cones packed via the same `MakeSpotGpuLight` path the runtime uses), build one
+median-split triangle BVH over every cell's cooked triangles, tessellate each
+cell near its reaching lights (7B.4), then per vertex sum
+`wrap(N,L) * atten * visibility * color * intensity` with the CPU model kept
+exactly equal to `lighting.glsli` (the wrap factor is read from
+`render.style.diffuse_wrap` at cook, so baked and dynamic shading share one
+model). Visibility is one occlusion ray per vertex-light pair with a small
+normal offset: leak prevention through walls, not a penumbra. Deterministic by
+construction (fixed geometry order, no RNG).
+
+Staleness: `Direct` light state and the bake and tessellation parameters fold
+into the existing brush-input cook hash, so touching a light or retuning
+restales the level. The parameters are hashed only when `Direct` lights
+exist, so levels without baked lights do not recook on a tuning change.
+
+### 7B.4 Tessellation: distance-graded uniform subdivision
+
+The quality-maker, and a deliberate departure from 7A.5's error-driven scheme,
+which was implemented first and rejected on screen (7A.5 amendment). The
+shipped scheme (`assets/cook/DirectLightTessellate`) is a pure per-edge
+predicate: split an edge while it is longer than
+`max(minEdge, d * gradingFactor)`, where `d` is the light's distance to the
+closest point ON the edge segment, considering only lights within
+`range + margin` of the edge. Gating on the closest point rather than the
+midpoint matters: midpoint gating leaves lit vertices wired to distant corners
+and streaks radially. The predicate converges to a regular lattice near
+lights, needs no rays during refinement, and, with memoized per-edge decisions
+and quantized midpoints, conforms with no T-junctions (verified watertight on
+the cooked mesh). Geometry beyond every light's reach is never touched.
+
+The vertex-growth cap is a runaway backstop only (a multiplier over the cell's
+base vertex count); a binding cap starves refinement mid-pool and shows
+immediately. Defaults: grading 0.15, min edge 0.25, max depth 6, proximity
+margin 1.0, growth 256x. Large brush faces (32 units) need depth 8 to reach
+their graded targets; the stress scene sets it. Depth 0 disables refinement
+entirely.
+
+### 7B.5 Tooling
+
+- Tunables are archived editor cvars: `editor.cook.bake_grading`,
+  `bake_min_edge`, `bake_max_depth`, `bake_margin`, `bake_growth_cap`. A
+  deviation from the `render.bake.*` sketch: these are cook inputs, not
+  runtime state, so the editor owns them.
+- `render.debug.view baked_direct` isolates the raw baked vertex irradiance;
+  dynamic-lit and unbaked surfaces read black. This is the doctrine proof
+  view: baked light visibly never appears where it was not baked.
+- The kyusu lighting panel shows the authored `Direct` light count;
+  `DocumentCookResult` carries the baked-light and added-vertex counts and the
+  PIE cook logs them.
+- No dedicated Bake button: the bake rides every cook, so Cook and PIE are the
+  button. The Section 10 interactive-bake flow becomes worthwhile only if bake
+  time ever dominates cook time.
+
+### 7B.6 Validation (the closed loop)
+
+The baked counterpart of the original measurement, same rig and capture
+tooling:
+
+| | dynamic 96 | baked 96 |
+| --- | --- | --- |
+| LightsVisible (median) | 64 (capped) | 0 |
+| LightsDroppedAtCap | 32 (lights vanish) | 0 |
+| MainColor median | 5.08 ms | 0.041 ms |
+| Triangles | 2116 | 49682 |
+
+All 96 pools render; the cap wall is gone; the per-frame cost is noise even at
+23x the triangles. Reproduction is committed with the evidence
+(`BakedLightingStressGen`, env-gated). Unit coverage: RGBM round trip,
+analytic single-light match against the shader model, occlusion, range,
+determinism, tessellation grading and conformity, end-to-end cook. The rim
+stair-stepping visible in captures is renderer-wide rasterization aliasing (no
+MSAA in the forward pass), present on every hard edge, unrelated to the bake.
+
+### 7B.7 Deferred, with triggers
+
+- **Cross-zone halo.** The bake is per-document today: a `Direct` light near a
+  zone boundary neither lights nor is occluded by the neighbor zone. Fold in
+  with 3B.1's halo (Section 7.2) when real worlds put baked lights at zone
+  seams.
+- **The weld (7A.3).** Exactly-coincident duplicate vertices already bake
+  identically by determinism plus quantized tessellation midpoints; the full
+  weld is needed only if hard-edge seams ever show on real content.
+- **Soft baked penumbra** (a few jittered visibility rays from a fixed table):
+  an authoring nicety once real content wants softer pool edges.
+- **glTF export of the channel**: baked light is not a glTF concept; map to
+  COLOR_0 if an external tool ever needs it.
 
 ---
 
@@ -2231,6 +2460,19 @@ first; probe streaming (3B.2) and vertex AO (3B.3) are independently mergeable
 consumers of it, and 3B.3 works against the hemi-ambient fallback even if 3B.2
 never ships.
 
+Revision 4 status: the baked-direct payload (Section 7B) shipped a slice of
+this substrate early: the median-split triangle BVH with segment occlusion
+(`assets/cook/BakeBvh`), light-proximity tessellation
+(`assets/cook/DirectLightTessellate`), the `.smesh` vertex-format bump with
+its attribute plumbing, and the `DocumentCook`/`WorldCook` bake seam with
+staleness hashing. 3B.1's remaining scope is the grid math, the hemisphere ray
+table, SH projection, dilation, `.sprobe` IO, and the neighbor halo; new bake
+modules belong beside the shipped ones under `assets/cook/` (cook-gated), not
+under `render/probes/` as sketched below. 3B.3 carries two amendments: its
+storage numbers moved (7A.6: offset 52, location 9, `.smesh` v5) and its
+tessellation scheme must be judged on screen against a distance-graded uniform
+variant before committing (7A.5).
+
 #### 3B.1: Shared bake core, grid math, probe format (M)
 
 - **Goal.** Everything CPU-testable lands first: grid mapping, the shared
@@ -2324,7 +2566,8 @@ never ships.
 - **Validation.** The Section 13 AO test set (weld, hard-edge split, cross-zone
   determinism, occluder-gated refinement, open-floor near-zero growth,
   thin-wall/window policy, instance neutrality, composition without crushed
-  blacks, AO-disabled equals Phase 3A ambient); `.smesh` v3 files load neutral.
+  blacks, AO-disabled equals Phase 3A ambient); the loader rejects prior
+  `.smesh` versions (single-version doctrine, 7A.6 amendment).
 - **Completion criteria.** A coplanar floor split across two draw calls and
   across a zone boundary shows no AO seam; a massive floor beside one wall
   refines only near the wall; AO composes with probes without crushed corners;
@@ -2383,9 +2626,9 @@ New engine files:
 | `engine/{include,src}/render/probes/IrradianceProbeGrid.{h,cpp}` | Grid3d + GridTransform3d composition |
 | `engine/include/render/probes/IrradianceVolumeComponent.h` | Component + schema (`'IRVL'`) |
 | `engine/{include,src}/render/probes/ProbeVolumeSet.{h,cpp}` | Resident volumes, GPU upload |
-| `engine/{include,src}/render/probes/BakeBvh.{h,cpp}` | Shared triangle BVH, neighbor halo, cosine hemisphere ray kernel, fixed ray table |
-| `engine/{include,src}/render/probes/ProbeBakeMath.{h,cpp}` | Classification, dilation, SH projection over `BakeBvh` |
-| `engine/{include,src}/render/probes/AoBakeMath.{h,cpp}` | Vertex-AO weld topology, occluder-gated adaptive tessellation, hemisphere AO, scatter-to-vertex |
+| `engine/{include,src}/assets/cook/BakeBvh.{h,cpp}` | Shared triangle BVH with segment occlusion (shipped, revision 4); halo assembly, cosine hemisphere ray kernel, fixed ray table still to add |
+| `engine/{include,src}/assets/cook/ProbeBakeMath.{h,cpp}` | Classification, dilation, SH projection over `BakeBvh` (placement per the revision-4 amendment: bake modules are cook-gated, not under `render/`) |
+| `engine/{include,src}/assets/cook/AoBakeMath.{h,cpp}` | Vertex-AO weld topology, tessellation (scheme per the 7A.5 amendment), hemisphere AO, scatter-to-vertex |
 | `engine/{include,src}/assets/probes/ProbeVolumeFormat.{h,cpp}` | `.sprobe` chunked binary IO |
 | `engine/include/math/spatial/GridTransform3d.h` | World-cell mapping value type |
 | `engine/{include,src}/graphics/vulkan/GpuTimestampPool.{h,cpp}` | Lazily created timestamp queries |
@@ -2411,9 +2654,11 @@ Modified engine files (primary): `render/RenderLight.h`,
 `engine/shaders/mesh_forward.{vert,frag}.glsl`,
 `render/Camera.h` and `render/Camera.cpp` (comments only),
 `template/src/TemplateGame.cpp` (probe recipe),
-`render/static_mesh/StaticMeshVertex.h` (packed AO attribute, +4 bytes),
+`render/static_mesh/StaticMeshVertex.h` (one packed 4-byte attribute per bake
+payload: baked direct shipped at offset 48, AO takes offset 52),
 `assets/static_mesh/{StaticMeshFormat.h,MeshSerializer.{h,cpp},MeshLoader.cpp}`
-(`.smesh` v4 AO channel, v3 loads neutral).
+(`.smesh` v4 baked-direct channel shipped; v5 adds AO; the loader rejects
+prior versions).
 
 Editor files: kyusu `render/LightVisualRenderer.{h,cpp}` (new),
 `render/EditorRenderFeature.{h,cpp}`, `render/SceneRenderQueueBuilder.cpp`,
@@ -2423,8 +2668,9 @@ LightingPanel.{h,cpp} (new)}`, `editmodes/` cone manipulator (new) +
 `document/{DocumentCook.cpp,WorldCook.cpp}`, `app/EditorServices.cpp`;
 shudei `MaterialInspectorPanel.cpp`.
 
-Docs: update `docs/plans/engine-roadmap.md` Track B items 2/5/8 to record this
-plan's ordering; append 3C findings here.
+Docs: `docs/plans/engine-roadmap.md` Track B items 2 and 8 were updated at
+revision 4; item 5 updates when the tonemap moves to the Post phase. Append 3C
+findings here.
 
 ---
 
@@ -2579,7 +2825,7 @@ Risks and mitigations:
 - **Caster-diff cost on caster-heavy frames.** Bounded by the coarse gate
   (diff only when OnChange slots are resident) and budgeted (Section 14);
   recorded escalations: `Changed<>` prefilter, then a static/dynamic caster
-  split (0.5).
+  split (0.6).
 - **Dilation leaks at thin interior walls within one volume.** Countermeasures
   and their limits are stated in 7.3 (cell-size guidance, volume splitting,
   dilated-probe overlay); occlusion-aware interpolation is the recorded
@@ -2607,8 +2853,11 @@ Risks and mitigations:
 - **Cross-zone AO seam if determinism breaks.** The halo must be assembled in a
   stable order and the ray table fixed; the cross-zone determinism unit test
   (Section 13) fails loudly if a nondeterministic input creeps in.
-- **`.smesh` v4 vs older tooling.** Version gate is explicit; v3 loads neutral,
-  so the failure mode is "AO absent," never corruption.
+- **`.smesh` version bumps vs older tooling.** Superseded in revision 4 by the
+  single-version doctrine as shipped: the loader rejects prior versions
+  outright and cooked content recooks via `kCookedCacheIndexVersion` (done
+  this way for v4 baked direct; v5 AO follows suit). The failure mode is a
+  loud reject plus recook, never a silently stale channel.
 - **Instrumentation cost regressions over time.** The 9.7 A/B protocol is
   rerun whenever the instrumentation surface changes; the granularity policy
   (9.2) gives reviewers a bright line.
@@ -2685,7 +2934,7 @@ Deferred work, anchored to triggers:
   probe/vertex blend): the dialed multiply is the v1 model; a stronger model
   waits for content that the defaults cannot satisfy (7A.7).
 - **`Changed<>` prefilter for the caster diff, static/dynamic caster split**:
-  measure-first (0.5).
+  measure-first (0.6).
 - **Multi-viewport editor shadow preview** (context zones + all viewports):
   focus-viewport-only in Phase 3; extend when editors ask.
 - **Editor-process instrumentation and per-viewport stats**: after the

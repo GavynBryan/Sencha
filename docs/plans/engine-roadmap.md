@@ -106,8 +106,10 @@ Absent. This list is the roadmap's backlog:
 - Input action mapping: raw `InputFrame` only, no data-driven bindings.
 - Game-facing UI/HUD: ImGui is debug and editor only.
 - Navigation: none. AI: none. Save games: none. Localization: none.
-- Rendering: no shadows, no transparency (opaque fallback with a warning), no
-  post-processing (phase reserved, empty), no particles, no decals, no skybox, no GI.
+- Rendering: no transparency (opaque fallback with a warning), no post-processing
+  (phase reserved, empty), no particles, no decals, no skybox, no probe GI. (Spot and
+  point shadows and baked static direct lighting shipped 2026-07; hemispheric ambient
+  is still the only indirect term.)
 - Cinematics/sequencer: none.
 - World partition metadata: no cells, adjacency, manifests, or streaming budgets beyond
   `AsyncCommitBudgetMs`.
@@ -321,11 +323,13 @@ split is also what keeps the second-RHI decision cheap to revisit (Section 11).
    format seam exists; `render/skinned_mesh/` caches load the data today. Gate: a
    skinned character renders and animates in a cooked level.
 
-2. **Shadows (v1.0 directional cascaded shadow maps; spot in v1.0 if the pass structure
-   makes it incidental, point in v2.0).** A depth-pass feature in the existing
-   render-feature structure; the `GpuLight` record already reserves the type enum and
-   `ShadowIndex` field. Gate: sun shadows in the template game at a stated cascade
-   configuration, toggled by data.
+2. **Shadows (spot and point shipped 2026-07; directional cascaded deferred).** The
+   renderer phase-3 plan (`docs/plans/renderer-phase-3-lighting.md`) superseded this
+   row's ordering and shipped spot and point shadows first: a shared depth atlas, a
+   depth cube array, and renderer-owned residency with budgets and caster-diff
+   invalidation. There are no directional lights yet; directional plus CSM lands with
+   the outdoor/sun need, and the rule that AO never contains sunlight is already
+   recorded against that future work (phase-3 plan Section 15).
 
 3. **Transparency pass (v1.0).** A sorted blended pass filling the reserved pipeline
    slot; retires the opaque-fallback warning in `MaterialAssetLoader`. Also the
@@ -343,7 +347,13 @@ split is also what keeps the second-RHI decision cheap to revisit (Section 11).
 7. **Decals (v2.0).**
 
 8. **GI (v2.0 baked, v3.0 dynamic at scale).** Explicitly not v1.0; hemispheric ambient
-   remains the stand-in. Trigger in Section 11.
+   remains the indirect stand-in. Trigger in Section 11. The accepted design is the
+   renderer phase-3 plan's Phase 3B (zone-scoped L1 SH probe volumes plus cooked vertex
+   AO), and its first substrate slice shipped 2026-07 as baked static direct lighting
+   (phase-3 plan Section 7B): static accent lights bake their diffuse into cell
+   vertices and leave the runtime light set, answering the measured 64-light forward
+   cap. Probes and AO ride the same bake machinery (BVH, cook seam, staleness hashing,
+   tessellation) when GI lands.
 
 9. **Terrain, water, volumetrics, weather and time-of-day as data (v3.0).**
 
