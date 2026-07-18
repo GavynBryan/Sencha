@@ -9,6 +9,7 @@
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/DirectLightBake.h>
+#include <assets/cook/DirectLightTessellate.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
@@ -333,10 +334,18 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         occlusionBvh.Build(std::move(occluders));
 
         const DirectLightBakeParams bakeParams{};
+        const DirectTessellationParams tessParams{};
         for (PendingCellMesh& pending : pendingMeshes)
         {
-            BakeDirectLighting(pending.Geometry, Mat4::MakeTranslation(pending.Origin),
-                               bakeLights, occlusionBvh, bakeParams);
+            const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
+            // Refine near the lights first (so the high-frequency falloff has
+            // vertices to land on), then bake the refined mesh. Occlusion uses
+            // the coarse BVH: tessellation only adds coplanar vertices, so the
+            // occluding surfaces are unchanged.
+            TessellateForDirectBake(pending.Geometry, toWorld, bakeLights,
+                                    occlusionBvh, bakeParams, tessParams);
+            BakeDirectLighting(pending.Geometry, toWorld, bakeLights,
+                               occlusionBvh, bakeParams);
         }
     }
 

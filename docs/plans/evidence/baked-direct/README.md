@@ -50,6 +50,12 @@ Reproduce:
   lights are authored `direct` and excluded from the runtime forward set. End-to-end proof: real
   bake -> `.smesh` -> shader -> screen, zero runtime lights. (Dense 32x32 plane, so no smear;
   a raw brush face would still smear until Phase 3 tessellation.)
+- `phase3_brush_tessellated.png`: the Phase 3 payoff. A real cooked box-brush floor (a top face
+  with four corners, the Phase 0 smear case) now shows smooth colored pools, because the cook
+  adaptively tessellated the floor near the `direct` lights before baking. Same exclusion (all
+  lights `direct`, none in the runtime set). Mild faceting at the brightest center is Phase 4
+  tuning (higher depth / lower tolerance). The smear the spike warned about is fixed on real
+  low-poly brush geometry.
 
 ## Verdict
 
