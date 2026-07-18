@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,8 +32,18 @@ public:
     void Stop();
     [[nodiscard]] bool IsRunning();
 
+    // A one-shot description if the child ended abnormally (non-zero exit or a
+    // signal other than the SIGTERM Stop sends) since the last call. Clean exits
+    // and user-initiated stops report nothing. Poll this beside IsRunning so an
+    // instant post-launch death (bad content, failed device init) surfaces
+    // instead of the Play button just going dark.
+    [[nodiscard]] std::optional<std::string> TakeExitReport();
+
 private:
+    void RecordExit(int status);
+
     // pid_t kept as long to keep the platform header out of this interface; -1 is
     // "no child".
     long ChildPid = -1;
+    std::optional<std::string> PendingExitReport;
 };

@@ -16,7 +16,9 @@
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <optional>
 #include <span>
+#include <system_error>
 #include <variant>
 
 PieDriver::PieDriver(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets)
@@ -143,6 +145,30 @@ void PieDriver::Play(const std::string& map)
     }
 
     const std::string app = ResolveHostAppPath();
+
+    // Preflight the two paths fork/exec cannot report before it is too late: a
+    // missing host binary and a missing game module both otherwise leave the
+    // child dead at exit 127 with the editor reporting a phantom "session
+    // started". Resolve the module the way the child will (relative to the
+    // project directory it chdir's into).
+    std::error_code ec;
+    if (!std::filesystem::exists(app, ec))
+    {
+        log.Error("play failed: host app not found at '{}' (build the 'app' "
+                  "target for this build tree)", app);
+        return;
+    }
+    const std::filesystem::path modulePath =
+        std::filesystem::path(Project_->GameModulePath).is_absolute()
+            ? std::filesystem::path(Project_->GameModulePath)
+            : std::filesystem::path(Project_->Directory) / Project_->GameModulePath;
+    if (!std::filesystem::exists(modulePath, ec))
+    {
+        log.Error("play failed: game module not found at '{}' (build the "
+                  "project's game module)", modulePath.generic_string());
+        return;
+    }
+
     // CWD is the project directory: the game resolves its content roots
     // ("assets", "assets/.cooked") relative to it, exactly as a shipped game.
     std::string commandLine;
@@ -165,7 +191,10 @@ void PieDriver::Stop()
 
 bool PieDriver::IsPlaying()
 {
-    return Pie.IsRunning();
+    const bool running = Pie.IsRunning();
+    if (std::optional<std::string> report = Pie.TakeExitReport())
+        Engine_.Logging().GetLogger<PieDriver>().Error("play: " + *report);
+    return running;
 }
 
 std::string PieDriver::ResolveHostAppPath() const
