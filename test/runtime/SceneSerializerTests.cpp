@@ -17,6 +17,7 @@
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
@@ -81,6 +82,7 @@ namespace
         registry.Components.RegisterComponent<Parent>();
         registry.Components.RegisterComponent<StaticMeshComponent>();
         registry.Components.RegisterComponent<ZoneLightmapComponent>();
+        registry.Components.RegisterComponent<IrradianceVolumeComponent>();
         registry.Components.RegisterComponent<PointLightComponent>();
         registry.Components.RegisterComponent<SpotLightComponent>();
         registry.Components.RegisterComponent<CameraComponent>();

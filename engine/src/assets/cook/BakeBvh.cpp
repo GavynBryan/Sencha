@@ -121,8 +121,8 @@ std::uint32_t BakeBvh::BuildRange(std::uint32_t start, std::uint32_t count)
     return nodeIndex;
 }
 
-bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
-                                 double maxT) const
+bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
+                       double maxT, BakeBvhHit& hit) const
 {
     if (Nodes.empty())
         return false;
@@ -137,7 +137,7 @@ bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
     }
 
     double nearestT = maxT;
-    bool nearestBackface = false;
+    const BakeTriangle* nearest = nullptr;
 
     std::array<std::uint32_t, 64> stack{};
     std::uint32_t depth = 0;
@@ -157,9 +157,7 @@ bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
                 if (t <= kEps || t >= nearestT)
                     continue;
                 nearestT = t;
-                const Vec3d normal =
-                    (tri.V1 - tri.V0).Cross(tri.V2 - tri.V0);
-                nearestBackface = normal.Dot(direction) > 0.0f;
+                nearest = &tri;
             }
             continue;
         }
@@ -170,7 +168,25 @@ bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
             stack[depth++] = node.Right;
         }
     }
-    return nearestBackface;
+
+    if (nearest == nullptr)
+        return false;
+
+    const Vec3d normal =
+        (nearest->V1 - nearest->V0).Cross(nearest->V2 - nearest->V0);
+    const float length = normal.Magnitude();
+    hit.T = nearestT;
+    hit.Position = origin + direction * static_cast<float>(nearestT);
+    hit.Normal = length > 0.0f ? normal / length : Vec3d(0.0f, 1.0f, 0.0f);
+    hit.Backface = normal.Dot(direction) > 0.0f;
+    return true;
+}
+
+bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
+                                 double maxT) const
+{
+    BakeBvhHit hit;
+    return FirstHit(origin, direction, maxT, hit) && hit.Backface;
 }
 
 bool BakeBvh::SegmentOccluded(const Vec3d& origin, const Vec3d& target) const

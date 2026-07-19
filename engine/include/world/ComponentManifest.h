@@ -3,6 +3,7 @@
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <components/CameraComponent.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
@@ -24,6 +25,7 @@ using EngineSceneComponents = std::tuple<
     CameraComponent,
     StaticMeshComponent,
     ZoneLightmapComponent,
+    IrradianceVolumeComponent,
     PointLightComponent,
     SpotLightComponent,
     AudioSourceComponent,

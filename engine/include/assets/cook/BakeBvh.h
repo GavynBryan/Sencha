@@ -14,6 +14,17 @@ struct BakeTriangle
     Vec3d V2;
 };
 
+// Nearest intersection along a ray. Normal is the unit geometric normal from
+// the triangle's winding (not flipped toward the ray); Backface reports
+// whether the ray struck the winding's far side.
+struct BakeBvhHit
+{
+    double T = 0.0;
+    Vec3d Position;
+    Vec3d Normal;
+    bool Backface = false;
+};
+
 // Median-split triangle BVH for offline bake visibility queries. Built once
 // over a zone's (and halo's) world-space triangles, queried per (vertex,
 // light) pair, then discarded. Cook-only, no physics dependency: the bake
@@ -39,6 +50,12 @@ public:
     // filtering would drag out past the wall base. False on a miss.
     bool FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
                             double maxT) const;
+
+    // Nearest triangle hit along origin + t*direction (unit length not
+    // required; t in (eps, maxT]). False on a miss. The probe bake gathers
+    // bounce radiance at the hit and classifies buried probes with it.
+    bool FirstHit(const Vec3d& origin, const Vec3d& direction, double maxT,
+                  BakeBvhHit& hit) const;
 
     bool Empty() const { return Triangles.empty(); }
 
