@@ -2547,18 +2547,22 @@ first; probe streaming (3B.2) and vertex AO (3B.3) are independently mergeable
 consumers of it, and 3B.3 works against the hemi-ambient fallback even if 3B.2
 never ships.
 
-Revision 4 status: the baked-direct payload (Section 7B) shipped a slice of
-this substrate early: the median-split triangle BVH with segment occlusion
-(`assets/cook/BakeBvh`), light-proximity tessellation
-(`assets/cook/DirectLightTessellate`), the `.smesh` vertex-format bump with
-its attribute plumbing, and the `DocumentCook`/`WorldCook` bake seam with
-staleness hashing. 3B.1's remaining scope is the grid math, the hemisphere ray
-table, SH projection, dilation, `.sprobe` IO, and the neighbor halo; new bake
-modules belong beside the shipped ones under `assets/cook/` (cook-gated), not
-under `render/probes/` as sketched below. 3B.3 carries two amendments: its
-storage numbers moved (7A.6: offset 52, location 9, `.smesh` v5) and its
-tessellation scheme must be judged on screen against a distance-graded uniform
-variant before committing (7A.5).
+Revision 4 status: the baked-direct work (Sections 7B then 7C) shipped a
+slice of this substrate early: the median-split triangle BVH with segment
+occlusion plus first-hit backface query (`assets/cook/BakeBvh`), the
+per-sample radiance evaluator (`assets/cook/DirectLightBake`), the luxel
+rasterizer and atlas packer (`assets/cook/LightmapRaster`,
+`assets/cook/LightmapAtlasPack`), the `.smesh` vertex-format bump with its
+attribute plumbing, and the `DocumentCook`/`WorldCook` bake seam with
+staleness hashing. (7B's light-proximity tessellator also landed here first
+and was deleted with 7B.) 3B.1's remaining scope is the grid math, the
+hemisphere ray table, SH projection, dilation, `.sprobe` IO, and the neighbor
+halo; new bake modules belong beside the shipped ones under `assets/cook/`
+(cook-gated), not under `render/probes/` as sketched below. 3B.3 carries one
+amendment: per the re-amended 7A.6, weigh AO as a zone-atlas channel first
+(the density question that forced adaptive tessellation dissolves in texel
+space); if it lands as vertex data instead, the slot is offset 52, location
+10, `.smesh` v6.
 
 #### 3B.1: Shared bake core, grid math, probe format (M)
 
