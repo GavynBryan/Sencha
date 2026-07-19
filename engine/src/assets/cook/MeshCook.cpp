@@ -120,12 +120,13 @@ namespace
     // -- glTF primitive reading ------------------------------------------------
 
     const cgltf_accessor* FindAttribute(const cgltf_primitive& primitive,
-                                        cgltf_attribute_type type)
+                                        cgltf_attribute_type type,
+                                        int setIndex = 0)
     {
         for (cgltf_size i = 0; i < primitive.attributes_count; ++i)
         {
             const cgltf_attribute& attribute = primitive.attributes[i];
-            if (attribute.type == type && attribute.index == 0)
+            if (attribute.type == type && attribute.index == setIndex)
                 return attribute.data;
         }
         return nullptr;
@@ -198,6 +199,11 @@ namespace
         const cgltf_accessor* positions = FindAttribute(primitive, cgltf_attribute_type_position);
         const cgltf_accessor* normals = FindAttribute(primitive, cgltf_attribute_type_normal);
         const cgltf_accessor* uvs = FindAttribute(primitive, cgltf_attribute_type_texcoord);
+        // TEXCOORD_1, when the author supplies one, imports as the lightmap
+        // sheet: a [0,1] layout the cook later assigns per-placement atlas
+        // rects to. No auto-unwrapping; meshes without it stay unbaked.
+        const cgltf_accessor* lightmapUvs =
+            FindAttribute(primitive, cgltf_attribute_type_texcoord, 1);
         const cgltf_accessor* tangents = FindAttribute(primitive, cgltf_attribute_type_tangent);
         const cgltf_accessor* joints = FindAttribute(primitive, cgltf_attribute_type_joints);
         const cgltf_accessor* weights = FindAttribute(primitive, cgltf_attribute_type_weights);
@@ -250,6 +256,20 @@ namespace
                 if (!cgltf_accessor_read_float(uvs, i, uv, 2))
                     return fail("could not read TEXCOORD_0");
                 vertex.Uv0 = Vec2d(uv[0], uv[1]);
+            }
+
+            if (lightmapUvs != nullptr)
+            {
+                float uv[2]{};
+                if (!cgltf_accessor_read_float(lightmapUvs, i, uv, 2))
+                    return fail("could not read TEXCOORD_1");
+                const auto pack = [](float value) {
+                    const float clamped =
+                        value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+                    return static_cast<std::uint16_t>(clamped * 65535.0f + 0.5f);
+                };
+                vertex.LightmapU = pack(uv[0]);
+                vertex.LightmapV = pack(uv[1]);
             }
 
             if (tangents != nullptr)

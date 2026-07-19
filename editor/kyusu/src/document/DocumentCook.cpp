@@ -14,8 +14,11 @@
 #include <assets/cook/LightmapRaster.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
+#include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureSerializer.h>
+#include <core/assets/AssetSystem.h>
+#include <render/StaticMeshComponent.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
@@ -229,6 +232,101 @@ std::vector<BakeDirectLight> CollectDirectLights(const World& world)
     return lights;
 }
 
+// A placed instanceable mesh joining the zone's lightmap: its cook-document
+// entity (for the scale/bias writeback), placement transform, CPU geometry
+// (sheet UVs in LightmapU/V), and the atlas rect sizing derived from it.
+struct LightmapPlacement
+{
+    EntityId Entity;
+    Mat4 ToWorld = Mat4::Identity();
+    MeshGeometry Geometry;
+    Vec2d WorldExtent;               // world size the [0,1] sheet spans, per axis
+    std::uint32_t Chart = 0;         // index into the shared atlas layout
+    bool CastsIntoBake = true;       // AffectsBakedLighting: occludes others
+};
+
+// Gathers placed StaticMesh entities whose mesh asset carries lightmap sheet
+// UVs. Needs the asset system (handle -> path) and disk access (the cook
+// loads CPU geometry; the runtime caches hold none); a null assetSystem cooks
+// brush-only and bakes no placements. Deterministic: entity iteration order.
+std::vector<LightmapPlacement> CollectLightmapPlacements(
+    const World& world, AssetSystem* assetSystem,
+    const std::filesystem::path& assetsRoot, LoggingProvider& logging)
+{
+    std::vector<LightmapPlacement> placements;
+    if (assetSystem == nullptr || !world.IsRegistered<StaticMeshComponent>()
+        || !world.IsRegistered<LocalTransform>())
+        return placements;
+
+    MeshLoader loader(logging);
+    world.ForEachComponent<StaticMeshComponent>(
+        [&](EntityId entity, const StaticMeshComponent& renderer)
+        {
+            const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+            if (transform == nullptr)
+                return;
+            const std::string_view assetPath =
+                assetSystem->GetPathForStaticMesh(renderer.Mesh);
+            constexpr std::string_view prefix = "asset://";
+            if (assetPath.size() <= prefix.size())
+                return;
+            const std::string rel(assetPath.substr(prefix.size()));
+
+            // Authored meshes live under the root; generated ones under
+            // .cooked (the same split physicalPathFor uses for refs).
+            std::filesystem::path physical = assetsRoot / rel;
+            std::error_code ec;
+            if (!std::filesystem::exists(physical, ec))
+                physical = assetsRoot / ".cooked" / rel;
+
+            LightmapPlacement placement;
+            if (!loader.LoadFromFile(physical.generic_string(), placement.Geometry))
+                return;
+
+            bool hasSheet = false;
+            for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
+                if (vertex.LightmapU != 0 || vertex.LightmapV != 0)
+                {
+                    hasSheet = true;
+                    break;
+                }
+            if (!hasSheet)
+                return;
+
+            placement.Entity = entity;
+            placement.ToWorld = transform->Value.ToMat4();
+            placement.CastsIntoBake = renderer.AffectsBakedLighting;
+
+            // World density of the sheet: the steepest world-per-sheet-unit
+            // ratio over the indexed edges, per axis, measured on the PLACED
+            // triangles so instance scale is included.
+            float du = 0.0f;
+            float dv = 0.0f;
+            const std::vector<StaticMeshVertex>& verts = placement.Geometry.Vertices;
+            const std::vector<uint32_t>& indices = placement.Geometry.Indices;
+            for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+                for (int e = 0; e < 3; ++e)
+                {
+                    const StaticMeshVertex& a = verts[indices[i + e]];
+                    const StaticMeshVertex& b = verts[indices[i + (e + 1) % 3]];
+                    const float world =
+                        (placement.ToWorld.TransformPoint(b.Position)
+                         - placement.ToWorld.TransformPoint(a.Position)).Magnitude();
+                    const float su = std::abs(b.LightmapU - a.LightmapU) / 65535.0f;
+                    const float sv = std::abs(b.LightmapV - a.LightmapV) / 65535.0f;
+                    if (su > 1e-5f)
+                        du = std::max(du, world / su);
+                    if (sv > 1e-5f)
+                        dv = std::max(dv, world / sv);
+                }
+            if (du <= 0.0f && dv <= 0.0f)
+                return;
+            placement.WorldExtent = Vec2d{ std::max(du, 1e-3f), std::max(dv, 1e-3f) };
+            placements.push_back(std::move(placement));
+        });
+    return placements;
+}
+
 // The cook kernel. Operates on a mutable document it is free to mutate
 // destructively (it drops brush entities before serializing the passthrough
 // scene), so both callers hand it a throwaway: the file cook loads one from
@@ -257,6 +355,10 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         doc.GetScene(), doc.GetDefaultMaterial(),
         bakeLights.empty() ? nullptr : &charts,
         lightmapParams.ConeDegrees, lightmapParams.LuxelSize);
+    std::vector<LightmapPlacement> placements = bakeLights.empty()
+        ? std::vector<LightmapPlacement>{}
+        : CollectLightmapPlacements(doc.GetRegistry().Components, assetSystem,
+                                    assetsRoot, logging);
     uint64_t geometryHash =
         HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
     if (!bakeLights.empty())
@@ -269,6 +371,17 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         geometryHash = HashBytes64(
             std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
             geometryHash);
+        for (const LightmapPlacement& placement : placements)
+        {
+            geometryHash = HashBytes64(std::as_bytes(std::span<const Mat4>{
+                &placement.ToWorld, 1 }), geometryHash);
+            geometryHash = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
+                placement.Geometry.Vertices.data(),
+                placement.Geometry.Vertices.size() }), geometryHash);
+            const std::uint8_t casts = placement.CastsIntoBake ? 1 : 0;
+            geometryHash = HashBytes64(std::as_bytes(std::span<const std::uint8_t>{
+                &casts, 1 }), geometryHash);
+        }
     }
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
@@ -279,9 +392,39 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     LightmapAtlasLayout atlasLayout;
     if (!bakeLights.empty())
     {
+        // Placements pack into the same zone atlas as the brush charts: one
+        // rect per placement, sized by the world span its [0,1] sheet covers.
+        std::vector<Vec2d> extents = charts.Extents;
+        for (LightmapPlacement& placement : placements)
+        {
+            placement.Chart = static_cast<std::uint32_t>(extents.size());
+            extents.push_back(placement.WorldExtent);
+        }
         atlasLayout = PackLightmapAtlas(
-            charts.Extents, lightmapParams.LuxelSize, lightmapParams.MaxAtlasSize);
+            extents, lightmapParams.LuxelSize, lightmapParams.MaxAtlasSize);
         const float luxel = atlasLayout.EffectiveLuxelSize;
+
+        // Per-placement scale/bias: the mesh's sheet UVs map linearly into
+        // its rect's grid points; the runtime applies uv * xy + zw. Written
+        // into the cook document's component so SaveSceneJson serializes it.
+        for (const LightmapPlacement& placement : placements)
+        {
+            const LightmapChartRect& rect = atlasLayout.Rects[placement.Chart];
+            const float pointsU = std::ceil(placement.WorldExtent.X / luxel);
+            const float pointsV = std::ceil(placement.WorldExtent.Y / luxel);
+            StaticMeshComponent* renderer =
+                doc.GetScene().GetRegistry().Components.TryGet<StaticMeshComponent>(
+                    placement.Entity);
+            if (renderer == nullptr)
+                continue;
+            renderer->LightmapScaleBias = Vec4{
+                pointsU / static_cast<float>(atlasLayout.Width),
+                pointsV / static_cast<float>(atlasLayout.Height),
+                (static_cast<float>(rect.X + kLightmapGutter) + 0.5f)
+                    / static_cast<float>(atlasLayout.Width),
+                (static_cast<float>(rect.Y + kLightmapGutter) + 0.5f)
+                    / static_cast<float>(atlasLayout.Height) };
+        }
         for (BrushCell& cell : cells)
             for (CookFace& face : cell.Faces)
             {
@@ -405,6 +548,24 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                     toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i + 2]].Position) });
             }
         }
+        // Placed meshes occlude too (and shadow each other) unless authored
+        // out via AffectsBakedLighting.
+        for (const LightmapPlacement& placement : placements)
+        {
+            if (!placement.CastsIntoBake)
+                continue;
+            const MeshGeometry& geometry = placement.Geometry;
+            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+            {
+                occluders.push_back(BakeTriangle{
+                    placement.ToWorld.TransformPoint(
+                        geometry.Vertices[geometry.Indices[i]].Position),
+                    placement.ToWorld.TransformPoint(
+                        geometry.Vertices[geometry.Indices[i + 1]].Position),
+                    placement.ToWorld.TransformPoint(
+                        geometry.Vertices[geometry.Indices[i + 2]].Position) });
+            }
+        }
         BakeBvh occlusionBvh;
         occlusionBvh.Build(std::move(occluders));
 
@@ -438,6 +599,32 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                     chartTriangles[face.Chart].push_back(tri);
                 }
             }
+
+        // Placement charts: sheet UVs scale into the rect's grid points; the
+        // luxel bake then runs on the placed world triangles like any chart.
+        for (const LightmapPlacement& placement : placements)
+        {
+            const float pointsU = std::ceil(placement.WorldExtent.X / luxel);
+            const float pointsV = std::ceil(placement.WorldExtent.Y / luxel);
+            const MeshGeometry& geometry = placement.Geometry;
+            if (placement.Chart >= chartTriangles.size())
+                continue;
+            std::vector<LightmapRasterTriangle>& out = chartTriangles[placement.Chart];
+            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+            {
+                LightmapRasterTriangle tri;
+                for (int k = 0; k < 3; ++k)
+                {
+                    const StaticMeshVertex& vertex = geometry.Vertices[geometry.Indices[i + k]];
+                    tri.Uv[k] = Vec2d{ vertex.LightmapU / 65535.0f * pointsU,
+                                       vertex.LightmapV / 65535.0f * pointsV };
+                    tri.Position[k] = placement.ToWorld.TransformPoint(vertex.Position);
+                    tri.Normal[k] =
+                        placement.ToWorld.TransformVector(vertex.Normal).Normalized();
+                }
+                out.push_back(tri);
+            }
+        }
 
         std::vector<std::uint32_t> atlasPixels(
             static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
