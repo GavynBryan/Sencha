@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/cook/LightmapCookParams.h>
+#include <assets/cook/LightingCookParams.h>
 
 #include <filesystem>
 #include <string>
@@ -30,4 +30,4 @@ struct WorldCookResult
                                         double cellSize,
                                         LoggingProvider& logging,
                                         RuntimeAssets* assets,
-                                        const LightmapCookParams& lightmapParams = {});
+                                        const LightingCookParams& lightmapParams = {});

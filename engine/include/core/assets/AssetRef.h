@@ -24,6 +24,7 @@ enum class AssetType : uint16_t
     AnimationClip = 9,
     SkinnedMesh = 10,
     Collision = 11,
+    ProbeVolume = 12,
 };
 
 enum class AssetSourceKind : uint16_t

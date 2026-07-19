@@ -152,7 +152,7 @@ TEST(LightmapSpike, Generate)
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 
-    LightmapCookParams fine{};
+    LightingCookParams fine{};
     const DocumentCookResult fineResult =
         CookDocument(levelPath, root, /*cellSize*/ 64.0, nullptr, nullptr, fine);
     ASSERT_TRUE(fineResult.Success) << fineResult.Error;
@@ -164,7 +164,7 @@ TEST(LightmapSpike, Generate)
     ASSERT_TRUE(coarseDoc.Load(levelPath.generic_string()));
     const fs::path coarsePath = root / "levels/lightmap_spike_coarse.json";
     ASSERT_TRUE(coarseDoc.SaveAs(coarsePath.generic_string()));
-    LightmapCookParams coarse{};
+    LightingCookParams coarse{};
     coarse.LuxelSize = 0.5f;
     const DocumentCookResult coarseResult =
         CookDocument(coarsePath, root, /*cellSize*/ 64.0, nullptr, nullptr, coarse);

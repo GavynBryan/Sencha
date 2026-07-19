@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/cook/LightmapCookParams.h>
+#include <assets/cook/LightingCookParams.h>
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <math/Vec.h>
@@ -36,6 +36,8 @@ struct DocumentCookResult
     uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
     std::size_t              DirectLightCount = 0;   // lights baked this cook
+    std::size_t              ProbeVolumeCount = 0;   // authored volumes baked
+    std::size_t              ProbeCount = 0;         // total probes across them
     std::uint32_t            LightmapAtlasWidth = 0; // 0 when nothing baked
     std::uint32_t            LightmapAtlasHeight = 0;
     // The luxel size the atlas actually packed at; differs from the requested
@@ -69,7 +71,7 @@ struct RuntimeAssets;
                                         double cellSize,
                                         LoggingProvider* logging = nullptr,
                                         RuntimeAssets* assets = nullptr,
-                                        const LightmapCookParams& lightmapParams = {});
+                                        const LightingCookParams& lightmapParams = {});
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
@@ -85,4 +87,4 @@ struct RuntimeAssets;
                                         double cellSize,
                                         LoggingProvider& logging,
                                         RuntimeAssets* assets = nullptr,
-                                        const LightmapCookParams& lightmapParams = {});
+                                        const LightingCookParams& lightmapParams = {});

@@ -15,7 +15,7 @@ WorldCookResult CookWorld(WorldDocument& world,
                           double cellSize,
                           LoggingProvider& logging,
                           RuntimeAssets* assets,
-                          const LightmapCookParams& lightmapParams)
+                          const LightingCookParams& lightmapParams)
 {
     namespace fs = std::filesystem;
     WorldCookResult result;

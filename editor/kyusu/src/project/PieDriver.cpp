@@ -49,7 +49,7 @@ std::string PieDriver::Cook(const std::string& levelName)
     // Lightmap tuning rides the cook so PIE always reflects the dialed values;
     // the diffuse wrap comes from the renderer style cvar so baked and dynamic
     // lighting share one shading model.
-    LightmapCookParams lightmapParams{};
+    LightingCookParams lightmapParams{};
     lightmapParams.Shading.DiffuseWrap = static_cast<float>(
         readDouble("render.style.diffuse_wrap", lightmapParams.Shading.DiffuseWrap));
     lightmapParams.LuxelSize = static_cast<float>(
@@ -58,6 +58,18 @@ std::string PieDriver::Cook(const std::string& levelName)
         readDouble("editor.cook.lightmap_max_size", lightmapParams.MaxAtlasSize));
     lightmapParams.ConeDegrees = static_cast<float>(
         readDouble("editor.cook.lightmap_cone", lightmapParams.ConeDegrees));
+    lightmapParams.Probe.BounceAlbedo = static_cast<float>(
+        readDouble("editor.cook.probe_albedo", lightmapParams.Probe.BounceAlbedo));
+    // The probe bake replaces the runtime hemispheric ambient, so its miss
+    // environment is that exact pair.
+    lightmapParams.Probe.SkyColor = Vec3d(
+        static_cast<float>(readDouble("render.ambient.sky_r", 0.10)),
+        static_cast<float>(readDouble("render.ambient.sky_g", 0.12)),
+        static_cast<float>(readDouble("render.ambient.sky_b", 0.15)));
+    lightmapParams.Probe.GroundColor = Vec3d(
+        static_cast<float>(readDouble("render.ambient.ground_r", 0.04)),
+        static_cast<float>(readDouble("render.ambient.ground_g", 0.03)),
+        static_cast<float>(readDouble("render.ambient.ground_b", 0.02)));
 
     if (Assets_ == nullptr)
     {
@@ -283,6 +295,10 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
                        "Chart normal-cone split limit in degrees: soft-edged faces join "
                        "one lightmap chart while their normals stay inside this cone.",
                        5.0, 90.0);
+    registerBakeDouble("editor.cook.probe_albedo", 0.35,
+                       "Constant surface reflectance for the irradiance-probe bounce: "
+                       "how much of a surface's direct lighting probes pick up.",
+                       0.0, 1.0);
 
     ConsoleCommandMetadata cook;
     cook.Name = "cook";

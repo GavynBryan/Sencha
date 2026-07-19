@@ -1,5 +1,6 @@
 #include <assets/cook/ProbeBake.h>
 
+#include <assets/probes/ProbeVolumeFormat.h>
 #include <jobs/JobSystem.h>
 
 #include <algorithm>
@@ -234,6 +235,27 @@ ProbeVolumeBakeResult BakeProbeVolume(const GridTransform3d& grid,
         }
 
     return result;
+}
+
+std::vector<std::uint16_t> PackProbeShHalf(std::span<const ProbeShL1> sh)
+{
+    std::vector<std::uint16_t> halves;
+    halves.reserve(sh.size() * kProbeShChannels * kProbeShCoefficients);
+    const auto plane = [&](auto&& channel)
+    {
+        for (const ProbeShL1& probe : sh)
+        {
+            const Vec4& c = channel(probe);
+            halves.push_back(FloatToHalf(c.X));
+            halves.push_back(FloatToHalf(c.Y));
+            halves.push_back(FloatToHalf(c.Z));
+            halves.push_back(FloatToHalf(c.W));
+        }
+    };
+    plane([](const ProbeShL1& p) -> const Vec4& { return p.R; });
+    plane([](const ProbeShL1& p) -> const Vec4& { return p.G; });
+    plane([](const ProbeShL1& p) -> const Vec4& { return p.B; });
+    return halves;
 }
 
 std::vector<BakeTriangle> AssembleProbeBakeTriangles(

@@ -181,10 +181,10 @@ TEST_F(BakedLightingCookTest, RestalesOnLightMove)
 
 TEST_F(BakedLightingCookTest, RestalesOnLightmapTuningOnlyWhenLightsExist)
 {
-    LightmapCookParams fine{};
-    LightmapCookParams coarse{};
+    LightingCookParams fine{};
+    LightingCookParams coarse{};
     coarse.LuxelSize = 0.5f;
-    LightmapCookParams wideCone{};
+    LightingCookParams wideCone{};
     wideCone.ConeDegrees = 80.0f;
 
     const fs::path lit = AuthorFloorWithLight(LightBakeContribution::Direct);

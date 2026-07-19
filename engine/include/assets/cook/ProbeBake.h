@@ -110,3 +110,8 @@ std::vector<BakeTriangle> AssembleProbeBakeTriangles(
     const Aabb3d& zoneBounds,
     std::span<const ProbeHaloZone> halo,
     float maxRayDistance);
+
+// Quantizes baked SH into the .sprobe payload layout: three channel planes
+// (R, G, B), each probe a quad of fp16 in (c1x, c1y, c1z, c0) order. One
+// straight 3D-texture upload per channel at runtime.
+std::vector<std::uint16_t> PackProbeShHalf(std::span<const ProbeShL1> sh);

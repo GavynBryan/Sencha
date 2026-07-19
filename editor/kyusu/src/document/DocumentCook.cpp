@@ -12,12 +12,16 @@
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/LightmapAtlasPack.h>
 #include <assets/cook/LightmapRaster.h>
+#include <assets/cook/ProbeBake.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
+#include <assets/probes/ProbeVolumeFormat.h>
 #include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureSerializer.h>
 #include <core/assets/AssetSystem.h>
+#include <math/spatial/GridTransform3d.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
@@ -170,13 +174,20 @@ JsonValue BuildCellEntity(const Vec3d& origin,
 
 namespace
 {
-// Lights authored LightBakeContribution::Direct, resolved to world-space bake
-// inputs. Their direct diffuse is baked into the zone lightmap and they are
-// excluded from the runtime forward set, so a bake is the only thing that makes
-// them visible. Spot cone parameters reuse the runtime packing so the baked
-// cone matches the shader cone exactly.
-std::vector<BakeDirectLight> CollectDirectLights(const World& world)
+// Lights resolved to world-space bake inputs. Direct lights feed the lightmap
+// (their diffuse bakes there and they leave the runtime forward set, so a
+// bake is the only thing that makes them visible); with includeIndirect the
+// set widens to Indirect lights, whose direct stays dynamic but whose bounce
+// feeds the probe bake. Spot cone parameters reuse the runtime packing so the
+// baked cone matches the shader cone exactly.
+std::vector<BakeDirectLight> CollectBakeLights(const World& world, bool includeIndirect)
 {
+    const auto contributes = [includeIndirect](LightBakeContribution bake)
+    {
+        return bake == LightBakeContribution::Direct
+            || (includeIndirect && bake == LightBakeContribution::Indirect);
+    };
+
     std::vector<BakeDirectLight> lights;
     if (!world.IsRegistered<LocalTransform>())
         return lights;
@@ -186,7 +197,7 @@ std::vector<BakeDirectLight> CollectDirectLights(const World& world)
         world.ForEachComponent<PointLightComponent>(
             [&](EntityId entity, const PointLightComponent& light)
             {
-                if (light.BakeContribution != LightBakeContribution::Direct)
+                if (!contributes(light.BakeContribution))
                     return;
                 const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
                 if (transform == nullptr)
@@ -206,7 +217,7 @@ std::vector<BakeDirectLight> CollectDirectLights(const World& world)
         world.ForEachComponent<SpotLightComponent>(
             [&](EntityId entity, const SpotLightComponent& light)
             {
-                if (light.BakeContribution != LightBakeContribution::Direct)
+                if (!contributes(light.BakeContribution))
                     return;
                 const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
                 if (transform == nullptr)
@@ -230,6 +241,57 @@ std::vector<BakeDirectLight> CollectDirectLights(const World& world)
     }
 
     return lights;
+}
+
+// An authored probe volume resolved to its world lattice. StableIndex is the
+// collection order (entity iteration order, deterministic per document), the
+// runtime's overlap tiebreaker.
+struct ProbeVolumeInput
+{
+    GridTransform3d Grid;
+    std::int32_t Priority = 0;
+};
+
+std::vector<ProbeVolumeInput> CollectProbeVolumes(const World& world)
+{
+    std::vector<ProbeVolumeInput> volumes;
+    if (!world.IsRegistered<LocalTransform>()
+        || !world.IsRegistered<IrradianceVolumeComponent>())
+        return volumes;
+
+    world.ForEachComponent<IrradianceVolumeComponent>(
+        [&](EntityId entity, const IrradianceVolumeComponent& volume)
+        {
+            const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+            if (transform == nullptr || volume.CellSize <= 0.0f)
+                return;
+            ProbeVolumeInput input;
+            input.Grid = GridTransform3d::FromBounds(
+                Aabb3d::FromCenterHalfExtent(transform->Value.Position,
+                                             volume.HalfExtents),
+                volume.CellSize);
+            input.Priority = volume.Priority;
+            volumes.push_back(input);
+        });
+    return volumes;
+}
+
+uint64_t HashProbeVolumes(std::span<const ProbeVolumeInput> volumes, uint64_t seed)
+{
+    uint64_t h = seed;
+    for (const ProbeVolumeInput& volume : volumes)
+    {
+        const float values[] = {
+            volume.Grid.Origin.X, volume.Grid.Origin.Y, volume.Grid.Origin.Z,
+            volume.Grid.CellSize,
+            static_cast<float>(volume.Grid.DimsX),
+            static_cast<float>(volume.Grid.DimsY),
+            static_cast<float>(volume.Grid.DimsZ),
+            static_cast<float>(volume.Priority),
+        };
+        h = HashBytes64(std::as_bytes(std::span<const float>{ values, std::size(values) }), h);
+    }
+    return h;
 }
 
 // A placed instanceable mesh joining the zone's lightmap: its cook-document
@@ -339,38 +401,40 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                                   double cellSize,
                                   LoggingProvider& logging,
                                   AssetSystem* assetSystem,
-                                  const LightmapCookParams& lightmapParams)
+                                  const LightingCookParams& lightmapParams)
 {
     DocumentCookResult result;
 
     // Lights first: charts are generated only when something will bake into
     // them. Collect -> hash -> cluster; the hash is taken on the collected
     // input (including chart identity) so it reflects exactly what gets
-    // baked. Bake tuning is hashed only when direct lights exist, since the
-    // output is otherwise independent of it.
+    // baked. Each bake's tuning is hashed only when its inputs exist, since
+    // the output is otherwise independent of it.
     const std::vector<BakeDirectLight> bakeLights =
-        CollectDirectLights(doc.GetRegistry().Components);
+        CollectBakeLights(doc.GetRegistry().Components, false);
+    const std::vector<ProbeVolumeInput> probeVolumes =
+        CollectProbeVolumes(doc.GetRegistry().Components);
+    // Probes bounce off surfaces lit by Direct AND Indirect lights: Indirect
+    // is the authoring contract for "dynamic direct, baked mood".
+    const std::vector<BakeDirectLight> bounceLights = probeVolumes.empty()
+        ? std::vector<BakeDirectLight>{}
+        : CollectBakeLights(doc.GetRegistry().Components, true);
     CookChartSet charts;
     std::vector<CookBrushGeometry> brushes = CollectCookBrushes(
         doc.GetScene(), doc.GetDefaultMaterial(),
         bakeLights.empty() ? nullptr : &charts,
         lightmapParams.ConeDegrees, lightmapParams.LuxelSize);
-    std::vector<LightmapPlacement> placements = bakeLights.empty()
+    // Placements matter to the lightmap (they receive rects) and to probes
+    // (they occlude rays), so they are collected when either bake runs.
+    std::vector<LightmapPlacement> placements =
+        (bakeLights.empty() && probeVolumes.empty())
         ? std::vector<LightmapPlacement>{}
         : CollectLightmapPlacements(doc.GetRegistry().Components, assetSystem,
                                     assetsRoot, logging);
     uint64_t geometryHash =
         HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
-    if (!bakeLights.empty())
+    if (!bakeLights.empty() || !probeVolumes.empty())
     {
-        const float tuning[] = {
-            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
-            lightmapParams.LuxelSize, static_cast<float>(lightmapParams.MaxAtlasSize),
-            lightmapParams.ConeDegrees,
-        };
-        geometryHash = HashBytes64(
-            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
-            geometryHash);
         for (const LightmapPlacement& placement : placements)
         {
             geometryHash = HashBytes64(std::as_bytes(std::span<const Mat4>{
@@ -382,6 +446,37 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             geometryHash = HashBytes64(std::as_bytes(std::span<const std::uint8_t>{
                 &casts, 1 }), geometryHash);
         }
+    }
+    if (!bakeLights.empty())
+    {
+        const float tuning[] = {
+            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
+            lightmapParams.LuxelSize, static_cast<float>(lightmapParams.MaxAtlasSize),
+            lightmapParams.ConeDegrees,
+        };
+        geometryHash = HashBytes64(
+            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
+            geometryHash);
+    }
+    if (!probeVolumes.empty())
+    {
+        geometryHash = HashDirectLights(bounceLights, geometryHash);
+        geometryHash = HashProbeVolumes(probeVolumes, geometryHash);
+        const float tuning[] = {
+            lightmapParams.Probe.BounceAlbedo,
+            lightmapParams.Probe.SkyColor.X, lightmapParams.Probe.SkyColor.Y,
+            lightmapParams.Probe.SkyColor.Z,
+            lightmapParams.Probe.GroundColor.X, lightmapParams.Probe.GroundColor.Y,
+            lightmapParams.Probe.GroundColor.Z,
+            lightmapParams.Probe.MaxRayDistance,
+            lightmapParams.Probe.ClassifyRayDistance,
+            lightmapParams.Probe.ClassifyBackfaceRatio,
+            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
+            static_cast<float>(lightmapParams.ProbeRayCount),
+        };
+        geometryHash = HashBytes64(
+            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
+            geometryHash);
     }
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
 
@@ -529,11 +624,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         }
     }
 
-    // Bake static direct lighting into the zone's lightmap atlas. The lights
-    // were collected up front (folded into the cook hash); a single occlusion
-    // BVH over every cell's world triangles lets a light in one cell shadow
-    // onto its neighbors. No cross-zone halo yet (single-document cook).
-    if (!bakeLights.empty())
+    // One occlusion BVH over every cell's world triangles serves both bakes:
+    // a light in one cell shadows onto its neighbors, and probe rays see the
+    // whole document. No cross-zone halo yet (single-document cook).
+    BakeBvh occlusionBvh;
+    if (!bakeLights.empty() || !probeVolumes.empty())
     {
         std::vector<BakeTriangle> occluders;
         for (const PendingCellMesh& pending : pendingMeshes)
@@ -566,9 +661,13 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                         geometry.Vertices[geometry.Indices[i + 2]].Position) });
             }
         }
-        BakeBvh occlusionBvh;
         occlusionBvh.Build(std::move(occluders));
+    }
 
+    // Bake static direct lighting into the zone's lightmap atlas. The lights
+    // were collected up front (folded into the cook hash).
+    if (!bakeLights.empty())
+    {
         result.DirectLightCount = bakeLights.size();
         result.LightmapAtlasWidth = atlasLayout.Width;
         result.LightmapAtlasHeight = atlasLayout.Height;
@@ -666,6 +765,51 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                 }) },
             }) },
         }));
+    }
+
+    // Bake authored irradiance-probe volumes into the zone's .sprobe. Bounce
+    // comes from Direct and Indirect lights against the same occlusion BVH;
+    // the runtime locates the file by the cooked-scene path convention.
+    if (!probeVolumes.empty())
+    {
+        ProbeBakeParams probeParams = lightmapParams.Probe;
+        probeParams.Shading = lightmapParams.Shading;
+        const std::vector<Vec3d> rayTable =
+            BuildProbeRayTable(lightmapParams.ProbeRayCount);
+
+        ProbeVolumeFile probeFile;
+        std::size_t probeCount = 0;
+        for (std::size_t i = 0; i < probeVolumes.size(); ++i)
+        {
+            const ProbeVolumeInput& input = probeVolumes[i];
+            const ProbeVolumeBakeResult baked = BakeProbeVolume(
+                input.Grid, occlusionBvh, bounceLights, rayTable, probeParams);
+
+            ProbeVolumeRecord record;
+            record.Grid = input.Grid;
+            record.Priority = input.Priority;
+            record.StableIndex = static_cast<std::uint32_t>(i);
+            record.ShHalf = PackProbeShHalf(baked.Sh);
+            record.ValidityBits = PackValidityBits(baked.Valid);
+            probeCount += baked.Sh.size();
+            probeFile.Volumes.push_back(std::move(record));
+        }
+
+        const std::string probeRel = "levels/" + stemStr + "/probes.sprobe";
+        const std::filesystem::path probePhysical = assetsRoot / ".cooked" / probeRel;
+        std::error_code makeDirs;
+        std::filesystem::create_directories(probePhysical.parent_path(), makeDirs);
+        std::ofstream probeStream(probePhysical, std::ios::binary | std::ios::trunc);
+        BinaryWriter probeWriter(probeStream);
+        if (!probeStream.is_open() || !WriteProbeVolumeFile(probeWriter, probeFile))
+        {
+            result.Error = "CookDocument: could not write probe volumes '" + probeRel + "'";
+            return result;
+        }
+        artifacts.push_back(CookedArtifact{
+            "asset://" + probeRel, ".cooked/" + probeRel, AssetType::ProbeVolume });
+        result.ProbeVolumeCount = probeVolumes.size();
+        result.ProbeCount = probeCount;
     }
 
     for (const PendingCellMesh& pending : pendingMeshes)
@@ -804,7 +948,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           double cellSize,
                           LoggingProvider* logging,
                           RuntimeAssets* assets,
-                          const LightmapCookParams& lightmapParams)
+                          const LightingCookParams& lightmapParams)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -833,7 +977,7 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
                           double cellSize,
                           LoggingProvider& logging,
                           RuntimeAssets* assets,
-                          const LightmapCookParams& lightmapParams)
+                          const LightingCookParams& lightmapParams)
 {
     // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
     // free to mutate, leaving the editor's document untouched. The snapshot shares

@@ -70,7 +70,7 @@ TEST(BakedLightingStress, Generate)
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 
     const DocumentCookResult result = CookDocument(
-        levelPath, root, /*cellSize*/ 64.0, nullptr, nullptr, LightmapCookParams{});
+        levelPath, root, /*cellSize*/ 64.0, nullptr, nullptr, LightingCookParams{});
     ASSERT_TRUE(result.Success) << result.Error;
     EXPECT_EQ(result.DirectLightCount, static_cast<std::size_t>(kCols * kRows));
     EXPECT_GT(result.LightmapAtlasWidth, 0u);
