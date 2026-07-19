@@ -1,5 +1,10 @@
 #include <render/RenderExtractionSystem.h>
 
+#include <graphics/vulkan/TextureCache.h>
+#include <render/ZoneLightmapComponent.h>
+
+#include <cmath>
+
 namespace
 {
     Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
@@ -24,12 +29,27 @@ void RenderExtractionSystem::Extract(const World& world,
                                      const MaterialCache& materials,
                                      const MaterialSetCache& materialSets,
                                      const CameraRenderData& camera,
-                                     RenderQueue& queue)
+                                     RenderQueue& queue,
+                                     const TextureCache* textures)
 {
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
     {
         return;
+    }
+
+    // The zone's baked-lighting atlas, resolved once per registry pass.
+    uint32_t lightmapIndex = UINT32_MAX;
+    if (textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+    {
+        world.ForEachComponent<ZoneLightmapComponent>(
+            [&](EntityId, const ZoneLightmapComponent& lightmap)
+            {
+                const BindlessImageIndex index =
+                    textures->GetBindlessIndex(lightmap.Texture);
+                if (index.IsValid())
+                    lightmapIndex = index.Value;
+            });
     }
 
     if (LastWorld != &world || !CachedQuery.has_value())
@@ -90,6 +110,22 @@ void RenderExtractionSystem::Extract(const World& world,
                 item.CameraDepth = cameraDepth;
                 item.Pass = material->Pass;
                 item.Pipeline = SelectOpaquePipeline(*material);
+                item.LightmapTextureIndex = lightmapIndex;
+                // SPIKE HACK (throwaway branch): entities marked with layer
+                // mask 0x7FFFFFFF fake the per-instance atlas rect the real
+                // placement cook will assign, deriving a small distinct rect
+                // from world position so instanced placements visibly sample
+                // different atlas regions within one draw run.
+                if (lightmapIndex != UINT32_MAX && renderer.LayerMask == 0x7FFFFFFFu)
+                {
+                    const float px = worldMatrix.At(0, 3);
+                    const float pz = worldMatrix.At(2, 3);
+                    const auto fract = [](float v) { return v - std::floor(v); };
+                    item.LightmapScaleBias = Vec4{
+                        0.08f, 0.08f,
+                        0.1f + 0.7f * fract(px * 0.31f + 0.5f),
+                        0.1f + 0.5f * fract(pz * 0.17f + 0.3f) };
+                }
                 queue.AddOpaque(item);
             }
         }

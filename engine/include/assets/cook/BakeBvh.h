@@ -30,6 +30,16 @@ public:
     // reported as self-occluded, and the light itself is not a blocker.
     bool SegmentOccluded(const Vec3d& origin, const Vec3d& target) const;
 
+    // True when the NEAREST triangle hit along origin + t*direction (unit
+    // length not required; t in (eps, maxT]) faces away from the ray: seeing
+    // a backface first means the point sits inside or underneath solid
+    // geometry. The bake uses this to invalidate buried lightmap samples
+    // (e.g. floor luxels underneath an overlapping wall brush) so dilation
+    // fills them from lit neighbors instead of baking black that bilinear
+    // filtering would drag out past the wall base. False on a miss.
+    bool FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
+                            double maxT) const;
+
     bool Empty() const { return Triangles.empty(); }
 
 private:

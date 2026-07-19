@@ -151,6 +151,11 @@ TextureHandle TextureCache::Find(std::string_view name) const
     return FindRegisteredHandle(name);
 }
 
+std::string_view TextureCache::GetName(TextureHandle handle) const
+{
+    return GetRegisteredPath(handle);
+}
+
 // -- Hot reload ---------------------------------------------------------------
 
 bool TextureCache::ReloadInPlace(std::string_view path, const TextureData& texture)

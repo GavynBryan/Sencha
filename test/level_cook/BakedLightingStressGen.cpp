@@ -69,18 +69,10 @@ TEST(BakedLightingStress, Generate)
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 
-    // The floor face's base edges are 32 units, so the default depth cap stops
-    // above the graded targets; two more levels reach them (the same dial the
-    // editor exposes as editor.cook.bake_max_depth).
-    DirectTessellationParams tessParams{};
-    tessParams.MaxDepth = 8;
-    // 96 pools on one box brush (24 base vertices) legitimately outgrow the
-    // default backstop; lift it so the cap never starves refinement mid-pool.
-    tessParams.MaxVertexGrowth = 2048.0f;
     const DocumentCookResult result = CookDocument(
-        levelPath, root, /*cellSize*/ 64.0, nullptr, nullptr,
-        DirectLightBakeParams{}, tessParams);
+        levelPath, root, /*cellSize*/ 64.0, nullptr, nullptr, LightmapCookParams{});
     ASSERT_TRUE(result.Success) << result.Error;
     EXPECT_EQ(result.DirectLightCount, static_cast<std::size_t>(kCols * kRows));
-    EXPECT_GT(result.BakedVerticesAdded, 0u);
+    EXPECT_GT(result.LightmapAtlasWidth, 0u);
+    EXPECT_GT(result.LightmapAtlasHeight, 0u);
 }

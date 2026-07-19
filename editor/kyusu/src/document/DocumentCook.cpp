@@ -9,11 +9,13 @@
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/DirectLightBake.h>
-#include <assets/cook/DirectLightTessellate.h>
 #include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/LightmapAtlasPack.h>
+#include <assets/cook/LightmapRaster.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
 #include <assets/static_mesh/MeshSerializer.h>
+#include <assets/texture/TextureSerializer.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
@@ -33,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <span>
 #include <string>
@@ -55,8 +58,27 @@ namespace
                 h = HashBytes64(face.Material.Path, h);
                 h = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
                     face.Triangles.data(), face.Triangles.size() }), h);
+                // Chart identity and chart-space UVs are hashed explicitly: a
+                // soft-edge toggle between coplanar faces changes charts (so
+                // the lightmap layout) without moving a single vertex byte.
+                h = HashBytes64(std::as_bytes(std::span<const std::uint32_t>{
+                    &face.Chart, 1 }), h);
+                if (!face.ChartUv.empty())
+                    h = HashBytes64(std::as_bytes(std::span<const Vec2d>{
+                        face.ChartUv.data(), face.ChartUv.size() }), h);
             }
         return h;
+    }
+
+    // Vertex lightmap UV: two unorm16 texel-center coordinates packed into the
+    // 4-byte vertex slot (little-endian: U low, V high).
+    std::uint32_t PackLightmapUv(float u, float v)
+    {
+        const auto pack = [](float value) {
+            const float clamped = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+            return static_cast<std::uint32_t>(std::lround(clamped * 65535.0f));
+        };
+        return pack(u) | (pack(v) << 16);
     }
 
     // Fold the baked-direct light set into the cook hash so moving, recoloring,
@@ -223,32 +245,74 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                                   double cellSize,
                                   LoggingProvider& logging,
                                   AssetSystem* assetSystem,
-                                  const DirectLightBakeParams& bakeParams,
-                                  const DirectTessellationParams& tessParams)
+                                  const LightmapCookParams& lightmapParams)
 {
     DocumentCookResult result;
 
-    // Collect -> hash -> cluster. The hash is taken on the collected input so it
-    // reflects exactly what gets baked. Bake tuning is hashed only when direct
-    // lights exist, since the output is otherwise independent of it.
-    std::vector<CookBrushGeometry> brushes = CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
+    // Lights first: charts are generated only when something will bake into
+    // them. Collect -> hash -> cluster; the hash is taken on the collected
+    // input (including chart identity) so it reflects exactly what gets
+    // baked. Bake tuning is hashed only when direct lights exist, since the
+    // output is otherwise independent of it.
     const std::vector<BakeDirectLight> bakeLights =
         CollectDirectLights(doc.GetRegistry().Components);
+    CookChartSet charts;
+    std::vector<CookBrushGeometry> brushes = CollectCookBrushes(
+        doc.GetScene(), doc.GetDefaultMaterial(),
+        bakeLights.empty() ? nullptr : &charts,
+        lightmapParams.ConeDegrees, lightmapParams.LuxelSize);
     uint64_t geometryHash =
         HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
     if (!bakeLights.empty())
     {
         const float tuning[] = {
-            bakeParams.DiffuseWrap, bakeParams.NormalOffset,
-            tessParams.LightProximityMargin, tessParams.GradingFactor,
-            tessParams.MinEdgeLength, static_cast<float>(tessParams.MaxDepth),
-            tessParams.PositionQuantum, tessParams.MaxVertexGrowth,
+            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
+            lightmapParams.LuxelSize, static_cast<float>(lightmapParams.MaxAtlasSize),
+            lightmapParams.ConeDegrees,
         };
         geometryHash = HashBytes64(
             std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
             geometryHash);
     }
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
+
+    // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
+    // the per-cell mesh bake: the weld compares whole vertices, so identical
+    // UVs weld chart interiors and differing UVs split chart borders, with no
+    // dedicated chart-splitting logic.
+    LightmapAtlasLayout atlasLayout;
+    if (!bakeLights.empty())
+    {
+        atlasLayout = PackLightmapAtlas(
+            charts.Extents, lightmapParams.LuxelSize, lightmapParams.MaxAtlasSize);
+        const float luxel = atlasLayout.EffectiveLuxelSize;
+        for (BrushCell& cell : cells)
+            for (CookFace& face : cell.Faces)
+            {
+                if (face.Chart >= atlasLayout.Rects.size())
+                    continue;
+                const LightmapChartRect& rect = atlasLayout.Rects[face.Chart];
+                for (std::size_t i = 0; i < face.Triangles.size()
+                     && i < face.ChartUv.size(); ++i)
+                {
+                    // Grid point k maps to the CENTER of texel (rect + gutter
+                    // + k); bilinear filtering then interpolates exactly
+                    // between adjacent grid samples.
+                    const float u = (static_cast<float>(rect.X + kLightmapGutter)
+                        + face.ChartUv[i].X / luxel + 0.5f)
+                        / static_cast<float>(atlasLayout.Width);
+                    const float v = (static_cast<float>(rect.Y + kLightmapGutter)
+                        + face.ChartUv[i].Y / luxel + 0.5f)
+                        / static_cast<float>(atlasLayout.Height);
+                    face.Triangles[i].BakedDirect = PackLightmapUv(u, v);
+                }
+            }
+        if (luxel != lightmapParams.LuxelSize)
+            logging.GetLogger<EditorDocument>().Warn(
+                "cook: lightmap atlas overflowed {}x{}; luxel size clamped {} -> {}",
+                lightmapParams.MaxAtlasSize, lightmapParams.MaxAtlasSize,
+                lightmapParams.LuxelSize, luxel);
+    }
 
     const std::string stemStr(stem);
     MeshSerializer serializer(logging);
@@ -325,11 +389,10 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         }
     }
 
-    // Bake static direct lighting into the cell vertices, then write the cell
-    // meshes. The lights were collected up front (folded into the cook hash);
-    // a single occlusion BVH over every cell's world triangles lets a light in
-    // one cell shadow onto its neighbors. No cross-zone halo yet (single-
-    // document cook).
+    // Bake static direct lighting into the zone's lightmap atlas. The lights
+    // were collected up front (folded into the cook hash); a single occlusion
+    // BVH over every cell's world triangles lets a light in one cell shadow
+    // onto its neighbors. No cross-zone halo yet (single-document cook).
     if (!bakeLights.empty())
     {
         std::vector<BakeTriangle> occluders;
@@ -349,18 +412,76 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         occlusionBvh.Build(std::move(occluders));
 
         result.DirectLightCount = bakeLights.size();
-        for (PendingCellMesh& pending : pendingMeshes)
+        result.LightmapAtlasWidth = atlasLayout.Width;
+        result.LightmapAtlasHeight = atlasLayout.Height;
+        result.EffectiveLuxelSize = atlasLayout.EffectiveLuxelSize;
+
+        // Gather each chart's triangles (world positions + smoothed normals +
+        // chart grid UVs) from the pre-weld cell faces, then rasterize and
+        // bake chart by chart.
+        std::vector<std::vector<LightmapRasterTriangle>> chartTriangles(
+            atlasLayout.Rects.size());
+        const float luxel = atlasLayout.EffectiveLuxelSize;
+        for (const BrushCell& cell : cells)
+            for (const CookFace& face : cell.Faces)
+            {
+                if (face.Chart >= chartTriangles.size())
+                    continue;
+                for (std::size_t i = 0; i + 2 < face.Triangles.size()
+                     && i + 2 < face.ChartUv.size(); i += 3)
+                {
+                    LightmapRasterTriangle tri;
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        tri.Uv[k] = Vec2d{ face.ChartUv[i + k].X / luxel,
+                                           face.ChartUv[i + k].Y / luxel };
+                        tri.Position[k] = face.Triangles[i + k].Position + cell.Origin;
+                        tri.Normal[k] = face.Triangles[i + k].Normal;
+                    }
+                    chartTriangles[face.Chart].push_back(tri);
+                }
+            }
+
+        std::vector<std::uint32_t> atlasPixels(
+            static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
+        for (std::size_t c = 0; c < chartTriangles.size(); ++c)
+            BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], bakeLights,
+                            occlusionBvh, lightmapParams.Shading,
+                            atlasLayout.Width, atlasPixels);
+
+        // Emit the atlas as a cooked texture artifact plus the zone component
+        // that binds it at runtime.
+        TextureData atlas;
+        atlas.Format = TexturePixelFormat::RGBA8;
+        atlas.Usage = TextureUsage::LinearData;
+        atlas.Filter = TextureFilter::Linear;
+        atlas.Width = atlasLayout.Width;
+        atlas.Height = atlasLayout.Height;
+        atlas.Mips = { TextureMipLevel{ atlasLayout.Width, atlasLayout.Height, 0,
+                                        atlasPixels.size() * sizeof(std::uint32_t) } };
+        atlas.Blob.resize(atlasPixels.size() * sizeof(std::uint32_t));
+        std::memcpy(atlas.Blob.data(), atlasPixels.data(), atlas.Blob.size());
+
+        const std::string atlasRel = "levels/" + stemStr + "/lightmap.stex";
+        const std::string atlasAssetPath = "asset://" + atlasRel;
+        TextureSerializer textureSerializer(logging);
+        if (!textureSerializer.WriteToFile(
+                (assetsRoot / ".cooked" / atlasRel).generic_string(), atlas))
         {
-            const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
-            // Refine near the lights first (so the falloff has vertices to
-            // land on), then bake the refined mesh. Occlusion uses the coarse
-            // BVH: tessellation only adds coplanar vertices, so the occluding
-            // surfaces are unchanged.
-            result.BakedVerticesAdded += TessellateForDirectBake(
-                pending.Geometry, toWorld, bakeLights, tessParams);
-            BakeDirectLighting(pending.Geometry, toWorld, bakeLights,
-                               occlusionBvh, bakeParams);
+            result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
+            return result;
         }
+        artifacts.push_back(CookedArtifact{
+            atlasAssetPath, ".cooked/" + atlasRel, AssetType::Texture });
+        generatedMeshPaths.insert(atlasAssetPath);
+        materialRefs.push_back(atlasAssetPath);
+        cellEntities.push_back(JsonValue(JsonValue::Object{
+            { "components", JsonValue(JsonValue::Object{
+                { "ZoneLightmap", JsonValue(JsonValue::Object{
+                    { "texture", JsonValue(atlasAssetPath) },
+                }) },
+            }) },
+        }));
     }
 
     for (const PendingCellMesh& pending : pendingMeshes)
@@ -499,8 +620,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           double cellSize,
                           LoggingProvider* logging,
                           RuntimeAssets* assets,
-                          const DirectLightBakeParams& bakeParams,
-                          const DirectTessellationParams& tessParams)
+                          const LightmapCookParams& lightmapParams)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -520,7 +640,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
     return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
                              assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr,
-                             bakeParams, tessParams);
+                             lightmapParams);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -529,8 +649,7 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
                           double cellSize,
                           LoggingProvider& logging,
                           RuntimeAssets* assets,
-                          const DirectLightBakeParams& bakeParams,
-                          const DirectTessellationParams& tessParams)
+                          const LightmapCookParams& lightmapParams)
 {
     // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
     // free to mutate, leaving the editor's document untouched. The snapshot shares
@@ -548,5 +667,5 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
     return CookDocumentKernel(snapshot, levelName, sourceRel, assetsRoot, cellSize,
                              logging, assets != nullptr ? &assets->Assets : nullptr,
-                             bakeParams, tessParams);
+                             lightmapParams);
 }

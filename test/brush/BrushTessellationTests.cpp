@@ -18,7 +18,7 @@ namespace
     {
         std::vector<CollectedFace> faces;
         BrushTessellate(mesh, transform,
-            [&](const FaceMaterial& material, std::span<const BrushTriVertex> tris) {
+            [&](std::uint32_t, const FaceMaterial& material, std::span<const BrushTriVertex> tris) {
                 faces.push_back(CollectedFace{ material, { tris.begin(), tris.end() } });
             });
         return faces;
@@ -29,7 +29,7 @@ namespace
     {
         std::vector<CollectedFace> faces;
         BrushTessellateFace(mesh, transform, faceIndex,
-            [&](const FaceMaterial& material, std::span<const BrushTriVertex> tris) {
+            [&](std::uint32_t, const FaceMaterial& material, std::span<const BrushTriVertex> tris) {
                 faces.push_back(CollectedFace{ material, { tris.begin(), tris.end() } });
             });
         return faces;

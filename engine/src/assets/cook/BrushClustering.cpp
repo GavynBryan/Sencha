@@ -80,6 +80,8 @@ ClusterBrushesIntoCells(std::span<const CookBrushGeometry> brushes, double cellS
             {
                 CookFace face;
                 face.Material = src.Material;
+                face.Chart = src.Chart;
+                face.ChartUv = src.ChartUv;
                 face.Triangles.reserve(src.Triangles.size());
                 for (const StaticMeshVertex& v : src.Triangles)
                 {

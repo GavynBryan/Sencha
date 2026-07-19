@@ -45,6 +45,17 @@ struct DirectLightBakeParams
     float NormalOffset = 0.02f;
 };
 
+// The baked static direct diffuse radiance at one world-space surface point:
+// the same wrap-Lambert + windowed inverse-square model as the forward shader
+// (lighting.glsli), with one occlusion ray per light through `occluders`. The
+// shared per-sample evaluator behind both the per-vertex bake and the lightmap
+// luxel bake.
+Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
+                                  const Vec3d& worldNormal,
+                                  std::span<const BakeDirectLight> lights,
+                                  const BakeBvh& occluders,
+                                  const DirectLightBakeParams& params);
+
 // Compute each vertex's baked static direct diffuse and write it, RGBM-packed,
 // into geometry.Vertices[].BakedDirect. Uses the same wrap-Lambert + windowed
 // inverse-square model as the forward shader (lighting.glsli), traces one

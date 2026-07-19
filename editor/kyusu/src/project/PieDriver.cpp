@@ -46,23 +46,18 @@ std::string PieDriver::Cook(const std::string& levelName)
     };
     const double cellSize = readDouble("editor.cook.cell_size", 16.0);
 
-    // Bake tuning rides the cook so PIE always reflects the dialed values; the
-    // diffuse wrap comes from the renderer style cvar so baked and dynamic
+    // Lightmap tuning rides the cook so PIE always reflects the dialed values;
+    // the diffuse wrap comes from the renderer style cvar so baked and dynamic
     // lighting share one shading model.
-    DirectLightBakeParams bakeParams{};
-    bakeParams.DiffuseWrap = static_cast<float>(
-        readDouble("render.style.diffuse_wrap", bakeParams.DiffuseWrap));
-    DirectTessellationParams tessParams{};
-    tessParams.GradingFactor = static_cast<float>(
-        readDouble("editor.cook.bake_grading", tessParams.GradingFactor));
-    tessParams.MinEdgeLength = static_cast<float>(
-        readDouble("editor.cook.bake_min_edge", tessParams.MinEdgeLength));
-    tessParams.MaxDepth = static_cast<int>(
-        readDouble("editor.cook.bake_max_depth", tessParams.MaxDepth));
-    tessParams.LightProximityMargin = static_cast<float>(
-        readDouble("editor.cook.bake_margin", tessParams.LightProximityMargin));
-    tessParams.MaxVertexGrowth = static_cast<float>(
-        readDouble("editor.cook.bake_growth_cap", tessParams.MaxVertexGrowth));
+    LightmapCookParams lightmapParams{};
+    lightmapParams.Shading.DiffuseWrap = static_cast<float>(
+        readDouble("render.style.diffuse_wrap", lightmapParams.Shading.DiffuseWrap));
+    lightmapParams.LuxelSize = static_cast<float>(
+        readDouble("editor.cook.lightmap_luxel", lightmapParams.LuxelSize));
+    lightmapParams.MaxAtlasSize = static_cast<std::uint32_t>(
+        readDouble("editor.cook.lightmap_max_size", lightmapParams.MaxAtlasSize));
+    lightmapParams.ConeDegrees = static_cast<float>(
+        readDouble("editor.cook.lightmap_cone", lightmapParams.ConeDegrees));
 
     if (Assets_ == nullptr)
     {
@@ -96,7 +91,7 @@ std::string PieDriver::Cook(const std::string& levelName)
 
         const WorldCookResult cooked =
             CookWorld(World_, assetsRoot, cellSize, Engine_.Logging(), Assets_,
-                      bakeParams, tessParams);
+                      lightmapParams);
         if (!cooked.Success)
         {
             log.Error("cook failed: " + cooked.Error);
@@ -122,7 +117,7 @@ std::string PieDriver::Cook(const std::string& levelName)
 
     const DocumentCookResult cooked =
         CookDocument(World_.FocusDocument(), name, assetsRoot, cellSize, Engine_.Logging(), Assets_,
-                     bakeParams, tessParams);
+                     lightmapParams);
     if (!cooked.Success)
     {
         log.Error("cook failed: " + cooked.Error);
@@ -135,8 +130,10 @@ std::string PieDriver::Cook(const std::string& levelName)
     log.Info("cooked '{}' ({} cells) -> {}",
              LastCookedMap_, cooked.CellCount, cooked.CookedScenePath.generic_string());
     if (cooked.DirectLightCount > 0)
-        log.Info("cook: baked {} direct light(s); tessellation added {} vertices",
-                 cooked.DirectLightCount, cooked.BakedVerticesAdded);
+        log.Info("cook: baked {} direct light(s) into a {}x{} lightmap atlas "
+                 "(luxel {})",
+                 cooked.DirectLightCount, cooked.LightmapAtlasWidth,
+                 cooked.LightmapAtlasHeight, cooked.EffectiveLuxelSize);
     return LastCookedMap_;
 }
 
@@ -274,20 +271,16 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
             .Max = max,
         });
     };
-    registerBakeDouble("editor.cook.bake_grading", 0.15,
-                       "Baked-light tessellation target edge length as a fraction of "
-                       "distance to the light. Smaller is finer.", 0.01, 2.0);
-    registerBakeDouble("editor.cook.bake_min_edge", 0.25,
-                       "Baked-light tessellation never splits an edge below this world "
-                       "length.", 0.01, 16.0);
-    registerBakeDouble("editor.cook.bake_max_depth", 6.0,
-                       "Baked-light tessellation recursion depth cap per cook.", 0.0, 12.0);
-    registerBakeDouble("editor.cook.bake_margin", 1.0,
-                       "Distance beyond a baked light's range that still tessellates, so "
-                       "the refined region reaches past the falloff.", 0.0, 16.0);
-    registerBakeDouble("editor.cook.bake_growth_cap", 256.0,
-                       "Runaway backstop: per-cell vertex growth multiple where baked-light "
-                       "tessellation stops splitting.", 1.0, 4096.0);
+    registerBakeDouble("editor.cook.lightmap_luxel", 0.25,
+                       "World units per lightmap texel. Smaller is finer; the atlas "
+                       "density-clamps if the max size cannot hold it.", 0.05, 4.0);
+    registerBakeDouble("editor.cook.lightmap_max_size", 2048.0,
+                       "Per-dimension lightmap atlas cap. Keep at or below 4096 so "
+                       "vertex UVs stay sub-texel accurate.", 128.0, 4096.0);
+    registerBakeDouble("editor.cook.lightmap_cone", 45.0,
+                       "Chart normal-cone split limit in degrees: soft-edged faces join "
+                       "one lightmap chart while their normals stay inside this cone.",
+                       5.0, 90.0);
 
     ConsoleCommandMetadata cook;
     cook.Name = "cook";

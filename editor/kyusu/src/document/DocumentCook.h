@@ -1,7 +1,6 @@
 #pragma once
 
-#include <assets/cook/DirectLightBake.h>
-#include <assets/cook/DirectLightTessellate.h>
+#include <assets/cook/LightmapCookParams.h>
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <math/Vec.h>
@@ -36,8 +35,12 @@ struct DocumentCookResult
     std::filesystem::path    CollisionSidecarPath;
     uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
-    std::size_t              DirectLightCount = 0;     // lights baked into vertices this cook
-    std::size_t              BakedVerticesAdded = 0;   // tessellation growth across all cells
+    std::size_t              DirectLightCount = 0;   // lights baked this cook
+    std::uint32_t            LightmapAtlasWidth = 0; // 0 when nothing baked
+    std::uint32_t            LightmapAtlasHeight = 0;
+    // The luxel size the atlas actually packed at; differs from the requested
+    // size only when MaxAtlasSize forced a density clamp (worth a log line).
+    float                    EffectiveLuxelSize = 0.0f;
 };
 
 // Builds the cooked StaticMesh entity JSON for one cell: a Transform at the
@@ -66,8 +69,7 @@ struct RuntimeAssets;
                                         double cellSize,
                                         LoggingProvider* logging = nullptr,
                                         RuntimeAssets* assets = nullptr,
-                                        const DirectLightBakeParams& bakeParams = {},
-                                        const DirectTessellationParams& tessParams = {});
+                                        const LightmapCookParams& lightmapParams = {});
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
@@ -83,5 +85,4 @@ struct RuntimeAssets;
                                         double cellSize,
                                         LoggingProvider& logging,
                                         RuntimeAssets* assets = nullptr,
-                                        const DirectLightBakeParams& bakeParams = {},
-                                        const DirectTessellationParams& tessParams = {});
+                                        const LightmapCookParams& lightmapParams = {});

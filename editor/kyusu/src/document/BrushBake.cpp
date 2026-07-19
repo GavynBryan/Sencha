@@ -17,7 +17,7 @@ bool BakeBrushToGeometry(const BrushMesh& mesh,
 {
     std::vector<CookFace> faces;
     BrushTessellate(mesh, Transform3f::Identity(),
-        [&](const FaceMaterial& material, std::span<const BrushTriVertex> triangles) {
+        [&](std::uint32_t, const FaceMaterial& material, std::span<const BrushTriVertex> triangles) {
             CookFace face;
             face.Material = EffectiveMaterial(material, levelDefault);
             face.Triangles.reserve(triangles.size());

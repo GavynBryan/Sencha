@@ -6,6 +6,7 @@
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <world/transform/TransformComponents.h>
 
 #include <tuple>
@@ -22,6 +23,7 @@ using EngineSceneComponents = std::tuple<
     LocalTransform,
     CameraComponent,
     StaticMeshComponent,
+    ZoneLightmapComponent,
     PointLightComponent,
     SpotLightComponent,
     AudioSourceComponent,

@@ -3,7 +3,7 @@ layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
 layout(location = 3) in vec3 inWorldTangent;
 layout(location = 4) in float inTangentSign;
-layout(location = 5) in vec3 inBakedDirect;
+layout(location = 5) in vec2 inLightmapUv;
 
 layout(push_constant) uniform MeshPush
 {
@@ -18,12 +18,22 @@ layout(push_constant) uniform MeshPush
     uint OrmTextureIndex;
     uint EmissiveTextureIndex;
     uint ReceiveShadows;
-    uint Pad0;
+    uint LightmapTextureIndex;
     uint Pad1;
     uint Pad2;
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
+
+// The baked static direct diffuse term: one bilinear fetch of the zone's
+// RGBM lightmap atlas, decoded post-filter. Zero when the item has no atlas.
+vec3 SampleBakedDirect()
+{
+    if (pushData.LightmapTextureIndex == 0xFFFFFFFFu)
+        return vec3(0.0);
+    vec4 rgbm = texture(BindlessTextures[pushData.LightmapTextureIndex], inLightmapUv);
+    return rgbm.rgb * (rgbm.a * BAKED_DIRECT_RANGE);
+}
 
 vec4 SampleBaseColor()
 {

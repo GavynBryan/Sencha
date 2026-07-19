@@ -112,6 +112,7 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
@@ -178,6 +179,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
@@ -221,6 +223,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp

@@ -44,6 +44,14 @@ struct RenderQueueItem
     float CameraDepth = 0.0f;
     ShaderPassId Pass = ShaderPassId::ForwardOpaque;
     OpaquePipelineId Pipeline = OpaquePipelineId::StandardLitBack;
+    // Bindless slot of the zone's baked-lighting atlas, or UINT32_MAX when the
+    // item has none. Uniform per draw, so it joins the run-merge equality test
+    // (the same mesh resident in two zones must not share one run).
+    uint32_t LightmapTextureIndex = UINT32_MAX;
+    // Per-instance remap from the mesh's lightmap UVs into its atlas rect;
+    // identity for cooked cells (their UVs are absolute atlas coordinates).
+    // Varies freely within a run: per-instance data, never merge criteria.
+    Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
     uint64_t SortKey = 0;
 };
 

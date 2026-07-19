@@ -66,7 +66,7 @@ void BrushSolidRenderer::AppendBrushMesh(std::vector<EditorSolidVertex>& vertice
     // The kernel produces the triangles (positions/normals/UVs); the renderer only
     // adds the per-material tint and packs them into GPU vertices.
     BrushTessellate(mesh, transform,
-        [&](const FaceMaterial& material, std::span<const BrushTriVertex> triangles) {
+        [&](std::uint32_t, const FaceMaterial& material, std::span<const BrushTriVertex> triangles) {
             const Vec4 base = TintForMaterial(material.Material);
             const Vec4 modulated(base.X * tint.X, base.Y * tint.Y, base.Z * tint.Z,
                                  base.W * tint.W);

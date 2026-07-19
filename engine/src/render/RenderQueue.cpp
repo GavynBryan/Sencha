@@ -56,7 +56,8 @@ void RenderQueue::SortOpaque()
                 && item.Mesh == head.Mesh
                 && item.SectionIndex == head.SectionIndex
                 && item.Material == head.Material
-                && item.Pass == head.Pass)
+                && item.Pass == head.Pass
+                && item.LightmapTextureIndex == head.LightmapTextureIndex)
             {
                 ++OpaqueRunList.back().Count;
                 continue;

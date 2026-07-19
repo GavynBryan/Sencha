@@ -121,6 +121,58 @@ std::uint32_t BakeBvh::BuildRange(std::uint32_t start, std::uint32_t count)
     return nodeIndex;
 }
 
+bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
+                                 double maxT) const
+{
+    if (Nodes.empty())
+        return false;
+
+    constexpr double kEps = 1e-4;
+    Vec3d invDir;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const double d = direction[axis];
+        invDir[axis] = static_cast<float>(
+            (d > 0.0 || d < 0.0) ? 1.0 / d : 1e30);
+    }
+
+    double nearestT = maxT;
+    bool nearestBackface = false;
+
+    std::array<std::uint32_t, 64> stack{};
+    std::uint32_t depth = 0;
+    stack[depth++] = 0;
+    while (depth > 0)
+    {
+        const Node& node = Nodes[stack[--depth]];
+        if (!SegmentIntersectsBox(node.Bounds, origin, invDir, kEps, nearestT))
+            continue;
+
+        if (node.Count > 0)
+        {
+            for (std::uint32_t i = 0; i < node.Count; ++i)
+            {
+                const BakeTriangle& tri = Triangles[Order[node.Start + i]];
+                const double t = RayTriangleT(origin, direction, tri);
+                if (t <= kEps || t >= nearestT)
+                    continue;
+                nearestT = t;
+                const Vec3d normal =
+                    (tri.V1 - tri.V0).Cross(tri.V2 - tri.V0);
+                nearestBackface = normal.Dot(direction) > 0.0f;
+            }
+            continue;
+        }
+
+        if (depth + 2 <= stack.size())
+        {
+            stack[depth++] = node.Left;
+            stack[depth++] = node.Right;
+        }
+    }
+    return nearestBackface;
+}
+
 bool BakeBvh::SegmentOccluded(const Vec3d& origin, const Vec3d& target) const
 {
     if (Nodes.empty())

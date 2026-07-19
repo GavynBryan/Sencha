@@ -310,7 +310,8 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
     {
-        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets);
+        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials,
+                                 runtimeAssets.MaterialSets, &runtimeAssets.Textures);
         pipeline->AddMeshRenderFeature(graphics);
     }
 

@@ -244,7 +244,8 @@ namespace
         return perFace;
     }
 
-    void EmitFace(const BrushMesh& mesh, const Transform3f& transform, const BrushFace& face,
+    void EmitFace(const BrushMesh& mesh, const Transform3f& transform,
+                  std::uint32_t faceIndex, const BrushFace& face,
                   const BrushFaceEmit& emit, std::vector<BrushTriVertex>& triangles,
                   std::vector<std::array<std::uint32_t, 3>>& ears,
                   const LoopNormals* loopNormals = nullptr)
@@ -306,7 +307,7 @@ namespace
             }
         }
 
-        emit(face.Material, triangles);
+        emit(faceIndex, face.Material, triangles);
     }
 }
 
@@ -319,7 +320,8 @@ void BrushTessellate(const BrushMesh& mesh, const Transform3f& transform, const 
     for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
     {
         const LoopNormals* normals = f < soft.size() && !soft[f].empty() ? &soft[f] : nullptr;
-        EmitFace(mesh, transform, mesh.Faces[f], emit, triangles, ears, normals);
+        EmitFace(mesh, transform, static_cast<std::uint32_t>(f), mesh.Faces[f],
+                 emit, triangles, ears, normals);
     }
 }
 
@@ -331,5 +333,5 @@ void BrushTessellateFace(const BrushMesh& mesh, const Transform3f& transform,
 
     std::vector<BrushTriVertex> triangles;
     std::vector<std::array<std::uint32_t, 3>> ears;
-    EmitFace(mesh, transform, mesh.Faces[faceIndex], emit, triangles, ears);
+    EmitFace(mesh, transform, faceIndex, mesh.Faces[faceIndex], emit, triangles, ears);
 }

@@ -68,9 +68,21 @@ struct MeshPushConstants
     std::uint32_t OrmTextureIndex = UINT32_MAX;
     std::uint32_t EmissiveTextureIndex = UINT32_MAX;
     std::uint32_t ReceiveShadows = 1;
-    std::uint32_t Pad0 = 0;
+    // Bindless slot of the zone's baked-lighting atlas; UINT32_MAX skips the
+    // baked term. Uniform per run (part of the run-merge identity).
+    std::uint32_t LightmapTextureIndex = UINT32_MAX;
     std::uint32_t Pad1 = 0;
     std::uint32_t Pad2 = 0;
+};
+
+// Binding 1 of the mesh vertex input: one entry per drawn instance, written
+// into per-frame scratch by BindInstanceStream.
+struct MeshInstanceData
+{
+    Mat4 World;
+    // Remaps the mesh's lightmap UVs into its atlas rect (uv * xy + zw);
+    // identity for cooked cells, whose UVs are absolute atlas coordinates.
+    Vec4 LightmapScaleBias;
 };
 
 class MeshForwardPass

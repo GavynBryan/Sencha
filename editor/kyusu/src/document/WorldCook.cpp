@@ -15,8 +15,7 @@ WorldCookResult CookWorld(WorldDocument& world,
                           double cellSize,
                           LoggingProvider& logging,
                           RuntimeAssets* assets,
-                          const DirectLightBakeParams& bakeParams,
-                          const DirectTessellationParams& tessParams)
+                          const LightmapCookParams& lightmapParams)
 {
     namespace fs = std::filesystem;
     WorldCookResult result;
@@ -73,7 +72,7 @@ WorldCookResult CookWorld(WorldDocument& world,
         const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
         const DocumentCookResult zoneCook =
             CookDocument(scenePath, assetsRoot, cellSize, &logging, assets,
-                         bakeParams, tessParams);
+                         lightmapParams);
         if (!zoneCook.Success)
         {
             result.Error = "CookWorld: zone '" + zone.Name + "': " + zoneCook.Error;
@@ -102,7 +101,7 @@ WorldCookResult CookWorld(WorldDocument& world,
         }
         const DocumentCookResult sceneCook =
             CookDocument(scenePath, assetsRoot, cellSize, &logging, assets,
-                         bakeParams, tessParams);
+                         lightmapParams);
         if (!sceneCook.Success)
         {
             result.Error = "CookWorld: world scene: " + sceneCook.Error;

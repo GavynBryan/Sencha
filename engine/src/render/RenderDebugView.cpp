@@ -23,6 +23,7 @@ namespace
         { RenderDebugView::ShadowRaw, "shadow_raw", "Raw shadow compare" },
         { RenderDebugView::Overdraw, "overdraw", "Overdraw" },
         { RenderDebugView::BakedDirect, "baked_direct", "Baked direct" },
+        { RenderDebugView::LightmapTexels, "lightmap_texels", "Lightmap texels" },
     };
 
     static_assert(sizeof(kNames) / sizeof(kNames[0]) == kRenderDebugViewCount);

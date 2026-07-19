@@ -1,7 +1,6 @@
 #pragma once
 
-#include <assets/cook/DirectLightBake.h>
-#include <assets/cook/DirectLightTessellate.h>
+#include <assets/cook/LightmapCookParams.h>
 
 #include <filesystem>
 #include <string>
@@ -31,5 +30,4 @@ struct WorldCookResult
                                         double cellSize,
                                         LoggingProvider& logging,
                                         RuntimeAssets* assets,
-                                        const DirectLightBakeParams& bakeParams = {},
-                                        const DirectTessellationParams& tessParams = {});
+                                        const LightmapCookParams& lightmapParams = {});

@@ -91,6 +91,7 @@ public:
     void ReleaseMaterialSet(MaterialSetHandle handle);
 
     [[nodiscard]] std::string_view GetPathForStaticMesh(StaticMeshHandle handle) const;
+    [[nodiscard]] std::string_view GetPathForTexture(TextureHandle handle) const;
     [[nodiscard]] std::string_view GetPathForSkinnedMesh(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetPathForMaterial(MaterialHandle handle) const;
     [[nodiscard]] std::string_view GetPathForAudioClip(AudioClipHandle handle) const;

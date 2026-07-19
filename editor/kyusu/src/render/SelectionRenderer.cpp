@@ -230,7 +230,7 @@ void SelectionRenderer::AppendFaceFill(std::vector<EditorLineVertex>& triangles,
                                        const Vec4& color) const
 {
     BrushTessellateFace(mesh, transform, faceIndex,
-        [&](const FaceMaterial&, std::span<const BrushTriVertex> tris) {
+        [&](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> tris) {
             for (const BrushTriVertex& tri : tris)
                 triangles.push_back(EditorLineVertex{ tri.Position, color });
         });

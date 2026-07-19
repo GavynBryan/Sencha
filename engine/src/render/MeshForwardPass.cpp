@@ -27,7 +27,12 @@ static_assert(offsetof(MeshPushConstants, NormalTextureIndex) == 52);
 static_assert(offsetof(MeshPushConstants, OrmTextureIndex) == 56);
 static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
 static_assert(offsetof(MeshPushConstants, ReceiveShadows) == 64);
+static_assert(offsetof(MeshPushConstants, LightmapTextureIndex) == 68);
 static_assert(sizeof(MeshPushConstants) == 80);
+
+static_assert(offsetof(MeshInstanceData, World) == 0);
+static_assert(offsetof(MeshInstanceData, LightmapScaleBias) == 64);
+static_assert(sizeof(MeshInstanceData) == 80);
 
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
 static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
@@ -124,18 +129,19 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
     base.Layout = PipelineLayout;
     base.VertexBindings = {
         { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
+        { 1, sizeof(MeshInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE },
     };
     base.VertexAttributes = {
         { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
         { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
         { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
-        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
-        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
-        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) },
+        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 16 },
+        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
+        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = true;
@@ -204,18 +210,19 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
     base.Layout = PipelineLayout;
     base.VertexBindings = {
         { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
+        { 1, sizeof(MeshInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE },
     };
     base.VertexAttributes = {
         { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
         { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
         { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
-        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
-        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
-        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) },
+        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 16 },
+        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
+        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = !overdraw;
@@ -324,13 +331,17 @@ bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const Render
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
 
-    auto stream = Scratch->AllocateVertex(order.size() * sizeof(Mat4));
+    auto stream = Scratch->AllocateVertex(order.size() * sizeof(MeshInstanceData));
     if (!stream.IsValid())
         return false;
 
-    Mat4* transforms = static_cast<Mat4*>(stream.Mapped);
+    MeshInstanceData* instances = static_cast<MeshInstanceData*>(stream.Mapped);
     for (size_t i = 0; i < order.size(); ++i)
-        transforms[i] = items[order[i]].WorldMatrix.Transposed();
+    {
+        const RenderQueueItem& item = items[order[i]];
+        instances[i].World = item.WorldMatrix.Transposed();
+        instances[i].LightmapScaleBias = item.LightmapScaleBias;
+    }
 
     VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Buffer);
     vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Offset);
@@ -429,6 +440,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.OrmTextureIndex = material->OrmTextureIndex;
         push.EmissiveTextureIndex = material->EmissiveTextureIndex;
         push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
+        push.LightmapTextureIndex = item.LightmapTextureIndex;
 
         if (vertexBuffer != lastVertexBuffer)
         {

@@ -21,6 +21,7 @@ enum class RenderDebugView : std::uint32_t
     ShadowRaw,
     Overdraw,
     BakedDirect,
+    LightmapTexels,
     Count,
 };
 

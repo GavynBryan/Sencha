@@ -22,15 +22,21 @@
 // The query is cached per instance to avoid rebuild-from-scratch every frame;
 // a World* sentinel detects world changes (relevant in multi-registry loops).
 //=============================================================================
+class TextureCache;
+
 class RenderExtractionSystem
 {
 public:
+    // `textures` resolves the zone's ZoneLightmapComponent (if any) to the
+    // bindless atlas index stamped on every emitted item; null leaves items
+    // without a lightmap.
     void Extract(const World& world,
                  const StaticMeshCache& meshes,
                  const MaterialCache& materials,
                  const MaterialSetCache& materialSets,
                  const CameraRenderData& camera,
-                 RenderQueue& queue);
+                 RenderQueue& queue,
+                 const TextureCache* textures = nullptr);
 
 private:
     const World* LastWorld = nullptr;

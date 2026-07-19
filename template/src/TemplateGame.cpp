@@ -432,7 +432,8 @@ void TemplateGame::OnStart(GameStartupContext&)
     if (DefaultRenderPipeline* pipeline = engine.GetRenderPipeline())
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets);
+            runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets,
+            &runtimeAssets.Textures);
         pipeline->AddMeshRenderFeature(graphics);
     }
 

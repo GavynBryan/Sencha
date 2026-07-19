@@ -106,11 +106,13 @@ DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
 
 void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
-                                           MaterialSetCache& materialSets)
+                                           MaterialSetCache& materialSets,
+                                           TextureCache* textures)
 {
     Meshes = &meshes;
     Materials = &materials;
     MaterialSets = &materialSets;
+    Textures = textures;
 }
 
 bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
@@ -223,7 +225,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         }
 
         RenderExtractor.Extract(
-            registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue);
+            registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue,
+            Textures);
     }
 
     Queue.SortOpaque();

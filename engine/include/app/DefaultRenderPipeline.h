@@ -41,7 +41,8 @@ public:
     [[nodiscard]] const CameraRenderData& GetCameraData() const { return Camera; }
 
     void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials,
-                        MaterialSetCache& materialSets);
+                        MaterialSetCache& materialSets,
+                        TextureCache* textures = nullptr);
     bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
@@ -72,6 +73,7 @@ private:
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     MaterialSetCache* MaterialSets = nullptr;
+    TextureCache* Textures = nullptr;
     Logger* Log = nullptr;
     const ConsoleRegistry* Console = nullptr;
     const RenderInstrumentation* Instrumentation = nullptr;
