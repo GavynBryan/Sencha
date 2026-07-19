@@ -65,12 +65,16 @@ LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
                              SelectionService& selection,
                              CommandStack& commands,
                              std::function<void()> invalidateShadows,
-                             std::function<std::uint32_t()> countBakedDirectLights)
+                             std::function<std::uint32_t()> countBakedDirectLights,
+                             std::function<BakedPreviewState()> bakedPreviewState,
+                             std::function<void(bool)> setBakedPreview)
     : Readout(readout)
     , Selection(selection)
     , Commands(commands)
     , InvalidateShadows(std::move(invalidateShadows))
     , CountBakedDirectLights(std::move(countBakedDirectLights))
+    , BakedPreview(std::move(bakedPreviewState))
+    , SetBakedPreview(std::move(setBakedPreview))
 {
 }
 
@@ -95,8 +99,37 @@ void LightingPanel::OnDraw()
             ImGui::Text("Baked direct lights: %u", baked);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Lights authored bake_contribution=direct: their diffuse\n"
-                                  "bakes into cell vertices at cook and they are excluded\n"
-                                  "from the runtime light set. Preview requires a cook.");
+                                  "bakes into the zone's lightmap atlas at cook and they are\n"
+                                  "excluded from the runtime light set.");
+        }
+    }
+
+    // Viewport baked-lighting preview: renders the LAST COOK's cells + atlas
+    // in the Solid viewports. A cook is the refresh action.
+    if (BakedPreview && SetBakedPreview)
+    {
+        const BakedPreviewState state = BakedPreview();
+        if (state == BakedPreviewState::Unavailable)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
+            ImGui::TextUnformatted("Baked preview: cook to enable");
+            ImGui::PopStyleColor();
+        }
+        else
+        {
+            bool enabled = state != BakedPreviewState::Off;
+            if (ImGui::Checkbox("Baked lighting preview", &enabled))
+                SetBakedPreview(enabled);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Show the last cook's baked lighting in Solid viewports.\n"
+                                  "Cook again to refresh after edits.");
+            if (state == BakedPreviewState::Stale)
+            {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::Warning);
+                ImGui::TextUnformatted("(stale - recook to refresh)");
+                ImGui::PopStyleColor();
+            }
         }
     }
 

@@ -8,6 +8,8 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
+#include <filesystem>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -15,8 +17,10 @@ class EditorDocument;
 class AssetSystem;
 class StaticMeshCache;
 class MaterialSetCache;
+class TextureCache;
 class LoggingProvider;
 class Logger;
+struct Registry;
 
 //=============================================================================
 // SceneRenderQueueBuilder
@@ -51,7 +55,8 @@ public:
                             StaticMeshCache& meshes,
                             MaterialCache& materials,
                             MaterialSetCache& materialSets,
-                            LoggingProvider& logging);
+                            LoggingProvider& logging,
+                            TextureCache* textures = nullptr);
     ~SceneRenderQueueBuilder();
 
     SceneRenderQueueBuilder(const SceneRenderQueueBuilder&) = delete;
@@ -74,6 +79,23 @@ public:
         const Vec<3>& viewOrigin);
     [[nodiscard]] std::span<const PointShadowRequest> BuildPointShadowRequests(
         const Vec<3>& viewOrigin);
+
+    // Baked-lighting preview: while enabled and loaded, the solid queues show
+    // the LAST COOK's scene (cells with atlas UVs, placements with their
+    // cooked scale/bias, Direct lights excluded) instead of the live brush
+    // solids. The preview is a snapshot: it goes stale when the document
+    // diverges from the cook that produced it (the badge; another cook
+    // refreshes it). Selection, wireframe, and gizmo overlays are untouched.
+    struct LightmapPreviewSource
+    {
+        std::filesystem::path CookedScenePath;
+        std::uint64_t CookHash = 0;
+    };
+    void SetLightmapPreview(const LightmapPreviewSource& source);
+    void SetLightmapPreviewEnabled(bool enabled) { PreviewEnabled = enabled; }
+    [[nodiscard]] bool LightmapPreviewEnabled() const { return PreviewEnabled; }
+    [[nodiscard]] bool LightmapPreviewLoaded() const { return PreviewRegistry != nullptr; }
+    [[nodiscard]] bool LightmapPreviewStale() const { return PreviewStale; }
 
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
@@ -120,8 +142,9 @@ private:
 
     void RebuildBrushMeshes(const EditorDocument& document);
     void EmitBrushQueue();
+    void EmitPreviewQueue();
     void BuildMeshQueue(const EditorDocument& document);
-    void BuildLights(const EditorDocument& document);
+    void BuildLights(const EditorDocument& document, bool skipDirectLights);
     void BuildShadowCasters(const EditorDocument& document);
     void ReleaseBrushMeshes();
 
@@ -129,12 +152,25 @@ private:
     StaticMeshCache& Meshes;
     MaterialCache& Materials;
     MaterialSetCache& MaterialSets;
+    TextureCache* Textures = nullptr;
+    LoggingProvider& Logging;
     Logger& Log;
 
     std::vector<CachedBrushMesh> BrushMeshes;     // GPU brush meshes, one per cooked brush
     std::vector<MaterialHandle> BrushMaterials;   // material refs this build holds (released on rebuild)
     uint64_t BrushHash = 0;                       // content hash of the last bake
     bool HasBaked = false;
+
+    // The cooked-scene snapshot backing the baked-lighting preview, loaded
+    // through the editor's asset caches. DocHash captures the document state
+    // (brush + light content) the snapshot corresponds to; divergence flags
+    // the stale badge but keeps rendering the snapshot (no flicker).
+    std::unique_ptr<Registry> PreviewRegistry;
+    std::uint64_t PreviewDocHash = 0;
+    std::uint64_t CurrentDocHash = 0;
+    std::uint64_t LightsHash = 0;                 // folded during BuildLights
+    bool PreviewEnabled = false;
+    bool PreviewStale = false;
 
     RenderQueue Brushes;
     RenderQueue PlacedMeshes;

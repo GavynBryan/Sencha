@@ -470,6 +470,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands));
+    const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
+        return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
+    };
     UiFeature->AddPanel(std::make_unique<LightingPanel>(
         RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
         [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
@@ -490,6 +493,34 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
                             ++count;
                     });
             return count;
+        },
+        [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
+            SceneRenderQueueBuilder* builder = previewBuilder();
+            const PieDriver::CookRecord* record =
+                Pie != nullptr ? Pie->LastCookRecord() : nullptr;
+            if (builder == nullptr || record == nullptr)
+                return LightingPanel::BakedPreviewState::Unavailable;
+            if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
+                return LightingPanel::BakedPreviewState::Off;
+            return builder->LightmapPreviewStale()
+                ? LightingPanel::BakedPreviewState::Stale
+                : LightingPanel::BakedPreviewState::Fresh;
+        },
+        [this, previewBuilder](bool enabled) {
+            SceneRenderQueueBuilder* builder = previewBuilder();
+            if (builder == nullptr)
+                return;
+            if (enabled)
+            {
+                if (const PieDriver::CookRecord* record =
+                        Pie != nullptr ? Pie->LastCookRecord() : nullptr)
+                {
+                    builder->SetLightmapPreview({ record->CookedScenePath,
+                                                  record->ContentHash });
+                    PreviewCookSerial = record->Serial;
+                }
+            }
+            builder->SetLightmapPreviewEnabled(enabled);
         }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
@@ -675,6 +706,19 @@ void EditorServices::ProcessFrame()
         Files->ProcessPending();
         Files->UpdateTitle();
     }
+
+    // A newer cook refreshes an enabled baked-lighting preview in place, so
+    // Cook doubles as the preview's refresh action.
+    if (RenderFeature != nullptr && Pie != nullptr)
+        if (SceneRenderQueueBuilder* builder = RenderFeature->FocusQueueBuilder();
+            builder != nullptr && builder->LightmapPreviewEnabled())
+            if (const PieDriver::CookRecord* record = Pie->LastCookRecord();
+                record != nullptr && record->Serial != PreviewCookSerial)
+            {
+                builder->SetLightmapPreview({ record->CookedScenePath,
+                                              record->ContentHash });
+                PreviewCookSerial = record->Serial;
+            }
 
     // Poll watched sources on an interval, not per frame: the watcher is a
     // content-hash-confirmed mtime scan over the content roots. A save from

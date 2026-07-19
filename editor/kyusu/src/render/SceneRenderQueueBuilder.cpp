@@ -7,21 +7,32 @@
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <core/assets/AssetSystem.h>
+#include <core/json/JsonParser.h>
+#include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/PointLightComponent.h>
 #include <render/ShadowCasterExtractionSystem.h>
 #include <render/SpotLightComponent.h>
 #include <render/RenderEntityKey.h>
 #include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/SceneSerializationContext.h>
+#include <world/serialization/SceneSerializer.h>
+#include <world/transform/TransformComponents.h>
+#include <zone/DefaultZoneBuilder.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <fstream>
+#include <optional>
+#include <sstream>
 #include <utility>
 
 namespace
@@ -82,11 +93,14 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  StaticMeshCache& meshes,
                                                  MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
-                                                 LoggingProvider& logging)
+                                                 LoggingProvider& logging,
+                                                 TextureCache* textures)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
+    , Textures(textures)
+    , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
 }
@@ -99,10 +113,26 @@ SceneRenderQueueBuilder::~SceneRenderQueueBuilder()
 void SceneRenderQueueBuilder::Build(const EditorDocument& document)
 {
     RebuildBrushMeshes(document);
-    EmitBrushQueue();
-    BuildMeshQueue(document);
-    BuildLights(document);
+    const bool preview = PreviewEnabled && PreviewRegistry != nullptr;
+    if (preview)
+    {
+        // The cooked snapshot replaces both solid queues: cells carry the
+        // atlas, and placements carry their cooked scale/bias. Live geometry
+        // still feeds the shadow casters below (it is the same geometry).
+        EmitPreviewQueue();
+        PlacedMeshes.Reset();
+        PlacedMeshes.SortOpaque();
+    }
+    else
+    {
+        EmitBrushQueue();
+        BuildMeshQueue(document);
+    }
+    BuildLights(document, /*skipDirectLights*/ preview);
     BuildShadowCasters(document);
+
+    CurrentDocHash = BrushHash ^ (LightsHash * 0x9E3779B97F4A7C15ull);
+    PreviewStale = PreviewRegistry != nullptr && CurrentDocHash != PreviewDocHash;
 }
 
 void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
@@ -239,7 +269,105 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     PlacedMeshes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
+void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& source)
+{
+    PreviewRegistry.reset();
+
+    std::ifstream file(source.CookedScenePath);
+    if (!file.is_open())
+    {
+        Log.Error("lightmap preview: cannot open '{}'",
+                  source.CookedScenePath.generic_string());
+        return;
+    }
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    JsonParseError parseError;
+    const std::optional<JsonValue> json = JsonParse(buffer.str(), &parseError);
+    if (!json)
+    {
+        Log.Error("lightmap preview: parse error in '{}': {}",
+                  source.CookedScenePath.generic_string(), parseError.Message);
+        return;
+    }
+
+    auto registry = std::make_unique<Registry>();
+    InitializeDefault3DRegistry(*registry, &Meshes, &MaterialSets,
+                                nullptr, nullptr, nullptr, Textures);
+    SceneSerializationContext context(Logging, &Assets);
+    SceneLoadError loadError;
+    if (!LoadSceneJson(*json, *registry, context, &loadError))
+    {
+        Log.Error("lightmap preview: scene load error: {}", loadError.Message);
+        return;
+    }
+
+    PreviewRegistry = std::move(registry);
+    PreviewDocHash = CurrentDocHash;
+    PreviewStale = false;
+    Log.Info("lightmap preview: loaded '{}'", source.CookedScenePath.generic_string());
+}
+
+void SceneRenderQueueBuilder::EmitPreviewQueue()
+{
+    Brushes.Reset();
+    const World& world = PreviewRegistry->Components;
+
+    std::uint32_t lightmapIndex = UINT32_MAX;
+    if (Textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+        world.ForEachComponent<ZoneLightmapComponent>(
+            [&](EntityId, const ZoneLightmapComponent& lightmap)
+            {
+                const BindlessImageIndex index =
+                    Textures->GetBindlessIndex(lightmap.Texture);
+                if (index.IsValid())
+                    lightmapIndex = index.Value;
+            });
+
+    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
+        world.ForEachComponent<StaticMeshComponent>(
+            [&](EntityId entity, const StaticMeshComponent& renderer)
+            {
+                if (!renderer.Visible)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const GpuStaticMesh* mesh = Meshes.Get(renderer.Mesh);
+                const std::vector<MaterialHandle>* sectionMaterials =
+                    MaterialSets.Get(renderer.Materials);
+                if (transform == nullptr || mesh == nullptr
+                    || sectionMaterials == nullptr || sectionMaterials->empty())
+                    return;
+
+                const Mat4 worldMatrix = transform->Value.ToMat4();
+                const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
+                for (uint32_t section = 0;
+                     section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
+                {
+                    if ((renderer.SectionMask & (1u << section)) == 0)
+                        continue;
+                    const uint32_t slot = mesh->Sections[section].MaterialSlot;
+                    const MaterialHandle material = slot < sectionMaterials->size()
+                        ? (*sectionMaterials)[slot]
+                        : sectionMaterials->back();
+                    if (!material.IsValid())
+                        continue;
+
+                    RenderQueueItem item{};
+                    item.Mesh = renderer.Mesh;
+                    item.Material = material;
+                    item.SectionIndex = section;
+                    item.WorldMatrix = worldMatrix;
+                    item.WorldBounds = worldBounds;
+                    item.LightmapTextureIndex = lightmapIndex;
+                    item.LightmapScaleBias = renderer.LightmapScaleBias;
+                    Brushes.AddOpaque(item);
+                }
+            });
+    Brushes.SortOpaque();
+}
+
+void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
+                                          bool skipDirectLights)
 {
     // Reset() clears only the packed counts; the ambient tints and shadow
     // tunables are owned by the caller (EditorRenderFeature stamps them from
@@ -249,6 +377,7 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
     SceneLights.Reset();
     ShadowCandidates.clear();
     PointShadowCandidates.clear();
+    LightsHash = kFnvOffset;
 
     const EditorScene& scene = document.GetScene();
     const Registry& registry = scene.GetRegistry();
@@ -266,8 +395,14 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
             && std::isfinite(point->Intensity) && std::isfinite(point->Range)
             && point->Intensity > 0.0f && point->Range > 0.0f)
         {
-            const std::uint32_t lightIndex = SceneLights.Add(
-                MakePointGpuLight(transform->Position, *point));
+            HashBytes(LightsHash, &transform->Position, sizeof(transform->Position));
+            HashBytes(LightsHash, point, sizeof(*point));
+            // Lights baked into the previewed atlas must not double-light it.
+            const bool baked = skipDirectLights
+                && point->BakeContribution == LightBakeContribution::Direct;
+            const std::uint32_t lightIndex = baked
+                ? UINT32_MAX
+                : SceneLights.Add(MakePointGpuLight(transform->Position, *point));
             if (lightIndex != UINT32_MAX && point->CastShadows)
             {
                 PointShadowCandidates.push_back(PointShadowCandidate{
@@ -291,6 +426,12 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
         {
             continue;
         }
+
+        HashBytes(LightsHash, &transform->Position, sizeof(transform->Position));
+        HashBytes(LightsHash, spot, sizeof(*spot));
+        if (skipDirectLights
+            && spot->BakeContribution == LightBakeContribution::Direct)
+            continue;
 
         const Vec<3> direction = transform->Forward();
         const std::uint32_t lightIndex = SceneLights.Add(

@@ -161,5 +161,8 @@ private:
     // holds the document and project; Files holds the document, command stack,
     // selection, and material library.
     std::unique_ptr<PieDriver>          Pie;
+    // Serial of the cook the baked-lighting preview last loaded; a newer cook
+    // refreshes an enabled preview in ProcessFrame.
+    std::uint64_t                       PreviewCookSerial = 0;
     std::unique_ptr<DocumentFileActions> Files;
 };

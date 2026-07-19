@@ -105,6 +105,13 @@ public:
     // extracted state, like the depth-bias cvars, invalidate automatically).
     void InvalidateShadows() { Residency.InvalidateAll(); }
 
+    // The focus document's queue builder, for the baked-lighting preview
+    // controls (lighting panel). Null before Setup or without asset stores.
+    [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
+    {
+        return QueueBuilder.has_value() ? &*QueueBuilder : nullptr;
+    }
+
 private:
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.

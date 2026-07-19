@@ -66,7 +66,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         MaterialStore = &runtimeAssets->Materials;
         QueueBuilder.emplace(runtimeAssets->Assets, runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
-                             logging);
+                             logging, &runtimeAssets->Textures);
         SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;

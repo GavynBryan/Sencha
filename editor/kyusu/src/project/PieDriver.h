@@ -2,6 +2,8 @@
 
 #include "PieSession.h"
 
+#include <cstdint>
+#include <filesystem>
 #include <string>
 
 class Engine;
@@ -30,6 +32,19 @@ public:
     [[nodiscard]] bool IsPlaying();
     [[nodiscard]] const std::string& LastCookedMap() const { return LastCookedMap_; }
 
+    // The last successful single-level cook, for the viewport's baked-lighting
+    // preview. Serial increments per cook so the preview can refresh itself.
+    struct CookRecord
+    {
+        std::filesystem::path CookedScenePath;
+        std::uint64_t ContentHash = 0;
+        std::uint64_t Serial = 0;
+    };
+    [[nodiscard]] const CookRecord* LastCookRecord() const
+    {
+        return LastCook_.Serial != 0 ? &LastCook_ : nullptr;
+    }
+
     // Registers `cook`/`play`/`stop`/`project` and the editor.cook.cell_size cvar.
     void RegisterCommands(ConsoleRegistry& registry);
 
@@ -46,6 +61,7 @@ private:
     // Last successfully cooked map ("levels/<name>"); `play` with no arg uses it,
     // closing the author -> cook -> play loop.
     std::string        LastCookedMap_;
+    CookRecord         LastCook_;
     // World-mode cook result: the world file stem plus the focus zone's hex id.
     // Play launches `+world <stem> +zone <hex>` against the cooked world
     // manifest; the map fields and these are mutually exclusive.

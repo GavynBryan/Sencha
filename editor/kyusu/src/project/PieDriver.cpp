@@ -127,6 +127,8 @@ std::string PieDriver::Cook(const std::string& levelName)
     LastCookedWorld_.clear();
     LastCookedZone_.clear();
     LastCookedMap_ = "levels/" + name;
+    LastCook_ = CookRecord{ cooked.CookedScenePath, cooked.ContentHash,
+                            LastCook_.Serial + 1 };
     log.Info("cooked '{}' ({} cells) -> {}",
              LastCookedMap_, cooked.CellCount, cooked.CookedScenePath.generic_string());
     if (cooked.DirectLightCount > 0)

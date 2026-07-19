@@ -20,11 +20,22 @@ struct ShadowResidencyReadout;
 class LightingPanel : public IEditorPanel
 {
 public:
+    // The viewport baked-lighting preview, as the panel sees it.
+    enum class BakedPreviewState : std::uint8_t
+    {
+        Unavailable, // nothing cooked yet this session
+        Off,
+        Fresh,       // showing the last cook, document unchanged since
+        Stale,       // showing the last cook, document edited since (recook)
+    };
+
     LightingPanel(const ShadowResidencyReadout& readout,
                   SelectionService& selection,
                   CommandStack& commands,
                   std::function<void()> invalidateShadows,
-                  std::function<std::uint32_t()> countBakedDirectLights);
+                  std::function<std::uint32_t()> countBakedDirectLights,
+                  std::function<BakedPreviewState()> bakedPreviewState = {},
+                  std::function<void(bool)> setBakedPreview = {});
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -46,4 +57,6 @@ private:
     CommandStack& Commands;
     std::function<void()> InvalidateShadows;
     std::function<std::uint32_t()> CountBakedDirectLights;
+    std::function<BakedPreviewState()> BakedPreview;
+    std::function<void(bool)> SetBakedPreview;
 };
