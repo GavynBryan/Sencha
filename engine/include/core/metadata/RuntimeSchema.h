@@ -2,6 +2,7 @@
 
 #include <core/assets/AssetRef.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/EnumSchema.h>
 #include <core/metadata/ScalarGroup.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
@@ -55,6 +56,11 @@ struct RuntimeField
     std::uint8_t Count = 1;
     // A leaf the editor shows but does not let the user edit (an identity id).
     bool         ReadOnly = false;
+    // Non-empty for an enum member with an EnumSchema: the named choices for
+    // this leaf, so an editor draws a selector instead of a number field.
+    // Scalar stays the underlying integer kind and the bytes at Offset are
+    // unchanged, so a consumer without enum awareness still works.
+    std::span<const EnumOption> Enum{};
 };
 
 namespace RuntimeSchemaDetail
@@ -155,9 +161,11 @@ namespace RuntimeSchemaDetail
             }
             else
             {
-                Out.push_back(RuntimeField{
-                    std::move(name), offset, sizeof(MemberType),
-                    ScalarKindOf<MemberType>(), field.Asset, field.Arity });
+                RuntimeField f{ std::move(name), offset, sizeof(MemberType),
+                                ScalarKindOf<MemberType>(), field.Asset, field.Arity };
+                if constexpr (HasEnumSchema<MemberType>)
+                    f.Enum = EnumOptionsOf<MemberType>();
+                Out.push_back(std::move(f));
             }
         }
     };

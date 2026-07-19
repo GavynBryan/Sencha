@@ -1,5 +1,6 @@
 #include <core/assets/AssetRef.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/EnumSchema.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <math/MathSchemas.h>
@@ -49,6 +50,31 @@ template <> struct TypeSchema<EnumComp>
 {
     static constexpr std::string_view Name = "test.enum";
     static auto Fields() { return std::tuple{ MakeField("mode", &EnumComp::M) }; }
+};
+
+// An enum WITH an EnumSchema: its leaf carries the named option table, so
+// schema-driven editors can draw a selector. Mode above has no EnumSchema and
+// stands in for the bare-integer fallback.
+enum class Gear : std::uint8_t { Park = 0, Drive = 1, Reverse = 3 };
+template <> struct EnumSchema<Gear>
+{
+    static constexpr std::array Values = {
+        EnumValue{ Gear::Park,    "park" },
+        EnumValue{ Gear::Drive,   "drive" },
+        EnumValue{ Gear::Reverse, "reverse" },
+    };
+};
+struct NamedEnumComp { Gear G = Gear::Park; Mode M = Mode::A; };
+template <> struct TypeSchema<NamedEnumComp>
+{
+    static constexpr std::string_view Name = "test.named_enum";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("gear", &NamedEnumComp::G),
+            MakeField("mode", &NamedEnumComp::M),
+        };
+    }
 };
 
 // A handle-shaped leaf (no TypeSchema) tagged as an asset reference. Stands in
@@ -256,6 +282,43 @@ TEST(RuntimeSchema, EnumMapsToUnderlyingKindAndSize)
     ASSERT_NE(mode, nullptr);
     EXPECT_EQ(mode->Scalar, FieldScalar::UInt32); // underlying is unsigned
     EXPECT_EQ(mode->Size, sizeof(Mode));          // but only one byte wide
+    // No EnumSchema, no option table: the leaf stays a bare integer.
+    EXPECT_TRUE(mode->Enum.empty());
+}
+
+TEST(RuntimeSchema, SchemaedEnumCarriesItsOptionTable)
+{
+    const auto& fields = RuntimeFieldsOf<NamedEnumComp>();
+    ASSERT_EQ(fields.size(), 2u);
+
+    // The underlying scalar contract is unchanged by the table: same kind,
+    // same size, same raw bytes at the offset.
+    const RuntimeField* gear = Find(fields, "gear");
+    ASSERT_NE(gear, nullptr);
+    EXPECT_EQ(gear->Scalar, FieldScalar::UInt32);
+    EXPECT_EQ(gear->Size, sizeof(Gear));
+
+    // The option table mirrors EnumSchema<Gear>::Values exactly, including a
+    // non-contiguous enumerator value.
+    ASSERT_EQ(gear->Enum.size(), 3u);
+    EXPECT_EQ(gear->Enum[0].Name, "park");
+    EXPECT_EQ(gear->Enum[0].Value, 0);
+    EXPECT_EQ(gear->Enum[1].Name, "drive");
+    EXPECT_EQ(gear->Enum[1].Value, 1);
+    EXPECT_EQ(gear->Enum[2].Name, "reverse");
+    EXPECT_EQ(gear->Enum[2].Value, 3);
+
+    // Writing an option's value through the leaf lands in the member.
+    NamedEnumComp c{};
+    auto* base = reinterpret_cast<std::byte*>(&c);
+    const std::uint8_t reverse = 3;
+    std::memcpy(base + gear->Offset, &reverse, gear->Size);
+    EXPECT_EQ(c.G, Gear::Reverse);
+
+    // A schema-less enum next to it still reflects as a bare integer.
+    const RuntimeField* mode = Find(fields, "mode");
+    ASSERT_NE(mode, nullptr);
+    EXPECT_TRUE(mode->Enum.empty());
 }
 
 TEST(RuntimeSchema, VecAndQuatGroupIntoOneLeafEach)
