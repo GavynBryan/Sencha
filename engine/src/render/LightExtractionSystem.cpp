@@ -63,8 +63,8 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                 {
                     if (!light.Enabled || !IsUsable(light.Intensity, light.Range))
                         return;
-                    // Baked-direct lights contribute only through the per-vertex
-                    // channel; they never enter the runtime forward set.
+                    // Baked-direct lights contribute only through the zone
+                    // lightmap; they never enter the runtime forward set.
                     if (light.BakeContribution == LightBakeContribution::Direct)
                         return;
 
@@ -102,8 +102,8 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
                 {
                     if (!light.Enabled || !IsUsable(light.Intensity, light.Range))
                         return;
-                    // Baked-direct lights contribute only through the per-vertex
-                    // channel; they never enter the runtime forward set.
+                    // Baked-direct lights contribute only through the zone
+                    // lightmap; they never enter the runtime forward set.
                     if (light.BakeContribution == LightBakeContribution::Direct)
                         return;
 

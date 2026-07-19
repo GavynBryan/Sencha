@@ -156,7 +156,7 @@ namespace EngineConsoleBuiltins
             .DefaultValue = true,
             .CurrentValue = true,
             .Flags = CVarFlags::Archive,
-            .Help = "Adds the baked static direct diffuse vertex term in the "
+            .Help = "Adds the baked static direct diffuse lightmap term in the "
                     "forward shader. Off isolates dynamic lighting for A/B.",
             .Source = { "renderer defaults" },
         });

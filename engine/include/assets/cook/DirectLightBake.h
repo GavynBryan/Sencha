@@ -9,7 +9,7 @@
 struct MeshGeometry;
 class BakeBvh;
 
-// RGBM multiplier for the baked-direct vertex channel. Must match
+// RGBM multiplier for baked-direct lightmap texels. Must match
 // BAKED_DIRECT_RANGE in engine/shaders/mesh_frame.glsli (the shader decoder).
 inline constexpr float kBakedDirectRange = 16.0f;
 
@@ -19,7 +19,7 @@ enum class BakeLightKind : std::uint8_t
     Spot,
 };
 
-// A static light whose direct diffuse is baked into geometry vertices. World
+// A static light whose direct diffuse is baked into the zone lightmap. World
 // space. Spot fields are ignored for point lights. ConeScale/ConeOffset follow
 // the runtime packing (RenderLight.h MakeSpotGpuLight) so the baked cone
 // matches the shader cone exactly.

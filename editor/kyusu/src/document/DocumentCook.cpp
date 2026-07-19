@@ -171,7 +171,7 @@ JsonValue BuildCellEntity(const Vec3d& origin,
 namespace
 {
 // Lights authored LightBakeContribution::Direct, resolved to world-space bake
-// inputs. Their direct diffuse is baked into cell vertices and they are
+// inputs. Their direct diffuse is baked into the zone lightmap and they are
 // excluded from the runtime forward set, so a bake is the only thing that makes
 // them visible. Spot cone parameters reuse the runtime packing so the baked
 // cone matches the shader cone exactly.

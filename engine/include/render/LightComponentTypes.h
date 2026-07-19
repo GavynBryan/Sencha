@@ -42,10 +42,13 @@ struct EnumSchema<ShadowUpdatePolicy>
 enum class LightBakeContribution : std::uint8_t
 {
     None,
+    // Reserved for the future baked-irradiance (probe) cook. Nothing consumes
+    // it yet: at runtime an Indirect light behaves exactly like None (fully
+    // dynamic, counts against the light cap). It does NOT bake anything today.
     Indirect,
-    // The light's direct diffuse is baked into static geometry vertices and the
-    // light is removed from the runtime forward set (no per-frame cost, no cap
-    // slot, no shadow). For static fill/accent lights on static geometry.
+    // The light's direct diffuse is baked into the zone's lightmap atlas and
+    // the light is removed from the runtime forward set (no per-frame cost, no
+    // cap slot, no shadow). For static fill/accent lights on static geometry.
     Direct,
 };
 
