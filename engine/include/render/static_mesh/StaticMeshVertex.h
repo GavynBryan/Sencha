@@ -19,10 +19,12 @@ struct StaticMeshVertex
     // (MikkTSpace) when the source lacks them (Decision M).
     Vec4 Tangent;
 
-    // Baked static direct diffuse, RGBM-packed (R8G8B8A8): the summed
-    // contribution of lights authored LightBakeContribution::Direct, computed
-    // per vertex by the lighting bake. Zero is neutral (unbaked meshes add
-    // nothing). Read as VK_FORMAT_R8G8B8A8_UNORM and decoded rgb * a * range
-    // in the forward vertex shader.
-    std::uint32_t BakedDirect = 0;
+    // Lightmap UV, unorm16 per axis, read as VK_FORMAT_R16G16_UNORM. Cooked
+    // cell meshes store absolute atlas texel-center coordinates; instanceable
+    // meshes store a [0,1] sheet the per-instance scale/bias remaps into
+    // their atlas rect. Zero is safe on unbaked meshes: with the identity
+    // remap it lands on the atlas's reserved black border texel, and items
+    // with no atlas skip the baked term entirely.
+    std::uint16_t LightmapU = 0;
+    std::uint16_t LightmapV = 0;
 };

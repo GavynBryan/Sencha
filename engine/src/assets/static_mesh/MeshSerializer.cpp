@@ -122,9 +122,9 @@ bool MeshSerializer::WriteToWriter(BinaryWriter& writer,
     // Self-describing baked-direct hint for tooling; the runtime reads the
     // channel regardless of the flag (neutral zero adds nothing).
     for (const StaticMeshVertex& vertex : canonical.Vertices)
-        if (vertex.BakedDirect != 0)
+        if (vertex.LightmapU != 0 || vertex.LightmapV != 0)
         {
-            header.Flags |= kSmeshFlagBakedDirect;
+            header.Flags |= kSmeshFlagLightmapUv;
             break;
         }
     header.VertexCount = static_cast<uint32_t>(canonical.Vertices.size());

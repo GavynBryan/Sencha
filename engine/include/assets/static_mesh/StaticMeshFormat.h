@@ -13,17 +13,20 @@
 // gated on the skinned flag bit; non-skinned files write them as zero and
 // are otherwise byte-identical to v2. One version is live at a time — dev
 // meshes regenerate, cooked meshes recook (the cooked-index bump).
-// Version 4: the base vertex gained a 4-byte baked-static-direct channel
-// (StaticMeshVertex::BakedDirect; 48 -> 52 bytes). Always present, zero when
+// Version 4: the base vertex gained a 4-byte baked-static-direct RGBM channel
+// (48 -> 52 bytes). Single version live: v3 files recooked (cooked-index bump).
+// Version 5: baked lighting moved from vertices to per-zone lightmap atlases;
+// the 4-byte slot at offset 48 became two unorm16 lightmap UVs
+// (StaticMeshVertex::LightmapU/V; stride stays 52). Always present, zero when
 // unbaked, so one vertex format and one draw path serve baked and unbaked
-// meshes alike. The kSmeshFlagBakedDirect header bit records whether the bake
-// actually wrote nonzero values (tooling hint only; the runtime always reads
-// the channel). Single version live: v3 files must recook (cooked-index bump).
-inline constexpr uint32_t kSmeshFormatVersion = 4;
+// meshes alike. The kSmeshFlagLightmapUv header bit records whether the cook
+// wrote meaningful UVs (tooling hint only; the runtime always reads the
+// channel). Single version live: v4 files must recook (cooked-index bump).
+inline constexpr uint32_t kSmeshFormatVersion = 5;
 
 // SmeshFileHeader::Flags bits.
 inline constexpr uint32_t kSmeshFlagSkinned = 1u << 0;
-inline constexpr uint32_t kSmeshFlagBakedDirect = 1u << 1;
+inline constexpr uint32_t kSmeshFlagLightmapUv = 1u << 1;
 
 enum class SmeshIndexFormat : uint32_t
 {

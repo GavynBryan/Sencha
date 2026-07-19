@@ -75,9 +75,11 @@ struct CookedSourceEntry
 // cache, so every source recooks. Version 2: texture cook output changed
 // from RGBA8 to BC-compressed (Decision L format table). Version 3: .smesh
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
-// .sanim artifacts (Decisions J, M, N). A per-importer cook version is the
-// finer-grained eventual replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 4;
+// .sanim artifacts (Decisions J, M, N). Version 5: .smesh moved to v5
+// (lightmap UVs replaced the baked-direct vertex channel; per-zone atlas
+// artifacts). A per-importer cook version is the finer-grained eventual
+// replacement if bumps become frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 5;
 
 class CookedCacheIndex
 {

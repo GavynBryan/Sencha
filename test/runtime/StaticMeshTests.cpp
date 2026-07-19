@@ -133,7 +133,7 @@ TEST(StaticMeshSerialization, BadMagicFails)
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
 }
 
-TEST(StaticMeshSerialization, WritesVersion4AndStride52)
+TEST(StaticMeshSerialization, WritesVersion5AndStride52)
 {
     LoggingProvider logging;
     MeshSerializer serializer(logging);
@@ -145,12 +145,12 @@ TEST(StaticMeshSerialization, WritesVersion4AndStride52)
     SmeshFileHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(header));
     EXPECT_EQ(header.Version, kSmeshFormatVersion);
-    EXPECT_EQ(header.Version, 4u);
+    EXPECT_EQ(header.Version, 5u);
     EXPECT_EQ(header.VertexStride, sizeof(StaticMeshVertex));
     EXPECT_EQ(header.VertexStride, 52u);
 }
 
-TEST(StaticMeshSerialization, PreservesBakedDirectChannel)
+TEST(StaticMeshSerialization, PreservesLightmapUvChannel)
 {
     LoggingProvider logging;
     MeshSerializer serializer(logging);
@@ -158,29 +158,39 @@ TEST(StaticMeshSerialization, PreservesBakedDirectChannel)
 
     MeshGeometry source = MakeValidMesh();
     for (std::size_t i = 0; i < source.Vertices.size(); ++i)
-        source.Vertices[i].BakedDirect = 0x11223344u + static_cast<std::uint32_t>(i);
+    {
+        source.Vertices[i].LightmapU = static_cast<std::uint16_t>(0x1122u + i);
+        source.Vertices[i].LightmapV = static_cast<std::uint16_t>(0x3344u + i);
+    }
 
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(source, bytes));
+    SmeshFileHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    EXPECT_NE(header.Flags & kSmeshFlagLightmapUv, 0u);
 
     MeshGeometry loaded;
     ASSERT_TRUE(loader.LoadFromBytes(bytes, loaded));
     ASSERT_EQ(loaded.Vertices.size(), source.Vertices.size());
     for (std::size_t i = 0; i < source.Vertices.size(); ++i)
-        EXPECT_EQ(loaded.Vertices[i].BakedDirect, source.Vertices[i].BakedDirect);
+    {
+        EXPECT_EQ(loaded.Vertices[i].LightmapU, source.Vertices[i].LightmapU);
+        EXPECT_EQ(loaded.Vertices[i].LightmapV, source.Vertices[i].LightmapV);
+    }
 }
 
 TEST(StaticMeshSerialization, RejectsPriorVersion)
 {
-    // One version is live at a time: a v3 file (before the baked-direct
-    // channel) must fail rather than load with a mismatched vertex stride.
+    // One version is live at a time: a v4 file (the baked-direct vertex
+    // channel that the lightmap UVs replaced) must fail rather than load
+    // with reinterpreted channel bytes.
     LoggingProvider logging;
     MeshSerializer serializer(logging);
     MeshLoader loader(logging);
 
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
-    const std::uint32_t priorVersion = 3;
+    const std::uint32_t priorVersion = 4;
     std::memcpy(bytes.data() + offsetof(SmeshFileHeader, Version),
                 &priorVersion, sizeof(priorVersion));
 

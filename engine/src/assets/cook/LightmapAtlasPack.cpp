@@ -24,8 +24,10 @@ namespace
     }
 
     // One deterministic shelf-pack attempt into a fixed atlas. Rects are
-    // placed in `order`; the first row/column stay reserved (packing starts
-    // at (1,1)). Returns false when anything does not fit.
+    // placed in `order`; the first AND last row/column stay reserved (packing
+    // starts at (1,1) and stops one texel short) so a wrap-addressed bilinear
+    // sample at UV 0 or 1 only ever blends reserved black texels. Returns
+    // false when anything does not fit.
     bool TryPack(std::span<const PaddedDims> dims,
                  std::span<const std::uint32_t> order,
                  std::uint32_t width, std::uint32_t height,
@@ -37,15 +39,15 @@ namespace
         for (const std::uint32_t index : order)
         {
             const PaddedDims& d = dims[index];
-            if (d.Width + 1 > width || d.Height + 1 > height)
+            if (d.Width + 2 > width || d.Height + 2 > height)
                 return false;
-            if (cursorX + d.Width > width)
+            if (cursorX + d.Width > width - 1)
             {
                 cursorY += shelfHeight;
                 cursorX = 1;
                 shelfHeight = 0;
             }
-            if (cursorY + d.Height > height)
+            if (cursorY + d.Height > height - 1)
                 return false;
             rects[index] = LightmapChartRect{ cursorX, cursorY, d.Width, d.Height };
             cursorX += d.Width;

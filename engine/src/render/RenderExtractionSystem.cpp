@@ -3,8 +3,6 @@
 #include <graphics/vulkan/TextureCache.h>
 #include <render/ZoneLightmapComponent.h>
 
-#include <cmath>
-
 namespace
 {
     Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
@@ -111,21 +109,7 @@ void RenderExtractionSystem::Extract(const World& world,
                 item.Pass = material->Pass;
                 item.Pipeline = SelectOpaquePipeline(*material);
                 item.LightmapTextureIndex = lightmapIndex;
-                // SPIKE HACK (throwaway branch): entities marked with layer
-                // mask 0x7FFFFFFF fake the per-instance atlas rect the real
-                // placement cook will assign, deriving a small distinct rect
-                // from world position so instanced placements visibly sample
-                // different atlas regions within one draw run.
-                if (lightmapIndex != UINT32_MAX && renderer.LayerMask == 0x7FFFFFFFu)
-                {
-                    const float px = worldMatrix.At(0, 3);
-                    const float pz = worldMatrix.At(2, 3);
-                    const auto fract = [](float v) { return v - std::floor(v); };
-                    item.LightmapScaleBias = Vec4{
-                        0.08f, 0.08f,
-                        0.1f + 0.7f * fract(px * 0.31f + 0.5f),
-                        0.1f + 0.5f * fract(pz * 0.17f + 0.3f) };
-                }
+                item.LightmapScaleBias = renderer.LightmapScaleBias;
                 queue.AddOpaque(item);
             }
         }

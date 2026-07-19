@@ -13,10 +13,12 @@ Registry& CreateDefault3DZone(ZoneRuntime& zones,
                               MaterialSetCache* materialSets,
                               AudioClipCache* audioClips,
                               AudioService* audio,
-                              CaptionRuntime* captions)
+                              CaptionRuntime* captions,
+                              TextureCache* textures)
 {
     Registry& registry = zones.CreateZone(zone);
-    InitializeDefault3DRegistry(registry, meshes, materialSets, audioClips, audio, captions);
+    InitializeDefault3DRegistry(registry, meshes, materialSets, audioClips, audio,
+                                captions, textures);
     zones.SetParticipation(zone, participation);
     return registry;
 }
@@ -26,7 +28,8 @@ void InitializeDefault3DRegistry(Registry& registry,
                                  MaterialSetCache* materialSets,
                                  AudioClipCache* audioClips,
                                  AudioService* audio,
-                                 CaptionRuntime* captions)
+                                 CaptionRuntime* captions,
+                                 TextureCache* textures)
 {
     registry.Resources.Register<ActiveCameraService>();
     // Storage traits, not raw RegisterComponent: LocalTransform's traits also
@@ -36,6 +39,7 @@ void InitializeDefault3DRegistry(Registry& registry,
         ComponentStorageTraits<typename decltype(tag)::Type>::Register(registry);
     });
     registry.Components.AddResource<StaticMeshComponentAssets>(meshes, materialSets);
+    registry.Components.AddResource<ZoneLightmapComponentAssets>(textures);
     registry.Components.AddResource<AudioSourceRuntime>(audioClips, audio, captions);
 }
 

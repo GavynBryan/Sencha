@@ -13,8 +13,8 @@ Usage: gen_flat_plane_smesh.py <size_world_units> <subdivisions> <out.smesh>
 import struct
 import sys
 
-SMESH_VERSION = 4
-VERTEX_STRIDE = 52   # 48-byte base + 4-byte baked-direct channel (neutral zero)
+SMESH_VERSION = 5
+VERTEX_STRIDE = 52   # 48-byte base + two unorm16 lightmap UVs (neutral zero)
 HEADER_SIZE = 88
 SECTION_SIZE = 48
 
@@ -73,7 +73,7 @@ def write(path, size, subdiv):
     body = bytearray()
     for vtx in verts:
         body += struct.pack("<12f", *vtx)
-        body += struct.pack("<I", 0)   # BakedDirect (neutral: unbaked plane)
+        body += struct.pack("<HH", 0, 0)   # LightmapU/V (neutral: unbaked plane)
     for idx in indices:
         body += struct.pack("<I", idx)
 

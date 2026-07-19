@@ -88,22 +88,3 @@ std::uint32_t EncodeBakedDirectRgbm(const Vec3d& radiance)
     return r | (g << 8) | (b << 16) | (a << 24);
 }
 
-bool BakeDirectLighting(MeshGeometry& geometry,
-                        const Mat4& worldTransform,
-                        std::span<const BakeDirectLight> lights,
-                        const BakeBvh& occluders,
-                        const DirectLightBakeParams& params)
-{
-    bool anyLit = false;
-    for (StaticMeshVertex& vertex : geometry.Vertices)
-    {
-        const Vec3d worldPos = worldTransform.TransformPoint(vertex.Position);
-        const Vec3d worldNormal =
-            worldTransform.TransformVector(vertex.Normal).Normalized();
-        const Vec3d radiance = EvaluateBakedDirectRadiance(
-            worldPos, worldNormal, lights, occluders, params);
-        vertex.BakedDirect = EncodeBakedDirectRgbm(radiance);
-        anyLit = anyLit || vertex.BakedDirect != 0;
-    }
-    return anyLit;
-}

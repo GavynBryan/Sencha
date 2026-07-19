@@ -140,7 +140,7 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, LightmapU) },
         { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -221,7 +221,7 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
         { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
         { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, BakedDirect) },
+        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, LightmapU) },
         { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
     };
     base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;

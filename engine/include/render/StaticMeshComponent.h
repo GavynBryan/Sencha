@@ -31,6 +31,10 @@ struct StaticMeshComponent
     bool AffectsBakedLighting = true;
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SectionMask = 0xFFFFFFFFu;
+    // Remaps the mesh's lightmap UVs into this placement's atlas rect
+    // (uv * xy + zw). Identity for cooked cell meshes (absolute atlas UVs);
+    // the cook assigns per-placement rects to instanceable meshes.
+    Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
 };
 
 struct StaticMeshComponentAssets
@@ -96,6 +100,8 @@ struct TypeSchema<StaticMeshComponent>
                 .Default(defaults.AffectsBakedLighting),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),
+            MakeField("lightmap_scale_bias", &StaticMeshComponent::LightmapScaleBias)
+                .Default(defaults.LightmapScaleBias),
         };
     }
 };

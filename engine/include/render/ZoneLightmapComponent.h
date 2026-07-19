@@ -3,6 +3,10 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTraits.h>
+#include <ecs/EntityId.h>
+#include <ecs/World.h>
+#include <graphics/vulkan/TextureCache.h>
 #include <render/TextureHandle.h>
 
 #include <cstdint>
@@ -20,6 +24,35 @@
 struct ZoneLightmapComponent
 {
     TextureHandle Texture;
+};
+
+struct ZoneLightmapComponentAssets
+{
+    ZoneLightmapComponentAssets() = default;
+    explicit ZoneLightmapComponentAssets(TextureCache* textures)
+        : Textures(textures)
+    {
+    }
+
+    TextureCache* Textures = nullptr;
+};
+
+template <>
+struct ComponentTraits<ZoneLightmapComponent>
+{
+    static void OnAdd(ZoneLightmapComponent& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<ZoneLightmapComponentAssets>();
+        if (assets != nullptr && assets->Textures != nullptr)
+            assets->Textures->Retain(component.Texture);
+    }
+
+    static void OnRemove(const ZoneLightmapComponent& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<ZoneLightmapComponentAssets>();
+        if (assets != nullptr && assets->Textures != nullptr)
+            assets->Textures->Release(component.Texture);
+    }
 };
 
 template <>

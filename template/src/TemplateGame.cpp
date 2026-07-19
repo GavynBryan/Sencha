@@ -108,9 +108,11 @@ namespace
     // resource registration on the detached registry, then the JSON parse.
     // Shared by the single-zone map path and the world-streaming recipe.
     void BuildZoneScene(Registry& registry, SceneParse& parsed, const std::string& scenePath,
-                        StaticMeshCache* meshes, MaterialSetCache* materialSets)
+                        StaticMeshCache* meshes, MaterialSetCache* materialSets,
+                        TextureCache* textures)
     {
-        InitializeDefault3DRegistry(registry, meshes, materialSets);
+        InitializeDefault3DRegistry(registry, meshes, materialSets,
+                                    nullptr, nullptr, nullptr, textures);
         // Physics components must be registered before any entity is created
         // in this zone's World (build runs before finalize spawns entities).
         // The helper also registers the runtime link components the bridges
@@ -605,11 +607,12 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     auto parsed = std::make_shared<SceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
+    TextureCache* textures = &runtimeAssets.Textures;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, scenePath](Registry& registry) {
-            BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets);
+        [parsed, meshes, materialSets, textures, scenePath](Registry& registry) {
+            BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures);
         },
         [this, parsed, &logging, collisionSidecar](Registry& registry) {
             if (!FinalizeZoneScene(registry, *parsed, logging, &RuntimeAssetState().Assets,
@@ -678,12 +681,13 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
+    TextureCache* textures = &runtimeAssets.Textures;
     AssetSystem* assets = &runtimeAssets.Assets;
     LoggingProvider* loggingPtr = &logging;
 
     const EngineRuntimeConfig& runtimeConfig = engine.Config().Runtime;
     Partition.emplace(
-        [this, meshes, materialSets, assets, loggingPtr](const ZoneHeader& header)
+        [this, meshes, materialSets, textures, assets, loggingPtr](const ZoneHeader& header)
         {
             // Cooked refs are relative to the assets root (the world cook's
             // contract); the recipe carries scene and collision only. The
@@ -694,8 +698,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 std::string(kAuthoredRoot) + "/" + header.CookedCollisionRef;
             auto parsed = std::make_shared<SceneParse>();
             ZoneLoadRecipe recipe;
-            recipe.Build = [parsed, scenePath, meshes, materialSets](Registry& registry)
-            { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets); };
+            recipe.Build = [parsed, scenePath, meshes, materialSets, textures](Registry& registry)
+            { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures); };
             // PhysicsShapes resolves at finalize time through `this`: the
             // startup +world command runs at GameLoaded, BEFORE system
             // registration hands out the shape cache, so capturing the
@@ -732,7 +736,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     if (!WorldPawn.IsValid())
     {
         Registry& global = engine.Zones().Global();
-        InitializeDefault3DRegistry(global, meshes, materialSets);
+        InitializeDefault3DRegistry(global, meshes, materialSets,
+                                    nullptr, nullptr, nullptr, textures);
         RegisterPhysicsComponents(global.Components);
         RegisterMovement(global.Components);
         RegisterCameraComponents(global.Components);

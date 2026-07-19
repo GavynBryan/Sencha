@@ -277,11 +277,13 @@ ConsoleResult SceneViewerGame::LoadMap(std::string_view mapName)
     auto parsed = std::make_shared<SceneParse>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
+    TextureCache* textures = &runtimeAssets.Textures;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, scenePath](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materialSets);
+        [parsed, meshes, materialSets, textures, scenePath](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materialSets,
+                                        nullptr, nullptr, nullptr, textures);
             *parsed = ParseSceneFile(scenePath);
         },
         [this, parsed, &logging](Registry& registry) {

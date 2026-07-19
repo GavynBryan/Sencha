@@ -69,6 +69,35 @@ scripted tile mesh with [0,1] lightmap UVs fake the instanced-placement leg
 - `render.baked_direct.enabled 0/1` A/B and the kyusu PIE path smoke run land
   with Phase 2's cook tests.
 
+## Phases 1+2: the real build (v5 format + cook replacement)
+
+Landed after the gate passed: `.smesh` v5 (LightmapU/V unorm16 replace the
+baked-direct word; `kSmeshFlagLightmapUv`; loader rejects v4;
+`kCookedCacheIndexVersion` 5), ZoneLightmapComponent release traits behind a
+`ZoneLightmapComponentAssets` registry resource,
+`StaticMeshComponent.LightmapScaleBias` (schema-defaulted), the spike's
+extraction hack removed, the packer reserving the LAST atlas row/column too
+(a wrap-addressed bilinear sample at UV 0 or 1 only ever blends reserved
+black), `migrate_smesh_v4_to_v5.py`, and the test suites:
+BrushLightmapChartTests, LightmapAtlasPackTests, LightmapRasterTests,
+RenderQueueRunTests, and the rewritten BakedLightingCookTests (atlas artifact
++ component emission, no-atlas-without-lights, restale on light move / luxel /
+cone / the coplanar soft-edge toggle that only chart hashing catches).
+
+**The closed loop, third generation** (96 Direct lights, same rig;
+`phase2_stress_capture.json`, atlas in `phase2_stress_atlas.png`):
+
+| | dynamic 96 | vertex bake (deleted) | lightmap atlas |
+| --- | --- | --- | --- |
+| LightsVisible (median) | 64 (capped) | 0 | **0** |
+| LightsDroppedAtCap | 32 (lights vanish) | 0 | **0** |
+| MainColor median | 5.08 ms | 0.041 ms | **0.019 ms** |
+| Triangles | 2116 | 49682 (tessellated) | **12 (raw brush)** |
+
+The geometry cost of baked lighting is now zero: the stress floor renders as
+the 12 raw box triangles it always was, and lighting density lives entirely
+in a 512x256 (512 KB) texture. Suite green at 1628.
+
 ## Reproduce
 
     cmake --build build --target level_cook_tests app

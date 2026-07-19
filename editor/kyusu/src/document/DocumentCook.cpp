@@ -70,15 +70,11 @@ namespace
         return h;
     }
 
-    // Vertex lightmap UV: two unorm16 texel-center coordinates packed into the
-    // 4-byte vertex slot (little-endian: U low, V high).
-    std::uint32_t PackLightmapUv(float u, float v)
+    // Unorm16 lightmap UV component (texel-center convention).
+    std::uint16_t PackLightmapUv16(float value)
     {
-        const auto pack = [](float value) {
-            const float clamped = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
-            return static_cast<std::uint32_t>(std::lround(clamped * 65535.0f));
-        };
-        return pack(u) | (pack(v) << 16);
+        const float clamped = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+        return static_cast<std::uint16_t>(std::lround(clamped * 65535.0f));
     }
 
     // Fold the baked-direct light set into the cook hash so moving, recoloring,
@@ -304,7 +300,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                     const float v = (static_cast<float>(rect.Y + kLightmapGutter)
                         + face.ChartUv[i].Y / luxel + 0.5f)
                         / static_cast<float>(atlasLayout.Height);
-                    face.Triangles[i].BakedDirect = PackLightmapUv(u, v);
+                    face.Triangles[i].LightmapU = PackLightmapUv16(u);
+                    face.Triangles[i].LightmapV = PackLightmapUv16(v);
                 }
             }
         if (luxel != lightmapParams.LuxelSize)

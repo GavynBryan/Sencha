@@ -56,20 +56,6 @@ Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
                                   const BakeBvh& occluders,
                                   const DirectLightBakeParams& params);
 
-// Compute each vertex's baked static direct diffuse and write it, RGBM-packed,
-// into geometry.Vertices[].BakedDirect. Uses the same wrap-Lambert + windowed
-// inverse-square model as the forward shader (lighting.glsli), traces one
-// occlusion ray per (vertex, light) through `occluders` (which must already
-// contain this geometry's world triangles plus any neighbor halo), and applies
-// `worldTransform` to map local vertex positions/normals into the light/BVH
-// world space. Deterministic. Returns true if any vertex received nonzero
-// light (so the caller can set the baked-direct file flag).
-bool BakeDirectLighting(MeshGeometry& geometry,
-                        const Mat4& worldTransform,
-                        std::span<const BakeDirectLight> lights,
-                        const BakeBvh& occluders,
-                        const DirectLightBakeParams& params);
-
-// Pack a linear RGB radiance into the R8G8B8A8 RGBM the vertex channel stores.
+// Pack a linear RGB radiance into the R8G8B8A8 RGBM a lightmap texel stores.
 // Zero radiance packs to zero (neutral). Exposed for tests.
 std::uint32_t EncodeBakedDirectRgbm(const Vec3d& radiance);
