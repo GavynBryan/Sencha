@@ -348,12 +348,13 @@ split is also what keeps the second-RHI decision cheap to revisit (Section 11).
 
 8. **GI (v2.0 baked, v3.0 dynamic at scale).** Explicitly not v1.0; hemispheric ambient
    remains the indirect stand-in. Trigger in Section 11. The accepted design is the
-   renderer phase-3 plan's Phase 3B (zone-scoped L1 SH probe volumes plus cooked vertex
-   AO), and its first substrate slice shipped 2026-07 as baked static direct lighting
-   (phase-3 plan Section 7B): static accent lights bake their diffuse into cell
-   vertices and leave the runtime light set, answering the measured 64-light forward
-   cap. Probes and AO ride the same bake machinery (BVH, cook seam, staleness hashing,
-   tessellation) when GI lands.
+   renderer phase-3 plan's Phase 3B (zone-scoped L1 SH probe volumes plus cooked AO),
+   and its first substrate slice shipped 2026-07 as baked static direct lighting
+   (phase-3 plan Section 7C): static lights bake into per-zone lightmap atlases
+   (charts grown across authored soft edges over brush geometry) and leave the
+   runtime light set, answering the measured 64-light forward cap at raw brush
+   density. Probes and AO ride the same bake machinery (BVH, chart/atlas/raster
+   kernels, cook seam, staleness hashing, per-zone texture streaming) when GI lands.
 
 9. **Terrain, water, volumetrics, weather and time-of-day as data (v3.0).**
 

@@ -1,12 +1,14 @@
 # Renderer Phase 3: Lighting, Shading, Shadows, Baked Irradiance, and Renderer Profiling
 
-Status: IN EXECUTION, revision 4, 2026-07-18. No longer plan-only: Phase 3.0
+Status: IN EXECUTION, revision 4, 2026-07-19. No longer plan-only: Phase 3.0
 (instrumentation) and the Phase 3A dynamic-lighting and shadow ladder have
 landed in code, and revision 4 records the first shipped slice of Phase 3B
-territory, baked static direct lighting (Section 7B), added in response to the
-measured 64-light forward cap. Revision 2 incorporated a cross-agent design
-review; revision 3 worked baked ambient occlusion into the plan after a second
-adversarial pass. Dispositions are recorded in Section 0 (newest first).
+territory, baked static direct lighting, added in response to the measured
+64-light forward cap. It shipped twice in one series: a per-vertex channel
+(Section 7B, superseded and deleted), then per-zone lightmap atlases (Section
+7C, current). Revision 2 incorporated a cross-agent design review; revision 3
+worked baked ambient occlusion into the plan after a second adversarial pass.
+Dispositions are recorded in Section 0 (newest first).
 
 This document is the lighting portion of the "render ladder plan" that
 `docs/assets/pipeline.md` repeatedly defers to ("Decision L ships the data, not
@@ -40,11 +42,12 @@ Scope summary of the standing decisions:
   occluders by occluder-gated adaptive tessellation. AO modulates the ambient
   term only and is never a substitute for a shadow map (Section 7A).
 - Baked static direct lighting (shipped, revision 4): a light authored
-  `LightBakeContribution::Direct` has its diffuse baked into cooked cell
-  vertices (a second per-vertex RGBM attribute) and is excluded from the
-  runtime light set entirely, so it costs nothing per frame and never counts
-  against the 64-light cap. A separate channel and a separate additive term,
-  not the AO datum and not a shadow substitute (Section 7B).
+  `LightBakeContribution::Direct` has its diffuse baked into the zone's
+  lightmap atlas (charts grown across authored soft edges over brush
+  geometry) and is excluded from the runtime light set entirely, so it costs
+  nothing per frame and never counts against the 64-light cap. A separate
+  additive term, not the AO datum and not a shadow substitute (Section 7C;
+  the earlier per-vertex form is Section 7B, superseded).
 - Profiling: an explicit instrumentation mode ladder (Off / Counters / Gpu /
   Capture) whose Off path performs no profiling work, plus a compile-time
   option that removes instrumentation, debug labels, debug pipelines, and
@@ -62,42 +65,55 @@ hemispheric-ambient fallback without probes.
 
 ## 0. Disposition
 
-### 0.0 Revision 4: baked static direct lighting (shipped)
+### 0.0 Revision 4: baked static direct lighting (shipped, twice)
 
 Not a design review: this revision records an implemented feature and its
-deviations. The measured investigation under
-`docs/plans/evidence/point-light-cost/` convicted the forward renderer's
-64-light cap as a correctness wall (96 visible lights silently drop 32) with a
-real ~80 us per light cost, and the owner chose per-vertex baked static direct
-lighting as the remedy. It shipped end to end (format, bake, tessellation,
-cook integration, tooling, validation) and is documented in the new Section
-7B. Consequences threaded into this document:
+deviations, in two generations landed in one series. The measured
+investigation under `docs/plans/evidence/point-light-cost/` convicted the
+forward renderer's 64-light cap as a correctness wall (96 visible lights
+silently drop 32) with a real ~80 us per light cost.
 
-- Direct lighting is no longer unconditionally dynamic: a light authored
-  `LightBakeContribution::Direct` bakes its diffuse into cooked cell vertices
+**Generation one (per-vertex, deleted):** the owner first chose per-vertex
+baked direct lighting. It shipped end to end (v4 `.smesh` channel, cook bake,
+distance-graded tessellation; history in Section 7B and
+`docs/plans/evidence/baked-direct/`), then was deleted in the same series
+when the owner's spec sharpened to whole-world baked lighting on streamed,
+weak-hardware targets: the vertex lattice scales with lit area, streams at
+52 B per sample, and cannot carry per-light animation.
+
+**Generation two (per-zone lightmap atlases, current):** Section 7.1's
+surface-lightmap rejection is REVERSED for direct light only (Section 7C).
+Charts grow across authored soft edges (cut at hard edges, cone-split on
+curves), pack into one deterministic RGBM atlas per zone, and bake through
+the same per-sample evaluator; geometry stays at raw brush density. Evidence:
+`docs/plans/evidence/lightmap-atlas/` (96 lights = 0.019 ms MainColor over 12
+raw triangles). Consequences threaded into this document:
+
+- A light authored `LightBakeContribution::Direct` bakes into the zone atlas
   and leaves the runtime light set entirely (amendment in 7.1, doctrine note
   in 7A.2). Runtime shadow maps remain the only authoritative direct-shadow
   representation; the AO doctrine is untouched.
-- The vertex slot 7A.6 reserved for AO (offset 48, attribute location 8,
-  `.smesh` v4) is now occupied by the baked-direct RGBM channel. Vertex AO,
-  when it lands, takes offset 52, location 9, `.smesh` v5 (amendment in 7A.6).
-  The "v3 loads neutral" compatibility row is superseded by the codebase's
-  single-version doctrine: the loader rejects prior versions and cooked
-  content recooks via `kCookedCacheIndexVersion` (amendment in Section 15).
-- 7A.5's error-driven adaptive tessellation was implemented for the direct
-  payload and rejected on screen: irregular refinement streaks smooth
-  interpolated falloffs. Distance-graded uniform subdivision replaced it
-  (details in 7B.4; amendment and a re-judgment obligation for AO in 7A.5).
+- `.smesh` v5: the 4-byte slot at offset 48 (v4's baked-direct RGBM) is now
+  two unorm16 lightmap UVs, attribute location 8. Vertex AO, if it still
+  lands as vertex data, takes offset 52, location 9, `.smesh` v6 (amendment
+  in 7A.6), but with the atlas machinery live, AO as an atlas channel is
+  the cheaper first question for 3B.3. Single version live: the loader
+  rejects prior versions; content recooks via `kCookedCacheIndexVersion`.
+- 7A.5's error-driven adaptive tessellation was implemented for generation
+  one and rejected on screen (irregular refinement streaks smooth falloffs);
+  generation two deletes lighting-driven tessellation entirely.
 - Bake math lives in the engine under `assets/cook/` (`BakeBvh`,
-  `DirectLightBake`, `DirectLightTessellate`), gated behind
+  `DirectLightBake`, `LightmapAtlasPack`, `LightmapRaster`), gated behind
   `SENCHA_ENABLE_COOK`, not under `render/probes/` as 3B.1 sketched: the bake
   is cook infrastructure and must never link into the runtime. 3B modules
   should follow this placement (amendment in Section 11, Phase 3B).
 - What 3B.1 can now reuse: the median-split triangle BVH with segment
-  occlusion, the cook-integration seam in `DocumentCook`/`WorldCook` with
-  staleness hashing, the vertex-format plumbing, and the tessellator. Still
-  unbuilt: grid math, the hemisphere ray table, SH projection, dilation,
-  `.sprobe` IO, the neighbor halo, and the weld.
+  occlusion and first-hit-backface queries, chart generation over brush
+  topology, deterministic atlas packing, luxel rasterization with
+  buried-sample invalidation, the cook-integration seam with staleness
+  hashing, and per-zone texture artifacts with a scene component + preload.
+  Still unbuilt: grid math, the hemisphere ray table, SH projection,
+  dilation, `.sprobe` IO, and the neighbor halo.
 
 ### 0.1 Revision 3: baked ambient occlusion
 
@@ -1299,6 +1315,12 @@ Compared against the alternatives, grounded in this codebase:
    `editor/kyusu/src/document/DocumentCook.cpp:238-258`, so packing would
    churn), streaming of per-zone lightmap pages, seam handling, and long
    bakes. They also do nothing for dynamic objects, which still need probes.
+   (Amended in revision 4: REVERSED for DIRECT light only, Section 7C. The
+   unwrapper objection dissolved for brush geometry: charts grow from the
+   authored soft/hard edge topology, no general unwrapping; the owner's
+   whole-world-baked spec made texel storage the right medium. This
+   rejection stands for the ambient/indirect payload: probes remain the
+   mechanism that also covers dynamic objects.)
 2. **Baked per-vertex irradiance: rejected as the primary mechanism.** Fits
    the target era and is cheap to sample, but couples bake output to vertex
    density (brush-cooked cells are coarse), invalidates on every geometry
@@ -1642,14 +1664,16 @@ subdivision keeps the proximity gate, so open surfaces still stay untouched.
 
 ### 7A.6 Storage, packing, and memory
 
-Amended in revision 4: the offset-48 / location-8 slot and the v3 to v4 bump
-described below were consumed by the baked-direct RGBM channel (Section 7B),
-which shipped first. Vertex AO therefore lands as a second 4-byte attribute at
-offset 52 (stride 52 to 56), location 9, `.smesh` v4 to v5, and the loader
-rejects prior versions outright per the single-version doctrine (cooked
-content recooks via `kCookedCacheIndexVersion`) instead of loading v3 as
-neutral. The packing analysis below otherwise stands (byte 0 = AO, bytes 1-3
-reserved).
+Amended in revision 4: the offset-48 / location-8 slot described below is
+occupied by the lightmap UVs (Section 7C; briefly by 7B's RGBM channel before
+that), and `.smesh` is at v5. If vertex AO still lands as vertex data it takes
+offset 52 (stride 52 to 56), location 10 (9 is the per-instance lightmap
+scale/bias), and `.smesh` v6, with the loader rejecting prior versions per the
+single-version doctrine (cooked content recooks via `kCookedCacheIndexVersion`)
+instead of loading old files as neutral. With the per-zone atlas machinery now
+live, 3B.3 should first weigh AO as an atlas channel instead of vertex data:
+the sampling density question that forced adaptive tessellation dissolves in
+texel space. The packing analysis below otherwise stands.
 
 - `StaticMeshVertex` (48 bytes today: `Vec3d` position + `Vec3d` normal +
   `Vec2d` uv + `Vec4` tangent, all float-backed since `Vec3d = Vec<3>` float,
@@ -1763,10 +1787,20 @@ confirm by eye it never bleeds into a direct-lit surface.
 
 ---
 
-## 7B. Baked static direct lighting (shipped, revision 4)
+## 7B. Baked static direct lighting, generation one: per-vertex (SUPERSEDED)
+
+SUPERSEDED within the same series by the per-zone lightmap atlas (Section 7C):
+the vertex channel, the tessellator, and the tuning cvars described below were
+deleted per the remove-don't-deprecate doctrine when the owner's spec
+sharpened to whole-world baked lighting on streamed weak-hardware targets.
+This section is retained as the design record of generation one; its evidence
+lives under `docs/plans/evidence/baked-direct/`. The lessons that carried
+forward: bake shading not shadows, CPU/shader model parity, additive-zero
+neutrality, single-version formats, and the on-screen rejection of
+error-driven tessellation.
 
 Added and implemented in revision 4. Sections 7 and 7A describe designed but
-unbuilt payloads; this section describes shipped code and is written from it.
+unbuilt payloads; this section described shipped code when it was current.
 Motivation: the measured investigation under
 `docs/plans/evidence/point-light-cost/` convicted the 64-light forward cap as
 a correctness wall (at 96 visible lights, 32 drop silently) with a real ~80 us
@@ -1907,6 +1941,59 @@ MSAA in the forward pass), present on every hard edge, unrelated to the bake.
   an authoring nicety once real content wants softer pool edges.
 - **glTF export of the channel**: baked light is not a glTF concept; map to
   COLOR_0 if an external tool ever needs it.
+
+---
+
+## 7C. Baked static direct lighting, generation two: per-zone lightmap atlases (shipped)
+
+The current mechanism, replacing Section 7B's vertex channel. Owner spec:
+UE1-era look, whole-world baked static lighting, hitch-free zone streaming,
+120 FPS on weak hardware. Full design and phase record in the approved plan
+(the lightmap plan in the owner's plan directory) and evidence under
+`docs/plans/evidence/lightmap-atlas/`; the mechanism in brief:
+
+- **Authoring is unchanged**: `LightBakeContribution::Direct` on point and
+  spot lights; excluded from the runtime set at extraction; additive diffuse
+  term; `render.baked_direct.enabled` and the `baked_direct`/`lightmap_texels`
+  debug views.
+- **Charts** grow across authored SOFT edges (union-find mirroring the
+  smoothing-group normals), are cut at hard edges, and cone-split on curves
+  (45 degrees, `editor.cook.lightmap_cone`). Chart identity and chart UVs are
+  part of the cook staleness hash (a coplanar soft-edge toggle changes no
+  vertex byte but must restale).
+- **One RGBM RGBA8 atlas per zone** (`.stex`, LinearData, no mips), shelf
+  packed with 2-texel gutters, first and last row/column reserved black (the
+  wrap-safe sentinel unbaked items sample). Overflow density-clamps by
+  sqrt(2) steps; never multiple pages. Luxel default 0.25 m
+  (`editor.cook.lightmap_luxel`), cap 2048 (`editor.cook.lightmap_max_size`).
+- **Luxels** sample at grid points (N+1 texels per N luxels), rasterized with
+  an interior-beats-edge rule and a half-diagonal edge reach for slivers,
+  baked through the shared per-sample evaluator, dilated 2 ping-pong passes.
+  **Buried-sample invalidation** (BakeBvh::FirstHitIsBackface along the
+  sample normal) keeps luxels underneath overlapping brushes from baking
+  black bleed: mandatory, since kyusu brushes overlap by design.
+- **Vertices** carry unorm16 atlas UVs (`.smesh` v5, offset 48, location 8):
+  absolute for cooked cells, [0,1] sheets for instanceable meshes, remapped
+  per placement by a Vec4 scale/bias in the instance stream (location 9).
+  The per-draw bindless atlas index rides push constants and joins the
+  run-merge identity; per-instance scale/bias never does.
+- **Placements**: baked brush meshes chart themselves into sheets; glTF
+  imports TEXCOORD_1; the cook packs a per-placement rect (world density from
+  the placed triangles), bakes it, and serializes the scale/bias on the
+  component. Placed meshes occlude unless `AffectsBakedLighting` is off.
+- **Editor**: the lighting panel's baked preview renders the last cook's
+  scene (cells + atlas + placement rects) in Solid viewports with Direct
+  lights excluded and a staleness badge; Cook refreshes it.
+- **Streaming**: the atlas is a manifest asset preloaded in wave one; the
+  streamed-world recipe warms it before attach.
+- Closed loop (third generation of the measurement): 96 Direct lights render
+  with LightsVisible 0, dropped 0, MainColor 0.019 ms, at 12 raw triangles
+  (the tessellated vertex path needed 49682).
+
+Deferred with triggers: cross-zone halo (with 3B.1's), per-light occlusion
+masks x runtime intensity (the UE1 animated-static-light extension the atlas
+medium exists to allow), soft baked penumbra, and BC compression of atlases
+if memory ever asks.
 
 ---
 

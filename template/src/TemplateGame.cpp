@@ -698,6 +698,24 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 std::string(kAuthoredRoot) + "/" + header.CookedCollisionRef;
             auto parsed = std::make_shared<SceneParse>();
             ZoneLoadRecipe recipe;
+            // Warm the zone's assets (meshes, materials, the lightmap atlas)
+            // before attach, the same manifest convention as the map path:
+            // the manifest sits beside the cooked scene (.cooked.json ->
+            // .manifest.json). Missing manifest = resolve-on-attach fallback.
+            {
+                std::string manifestPath = scenePath;
+                constexpr std::string_view cookedSuffix = ".cooked.json";
+                if (manifestPath.ends_with(cookedSuffix))
+                {
+                    manifestPath.resize(manifestPath.size() - cookedSuffix.size());
+                    manifestPath += ".manifest.json";
+                    AssetManifest manifest;
+                    if (Preloader.has_value()
+                        && LoadAssetManifestFile(manifestPath, manifest, nullptr))
+                        recipe.Preload = Preloader->Begin(ResolveManifestPaths(
+                            manifest, RuntimeAssetState().Registry));
+                }
+            }
             recipe.Build = [parsed, scenePath, meshes, materialSets, textures](Registry& registry)
             { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures); };
             // PhysicsShapes resolves at finalize time through `this`: the
