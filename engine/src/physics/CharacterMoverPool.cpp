@@ -137,6 +137,24 @@ void CharacterMoverPool::Reconcile(World& world)
     LastStructuralVersion = world.StructuralVersion(); // post-flush value
 }
 
+void CharacterMoverPool::Evict(World& world)
+{
+    if (!Ready(world) || !S)
+        return;
+
+    State& state = *S;
+    for (uint32_t slot = 0; slot < state.Slots.size(); ++slot)
+    {
+        if (!state.Slots[slot].Mover)
+            continue;
+        const EntityId owner = state.Slots[slot].Owner;
+        if (world.IsAlive(owner) && world.HasComponent<CharacterMoverLink>(owner))
+            state.Commands.RemoveComponent<CharacterMoverLink>(owner);
+        state.Release(slot);
+    }
+    state.Commands.Flush();
+}
+
 void CharacterMoverPool::Drive(World& world, float dt, const Vec3d& gravity)
 {
     if (!Ready(world) || !S)

@@ -43,6 +43,11 @@ public:
     // CharacterMoverLink); the only indirection is the slot into the pool.
     void Drive(World& world, float dt, const Vec3d& gravity);
 
+    // Release every mover and strip links, so the next Reconcile recreates
+    // them from component state. Called when the registry leaves the physics
+    // domain or detaches: dormant means zero backend presence.
+    void Evict(World& world);
+
     [[nodiscard]] size_t   MoverCount() const;
     [[nodiscard]] uint64_t ReconcilePasses() const { return ReconcileCount; }
 
