@@ -20,10 +20,10 @@ class PhysicsWorld;
 // registry and releases its CharacterVirtuals; the shared PhysicsWorld it
 // points at outlives it (same teardown order as bodies).
 //
-// Reconcile is gated on the World's structural version, like RigidBodyBinding, so a
-// steady frame skips topology work; the pool itself is the physics-side record
-// that lets a destroyed entity's mover be reclaimed (DestroyEntity fires no hook
-// and the link vanishes with the entity).
+// Reconcile is gated on the World's structural version, like RigidBodyBinding,
+// so a steady frame skips topology work; the pool itself is the physics-side
+// record that lets a destroyed entity's mover be reclaimed (CharacterMoverLink
+// is a hook-free handle, so it vanishes silently with the entity).
 //=============================================================================
 class CharacterMoverPool
 {

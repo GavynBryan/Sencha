@@ -57,6 +57,9 @@ PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
         ToObjectLayer(desc.Layer));
     settings.mIsSensor = desc.IsTrigger;
     settings.mUserData = desc.UserData;
+    settings.mGravityFactor = desc.GravityScale;
+    settings.mLinearDamping = desc.LinearDamping;
+    settings.mAngularDamping = desc.AngularDamping;
     if (desc.Motion == BodyMotion::Dynamic && desc.Mass > 0.0f)
     {
         settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
@@ -104,6 +107,30 @@ void PhysicsWorld::SetLinearVelocity(PhysicsBodyId id, const Vec3d& velocity)
 {
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     bodies.SetLinearVelocity(ToJph(id), ToJph(velocity));
+}
+
+Vec3d PhysicsWorld::GetAngularVelocity(PhysicsBodyId id) const
+{
+    const JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    return FromJph(bodies.GetAngularVelocity(ToJph(id)));
+}
+
+void PhysicsWorld::SetAngularVelocity(PhysicsBodyId id, const Vec3d& velocity)
+{
+    JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    bodies.SetAngularVelocity(ToJph(id), ToJph(velocity));
+}
+
+void PhysicsWorld::SetGravityScale(PhysicsBodyId id, float scale)
+{
+    JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    bodies.SetGravityFactor(ToJph(id), scale);
+}
+
+void PhysicsWorld::WakeBody(PhysicsBodyId id)
+{
+    JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    bodies.ActivateBody(ToJph(id));
 }
 
 uint64_t PhysicsWorld::GetUserData(PhysicsBodyId id) const

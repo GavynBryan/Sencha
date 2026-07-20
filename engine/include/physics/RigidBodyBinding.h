@@ -44,9 +44,10 @@ inline EntityId UnpackEntity(uint64_t value)
 // reconciled only when the World's structural version changes (an entity or
 // component was created/destroyed/added/removed); a steady frame is a single
 // integer compare. The dense Owned vector is the physics-side record that makes
-// destroy-detection possible: DestroyEntity fires no hook and the entity's
-// PhysicsBodyLink vanishes with it, so nothing in the ECS can report the dead
-// body. Reconcile sweeps Owned for dead or collider-less entities.
+// destroy-detection possible: PhysicsBodyLink is a plain handle with no
+// lifecycle hook — backend residency belongs to binding records, not component
+// hooks — so the link vanishes silently with a destroyed entity and reconcile
+// sweeps Owned for dead or collider-less entities.
 //=============================================================================
 class RigidBodyBinding
 {

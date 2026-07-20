@@ -54,6 +54,12 @@ struct BodyDesc
     float Mass = 1.0f; // dynamic only; <= 0 asks the backend to derive it from the shape
     bool IsTrigger = false;
     uint64_t UserData = 0;
+
+    // Dynamic-body motion parameters; ignored for static bodies. Damping
+    // defaults match the backend's, so omitting them changes nothing.
+    float GravityScale = 1.0f;
+    float LinearDamping = 0.05f;
+    float AngularDamping = 0.05f;
 };
 
 struct BodyTransform
@@ -90,6 +96,16 @@ public:
 
     [[nodiscard]] Vec3d GetLinearVelocity(PhysicsBodyId id) const;
     void SetLinearVelocity(PhysicsBodyId id, const Vec3d& velocity);
+
+    [[nodiscard]] Vec3d GetAngularVelocity(PhysicsBodyId id) const;
+    void SetAngularVelocity(PhysicsBodyId id, const Vec3d& velocity);
+
+    // Per-body gravity multiplier: 0 suspends, 1 is world gravity. Does not
+    // wake a sleeping body — pair with WakeBody when a slept body must respond
+    // to the change. (Velocity writes, by contrast, wake on their own.)
+    void SetGravityScale(PhysicsBodyId id, float scale);
+
+    void WakeBody(PhysicsBodyId id);
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;

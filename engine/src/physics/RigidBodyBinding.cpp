@@ -109,6 +109,12 @@ void RigidBodyBinding::Reconcile(World& world, SceneState& state)
         desc.IsTrigger = collider.IsTrigger;
         desc.Mass = body != nullptr ? body->Mass : 1.0f;
         desc.UserData = PackEntity(entity);
+        if (body != nullptr)
+        {
+            desc.GravityScale = body->GravityScale;
+            desc.LinearDamping = body->LinearDamping;
+            desc.AngularDamping = body->AngularDamping;
+        }
 
         const PhysicsBodyId id = Simulation->AddBody(desc);
         if (!id.IsValid())
@@ -116,7 +122,10 @@ void RigidBodyBinding::Reconcile(World& world, SceneState& state)
 
         Owned.push_back(BodyRecord{ entity, id });
         if (body != nullptr)
+        {
             Simulation->SetLinearVelocity(id, body->LinearVelocity);
+            Simulation->SetAngularVelocity(id, body->AngularVelocity);
+        }
         state.Commands.AddComponent<PhysicsBodyLink>(entity, PhysicsBodyLink{ id });
     });
 
@@ -166,9 +175,10 @@ void RigidBodyBinding::SyncToPhysics(World& world)
         LastStructuralVersion = world.StructuralVersion(); // post-flush value
     }
 
-    // Push authored transforms into kinematic bodies. Reads only (no version
-    // bump). Kinematic bodies are few; static colliders carry no RigidBody and
-    // so never match.
+    // Push authored state into the simulation. Reads only (no version bump).
+    // Kinematic bodies take their authored transform; dynamic bodies take
+    // GravityScale, so a runtime edit acts on the next tick. Static colliders
+    // carry no RigidBody and so never match.
     state.KinematicPush.ForEachChunk([&](auto& view)
     {
         const auto transforms = view.template Read<LocalTransform>();
@@ -176,10 +186,15 @@ void RigidBodyBinding::SyncToPhysics(World& world)
         const auto links = view.template Read<PhysicsBodyLink>();
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
-            if (bodies[i].Motion != BodyMotion::Kinematic)
-                continue;
-            Simulation->SetBodyTransform(
-                links[i].Body, transforms[i].Value.Position, transforms[i].Value.Rotation);
+            if (bodies[i].Motion == BodyMotion::Kinematic)
+            {
+                Simulation->SetBodyTransform(
+                    links[i].Body, transforms[i].Value.Position, transforms[i].Value.Rotation);
+            }
+            else if (bodies[i].Motion == BodyMotion::Dynamic)
+            {
+                Simulation->SetGravityScale(links[i].Body, bodies[i].GravityScale);
+            }
         }
     });
 }
@@ -191,9 +206,9 @@ void RigidBodyBinding::SyncFromPhysics(World& world)
 
     SceneState& state = EnsureState(world);
 
-    // Write resolved transforms and velocity back for dynamic bodies. Contiguous
-    // column walk, no hashing. Static colliders (no RigidBody) and kinematic
-    // bodies (skipped) are not written.
+    // Write resolved transforms and velocities back for dynamic bodies.
+    // Contiguous column walk, no hashing. Static colliders (no RigidBody) and
+    // kinematic bodies (skipped) are not written.
     state.DynamicPull.ForEachChunk([&](auto& view)
     {
         auto transforms = view.template Write<LocalTransform>();
@@ -207,6 +222,7 @@ void RigidBodyBinding::SyncFromPhysics(World& world)
             transforms[i].Value.Position = pose.Position;
             transforms[i].Value.Rotation = pose.Rotation;
             bodies[i].LinearVelocity = Simulation->GetLinearVelocity(links[i].Body);
+            bodies[i].AngularVelocity = Simulation->GetAngularVelocity(links[i].Body);
         }
     });
 }
