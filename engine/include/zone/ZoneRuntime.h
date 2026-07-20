@@ -49,20 +49,19 @@ public:
     std::size_t ZoneCount() const;
 
     // Pending changes accumulated since the previous residency phase. Intended
-    // for debug/tools/tests. Runtime dispatch must call BeginResidencyProcessing
-    // so handlers iterate a stable batch while any lifecycle mutations they
-    // trigger accumulate for the next frame.
+    // for debug/tools/tests. Runtime dispatch calls BeginResidencyProcessing so
+    // handlers iterate stable storage rather than the mutable pending vector.
     std::span<const RegistryResidencyChange> ResidencyChanges() const;
 
     // Swap the pending batch into stable processing storage. The returned span
-    // remains valid until FinalizeResidencyProcessing. Any attach, participation,
-    // or detach request raised by a residency handler is queued in a fresh
-    // pending batch and runs next frame instead of invalidating this span.
+    // remains valid until FinalizeResidencyProcessing. Registry lifecycle cannot
+    // mutate while handlers process this batch; any resulting work must be
+    // queued for a later drain point, preserving the invariant that backend
+    // residency is corrected before a new frame view observes lifecycle state.
     std::span<const RegistryResidencyChange> BeginResidencyProcessing();
 
-    // Destroy only registries whose Detaching transition was present in the
-    // processing batch, then clear that batch. Detaches requested during the
-    // phase remain alive and queued for the next residency visit.
+    // Destroy registries whose Detaching transition was processed, then clear
+    // the stable batch and reopen the drain-point mutation window.
     void FinalizeResidencyProcessing();
 
     // Intended for debug/tools/tests. Runtime systems should consume
@@ -79,9 +78,9 @@ public:
     }
 
     // The returned view is valid until EndFrameView. Zone lifecycle
-    // (CreateZone, AttachZone, DestroyZone) asserts that no view is live:
-    // mutations belong at the drain point, before the frame's view is built.
-    // Spans therefore never contain null entries.
+    // (CreateZone, AttachZone, DestroyZone, SetParticipation) asserts that no
+    // view or residency batch is live. Spans therefore never contain null
+    // entries or observe backend-uncorrected lifecycle state.
     FrameRegistryView BuildFrameView();
     void EndFrameView();
 
@@ -113,8 +112,9 @@ private:
                                    ZoneParticipation current);
     void RecordDetaching(Registry* registry, ZoneParticipation previous);
 
-    // True between BuildFrameView and EndFrameView: the window in which zone
-    // lifecycle mutation would dangle span entries mid-frame.
+    // Frame-view and residency processing are both read-stable windows. Registry
+    // lifecycle mutation is legal only outside them at an owner-thread drain
+    // point.
     bool FrameViewLive_ = false;
     bool ResidencyProcessing_ = false;
 
