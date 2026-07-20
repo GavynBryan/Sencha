@@ -1,226 +1,534 @@
-# Sencha: Code Quality Constraints
+# Sencha Engineering Constitution
 
-Context for Claude Code working in the Sencha engine codebase. These are invariants, not suggestions. When a requested change conflicts with one of them, stop and say so before writing anything (see "When to push back"). The existing codebase is the source of truth for current behavior where this document has gone stale. It is not proof that the current shape is ideal; see "Escalating bad contracts."
+This file is the authoritative repository-level guidance for every coding agent working in Sencha. Read it completely before planning, reviewing, or editing. These are engineering invariants, not suggestions. A short request changes the amount of explanation required, not the standard of engineering required.
+
+## Instruction precedence and evidence
+
+Use this precedence when sources disagree:
+
+1. The user request defines the desired product outcome and explicitly approved scope.
+2. This file defines repository engineering constraints. When a request conflicts with one, name the conflict before proceeding.
+3. The current working tree and its tests define existing behavior and contracts.
+4. Current architecture documentation explains intended ownership and dependency direction.
+5. Roadmaps and plans describe intended work. They are not proof that a mechanism has landed.
+6. Comments, commit messages, examples, and historical documents are supporting evidence only.
+
+Never create, extend, or depend on a type merely because a plan, example, or document names it. Search the current tree first. Capitalized prose names are not proof that a type exists or should exist.
+
+When documentation and code disagree about current status, verify behavior in source and tests. Correct directly relevant stale documentation as part of the change. The current shape is evidence of behavior, not proof that the shape is ideal. See "Escalating bad contracts."
+
+## Required start-of-task protocol
+
+Before planning, reviewing, or editing:
+
+1. Read this file completely.
+2. Run `git status --short` and inspect relevant existing diffs. Treat all pre-existing modifications as user-owned.
+3. Locate and read the owning header, implementation, tests, registration or composition code, and directly relevant architecture documentation.
+4. Search for all producers, consumers, sibling implementations, and duplicated versions of the operation.
+5. State the invariant being changed in terms independent of a particular screen, callback, or gameplay scenario.
+6. Identify the layer and object that own the invariant.
+7. Trace every applicable part of the vertical path:
+   - authoring document or schema,
+   - editor command and interaction transaction,
+   - import or cook path,
+   - persisted or cooked representation,
+   - loader, registry, and cache,
+   - ECS component and system,
+   - schedule or frame phase,
+   - render extraction and backend,
+   - diagnostics, tests, and fitness functions.
+8. Identify compatibility, ABI, threading, ownership, and hot-path consequences before choosing the implementation shape.
+
+Do not edit after reading only one consumer. Do not assume the first matching class owns the concept. Planning requests receive the same repository inspection and architectural care as implementation requests.
 
 ## Prime directives
 
-**1. Name mechanisms, never intents.** Types and modules are named for what they mechanically do, not for the gameplay outcome they happen to serve. `WorldPartitionRuntime`, not `MetroidvaniaZoneManager`. `IZonePopulationStrategy`, not `SurvivalHorrorSpawner`. The genre (Metroidvania, Zelda-like, survival horror) is a *configuration* of shape-neutral systems, never a vocabulary baked into the type system. If you find yourself reaching for a genre word, a project name (Loss Function, SINR, Tulpa), or an "intent" in an identifier, that is the signal to stop and find the neutral mechanism underneath.
+**1. Name mechanisms, never intents.** Types and modules are named for what they mechanically do, not for the gameplay outcome they happen to serve. `WorldPartitionRuntime`, not `MetroidvaniaZoneManager`. `PopulationPolicy`, not `SurvivalHorrorSpawner`. The genre is a configuration of shape-neutral systems, never vocabulary baked into the type system. If you reach for a genre word, project name, or gameplay intent in an identifier, stop and find the neutral mechanism underneath.
 
-**2. Requirements are user-facing, not engineering directives.** A feature request describes what a player or designer should be able to do. It is not an instruction for how to structure code. "Zones should stream as the player backtracks" is a requirement; the engineering answer is the existing WorldPartitionRuntime plus budgets and manifest data, not a new type that encodes "backtracking." Translate requests into the existing substrate plus data. Do not import the request's nouns into the architecture.
+**2. Requirements are user-facing, not engineering directives.** A feature request describes what a player or designer should be able to do. It does not prescribe code structure. "Zones should stream as the player backtracks" is a requirement. The engineering answer should use the existing partition, budget, and manifest substrate rather than introduce a type that encodes backtracking.
 
-**3. Behavior comes from data, not branches.** New gameplay and content variation enter through data: manifests, `.smat`/`.stex`, cvars, gameplay tags, config, component values. It does not enter through hardcoded special-case branches or per-use-case code paths. The fidelity-tier system was deleted for exactly this reason: one pipeline, features toggled by data, no parallel pipelines per scenario. Hold that line everywhere. This is about special-casing core behavior; a small closed local switch is not a violation (see "Behavioral variation and dispatch").
+**3. Behavior comes from data, not branches.** New gameplay and content variation enter through manifests, assets, cvars, gameplay tags, config, component values, schemas, and registered data. They do not enter through hardcoded use-case branches or parallel pipelines. A small closed local switch is acceptable. A central behavior switch that grows with features is not.
 
-**4. Earn every abstraction.** Default to concrete types inside a layer. A seam (interface, strategy, trait, extension point) is justified by a real boundary or a real axis of variation, not by symmetry, habit, or the possibility that variation might appear someday. Real boundaries that justify a seam even without a second shipping implementation:
+**4. Earn every abstraction.** Default to concrete types inside a layer. A seam such as an interface, strategy, trait, or extension point is justified by a real boundary or a real variation axis, not by symmetry, habit, or hypothetical future use.
 
-- a game binary boundary (games extend the engine here),
+Real boundaries that can justify a seam even before a second shipping implementation include:
+
+- a game binary boundary,
 - an editor boundary,
 - an asset pipeline boundary,
 - a scripting boundary,
-- a test boundary (the mechanism cannot otherwise be tested without booting unrelated systems),
 - a module boundary,
 - a renderer or platform boundary,
 - a data-selected runtime extension point,
+- a test boundary when the mechanism cannot otherwise be tested without unrelated systems,
 - a real algorithmic variation axis that exists today.
 
-A seam is invalid when it is an interface around exactly one class with no boundary behind it, a factory with no selection decision, a strategy with no real selection point, or an abstraction that makes the current code harder to read than the concrete version. Sencha rejected an authored NavPath primitive in favor of area classification plus cost biasing, and greenlit exactly one irreducible abstraction (the hierarchical cross-zone planner) because it was genuinely irreducible.
+A seam is invalid when it is an interface around one class with no boundary behind it, a factory with no selection decision, a strategy with no selection point, or an abstraction that makes the current code harder to read than the concrete version.
 
-The full rule: default to concrete types inside a layer; use narrow seams at real boundaries; collapse fake boundaries; narrow bloated real boundaries; refactor responsibilities before adding another layer of indirection. Do not preserve a bad seam merely because code already depends on it, and do not hide a bad seam behind more adapters. If a seam makes every consumer uglier, propose changing the seam (see "Escalating bad contracts"). Consolidation and deletion are wins, not regressions.
+Default to concrete types inside a layer. Use narrow seams at real boundaries. Collapse fake boundaries. Narrow bloated real boundaries. Refactor responsibilities before adding another layer of indirection. Do not preserve a bad seam because callers already depend on it, and do not hide it behind more adapters.
 
-These four pull against each other on purpose. Be decoupled, testable, and extendable (directives 1 through 3) without manufacturing enterprise abstraction (directive 4).
+These directives pull against each other on purpose. Be decoupled, testable, and extendable without manufacturing enterprise abstraction.
 
 ## Naming
 
-- Plain, mechanical names. The tea theme (Kettle, Teapot, Infuser, Essenchal) is retired. Current names are Engine, ServiceHost, Renderer, World, Registry, ZoneRuntime, FrameDriver. Match that register.
-- No `Manager`, `Helper`, `Util`, `Handler` grab-bags. If a type needs one of those words to describe it, it is doing too many things. Split it.
-- IDs are strongly typed via `StrongId<T>` (e.g. `StrongId<GameplayTagId>`). Do not pass a raw `uint32` or index where a strong id exists.
-- No cute, no clever, no genre words, no project codenames in engine identifiers.
-- Do not use the word "polymorphic" as a recommendation. Say what you actually mean: "dispatch," "variation mechanism," "runtime seam," "compile-time policy," or "registered operation." Sencha is C++20 and intentionally light on inheritance; behavioral variation is not a request for an inheritance hierarchy.
+- Use plain mechanical names. The tea theme is retired for internal engine types. Product names remain acceptable for executables and window titles.
+- Do not create `Manager`, `Helper`, `Util`, or `Handler` grab-bags. If one of those words is needed to describe a type, inspect whether it owns too many responsibilities.
+- Use existing strong ID types. Do not pass a raw integer or array index where a strong ID exists.
+- Do not store or compare raw entity indices. Entity identity is generational.
+- Do not use cute names, genre words, project codenames, or other engines as identifiers or behavior descriptions.
+- Do not recommend "polymorphism" as a shape. Name the actual mechanism: dispatch, runtime seam, compile-time policy, registered operation, trait, command, or data table.
 
-## Layering and dependencies
+## Layering, ownership, and dependencies
 
-- Dependency direction flows one way. Engine / ServiceHost / FrameDriver host the frame; Renderer, World, Registry, ZoneRuntime sit under them. Lower layers do not reference higher ones.
-- `World` owns `Registry` owns archetype storage; `ZoneRuntime` sits over the partition. Respect this containment; do not reach across it.
-- The editors are separate executables with their own Registry: `kyusu` (level editor), `shudei` (material editor), and `kettle` (project launcher), all over the `editor_common` shell library. Product names stay on executables and window titles only; internal types are mechanically named. Editor-only and cook-only code never links into the runtime. Cook paths stay gated behind `SENCHA_ENABLE_COOK` and are dev-only.
+Dependency direction flows toward stable lower-level mechanisms. Lower layers do not reach upward into hosts, editors, or game-specific code.
+
+- `Engine` is the integration root for services, frame hosting, scheduling, timing, and worker lanes.
+- `Registry` wraps ECS `World` storage plus registry-local resources.
+- `ZoneRuntime` owns the global registry and loaded zone registries.
+- `FrameDriver` owns the outer frame pipeline.
+- Render extraction copies simulation state into render-domain data. Graphics backends consume extracted data, not live ECS state.
+- Editor executables own their editor registries and authoring state. Editor-only and cook-only code never links into the shipping runtime.
+- Cook paths stay gated behind `SENCHA_ENABLE_COOK` and remain dev-only.
+- Jolt stays behind the physics firewall. Vulkan and SDL details stay behind their intended boundaries.
+- There is no service locator and no general dependency container. Ownership and dependencies are explicit.
+
+Do not reach across ownership boundaries for convenience. If a caller repeatedly assembles another layer's internals, improve the owning API.
 
 ## Files and translation units
 
-A file groups one tight mechanism, not a whole subsystem vocabulary. Broad category files are junk drawers and are not acceptable.
+A file groups one tight mechanism, not a subsystem vocabulary.
 
-Bad shapes: `MovementSystems.cpp` holding every movement-related system, `EditorCommands.cpp` holding every editor operation, `GameplaySystems.cpp`, `Systems.cpp`, `Helpers.cpp`, `Utils.cpp`, `RegistryStuff.cpp`.
+Bad shapes include:
 
-Preferred shapes:
+- `MovementSystems.cpp` containing every movement system,
+- `EditorCommands.cpp` containing every editor operation,
+- `GameplaySystems.cpp`,
+- `Systems.cpp`,
+- `Helpers.cpp`,
+- `Utils.cpp`,
+- `RegistryStuff.cpp`.
 
-- one primary type per `.cpp`, with its private helpers beside it,
+Preferred shapes include:
+
+- one primary type per `.cpp`, with private helpers beside it,
 - a small tightly coupled family that always changes together,
-- a registration file that only wires existing implementations together (wiring, no logic),
+- a registration file that only wires existing implementations together,
 - a test file organized around one mechanism or contract.
 
-Rules of thumb:
-
-- If adding a type makes a file harder to scan, create a new file.
-- If a file needs section banners to stay readable, split it.
-- If multiple types in a file do not share private helpers, invariants, or lifecycle, they probably do not belong together.
-
-Split by mechanism. Do not solve file explosion by making junk drawers, and do not solve junk drawers by making one-file-per-function noise.
+Split by mechanism. Do not solve file growth with junk drawers. Do not solve junk drawers with one-file-per-function noise. If multiple types do not share private helpers, invariants, or lifecycle, they probably do not belong together.
 
 ## ECS rules
 
-- Components are data. SoA chunks are 16KB. Components carry no behavior; logic lives in systems. No methods on components beyond trivial accessors.
-- Structural changes (add or remove a component, create or destroy an entity) during iteration go through `CommandBuffer` only. Never mutate archetype membership inside a running query.
-- Entity ids are generational. Never store or compare a raw index. Respect generation checks; a stale handle must fail the check, not silently alias a recycled slot.
-- Change detection is `Changed<T>` and is chunk-conservative. Do not assume per-entity change granularity; if you write to a component in a chunk, treat the whole chunk as changed.
+- Components are data. Components carry no behavior beyond trivial accessors.
+- Archetype chunks use SoA storage in 16 KB blocks.
+- Register component types before the first entity is created in a `World`.
+- Structural changes during a query or lifecycle hook go through `CommandBuffer`. Never mutate archetype membership inside active iteration.
+- Lifecycle work belongs in `ComponentTraits` hooks, not scattered ad-hoc initialization.
+- Lifecycle hooks may retain or release external handles, but must not perform structural ECS mutation.
+- Zero-size markers are tag components. Do not fake a tag with a bool component.
+- `Changed<T>` is chunk-conservative. A write to one entity can mark the component column for the whole chunk.
+- Non-const access counts as a write. Use const access for pure reads.
 - Use cached `Query` objects. Do not rebuild a query every frame.
-- Lifecycle work goes through `ComponentTraits` hooks, not ad-hoc init scattered across systems.
-- Zero-size markers are tag components. Use them; do not fake a tag with a bool component.
+- Do not cache chunk row pointers across structural changes unless invalidated through structural-version tracking.
+- Do not store owning runtime resources directly in relocatable component storage. Prefer values, handles, IDs, and registry resources.
+- Systems must tolerate zero, one, or many matching entities.
 
 ## Concurrency rules
 
 Two lanes, no third.
 
-- **JobSystem / ThreadPoolJobSystem**: intra-frame fork-join. The caller participates. No nesting (a job does not spawn-and-wait on the same system). `worker_count == 0` is the deterministic single-thread path and must stay behaviorally identical to the parallel path.
+- **JobSystem / ThreadPoolJobSystem**: intra-frame fork-join. The caller participates. Jobs do not spawn and wait on the same pool. `worker_count == 0` is the deterministic serial reference path.
 - **AsyncTaskQueue**: cross-frame work. Results commit at `FramePhase::DrainAsyncTasks`, never mid-frame.
-- Isolation is by disjoint registries, not locks. Parallelism comes from partitioning data so two workers touch disjoint state. Do not reach for a mutex to make shared mutation "safe." If two systems contend, the answer is usually a registry split or a phase boundary, not a lock.
-- Do not spawn raw threads, `std::async`, or your own pools. Use the two lanes.
-- Chunk-parallel queries (Stage D) are deferred behind a roughly 1ms profile gate. Do not parallelize a query speculatively. Measure first; if it is under the gate, it stays serial.
-
-## Data-driven and configuration
-
-- Tunables are cvars, surfaced through the dev console. New tunable behavior gets a cvar, not a recompile-to-change constant.
-- Gameplay state and queries use the tag system in `core/gameplay_tags`. Tags are dotted names interned to registration-order `uint32` ids (id 0 is the sentinel; ids are runtime values, not hashes, so never serialize a tag id as if it were stable across builds). Membership is `GameplayTagSet`; refcounted grants are `CountedGameplayTagSet` with `GameplayTagSource` tracking; queries are `GameplayTagQuery` (All/Any/None, Exact or Hierarchical). Resolve hierarchy query-side via `IsDescendantOf` (inclusive). Do not invent a parallel string-keyed flag system alongside this.
-- Assets flow through the `IAssetLoader` staged-load contract and the content-hashed cooked cache. New asset types implement the contract; they do not bolt on a side-channel loader. Material and texture data is `.smat`/`.stex`. Mesh data splits `StaticMesh`/`SkinnedMesh` over shared `MeshGeometry`; skinning streams stay separate from base vertex streams.
-
-## Behavioral variation and dispatch
-
-Small switches are fine. Large behavior hubs are a smell. The line is what the branch controls and whether it will grow.
-
-A small `switch` is acceptable for: serialization tags, tiny format distinctions, debug draw modes, mapping an enum to a string, and other small closed local choices.
-
-A `switch` is a smell when it controls: core behavior, lifecycle, policy, editor operations, asset loading, movement behavior, gameplay rules, or anything likely to accumulate cases.
-
-For core behavior, prefer, in roughly this order of reach:
-
-- components plus systems, when behavior varies by entity state,
-- data tables, tags, asset metadata, manifests, or cvars, when behavior should be content-authored,
-- C++20 concepts or traits, when compile-time variation is clearer than runtime branching,
-- function tables or registered operations, for small closed dispatch,
-- command objects, when operations need identity, undo, redo, serialization, keybinds, or editor registration,
-- separate named systems, when behavior has its own state, tests, lifecycle, or invariants,
-- narrow runtime seams, only at real binary, module, editor, asset, renderer, or scripting boundaries.
-
-Do not build a god function around `switch(mode)` and keep adding cases. Once a branch starts accumulating state, helper functions, special lifecycle rules, or cross-system knowledge, split the behavior into a named mechanism.
-
-Do not replace branching with worse indirection either. Each mechanism has an entry bar:
-
-- A runtime interface is justified only at a real boundary or a real variation axis.
-- A concept is justified only when there are real model types or the constraint improves readability.
-- A trait is justified when the variation is mechanical and compile-time.
-- A command object is justified when the operation needs identity or tooling support.
-
-Sencha is intentionally light on inheritance. Prefer values, components, free functions, concrete systems, traits, concepts, registries, and composition. Use virtual dispatch sparingly, mostly at module boundaries where runtime substitution is actually part of the design.
-
-## SOLID, applied to this codebase
-
-SOLID is a pressure test, not a religion. The goals it protects here are concrete:
-
-- code can be tested without booting the whole engine,
-- game binaries can extend the engine through intentional seams,
-- lower layers do not know about higher layers,
-- systems remain small and replaceable,
-- data selects behavior where possible,
-- deleting an abstraction is a valid architectural improvement.
-
-Prefer plain values, free functions, concrete types, narrow interfaces, registries, traits, concepts, and composition roots. Forbidden regardless of which principle is invoked to justify them: interface soup, factory/provider/adapter stacks, abstract base classes by default, service locators, dependency-injection theater, and inheritance hierarchies created only to avoid a switch.
-
-- **SRP**: one mechanical responsibility per type. The grab-bag-name test above is the smell.
-- **OCP**: extend by adding a component, a system, a command, a loader, a modifier, a registered operation, a trait specialization, a concept model, or an implementation behind an existing narrow seam (`IAssetLoader`, `IZonePopulationStrategy`, `IPoseModifier`, `IEditorCommand`). Do not extend core behavior by growing a central `switch`, a mode enum, a branch pile, or a registry of special cases. If behavior has identity, lifecycle, tests, or policy, give it a named mechanism. If there is no seam and the variation is real and present, add the narrowest seam that fits (directive 4), then extend through it. If the existing seam is the wrong shape, propose changing the seam instead of making consumers worse (see "Escalating bad contracts").
-- **LSP**: implementations honor the full contract of their interface, including ordering and lifecycle guarantees (for example the staged-load contract's phases). A loader that loads everything eagerly is not a valid `IAssetLoader`.
-- **ISP**: narrow interfaces. The existing seams are deliberately small. Keep new ones small. No fat "do everything" interface.
-- **DIP**: systems depend on the seam, not the concrete loader, strategy, or modifier. Concrete selection happens at composition, driven by data where possible. DIP does not mean every dependency gets an interface; it means real seams point the right direction.
-
-## Escalating bad contracts
-
-Do not blindly work around awkward architecture. If implementing a feature cleanly is blocked by a lower-level contract, and obeying that contract would produce ugly consumer code (excessive adapters, repeated boilerplate, unnatural ownership flow, duplicated state, central branching, knowledge leaking across layers), stop and identify whether the lower-level seam is the real problem. Say so before writing the workaround.
-
-Expected behavior when this happens:
-
-1. Explain the consumer code that would result from obeying the existing contract.
-2. Identify the contract, seam, ownership rule, data shape, or API causing the ugliness.
-3. Propose the smaller architectural refactor that would make the high-level implementation cleaner.
-4. Explain what code becomes simpler after the refactor.
-5. Ask before performing the architectural rewrite, unless architecture cleanup was explicitly requested.
-
-Escalation triggers:
-
-- A caller must know too much about another layer's internals.
-- A high-level feature requires repeated setup or teardown boilerplate.
-- A mode enum or switch in consumer code is compensating for a missing mechanism.
-- A supposedly generic API forces game-specific branching.
-- A seam is too narrow, too wide, or pointed in the wrong direction.
-- The clean implementation wants data-driven selection, but the lower layer only exposes hardcoded branches.
-- The consumer has to duplicate state already owned by a lower layer.
-- Test code is difficult because the contract requires booting unrelated systems.
-- Multiple consumers are forming the same awkward adapter around a bad API.
-- Ownership is ambiguous: it is unclear which layer, type, registry, runtime object, or system owns the state or lifecycle.
-- Adding a small feature requires touching too many classes, especially across multiple layers.
-- A change that should be local forces edits in unrelated systems, registries, factories, command wiring, serializers, or editor glue.
-- Multiple classes exist mostly to forward calls, translate shapes, or route around an awkward contract.
-- Wrapper types are accumulating around another type because the underlying API is not shaped for its real consumers.
-- The consumer has to assemble too many low-level pieces manually before it can express the actual high-level operation.
-- A class exists mainly to compensate for another class having the wrong responsibility.
-- A new feature requires parallel state because the natural owner does not expose the right operation.
-- The code keeps adding adapter or bridge shapes without reducing complexity at the call site.
-- The most direct implementation is obvious, but the current ownership model makes it illegal, awkward, or leaky.
-
-When these appear, do not solve the problem by adding another wrapper. Identify the bad ownership boundary, contract, or responsibility split, and propose the smallest refactor that makes the consumer code natural. A good architecture makes common high-level operations easy to express; if every consumer performs the same ritual before using a system, the ritual belongs behind a better API.
-
-This is not permission for rewrites by default. Escalate only when the lower-level shape is actively forcing bad consumer code. The preferred response is not "I worked around it." The preferred response is "this contract is making the consumer worse; here is the smaller refactor that would remove the friction."
+- Parallel isolation comes from disjoint registries or disjoint data partitions, not shared mutation hidden behind locks.
+- Do not spawn raw threads, call `std::async`, or create another pool.
+- Do not add a mutex as the first answer to ownership contention. Prefer a registry split, data partition, or phase boundary.
+- Do not parallelize a query speculatively. Measure first. The existing profile gate is roughly 1 ms.
+- Owner-thread resources remain owner-thread resources. Async staging may prepare plain CPU data, but publication, cache mutation, and GPU work commit on the owner thread.
 
 ## Determinism
 
-- Default to determinism. The serial path (`worker_count == 0`, lazy deterministic schedule evaluation) is the reference; the parallel path must match it where it matters.
-- Watch the usual nondeterminism sources: iteration order over unordered containers, time- or address-seeded randomness, float reduction order that differs between serial and parallel. If a change can diverge serial vs parallel, that is a defect, not a tuning detail.
+- Default to determinism. The serial path is the reference. Parallel execution must match it where the product contract requires equivalent results.
+- Watch unordered-container iteration, time-seeded or address-seeded randomness, floating-point reduction order, task completion order, and unstable registration order.
+- A serial versus parallel divergence is a defect, not a tuning detail.
+- Determinism claims require evidence from both paths when the change can affect scheduling or ordering.
 
-## Testing and change hygiene
+## Data-driven configuration
 
-- The suite is green (roughly 852 tests at last count). Keep it green. New mechanisms ship with tests for the mechanism, not for the gameplay intent layered on top of it.
-- Prefer the smallest change that satisfies the requirement. A net line reduction that preserves capability is a good outcome, not a missed opportunity to add structure.
+- Tunables are cvars exposed through the dev console. New tunable behavior gets a cvar rather than a recompile-to-change constant.
+- Gameplay state and queries use `core/gameplay_tags`. Do not invent a parallel string-keyed flag system.
+- Gameplay tag IDs are registration-order runtime values, not stable hashes. Never serialize them as stable identities.
+- Assets flow through the staged `IAssetLoader` contract and content-hashed cooked cache. New asset types implement that contract rather than adding a side-channel loader.
+- Runtime formats are cooked formats. Source importers remain in the dev-only cook layer.
+- Stable authoring identity belongs in documents and assets. Dense runtime indices and tables belong in compiled runtime data.
+- Repeated interpretation, ID resolution, schema traversal, and parsing should be moved out of hot paths.
+
+## Behavioral variation and dispatch
+
+Small switches are fine. Large behavior hubs are a smell. The distinction is what the branch controls and whether it will grow.
+
+A small `switch` is acceptable for serialization tags, tiny format distinctions, debug draw modes, enum-to-string mapping, and other closed local choices.
+
+A `switch` is a smell when it controls core behavior, lifecycle, policy, editor operations, asset loading, movement behavior, gameplay rules, or anything likely to accumulate cases.
+
+For core behavior, prefer in roughly this order:
+
+- components plus systems when behavior varies by entity state,
+- data tables, tags, asset metadata, manifests, schemas, or cvars when behavior is authored,
+- C++20 concepts or traits when compile-time variation is clearer,
+- function tables or registered operations for small closed dispatch,
+- command objects when operations need identity, undo, redo, serialization, keybinds, or editor registration,
+- separate named systems when behavior owns state, tests, lifecycle, or invariants,
+- narrow runtime seams only at real binary, module, editor, asset, renderer, platform, or scripting boundaries.
+
+Do not replace a branch with worse indirection. Each mechanism has an entry bar. A runtime interface requires a real boundary or variation axis. A trait requires mechanical compile-time variation. A command requires operation identity or tooling semantics.
+
+Sencha is intentionally light on inheritance. Prefer values, components, free functions, concrete systems, traits, concepts, registries, commands, and composition roots. Use virtual dispatch sparingly at boundaries where runtime substitution is part of the design.
+
+## SOLID, applied to Sencha
+
+SOLID is a pressure test, not a religion. Its useful goals here are concrete:
+
+- code can be tested without booting the whole engine,
+- game binaries extend the engine through intentional seams,
+- lower layers do not know about higher layers,
+- systems remain small and replaceable,
+- data selects behavior where possible,
+- deleting an abstraction is a valid improvement.
+
+Prefer plain values, free functions, concrete types, narrow interfaces, registries, traits, concepts, and composition roots. Forbidden regardless of the principle used to justify them: interface soup, factory-provider-adapter stacks, abstract base classes by default, service locators, dependency-injection theater, and inheritance hierarchies created only to avoid a switch.
+
+- **SRP**: one mechanical responsibility per type.
+- **OCP**: extend through a component, system, command, loader, registered operation, trait specialization, concept model, or an existing proven seam. If a real variation exists and no seam fits, add the narrowest earned seam.
+- **LSP**: implementations honor the full contract, including ordering, ownership, and lifecycle guarantees.
+- **ISP**: interfaces remain narrow. Do not create a fat interface to avoid passing explicit dependencies.
+- **DIP**: real boundaries point in the correct direction. It does not mean every dependency receives an interface.
+
+## Escalating bad contracts
+
+Do not blindly work around awkward architecture. If a lower-level contract would force excessive adapters, repeated boilerplate, unnatural ownership, duplicated state, central branching, or cross-layer knowledge, identify the contract as the likely problem before adding another wrapper.
+
+Expected response:
+
+1. Explain the consumer code the current contract would force.
+2. Identify the contract, ownership rule, data shape, or API causing the ugliness.
+3. Propose the smallest architectural refactor that makes the high-level implementation natural.
+4. Explain which callers and invariants become simpler.
+
+A requested implementation includes permission for the smallest local, behavior-preserving prerequisite refactor required to satisfy this file.
+
+Escalate before editing when the cleaner solution would:
+
+- materially expand product scope,
+- change a public SDK or module ABI contract,
+- change or migrate a persisted or cooked format,
+- delete a declared capability,
+- replace a major subsystem,
+- require destructive data conversion,
+- or choose between materially different product semantics.
+
+Do not request permission merely to extract duplicated logic, move an invariant to its correct owner, narrow an unhealthy private API, or delete a workaround made obsolete by the requested change.
+
+Bad-contract triggers include:
+
+- a caller must know another layer's internals,
+- repeated setup or teardown boilerplate,
+- a mode enum compensating for a missing mechanism,
+- a generic API forcing game-specific branching,
+- duplicated state already owned elsewhere,
+- tests requiring unrelated systems to boot,
+- multiple consumers forming the same adapter,
+- ambiguous ownership or lifecycle,
+- a local feature forcing unrelated edits across many layers,
+- forwarding-only wrappers accumulating around a bad API,
+- a class existing mainly to compensate for another class's responsibility,
+- bridge shapes increasing without reducing call-site complexity.
+
+The preferred response is not "I worked around it." The preferred response is "this contract is making the consumer worse; here is the smallest correction."
+
+## State, lifecycle, and editor interaction
+
+State has one owner.
+
+- Persisted authoring state belongs to the document and changes through undoable commands.
+- Cross-panel editor state belongs to the editor workspace or service that owns it.
+- Drag previews and pointer-local state stay local unless another surface genuinely consumes them.
+- Runtime simulation state belongs to runtime systems and registries.
+- Derived values are computed or cached with explicit invalidation. Do not synchronize duplicate canonical state.
+- Live edits follow begin, preview, commit or cancel. Every interruption path must terminate the transaction.
+- Escape, focus loss, tool switching, document closing, and shutdown must not strand preview state.
+- Input plumbing passes complete events or complete domain event values. Do not decompose and silently drop modifiers or other fields.
+- Interaction math should use plain engine or editor-domain types where possible so it can be tested without GUI or graphics startup.
+
+## Performance requirements
+
+Optimize architectural shape first. Micro-optimize only with evidence.
+
+In per-frame or per-entity hot paths, avoid:
+
+- authoring-document traversal,
+- schema lookup or parsing,
+- repeated string splitting, regex, or JSON work,
+- rebuilding maps, sets, arrays, closures, or temporary objects,
+- broad registry scans when a cached query or capability table can make work proportional to matches,
+- GPU resource creation or cache mutation from worker threads,
+- backend traversal of live ECS state.
+
+Prefer:
+
+- compiled tables and stable indices,
+- cached queries and precomputed bindings,
+- retained objects updated in place,
+- bounded queues and explicit budgets,
+- reused scratch storage when profiling proves allocation pressure,
+- work proportional to active systems, active assets, visible registries, and matching components.
+
+When changing a hot path, state expected complexity. If the change plausibly affects frame time or allocation rate, add a targeted diagnostic, benchmark, or before-and-after measurement. Do not claim performance improvement without evidence.
+
+## Sencha change-path checklists
+
+Check only paths applicable to the requested change, but make the decision explicitly.
+
+### ECS or component changes
+
+Check:
+
+- component registration before entity creation,
+- `ComponentTraits` lifecycle behavior,
+- structural mutation and `CommandBuffer` boundaries,
+- `TypeSchema`, `ComponentManifest`, serializers, and `ComponentStorageTraits`,
+- const versus write access and chunk-conservative change detection,
+- generational identity and strong IDs,
+- cached query behavior,
+- registry and zone participation,
+- serial and parallel determinism,
+- focused ECS and runtime tests.
+
+### Asset changes
+
+Check:
+
+- source import and cook behavior,
+- cooked extension and cache identity,
+- `AssetRegistry` discovery,
+- staged load versus owner-thread commit,
+- runtime cache retain and release,
+- dependency and preload ordering,
+- hot reload and invalidation,
+- editor selection and preview,
+- diagnostics for missing or invalid assets.
+
+Do not introduce a second loading path for convenience.
+
+### Editor interaction changes
+
+Check:
+
+- persisted document state versus transient interaction state,
+- `CommandStack` ownership,
+- begin, preview, commit, and cancel behavior,
+- escape, focus loss, tool switching, and shutdown,
+- complete input-event propagation,
+- multi-selection and stable identity,
+- GUI-independent math extraction where headless testing is possible,
+- undo and redo regression coverage.
+
+### Runtime, rendering, or graphics changes
+
+Check:
+
+- fixed simulation time versus presentation wall time,
+- frame-phase ownership,
+- simulation-to-render extraction,
+- prohibition on backend traversal of live ECS state,
+- owner-thread GPU resource creation and destruction,
+- cache and handle lifecycle,
+- expected CPU and GPU complexity,
+- allocation behavior in repeated paths,
+- zero-resource and many-resource behavior,
+- device loss, resize, and teardown paths when applicable.
+
+### World partition changes
+
+Check:
+
+- global registry versus zone registries,
+- authored identity versus runtime identity,
+- zone participation in visible, physics, logic, and audio views,
+- detached async construction and main-thread attach,
+- streaming budgets and commit boundaries,
+- topology, adjacency, and diagnostics,
+- dormant-zone behavior,
+- deterministic scheduling and unload lifecycle.
+
+### Public SDK or module-boundary changes
+
+Check:
+
+- whether the type is reachable through installed headers or exported symbols,
+- layout, calling convention, compiler, standard library, and build configuration consequences,
+- ABI fingerprint consequences,
+- host and game-module skew,
+- `sizeof` and `offsetof` coverage where applicable,
+- module isolation and ABI fitness checks,
+- whether a POD descriptor or data contract can replace a new virtual.
+
+### Persisted or cooked format changes
+
+Check:
+
+- current version contract,
+- backward-compatible load behavior,
+- deterministic serialization,
+- missing and unknown value preservation,
+- migration input, output, failure, and rollback behavior,
+- runtime and editor agreement,
+- test fixtures for old and new data.
+
+Do not bump a format version for an editor-only improvement. Do not silently discard unresolved values or substitute defaults that change meaning.
+
+## Testing standards
+
+Tests protect invariants and externally meaningful behavior.
+
+- Put regression coverage at the layer that owns the invariant.
+- Pure model, geometry, parser, and resolver code gets focused table-driven tests.
+- ECS tests cover structural safety, lifecycle, identity, queries, and deterministic behavior.
+- Asset tests cover stage, commit, identity, dependency ordering, and lifetime.
+- Editor tests cover commands, cancellation, selection, event completeness, undo, and redo.
+- Runtime tests cover frame phases, module boundaries, streaming handoff, and deterministic paths.
+- Performance-sensitive changes need a representative measurement or a test that bounds work.
+- A regression test must fail before the fix for the intended reason.
+- Do not use timing sleeps when deterministic state or events can prove behavior.
+- Never delete, skip, loosen, or snapshot over a failing test merely to make a change pass.
 
 ### Unused code: classify before recommending deletion
 
-"Not wired up yet" is not by itself grounds for deletion in an engine. Before recommending removal of unused or partially wired code, classify it:
+"Not wired up yet" is not enough to declare code dead. Classify it:
 
-- **Planned infrastructure**: anchored to a declared Sencha engine capability, has a clear future consumer, protects a real boundary, and can be tested on its own. Keep it. Do not recommend deleting it merely because the final consumer is not wired yet.
-- **Speculative abstraction**: exists only because something might someday need variation. No declared capability, no identified consumer, no boundary. Remove it.
-- **Stale plan**: the code or a comment explicitly marks future engine work, but the plan may no longer hold. Question it before deleting; ask whether the capability is still intended rather than silently removing it.
-- **Dead seam**: no longer protects a boundary, no longer has a consumer, or only makes callers worse. Remove it. Do not preserve it because code already depends on it; migrate the callers and delete it.
+- **Planned infrastructure**: anchored to a declared capability, protects a real boundary, has a clear future consumer, and can be tested independently. Keep it.
+- **Speculative abstraction**: exists only because something might someday need variation. Remove it.
+- **Stale plan**: future intent is recorded but may no longer hold. Verify before deleting.
+- **Dead seam**: no longer protects a boundary, has no consumer, or makes callers worse. Migrate callers and remove it.
 
-Do not leave new half-wired strategies or "for future use" interfaces behind your own changes: if you add a mechanism, either wire it to its consumer or anchor it explicitly to the declared capability it serves.
+Do not leave new half-wired strategies or future-use interfaces. Wire the mechanism to its consumer or anchor it explicitly to a declared capability with tests.
+
+## Evidence before claims
+
+- Do not call code unused based only on missing direct call sites. Check registration, reflection, CMake inclusion, asset discovery, module loading, editor commands, data-driven lookup, and tests.
+- Do not call a path hot without identifying how often it runs.
+- Do not claim a performance improvement without representative measurement.
+- Do not claim determinism without comparing serial and parallel paths where relevant.
+- Do not claim compatibility without identifying the persisted, cooked, SDK, or ABI contract.
+- Do not claim a bug fixed without a reproduction, regression test, or explicit reason neither is feasible.
+- Do not describe a subsystem as absent or complete based only on a roadmap status paragraph.
+- Do not claim a test or command passed unless it was actually run.
+
+## Working-tree discipline
+
+- Existing modifications belong to the user unless proven otherwise.
+- Read relevant diffs before editing a modified file.
+- Preserve unrelated changes, formatting, naming, and organization.
+- Do not run destructive Git commands.
+- Do not reset, clean, stash, checkout, amend, commit, or push unless explicitly requested.
+- Do not run repository-wide formatting for a local change.
+- Do not update generated, vendored, or cooked output unless the repository intentionally tracks it and the change requires regeneration.
+- Keep the diff scoped to requested behavior and the smallest architectural support required.
+- Necessary prerequisite refactoring is allowed. Opportunistic cleanup is not.
+
+## Required verification
+
+For a normal code change, use the canonical preset workflow:
+
+```sh
+cmake --preset dev
+cmake --build --preset dev --parallel
+ctest --preset dev
+git diff --check
+```
+
+Run focused tests first while iterating, for example:
+
+```sh
+ctest --test-dir build -R '<relevant-pattern>' --output-on-failure
+```
+
+or run the relevant GoogleTest executable with a focused filter.
+
+Do not run CTest in parallel by default. CI intentionally runs the suite serially. Parallel CTest requires evidence that affected tests and temporary resources are isolated.
+
+Additional verification:
+
+- Concurrency changes: exercise `worker_count == 0` and the parallel path. Run the `tsan` preset when supported and relevant.
+- Public or module-boundary changes: run module ABI, layout, and isolation coverage.
+- Editor layering changes: run editor and mesh-edit dependency fitness tests.
+- Physics changes: preserve the Jolt firewall and run physics isolation.
+- Runtime performance changes: record scenario, baseline, result, and measurement method.
+- Interaction changes: repeat the actual pointer, keyboard, focus, cancellation, and undo path.
+- Bug fixes: repeat the original reproduction.
+- Documentation-only changes: run `git diff --check` and verify referenced paths, names, links, and commands. The application suite is not required unless executable examples, scripts, generated files, or developer tooling changed.
+
+If a required command cannot be run, report the change as unverified or incomplete. State exactly what was not run and why.
 
 ## Comments and style
 
-- Comments explain why, not what. The code says what it does. If a comment restates the line below it, delete the comment.
-- Write for a reader with no session context. A comment must make sense to someone opening the file cold, with no knowledge of the conversation, plan, or request that produced the code. If a comment only makes sense to someone who watched the change happen, delete it.
-- What comments are for: a summary on a struct or type stating what it holds and its invariants, and a hint on a variable whose meaning or units are not obvious from its name and type. Beyond that, only genuine why-constraints (ordering requirements, non-obvious ownership, a workaround with its reason).
-- No references to other engines, games, or products as behavior descriptions. Not "more like Source 2 Hammer," not "quake-like movement." Describe the mechanism itself: the acceleration model, the snapping rule, the projection behavior.
-- No references to plan documents, task numbers, conversation phases, or requests. Not "satisfied planB.md part 1.3a." The comment states what the code does or why; provenance goes in the commit message if anywhere.
-- No apophatic comments: do not document what code does not do ("this function does not reach for backend render code"). Absences are enforced by layering rules and review, not narrated in comments. The exception is a real trap: a warning that a plausible-looking use is wrong ("not safe to call during archetype iteration") is a why-constraint, not narration.
-- No editorializing about the code being replaced. Not "removing the old hack," not internal slang for bad code. The diff shows what was removed; the comment describes only what is there now.
-- No em dashes anywhere (code, comments, docs, commit messages). Use periods, colons, or parentheses.
-- No filler, no marketing voice, no "elegant" or "robust" or "powerful" self-description in comments. State the constraint or the reason and stop.
+- Comments explain why, not what.
+- Write for a reader with no session context.
+- Type comments state purpose and invariants. Variable comments state non-obvious meaning or units. Other comments record genuine ordering, ownership, lifecycle, or workaround constraints.
+- Do not reference other engines, games, project plans, task numbers, conversation phases, or requests as behavior descriptions.
+- Do not document absences unless warning about a real trap.
+- Do not editorialize about replaced code.
+- Comments and documentation should sound like they were written by a maintainer who understands the code, not an agent narrating a patch. Use normal punctuation and natural sentence rhythm. Be direct, specific, and proportionate to the thing being explained.
+- Avoid canned framing, repetitive restatement, excessive headings, rhetorical flourish, mirrored contrast constructions, marketing adjectives, self-congratulation, and change-log narration embedded in source comments.
 
 ## When to push back
 
-Disagree before complying, not after. Stop and raise the conflict (do not silently write the code) when a request would:
+Disagree before complying, not after. Stop and name the conflict when a request would:
 
-- put a genre word, project name, or intent into an identifier or type (directive 1),
-- add a special-case branch or parallel code path where data would do (directive 3),
-- introduce a seam with no real boundary or present variation axis behind it (directive 4),
-- grow a central behavioral `switch`, mode enum, or branch pile instead of a named mechanism,
-- add types to a junk-drawer file instead of splitting by mechanism,
-- delete planned infrastructure that is anchored to a declared engine capability,
-- add a lock, a raw thread, or a third concurrency lane,
-- mutate archetype membership mid-iteration outside a CommandBuffer,
-- link editor or cook code into the runtime,
-- or break determinism between the serial and parallel paths.
+- put genre, project, or gameplay intent into an engine identifier,
+- add a special-case branch or parallel pipeline where data should select behavior,
+- introduce a seam with no real boundary or variation axis,
+- grow a central behavioral switch, mode enum, or branch pile,
+- add types to a junk-drawer file,
+- delete planned infrastructure anchored to a declared capability,
+- add a lock, raw thread, `std::async`, or a third concurrency lane,
+- mutate archetype membership during active iteration outside `CommandBuffer`,
+- link editor or cook code into the shipping runtime,
+- let a graphics backend traverse live ECS state,
+- change a public ABI or persisted format without explicit treatment,
+- or break required serial and parallel equivalence.
 
-State the conflict, name the invariant, propose the shape-neutral alternative. If the override stands after that, proceed. The point is that any contamination is a decision on the record, not an accident.
+State the conflict, name the invariant, and propose the shape-neutral alternative. If the user explicitly overrides after the conflict is named, proceed and record the tradeoff honestly.
+
+## Definition of done
+
+A change is complete only when all applicable statements are true:
+
+- The invariant has one identifiable owner.
+- The implementation uses an existing mechanism or introduces the smallest earned mechanism.
+- Consumers do not duplicate resolution, conversion, lifecycle, or policy logic.
+- No game, genre, project, or feature intent leaked into engine vocabulary.
+- ECS structural, lifecycle, storage, and identity rules remain valid.
+- Serial and parallel behavior remain equivalent where required.
+- Async work publishes only through the declared owner-thread boundary.
+- Editor, cook, runtime, render, and graphics dependencies still point correctly.
+- Public ABI and persisted formats are unchanged or explicitly handled.
+- Hot paths have not gained unbounded work, repeated parsing, or avoidable allocation.
+- Focused regressions protect the owning invariant.
+- Focused tests, required build, complete suite, and `git diff --check` pass when applicable.
+- The original feature or bug path has been exercised.
+- Remaining diagnostics and unrun verification are reported honestly.
+
+Do not describe a partial implementation as finished.
+
+## Required handoff
+
+Every implementation handoff reports:
+
+1. The invariant and owning mechanism.
+2. The material files or subsystems changed.
+3. Compatibility, ABI, threading, and performance consequences.
+4. Focused verification performed.
+5. Full verification performed.
+6. Anything not run, unresolved, or intentionally deferred.
+
+Do not list every edited line. Report the architectural shape and the evidence that it works.
