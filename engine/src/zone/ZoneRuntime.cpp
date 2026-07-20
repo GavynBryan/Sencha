@@ -1,7 +1,7 @@
 #include <zone/ZoneRuntime.h>
 
-#include <cassert>
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <span>
 
@@ -24,9 +24,10 @@ const Registry& ZoneRuntime::Global() const
 
 Registry& ZoneRuntime::CreateZone(ZoneId zone)
 {
+    assert(!ResidencyProcessing_
+           && "CreateZone during RegistryResidency: queue lifecycle work for a later drain point");
     assert(zone.IsValid() && "ZoneRuntime::CreateZone: zone id must be valid");
     assert(!FindLoadedZone(zone) && "ZoneRuntime::CreateZone: duplicate zone id");
-
     assert(!FrameViewLive_
            && "CreateZone with a live frame view: zone lifecycle is drain-point-only");
     InvalidateFrameScratch();
@@ -39,7 +40,8 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
     loaded->ZoneRegistry = std::move(registry);
     loaded->Participation = {};
 
-    assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+    assert(loaded->Zone == loaded->ZoneRegistry->Zone
+           && "LoadedZone and Registry ZoneIds must match");
 
     Registry* registryPtr = loaded->ZoneRegistry.get();
     Zones.push_back(std::move(loaded));
@@ -55,14 +57,21 @@ RegistryId ZoneRuntime::ReserveRegistryId()
 Registry& ZoneRuntime::AttachZone(std::unique_ptr<Registry> registry,
                                   ZoneParticipation participation)
 {
+    assert(!ResidencyProcessing_
+           && "AttachZone during RegistryResidency: queue lifecycle work for a later drain point");
     assert(!FrameViewLive_
            && "AttachZone with a live frame view: zone lifecycle is drain-point-only");
     assert(registry && "ZoneRuntime::AttachZone: registry must not be null");
-    assert(registry->Kind == RegistryKind::Zone && "ZoneRuntime::AttachZone: registry kind must be Zone");
-    assert(registry->Zone.IsValid() && "ZoneRuntime::AttachZone: registry must carry a valid ZoneId");
-    assert(registry->Id.IsValid() && "ZoneRuntime::AttachZone: registry id must be reserved via ReserveRegistryId");
-    assert(!FindLoadedZone(registry->Zone) && "ZoneRuntime::AttachZone: duplicate zone id");
-    assert(!FindRegistry(registry->Id) && "ZoneRuntime::AttachZone: duplicate registry id");
+    assert(registry->Kind == RegistryKind::Zone
+           && "ZoneRuntime::AttachZone: registry kind must be Zone");
+    assert(registry->Zone.IsValid()
+           && "ZoneRuntime::AttachZone: registry must carry a valid ZoneId");
+    assert(registry->Id.IsValid()
+           && "ZoneRuntime::AttachZone: registry id must be reserved via ReserveRegistryId");
+    assert(!FindLoadedZone(registry->Zone)
+           && "ZoneRuntime::AttachZone: duplicate zone id");
+    assert(!FindRegistry(registry->Id)
+           && "ZoneRuntime::AttachZone: duplicate registry id");
 
     InvalidateFrameScratch();
 
@@ -79,6 +88,9 @@ Registry& ZoneRuntime::AttachZone(std::unique_ptr<Registry> registry,
 
 bool ZoneRuntime::DestroyZone(ZoneId zone)
 {
+    assert(!ResidencyProcessing_
+           && "DestroyZone during RegistryResidency: queue lifecycle work for a later drain point");
+
     auto it = std::find_if(Zones.begin(), Zones.end(),
         [zone](const std::unique_ptr<LoadedZone>& loaded) {
             return loaded->Zone == zone && !loaded->Detaching;
@@ -125,9 +137,8 @@ void ZoneRuntime::FinalizeResidencyProcessing()
     assert(ResidencyProcessing_
            && "FinalizeResidencyProcessing called without BeginResidencyProcessing");
 
-    // Only destroy registries whose Detaching transition was in the stable batch
-    // just processed. A detach requested reentrantly during residency is queued
-    // in PendingChanges_ and stays alive until next frame's final visit.
+    // Every detaching registry in this stable batch received its final visit
+    // while alive. It is now safe to destroy the registry and its resources.
     std::erase_if(Zones, [this](const std::unique_ptr<LoadedZone>& loaded) {
         for (const RegistryResidencyChange& change : ProcessingChanges_)
         {
@@ -253,7 +264,8 @@ Registry* ZoneRuntime::FindRegistry(RegistryId id)
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone
+               && "LoadedZone and Registry ZoneIds must match");
         if (!loaded->Detaching && loaded->ZoneRegistry->Id == id)
             return loaded->ZoneRegistry.get();
     }
@@ -271,7 +283,8 @@ const Registry* ZoneRuntime::FindRegistry(RegistryId id) const
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone
+               && "LoadedZone and Registry ZoneIds must match");
         if (!loaded->Detaching && loaded->ZoneRegistry->Id == id)
             return loaded->ZoneRegistry.get();
     }
@@ -288,6 +301,9 @@ ZoneParticipation ZoneRuntime::GetParticipation(ZoneId zone) const
 
 void ZoneRuntime::SetParticipation(ZoneId zone, ZoneParticipation participation)
 {
+    assert(!ResidencyProcessing_
+           && "SetParticipation during RegistryResidency: queue lifecycle work for a later drain point");
+
     LoadedZone* loaded = FindLoadedZone(zone);
     assert(loaded && "ZoneRuntime::SetParticipation: zone must be loaded");
 
@@ -308,6 +324,8 @@ std::size_t ZoneRuntime::ZoneCount() const
 
 FrameRegistryView ZoneRuntime::BuildFrameView()
 {
+    assert(!ResidencyProcessing_
+           && "BuildFrameView before FinalizeResidencyProcessing");
     FrameViewLive_ = true;
     InvalidateFrameScratch();
 
@@ -322,7 +340,8 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
 
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone
+               && "LoadedZone and Registry ZoneIds must match");
         if (loaded->Detaching)
             continue;
 
@@ -356,7 +375,8 @@ ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone)
 {
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone
+               && "LoadedZone and Registry ZoneIds must match");
         if (!loaded->Detaching && loaded->Zone == zone)
             return loaded.get();
     }
@@ -368,7 +388,8 @@ const ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone) const
 {
     for (const auto& loaded : Zones)
     {
-        assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        assert(loaded->Zone == loaded->ZoneRegistry->Zone
+               && "LoadedZone and Registry ZoneIds must match");
         if (!loaded->Detaching && loaded->Zone == zone)
             return loaded.get();
     }
