@@ -91,10 +91,9 @@ bool ZoneRuntime::DestroyZone(ZoneId zone)
            && "DestroyZone with a live frame view: zone lifecycle is drain-point-only");
     InvalidateFrameScratch();
 
-    // Two-step destruction: mark and record now, erase in
-    // FinalizeResidencyProcessing after the residency phase has visited the
-    // registry with everything still alive. The zone is already invisible to
-    // queries and frame spans.
+    // Two-step destruction: mark and record now. The registry is erased only
+    // after its Detaching change reaches a residency phase, so every backend
+    // owner gets a final visit while the registry and sibling resources live.
     LoadedZone& detaching = **it;
     detaching.Detaching = true;
     RecordDetaching(detaching.ZoneRegistry.get(), detaching.Participation);
@@ -106,15 +105,43 @@ std::span<const RegistryResidencyChange> ZoneRuntime::ResidencyChanges() const
     return { PendingChanges_.data(), PendingChanges_.size() };
 }
 
+std::span<const RegistryResidencyChange> ZoneRuntime::BeginResidencyProcessing()
+{
+    assert(!FrameViewLive_
+           && "BeginResidencyProcessing with a live frame view: residency is drain-point-only");
+    assert(!ResidencyProcessing_
+           && "BeginResidencyProcessing called before the previous batch was finalized");
+
+    ProcessingChanges_.clear();
+    ProcessingChanges_.swap(PendingChanges_);
+    ResidencyProcessing_ = true;
+    return { ProcessingChanges_.data(), ProcessingChanges_.size() };
+}
+
 void ZoneRuntime::FinalizeResidencyProcessing()
 {
     assert(!FrameViewLive_
            && "FinalizeResidencyProcessing with a live frame view: residency is drain-point-only");
+    assert(ResidencyProcessing_
+           && "FinalizeResidencyProcessing called without BeginResidencyProcessing");
 
-    std::erase_if(Zones, [](const std::unique_ptr<LoadedZone>& loaded) {
-        return loaded->Detaching;
+    // Only destroy registries whose Detaching transition was in the stable batch
+    // just processed. A detach requested reentrantly during residency is queued
+    // in PendingChanges_ and stays alive until next frame's final visit.
+    std::erase_if(Zones, [this](const std::unique_ptr<LoadedZone>& loaded) {
+        for (const RegistryResidencyChange& change : ProcessingChanges_)
+        {
+            if (change.Kind == RegistryResidencyChangeKind::Detaching
+                && change.Id == loaded->ZoneRegistry->Id)
+            {
+                return true;
+            }
+        }
+        return false;
     });
-    PendingChanges_.clear();
+
+    ProcessingChanges_.clear();
+    ResidencyProcessing_ = false;
 }
 
 RegistryResidencyChange* ZoneRuntime::FindPendingChange(RegistryId id)
@@ -188,14 +215,11 @@ void ZoneRuntime::RecordDetaching(Registry* registry, ZoneParticipation previous
 
     if (existing->Kind == RegistryResidencyChangeKind::Attached)
     {
-        // Attached and destroyed inside one window: no frame ever observed the
-        // registry and nothing can hold backend state for it, so no change is
-        // emitted at all. The Detaching mark alone frees it at finalize.
-        const RegistryId id = existing->Id;
-        std::erase_if(PendingChanges_, [id](const RegistryResidencyChange& change) {
-            return change.Id == id;
-        });
-        return;
+        // Finalizers run after AttachZone and before residency processing, so an
+        // attach-then-destroy registry may already own entities and backend
+        // resources. Preserve a Detaching visit rather than assuming there is
+        // nothing to clean up.
+        existing->Previous = existing->Current;
     }
 
     existing->Kind = RegistryResidencyChangeKind::Detaching;
