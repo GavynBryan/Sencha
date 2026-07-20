@@ -1,6 +1,6 @@
 // Registry residency transitions: lifecycle mutations coalesce in a pending
-// batch; BeginResidencyProcessing swaps that batch into stable storage so
-// handlers can enqueue next-frame changes without invalidating their span.
+// batch; BeginResidencyProcessing swaps that batch into stable storage, and
+// lifecycle mutation is forbidden until the batch is finalized.
 
 #include <gtest/gtest.h>
 
@@ -127,35 +127,32 @@ TEST(RegistryResidency, NoOpSetParticipationRecordsNothing)
     EXPECT_TRUE(runtime.ResidencyChanges().empty());
 }
 
-TEST(RegistryResidency, ProcessingBatchIsStableUnderReentrantMutation)
+TEST(RegistryResidency, BeginMovesPendingIntoStableProcessingStorage)
 {
     ZoneRuntime runtime;
-    Registry& first = runtime.CreateZone(ZoneId{ 1 });
-    Registry& second = runtime.CreateZone(ZoneId{ 2 });
-    ProcessResidency(runtime);
+    Registry& zone = runtime.CreateZone(ZoneId{ 1 });
 
-    runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
     const auto processing = runtime.BeginResidencyProcessing();
     ASSERT_EQ(processing.size(), 1u);
-    EXPECT_EQ(processing[0].Id, first.Id);
+    EXPECT_EQ(processing[0].Id, zone.Id);
+    EXPECT_TRUE(runtime.ResidencyChanges().empty());
 
-    runtime.SetParticipation(ZoneId{ 2 }, Full());
-
-    // The active span is unchanged; the new mutation lives in next frame's
-    // pending batch instead of reallocating or being cleared by finalization.
-    ASSERT_EQ(processing.size(), 1u);
-    EXPECT_EQ(processing[0].Id, first.Id);
-    ASSERT_EQ(runtime.ResidencyChanges().size(), 1u);
-    EXPECT_EQ(runtime.ResidencyChanges()[0].Id, second.Id);
-
-    runtime.FinalizeResidencyProcessing();
-    ASSERT_EQ(runtime.ResidencyChanges().size(), 1u);
-
-    const auto next = runtime.BeginResidencyProcessing();
-    ASSERT_EQ(next.size(), 1u);
-    EXPECT_EQ(next[0].Id, second.Id);
     runtime.FinalizeResidencyProcessing();
 }
+
+#ifndef NDEBUG
+TEST(RegistryResidency, LifecycleMutationDuringResidencyAsserts)
+{
+    EXPECT_DEATH(
+        {
+            ZoneRuntime runtime;
+            runtime.CreateZone(ZoneId{ 1 });
+            (void)runtime.BeginResidencyProcessing();
+            runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
+        },
+        "during RegistryResidency");
+}
+#endif
 
 TEST(RegistryResidency, DestroyZoneMarksDetachingAndDefersDestruction)
 {
