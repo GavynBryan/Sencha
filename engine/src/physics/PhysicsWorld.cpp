@@ -96,14 +96,21 @@ void PhysicsWorld::DriveConstraints(float dt)
         const Quatf desiredRot =
             (slot.Target.WorldFrame.Rotation * slot.FollowerLocalFrame.Rotation.Inverse())
                 .Normalized();
-        const Vec3d desiredPos =
-            slot.Target.WorldFrame.Position - desiredRot.RotateVector(slot.FollowerLocalFrame.Position);
+        const Vec3d followerOffset =
+            desiredRot.RotateVector(slot.FollowerLocalFrame.Position);
+        const Vec3d desiredPos = slot.Target.WorldFrame.Position - followerOffset;
+
+        // The target twist is defined at the driven frame origin. Convert it to
+        // the follower body center before applying it: v_frame = v_body + w x r.
+        const Vec3d bodyCenterFeedForward =
+            slot.Target.LinearVelocity
+            - slot.Target.AngularVelocity.Cross(followerOffset);
 
         if (slot.Target.Teleported)
         {
             bodies.SetPositionAndRotation(body, ToJphR(desiredPos), ToJph(desiredRot),
                                           JPH::EActivation::Activate);
-            bodies.SetLinearVelocity(body, ToJph(slot.Target.LinearVelocity));
+            bodies.SetLinearVelocity(body, ToJph(bodyCenterFeedForward));
             bodies.SetAngularVelocity(body, ToJph(slot.Target.AngularVelocity));
             slot.Telemetry = PhysicsConstraintTelemetry{};
             continue;
@@ -125,7 +132,7 @@ void PhysicsWorld::DriveConstraints(float dt)
         if (closingAngular > Impl->MaxDriveClosingAngularSpeed)
             closingAngular = Impl->MaxDriveClosingAngularSpeed;
 
-        const Vec3d velocity = closing + slot.Target.LinearVelocity;
+        const Vec3d velocity = closing + bodyCenterFeedForward;
         const Vec3d angularVelocity = axis * closingAngular + slot.Target.AngularVelocity;
 
         bodies.SetLinearVelocity(body, ToJph(velocity));
