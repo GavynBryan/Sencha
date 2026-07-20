@@ -4,6 +4,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <zone/AsyncZoneLoader.h>
+#include <zone/WorldPartitionManifestJson.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneRuntime.h>
 
@@ -133,6 +134,22 @@ TEST(ParticipationLease, StaleTokenCannotReleaseReusedSlot)
     EXPECT_TRUE(fixture.Partition.IsParticipationLeaseValid(second));
     EXPECT_FALSE(fixture.Partition.ReleaseParticipationLease(first));
     EXPECT_TRUE(fixture.Partition.IsParticipationLeaseValid(second));
+}
+
+TEST(ParticipationLease, ForcedTeardownInvalidatesAllZoneHolders)
+{
+    LeaseFixture fixture;
+
+    const ParticipationLeaseId physics = fixture.Partition.AcquireParticipationLease(
+        kLeased, ZoneParticipation{ .Physics = true });
+    const ParticipationLeaseId logic = fixture.Partition.AcquireParticipationLease(
+        kLeased, ZoneParticipation{ .Logic = true });
+
+    EXPECT_EQ(fixture.Partition.InvalidateParticipationLeases(kLeased), 2u);
+    EXPECT_FALSE(fixture.Partition.IsParticipationLeaseValid(physics));
+    EXPECT_FALSE(fixture.Partition.IsParticipationLeaseValid(logic));
+    EXPECT_FALSE(fixture.Partition.ReleaseParticipationLease(physics));
+    EXPECT_EQ(fixture.Partition.ParticipationLeaseCount(), 0u);
 }
 
 TEST(ParticipationLease, ManifestReloadInvalidatesOutstandingTokens)
