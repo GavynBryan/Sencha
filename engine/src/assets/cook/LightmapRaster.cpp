@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -25,11 +26,51 @@ namespace
 
     struct LuxelSample
     {
-        Vec3d Position;
-        Vec3d Normal;
+        // The triangle that claimed this luxel; subsampling maps grid-space
+        // points through it to world positions and normals.
+        const LightmapRasterTriangle* Tri = nullptr;
         // 0 = uncovered, 1 = edge-clamped sample, 2 = interior sample.
         std::uint8_t Coverage = 0;
     };
+
+    // Barycentric weights of p against the triangle (a, b, c), clamped onto
+    // the triangle when p lies outside it (closest boundary point). Returns
+    // the squared grid-space distance from p to the sampled point (0 inside).
+    float ClampedBarycentric(const Vec2d& a, const Vec2d& b, const Vec2d& c,
+                             float den, const Vec2d& p,
+                             float& wa, float& wb, float& wc)
+    {
+        const Vec2d v0{ b.X - a.X, b.Y - a.Y };
+        const Vec2d v1{ c.X - a.X, c.Y - a.Y };
+        const Vec2d v2{ p.X - a.X, p.Y - a.Y };
+        wb = Cross2(v2, v1) / den;
+        wc = Cross2(v0, v2) / den;
+        wa = 1.0f - wb - wc;
+        if (wa >= -1e-4f && wb >= -1e-4f && wc >= -1e-4f)
+            return 0.0f;
+
+        float bestDistSq = std::numeric_limits<float>::max();
+        const Vec2d corners[3] = { a, b, c };
+        for (int e = 0; e < 3; ++e)
+        {
+            const Vec2d& s0 = corners[e];
+            const Vec2d& s1 = corners[(e + 1) % 3];
+            const float t = SegmentClosestT(s0, s1, p);
+            const Vec2d q{ s0.X + (s1.X - s0.X) * t, s0.Y + (s1.Y - s0.Y) * t };
+            const float dx = p.X - q.X;
+            const float dy = p.Y - q.Y;
+            const float distSq = dx * dx + dy * dy;
+            if (distSq < bestDistSq)
+            {
+                bestDistSq = distSq;
+                const Vec2d vq{ q.X - a.X, q.Y - a.Y };
+                wb = Cross2(vq, v1) / den;
+                wc = Cross2(v0, vq) / den;
+                wa = 1.0f - wb - wc;
+            }
+        }
+        return bestDistSq;
+    }
 } // namespace
 
 void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
@@ -81,52 +122,19 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                     continue; // interior already claimed this luxel
 
                 const Vec2d p{ static_cast<float>(x), static_cast<float>(y) };
-                const Vec2d v2{ p.X - a.X, p.Y - a.Y };
-                float wb = Cross2(v2, v1) / den;
-                float wc = Cross2(v0, v2) / den;
-                float wa = 1.0f - wb - wc;
-
-                std::uint8_t coverage = 0;
-                if (wa >= -1e-4f && wb >= -1e-4f && wc >= -1e-4f)
-                {
-                    coverage = 2;
-                }
-                else
-                {
-                    // Off-triangle: clamp to the closest boundary point and
-                    // accept it while within the edge reach.
-                    float bestDistSq = kEdgeReach * kEdgeReach + 1.0f;
-                    const Vec2d corners[3] = { a, b, c };
-                    for (int e = 0; e < 3; ++e)
-                    {
-                        const Vec2d& s0 = corners[e];
-                        const Vec2d& s1 = corners[(e + 1) % 3];
-                        const float t = SegmentClosestT(s0, s1, p);
-                        const Vec2d q{ s0.X + (s1.X - s0.X) * t, s0.Y + (s1.Y - s0.Y) * t };
-                        const float dx = p.X - q.X;
-                        const float dy = p.Y - q.Y;
-                        const float distSq = dx * dx + dy * dy;
-                        if (distSq < bestDistSq)
-                        {
-                            bestDistSq = distSq;
-                            const Vec2d vq{ q.X - a.X, q.Y - a.Y };
-                            wb = Cross2(vq, v1) / den;
-                            wc = Cross2(v0, vq) / den;
-                            wa = 1.0f - wb - wc;
-                        }
-                    }
-                    if (bestDistSq <= kEdgeReach * kEdgeReach)
-                        coverage = 1;
-                }
-
+                float wa = 0.0f, wb = 0.0f, wc = 0.0f;
+                const float distSq = ClampedBarycentric(a, b, c, den, p, wa, wb, wc);
+                // Interior points sample directly; off-triangle points within
+                // the edge reach clamp onto the boundary (slivers stay lit).
+                const std::uint8_t coverage =
+                    distSq <= 0.0f ? 2
+                    : distSq <= kEdgeReach * kEdgeReach ? 1
+                                                        : 0;
                 if (coverage == 0 || coverage <= sample.Coverage)
                     continue; // first writer wins within a class
 
                 sample.Coverage = coverage;
-                sample.Position = tri.Position[0] * wa + tri.Position[1] * wb
-                    + tri.Position[2] * wc;
-                sample.Normal = (tri.Normal[0] * wa + tri.Normal[1] * wb
-                    + tri.Normal[2] * wc);
+                sample.Tri = &tri;
             }
     }
 
@@ -140,34 +148,88 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
     };
     std::vector<Texel> texels(static_cast<std::size_t>(rect.Width) * rect.Height);
 
+    // 2x2 supersampling per luxel: a luxel is one texel of an all-or-nothing
+    // visibility function, and a lit patch smaller than a texel (light spilled
+    // diagonally through a doorway) otherwise bakes as an isolated full-bright
+    // pinhole in the middle of shadow, while shadow lines land at different
+    // phases on the wall and floor charts that meet at a junction. Averaging
+    // four in-luxel samples turns partial coverage into partial brightness.
+    constexpr Vec2d kSubsamples[4] = {
+        { -0.25f, -0.25f }, { 0.25f, -0.25f }, { -0.25f, 0.25f }, { 0.25f, 0.25f }
+    };
+
     for (std::uint32_t y = 0; y < gridH; ++y)
         for (std::uint32_t x = 0; x < gridW; ++x)
         {
             const LuxelSample& sample = samples[static_cast<std::size_t>(y) * gridW + x];
-            if (sample.Coverage == 0)
+            if (sample.Coverage == 0 || sample.Tri == nullptr)
                 continue;
-            const Vec3d normal = sample.Normal.SqrMagnitude() > 1e-12f
-                ? sample.Normal.Normalized()
-                : Vec3d{ 0.0f, 1.0f, 0.0f };
-            // Buried samples (a chart running underneath an overlapping brush)
-            // stay uncovered: dilation continues the neighboring lighting
-            // across them instead of baking black that bilinear filtering
-            // would bleed out past the overlapping geometry's base. Buried
-            // means ENCLOSED: a backface first along the normal AND along its
-            // reverse. A single distant backface is not enough, because carved
-            // interiors and single-skin walls legitimately show their backs
-            // across open air; the reverse probe skips twice the lift so the
-            // sample's own surface and flush partners are not the "behind"
-            // hit.
-            const Vec3d probeOrigin = sample.Position + normal * params.NormalOffset;
-            if (occluders.FirstHitIsBackface(probeOrigin, normal, 1e6)
-                && occluders.FirstHitIsBackface(probeOrigin, normal * -1.0f, 1e6,
-                                                2.0 * params.NormalOffset))
+            const LightmapRasterTriangle& tri = *sample.Tri;
+            const Vec2d v0{ tri.Uv[1].X - tri.Uv[0].X, tri.Uv[1].Y - tri.Uv[0].Y };
+            const Vec2d v1{ tri.Uv[2].X - tri.Uv[0].X, tri.Uv[2].Y - tri.Uv[0].Y };
+            const float den = Cross2(v0, v1);
+            if (std::abs(den) <= 1e-9f)
                 continue;
+
+            Vec3d radiance{ 0.0f, 0.0f, 0.0f };
+            int contributors = 0;
+            for (const Vec2d& offset : kSubsamples)
+            {
+                const Vec2d p{ static_cast<float>(x) + offset.X,
+                               static_cast<float>(y) + offset.Y };
+                float wa = 0.0f, wb = 0.0f, wc = 0.0f;
+                (void)ClampedBarycentric(tri.Uv[0], tri.Uv[1], tri.Uv[2], den, p,
+                                         wa, wb, wc);
+                Vec3d position = tri.Position[0] * wa + tri.Position[1] * wb
+                    + tri.Position[2] * wc;
+                // Inset each sample a hair toward the triangle's interior:
+                // brush geometry and the luxel grid are both typically integer
+                // aligned, so samples land EXACTLY on perpendicular brush
+                // planes, where a shadow segment meets its blocker at t = 0
+                // (inside the occlusion test's start-point exclusion) and the
+                // lit-or-shadowed answer becomes arbitrary.
+                {
+                    constexpr float kSampleInset = 0.0025f;
+                    const Vec3d centroid =
+                        (tri.Position[0] + tri.Position[1] + tri.Position[2]) / 3.0f;
+                    const Vec3d toCenter = centroid - position;
+                    const float distance = toCenter.Magnitude();
+                    if (distance > kSampleInset)
+                        position += toCenter * (kSampleInset / distance);
+                }
+                const Vec3d rawNormal = tri.Normal[0] * wa + tri.Normal[1] * wb
+                    + tri.Normal[2] * wc;
+                const Vec3d normal = rawNormal.SqrMagnitude() > 1e-12f
+                    ? rawNormal.Normalized()
+                    : Vec3d{ 0.0f, 1.0f, 0.0f };
+
+                // Buried subsamples (a chart running underneath an overlapping
+                // brush) contribute nothing: dilation continues the
+                // neighboring lighting across fully buried luxels instead of
+                // baking black that bilinear filtering would bleed out past
+                // the overlapping geometry's base. Buried means ENCLOSED: a
+                // backface first along the normal AND along its reverse. A
+                // single distant backface is not enough, because carved
+                // interiors and single-skin walls legitimately show their
+                // backs across open air; the reverse probe skips twice the
+                // lift so the sample's own surface and flush partners are not
+                // the "behind" hit.
+                const Vec3d probeOrigin = position + normal * params.NormalOffset;
+                if (occluders.FirstHitIsBackface(probeOrigin, normal, 1e6)
+                    && occluders.FirstHitIsBackface(probeOrigin, normal * -1.0f, 1e6,
+                                                    2.0 * params.NormalOffset))
+                    continue;
+
+                radiance += EvaluateBakedDirectRadiance(
+                    position, normal, lights, occluders, params);
+                ++contributors;
+            }
+            if (contributors == 0)
+                continue; // fully buried: dilation fills from neighbors
+
             Texel& texel = texels[static_cast<std::size_t>(y + kLightmapGutter) * rect.Width
                 + x + kLightmapGutter];
-            texel.Radiance = EvaluateBakedDirectRadiance(
-                sample.Position, normal, lights, occluders, params);
+            texel.Radiance = radiance / static_cast<float>(contributors);
             texel.Covered = true;
         }
 

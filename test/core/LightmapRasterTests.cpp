@@ -157,6 +157,53 @@ TEST(LightmapRaster, DistantSingleSidedBackfaceDoesNotBury)
                       rect.Y + kLightmapGutter + 2), 0u);
 }
 
+TEST(LightmapRaster, ShadowBoundaryLuxelBakesPartialBrightness)
+{
+    // A wall crosses a luxel between its subsample columns: half the luxel's
+    // area sees the overhead light, half sits in shadow. The luxel must bake
+    // an intermediate value (2x2 supersampling), not the all-or-nothing of a
+    // single center sample, so an under-texel light spill reads as a dim
+    // patch instead of a full-bright pinhole and shadow lines grade the same
+    // way on every chart that crosses them.
+    std::vector<BakeTriangle> occluders;
+    // Vertical wall at x = 2.875 (between luxel 3's subsamples at 2.75 and
+    // 3.25), tall enough to shadow everything past it from the light below.
+    occluders.push_back({ Vec3d{ 2.875f, 0.0f, -10 }, Vec3d{ 2.875f, 20.0f, -10 },
+                          Vec3d{ 2.875f, 20.0f, 10 } });
+    occluders.push_back({ Vec3d{ 2.875f, 0.0f, -10 }, Vec3d{ 2.875f, 20.0f, 10 },
+                          Vec3d{ 2.875f, 0.0f, 10 } });
+    BakeBvh bvh;
+    bvh.Build(std::move(occluders));
+
+    std::array<BakeDirectLight, 1> lights{};
+    lights[0].Position = Vec3d{ 1.0f, 8.0f, 2.0f };
+    lights[0].Intensity = 30.0f;
+    lights[0].Range = 30.0f;
+
+    const LightmapChartRect rect{ 1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter };
+    const std::uint32_t width = 16;
+    std::vector<std::uint32_t> atlas(width * 16, 0u);
+    BakeChartLuxels(MakeQuadChart(), rect, lights, bvh,
+                    DirectLightBakeParams{}, width, atlas);
+
+    const auto luminance = [&](std::uint32_t gx, std::uint32_t gy)
+    {
+        const std::uint32_t p = PixelAt(atlas, width, rect.X + kLightmapGutter + gx,
+                                        rect.Y + kLightmapGutter + gy);
+        const float m = static_cast<float>((p >> 24) & 0xFF) / 255.0f * 16.0f;
+        const float r = static_cast<float>(p & 0xFF) / 255.0f;
+        return r * m;
+    };
+
+    const float lit = luminance(2, 2);       // fully in the light
+    const float boundary = luminance(3, 2);  // wall splits this luxel
+    const float shadow = luminance(4, 2);    // fully behind the wall
+    EXPECT_GT(lit, 0.05f);
+    EXPECT_LT(shadow, lit * 0.1f);
+    EXPECT_GT(boundary, lit * 0.2f);
+    EXPECT_LT(boundary, lit * 0.8f);
+}
+
 TEST(LightmapRaster, IsDeterministic)
 {
     const LightmapChartRect rect{ 1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter };

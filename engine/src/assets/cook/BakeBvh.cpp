@@ -41,28 +41,45 @@ namespace
         return true;
     }
 
-    // Moller-Trumbore with double accumulators. Returns the ray parameter t of
-    // the hit (origin + t*dir), or a negative value on miss / degenerate tri.
+    struct DVec
+    {
+        double X, Y, Z;
+    };
+
+    DVec ToDouble(const Vec3d& v) { return { v.X, v.Y, v.Z }; }
+    DVec Sub(const DVec& a, const DVec& b) { return { a.X - b.X, a.Y - b.Y, a.Z - b.Z }; }
+    DVec Cross(const DVec& a, const DVec& b)
+    {
+        return { a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X };
+    }
+    double Dot(const DVec& a, const DVec& b) { return a.X * b.X + a.Y * b.Y + a.Z * b.Z; }
+
+    // Moller-Trumbore, entirely in double: float cross products near a shared
+    // triangle edge can put the barycentrics just outside [0, 1] for BOTH
+    // triangles, opening one-texel light pinholes through solid walls where a
+    // shadow segment grazes the seam. Returns the ray parameter t of the hit
+    // (origin + t*dir), or a negative value on miss / degenerate tri.
     double RayTriangleT(const Vec3d& origin, const Vec3d& dir,
                         const BakeTriangle& tri)
     {
         constexpr double kParallelEps = 1e-12;
-        const Vec3d edge1 = tri.V1 - tri.V0;
-        const Vec3d edge2 = tri.V2 - tri.V0;
-        const Vec3d pvec = dir.Cross(edge2);
-        const double det = edge1.Dot(pvec);
+        const DVec v0 = ToDouble(tri.V0);
+        const DVec edge1 = Sub(ToDouble(tri.V1), v0);
+        const DVec edge2 = Sub(ToDouble(tri.V2), v0);
+        const DVec pvec = Cross(ToDouble(dir), edge2);
+        const double det = Dot(edge1, pvec);
         if (det > -kParallelEps && det < kParallelEps)
             return -1.0;
         const double invDet = 1.0 / det;
-        const Vec3d tvec = origin - tri.V0;
-        const double u = tvec.Dot(pvec) * invDet;
+        const DVec tvec = Sub(ToDouble(origin), v0);
+        const double u = Dot(tvec, pvec) * invDet;
         if (u < 0.0 || u > 1.0)
             return -1.0;
-        const Vec3d qvec = tvec.Cross(edge1);
-        const double v = dir.Dot(qvec) * invDet;
+        const DVec qvec = Cross(tvec, edge1);
+        const double v = Dot(ToDouble(dir), qvec) * invDet;
         if (v < 0.0 || u + v > 1.0)
             return -1.0;
-        return edge2.Dot(qvec) * invDet;
+        return Dot(edge2, qvec) * invDet;
     }
 }
 
