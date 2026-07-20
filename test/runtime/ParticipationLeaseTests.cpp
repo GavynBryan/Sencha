@@ -4,7 +4,6 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <zone/AsyncZoneLoader.h>
-#include <zone/WorldPartitionManifestJson.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneRuntime.h>
 
