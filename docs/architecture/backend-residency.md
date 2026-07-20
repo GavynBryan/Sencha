@@ -12,8 +12,8 @@ Every binding must state and test these edges:
 - **Detaching:** perform an unconditional final visit while the registry and sibling resources remain alive. Normal teardown empties the binding before registry destruction; destructors remain defensive fallback.
 - **Return:** restore deterministically from authoritative component state.
 
-Lifecycle mutations are recorded at their mutation sites and processed once per rendered frame before frame-view construction. The processing batch is stable: mutations raised during residency processing accumulate for the next frame.
+Lifecycle mutations are recorded at their mutation sites and processed once per rendered frame before frame-view construction. The processing batch is stable and read-only. Registry attachment, participation changes, and detachment are forbidden while residency handlers run; resulting lifecycle work must be queued for a later drain point. This preserves the invariant that backend state is corrected before a new frame view can observe the corresponding registry state.
 
-Cross-registry relationships that must survive routine streaming use game-held, generational participation leases. Independent leases compose by union and release independently. Forced teardown may override a lease; the relationship reports its own terminal result.
+Cross-registry relationships that must survive routine streaming use game-held, generational participation leases owned by `WorldPartitionRuntime`. Independent leases compose by union and release independently. Forced teardown may override leases, but the teardown owner must first call `InvalidateParticipationLeases(zone)` so every token becomes stale before the registry is destroyed and the relationship reports its terminal result.
 
 Concrete bindings remain separate resources, named for their backend object family. Shared lifecycle shape does not justify a common base class or aggregate manager. After multiple implementations exist, only proven duplicated mechanics may be extracted.
