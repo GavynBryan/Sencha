@@ -303,6 +303,8 @@ void ZoneRuntime::SetParticipation(ZoneId zone, ZoneParticipation participation)
 {
     assert(!ResidencyProcessing_
            && "SetParticipation during RegistryResidency: queue lifecycle work for a later drain point");
+    assert(!FrameViewLive_
+           && "SetParticipation with a live frame view: zone lifecycle is drain-point-only");
 
     LoadedZone* loaded = FindLoadedZone(zone);
     assert(loaded && "ZoneRuntime::SetParticipation: zone must be loaded");
@@ -326,6 +328,8 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
 {
     assert(!ResidencyProcessing_
            && "BuildFrameView before FinalizeResidencyProcessing");
+    assert(!FrameViewLive_
+           && "BuildFrameView called before EndFrameView");
     FrameViewLive_ = true;
     InvalidateFrameScratch();
 
@@ -407,6 +411,7 @@ RegistryId ZoneRuntime::AllocateRegistryId()
 
 void ZoneRuntime::EndFrameView()
 {
+    assert(FrameViewLive_ && "EndFrameView called with no live frame view");
     FrameViewLive_ = false;
 }
 
