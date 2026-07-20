@@ -80,6 +80,7 @@ public:
     [[nodiscard]] float GetGravityScale(PhysicsBodyId id) const;
     void SetGravityScale(PhysicsBodyId id, float scale);
 
+    [[nodiscard]] bool IsBodyActive(PhysicsBodyId id) const;
     void WakeBody(PhysicsBodyId id);
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
