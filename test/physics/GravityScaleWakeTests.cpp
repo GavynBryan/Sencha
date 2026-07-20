@@ -9,6 +9,8 @@
 #include <physics/components/RigidBody.h>
 #include <world/transform/TransformComponents.h>
 
+#include <utility>
+
 TEST(RigidBodyBinding, GravityEditWakesSleepingBody)
 {
     constexpr float dt = 1.0f / 60.0f;
