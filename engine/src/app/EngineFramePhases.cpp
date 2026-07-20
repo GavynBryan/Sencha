@@ -128,6 +128,15 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         engine.Tasks().DrainCompletions(budget);
     });
 
+    driver.Register(FramePhase::RegistryResidency, [&engine, &config](PhaseContext&) {
+        RegistryResidencyContext residency{
+            .Config = config,
+            .Changes = engine.Zones().ResidencyChanges(),
+        };
+        engine.Schedule().RunRegistryResidency(residency);
+        engine.Zones().FinalizeResidencyProcessing();
+    });
+
     driver.Register(FramePhase::ScheduleTicks, [&engine](PhaseContext& ctx) {
         ctx.Registries = engine.Schedule().BuildFrameView(engine.Zones());
         ctx.Runtime->ScheduleFixedTicks();

@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <world/registry/FrameRegistryView.h>
 #include <world/registry/Registry.h>
 #include <vector>
+#include <zone/RegistryResidency.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
 
@@ -46,6 +48,15 @@ public:
 
     std::size_t ZoneCount() const;
 
+    // The residency-change batch accumulated since the last finalize, one
+    // coalesced entry per mutated registry (see RegistryResidency.h). The
+    // RegistryResidency frame phase processes it, then calls
+    // FinalizeResidencyProcessing, which destroys registries marked Detaching
+    // and clears the batch. Instance pointers in the batch are valid until
+    // that finalize call.
+    std::span<const RegistryResidencyChange> ResidencyChanges() const;
+    void FinalizeResidencyProcessing();
+
     // Intended for debug/tools/tests. Runtime systems should consume
     // FrameRegistryView instead of walking ZoneRuntime directly.
     template<typename Fn>
@@ -53,6 +64,8 @@ public:
     {
         for (const auto& loaded : Zones)
         {
+            if (loaded->Detaching)
+                continue;
             fn(loaded->Zone, *loaded->ZoneRegistry, loaded->Participation);
         }
     }
@@ -70,6 +83,13 @@ private:
         ZoneId Zone;
         std::unique_ptr<Registry> ZoneRegistry;
         ZoneParticipation Participation;
+
+        // DestroyZone marks instead of erasing: the registry stays owned and
+        // readable (reachable only through the residency batch) until
+        // FinalizeResidencyProcessing, so retained backend state gets its
+        // final visit while resources are alive. Detaching zones are invisible
+        // to every query and frame span.
+        bool Detaching = false;
     };
 
     LoadedZone* FindLoadedZone(ZoneId zone);
@@ -77,6 +97,13 @@ private:
 
     RegistryId AllocateRegistryId();
     void InvalidateFrameScratch();
+
+    RegistryResidencyChange* FindPendingChange(RegistryId id);
+    void RecordAttached(Registry* registry, ZoneParticipation participation);
+    void RecordParticipationChange(Registry* registry,
+                                   ZoneParticipation previous,
+                                   ZoneParticipation current);
+    void RecordDetaching(Registry* registry, ZoneParticipation previous);
 
     // True between BuildFrameView and EndFrameView: the window in which zone
     // lifecycle mutation would dangle span entries mid-frame.
@@ -91,6 +118,9 @@ private:
     std::vector<Registry*> PhysicsScratch;
     std::vector<Registry*> LogicScratch;
     std::vector<Registry*> AudioScratch;
+    std::vector<Registry*> ParticipatingScratch;
+
+    std::vector<RegistryResidencyChange> PendingChanges_;
 
     std::uint16_t NextRegistryIndex = 2;
 };

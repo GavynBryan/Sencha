@@ -9,6 +9,7 @@ FrameRegistryView EngineSchedule::BuildFrameView(ZoneRuntime& zones)
 
 void EngineSchedule::Init()
 {
+    TopoSort(RegistryResidencyEntries);
     TopoSort(FixedLogicEntries);
     TopoSort(PhysicsEntries);
     TopoSort(PostFixedEntries);
@@ -36,6 +37,7 @@ void EngineSchedule::Shutdown()
 
     Records.clear();
     TypeIndex.clear();
+    RegistryResidencyEntries.clear();
     FixedLogicEntries.clear();
     PhysicsEntries.clear();
     PostFixedEntries.clear();
@@ -44,6 +46,11 @@ void EngineSchedule::Shutdown()
     AudioEntries.clear();
     EndFrameEntries.clear();
     Initialized = false;
+}
+
+void EngineSchedule::RunRegistryResidency(RegistryResidencyContext& ctx)
+{
+    Run(RegistryResidencyEntries, ctx);
 }
 
 void EngineSchedule::RunFixedLogic(FixedLogicContext& ctx)

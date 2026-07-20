@@ -6,6 +6,7 @@
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/FrameClock.h>
 #include <world/registry/FrameRegistryView.h>
+#include <zone/RegistryResidency.h>
 
 #include <SDL3/SDL.h>
 
@@ -81,6 +82,22 @@ struct PlatformEventContext
     EngineConfig& Config;
     SDL_Event& Event;
     bool Handled = false;
+};
+
+//=============================================================================
+// RegistryResidencyContext
+//
+// Provides the frame's registry residency-change batch, processed once per
+// rendered frame after async commits and before the frame view is built —
+// including frames that run zero fixed ticks. Systems owning retained backend
+// state react here: evict on a registry leaving their domain, restore on it
+// entering, tear down on Detaching while the registry is still fully alive.
+// No frame view exists yet at this point; change records carry live pointers.
+//=============================================================================
+struct RegistryResidencyContext
+{
+    EngineConfig& Config;
+    std::span<const RegistryResidencyChange> Changes;
 };
 
 //=============================================================================

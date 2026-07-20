@@ -18,6 +18,10 @@ template<typename T>
 concept HasScheduleShutdown = requires(T& t) { t.Shutdown(); };
 
 template<typename T>
+concept HasRegistryResidency =
+    requires(T& t, RegistryResidencyContext& ctx) { t.RegistryResidency(ctx); };
+
+template<typename T>
 concept HasFixedLogic = requires(T& t, FixedLogicContext& ctx) { t.FixedLogic(ctx); };
 
 template<typename T>
@@ -40,8 +44,8 @@ concept HasEndFrame = requires(T& t, EndFrameContext& ctx) { t.EndFrame(ctx); };
 
 template<typename T>
 concept IsScheduledSystem =
-    HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T> || HasFrameUpdate<T>
-    || HasExtractRender<T> || HasAudio<T> || HasEndFrame<T>;
+    HasRegistryResidency<T> || HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T>
+    || HasFrameUpdate<T> || HasExtractRender<T> || HasAudio<T> || HasEndFrame<T>;
 
 //=============================================================================
 // EngineSchedule
@@ -77,6 +81,7 @@ public:
 
     FrameRegistryView BuildFrameView(ZoneRuntime& zones);
 
+    void RunRegistryResidency(RegistryResidencyContext& ctx);
     void RunFixedLogic(FixedLogicContext& ctx);
     void RunPhysics(PhysicsContext& ctx);
     void RunPostFixed(PostFixedContext& ctx);
@@ -130,6 +135,7 @@ private:
     std::vector<SystemRecord> Records;
     std::unordered_map<std::type_index, void*> TypeIndex;
 
+    std::vector<DispatchEntry<RegistryResidencyContext>> RegistryResidencyEntries;
     std::vector<DispatchEntry<FixedLogicContext>> FixedLogicEntries;
     std::vector<DispatchEntry<PhysicsContext>> PhysicsEntries;
     std::vector<DispatchEntry<PostFixedContext>> PostFixedEntries;
@@ -164,6 +170,9 @@ T& EngineSchedule::Register(Args&&... args)
         rec.ShutdownFn = [](void* p) { static_cast<T*>(p)->Shutdown(); };
     Records.push_back(rec);
 
+    if constexpr (HasRegistryResidency<T>)
+        RegistryResidencyEntries.push_back({ std::type_index(typeid(T)), raw,
+            [](void* p, RegistryResidencyContext& ctx) { static_cast<T*>(p)->RegistryResidency(ctx); }, {} });
     if constexpr (HasFixedLogic<T>)
         FixedLogicEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, FixedLogicContext& ctx) { static_cast<T*>(p)->FixedLogic(ctx); }, {} });
@@ -194,6 +203,7 @@ void EngineSchedule::After()
 {
     const std::type_index tid(typeid(T));
     const std::type_index dep(typeid(TDep));
+    AddDependency(RegistryResidencyEntries, tid, dep);
     AddDependency(FixedLogicEntries, tid, dep);
     AddDependency(PhysicsEntries, tid, dep);
     AddDependency(PostFixedEntries, tid, dep);
