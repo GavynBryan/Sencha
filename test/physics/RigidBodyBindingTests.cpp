@@ -187,10 +187,10 @@ TEST(RigidBodyBinding, BodyLinkTracksColliderLifetime)
     EXPECT_FALSE(ecs.HasComponent<PhysicsBodyLink>(box));
 }
 
-// Destroy robustness: DestroyEntity fires no hook and the entity's link vanishes
-// with it, so only the physics-side Owned record can report the dead body. The
-// reconcile sweep (gated on the structural-version bump that destroy causes)
-// removes it. This is the case the dense Owned vector exists for.
+// Destroy robustness: PhysicsBodyLink carries no lifecycle hook, so it vanishes
+// silently with the entity and only the physics-side Owned record can report the
+// dead body. The reconcile sweep (gated on the structural-version bump that
+// destroy causes) removes it. This is the case the dense Owned vector exists for.
 TEST(RigidBodyBinding, DestroyingEntityRemovesBody)
 {
     PhysicsWorld physics;
@@ -273,4 +273,53 @@ TEST(RigidBodyBinding, StepSystemStoresBindingInRegistryResources)
     EXPECT_TRUE(registry.Resources.Has<RigidBodyBinding>());
     EXPECT_FALSE(registry.Components.HasResource<RigidBodyBinding>());
     EXPECT_EQ(registry.Resources.Get<RigidBodyBinding>().BodyCount(), 1u);
+}
+
+// ─── Full body state through the ECS bridge ──────────────────────────────────
+
+TEST(RigidBodyBinding, AngularStateRoundTripsThroughComponents)
+{
+    PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    RigidBodyBinding binding(physics);
+
+    EntityId top = SpawnAt(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+    ecs.AddComponent<Collider>(top, Collider{ CollisionShape::MakeSphere(0.5f) });
+    RigidBody body;
+    body.Motion = BodyMotion::Dynamic;
+    body.GravityScale = 0.0f;               // spin in place
+    body.AngularVelocity = Vec3d(0.0f, 4.0f, 0.0f);
+    ecs.AddComponent<RigidBody>(top, body);
+
+    Tick(binding, ecs, physics, 10);
+
+    const RigidBody* pulled = ecs.TryGet<RigidBody>(top);
+    ASSERT_NE(pulled, nullptr);
+    EXPECT_NEAR(pulled->AngularVelocity.Y, 4.0f, 0.25f); // damping trims a little
+    const LocalTransform* lt = ecs.TryGet<LocalTransform>(top);
+    ASSERT_NE(lt, nullptr);
+    EXPECT_NEAR(lt->Value.Position.Y, 5.0f, 1e-3f); // gravity scale held it up
+}
+
+TEST(RigidBodyBinding, RuntimeGravityScaleEditActsNextTick)
+{
+    PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    RigidBodyBinding binding(physics);
+
+    EntityId ball = SpawnAt(ecs, Vec3d(0.0f, 50.0f, 0.0f));
+    ecs.AddComponent<Collider>(ball, Collider{ CollisionShape::MakeSphere(0.5f) });
+    ecs.AddComponent<RigidBody>(ball, RigidBody{ BodyMotion::Dynamic, 1.0f, Vec3d::Zero(), 1.0f });
+
+    Tick(binding, ecs, physics, 30);
+    const float fallingSpeed = ecs.TryGet<RigidBody>(ball)->LinearVelocity.Y;
+    EXPECT_LT(fallingSpeed, -1.0f);
+
+    // The suspended-actor case: gameplay zeroes gravity on the live component.
+    ecs.TryGet<RigidBody>(ball)->GravityScale = 0.0f;
+    Tick(binding, ecs, physics, 1);
+
+    EXPECT_GT(ecs.TryGet<RigidBody>(ball)->LinearVelocity.Y, fallingSpeed * 1.001f);
 }

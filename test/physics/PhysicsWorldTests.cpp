@@ -126,3 +126,117 @@ TEST(PhysicsWorld, CarriesUserDataForQueryMapping)
 
     EXPECT_EQ(world.GetUserData(id), 0xABCDEF01u);
 }
+
+// ─── Full body state (angular velocity, gravity scale, damping, wake) ────────
+
+TEST(PhysicsWorld, AngularVelocityRoundTrips)
+{
+    PhysicsWorld world;
+    BodyDesc desc;
+    desc.Shape = CollisionShape::MakeSphere(0.5f);
+    desc.Position = Vec3d(0.0f, 5.0f, 0.0f);
+    desc.Motion = BodyMotion::Dynamic;
+    desc.Layer = CollisionLayer::Moving;
+    desc.GravityScale = 0.0f; // free space: nothing but the spin
+    const PhysicsBodyId body = world.AddBody(desc);
+    ASSERT_TRUE(body.IsValid());
+
+    world.SetAngularVelocity(body, Vec3d(0.0f, 3.0f, 0.0f));
+    const Quatf before = world.GetBodyTransform(body).Rotation;
+    world.Step(kFixedDt);
+
+    // One step of default damping trims a fraction of a percent.
+    EXPECT_NEAR(world.GetAngularVelocity(body).Y, 3.0f, 0.05f);
+    const Quatf after = world.GetBodyTransform(body).Rotation;
+    EXPECT_FALSE(before.X == after.X && before.Y == after.Y
+                 && before.Z == after.Z && before.W == after.W);
+}
+
+TEST(PhysicsWorld, GravityScaleZeroSuspendsBody)
+{
+    PhysicsWorld world;
+
+    BodyDesc desc;
+    desc.Shape = CollisionShape::MakeSphere(0.5f);
+    desc.Position = Vec3d(0.0f, 5.0f, 0.0f);
+    desc.Motion = BodyMotion::Dynamic;
+    desc.Layer = CollisionLayer::Moving;
+    desc.GravityScale = 0.0f;
+    const PhysicsBodyId suspended = world.AddBody(desc);
+
+    desc.Position = Vec3d(3.0f, 5.0f, 0.0f);
+    desc.GravityScale = 1.0f;
+    const PhysicsBodyId falling = world.AddBody(desc);
+
+    for (int i = 0; i < 60; ++i)
+        world.Step(kFixedDt);
+
+    EXPECT_NEAR(world.GetBodyTransform(suspended).Position.Y, 5.0f, 1e-3f);
+    EXPECT_LT(world.GetBodyTransform(falling).Position.Y, 4.0f);
+}
+
+TEST(PhysicsWorld, GravityScaleChangesActOnTheNextStep)
+{
+    PhysicsWorld world;
+    const PhysicsBodyId sphere = AddFallingSphere(world, 50.0f);
+
+    for (int i = 0; i < 30; ++i)
+        world.Step(kFixedDt);
+    const float fallingSpeed = world.GetLinearVelocity(sphere).Y;
+    EXPECT_LT(fallingSpeed, -1.0f); // it was genuinely falling
+
+    world.SetGravityScale(sphere, 0.0f);
+    world.Step(kFixedDt);
+
+    // No gravity this step: vertical speed only loses its damping fraction.
+    EXPECT_GT(world.GetLinearVelocity(sphere).Y, fallingSpeed * 1.001f);
+}
+
+TEST(PhysicsWorld, HighAngularDampingBrakesSpinFaster)
+{
+    PhysicsWorld world;
+
+    BodyDesc desc;
+    desc.Shape = CollisionShape::MakeSphere(0.5f);
+    desc.Position = Vec3d(0.0f, 5.0f, 0.0f);
+    desc.Motion = BodyMotion::Dynamic;
+    desc.Layer = CollisionLayer::Moving;
+    desc.GravityScale = 0.0f;
+    desc.AngularDamping = 0.05f;
+    const PhysicsBodyId lazy = world.AddBody(desc);
+
+    desc.Position = Vec3d(3.0f, 5.0f, 0.0f);
+    desc.AngularDamping = 5.0f;
+    const PhysicsBodyId braked = world.AddBody(desc);
+
+    world.SetAngularVelocity(lazy, Vec3d(0.0f, 10.0f, 0.0f));
+    world.SetAngularVelocity(braked, Vec3d(0.0f, 10.0f, 0.0f));
+    for (int i = 0; i < 60; ++i)
+        world.Step(kFixedDt);
+
+    EXPECT_GT(world.GetAngularVelocity(lazy).Y, 2.0f * world.GetAngularVelocity(braked).Y);
+}
+
+TEST(PhysicsWorld, WakeBodyMakesGravityChangesActOnSleptBodies)
+{
+    PhysicsWorld world;
+    AddFloor(world);
+    const PhysicsBodyId sphere = AddFallingSphere(world, 2.0f);
+
+    for (int i = 0; i < 300; ++i) // settle and fall asleep
+        world.Step(kFixedDt);
+    const float restY = world.GetBodyTransform(sphere).Position.Y;
+
+    // A gravity-scale write alone does not wake a sleeping body: even inverted
+    // gravity leaves it resting. (This stillness is also the proof it slept.)
+    world.SetGravityScale(sphere, -1.0f);
+    for (int i = 0; i < 30; ++i)
+        world.Step(kFixedDt);
+    EXPECT_NEAR(world.GetBodyTransform(sphere).Position.Y, restY, 1e-3f);
+
+    // An explicit wake makes the pending gravity change act.
+    world.WakeBody(sphere);
+    for (int i = 0; i < 30; ++i)
+        world.Step(kFixedDt);
+    EXPECT_GT(world.GetBodyTransform(sphere).Position.Y, restY + 0.1f);
+}
