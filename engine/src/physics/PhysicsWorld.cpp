@@ -68,8 +68,9 @@ void PhysicsWorld::Step(float dt, int collisionSteps)
 }
 
 // Locked velocity-drive prototype. The target pose is the frame at the start of
-// this step; its supplied velocity predicts motion through the step. The error
-// correction and feed-forward terms therefore each appear exactly once.
+// this step; its supplied velocity predicts motion through the step. The drive
+// closes error at the follower attachment frame, then derives the body-center
+// velocity that realizes that frame twist.
 void PhysicsWorld::DriveConstraints(float dt)
 {
     if (dt <= 0.0f)
@@ -96,21 +97,18 @@ void PhysicsWorld::DriveConstraints(float dt)
         const Quatf desiredRot =
             (slot.Target.WorldFrame.Rotation * slot.FollowerLocalFrame.Rotation.Inverse())
                 .Normalized();
-        const Vec3d followerOffset =
+        const Vec3d desiredOffset =
             desiredRot.RotateVector(slot.FollowerLocalFrame.Position);
-        const Vec3d desiredPos = slot.Target.WorldFrame.Position - followerOffset;
-
-        // The target twist is defined at the driven frame origin. Convert it to
-        // the follower body center before applying it: v_frame = v_body + w x r.
-        const Vec3d bodyCenterFeedForward =
-            slot.Target.LinearVelocity
-            - slot.Target.AngularVelocity.Cross(followerOffset);
+        const Vec3d desiredPos = slot.Target.WorldFrame.Position - desiredOffset;
 
         if (slot.Target.Teleported)
         {
+            const Vec3d bodyCenterVelocity =
+                slot.Target.LinearVelocity
+                - slot.Target.AngularVelocity.Cross(desiredOffset);
             bodies.SetPositionAndRotation(body, ToJphR(desiredPos), ToJph(desiredRot),
                                           JPH::EActivation::Activate);
-            bodies.SetLinearVelocity(body, ToJph(bodyCenterFeedForward));
+            bodies.SetLinearVelocity(body, ToJph(bodyCenterVelocity));
             bodies.SetAngularVelocity(body, ToJph(slot.Target.AngularVelocity));
             slot.Telemetry = PhysicsConstraintTelemetry{};
             continue;
@@ -118,12 +116,16 @@ void PhysicsWorld::DriveConstraints(float dt)
 
         const BodyTransform pose{ FromJphR(bodies.GetPosition(body)),
                                   FromJph(bodies.GetRotation(body)) };
+        const Vec3d actualOffset =
+            pose.Rotation.RotateVector(slot.FollowerLocalFrame.Position);
+        const Vec3d actualFramePosition = pose.Position + actualOffset;
+        const Vec3d framePositionError =
+            slot.Target.WorldFrame.Position - actualFramePosition;
 
-        const Vec3d positionError = desiredPos - pose.Position;
         Vec3d axis;
         const float angularError = DeltaAxisAngle(pose.Rotation, desiredRot, axis);
 
-        Vec3d closing = positionError * (1.0f / dt);
+        Vec3d closing = framePositionError * (1.0f / dt);
         const float closingSpeed = closing.Magnitude();
         if (closingSpeed > Impl->MaxDriveClosingSpeed)
             closing = closing * (Impl->MaxDriveClosingSpeed / closingSpeed);
@@ -132,15 +134,19 @@ void PhysicsWorld::DriveConstraints(float dt)
         if (closingAngular > Impl->MaxDriveClosingAngularSpeed)
             closingAngular = Impl->MaxDriveClosingAngularSpeed;
 
-        const Vec3d velocity = closing + bodyCenterFeedForward;
-        const Vec3d angularVelocity = axis * closingAngular + slot.Target.AngularVelocity;
+        const Vec3d angularVelocity =
+            axis * closingAngular + slot.Target.AngularVelocity;
+        const Vec3d desiredFrameVelocity =
+            closing + slot.Target.LinearVelocity;
+        const Vec3d bodyCenterVelocity =
+            desiredFrameVelocity - angularVelocity.Cross(actualOffset);
 
-        bodies.SetLinearVelocity(body, ToJph(velocity));
+        bodies.SetLinearVelocity(body, ToJph(bodyCenterVelocity));
         bodies.SetAngularVelocity(body, ToJph(angularVelocity));
 
-        slot.Telemetry.PositionError = positionError.Magnitude();
+        slot.Telemetry.PositionError = framePositionError.Magnitude();
         slot.Telemetry.AngularError = angularError;
-        slot.Telemetry.CommandedLinearSpeed = velocity.Magnitude();
+        slot.Telemetry.CommandedLinearSpeed = bodyCenterVelocity.Magnitude();
         slot.Telemetry.CommandedAngularSpeed = angularVelocity.Magnitude();
     }
 }
