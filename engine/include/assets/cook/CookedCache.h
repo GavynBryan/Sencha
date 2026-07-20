@@ -77,9 +77,12 @@ struct CookedSourceEntry
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
 // .sanim artifacts (Decisions J, M, N). Version 5: .smesh moved to v5
 // (lightmap UVs replaced the baked-direct vertex channel; per-zone atlas
-// artifacts). A per-importer cook version is the finer-grained eventual
-// replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 5;
+// artifacts). Version 6: lightmap atlases moved from RGBM RGBA8 to RGB9E5
+// (texels decode before filtering; the shader no longer applies a
+// multiplier, so older atlases would render wrong). A per-importer cook
+// version is the finer-grained eventual replacement if bumps become
+// frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 6;
 
 class CookedCacheIndex
 {

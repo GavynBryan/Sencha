@@ -1,0 +1,4102 @@
+{
+  "version": 1,
+  "entities": [
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 1
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              2.3636364936828613
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              0.7272727489471436
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -0.9090909957885742
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -2.545454502105713
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -4.181818008422852
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -5.818181991577148
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -7.454545021057129
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -9.090909004211426
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -10.727272987365723
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -12.363636016845703
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -5.5,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -3.9285714626312256,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -2.357142925262451,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -0.7857141494750977,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.7857141494750977,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.05000000074505806,
+            0.10000000149011612,
+            1
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              2.357142925262451,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.9900000095367432,
+            0.6499999761581421,
+            0.2199999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.9285717010498047,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.550000011920929,
+            0.15000000596046448,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              5.5,
+              1.399999976158142,
+              -14
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.10000000149011612,
+            0.8500000238418579,
+            0.949999988079071
+          ],
+          "intensity": 10,
+          "range": 3,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    }
+  ],
+  "hierarchy": [],
+  "brush_meshes": {
+    "1": {
+      "vertices": [
+        [
+          -16,
+          -0.25,
+          -16
+        ],
+        [
+          16,
+          -0.25,
+          -16
+        ],
+        [
+          16,
+          0.25,
+          -16
+        ],
+        [
+          -16,
+          0.25,
+          -16
+        ],
+        [
+          -16,
+          -0.25,
+          16
+        ],
+        [
+          16,
+          -0.25,
+          16
+        ],
+        [
+          16,
+          0.25,
+          16
+        ],
+        [
+          -16,
+          0.25,
+          16
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    }
+  },
+  "default_material": "asset://materials/dev/gray.smat"
+}

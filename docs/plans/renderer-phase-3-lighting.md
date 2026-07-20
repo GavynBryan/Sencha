@@ -84,7 +84,7 @@ weak-hardware targets: the vertex lattice scales with lit area, streams at
 **Generation two (per-zone lightmap atlases, current):** Section 7.1's
 surface-lightmap rejection is REVERSED for direct light only (Section 7C).
 Charts grow across authored soft edges (cut at hard edges, cone-split on
-curves), pack into one deterministic RGBM atlas per zone, and bake through
+curves), pack into one deterministic RGB9E5 atlas per zone, and bake through
 the same per-sample evaluator; geometry stays at raw brush density. Evidence:
 `docs/plans/evidence/lightmap-atlas/` (96 lights = 0.019 ms MainColor over 12
 raw triangles). Consequences threaded into this document:
@@ -1922,7 +1922,7 @@ tooling:
 
 All 96 pools render; the cap wall is gone; the per-frame cost is noise even at
 23x the triangles. Reproduction is committed with the evidence
-(`BakedLightingStressGen`, env-gated). Unit coverage: RGBM round trip,
+(`BakedLightingStressGen`, env-gated). Unit coverage: RGB9E5 round trip,
 analytic single-light match against the shader model, occlusion, range,
 determinism, tessellation grading and conformity, end-to-end cook. The rim
 stair-stepping visible in captures is renderer-wide rasterization aliasing (no
@@ -1961,17 +1961,38 @@ UE1-era look, whole-world baked static lighting, hitch-free zone streaming,
   (45 degrees, `editor.cook.lightmap_cone`). Chart identity and chart UVs are
   part of the cook staleness hash (a coplanar soft-edge toggle changes no
   vertex byte but must restale).
-- **One RGBM RGBA8 atlas per zone** (`.stex`, LinearData, no mips), shelf
+- **One RGB9E5 atlas per zone** (`.stex`, LinearData, no mips), shelf
   packed with 2-texel gutters, first and last row/column reserved black (the
-  wrap-safe sentinel unbaked items sample). Overflow density-clamps by
+  wrap-safe sentinel unbaked items sample). Shared-exponent texels decode
+  BEFORE hardware filtering, so bilinear results are linear in radiance;
+  RGBM RGBA8 was replaced because filtering its encoded rgb and multiplier
+  separately overshoots up to 1/(4k(k-1)) wherever a smooth gradient crosses
+  a multiplier quantization step, rendering as meandering bright contour
+  lines mid-surface. Overflow density-clamps by
   sqrt(2) steps; never multiple pages. Luxel default 0.25 m
   (`editor.cook.lightmap_luxel`), cap 2048 (`editor.cook.lightmap_max_size`).
-- **Luxels** sample at grid points (N+1 texels per N luxels), rasterized with
-  an interior-beats-edge rule and a half-diagonal edge reach for slivers,
-  baked through the shared per-sample evaluator, dilated 2 ping-pong passes.
-  **Buried-sample invalidation** (BakeBvh::FirstHitIsBackface along the
-  sample normal) keeps luxels underneath overlapping brushes from baking
-  black bleed: mandatory, since kyusu brushes overlap by design.
+- **Luxels** sample at grid points (N+1 texels per N luxels). Each 2x2
+  supersample resolves independently against a deterministic list of the
+  chart's own triangles: a containing triangle wins, otherwise the closest
+  surface within the half-diagonal edge reach is edge-clamped and nudged
+  inward by 0.0025 world unit. Sampling is one-sided by design: a boundary
+  luxel bakes the limit of its own chart's lighting. Coplanar charts share a
+  world-aligned luxel lattice (chart UV minima floor to luxel multiples), so
+  where lighting is continuous across a chart or mesh seam the one-sided
+  limits agree, and where an illumination step lies exactly on the seam (a
+  wall base, a shadow plane through a light) each side keeps its own value
+  rather than averaging both sides into the shared boundary texels, which
+  rendered as a bright fringe hugging the seam on its shadow side. Interior
+  samples are not displaced, and equal-distance open-corner clamps resolve by
+  their geometric surface point, so lighting is independent of internal
+  diagonals and mesh partitioning. Samples bake through the shared per-sample
+  evaluator and dilate through 2 ping-pong passes.
+  **Buried-overlap invalidation** remains a local raster rule: backfaces must
+  be the first hit in both shading-normal directions before a sample is
+  discarded. Open, one-sided room shells are supported and need neither
+  closure nor outward winding; authored normals control light reception while
+  shadow occlusion remains two-sided. This keeps luxels underneath genuinely
+  overlapping brushes from baking black bleed without rejecting open rooms.
 - **Vertices** carry unorm16 atlas UVs (`.smesh` v5, offset 48, location 8):
   absolute for cooked cells, [0,1] sheets for instanceable meshes, remapped
   per placement by a Vec4 scale/bias in the instance stream (location 9).

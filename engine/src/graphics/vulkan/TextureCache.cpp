@@ -29,6 +29,7 @@ namespace
             case TexturePixelFormat::BC5:        return VK_FORMAT_BC5_UNORM_BLOCK;
             case TexturePixelFormat::BC7:        return VK_FORMAT_BC7_UNORM_BLOCK;
             case TexturePixelFormat::BC7_SRGB:   return VK_FORMAT_BC7_SRGB_BLOCK;
+            case TexturePixelFormat::RGB9E5:     return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
             default:                             return VK_FORMAT_UNDEFINED;
         }
     }

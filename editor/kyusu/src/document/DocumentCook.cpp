@@ -134,6 +134,7 @@ namespace
         std::string BlobRelPath;
         Vec3d Origin;
     };
+
 } // namespace
 
 JsonValue BuildCellEntity(const Vec3d& origin,
@@ -675,7 +676,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
         // Gather each chart's triangles (world positions + smoothed normals +
         // chart grid UVs) from the pre-weld cell faces, then rasterize and
-        // bake chart by chart.
+        // bake chart by chart. Each chart's span holds only its own surface:
+        // a boundary luxel bakes the one-sided limit of its own chart, so an
+        // illumination step that lies exactly on a chart seam (a wall base, a
+        // shadow plane through a light) stays crisp instead of averaging both
+        // sides into the shared boundary texels.
         std::vector<std::vector<LightmapRasterTriangle>> chartTriangles(
             atlasLayout.Rects.size());
         const float luxel = atlasLayout.EffectiveLuxelSize;
@@ -735,7 +740,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         // Emit the atlas as a cooked texture artifact plus the zone component
         // that binds it at runtime.
         TextureData atlas;
-        atlas.Format = TexturePixelFormat::RGBA8;
+        atlas.Format = TexturePixelFormat::RGB9E5;
         atlas.Usage = TextureUsage::LinearData;
         atlas.Filter = TextureFilter::Linear;
         atlas.Width = atlasLayout.Width;

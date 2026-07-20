@@ -15,12 +15,19 @@ class BakeBvh;
 //
 // A chart's triangles are rasterized in chart grid space (grid-point
 // convention: samples sit AT integer grid coordinates, matching the packer).
-// Each covered grid point records a barycentric-interpolated world position
-// and smoothed shading normal, then bakes through the shared per-sample
-// evaluator (EvaluateBakedDirectRadiance). Uncovered texels near covered ones
-// are dilated so bilinear filtering never reads unlit gutter. Deterministic:
-// triangles rasterize in input order, interior coverage beats edge coverage,
-// and within a class the first writer wins.
+// Expanded triangle bounds build a deterministic candidate list per grid
+// point. Each of its four supersamples independently selects a containing
+// triangle, or the nearest edge-clamped candidate within half a luxel
+// diagonal, then interpolates its world position and authored shading normal.
+// Sampling is one-sided: the span holds only the chart's own surface, so a
+// boundary luxel bakes the limit of its own chart's lighting. Coplanar charts
+// share a world-aligned luxel lattice, so where the lighting is continuous
+// across a chart or mesh seam the one-sided limits agree, and where an
+// illumination step lies exactly on the seam each side keeps its own value
+// instead of averaging the two into the shared boundary texels. Uncovered
+// texels near covered ones are dilated so bilinear filtering never reads an
+// unlit gutter. Open, one-sided shells are valid receivers; authored normals
+// control light reception while bake occlusion remains two-sided.
 //=============================================================================
 
 struct LightmapRasterTriangle
@@ -32,7 +39,7 @@ struct LightmapRasterTriangle
     Vec3d Normal[3];   // world space, smoothed shading normals
 };
 
-// Rasterizes and bakes one chart into `atlasPixels` (row-major RGBA8/RGBM,
+// Rasterizes and bakes one chart into `atlasPixels` (row-major RGB9E5,
 // atlasWidth texels per row). Touches only the chart's padded rect.
 void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                      const LightmapChartRect& rect,

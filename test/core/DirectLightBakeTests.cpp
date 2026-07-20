@@ -14,14 +14,14 @@
 
 namespace
 {
-    // Mirror of the shader's RGBM decode (mesh_material.glsli).
+    // Mirror of the sampler's RGB9E5 texel decode (E5B9G9R9_UFLOAT_PACK32).
     Vec3d DecodeBakedDirect(std::uint32_t packed)
     {
-        const float r = ((packed >> 0) & 0xFFu) / 255.0f;
-        const float g = ((packed >> 8) & 0xFFu) / 255.0f;
-        const float b = ((packed >> 16) & 0xFFu) / 255.0f;
-        const float a = ((packed >> 24) & 0xFFu) / 255.0f;
-        return Vec3d(r, g, b) * (a * kBakedDirectRange);
+        const float scale = std::exp2(static_cast<float>(
+            static_cast<int>(packed >> 27) - 15 - 9));
+        return Vec3d(static_cast<float>(packed & 0x1FFu),
+                     static_cast<float>((packed >> 9) & 0x1FFu),
+                     static_cast<float>((packed >> 18) & 0x1FFu)) * scale;
     }
 
     // A quad (two triangles) centered at `center`, in the XZ plane (normal +Y),
@@ -38,18 +38,36 @@ namespace
     }
 }
 
-TEST(BakedDirectRgbm, ZeroRadiancePacksToNeutral)
+TEST(BakedDirectRgb9e5, ZeroRadiancePacksToNeutral)
 {
-    EXPECT_EQ(EncodeBakedDirectRgbm(Vec3d(0.0f, 0.0f, 0.0f)), 0u);
+    EXPECT_EQ(EncodeBakedDirectRgb9e5(Vec3d(0.0f, 0.0f, 0.0f)), 0u);
 }
 
-TEST(BakedDirectRgbm, RoundTripsWithinQuantization)
+TEST(BakedDirectRgb9e5, RoundTripsWithinQuantization)
 {
-    const Vec3d radiance(1.5f, 0.75f, 0.25f);
-    const Vec3d decoded = DecodeBakedDirect(EncodeBakedDirectRgbm(radiance));
-    EXPECT_NEAR(decoded.X, radiance.X, 0.05f);
-    EXPECT_NEAR(decoded.Y, radiance.Y, 0.05f);
-    EXPECT_NEAR(decoded.Z, radiance.Z, 0.05f);
+    // 9-bit mantissas under the shared exponent: every channel within one
+    // step of 2^(exp-24) of the exact value, across dim and bright texels.
+    for (const Vec3d& radiance : { Vec3d(1.5f, 0.75f, 0.25f),
+                                   Vec3d(0.0631f, 0.0592f, 0.0305f),
+                                   Vec3d(15.9f, 14.9f, 7.7f) })
+    {
+        const Vec3d decoded = DecodeBakedDirect(EncodeBakedDirectRgb9e5(radiance));
+        const float maxComponent =
+            std::max(radiance.X, std::max(radiance.Y, radiance.Z));
+        const float step = maxComponent / 256.0f;
+        EXPECT_NEAR(decoded.X, radiance.X, step);
+        EXPECT_NEAR(decoded.Y, radiance.Y, step);
+        EXPECT_NEAR(decoded.Z, radiance.Z, step);
+    }
+}
+
+TEST(BakedDirectRgb9e5, ClampsToRepresentableMax)
+{
+    const Vec3d decoded = DecodeBakedDirect(
+        EncodeBakedDirectRgb9e5(Vec3d(1.0e6f, 1.0e6f, 1.0e6f)));
+    EXPECT_NEAR(decoded.X, kBakedDirectMax, 1.0f);
+    EXPECT_NEAR(decoded.Y, kBakedDirectMax, 1.0f);
+    EXPECT_NEAR(decoded.Z, kBakedDirectMax, 1.0f);
 }
 
 TEST(DirectLightBake, UnoccludedSampleMatchesAnalyticModel)
@@ -97,7 +115,7 @@ TEST(DirectLightBake, OccludedSampleReceivesNothing)
     const Vec3d radiance = EvaluateBakedDirectRadiance(
         Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f), lights, bvh,
         DirectLightBakeParams{});
-    EXPECT_EQ(EncodeBakedDirectRgbm(radiance), 0u);
+    EXPECT_EQ(EncodeBakedDirectRgb9e5(radiance), 0u);
 }
 
 TEST(DirectLightBake, BeyondRangeReceivesNothing)
@@ -112,7 +130,7 @@ TEST(DirectLightBake, BeyondRangeReceivesNothing)
     const Vec3d radiance = EvaluateBakedDirectRadiance(
         Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f), lights, empty,
         DirectLightBakeParams{});
-    EXPECT_EQ(EncodeBakedDirectRgbm(radiance), 0u);
+    EXPECT_EQ(EncodeBakedDirectRgb9e5(radiance), 0u);
 }
 
 TEST(DirectLightBake, IsDeterministic)
@@ -135,7 +153,7 @@ TEST(DirectLightBake, IsDeterministic)
             position, Vec3d(0.0f, 1.0f, 0.0f), lights, bvh, DirectLightBakeParams{});
         const Vec3d b = EvaluateBakedDirectRadiance(
             position, Vec3d(0.0f, 1.0f, 0.0f), lights, bvh, DirectLightBakeParams{});
-        EXPECT_EQ(EncodeBakedDirectRgbm(a), EncodeBakedDirectRgbm(b));
+        EXPECT_EQ(EncodeBakedDirectRgb9e5(a), EncodeBakedDirectRgb9e5(b));
     }
 }
 
@@ -150,6 +168,31 @@ TEST(BakeBvh, SegmentOcclusionDetectsAndMissesBlocker)
     EXPECT_TRUE(bvh.SegmentOccluded(Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 2.0f, 0.0f)));
     // Beside the quad (x = 3 is outside the +/-1 span).
     EXPECT_FALSE(bvh.SegmentOccluded(Vec3d(3.0f, 0.0f, 0.0f), Vec3d(3.0f, 2.0f, 0.0f)));
+}
+
+TEST(BakeBvh, SharedQuadEdgeOccludesForEitherDiagonal)
+{
+    // The segment lands on the internal edge of each triangulation. Shadow
+    // occlusion is two-sided and belongs to the quad surface, not its chosen
+    // diagonal, including at non-binary authored coordinates.
+    const Vec3d a{ -3.0f, 1.999999761581421f, -2.0f };
+    const Vec3d b{ 5.0f, 1.999999761581421f, -2.0f };
+    const Vec3d c{ 5.0f, 1.999999761581421f, 6.0f };
+    const Vec3d d{ -3.0f, 1.999999761581421f, 6.0f };
+
+    BakeBvh ac;
+    ac.Build({ BakeTriangle{ a, b, c }, BakeTriangle{ a, c, d } });
+    BakeBvh bd;
+    bd.Build({ BakeTriangle{ b, c, d }, BakeTriangle{ b, d, a } });
+
+    for (const float along : { 0.125f, 0.375f, 0.625f, 0.875f })
+    {
+        const Vec3d hit = a + (c - a) * along;
+        const Vec3d origin = hit + Vec3d{ 0.173f, -3.0f, -0.271f };
+        const Vec3d target = hit + Vec3d{ -0.119f, 4.0f, 0.337f };
+        EXPECT_TRUE(ac.SegmentOccluded(origin, target));
+        EXPECT_TRUE(bd.SegmentOccluded(origin, target));
+    }
 }
 
 TEST(BakeBvh, FirstHitBackfaceDistinguishesBuriedFromShadowed)

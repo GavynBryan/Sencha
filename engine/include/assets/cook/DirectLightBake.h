@@ -9,9 +9,9 @@
 struct MeshGeometry;
 class BakeBvh;
 
-// RGBM multiplier for baked-direct lightmap texels. Must match
-// BAKED_DIRECT_RANGE in engine/shaders/mesh_frame.glsli (the shader decoder).
-inline constexpr float kBakedDirectRange = 16.0f;
+// Radiance ceiling for baked-direct lightmap texels, the RGB9E5 shared
+// exponent format's representable maximum: (511/512) * 2^17.
+inline constexpr float kBakedDirectMax = 65408.0f;
 
 enum class BakeLightKind : std::uint8_t
 {
@@ -56,6 +56,9 @@ Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
                                   const BakeBvh& occluders,
                                   const DirectLightBakeParams& params);
 
-// Pack a linear RGB radiance into the R8G8B8A8 RGBM a lightmap texel stores.
-// Zero radiance packs to zero (neutral). Exposed for tests.
-std::uint32_t EncodeBakedDirectRgbm(const Vec3d& radiance);
+// Pack a linear RGB radiance into the RGB9E5 shared-exponent texel a lightmap
+// stores (VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 bit layout: 9-bit mantissas in
+// r|g<<9|b<<18, 5-bit biased exponent in <<27). The sampler decodes texels
+// before filtering, so bilinear results are linear in radiance. Zero radiance
+// packs to zero. Exposed for tests.
+std::uint32_t EncodeBakedDirectRgb9e5(const Vec3d& radiance);

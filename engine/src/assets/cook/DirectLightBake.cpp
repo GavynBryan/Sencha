@@ -13,11 +13,6 @@ namespace
     {
         return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
     }
-
-    std::uint8_t ToUnorm8(float value)
-    {
-        return static_cast<std::uint8_t>(std::lround(Clamp01(value) * 255.0f));
-    }
 }
 
 Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
@@ -68,23 +63,42 @@ Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
     return accum;
 }
 
-std::uint32_t EncodeBakedDirectRgbm(const Vec3d& radiance)
+std::uint32_t EncodeBakedDirectRgb9e5(const Vec3d& radiance)
 {
-    const float maxComponent =
-        std::max(radiance.X, std::max(radiance.Y, radiance.Z));
+    // Shared-exponent packing per the E5B9G9R9 spec: 9-bit mantissas, 5-bit
+    // exponent biased by 15, channel value = mantissa * 2^(exp - 15 - 9).
+    constexpr int kMantissaBits = 9;
+    constexpr int kExpBias = 15;
+    constexpr int kMaxBiasedExp = 31;
+
+    const float r = std::clamp(radiance.X, 0.0f, kBakedDirectMax);
+    const float g = std::clamp(radiance.Y, 0.0f, kBakedDirectMax);
+    const float b = std::clamp(radiance.Z, 0.0f, kBakedDirectMax);
+    const float maxComponent = std::max(r, std::max(g, b));
     if (maxComponent <= 0.0f)
         return 0;
 
-    // Quantize the multiplier up so the divided rgb stays within [0,1].
-    float m = Clamp01(maxComponent / kBakedDirectRange);
-    m = std::ceil(m * 255.0f) / 255.0f;
-    const float inv = 1.0f / (m * kBakedDirectRange);
+    int biasedExp = std::max(0,
+        static_cast<int>(std::floor(std::log2(maxComponent))) + 1 + kExpBias);
+    biasedExp = std::min(biasedExp, kMaxBiasedExp);
+    float scale = std::exp2(
+        static_cast<float>(biasedExp - kExpBias - kMantissaBits));
+    // Rounding can carry the largest mantissa to 2^9; renormalize once.
+    if (std::lround(maxComponent / scale) == (1 << kMantissaBits)
+        && biasedExp < kMaxBiasedExp)
+    {
+        ++biasedExp;
+        scale *= 2.0f;
+    }
 
-    const std::uint32_t r = ToUnorm8(radiance.X * inv);
-    const std::uint32_t g = ToUnorm8(radiance.Y * inv);
-    const std::uint32_t b = ToUnorm8(radiance.Z * inv);
-    const std::uint32_t a = ToUnorm8(m);
-    // R8G8B8A8_UNORM little-endian: byte 0 = R.
-    return r | (g << 8) | (b << 16) | (a << 24);
+    const auto mantissa = [scale](float value)
+    {
+        const long m = std::lround(value / scale);
+        return static_cast<std::uint32_t>(
+            std::min(m, static_cast<long>((1 << kMantissaBits) - 1)));
+    };
+    return mantissa(r) | (mantissa(g) << kMantissaBits)
+        | (mantissa(b) << (2 * kMantissaBits))
+        | (static_cast<std::uint32_t>(biasedExp) << (3 * kMantissaBits));
 }
 

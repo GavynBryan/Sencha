@@ -8,6 +8,9 @@
 
 namespace
 {
+    constexpr float kEdgeReach = 0.7071f;
+    constexpr float kSampleInset = 0.0025f;
+
     float Cross2(const Vec2d& a, const Vec2d& b)
     {
         return a.X * b.Y - a.Y * b.X;
@@ -24,13 +27,20 @@ namespace
         return std::clamp(t, 0.0f, 1.0f);
     }
 
-    struct LuxelSample
+    struct RasterTriangle
     {
-        // The triangle that claimed this luxel; subsampling maps grid-space
-        // points through it to world positions and normals.
         const LightmapRasterTriangle* Tri = nullptr;
-        // 0 = uncovered, 1 = edge-clamped sample, 2 = interior sample.
-        std::uint8_t Coverage = 0;
+        Vec2d Edge0;
+        Vec2d Edge1;
+        float Den = 0.0f;
+    };
+
+    struct ResolvedSample
+    {
+        const RasterTriangle* Tri = nullptr;
+        float Weight[3] = { 0.0f, 0.0f, 0.0f };
+        Vec2d SurfacePoint;
+        bool EdgeClamped = false;
     };
 
     // Barycentric weights of p against the triangle (a, b, c), clamped onto
@@ -71,6 +81,127 @@ namespace
         }
         return bestDistSq;
     }
+
+    bool TriangleLess(const RasterTriangle& lhs, const RasterTriangle& rhs)
+    {
+        // Candidate order must not inherit mesh triangle order: points on a
+        // shared edge can be contained by both triangles. Compare all authored
+        // data so even coincident chart-space triangles have a stable order.
+        for (int vertex = 0; vertex < 3; ++vertex)
+        {
+            for (int axis = 0; axis < 2; ++axis)
+            {
+                const float a = lhs.Tri->Uv[vertex][axis];
+                const float b = rhs.Tri->Uv[vertex][axis];
+                if (a != b)
+                    return a < b;
+            }
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const float a = lhs.Tri->Position[vertex][axis];
+                const float b = rhs.Tri->Position[vertex][axis];
+                if (a != b)
+                    return a < b;
+            }
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const float a = lhs.Tri->Normal[vertex][axis];
+                const float b = rhs.Tri->Normal[vertex][axis];
+                if (a != b)
+                    return a < b;
+            }
+        }
+        return false;
+    }
+
+    ResolvedSample ResolveSample(const Vec2d& p,
+                                 const std::vector<std::uint32_t>& candidates,
+                                 const std::vector<RasterTriangle>& rasterTriangles)
+    {
+        ResolvedSample nearest;
+        float nearestDistSq = kEdgeReach * kEdgeReach;
+        constexpr float kDistanceTieEps = 1e-7f;
+        for (const std::uint32_t index : candidates)
+        {
+            const RasterTriangle& rasterTri = rasterTriangles[index];
+            const LightmapRasterTriangle& tri = *rasterTri.Tri;
+            float wa = 0.0f, wb = 0.0f, wc = 0.0f;
+            const float distSq = ClampedBarycentric(
+                tri.Uv[0], tri.Uv[1], tri.Uv[2], rasterTri.Den, p,
+                wa, wb, wc);
+            const Vec2d surfacePoint = tri.Uv[0] * wa
+                + tri.Uv[1] * wb + tri.Uv[2] * wc;
+
+            // rasterTriangles (and therefore every candidate list) has a
+            // geometry-derived order. The first containing triangle is the
+            // deterministic winner on a shared edge.
+            if (distSq <= 0.0f)
+                return ResolvedSample{
+                    &rasterTri, { wa, wb, wc }, surfacePoint, false };
+
+            // A chart corner can be equally close to two real boundary edges.
+            // The triangles reaching that corner change with a quad diagonal,
+            // so resolve the tie by the geometric closest point in chart space,
+            // not candidate/triangle order.
+            const bool closer = nearest.Tri == nullptr
+                || distSq < nearestDistSq - kDistanceTieEps;
+            const bool tied = nearest.Tri != nullptr
+                && std::abs(distSq - nearestDistSq) <= kDistanceTieEps;
+            const bool pointLess = tied
+                && (surfacePoint.X < nearest.SurfacePoint.X
+                    || (surfacePoint.X == nearest.SurfacePoint.X
+                        && surfacePoint.Y < nearest.SurfacePoint.Y));
+            if (distSq <= kEdgeReach * kEdgeReach && (closer || pointLess))
+            {
+                nearest = ResolvedSample{
+                    &rasterTri, { wa, wb, wc }, surfacePoint, true };
+                nearestDistSq = distSq;
+            }
+        }
+        return nearest;
+    }
+
+    Vec3d InterpolatePosition(const LightmapRasterTriangle& tri,
+                              const float weights[3])
+    {
+        return tri.Position[0] * weights[0] + tri.Position[1] * weights[1]
+            + tri.Position[2] * weights[2];
+    }
+
+    Vec3d InterpolateNormal(const LightmapRasterTriangle& tri,
+                            const float weights[3])
+    {
+        return tri.Normal[0] * weights[0] + tri.Normal[1] * weights[1]
+            + tri.Normal[2] * weights[2];
+    }
+
+    void InsetEdgeSample(const Vec2d& samplePoint,
+                         const RasterTriangle& rasterTri,
+                         const float weights[3], Vec3d& position)
+    {
+        const LightmapRasterTriangle& tri = *rasterTri.Tri;
+        const Vec2d surfacePoint = tri.Uv[0] * weights[0]
+            + tri.Uv[1] * weights[1] + tri.Uv[2] * weights[2];
+        const Vec2d towardSurface = surfacePoint - samplePoint;
+
+        // Map the chart-space direction from the off-surface sample to its
+        // closest boundary point into world space, then continue a hair past
+        // the boundary. Unlike a centroid direction, this depends only on the
+        // actual chart edge and cannot expose an internal triangulation.
+        const float db = Cross2(towardSurface, rasterTri.Edge1) / rasterTri.Den;
+        const float dc = Cross2(rasterTri.Edge0, towardSurface) / rasterTri.Den;
+        Vec3d inward = (tri.Position[1] - tri.Position[0]) * db
+            + (tri.Position[2] - tri.Position[0]) * dc;
+        float distance = inward.Magnitude();
+        if (distance <= 1e-12f)
+        {
+            inward = (tri.Position[0] + tri.Position[1] + tri.Position[2]) / 3.0f
+                - position;
+            distance = inward.Magnitude();
+        }
+        if (distance > kSampleInset)
+            position += inward * (kSampleInset / distance);
+    }
 } // namespace
 
 void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
@@ -86,11 +217,8 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
     const std::uint32_t gridW = rect.Width - 2 * kLightmapGutter;
     const std::uint32_t gridH = rect.Height - 2 * kLightmapGutter;
 
-    std::vector<LuxelSample> samples(static_cast<std::size_t>(gridW) * gridH);
-
-    // Half the luxel diagonal: a grid point this close to a triangle still
-    // samples it (clamped onto the surface), so sliver triangles stay lit.
-    constexpr float kEdgeReach = 0.7071f;
+    std::vector<RasterTriangle> rasterTriangles;
+    rasterTriangles.reserve(triangles.size());
 
     for (const LightmapRasterTriangle& tri : triangles)
     {
@@ -103,10 +231,31 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
         if (std::abs(den) <= 1e-9f)
             continue; // degenerate in chart space; neighbors + dilation cover it
 
-        const float minX = std::min(a.X, std::min(b.X, c.X)) - kEdgeReach;
-        const float maxX = std::max(a.X, std::max(b.X, c.X)) + kEdgeReach;
-        const float minY = std::min(a.Y, std::min(b.Y, c.Y)) - kEdgeReach;
-        const float maxY = std::max(a.Y, std::max(b.Y, c.Y)) + kEdgeReach;
+        rasterTriangles.push_back(RasterTriangle{ &tri, v0, v1, den });
+    }
+    std::sort(rasterTriangles.begin(), rasterTriangles.end(), TriangleLess);
+
+    // Each luxel keeps every triangle that any of its four offsets could
+    // resolve. The extra quarter-texel accounts for the subsample displacement
+    // before applying the existing half-diagonal edge reach.
+    std::vector<std::vector<std::uint32_t>> candidates(
+        static_cast<std::size_t>(gridW) * gridH);
+    constexpr float kCandidateReach = kEdgeReach + 0.25f;
+    for (std::uint32_t index = 0; index < rasterTriangles.size(); ++index)
+    {
+        const LightmapRasterTriangle& tri = *rasterTriangles[index].Tri;
+        const Vec2d& a = tri.Uv[0];
+        const Vec2d& b = tri.Uv[1];
+        const Vec2d& c = tri.Uv[2];
+
+        const float minX = std::min(a.X, std::min(b.X, c.X)) - kCandidateReach;
+        const float maxX = std::max(a.X, std::max(b.X, c.X)) + kCandidateReach;
+        const float minY = std::min(a.Y, std::min(b.Y, c.Y)) - kCandidateReach;
+        const float maxY = std::max(a.Y, std::max(b.Y, c.Y)) + kCandidateReach;
+        if (maxX < 0.0f || maxY < 0.0f
+            || minX > static_cast<float>(gridW - 1)
+            || minY > static_cast<float>(gridH - 1))
+            continue;
         const std::uint32_t x0 = static_cast<std::uint32_t>(std::max(0.0f, std::floor(minX)));
         const std::uint32_t y0 = static_cast<std::uint32_t>(std::max(0.0f, std::floor(minY)));
         const std::uint32_t x1 = static_cast<std::uint32_t>(
@@ -116,26 +265,7 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
 
         for (std::uint32_t y = y0; y <= y1 && y < gridH; ++y)
             for (std::uint32_t x = x0; x <= x1 && x < gridW; ++x)
-            {
-                LuxelSample& sample = samples[static_cast<std::size_t>(y) * gridW + x];
-                if (sample.Coverage == 2)
-                    continue; // interior already claimed this luxel
-
-                const Vec2d p{ static_cast<float>(x), static_cast<float>(y) };
-                float wa = 0.0f, wb = 0.0f, wc = 0.0f;
-                const float distSq = ClampedBarycentric(a, b, c, den, p, wa, wb, wc);
-                // Interior points sample directly; off-triangle points within
-                // the edge reach clamp onto the boundary (slivers stay lit).
-                const std::uint8_t coverage =
-                    distSq <= 0.0f ? 2
-                    : distSq <= kEdgeReach * kEdgeReach ? 1
-                                                        : 0;
-                if (coverage == 0 || coverage <= sample.Coverage)
-                    continue; // first writer wins within a class
-
-                sample.Coverage = coverage;
-                sample.Tri = &tri;
-            }
+                candidates[static_cast<std::size_t>(y) * gridW + x].push_back(index);
     }
 
     // Padded-rect radiance buffer: covered grid points bake, then dilation
@@ -161,14 +291,9 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
     for (std::uint32_t y = 0; y < gridH; ++y)
         for (std::uint32_t x = 0; x < gridW; ++x)
         {
-            const LuxelSample& sample = samples[static_cast<std::size_t>(y) * gridW + x];
-            if (sample.Coverage == 0 || sample.Tri == nullptr)
-                continue;
-            const LightmapRasterTriangle& tri = *sample.Tri;
-            const Vec2d v0{ tri.Uv[1].X - tri.Uv[0].X, tri.Uv[1].Y - tri.Uv[0].Y };
-            const Vec2d v1{ tri.Uv[2].X - tri.Uv[0].X, tri.Uv[2].Y - tri.Uv[0].Y };
-            const float den = Cross2(v0, v1);
-            if (std::abs(den) <= 1e-9f)
+            const std::vector<std::uint32_t>& luxelCandidates =
+                candidates[static_cast<std::size_t>(y) * gridW + x];
+            if (luxelCandidates.empty())
                 continue;
 
             Vec3d radiance{ 0.0f, 0.0f, 0.0f };
@@ -177,28 +302,18 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
             {
                 const Vec2d p{ static_cast<float>(x) + offset.X,
                                static_cast<float>(y) + offset.Y };
-                float wa = 0.0f, wb = 0.0f, wc = 0.0f;
-                (void)ClampedBarycentric(tri.Uv[0], tri.Uv[1], tri.Uv[2], den, p,
-                                         wa, wb, wc);
-                Vec3d position = tri.Position[0] * wa + tri.Position[1] * wb
-                    + tri.Position[2] * wc;
-                // Inset each sample a hair toward the triangle's interior:
-                // brush geometry and the luxel grid are both typically integer
-                // aligned, so samples land EXACTLY on perpendicular brush
-                // planes, where a shadow segment meets its blocker at t = 0
-                // (inside the occlusion test's start-point exclusion) and the
-                // lit-or-shadowed answer becomes arbitrary.
-                {
-                    constexpr float kSampleInset = 0.0025f;
-                    const Vec3d centroid =
-                        (tri.Position[0] + tri.Position[1] + tri.Position[2]) / 3.0f;
-                    const Vec3d toCenter = centroid - position;
-                    const float distance = toCenter.Magnitude();
-                    if (distance > kSampleInset)
-                        position += toCenter * (kSampleInset / distance);
-                }
-                const Vec3d rawNormal = tri.Normal[0] * wa + tri.Normal[1] * wb
-                    + tri.Normal[2] * wc;
+                const ResolvedSample resolved =
+                    ResolveSample(p, luxelCandidates, rasterTriangles);
+                if (resolved.Tri == nullptr)
+                    continue;
+                const LightmapRasterTriangle& tri = *resolved.Tri->Tri;
+                Vec3d position = InterpolatePosition(tri, resolved.Weight);
+                // Only off-surface samples need the chart-boundary safeguard.
+                // Interior samples retain their exact resolved position, so
+                // an internal triangle edge cannot become a lighting seam.
+                if (resolved.EdgeClamped)
+                    InsetEdgeSample(p, *resolved.Tri, resolved.Weight, position);
+                const Vec3d rawNormal = InterpolateNormal(tri, resolved.Weight);
                 const Vec3d normal = rawNormal.SqrMagnitude() > 1e-12f
                     ? rawNormal.Normalized()
                     : Vec3d{ 0.0f, 1.0f, 0.0f };
@@ -277,6 +392,6 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
         {
             const Texel& texel = texels[static_cast<std::size_t>(y) * rect.Width + x];
             atlasPixels[static_cast<std::size_t>(rect.Y + y) * atlasWidth + rect.X + x] =
-                EncodeBakedDirectRgbm(texel.Radiance);
+                EncodeBakedDirectRgb9e5(texel.Radiance);
         }
 }

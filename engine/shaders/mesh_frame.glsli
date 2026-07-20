@@ -5,10 +5,6 @@ const uint MAX_POINT_SHADOWS = 4u;
 const uint MAX_PROBE_VOLUMES = 8u;
 const uint PROBE_VOLUME_CHANNELS = 3u;
 
-// RGBM multiplier for baked-direct lightmap texels. Must match the encoder in
-// the lighting bake (engine-side DirectLightBake).
-const float BAKED_DIRECT_RANGE = 16.0;
-
 struct GpuLight
 {
     vec4 PositionRange;

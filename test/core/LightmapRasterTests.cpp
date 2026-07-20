@@ -6,7 +6,9 @@
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/LightmapRaster.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace
@@ -38,10 +40,107 @@ namespace
         return { a, b };
     }
 
+    // The same surface and vertex attributes as MakeQuadChart, split across
+    // the other diagonal.
+    std::vector<LightmapRasterTriangle> MakeOppositeDiagonalQuadChart()
+    {
+        LightmapRasterTriangle a{};
+        a.Uv[0] = { 0, 0 }; a.Uv[1] = { 4, 0 }; a.Uv[2] = { 0, 4 };
+        a.Position[0] = { 0, 0, 0 }; a.Position[1] = { 4, 0, 0 }; a.Position[2] = { 0, 0, 4 };
+        LightmapRasterTriangle b = a;
+        b.Uv[0] = { 4, 0 }; b.Uv[1] = { 4, 4 }; b.Uv[2] = { 0, 4 };
+        b.Position[0] = { 4, 0, 0 }; b.Position[1] = { 4, 0, 4 }; b.Position[2] = { 0, 0, 4 };
+        for (int k = 0; k < 3; ++k)
+        {
+            a.Normal[k] = { 0, 1, 0 };
+            b.Normal[k] = { 0, 1, 0 };
+        }
+        return { a, b };
+    }
+
+    BakeBvh MakeCrossingShadowBvh()
+    {
+        std::vector<BakeTriangle> occluders;
+        // This wall splits luxel 3 and its shadow boundary crosses either
+        // possible quad diagonal inside the chart.
+        occluders.push_back({ Vec3d{ 2.875f, 0.0f, -10 }, Vec3d{ 2.875f, 20.0f, -10 },
+                              Vec3d{ 2.875f, 20.0f, 10 } });
+        occluders.push_back({ Vec3d{ 2.875f, 0.0f, -10 }, Vec3d{ 2.875f, 20.0f, 10 },
+                              Vec3d{ 2.875f, 0.0f, 10 } });
+        BakeBvh bvh;
+        bvh.Build(std::move(occluders));
+        return bvh;
+    }
+
+    std::vector<std::uint32_t> BakeQuadAtlas(
+        const std::vector<LightmapRasterTriangle>& chart,
+        const BakeBvh& occluders, std::span<const BakeDirectLight> lights)
+    {
+        const LightmapChartRect rect{
+            1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter
+        };
+        constexpr std::uint32_t kWidth = 16;
+        std::vector<std::uint32_t> atlas(kWidth * 16, 0u);
+        BakeChartLuxels(chart, rect, lights, occluders,
+                        DirectLightBakeParams{}, kWidth, atlas);
+        return atlas;
+    }
+
+    // RGB9E5 red channel: 9-bit mantissa scaled by the shared exponent.
+    float DecodeRed(std::uint32_t pixel)
+    {
+        const float scale = std::exp2(static_cast<float>(
+            static_cast<int>(pixel >> 27) - 15 - 9));
+        return static_cast<float>(pixel & 0x1FFu) * scale;
+    }
+
     std::uint32_t PixelAt(const std::vector<std::uint32_t>& atlas,
                           std::uint32_t width, std::uint32_t x, std::uint32_t y)
     {
         return atlas[static_cast<std::size_t>(y) * width + x];
+    }
+
+    void AppendGridQuad(std::vector<LightmapRasterTriangle>& out,
+                        float minX, float minY, float maxX, float maxY,
+                        bool oppositeDiagonal)
+    {
+        const auto vertex = [](float x, float y)
+        {
+            LightmapRasterTriangle tri{};
+            tri.Uv[0] = { x, y };
+            tri.Position[0] = { x, 0.0f, y };
+            tri.Normal[0] = { 0.0f, 1.0f, 0.0f };
+            return tri;
+        };
+        const LightmapRasterTriangle bl = vertex(minX, minY);
+        const LightmapRasterTriangle br = vertex(maxX, minY);
+        const LightmapRasterTriangle tr = vertex(maxX, maxY);
+        const LightmapRasterTriangle tl = vertex(minX, maxY);
+        const auto make = [](const LightmapRasterTriangle& a,
+                             const LightmapRasterTriangle& b,
+                             const LightmapRasterTriangle& c)
+        {
+            LightmapRasterTriangle result{};
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const LightmapRasterTriangle* source =
+                    axis == 0 ? &a : (axis == 1 ? &b : &c);
+                result.Uv[axis] = source->Uv[0];
+                result.Position[axis] = source->Position[0];
+                result.Normal[axis] = source->Normal[0];
+            }
+            return result;
+        };
+        if (oppositeDiagonal)
+        {
+            out.push_back(make(bl, br, tl));
+            out.push_back(make(br, tr, tl));
+        }
+        else
+        {
+            out.push_back(make(bl, br, tr));
+            out.push_back(make(bl, tr, tl));
+        }
     }
 }
 
@@ -190,9 +289,7 @@ TEST(LightmapRaster, ShadowBoundaryLuxelBakesPartialBrightness)
     {
         const std::uint32_t p = PixelAt(atlas, width, rect.X + kLightmapGutter + gx,
                                         rect.Y + kLightmapGutter + gy);
-        const float m = static_cast<float>((p >> 24) & 0xFF) / 255.0f * 16.0f;
-        const float r = static_cast<float>(p & 0xFF) / 255.0f;
-        return r * m;
+        return DecodeRed(p);
     };
 
     const float lit = luminance(2, 2);       // fully in the light
@@ -202,6 +299,168 @@ TEST(LightmapRaster, ShadowBoundaryLuxelBakesPartialBrightness)
     EXPECT_LT(shadow, lit * 0.1f);
     EXPECT_GT(boundary, lit * 0.2f);
     EXPECT_LT(boundary, lit * 0.8f);
+}
+
+TEST(LightmapRaster, OppositePlanarTriangulationsMatchAcrossShadowBoundary)
+{
+    const auto lights = MakeLight();
+    const BakeBvh bvh = MakeCrossingShadowBvh();
+
+    const std::vector<std::uint32_t> first =
+        BakeQuadAtlas(MakeQuadChart(), bvh, lights);
+    const std::vector<std::uint32_t> opposite =
+        BakeQuadAtlas(MakeOppositeDiagonalQuadChart(), bvh, lights);
+
+    // Includes chart-edge samples and both dilation passes, not just the
+    // interior texels around the diagonal.
+    EXPECT_EQ(first, opposite);
+}
+
+TEST(LightmapRaster, OpenSurfaceCornerTieDoesNotExposeQuadDiagonals)
+{
+    // Three coplanar charts form an L: target [0,4]^2 plus neighbors to its
+    // right and top. At (4.25,4.25), outside the real concave corner, the two
+    // boundary edges are equally near. The selected edge (and its 0.0025
+    // inset) must come from geometry, not whichever diagonal sorts first.
+    const auto make = [](bool opposite)
+    {
+        std::vector<LightmapRasterTriangle> chart;
+        AppendGridQuad(chart, 0, 0, 4, 4, opposite);
+        AppendGridQuad(chart, 4, 0, 8, 4, opposite);
+        AppendGridQuad(chart, 0, 4, 4, 8, opposite);
+        return chart;
+    };
+    std::array<BakeDirectLight, 1> lights{};
+    lights[0].Position = { 7.0f, 2.0f, 1.0f };
+    lights[0].Intensity = 30.0f;
+    lights[0].Range = 20.0f;
+    BakeBvh empty;
+
+    EXPECT_EQ(BakeQuadAtlas(make(false), empty, lights),
+              BakeQuadAtlas(make(true), empty, lights));
+}
+
+TEST(LightmapRaster, TriangleInputOrderDoesNotChangeAtlas)
+{
+    const auto lights = MakeLight();
+    const BakeBvh bvh = MakeCrossingShadowBvh();
+    std::vector<LightmapRasterTriangle> chart = MakeQuadChart();
+    for (int k = 0; k < 3; ++k)
+    {
+        // Make the shared-edge winner observable instead of relying on two
+        // triangles whose interpolated attributes happen to be identical.
+        chart[0].Normal[k] = { 0, -1, 0 };
+        chart[1].Normal[k] = { 0, 1, 0 };
+    }
+    const std::vector<std::uint32_t> forward = BakeQuadAtlas(chart, bvh, lights);
+    std::reverse(chart.begin(), chart.end());
+    const std::vector<std::uint32_t> reversed = BakeQuadAtlas(chart, bvh, lights);
+    EXPECT_EQ(forward, reversed);
+}
+
+TEST(LightmapRaster, SupersampleCrossingInternalEdgeUsesNeighborTriangle)
+{
+    std::vector<LightmapRasterTriangle> chart = MakeQuadChart();
+    for (int k = 0; k < 3; ++k)
+    {
+        // At grid point (2,2), three deterministic samples resolve to the
+        // lower-right triangle while the upper-left offset lies strictly in
+        // this lit triangle. A center-owner implementation clamps all four to
+        // the first triangle and incorrectly bakes zero.
+        chart[0].Normal[k] = { 0, -1, 0 };
+        chart[1].Normal[k] = { 0, 1, 0 };
+    }
+    std::array<BakeDirectLight, 1> lights{};
+    lights[0].Position = { 2.0f, 10.0f, 2.0f };
+    lights[0].Intensity = 100.0f;
+    lights[0].Range = 30.0f;
+    BakeBvh empty;
+    const std::vector<std::uint32_t> atlas = BakeQuadAtlas(chart, empty, lights);
+
+    constexpr std::uint32_t kWidth = 16;
+    const LightmapChartRect rect{
+        1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter
+    };
+    const float crossing = DecodeRed(PixelAt(
+        atlas, kWidth, rect.X + kLightmapGutter + 2,
+        rect.Y + kLightmapGutter + 2));
+    const float lit = DecodeRed(PixelAt(
+        atlas, kWidth, rect.X + kLightmapGutter + 1,
+        rect.Y + kLightmapGutter + 3));
+    EXPECT_GT(lit, 0.05f);
+    EXPECT_GT(crossing, lit * 0.1f);
+    EXPECT_LT(crossing, lit * 0.5f);
+}
+
+TEST(LightmapRaster, OpenInwardShellReceivesLightAndOccludesTwoSided)
+{
+    // Five inward-facing room planes, open at z=0. The receiver is the floor;
+    // its own geometry is in the BVH, as it is in a real document cook.
+    std::vector<BakeTriangle> shell = {
+        // floor, +Y
+        { { 0, 0, 0 }, { 4, 0, 4 }, { 4, 0, 0 } },
+        { { 0, 0, 0 }, { 0, 0, 4 }, { 4, 0, 4 } },
+        // ceiling, -Y
+        { { 0, 4, 0 }, { 4, 4, 0 }, { 4, 4, 4 } },
+        { { 0, 4, 0 }, { 4, 4, 4 }, { 0, 4, 4 } },
+        // x=0 wall, +X
+        { { 0, 0, 0 }, { 0, 4, 4 }, { 0, 0, 4 } },
+        { { 0, 0, 0 }, { 0, 4, 0 }, { 0, 4, 4 } },
+        // x=4 wall, -X
+        { { 4, 0, 0 }, { 4, 0, 4 }, { 4, 4, 4 } },
+        { { 4, 0, 0 }, { 4, 4, 4 }, { 4, 4, 0 } },
+        // z=4 wall, -Z
+        { { 0, 0, 4 }, { 0, 4, 4 }, { 4, 4, 4 } },
+        { { 0, 0, 4 }, { 4, 4, 4 }, { 4, 0, 4 } },
+    };
+    BakeBvh openShell;
+    openShell.Build(shell);
+    std::array<BakeDirectLight, 1> lights{};
+    lights[0].Position = { 2.0f, 3.0f, 2.0f };
+    lights[0].Intensity = 30.0f;
+    lights[0].Range = 20.0f;
+
+    const std::vector<std::uint32_t> unblocked =
+        BakeQuadAtlas(MakeQuadChart(), openShell, lights);
+    constexpr std::uint32_t kWidth = 16;
+    const LightmapChartRect rect{
+        1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter
+    };
+    const auto centerPixel = [&](const std::vector<std::uint32_t>& atlas)
+    {
+        return PixelAt(atlas, kWidth, rect.X + kLightmapGutter + 2,
+                       rect.Y + kLightmapGutter + 2);
+    };
+    ASSERT_NE(centerPixel(unblocked), 0u);
+
+    // A one-sided sheet between the floor and light blocks the segment in
+    // either winding, while the shell/receiver is still not classified as a
+    // buried overlap.
+    const BakeTriangle blockerA{
+        { -10, 1, -10 }, { -10, 1, 10 }, { 10, 1, 10 }
+    };
+    const BakeTriangle blockerB{
+        { -10, 1, -10 }, { 10, 1, 10 }, { 10, 1, -10 }
+    };
+    for (const bool reverseWinding : { false, true })
+    {
+        std::vector<BakeTriangle> blockedGeometry = shell;
+        if (reverseWinding)
+        {
+            blockedGeometry.push_back({ blockerA.V0, blockerA.V2, blockerA.V1 });
+            blockedGeometry.push_back({ blockerB.V0, blockerB.V2, blockerB.V1 });
+        }
+        else
+        {
+            blockedGeometry.push_back(blockerA);
+            blockedGeometry.push_back(blockerB);
+        }
+        BakeBvh blockedShell;
+        blockedShell.Build(std::move(blockedGeometry));
+        const std::vector<std::uint32_t> blocked =
+            BakeQuadAtlas(MakeQuadChart(), blockedShell, lights);
+        EXPECT_EQ(centerPixel(blocked), 0u);
+    }
 }
 
 TEST(LightmapRaster, IsDeterministic)

@@ -14,17 +14,42 @@ namespace
     // area-weights the chart normal for free.
     Vec3d WorldNewell(const BrushMesh& mesh, const Transform3f& transform, const BrushFace& face)
     {
-        Vec3d sum{ 0.0f, 0.0f, 0.0f };
+        // Start at a geometry-derived loop vertex, not the authored loop's
+        // arbitrary first entry. Convex tessellation fans from that entry, so
+        // rotating a loop to select the other quad diagonal must not perturb
+        // the chart basis through a different floating-point reduction order.
         const std::size_t n = face.Loop.size();
+        if (n == 0)
+            return Vec3d{};
+        std::size_t start = 0;
+        for (std::size_t i = 1; i < n; ++i)
+            if (face.Loop[i] < face.Loop[start])
+                start = i;
+
+        // World positions are floats, so every Newell product is exact when
+        // promoted to double. Accumulating there eliminates the tiny residual
+        // off-axis components that otherwise make separate coplanar quads pick
+        // different chart seed axes (and therefore different sample grids).
+        double sumX = 0.0;
+        double sumY = 0.0;
+        double sumZ = 0.0;
         for (std::size_t i = 0; i < n; ++i)
         {
-            const Vec3d a = transform.TransformPoint(mesh.Vertices[face.Loop[i]].Position);
-            const Vec3d b = transform.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % n]].Position);
-            sum.X += (a.Y - b.Y) * (a.Z + b.Z);
-            sum.Y += (a.Z - b.Z) * (a.X + b.X);
-            sum.Z += (a.X - b.X) * (a.Y + b.Y);
+            const std::size_t current = (start + i) % n;
+            const std::size_t next = (start + i + 1) % n;
+            const Vec3d a = transform.TransformPoint(
+                mesh.Vertices[face.Loop[current]].Position);
+            const Vec3d b = transform.TransformPoint(
+                mesh.Vertices[face.Loop[next]].Position);
+            sumX += (static_cast<double>(a.Y) - b.Y)
+                * (static_cast<double>(a.Z) + b.Z);
+            sumY += (static_cast<double>(a.Z) - b.Z)
+                * (static_cast<double>(a.X) + b.X);
+            sumZ += (static_cast<double>(a.X) - b.X)
+                * (static_cast<double>(a.Y) + b.Y);
         }
-        return sum;
+        return Vec3d{ static_cast<float>(sumX), static_cast<float>(sumY),
+                      static_cast<float>(sumZ) };
     }
 
     // Basis for a chart plane: the world axis least aligned with the normal

@@ -63,6 +63,13 @@ namespace
                         const BakeTriangle& tri)
     {
         constexpr double kParallelEps = 1e-12;
+        // Treat a hit infinitesimally outside one triangle's barycentric edge
+        // as lying on the shared edge. Without this tolerance a ray can miss
+        // both halves of one quad diagonal yet hit the same surface with the
+        // opposite diagonal, making baked shadows depend on tessellation.
+        // Inputs are floats evaluated in double; 1e-10 is many orders below
+        // any authored or bake offset scale while closing that arithmetic gap.
+        constexpr double kBarycentricEps = 1e-10;
         const DVec v0 = ToDouble(tri.V0);
         const DVec edge1 = Sub(ToDouble(tri.V1), v0);
         const DVec edge2 = Sub(ToDouble(tri.V2), v0);
@@ -73,11 +80,11 @@ namespace
         const double invDet = 1.0 / det;
         const DVec tvec = Sub(ToDouble(origin), v0);
         const double u = Dot(tvec, pvec) * invDet;
-        if (u < 0.0 || u > 1.0)
+        if (u < -kBarycentricEps || u > 1.0 + kBarycentricEps)
             return -1.0;
         const DVec qvec = Cross(tvec, edge1);
         const double v = Dot(ToDouble(dir), qvec) * invDet;
-        if (v < 0.0 || u + v > 1.0)
+        if (v < -kBarycentricEps || u + v > 1.0 + kBarycentricEps)
             return -1.0;
         return Dot(edge2, qvec) * invDet;
     }

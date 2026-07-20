@@ -114,3 +114,40 @@ TEST(BrushLightmapCharts, IsDeterministic)
         EXPECT_EQ(a.Charts[i].UvMax.Y, b.Charts[i].UvMax.Y);
     }
 }
+
+TEST(BrushLightmapCharts, CyclicQuadRotationDoesNotChangeChartProjection)
+{
+    BrushMesh original;
+    original.Vertices = {
+        BrushVertex{ { 4.0f, 0.5000001192092896f, -1.999999761581421f } },
+        BrushVertex{ { 4.0f, -3.5f, -1.999999761581421f } },
+        BrushVertex{ { 5.0f, -2.5f, -1.999999761581421f } },
+        BrushVertex{ { 5.0f, -0.5f, -1.999999761581421f } },
+    };
+    original.Faces = { BrushFace{ { 0, 1, 2, 3 }, {}, {} } };
+
+    BrushMesh rotated = original;
+    rotated.Faces[0].Loop = { 1, 2, 3, 0 };
+
+    const BrushChartSet a =
+        BuildBrushLightmapCharts(original, Transform3f{}, 45.0f, 0.25f);
+    const BrushChartSet b =
+        BuildBrushLightmapCharts(rotated, Transform3f{}, 45.0f, 0.25f);
+    ASSERT_EQ(a.Charts.size(), 1u);
+    ASSERT_EQ(b.Charts.size(), 1u);
+    EXPECT_EQ(a.Charts[0].Normal, b.Charts[0].Normal);
+    EXPECT_EQ(a.Charts[0].TangentU, b.Charts[0].TangentU);
+    EXPECT_EQ(a.Charts[0].TangentV, b.Charts[0].TangentV);
+    EXPECT_EQ(a.Charts[0].UvMin, b.Charts[0].UvMin);
+    EXPECT_EQ(a.Charts[0].UvMax, b.Charts[0].UvMax);
+
+    // Constant-Z input must stay exactly axis-aligned. In float Newell
+    // accumulation this real Benchmark-shaped quad left a ~8e-8 X component,
+    // enough to select a different seed axis than its coplanar neighbors.
+    EXPECT_EQ(a.Charts[0].Normal, (Vec3d{ 0.0f, 0.0f, 1.0f }));
+    EXPECT_EQ(a.Charts[0].TangentU, (Vec3d{ 0.0f, -1.0f, 0.0f }));
+    EXPECT_EQ(BrushComputeFaceNormal(original, original.Faces[0]),
+              BrushComputeFaceNormal(rotated, rotated.Faces[0]));
+    EXPECT_EQ(BrushComputeFaceNormal(original, original.Faces[0]),
+              (Vec3d{ 0.0f, 0.0f, 1.0f }));
+}
