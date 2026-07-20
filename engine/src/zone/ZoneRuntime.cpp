@@ -43,6 +43,7 @@ Registry& ZoneRuntime::CreateZone(ZoneId zone)
 
     Registry* registryPtr = loaded->ZoneRegistry.get();
     Zones.push_back(std::move(loaded));
+    RecordAttached(registryPtr, ZoneParticipation{});
     return *registryPtr;
 }
 
@@ -72,6 +73,7 @@ Registry& ZoneRuntime::AttachZone(std::unique_ptr<Registry> registry,
 
     Registry* registryPtr = loaded->ZoneRegistry.get();
     Zones.push_back(std::move(loaded));
+    RecordAttached(registryPtr, participation);
     return *registryPtr;
 }
 
@@ -79,7 +81,7 @@ bool ZoneRuntime::DestroyZone(ZoneId zone)
 {
     auto it = std::find_if(Zones.begin(), Zones.end(),
         [zone](const std::unique_ptr<LoadedZone>& loaded) {
-            return loaded->Zone == zone;
+            return loaded->Zone == zone && !loaded->Detaching;
         });
 
     if (it == Zones.end())
@@ -88,8 +90,116 @@ bool ZoneRuntime::DestroyZone(ZoneId zone)
     assert(!FrameViewLive_
            && "DestroyZone with a live frame view: zone lifecycle is drain-point-only");
     InvalidateFrameScratch();
-    Zones.erase(it);
+
+    // Two-step destruction: mark and record now, erase in
+    // FinalizeResidencyProcessing after the residency phase has visited the
+    // registry with everything still alive. The zone is already invisible to
+    // queries and frame spans.
+    LoadedZone& detaching = **it;
+    detaching.Detaching = true;
+    RecordDetaching(detaching.ZoneRegistry.get(), detaching.Participation);
     return true;
+}
+
+std::span<const RegistryResidencyChange> ZoneRuntime::ResidencyChanges() const
+{
+    return { PendingChanges_.data(), PendingChanges_.size() };
+}
+
+void ZoneRuntime::FinalizeResidencyProcessing()
+{
+    assert(!FrameViewLive_
+           && "FinalizeResidencyProcessing with a live frame view: residency is drain-point-only");
+
+    std::erase_if(Zones, [](const std::unique_ptr<LoadedZone>& loaded) {
+        return loaded->Detaching;
+    });
+    PendingChanges_.clear();
+}
+
+RegistryResidencyChange* ZoneRuntime::FindPendingChange(RegistryId id)
+{
+    for (RegistryResidencyChange& change : PendingChanges_)
+        if (change.Id == id)
+            return &change;
+    return nullptr;
+}
+
+void ZoneRuntime::RecordAttached(Registry* registry, ZoneParticipation participation)
+{
+    assert(FindPendingChange(registry->Id) == nullptr
+           && "RecordAttached: registry ids are never reused within a window");
+    PendingChanges_.push_back(RegistryResidencyChange{
+        RegistryResidencyChangeKind::Attached,
+        registry->Id,
+        registry,
+        ZoneParticipation{},
+        participation,
+    });
+}
+
+void ZoneRuntime::RecordParticipationChange(Registry* registry,
+                                            ZoneParticipation previous,
+                                            ZoneParticipation current)
+{
+    RegistryResidencyChange* existing = FindPendingChange(registry->Id);
+    if (existing == nullptr)
+    {
+        PendingChanges_.push_back(RegistryResidencyChange{
+            RegistryResidencyChangeKind::ParticipationChanged,
+            registry->Id,
+            registry,
+            previous,
+            current,
+        });
+        return;
+    }
+
+    // Coalesce to first-observed Previous and final Current: intermediate
+    // states within one drain window were never observable to any frame.
+    existing->Current = current;
+
+    // A round trip (A -> B -> A) nets no change; drop the record so the
+    // residency phase never processes a transition that did not happen.
+    if (existing->Kind == RegistryResidencyChangeKind::ParticipationChanged
+        && existing->Previous == existing->Current)
+    {
+        const RegistryId id = existing->Id;
+        std::erase_if(PendingChanges_, [id](const RegistryResidencyChange& change) {
+            return change.Id == id;
+        });
+    }
+}
+
+void ZoneRuntime::RecordDetaching(Registry* registry, ZoneParticipation previous)
+{
+    RegistryResidencyChange* existing = FindPendingChange(registry->Id);
+    if (existing == nullptr)
+    {
+        PendingChanges_.push_back(RegistryResidencyChange{
+            RegistryResidencyChangeKind::Detaching,
+            registry->Id,
+            registry,
+            previous,
+            ZoneParticipation{},
+        });
+        return;
+    }
+
+    if (existing->Kind == RegistryResidencyChangeKind::Attached)
+    {
+        // Attached and destroyed inside one window: no frame ever observed the
+        // registry and nothing can hold backend state for it, so no change is
+        // emitted at all. The Detaching mark alone frees it at finalize.
+        const RegistryId id = existing->Id;
+        std::erase_if(PendingChanges_, [id](const RegistryResidencyChange& change) {
+            return change.Id == id;
+        });
+        return;
+    }
+
+    existing->Kind = RegistryResidencyChangeKind::Detaching;
+    existing->Current = ZoneParticipation{};
 }
 
 bool ZoneRuntime::IsZoneLoaded(ZoneId zone) const
@@ -120,7 +230,7 @@ Registry* ZoneRuntime::FindRegistry(RegistryId id)
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->ZoneRegistry->Id == id)
+        if (!loaded->Detaching && loaded->ZoneRegistry->Id == id)
             return loaded->ZoneRegistry.get();
     }
 
@@ -138,7 +248,7 @@ const Registry* ZoneRuntime::FindRegistry(RegistryId id) const
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->ZoneRegistry->Id == id)
+        if (!loaded->Detaching && loaded->ZoneRegistry->Id == id)
             return loaded->ZoneRegistry.get();
     }
 
@@ -156,12 +266,20 @@ void ZoneRuntime::SetParticipation(ZoneId zone, ZoneParticipation participation)
 {
     LoadedZone* loaded = FindLoadedZone(zone);
     assert(loaded && "ZoneRuntime::SetParticipation: zone must be loaded");
+
+    const ZoneParticipation previous = loaded->Participation;
     loaded->Participation = participation;
+    if (!(previous == participation))
+        RecordParticipationChange(loaded->ZoneRegistry.get(), previous, participation);
 }
 
 std::size_t ZoneRuntime::ZoneCount() const
 {
-    return Zones.size();
+    std::size_t count = 0;
+    for (const auto& loaded : Zones)
+        if (!loaded->Detaching)
+            ++count;
+    return count;
 }
 
 FrameRegistryView ZoneRuntime::BuildFrameView()
@@ -176,10 +294,13 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
     PhysicsScratch.push_back(GlobalRegistry.get());
     LogicScratch.push_back(GlobalRegistry.get());
     AudioScratch.push_back(GlobalRegistry.get());
+    ParticipatingScratch.push_back(GlobalRegistry.get());
 
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
+        if (loaded->Detaching)
+            continue;
 
         Registry* registry = loaded->ZoneRegistry.get();
         const ZoneParticipation& participation = loaded->Participation;
@@ -192,6 +313,8 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
             LogicScratch.push_back(registry);
         if (participation.Audio)
             AudioScratch.push_back(registry);
+        if (participation.Any())
+            ParticipatingScratch.push_back(registry);
     }
 
     return FrameRegistryView{
@@ -199,7 +322,9 @@ FrameRegistryView ZoneRuntime::BuildFrameView()
         .Visible = std::span<Registry*>{ VisibleScratch.data(), VisibleScratch.size() },
         .Physics = std::span<Registry*>{ PhysicsScratch.data(), PhysicsScratch.size() },
         .Logic = std::span<Registry*>{ LogicScratch.data(), LogicScratch.size() },
-        .Audio = std::span<Registry*>{ AudioScratch.data(), AudioScratch.size() }
+        .Audio = std::span<Registry*>{ AudioScratch.data(), AudioScratch.size() },
+        .Participating = std::span<Registry* const>{ ParticipatingScratch.data(),
+                                                     ParticipatingScratch.size() }
     };
 }
 
@@ -208,7 +333,7 @@ ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone)
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->Zone == zone)
+        if (!loaded->Detaching && loaded->Zone == zone)
             return loaded.get();
     }
 
@@ -220,7 +345,7 @@ const ZoneRuntime::LoadedZone* ZoneRuntime::FindLoadedZone(ZoneId zone) const
     for (const auto& loaded : Zones)
     {
         assert(loaded->Zone == loaded->ZoneRegistry->Zone && "LoadedZone and Registry ZoneIds must match");
-        if (loaded->Zone == zone)
+        if (!loaded->Detaching && loaded->Zone == zone)
             return loaded.get();
     }
 
@@ -246,9 +371,11 @@ void ZoneRuntime::InvalidateFrameScratch()
     std::fill(PhysicsScratch.begin(), PhysicsScratch.end(), nullptr);
     std::fill(LogicScratch.begin(), LogicScratch.end(), nullptr);
     std::fill(AudioScratch.begin(), AudioScratch.end(), nullptr);
+    std::fill(ParticipatingScratch.begin(), ParticipatingScratch.end(), nullptr);
 
     VisibleScratch.clear();
     PhysicsScratch.clear();
     LogicScratch.clear();
     AudioScratch.clear();
+    ParticipatingScratch.clear();
 }

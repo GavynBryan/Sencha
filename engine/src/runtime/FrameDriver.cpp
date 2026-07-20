@@ -8,6 +8,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
     case FramePhase::DrainAsyncTasks: return "DrainAsyncTasks";
+    case FramePhase::RegistryResidency: return "RegistryResidency";
     case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
     case FramePhase::Update: return "Update";
@@ -86,6 +87,10 @@ void FrameDriver::StepOnce()
     InvokePhase(FramePhase::ResolveLifecycle, ctx);
     InvokePhase(FramePhase::RebuildGraphics, ctx);
     InvokePhase(FramePhase::DrainAsyncTasks, ctx);
+    // Residency runs every rendered frame — including zero-fixed-tick frames —
+    // so retained backend state reacts to lifecycle before the frame view can
+    // observe it, and Detaching registries get their final visit while alive.
+    InvokePhase(FramePhase::RegistryResidency, ctx);
     InvokePhase(FramePhase::ScheduleTicks, ctx);
 
     // Fixed-step simulation loop. Each fixed tick is its own mini-phase so
