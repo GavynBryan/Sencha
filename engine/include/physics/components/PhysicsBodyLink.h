@@ -7,7 +7,7 @@
 // PhysicsBodyLink
 //
 // Runtime-only link from a collider entity to its body in the shared
-// PhysicsWorld. PhysicsScene's reconcile adds it when it creates a body and
+// PhysicsWorld. RigidBodyBinding's reconcile adds it when it creates a body and
 // removes it when the body goes away. Never authored, never serialized, never
 // cooked: it is rebuilt every run. Storing the handle in the chunk lets the
 // per-frame transform sync walk (LocalTransform, RigidBody, PhysicsBodyLink) as

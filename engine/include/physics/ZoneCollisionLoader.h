@@ -10,7 +10,7 @@ class CollisionShapeCache;
 //
 // Loads a level's cooked collision sidecar (written by the level cook): for each
 // entry, restores the pre-baked Jolt blob into `cache` and spawns a static
-// collider entity at its origin. PhysicsScene then turns those into static
+// collider entity at its origin. RigidBodyBinding then turns those into static
 // bodies; they die with the zone's registry. Returns the number loaded.
 //
 // This is how authored brush geometry becomes collidable: zero authoring, world

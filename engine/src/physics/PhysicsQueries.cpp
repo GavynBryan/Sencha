@@ -13,7 +13,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 
-#include <physics/PhysicsScene.h> // UnpackEntity
+#include <physics/RigidBodyBinding.h> // UnpackEntity
 #include <physics/PhysicsWorld.h>
 
 namespace

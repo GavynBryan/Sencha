@@ -18,7 +18,7 @@
 // step it without graphics.
 //
 // Responsibility boundary (see the physics plan): body lifetime/ECS binding
-// lives in PhysicsScene, read-only spatial queries in PhysicsQueries, frame
+// lives in RigidBodyBinding, read-only spatial queries in PhysicsQueries, frame
 // orchestration in PhysicsStepSystem. Those collaborators reach the backend
 // through Internal(); gameplay never does.
 //=============================================================================
@@ -81,7 +81,7 @@ public:
     // contact stability; a fixed value keeps the step reproducible.
     void Step(float dt, int collisionSteps = 1);
 
-    // --- Body interface (used by PhysicsScene, not gameplay) ---------------
+    // --- Body interface (used by RigidBodyBinding, not gameplay) ---------------
     [[nodiscard]] PhysicsBodyId AddBody(const BodyDesc& desc);
     void RemoveBody(PhysicsBodyId id);
 

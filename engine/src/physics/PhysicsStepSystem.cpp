@@ -2,18 +2,8 @@
 
 #include <app/GameContexts.h>
 #include <ecs/World.h>
-#include <physics/PhysicsScene.h>
+#include <physics/RigidBodyBinding.h>
 #include <world/registry/Registry.h>
-
-namespace
-{
-PhysicsScene& EnsureScene(World& world, PhysicsWorld& physics)
-{
-    if (world.HasResource<PhysicsScene>())
-        return world.GetResource<PhysicsScene>();
-    return world.AddResource<PhysicsScene>(physics);
-}
-} // namespace
 
 PhysicsStepSystem::PhysicsStepSystem()
 {
@@ -28,16 +18,15 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
 
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
-        EnsureScene(world, Simulation).SyncToPhysics(world);
+        RigidBodyBinding& binding = reg->Resources.Ensure<RigidBodyBinding>(Simulation);
+        binding.SyncToPhysics(reg->Components);
     }
 
     Simulation.Step(dt, CollisionSteps);
 
     for (Registry* reg : ctx.ActiveRegistries)
     {
-        World& world = reg->Components;
-        if (PhysicsScene* scene = world.TryGetResource<PhysicsScene>())
-            scene->SyncFromPhysics(world);
+        if (RigidBodyBinding* binding = reg->Resources.TryGet<RigidBodyBinding>())
+            binding->SyncFromPhysics(reg->Components);
     }
 }
