@@ -84,12 +84,23 @@ static void OnRemove(const T& component, World& world, EntityId entity);
 |-----------------------------------------|--------------------|----------------------------------|
 | `world.AddComponent<T>(entity, value)`  | `OnAdd` for non-empty T | Immediately, inline              |
 | `world.RemoveComponent<T>(entity)`      | `OnRemove` for non-empty T | Before the entity moves archetype|
+| `world.DestroyEntity(entity)`           | `OnRemove` for every non-empty hooked component | Before the row is removed |
 | `cmds.AddComponent<T>(entity, value)`   | `OnAdd` for non-empty T | During `CommandBuffer::Flush`    |
 | `cmds.RemoveComponent<T>(entity)`       | `OnRemove` for non-empty T | During `CommandBuffer::Flush`    |
+| `cmds.DestroyEntity(entity)`            | `OnRemove` for every non-empty hooked component | During `CommandBuffer::Flush` |
+| `World` destruction / move-assignment   | `OnRemove` for every live non-empty hooked component | Before resources are destroyed |
 
 Hooks run **synchronously** at the call site (for direct mutations) or during flush (for
 command buffer operations). They execute in the order commands were recorded for
 command-buffer flushes.
+
+Destruction fires an entity's hooked components in column (registration) order,
+deterministically, and observes the destroyed entity's own values — hooks run
+before the swap-remove that backfills the row. World teardown drains every live
+hooked component the same way **before** destroying resources, so a hook that
+releases against a `World` resource (the retain/release pattern above) can always
+reach its service. There is no path on which a hooked component leaves the world
+without its `OnRemove` firing.
 
 ---
 

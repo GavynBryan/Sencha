@@ -22,6 +22,7 @@
 
 // Forward declarations — defined in their own headers.
 class CommandBuffer;
+class World;
 template <typename... Accessors> class Query;
 
 // ─── ComponentMeta ──────────────────────────────────────────────────────────
@@ -34,6 +35,11 @@ struct ComponentMeta
     size_t           Size;
     size_t           Alignment;
     bool             IsTag;     // zero-size marker; no per-entity column
+
+    // Type-erased OnRemove dispatch for paths that cannot name T: entity
+    // destruction and World teardown. Typed remove paths dispatch the trait
+    // directly. Null when T has no OnRemove hook or is a tag.
+    void (*OnRemoveHook)(const void* component, World& world, EntityId entity) = nullptr;
 };
 
 struct ComponentBatchItem
@@ -60,8 +66,14 @@ class World
 
 public:
     World() = default;
+
+    // Teardown order contract: live components' OnRemove hooks fire first,
+    // while resources are still reachable, then resources are destroyed.
+    // Reversed, retain/release components could not reach their services and
+    // would leak their external handles on unload.
     ~World()
     {
+        DrainRemoveHooks();
         ClearOwnedTypeErased(Resources);
         ClearOwnedTypeErased(LegacyStores);
     }
@@ -78,6 +90,7 @@ public:
     {
         if (this != &other)
         {
+            DrainRemoveHooks();
             ClearOwnedTypeErased(Resources);
             ClearOwnedTypeErased(LegacyStores);
             MoveFrom(std::move(other));
@@ -129,6 +142,12 @@ public:
         meta.Size      = size;
         meta.Alignment = align;
         meta.IsTag     = std::is_empty_v<T>;
+        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
+        {
+            meta.OnRemoveHook = [](const void* ptr, World& w, EntityId e) {
+                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);
+            };
+        }
         ComponentMetas.push_back(meta);
 
         return id;
@@ -202,6 +221,10 @@ public:
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
+
+        // Hooks fire before the swap-remove so they observe the destroyed
+        // entity's own component values, not a moved neighbor's.
+        FireRemoveHooks(entity, loc);
 
         EntityIndex moved = arch.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
@@ -826,6 +849,11 @@ private:
     EntityRegistry                          Entities;
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 
+    // Index-aligned with ArchetypeList: the component ids in this archetype
+    // that carry an OnRemove hook, in column order. Empty for the common
+    // hook-free archetype, so destruction pays one lookup and one branch.
+    std::vector<std::vector<ComponentId>>   HookedRemoveIdsByArchetype;
+
     struct SigHash
     {
         size_t operator()(const ArchetypeSignature& s) const noexcept
@@ -883,6 +911,7 @@ private:
     {
         Entities = std::move(other.Entities);
         ArchetypeList = std::move(other.ArchetypeList);
+        HookedRemoveIdsByArchetype = std::move(other.HookedRemoveIdsByArchetype);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
         TypeToId = std::move(other.TypeToId);
@@ -905,6 +934,58 @@ private:
     uint32_t GenerationForIndex(EntityIndex index) const
     {
         return Entities.GenerationForIndex(index);
+    }
+
+    // Fire OnRemove for every hooked component of one live row, in column
+    // (registration) order — deterministic. Entity destruction cannot name
+    // component types, so dispatch goes through the pointers captured at
+    // registration. One vector index + empty check for hook-free archetypes.
+    void FireRemoveHooks(EntityId entity, const EntityLocation& loc)
+    {
+        const auto& hooked = HookedRemoveIdsByArchetype[loc.ArchetypeId];
+        if (hooked.empty())
+            return;
+
+        Chunk* ch = ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get();
+        ScopedLifecycleHook hookScope(*this);
+        for (const ComponentId id : hooked)
+        {
+            const uint32_t col = ch->FindColumn(id);
+            assert(col != UINT32_MAX && "Hooked component missing its column");
+            const void* ptr = ch->ColumnData(col) + loc.RowIndex * ch->Columns[col].Stride;
+            ComponentMetas[id].OnRemoveHook(ptr, *this, entity);
+        }
+    }
+
+    // Teardown pass: fire OnRemove for every live hooked component so the
+    // hook contract holds on World destruction (see the destructor comment).
+    // Row storage stays intact while hooks run. No-op on moved-from worlds.
+    void DrainRemoveHooks()
+    {
+        for (const auto& archPtr : ArchetypeList)
+        {
+            const auto& hooked = HookedRemoveIdsByArchetype[archPtr->Id];
+            if (hooked.empty())
+                continue;
+
+            for (const auto& chunkPtr : archPtr->Chunks)
+            {
+                Chunk* ch = chunkPtr.get();
+                for (uint32_t row = 0; row < ch->RowCount; ++row)
+                {
+                    const EntityIndex index = ch->EntityIndices()[row];
+                    const EntityId entity{ index, Entities.GenerationForIndex(index) };
+                    ScopedLifecycleHook hookScope(*this);
+                    for (const ComponentId id : hooked)
+                    {
+                        const uint32_t col = ch->FindColumn(id);
+                        const void* ptr =
+                            ch->ColumnData(col) + row * ch->Columns[col].Stride;
+                        ComponentMetas[id].OnRemoveHook(ptr, *this, entity);
+                    }
+                }
+            }
+        }
     }
 
     template <typename Move>
@@ -933,13 +1014,20 @@ private:
         arch->Id        = id;
 
         std::vector<ComponentInfo> cols;
+        std::vector<ComponentId>   hooked;
         for (const auto& meta : ComponentMetas)
-            if (sig.test(meta.Id))
-                cols.push_back(ComponentInfo{ meta.Id, meta.Size, meta.Alignment });
+        {
+            if (!sig.test(meta.Id))
+                continue;
+            cols.push_back(ComponentInfo{ meta.Id, meta.Size, meta.Alignment });
+            if (meta.OnRemoveHook != nullptr)
+                hooked.push_back(meta.Id);
+        }
 
         arch->BuildLayout(cols);
         SignatureToArchetype[sig] = id;
         ArchetypeList.push_back(std::move(arch));
+        HookedRemoveIdsByArchetype.push_back(std::move(hooked));
         return ArchetypeList.back().get();
     }
 };
