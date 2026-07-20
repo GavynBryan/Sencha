@@ -40,13 +40,25 @@ the mechanism through components and events.
    world-partition features, not hidden constraint behavior.
 7. **Terminal events are published into one engine-owned buffer** on
    `PhysicsStepSystem`, which outlives every registry, so unload-path events cannot
-   die with the registry that produced them.
-8. **`PhysicsConstraintId` is generational.** Constraint handles live in ECS link
+   die with the registry that produced them. Teardown events raised between steps
+   land in a pending staging list that the next step folds into the published
+   buffer before clearing, so the per-step clear cannot destroy them unread.
+8. **Terminal completion consumes the definition.** Ending a constraint for any
+   reason removes `DrivenPoseConstraint` from the follower along with the runtime
+   components. The component is a transient runtime request; rearming is
+   structural — the game adds a new component. Persistent authored constraints
+   arrive in P7 as an authoring component that instantiates transient requests.
+9. **`PhysicsConstraintId` is generational.** Constraint handles live in ECS link
    components and survive churn; slot reuse without a generation is an ABA defect
    waiting to happen. `RemoveConstraint` on a dead handle is a safe no-op.
-9. **Three update categories, three mechanisms**: topology through structural-version
-   gating, configuration edits through `Changed<DrivenPoseConstraint>`, per-tick
-   target state unconditionally.
+10. **Three update categories, three mechanisms**: topology through
+    structural-version gating, configuration edits through
+    `Changed<DrivenPoseConstraint>`, per-tick target state unconditionally.
+    `Changed` never doubles as a rearm signal — decision 8 makes that impossible,
+    because a terminal constraint no longer has a component to be marked changed.
+11. **The binding owns frame and velocity composition.** The backend receives an
+    already-resolved world-space driven frame with velocities evaluated at the
+    attachment point; it never sees the target's ECS-side local attachment frame.
 
 Rejected shapes, argued where cited:
 
@@ -172,8 +184,8 @@ struct DrivenPoseConstraint
     Transform3f FollowerLocalFrame;
     Transform3f TargetLocalFrame;
 
-    PoseDriveSettings LinearDrive;
-    PoseDriveSettings AngularDrive;
+    LinearPoseDriveSettings LinearDrive;
+    AngularPoseDriveSettings AngularDrive;
     ConstraintBreakSettings Break;
 };
 ```
@@ -255,10 +267,16 @@ handle that makes steady-state work a contiguous column walk with no hashing.
 (Section 8) are canonical for all constraint state; the component never feeds back
 into the binding. Games read it with const access.
 
-No backend or Jolt type enters ECS storage. All three components (plus
-`DrivenPoseConstraint`) register in `RegisterPhysicsComponents`
-(`engine/src/physics/PhysicsRegistration.cpp`) before any entity creation, per ECS
-rules.
+Because terminal completion removes all three components in the same flush
+(Section 10), `Broken` and `Invalid` are never observable through
+`DrivenPoseTelemetry` — the component only ever shows `Pending` or `Active`, and
+terminal outcomes reach the game exclusively through the `DrivenPoseEnded` event.
+The enum's terminal values exist for the binding's records and diagnostics.
+
+No backend or Jolt type enters ECS storage. All three components —
+`DrivenPoseConstraint`, `DrivenPoseLink`, `DrivenPoseTelemetry` — register in
+`RegisterPhysicsComponents` (`engine/src/physics/PhysicsRegistration.cpp`) before
+any entity creation, per ECS rules.
 
 ---
 
@@ -271,15 +289,28 @@ enum class PoseDriveResponse : uint8_t
     Spring,
 };
 
-struct PoseDriveSettings
+struct LinearPoseDriveSettings
 {
     PoseDriveResponse Response = PoseDriveResponse::Locked;
 
     float FrequencyHz = 0.0f;
     float DampingRatio = 1.0f;
-    float MaxForce = std::numeric_limits<float>::infinity(); // MaxTorque angular
+    float MaxForce = std::numeric_limits<float>::infinity();
+};
+
+struct AngularPoseDriveSettings
+{
+    PoseDriveResponse Response = PoseDriveResponse::Locked;
+
+    float FrequencyHz = 0.0f;
+    float DampingRatio = 1.0f;
+    float MaxTorque = std::numeric_limits<float>::infinity();
 };
 ```
+
+Two structs rather than one reused struct with a context-dependent limit field: a
+member named `MaxForce` must not mean torque when the struct sits in the angular
+slot.
 
 `Locked` requests rigid relative-pose preservation. `Spring` uses frequency and
 damping and may lag under collision or acceleration. These are the two response
@@ -325,10 +356,9 @@ struct DrivenPoseConstraintDesc
 {
     PhysicsBodyId Follower;
     Transform3f FollowerLocalFrame;
-    Transform3f TargetLocalFrame;
 
-    PoseDriveSettings LinearDrive;
-    PoseDriveSettings AngularDrive;
+    LinearPoseDriveSettings LinearDrive;
+    AngularPoseDriveSettings AngularDrive;
 
     uint64_t OwnerTag = 0;  // opaque; the binding packs its RegistryId
     uint64_t UserData = 0;  // opaque; the binding packs the follower EntityId
@@ -336,9 +366,8 @@ struct DrivenPoseConstraintDesc
 
 struct DrivenPoseTarget
 {
-    Vec3d Position;
-    Quatf Rotation;
-    Vec3d LinearVelocity;
+    Transform3f WorldFrame;  // already composed: targetWorld * TargetLocalFrame
+    Vec3d LinearVelocity;    // evaluated at the frame origin, not the target origin
     Vec3d AngularVelocity;
     bool Teleported = false;
 };
@@ -370,10 +399,14 @@ std::span<const ExpiredConstraint> TakeExpiredConstraints(); // drained post-ste
 
 Contract:
 
-- The target is a driven frame, not necessarily a body: dynamic, kinematic,
-  animated, scripted, or any entity with a valid world transform. The backend owns
-  whatever hidden representation realizes the frame (kinematic anchor, mass
-  scaling, or another Jolt-side mechanism); the choice never leaks.
+- The backend's whole contract is: drive this follower-local frame toward this
+  world-space frame. It never sees the target entity or its local attachment
+  frame; frame and velocity composition belong to the binding (Section 12), which
+  keeps `TargetLocalFrame` single-owner on the ECS side. The target is a driven
+  frame, not necessarily a body: dynamic, kinematic, animated, scripted, or any
+  entity with a valid world transform. The backend owns whatever hidden
+  representation realizes the frame (kinematic anchor, mass scaling, or another
+  Jolt-side mechanism); the choice never leaks.
 - One-way: the follower receives constraint forces, the target receives no solver
   feedback, and the follower continues colliding normally.
 - **Refresh-or-expire.** `SetDrivenPoseTarget` must be called between steps for
@@ -437,8 +470,10 @@ Three update categories, three mechanisms:
 - **Configuration** (an existing `DrivenPoseConstraint` edited: retuned spring,
   changed frames, changed thresholds): detected with
   `Changed<DrivenPoseConstraint>` and pushed to the backend. Chunk-conservative is
-  acceptable — re-pushing a chunk's settings occasionally is cheap. All read paths
-  use const access so reads never mark the column.
+  acceptable — re-pushing a chunk's settings occasionally is cheap, and a spurious
+  neighbor-write mark can never resurrect a terminal constraint because
+  termination removes the component itself (Section 10). All read paths use const
+  access so reads never mark the column.
 - **Per-tick target state**: resolved and refreshed unconditionally for every
   active constraint. This is not reconciliation; the steady-state test in
   Section 16 is worded against topology passes only.
@@ -453,13 +488,20 @@ Structural changes the binding itself needs (adding `DrivenPoseLink` and
   (the registry's body pass has already run — Section 9), remove backend
   constraints whose definition vanished, sweep records for dead followers.
 - PrepareStep: resolve each record's `Target` ref against the physics span, read
-  target pose and velocities, classify teleports, call `SetDrivenPoseTarget`.
-  Resolution failure or target death is recorded for terminal handling in
-  CollectResults; the constraint is not refreshed, so the backend also disables it
-  for the step.
+  the target pose, compose the driven world frame
+  (`targetWorld * TargetLocalFrame`) and its velocities at the frame origin —
+  for an off-center frame on a rotating target the linear velocity is
+  `v + ω × r`, not the target origin's velocity — classify teleports, and call
+  `SetDrivenPoseTarget`. Composition is pure transform math with focused
+  table-driven tests. Resolution failure or target death is recorded for terminal
+  handling in CollectResults; the constraint is not refreshed, so the backend
+  also disables it for the step.
 - CollectResults: pull telemetry, evaluate break thresholds with hysteresis and
-  `RequiredDuration`, publish terminal events, remove broken backend constraints,
-  strip runtime components, update `DrivenPoseTelemetry` copies.
+  `RequiredDuration`, publish terminal events, remove terminal backend
+  constraints, and remove the terminal followers' `DrivenPoseConstraint`,
+  `DrivenPoseLink`, and `DrivenPoseTelemetry` in one command-buffer flush
+  (Section 10). Surviving constraints get their `DrivenPoseTelemetry` copies
+  updated in place.
 - Destructor: remove all owned backend constraints and publish `OwnerUnloaded`
   events through the sink pointer, which outlives every registry (Section 11).
 
@@ -512,8 +554,17 @@ pass 6). Telemetry is collected before any backend constraint is destroyed.
 
 ## 10. Lifecycle and termination
 
-States: `Pending -> Active -> Broken | Invalid`. A terminal constraint never
-recreates itself; rearming requires the game to replace the component.
+States: `Pending -> Active -> Broken | Invalid`. Terminal completion consumes the
+request: in one command-buffer flush the binding publishes `DrivenPoseEnded`,
+removes the backend constraint, and removes `DrivenPoseConstraint`,
+`DrivenPoseLink`, and `DrivenPoseTelemetry` from the follower. This is what makes
+"broken constraints do not recreate" structurally true — after the flush there is
+no definition left for topology reconciliation to rediscover, and no component
+left for a chunk-conservative `Changed` mark to touch. Rearming is unambiguous:
+the game adds a fresh `DrivenPoseConstraint`. The `Invalid` path consumes the
+request the same way, with a loud debug diagnostic. When P7 introduces authored
+persistent constraints, the authoring component instantiates transient requests;
+the runtime contract here does not change.
 
 - **Pending**: definition exists, follower body link not yet bound. Because the
   registry's body pass precedes its constraint pass, the common case binds in the
@@ -589,17 +640,38 @@ struct DrivenPoseEnded
 };
 ```
 
-`PhysicsStepSystem` owns an `EventBuffer<DrivenPoseEnded>` (the existing primitive
-at `engine/include/core/event/EventBuffer.h`; domain services own their buffers by
+`PhysicsStepSystem` owns the event sink (built on the existing primitive at
+`engine/include/core/event/EventBuffer.h`; domain services own their buffers by
 design). Bindings hold a non-owning sink pointer with the same lifetime argument
 `RigidBodyBinding` already uses for its raw `PhysicsWorld*`: `EngineSchedule`
 outlives `ZoneRuntime`, so registry teardown can still publish.
 
-Buffer discipline: cleared at the start of each physics step. Consumers in the same
-fixed tick's `PostFixed` phase see that tick's events. Frame-lane (`Update`)
-consumers must not assume one tick per frame — a frame runs zero or several fixed
-ticks, and only the last tick's events survive to `Update`. Systems that must not
-miss events consume them in `PostFixed`.
+The sink is two containers, because teardown publishes outside the step. Zone
+lifecycle mutates at drain points before `ScheduleTicks` builds the frame view, so
+an `OwnerUnloaded` raised by a binding destructor exists before the next physics
+step begins — a single buffer cleared at step entry would destroy it unread.
+
+```text
+published : EventBuffer<DrivenPoseEnded>   read by consumers
+pending   : append-only staging            written by teardown, between steps
+
+at physics-step entry:
+    published.Clear()
+    move pending into published
+during the step:
+    bindings and the expiry drain append to published
+```
+
+Everything runs on the simulation thread (teardown at drain points, publication
+inside the step), so no synchronization is involved.
+
+Visibility: consumers in the same fixed tick's `PostFixed` phase see that tick's
+events, including any teardown events staged since the previous step. Frame-lane
+(`Update`) consumers must not assume one tick per frame — a frame runs zero or
+several fixed ticks, and only the last tick's events survive to `Update`. Systems
+that must not miss events consume them in `PostFixed`. A frame that runs zero
+ticks leaves staged teardown events pending; they surface in the next tick that
+actually runs, which is the next moment physics state is coherent to act on.
 
 The engine reports the physical result only. It does not drop objects, end
 abilities, restore input, play cues, destroy game entities, or apply cooldowns;
@@ -626,6 +698,13 @@ Velocity: if the target carries a `RigidBody` component, use its linear and angu
 velocity values (component reads — the target's backend body, if any, is never
 touched). Otherwise derive from fixed-step transform deltas; angular velocity from
 the quaternion delta. The binding's record keeps the previous target transform.
+
+The binding then evaluates velocity at the driven frame's origin before refreshing
+the backend: for an attachment offset `r` from the target origin, the frame's
+linear velocity is `v + ω × r`. Skipping this hands the backend the target
+origin's velocity and makes off-center attachments on rotating targets drag
+behind their true path; the frame-composition helper owns this math and its
+table-driven tests.
 Discontinuities beyond the per-step translation and rotation bounds classify as
 teleports before velocity derivation, so a teleport never manufactures an enormous
 synthetic velocity — it either breaks the constraint (per break settings) or is
@@ -719,11 +798,12 @@ tunable validation, deterministic fixed-step tests. Exit: the same mechanism
 expresses rigid following and forgiving pickup-style following.
 
 **P4 — ECS binding and orchestration.**
-Components and registration; `DrivenPoseBinding`; global pass restructure in
-`PhysicsStepSystem`; span-scoped target resolution; engine-owned event buffer and
-sink wiring; owner teardown publishing; expired-list draining. Exit: constraints
-bind and unbind across registries without leaking backend objects or scanning
-topology on steady frames.
+Components and registration; `DrivenPoseBinding` with the frame- and
+velocity-composition helper; global pass restructure in `PhysicsStepSystem`;
+span-scoped target resolution; engine-owned event sink with pending staging;
+owner teardown publishing; expired-list draining. Exit: constraints bind and
+unbind across registries without leaking backend objects or scanning topology on
+steady frames, and teardown events survive to the next executed tick.
 
 **P5 — breaking and events.**
 Threshold accumulation, hysteresis, teleport classification, `RequiredDuration`,
@@ -763,8 +843,15 @@ ECS integration:
 
 - constraint binds in the same step its follower body binds; stays pending before
 - component removal, follower destruction, target destruction, and target-registry
-  unload each end the constraint with the correct reason
-- owner-registry unload removes backend constraints and publishes `OwnerUnloaded`
+  unload each end the constraint with the correct reason and remove all three
+  components from a surviving follower in the same flush
+- after a break, a write to a different entity's `DrivenPoseConstraint` in the
+  same chunk does not resurrect or rebind the broken follower
+- an off-center frame on a rotating target receives attachment-point velocity
+  (`v + ω × r`), verified against the analytic path
+- owner-registry unload removes backend constraints and publishes `OwnerUnloaded`;
+  the event survives to the next executed tick's `PostFixed` consumer even when
+  the unload happens on a frame that runs zero fixed ticks
 - owner-registry dormancy expires constraints and publishes `OwnerInactive`;
   the returning registry cleans up without publishing a second event
 - target-registry dormancy ends with `TargetUnavailable`
@@ -788,13 +875,17 @@ passing under the new names and storage.
 
 ## 17. Performance expectations
 
-Steady-state complexity: `O(active constraints + active bodies)`. No entity scans,
-no per-constraint registry scans, no repeated registration lookups, no backend
-creation during steady following, no schema interpretation or string lookup in the
-step. Topology work is structural-version gated; target refresh and telemetry are
-contiguous walks over dense records; span resolution is a bounded scan over a
-handful of registries. Any bounded behavior (expiry, pending diagnostics) logs what
-it dropped rather than truncating silently.
+Steady-state complexity, stated honestly:
+`O(active bodies + active constraints × physics registries)` — each active
+constraint's target resolution scans the physics span. The span is deliberately
+small (global plus a handful of streamed zones), so this is acceptable and is not
+disguised as `O(B + C)`; if profiling ever shows the resolution term, the fix is
+an indexed lookup, not a redesign. Beyond that: no entity scans, no repeated
+registration lookups, no backend creation during steady following, no schema
+interpretation or string lookup in the step. Topology work is structural-version
+gated; target refresh and telemetry are contiguous walks over dense records. Any
+bounded behavior (expiry, pending diagnostics) logs what it dropped rather than
+truncating silently.
 
 ---
 
