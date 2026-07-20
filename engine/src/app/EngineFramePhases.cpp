@@ -131,7 +131,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     driver.Register(FramePhase::RegistryResidency, [&engine, &config](PhaseContext&) {
         RegistryResidencyContext residency{
             .Config = config,
-            .Changes = engine.Zones().ResidencyChanges(),
+            .Changes = engine.Zones().BeginResidencyProcessing(),
         };
         engine.Schedule().RunRegistryResidency(residency);
         engine.Zones().FinalizeResidencyProcessing();
