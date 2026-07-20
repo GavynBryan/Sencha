@@ -12,14 +12,10 @@
 // Backend-free, like PhysicsTypes.h. The backend's whole contract is: drive
 // this follower-local frame toward this world-space frame, one-way, while the
 // follower collides normally. It never sees the target entity or its local
-// attachment frame — frame and velocity composition belong to the ECS-side
+// attachment frame; frame and velocity composition belong to the ECS-side
 // binding. The hidden realization never leaks through these types.
 //=============================================================================
 
-// Generational handle to a constraint inside a PhysicsWorld. Unlike body ids,
-// constraint handles live in ECS link components and outlive breaks in
-// telemetry queries, so slot reuse without a generation would be an ABA
-// defect. A stale handle never resolves.
 struct PhysicsConstraintId
 {
     static constexpr uint32_t kInvalid = 0xffffffffu;
@@ -33,8 +29,8 @@ struct PhysicsConstraintId
 
 enum class PoseDriveResponse : uint8_t
 {
-    Locked, // rigid relative-pose preservation
-    Spring, // lags and recovers under FrequencyHz / DampingRatio
+    Locked,
+    Spring,
 };
 
 struct LinearPoseDriveSettings
@@ -53,27 +49,28 @@ struct AngularPoseDriveSettings
     float MaxTorque = std::numeric_limits<float>::infinity();
 };
 
-// Everything needed to create one driven pose constraint. The follower must
-// be a dynamic body in the same world.
 struct DrivenPoseConstraintDesc
 {
     PhysicsBodyId Follower;
 
-    // The attachment frame on the follower, in body space. The backend drives
-    // this frame toward the target's world frame.
+    // Attachment frame on the follower, in body space. The backend drives this
+    // frame toward the target's world frame.
     BodyTransform FollowerLocalFrame{ Vec3d::Zero(), Quatf::Identity() };
 
     LinearPoseDriveSettings LinearDrive;
     AngularPoseDriveSettings AngularDrive;
 
-    uint64_t UserData = 0; // opaque tag for the ECS bridge, like BodyDesc::UserData
+    uint64_t UserData = 0;
 };
 
-// The per-step target input. A constraint must be refreshed between steps:
-// the target is per-step input exactly like a kinematic body's transform.
+// Per-step target input. WorldFrame is the target frame at the beginning of the
+// upcoming physics step. LinearVelocity and AngularVelocity describe how that
+// frame moves through the step, so locked response corrects the current error
+// and adds feed-forward motion exactly once.
+//
 // Velocities are evaluated at the frame origin (v + w x r for off-center
-// frames), not at the target object's origin — that composition is the
-// caller's job.
+// frames), not at the target object's origin; that composition is the caller's
+// job.
 struct DrivenPoseTarget
 {
     BodyTransform WorldFrame{ Vec3d::Zero(), Quatf::Identity() };
@@ -85,11 +82,15 @@ struct DrivenPoseTarget
     bool Teleported = false;
 };
 
-// Read after a step, until the constraint is removed.
+// Read after a step, until the constraint is removed. The velocity-drive
+// prototype cannot report physical force or torque because it does not expose a
+// solver impulse. These diagnostics therefore name exactly what was commanded;
+// P3 replaces them with force/torque only when a real solver-side realization
+// can aggregate impulses over the outer fixed step.
 struct PhysicsConstraintTelemetry
 {
-    float PositionError = 0.0f;  // meters, before this step's drive
-    float AngularError = 0.0f;   // radians, before this step's drive
-    float AppliedForce = 0.0f;   // newtons realized by this step's drive
-    float AppliedTorque = 0.0f;  // newton-meters realized by this step's drive
+    float PositionError = 0.0f;
+    float AngularError = 0.0f;
+    float CommandedLinearSpeed = 0.0f;
+    float CommandedAngularSpeed = 0.0f;
 };
