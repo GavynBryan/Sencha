@@ -42,8 +42,6 @@ void PhysicsWorld::SetShapeCache(const CollisionShapeCache* cache)
 
 namespace
 {
-// Shortest-arc axis-angle of the rotation carrying `from` onto `to`.
-// Returns the angle; writes the unit axis (zero vector for tiny angles).
 float DeltaAxisAngle(const Quatf& from, const Quatf& to, Vec3d& axisOut)
 {
     Quatf delta = (to * from.Inverse()).Normalized();
@@ -69,10 +67,9 @@ void PhysicsWorld::Step(float dt, int collisionSteps)
     Impl->System.Update(dt, collisionSteps, &Impl->Temp, &Impl->Jobs);
 }
 
-// The hidden realization: close the whole pose error within one step by
-// velocity, then let the solver resolve contacts, which is what keeps the
-// follower colliding normally and the relationship one-way. Telemetry records
-// the pre-drive error and the force/torque the velocity change amounts to.
+// Locked velocity-drive prototype. The target pose is the frame at the start of
+// this step; its supplied velocity predicts motion through the step. The error
+// correction and feed-forward terms therefore each appear exactly once.
 void PhysicsWorld::DriveConstraints(float dt)
 {
     if (dt <= 0.0f)
@@ -96,8 +93,6 @@ void PhysicsWorld::DriveConstraints(float dt)
 
         const JPH::BodyID body = ToJph(slot.Follower);
 
-        // Desired body pose from the target frame and the follower-local
-        // attachment frame: bodyRot * localRot = frameRot.
         const Quatf desiredRot =
             (slot.Target.WorldFrame.Rotation * slot.FollowerLocalFrame.Rotation.Inverse())
                 .Normalized();
@@ -121,9 +116,6 @@ void PhysicsWorld::DriveConstraints(float dt)
         Vec3d axis;
         const float angularError = DeltaAxisAngle(pose.Rotation, desiredRot, axis);
 
-        // The error-closing component is capped so a large error cannot
-        // command a speed discrete collision would tunnel at; the target
-        // frame's own velocity rides on top uncapped. See PhysicsWorldConfig.
         Vec3d closing = positionError * (1.0f / dt);
         const float closingSpeed = closing.Magnitude();
         if (closingSpeed > Impl->MaxDriveClosingSpeed)
@@ -136,28 +128,13 @@ void PhysicsWorld::DriveConstraints(float dt)
         const Vec3d velocity = closing + slot.Target.LinearVelocity;
         const Vec3d angularVelocity = axis * closingAngular + slot.Target.AngularVelocity;
 
-        const Vec3d previousVelocity = FromJph(bodies.GetLinearVelocity(body));
-        const Vec3d previousAngular = FromJph(bodies.GetAngularVelocity(body));
-
         bodies.SetLinearVelocity(body, ToJph(velocity));
         bodies.SetAngularVelocity(body, ToJph(angularVelocity));
 
-        float mass = 0.0f;
-        {
-            JPH::BodyLockRead lock(Impl->System.GetBodyLockInterface(), body);
-            if (lock.Succeeded() && lock.GetBody().GetMotionPropertiesUnchecked() != nullptr)
-            {
-                const float inverseMass =
-                    lock.GetBody().GetMotionPropertiesUnchecked()->GetInverseMass();
-                mass = inverseMass > 0.0f ? 1.0f / inverseMass : 0.0f;
-            }
-        }
-
         slot.Telemetry.PositionError = positionError.Magnitude();
         slot.Telemetry.AngularError = angularError;
-        slot.Telemetry.AppliedForce = mass * (velocity - previousVelocity).Magnitude() / dt;
-        slot.Telemetry.AppliedTorque =
-            mass * (angularVelocity - previousAngular).Magnitude() / dt;
+        slot.Telemetry.CommandedLinearSpeed = velocity.Magnitude();
+        slot.Telemetry.CommandedAngularSpeed = angularVelocity.Magnitude();
     }
 }
 
@@ -201,9 +178,6 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
     if (!id.IsValid())
         return;
 
-    // Dependent constraints are invalidated before the body goes, so a
-    // constraint can never reference a removed body. The ECS binding keeps its
-    // own records and observes the invalidation through IsConstraintValid.
     for (uint32_t i = 0; i < Impl->Constraints.size(); ++i)
     {
         DrivenPoseSlot& slot = Impl->Constraints[i];
@@ -219,10 +193,6 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID bid = ToJph(id);
 
-    // The backend does not wake contact partners on removal, so anything
-    // resting on this body would keep sleeping on phantom support — a crate
-    // stack when its base despawns, a ball on evicted zone geometry. Capture
-    // the bounds, remove, then wake everything that overlapped.
     bool hadBounds = false;
     JPH::AABox bounds;
     {
@@ -283,6 +253,12 @@ void PhysicsWorld::SetAngularVelocity(PhysicsBodyId id, const Vec3d& velocity)
     bodies.SetAngularVelocity(ToJph(id), ToJph(velocity));
 }
 
+float PhysicsWorld::GetGravityScale(PhysicsBodyId id) const
+{
+    const JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    return bodies.GetGravityFactor(ToJph(id));
+}
+
 void PhysicsWorld::SetGravityScale(PhysicsBodyId id, float scale)
 {
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
@@ -302,6 +278,17 @@ PhysicsConstraintId PhysicsWorld::AddDrivenPoseConstraint(const DrivenPoseConstr
         || bodies.GetMotionType(ToJph(desc.Follower)) != JPH::EMotionType::Dynamic)
     {
         assert(false && "AddDrivenPoseConstraint: follower must be a live dynamic body");
+        return PhysicsConstraintId{};
+    }
+
+    const bool supported =
+        desc.LinearDrive.Response == PoseDriveResponse::Locked
+        && desc.AngularDrive.Response == PoseDriveResponse::Locked
+        && std::isinf(desc.LinearDrive.MaxForce)
+        && std::isinf(desc.AngularDrive.MaxTorque);
+    if (!supported)
+    {
+        assert(false && "AddDrivenPoseConstraint: spring and force/torque limits require P3");
         return PhysicsConstraintId{};
     }
 
@@ -334,9 +321,6 @@ PhysicsConstraintId PhysicsWorld::AddDrivenPoseConstraint(const DrivenPoseConstr
 
 void PhysicsWorld::RemoveConstraint(PhysicsConstraintId id)
 {
-    // Dead, stale, and already-invalidated handles are safe no-ops: cleanup
-    // paths (binding teardown, RemoveBody, registry destruction) cross in
-    // unspecified order.
     if (!IsConstraintValid(id))
         return;
 
