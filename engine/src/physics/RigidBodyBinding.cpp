@@ -1,6 +1,7 @@
 #include <physics/RigidBodyBinding.h>
 
 #include <cassert>
+#include <cmath>
 
 #include <ecs/CommandBuffer.h>
 #include <ecs/Query.h>
@@ -20,10 +21,6 @@ CollisionLayer DeriveLayer(BodyMotion motion, bool isTrigger)
     return motion == BodyMotion::Static ? CollisionLayer::Static : CollisionLayer::Moving;
 }
 
-// Place bodies at the entity's world pose. Propagation runs after physics, so a
-// top-level entity (the MVP case: brush cells, player, loose dynamics) has
-// LocalTransform == WorldTransform here; WorldTransform is preferred when present
-// for the parented case. Used only at body creation (the rare path).
 BodyTransform ReadPose(const World& world, EntityId entity)
 {
     if (world.IsRegistered<WorldTransform>())
@@ -35,9 +32,6 @@ BodyTransform ReadPose(const World& world, EntityId entity)
 }
 } // namespace
 
-// PIMPL: keeps Query.h out of the public header, matching the Jolt firewall
-// discipline. The queries are cached (built once, bound to this scene's World)
-// and the command buffer is reused (Flush clears it).
 struct RigidBodyBinding::SceneState
 {
     explicit SceneState(World& world)
@@ -59,18 +53,12 @@ RigidBodyBinding::RigidBodyBinding(PhysicsWorld& world)
 
 RigidBodyBinding::~RigidBodyBinding()
 {
-    // Safe without a lifetime guard: the world outlives this scene (zones are
-    // destroyed before the step system that owns the world).
     for (const BodyRecord& rec : Owned)
         Simulation->RemoveBody(rec.Body);
 }
 
 bool RigidBodyBinding::Ready(const World& world) const
 {
-    // The bridge needs colliders to bind, the link component to mark bound
-    // bodies, and a transform to place them. RigidBody gates the dynamic and
-    // kinematic queries; RegisterPhysicsComponents registers all of these
-    // together, so a configured zone passes and a bare World stays inert.
     return world.IsRegistered<Collider>() && world.IsRegistered<RigidBody>()
         && world.IsRegistered<PhysicsBodyLink>() && world.IsRegistered<LocalTransform>();
 }
@@ -85,11 +73,8 @@ RigidBodyBinding::SceneState& RigidBodyBinding::EnsureState(World& world)
 void RigidBodyBinding::Reconcile(World& world, SceneState& state)
 {
     ++ReconcileCount;
-    const World& readOnly = world; // const iteration: do not mark colliders changed
+    const World& readOnly = world;
 
-    // Create a body for every collider that does not have one yet. ForEachComponent
-    // yields the full (generational) EntityId the body's UserData and the Owned
-    // record need; the HasComponent skip keeps already-bound colliders untouched.
     readOnly.ForEachComponent<Collider>([&](EntityId entity, const Collider& collider)
     {
         if (world.HasComponent<PhysicsBodyLink>(entity))
@@ -129,10 +114,6 @@ void RigidBodyBinding::Reconcile(World& world, SceneState& state)
         state.Commands.AddComponent<PhysicsBodyLink>(entity, PhysicsBodyLink{ id });
     });
 
-    // Drop bodies whose entity was destroyed (no hook fired; the link vanished
-    // with the entity) or whose collider was removed. One sweep over Owned, so
-    // both cases are covered; only the collider-removed case still has a link to
-    // strip. O(bodies in this zone), paid only on structural-change frames.
     for (size_t i = 0; i < Owned.size();)
     {
         const EntityId entity = Owned[i].Entity;
@@ -157,9 +138,6 @@ void RigidBodyBinding::Reconcile(World& world, SceneState& state)
 
 void RigidBodyBinding::SyncToPhysics(World& world)
 {
-    // The likely misconfiguration: colliders registered but the runtime link
-    // forgotten, which would re-create every body each step. Loud in debug;
-    // a fully bare World (no colliders) stays silently inert.
     assert(!(world.IsRegistered<Collider>() && !world.IsRegistered<PhysicsBodyLink>())
            && "Collider registered without PhysicsBodyLink: call RegisterPhysicsComponents.");
 
@@ -172,13 +150,9 @@ void RigidBodyBinding::SyncToPhysics(World& world)
     if (version != LastStructuralVersion)
     {
         Reconcile(world, state);
-        LastStructuralVersion = world.StructuralVersion(); // post-flush value
+        LastStructuralVersion = world.StructuralVersion();
     }
 
-    // Push authored state into the simulation. Reads only (no version bump).
-    // Kinematic bodies take their authored transform; dynamic bodies take
-    // GravityScale, so a runtime edit acts on the next tick. Static colliders
-    // carry no RigidBody and so never match.
     state.KinematicPush.ForEachChunk([&](auto& view)
     {
         const auto transforms = view.template Read<LocalTransform>();
@@ -193,7 +167,15 @@ void RigidBodyBinding::SyncToPhysics(World& world)
             }
             else if (bodies[i].Motion == BodyMotion::Dynamic)
             {
-                Simulation->SetGravityScale(links[i].Body, bodies[i].GravityScale);
+                // SetGravityFactor does not wake a sleeping body. Compare the
+                // applied backend value so a runtime edit wakes exactly once,
+                // while unchanged bodies remain eligible for sleep.
+                const float applied = Simulation->GetGravityScale(links[i].Body);
+                if (std::abs(applied - bodies[i].GravityScale) > 1e-6f)
+                {
+                    Simulation->SetGravityScale(links[i].Body, bodies[i].GravityScale);
+                    Simulation->WakeBody(links[i].Body);
+                }
             }
         }
     });
@@ -204,7 +186,7 @@ void RigidBodyBinding::Evict(World& world)
     if (!Ready(world) || Owned.empty())
         return;
 
-    SyncFromPhysics(world); // capture transforms and velocities first
+    SyncFromPhysics(world);
 
     SceneState& state = EnsureState(world);
     for (const BodyRecord& rec : Owned)
@@ -224,9 +206,6 @@ void RigidBodyBinding::SyncFromPhysics(World& world)
 
     SceneState& state = EnsureState(world);
 
-    // Write resolved transforms and velocities back for dynamic bodies.
-    // Contiguous column walk, no hashing. Static colliders (no RigidBody) and
-    // kinematic bodies (skipped) are not written.
     state.DynamicPull.ForEachChunk([&](auto& view)
     {
         auto transforms = view.template Write<LocalTransform>();
