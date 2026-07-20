@@ -4,18 +4,35 @@
 #include <world/registry/Registry.h>
 #include <span>
 
+// Domain-scoped lookup for simulation code. Callers must choose the span whose
+// participation contract they actually need instead of resolving against the
+// union of every active domain.
+[[nodiscard]] inline Registry* FindRegistry(
+    std::span<Registry* const> registries,
+    RegistryId id)
+{
+    if (!id.IsValid())
+        return nullptr;
+    for (Registry* registry : registries)
+        if (registry->Id == id)
+            return registry;
+    return nullptr;
+}
+
+[[nodiscard]] inline bool IsAliveIn(
+    std::span<Registry* const> registries,
+    EntityRef ref)
+{
+    const Registry* registry = FindRegistry(registries, ref.Registry);
+    return registry != nullptr && registry->Components.IsAlive(ref.Entity);
+}
+
 //=============================================================================
 // FrameRegistryView
 //
 // The frame's iteration view: which registries each domain visits this frame,
 // built once at ScheduleTicks from drain-point-stable lifecycle state. Spans
 // never contain null entries and stay valid until EndFrameView.
-//
-// Resolution is deliberately view-scoped: Find answers only for registries
-// participating this frame, which is the correct default for simulation code —
-// a dormant or detached registry is unresolvable, exactly as if it were gone.
-// Residency-transition consumers get live pointers in their change records;
-// tools and lifecycle orchestration use ZoneRuntime::FindRegistry.
 //=============================================================================
 struct FrameRegistryView
 {
@@ -26,27 +43,19 @@ struct FrameRegistryView
     std::span<Registry*> Logic;
     std::span<Registry*> Audio;
 
-    // Global plus every zone in at least one span this frame, in span order
-    // (global first, zones in attach order).
+    // Global plus every zone in at least one span this frame, in stable order.
     std::span<Registry* const> Participating;
 
-    // Resolve a registry participating this frame; null otherwise. Linear over
-    // a handful of registries — index it only when a profile says so.
-    [[nodiscard]] Registry* Find(RegistryId id) const
+    // Explicitly domain-agnostic resolution for systems that truly operate over
+    // the union. Physics, logic, audio, and rendering code should instead call
+    // FindRegistry with the matching domain span.
+    [[nodiscard]] Registry* FindParticipating(RegistryId id) const
     {
-        if (!id.IsValid())
-            return nullptr;
-        for (Registry* registry : Participating)
-            if (registry->Id == id)
-                return registry;
-        return nullptr;
+        return FindRegistry(Participating, id);
     }
 
-    // Generational liveness through the view: true only when the ref's
-    // registry participates this frame and the entity is alive in it.
-    [[nodiscard]] bool IsAlive(EntityRef ref) const
+    [[nodiscard]] bool IsAliveParticipating(EntityRef ref) const
     {
-        const Registry* registry = Find(ref.Registry);
-        return registry != nullptr && registry->Components.IsAlive(ref.Entity);
+        return IsAliveIn(Participating, ref);
     }
 };
