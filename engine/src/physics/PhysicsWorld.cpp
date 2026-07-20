@@ -265,6 +265,12 @@ void PhysicsWorld::SetGravityScale(PhysicsBodyId id, float scale)
     bodies.SetGravityFactor(ToJph(id), scale);
 }
 
+bool PhysicsWorld::IsBodyActive(PhysicsBodyId id) const
+{
+    const JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    return bodies.IsActive(ToJph(id));
+}
+
 void PhysicsWorld::WakeBody(PhysicsBodyId id)
 {
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
