@@ -42,20 +42,23 @@ public:
     bool SegmentOccluded(const Vec3d& origin, const Vec3d& target) const;
 
     // True when the NEAREST triangle hit along origin + t*direction (unit
-    // length not required; t in (eps, maxT]) faces away from the ray: seeing
-    // a backface first means the point sits inside or underneath solid
-    // geometry. The bake uses this to invalidate buried lightmap samples
-    // (e.g. floor luxels underneath an overlapping wall brush) so dilation
-    // fills them from lit neighbors instead of baking black that bilinear
-    // filtering would drag out past the wall base. False on a miss.
+    // length not required; t in (max(eps, minT), maxT]) faces away from the
+    // ray: seeing a backface first means the point sits inside or underneath
+    // solid geometry. The bake uses this to invalidate buried lightmap
+    // samples (e.g. floor luxels underneath an overlapping wall brush) so
+    // dilation fills them from lit neighbors instead of baking black that
+    // bilinear filtering would drag out past the wall base. minT lets a
+    // reverse probe skip past the sample's own surface and any flush
+    // partners coplanar with it. False on a miss.
     bool FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
-                            double maxT) const;
+                            double maxT, double minT = 0.0) const;
 
     // Nearest triangle hit along origin + t*direction (unit length not
-    // required; t in (eps, maxT]). False on a miss. The probe bake gathers
-    // bounce radiance at the hit and classifies buried probes with it.
+    // required; t in (max(eps, minT), maxT]). False on a miss. The probe
+    // bake gathers bounce radiance at the hit and classifies buried probes
+    // with it.
     bool FirstHit(const Vec3d& origin, const Vec3d& direction, double maxT,
-                  BakeBvhHit& hit) const;
+                  BakeBvhHit& hit, double minT = 0.0) const;
 
     bool Empty() const { return Triangles.empty(); }
 

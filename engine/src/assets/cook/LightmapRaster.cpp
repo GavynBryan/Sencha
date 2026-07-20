@@ -149,13 +149,20 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
             const Vec3d normal = sample.Normal.SqrMagnitude() > 1e-12f
                 ? sample.Normal.Normalized()
                 : Vec3d{ 0.0f, 1.0f, 0.0f };
-            // Buried samples (a chart running underneath an overlapping brush
-            // sees a backface first along its own normal) stay uncovered:
-            // dilation continues the neighboring lighting across them instead
-            // of baking black that bilinear filtering would bleed out past
-            // the overlapping geometry's base.
+            // Buried samples (a chart running underneath an overlapping brush)
+            // stay uncovered: dilation continues the neighboring lighting
+            // across them instead of baking black that bilinear filtering
+            // would bleed out past the overlapping geometry's base. Buried
+            // means ENCLOSED: a backface first along the normal AND along its
+            // reverse. A single distant backface is not enough, because carved
+            // interiors and single-skin walls legitimately show their backs
+            // across open air; the reverse probe skips twice the lift so the
+            // sample's own surface and flush partners are not the "behind"
+            // hit.
             const Vec3d probeOrigin = sample.Position + normal * params.NormalOffset;
-            if (occluders.FirstHitIsBackface(probeOrigin, normal, 1e6))
+            if (occluders.FirstHitIsBackface(probeOrigin, normal, 1e6)
+                && occluders.FirstHitIsBackface(probeOrigin, normal * -1.0f, 1e6,
+                                                2.0 * params.NormalOffset))
                 continue;
             Texel& texel = texels[static_cast<std::size_t>(y + kLightmapGutter) * rect.Width
                 + x + kLightmapGutter];

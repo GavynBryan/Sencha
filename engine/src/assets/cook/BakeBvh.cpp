@@ -122,12 +122,13 @@ std::uint32_t BakeBvh::BuildRange(std::uint32_t start, std::uint32_t count)
 }
 
 bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
-                       double maxT, BakeBvhHit& hit) const
+                       double maxT, BakeBvhHit& hit, double minT) const
 {
     if (Nodes.empty())
         return false;
 
-    constexpr double kEps = 1e-4;
+    constexpr double kBaseEps = 1e-4;
+    const double kEps = minT > kBaseEps ? minT : kBaseEps;
     Vec3d invDir;
     for (int axis = 0; axis < 3; ++axis)
     {
@@ -138,6 +139,14 @@ bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
 
     double nearestT = maxT;
     const BakeTriangle* nearest = nullptr;
+    bool nearestBackface = false;
+
+    // Flush brush faces produce coincident triangle pairs with opposite
+    // windings; a ray crossing that interface hits both at the same t and the
+    // winner would otherwise be traversal order. Within this tie window the
+    // front face wins, so an open-space ray never reports backface-first at a
+    // kissing surface, and the answer is independent of build order.
+    const auto tieWindow = [](double t) { return 1e-6 * (1.0 + t); };
 
     std::array<std::uint32_t, 64> stack{};
     std::uint32_t depth = 0;
@@ -145,7 +154,8 @@ bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
     while (depth > 0)
     {
         const Node& node = Nodes[stack[--depth]];
-        if (!SegmentIntersectsBox(node.Bounds, origin, invDir, kEps, nearestT))
+        if (!SegmentIntersectsBox(node.Bounds, origin, invDir, kEps,
+                                  nearestT + tieWindow(nearestT)))
             continue;
 
         if (node.Count > 0)
@@ -154,10 +164,23 @@ bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
             {
                 const BakeTriangle& tri = Triangles[Order[node.Start + i]];
                 const double t = RayTriangleT(origin, direction, tri);
-                if (t <= kEps || t >= nearestT)
+                if (t <= kEps || t > nearestT + tieWindow(nearestT))
                     continue;
-                nearestT = t;
-                nearest = &tri;
+                const Vec3d triNormal =
+                    (tri.V1 - tri.V0).Cross(tri.V2 - tri.V0);
+                const bool backface = triNormal.Dot(direction) > 0.0f;
+                if (nearest == nullptr || t < nearestT - tieWindow(nearestT))
+                {
+                    nearestT = t;
+                    nearest = &tri;
+                    nearestBackface = backface;
+                }
+                else if (nearestBackface && !backface)
+                {
+                    nearestT = t < nearestT ? t : nearestT;
+                    nearest = &tri;
+                    nearestBackface = false;
+                }
             }
             continue;
         }
@@ -178,15 +201,15 @@ bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
     hit.T = nearestT;
     hit.Position = origin + direction * static_cast<float>(nearestT);
     hit.Normal = length > 0.0f ? normal / length : Vec3d(0.0f, 1.0f, 0.0f);
-    hit.Backface = normal.Dot(direction) > 0.0f;
+    hit.Backface = nearestBackface;
     return true;
 }
 
 bool BakeBvh::FirstHitIsBackface(const Vec3d& origin, const Vec3d& direction,
-                                 double maxT) const
+                                 double maxT, double minT) const
 {
     BakeBvhHit hit;
-    return FirstHit(origin, direction, maxT, hit) && hit.Backface;
+    return FirstHit(origin, direction, maxT, hit, minT) && hit.Backface;
 }
 
 bool BakeBvh::SegmentOccluded(const Vec3d& origin, const Vec3d& target) const

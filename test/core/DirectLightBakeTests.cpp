@@ -171,4 +171,39 @@ TEST(BakeBvh, FirstHitBackfaceDistinguishesBuriedFromShadowed)
         Vec3d(0.0f, 2.0f, 0.0f), Vec3d(0.0f, -1.0f, 0.0f), 100.0));
 }
 
+TEST(BakeBvh, CoincidentFlushFacesNeverReportBackfaceFirst)
+{
+    // Two brushes kissing produce coincident triangles with opposite
+    // windings at the shared interface. A ray crossing that interface from
+    // open space hits both at the same t; the front face must win the tie in
+    // EITHER build order, or whole lightmap regions classify as buried by
+    // traversal-order luck (seen as black holes in the Benchmark bake).
+    std::vector<BakeTriangle> frontFirst;
+    AddQuadXZ(frontFirst, Vec3d(0.0f, 1.0f, 0.0f), 1.0f);  // front faces -Y
+    {
+        // The same quad flipped: front faces +Y.
+        std::vector<BakeTriangle> flipped;
+        AddQuadXZ(flipped, Vec3d(0.0f, 1.0f, 0.0f), 1.0f);
+        for (BakeTriangle& tri : flipped)
+            std::swap(tri.V1, tri.V2);
+        frontFirst.insert(frontFirst.end(), flipped.begin(), flipped.end());
+    }
+    std::vector<BakeTriangle> backFirst(frontFirst.rbegin(), frontFirst.rend());
+
+    BakeBvh a;
+    a.Build(std::move(frontFirst));
+    BakeBvh b;
+    b.Build(std::move(backFirst));
+
+    // From below looking up and from above looking down, one member of the
+    // pair always faces the ray: never buried, whichever order built the BVH.
+    for (const BakeBvh* bvh : { &a, &b })
+    {
+        EXPECT_FALSE(bvh->FirstHitIsBackface(
+            Vec3d(0.2f, 0.0f, 0.1f), Vec3d(0.0f, 1.0f, 0.0f), 100.0));
+        EXPECT_FALSE(bvh->FirstHitIsBackface(
+            Vec3d(0.2f, 2.0f, 0.1f), Vec3d(0.0f, -1.0f, 0.0f), 100.0));
+    }
+}
+
 #endif  // SENCHA_ENABLE_COOK
