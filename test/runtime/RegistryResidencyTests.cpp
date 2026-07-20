@@ -1,8 +1,6 @@
-// Registry residency transitions: every lifecycle mutation records one
-// coalesced change per registry per drain window; DestroyZone defers
-// destruction so the Detaching registry stays alive and readable through the
-// batch until FinalizeResidencyProcessing; queries and frame views never
-// observe a detaching registry.
+// Registry residency transitions: lifecycle mutations coalesce in a pending
+// batch; BeginResidencyProcessing swaps that batch into stable storage so
+// handlers can enqueue next-frame changes without invalidating their span.
 
 #include <gtest/gtest.h>
 
@@ -25,9 +23,13 @@ ZoneParticipation Full()
 {
     return ZoneParticipation{ true, true, true, true };
 }
-} // namespace
 
-// ─── Recording and coalescing ────────────────────────────────────────────────
+void ProcessResidency(ZoneRuntime& runtime)
+{
+    (void)runtime.BeginResidencyProcessing();
+    runtime.FinalizeResidencyProcessing();
+}
+} // namespace
 
 TEST(RegistryResidency, CreateZoneRecordsAttached)
 {
@@ -40,7 +42,7 @@ TEST(RegistryResidency, CreateZoneRecordsAttached)
     EXPECT_EQ(changes[0].Id, zone.Id);
     EXPECT_EQ(changes[0].Instance, &zone);
     EXPECT_FALSE(changes[0].Previous.Any());
-    EXPECT_FALSE(changes[0].Current.Any()); // dormant attach
+    EXPECT_FALSE(changes[0].Current.Any());
 }
 
 TEST(RegistryResidency, CreateThenSetParticipationCoalescesIntoAttached)
@@ -73,7 +75,7 @@ TEST(RegistryResidency, SetParticipationRecordsPreviousAndCurrent)
 {
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
-    runtime.FinalizeResidencyProcessing(); // close the attach window
+    ProcessResidency(runtime);
 
     runtime.SetParticipation(ZoneId{ 1 }, Full());
 
@@ -89,7 +91,7 @@ TEST(RegistryResidency, RepeatedChangesCoalesceToFirstPreviousFinalCurrent)
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     runtime.SetParticipation(ZoneId{ 1 }, Full());
     runtime.SetParticipation(ZoneId{ 1 }, ZoneParticipation{});
@@ -105,10 +107,10 @@ TEST(RegistryResidency, ParticipationRoundTripDropsTheRecord)
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     runtime.SetParticipation(ZoneId{ 1 }, Full());
-    runtime.SetParticipation(ZoneId{ 1 }, LogicOnly()); // back where it started
+    runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
 
     EXPECT_TRUE(runtime.ResidencyChanges().empty());
 }
@@ -118,14 +120,42 @@ TEST(RegistryResidency, NoOpSetParticipationRecordsNothing)
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
 
     EXPECT_TRUE(runtime.ResidencyChanges().empty());
 }
 
-// ─── Two-step destruction ────────────────────────────────────────────────────
+TEST(RegistryResidency, ProcessingBatchIsStableUnderReentrantMutation)
+{
+    ZoneRuntime runtime;
+    Registry& first = runtime.CreateZone(ZoneId{ 1 });
+    Registry& second = runtime.CreateZone(ZoneId{ 2 });
+    ProcessResidency(runtime);
+
+    runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
+    const auto processing = runtime.BeginResidencyProcessing();
+    ASSERT_EQ(processing.size(), 1u);
+    EXPECT_EQ(processing[0].Id, first.Id);
+
+    runtime.SetParticipation(ZoneId{ 2 }, Full());
+
+    // The active span is unchanged; the new mutation lives in next frame's
+    // pending batch instead of reallocating or being cleared by finalization.
+    ASSERT_EQ(processing.size(), 1u);
+    EXPECT_EQ(processing[0].Id, first.Id);
+    ASSERT_EQ(runtime.ResidencyChanges().size(), 1u);
+    EXPECT_EQ(runtime.ResidencyChanges()[0].Id, second.Id);
+
+    runtime.FinalizeResidencyProcessing();
+    ASSERT_EQ(runtime.ResidencyChanges().size(), 1u);
+
+    const auto next = runtime.BeginResidencyProcessing();
+    ASSERT_EQ(next.size(), 1u);
+    EXPECT_EQ(next[0].Id, second.Id);
+    runtime.FinalizeResidencyProcessing();
+}
 
 TEST(RegistryResidency, DestroyZoneMarksDetachingAndDefersDestruction)
 {
@@ -134,25 +164,26 @@ TEST(RegistryResidency, DestroyZoneMarksDetachingAndDefersDestruction)
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
     const RegistryId id = zone.Id;
     const EntityId entity = zone.Components.CreateEntity();
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     ASSERT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
 
-    // Invisible to every query immediately...
     EXPECT_FALSE(runtime.IsZoneLoaded(ZoneId{ 1 }));
     EXPECT_EQ(runtime.FindZone(ZoneId{ 1 }), nullptr);
     EXPECT_EQ(runtime.FindRegistry(id), nullptr);
     EXPECT_EQ(runtime.ZoneCount(), 0u);
 
-    // ...but alive and readable through the change record until finalize.
-    const auto changes = runtime.ResidencyChanges();
-    ASSERT_EQ(changes.size(), 1u);
-    EXPECT_EQ(changes[0].Kind, RegistryResidencyChangeKind::Detaching);
-    EXPECT_EQ(changes[0].Previous, LogicOnly());
-    EXPECT_FALSE(changes[0].Current.Any());
-    ASSERT_EQ(changes[0].Instance, &zone);
-    EXPECT_TRUE(changes[0].Instance->Components.IsAlive(entity));
+    const auto pending = runtime.ResidencyChanges();
+    ASSERT_EQ(pending.size(), 1u);
+    EXPECT_EQ(pending[0].Kind, RegistryResidencyChangeKind::Detaching);
+    EXPECT_EQ(pending[0].Previous, LogicOnly());
+    EXPECT_FALSE(pending[0].Current.Any());
+    ASSERT_EQ(pending[0].Instance, &zone);
+    EXPECT_TRUE(pending[0].Instance->Components.IsAlive(entity));
 
+    const auto processing = runtime.BeginResidencyProcessing();
+    ASSERT_EQ(processing.size(), 1u);
+    EXPECT_TRUE(processing[0].Instance->Components.IsAlive(entity));
     runtime.FinalizeResidencyProcessing();
     EXPECT_TRUE(runtime.ResidencyChanges().empty());
 }
@@ -162,7 +193,7 @@ TEST(RegistryResidency, ParticipationChangeThenDestroyCoalescesToDetaching)
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     runtime.SetParticipation(ZoneId{ 1 }, Full());
     runtime.DestroyZone(ZoneId{ 1 });
@@ -170,19 +201,23 @@ TEST(RegistryResidency, ParticipationChangeThenDestroyCoalescesToDetaching)
     const auto changes = runtime.ResidencyChanges();
     ASSERT_EQ(changes.size(), 1u);
     EXPECT_EQ(changes[0].Kind, RegistryResidencyChangeKind::Detaching);
-    EXPECT_EQ(changes[0].Previous, LogicOnly()); // first observed, not Full
+    EXPECT_EQ(changes[0].Previous, LogicOnly());
 }
 
-TEST(RegistryResidency, AttachAndDestroyInOneWindowEmitsNothing)
+TEST(RegistryResidency, AttachAndDestroyInOneWindowStillEmitsDetaching)
 {
     ZoneRuntime runtime;
-    runtime.CreateZone(ZoneId{ 1 });
+    Registry& zone = runtime.CreateZone(ZoneId{ 1 });
+    const RegistryId id = zone.Id;
     runtime.DestroyZone(ZoneId{ 1 });
 
-    EXPECT_TRUE(runtime.ResidencyChanges().empty());
-    EXPECT_EQ(runtime.ZoneCount(), 0u);
+    const auto changes = runtime.ResidencyChanges();
+    ASSERT_EQ(changes.size(), 1u);
+    EXPECT_EQ(changes[0].Kind, RegistryResidencyChangeKind::Detaching);
+    EXPECT_EQ(changes[0].Id, id);
+    EXPECT_EQ(changes[0].Instance, &zone);
 
-    runtime.FinalizeResidencyProcessing(); // frees the never-observed zone
+    ProcessResidency(runtime);
     EXPECT_FALSE(runtime.IsZoneLoaded(ZoneId{ 1 }));
 }
 
@@ -190,7 +225,7 @@ TEST(RegistryResidency, DoubleDestroyReturnsFalse)
 {
     ZoneRuntime runtime;
     runtime.CreateZone(ZoneId{ 1 });
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     EXPECT_TRUE(runtime.DestroyZone(ZoneId{ 1 }));
     EXPECT_FALSE(runtime.DestroyZone(ZoneId{ 1 }));
@@ -201,7 +236,7 @@ TEST(RegistryResidency, ZoneIdIsReusableWhilePredecessorDetaches)
     ZoneRuntime runtime;
     Registry& first = runtime.CreateZone(ZoneId{ 1 });
     const RegistryId firstId = first.Id;
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     runtime.DestroyZone(ZoneId{ 1 });
     Registry& second = runtime.CreateZone(ZoneId{ 1 });
@@ -217,8 +252,6 @@ TEST(RegistryResidency, ZoneIdIsReusableWhilePredecessorDetaches)
     EXPECT_EQ(changes[1].Id, second.Id);
 }
 
-// ─── Frame view resolution ───────────────────────────────────────────────────
-
 TEST(RegistryResidency, FrameViewExcludesDetachingAndResolvesParticipating)
 {
     ZoneRuntime runtime;
@@ -227,31 +260,44 @@ TEST(RegistryResidency, FrameViewExcludesDetachingAndResolvesParticipating)
     Registry& detaching = runtime.CreateZone(ZoneId{ 3 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
     runtime.SetParticipation(ZoneId{ 3 }, Full());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
     runtime.DestroyZone(ZoneId{ 3 });
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    ASSERT_EQ(view.Participating.size(), 2u); // global + active
+    ASSERT_EQ(view.Participating.size(), 2u);
     EXPECT_EQ(view.Participating[0], &runtime.Global());
     EXPECT_EQ(view.Participating[1], &active);
 
-    EXPECT_EQ(view.Find(active.Id), &active);
-    EXPECT_EQ(view.Find(runtime.Global().Id), &runtime.Global());
-    EXPECT_EQ(view.Find(dormant.Id), nullptr);   // attached but dormant
-    EXPECT_EQ(view.Find(detaching.Id), nullptr);
-    EXPECT_EQ(view.Find(RegistryId::Invalid()), nullptr);
+    EXPECT_EQ(view.FindParticipating(active.Id), &active);
+    EXPECT_EQ(view.FindParticipating(runtime.Global().Id), &runtime.Global());
+    EXPECT_EQ(view.FindParticipating(dormant.Id), nullptr);
+    EXPECT_EQ(view.FindParticipating(detaching.Id), nullptr);
+    EXPECT_EQ(view.FindParticipating(RegistryId::Invalid()), nullptr);
 
     runtime.EndFrameView();
 }
 
-TEST(RegistryResidency, IsAliveResolvesThroughTheView)
+TEST(RegistryResidency, DomainScopedLookupDoesNotResolveOtherDomains)
+{
+    ZoneRuntime runtime;
+    Registry& logicOnly = runtime.CreateZone(ZoneId{ 1 });
+    runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
+    ProcessResidency(runtime);
+
+    FrameRegistryView view = runtime.BuildFrameView();
+    EXPECT_EQ(FindRegistry(view.Logic, logicOnly.Id), &logicOnly);
+    EXPECT_EQ(FindRegistry(view.Physics, logicOnly.Id), nullptr);
+    runtime.EndFrameView();
+}
+
+TEST(RegistryResidency, IsAliveResolvesThroughChosenSpan)
 {
     ZoneRuntime runtime;
     Registry& active = runtime.CreateZone(ZoneId{ 1 });
     Registry& dormant = runtime.CreateZone(ZoneId{ 2 });
     runtime.SetParticipation(ZoneId{ 1 }, LogicOnly());
-    runtime.FinalizeResidencyProcessing();
+    ProcessResidency(runtime);
 
     const EntityId live = active.Components.CreateEntity();
     const EntityId dead = active.Components.CreateEntity();
@@ -260,10 +306,10 @@ TEST(RegistryResidency, IsAliveResolvesThroughTheView)
 
     FrameRegistryView view = runtime.BuildFrameView();
 
-    EXPECT_TRUE(view.IsAlive(EntityRef{ active.Id, live }));
-    EXPECT_FALSE(view.IsAlive(EntityRef{ active.Id, dead }));
-    EXPECT_FALSE(view.IsAlive(EntityRef{ dormant.Id, inDormant })); // unresolvable
-    EXPECT_FALSE(view.IsAlive(EntityRef{}));
+    EXPECT_TRUE(IsAliveIn(view.Logic, EntityRef{ active.Id, live }));
+    EXPECT_FALSE(IsAliveIn(view.Logic, EntityRef{ active.Id, dead }));
+    EXPECT_FALSE(IsAliveIn(view.Logic, EntityRef{ dormant.Id, inDormant }));
+    EXPECT_FALSE(IsAliveIn(view.Logic, EntityRef{}));
 
     runtime.EndFrameView();
 }
