@@ -65,6 +65,15 @@ public:
     // Post-step: write dynamic bodies' resolved transforms back to LocalTransform.
     void SyncFromPhysics(World& world);
 
+    // Remove every body from the shared simulation after capturing its latest
+    // state into components, stripping links so the next SyncToPhysics
+    // reconcile recreates the bodies from component-authoritative state.
+    // Called when the registry leaves the physics domain or detaches: dormant
+    // means zero backend presence — no contacts, no query hits, no solver
+    // cost. Restore needs no dedicated path; the link strips bump the
+    // structural version, making the ordinary reconcile the restore.
+    void Evict(World& world);
+
     [[nodiscard]] size_t BodyCount() const { return Owned.size(); }
 
     // Times the topology reconcile pass has run. A steady frame (no structural

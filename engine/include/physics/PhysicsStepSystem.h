@@ -4,6 +4,7 @@
 #include <physics/PhysicsWorld.h>
 
 struct PhysicsContext;
+struct RegistryResidencyContext;
 
 //=============================================================================
 // PhysicsStepSystem
@@ -26,6 +27,13 @@ public:
     ~PhysicsStepSystem();
 
     void Physics(PhysicsContext& ctx);
+
+    // Lifecycle edges for retained physics state, dispatched by the
+    // RegistryResidency frame phase: a registry leaving the physics domain
+    // (dormancy or detach) evicts its backend objects while the registry is
+    // still readable. Entering needs nothing here — eviction's link strips
+    // bump the structural version, so the next sync's reconcile restores.
+    void RegistryResidency(RegistryResidencyContext& ctx);
 
     [[nodiscard]] PhysicsWorld& GetSimulation() { return Simulation; }
     [[nodiscard]] CollisionShapeCache& GetShapeCache() { return Shapes; }

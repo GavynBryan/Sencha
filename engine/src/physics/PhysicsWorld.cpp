@@ -218,8 +218,32 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
 
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID bid = ToJph(id);
+
+    // The backend does not wake contact partners on removal, so anything
+    // resting on this body would keep sleeping on phantom support — a crate
+    // stack when its base despawns, a ball on evicted zone geometry. Capture
+    // the bounds, remove, then wake everything that overlapped.
+    bool hadBounds = false;
+    JPH::AABox bounds;
+    {
+        JPH::BodyLockRead lock(Impl->System.GetBodyLockInterface(), bid);
+        if (lock.Succeeded())
+        {
+            bounds = lock.GetBody().GetWorldSpaceBounds();
+            hadBounds = true;
+        }
+    }
+
     bodies.RemoveBody(bid);
     bodies.DestroyBody(bid);
+
+    if (hadBounds)
+    {
+        bounds.ExpandBy(JPH::Vec3::sReplicate(0.1f));
+        const JPH::BroadPhaseLayerFilter allBroadPhase;
+        const JPH::ObjectLayerFilter allObjects;
+        bodies.ActivateBodiesInAABox(bounds, allBroadPhase, allObjects);
+    }
 }
 
 BodyTransform PhysicsWorld::GetBodyTransform(PhysicsBodyId id) const

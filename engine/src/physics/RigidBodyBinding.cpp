@@ -199,6 +199,24 @@ void RigidBodyBinding::SyncToPhysics(World& world)
     });
 }
 
+void RigidBodyBinding::Evict(World& world)
+{
+    if (!Ready(world) || Owned.empty())
+        return;
+
+    SyncFromPhysics(world); // capture transforms and velocities first
+
+    SceneState& state = EnsureState(world);
+    for (const BodyRecord& rec : Owned)
+    {
+        Simulation->RemoveBody(rec.Body);
+        if (world.IsAlive(rec.Entity) && world.HasComponent<PhysicsBodyLink>(rec.Entity))
+            state.Commands.RemoveComponent<PhysicsBodyLink>(rec.Entity);
+    }
+    Owned.clear();
+    state.Commands.Flush();
+}
+
 void RigidBodyBinding::SyncFromPhysics(World& world)
 {
     if (!Ready(world) || Owned.empty())
