@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -65,7 +66,13 @@ public:
         ZoneParticipation minimum);
     bool ReleaseParticipationLease(ParticipationLeaseId lease);
     [[nodiscard]] bool IsParticipationLeaseValid(ParticipationLeaseId lease) const;
-    [[nodiscard]] size_t ParticipationLeaseCount() const { return ActiveLeaseCount_; }
+
+    // Forced teardown overrides leases. The owner initiating that teardown must
+    // invalidate the affected zone's tokens before destroying it, so holders can
+    // observe the loss and stale tokens can never release a reused slot.
+    std::size_t InvalidateParticipationLeases(ZoneId zone);
+
+    [[nodiscard]] std::size_t ParticipationLeaseCount() const { return ActiveLeaseCount_; }
 
     void SetWorldTags(std::vector<std::string> tags);
 
@@ -101,7 +108,7 @@ private:
     std::vector<ZonePin> Pins_;
     std::vector<ParticipationLeaseSlot> LeaseSlots_;
     std::vector<uint32_t> FreeLeaseSlots_;
-    size_t ActiveLeaseCount_ = 0;
+    std::size_t ActiveLeaseCount_ = 0;
     std::vector<std::string> WorldTags_;
     std::vector<ZoneId> PendingDestroys_;
     std::vector<ZoneId> Issued_;
