@@ -77,4 +77,20 @@ if(SENCHA_ENABLE_VULKAN AND SENCHA_BUILD_TEMPLATE)
     add_subdirectory(template)
 endif()
 
+# During joint engine and game development, an external game can join this
+# build so its module always uses the host's exact ABI fingerprint. The game
+# remains a standalone project and can still build against an installed SDK.
+if(SENCHA_GAME_PROJECT_DIR)
+    get_filename_component(SENCHA_GAME_PROJECT_DIR_ABSOLUTE
+        "${SENCHA_GAME_PROJECT_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    if(NOT EXISTS "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "SENCHA_GAME_PROJECT_DIR does not contain CMakeLists.txt: "
+            "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}")
+    endif()
+    add_subdirectory(
+        "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}"
+        "${CMAKE_BINARY_DIR}/game-project")
+endif()
+
 add_subdirectory(test)
