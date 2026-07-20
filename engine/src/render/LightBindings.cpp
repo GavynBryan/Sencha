@@ -44,12 +44,35 @@ bool LightBindings::Setup(const RendererServices& services)
     WriteBinding(4, 0, RawPointShadowSampler, Images->GetView(DummyShadowCube),
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 #endif
-    for (std::uint32_t volume = 0; volume < kMaxActiveProbeVolumes; ++volume)
+    for (std::uint32_t element = 0;
+         element < kMaxActiveProbeVolumes * kProbeVolumeChannelCount; ++element)
     {
-        WriteBinding(2, volume, ProbeSampler, Images->GetView(DummyProbeVolume),
+        WriteBinding(2, element, ProbeSampler, Images->GetView(DummyProbeVolume),
                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
     return true;
+}
+
+void LightBindings::SetProbeVolume(std::uint32_t slot, VkImageView r,
+                                   VkImageView g, VkImageView b)
+{
+    if (slot >= kMaxActiveProbeVolumes || !IsValid())
+        return;
+    const std::uint32_t base = slot * kProbeVolumeChannelCount;
+    const VkImageView views[kProbeVolumeChannelCount] = { r, g, b };
+    for (std::uint32_t channel = 0; channel < kProbeVolumeChannelCount; ++channel)
+    {
+        WriteBinding(2, base + channel, ProbeSampler, views[channel],
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+}
+
+void LightBindings::ResetProbeVolume(std::uint32_t slot)
+{
+    if (slot >= kMaxActiveProbeVolumes || !IsValid())
+        return;
+    const VkImageView dummy = Images->GetView(DummyProbeVolume);
+    SetProbeVolume(slot, dummy, dummy, dummy);
 }
 
 bool LightBindings::CreateSamplers()
@@ -220,7 +243,7 @@ bool LightBindings::CreateSetObjects()
           .pImmutableSamplers = nullptr },
         { .binding = 2,
           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-          .descriptorCount = kMaxActiveProbeVolumes,
+          .descriptorCount = kMaxActiveProbeVolumes * kProbeVolumeChannelCount,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
           .pImmutableSamplers = nullptr },
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -237,22 +260,39 @@ bool LightBindings::CreateSetObjects()
 #endif
     };
 
+    // Binding 2 swaps probe volumes in and out while frames holding this set
+    // are still in flight (zones stream at the drain point, not between
+    // frames), so it is update-after-bind, the same contract the bindless
+    // material set relies on. The shadow bindings stay write-once-at-setup.
+    constexpr std::uint32_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
+    VkDescriptorBindingFlags bindingFlags[bindingCount] = {};
+    bindingFlags[2] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
+    flagsInfo.sType =
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flagsInfo.bindingCount = bindingCount;
+    flagsInfo.pBindingFlags = bindingFlags;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = sizeof(bindings) / sizeof(bindings[0]);
+    layoutInfo.pNext = &flagsInfo;
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layoutInfo.bindingCount = bindingCount;
     layoutInfo.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(Device, &layoutInfo, nullptr, &SetLayout) != VK_SUCCESS)
         return false;
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 2 + kMaxActiveProbeVolumes;
+    poolSize.descriptorCount = 2 + kMaxActiveProbeVolumes * kProbeVolumeChannelCount;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     poolSize.descriptorCount += 2;
 #endif
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     poolInfo.maxSets = 1;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;

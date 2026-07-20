@@ -47,7 +47,9 @@ static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
 static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
 static_assert(offsetof(MeshFrameUniforms, PointShadowCount) == 5024);
 static_assert(offsetof(MeshFrameUniforms, PointShadows) == 5040);
-static_assert(offsetof(MeshFrameUniforms, DebugView) == 5168);
+static_assert(offsetof(MeshFrameUniforms, ProbeVolumeCount) == 5168);
+static_assert(offsetof(MeshFrameUniforms, ProbeVolumes) == 5184);
+static_assert(offsetof(MeshFrameUniforms, DebugView) == 5696);
 static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
 static_assert(offsetof(GpuSpotShadow, AtlasScaleBias) == 64);
@@ -55,7 +57,7 @@ static_assert(offsetof(GpuSpotShadow, SamplingParams) == 80);
 static_assert(sizeof(GpuPointShadow) == 32);
 static_assert(offsetof(GpuPointShadow, PositionFar) == 0);
 static_assert(offsetof(GpuPointShadow, Params) == 16);
-static_assert(sizeof(MeshFrameUniforms) == 5184);
+static_assert(sizeof(MeshFrameUniforms) == 5712);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -314,6 +316,14 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
         uniforms.PointShadows[index].Params =
             lights.PointShadows[index].Params;
     }
+
+    const std::uint32_t probeVolumeCount =
+        lights.ProbeVolumeCount < kMaxActiveProbeVolumes
+            ? lights.ProbeVolumeCount
+            : kMaxActiveProbeVolumes;
+    uniforms.ProbeVolumeCount = probeVolumeCount;
+    std::memcpy(uniforms.ProbeVolumes, lights.ProbeVolumes,
+                sizeof(GpuProbeVolume) * probeVolumeCount);
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     uniforms.DebugView = static_cast<std::uint32_t>(lights.DebugView);

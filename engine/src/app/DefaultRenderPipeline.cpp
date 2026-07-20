@@ -100,6 +100,7 @@ namespace
 DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
                                              const ConsoleRegistry* console)
     : Log(logging ? &logging->GetLogger<DefaultRenderPipeline>() : nullptr)
+    , Logging(logging)
     , Console(console)
 {
 }
@@ -133,6 +134,10 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     {
         return false;
     }
+    // Probe residency shares the lighting set: it swaps binding-2 slots as
+    // zones stream and hands headers to extraction. Uploads only ever happen
+    // after the shadow feature's Setup has created the set.
+    ProbeVolumes.Setup(&graphics.Images, bindings, Logging);
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
         Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings))) != nullptr;
 #else
@@ -236,6 +241,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     LightExtractionCounts lightCounts;
     LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
                            PointShadowRequests, &lightCounts);
+    ProbeVolumes.AppendActive(ctx.ActiveRegistries, Lights);
     ShadowCasterExtractor.Extract(
         ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
 

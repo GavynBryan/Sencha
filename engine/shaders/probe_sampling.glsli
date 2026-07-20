@@ -1,0 +1,62 @@
+// Irradiance-probe volume sampling. Requires mesh_frame.glsli and, in the
+// including shader, GL_EXT_nonuniform_qualifier (volume selection is per
+// fragment, so the sampler index is not dynamically uniform within a draw).
+layout(set = 2, binding = 2)
+    uniform sampler3D ProbeVolumes[MAX_PROBE_VOLUMES * PROBE_VOLUME_CHANNELS];
+
+// SH evaluation constants: the Y00 / Y1 basis factors with the Lambert
+// cosine-lobe convolution and 1/pi diffuse folding applied. Must match the
+// CPU reference EvaluateProbeShL1 (assets/cook/ProbeBake) bit for bit in
+// formulation: ambient = max(0, dot(coeffs, vec4(n * C1, C0))).
+const float PROBE_SH_C0 = 0.2820948;
+const float PROBE_SH_C1 = 0.4886025 * (2.0 / 3.0);
+
+// Ambient color for the shading normal from the probe volume covering the
+// fragment, falling back to the caller's hemispheric value when none does.
+// Overlap precedence: highest priority, then smallest world volume, then
+// lowest cook-order id, so the winner can never flicker between frames.
+// Coverage is bounded by texel centers (UvwMin/Max), so the outer half cell
+// of a lattice falls back rather than sampling a clamped edge.
+vec3 SampleProbeAmbient(vec3 worldPos, vec3 normal, vec3 hemiAmbient)
+{
+    int best = -1;
+    float bestPriority = 0.0;
+    float bestVolume = 0.0;
+    float bestStable = 0.0;
+    vec3 bestUvw = vec3(0.0);
+    for (uint i = 0u; i < frame.ProbeVolumeCount; ++i)
+    {
+        vec3 uvw = worldPos * frame.ProbeVolumes[i].ScaleChannelBase.xyz
+                 + frame.ProbeVolumes[i].BiasPriority.xyz;
+        if (any(lessThan(uvw, frame.ProbeVolumes[i].UvwMinVolume.xyz))
+            || any(greaterThan(uvw, frame.ProbeVolumes[i].UvwMaxStableIndex.xyz)))
+        {
+            continue;
+        }
+        float priority = frame.ProbeVolumes[i].BiasPriority.w;
+        float volume = frame.ProbeVolumes[i].UvwMinVolume.w;
+        float stable = frame.ProbeVolumes[i].UvwMaxStableIndex.w;
+        bool better = best < 0
+            || priority > bestPriority
+            || (priority == bestPriority
+                && (volume < bestVolume
+                    || (volume == bestVolume && stable < bestStable)));
+        if (better)
+        {
+            best = int(i);
+            bestPriority = priority;
+            bestVolume = volume;
+            bestStable = stable;
+            bestUvw = uvw;
+        }
+    }
+    if (best < 0)
+        return hemiAmbient;
+
+    uint base = uint(frame.ProbeVolumes[best].ScaleChannelBase.w);
+    vec4 shR = texture(ProbeVolumes[nonuniformEXT(base + 0u)], bestUvw);
+    vec4 shG = texture(ProbeVolumes[nonuniformEXT(base + 1u)], bestUvw);
+    vec4 shB = texture(ProbeVolumes[nonuniformEXT(base + 2u)], bestUvw);
+    vec4 eval = vec4(normal * PROBE_SH_C1, PROBE_SH_C0);
+    return max(vec3(dot(shR, eval), dot(shG, eval), dot(shB, eval)), vec3(0.0));
+}

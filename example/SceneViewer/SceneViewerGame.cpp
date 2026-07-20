@@ -1,6 +1,7 @@
 #include "SceneViewerGame.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <render/ProbeVolumeSet.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
 #include <core/assets/AssetIdMap.h>
@@ -275,18 +276,20 @@ ConsoleResult SceneViewerGame::LoadMap(std::string_view mapName)
                  std::string(mapName), manifestError);
 
     auto parsed = std::make_shared<SceneParse>();
+    auto probes = std::make_shared<ProbeVolumeFile>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
     TextureCache* textures = &runtimeAssets.Textures;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, textures, scenePath](Registry& registry) {
+        [parsed, probes, meshes, materialSets, textures, scenePath](Registry& registry) {
             InitializeDefault3DRegistry(registry, meshes, materialSets,
                                         nullptr, nullptr, nullptr, textures);
             *parsed = ParseSceneFile(scenePath);
+            (void)ReadZoneProbeFile(scenePath, *probes);
         },
-        [this, parsed, &logging](Registry& registry) {
+        [this, parsed, probes, &logging](Registry& registry) {
             Logger& finalizeLog = logging.GetLogger<SceneViewerGame>();
             if (!parsed->Json)
             {
@@ -301,6 +304,8 @@ ConsoleResult SceneViewerGame::LoadMap(std::string_view mapName)
                 finalizeLog.Error("SceneViewer: scene load error: {}", loadError.Message);
                 return;
             }
+            if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
+                AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
 
             // Use the scene's camera if it authored one; a cooked level is pure
             // geometry, so spawn a fly-cam to make it viewable.

@@ -16,8 +16,10 @@ class VulkanUploadContextService;
 //   binding 0: spot shadow atlas, comparison-sampled (sampler2DShadow)
 //   binding 1: point shadow cube array, comparison-sampled
 //              (samplerCubeArrayShadow)
-//   binding 2: irradiance probe volumes, sampler3D[kMaxActiveProbeVolumes]
-//              (dummy-filled)
+//   binding 2: irradiance probe volumes,
+//              sampler3D[kMaxActiveProbeVolumes * kProbeVolumeChannelCount]
+//              (three SH channel textures per volume slot; dummy-filled;
+//              update-after-bind so zone streaming swaps slots mid-flight)
 // Development profiling builds additionally expose the same depth images
 // through nearest, non-comparison samplers at bindings 3 and 4. Only the
 // debug-view shader sees those bindings; shipping layouts stop at binding 2.
@@ -37,6 +39,16 @@ public:
     bool CreateAtlas();
     bool CreateCubePool();
     void Teardown();
+
+    // Points volume slot `slot` at its three SH channel textures (R, G, B
+    // coefficient volumes, 3D views in SHADER_READ_ONLY layout), or back at
+    // the dummy. Binding 2 is update-after-bind: both are safe while frames
+    // holding the set are in flight, as long as no in-flight frame's UBO
+    // headers still reference the slot (the caller parks a slot for a frame
+    // before reusing it, or relies on zone teardown's device-idle).
+    void SetProbeVolume(std::uint32_t slot, VkImageView r, VkImageView g,
+                        VkImageView b);
+    void ResetProbeVolume(std::uint32_t slot);
 
     [[nodiscard]] bool IsValid() const;
     [[nodiscard]] bool HasAtlas() const { return Atlas.IsValid(); }

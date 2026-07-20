@@ -7,6 +7,7 @@
 #include <render/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
+#include <render/ProbeVolumeSet.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
@@ -57,12 +58,17 @@ public:
     // render.shadow.invalidate console command).
     void InvalidateShadows() { Residency.InvalidateAll(); }
 
+    // Baked irradiance-probe residency. Hosts feed decoded .sprobe payloads
+    // in at zone finalize; extraction appends the resident headers each frame.
+    [[nodiscard]] ProbeVolumeSet& GetProbeVolumes() { return ProbeVolumes; }
+
 private:
     void PublishExtractionStats(RenderStats& stats,
                                 const LightExtractionCounts& lightCounts) const;
 
     RenderQueue Queue;
     RenderLightSet Lights;
+    ProbeVolumeSet ProbeVolumes;
     ShadowCasterSet ShadowCasters;
     ShadowResidency Residency;
     ShadowCasterDiff CasterDiff;
@@ -75,6 +81,7 @@ private:
     MaterialSetCache* MaterialSets = nullptr;
     TextureCache* Textures = nullptr;
     Logger* Log = nullptr;
+    LoggingProvider* Logging = nullptr;
     const ConsoleRegistry* Console = nullptr;
     const RenderInstrumentation* Instrumentation = nullptr;
     bool LightCapWarned = false;

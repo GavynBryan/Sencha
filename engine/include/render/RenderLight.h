@@ -4,6 +4,7 @@
 #include <math/Vec.h>
 #include <math/geometry/3d/Sphere.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <math/spatial/GridTransform3d.h>
 #include <render/PointLightComponent.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <render/RenderDebugView.h>
@@ -52,6 +53,55 @@ inline constexpr std::uint32_t kSpotShadowMinTileExtent = 256;
 // binding array in the lighting descriptor set, which stays dummy-filled
 // until probe content is uploaded.
 inline constexpr std::uint32_t kMaxActiveProbeVolumes = 8;
+// SH channel textures per resident volume (R, G, B coefficient volumes); a
+// volume slot spans this many consecutive binding-2 array elements.
+inline constexpr std::uint32_t kProbeVolumeChannelCount = 3;
+
+// One resident irradiance-probe volume's frame-UBO header: the fragment
+// selects the covering volume, maps world position to normalized 3D-texture
+// coordinates (uvw = position * scale + bias), and samples its three SH
+// channel textures starting at ChannelBase in the binding-2 array. UvwMin/Max
+// bound the lattice interior (first to last texel center), so the contains
+// test and the sampler clamp agree exactly.
+struct GpuProbeVolume
+{
+    Vec4 ScaleChannelBase;  // xyz world->uvw scale, w first binding-2 element
+    Vec4 BiasPriority;      // xyz world->uvw bias, w authored priority
+    Vec4 UvwMinVolume;      // xyz lattice min, w world volume (smaller wins)
+    Vec4 UvwMaxStableIndex; // xyz lattice max, w cook-order id (final tiebreak)
+};
+
+static_assert(sizeof(GpuProbeVolume) == 64,
+              "GpuProbeVolume must match the std140 header record");
+
+inline GpuProbeVolume MakeGpuProbeVolume(const GridTransform3d& grid,
+                                         std::int32_t priority,
+                                         std::uint32_t stableIndex,
+                                         std::uint32_t slot)
+{
+    const Vec<3> dims(static_cast<float>(grid.DimsX),
+                      static_cast<float>(grid.DimsY),
+                      static_cast<float>(grid.DimsZ));
+    const Vec<3> scale(1.0f / (grid.CellSize * dims.X),
+                       1.0f / (grid.CellSize * dims.Y),
+                       1.0f / (grid.CellSize * dims.Z));
+    const Vec<3> bias(0.5f / dims.X - grid.Origin.X * scale.X,
+                      0.5f / dims.Y - grid.Origin.Y * scale.Y,
+                      0.5f / dims.Z - grid.Origin.Z * scale.Z);
+    const Vec<3> extent = grid.Bounds().Size();
+
+    GpuProbeVolume volume;
+    volume.ScaleChannelBase = Vec4(scale.X, scale.Y, scale.Z,
+        static_cast<float>(slot * kProbeVolumeChannelCount));
+    volume.BiasPriority = Vec4(bias.X, bias.Y, bias.Z,
+        static_cast<float>(priority));
+    volume.UvwMinVolume = Vec4(0.5f / dims.X, 0.5f / dims.Y, 0.5f / dims.Z,
+        extent.X * extent.Y * extent.Z);
+    volume.UvwMaxStableIndex = Vec4(
+        (dims.X - 0.5f) / dims.X, (dims.Y - 0.5f) / dims.Y,
+        (dims.Z - 0.5f) / dims.Z, static_cast<float>(stableIndex));
+    return volume;
+}
 inline constexpr std::uint32_t kSpotShadowAtlasExtent = 2048;
 // The reference tier: shadow-view sampling parameters are derived for this
 // tile edge and rescaled to the granted allocation's interior at schedule
@@ -308,12 +358,23 @@ struct RenderLightSet
     SpotShadowView SpotShadows[kMaxSpotShadows];
     std::uint32_t PointShadowCount = 0;
     PointShadowView PointShadows[kMaxPointShadows];
+    std::uint32_t ProbeVolumeCount = 0;
+    GpuProbeVolume ProbeVolumes[kMaxActiveProbeVolumes];
 
     void Reset()
     {
         Count = 0;
         SpotShadowCount = 0;
         PointShadowCount = 0;
+        ProbeVolumeCount = 0;
+    }
+
+    bool AddProbeVolume(const GpuProbeVolume& volume)
+    {
+        if (ProbeVolumeCount >= kMaxActiveProbeVolumes)
+            return false;
+        ProbeVolumes[ProbeVolumeCount++] = volume;
+        return true;
     }
 
     [[nodiscard]] std::uint32_t Add(const GpuLight& light)

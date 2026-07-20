@@ -2,9 +2,11 @@
 const uint MAX_LIGHTS = 64u;
 const uint MAX_SPOT_SHADOWS = 8u;
 const uint MAX_POINT_SHADOWS = 4u;
+const uint MAX_PROBE_VOLUMES = 8u;
+const uint PROBE_VOLUME_CHANNELS = 3u;
 
-// RGBM multiplier for the baked-static-direct vertex channel. Must match the
-// encoder in the lighting bake (engine-side DirectLightBakeMath).
+// RGBM multiplier for baked-direct lightmap texels. Must match the encoder in
+// the lighting bake (engine-side DirectLightBake).
 const float BAKED_DIRECT_RANGE = 16.0;
 
 struct GpuLight
@@ -33,6 +35,18 @@ struct GpuPointShadow
     vec4 Params;      // near plane, softness in texels, bias scale, unused
 };
 
+// One resident irradiance-probe volume: uvw = worldPos * Scale + Bias maps
+// into its three SH channel textures, whose binding-2 elements start at
+// ScaleChannelBase.w. UvwMin/Max bound the lattice's texel centers, so the
+// contains test and the sampler clamp agree.
+struct GpuProbeVolume
+{
+    vec4 ScaleChannelBase;  // xyz world->uvw scale, w first binding-2 element
+    vec4 BiasPriority;      // xyz world->uvw bias, w authored priority
+    vec4 UvwMinVolume;      // xyz lattice min, w world volume (smaller wins)
+    vec4 UvwMaxStableIndex; // xyz lattice max, w cook-order id (final tiebreak)
+};
+
 layout(set = 0, binding = 0) uniform MeshFrame
 {
     mat4 ViewProjection;
@@ -55,6 +69,11 @@ layout(set = 0, binding = 0) uniform MeshFrame
     uint PointShadowPad1;
     uint PointShadowPad2;
     GpuPointShadow PointShadows[MAX_POINT_SHADOWS];
+    uint ProbeVolumeCount;
+    uint ProbePad0;
+    uint ProbePad1;
+    uint ProbePad2;
+    GpuProbeVolume ProbeVolumes[MAX_PROBE_VOLUMES];
     uint DebugView;
     uint DebugViewPad0;
     uint DebugViewPad1;

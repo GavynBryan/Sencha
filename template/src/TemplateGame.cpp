@@ -4,6 +4,7 @@
 #include "SpinComponent.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <render/ProbeVolumeSet.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
 #include <core/assets/AssetIdMap.h>
@@ -605,19 +606,23 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                  std::string(mapName), manifestError);
 
     auto parsed = std::make_shared<SceneParse>();
+    auto probes = std::make_shared<ProbeVolumeFile>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
     TextureCache* textures = &runtimeAssets.Textures;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, textures, scenePath](Registry& registry) {
+        [parsed, probes, meshes, materialSets, textures, scenePath](Registry& registry) {
             BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures);
+            (void)ReadZoneProbeFile(scenePath, *probes);
         },
-        [this, parsed, &logging, collisionSidecar](Registry& registry) {
+        [this, parsed, probes, &logging, collisionSidecar](Registry& registry) {
             if (!FinalizeZoneScene(registry, *parsed, logging, &RuntimeAssetState().Assets,
                                    PhysicsShapes, collisionSidecar))
                 return;
+            if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
+                AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
 
             // Single-zone life: the avatar lives and dies with the map's zone.
             (void)SpawnPlayerAvatar(registry, logging.GetLogger<TemplateGame>());
@@ -697,6 +702,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             const std::string collisionPath =
                 std::string(kAuthoredRoot) + "/" + header.CookedCollisionRef;
             auto parsed = std::make_shared<SceneParse>();
+            auto probes = std::make_shared<ProbeVolumeFile>();
             ZoneLoadRecipe recipe;
             // Warm the zone's assets (meshes, materials, the lightmap atlas)
             // before attach, the same manifest convention as the map path:
@@ -716,17 +722,25 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                             manifest, RuntimeAssetState().Registry));
                 }
             }
-            recipe.Build = [parsed, scenePath, meshes, materialSets, textures](Registry& registry)
-            { BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures); };
+            recipe.Build = [parsed, probes, scenePath, meshes, materialSets,
+                            textures](Registry& registry)
+            {
+                BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures);
+                (void)ReadZoneProbeFile(scenePath, *probes);
+            };
             // PhysicsShapes resolves at finalize time through `this`: the
             // startup +world command runs at GameLoaded, BEFORE system
             // registration hands out the shape cache, so capturing the
             // pointer's value here would bake in null and silently skip
             // every zone's collision.
-            recipe.Finalize = [this, parsed, loggingPtr, assets, collisionPath](Registry& registry)
+            recipe.Finalize = [this, parsed, probes, loggingPtr, assets,
+                               collisionPath](Registry& registry)
             {
-                (void)FinalizeZoneScene(registry, *parsed, *loggingPtr, assets, PhysicsShapes,
-                                        collisionPath);
+                if (!FinalizeZoneScene(registry, *parsed, *loggingPtr, assets, PhysicsShapes,
+                                       collisionPath))
+                    return;
+                if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
+                    AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
             };
             return recipe;
         },

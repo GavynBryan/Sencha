@@ -1,8 +1,10 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
 
 #include "mesh_frame.glsli"
 #include "shadow_sampling.glsli"
+#include "probe_sampling.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
@@ -28,6 +30,7 @@ void main()
 
     float hemi = 0.5 + 0.5 * normal.y;
     vec3 ambientColor = mix(frame.AmbientGround.rgb, frame.AmbientSky.rgb, hemi);
+    ambientColor = SampleProbeAmbient(inWorldPos, normal, ambientColor);
     ambientColor = max(ambientColor, vec3(max(frame.StyleParams.y, 0.0)));
     vec3 lit = baseColor.rgb * ambientColor * clamp(orm.r, 0.0, 1.0);
 

@@ -197,6 +197,7 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     entry.Allocation = allocation;
     entry.Format = info.Format;
     entry.Extent = info.Extent;
+    entry.Depth = info.ViewType == VK_IMAGE_VIEW_TYPE_3D ? info.Depth : 1;
     entry.AspectMask = info.AspectMask;
     entry.MipLevels = mipLevels;
     entry.GenerateMips = info.GenerateMips;
@@ -306,9 +307,17 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
         Log.Error("Upload: invalid ImageHandle");
         return false;
     }
-    if (entry->ViewType != VK_IMAGE_VIEW_TYPE_2D || entry->ArrayLayers != 1)
+    // 3D images upload as one region spanning every depth slice (they are a
+    // single array layer); cube/array images still have no upload path.
+    const bool is3d = entry->ViewType == VK_IMAGE_VIEW_TYPE_3D;
+    if ((entry->ViewType != VK_IMAGE_VIEW_TYPE_2D && !is3d) || entry->ArrayLayers != 1)
     {
-        Log.Error("Upload supports 2D single-layer images only");
+        Log.Error("Upload supports 2D and 3D single-layer images only");
+        return false;
+    }
+    if (is3d && entry->GenerateMips)
+    {
+        Log.Error("Upload: mip generation is not supported for 3D images");
         return false;
     }
 
@@ -371,7 +380,7 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = { entry->Extent.width, entry->Extent.height, 1 };
+    region.imageExtent = { entry->Extent.width, entry->Extent.height, entry->Depth };
 
     vkCmdCopyBufferToImage(
         cmd, staging, entry->Image,

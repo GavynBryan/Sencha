@@ -49,6 +49,11 @@ struct MeshFrameUniforms
     std::uint32_t PointShadowPad1 = 0;
     std::uint32_t PointShadowPad2 = 0;
     GpuPointShadow PointShadows[kMaxPointShadows];
+    std::uint32_t ProbeVolumeCount = 0;
+    std::uint32_t ProbePad0 = 0;
+    std::uint32_t ProbePad1 = 0;
+    std::uint32_t ProbePad2 = 0;
+    GpuProbeVolume ProbeVolumes[kMaxActiveProbeVolumes];
     std::uint32_t DebugView = 0;
     std::uint32_t DebugViewPad0 = 0;
     std::uint32_t DebugViewPad1 = 0;

@@ -23,9 +23,10 @@ class VulkanUploadContextService;
 //
 // The service deliberately centers on the 90% path: 2D color images,
 // single array layer, optional mip chain, default whole-image view.
-// Cube-array and 3D images are supported only as far as the lighting
-// descriptor bindings need them (create, view, clear via command buffer);
-// Upload and mip generation remain 2D single-layer only.
+// Cube-array images are supported only as far as the lighting descriptor
+// bindings need them (create, view, clear via command buffer). 3D images
+// additionally support Upload (one region spanning all depth slices, for
+// probe volumes); mip generation remains 2D single-layer only.
 //
 // This service deals in Vulkan images, not "textures". A higher layer
 // (resource cache / asset system) composes ImageHandles with sampler
@@ -124,6 +125,7 @@ private:
         VmaAllocation Allocation = VK_NULL_HANDLE;
         VkFormat Format = VK_FORMAT_UNDEFINED;
         VkExtent2D Extent{};
+        uint32_t Depth = 1;  // 3D images only; 1 otherwise
         VkImageAspectFlags AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         uint32_t MipLevels = 1;
         bool GenerateMips = false;
