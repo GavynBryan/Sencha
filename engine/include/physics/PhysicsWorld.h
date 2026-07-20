@@ -6,6 +6,7 @@
 #include <math/Quat.h>
 #include <math/Vec.h>
 #include <physics/CollisionShape.h>
+#include <physics/PhysicsConstraintTypes.h>
 #include <physics/PhysicsTypes.h>
 
 //=============================================================================
@@ -36,6 +37,16 @@ struct PhysicsWorldConfig
     uint32_t MaxBodies = 10240;
     uint32_t MaxBodyPairs = 16384;
     uint32_t MaxContactConstraints = 8192;
+
+    // Ceiling on the error-closing speed a driven pose constraint commands,
+    // beyond the target frame's own velocity (which is never capped). Discrete
+    // collision cannot resolve arbitrary closing speeds — an uncapped locked
+    // drive tunnels through geometry when the error is large. 50 m/s crosses
+    // ~0.8 m per 60 Hz step, within what room-scale geometry resolves; thin
+    // geometry that needs more headroom is a motion-quality concern on the
+    // body, not the constraint's.
+    float MaxDriveClosingSpeed = 50.0f;
+    float MaxDriveClosingAngularSpeed = 30.0f; // radians/second
 };
 
 // Everything needed to create one body. Backend-free: the shape is described by
@@ -60,12 +71,6 @@ struct BodyDesc
     float GravityScale = 1.0f;
     float LinearDamping = 0.05f;
     float AngularDamping = 0.05f;
-};
-
-struct BodyTransform
-{
-    Vec3d Position;
-    Quatf Rotation;
 };
 
 class PhysicsWorld
@@ -110,6 +115,27 @@ public:
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;
 
+    // --- Driven pose constraints (used by DrivenPoseBinding, not gameplay) --
+    //
+    // One-way: the follower is driven toward the target frame and keeps
+    // colliding; nothing feeds back into whatever produced the frame. Targets
+    // are per-step input — SetDrivenPoseTarget must be called between steps
+    // for every live constraint. An unrefreshed constraint is an orchestration
+    // bug: debug builds assert, release builds skip driving it for the step
+    // and count it (StaleRefreshCount). RemoveBody invalidates constraints
+    // referencing the removed body first, so a dependent constraint can never
+    // dangle; removing an invalidated handle is a safe no-op in any order.
+
+    [[nodiscard]] PhysicsConstraintId AddDrivenPoseConstraint(const DrivenPoseConstraintDesc& desc);
+    void RemoveConstraint(PhysicsConstraintId id);
+    [[nodiscard]] bool IsConstraintValid(PhysicsConstraintId id) const;
+
+    void SetDrivenPoseTarget(PhysicsConstraintId id, const DrivenPoseTarget& target);
+    [[nodiscard]] PhysicsConstraintTelemetry GetConstraintTelemetry(PhysicsConstraintId id) const;
+
+    [[nodiscard]] uint32_t ConstraintCount() const;
+    [[nodiscard]] uint64_t StaleRefreshCount() const;
+
     // Backend access for in-module collaborators (queries, scene, character).
     // Returns an incomplete type here; only physics .cpp files that include the
     // internal header can use it, which is the firewall.
@@ -117,6 +143,8 @@ public:
     [[nodiscard]] const PhysicsWorldImpl& Internal() const { return *Impl; }
 
 private:
+    void DriveConstraints(float dt);
+
     std::unique_ptr<PhysicsWorldImpl> Impl;
     const CollisionShapeCache* ShapeCache = nullptr;
 };

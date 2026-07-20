@@ -5,9 +5,13 @@
 #include "PhysicsWorldImpl.h"
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/EActivation.h>
 
 #include <physics/CollisionShapeCache.h>
+
+#include <cassert>
+#include <cmath>
 
 PhysicsWorld::PhysicsWorld(const PhysicsWorldConfig& config)
     : Impl(nullptr)
@@ -23,6 +27,8 @@ PhysicsWorld::PhysicsWorld(const PhysicsWorldConfig& config)
         Impl->ObjectVsBroadPhase,
         Impl->ObjectVsObject);
     Impl->System.SetGravity(ToJph(config.Gravity));
+    Impl->MaxDriveClosingSpeed = config.MaxDriveClosingSpeed;
+    Impl->MaxDriveClosingAngularSpeed = config.MaxDriveClosingAngularSpeed;
 }
 
 PhysicsWorld::~PhysicsWorld() = default;
@@ -34,9 +40,125 @@ void PhysicsWorld::SetShapeCache(const CollisionShapeCache* cache)
     ShapeCache = cache;
 }
 
+namespace
+{
+// Shortest-arc axis-angle of the rotation carrying `from` onto `to`.
+// Returns the angle; writes the unit axis (zero vector for tiny angles).
+float DeltaAxisAngle(const Quatf& from, const Quatf& to, Vec3d& axisOut)
+{
+    Quatf delta = (to * from.Inverse()).Normalized();
+    if (delta.W < 0.0f)
+        delta = Quatf(-delta.X, -delta.Y, -delta.Z, -delta.W);
+
+    const float w = delta.W > 1.0f ? 1.0f : delta.W;
+    const float angle = 2.0f * std::acos(w);
+    const float s = std::sqrt(1.0f - w * w);
+    if (s < 1e-6f || angle < 1e-6f)
+    {
+        axisOut = Vec3d::Zero();
+        return 0.0f;
+    }
+    axisOut = Vec3d(delta.X / s, delta.Y / s, delta.Z / s);
+    return angle;
+}
+} // namespace
+
 void PhysicsWorld::Step(float dt, int collisionSteps)
 {
+    DriveConstraints(dt);
     Impl->System.Update(dt, collisionSteps, &Impl->Temp, &Impl->Jobs);
+}
+
+// The hidden realization: close the whole pose error within one step by
+// velocity, then let the solver resolve contacts, which is what keeps the
+// follower colliding normally and the relationship one-way. Telemetry records
+// the pre-drive error and the force/torque the velocity change amounts to.
+void PhysicsWorld::DriveConstraints(float dt)
+{
+    if (dt <= 0.0f)
+        return;
+
+    JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+
+    for (DrivenPoseSlot& slot : Impl->Constraints)
+    {
+        if (!slot.Alive)
+            continue;
+
+        if (!slot.Refreshed)
+        {
+            assert(false && "Driven pose constraint not refreshed since the last step: "
+                            "orchestration must SetDrivenPoseTarget every step.");
+            ++Impl->StaleRefreshes;
+            continue;
+        }
+        slot.Refreshed = false;
+
+        const JPH::BodyID body = ToJph(slot.Follower);
+
+        // Desired body pose from the target frame and the follower-local
+        // attachment frame: bodyRot * localRot = frameRot.
+        const Quatf desiredRot =
+            (slot.Target.WorldFrame.Rotation * slot.FollowerLocalFrame.Rotation.Inverse())
+                .Normalized();
+        const Vec3d desiredPos =
+            slot.Target.WorldFrame.Position - desiredRot.RotateVector(slot.FollowerLocalFrame.Position);
+
+        if (slot.Target.Teleported)
+        {
+            bodies.SetPositionAndRotation(body, ToJphR(desiredPos), ToJph(desiredRot),
+                                          JPH::EActivation::Activate);
+            bodies.SetLinearVelocity(body, ToJph(slot.Target.LinearVelocity));
+            bodies.SetAngularVelocity(body, ToJph(slot.Target.AngularVelocity));
+            slot.Telemetry = PhysicsConstraintTelemetry{};
+            continue;
+        }
+
+        const BodyTransform pose{ FromJphR(bodies.GetPosition(body)),
+                                  FromJph(bodies.GetRotation(body)) };
+
+        const Vec3d positionError = desiredPos - pose.Position;
+        Vec3d axis;
+        const float angularError = DeltaAxisAngle(pose.Rotation, desiredRot, axis);
+
+        // The error-closing component is capped so a large error cannot
+        // command a speed discrete collision would tunnel at; the target
+        // frame's own velocity rides on top uncapped. See PhysicsWorldConfig.
+        Vec3d closing = positionError * (1.0f / dt);
+        const float closingSpeed = closing.Magnitude();
+        if (closingSpeed > Impl->MaxDriveClosingSpeed)
+            closing = closing * (Impl->MaxDriveClosingSpeed / closingSpeed);
+
+        float closingAngular = angularError / dt;
+        if (closingAngular > Impl->MaxDriveClosingAngularSpeed)
+            closingAngular = Impl->MaxDriveClosingAngularSpeed;
+
+        const Vec3d velocity = closing + slot.Target.LinearVelocity;
+        const Vec3d angularVelocity = axis * closingAngular + slot.Target.AngularVelocity;
+
+        const Vec3d previousVelocity = FromJph(bodies.GetLinearVelocity(body));
+        const Vec3d previousAngular = FromJph(bodies.GetAngularVelocity(body));
+
+        bodies.SetLinearVelocity(body, ToJph(velocity));
+        bodies.SetAngularVelocity(body, ToJph(angularVelocity));
+
+        float mass = 0.0f;
+        {
+            JPH::BodyLockRead lock(Impl->System.GetBodyLockInterface(), body);
+            if (lock.Succeeded() && lock.GetBody().GetMotionPropertiesUnchecked() != nullptr)
+            {
+                const float inverseMass =
+                    lock.GetBody().GetMotionPropertiesUnchecked()->GetInverseMass();
+                mass = inverseMass > 0.0f ? 1.0f / inverseMass : 0.0f;
+            }
+        }
+
+        slot.Telemetry.PositionError = positionError.Magnitude();
+        slot.Telemetry.AngularError = angularError;
+        slot.Telemetry.AppliedForce = mass * (velocity - previousVelocity).Magnitude() / dt;
+        slot.Telemetry.AppliedTorque =
+            mass * (angularVelocity - previousAngular).Magnitude() / dt;
+    }
 }
 
 PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
@@ -78,6 +200,22 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
 {
     if (!id.IsValid())
         return;
+
+    // Dependent constraints are invalidated before the body goes, so a
+    // constraint can never reference a removed body. The ECS binding keeps its
+    // own records and observes the invalidation through IsConstraintValid.
+    for (uint32_t i = 0; i < Impl->Constraints.size(); ++i)
+    {
+        DrivenPoseSlot& slot = Impl->Constraints[i];
+        if (slot.Alive && slot.Follower == id)
+        {
+            slot.Alive = false;
+            ++slot.Generation;
+            Impl->FreeConstraintSlots.push_back(i);
+            --Impl->AliveConstraints;
+        }
+    }
+
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID bid = ToJph(id);
     bodies.RemoveBody(bid);
@@ -131,6 +269,91 @@ void PhysicsWorld::WakeBody(PhysicsBodyId id)
 {
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     bodies.ActivateBody(ToJph(id));
+}
+
+PhysicsConstraintId PhysicsWorld::AddDrivenPoseConstraint(const DrivenPoseConstraintDesc& desc)
+{
+    const JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
+    if (!desc.Follower.IsValid() || !bodies.IsAdded(ToJph(desc.Follower))
+        || bodies.GetMotionType(ToJph(desc.Follower)) != JPH::EMotionType::Dynamic)
+    {
+        assert(false && "AddDrivenPoseConstraint: follower must be a live dynamic body");
+        return PhysicsConstraintId{};
+    }
+
+    uint32_t index;
+    if (!Impl->FreeConstraintSlots.empty())
+    {
+        index = Impl->FreeConstraintSlots.back();
+        Impl->FreeConstraintSlots.pop_back();
+    }
+    else
+    {
+        index = static_cast<uint32_t>(Impl->Constraints.size());
+        Impl->Constraints.emplace_back();
+    }
+
+    DrivenPoseSlot& slot = Impl->Constraints[index];
+    slot.Alive = true;
+    slot.Follower = desc.Follower;
+    slot.FollowerLocalFrame = desc.FollowerLocalFrame;
+    slot.LinearDrive = desc.LinearDrive;
+    slot.AngularDrive = desc.AngularDrive;
+    slot.UserData = desc.UserData;
+    slot.Target = DrivenPoseTarget{};
+    slot.Refreshed = false;
+    slot.Telemetry = PhysicsConstraintTelemetry{};
+    ++Impl->AliveConstraints;
+
+    return PhysicsConstraintId{ index, slot.Generation };
+}
+
+void PhysicsWorld::RemoveConstraint(PhysicsConstraintId id)
+{
+    // Dead, stale, and already-invalidated handles are safe no-ops: cleanup
+    // paths (binding teardown, RemoveBody, registry destruction) cross in
+    // unspecified order.
+    if (!IsConstraintValid(id))
+        return;
+
+    DrivenPoseSlot& slot = Impl->Constraints[id.Index];
+    slot.Alive = false;
+    ++slot.Generation;
+    Impl->FreeConstraintSlots.push_back(id.Index);
+    --Impl->AliveConstraints;
+}
+
+bool PhysicsWorld::IsConstraintValid(PhysicsConstraintId id) const
+{
+    return id.IsValid() && id.Index < Impl->Constraints.size()
+        && Impl->Constraints[id.Index].Alive
+        && Impl->Constraints[id.Index].Generation == id.Generation;
+}
+
+void PhysicsWorld::SetDrivenPoseTarget(PhysicsConstraintId id, const DrivenPoseTarget& target)
+{
+    if (!IsConstraintValid(id))
+        return;
+    DrivenPoseSlot& slot = Impl->Constraints[id.Index];
+    slot.Target = target;
+    slot.Refreshed = true;
+}
+
+PhysicsConstraintTelemetry PhysicsWorld::GetConstraintTelemetry(PhysicsConstraintId id) const
+{
+    if (!IsConstraintValid(id))
+        return PhysicsConstraintTelemetry{};
+    return Impl->Constraints[id.Index].Telemetry;
+}
+
+uint32_t PhysicsWorld::ConstraintCount() const
+{
+    return Impl->AliveConstraints;
+}
+
+uint64_t PhysicsWorld::StaleRefreshCount() const
+{
+    return Impl->StaleRefreshes;
 }
 
 uint64_t PhysicsWorld::GetUserData(PhysicsBodyId id) const

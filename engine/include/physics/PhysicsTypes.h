@@ -3,6 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <math/Quat.h>
+#include <math/Vec.h>
+
 //=============================================================================
 // Physics public vocabulary
 //
@@ -54,4 +57,12 @@ struct std::hash<PhysicsBodyId>
     {
         return std::hash<uint32_t>{}(id.Value);
     }
+};
+
+// A body-space or world-space pose in facade vocabulary. Also the frame type
+// for driven pose constraints (see PhysicsConstraintTypes.h).
+struct BodyTransform
+{
+    Vec3d Position;
+    Quatf Rotation;
 };
