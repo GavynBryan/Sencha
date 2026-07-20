@@ -477,8 +477,8 @@ If a required command cannot be run, report the change as unverified or incomple
 - Do not reference other engines, games, project plans, task numbers, conversation phases, or requests as behavior descriptions.
 - Do not document absences unless warning about a real trap.
 - Do not editorialize about replaced code.
-- No em dashes anywhere in code, comments, docs, commit messages, or PR prose. Use periods, colons, or parentheses.
-- No filler, marketing voice, or self-description such as "elegant," "robust," or "powerful."
+- Comments and documentation should sound like they were written by a maintainer who understands the code, not an agent narrating a patch. Use normal punctuation and natural sentence rhythm. Be direct, specific, and proportionate to the thing being explained.
+- Avoid canned framing, repetitive restatement, excessive headings, rhetorical flourish, mirrored contrast constructions, marketing adjectives, self-congratulation, and change-log narration embedded in source comments.
 
 ## When to push back
 
