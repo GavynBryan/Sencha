@@ -11,15 +11,16 @@ class PhysicsWorld;
 //=============================================================================
 // CharacterMoverPool
 //
-// Per-registry ECS<->character bridge, the character analogue of PhysicsScene.
+// Per-registry ECS<->character bridge, the character analogue of RigidBodyBinding.
 // A CharacterMover owns a Jolt CharacterVirtual and is not trivially copyable,
 // so it cannot live in a chunk; the movers live here in a dense pool with a free
 // list (so a slot stays valid for the mover's lifetime) and each controller
-// entity carries its slot in a CharacterMoverLink component. Stored as a World
-// resource, so it dies with the zone and releases its CharacterVirtuals; the
-// shared PhysicsWorld it points at outlives it (same teardown order as bodies).
+// entity carries its slot in a CharacterMoverLink component. Stored in
+// Registry::Resources beside the other physics bindings, so it dies with the
+// registry and releases its CharacterVirtuals; the shared PhysicsWorld it
+// points at outlives it (same teardown order as bodies).
 //
-// Reconcile is gated on the World's structural version, like PhysicsScene, so a
+// Reconcile is gated on the World's structural version, like RigidBodyBinding, so a
 // steady frame skips topology work; the pool itself is the physics-side record
 // that lets a destroyed entity's mover be reclaimed (DestroyEntity fires no hook
 // and the link vanishes with the entity).

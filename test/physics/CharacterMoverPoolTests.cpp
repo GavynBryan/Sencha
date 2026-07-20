@@ -1,5 +1,5 @@
 // CharacterMoverPool bridges CharacterController entities to CharacterMovers in a
-// dense pool (the character analogue of PhysicsScene). Tests drive it directly
+// dense pool (the character analogue of RigidBodyBinding). Tests drive it directly
 // with a bare ECS World; no engine frame harness, no Jolt headers.
 
 #include <gtest/gtest.h>

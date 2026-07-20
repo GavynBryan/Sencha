@@ -1,4 +1,4 @@
-#include <physics/PhysicsScene.h>
+#include <physics/RigidBodyBinding.h>
 
 #include <cassert>
 
@@ -38,7 +38,7 @@ BodyTransform ReadPose(const World& world, EntityId entity)
 // PIMPL: keeps Query.h out of the public header, matching the Jolt firewall
 // discipline. The queries are cached (built once, bound to this scene's World)
 // and the command buffer is reused (Flush clears it).
-struct PhysicsScene::SceneState
+struct RigidBodyBinding::SceneState
 {
     explicit SceneState(World& world)
         : Commands(world)
@@ -52,12 +52,12 @@ struct PhysicsScene::SceneState
     Query<Write<LocalTransform>, Write<RigidBody>, Read<PhysicsBodyLink>> DynamicPull;
 };
 
-PhysicsScene::PhysicsScene(PhysicsWorld& world)
+RigidBodyBinding::RigidBodyBinding(PhysicsWorld& world)
     : Simulation(&world)
 {
 }
 
-PhysicsScene::~PhysicsScene()
+RigidBodyBinding::~RigidBodyBinding()
 {
     // Safe without a lifetime guard: the world outlives this scene (zones are
     // destroyed before the step system that owns the world).
@@ -65,7 +65,7 @@ PhysicsScene::~PhysicsScene()
         Simulation->RemoveBody(rec.Body);
 }
 
-bool PhysicsScene::Ready(const World& world) const
+bool RigidBodyBinding::Ready(const World& world) const
 {
     // The bridge needs colliders to bind, the link component to mark bound
     // bodies, and a transform to place them. RigidBody gates the dynamic and
@@ -75,14 +75,14 @@ bool PhysicsScene::Ready(const World& world) const
         && world.IsRegistered<PhysicsBodyLink>() && world.IsRegistered<LocalTransform>();
 }
 
-PhysicsScene::SceneState& PhysicsScene::EnsureState(World& world)
+RigidBodyBinding::SceneState& RigidBodyBinding::EnsureState(World& world)
 {
     if (!State)
         State = std::make_unique<SceneState>(world);
     return *State;
 }
 
-void PhysicsScene::Reconcile(World& world, SceneState& state)
+void RigidBodyBinding::Reconcile(World& world, SceneState& state)
 {
     ++ReconcileCount;
     const World& readOnly = world; // const iteration: do not mark colliders changed
@@ -146,7 +146,7 @@ void PhysicsScene::Reconcile(World& world, SceneState& state)
     state.Commands.Flush();
 }
 
-void PhysicsScene::SyncToPhysics(World& world)
+void RigidBodyBinding::SyncToPhysics(World& world)
 {
     // The likely misconfiguration: colliders registered but the runtime link
     // forgotten, which would re-create every body each step. Loud in debug;
@@ -184,7 +184,7 @@ void PhysicsScene::SyncToPhysics(World& world)
     });
 }
 
-void PhysicsScene::SyncFromPhysics(World& world)
+void RigidBodyBinding::SyncFromPhysics(World& world)
 {
     if (!Ready(world) || Owned.empty())
         return;

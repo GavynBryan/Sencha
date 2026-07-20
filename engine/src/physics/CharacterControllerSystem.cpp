@@ -24,10 +24,7 @@ void CharacterControllerSystem::Physics(PhysicsContext& ctx)
         if (!world.IsRegistered<CharacterController>())
             continue;
 
-        CharacterMoverPool& pool = world.HasResource<CharacterMoverPool>()
-            ? world.GetResource<CharacterMoverPool>()
-            : world.AddResource<CharacterMoverPool>(physics);
-
+        CharacterMoverPool& pool = reg->Resources.Ensure<CharacterMoverPool>(physics);
         pool.Reconcile(world);
         pool.Drive(world, dt, Gravity);
     }

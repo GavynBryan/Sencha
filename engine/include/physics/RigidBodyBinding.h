@@ -28,15 +28,15 @@ inline EntityId UnpackEntity(uint64_t value)
 }
 
 //=============================================================================
-// PhysicsScene
+// RigidBodyBinding
 //
 // Per-registry ECS<->body bridge. Backend-free: it drives the PhysicsWorld
-// facade, never Jolt. Stored as a World resource, so it is owned by the World
-// (one per registry) and its destructor removes that zone's bodies from the
-// shared PhysicsWorld when the zone unloads. The world is a raw pointer, not
-// owned: it always outlives this scene because ZoneRuntime (registries + their
-// PhysicsScenes) is destroyed before EngineSchedule (the PhysicsStepSystem that
-// owns the world). No refcounting.
+// facade, never Jolt. Stored in Registry::Resources — the owner of per-registry
+// backend bindings — so it dies with the registry and its destructor removes
+// that zone's bodies from the shared PhysicsWorld when the zone unloads. The
+// world is a raw pointer, not owned: it always outlives this binding because
+// ZoneRuntime (registries + their RigidBodyBindings) is destroyed before
+// EngineSchedule (the PhysicsStepSystem that owns the world). No refcounting.
 //
 // Steady-state cost is proportional to what moved, not what exists. The body
 // handle lives in a per-entity PhysicsBodyLink component, so the per-frame
@@ -48,14 +48,14 @@ inline EntityId UnpackEntity(uint64_t value)
 // PhysicsBodyLink vanishes with it, so nothing in the ECS can report the dead
 // body. Reconcile sweeps Owned for dead or collider-less entities.
 //=============================================================================
-class PhysicsScene
+class RigidBodyBinding
 {
 public:
-    explicit PhysicsScene(PhysicsWorld& world);
-    ~PhysicsScene();
+    explicit RigidBodyBinding(PhysicsWorld& world);
+    ~RigidBodyBinding();
 
-    PhysicsScene(const PhysicsScene&) = delete;
-    PhysicsScene& operator=(const PhysicsScene&) = delete;
+    RigidBodyBinding(const RigidBodyBinding&) = delete;
+    RigidBodyBinding& operator=(const RigidBodyBinding&) = delete;
 
     // Pre-step: reconcile body topology (gated on the structural version), then
     // push kinematic transforms into the simulation.

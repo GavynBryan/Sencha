@@ -1,6 +1,6 @@
 // End-to-end: an authored brush becomes walkable collision with zero collision
 // authoring. Cook a brush level -> a collision sidecar + per-cell .scol blobs ->
-// LoadZoneCollision spawns static colliders -> PhysicsScene makes static bodies
+// LoadZoneCollision spawns static colliders -> RigidBodyBinding makes static bodies
 // -> a downward ray hits the cooked brush. Headless: no AssetSystem, no graphics.
 
 #include "document/DocumentCook.h"
@@ -16,7 +16,7 @@
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsRegistration.h>
-#include <physics/PhysicsScene.h>
+#include <physics/RigidBodyBinding.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/ZoneCollisionLoader.h>
 #include <physics/components/Collider.h>
@@ -118,7 +118,7 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
     EXPECT_EQ(cache.Count(), 1u);
 
     // The collider entity becomes a static body, and the brush is there to hit.
-    PhysicsScene scene(world);
+    RigidBodyBinding scene(world);
     scene.SyncToPhysics(ecs);
     EXPECT_EQ(scene.BodyCount(), 1u);
 
