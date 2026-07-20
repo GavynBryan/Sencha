@@ -183,6 +183,28 @@ bool WorldPartitionRuntime::IsParticipationLeaseValid(ParticipationLeaseId lease
         && LeaseSlots_[lease.Index].Generation == lease.Generation;
 }
 
+std::size_t WorldPartitionRuntime::InvalidateParticipationLeases(ZoneId zone)
+{
+    std::size_t invalidated = 0;
+    for (uint32_t index = 0; index < LeaseSlots_.size(); ++index)
+    {
+        ParticipationLeaseSlot& slot = LeaseSlots_[index];
+        if (!slot.Alive || slot.Zone != zone)
+            continue;
+
+        slot.Alive = false;
+        ++slot.Generation;
+        if (slot.Generation == 0)
+            ++slot.Generation;
+        slot.Zone = ZoneId{};
+        slot.Minimum = ZoneParticipation{};
+        FreeLeaseSlots_.push_back(index);
+        --ActiveLeaseCount_;
+        ++invalidated;
+    }
+    return invalidated;
+}
+
 void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
 {
     WorldTags_ = std::move(tags);
