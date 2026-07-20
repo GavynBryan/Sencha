@@ -48,13 +48,21 @@ public:
 
     std::size_t ZoneCount() const;
 
-    // The residency-change batch accumulated since the last finalize, one
-    // coalesced entry per mutated registry (see RegistryResidency.h). The
-    // RegistryResidency frame phase processes it, then calls
-    // FinalizeResidencyProcessing, which destroys registries marked Detaching
-    // and clears the batch. Instance pointers in the batch are valid until
-    // that finalize call.
+    // Pending changes accumulated since the previous residency phase. Intended
+    // for debug/tools/tests. Runtime dispatch must call BeginResidencyProcessing
+    // so handlers iterate a stable batch while any lifecycle mutations they
+    // trigger accumulate for the next frame.
     std::span<const RegistryResidencyChange> ResidencyChanges() const;
+
+    // Swap the pending batch into stable processing storage. The returned span
+    // remains valid until FinalizeResidencyProcessing. Any attach, participation,
+    // or detach request raised by a residency handler is queued in a fresh
+    // pending batch and runs next frame instead of invalidating this span.
+    std::span<const RegistryResidencyChange> BeginResidencyProcessing();
+
+    // Destroy only registries whose Detaching transition was present in the
+    // processing batch, then clear that batch. Detaches requested during the
+    // phase remain alive and queued for the next residency visit.
     void FinalizeResidencyProcessing();
 
     // Intended for debug/tools/tests. Runtime systems should consume
@@ -85,8 +93,8 @@ private:
         ZoneParticipation Participation;
 
         // DestroyZone marks instead of erasing: the registry stays owned and
-        // readable (reachable only through the residency batch) until
-        // FinalizeResidencyProcessing, so retained backend state gets its
+        // readable (reachable only through the residency batch) until its
+        // Detaching transition is processed, so retained backend state gets its
         // final visit while resources are alive. Detaching zones are invisible
         // to every query and frame span.
         bool Detaching = false;
@@ -108,6 +116,7 @@ private:
     // True between BuildFrameView and EndFrameView: the window in which zone
     // lifecycle mutation would dangle span entries mid-frame.
     bool FrameViewLive_ = false;
+    bool ResidencyProcessing_ = false;
 
     std::unique_ptr<Registry> GlobalRegistry;
     std::vector<std::unique_ptr<LoadedZone>> Zones;
@@ -121,6 +130,7 @@ private:
     std::vector<Registry*> ParticipatingScratch;
 
     std::vector<RegistryResidencyChange> PendingChanges_;
+    std::vector<RegistryResidencyChange> ProcessingChanges_;
 
     std::uint16_t NextRegistryIndex = 2;
 };
