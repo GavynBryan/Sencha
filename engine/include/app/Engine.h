@@ -5,6 +5,7 @@
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
 #include <zone/ZoneRuntime.h>
@@ -92,6 +93,20 @@ public:
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
 
+    // Complete engine-plus-game runtime component vocabulary for this run.
+    // Valid after Game::OnRegisterRuntimeComponents and before that game module
+    // is detached. The future unified World applies this schema before its first
+    // entity; current registry Worlds remain on their existing setup path while
+    // the migration is staged.
+    [[nodiscard]] WorldComponentSchema& RuntimeComponents()
+    {
+        return RuntimeComponentSchemaState;
+    }
+    [[nodiscard]] const WorldComponentSchema& RuntimeComponents() const
+    {
+        return RuntimeComponentSchemaState;
+    }
+
     [[nodiscard]] ZoneRuntime& Zones() { return ZoneRuntimeState; }
     [[nodiscard]] const ZoneRuntime& Zones() const { return ZoneRuntimeState; }
 
@@ -145,6 +160,7 @@ private:
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif
     EngineSchedule EngineSystems;
+    WorldComponentSchema RuntimeComponentSchemaState;
     ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
