@@ -29,6 +29,7 @@
 #include <render/StaticMeshComponent.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
