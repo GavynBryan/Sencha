@@ -1,10 +1,12 @@
 # Renderer Phase 3: Lighting, Shading, Shadows, Baked Irradiance, and Renderer Profiling
 
-Status: IN EXECUTION, revision 4, 2026-07-19. No longer plan-only: Phase 3.0
-(instrumentation) and the Phase 3A dynamic-lighting and shadow ladder have
-landed in code, and revision 4 records the first shipped slice of Phase 3B
-territory, baked static direct lighting, added in response to the measured
-64-light forward cap. It shipped twice in one series: a per-vertex channel
+Status: EXECUTION COMPLETE, revision 4, 2026-07-21. Every phase has landed:
+3.0 (instrumentation), 3A (dynamic lighting and shadows), 3B (baked direct
+lightmaps, irradiance probes, baked AO as an atlas channel, the cross-zone
+halo), and 3C (the evidence review, findings in Section 16: budgets
+comfortable, no escalation fires). Revision 4 records the first shipped
+slice of Phase 3B territory, baked static direct lighting, added in
+response to the measured 64-light forward cap. It shipped twice in one series: a per-vertex channel
 (Section 7B, superseded and deleted), then per-zone lightmap atlases (Section
 7C, current). Revision 2 incorporated a cross-agent design review; revision 3
 worked baked ambient occlusion into the plan after a second adversarial pass.
@@ -3092,3 +3094,50 @@ Deferred work, anchored to triggers:
   runtime capture pipeline proves its schema.
 - **Generalized spatial-field primitive**: waits for its second concrete user
   (water, voxels, occupancy), per directive 4.
+
+---
+
+## 16. Phase 3C findings (2026-07-21)
+
+Method, scenes, and reduced numbers: `docs/plans/evidence/render-3c-review/`
+(three scenes x 720p/1080p, Release profiling build, scripted deterministic
+orbit, 1500 frames, medians over ~1010 post-warmup frames). Hardware caveat:
+an RTX 4060 laptop, not the GTX 1060 reference tier; scaled readings below
+use a 3x throughput factor and remain conservative. 1440p was not
+measurable: the window manager clamps windowed swapchains to the display.
+
+**Verdict: the current forward architecture is comfortable at target
+workloads. No escalation trigger fires; no optimization is scheduled.**
+
+| Budget row (Section 14) | Measured (1080p) | Scaled ~1060 | Verdict |
+|---|---|---|---|
+| MainColor, representative room <= 6.0 ms | hub 0.450 ms median, 0.707 p95 | ~1.4 / ~2.1 ms | pass, 3x headroom |
+| MainColor, worst case (64 lights at the cap) | stress 1.214 ms median, 3.065 p95 | ~3.7 / ~9.2 ms | pass at median; p95 peaks only when all 64 lights are visible |
+| Shadow phase steady state <= 0.3 ms | 0.0007 ms (all cached, OnChange) | ~0.002 ms | pass |
+| Shadow worst invalidation frame <= 2.5 ms | 0.013 ms (11 views, warmup) | ~0.04 ms | pass; trivial casters, see caveats |
+| Probe sampling added cost <= 0.3 ms | 0.04-0.06 ms (separate A/B, Section 14 row) | ~0.12-0.17 ms | pass (probe-sampling-cost evidence) |
+| Baked AO runtime cost | one R8 fetch inside MainColor; no measurable delta at these workloads | - | pass |
+| Shadow memory <= 20 MiB | 4.0 MiB tiles + cubes at the stress cap | same | pass |
+| Frame scratch <= 75% of 2 MiB | 7.1 KiB high water | same | pass |
+| Probe memory per zone <= 2 MiB | largest bench volume ~53 KiB payload | same | pass |
+| Visible lights <= 24 typical / 64 cap | hub median 7; stress median 25, max 64, dropped 0 | same | pass |
+
+Escalation triggers: per-object light lists require representative content
+over 8 ms MainColor at 1080p with > 16 average per-fragment light
+iterations; representative content measures 0.45 ms and 7 lights. The
+stress scene's p95 approaches ~9 ms scaled only at the deliberate 64-light
+worst case, which the earlier point-light-cost evidence already ruled a
+content-design wall (bake dense static lights; the cap is a correctness
+boundary, not a target workload).
+
+Caveats and follow-ups recorded honestly:
+
+- Brush-only bench content is geometrically trivial (4 draws, ~100
+  triangles), so the CPU-extraction row (5k queue items) and the per-view
+  shadow render rows are not meaningfully exercised. Re-run those two rows
+  when real game content exists; the capture pipeline makes it one command.
+- The scripted orbit culls lights behind the camera, so stress medians see
+  ~25 of the 64 lights; the p95 column captures the all-visible phases.
+- The known shutdown segfault (TextureCache teardown during game.so static
+  destruction) reproduced on 3 of 9 bench runs, always after the capture
+  write. It is no longer "non-reproducible" and deserves a dedicated chase.
