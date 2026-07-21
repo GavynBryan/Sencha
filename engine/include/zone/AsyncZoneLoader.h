@@ -2,6 +2,7 @@
 
 #include <jobs/AsyncTaskQueue.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneLoadPackage.h>
 #include <zone/ZoneParticipation.h>
 
 #include <functional>
@@ -9,88 +10,71 @@
 #include <vector>
 
 class AssetPreload;
-struct Registry;
+class ComponentSerializerRegistry;
 class RuntimeFrameLoop;
-class ZoneRuntime;
+class RuntimeWorld;
+struct RuntimeZoneRecord;
+struct SceneSerializationContext;
+class WorldComponentSchema;
 
 //=============================================================================
 // AsyncZoneLoader
 //
-// Loads zones without blocking the frame. BeginLoad submits an async task
-// whose work stage builds a detached Registry (reserved id, invisible to the
-// frame), and whose commit stage — at the per-frame drain point — attaches
-// the registry to ZoneRuntime. The ZoneLoad temporal discontinuity is marked
-// only when the zone attaches with any participation: a dormant attach (the
-// default) is invisible to every frame span, so no discontinuity occurred.
+// Loads zones without blocking the frame. BeginLoad submits an async task whose
+// work stage builds detached plain CPU package data. The commit stage imports
+// that package into a hidden RuntimeWorld partition, runs the owner-thread
+// finalize callback, and publishes the zone atomically at the drain point.
 //
-// Room-streaming recipe (the engine's primary genre shape — preload the next
-// room seamlessly while the current one plays, then flip it live at the door):
-//
-//   loader.BeginLoad(nextRoom, build, finalize);          // dormant: seamless
-//   ... player crosses the doorway ...
-//   zones.SetParticipation(nextRoom, { .Visible = true, .Logic = true });
-//   runtime.MarkTemporalDiscontinuity(                    // only if the
-//       TemporalDiscontinuityReason::Teleport);           // camera cuts
-//
-// Loading directly into an active state (initial spawn, fast travel) passes
-// participation to BeginLoad and gets the ZoneLoad discontinuity with it.
-//
-// The build callback runs on a task thread against the detached registry
-// only. It must not touch caches, services, or any other engine state;
-// resolve asset handles on the main thread before BeginLoad and capture them
-// by value (handles are plain values — the existing builder helpers already
-// take them that way).
-//
-// All methods are owner-thread-only, inherited from AsyncTaskQueue's
-// contract. The loader must outlive any load it has in flight.
+// Build callbacks must not touch live Worlds, caches, services, or backend
+// objects. Finalize runs after successful package import and publication, while
+// the zone record and its entities are available on the owner thread.
 //=============================================================================
 class AsyncZoneLoader
 {
 public:
-    using BuildFn = std::function<void(Registry&)>;
-    using FinalizeFn = std::function<void(Registry&)>;
+    using BuildFn = std::function<void(ZoneLoadPackage&)>;
+    using FinalizeFn =
+        std::function<void(RuntimeWorld&, RuntimeZoneRecord&)>;
 
-    AsyncZoneLoader(AsyncTaskQueue& tasks, ZoneRuntime& zones, RuntimeFrameLoop& runtime);
+    AsyncZoneLoader(
+        AsyncTaskQueue& tasks,
+        RuntimeWorld& world,
+        const WorldComponentSchema& schema,
+        const ComponentSerializerRegistry& serializers,
+        SceneSerializationContext& sceneContext,
+        RuntimeFrameLoop& runtime);
 
-    // Starts loading. The zone must be valid, not loaded, and not in flight.
-    AsyncTaskHandle BeginLoad(ZoneId zone, BuildFn build, ZoneParticipation participation = {});
+    // Starts loading. The zone must be valid, not loaded/importing, and not in
+    // flight. The package is born with the requested ZoneId.
+    AsyncTaskHandle BeginLoad(
+        ZoneId zone,
+        BuildFn build,
+        ZoneParticipation participation = {});
 
-    // As above, with a main-thread publish step: finalize runs inside the
-    // commit, after the zone attaches and before the discontinuity is marked.
-    // Unlike build, finalize runs on the owner thread and so may touch caches,
-    // services, and game state — it is where cache acquisition, GPU uploads,
-    // and entity wiring that needs ambient state belong. The frame never
-    // observes the zone between attach and finalize; both happen inside one
-    // drain callback.
-    AsyncTaskHandle BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
-                              ZoneParticipation participation = {});
+    AsyncTaskHandle BeginLoad(
+        ZoneId zone,
+        BuildFn build,
+        FinalizeFn finalize,
+        ZoneParticipation participation = {});
 
-    // As above, additionally gated on an asset preload (docs/assets/
-    // pipeline.md, Decision D): if the build finishes before the preload,
-    // the attach defers — still at the drain point, still owner-thread —
-    // until the preload's last asset commits, so finalize always
-    // deserializes against warm caches. The preload's scaffolding handles
-    // are released after finalize (the zone's entities hold their own by
-    // then). A failed preload never blocks the zone: failures count as
-    // completion and finalize's synchronous fallback covers the gaps.
-    //
-    // A zone whose build has committed but whose attach is deferred can no
-    // longer be cancelled — it will attach when the assets land.
-    AsyncTaskHandle BeginLoad(ZoneId zone, BuildFn build, FinalizeFn finalize,
-                              ZoneParticipation participation,
-                              std::shared_ptr<AssetPreload> assets);
+    // Asset-gated variant. If package preparation finishes first, publication
+    // remains deferred until the preload completes. A failed/cancelled preload
+    // counts as complete; owner-thread decoding may use synchronous fallback.
+    AsyncTaskHandle BeginLoad(
+        ZoneId zone,
+        BuildFn build,
+        FinalizeFn finalize,
+        ZoneParticipation participation,
+        std::shared_ptr<AssetPreload> assets);
 
-    // True from BeginLoad until the zone attaches (or its load is cancelled).
     [[nodiscard]] bool IsLoading(ZoneId zone) const;
 
-    // Best effort, like AsyncTaskQueue::Cancel: fails (returns false) only
-    // while the build is mid-flight on the task thread — retry next frame.
+    // Best effort, like AsyncTaskQueue::Cancel: fails only while the build is
+    // actively executing on the task thread.
     bool CancelLoad(ZoneId zone);
 
-    // Destroys the zone at the next commit drain (FramePhase::DrainAsyncTasks),
-    // never mid-frame: zone lifecycle stays at the single frame point where no
-    // frame view is live, symmetric with BeginLoad's attach. The zone remains
-    // resident (and rendered) until the drain runs.
+    // Requests final detach at the next commit drain. Destruction itself occurs
+    // after the explicit residency visit, not inside this callback.
     AsyncTaskHandle RequestDestroy(ZoneId zone);
 
 private:
@@ -102,12 +86,18 @@ private:
     };
 
     void RemoveInFlight(ZoneId zone);
-    void AttachAndFinalize(ZoneId zone, std::unique_ptr<Registry> registry,
-                           FinalizeFn& finalize, ZoneParticipation participation,
-                           const std::shared_ptr<AssetPreload>& assets);
+    void ImportAndFinalize(
+        ZoneId zone,
+        std::unique_ptr<ZoneLoadPackage> package,
+        FinalizeFn& finalize,
+        ZoneParticipation participation,
+        const std::shared_ptr<AssetPreload>& assets);
 
     AsyncTaskQueue& Tasks;
-    ZoneRuntime& Zones;
+    RuntimeWorld& RuntimeWorldState;
+    const WorldComponentSchema& Schema;
+    const ComponentSerializerRegistry& Serializers;
+    SceneSerializationContext& SceneContext;
     RuntimeFrameLoop& Runtime;
     std::vector<InFlightLoad> InFlight;
 };
