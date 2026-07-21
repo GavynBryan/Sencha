@@ -9,8 +9,6 @@
 #include <utility>
 #include <vector>
 
-class ZoneRuntime;
-
 template<typename T>
 concept HasScheduleInit = requires(T& t) { t.Init(); };
 
@@ -18,8 +16,8 @@ template<typename T>
 concept HasScheduleShutdown = requires(T& t) { t.Shutdown(); };
 
 template<typename T>
-concept HasRegistryResidency =
-    requires(T& t, RegistryResidencyContext& ctx) { t.RegistryResidency(ctx); };
+concept HasZoneResidency =
+    requires(T& t, ZoneResidencyContext& ctx) { t.ZoneResidency(ctx); };
 
 template<typename T>
 concept HasFixedLogic = requires(T& t, FixedLogicContext& ctx) { t.FixedLogic(ctx); };
@@ -44,7 +42,7 @@ concept HasEndFrame = requires(T& t, EndFrameContext& ctx) { t.EndFrame(ctx); };
 
 template<typename T>
 concept IsScheduledSystem =
-    HasRegistryResidency<T> || HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T>
+    HasZoneResidency<T> || HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T>
     || HasFrameUpdate<T> || HasExtractRender<T> || HasAudio<T> || HasEndFrame<T>;
 
 //=============================================================================
@@ -79,9 +77,7 @@ public:
     void Init();
     void Shutdown();
 
-    FrameRegistryView BuildFrameView(ZoneRuntime& zones);
-
-    void RunRegistryResidency(RegistryResidencyContext& ctx);
+    void RunZoneResidency(ZoneResidencyContext& ctx);
     void RunFixedLogic(FixedLogicContext& ctx);
     void RunPhysics(PhysicsContext& ctx);
     void RunPostFixed(PostFixedContext& ctx);
@@ -91,12 +87,6 @@ public:
     void RunEndFrame(EndFrameContext& ctx);
 
 private:
-    //=============================================================================
-    // DispatchEntry
-    //
-    // Stores one system callback for a specific frame phase context.
-    // Carries type identity and dependency data for phase-local ordering.
-    //=============================================================================
     template<typename TContext>
     struct DispatchEntry
     {
@@ -106,12 +96,6 @@ private:
         std::vector<std::type_index> DependsOn;
     };
 
-    //=============================================================================
-    // SystemRecord
-    //
-    // Owns an erased registered system and its optional lifecycle callbacks.
-    // Lets the schedule initialize, shut down, and delete systems uniformly.
-    //=============================================================================
     struct SystemRecord
     {
         std::type_index TypeId{ typeid(void) };
@@ -135,7 +119,7 @@ private:
     std::vector<SystemRecord> Records;
     std::unordered_map<std::type_index, void*> TypeIndex;
 
-    std::vector<DispatchEntry<RegistryResidencyContext>> RegistryResidencyEntries;
+    std::vector<DispatchEntry<ZoneResidencyContext>> ZoneResidencyEntries;
     std::vector<DispatchEntry<FixedLogicContext>> FixedLogicEntries;
     std::vector<DispatchEntry<PhysicsContext>> PhysicsEntries;
     std::vector<DispatchEntry<PostFixedContext>> PostFixedEntries;
@@ -170,9 +154,9 @@ T& EngineSchedule::Register(Args&&... args)
         rec.ShutdownFn = [](void* p) { static_cast<T*>(p)->Shutdown(); };
     Records.push_back(rec);
 
-    if constexpr (HasRegistryResidency<T>)
-        RegistryResidencyEntries.push_back({ std::type_index(typeid(T)), raw,
-            [](void* p, RegistryResidencyContext& ctx) { static_cast<T*>(p)->RegistryResidency(ctx); }, {} });
+    if constexpr (HasZoneResidency<T>)
+        ZoneResidencyEntries.push_back({ std::type_index(typeid(T)), raw,
+            [](void* p, ZoneResidencyContext& ctx) { static_cast<T*>(p)->ZoneResidency(ctx); }, {} });
     if constexpr (HasFixedLogic<T>)
         FixedLogicEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, FixedLogicContext& ctx) { static_cast<T*>(p)->FixedLogic(ctx); }, {} });
@@ -203,7 +187,7 @@ void EngineSchedule::After()
 {
     const std::type_index tid(typeid(T));
     const std::type_index dep(typeid(TDep));
-    AddDependency(RegistryResidencyEntries, tid, dep);
+    AddDependency(ZoneResidencyEntries, tid, dep);
     AddDependency(FixedLogicEntries, tid, dep);
     AddDependency(PhysicsEntries, tid, dep);
     AddDependency(PostFixedEntries, tid, dep);
