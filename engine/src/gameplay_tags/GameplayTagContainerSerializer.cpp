@@ -14,97 +14,120 @@
 #include <span>
 #include <vector>
 
-// Declared in <world/serialization/SceneSerializer.h>. Forward-declared here so
-// framework code does not include that header, which pulls ComponentSerializer ->
-// SceneFieldCodec -> render/audio. Keeps the framework free of engine render/scene
-// includes.
 void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer);
 
 namespace
 {
-    class GameplayTagContainerSerializer final : public IComponentSerializer
+class GameplayTagContainerSerializer final : public IComponentSerializer
+{
+public:
+    ComponentTypeId TypeId() const override
     {
-    public:
-        ComponentTypeId TypeId() const override { return ResolveComponentTypeId<GameplayTagContainer>(); }
-        std::string_view JsonKey() const override { return "GameplayTags"; }
-        std::uint32_t BinaryChunkId() const override { return MakeFourCC('G', 'T', 'A', 'G'); }
+        return ResolveComponentTypeId<GameplayTagContainer>();
+    }
 
-        // No flat scalar leaves to expose: tags are a dynamic id/stack array, not
-        // a fixed set of editable fields, and the framework does not carry a
-        // TypeSchema. The inspector simply shows no leaf fields for this component.
-        std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+    std::string_view JsonKey() const override { return "GameplayTags"; }
+    std::uint32_t BinaryChunkId() const override
+    {
+        return MakeFourCC('G', 'T', 'A', 'G');
+    }
 
-        std::vector<std::byte> DefaultBytes() const override
-        {
-            GameplayTagContainer value{};
-            std::vector<std::byte> bytes(sizeof(GameplayTagContainer));
-            std::memcpy(bytes.data(), &value, sizeof(GameplayTagContainer));
-            return bytes;
-        }
+    std::span<const RuntimeField> RuntimeFields() const override
+    {
+        return {};
+    }
 
-        void RegisterStorage(Registry& registry) const override
-        {
-            if (!registry.Components.IsRegistered<GameplayTagContainer>())
-                registry.Components.RegisterComponent<GameplayTagContainer>();
-        }
+    std::vector<std::byte> DefaultBytes() const override
+    {
+        GameplayTagContainer value{};
+        std::vector<std::byte> bytes(sizeof(GameplayTagContainer));
+        std::memcpy(bytes.data(), &value, sizeof(GameplayTagContainer));
+        return bytes;
+    }
 
-        bool HasComponent(EntityId entity, const Registry& registry) const override
-        {
-            return registry.Components.IsRegistered<GameplayTagContainer>()
-                && registry.Components.HasComponent<GameplayTagContainer>(entity);
-        }
+    void RegisterStorage(Registry& registry) const override
+    {
+        if (!registry.Components.IsRegistered<GameplayTagContainer>())
+            registry.Components.RegisterComponent<GameplayTagContainer>();
+    }
 
-        bool Save(IWriteArchive& archive,
-                  EntityId entity,
-                  const Registry& registry,
-                  SceneSerializationContext&) const override
-        {
-            if (!registry.Components.IsRegistered<GameplayTagContainer>())
-                return true;
-            const GameplayTagContainer* tags = registry.Components.TryGet<GameplayTagContainer>(entity);
-            if (!tags)
-                return true; // entity has no tag component: nothing to write
+    bool HasComponent(
+        EntityId entity,
+        const Registry& registry) const override
+    {
+        return registry.Components.IsRegistered<GameplayTagContainer>()
+            && registry.Components.HasComponent<GameplayTagContainer>(entity);
+    }
 
-            const GameplayTagRegistry* reg = registry.Components.TryGetResource<GameplayTagRegistry>();
-            if (!reg)
-                return false; // cannot persist names without the registry resource
-
-            return WriteGameplayTags(archive, *tags, *reg);
-        }
-
-        bool Load(IReadArchive& archive,
-                  EntityId entity,
-                  Registry& registry,
-                  SceneSerializationContext&) override
-        {
-            GameplayTagRegistry* reg = registry.Components.TryGetResource<GameplayTagRegistry>();
-            if (!reg)
-                return false;
-
-            GameplayTagContainer tags{};
-            if (!ReadGameplayTags(archive, tags, *reg))
-                return false;
-
-            // Storage is registered up front by RegisterStorage (before entities
-            // exist), so just attach; registering here would violate the
-            // register-before-create rule.
-            registry.Components.AddComponent<GameplayTagContainer>(entity, tags);
+    bool Save(
+        IWriteArchive& archive,
+        EntityId entity,
+        const Registry& registry,
+        SceneSerializationContext&) const override
+    {
+        if (!registry.Components.IsRegistered<GameplayTagContainer>())
             return true;
+
+        const GameplayTagContainer* tags =
+            registry.Components.TryGet<GameplayTagContainer>(entity);
+        if (tags == nullptr)
+            return true;
+
+        const GameplayTagRegistry* tagRegistry =
+            registry.Components.TryGetResource<GameplayTagRegistry>();
+        return tagRegistry != nullptr
+            && WriteGameplayTags(archive, *tags, *tagRegistry);
+    }
+
+    bool Load(
+        IReadArchive& archive,
+        EntityId entity,
+        Registry& registry,
+        SceneSerializationContext& context) override
+    {
+        return LoadIntoWorld(
+            archive,
+            entity,
+            registry.Components,
+            context);
+    }
+
+    bool LoadIntoWorld(
+        IReadArchive& archive,
+        EntityId entity,
+        World& world,
+        SceneSerializationContext&) override
+    {
+        GameplayTagRegistry* tagRegistry =
+            world.TryGetResource<GameplayTagRegistry>();
+        if (tagRegistry == nullptr
+            || world.HasComponent<GameplayTagContainer>(entity))
+        {
+            return false;
         }
 
-        bool Remove(EntityId entity, Registry& registry) const override
+        GameplayTagContainer tags{};
+        if (!ReadGameplayTags(archive, tags, *tagRegistry))
+            return false;
+
+        world.AddComponent<GameplayTagContainer>(entity, tags);
+        return true;
+    }
+
+    bool Remove(EntityId entity, Registry& registry) const override
+    {
+        if (registry.Components.IsRegistered<GameplayTagContainer>()
+            && registry.Components.HasComponent<GameplayTagContainer>(entity))
         {
-            if (registry.Components.IsRegistered<GameplayTagContainer>()
-                && registry.Components.HasComponent<GameplayTagContainer>(entity))
-            {
-                registry.Components.RemoveComponent<GameplayTagContainer>(entity);
-            }
-            return true;
+            registry.Components.RemoveComponent<GameplayTagContainer>(entity);
         }
-    };
-}
+        return true;
+    }
+};
+} // namespace
 
 void RegisterGameplayTagSerializer()
 {
-    RegisterComponentSerializer(std::make_unique<GameplayTagContainerSerializer>());
+    RegisterComponentSerializer(
+        std::make_unique<GameplayTagContainerSerializer>());
 }
