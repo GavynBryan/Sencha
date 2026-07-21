@@ -7,8 +7,13 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 
+#include <cstddef>
 #include <fstream>
+#include <optional>
+#include <span>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 WorldCookResult CookWorld(WorldDocument& world,
                           const std::filesystem::path& assetsRoot,
@@ -67,12 +72,41 @@ WorldCookResult CookWorld(WorldDocument& world,
     // The cooked manifest starts as the authored records; each zone cook fills
     // the cooked-only fields.
     WorldPartitionManifest cooked = world.Manifest();
-    for (ZoneHeader& zone : cooked.Zones)
+
+    // Every zone's occluder geometry is collected up front so each zone cook
+    // can fold the neighbors within bake-ray reach into its occlusion set
+    // (and its cook hash). The kernel selects by reach; far zones cost one
+    // hash comparison and nothing else.
+    std::vector<ProbeHaloZone> halos;
+    halos.reserve(cooked.Zones.size());
+    for (const ZoneHeader& zone : cooked.Zones)
     {
+        const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
+        std::optional<ProbeHaloZone> haloZone =
+            CollectZoneBakeHalo(scenePath, assetsRoot, &logging, assets);
+        if (!haloZone.has_value())
+        {
+            result.Error = "CookWorld: zone '" + zone.Name
+                + "': could not load '" + scenePath.generic_string() + "'";
+            return result;
+        }
+        halos.push_back(std::move(*haloZone));
+    }
+
+    for (std::size_t zoneIndex = 0; zoneIndex < cooked.Zones.size(); ++zoneIndex)
+    {
+        ZoneHeader& zone = cooked.Zones[zoneIndex];
+        // The zone's own record swaps to the back so the span holds exactly
+        // the neighbors (vector swaps move buffers, not triangles).
+        std::swap(halos[zoneIndex], halos.back());
+        const std::span<const ProbeHaloZone> neighborHalo(
+            halos.data(), halos.size() - 1);
+
         const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
         const DocumentCookResult zoneCook =
             CookDocument(scenePath, assetsRoot, cellSize, &logging, assets,
-                         lightmapParams);
+                         lightmapParams, neighborHalo);
+        std::swap(halos[zoneIndex], halos.back());
         if (!zoneCook.Success)
         {
             result.Error = "CookWorld: zone '" + zone.Name + "': " + zoneCook.Error;

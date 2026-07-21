@@ -2591,10 +2591,15 @@ last-cook volume/probe counts. The in-panel bake with progress/cancel was
 superseded by the lightmap flow's convention: Cook is the bake action and
 the stale badge is the refresh cue. Streaming leak validation is
 live-workflow: the ProbeVolumesResident counter (stats panel and capture
-export) must return to zero on zone unload. Still open from this stage's
-list: feeding neighbor-zone halo geometry through the cook drivers (the
-kernel accepts it; the single-document cook passes none), and the measured
-probe-sampling GPU cost against the Section 14 budget. 3B.3 carries one
+export) must return to zero on zone unload. The neighbor halo is wired
+through the world cook: every zone's occluder geometry (pre-weld brush
+faces plus casting placements) is collected up front, and each zone cook
+folds the zones within probe-ray reach into its occlusion BVH and its cook
+hash, so both bakes see neighbor geometry, a neighbor edit within reach
+restales the zone, and one beyond reach does not. The standalone
+single-level cook still passes no halo (it has no world context). Still
+open from this stage's list: the measured probe-sampling GPU cost against
+the Section 14 budget. 3B.3 carries one
 amendment: per the re-amended 7A.6, weigh AO as a zone-atlas channel first
 (the density question that forced adaptive tessellation dissolves in texel
 space); if it lands as vertex data instead, the slot is offset 52, location

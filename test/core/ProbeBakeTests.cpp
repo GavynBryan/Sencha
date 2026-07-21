@@ -294,6 +294,33 @@ TEST(ProbeBake, HaloAssemblyFiltersByReachAndOrdersByContentHash)
     EXPECT_FLOAT_EQ(a[2].V0.X, 11.0f);
 }
 
+TEST(ProbeBake, HaloSelectionMatchesWhatAssemblyFoldsIn)
+{
+    ProbeHaloZone near;
+    near.ContentHash = 0x2222;
+    near.Bounds = Aabb3d{ Vec3d(11, 0, 0), Vec3d(13, 2, 2) };
+    ProbeHaloZone far;
+    far.ContentHash = 0x3333;
+    far.Bounds = Aabb3d{ Vec3d(200, 0, 0), Vec3d(202, 2, 2) };
+
+    const Aabb3d zoneBounds{ Vec3d(0, 0, 0), Vec3d(10, 2, 10) };
+    const std::vector<ProbeHaloZone> halo = { far, near };
+
+    // Reach 20 keeps only the near zone; a driver hashing this selection
+    // hashes exactly the set the assembly will fold into the BVH.
+    const std::vector<const ProbeHaloZone*> selected =
+        SelectProbeHaloZones(zoneBounds, halo, 20.0f);
+    ASSERT_EQ(selected.size(), 1u);
+    EXPECT_EQ(selected[0]->ContentHash, 0x2222u);
+
+    // Reach 200 keeps both, sorted by content hash regardless of input order.
+    const std::vector<const ProbeHaloZone*> both =
+        SelectProbeHaloZones(zoneBounds, halo, 200.0f);
+    ASSERT_EQ(both.size(), 2u);
+    EXPECT_EQ(both[0]->ContentHash, 0x2222u);
+    EXPECT_EQ(both[1]->ContentHash, 0x3333u);
+}
+
 TEST(ProbeBake, AdjacentZonesComputeIdenticalBoundarySamples)
 {
     // Two floor slabs side by side, one zone each, a probe above the shared

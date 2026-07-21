@@ -1,18 +1,23 @@
 #include <gtest/gtest.h>
 
+#include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
 #include "document/WorldCook.h"
 #include "document/WorldDocument.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 
+#include <assets/probes/ProbeVolumeFormat.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/BinaryReader.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <zone/WorldPartitionManifest.h>
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace fs = std::filesystem;
 
@@ -236,6 +241,127 @@ TEST_F(WorldCookTest, WorldSceneRecookIsByteIdenticalAndEditChangesOnlyItsHash)
     ASSERT_EQ(edited.Zones.size(), before.Zones.size());
     for (size_t i = 0; i < edited.Zones.size(); ++i)
         EXPECT_EQ(edited.Zones[i].CookedContentHash, before.Zones[i].CookedContentHash);
+}
+
+namespace
+{
+// Sum of every c0 (ambient) coefficient across all channels of the first
+// cooked probe volume: a scalar brightness proxy for occlusion assertions.
+double ProbeC0Sum(const std::filesystem::path& cookedScenePath)
+{
+    std::string probePath = cookedScenePath.generic_string();
+    constexpr std::string_view cookedSuffix = ".cooked.json";
+    EXPECT_TRUE(probePath.ends_with(cookedSuffix));
+    probePath.resize(probePath.size() - cookedSuffix.size());
+    probePath += "/probes.sprobe";
+
+    std::ifstream stream(probePath, std::ios::binary);
+    EXPECT_TRUE(stream.is_open()) << probePath;
+    BinaryReader reader(stream);
+    ProbeVolumeFile file;
+    EXPECT_TRUE(ReadProbeVolumeFile(reader, file));
+    EXPECT_FALSE(file.Volumes.empty());
+
+    double sum = 0.0;
+    for (std::size_t i = 0; i < file.Volumes[0].ShHalf.size(); ++i)
+        if (i % kProbeShCoefficients == kProbeShCoefficients - 1)
+            sum += HalfToFloat(file.Volumes[0].ShHalf[i]);
+    return sum;
+}
+} // namespace
+
+TEST_F(WorldCookTest, NeighborZoneGeometryOccludesTheProbeBake)
+{
+    // Zone A authors a floor and a probe volume above it; zone B authors a
+    // slab directly over the volume. Standalone, A's probes see open sky;
+    // in the world cook, B's slab joins A's occlusion set through the halo.
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 },
+                                                 Vec3d{ 4.0, 0.25, 4.0 });
+    const EntityId volumeEntity =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 2, 0 });
+    IrradianceVolumeComponent volume{};
+    volume.HalfExtents = Vec3d(2.0f, 1.0f, 2.0f);
+    volume.CellSize = 1.0f;
+    world.FocusDocument().GetScene().GetRegistry().Components.AddComponent(
+        volumeEntity, volume);
+    ASSERT_TRUE(world.SetFocusZone(second));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 6, 0 },
+                                                 Vec3d{ 4.0, 0.25, 4.0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    LightingCookParams params;
+    params.Probe.SkyColor = Vec3d(1.0f, 1.0f, 1.0f);
+    params.Probe.GroundColor = Vec3d(0.2f, 0.2f, 0.2f);
+
+    const fs::path zoneScene =
+        world.ResolveScenePath(world.Manifest().Zones[0].SceneRef);
+    const DocumentCookResult standalone =
+        CookDocument(zoneScene, Root, 16.0, &Logging, nullptr, params);
+    ASSERT_TRUE(standalone.Success) << standalone.Error;
+    const double open = ProbeC0Sum(standalone.CookedScenePath);
+    ASSERT_GT(open, 0.0);
+
+    // Same scene, same artifact path; the halo changes the cook hash, so the
+    // cooked cache re-bakes rather than serving the standalone result.
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr, params);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+    const double blocked = ProbeC0Sum(standalone.CookedScenePath);
+
+    EXPECT_GT(blocked, 0.0);
+    EXPECT_LT(blocked, open * 0.9);
+}
+
+TEST_F(WorldCookTest, NeighborEditRestalesOnlyZonesWithinBakeReach)
+{
+    // Zone A has bake work (a probe volume), so neighbor halos fold into its
+    // cook hash. "Near" sits within the default 100-unit bake reach; "Far"
+    // sits beyond it.
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId near = world.AddZone(world.Manifest().Regions[0].Id, "Near");
+    const ZoneId far = world.AddZone(world.Manifest().Regions[0].Id, "Far");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 },
+                                                 Vec3d{ 4.0, 0.25, 4.0 });
+    const EntityId volumeEntity =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 2, 0 });
+    IrradianceVolumeComponent volume{};
+    volume.HalfExtents = Vec3d(2.0f, 1.0f, 2.0f);
+    volume.CellSize = 1.0f;
+    world.FocusDocument().GetScene().GetRegistry().Components.AddComponent(
+        volumeEntity, volume);
+    ASSERT_TRUE(world.SetFocusZone(near));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 10, 0, 0 });
+    ASSERT_TRUE(world.SetFocusZone(far));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 500, 0, 0 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult firstCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(firstCook.Success) << firstCook.Error;
+    const WorldPartitionManifest before = ParseCookedManifest(firstCook.CookedManifestPath);
+
+    // An edit beyond reach: the probe zone's hash must not move.
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 505, 0, 0 });
+    world.FocusDocument().MarkDirty();
+    ASSERT_TRUE(world.SaveWorld());
+    const WorldCookResult farCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(farCook.Success) << farCook.Error;
+    const WorldPartitionManifest afterFar = ParseCookedManifest(farCook.CookedManifestPath);
+    EXPECT_EQ(afterFar.Zones[0].CookedContentHash, before.Zones[0].CookedContentHash);
+    EXPECT_NE(afterFar.Zones[2].CookedContentHash, before.Zones[2].CookedContentHash);
+
+    // An edit within reach: the probe zone recooks against the new halo.
+    ASSERT_TRUE(world.SetFocusZone(near));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 12, 0, 0 });
+    world.FocusDocument().MarkDirty();
+    ASSERT_TRUE(world.SaveWorld());
+    const WorldCookResult nearCook = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(nearCook.Success) << nearCook.Error;
+    const WorldPartitionManifest afterNear = ParseCookedManifest(nearCook.CookedManifestPath);
+    EXPECT_NE(afterNear.Zones[0].CookedContentHash, afterFar.Zones[0].CookedContentHash);
+    EXPECT_NE(afterNear.Zones[1].CookedContentHash, before.Zones[1].CookedContentHash);
 }
 
 TEST_F(WorldCookTest, RefusesDirtyWorldScene)

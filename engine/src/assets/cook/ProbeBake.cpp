@@ -258,8 +258,7 @@ std::vector<std::uint16_t> PackProbeShHalf(std::span<const ProbeShL1> sh)
     return halves;
 }
 
-std::vector<BakeTriangle> AssembleProbeBakeTriangles(
-    std::vector<BakeTriangle> zoneTriangles,
+std::vector<const ProbeHaloZone*> SelectProbeHaloZones(
     const Aabb3d& zoneBounds,
     std::span<const ProbeHaloZone> halo,
     float maxRayDistance)
@@ -275,8 +274,17 @@ std::vector<BakeTriangle> AssembleProbeBakeTriangles(
     std::stable_sort(selected.begin(), selected.end(),
                      [](const ProbeHaloZone* a, const ProbeHaloZone* b)
                      { return a->ContentHash < b->ContentHash; });
+    return selected;
+}
 
-    for (const ProbeHaloZone* zone : selected)
+std::vector<BakeTriangle> AssembleProbeBakeTriangles(
+    std::vector<BakeTriangle> zoneTriangles,
+    const Aabb3d& zoneBounds,
+    std::span<const ProbeHaloZone> halo,
+    float maxRayDistance)
+{
+    for (const ProbeHaloZone* zone :
+         SelectProbeHaloZones(zoneBounds, halo, maxRayDistance))
         zoneTriangles.insert(zoneTriangles.end(),
                              zone->Triangles.begin(), zone->Triangles.end());
     return zoneTriangles;

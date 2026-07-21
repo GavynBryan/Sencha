@@ -102,9 +102,18 @@ struct ProbeHaloZone
     std::vector<BakeTriangle> Triangles;
 };
 
-// The bake input for one zone: its own triangles, then every halo zone whose
-// bounds reach within maxRayDistance of zoneBounds, sorted by content hash.
-// Order only affects exact hit ties; the sort makes it reproducible anyway.
+// The halo zones whose bounds reach within maxRayDistance of zoneBounds,
+// sorted by content hash. This is the exact set AssembleProbeBakeTriangles
+// folds in, exposed so a cook driver can hash what the bake will actually
+// see: a neighbor edit within reach restales the zone, one beyond does not.
+std::vector<const ProbeHaloZone*> SelectProbeHaloZones(
+    const Aabb3d& zoneBounds,
+    std::span<const ProbeHaloZone> halo,
+    float maxRayDistance);
+
+// The bake input for one zone: its own triangles, then every selected halo
+// zone's triangles. Order only affects exact hit ties; the content-hash sort
+// makes it reproducible anyway.
 std::vector<BakeTriangle> AssembleProbeBakeTriangles(
     std::vector<BakeTriangle> zoneTriangles,
     const Aabb3d& zoneBounds,

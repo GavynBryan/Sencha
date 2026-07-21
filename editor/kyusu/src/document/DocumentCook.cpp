@@ -402,7 +402,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                                   double cellSize,
                                   LoggingProvider& logging,
                                   AssetSystem* assetSystem,
-                                  const LightingCookParams& lightmapParams)
+                                  const LightingCookParams& lightmapParams,
+                                  std::span<const ProbeHaloZone> halo)
 {
     DocumentCookResult result;
 
@@ -458,6 +459,30 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         geometryHash = HashBytes64(
             std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
             geometryHash);
+    }
+    // Neighbor-zone halo: read-only occluder geometry other zones offered.
+    // Only zones within probe-ray reach of this zone's bake inputs
+    // participate; the selected set folds into the cook hash, so a neighbor
+    // edit within reach restales this zone and one beyond reach does not.
+    std::vector<const ProbeHaloZone*> reachableHalo;
+    Aabb3d bakeBounds = Aabb3d::Empty();
+    if ((!bakeLights.empty() || !probeVolumes.empty()) && !halo.empty())
+    {
+        for (const CookBrushGeometry& brush : brushes)
+            bakeBounds.ExpandToInclude(brush.WorldBounds);
+        for (const LightmapPlacement& placement : placements)
+            if (placement.CastsIntoBake)
+                for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
+                    bakeBounds.ExpandToInclude(
+                        placement.ToWorld.TransformPoint(vertex.Position));
+        for (const ProbeVolumeInput& volume : probeVolumes)
+            bakeBounds.ExpandToInclude(volume.Grid.Bounds());
+        reachableHalo = SelectProbeHaloZones(bakeBounds, halo,
+                                             lightmapParams.Probe.MaxRayDistance);
+        for (const ProbeHaloZone* zone : reachableHalo)
+            geometryHash = HashBytes64(std::as_bytes(
+                std::span<const std::uint64_t>{ &zone->ContentHash, 1 }),
+                geometryHash);
     }
     if (!probeVolumes.empty())
     {
@@ -627,7 +652,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
     // a light in one cell shadows onto its neighbors, and probe rays see the
-    // whole document. No cross-zone halo yet (single-document cook).
+    // whole document plus any neighbor-zone halo within reach.
     BakeBvh occlusionBvh;
     if (!bakeLights.empty() || !probeVolumes.empty())
     {
@@ -662,7 +687,9 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                         geometry.Vertices[geometry.Indices[i + 2]].Position) });
             }
         }
-        occlusionBvh.Build(std::move(occluders));
+        occlusionBvh.Build(AssembleProbeBakeTriangles(
+            std::move(occluders), bakeBounds, halo,
+            lightmapParams.Probe.MaxRayDistance));
     }
 
     // Bake static direct lighting into the zone's lightmap atlas. The lights
@@ -953,7 +980,8 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           double cellSize,
                           LoggingProvider* logging,
                           RuntimeAssets* assets,
-                          const LightingCookParams& lightmapParams)
+                          const LightingCookParams& lightmapParams,
+                          std::span<const ProbeHaloZone> halo)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -973,7 +1001,65 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
     return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
                              assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr,
-                             lightmapParams);
+                             lightmapParams, halo);
+}
+
+std::optional<ProbeHaloZone> CollectZoneBakeHalo(
+    const std::filesystem::path& authoredLevelPath,
+    const std::filesystem::path& assetsRoot,
+    LoggingProvider* logging,
+    RuntimeAssets* assets)
+{
+    LoggingProvider silent;
+    LoggingProvider& log = logging != nullptr ? *logging : silent;
+    EditorDocument doc(log);
+    if (assets != nullptr)
+        doc.SetAssetEnvironment(*assets);
+    if (!doc.Load(authoredLevelPath.generic_string()))
+        return std::nullopt;
+
+    // Pre-weld brush face triangles are geometrically the surfaces the zone's
+    // own cook bakes into cell meshes (the weld dedupes vertices, it does not
+    // move them), so neighbors occlude against the same geometry the zone
+    // renders.
+    const std::vector<CookBrushGeometry> brushes =
+        CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
+    const std::vector<LightmapPlacement> placements = CollectLightmapPlacements(
+        doc.GetRegistry().Components,
+        assets != nullptr ? &assets->Assets : nullptr, assetsRoot, log);
+
+    ProbeHaloZone zone;
+    for (const CookBrushGeometry& brush : brushes)
+        for (const CookFace& face : brush.Faces)
+            for (std::size_t i = 0; i + 2 < face.Triangles.size(); i += 3)
+                zone.Triangles.push_back(BakeTriangle{
+                    face.Triangles[i].Position,
+                    face.Triangles[i + 1].Position,
+                    face.Triangles[i + 2].Position });
+    for (const LightmapPlacement& placement : placements)
+    {
+        if (!placement.CastsIntoBake)
+            continue;
+        const MeshGeometry& geometry = placement.Geometry;
+        for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+            zone.Triangles.push_back(BakeTriangle{
+                placement.ToWorld.TransformPoint(
+                    geometry.Vertices[geometry.Indices[i]].Position),
+                placement.ToWorld.TransformPoint(
+                    geometry.Vertices[geometry.Indices[i + 1]].Position),
+                placement.ToWorld.TransformPoint(
+                    geometry.Vertices[geometry.Indices[i + 2]].Position) });
+    }
+
+    for (const BakeTriangle& triangle : zone.Triangles)
+    {
+        zone.Bounds.ExpandToInclude(triangle.V0);
+        zone.Bounds.ExpandToInclude(triangle.V1);
+        zone.Bounds.ExpandToInclude(triangle.V2);
+    }
+    zone.ContentHash = HashBytes64(std::as_bytes(std::span<const BakeTriangle>{
+        zone.Triangles.data(), zone.Triangles.size() }));
+    return zone;
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -1000,5 +1086,5 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
     return CookDocumentKernel(snapshot, levelName, sourceRel, assetsRoot, cellSize,
                              logging, assets != nullptr ? &assets->Assets : nullptr,
-                             lightmapParams);
+                             lightmapParams, {});
 }

@@ -6,6 +6,7 @@
 #include <math/Vec.h>
 
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -66,12 +67,28 @@ struct RuntimeAssets;
 // `logging` and `assets` are optional: null logging cooks silently (headless),
 // null assets cooks brush-only (passthrough asset-handle components need the
 // shared asset system to resolve their refs).
+// `halo` is neighbor-zone occluder geometry (CollectZoneBakeHalo records):
+// zones within probe-ray reach join the bake's occlusion set and the cook
+// hash. A world cook passes the sibling zones; a standalone level cook has
+// none.
 [[nodiscard]] DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider* logging = nullptr,
                                         RuntimeAssets* assets = nullptr,
-                                        const LightingCookParams& lightmapParams = {});
+                                        const LightingCookParams& lightmapParams = {},
+                                        std::span<const ProbeHaloZone> halo = {});
+
+// Collects the saved level's bake-occluding world geometry (brush faces plus
+// placements that cast into the bake) as one halo record for NEIGHBOR zone
+// cooks: triangles, their bounds, and a content hash over them. Null return
+// means the level failed to load. `assets` as for CookDocument (placements
+// need it to resolve their mesh refs).
+[[nodiscard]] std::optional<ProbeHaloZone> CollectZoneBakeHalo(
+    const std::filesystem::path& authoredLevelPath,
+    const std::filesystem::path& assetsRoot,
+    LoggingProvider* logging = nullptr,
+    RuntimeAssets* assets = nullptr);
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
