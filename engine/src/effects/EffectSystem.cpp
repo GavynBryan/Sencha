@@ -12,6 +12,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -61,7 +62,7 @@ void TickEffectsImpl(
     const AttributeRegistry* attrReg =
         std::as_const(world).TryGetResource<AttributeRegistry>();
 
-    std::vector<EntityId> expired;
+    std::vector<EntityIndex> expiredIndices;
     Query<Write<ActiveEffect>> query(world);
     VisitEffectChunks(query, partitions, [&](auto& view)
     {
@@ -71,10 +72,9 @@ void TickEffectsImpl(
         {
             ActiveEffect& ae = effects[i];
             const EffectDefinition* def = effReg->Get(ae.Def);
-            const EntityId effectEntity = world.ResolveEntity(indices[i]);
             if (def == nullptr)
             {
-                expired.push_back(effectEntity);
+                expiredIndices.push_back(indices[i]);
                 continue;
             }
 
@@ -94,10 +94,22 @@ void TickEffectsImpl(
             {
                 ae.TimeRemaining -= dt;
                 if (ae.TimeRemaining <= 0.0f)
-                    expired.push_back(effectEntity);
+                    expiredIndices.push_back(indices[i]);
             }
         }
     });
+
+    if (expiredIndices.empty())
+        return;
+
+    const std::unordered_set<EntityIndex> expiredSet(
+        expiredIndices.begin(),
+        expiredIndices.end());
+    std::vector<EntityId> expired;
+    expired.reserve(expiredSet.size());
+    for (EntityId entity : world.GetAliveEntities())
+        if (expiredSet.contains(entity.Index))
+            expired.push_back(entity);
 
     for (EntityId entity : expired)
     {
