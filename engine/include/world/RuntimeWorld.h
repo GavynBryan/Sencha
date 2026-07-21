@@ -110,7 +110,10 @@ public:
         BeginResidencyProcessing();
     void FinalizeResidencyProcessing();
 
-    [[nodiscard]] FrameZoneView BuildFrameView();
+    // Returns reusable runtime-owned scratch. StoragePartitionSet capacity is
+    // retained across frames, so steady-state view construction allocates
+    // nothing. The reference is valid until EndFrameView.
+    [[nodiscard]] const FrameZoneView& BuildFrameView();
     void EndFrameView();
 
 private:
@@ -146,6 +149,7 @@ private:
     std::vector<ZoneResidencyChange> PendingChanges_;
     std::vector<ZoneResidencyChange> ProcessingChanges_;
 
+    FrameZoneView FrameViewScratch_;
     bool ResidencyProcessing_ = false;
     bool FrameViewLive_ = false;
 };
