@@ -28,6 +28,7 @@
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/RuntimeComponentSchema.h>
+#include <world/RuntimeWorld.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
@@ -53,6 +54,23 @@ SENCHA_DECLARE_COMPONENT_TYPE(
 SENCHA_DECLARE_COMPONENT_TYPE(
     MissingRuntimeComponent,
     "test.missing_runtime_component");
+
+namespace
+{
+int StartupGameRemoveCalls = 0;
+}
+
+template <>
+struct ComponentTraits<StartupGameComponent>
+{
+    static void OnRemove(
+        const StartupGameComponent&,
+        World&,
+        EntityId)
+    {
+        ++StartupGameRemoveCalls;
+    }
+};
 
 template <>
 struct TypeSchema<StartupGameComponent>
@@ -135,6 +153,19 @@ public:
         schema.Apply(world);
         AppliedGameComponent = world.IsRegistered<StartupGameComponent>();
         AppliedGameComponentId = world.GetComponentId<StartupGameComponent>();
+
+        RuntimeWorld& runtime = GetEngine().World();
+        World& live = runtime.Entities();
+        SawEngineOwnedWorld = live.IsRegistered<StartupGameComponent>();
+        EngineOwnedGameComponentId =
+            live.GetComponentId<StartupGameComponent>();
+
+        const EntityId entity = live.CreateEntity();
+        live.AddComponent<StartupGameComponent>(
+            entity,
+            StartupGameComponent{ 42 });
+        EngineOwnedEntityWasPersistent =
+            live.GetEntityPartition(entity) == PersistentStoragePartition;
     }
 
     int RegistrationCalls = 0;
@@ -143,8 +174,11 @@ public:
     bool SawEngineComponent = false;
     bool SawGameComponent = false;
     bool AppliedGameComponent = false;
+    bool SawEngineOwnedWorld = false;
+    bool EngineOwnedEntityWasPersistent = false;
     std::size_t SchemaSize = 0;
     ComponentId AppliedGameComponentId = InvalidComponentId;
+    ComponentId EngineOwnedGameComponentId = InvalidComponentId;
 };
 
 class MissingRuntimeSchemaGame final : public Game
@@ -227,9 +261,10 @@ TEST(RuntimeComponentSchema, EnginePrefixMatchesCurrentZoneRegistrationOrder)
     ExpectSameComponentId<CameraRig>(current.Components, unified);
 }
 
-TEST(RuntimeComponentSchema, EngineRunSealsEngineAndGameVocabularyBeforeStart)
+TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
 {
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    StartupGameRemoveCalls = 0;
 
     Application app(0, nullptr);
     RuntimeSchemaGame game;
@@ -242,8 +277,16 @@ TEST(RuntimeComponentSchema, EngineRunSealsEngineAndGameVocabularyBeforeStart)
     EXPECT_TRUE(game.SawEngineComponent);
     EXPECT_TRUE(game.SawGameComponent);
     EXPECT_TRUE(game.AppliedGameComponent);
+    EXPECT_TRUE(game.SawEngineOwnedWorld);
+    EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
     EXPECT_EQ(game.SchemaSize, 25u);
     EXPECT_EQ(game.AppliedGameComponentId, 24u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 24u);
+
+    // Application::Run owns Engine by value. Its return proves the engine-owned
+    // RuntimeWorld was destroyed while the game's concrete hook code was still
+    // mapped and callable.
+    EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 
 TEST(RuntimeComponentSchema, MissingRuntimeStorageFailsBeforeGameStart)
