@@ -3,10 +3,15 @@
 #include "PlayerStartComponent.h"
 #include "SpinComponent.h"
 
+#include <abilities/AbilityKit.h>
 #include <app/DefaultRenderPipeline.h>
-#include <render/ProbeVolumeSet.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
+#include <audio/AudioSourceComponent.h>
+#include <camera/CameraRegistration.h>
+#include <camera/CameraRig.h>
+#include <components/ActiveCameraService.h>
+#include <components/CameraComponent.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
@@ -15,38 +20,37 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
-#include <ecs/ComponentTypeId.h>
-#include <abilities/AbilityKit.h>
-#include <camera/CameraRegistration.h>
-#include <camera/CameraRig.h>
+#include <ecs/Query.h>
+#include <ecs/WorldComponentSchema.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <math/Quat.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementModes.h>
 #include <movement/MovementProfile.h>
+#include <movement/MovementRegistration.h>
 #include <movement/MovementState.h>
 #include <movement/MovementTags.h>
-#include <movement/MovementRegistration.h>
-#include <graphics/vulkan/GraphicsServices.h>
-#include <math/Quat.h>
-#include <math/geometry/3d/Transform3d.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsStepSystem.h>
 #include <physics/ZoneCollisionLoader.h>
 #include <physics/components/CharacterController.h>
-#include <physics/components/Collider.h>
-#include <physics/components/RigidBody.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
-#include <render/Camera.h>
-#include <world/registry/Registry.h>
+#include <render/ProbeVolumeSet.h>
+#include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
+#include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/DefaultZoneBuilder.h>
 #include <zone/WorldPartitionIds.h>
-#include <zone/ZoneRuntime.h>
+#include <zone/ZoneLoadPackage.h>
+#include <zone/ZonePackageImporter.h>
+#include <zone/ZonePackageSceneLoader.h>
 
 #include <SDL3/SDL.h>
 
@@ -60,345 +64,437 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace
 {
-    // Content layout: authored assets under "assets", cooked artifacts under
-    // "assets/.cooked". The authored scan skips .cooked on its own; the cooked
-    // scan is a second root so each generated mesh maps to the asset:// path the
-    // cook stamped. The host runs with the project directory as CWD.
-    constexpr std::string_view kAuthoredRoot = "assets";
-    constexpr std::string_view kCookedScanRoot = "assets/.cooked";
-    constexpr ZoneId kPlayZone{ 1 };
+constexpr std::string_view kAuthoredRoot = "assets";
+constexpr std::string_view kCookedScanRoot = "assets/.cooked";
+constexpr ZoneId kPlayZone{ 1 };
 
-    struct SceneParse
+struct SceneBuildResult
+{
+    bool Success = false;
+    std::string Error;
+};
+
+std::optional<JsonValue> ParseSceneFile(
+    const std::string& path,
+    std::string& error)
+{
+    std::ifstream file(path);
+    if (!file.is_open())
     {
-        std::optional<JsonValue> Json;
-        std::string Error;
-    };
-
-    SceneParse ParseSceneFile(const std::string& path)
-    {
-        SceneParse out;
-        std::ifstream file(path);
-        if (!file.is_open())
-        {
-            out.Error = "could not open scene file '" + path + "'";
-            return out;
-        }
-        std::ostringstream buf;
-        buf << file.rdbuf();
-
-        JsonParseError parseError;
-        out.Json = JsonParse(buf.str(), &parseError);
-        if (!out.Json)
-            out.Error = "scene JSON parse error at " + std::to_string(parseError.Position)
-                + ": " + parseError.Message;
-        return out;
+        error = "could not open scene file '" + path + "'";
+        return std::nullopt;
     }
 
-    EntityId FindFirstCamera(Registry& registry)
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+
+    JsonParseError parseError;
+    std::optional<JsonValue> json =
+        JsonParse(buffer.str(), &parseError);
+    if (!json)
     {
-        for (EntityId entity : registry.Entities.GetAliveEntities())
-            if (registry.Components.TryGet<CameraComponent>(entity) != nullptr)
-                return entity;
+        error = "scene JSON parse error at "
+            + std::to_string(parseError.Position)
+            + ": " + parseError.Message;
+    }
+    return json;
+}
+
+void BuildScenePackage(
+    ZoneLoadPackage& package,
+    SceneBuildResult& result,
+    const std::string& scenePath,
+    const ComponentSerializerRegistry& serializers)
+{
+    std::string parseError;
+    const std::optional<JsonValue> json =
+        ParseSceneFile(scenePath, parseError);
+    if (!json)
+    {
+        result.Error = std::move(parseError);
+        return;
+    }
+
+    SceneLoadError loadError;
+    if (!BuildZonePackageFromSceneJson(
+            *json,
+            serializers,
+            package,
+            &loadError))
+    {
+        result.Error = loadError.Message;
+        return;
+    }
+
+    result.Success = true;
+    result.Error.clear();
+}
+
+EntityId FindFirstCamera(
+    const World& world,
+    StoragePartitionId partition)
+{
+    if (!world.IsRegistered<CameraComponent>())
         return EntityId{};
-    }
 
-    // The task-thread half of loading one cooked zone scene: component and
-    // resource registration on the detached registry, then the JSON parse.
-    // Shared by the single-zone map path and the world-streaming recipe.
-    void BuildZoneScene(Registry& registry, SceneParse& parsed, const std::string& scenePath,
-                        StaticMeshCache* meshes, MaterialSetCache* materialSets,
-                        TextureCache* textures)
+    for (EntityId entity : world.GetAliveEntities())
     {
-        InitializeDefault3DRegistry(registry, meshes, materialSets,
-                                    nullptr, nullptr, nullptr, textures);
-        // Physics components must be registered before any entity is created
-        // in this zone's World (build runs before finalize spawns entities).
-        // The helper also registers the runtime link components the bridges
-        // add at reconcile time, so they cannot be forgotten.
-        RegisterPhysicsComponents(registry.Components);
-        // Gameplay components (movement, tags, attributes, abilities, camera
-        // rig) plus their resources, registered here for the same reason:
-        // storage must exist before the finalize pass spawns entities.
-        RegisterMovement(registry.Components);
-        RegisterCameraComponents(registry.Components);
-        parsed = ParseSceneFile(scenePath);
-    }
-
-    // The owner-thread half: scene deserialization plus the cooked brush
-    // collision. Returns false when the scene did not load.
-    bool FinalizeZoneScene(Registry& registry, const SceneParse& parsed,
-                           LoggingProvider& logging, AssetSystem* assets,
-                           CollisionShapeCache* shapes, const std::string& collisionSidecar)
-    {
-        Logger& log = logging.GetLogger<TemplateGame>();
-        if (!parsed.Json)
+        if (world.GetEntityPartition(entity) == partition
+            && world.TryGet<CameraComponent>(entity) != nullptr)
         {
-            log.Error("TemplateGame: {}", parsed.Error);
-            return false;
+            return entity;
         }
+    }
+    return EntityId{};
+}
 
-        SceneLoadError loadError;
-        SceneSerializationContext sceneContext(logging, assets);
-        if (!LoadSceneJson(*parsed.Json, registry, sceneContext, &loadError))
+Vec3d FindPlayerStart(
+    const World& world,
+    std::optional<StoragePartitionId> partition)
+{
+    if (!world.IsRegistered<PlayerStartComponent>())
+        return Vec3d(0.0f, 2.0f, 0.0f);
+
+    for (EntityId entity : world.GetAliveEntities())
+    {
+        if (partition.has_value()
+            && world.GetEntityPartition(entity) != *partition)
         {
-            log.Error("TemplateGame: scene load error: {}", loadError.Message);
-            return false;
+            continue;
         }
+        if (!world.HasComponent<PlayerStartComponent>(entity))
+            continue;
 
-        // Load the level's cooked brush collision: spawns the static colliders
-        // the character walks on. No collision authoring; it rode the cook.
-        if (shapes != nullptr)
-            LoadZoneCollision(registry.Components, *shapes, collisionSidecar,
-                              std::string(kCookedScanRoot));
-        return true;
+        if (const LocalTransform* transform =
+                world.TryGet<LocalTransform>(entity))
+        {
+            return transform->Value.Position;
+        }
+    }
+    return Vec3d(0.0f, 2.0f, 0.0f);
+}
+
+EntityId CreateTransformEntity(
+    World& world,
+    const Vec3d& position,
+    StoragePartitionId partition = PersistentStoragePartition)
+{
+    Transform3f transform;
+    transform.Position = position;
+
+    const EntityId entity = world.CreateEntity(partition);
+    world.AddComponent<LocalTransform>(
+        entity,
+        LocalTransform{ transform });
+    world.AddComponent<WorldTransform>(
+        entity,
+        WorldTransform{ transform });
+    return entity;
+}
+
+EntityId SpawnPlayerAvatar(
+    World& world,
+    Logger& log,
+    std::optional<StoragePartitionId> spawnPartition)
+{
+    const Vec3d spawnPosition =
+        FindPlayerStart(world, spawnPartition);
+
+    EntityId camera = FindFirstCamera(
+        world,
+        PersistentStoragePartition);
+    if (!camera.IsValid())
+    {
+        camera = CreateTransformEntity(world, spawnPosition);
+        world.AddComponent<CameraComponent>(
+            camera,
+            CameraComponent{});
+    }
+    world.GetResource<ActiveCameraService>().SetActive(camera);
+
+    const EntityId pawn =
+        CreateTransformEntity(world, spawnPosition);
+    world.AddComponent<CharacterController>(
+        pawn,
+        CharacterController{});
+    world.AddComponent<MovementProfile>(
+        pawn,
+        MovementProfile{});
+    world.AddComponent<MovementState>(
+        pawn,
+        MovementState{});
+    world.AddComponent<MovementIntent>(
+        pawn,
+        MovementIntent{});
+    world.AddComponent<OnGround>(pawn, OnGround{});
+    world.AddComponent<LocomotionModeRequest>(
+        pawn,
+        LocomotionModeRequest{});
+
+    const MovementDefs* movementDefs =
+        world.TryGetResource<MovementDefs>();
+
+    GameplayTagContainer pawnTags{};
+    if (const MovementTags* movementTags =
+            world.TryGetResource<MovementTags>())
+    {
+        pawnTags.Grant(movementTags->Controlled);
+    }
+    world.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+
+    AttributeSet pawnAttributes{};
+    if (movementDefs != nullptr)
+        pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
+    world.AddComponent<AttributeSet>(pawn, pawnAttributes);
+
+    AbilitySet pawnAbilities{};
+    if (movementDefs != nullptr)
+        pawnAbilities.Grant(movementDefs->Jump);
+    world.AddComponent<AbilitySet>(pawn, pawnAbilities);
+
+    CameraRig rig{};
+    rig.Target = pawn;
+    rig.Mode = CameraRigMode::FirstPerson;
+    world.AddComponent<CameraRig>(camera, rig);
+
+    log.Info(
+        "TemplateGame: spawned persistent player and camera in partition zero");
+    return pawn;
+}
+
+void ConfigureRuntimeResources(
+    Engine& engine,
+    RuntimeAssets& assets)
+{
+    World& world = engine.World().Entities();
+
+    if (StaticMeshComponentAssets* meshAssets =
+            world.TryGetResource<StaticMeshComponentAssets>())
+    {
+        meshAssets->Meshes = &assets.StaticMeshes;
+        meshAssets->MaterialSets = &assets.MaterialSets;
+    }
+    else
+    {
+        world.AddResource<StaticMeshComponentAssets>(
+            &assets.StaticMeshes,
+            &assets.MaterialSets);
     }
 
-    // Camera plus the controlled pawn: world-lifetime avatar state, not zone
-    // content. The map path spawns it into its single zone; the world path
-    // spawns it once into the global registry, where zone unloads never
-    // touch it. Returns the pawn.
-    EntityId SpawnPlayerAvatar(Registry& registry, Logger& log)
+    if (ZoneLightmapComponentAssets* lightmapAssets =
+            world.TryGetResource<ZoneLightmapComponentAssets>())
     {
-        // The authored spawn point: the first player_start entity in this
-        // registry (world scene content on the world path). Entities load in
-        // scene order, so "first" is deterministic per cooked scene.
-        Vec3d spawnPosition{ 0.0f, 2.0f, 0.0f };
-        const World& spawnLookup = registry.Components;
-        bool foundStart = false;
-        for (EntityId entity : registry.Entities.GetAliveEntities())
+        lightmapAssets->Textures = &assets.Textures;
+    }
+    else
+    {
+        world.AddResource<ZoneLightmapComponentAssets>(&assets.Textures);
+    }
+
+    if (AudioSourceRuntime* audioRuntime =
+            world.TryGetResource<AudioSourceRuntime>())
+    {
+        audioRuntime->Clips = &assets.AudioClips;
+        audioRuntime->Audio = &engine.Audio();
+        audioRuntime->Captions = &engine.Captions();
+    }
+    else
+    {
+        world.AddResource<AudioSourceRuntime>(
+            &assets.AudioClips,
+            &engine.Audio(),
+            &engine.Captions());
+    }
+
+    RegisterPhysicsComponents(world);
+    RegisterMovement(world);
+    RegisterCameraComponents(world);
+}
+
+struct WorldPartitionUpdateSystem
+{
+    WorldPartitionUpdateSystem(
+        std::optional<WorldPartitionRuntime>& partition,
+        std::optional<AsyncZoneLoader>& loader,
+        RuntimeWorld& runtimeWorld,
+        EntityId& pawn)
+        : Partition(partition)
+        , Loader(loader)
+        , Runtime(runtimeWorld)
+        , Pawn(pawn)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        if (!Partition || !Partition->HasManifest() || !Loader)
+            return;
+
+        if (Pawn.IsValid())
         {
-            if (!spawnLookup.HasComponent<PlayerStartComponent>(entity))
-                continue;
-            if (const LocalTransform* transform = spawnLookup.TryGet<LocalTransform>(entity))
+            if (const WorldTransform* transform =
+                    ctx.Entities.TryGet<WorldTransform>(Pawn))
             {
-                spawnPosition = transform->Value.Position;
-                foundStart = true;
+                Partition->SetFocus(transform->Value.Position);
+            }
+        }
+        Partition->Update(
+            ctx.WallDeltaSeconds,
+            *Loader,
+            Runtime);
+    }
+
+    std::optional<WorldPartitionRuntime>& Partition;
+    std::optional<AsyncZoneLoader>& Loader;
+    RuntimeWorld& Runtime;
+    EntityId& Pawn;
+};
+
+struct CharacterInputSystem
+{
+    void FixedLogic(FixedLogicContext& ctx)
+    {
+        World& world = ctx.Entities;
+        if (!world.IsRegistered<MovementIntent>()
+            || !world.IsRegistered<GameplayTagContainer>())
+        {
+            return;
+        }
+
+        const MovementTags* tags =
+            world.TryGetResource<MovementTags>();
+        const MovementDefs* defs =
+            world.TryGetResource<MovementDefs>();
+        AbilityActivationQueue* activations =
+            world.TryGetResource<AbilityActivationQueue>();
+        if (tags == nullptr || defs == nullptr)
+            return;
+
+        const InputFrame& input = ctx.Input;
+        const float forward =
+            (input.IsKeyDown(SDL_SCANCODE_W) ? 1.0f : 0.0f)
+            - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
+        const float strafe =
+            (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
+            - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
+
+        bool jump = false;
+        for (std::uint32_t scancode : input.KeysPressed)
+        {
+            if (scancode == SDL_SCANCODE_SPACE)
+            {
+                jump = true;
                 break;
             }
         }
-        if (!foundStart)
-            log.Info("TemplateGame: no player_start entity; spawning the avatar at the "
-                     "default position");
 
-        // Use the scene's camera if it authored one; a cooked level is pure
-        // geometry, so spawn one to make it viewable.
-        EntityId camera = FindFirstCamera(registry);
-        if (!camera.IsValid())
+        float yaw = 0.0f;
+        if (const ActiveCameraService* cameraService =
+                world.TryGetResource<ActiveCameraService>())
         {
-            Transform3f cameraStart;
-            cameraStart.Position = spawnPosition;
-            camera = CreateDefaultEntity(registry, cameraStart);
-            AddDefaultCamera(registry, camera, CameraComponent{}, /*makeActive*/ true);
-        }
-        else
-        {
-            registry.Resources.Get<ActiveCameraService>().SetActive(camera);
-        }
-
-        // The player is a kinematic capsule the camera follows, a separate
-        // entity from the camera. Locomotion is data on the pawn: intent +
-        // profile + a mode marker, top speed as the MoveSpeed attribute, jump
-        // as a granted ability. The framework resolves intent to a planar
-        // DesiredVelocity; the engine's CharacterControllerSystem resolves that
-        // against collision.
-        World& pawnWorld = registry.Components;
-        Transform3f pawnStart;
-        pawnStart.Position = spawnPosition;
-        const EntityId pawn = CreateDefaultEntity(registry, pawnStart);
-        pawnWorld.AddComponent<CharacterController>(pawn, CharacterController{});
-        pawnWorld.AddComponent<MovementProfile>(pawn, MovementProfile{});
-        pawnWorld.AddComponent<MovementState>(pawn, MovementState{});
-        pawnWorld.AddComponent<MovementIntent>(pawn, MovementIntent{});
-        pawnWorld.AddComponent<OnGround>(pawn, OnGround{});
-        // The mode arbiter projects movement.grounded (which gates the jump
-        // ability) only for pawns carrying a mode request. Without it the pawn
-        // walks (that only needs the OnGround marker) but can never jump.
-        pawnWorld.AddComponent<LocomotionModeRequest>(pawn, LocomotionModeRequest{});
-
-        const MovementDefs* movementDefs = pawnWorld.TryGetResource<MovementDefs>();
-
-        GameplayTagContainer pawnTags{};
-        if (const MovementTags* movementTags = pawnWorld.TryGetResource<MovementTags>())
-            pawnTags.Grant(movementTags->Controlled);
-        pawnWorld.AddComponent<GameplayTagContainer>(pawn, pawnTags);
-
-        AttributeSet pawnAttributes{};
-        if (movementDefs != nullptr)
-            pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
-        pawnWorld.AddComponent<AttributeSet>(pawn, pawnAttributes);
-
-        AbilitySet pawnAbilities{};
-        if (movementDefs != nullptr)
-            pawnAbilities.Grant(movementDefs->Jump);
-        pawnWorld.AddComponent<AbilitySet>(pawn, pawnAbilities);
-
-        // Point the camera at the pawn. Mode is data: first-person here, but
-        // third-person and fixed are the same system on a different value.
-        CameraRig rig{};
-        rig.Target = pawn;
-        rig.Mode = CameraRigMode::FirstPerson;
-        registry.Components.AddComponent<CameraRig>(camera, rig);
-        return pawn;
-    }
-
-    // Feeds the pawn's position to the partition focus, then pumps the
-    // streaming policy: the once-per-frame Update the runtime's contract
-    // requires, game-pumped by design. Inert until `world` loads a manifest.
-    struct WorldPartitionUpdateSystem
-    {
-        WorldPartitionUpdateSystem(std::optional<WorldPartitionRuntime>& partition,
-                                   std::optional<AsyncZoneLoader>& loader,
-                                   ZoneRuntime*& zones, EntityId& pawn)
-            : Partition(partition)
-            , Loader(loader)
-            , Zones(zones)
-            , Pawn(pawn)
-        {
-        }
-
-        void FrameUpdate(FrameUpdateContext& ctx)
-        {
-            if (!Partition || !Partition->HasManifest() || !Loader || Zones == nullptr)
-                return;
-            if (Pawn.IsValid())
+            if (cameraService->HasActive())
             {
-                const World& world = Zones->Global().Components;
-                if (world.IsRegistered<WorldTransform>())
-                    if (const WorldTransform* transform = world.TryGet<WorldTransform>(Pawn))
-                        Partition->SetFocus(transform->Value.Position);
-            }
-            Partition->Update(ctx.WallDeltaSeconds, *Loader, *Zones);
-        }
-
-        std::optional<WorldPartitionRuntime>& Partition;
-        std::optional<AsyncZoneLoader>& Loader;
-        ZoneRuntime*& Zones;
-        EntityId& Pawn;
-    };
-
-    // Player input -> MovementIntent + ability activations for the controlled
-    // pawn(s). Reads the active camera rig's yaw so WASD is camera-relative; the
-    // locomotion operations then consume the world-space intent, decoupled from
-    // input and the camera. Discrete actions (jump) are queued as ability
-    // activations, gated downstream by AbilityKit (grounded, cooldown), not here.
-    struct CharacterInputSystem
-    {
-        explicit CharacterInputSystem(Registry*& registry)
-            : RegistryInstance(registry)
-        {
-        }
-
-        void FixedLogic(FixedLogicContext& ctx)
-        {
-            if (RegistryInstance == nullptr)
-                return;
-            World& world = RegistryInstance->Components;
-            if (!world.IsRegistered<MovementIntent>() || !world.IsRegistered<GameplayTagContainer>())
-                return;
-            const MovementTags* ids = world.TryGetResource<MovementTags>();
-            const MovementDefs* defs = world.TryGetResource<MovementDefs>();
-            AbilityActivationQueue* activations = world.TryGetResource<AbilityActivationQueue>();
-            if (ids == nullptr || defs == nullptr)
-                return;
-
-            const InputFrame& input = ctx.Input;
-            const float forward = (input.IsKeyDown(SDL_SCANCODE_W) ? 1.0f : 0.0f)
-                                - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
-            const float strafe = (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
-                               - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
-            bool jump = false;
-            for (std::uint32_t scancode : input.KeysPressed)
-                if (scancode == SDL_SCANCODE_SPACE)
+                if (const CameraRig* rig = world.TryGet<CameraRig>(
+                        cameraService->GetActive()))
                 {
-                    jump = true;
-                    break;
+                    yaw = rig->Yaw;
                 }
+            }
+        }
 
-            float yaw = 0.0f;
-            if (const ActiveCameraService* cameraService =
-                    RegistryInstance->Resources.TryGet<ActiveCameraService>())
-                if (cameraService->HasActive() && world.IsRegistered<CameraRig>())
-                    if (const CameraRig* rig = world.TryGet<CameraRig>(cameraService->GetActive()))
-                        yaw = rig->Yaw;
+        const Quatf frame =
+            Quatf::FromAxisAngle(Vec3d::Up(), yaw);
+        Vec3d wish =
+            frame.RotateVector(Vec3d::Forward()) * forward
+            + frame.RotateVector(Vec3d::Right()) * strafe;
+        wish.Y = 0.0f;
+        const float squared = wish.SqrMagnitude();
+        if (squared > 1.0f)
+            wish = wish * (1.0f / std::sqrt(squared));
 
-            const Quatf frame = Quatf::FromAxisAngle(Vec3d::Up(), yaw);
-            Vec3d wish = frame.RotateVector(Vec3d::Forward()) * forward
-                       + frame.RotateVector(Vec3d::Right()) * strafe;
-            wish.Y = 0.0f;
-            const float sqr = wish.SqrMagnitude();
-            if (sqr > 1.0f)
-                wish = wish * (1.0f / std::sqrt(sqr));
-
-            world.ForEachComponent<MovementIntent>([&](EntityId entity, MovementIntent& intent)
+        Query<
+            Write<MovementIntent>,
+            Read<GameplayTagContainer>> query(world);
+        query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
+        {
+            auto intents = view.template Write<MovementIntent>();
+            const auto entityTags =
+                view.template Read<GameplayTagContainer>();
+            for (std::uint32_t index = 0;
+                 index < view.Count();
+                 ++index)
             {
-                const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(entity);
-                if (tags == nullptr || !tags->HasExact(ids->Controlled))
-                    return;
-                intent.WishDir = wish;
+                if (!entityTags[index].HasExact(tags->Controlled))
+                    continue;
+
+                intents[index].WishDir = wish;
                 if (jump && activations != nullptr)
-                    activations->Pending.push_back({ entity, defs->Jump });
-            });
-        }
+                {
+                    activations->Pending.push_back(
+                        { view.Entity(index), defs->Jump });
+                }
+            }
+        });
+    }
+};
 
-        Registry*& RegistryInstance;
-    };
-
-    // A game system: rotates every entity carrying a SpinComponent. The example
-    // of gameplay reading a game-defined component placed in the editor and baked
-    // through the cook. Mutates transform values only, never archetype membership.
-    struct SpinSystem
+struct SpinSystem
+{
+    void FixedLogic(FixedLogicContext& ctx)
     {
-        explicit SpinSystem(Registry*& registry)
-            : RegistryInstance(registry)
+        World& world = ctx.Entities;
+        if (!world.IsRegistered<SpinComponent>()
+            || !world.IsRegistered<LocalTransform>())
         {
+            return;
         }
 
-        void FixedLogic(FixedLogicContext& ctx)
+        const float dt =
+            static_cast<float>(ctx.Time.DeltaSeconds);
+        Query<Write<SpinComponent>, Write<LocalTransform>> query(world);
+        query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
         {
-            if (RegistryInstance == nullptr)
-                return;
-            World& world = RegistryInstance->Components;
-            if (!world.IsRegistered<SpinComponent>())
-                return;
-
-            const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
-            world.ForEachComponent<SpinComponent>([&](EntityId id, SpinComponent& spin) {
-                LocalTransform* transform = world.TryGet<LocalTransform>(id);
-                if (transform == nullptr)
-                    return;
-                transform->Value.Rotation =
-                    transform->Value.Rotation
-                    * Quatf::FromAxisAngle(Vec3d::Up(), spin.RadiansPerSecond * dt);
-            });
-        }
-
-        Registry*& RegistryInstance;
-    };
+            auto spins = view.template Write<SpinComponent>();
+            auto transforms = view.template Write<LocalTransform>();
+            for (std::uint32_t index = 0;
+                 index < view.Count();
+                 ++index)
+            {
+                transforms[index].Value.Rotation =
+                    transforms[index].Value.Rotation
+                    * Quatf::FromAxisAngle(
+                        Vec3d::Up(),
+                        spins[index].RadiansPerSecond * dt);
+            }
+        });
+    }
+};
 } // namespace
 
-void TemplateGame::OnRegisterComponents(ComponentSerializerRegistry&)
+void TemplateGame::OnRegisterComponents(
+    ComponentSerializerRegistry&)
 {
-    // Built-in scene components (Transform, StaticMesh, Camera, ...) plus the
-    // game's own. RegisterComponent<T>() is schema-driven, so SpinComponent
-    // serializes through the cook and shows up editable in the editor inspector.
-    // The editor reuses this hook to edit scenes containing the game's components
-    // without ever starting the game.
     InitSceneSerializer();
     RegisterComponent<SpinComponent>();
     RegisterComponent<PlayerStartComponent>();
 }
 
-void TemplateGame::OnUnregisterComponents(ComponentSerializerRegistry& serializers)
+void TemplateGame::OnUnregisterComponents(
+    ComponentSerializerRegistry& serializers)
 {
-    // Symmetric teardown: retract the serializers whose code lives in THIS module
-    // before the host unmaps it. Without this, the SpinComponent serializer would
-    // outlive dlclose and crash when the registry frees it at exit. Built-in
-    // serializers (engine code) are left for the host to manage.
     serializers.Remove(ResolveComponentTypeId<SpinComponent>());
     serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
+}
+
+void TemplateGame::OnRegisterRuntimeComponents(
+    WorldComponentSchema& schema)
+{
+    schema.Add<SpinComponent>();
+    schema.Add<PlayerStartComponent>();
 }
 
 void TemplateGame::OnStart(GameStartupContext&)
@@ -407,55 +503,87 @@ void TemplateGame::OnStart(GameStartupContext&)
     LoggingProvider& logging = engine.Logging();
     GraphicsServices& graphics = engine.Graphics();
 
-    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
+    Assets.emplace(
+        logging,
+        graphics.Buffers,
+        graphics.Images,
+        graphics.Descriptors,
+        graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins). The cooked
-    // index adds artifacts the physical scan cannot key, notably cooked textures
-    // (asset://...png serving cooked .stex bytes).
-    ScanAssetsDirectory(std::string(kAuthoredRoot), runtimeAssets.Registry);
-    ScanAssetsDirectory(std::string(kCookedScanRoot), runtimeAssets.Registry);
-    RegisterCookedAssets(std::string(kAuthoredRoot), runtimeAssets.Registry);
+    ScanAssetsDirectory(
+        std::string(kAuthoredRoot),
+        runtimeAssets.Registry);
+    ScanAssetsDirectory(
+        std::string(kCookedScanRoot),
+        runtimeAssets.Registry);
+    RegisterCookedAssets(
+        std::string(kAuthoredRoot),
+        runtimeAssets.Registry);
 
+    AssetIdMap idMap;
+    std::string idMapError;
+    const std::string idMapPath =
+        std::string(kAuthoredRoot) + "/"
+        + std::string(kAssetIdMapFileName);
+    if (AssetIdMap::LoadFromFile(
+            idMapPath,
+            idMap,
+            &idMapError))
     {
-        AssetIdMap idMap;
-        std::string idMapError;
-        const std::string idMapPath =
-            std::string(kAuthoredRoot) + "/" + std::string(kAssetIdMapFileName);
-        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
-            ApplyAssetIds(idMap, runtimeAssets.Registry);
-        else
-            logging.GetLogger<TemplateGame>().Warn(
-                "TemplateGame: no asset id map ({}); refs resolve by path only", idMapError);
+        ApplyAssetIds(idMap, runtimeAssets.Registry);
+    }
+    else
+    {
+        logging.GetLogger<TemplateGame>().Warn(
+            "TemplateGame: no asset id map ({}); refs resolve by path only",
+            idMapError);
     }
 
-    ZoneLoader.emplace(engine.Tasks(), engine.Zones(), engine.Runtime());
-    Preloader.emplace(logging, runtimeAssets.Registry, runtimeAssets.Assets, engine.Tasks());
+    ConfigureRuntimeResources(engine, runtimeAssets);
+    SceneContext = std::make_unique<SceneSerializationContext>(
+        logging,
+        &runtimeAssets.Assets);
+    ZoneLoader.emplace(
+        engine.Tasks(),
+        engine.World(),
+        engine.RuntimeComponents(),
+        DefaultComponentSerializerRegistry(),
+        *SceneContext,
+        engine.Runtime());
+    Preloader.emplace(
+        logging,
+        runtimeAssets.Registry,
+        runtimeAssets.Assets,
+        engine.Tasks());
 
-    if (DefaultRenderPipeline* pipeline = engine.GetRenderPipeline())
+    if (DefaultRenderPipeline* pipeline =
+            engine.GetRenderPipeline())
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets,
+            runtimeAssets.StaticMeshes,
+            runtimeAssets.Materials,
+            runtimeAssets.MaterialSets,
             &runtimeAssets.Textures);
         pipeline->AddMeshRenderFeature(graphics);
     }
 
-    ZoneRuntimePtr = &engine.Zones();
-
-    // The +map mechanism: the startup script runs `map <name>` immediately after
-    // this hook (ConsolePhase::GameLoaded), landing in LoadMap. The `world` and
-    // `zone` commands ride the same mechanism: +world/+zone argv become console
-    // lines executed at GameLoaded (ConsoleStartupScript::FromArgv).
     engine.Console().SetMapHandler(
-        [this](std::string_view mapName) { return LoadMap(mapName); });
+        [this](std::string_view mapName)
+        {
+            return LoadMap(mapName);
+        });
+
     engine.Console().Registry().RegisterCommand({
         .Name = "world",
         .Owner = "game",
         .Usage = "world <name>",
-        .Help = "Load a cooked partitioned world (assets/.cooked/worlds/<name>.sworld.json) "
-                "and stream its zones around the player.",
+        .Help = "Load a cooked partitioned world and stream its zones around the player.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string> args)
+        {
             if (args.size() != 1)
             {
                 ConsoleResult usage;
@@ -465,13 +593,17 @@ void TemplateGame::OnStart(GameStartupContext&)
             return LoadWorld(args[0]);
         },
     });
+
     engine.Console().Registry().RegisterCommand({
         .Name = "zone",
         .Owner = "game",
         .Usage = "zone <16-hex zone id>",
-        .Help = "Focus the loaded world on a zone; queued when issued before `world`.",
+        .Help = "Focus the loaded world on a zone.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string> args)
+        {
             if (args.size() != 1)
             {
                 ConsoleResult usage;
@@ -481,54 +613,73 @@ void TemplateGame::OnStart(GameStartupContext&)
             return FocusWorldZone(args[0]);
         },
     });
+
     engine.Console().Registry().RegisterCommand({
         .Name = "zones",
         .Owner = "game",
         .Usage = "zones",
-        .Help = "Print the world partition demand table: why each zone is resident, "
-                "its participation, and the focus.",
+        .Help = "Print world partition demand and residency.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string>)
+        {
             ConsoleResult result;
             if (!Partition || !Partition->HasManifest())
             {
                 result.Info("no world loaded (use `world <name>`)");
                 return result;
             }
-            ZoneRuntime& zones = GetEngine().Zones();
-            const auto zoneName = [&](ZoneId zone) -> std::string
+
+            RuntimeWorld& runtime = GetEngine().World();
+            const auto zoneName = [&](ZoneId zone)
             {
                 for (const ZoneHeader& header : Partition->Manifest().Zones)
                     if (header.Id == zone)
                         return header.Name;
                 return ZoneIdToString(zone);
             };
+
             result.Info("focus: " + zoneName(Partition->FocusZone()));
-            for (const ZoneDemandRecord& record : Partition->DemandRecords())
+            for (const ZoneDemandRecord& record :
+                 Partition->DemandRecords())
             {
                 std::string sources;
-                const auto tag = [&](bool on, const char* name)
+                const auto addSource = [&sources](
+                    bool enabled,
+                    const char* name)
                 {
-                    if (!on)
+                    if (!enabled)
                         return;
                     if (!sources.empty())
                         sources += "+";
                     sources += name;
                 };
-                tag(record.Sources.Focus, "focus");
-                tag(record.Sources.Neighbor, "neighbor");
-                tag(record.Sources.Pinned, "pinned");
-                tag(record.Sources.Lingering, "lingering");
+                addSource(record.Sources.Focus, "focus");
+                addSource(record.Sources.Neighbor, "neighbor");
+                addSource(record.Sources.Pinned, "pinned");
+                addSource(record.Sources.Lingering, "lingering");
 
-                std::string state;
-                if (zones.IsZoneLoaded(record.Zone))
-                    state = zones.GetParticipation(record.Zone).Any() ? "live" : "dormant";
-                else if (ZoneLoader && ZoneLoader->IsLoading(record.Zone))
+                std::string state = "unloaded";
+                if (const RuntimeZoneRecord* zone =
+                        runtime.FindZone(record.Zone))
+                {
+                    if (zone->State == RuntimeZoneLoadState::Importing)
+                        state = "loading";
+                    else
+                        state = zone->Participation.Any()
+                            ? "live"
+                            : "dormant";
+                }
+                else if (ZoneLoader
+                         && ZoneLoader->IsLoading(record.Zone))
+                {
                     state = "loading";
-                else
-                    state = "unloaded";
+                }
 
-                result.Info("  " + zoneName(record.Zone) + ": " + sources + ", " + state);
+                result.Info(
+                    "  " + zoneName(record.Zone) + ": "
+                    + sources + ", " + state);
             }
             return result;
         },
@@ -538,20 +689,26 @@ void TemplateGame::OnStart(GameStartupContext&)
         .Name = "worldtag",
         .Owner = "game",
         .Usage = "worldtag <dotted.tag.name>",
-        .Help = "Toggle a world-state tag; transitions gated on it open or close and "
-                "streaming reflows next frame.",
+        .Help = "Toggle a world-state tag used by streaming transitions.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string> args)
+        {
             ConsoleResult result;
             if (args.size() != 1 || args[0].empty())
             {
                 result.Error("usage: worldtag <dotted.tag.name>");
                 return result;
             }
-            const auto it = std::find(WorldTags.begin(), WorldTags.end(), args[0]);
-            if (it != WorldTags.end())
+
+            const auto found = std::find(
+                WorldTags.begin(),
+                WorldTags.end(),
+                args[0]);
+            if (found != WorldTags.end())
             {
-                WorldTags.erase(it);
+                WorldTags.erase(found);
                 result.Info("tag '" + args[0] + "' cleared");
             }
             else
@@ -566,9 +723,9 @@ void TemplateGame::OnStart(GameStartupContext&)
     });
 
     std::printf("Sencha game template\n");
-    std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
-    std::printf("  Load a world: +world <name> (+zone <hexid> overrides the start zone)\n");
-    std::printf("  Right mouse: look | WASD: move | Space: jump | Escape: quit\n");
+    std::printf("  Load a map: +map levels/<name>\n");
+    std::printf("  Load a world: +world <name>\n");
+    std::printf("  Right mouse: look | WASD: move | Space: jump\n");
 }
 
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
@@ -576,64 +733,117 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     Engine& engine = GetEngine();
     LoggingProvider& logging = engine.Logging();
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
-    Logger& log = logging.GetLogger<TemplateGame>();
+    ConsoleResult result;
 
-    const std::string base = std::string(kCookedScanRoot) + "/" + std::string(mapName);
+    if (!ZoneLoader)
+    {
+        result.Error("runtime zone loader is unavailable");
+        return result;
+    }
+    if (Partition && Partition->HasManifest())
+    {
+        result.Error("a partitioned world is already loaded");
+        return result;
+    }
+    if (engine.World().FindZone(kPlayZone) != nullptr
+        || ZoneLoader->IsLoading(kPlayZone))
+    {
+        result.Error("a map is already loaded or loading");
+        return result;
+    }
+
+    const std::string base =
+        std::string(kCookedScanRoot) + "/"
+        + std::string(mapName);
     const std::string scenePath = base + ".cooked.json";
     const std::string manifestPath = base + ".manifest.json";
-    const std::string collisionSidecar = base + ".collision.json";
+    const std::string collisionSidecar =
+        base + ".collision.json";
 
-    // Re-map: drop the in-flight load or the committed zone before loading anew.
-    if (ZoneLoader)
-    {
-        if (ZoneLoader->IsLoading(kPlayZone))
-            ZoneLoader->CancelLoad(kPlayZone);
-        if (ZoneActive)
-            engine.Zones().DestroyZone(kPlayZone);
-    }
-    ActiveZoneRegistry = nullptr;
-    ZoneActive = false;
-
-    // Manifest-driven preload (optional): a missing manifest is the sync
-    // resolve-on-attach fallback.
     std::shared_ptr<AssetPreload> preload;
     AssetManifest manifest;
     std::string manifestError;
-    if (LoadAssetManifestFile(manifestPath, manifest, &manifestError))
-        preload = Preloader->Begin(ResolveManifestPaths(manifest, runtimeAssets.Registry));
+    if (LoadAssetManifestFile(
+            manifestPath,
+            manifest,
+            &manifestError))
+    {
+        preload = Preloader->Begin(
+            ResolveManifestPaths(
+                manifest,
+                runtimeAssets.Registry));
+    }
     else
-        log.Warn("TemplateGame: no manifest for '{}' ({}); resolve-on-attach",
-                 std::string(mapName), manifestError);
+    {
+        logging.GetLogger<TemplateGame>().Warn(
+            "TemplateGame: no manifest for '{}' ({}); resolve-on-import",
+            std::string(mapName),
+            manifestError);
+    }
 
-    auto parsed = std::make_shared<SceneParse>();
+    auto buildResult = std::make_shared<SceneBuildResult>();
+    const ComponentSerializerRegistry* serializers =
+        &DefaultComponentSerializerRegistry();
     auto probes = std::make_shared<ProbeVolumeFile>();
-    StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
-    MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
-    TextureCache* textures = &runtimeAssets.Textures;
-
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, probes, meshes, materialSets, textures, scenePath](Registry& registry) {
-            BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures);
+        [buildResult, probes, serializers, scenePath](
+            ZoneLoadPackage& package)
+        {
+            BuildScenePackage(
+                package,
+                *buildResult,
+                scenePath,
+                *serializers);
             (void)ReadZoneProbeFile(scenePath, *probes);
         },
-        [this, parsed, probes, &logging, collisionSidecar](Registry& registry) {
-            if (!FinalizeZoneScene(registry, *parsed, logging, &RuntimeAssetState().Assets,
-                                   PhysicsShapes, collisionSidecar))
-                return;
-            if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
-                AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
+        [this, buildResult, probes, collisionSidecar, &logging](
+            RuntimeWorld& runtime,
+            RuntimeZoneRecord& zone)
+        {
+            if (!buildResult->Success)
+            {
+                logging.GetLogger<TemplateGame>().Error(
+                    "TemplateGame: scene load error: {}",
+                    buildResult->Error);
+                return false;
+            }
 
-            // Single-zone life: the avatar lives and dies with the map's zone.
-            (void)SpawnPlayerAvatar(registry, logging.GetLogger<TemplateGame>());
+            if (PhysicsShapes != nullptr)
+            {
+                LoadZoneCollision(
+                    runtime.Entities(),
+                    *PhysicsShapes,
+                    collisionSidecar,
+                    std::string(kCookedScanRoot),
+                    zone.Partition);
+            }
 
-            ActiveZoneRegistry = &registry;
-            ZoneActive = true;
+            if (DefaultRenderPipeline* pipeline =
+                    GetEngine().GetRenderPipeline())
+            {
+                AttachZoneProbes(
+                    pipeline->GetProbeVolumes(), zone, *probes);
+            }
+
+            if (!PlayerPawn.IsValid())
+            {
+                PlayerPawn = SpawnPlayerAvatar(
+                    runtime.Entities(),
+                    logging.GetLogger<TemplateGame>(),
+                    zone.Partition);
+            }
+            PlayZoneActive = true;
+            return true;
         },
-        ZoneParticipation{ .Visible = true, .Physics = true, .Logic = true, .Audio = true },
+        ZoneParticipation{
+            .Visible = true,
+            .Physics = true,
+            .Logic = true,
+            .Audio = true,
+        },
         std::move(preload));
 
-    ConsoleResult result;
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;
 }
@@ -644,39 +854,46 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     LoggingProvider& logging = engine.Logging();
     ConsoleResult result;
 
-    // One world at a time, in either direction: mixing the single-zone map
-    // path with streamed zones would race two owners over the play space.
-    if (ZoneActive || (ZoneLoader && ZoneLoader->IsLoading(kPlayZone)))
+    if (PlayZoneActive
+        || (ZoneLoader && ZoneLoader->IsLoading(kPlayZone)))
     {
-        result.Error("a map is loaded; restart and use +world " + std::string(worldName));
+        result.Error("a map is loaded; restart and use +world");
         return result;
     }
     if (Partition && Partition->HasManifest())
     {
-        result.Error("a world is already loaded; restart to switch worlds");
+        result.Error("a world is already loaded");
         return result;
     }
 
-    const std::string manifestPath = std::string(kCookedScanRoot) + "/worlds/"
+    const std::string manifestPath =
+        std::string(kCookedScanRoot) + "/worlds/"
         + std::string(worldName) + ".sworld.json";
     std::ifstream file(manifestPath);
     if (!file.is_open())
     {
-        result.Error("no cooked world manifest at '" + manifestPath + "'; cook the world first");
+        result.Error(
+            "no cooked world manifest at '" + manifestPath + "'");
         return result;
     }
+
     std::ostringstream buffer;
     buffer << file.rdbuf();
     JsonParseError parseError;
-    const auto json = JsonParse(buffer.str(), &parseError);
+    const std::optional<JsonValue> json =
+        JsonParse(buffer.str(), &parseError);
     if (!json)
     {
-        result.Error("world manifest parse error at " + std::to_string(parseError.Position)
-                     + ": " + parseError.Message);
+        result.Error(
+            "world manifest parse error at "
+            + std::to_string(parseError.Position)
+            + ": " + parseError.Message);
         return result;
     }
+
     std::string manifestError;
-    auto manifest = ReadWorldPartitionManifest(*json, &manifestError);
+    std::optional<WorldPartitionManifest> manifest =
+        ReadWorldPartitionManifest(*json, &manifestError);
     if (!manifest)
     {
         result.Error("world manifest rejected: " + manifestError);
@@ -684,25 +901,27 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     }
 
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
-    StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
-    MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
-    TextureCache* textures = &runtimeAssets.Textures;
-    AssetSystem* assets = &runtimeAssets.Assets;
+    AssetSystem* assetSystem = &runtimeAssets.Assets;
     LoggingProvider* loggingPtr = &logging;
+    const ComponentSerializerRegistry* serializers =
+        &DefaultComponentSerializerRegistry();
 
-    const EngineRuntimeConfig& runtimeConfig = engine.Config().Runtime;
+    const EngineRuntimeConfig& runtimeConfig =
+        engine.Config().Runtime;
     Partition.emplace(
-        [this, meshes, materialSets, textures, assets, loggingPtr](const ZoneHeader& header)
+        [this, assetSystem, loggingPtr, serializers](
+            const ZoneHeader& header)
         {
-            // Cooked refs are relative to the assets root (the world cook's
-            // contract); the recipe carries scene and collision only. The
-            // avatar is world-lifetime state and never part of a zone recipe.
             const std::string scenePath =
-                std::string(kAuthoredRoot) + "/" + header.CookedSceneRef;
+                std::string(kAuthoredRoot) + "/"
+                + header.CookedSceneRef;
             const std::string collisionPath =
-                std::string(kAuthoredRoot) + "/" + header.CookedCollisionRef;
-            auto parsed = std::make_shared<SceneParse>();
+                std::string(kAuthoredRoot) + "/"
+                + header.CookedCollisionRef;
+            auto buildResult =
+                std::make_shared<SceneBuildResult>();
             auto probes = std::make_shared<ProbeVolumeFile>();
+
             ZoneLoadRecipe recipe;
             // Warm the zone's assets (meshes, materials, the lightmap atlas)
             // before attach, the same manifest convention as the map path:
@@ -713,35 +932,64 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 constexpr std::string_view cookedSuffix = ".cooked.json";
                 if (manifestPath.ends_with(cookedSuffix))
                 {
-                    manifestPath.resize(manifestPath.size() - cookedSuffix.size());
+                    manifestPath.resize(
+                        manifestPath.size() - cookedSuffix.size());
                     manifestPath += ".manifest.json";
                     AssetManifest manifest;
                     if (Preloader.has_value()
                         && LoadAssetManifestFile(manifestPath, manifest, nullptr))
+                    {
                         recipe.Preload = Preloader->Begin(ResolveManifestPaths(
                             manifest, RuntimeAssetState().Registry));
+                    }
                 }
             }
-            recipe.Build = [parsed, probes, scenePath, meshes, materialSets,
-                            textures](Registry& registry)
-            {
-                BuildZoneScene(registry, *parsed, scenePath, meshes, materialSets, textures);
-                (void)ReadZoneProbeFile(scenePath, *probes);
-            };
-            // PhysicsShapes resolves at finalize time through `this`: the
-            // startup +world command runs at GameLoaded, BEFORE system
-            // registration hands out the shape cache, so capturing the
-            // pointer's value here would bake in null and silently skip
-            // every zone's collision.
-            recipe.Finalize = [this, parsed, probes, loggingPtr, assets,
-                               collisionPath](Registry& registry)
-            {
-                if (!FinalizeZoneScene(registry, *parsed, *loggingPtr, assets, PhysicsShapes,
-                                       collisionPath))
-                    return;
-                if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
-                    AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
-            };
+            recipe.Build =
+                [buildResult, probes, scenePath, serializers](
+                    ZoneLoadPackage& package)
+                {
+                    BuildScenePackage(
+                        package,
+                        *buildResult,
+                        scenePath,
+                        *serializers);
+                    (void)ReadZoneProbeFile(scenePath, *probes);
+                };
+            recipe.Finalize =
+                [this,
+                 buildResult,
+                 probes,
+                 loggingPtr,
+                 assetSystem,
+                 collisionPath](
+                    RuntimeWorld& runtime,
+                    RuntimeZoneRecord& zone)
+                {
+                    (void)assetSystem;
+                    if (!buildResult->Success)
+                    {
+                        loggingPtr->GetLogger<TemplateGame>().Error(
+                            "TemplateGame: zone scene load error: {}",
+                            buildResult->Error);
+                        return false;
+                    }
+                    if (PhysicsShapes != nullptr)
+                    {
+                        LoadZoneCollision(
+                            runtime.Entities(),
+                            *PhysicsShapes,
+                            collisionPath,
+                            std::string(kCookedScanRoot),
+                            zone.Partition);
+                    }
+                    if (DefaultRenderPipeline* pipeline =
+                            GetEngine().GetRenderPipeline())
+                    {
+                        AttachZoneProbes(
+                            pipeline->GetProbeVolumes(), zone, *probes);
+                    }
+                    return true;
+                };
             return recipe;
         },
         WorldPartitionStreamingConfig{
@@ -754,7 +1002,9 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         });
 
     std::string loadError;
-    if (!Partition->LoadManifest(std::move(*manifest), &loadError))
+    if (!Partition->LoadManifest(
+            std::move(*manifest),
+            &loadError))
     {
         Partition.reset();
         result.Error("world refused: " + loadError);
@@ -762,42 +1012,68 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     }
     Partition->SetWorldTags(WorldTags);
 
-    // The avatar spawns once into the global registry, so zone unloads never
-    // destroy it. The global registry needs the same component registration a
-    // zone build performs before entities exist in it.
-    if (!WorldPawn.IsValid())
+    const WorldPartitionManifest& loaded = Partition->Manifest();
+    if (!loaded.CookedWorldSceneRef.empty())
     {
-        Registry& global = engine.Zones().Global();
-        InitializeDefault3DRegistry(global, meshes, materialSets,
-                                    nullptr, nullptr, nullptr, textures);
-        RegisterPhysicsComponents(global.Components);
-        RegisterMovement(global.Components);
-        RegisterCameraComponents(global.Components);
+        const std::string scenePath =
+            std::string(kAuthoredRoot) + "/"
+            + loaded.CookedWorldSceneRef;
+        const std::string collisionPath =
+            std::string(kAuthoredRoot) + "/"
+            + loaded.CookedWorldCollisionRef;
 
-        // The world scene: authored global content, loaded synchronously into
-        // the global registry before the avatar spawns (a world load is a
-        // loading-screen boundary, not a streaming moment), so the player
-        // start and every other world-lifetime entity exist first.
-        const WorldPartitionManifest& loaded = Partition->Manifest();
-        if (!loaded.CookedWorldSceneRef.empty())
+        ZoneLoadPackage package(kPlayZone);
+        SceneBuildResult buildResult;
+        BuildScenePackage(
+            package,
+            buildResult,
+            scenePath,
+            DefaultComponentSerializerRegistry());
+        if (!buildResult.Success)
         {
-            const std::string scenePath =
-                std::string(kAuthoredRoot) + "/" + loaded.CookedWorldSceneRef;
-            const std::string collisionPath =
-                std::string(kAuthoredRoot) + "/" + loaded.CookedWorldCollisionRef;
-            SceneParse parsed = ParseSceneFile(scenePath);
-            const bool sceneLoaded = FinalizeZoneScene(
-                global, parsed, logging, &runtimeAssets.Assets, PhysicsShapes, collisionPath);
-            // A startup +world runs at GameLoaded, before system registration
-            // hands out the collision cache; the collision half completes in
-            // OnRegisterSystems.
-            if (sceneLoaded && PhysicsShapes == nullptr
-                && !loaded.CookedWorldCollisionRef.empty())
-                PendingWorldSceneCollision = collisionPath;
+            Partition.reset();
+            result.Error(
+                "world scene load error: " + buildResult.Error);
+            return result;
         }
 
-        WorldPawn = SpawnPlayerAvatar(global, logging.GetLogger<TemplateGame>());
-        ActiveZoneRegistry = &global;   // the input and spin systems read this
+        ZoneImportError importError;
+        if (!ImportPackageIntoPartition(
+                engine.World().Entities(),
+                engine.RuntimeComponents(),
+                package,
+                PersistentStoragePartition,
+                DefaultComponentSerializerRegistry(),
+                *SceneContext,
+                &importError))
+        {
+            Partition.reset();
+            result.Error(
+                "world scene import error: " + importError.Message);
+            return result;
+        }
+
+        if (PhysicsShapes != nullptr)
+        {
+            LoadZoneCollision(
+                engine.World().Entities(),
+                *PhysicsShapes,
+                collisionPath,
+                std::string(kCookedScanRoot),
+                PersistentStoragePartition);
+        }
+        else if (!loaded.CookedWorldCollisionRef.empty())
+        {
+            PendingWorldSceneCollision = collisionPath;
+        }
+    }
+
+    if (!PlayerPawn.IsValid())
+    {
+        PlayerPawn = SpawnPlayerAvatar(
+            engine.World().Entities(),
+            logging.GetLogger<TemplateGame>(),
+            PersistentStoragePartition);
     }
 
     ZoneId focus = PendingZoneFocus;
@@ -813,40 +1089,42 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         focus = Partition->Manifest().StartZone;
     if (focus.IsValid() && zoneExists(focus))
         Partition->SetFocus(focus);
-    else
-        result.Warning("world '" + std::string(worldName)
-                       + "' designates no start zone; focus follows the pawn");
 
     result.Info("loading world '" + std::string(worldName) + "'");
     return result;
 }
 
-ConsoleResult TemplateGame::FocusWorldZone(std::string_view zoneHex)
+ConsoleResult TemplateGame::FocusWorldZone(
+    std::string_view zoneHex)
 {
     ConsoleResult result;
-    const auto zone = ZoneIdFromString(zoneHex);
+    const std::optional<ZoneId> zone =
+        ZoneIdFromString(zoneHex);
     if (!zone.has_value())
     {
-        result.Error("malformed zone id '" + std::string(zoneHex)
-                     + "' (16 lowercase hex digits, nonzero)");
+        result.Error(
+            "malformed zone id '" + std::string(zoneHex) + "'");
         return result;
     }
 
     if (Partition && Partition->HasManifest())
     {
         for (const ZoneHeader& header : Partition->Manifest().Zones)
+        {
             if (header.Id == *zone)
             {
                 Partition->SetFocus(*zone);
-                result.Info("focus zone " + std::string(zoneHex));
+                result.Info(
+                    "focus zone " + std::string(zoneHex));
                 return result;
             }
-        result.Error("zone " + std::string(zoneHex) + " is not in the loaded world");
+        }
+        result.Error(
+            "zone " + std::string(zoneHex)
+            + " is not in the loaded world");
         return result;
     }
 
-    // Before `world` takes effect (the +world +zone argv order is not
-    // guaranteed): queue the override for the world load to consume.
     PendingZoneFocus = *zone;
     result.Info("zone focus queued for the next world load");
     return result;
@@ -855,29 +1133,35 @@ ConsoleResult TemplateGame::FocusWorldZone(std::string_view zoneHex)
 void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterPhysics(ctx.Schedule);
-    // The physics step system owns the shared collision cache; grab it so map
-    // load can fill it with the level's cooked brush collision.
-    if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
-        PhysicsShapes = &step->GetShapeCache();
-    // A startup +world loaded the world scene before this hook handed out the
-    // cache: complete its collision half now, still before the first frame.
-    if (PhysicsShapes != nullptr && !PendingWorldSceneCollision.empty())
+    if (PhysicsStepSystem* step =
+            ctx.Schedule.Get<PhysicsStepSystem>())
     {
-        LoadZoneCollision(GetEngine().Zones().Global().Components, *PhysicsShapes,
-                          PendingWorldSceneCollision, std::string(kCookedScanRoot));
+        PhysicsShapes = &step->GetShapeCache();
+    }
+
+    if (PhysicsShapes != nullptr
+        && !PendingWorldSceneCollision.empty())
+    {
+        LoadZoneCollision(
+            GetEngine().World().Entities(),
+            *PhysicsShapes,
+            PendingWorldSceneCollision,
+            std::string(kCookedScanRoot),
+            PersistentStoragePartition);
         PendingWorldSceneCollision.clear();
     }
-    // Engine-provided gameplay: the ability kit and movement systems drive the sim
-    // over active registries, and camera follow places the view. The template only
-    // wires input in and orders it ahead of the sim so intent lands the same tick.
+
     RegisterAbilityKitSystems(ctx.Schedule);
     RegisterMovementSystems(ctx.Schedule);
     RegisterCameraSystem(ctx.Schedule);
-    ctx.Schedule.Register<CharacterInputSystem>(ActiveZoneRegistry);
+    ctx.Schedule.Register<CharacterInputSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
-    ctx.Schedule.Register<SpinSystem>(ActiveZoneRegistry);
-    ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition, ZoneLoader, ZoneRuntimePtr,
-                                                      WorldPawn);
+    ctx.Schedule.Register<SpinSystem>();
+    ctx.Schedule.Register<WorldPartitionUpdateSystem>(
+        Partition,
+        ZoneLoader,
+        GetEngine().World(),
+        PlayerPawn);
 }
 
 void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)
@@ -887,58 +1171,107 @@ void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)
 
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
+    {
         SetRelativeMouseMode(true);
+    }
     else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
-        && ctx.Event.button.button == SDL_BUTTON_RIGHT)
+             && ctx.Event.button.button == SDL_BUTTON_RIGHT)
+    {
         SetRelativeMouseMode(false);
+    }
     else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+    {
         SetRelativeMouseMode(false);
+    }
 }
 
 void TemplateGame::OnShutdown(GameShutdownContext&)
 {
     SetRelativeMouseMode(false);
 
-    // World path: drop in-flight loads and destroy streamed zones so their
-    // mesh and texture handles return to the caches before the caches die.
-    if (Partition && Partition->HasManifest() && ZoneLoader)
+    Engine& engine = GetEngine();
+    RuntimeWorld& runtime = engine.World();
+
+    if (ZoneLoader)
     {
-        for (const ZoneHeader& zone : Partition->Manifest().Zones)
+        if (ZoneLoader->IsLoading(kPlayZone))
+            (void)ZoneLoader->CancelLoad(kPlayZone);
+        if (Partition && Partition->HasManifest())
         {
-            if (ZoneLoader->IsLoading(zone.Id))
-                (void)ZoneLoader->CancelLoad(zone.Id);
-            if (GetEngine().Zones().IsZoneLoaded(zone.Id))
-                (void)GetEngine().Zones().DestroyZone(zone.Id);
+            for (const ZoneHeader& zone : Partition->Manifest().Zones)
+                if (ZoneLoader->IsLoading(zone.Id))
+                    (void)ZoneLoader->CancelLoad(zone.Id);
         }
     }
+
+    if (runtime.FindZone(kPlayZone) != nullptr)
+        (void)runtime.RequestDetach(kPlayZone);
+    if (Partition && Partition->HasManifest())
+    {
+        for (const ZoneHeader& zone : Partition->Manifest().Zones)
+            if (runtime.FindZone(zone.Id) != nullptr)
+                (void)runtime.RequestDetach(zone.Id);
+    }
+    runtime.FlushLifecycleRequests();
+
+    const std::span<const ZoneResidencyChange> changes =
+        runtime.BeginResidencyProcessing();
+    ZoneResidencyContext residency{
+        .Config = engine.Config(),
+        .Entities = runtime.Entities(),
+        .Changes = changes,
+    };
+    engine.Schedule().RunZoneResidency(residency);
+    runtime.FinalizeResidencyProcessing();
+
+    const std::vector<EntityId> alive =
+        runtime.Entities().GetAliveEntities();
+    for (EntityId entity : alive)
+    {
+        if (runtime.Entities().GetEntityPartition(entity)
+            == PersistentStoragePartition)
+        {
+            runtime.Entities().DestroyEntity(entity);
+        }
+    }
+
+    runtime.Entities()
+        .GetResource<ActiveCameraService>()
+        .SetActive(EntityId{});
+    if (StaticMeshComponentAssets* meshAssets =
+            runtime.Entities().TryGetResource<StaticMeshComponentAssets>())
+    {
+        meshAssets->Meshes = nullptr;
+        meshAssets->MaterialSets = nullptr;
+    }
+    if (AudioSourceRuntime* audioRuntime =
+            runtime.Entities().TryGetResource<AudioSourceRuntime>())
+    {
+        audioRuntime->Clips = nullptr;
+        audioRuntime->Audio = nullptr;
+        audioRuntime->Captions = nullptr;
+    }
+
+    PlayerPawn = EntityId{};
+    PlayZoneActive = false;
     Partition.reset();
-
-    if (ZoneLoader && ZoneLoader->IsLoading(kPlayZone))
-        ZoneLoader->CancelLoad(kPlayZone);
     ZoneLoader.reset();
-
-    GetEngine().Zones().DestroyZone(kPlayZone);
-    ActiveZoneRegistry = nullptr;
-
-    // Release the GPU-backed asset caches here, while OnShutdown still runs with
-    // the engine (device, allocators, descriptor pools) up. DestroyZone above
-    // already returned the zone's mesh/texture handles to these caches. Left to
-    // the module-static Game's own destruction, they would free at process exit
-    // after the device is gone, corrupting the heap on a clean window close (PIE
-    // never hit this: Stop kills the process, so no exit handlers run).
+    SceneContext.reset();
     Preloader.reset();
     Assets.reset();
 }
 
 RuntimeAssets& TemplateGame::RuntimeAssetState()
 {
-    assert(Assets.has_value() && "RuntimeAssets must be constructed before use");
+    assert(Assets.has_value()
+           && "RuntimeAssets must be constructed before use");
     return *Assets;
 }
 
 void TemplateGame::SetRelativeMouseMode(bool enabled)
 {
-    SdlWindow* window = GetEngine().Platform().Windows.GetPrimaryWindow();
+    SdlWindow* window =
+        GetEngine().Platform().Windows.GetPrimaryWindow();
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
     if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
@@ -946,13 +1279,8 @@ void TemplateGame::SetRelativeMouseMode(bool enabled)
     SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
 }
 
-//=============================================================================
-// Game module entry points (the only exported symbols).
-//=============================================================================
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()
 {
-    // Module-owned static: the host drives it but never deletes it across the
-    // allocator boundary; teardown is OnShutdown + unmap.
     static TemplateGame instance;
     return &instance;
 }
