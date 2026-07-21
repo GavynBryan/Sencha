@@ -4,9 +4,11 @@
 #include "FreeCamera.h"
 
 #include <app/Game.h>
+#include <components/ActiveCameraService.h>
 #include <core/assets/AssetPreloader.h>
 #include <core/assets/RuntimeAssets.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/transform/TransformComponents.h>
 #include <zone/AsyncZoneLoader.h>
 
 #include <memory>
