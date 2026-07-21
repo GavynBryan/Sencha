@@ -97,6 +97,12 @@ public:
     [[nodiscard]] bool IsZoneResident(ZoneId zone) const;
     [[nodiscard]] std::size_t ZoneCount() const;
 
+    // Structural ownership migration. The entity keeps its generational id and
+    // component signature; World publishes one EntityPartitionMove for backend
+    // secondary-index repair.
+    bool MoveEntityToZone(EntityId entity, ZoneId destination);
+    bool MoveEntityToPersistent(EntityId entity);
+
     // Requests are legal while a frame view or residency batch is live. They do
     // not mutate current participation. FlushLifecycleRequests applies the
     // coalesced requests at the next owner-thread lifecycle drain.
