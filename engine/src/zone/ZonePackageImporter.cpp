@@ -123,6 +123,7 @@ bool ImportZonePackageImpl(
     const ZoneLoadPackage& package,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
+    bool publish,
     ZoneParticipation participation,
     ZoneImportError* error)
 {
@@ -188,7 +189,7 @@ bool ImportZonePackageImpl(
             world.AddComponent<Parent>(child, Parent{ parent });
     }
 
-    if (!runtime.PublishZone(package.Zone(), participation))
+    if (publish && !runtime.PublishZone(package.Zone(), participation))
         return fail("Zone package could not publish its hidden import partition.");
 
     if (error != nullptr)
@@ -196,6 +197,42 @@ bool ImportZonePackageImpl(
     return true;
 }
 } // namespace
+
+bool ImportZonePackageHidden(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    ZoneImportError* error)
+{
+    return ImportZonePackageImpl(
+        runtime,
+        schema,
+        package,
+        nullptr,
+        nullptr,
+        false,
+        ZoneParticipation{},
+        error);
+}
+
+bool ImportZonePackageHidden(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    const ComponentSerializerRegistry& serializers,
+    SceneSerializationContext& sceneContext,
+    ZoneImportError* error)
+{
+    return ImportZonePackageImpl(
+        runtime,
+        schema,
+        package,
+        &serializers,
+        &sceneContext,
+        false,
+        ZoneParticipation{},
+        error);
+}
 
 bool ImportZonePackage(
     RuntimeWorld& runtime,
@@ -210,6 +247,7 @@ bool ImportZonePackage(
         package,
         nullptr,
         nullptr,
+        true,
         participation,
         error);
 }
@@ -229,6 +267,7 @@ bool ImportZonePackage(
         package,
         &serializers,
         &sceneContext,
+        true,
         participation,
         error);
 }
