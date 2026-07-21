@@ -26,15 +26,15 @@ class WorldComponentSchema;
 // finalize callback, and publishes the zone atomically at the drain point.
 //
 // Build callbacks must not touch live Worlds, caches, services, or backend
-// objects. Finalize runs after successful package import and publication, while
-// the zone record and its entities are available on the owner thread.
+// objects. Finalize runs while the imported partition is still hidden and
+// returns false to cancel the whole import before publication.
 //=============================================================================
 class AsyncZoneLoader
 {
 public:
     using BuildFn = std::function<void(ZoneLoadPackage&)>;
     using FinalizeFn =
-        std::function<void(RuntimeWorld&, RuntimeZoneRecord&)>;
+        std::function<bool(RuntimeWorld&, RuntimeZoneRecord&)>;
 
     AsyncZoneLoader(
         AsyncTaskQueue& tasks,
