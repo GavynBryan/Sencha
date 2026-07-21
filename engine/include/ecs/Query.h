@@ -4,6 +4,7 @@
 #include <ecs/Chunk.h>
 #include <ecs/ComponentId.h>
 #include <ecs/QueryAccessors.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
 #include <array>
@@ -11,6 +12,7 @@
 #include <cstdint>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // ─── compile-time accessor index ─────────────────────────────────────────────
@@ -46,6 +48,7 @@ struct ChunkView
 
     const EntityIndex* Entities() const { return RawChunk->EntityIndices(); }
     uint32_t           Count()    const { return RawChunk->RowCount; }
+    StoragePartitionId Partition() const { return RawChunk->Partition; }
 
     // Returns const span. Column version is NOT bumped (Read is non-mutating).
     template <typename T>
@@ -99,50 +102,32 @@ public:
         RebuildMatchingArchetypes();
     }
 
-    // Chunk-level iteration — primary entry point.
-    // F: void(ChunkView<Accessors...>&)
-    // referenceFrame: used by Changed<T> to determine "changed since when".
-    //   Pass 0 to match all chunks with any write in their history.
-    //   Pass world.CurrentFrame()-1 to match only chunks written last frame.
+    // Unfiltered chunk-level iteration. This remains the primary compatibility
+    // path and compiles without a partition-membership branch.
+    // referenceFrame is used only by Changed<T> accessors.
     template <typename F>
     void ForEachChunk(F&& fn, uint32_t referenceFrame = 0)
     {
-        // A referenceFrame is only meaningful to Changed<T> accessors. Passing
-        // one without any Changed<T> in the query silently filters nothing —
-        // see docs/ecs/decisions.md D4.5 for the bug this caught.
-        assert((referenceFrame == 0 || ChangedSig.any())
-               && "referenceFrame passed to a query with no Changed<T> accessor.");
+        ForEachChunkImpl<false>(
+            nullptr,
+            std::forward<F>(fn),
+            referenceFrame);
+    }
 
-        W->PushQueryScope();
-        RebuildIfStale();
-
-        const uint32_t frame = W->CurrentFrame();
-
-        for (uint32_t archIdx : MatchingArchetypes)
-        {
-            Archetype& arch = *W->GetArchetypes()[archIdx];
-            if (arch.Chunks.empty()) continue;
-
-            // Column indices are identical for all chunks in the same archetype —
-            // compute once per archetype, not per chunk. See decisions.md D0.6.
-            ChunkView<Accessors...> view;
-            view.Frame = frame;
-            PopulateColIndices(view, *arch.Chunks[0], std::index_sequence_for<Accessors...>{});
-
-            for (auto& chunkPtr : arch.Chunks)
-            {
-                Chunk& chunk = *chunkPtr;
-                if (chunk.IsEmpty()) continue;
-                if (!PassesChangedFilter(chunk, referenceFrame)) continue;
-
-                view.RawChunk = &chunk;
-                fn(view);
-
-                BumpWriteVersions(chunk, view, frame, std::index_sequence_for<Accessors...>{});
-            }
-        }
-
-        W->PopQueryScope();
+    // Partition-filtered chunk iteration. Membership is checked once per chunk,
+    // never once per entity. The set is supplied by the frame/domain owner and
+    // remains external to the cached query so one query can serve several
+    // participation domains without rebuilding archetype matches.
+    template <typename F>
+    void ForEachChunkIn(
+        const StoragePartitionSet& partitions,
+        F&& fn,
+        uint32_t referenceFrame = 0)
+    {
+        ForEachChunkImpl<true>(
+            &partitions,
+            std::forward<F>(fn),
+            referenceFrame);
     }
 
     void RebuildMatchingArchetypes()
@@ -170,6 +155,57 @@ private:
 
     std::vector<uint32_t> MatchingArchetypes;
     uint32_t              CachedArchetypeCount = 0;
+
+    template <bool FilterByPartition, typename F>
+    void ForEachChunkImpl(
+        const StoragePartitionSet* partitions,
+        F&& fn,
+        uint32_t referenceFrame)
+    {
+        // A referenceFrame is only meaningful to Changed<T> accessors. Passing
+        // one without any Changed<T> in the query silently filters nothing —
+        // see docs/ecs/decisions.md D4.5 for the bug this caught.
+        assert((referenceFrame == 0 || ChangedSig.any())
+               && "referenceFrame passed to a query with no Changed<T> accessor.");
+        if constexpr (FilterByPartition)
+            assert(partitions != nullptr);
+
+        W->PushQueryScope();
+        RebuildIfStale();
+
+        const uint32_t frame = W->CurrentFrame();
+
+        for (uint32_t archIdx : MatchingArchetypes)
+        {
+            Archetype& arch = *W->GetArchetypes()[archIdx];
+            if (arch.Chunks.empty()) continue;
+
+            // Column indices are identical for all chunks in the same archetype —
+            // compute once per archetype, not per chunk. See decisions.md D0.6.
+            ChunkView<Accessors...> view;
+            view.Frame = frame;
+            PopulateColIndices(view, *arch.Chunks[0], std::index_sequence_for<Accessors...>{});
+
+            for (auto& chunkPtr : arch.Chunks)
+            {
+                Chunk& chunk = *chunkPtr;
+                if (chunk.IsEmpty()) continue;
+                if constexpr (FilterByPartition)
+                {
+                    if (!partitions->Contains(chunk.Partition))
+                        continue;
+                }
+                if (!PassesChangedFilter(chunk, referenceFrame)) continue;
+
+                view.RawChunk = &chunk;
+                fn(view);
+
+                BumpWriteVersions(chunk, view, frame, std::index_sequence_for<Accessors...>{});
+            }
+        }
+
+        W->PopQueryScope();
+    }
 
     void BuildSignatures()
     {
