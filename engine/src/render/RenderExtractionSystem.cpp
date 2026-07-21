@@ -5,30 +5,32 @@
 
 namespace
 {
-    Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
+Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
+{
+    Aabb3d result = Aabb3d::Empty();
+    for (int x = 0; x < 2; ++x)
+    for (int y = 0; y < 2; ++y)
+    for (int z = 0; z < 2; ++z)
     {
-        Aabb3d result = Aabb3d::Empty();
-        for (int x = 0; x < 2; ++x)
-        for (int y = 0; y < 2; ++y)
-        for (int z = 0; z < 2; ++z)
-        {
-            Vec3d p(
-                x == 0 ? local.Min.X : local.Max.X,
-                y == 0 ? local.Min.Y : local.Max.Y,
-                z == 0 ? local.Min.Z : local.Max.Z);
-            result.ExpandToInclude(world.TransformPoint(p));
-        }
-        return result;
+        Vec3d point(
+            x == 0 ? local.Min.X : local.Max.X,
+            y == 0 ? local.Min.Y : local.Max.Y,
+            z == 0 ? local.Min.Z : local.Max.Z);
+        result.ExpandToInclude(world.TransformPoint(point));
     }
+    return result;
 }
+} // namespace
 
-void RenderExtractionSystem::Extract(const World& world,
-                                     const StaticMeshCache& meshes,
-                                     const MaterialCache& materials,
-                                     const MaterialSetCache& materialSets,
-                                     const CameraRenderData& camera,
-                                     RenderQueue& queue,
-                                     const TextureCache* textures)
+void RenderExtractionSystem::Extract(
+    const World& world,
+    const StoragePartitionSet& partitions,
+    const StaticMeshCache& meshes,
+    const MaterialCache& materials,
+    const MaterialSetCache& materialSets,
+    const CameraRenderData& camera,
+    RenderQueue& queue,
+    const TextureCache* textures)
 {
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
@@ -37,7 +39,7 @@ void RenderExtractionSystem::Extract(const World& world,
     }
 
     // The zone's baked-lighting atlas and AO plane, resolved once per
-    // registry pass.
+    // extraction pass.
     uint32_t lightmapIndex = UINT32_MAX;
     uint32_t aoIndex = UINT32_MAX;
     if (textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
@@ -62,13 +64,12 @@ void RenderExtractionSystem::Extract(const World& world,
         LastWorld = &world;
     }
 
-    CachedQuery->ForEachChunk([&](auto& view)
+    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto transforms = view.template Read<WorldTransform>();
         const auto renderers = view.template Read<StaticMeshComponent>();
-        const uint32_t count = view.Count();
 
-        for (uint32_t i = 0; i < count; ++i)
+        for (uint32_t i = 0; i < view.Count(); ++i)
         {
             const StaticMeshComponent& renderer = renderers[i];
             if (!renderer.Visible)
@@ -77,17 +78,23 @@ void RenderExtractionSystem::Extract(const World& world,
             const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
             const std::vector<MaterialHandle>* sectionMaterials =
                 materialSets.Get(renderer.Materials);
-            if (mesh == nullptr || sectionMaterials == nullptr || sectionMaterials->empty())
+            if (mesh == nullptr || sectionMaterials == nullptr
+                || sectionMaterials->empty())
+            {
                 continue;
+            }
 
             const Mat4 worldMatrix = transforms[i].Value.ToMat4();
-            const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
+            const Aabb3d worldBounds =
+                TransformBounds(mesh->LocalBounds, worldMatrix);
             if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
                 continue;
 
-            const Vec4 cameraSpaceCenter =
-                camera.View * Vec4(worldBounds.Center().X, worldBounds.Center().Y,
-                                   worldBounds.Center().Z, 1.0f);
+            const Vec4 cameraSpaceCenter = camera.View * Vec4(
+                worldBounds.Center().X,
+                worldBounds.Center().Y,
+                worldBounds.Center().Z,
+                1.0f);
             const float cameraDepth = -cameraSpaceCenter.Z;
 
             for (uint32_t sectionIndex = 0;
@@ -97,10 +104,12 @@ void RenderExtractionSystem::Extract(const World& world,
                 if ((renderer.SectionMask & (1u << sectionIndex)) == 0)
                     continue;
 
-                const uint32_t slot = mesh->Sections[sectionIndex].MaterialSlot;
-                const MaterialHandle materialHandle = slot < sectionMaterials->size()
-                    ? (*sectionMaterials)[slot]
-                    : sectionMaterials->back();
+                const uint32_t slot =
+                    mesh->Sections[sectionIndex].MaterialSlot;
+                const MaterialHandle materialHandle =
+                    slot < sectionMaterials->size()
+                        ? (*sectionMaterials)[slot]
+                        : sectionMaterials->back();
                 const Material* material = materials.Get(materialHandle);
                 if (material == nullptr)
                     continue;
