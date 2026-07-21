@@ -146,11 +146,23 @@ public:
               Registry& registry,
               SceneSerializationContext& context) override
     {
+        return LoadIntoWorld(
+            archive,
+            entity,
+            registry.Components,
+            context);
+    }
+
+    bool LoadIntoWorld(IReadArchive& archive,
+                       EntityId entity,
+                       World& world,
+                       SceneSerializationContext& context) override
+    {
         Component component{};
         if (!SceneComponentSerialization::LoadFields(archive, component, context))
             return false;
 
-        return Traits::Add(registry, entity, component);
+        return Traits::Add(world, entity, component);
     }
 
     bool Remove(EntityId entity, Registry& registry) const override
