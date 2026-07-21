@@ -11,6 +11,8 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
@@ -64,12 +66,19 @@ namespace
         return settings;
     }
 
-    void SetupRegistry(Registry& registry, AudioClipCache* cache,
-                       AudioService* audio, CaptionRuntime* captions)
+    StoragePartitionSet ActivePartitions()
     {
-        registry.Components.AddResource<AudioSourceRuntime>(cache, audio, captions);
-        registry.Components.RegisterComponent<AudioSourceComponent>();
-        registry.Components.RegisterComponent<AudioCaptionComponent>();
+        StoragePartitionSet partitions;
+        partitions.Add(StoragePartitionId::Default());
+        return partitions;
+    }
+
+    void SetupWorld(World& world, AudioClipCache* cache,
+                    AudioService* audio, CaptionRuntime* captions)
+    {
+        world.AddResource<AudioSourceRuntime>(cache, audio, captions);
+        world.RegisterComponent<AudioSourceComponent>();
+        world.RegisterComponent<AudioCaptionComponent>();
     }
 
     AudioCaptionComponent WorldCC(std::string_view text)
@@ -97,23 +106,23 @@ TEST(CaptionSystemScene, ActiveZoneStartsSourceAndCaptionTogether)
     AudioClipCache cache(logging);
     AudioClipHandle clip = cache.Register("asset://audio/hum.wav", MakeClip());
 
-    Registry registry;
-    SetupRegistry(registry, &cache, &audio, &captions);
+    World world;
+    SetupWorld(world, &cache, &audio, &captions);
 
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(entity, WorldCC("cc.hum"));
+    world.AddComponent(entity, WorldCC("cc.hum"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
+    const StoragePartitionSet active = ActivePartitions();
 
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
 
-    const auto* source = registry.Components.TryGet<AudioSourceComponent>(entity);
-    const auto* caption = registry.Components.TryGet<AudioCaptionComponent>(entity);
+    const auto* source = world.TryGet<AudioSourceComponent>(entity);
+    const auto* caption = world.TryGet<AudioCaptionComponent>(entity);
     ASSERT_TRUE(source->Voice.IsValid());
     ASSERT_TRUE(caption->Caption.IsValid());
     EXPECT_EQ(caption->CaptionedVoice, source->Voice);
@@ -142,45 +151,45 @@ TEST(CaptionSystemScene, DormancyRetiresCaptionAndLoopReentryRecaptions)
     AudioClipCache cache(logging);
     AudioClipHandle clip = cache.Register("asset://audio/amb.wav", MakeClip());
 
-    Registry registry;
-    SetupRegistry(registry, &cache, &audio, &captions);
+    World world;
+    SetupWorld(world, &cache, &audio, &captions);
 
-    EntityId loop = registry.Entities.Create();
-    registry.Components.AddComponent(loop, AudioSourceComponent{
+    EntityId loop = world.CreateEntity();
+    world.AddComponent(loop, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(loop, WorldCC("cc.loop"));
+    world.AddComponent(loop, WorldCC("cc.loop"));
 
-    EntityId oneShot = registry.Entities.Create();
-    registry.Components.AddComponent(oneShot, AudioSourceComponent{
+    EntityId oneShot = world.CreateEntity();
+    world.AddComponent(oneShot, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(oneShot, WorldCC("cc.oneshot"));
+    world.AddComponent(oneShot, WorldCC("cc.oneshot"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    std::vector<Registry*> dormant{};
+    const StoragePartitionSet active = ActivePartitions();
+    const StoragePartitionSet dormant;
 
     // Active: both caption.
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
     EXPECT_EQ(captions.Visible("World").size(), 2u);
 
     // Dormant: the audio sweep stops the voices; the captions fall out of
     // CaptionRuntime::Tick via voice state — no caption-aware sweep exists.
-    audioSystem.Update(&audio, dormant);
-    captionSystem.Update(&captions, &audio, dormant, 0.016f);
+    audioSystem.Update(&audio, world, dormant);
+    captionSystem.Update(&captions, &audio, world, dormant, 0.016f);
     EXPECT_EQ(captions.ActiveCount(), 0u);
 
     // Reactivate: the loop restarts with a fresh voice and re-captions; the
     // one-shot's Started latch holds and neither sound nor caption replays.
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
 
     auto visible = captions.Visible("World");
     ASSERT_EQ(visible.size(), 1u);
     EXPECT_EQ(visible[0].Payload.Text.View(), "cc.loop");
     EXPECT_EQ(visible[0].Voice,
-              registry.Components.TryGet<AudioSourceComponent>(loop)->Voice);
+              world.TryGet<AudioSourceComponent>(loop)->Voice);
 }
 
 TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
@@ -196,26 +205,26 @@ TEST(CaptionSystemScene, ComponentRemovalEndsCaption)
     AudioClipCache cache(logging);
     AudioClipHandle clip = cache.Register("asset://audio/door.wav", MakeClip());
 
-    Registry registry;
-    SetupRegistry(registry, &cache, &audio, &captions);
+    World world;
+    SetupWorld(world, &cache, &audio, &captions);
 
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(entity, WorldCC("cc.door"));
+    world.AddComponent(entity, WorldCC("cc.door"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    const StoragePartitionSet active = ActivePartitions();
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
 
-    CaptionId id = registry.Components.TryGet<AudioCaptionComponent>(entity)->Caption;
+    CaptionId id = world.TryGet<AudioCaptionComponent>(entity)->Caption;
     ASSERT_TRUE(captions.IsActive(id));
 
     // OnRemove ends the caption directly — entity destruction and zone
     // detach both fire it, and it does not wait for the next Tick.
-    registry.Components.RemoveComponent<AudioCaptionComponent>(entity);
+    world.RemoveComponent<AudioCaptionComponent>(entity);
     EXPECT_FALSE(captions.IsActive(id));
 }
 
@@ -224,19 +233,19 @@ TEST(CaptionSystemScene, OrphanCaptionComponentIsInert)
     LoggingProvider logging;
     CaptionRuntime captions(logging, GateChannels());
 
-    Registry registry;
-    SetupRegistry(registry, nullptr, nullptr, &captions);
+    World world;
+    SetupWorld(world, nullptr, nullptr, &captions);
 
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, WorldCC("cc.orphan"));
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, WorldCC("cc.orphan"));
 
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    captionSystem.Update(&captions, nullptr, active, 0.016f);
-    captionSystem.Update(&captions, nullptr, active, 0.016f);
+    const StoragePartitionSet active = ActivePartitions();
+    captionSystem.Update(&captions, nullptr, world, active, 0.016f);
+    captionSystem.Update(&captions, nullptr, world, active, 0.016f);
 
     EXPECT_EQ(captions.ActiveCount(), 0u);
-    EXPECT_TRUE(registry.Components.TryGet<AudioCaptionComponent>(entity)->WarnedOrphan);
+    EXPECT_TRUE(world.TryGet<AudioCaptionComponent>(entity)->WarnedOrphan);
 }
 
 // -- Decision C on the scene path -------------------------------------------------
@@ -262,29 +271,29 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
     VoiceId occupant = audio.Play(AudioClipKey{ 99 }, occupantClip, params);
     ASSERT_TRUE(occupant.IsValid());
 
-    Registry registry;
-    SetupRegistry(registry, &cache, &audio, &captions);
+    World world;
+    SetupWorld(world, &cache, &audio, &captions);
 
-    EntityId speech = registry.Entities.Create();
-    registry.Components.AddComponent(speech, AudioSourceComponent{
+    EntityId speech = world.CreateEntity();
+    world.AddComponent(speech, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(speech, AudioCaptionComponent{
+    world.AddComponent(speech, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "World",
         .Priority = CaptionPriority::Narrative,
         .Text = "line.rejected",
     });
 
-    EntityId slam = registry.Entities.Create();
-    registry.Components.AddComponent(slam, AudioSourceComponent{
+    EntityId slam = world.CreateEntity();
+    world.AddComponent(slam, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(slam, WorldCC("cc.rejected"));
+    world.AddComponent(slam, WorldCC("cc.rejected"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    const StoragePartitionSet active = ActivePartitions();
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
 
     // Both sources attempted and were rejected. The subtitle survived as a
     // timed caption; the closed caption stayed silent (no sound happened).
@@ -295,7 +304,7 @@ TEST(CaptionSystemDegrade, RejectedSceneSubtitleDegradesToTimedAndCCDrops)
     EXPECT_GT(visible[0].DurationSeconds, 0.0f);
 
     // The degrade fires once per component lifetime, not per frame.
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
     EXPECT_EQ(captions.ActiveCount(), 1u);
 }
 
@@ -306,13 +315,13 @@ TEST(CaptionSystemDegrade, NoAudioServiceStillSubtitlesActiveSources)
     AudioClipCache cache(logging);
     AudioClipHandle clip = cache.Register("asset://audio/voice.wav", MakeClip());
 
-    Registry registry;
-    SetupRegistry(registry, &cache, nullptr, &captions);
+    World world;
+    SetupWorld(world, &cache, nullptr, &captions);
 
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
+    EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = false });
-    registry.Components.AddComponent(entity, AudioCaptionComponent{
+    world.AddComponent(entity, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "World",
         .Text = "line.no.device",
@@ -322,9 +331,9 @@ TEST(CaptionSystemDegrade, NoAudioServiceStillSubtitlesActiveSources)
     // gets the language content — the third invariant.
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    audioSystem.Update(nullptr, active);
-    captionSystem.Update(&captions, nullptr, active, 0.016f);
+    const StoragePartitionSet active = ActivePartitions();
+    audioSystem.Update(nullptr, world, active);
+    captionSystem.Update(&captions, nullptr, world, active, 0.016f);
 
     auto visible = captions.Visible("World");
     ASSERT_EQ(visible.size(), 1u);
