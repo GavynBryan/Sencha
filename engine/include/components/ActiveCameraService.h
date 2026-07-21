@@ -5,9 +5,10 @@
 //=============================================================================
 // ActiveCameraService
 //
-// Registry-local resource that tracks which entity is the active camera. Kept in
-// the neutral component/service catalog so gameplay camera follow, world setup,
-// and render extraction can share it without depending on render headers.
+// Simulation-scoped World resource that tracks which entity is the active
+// camera. Under the legacy per-zone runtime it was installed once per Registry;
+// the unified runtime owns one instance because every camera entity shares one
+// generational EntityId universe.
 //=============================================================================
 class ActiveCameraService
 {
