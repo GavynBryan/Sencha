@@ -891,8 +891,6 @@ public:
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
             assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
             BumpStructural(loc.Partition);
-            assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
-            BumpStructural(loc.Partition);
             assert(!src.Signature.test(id) && "Entity already has component.");
 
             ArchetypeSignature newSig = src.Signature;
@@ -947,6 +945,8 @@ public:
 
             EntityLocation loc = Entities.GetLocation(entity);
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
+            assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+            BumpStructural(loc.Partition);
             assert(src.Signature.test(id) && "Entity does not have component.");
 
             ArchetypeSignature newSig = src.Signature;
