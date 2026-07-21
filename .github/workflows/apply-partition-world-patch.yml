@@ -1,0 +1,29 @@
+name: Apply partition world patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-partition-world-patch.yml'
+      - 'tools/temporary/apply_partition_world_patch.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply asserted source transformation
+        run: python3 tools/temporary/apply_partition_world_patch.py
+      - name: Commit transformed source
+        run: |
+          git config user.name "sencha-partition-migration"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(ecs): add partition-aware world operations"
+          git push origin HEAD:${GITHUB_REF_NAME}
