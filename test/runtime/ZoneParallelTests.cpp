@@ -1,247 +1,237 @@
 #include <gtest/gtest.h>
 
-#include <jobs/ThreadPoolJobSystem.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <world/registry/Registry.h>
-#include <world/registry/RegistryParallel.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformPropagation.h>
-#include <zone/DefaultZoneBuilder.h>
-#include <zone/ZoneRuntime.h>
-
-#include <array>
-#include <latch>
-#include <set>
-#include <thread>
-#include <vector>
 
 namespace
 {
-    // Deterministic multi-zone content: every zone gets a three-deep parented
-    // chain plus a handful of independent roots, all positioned from indices
-    // so two builds of the same shape are exactly identical.
-    void BuildHierarchyZone(Registry& registry, uint32_t zoneSeed)
-    {
-        const float base = static_cast<float>(zoneSeed) * 100.0f;
+constexpr StoragePartitionId kFirst{ 1 };
+constexpr StoragePartitionId kSecond{ 2 };
 
-        EntityId root = CreateDefaultEntity(
-            registry, Transform3f(Vec3d(base, 1.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
-        EntityId child = CreateDefaultEntity(
-            registry, Transform3f(Vec3d(0.0f, 2.0f, 0.0f), Quatf::Identity(), Vec3d::One()));
-        EntityId grandchild = CreateDefaultEntity(
-            registry, Transform3f(Vec3d(0.0f, 0.0f, 3.0f), Quatf::Identity(), Vec3d::One()));
-        registry.Components.AddComponent(child, Parent{ root });
-        registry.Components.AddComponent(grandchild, Parent{ child });
-
-        for (uint32_t i = 0; i < 8; ++i)
-        {
-            CreateDefaultEntity(
-                registry,
-                Transform3f(Vec3d(base + static_cast<float>(i), 0.0f, -1.0f),
-                            Quatf::Identity(), Vec3d::One()));
-        }
-    }
-
-    void BuildZones(ZoneRuntime& zones, uint32_t zoneCount)
-    {
-        for (uint32_t i = 0; i < zoneCount; ++i)
-        {
-            Registry& registry = CreateDefault3DZone(
-                zones, ZoneId{ static_cast<uint16_t>(i + 1) }, ZoneParticipation{ .Logic = true });
-            BuildHierarchyZone(registry, i);
-        }
-    }
-
-    void ExpectIdenticalWorldTransforms(ZoneRuntime& a, ZoneRuntime& b, uint32_t zoneCount)
-    {
-        for (uint32_t i = 0; i < zoneCount; ++i)
-        {
-            const ZoneId zone{ static_cast<uint16_t>(i + 1) };
-            Registry* ra = a.FindZone(zone);
-            Registry* rb = b.FindZone(zone);
-            ASSERT_NE(ra, nullptr);
-            ASSERT_NE(rb, nullptr);
-
-            const auto entities = ra->Entities.GetAliveEntities();
-            ASSERT_EQ(entities.size(), rb->Entities.GetAliveEntities().size());
-            for (EntityId entity : entities)
-            {
-                const WorldTransform* wa = std::as_const(ra->Components).TryGet<WorldTransform>(entity);
-                const WorldTransform* wb = std::as_const(rb->Components).TryGet<WorldTransform>(entity);
-                ASSERT_NE(wa, nullptr);
-                ASSERT_NE(wb, nullptr);
-                EXPECT_EQ(wa->Value.Position, wb->Value.Position)
-                    << "zone " << i << " entity " << entity.Index;
-            }
-        }
-    }
+void RegisterTransforms(World& world)
+{
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
 }
 
-//=============================================================================
-// ForEachRegistryParallel: the Decision 4 helper.
-//=============================================================================
-
-TEST(ForEachRegistryParallel, VisitsEveryRegistryExactlyOnce)
+EntityId CreateTransformEntity(
+    World& world,
+    StoragePartitionId partition,
+    const Vec3d& localPosition)
 {
-    ThreadPoolJobSystem jobs(4);
-    std::array<Registry, 5> storage;
-    std::array<Registry*, 5> registries;
-    for (size_t i = 0; i < storage.size(); ++i)
-    {
-        registries[i] = &storage[i];
-    }
+    Transform3f local;
+    local.Position = localPosition;
 
-    std::array<std::atomic<int>, 5> visits{};
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(registries),
-                            [&](Registry& registry) {
-                                for (size_t i = 0; i < storage.size(); ++i)
-                                {
-                                    if (&registry == &storage[i])
-                                    {
-                                        visits[i].fetch_add(1);
-                                    }
-                                }
-                            });
-
-    for (size_t i = 0; i < visits.size(); ++i)
-    {
-        EXPECT_EQ(visits[i].load(), 1) << "registry " << i;
-    }
+    const EntityId entity = world.CreateEntity(partition);
+    world.AddComponent<LocalTransform>(
+        entity,
+        LocalTransform{ local });
+    world.AddComponent<WorldTransform>(
+        entity,
+        WorldTransform{});
+    return entity;
 }
 
-TEST(ForEachRegistryParallel, SingleEntryRunsInlineOnCaller)
+StoragePartitionSet Partitions(
+    bool first,
+    bool second)
 {
-    ThreadPoolJobSystem jobs(4);
-    Registry registry;
-    std::array<Registry*, 1> registries{ &registry };
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    if (first)
+        partitions.Add(kFirst);
+    if (second)
+        partitions.Add(kSecond);
+    return partitions;
+}
+} // namespace
 
-    std::thread::id ranOn;
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(registries),
-                            [&](Registry&) { ranOn = std::this_thread::get_id(); });
+TEST(PartitionTransformPropagation, VisitsOnlyActivePartitionChunks)
+{
+    World world;
+    RegisterTransforms(world);
 
-    // No fork for one registry: the dispatch floor is never paid for a
-    // workload that cannot parallelize.
-    EXPECT_EQ(ranOn, std::this_thread::get_id());
+    const EntityId first = CreateTransformEntity(
+        world,
+        kFirst,
+        Vec3d(1.0f, 2.0f, 3.0f));
+    const EntityId second = CreateTransformEntity(
+        world,
+        kSecond,
+        Vec3d(4.0f, 5.0f, 6.0f));
+
+    const StoragePartitionSet active = Partitions(true, false);
+    PropagateTransforms(
+        world,
+        active,
+        TransformPropagationDomain::Simulation);
+
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(first)->Value.Position,
+        Vec3d(1.0f, 2.0f, 3.0f));
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(second)->Value.Position,
+        Vec3d::Zero());
 }
 
-TEST(ForEachRegistryParallel, EmptySpanAndNullEntriesAreSkipped)
+TEST(PartitionTransformPropagation, CrossPartitionParentChainResolvesExactly)
 {
-    ThreadPoolJobSystem jobs(2);
-    int calls = 0;
+    World world;
+    RegisterTransforms(world);
 
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(),
-                            [&](Registry&) { ++calls; });
-    EXPECT_EQ(calls, 0);
+    const EntityId root = CreateTransformEntity(
+        world,
+        kFirst,
+        Vec3d(100.0f, 1.0f, 0.0f));
+    const EntityId child = CreateTransformEntity(
+        world,
+        kSecond,
+        Vec3d(0.0f, 2.0f, 0.0f));
+    const EntityId grandchild = CreateTransformEntity(
+        world,
+        kSecond,
+        Vec3d(0.0f, 0.0f, 3.0f));
+    world.AddComponent<Parent>(child, Parent{ root });
+    world.AddComponent<Parent>(grandchild, Parent{ child });
 
-    Registry registry;
-    std::array<Registry*, 3> withNulls{ nullptr, &registry, nullptr };
-    std::atomic<int> parallelCalls{ 0 };
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(withNulls),
-                            [&](Registry&) { parallelCalls.fetch_add(1); });
-    EXPECT_EQ(parallelCalls.load(), 1);
+    const StoragePartitionSet active = Partitions(true, true);
+    PropagateTransforms(
+        world,
+        active,
+        TransformPropagationDomain::Simulation);
+
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(root)->Value.Position,
+        Vec3d(100.0f, 1.0f, 0.0f));
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(child)->Value.Position,
+        Vec3d(100.0f, 3.0f, 0.0f));
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(grandchild)->Value.Position,
+        Vec3d(100.0f, 3.0f, 3.0f));
 }
 
-// With W workers and W + 1 registries rendezvousing on a latch, completion
-// requires the registries to genuinely run concurrently (and the caller to
-// participate). A hang here means the helper stopped forking.
-TEST(ForEachRegistryParallel, RegistriesRunConcurrently)
+TEST(PartitionTransformPropagation, DormantPartitionSkipsWorkAndCatchesUpOnReentry)
 {
-    constexpr uint32_t Workers = 3;
-    ThreadPoolJobSystem jobs(Workers);
+    World world;
+    RegisterTransforms(world);
 
-    std::array<Registry, Workers + 1> storage;
-    std::array<Registry*, Workers + 1> registries;
-    for (size_t i = 0; i < storage.size(); ++i)
-    {
-        registries[i] = &storage[i];
-    }
+    const EntityId root = CreateTransformEntity(
+        world,
+        kFirst,
+        Vec3d(10.0f, 0.0f, 0.0f));
+    const EntityId child = CreateTransformEntity(
+        world,
+        kSecond,
+        Vec3d(0.0f, 2.0f, 0.0f));
+    world.AddComponent<Parent>(child, Parent{ root });
 
-    std::latch rendezvous(Workers + 1);
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(registries),
-                            [&](Registry&) { rendezvous.arrive_and_wait(); });
+    const StoragePartitionSet both = Partitions(true, true);
+    PropagateTransforms(
+        world,
+        both,
+        TransformPropagationDomain::Simulation);
+    ASSERT_EQ(
+        world.TryGet<WorldTransform>(child)->Value.Position,
+        Vec3d(10.0f, 2.0f, 0.0f));
+
+    world.AdvanceFrame();
+    world.TryGet<LocalTransform>(root)->Value.Position.X = 25.0f;
+
+    const StoragePartitionSet firstOnly = Partitions(true, false);
+    PropagateTransforms(
+        world,
+        firstOnly,
+        TransformPropagationDomain::Simulation);
+
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(root)->Value.Position,
+        Vec3d(25.0f, 0.0f, 0.0f));
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(child)->Value.Position,
+        Vec3d(10.0f, 2.0f, 0.0f));
+
+    world.AdvanceFrame();
+    PropagateTransforms(
+        world,
+        both,
+        TransformPropagationDomain::Simulation);
+
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(child)->Value.Position,
+        Vec3d(25.0f, 2.0f, 0.0f));
 }
 
-//=============================================================================
-// Zone-parallel transform propagation: the Stage C success criterion is
-// bit-identical results against the single-threaded configuration.
-//=============================================================================
-
-TEST(ZoneParallelPropagation, MatchesSingleThreadedConfigurationExactly)
+TEST(PartitionTransformPropagation, SimulationAndPresentationKeepIndependentActivityHistory)
 {
-    constexpr uint32_t ZoneCount = 6;
+    World world;
+    RegisterTransforms(world);
 
-    ZoneRuntime serialZones;
-    ZoneRuntime parallelZones;
-    BuildZones(serialZones, ZoneCount);
-    BuildZones(parallelZones, ZoneCount);
+    const EntityId entity = CreateTransformEntity(
+        world,
+        kSecond,
+        Vec3d(1.0f, 0.0f, 0.0f));
+    const StoragePartitionSet visible = Partitions(false, true);
+    const StoragePartitionSet logic = Partitions(false, false);
 
-    ThreadPoolJobSystem serialJobs(0);
-    ThreadPoolJobSystem parallelJobs(4);
+    PropagateTransforms(
+        world,
+        visible,
+        TransformPropagationDomain::Presentation);
+    ASSERT_EQ(
+        world.TryGet<WorldTransform>(entity)->Value.Position,
+        Vec3d(1.0f, 0.0f, 0.0f));
 
-    PropagateTransforms(serialJobs, serialZones.BuildFrameView().Logic);
-    PropagateTransforms(parallelJobs, parallelZones.BuildFrameView().Logic);
+    world.AdvanceFrame();
+    world.TryGet<LocalTransform>(entity)->Value.Position.X = 3.0f;
+    PropagateTransforms(
+        world,
+        logic,
+        TransformPropagationDomain::Simulation);
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(entity)->Value.Position,
+        Vec3d(1.0f, 0.0f, 0.0f));
 
-    ExpectIdenticalWorldTransforms(serialZones, parallelZones, ZoneCount);
+    PropagateTransforms(
+        world,
+        visible,
+        TransformPropagationDomain::Presentation);
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(entity)->Value.Position,
+        Vec3d(3.0f, 0.0f, 0.0f));
 }
 
-TEST(ZoneParallelPropagation, MatchesTheSerialOverloadExactly)
+TEST(PartitionTransformPropagation, EntityMigrationInvalidatesCachedRowPointers)
 {
-    constexpr uint32_t ZoneCount = 4;
+    World world;
+    RegisterTransforms(world);
 
-    ZoneRuntime serialZones;
-    ZoneRuntime parallelZones;
-    BuildZones(serialZones, ZoneCount);
-    BuildZones(parallelZones, ZoneCount);
+    const EntityId entity = CreateTransformEntity(
+        world,
+        kFirst,
+        Vec3d(2.0f, 0.0f, 0.0f));
+    const StoragePartitionSet both = Partitions(true, true);
 
-    ThreadPoolJobSystem jobs(4);
+    PropagateTransforms(
+        world,
+        both,
+        TransformPropagationDomain::Simulation);
+    ASSERT_TRUE(world.MoveEntityToPartition(entity, kSecond));
 
-    PropagateTransforms(serialZones.BuildFrameView().Logic);
-    PropagateTransforms(jobs, parallelZones.BuildFrameView().Logic);
+    world.AdvanceFrame();
+    world.TryGet<LocalTransform>(entity)->Value.Position.X = 7.0f;
+    PropagateTransforms(
+        world,
+        both,
+        TransformPropagationDomain::Simulation);
 
-    ExpectIdenticalWorldTransforms(serialZones, parallelZones, ZoneCount);
-}
-
-TEST(ZoneParallelPropagation, ChildChainsResolveThroughParents)
-{
-    ZoneRuntime zones;
-    BuildZones(zones, 3);
-    ThreadPoolJobSystem jobs(4);
-
-    PropagateTransforms(jobs, zones.BuildFrameView().Logic);
-
-    for (uint32_t i = 0; i < 3; ++i)
-    {
-        Registry* registry = zones.FindZone(ZoneId{ static_cast<uint16_t>(i + 1) });
-        ASSERT_NE(registry, nullptr);
-        const auto entities = registry->Entities.GetAliveEntities();
-        ASSERT_GE(entities.size(), 3u);
-
-        const float base = static_cast<float>(i) * 100.0f;
-        const WorldTransform* grandchild =
-            std::as_const(registry->Components).TryGet<WorldTransform>(entities[2]);
-        ASSERT_NE(grandchild, nullptr);
-        // root(base,1,0) + child(0,2,0) + grandchild(0,0,3), identity rotations.
-        EXPECT_EQ(grandchild->Value.Position, Vec3d(base, 3.0f, 3.0f));
-    }
-}
-
-TEST(ZoneParallelPropagation, DuplicateSpanEntriesPropagateOnce)
-{
-    ZoneRuntime zones;
-    BuildZones(zones, 1);
-    Registry* registry = zones.FindZone(ZoneId{ 1 });
-    ASSERT_NE(registry, nullptr);
-
-    ThreadPoolJobSystem jobs(4);
-    std::array<Registry*, 4> duplicated{ registry, registry, registry, registry };
-
-    // The overload deduplicates before forking; duplicates would otherwise
-    // race one World across jobs.
-    PropagateTransforms(jobs, duplicated);
-
-    const auto entities = registry->Entities.GetAliveEntities();
-    const WorldTransform* root =
-        std::as_const(registry->Components).TryGet<WorldTransform>(entities[0]);
-    ASSERT_NE(root, nullptr);
-    EXPECT_EQ(root->Value.Position, Vec3d(0.0f, 1.0f, 0.0f));
+    EXPECT_TRUE(world.IsAlive(entity));
+    EXPECT_EQ(world.GetEntityPartition(entity), kSecond);
+    EXPECT_EQ(
+        world.TryGet<WorldTransform>(entity)->Value.Position,
+        Vec3d(7.0f, 0.0f, 0.0f));
 }
