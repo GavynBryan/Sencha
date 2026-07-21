@@ -6,6 +6,7 @@
 
 class Engine;
 class ComponentSerializerRegistry;
+class WorldComponentSchema;
 
 //=============================================================================
 // Game
@@ -32,6 +33,12 @@ public:
     // the symmetric teardown (editor module swap / host shutdown).
     virtual void OnRegisterComponents(ComponentSerializerRegistry&) {}
     virtual void OnUnregisterComponents(ComponentSerializerRegistry&) {}
+
+    // Register the game's runtime ECS storage vocabulary. Engine::Run first adds
+    // the engine-owned prefix, calls this hook, then seals the schema before
+    // OnStart. Unlike serializer registration, this hook is runtime-only: the
+    // editor does not need a live World merely to inspect scene fields.
+    virtual void OnRegisterRuntimeComponents(WorldComponentSchema&) {}
 
     virtual void OnStart(GameStartupContext&) {}
     virtual void OnRegisterSystems(SystemRegisterContext&) {}
