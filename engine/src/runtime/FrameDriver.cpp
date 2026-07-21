@@ -8,7 +8,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
     case FramePhase::DrainAsyncTasks: return "DrainAsyncTasks";
-    case FramePhase::RegistryResidency: return "RegistryResidency";
+    case FramePhase::ZoneResidency: return "ZoneResidency";
     case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
     case FramePhase::Update: return "Update";
@@ -87,14 +87,9 @@ void FrameDriver::StepOnce()
     InvokePhase(FramePhase::ResolveLifecycle, ctx);
     InvokePhase(FramePhase::RebuildGraphics, ctx);
     InvokePhase(FramePhase::DrainAsyncTasks, ctx);
-    // Residency runs every rendered frame — including zero-fixed-tick frames —
-    // so retained backend state reacts to lifecycle before the frame view can
-    // observe it, and Detaching registries get their final visit while alive.
-    InvokePhase(FramePhase::RegistryResidency, ctx);
+    InvokePhase(FramePhase::ZoneResidency, ctx);
     InvokePhase(FramePhase::ScheduleTicks, ctx);
 
-    // Fixed-step simulation loop. Each fixed tick is its own mini-phase so
-    // registered simulation callbacks can observe tick count cleanly.
     if (Trace) Trace->BeginPhase("Simulate");
     while (Runtime.CanRunFixedTickThisFrame())
     {
@@ -114,12 +109,7 @@ void FrameDriver::StepOnce()
     if (Trace) Trace->EndPhase("Simulate");
 
     Runtime.BuildPresentationFrame();
-
     InvokePhase(FramePhase::Update, ctx);
-
-    // If no fixed tick ran this frame and edges are still pending, presentation
-    // may still want them (mouse-look, etc.) but simulation did not consume
-    // them — keep edges alive for the next frame by NOT draining.
 
     ctx.PacketWrite->Reset();
     ctx.PacketWrite->FrameIndex = Runtime.GetCurrentFrame().WallTime.FrameIndex;
@@ -140,14 +130,9 @@ void FrameDriver::StepOnce()
     Packets.Flip();
 
     if (lifecycleOnly)
-    {
-        // No swapchain wait happened — don't spin the CPU.
         Pacer.WaitForLifecycleIdle();
-    }
     else
-    {
         Pacer.Wait();
-    }
 }
 
 void FrameDriver::Run()
