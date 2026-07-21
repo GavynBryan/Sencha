@@ -3,28 +3,16 @@
 #include <cstdint>
 #include <memory>
 
+#include <ecs/StoragePartitionId.h>
 #include <math/Vec.h>
 
-class World;
 class PhysicsWorld;
+class StoragePartitionSet;
+class World;
 
-//=============================================================================
-// CharacterMoverPool
-//
-// Per-registry ECS<->character bridge, the character analogue of RigidBodyBinding.
-// A CharacterMover owns a Jolt CharacterVirtual and is not trivially copyable,
-// so it cannot live in a chunk; the movers live here in a dense pool with a free
-// list (so a slot stays valid for the mover's lifetime) and each controller
-// entity carries its slot in a CharacterMoverLink component. Stored in
-// Registry::Resources beside the other physics bindings, so it dies with the
-// registry and releases its CharacterVirtuals; the shared PhysicsWorld it
-// points at outlives it (same teardown order as bodies).
-//
-// Reconcile is gated on the World's structural version, like RigidBodyBinding,
-// so a steady frame skips topology work; the pool itself is the physics-side
-// record that lets a destroyed entity's mover be reclaimed (CharacterMoverLink
-// is a hook-free handle, so it vanishes silently with the entity).
-//=============================================================================
+// Simulation-wide pool for CharacterMover backend objects. One pool serves the
+// unified runtime World; storage partitions only control which movers are
+// resident and driven during the current physics domain.
 class CharacterMoverPool
 {
 public:
@@ -34,31 +22,34 @@ public:
     CharacterMoverPool(const CharacterMoverPool&) = delete;
     CharacterMoverPool& operator=(const CharacterMoverPool&) = delete;
 
-    // Create movers for new controllers and release movers for dead or removed
-    // ones. Gated on the structural version: a steady frame is a single compare.
-    void Reconcile(World& world);
+    void Reconcile(
+        World& world,
+        const StoragePartitionSet& partitions);
+    void Drive(
+        World& world,
+        const StoragePartitionSet& partitions,
+        float dt,
+        const Vec3d& gravity);
 
-    // Advance every linked mover one tick and write resolved position + grounded
-    // back. Contiguous column walk over (CharacterController, LocalTransform,
-    // CharacterMoverLink); the only indirection is the slot into the pool.
-    void Drive(World& world, float dt, const Vec3d& gravity);
+    void EvictPartition(
+        World& world,
+        StoragePartitionId partition);
+    void EvictAll(World& world);
 
-    // Release every mover and strip links, so the next Reconcile recreates
-    // them from component state. Called when the registry leaves the physics
-    // domain or detaches: dormant means zero backend presence.
-    void Evict(World& world);
-
-    [[nodiscard]] size_t   MoverCount() const;
-    [[nodiscard]] uint64_t ReconcilePasses() const { return ReconcileCount; }
+    [[nodiscard]] size_t MoverCount() const;
+    [[nodiscard]] uint64_t ReconcilePasses() const
+    {
+        return ReconcileCount;
+    }
 
 private:
-    struct State; // PIMPL: pool slots + free list + cached query + command buffer
+    struct State;
 
-    bool   Ready(const World& world) const;
+    bool Ready(const World& world) const;
     State& EnsureState(World& world);
 
-    PhysicsWorld*          Simulation; // not owned; outlives this pool
+    PhysicsWorld* Simulation;
     std::unique_ptr<State> S;
-    uint64_t               LastStructuralVersion = 0;
-    uint64_t               ReconcileCount = 0;
+    uint64_t LastStructuralVersion = 0;
+    uint64_t ReconcileCount = 0;
 };
