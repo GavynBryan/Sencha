@@ -122,7 +122,8 @@ TEST(ZonePackageImporter, PublishesComponentsHierarchyAndDerivedTransforms)
     EntityId childEntity;
     for (EntityId entity : entities)
     {
-        const PackageValue* value = runtime.Entities().TryGet<PackageValue>(entity);
+        const PackageValue* value =
+            runtime.Entities().TryGet<PackageValue>(entity);
         ASSERT_NE(value, nullptr);
         if (value->Value == 11)
             rootEntity = entity;
@@ -132,10 +133,15 @@ TEST(ZonePackageImporter, PublishesComponentsHierarchyAndDerivedTransforms)
 
     ASSERT_TRUE(rootEntity.IsValid());
     ASSERT_TRUE(childEntity.IsValid());
-    EXPECT_NE(runtime.Entities().TryGet<WorldTransform>(rootEntity), nullptr);
-    EXPECT_NE(runtime.Entities().TryGet<WorldTransform>(childEntity), nullptr);
+    EXPECT_NE(
+        runtime.Entities().TryGet<WorldTransform>(rootEntity),
+        nullptr);
+    EXPECT_NE(
+        runtime.Entities().TryGet<WorldTransform>(childEntity),
+        nullptr);
 
-    const Parent* parent = runtime.Entities().TryGet<Parent>(childEntity);
+    const Parent* parent =
+        runtime.Entities().TryGet<Parent>(childEntity);
     ASSERT_NE(parent, nullptr);
     EXPECT_EQ(parent->Entity, rootEntity);
 
@@ -156,16 +162,85 @@ TEST(ZonePackageImporter, UnknownComponentRollsBackWholeHiddenPartition)
     ASSERT_TRUE(package.AddComponent(entity, PackageUnknown{ 2 }));
 
     ZoneImportError error;
-    EXPECT_FALSE(ImportZonePackage(runtime, schema, package, {}, &error));
+    EXPECT_FALSE(ImportZonePackage(
+        runtime,
+        schema,
+        package,
+        {},
+        &error));
     EXPECT_FALSE(error.Message.empty());
     EXPECT_EQ(runtime.FindZone(ZoneId{ 20 }), nullptr);
     EXPECT_EQ(runtime.Entities().EntityCount(), 0u);
     EXPECT_TRUE(runtime.PendingResidencyChanges().empty());
 }
 
+TEST(ZonePackageImporter, ImportsPersistentWorldSceneIntoPartitionZero)
+{
+    const WorldComponentSchema schema = MakePackageSchema();
+    RuntimeWorld runtime(schema);
+
+    const EntityId existing = runtime.Entities().CreateEntity();
+    runtime.Entities().AddComponent<PackageValue>(
+        existing,
+        PackageValue{ 5 });
+
+    ZoneLoadPackage package(ZoneId{ 30 });
+    const ZoneLocalEntityId first = package.CreateEntity();
+    const ZoneLocalEntityId second = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent(first, PackageValue{ 11 }));
+    ASSERT_TRUE(package.AddComponent(second, PackageValue{ 22 }));
+    ASSERT_TRUE(package.SetParent(second, first));
+
+    ZoneImportError error;
+    ASSERT_TRUE(ImportPackageIntoPartition(
+        runtime.Entities(),
+        schema,
+        package,
+        PersistentStoragePartition,
+        &error)) << error.Message;
+
+    EXPECT_TRUE(runtime.Entities().IsAlive(existing));
+    const std::vector<EntityId> persistent = EntitiesInPartition(
+        runtime.Entities(),
+        PersistentStoragePartition);
+    EXPECT_EQ(persistent.size(), 3u);
+    EXPECT_TRUE(runtime.PendingResidencyChanges().empty());
+}
+
+TEST(ZonePackageImporter, PersistentImportFailurePreservesExistingEntities)
+{
+    const WorldComponentSchema schema = MakePackageSchema();
+    RuntimeWorld runtime(schema);
+
+    const EntityId existing = runtime.Entities().CreateEntity();
+    runtime.Entities().AddComponent<PackageValue>(
+        existing,
+        PackageValue{ 5 });
+
+    ZoneLoadPackage package(ZoneId{ 40 });
+    const ZoneLocalEntityId valid = package.CreateEntity();
+    const ZoneLocalEntityId invalid = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent(valid, PackageValue{ 11 }));
+    ASSERT_TRUE(package.AddComponent(invalid, PackageUnknown{ 22 }));
+
+    ZoneImportError error;
+    EXPECT_FALSE(ImportPackageIntoPartition(
+        runtime.Entities(),
+        schema,
+        package,
+        PersistentStoragePartition,
+        &error));
+    EXPECT_FALSE(error.Message.empty());
+    EXPECT_TRUE(runtime.Entities().IsAlive(existing));
+    EXPECT_EQ(runtime.Entities().EntityCount(), 1u);
+    EXPECT_EQ(
+        runtime.Entities().TryGet<PackageValue>(existing)->Value,
+        5);
+}
+
 TEST(ZonePackageImporter, PackageRejectsDuplicateComponentsAndParents)
 {
-    ZoneLoadPackage package(ZoneId{ 30 });
+    ZoneLoadPackage package(ZoneId{ 50 });
     const ZoneLocalEntityId first = package.CreateEntity();
     const ZoneLocalEntityId second = package.CreateEntity();
 
