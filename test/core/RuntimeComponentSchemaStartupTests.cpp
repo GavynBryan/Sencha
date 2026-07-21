@@ -7,6 +7,9 @@
 #include <camera/CameraRegistration.h>
 #include <camera/CameraRig.h>
 #include <components/CameraComponent.h>
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -26,6 +29,7 @@
 #include <render/StaticMeshComponent.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
 
@@ -37,9 +41,45 @@ struct StartupGameComponent
     int Value = 0;
 };
 
+struct MissingRuntimeComponent
+{
+    int Value = 0;
+};
+
 SENCHA_DECLARE_COMPONENT_TYPE(
     StartupGameComponent,
     "test.startup_game_component");
+SENCHA_DECLARE_COMPONENT_TYPE(
+    MissingRuntimeComponent,
+    "test.missing_runtime_component");
+
+template <>
+struct TypeSchema<StartupGameComponent>
+{
+    static constexpr std::string_view Name = "startup_game_component";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('S', 'G', 'A', 'M');
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &StartupGameComponent::Value),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<MissingRuntimeComponent>
+{
+    static constexpr std::string_view Name = "missing_runtime_component";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('M', 'I', 'S', 'S');
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &MissingRuntimeComponent::Value),
+        };
+    }
+};
 
 namespace
 {
@@ -58,6 +98,17 @@ public:
     {
         ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
         ctx.Config.Debug.ConsoleLogging = false;
+    }
+
+    void OnRegisterComponents(ComponentSerializerRegistry&) override
+    {
+        InitSceneSerializer();
+        RegisterComponent<StartupGameComponent>();
+    }
+
+    void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
+    {
+        serializers.Remove(ResolveComponentTypeId<StartupGameComponent>());
     }
 
     void OnRegisterRuntimeComponents(WorldComponentSchema& schema) override
@@ -93,6 +144,36 @@ public:
     bool AppliedGameComponent = false;
     std::size_t SchemaSize = 0;
     ComponentId AppliedGameComponentId = InvalidComponentId;
+};
+
+class MissingRuntimeSchemaGame final : public Game
+{
+public:
+    void OnConfigure(GameConfigureContext& ctx) override
+    {
+        ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
+        ctx.Config.Debug.ConsoleLogging = false;
+    }
+
+    void OnRegisterComponents(ComponentSerializerRegistry&) override
+    {
+        InitSceneSerializer();
+        RegisterComponent<MissingRuntimeComponent>();
+    }
+
+    void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
+    {
+        ++UnregisterCalls;
+        serializers.Remove(ResolveComponentTypeId<MissingRuntimeComponent>());
+    }
+
+    void OnStart(GameStartupContext&) override
+    {
+        ++StartCalls;
+    }
+
+    int StartCalls = 0;
+    int UnregisterCalls = 0;
 };
 } // namespace
 
@@ -162,4 +243,16 @@ TEST(RuntimeComponentSchema, EngineRunSealsEngineAndGameVocabularyBeforeStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_EQ(game.SchemaSize, 25u);
     EXPECT_EQ(game.AppliedGameComponentId, 24u);
+}
+
+TEST(RuntimeComponentSchema, MissingRuntimeStorageFailsBeforeGameStart)
+{
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    Application app(0, nullptr);
+    MissingRuntimeSchemaGame game;
+
+    EXPECT_EQ(app.Run(game), 1);
+    EXPECT_EQ(game.StartCalls, 0);
+    EXPECT_EQ(game.UnregisterCalls, 1);
 }
