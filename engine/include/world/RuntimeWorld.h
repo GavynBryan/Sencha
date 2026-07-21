@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 class WorldComponentSchema;
@@ -68,8 +69,7 @@ struct RuntimeZoneRecord
 };
 
 // One runtime entity universe with streamed zones represented as storage
-// partitions. This coexists with the current per-registry ZoneRuntime until the
-// migration's scheduling, loading, and backend phases are proven.
+// partitions. This is the cutover replacement for per-zone runtime registries.
 class RuntimeWorld
 {
 public:
@@ -144,8 +144,10 @@ private:
 
     World Entities_;
 
-    // Indexed directly by StoragePartitionId. Slot zero is permanently reserved
-    // for persistent entities and never contains a RuntimeZoneRecord.
+    // ZoneId lookup is O(1); partition lookup is a direct dense-array index.
+    // Slot zero is permanently reserved for persistent entities and never
+    // contains a RuntimeZoneRecord.
+    std::unordered_map<ZoneId, StoragePartitionId> PartitionByZone_;
     std::vector<std::unique_ptr<RuntimeZoneRecord>> ZonesByPartition_;
     std::vector<std::uint16_t> FreePartitions_;
 
