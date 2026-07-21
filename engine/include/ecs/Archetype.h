@@ -4,12 +4,14 @@
 #include <ecs/Chunk.h>
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionId.h>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 // Per-component registration info needed to build an archetype's column layout.
@@ -21,7 +23,9 @@ struct ComponentInfo
 };
 
 // Archetype: metadata for a unique component signature.
-// Owns column descriptors and the list of live chunks.
+// Owns column descriptors and a flat list of live chunks. Each chunk belongs to
+// exactly one StoragePartitionId; partition lookup caches the most recent chunk
+// with capacity so rows from different partitions never share storage.
 // Entity location within an archetype is (ChunkIndex, RowIndex).
 struct Archetype
 {
@@ -80,31 +84,44 @@ struct Archetype
                && "Archetype column layout exceeds chunk size");
     }
 
-    Chunk* AllocChunk()
+    Chunk* AllocChunk(StoragePartitionId partition = StoragePartitionId::Default())
     {
         auto chunk = std::make_unique<Chunk>();
-        chunk->RowCount          = 0;
-        chunk->RowCapacity       = RowsPerChunk;
-        chunk->Columns           = Columns.data();
-        chunk->ColumnCount       = static_cast<uint32_t>(Columns.size());
+        chunk->RowCount           = 0;
+        chunk->RowCapacity        = RowsPerChunk;
+        chunk->Partition          = partition;
+        chunk->Columns            = Columns.data();
+        chunk->ColumnCount        = static_cast<uint32_t>(Columns.size());
         chunk->LastWrittenFrames.assign(Columns.size(), 0);
         chunk->EntityColumnOffset = EntityColumnOffset_;
         Chunks.push_back(std::move(chunk));
+
+        const uint32_t index = static_cast<uint32_t>(Chunks.size()) - 1;
+        LastChunkByPartition_[partition.Value] = index;
         return Chunks.back().get();
     }
 
-    Chunk* GetOrAllocChunkWithSpace()
+    Chunk* GetOrAllocChunkWithSpace(
+        StoragePartitionId partition = StoragePartitionId::Default())
     {
-        if (!Chunks.empty() && !Chunks.back()->IsFull())
-            return Chunks.back().get();
-        return AllocChunk();
+        const auto found = LastChunkByPartition_.find(partition.Value);
+        if (found != LastChunkByPartition_.end())
+        {
+            Chunk* chunk = Chunks[found->second].get();
+            assert(chunk->Partition == partition);
+            if (!chunk->IsFull())
+                return chunk;
+        }
+        return AllocChunk(partition);
     }
 
     // Returns (chunkIndex, rowIndex).
-    std::pair<uint32_t, uint32_t> AddRow(EntityIndex entityIndex)
+    std::pair<uint32_t, uint32_t> AddRow(
+        EntityIndex entityIndex,
+        StoragePartitionId partition = StoragePartitionId::Default())
     {
-        Chunk* chunk      = GetOrAllocChunkWithSpace();
-        const uint32_t ci = static_cast<uint32_t>(Chunks.size()) - 1;
+        Chunk* chunk = GetOrAllocChunkWithSpace(partition);
+        const uint32_t ci = LastChunkByPartition_[partition.Value];
         const uint32_t ri = chunk->RowCount++;
         chunk->EntityIndices()[ri] = entityIndex;
         return { ci, ri };
@@ -119,8 +136,8 @@ struct Archetype
         Chunk* chunk = Chunks[chunkIdx].get();
         assert(rowIdx < chunk->RowCount);
 
-        const uint32_t lastRow    = chunk->RowCount - 1;
-        EntityIndex    movedEntity = InvalidEntityIndex;
+        const uint32_t lastRow = chunk->RowCount - 1;
+        EntityIndex movedEntity = InvalidEntityIndex;
 
         if (rowIdx != lastRow)
         {
@@ -139,10 +156,9 @@ struct Archetype
 
         --chunk->RowCount;
 
-        // Empty-chunk compaction must happen in World (which has registry access).
-        // Iteration skips empty chunks, so the cost is bounded by chunk count.
-        // See docs/ecs/decisions.md D0.7.
-
+        // Empty chunks remain reusable by the same partition. Physical chunk
+        // compaction remains a World-level concern because entity locations and
+        // the per-partition last-chunk cache must be updated together.
         return movedEntity;
     }
 
@@ -184,4 +200,5 @@ struct Archetype
 
 private:
     size_t EntityColumnOffset_ = 0;
+    std::unordered_map<uint32_t, uint32_t> LastChunkByPartition_;
 };
