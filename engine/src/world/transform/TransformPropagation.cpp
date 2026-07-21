@@ -195,7 +195,7 @@ void TransformPropagationSystem::Propagate(
             continue;
         }
 
-        const StoragePartitionId partition = entry.ChunkPtr->Partition();
+        const StoragePartitionId partition = entry.ChunkPtr->Partition;
         if (!partitions.Contains(partition))
             continue;
 
