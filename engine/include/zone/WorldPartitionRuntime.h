@@ -12,7 +12,8 @@
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneDemand.h>
-#include <zone/ZoneRuntime.h>
+
+class RuntimeWorld;
 
 struct ZoneLoadRecipe
 {
@@ -37,9 +38,9 @@ struct ParticipationLeaseId
     friend bool operator==(ParticipationLeaseId, ParticipationLeaseId) = default;
 };
 
-// Metadata and policy layer over ZoneRuntime. It owns cooked streaming demand,
-// authored pins, and runtime participation leases; it never owns registries or
-// game entities. Single-threaded by contract.
+// Metadata and policy layer over RuntimeWorld zone partitions. It owns cooked
+// streaming demand, authored pins, and runtime participation leases; it never
+// owns entity storage or backend state. Single-threaded by contract.
 class WorldPartitionRuntime
 {
 public:
@@ -76,7 +77,7 @@ public:
 
     void SetWorldTags(std::vector<std::string> tags);
 
-    void Update(double deltaSeconds, AsyncZoneLoader& loader, ZoneRuntime& zones);
+    void Update(double deltaSeconds, AsyncZoneLoader& loader, RuntimeWorld& world);
 
     [[nodiscard]] std::span<const ZoneDemandRecord> DemandRecords() const { return Records_; }
 
