@@ -1,18 +1,22 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionId.h>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-// Entity location within archetype storage.
+// Entity location within archetype storage. Partition duplicates the owning
+// chunk's structural key so hot ownership lookup does not need to dereference
+// archetype storage. World mutations assert that both remain consistent.
 struct EntityLocation
 {
     uint32_t ArchetypeId = UINT32_MAX;
     uint32_t ChunkIndex  = UINT32_MAX;
     uint32_t RowIndex    = UINT32_MAX;
+    StoragePartitionId Partition = StoragePartitionId::Default();
 
     bool IsValid() const { return ArchetypeId != UINT32_MAX; }
 };
