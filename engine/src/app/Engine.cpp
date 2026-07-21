@@ -369,7 +369,7 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     ConsoleRegistry& registry = console.Registry();
     EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
-    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, RuntimeLoop, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(console, Configuration.Runtime, FrameDriverInstance);
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }
