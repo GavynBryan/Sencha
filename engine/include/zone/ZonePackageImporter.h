@@ -15,13 +15,26 @@ struct ZoneImportError
     std::string Message;
 };
 
-// Owner-thread semantic kernel for publishing a detached package into a hidden
-// RuntimeWorld partition. Any failure cancels the import completely; ordinary
-// frame-domain systems can observe only the final published zone.
-//
-// The first overload imports package-native runtime bytes. The second also
-// decodes worker-parsed serialized payloads through the engine-owned serializer
-// registry and explicit scene context.
+// Imports into a hidden RuntimeWorld partition but does not publish it. Used by
+// AsyncZoneLoader so owner-thread cache/backend/entity finalization can still
+// fail and cancel atomically before an Attached residency change exists.
+[[nodiscard]] bool ImportZonePackageHidden(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    ZoneImportError* error = nullptr);
+
+[[nodiscard]] bool ImportZonePackageHidden(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    const ComponentSerializerRegistry& serializers,
+    SceneSerializationContext& sceneContext,
+    ZoneImportError* error = nullptr);
+
+// Convenience wrappers for synchronous owner-thread callers that do not need a
+// separate finalization step. They import hidden data and publish only after the
+// entire package succeeds.
 [[nodiscard]] bool ImportZonePackage(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
