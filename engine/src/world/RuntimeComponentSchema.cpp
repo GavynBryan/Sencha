@@ -21,6 +21,7 @@
 #include <physics/components/RigidBody.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
@@ -61,4 +62,24 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 
     // Camera runtime data beyond the serializable CameraComponent.
     schema.Add<CameraRig>();
+}
+
+bool RuntimeComponentSchemaCoversSerializers(
+    const WorldComponentSchema& schema,
+    const ComponentSerializerRegistry& serializers,
+    std::string* missingComponent)
+{
+    for (const auto& serializer : serializers.Entries())
+    {
+        if (schema.Contains(serializer->TypeId()))
+            continue;
+
+        if (missingComponent != nullptr)
+            *missingComponent = std::string(serializer->JsonKey());
+        return false;
+    }
+
+    if (missingComponent != nullptr)
+        missingComponent->clear();
+    return true;
 }
