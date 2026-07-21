@@ -13,4 +13,5 @@
 #include <ecs/EntityRegistry.h>
 #include <ecs/Query.h>
 #include <ecs/QueryAccessors.h>
+#include <ecs/StoragePartitionId.h>
 #include <ecs/World.h>
