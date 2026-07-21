@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstdint>
 
 // Dense runtime identity for one storage partition inside an ECS World.
