@@ -67,7 +67,8 @@ LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
                              std::function<void()> invalidateShadows,
                              std::function<std::uint32_t()> countBakedDirectLights,
                              std::function<BakedPreviewState()> bakedPreviewState,
-                             std::function<void(bool)> setBakedPreview)
+                             std::function<void(bool)> setBakedPreview,
+                             std::function<ProbeSummary()> probeSummary)
     : Readout(readout)
     , Selection(selection)
     , Commands(commands)
@@ -75,6 +76,7 @@ LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
     , CountBakedDirectLights(std::move(countBakedDirectLights))
     , BakedPreview(std::move(bakedPreviewState))
     , SetBakedPreview(std::move(setBakedPreview))
+    , ProbeVolumes(std::move(probeSummary))
 {
 }
 
@@ -101,6 +103,27 @@ void LightingPanel::OnDraw()
                 ImGui::SetTooltip("Lights authored bake_contribution=direct: their diffuse\n"
                                   "bakes into the zone's lightmap atlas at cook and they are\n"
                                   "excluded from the runtime light set.");
+        }
+    }
+
+    // Probe volumes hold no runtime light slot either; their counts confirm
+    // the authoring took and the last cook baked them.
+    if (ProbeVolumes)
+    {
+        const ProbeSummary probes = ProbeVolumes();
+        if (probes.AuthoredVolumes > 0 || probes.CookedVolumes > 0)
+        {
+            if (probes.HasCook)
+                ImGui::Text("Probe volumes: %u (%u baked, %u probes)",
+                            probes.AuthoredVolumes, probes.CookedVolumes,
+                            probes.CookedProbes);
+            else
+                ImGui::Text("Probe volumes: %u (not yet cooked)",
+                            probes.AuthoredVolumes);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Irradiance probe volumes bake to per-zone .sprobe payloads\n"
+                                  "at cook; the runtime samples them for ambient light. Select\n"
+                                  "a volume to see its probe lattice in the viewport.");
         }
     }
 

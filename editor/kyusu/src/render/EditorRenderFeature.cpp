@@ -49,6 +49,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
     , ZoneBounds(WideLines)
+    , IrradianceVolumes(selection, WideLines, Lines)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -499,6 +500,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     else
         Meshes.DrawViewport(local, viewport, scene);
     Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    IrradianceVolumes.DrawViewport(local, viewport, scene);
     Highlight.DrawViewport(local, viewport, scene, *Session());
     if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
         ZoneBounds.DrawViewport(local, viewport, World, WorldView);

@@ -155,6 +155,9 @@ void DefaultRenderPipeline::PublishExtractionStats(
         ShadowRequests.size() + PointShadowRequests.size());
     stats.CasterDiffEvents = static_cast<std::uint32_t>(CasterEvents.size());
 
+    stats.ProbeVolumesResident =
+        static_cast<std::uint32_t>(ProbeVolumes.ResidentVolumeCount());
+
     const ShadowFrameStats& shadow = Residency.FrameStats();
     stats.ShadowSlotsHeld = shadow.Spot.HeldRequests + shadow.Point.HeldRequests;
     stats.ShadowCacheHits = shadow.Spot.CachedSlots + shadow.Point.CachedSlots;

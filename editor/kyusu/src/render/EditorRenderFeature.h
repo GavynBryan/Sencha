@@ -9,6 +9,7 @@
 #include "EditorBloomPass.h"
 #include "EditorWideLinePipeline.h"
 #include "GpuGridRenderer.h"
+#include "IrradianceVolumeRenderer.h"
 #include "render/ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
@@ -194,6 +195,7 @@ private:
     SelectionRenderer      Highlight;
     BrushFillRenderer      BrushFills;
     ZoneBoundsRenderer     ZoneBounds;
+    IrradianceVolumeRenderer IrradianceVolumes;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.

@@ -140,7 +140,9 @@ std::string PieDriver::Cook(const std::string& levelName)
     LastCookedZone_.clear();
     LastCookedMap_ = "levels/" + name;
     LastCook_ = CookRecord{ cooked.CookedScenePath, cooked.ContentHash,
-                            LastCook_.Serial + 1 };
+                            LastCook_.Serial + 1,
+                            static_cast<std::uint32_t>(cooked.ProbeVolumeCount),
+                            static_cast<std::uint32_t>(cooked.ProbeCount) };
     log.Info("cooked '{}' ({} cells) -> {}",
              LastCookedMap_, cooked.CellCount, cooked.CookedScenePath.generic_string());
     if (cooked.DirectLightCount > 0)

@@ -29,13 +29,24 @@ public:
         Stale,       // showing the last cook, document edited since (recook)
     };
 
+    // Irradiance probe volumes, as the panel sees them: what the document
+    // authors now, and what the last cook this session actually baked.
+    struct ProbeSummary
+    {
+        std::uint32_t AuthoredVolumes = 0;
+        std::uint32_t CookedVolumes = 0;
+        std::uint32_t CookedProbes = 0;
+        bool HasCook = false;
+    };
+
     LightingPanel(const ShadowResidencyReadout& readout,
                   SelectionService& selection,
                   CommandStack& commands,
                   std::function<void()> invalidateShadows,
                   std::function<std::uint32_t()> countBakedDirectLights,
                   std::function<BakedPreviewState()> bakedPreviewState = {},
-                  std::function<void(bool)> setBakedPreview = {});
+                  std::function<void(bool)> setBakedPreview = {},
+                  std::function<ProbeSummary()> probeSummary = {});
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -59,4 +70,5 @@ private:
     std::function<std::uint32_t()> CountBakedDirectLights;
     std::function<BakedPreviewState()> BakedPreview;
     std::function<void(bool)> SetBakedPreview;
+    std::function<ProbeSummary()> ProbeVolumes;
 };

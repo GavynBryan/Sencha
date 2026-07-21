@@ -80,6 +80,7 @@ void RenderStatsPanel::Draw()
 	ImGui::Text("  packed %u  dropped at cap %u  shadow-casting %u",
 	            stats->LightsVisible, stats->LightsDroppedAtCap,
 	            stats->ShadowCastingLights);
+	ImGui::Text("  probe volumes resident %u", stats->ProbeVolumesResident);
 
 	ImGui::Separator();
 	ImGui::Text("Shadows");

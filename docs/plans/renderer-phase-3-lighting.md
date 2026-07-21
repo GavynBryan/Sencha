@@ -2576,10 +2576,25 @@ rasterizer and atlas packer (`assets/cook/LightmapRaster`,
 `assets/cook/LightmapAtlasPack`), the `.smesh` vertex-format bump with its
 attribute plumbing, and the `DocumentCook`/`WorldCook` bake seam with
 staleness hashing. (7B's light-proximity tessellator also landed here first
-and was deleted with 7B.) 3B.1's remaining scope is the grid math, the
-hemisphere ray table, SH projection, dilation, `.sprobe` IO, and the neighbor
-halo; new bake modules belong beside the shipped ones under `assets/cook/`
-(cook-gated), not under `render/probes/` as sketched below. 3B.3 carries one
+and was deleted with 7B.) 3B.1 and 3B.2 have since shipped. The bake core
+(grid math, hemisphere ray table, SH projection, dilation, `.sprobe` IO,
+and the halo assembly kernel) landed under `assets/cook/` (cook-gated), not
+`render/probes/` as sketched below; the cook writes per-zone
+`probes.sprobe` payloads keyed into the cooked cache; the runtime makes
+volumes resident as zones stream (`ProbeVolumeSet`: three RGBA16F 3D
+textures per volume, cap 8, released with the zone registry) and samples
+them in the forward shader with the hemispheric fallback. Editor side: the
+viewport draws every volume's bounds box and the selected volume's probe
+lattice (derived exactly as the cook derives it), volume edits fold into
+the baked-preview stale badge, and the lighting panel reports authored vs
+last-cook volume/probe counts. The in-panel bake with progress/cancel was
+superseded by the lightmap flow's convention: Cook is the bake action and
+the stale badge is the refresh cue. Streaming leak validation is
+live-workflow: the ProbeVolumesResident counter (stats panel and capture
+export) must return to zero on zone unload. Still open from this stage's
+list: feeding neighbor-zone halo geometry through the cook drivers (the
+kernel accepts it; the single-document cook passes none), and the measured
+probe-sampling GPU cost against the Section 14 budget. 3B.3 carries one
 amendment: per the re-amended 7A.6, weigh AO as a zone-atlas channel first
 (the density question that forced adaptive tessellation dissolves in texel
 space); if it lands as vertex data instead, the slot is offset 52, location

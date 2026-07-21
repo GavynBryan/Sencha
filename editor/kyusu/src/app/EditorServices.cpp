@@ -39,6 +39,7 @@
 #include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
 #include <assets/cook/TextureCook.h>
 #include <render/LightComponentTypes.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <assets/hotreload/AssetHotReloader.h>
@@ -521,6 +522,24 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
                 }
             }
             builder->SetLightmapPreviewEnabled(enabled);
+        },
+        [this]() -> LightingPanel::ProbeSummary {
+            LightingPanel::ProbeSummary summary;
+            const World& world =
+                Workspace->World.FocusDocument().GetRegistry().Components;
+            if (world.IsRegistered<IrradianceVolumeComponent>())
+                world.ForEachComponent<IrradianceVolumeComponent>(
+                    [&](EntityId, const IrradianceVolumeComponent&) {
+                        ++summary.AuthoredVolumes;
+                    });
+            if (const PieDriver::CookRecord* record =
+                    Pie != nullptr ? Pie->LastCookRecord() : nullptr)
+            {
+                summary.HasCook = true;
+                summary.CookedVolumes = record->ProbeVolumeCount;
+                summary.CookedProbes = record->ProbeCount;
+            }
+            return summary;
         }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },

@@ -43,6 +43,11 @@ struct RenderStats
     std::uint64_t ShadowTileBytes = 0;
     std::uint32_t CasterDiffEvents = 0;
 
+    // Baked lighting residency: probe volumes holding GPU 3D textures.
+    // Zone streaming drives this up and down; a stale nonzero count after
+    // an unload is a leak.
+    std::uint32_t ProbeVolumesResident = 0;
+
     // Frame services.
     std::uint64_t ScratchHighWaterBytes = 0;
 };

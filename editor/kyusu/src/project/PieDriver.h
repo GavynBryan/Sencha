@@ -39,6 +39,8 @@ public:
         std::filesystem::path CookedScenePath;
         std::uint64_t ContentHash = 0;
         std::uint64_t Serial = 0;
+        std::uint32_t ProbeVolumeCount = 0; // authored volumes baked to .sprobe
+        std::uint32_t ProbeCount = 0;       // total probes across them
     };
     [[nodiscard]] const CookRecord* LastCookRecord() const
     {

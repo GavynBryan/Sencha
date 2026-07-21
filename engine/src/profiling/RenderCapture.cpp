@@ -52,6 +52,7 @@ namespace
 			{ "point_shadow_cubes_held_count", static_cast<double>(stats.PointShadowCubesHeld) },
 			{ "shadow_tile_bytes", static_cast<double>(stats.ShadowTileBytes) },
 			{ "caster_diff_events_count", static_cast<double>(stats.CasterDiffEvents) },
+			{ "probe_volumes_resident_count", static_cast<double>(stats.ProbeVolumesResident) },
 			{ "scratch_high_water_bytes", static_cast<double>(stats.ScratchHighWaterBytes) },
 		};
 		return fields;

@@ -14,6 +14,7 @@
 #include <ecs/World.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/ShadowCasterExtractionSystem.h>
 #include <render/SpotLightComponent.h>
@@ -131,7 +132,28 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
     BuildLights(document, /*skipDirectLights*/ preview);
     BuildShadowCasters(document);
 
-    CurrentDocHash = BrushHash ^ (LightsHash * 0x9E3779B97F4A7C15ull);
+    // Probe volumes are cook inputs (they select the .sprobe lattice), so
+    // editing one restales the badge like a brush or light edit does. No
+    // visibility filter: the cook bakes hidden volumes too.
+    uint64_t probeVolumesHash = kFnvOffset;
+    const EditorScene& scene = document.GetScene();
+    const World& world = scene.GetRegistry().Components;
+    if (world.IsRegistered<IrradianceVolumeComponent>())
+    {
+        world.ForEachComponent<IrradianceVolumeComponent>(
+            [&](EntityId entity, const IrradianceVolumeComponent& volume)
+            {
+                const Transform3f* transform = scene.TryGetTransform(entity);
+                if (transform == nullptr)
+                    return;
+                HashBytes(probeVolumesHash, &transform->Position,
+                          sizeof(transform->Position));
+                HashBytes(probeVolumesHash, &volume, sizeof(volume));
+            });
+    }
+
+    CurrentDocHash = BrushHash ^ (LightsHash * 0x9E3779B97F4A7C15ull)
+        ^ (probeVolumesHash * 0xC2B2AE3D27D4EB4Full);
     PreviewStale = PreviewRegistry != nullptr && CurrentDocHash != PreviewDocHash;
 }
 

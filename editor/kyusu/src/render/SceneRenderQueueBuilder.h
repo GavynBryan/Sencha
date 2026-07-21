@@ -163,8 +163,9 @@ private:
 
     // The cooked-scene snapshot backing the baked-lighting preview, loaded
     // through the editor's asset caches. DocHash captures the document state
-    // (brush + light content) the snapshot corresponds to; divergence flags
-    // the stale badge but keeps rendering the snapshot (no flicker).
+    // (brush, light, and probe-volume content) the snapshot corresponds to;
+    // divergence flags the stale badge but keeps rendering the snapshot (no
+    // flicker).
     std::unique_ptr<Registry> PreviewRegistry;
     std::uint64_t PreviewDocHash = 0;
     std::uint64_t CurrentDocHash = 0;
