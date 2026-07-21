@@ -133,6 +133,21 @@ std::size_t RuntimeWorld::ZoneCount() const
     return count;
 }
 
+bool RuntimeWorld::MoveEntityToZone(EntityId entity, ZoneId destination)
+{
+    const RuntimeZoneRecord* record = FindZone(destination);
+    if (record == nullptr || record->State != RuntimeZoneLoadState::Resident)
+        return false;
+    return Entities_.MoveEntityToPartition(entity, record->Partition);
+}
+
+bool RuntimeWorld::MoveEntityToPersistent(EntityId entity)
+{
+    return Entities_.MoveEntityToPartition(
+        entity,
+        PersistentStoragePartition);
+}
+
 bool RuntimeWorld::RequestParticipation(
     ZoneId zone,
     ZoneParticipation participation)
