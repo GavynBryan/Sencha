@@ -1,0 +1,29 @@
+name: Fix partition batch paths
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-partition-batch-paths.yml'
+      - 'tools/temporary/fix_partition_batch_paths.py'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Correct batch partition bookkeeping
+        run: python3 tools/temporary/fix_partition_batch_paths.py
+      - name: Commit corrected source
+        run: |
+          git config user.name "sencha-partition-migration"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(ecs): correct batch partition bookkeeping"
+          git push origin HEAD:${GITHUB_REF_NAME}
