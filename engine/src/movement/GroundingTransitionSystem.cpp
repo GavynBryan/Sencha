@@ -1,40 +1,65 @@
 #include <movement/GroundingTransitionSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementModes.h>
 #include <physics/components/CharacterController.h>
-#include <world/registry/Registry.h>
 
 namespace
 {
-    // Base priority for the built-in ground/air request; game modes outrank it.
-    constexpr int kGroundingPriority = 1;
-}
+constexpr int kGroundingPriority = 1;
 
-void RequestGroundingLocomotionModes(World& world)
+void RequestGroundingLocomotionModesImpl(
+    World& world,
+    const StoragePartitionSet* partitions)
 {
-    if (!world.IsRegistered<CharacterController>() || !world.IsRegistered<LocomotionModeRequest>())
+    if (!world.IsRegistered<CharacterController>()
+        || !world.IsRegistered<LocomotionModeRequest>())
+    {
         return;
+    }
 
     const ComponentTypeId onGround = ResolveComponentTypeId<OnGround>();
     const ComponentTypeId inAir = ResolveComponentTypeId<InAir>();
+    Query<Read<CharacterController>, With<LocomotionModeRequest>> query(world);
 
-    std::as_const(world).ForEachComponent<CharacterController>(
-        [&](EntityId entity, const CharacterController& controller)
+    const auto visit = [&](auto& view)
     {
-        if (!world.HasComponent<LocomotionModeRequest>(entity))
-            return;
-        RequestLocomotionMode(world, entity, controller.Grounded ? onGround : inAir,
-                              kGroundingPriority);
-    });
+        const auto controllers = view.template Read<CharacterController>();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
+        {
+            RequestLocomotionMode(
+                world,
+                view.Entity(i),
+                controllers[i].Grounded ? onGround : inAir,
+                kGroundingPriority);
+        }
+    };
+
+    if (partitions != nullptr)
+        query.ForEachChunkIn(*partitions, visit);
+    else
+        query.ForEachChunk(visit);
+}
+} // namespace
+
+void RequestGroundingLocomotionModes(World& world)
+{
+    RequestGroundingLocomotionModesImpl(world, nullptr);
+}
+
+void RequestGroundingLocomotionModes(
+    World& world,
+    const StoragePartitionSet& partitions)
+{
+    RequestGroundingLocomotionModesImpl(world, &partitions);
 }
 
 void GroundingTransitionSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    for (Registry* reg : ctx.ActiveRegistries)
-        Step(reg->Components);
+    RequestGroundingLocomotionModes(ctx.Entities, ctx.Partitions);
 }
 
 void GroundingTransitionSystem::Step(World& world)
