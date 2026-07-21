@@ -5,6 +5,7 @@
 
 #include <ecs/CommandBuffer.h>
 #include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/Collider.h>
@@ -18,17 +19,55 @@ CollisionLayer DeriveLayer(BodyMotion motion, bool isTrigger)
 {
     if (isTrigger)
         return CollisionLayer::Trigger;
-    return motion == BodyMotion::Static ? CollisionLayer::Static : CollisionLayer::Moving;
+    return motion == BodyMotion::Static
+        ? CollisionLayer::Static
+        : CollisionLayer::Moving;
 }
 
 BodyTransform ReadPose(const World& world, EntityId entity)
 {
     if (world.IsRegistered<WorldTransform>())
-        if (const WorldTransform* wt = world.TryGet<WorldTransform>(entity))
-            return BodyTransform{ wt->Value.Position, wt->Value.Rotation };
-    if (const LocalTransform* lt = world.TryGet<LocalTransform>(entity))
-        return BodyTransform{ lt->Value.Position, lt->Value.Rotation };
+    {
+        if (const WorldTransform* transform =
+                world.TryGet<WorldTransform>(entity))
+        {
+            return BodyTransform{
+                transform->Value.Position,
+                transform->Value.Rotation,
+            };
+        }
+    }
+
+    if (const LocalTransform* transform =
+            world.TryGet<LocalTransform>(entity))
+    {
+        return BodyTransform{
+            transform->Value.Position,
+            transform->Value.Rotation,
+        };
+    }
     return BodyTransform{ Vec3d::Zero(), Quatf::Identity() };
+}
+
+bool SamePartitions(
+    const StoragePartitionSet& a,
+    const StoragePartitionSet& b)
+{
+    if (a.Size() != b.Size())
+        return false;
+    for (StoragePartitionId partition : a.Members())
+        if (!b.Contains(partition))
+            return false;
+    return true;
+}
+
+void CopyPartitions(
+    StoragePartitionSet& destination,
+    const StoragePartitionSet& source)
+{
+    destination.Clear();
+    for (StoragePartitionId partition : source.Members())
+        destination.Add(partition);
 }
 } // namespace
 
@@ -42,8 +81,11 @@ struct RigidBodyBinding::SceneState
     }
 
     CommandBuffer Commands;
-    Query<Read<LocalTransform>, Read<RigidBody>, Read<PhysicsBodyLink>>   KinematicPush;
-    Query<Write<LocalTransform>, Write<RigidBody>, Read<PhysicsBodyLink>> DynamicPull;
+    Query<Read<LocalTransform>, Read<RigidBody>, Read<PhysicsBodyLink>>
+        KinematicPush;
+    Query<Write<LocalTransform>, Write<RigidBody>, Read<PhysicsBodyLink>>
+        DynamicPull;
+    StoragePartitionSet ActivePartitions;
 };
 
 RigidBodyBinding::RigidBodyBinding(PhysicsWorld& world)
@@ -53,14 +95,16 @@ RigidBodyBinding::RigidBodyBinding(PhysicsWorld& world)
 
 RigidBodyBinding::~RigidBodyBinding()
 {
-    for (const BodyRecord& rec : Owned)
-        Simulation->RemoveBody(rec.Body);
+    for (const BodyRecord& record : Owned)
+        Simulation->RemoveBody(record.Body);
 }
 
 bool RigidBodyBinding::Ready(const World& world) const
 {
-    return world.IsRegistered<Collider>() && world.IsRegistered<RigidBody>()
-        && world.IsRegistered<PhysicsBodyLink>() && world.IsRegistered<LocalTransform>();
+    return world.IsRegistered<Collider>()
+        && world.IsRegistered<RigidBody>()
+        && world.IsRegistered<PhysicsBodyLink>()
+        && world.IsRegistered<LocalTransform>();
 }
 
 RigidBodyBinding::SceneState& RigidBodyBinding::EnsureState(World& world)
@@ -70,18 +114,53 @@ RigidBodyBinding::SceneState& RigidBodyBinding::EnsureState(World& world)
     return *State;
 }
 
-void RigidBodyBinding::Reconcile(World& world, SceneState& state)
+void RigidBodyBinding::CaptureDynamicState(
+    World& world,
+    const BodyRecord& record)
+{
+    if (!world.IsAlive(record.Entity))
+        return;
+
+    RigidBody* body = world.TryGet<RigidBody>(record.Entity);
+    LocalTransform* transform =
+        world.TryGet<LocalTransform>(record.Entity);
+    if (body == nullptr || transform == nullptr
+        || body->Motion != BodyMotion::Dynamic)
+    {
+        return;
+    }
+
+    const BodyTransform pose =
+        Simulation->GetBodyTransform(record.Body);
+    transform->Value.Position = pose.Position;
+    transform->Value.Rotation = pose.Rotation;
+    body->LinearVelocity =
+        Simulation->GetLinearVelocity(record.Body);
+    body->AngularVelocity =
+        Simulation->GetAngularVelocity(record.Body);
+}
+
+void RigidBodyBinding::Reconcile(
+    World& world,
+    SceneState& state,
+    const StoragePartitionSet& partitions)
 {
     ++ReconcileCount;
     const World& readOnly = world;
 
-    readOnly.ForEachComponent<Collider>([&](EntityId entity, const Collider& collider)
+    readOnly.ForEachComponent<Collider>(
+        [&](EntityId entity, const Collider& collider)
     {
-        if (world.HasComponent<PhysicsBodyLink>(entity))
+        if (!partitions.Contains(world.GetEntityPartition(entity))
+            || world.HasComponent<PhysicsBodyLink>(entity))
+        {
             return;
+        }
 
         const RigidBody* body = readOnly.TryGet<RigidBody>(entity);
-        const BodyMotion motion = body != nullptr ? body->Motion : BodyMotion::Static;
+        const BodyMotion motion = body != nullptr
+            ? body->Motion
+            : BodyMotion::Static;
         const BodyTransform pose = ReadPose(readOnly, entity);
 
         BodyDesc desc;
@@ -108,118 +187,181 @@ void RigidBodyBinding::Reconcile(World& world, SceneState& state)
         Owned.push_back(BodyRecord{ entity, id });
         if (body != nullptr)
         {
-            Simulation->SetLinearVelocity(id, body->LinearVelocity);
-            Simulation->SetAngularVelocity(id, body->AngularVelocity);
+            Simulation->SetLinearVelocity(
+                id,
+                body->LinearVelocity);
+            Simulation->SetAngularVelocity(
+                id,
+                body->AngularVelocity);
         }
-        state.Commands.AddComponent<PhysicsBodyLink>(entity, PhysicsBodyLink{ id });
+        state.Commands.AddComponent<PhysicsBodyLink>(
+            entity,
+            PhysicsBodyLink{ id });
     });
 
-    for (size_t i = 0; i < Owned.size();)
+    for (size_t index = 0; index < Owned.size();)
     {
-        const EntityId entity = Owned[i].Entity;
-        const bool alive = world.IsAlive(entity);
-        const bool hasCollider = alive && world.HasComponent<Collider>(entity);
-        if (!alive || !hasCollider)
+        const BodyRecord record = Owned[index];
+        const bool alive = world.IsAlive(record.Entity);
+        const bool hasCollider =
+            alive && world.HasComponent<Collider>(record.Entity);
+        const bool active = alive
+            && partitions.Contains(
+                world.GetEntityPartition(record.Entity));
+        if (!alive || !hasCollider || !active)
         {
-            Simulation->RemoveBody(Owned[i].Body);
-            if (alive)
-                state.Commands.RemoveComponent<PhysicsBodyLink>(entity);
-            Owned[i] = Owned.back();
+            CaptureDynamicState(world, record);
+            Simulation->RemoveBody(record.Body);
+            if (alive
+                && world.HasComponent<PhysicsBodyLink>(record.Entity))
+            {
+                state.Commands.RemoveComponent<PhysicsBodyLink>(
+                    record.Entity);
+            }
+            Owned[index] = Owned.back();
             Owned.pop_back();
+            continue;
         }
-        else
-        {
-            ++i;
-        }
+        ++index;
     }
 
     state.Commands.Flush();
+    CopyPartitions(state.ActivePartitions, partitions);
 }
 
-void RigidBodyBinding::SyncToPhysics(World& world)
+void RigidBodyBinding::SyncToPhysics(
+    World& world,
+    const StoragePartitionSet& partitions)
 {
-    assert(!(world.IsRegistered<Collider>() && !world.IsRegistered<PhysicsBodyLink>())
-           && "Collider registered without PhysicsBodyLink: call RegisterPhysicsComponents.");
+    assert(!(world.IsRegistered<Collider>()
+             && !world.IsRegistered<PhysicsBodyLink>())
+           && "Collider registered without PhysicsBodyLink");
 
     if (!Ready(world))
         return;
 
     SceneState& state = EnsureState(world);
-
     const uint64_t version = world.StructuralVersion();
-    if (version != LastStructuralVersion)
+    if (version != LastStructuralVersion
+        || !SamePartitions(state.ActivePartitions, partitions))
     {
-        Reconcile(world, state);
+        Reconcile(world, state, partitions);
         LastStructuralVersion = world.StructuralVersion();
     }
 
-    state.KinematicPush.ForEachChunk([&](auto& view)
+    state.KinematicPush.ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto transforms = view.template Read<LocalTransform>();
         const auto bodies = view.template Read<RigidBody>();
         const auto links = view.template Read<PhysicsBodyLink>();
-        for (uint32_t i = 0; i < view.Count(); ++i)
+        for (uint32_t index = 0; index < view.Count(); ++index)
         {
-            if (bodies[i].Motion == BodyMotion::Kinematic)
+            if (bodies[index].Motion == BodyMotion::Kinematic)
             {
                 Simulation->SetBodyTransform(
-                    links[i].Body, transforms[i].Value.Position, transforms[i].Value.Rotation);
+                    links[index].Body,
+                    transforms[index].Value.Position,
+                    transforms[index].Value.Rotation);
             }
-            else if (bodies[i].Motion == BodyMotion::Dynamic)
+            else if (bodies[index].Motion == BodyMotion::Dynamic)
             {
-                // SetGravityFactor does not wake a sleeping body. Compare the
-                // applied backend value so a runtime edit wakes exactly once,
-                // while unchanged bodies remain eligible for sleep.
-                const float applied = Simulation->GetGravityScale(links[i].Body);
-                if (std::abs(applied - bodies[i].GravityScale) > 1e-6f)
+                const float applied =
+                    Simulation->GetGravityScale(links[index].Body);
+                if (std::abs(applied - bodies[index].GravityScale)
+                    > 1e-6f)
                 {
-                    Simulation->SetGravityScale(links[i].Body, bodies[i].GravityScale);
-                    Simulation->WakeBody(links[i].Body);
+                    Simulation->SetGravityScale(
+                        links[index].Body,
+                        bodies[index].GravityScale);
+                    Simulation->WakeBody(links[index].Body);
                 }
             }
         }
     });
 }
 
-void RigidBodyBinding::Evict(World& world)
-{
-    if (!Ready(world) || Owned.empty())
-        return;
-
-    SyncFromPhysics(world);
-
-    SceneState& state = EnsureState(world);
-    for (const BodyRecord& rec : Owned)
-    {
-        Simulation->RemoveBody(rec.Body);
-        if (world.IsAlive(rec.Entity) && world.HasComponent<PhysicsBodyLink>(rec.Entity))
-            state.Commands.RemoveComponent<PhysicsBodyLink>(rec.Entity);
-    }
-    Owned.clear();
-    state.Commands.Flush();
-}
-
-void RigidBodyBinding::SyncFromPhysics(World& world)
+void RigidBodyBinding::SyncFromPhysics(
+    World& world,
+    const StoragePartitionSet& partitions)
 {
     if (!Ready(world) || Owned.empty())
         return;
 
     SceneState& state = EnsureState(world);
-
-    state.DynamicPull.ForEachChunk([&](auto& view)
+    state.DynamicPull.ForEachChunkIn(partitions, [&](auto& view)
     {
         auto transforms = view.template Write<LocalTransform>();
         auto bodies = view.template Write<RigidBody>();
         const auto links = view.template Read<PhysicsBodyLink>();
-        for (uint32_t i = 0; i < view.Count(); ++i)
+        for (uint32_t index = 0; index < view.Count(); ++index)
         {
-            if (bodies[i].Motion != BodyMotion::Dynamic)
+            if (bodies[index].Motion != BodyMotion::Dynamic)
                 continue;
-            const BodyTransform pose = Simulation->GetBodyTransform(links[i].Body);
-            transforms[i].Value.Position = pose.Position;
-            transforms[i].Value.Rotation = pose.Rotation;
-            bodies[i].LinearVelocity = Simulation->GetLinearVelocity(links[i].Body);
-            bodies[i].AngularVelocity = Simulation->GetAngularVelocity(links[i].Body);
+
+            const BodyTransform pose =
+                Simulation->GetBodyTransform(links[index].Body);
+            transforms[index].Value.Position = pose.Position;
+            transforms[index].Value.Rotation = pose.Rotation;
+            bodies[index].LinearVelocity =
+                Simulation->GetLinearVelocity(links[index].Body);
+            bodies[index].AngularVelocity =
+                Simulation->GetAngularVelocity(links[index].Body);
         }
     });
+}
+
+void RigidBodyBinding::EvictPartition(
+    World& world,
+    StoragePartitionId partition)
+{
+    if (!Ready(world) || Owned.empty())
+        return;
+
+    SceneState& state = EnsureState(world);
+    for (size_t index = 0; index < Owned.size();)
+    {
+        const BodyRecord record = Owned[index];
+        if (!world.IsAlive(record.Entity)
+            || world.GetEntityPartition(record.Entity) != partition)
+        {
+            ++index;
+            continue;
+        }
+
+        CaptureDynamicState(world, record);
+        Simulation->RemoveBody(record.Body);
+        if (world.HasComponent<PhysicsBodyLink>(record.Entity))
+        {
+            state.Commands.RemoveComponent<PhysicsBodyLink>(
+                record.Entity);
+        }
+        Owned[index] = Owned.back();
+        Owned.pop_back();
+    }
+    state.Commands.Flush();
+    state.ActivePartitions.Remove(partition);
+    LastStructuralVersion = world.StructuralVersion();
+}
+
+void RigidBodyBinding::EvictAll(World& world)
+{
+    if (!Ready(world) || Owned.empty())
+        return;
+
+    SceneState& state = EnsureState(world);
+    for (const BodyRecord& record : Owned)
+    {
+        CaptureDynamicState(world, record);
+        Simulation->RemoveBody(record.Body);
+        if (world.IsAlive(record.Entity)
+            && world.HasComponent<PhysicsBodyLink>(record.Entity))
+        {
+            state.Commands.RemoveComponent<PhysicsBodyLink>(
+                record.Entity);
+        }
+    }
+    Owned.clear();
+    state.Commands.Flush();
+    state.ActivePartitions.Clear();
+    LastStructuralVersion = world.StructuralVersion();
 }
