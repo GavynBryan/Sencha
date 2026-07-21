@@ -24,7 +24,7 @@ StoragePartitionSet Active(
     StoragePartitionId second)
 {
     StoragePartitionSet partitions;
-    partitions.Add(PersistentStoragePartition);
+    partitions.Add(StoragePartitionId::Default());
     partitions.Add(first);
     partitions.Add(second);
     return partitions;
@@ -108,7 +108,7 @@ TEST(PhysicsPartitionMigration, MovingIntoDormantPartitionEvictsThenRestores)
     RigidBodyBinding binding(physics);
 
     StoragePartitionSet active;
-    active.Add(PersistentStoragePartition);
+    active.Add(StoragePartitionId::Default());
     active.Add(first);
 
     const EntityId projectile = SpawnProjectile(world, first);
@@ -133,7 +133,7 @@ TEST(PhysicsPartitionMigration, MovingIntoDormantPartitionEvictsThenRestores)
     EXPECT_TRUE(world.HasComponent<PhysicsBodyLink>(projectile));
     EXPECT_EQ(binding.BodyCount(), 1u);
     EXPECT_EQ(physics.BodyCount(), 1u);
-    EXPECT_EQ(
+    EXPECT_FLOAT_EQ(
         physics.GetLinearVelocity(
             world.TryGet<PhysicsBodyLink>(projectile)->Body).X,
         4.0f);
