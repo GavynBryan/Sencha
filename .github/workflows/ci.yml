@@ -27,6 +27,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
 
+      - name: Export temporary source snapshot
+        run: tar --exclude=.git -czf sencha-source.tar.gz .
+
+      - name: Upload temporary source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sencha-source
+          path: sencha-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install build and Vulkan dependencies
         run: |
           sudo apt-get update
