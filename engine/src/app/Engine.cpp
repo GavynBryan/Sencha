@@ -39,6 +39,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <string>
 #include <utility>
 
 Engine::Engine(EngineConfig engineConfig)
@@ -359,11 +360,29 @@ int Engine::Run(Game& game)
     // Serializers and runtime storage share stable component identities but are
     // independent registries. The editor calls only the serializer hook; the
     // runtime additionally composes and seals the complete World vocabulary.
-    game.OnRegisterComponents(DefaultComponentSerializerRegistry());
+    ComponentSerializerRegistry& serializers =
+        DefaultComponentSerializerRegistry();
+    game.OnRegisterComponents(serializers);
 
     RuntimeComponentSchemaState = WorldComponentSchema{};
     RegisterEngineRuntimeComponents(RuntimeComponentSchemaState);
     game.OnRegisterRuntimeComponents(RuntimeComponentSchemaState);
+
+    std::string missingRuntimeComponent;
+    if (!RuntimeComponentSchemaCoversSerializers(
+            RuntimeComponentSchemaState,
+            serializers,
+            &missingRuntimeComponent))
+    {
+        std::fprintf(
+            stderr,
+            "Runtime component schema is missing storage for serialized component '%s'.\n",
+            missingRuntimeComponent.c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+
     RuntimeComponentSchemaState.Seal();
 
     ConsoleService& console = Console();
@@ -427,7 +446,12 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
-    game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
+
+    // Symmetric teardown of OnRegisterComponents above: retract the game's
+    // serializers while the module is still mapped (the host unloads it after Run
+    // returns). A module-owned serializer left in the registry would be freed at
+    // exit, after dlclose, against unmapped code.
+    game.OnUnregisterComponents(serializers);
 
     // Game component entries contain concrete registration function pointers
     // instantiated in the game module. Clear them before Engine::Run returns and
