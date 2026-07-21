@@ -2,90 +2,110 @@
 
 #include <math/geometry/3d/Sphere.h>
 #include <render/LightSelection.h>
-#include <render/PointLightComponent.h>
 #include <render/RenderEntityKey.h>
-#include <render/SpotLightComponent.h>
-#include <world/registry/Registry.h>
-#include <world/transform/TransformComponents.h>
 
 #include <vector>
 
-void LightExtractionSystem::Extract(std::span<Registry*> registries,
-                                    const CameraRenderData& camera,
-                                    RenderLightSet& lights,
-                                    std::vector<SpotShadowRequest>& shadowRequests,
-                                    std::vector<PointShadowRequest>& pointShadowRequests,
-                                    LightExtractionCounts* counts) const
+namespace
 {
+// One World means one entity namespace: generational EntityId is the stable
+// ordering identity, and the registry-era key fields stay at their defaults.
+RenderEntityKey MakeWorldEntityKey(EntityId entity)
+{
+    return RenderEntityKey{ .Entity = entity };
+}
+} // namespace
+
+void LightExtractionSystem::Extract(
+    const World& world,
+    const StoragePartitionSet& partitions,
+    const CameraRenderData& camera,
+    RenderLightSet& lights,
+    std::vector<SpotShadowRequest>& shadowRequests,
+    std::vector<PointShadowRequest>& pointShadowRequests,
+    LightExtractionCounts* counts)
+{
+    if (LastWorld != &world)
+    {
+        PointQuery.reset();
+        SpotQuery.reset();
+        LastWorld = &world;
+    }
+
     std::vector<ForwardLightCandidate> candidates;
 
-    for (Registry* registry : registries)
+    if (world.IsRegistered<WorldTransform>()
+        && world.IsRegistered<PointLightComponent>())
     {
-        if (registry == nullptr)
-            continue;
+        if (!PointQuery.has_value())
+            PointQuery.emplace(world);
 
-        const World& world = registry->Components;
-        if (!world.IsRegistered<WorldTransform>())
-            continue;
-
-        if (world.IsRegistered<PointLightComponent>())
+        PointQuery->ForEachChunkIn(partitions, [&](auto& view)
         {
-            world.ForEachComponent<PointLightComponent>(
-                [&](EntityId entity, const PointLightComponent& light)
+            const auto transforms = view.template Read<WorldTransform>();
+            const auto pointLights = view.template Read<PointLightComponent>();
+            for (uint32_t i = 0; i < view.Count(); ++i)
+            {
+                const PointLightComponent& light = pointLights[i];
+                if (!light.Enabled
+                    || !IsUsableForwardLight(light.Intensity, light.Range))
                 {
-                    if (!light.Enabled
-                        || !IsUsableForwardLight(light.Intensity, light.Range))
-                        return;
-                    // Baked-direct lights contribute only through the zone
-                    // lightmap; they never enter the runtime forward set.
-                    if (light.BakeContribution == LightBakeContribution::Direct)
-                        return;
+                    continue;
+                }
+                // Baked-direct lights contribute only through the zone
+                // lightmap; they never enter the runtime forward set.
+                if (light.BakeContribution == LightBakeContribution::Direct)
+                    continue;
 
-                    const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
-                    if (transform == nullptr)
-                        return;
+                const Vec<3>& position = transforms[i].Value.Position;
+                const Sphere bounds(position, light.Range);
+                if (!camera.ViewFrustum.IntersectsSphere(bounds))
+                    continue;
 
-                    const Vec<3>& position = transform->Value.Position;
-                    const Sphere bounds(position, light.Range);
-                    if (!camera.ViewFrustum.IntersectsSphere(bounds))
-                        return;
-
-                    candidates.push_back(MakePointLightCandidate(
-                        MakeRenderEntityKey(*registry, entity), position,
-                        light, lights.ShadowSoftness));
-                });
-        }
-
-        if (world.IsRegistered<SpotLightComponent>())
-        {
-            world.ForEachComponent<SpotLightComponent>(
-                [&](EntityId entity, const SpotLightComponent& light)
-                {
-                    if (!light.Enabled
-                        || !IsUsableForwardLight(light.Intensity, light.Range))
-                        return;
-                    // Baked-direct lights contribute only through the zone
-                    // lightmap; they never enter the runtime forward set.
-                    if (light.BakeContribution == LightBakeContribution::Direct)
-                        return;
-
-                    const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
-                    if (transform == nullptr)
-                        return;
-
-                    const Vec<3>& position = transform->Value.Position;
-                    const Vec<3> direction = transform->Value.Forward();
-                    const Sphere bounds = MakeSpotBoundingSphere(
-                        position, direction, light.Range, light.OuterAngleDegrees);
-                    if (!camera.ViewFrustum.IntersectsSphere(bounds))
-                        return;
-
-                    candidates.push_back(MakeSpotLightCandidate(
-                        MakeRenderEntityKey(*registry, entity), transform->Value,
-                        light, lights.ShadowSoftness));
-                });
-        }
+                candidates.push_back(MakePointLightCandidate(
+                    MakeWorldEntityKey(view.Entity(i)), position,
+                    light, lights.ShadowSoftness));
+            }
+        });
     }
+
+    if (world.IsRegistered<WorldTransform>()
+        && world.IsRegistered<SpotLightComponent>())
+    {
+        if (!SpotQuery.has_value())
+            SpotQuery.emplace(world);
+
+        SpotQuery->ForEachChunkIn(partitions, [&](auto& view)
+        {
+            const auto transforms = view.template Read<WorldTransform>();
+            const auto spotLights = view.template Read<SpotLightComponent>();
+            for (uint32_t i = 0; i < view.Count(); ++i)
+            {
+                const SpotLightComponent& light = spotLights[i];
+                if (!light.Enabled
+                    || !IsUsableForwardLight(light.Intensity, light.Range))
+                {
+                    continue;
+                }
+                // Baked-direct lights contribute only through the zone
+                // lightmap; they never enter the runtime forward set.
+                if (light.BakeContribution == LightBakeContribution::Direct)
+                    continue;
+
+                const Vec<3>& position = transforms[i].Value.Position;
+                const Vec<3> direction = transforms[i].Value.Forward();
+                const Sphere bounds = MakeSpotBoundingSphere(
+                    position, direction, light.Range, light.OuterAngleDegrees);
+                if (!camera.ViewFrustum.IntersectsSphere(bounds))
+                    continue;
+
+                candidates.push_back(MakeSpotLightCandidate(
+                    MakeWorldEntityKey(view.Entity(i)), transforms[i].Value,
+                    light, lights.ShadowSoftness));
+            }
+        });
+    }
+
     ForwardLightSelectionCounts selectionCounts;
     SelectForwardLights(candidates, camera.Position, lights, shadowRequests,
                         pointShadowRequests, &selectionCounts);
@@ -94,4 +114,21 @@ void LightExtractionSystem::Extract(std::span<Registry*> registries,
         counts->FrustumCandidates = selectionCounts.Candidates;
         counts->Packed = selectionCounts.Packed;
     }
+}
+
+void LightExtractionSystem::Extract(
+    const World& world,
+    const CameraRenderData& camera,
+    RenderLightSet& lights,
+    std::vector<SpotShadowRequest>& shadowRequests,
+    std::vector<PointShadowRequest>& pointShadowRequests,
+    LightExtractionCounts* counts)
+{
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    for (EntityId entity : world.GetAliveEntities())
+        partitions.Add(world.GetEntityPartition(entity));
+
+    Extract(world, partitions, camera, lights, shadowRequests,
+            pointShadowRequests, counts);
 }
