@@ -136,7 +136,7 @@ TEST(UnifiedRuntimeWorld, FrameViewContainsPersistentAndParticipatingPartitions)
         runtime.AttachZone(ZoneId{ 3 }, ZoneParticipation{}).Partition;
     ProcessResidency(runtime);
 
-    const FrameZoneView view = runtime.BuildFrameView();
+    const FrameZoneView& view = runtime.BuildFrameView();
 
     EXPECT_EQ(view.Entities, &runtime.Entities());
     EXPECT_TRUE(view.Resident.Contains(PersistentStoragePartition));
@@ -169,7 +169,7 @@ TEST(UnifiedRuntimeWorld, MidFrameParticipationRequestIsDeferred)
         runtime.AttachZone(ZoneId{ 1 }, ZoneParticipation{}).Partition;
     ProcessResidency(runtime);
 
-    const FrameZoneView before = runtime.BuildFrameView();
+    const FrameZoneView& before = runtime.BuildFrameView();
     EXPECT_FALSE(before.Logic.Contains(partition));
     ASSERT_TRUE(runtime.RequestParticipation(ZoneId{ 1 }, LogicOnly()));
     EXPECT_FALSE(before.Logic.Contains(partition));
@@ -183,7 +183,7 @@ TEST(UnifiedRuntimeWorld, MidFrameParticipationRequestIsDeferred)
     EXPECT_EQ(changes[0].Current, LogicOnly());
     ProcessResidency(runtime);
 
-    const FrameZoneView after = runtime.BuildFrameView();
+    const FrameZoneView& after = runtime.BuildFrameView();
     EXPECT_TRUE(after.Logic.Contains(partition));
     runtime.EndFrameView();
 }

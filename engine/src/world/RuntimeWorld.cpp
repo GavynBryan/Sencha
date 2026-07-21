@@ -17,6 +17,7 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
 
     // Partition zero is persistent and never receives a RuntimeZoneRecord.
     ZonesByPartition_.resize(1);
+    FrameViewScratch_.Entities = &Entities_;
 }
 
 RuntimeWorld::~RuntimeWorld()
@@ -259,21 +260,24 @@ void RuntimeWorld::FinalizeResidencyProcessing()
     ResidencyProcessing_ = false;
 }
 
-FrameZoneView RuntimeWorld::BuildFrameView()
+const FrameZoneView& RuntimeWorld::BuildFrameView()
 {
     assert(!ResidencyProcessing_
            && "BuildFrameView before residency finalization");
     assert(!FrameViewLive_
            && "BuildFrameView called twice without EndFrameView");
 
-    FrameZoneView view;
-    view.Entities = &Entities_;
+    FrameViewScratch_.Visible.Clear();
+    FrameViewScratch_.Physics.Clear();
+    FrameViewScratch_.Logic.Clear();
+    FrameViewScratch_.Audio.Clear();
+    FrameViewScratch_.Resident.Clear();
 
-    view.Resident.Add(PersistentStoragePartition);
-    view.Visible.Add(PersistentStoragePartition);
-    view.Physics.Add(PersistentStoragePartition);
-    view.Logic.Add(PersistentStoragePartition);
-    view.Audio.Add(PersistentStoragePartition);
+    FrameViewScratch_.Resident.Add(PersistentStoragePartition);
+    FrameViewScratch_.Visible.Add(PersistentStoragePartition);
+    FrameViewScratch_.Physics.Add(PersistentStoragePartition);
+    FrameViewScratch_.Logic.Add(PersistentStoragePartition);
+    FrameViewScratch_.Audio.Add(PersistentStoragePartition);
 
     // Slot order is stable and dense, giving every domain deterministic
     // partition iteration without sorting or allocation in query execution.
@@ -283,19 +287,19 @@ FrameZoneView RuntimeWorld::BuildFrameView()
         if (record == nullptr || record->State != RuntimeZoneLoadState::Resident)
             continue;
 
-        view.Resident.Add(record->Partition);
+        FrameViewScratch_.Resident.Add(record->Partition);
         if (record->Participation.Visible)
-            view.Visible.Add(record->Partition);
+            FrameViewScratch_.Visible.Add(record->Partition);
         if (record->Participation.Physics)
-            view.Physics.Add(record->Partition);
+            FrameViewScratch_.Physics.Add(record->Partition);
         if (record->Participation.Logic)
-            view.Logic.Add(record->Partition);
+            FrameViewScratch_.Logic.Add(record->Partition);
         if (record->Participation.Audio)
-            view.Audio.Add(record->Partition);
+            FrameViewScratch_.Audio.Add(record->Partition);
     }
 
     FrameViewLive_ = true;
-    return view;
+    return FrameViewScratch_;
 }
 
 void RuntimeWorld::EndFrameView()
