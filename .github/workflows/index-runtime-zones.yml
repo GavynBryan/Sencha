@@ -1,0 +1,29 @@
+name: Index runtime zones
+
+on:
+  push:
+    paths:
+      - '.github/workflows/index-runtime-zones.yml'
+      - 'tools/temporary/index_runtime_zones.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out cutover branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply resident-zone index patch
+        run: python3 tools/temporary/index_runtime_zones.py
+      - name: Commit clean source
+        run: |
+          git config user.name "sencha-unified-runtime"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "perf(world): index resident zones by stable id"
+          git push origin HEAD:${GITHUB_REF_NAME}
