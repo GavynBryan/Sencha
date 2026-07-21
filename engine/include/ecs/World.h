@@ -7,6 +7,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/EntityRegistry.h>
+#include <ecs/StoragePartitionId.h>
 
 #include <any>
 #include <cassert>
@@ -15,6 +16,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <span>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -46,6 +48,16 @@ struct ComponentBatchItem
 {
     EntityId    Entity;
     const void* Blob = nullptr;
+};
+
+// Structural fact emitted when a live entity changes storage partitions.
+// Backends consume this journal to update secondary zone indices without
+// teaching the ECS about physics, audio, navigation, or rendering.
+struct EntityPartitionMove
+{
+    EntityId Entity;
+    StoragePartitionId Previous;
+    StoragePartitionId Current;
 };
 
 // ─── World ──────────────────────────────────────────────────────────────────
@@ -186,14 +198,19 @@ public:
 
     EntityId CreateEntity()
     {
+        return CreateEntity(StoragePartitionId::Default());
+    }
+
+    EntityId CreateEntity(StoragePartitionId partition)
+    {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "CreateEntity called while a query/lifecycle hook is active.");
         EntityCreated = true;
-        ++StructuralCounter;
-        EntityId id   = Entities.Create();
+        BumpStructural(partition);
+        EntityId id = Entities.Create();
         Archetype* empty = GetOrCreateArchetype(ArchetypeSignature{});
-        auto [ci, ri] = empty->AddRow(id.Index);
-        Entities.SetLocation(id, EntityLocation{ empty->Id, ci, ri });
+        auto [ci, ri] = empty->AddRow(id.Index, partition);
+        Entities.SetLocation(id, EntityLocation{ empty->Id, ci, ri, partition });
         return id;
     }
 
@@ -201,14 +218,21 @@ public:
     // Component data must be written by the caller immediately after.
     EntityId CreateEntityWithSignature(const ArchetypeSignature& sig)
     {
+        return CreateEntityWithSignature(StoragePartitionId::Default(), sig);
+    }
+
+    EntityId CreateEntityWithSignature(
+        StoragePartitionId partition,
+        const ArchetypeSignature& sig)
+    {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "CreateEntityWithSignature called while a query/lifecycle hook is active.");
         EntityCreated = true;
-        ++StructuralCounter;
-        EntityId id   = Entities.Create();
+        BumpStructural(partition);
+        EntityId id = Entities.Create();
         Archetype* arch = GetOrCreateArchetype(sig);
-        auto [ci, ri] = arch->AddRow(id.Index);
-        Entities.SetLocation(id, EntityLocation{ arch->Id, ci, ri });
+        auto [ci, ri] = arch->AddRow(id.Index, partition);
+        Entities.SetLocation(id, EntityLocation{ arch->Id, ci, ri, partition });
         return id;
     }
 
@@ -217,10 +241,11 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "DestroyEntity called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     arch = *ArchetypeList[loc.ArchetypeId];
+        assert(arch.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+        BumpStructural(loc.Partition);
 
         // Hooks fire before the swap-remove so they observe the destroyed
         // entity's own component values, not a moved neighbor's.
@@ -233,6 +258,92 @@ public:
         Entities.Destroy(entity);
     }
 
+    StoragePartitionId GetEntityPartition(EntityId entity) const
+    {
+        const EntityLocation loc = Entities.GetLocation(entity);
+        const Chunk* chunk = ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get();
+        assert(chunk->Partition == loc.Partition);
+        return loc.Partition;
+    }
+
+    bool MoveEntityToPartition(EntityId entity, StoragePartitionId destination)
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "MoveEntityToPartition called while a query/lifecycle hook is active.");
+        assert(Entities.IsAlive(entity));
+
+        const EntityLocation source = Entities.GetLocation(entity);
+        if (source.Partition == destination)
+            return false;
+
+        Archetype& archetype = *ArchetypeList[source.ArchetypeId];
+        assert(archetype.Chunks[source.ChunkIndex]->Partition == source.Partition);
+
+        auto [destinationChunk, destinationRow] =
+            archetype.AddRow(entity.Index, destination);
+        archetype.CopySharedComponents(
+            destinationChunk,
+            destinationRow,
+            archetype,
+            source.ChunkIndex,
+            source.RowIndex);
+        archetype.Chunks[destinationChunk]->BumpAllColumnVersions(FrameCounter);
+
+        EntityIndex moved = archetype.RemoveRow(source.ChunkIndex, source.RowIndex);
+        if (moved != InvalidEntityIndex)
+            Entities.SetLocationByIndex(moved, source);
+
+        Entities.SetLocation(entity, EntityLocation{
+            archetype.Id,
+            destinationChunk,
+            destinationRow,
+            destination,
+        });
+
+        ++StructuralCounter;
+        BumpPartitionStructural(source.Partition);
+        BumpPartitionStructural(destination);
+        PartitionMoves.push_back(EntityPartitionMove{ entity, source.Partition, destination });
+        return true;
+    }
+
+    size_t DestroyPartition(StoragePartitionId partition)
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "DestroyPartition called while a query/lifecycle hook is active.");
+
+        std::vector<EntityId> entities;
+        for (const auto& archetype : ArchetypeList)
+        {
+            for (const auto& chunk : archetype->Chunks)
+            {
+                if (chunk->Partition != partition || chunk->IsEmpty())
+                    continue;
+                for (uint32_t row = 0; row < chunk->RowCount; ++row)
+                {
+                    const EntityIndex index = chunk->EntityIndices()[row];
+                    entities.push_back(EntityId{ index, Entities.GenerationForIndex(index) });
+                }
+            }
+        }
+
+        for (const EntityId entity : entities)
+            DestroyEntity(entity);
+        return entities.size();
+    }
+
+    std::span<const EntityPartitionMove> PendingPartitionMoves() const
+    {
+        return { PartitionMoves.data(), PartitionMoves.size() };
+    }
+
+    std::vector<EntityPartitionMove> ConsumePartitionMoves()
+    {
+        std::vector<EntityPartitionMove> result;
+        result.swap(PartitionMoves);
+        return result;
+    }
+
     // ── Structural mutations ─────────────────────────────────────────────────
 
     template <typename T>
@@ -241,11 +352,12 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "AddComponent called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
         EntityLocation     loc = Entities.GetLocation(entity);
         Archetype&         src = *ArchetypeList[loc.ArchetypeId];
+        assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+        BumpStructural(loc.Partition);
 
         assert(!src.Signature.test(id) && "Entity already has component T.");
 
@@ -253,7 +365,7 @@ public:
         newSig.set(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if constexpr (!std::is_empty_v<T>)
@@ -263,7 +375,7 @@ public:
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
 
         if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
         {
@@ -281,11 +393,12 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "RemoveComponent called while a query/lifecycle hook is active — use CommandBuffer.");
         assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
 
         const ComponentId  id  = GetComponentId<T>();
         EntityLocation     loc = Entities.GetLocation(entity);
         Archetype&         src = *ArchetypeList[loc.ArchetypeId];
+        assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+        BumpStructural(loc.Partition);
 
         assert(src.Signature.test(id) && "Entity does not have component T.");
 
@@ -302,14 +415,14 @@ public:
         newSig.reset(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
     }
 
     // ── Component access ─────────────────────────────────────────────────────
@@ -505,6 +618,13 @@ public:
 
     uint64_t StructuralVersion() const { return StructuralCounter; }
 
+    uint64_t StructuralVersion(StoragePartitionId partition) const
+    {
+        return partition.Value < PartitionStructuralCounters.size()
+            ? PartitionStructuralCounters[partition.Value]
+            : 0;
+    }
+
     // ── Entity chunk location ────────────────────────────────────────────────
     //
     // Resolves the chunk and row currently holding an entity, for systems that
@@ -517,6 +637,7 @@ public:
     {
         Chunk*   ChunkPtr = nullptr;
         uint32_t Row      = 0;
+        StoragePartitionId Partition = StoragePartitionId::Default();
     };
 
     EntityChunkLocation LocateEntity(EntityId entity)
@@ -524,7 +645,8 @@ public:
         if (!Entities.IsAlive(entity)) return {};
         const EntityLocation loc = Entities.GetLocation(entity);
         return { ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get(),
-                 loc.RowIndex };
+                 loc.RowIndex,
+                 loc.Partition };
     }
 
     // ── Resources ────────────────────────────────────────────────────────────
@@ -662,17 +784,18 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
+        assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+        BumpStructural(loc.Partition);
         assert(!src.Signature.test(id) && "Entity already has component.");
 
         ArchetypeSignature newSig = src.Signature;
         newSig.set(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if (size > 0 && blob)
@@ -687,7 +810,7 @@ public:
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
 
         if (onAdd && size > 0)
         {
@@ -706,10 +829,11 @@ public:
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
         assert(Entities.IsAlive(entity));
-        ++StructuralCounter;
 
         EntityLocation loc  = Entities.GetLocation(entity);
         Archetype&     src  = *ArchetypeList[loc.ArchetypeId];
+        assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+        BumpStructural(loc.Partition);
         assert(src.Signature.test(id) && "Entity does not have component.");
 
         if (onRemove)
@@ -729,14 +853,14 @@ public:
         newSig.reset(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
         dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
             Entities.SetLocationByIndex(moved, loc);
 
-        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });
+        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
     }
 
     void AddComponentsRawBatch(
@@ -748,8 +872,6 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
-        ++StructuralCounter;
-
         struct Move
         {
             EntityId       Entity;
@@ -767,13 +889,17 @@ public:
 
             EntityLocation loc = Entities.GetLocation(entity);
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
+            assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+            BumpStructural(loc.Partition);
+            assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
+            BumpStructural(loc.Partition);
             assert(!src.Signature.test(id) && "Entity already has component.");
 
             ArchetypeSignature newSig = src.Signature;
             newSig.set(id);
             Archetype* dst = GetOrCreateArchetype(newSig);
 
-            auto [dci, dri] = dst->AddRow(entity.Index);
+            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
             dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             if (size > 0 && items[i].Blob)
@@ -787,7 +913,7 @@ public:
             moves.push_back(Move{
                 entity,
                 loc,
-                EntityLocation{ dst->Id, dci, dri }
+                EntityLocation{ dst->Id, dci, dri, loc.Partition }
             });
         }
 
@@ -804,8 +930,6 @@ public:
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
-        ++StructuralCounter;
-
         struct Move
         {
             EntityId       Entity;
@@ -829,13 +953,13 @@ public:
             newSig.reset(id);
             Archetype* dst = GetOrCreateArchetype(newSig);
 
-            auto [dci, dri] = dst->AddRow(entity.Index);
+            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
             dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             moves.push_back(Move{
                 entity,
                 loc,
-                EntityLocation{ dst->Id, dci, dri }
+                EntityLocation{ dst->Id, dci, dri, loc.Partition }
             });
         }
 
@@ -894,6 +1018,8 @@ private:
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;
+    std::vector<uint64_t> PartitionStructuralCounters{ 0 };
+    std::vector<EntityPartitionMove> PartitionMoves;
     bool     EntityCreated = false;
 
     static void ClearOwnedTypeErased(
@@ -922,6 +1048,8 @@ private:
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
         StructuralCounter = other.StructuralCounter;
+        PartitionStructuralCounters = std::move(other.PartitionStructuralCounters);
+        PartitionMoves = std::move(other.PartitionMoves);
         EntityCreated = other.EntityCreated;
 
         other.Resources.clear();
@@ -934,6 +1062,19 @@ private:
     uint32_t GenerationForIndex(EntityIndex index) const
     {
         return Entities.GenerationForIndex(index);
+    }
+
+    void BumpPartitionStructural(StoragePartitionId partition)
+    {
+        if (partition.Value >= PartitionStructuralCounters.size())
+            PartitionStructuralCounters.resize(partition.Value + 1, 0);
+        ++PartitionStructuralCounters[partition.Value];
+    }
+
+    void BumpStructural(StoragePartitionId partition)
+    {
+        ++StructuralCounter;
+        BumpPartitionStructural(partition);
     }
 
     // Fire OnRemove for every hooked component of one live row, in column
