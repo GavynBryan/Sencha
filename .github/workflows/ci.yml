@@ -33,15 +33,17 @@ jobs:
       - name: Apply one-shot partition transformation
         id: partition_patch
         continue-on-error: true
-        run: python3 tools/temporary/apply_partition_world_patch.py > partition-patch.log 2>&1
+        run: |
+          python3 tools/temporary/fix_partition_patch_script.py
+          python3 tools/temporary/apply_partition_world_patch.py > partition-patch.log 2>&1
 
       - name: Publish patch diagnostic
         if: steps.partition_patch.outcome == 'failure'
         run: |
-          cat partition-patch.log
+          cat partition-patch.log || true
           git config user.name "sencha-partition-migration"
           git config user.email "actions@users.noreply.github.com"
-          git add -f partition-patch.log
+          git add -f partition-patch.log tools/temporary/apply_partition_world_patch.py
           git commit -m "chore(dev): capture partition patch failure"
           git push origin HEAD:${GITHUB_HEAD_REF}
           exit 1
@@ -51,6 +53,7 @@ jobs:
         run: |
           git fetch origin "${{ github.base_ref }}"
           git checkout "origin/${{ github.base_ref }}" -- .github/workflows/ci.yml
+          rm -f tools/temporary/fix_partition_patch_script.py partition-patch.log
           git config user.name "sencha-partition-migration"
           git config user.email "actions@users.noreply.github.com"
           git add -A
