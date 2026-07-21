@@ -1,0 +1,23 @@
+name: Export source snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/export-source.yml'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Archive source
+        run: tar --exclude=.git -czf sencha-source.tar.gz .
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: sencha-source
+          path: sencha-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
