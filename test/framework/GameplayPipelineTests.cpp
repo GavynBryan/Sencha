@@ -1,103 +1,109 @@
 #include <gtest/gtest.h>
 
+#include <abilities/AbilityKit.h>
 #include <app/EngineSchedule.h>
 #include <core/config/EngineConfig.h>
-#include <abilities/AbilityKit.h>
+#include <ecs/StoragePartitionSet.h>
+#include <input/InputFrame.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementModes.h>
 #include <movement/MovementProfile.h>
+#include <movement/MovementRegistration.h>
 #include <movement/MovementState.h>
 #include <movement/MovementTags.h>
-#include <movement/MovementRegistration.h>
-#include <input/InputFrame.h>
 #include <physics/components/CharacterController.h>
 #include <runtime/RuntimeFrameLoop.h>
-#include <zone/ZoneRuntime.h>
 
 namespace
 {
-    struct GameplayScheduleHarness
+struct GameplayScheduleHarness
+{
+    GameplayScheduleHarness()
     {
-        EngineConfig Config;
-        RuntimeFrameLoop Runtime;
-        InputFrame Input;
-        ZoneRuntime Zones;
-        EngineSchedule Schedule;
-
-        Registry& CreateLogicZone()
-        {
-            Registry& registry = Zones.CreateZone(ZoneId{ 1 });
-            Zones.SetParticipation(ZoneId{ 1 }, ZoneParticipation{ .Logic = true });
-            return registry;
-        }
-    };
-
-    struct TestInputSystem
-    {
-        explicit TestInputSystem(EntityId pawn)
-            : Pawn(pawn)
-        {
-        }
-
-        void FixedLogic(FixedLogicContext& ctx)
-        {
-            for (Registry* reg : ctx.ActiveRegistries)
-            {
-                World& world = reg->Components;
-                if (MovementIntent* intent = world.TryGet<MovementIntent>(Pawn))
-                    intent->WishDir = Vec3d(1.0f, 0.0f, 0.0f);
-
-                const MovementDefs* defs = world.TryGetResource<MovementDefs>();
-                AbilityActivationQueue* queue = world.TryGetResource<AbilityActivationQueue>();
-                if (defs != nullptr && queue != nullptr)
-                    queue->Pending.push_back({ Pawn, defs->Jump });
-            }
-        }
-
-        EntityId Pawn;
-    };
-
-    EntityId SpawnControlledPawn(Registry& registry)
-    {
-        World& world = registry.Components;
-        world.RegisterComponent<CharacterController>();
-        RegisterMovement(world);
-
-        const MovementDefs& defs = world.GetResource<MovementDefs>();
-        const MovementTags& tags = world.GetResource<MovementTags>();
-
-        const EntityId pawn = world.CreateEntity();
-        CharacterController controller;
-        controller.Grounded = true;
-        world.AddComponent<CharacterController>(pawn, controller);
-        world.AddComponent<MovementProfile>(pawn, MovementProfile{});
-        world.AddComponent<MovementState>(pawn, MovementState{});
-        world.AddComponent<MovementIntent>(pawn, MovementIntent{});
-        world.AddComponent<LocomotionModeRequest>(pawn, LocomotionModeRequest{});
-        world.AddComponent<OnGround>(pawn, OnGround{});
-
-        GameplayTagContainer tagContainer;
-        tagContainer.Grant(tags.Controlled);
-        world.AddComponent<GameplayTagContainer>(pawn, tagContainer);
-
-        AttributeSet attrs;
-        attrs.Add(defs.MoveSpeed, 6.0f);
-        world.AddComponent<AttributeSet>(pawn, attrs);
-
-        AbilitySet abilities;
-        abilities.Grant(defs.Jump);
-        world.AddComponent<AbilitySet>(pawn, abilities);
-        return pawn;
+        WorldState.RegisterComponent<CharacterController>();
+        RegisterMovement(WorldState);
+        ActivePartitions.Add(StoragePartitionId::Default());
     }
+
+    EngineConfig Config;
+    RuntimeFrameLoop Runtime;
+    InputFrame Input;
+    World WorldState;
+    StoragePartitionSet ActivePartitions;
+    EngineSchedule Schedule;
+};
+
+struct TestInputSystem
+{
+    explicit TestInputSystem(EntityId pawn)
+        : Pawn(pawn)
+    {
+    }
+
+    void FixedLogic(FixedLogicContext& ctx)
+    {
+        if (!ctx.Entities.IsAlive(Pawn)
+            || !ctx.Partitions.Contains(
+                ctx.Entities.GetEntityPartition(Pawn)))
+        {
+            return;
+        }
+
+        if (MovementIntent* intent =
+                ctx.Entities.TryGet<MovementIntent>(Pawn))
+        {
+            intent->WishDir = Vec3d(1.0f, 0.0f, 0.0f);
+        }
+
+        const MovementDefs* defs =
+            ctx.Entities.TryGetResource<MovementDefs>();
+        AbilityActivationQueue* queue =
+            ctx.Entities.TryGetResource<AbilityActivationQueue>();
+        if (defs != nullptr && queue != nullptr)
+            queue->Pending.push_back({ Pawn, defs->Jump });
+    }
+
+    EntityId Pawn;
+};
+
+EntityId SpawnControlledPawn(World& world)
+{
+    const MovementDefs& defs = world.GetResource<MovementDefs>();
+    const MovementTags& tags = world.GetResource<MovementTags>();
+
+    const EntityId pawn = world.CreateEntity();
+    CharacterController controller;
+    controller.Grounded = true;
+    world.AddComponent<CharacterController>(pawn, controller);
+    world.AddComponent<MovementProfile>(pawn, MovementProfile{});
+    world.AddComponent<MovementState>(pawn, MovementState{});
+    world.AddComponent<MovementIntent>(pawn, MovementIntent{});
+    world.AddComponent<LocomotionModeRequest>(
+        pawn,
+        LocomotionModeRequest{});
+    world.AddComponent<OnGround>(pawn, OnGround{});
+
+    GameplayTagContainer tagContainer;
+    tagContainer.Grant(tags.Controlled);
+    world.AddComponent<GameplayTagContainer>(pawn, tagContainer);
+
+    AttributeSet attributes;
+    attributes.Add(defs.MoveSpeed, 6.0f);
+    world.AddComponent<AttributeSet>(pawn, attributes);
+
+    AbilitySet abilities;
+    abilities.Grant(defs.Jump);
+    world.AddComponent<AbilitySet>(pawn, abilities);
+    return pawn;
 }
+} // namespace
 
 TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
 {
     GameplayScheduleHarness harness;
-    Registry& registry = harness.CreateLogicZone();
-    const EntityId pawn = SpawnControlledPawn(registry);
+    const EntityId pawn = SpawnControlledPawn(harness.WorldState);
 
     RegisterAbilityKitSystems(harness.Schedule);
     RegisterMovementSystems(harness.Schedule);
@@ -105,22 +111,27 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     OrderMovementAfterInput<TestInputSystem>(harness.Schedule);
     harness.Schedule.Init();
 
-    FrameRegistryView view = harness.Schedule.BuildFrameView(harness.Zones);
-    FixedLogicContext ctx{
+    FixedLogicContext context{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
         .Input = harness.Input,
-        .Time = FixedSimTime{ .DeltaSeconds = 0.10, .TickIndex = 1 },
-        .Registries = view,
-        .ActiveRegistries = view.Logic,
+        .Time = FixedSimTime{
+            .DeltaSeconds = 0.10,
+            .TickIndex = 1,
+        },
+        .Entities = harness.WorldState,
+        .Partitions = harness.ActivePartitions,
     };
-    harness.Schedule.RunFixedLogic(ctx);
+    harness.Schedule.RunFixedLogic(context);
 
-    World& world = registry.Components;
-    const MovementTags& tags = world.GetResource<MovementTags>();
-    const auto* tagContainer = world.TryGet<GameplayTagContainer>(pawn);
-    const auto* controller = world.TryGet<CharacterController>(pawn);
-    const auto* state = world.TryGet<MovementState>(pawn);
+    const MovementTags& tags =
+        harness.WorldState.GetResource<MovementTags>();
+    const GameplayTagContainer* tagContainer =
+        harness.WorldState.TryGet<GameplayTagContainer>(pawn);
+    const CharacterController* controller =
+        harness.WorldState.TryGet<CharacterController>(pawn);
+    const MovementState* state =
+        harness.WorldState.TryGet<MovementState>(pawn);
 
     ASSERT_NE(tagContainer, nullptr);
     ASSERT_NE(controller, nullptr);
@@ -130,5 +141,7 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     EXPECT_TRUE(tagContainer->HasExact(tags.JumpCooldown));
     EXPECT_FLOAT_EQ(controller->PendingJumpSpeed, 5.5f);
     EXPECT_GT(controller->DesiredVelocity.X, 0.0f);
-    EXPECT_FLOAT_EQ(controller->DesiredVelocity.X, state->PlanarVelocity.X);
+    EXPECT_FLOAT_EQ(
+        controller->DesiredVelocity.X,
+        state->PlanarVelocity.X);
 }
