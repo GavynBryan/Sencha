@@ -18,9 +18,9 @@
 //=============================================================================
 // IComponentSerializer
 //
-// Interface for saving and loading a single component type to/from an archive.
-// Each implementation handles one component kind; the scene serializer iterates
-// all registered implementations to read/write a full registry.
+// Interface for saving and loading a single component type. Editor and legacy
+// document paths may still target Registry; runtime zone import targets the one
+// unified World directly.
 //=============================================================================
 struct IComponentSerializer
 {
@@ -52,6 +52,14 @@ struct IComponentSerializer
                       EntityId entity,
                       Registry& registry,
                       SceneSerializationContext& context) = 0;
+
+    // Runtime import path. The destination World already carries the complete
+    // sealed component vocabulary; serializers only decode and insert values.
+    virtual bool LoadIntoWorld(IReadArchive& archive,
+                               EntityId entity,
+                               World& world,
+                               SceneSerializationContext& context) = 0;
+
     virtual bool Remove(EntityId entity, Registry& registry) const = 0;
 
     // Optional hint for how the editor should visualize an entity carrying this
