@@ -266,6 +266,16 @@ public:
         return loc.Partition;
     }
 
+    // Reconstructs the live generational id for a raw index obtained from an
+    // active chunk query. Query rows are alive by construction; callers outside
+    // query storage should continue to hold EntityId directly.
+    EntityId ResolveEntityIndex(EntityIndex index) const
+    {
+        const EntityId entity{ index, Entities.GenerationForIndex(index) };
+        assert(Entities.IsAlive(entity));
+        return entity;
+    }
+
     bool MoveEntityToPartition(EntityId entity, StoragePartitionId destination)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0

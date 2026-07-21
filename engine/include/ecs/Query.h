@@ -43,10 +43,16 @@ struct ChunkView
     static constexpr size_t NAcc = sizeof...(Accessors);
 
     Chunk*                     RawChunk = nullptr;
+    const World*               Owner    = nullptr;
     uint32_t                   Frame    = 0;
     std::array<uint32_t, NAcc> ColIndices{};
 
     const EntityIndex* Entities() const { return RawChunk->EntityIndices(); }
+    EntityId Entity(uint32_t row) const
+    {
+        assert(Owner != nullptr && row < Count());
+        return Owner->ResolveEntityIndex(Entities()[row]);
+    }
     uint32_t           Count()    const { return RawChunk->RowCount; }
     StoragePartitionId Partition() const { return RawChunk->Partition; }
 
@@ -183,6 +189,7 @@ private:
             // Column indices are identical for all chunks in the same archetype —
             // compute once per archetype, not per chunk. See decisions.md D0.6.
             ChunkView<Accessors...> view;
+            view.Owner = W;
             view.Frame = frame;
             PopulateColIndices(view, *arch.Chunks[0], std::index_sequence_for<Accessors...>{});
 
