@@ -12,6 +12,14 @@ def replace_once(old: str, new: str) -> None:
     text = text.replace(old, new, 1)
 
 
+def replace_first(old: str, new: str) -> None:
+    global text
+    count = text.count(old)
+    if count < 1:
+        raise RuntimeError(f"expected at least one match, found {count}: {old[:100]!r}")
+    text = text.replace(old, new, 1)
+
+
 replace_once(
     "#include <ecs/EntityRegistry.h>\n",
     "#include <ecs/EntityRegistry.h>\n#include <ecs/StoragePartitionId.h>\n",
@@ -395,7 +403,7 @@ replace_once(
 # Preserve partition on all type-erased structural paths. These replacements are
 # deliberately local rather than regex-wide so an unexpected upstream change
 # fails the one-shot patch instead of silently producing mixed-partition chunks.
-replace_once(
+replace_first(
 '''        assert(Entities.IsAlive(entity));
         ++StructuralCounter;
 
@@ -409,11 +417,11 @@ replace_once(
         assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
         BumpStructural(loc.Partition);
 ''')
-replace_once(
+replace_first(
     "        auto [dci, dri] = dst->AddRow(entity.Index);\n",
     "        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);\n",
 )
-replace_once(
+replace_first(
     "        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri });\n",
     "        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });\n",
 )
@@ -441,14 +449,14 @@ replace_once(
     "        Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });\n",
 )
 
-replace_once(
+replace_first(
 '''        ++StructuralCounter;
 
         struct Move
 ''',
 '''        struct Move
 ''')
-replace_once(
+replace_first(
 '''            EntityLocation loc = Entities.GetLocation(entity);
             Archetype& src = *ArchetypeList[loc.ArchetypeId];
 ''',
@@ -457,11 +465,11 @@ replace_once(
             assert(src.Chunks[loc.ChunkIndex]->Partition == loc.Partition);
             BumpStructural(loc.Partition);
 ''')
-replace_once(
+replace_first(
     "            auto [dci, dri] = dst->AddRow(entity.Index);\n",
     "            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);\n",
 )
-replace_once(
+replace_first(
     "                EntityLocation{ dst->Id, dci, dri }\n",
     "                EntityLocation{ dst->Id, dci, dri, loc.Partition }\n",
 )
