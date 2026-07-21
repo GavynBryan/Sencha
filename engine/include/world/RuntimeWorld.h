@@ -84,6 +84,17 @@ public:
     [[nodiscard]] World& Entities() { return Entities_; }
     [[nodiscard]] const World& Entities() const { return Entities_; }
 
+    // Allocates a hidden storage partition for owner-thread import. Importing
+    // zones are addressable for the importer but absent from residency batches
+    // and every frame domain until PublishZone succeeds.
+    RuntimeZoneRecord& BeginZoneImport(ZoneId zone);
+    bool PublishZone(
+        ZoneId zone,
+        ZoneParticipation participation = {});
+    bool CancelZoneImport(ZoneId zone);
+
+    // Convenience for already-built owner-thread content. Equivalent to begin
+    // followed immediately by publish.
     RuntimeZoneRecord& AttachZone(
         ZoneId zone,
         ZoneParticipation participation = {});
