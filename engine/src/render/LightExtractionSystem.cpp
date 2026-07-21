@@ -132,3 +132,15 @@ void LightExtractionSystem::Extract(
     Extract(world, partitions, camera, lights, shadowRequests,
             pointShadowRequests, counts);
 }
+
+void LightExtractionSystem::Extract(
+    const World& world,
+    RenderLightSet& lights)
+{
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    for (EntityId entity : world.GetAliveEntities())
+        partitions.Add(world.GetEntityPartition(entity));
+
+    Extract(world, partitions, lights);
+}
