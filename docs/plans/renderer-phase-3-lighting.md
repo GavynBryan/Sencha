@@ -2597,9 +2597,12 @@ faces plus casting placements) is collected up front, and each zone cook
 folds the zones within probe-ray reach into its occlusion BVH and its cook
 hash, so both bakes see neighbor geometry, a neighbor edit within reach
 restales the zone, and one beyond reach does not. The standalone
-single-level cook still passes no halo (it has no world context). Still
-open from this stage's list: the measured probe-sampling GPU cost against
-the Section 14 budget. 3B.3 carries one
+single-level cook still passes no halo (it has no world context). The
+probe-sampling GPU cost is measured and inside budget: 0.04-0.06 ms
+paired-delta on an RTX 4060 at ~1080p, roughly 0.12-0.17 ms scaled to the
+reference tier against the 0.3 ms Section 14 row
+(docs/plans/evidence/probe-sampling-cost/). 3B.2 is complete; 3B.3 and 3C
+remain in this phase. 3B.3 carries one
 amendment: per the re-amended 7A.6, weigh AO as a zone-atlas channel first
 (the density question that forced adaptive tessellation dissolves in texel
 space); if it lands as vertex data instead, the slot is offset 52, location

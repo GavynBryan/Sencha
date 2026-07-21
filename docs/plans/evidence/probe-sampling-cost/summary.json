@@ -1,0 +1,16 @@
+{
+  "question": "Probe sampling added cost (fragment, volumes resident) vs the <= 0.3 ms full-screen budget (Section 14)",
+  "method": "paired per-frame Phase_MainColor_gpu_ms delta, probes_on vs probes_off (same cooked scene, .sprobe removed for the off run), scripted orbit, 1500 frames, 400 warmup dropped",
+  "gpu": "RTX 4060 laptop (~1080p swapchain)",
+  "scene": "levels/probe_spike (two lit rooms, one 25x5x13 volume at 1m cells, 1 dynamic light)",
+  "resident_count_on": 1,
+  "resident_count_off": 0,
+  "paired_frames": 1012,
+  "maincolor_on_median_ms": 0.3146,
+  "maincolor_off_median_ms": 0.249,
+  "delta_median_ms": 0.039,
+  "delta_mean_ms": 0.0578,
+  "scaled_gtx1060_estimate_ms": "0.12-0.17 (3x throughput scale)",
+  "budget_ms": 0.3,
+  "verdict": "PASS with >= 1.7x headroom on the reference tier"
+}
