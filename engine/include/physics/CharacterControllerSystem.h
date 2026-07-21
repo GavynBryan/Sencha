@@ -5,16 +5,10 @@
 struct PhysicsContext;
 class PhysicsStepSystem;
 
-//=============================================================================
-// CharacterControllerSystem
-//
-// Drives one CharacterMover per CharacterController entity against the shared
-// simulation. Scheduled in the Physics step, after PhysicsStepSystem so the
-// character collides against the stepped world (declare the order with
-// Schedule.After<CharacterControllerSystem, PhysicsStepSystem>()). Reads each
-// entity's authored capsule + DesiredVelocity, advances the mover, and writes
-// the resolved position to LocalTransform and Grounded back to the component.
-//=============================================================================
+// Drives CharacterController entities through the simulation-wide mover pool
+// owned by PhysicsStepSystem. The physics-domain partition set selects which
+// movers reconcile and advance; dormant partitions retain component state but
+// have no CharacterVirtual backend object.
 class CharacterControllerSystem
 {
 public:
