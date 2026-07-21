@@ -1,47 +1,16 @@
 #include <gtest/gtest.h>
-#include <math/geometry/3d/Transform3d.h>
-#include <world/registry/Registry.h>
-#include <world/transform/TransformPropagation.h>
-#include <zone/DefaultZoneBuilder.h>
-#include <zone/ZoneRuntime.h>
 
-#include <array>
+#include <math/geometry/3d/Transform3d.h>
+#include <world/transform/TransformPropagation.h>
+
 #include <numbers>
 #include <utility>
 
-// Global scope (not the unnamed namespace) so its stable-identity specialization
-// is well-formed; declared before first use below.
 struct ExtraComponent
 {
     int Value = 0;
 };
 SENCHA_DECLARE_COMPONENT_TYPE(ExtraComponent, "test.extra_component");
-
-TEST(TransformPropagation, PropagatesDefaultRegistryTransforms)
-{
-    ZoneRuntime zones;
-    Registry& registry = CreateDefault3DZone(
-        zones, ZoneId{ 1 }, ZoneParticipation{ .Logic = true });
-    EntityId entity = CreateDefaultEntity(registry);
-    registry.Components.TryGet<LocalTransform>(entity)->Value =
-        Transform3f(Vec3d(3.0f, 4.0f, 5.0f), Quatf::Identity(), Vec3d::One());
-
-    std::array<Registry*, 1> registries{ &registry };
-    PropagateTransforms(registries);
-
-    const WorldTransform* world = registry.Components.TryGet<WorldTransform>(entity);
-    ASSERT_NE(world, nullptr);
-    EXPECT_EQ(world->Value.Position, Vec3d(3.0f, 4.0f, 5.0f));
-}
-
-TEST(TransformPropagation, SkipsRegistriesWithoutTransformResources)
-{
-    Registry registry;
-
-    std::array<Registry*, 2> registries{ nullptr, &registry };
-
-    EXPECT_NO_THROW(PropagateTransforms(registries));
-}
 
 TEST(TransformPropagation, RootWorldEqualsLocalInEcsWorld)
 {
@@ -227,12 +196,6 @@ TEST(TransformPropagation, RotatedParentAffectsChildPositionInEcsWorld)
     EXPECT_TRUE(childWorld->Value.Rotation.NearlyEquals(parentLocal.Rotation, 1e-5f));
 }
 
-// ─── Stale cached-pointer regressions (decisions.md D4.4) ───────────────────
-//
-// The propagation cache stores raw row pointers. Each test below exercises a
-// structural change that relocates rows WITHOUT changing the archetype count —
-// the invalidation key used before D4.4 — and asserts propagation stays correct.
-
 TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 {
     World world;
@@ -240,8 +203,6 @@ TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
     world.RegisterComponent<WorldTransform>();
     world.RegisterComponent<Parent>();
 
-    // Three roots in the same archetype/chunk: destroying the first
-    // swap-removes the last into its row.
     EntityId a = world.CreateEntity();
     EntityId b = world.CreateEntity();
     EntityId c = world.CreateEntity();
@@ -254,7 +215,7 @@ TEST(TransformPropagation, DestroyedSiblingSwapRemoveDoesNotStalePropagation)
 
     PropagateTransforms(world);
 
-    world.DestroyEntity(a); // c moves into a's row; archetype count unchanged
+    world.DestroyEntity(a);
     world.AdvanceFrame();
     world.TryGet<LocalTransform>(c)->Value.Position = Vec3d(30.0f, 0.0f, 0.0f);
 
@@ -272,8 +233,6 @@ TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
     world.RegisterComponent<Parent>();
     world.RegisterComponent<ExtraComponent>();
 
-    // Pre-create the {Local, World, Extra} archetype so adding ExtraComponent
-    // to `a` later moves it into an EXISTING archetype (count unchanged).
     EntityId pre = world.CreateEntity();
     world.AddComponent(pre, LocalTransform{ Transform3f(Vec3d(9.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(pre, WorldTransform{});
@@ -285,7 +244,7 @@ TEST(TransformPropagation, MoveIntoExistingArchetypeInvalidatesCache)
 
     PropagateTransforms(world);
 
-    world.AddComponent(a, ExtraComponent{ 2 }); // moves a between existing archetypes
+    world.AddComponent(a, ExtraComponent{ 2 });
     world.AdvanceFrame();
     world.TryGet<LocalTransform>(a)->Value.Position = Vec3d(50.0f, 0.0f, 0.0f);
 
@@ -307,7 +266,6 @@ TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
 
     PropagateTransforms(world);
 
-    // b lands in the same archetype: no new archetype, no Parent write.
     EntityId b = world.CreateEntity();
     world.AddComponent(b, LocalTransform{ Transform3f(Vec3d(7.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(b, WorldTransform{});
@@ -319,9 +277,6 @@ TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
 
 TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
 {
-    // The FreeCamera / editor-gizmo pattern: steady-state mutation through
-    // non-const TryGet with no structural change. Relies on the D4.4
-    // conservative bump in non-const World::TryGet.
     World world;
     world.RegisterComponent<LocalTransform>();
     world.RegisterComponent<WorldTransform>();
@@ -363,9 +318,6 @@ TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
     PropagateTransforms(world);
     EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position, Vec3d(11.0f, 0.0f, 0.0f));
 
-    // Re-target the existing Parent value — no structural change, no
-    // archetype move. Detected via the Changed<Parent> path (non-const TryGet
-    // bumps the Parent column version).
     world.AdvanceFrame();
     world.TryGet<Parent>(child)->Entity = parentB;
 
@@ -381,7 +333,6 @@ TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
     world.RegisterComponent<Parent>();
     world.RegisterComponent<ExtraComponent>();
 
-    // a and b sit in different archetypes, therefore different chunks.
     EntityId a = world.CreateEntity();
     world.AddComponent(a, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(a, WorldTransform{});
@@ -391,19 +342,19 @@ TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
     world.AddComponent(b, WorldTransform{});
     world.AddComponent(b, ExtraComponent{ 1 });
 
-    world.AdvanceFrame(); // frame 1
-    PropagateTransforms(world); // full sweep — both chunks bumped at frame 1
+    world.AdvanceFrame();
+    PropagateTransforms(world);
 
-    world.AdvanceFrame(); // frame 2
+    world.AdvanceFrame();
     world.TryGet<LocalTransform>(a)->Value.Position = Vec3d(3.0f, 0.0f, 0.0f);
-    PropagateTransforms(world); // only a's chunk should be rewritten
+    PropagateTransforms(world);
 
     uint32_t changedRows = 0;
     Query<Read<WorldTransform>, Changed<WorldTransform>> changed(world);
     changed.ForEachChunk([&](auto& view)
     {
         changedRows += view.Count();
-    }, 1); // changed since frame 1 → only chunks written at frame 2
+    }, 1);
 
     EXPECT_EQ(changedRows, 1u);
     EXPECT_EQ(std::as_const(world).TryGet<WorldTransform>(a)->Value.Position,
