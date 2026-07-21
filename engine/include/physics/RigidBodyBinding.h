@@ -5,50 +5,30 @@
 #include <vector>
 
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionId.h>
 #include <physics/PhysicsTypes.h>
 
-class World;
 class PhysicsWorld;
+class StoragePartitionSet;
+class World;
 
-//=============================================================================
-// Entity <-> body user-data packing
-//
-// A body carries its owning entity in 64 bits of backend user data so a query
-// that hits the body can recover the entity. Index in the low word, generation
-// in the high word.
-//=============================================================================
-inline uint64_t PackEntity(EntityId e)
+inline uint64_t PackEntity(EntityId entity)
 {
-    return (static_cast<uint64_t>(e.Generation) << 32) | static_cast<uint64_t>(e.Index);
+    return (static_cast<uint64_t>(entity.Generation) << 32)
+        | static_cast<uint64_t>(entity.Index);
 }
 
 inline EntityId UnpackEntity(uint64_t value)
 {
-    return EntityId{ static_cast<uint32_t>(value & 0xffffffffu), static_cast<uint32_t>(value >> 32) };
+    return EntityId{
+        static_cast<uint32_t>(value & 0xffffffffu),
+        static_cast<uint32_t>(value >> 32),
+    };
 }
 
-//=============================================================================
-// RigidBodyBinding
-//
-// Per-registry ECS<->body bridge. Backend-free: it drives the PhysicsWorld
-// facade, never Jolt. Stored in Registry::Resources — the owner of per-registry
-// backend bindings — so it dies with the registry and its destructor removes
-// that zone's bodies from the shared PhysicsWorld when the zone unloads. The
-// world is a raw pointer, not owned: it always outlives this binding because
-// ZoneRuntime (registries + their RigidBodyBindings) is destroyed before
-// EngineSchedule (the PhysicsStepSystem that owns the world). No refcounting.
-//
-// Steady-state cost is proportional to what moved, not what exists. The body
-// handle lives in a per-entity PhysicsBodyLink component, so the per-frame
-// transform sync is a contiguous column walk with no hashing. Body topology is
-// reconciled only when the World's structural version changes (an entity or
-// component was created/destroyed/added/removed); a steady frame is a single
-// integer compare. The dense Owned vector is the physics-side record that makes
-// destroy-detection possible: PhysicsBodyLink is a plain handle with no
-// lifecycle hook — backend residency belongs to binding records, not component
-// hooks — so the link vanishes silently with a destroyed entity and reconcile
-// sweeps Owned for dead or collider-less entities.
-//=============================================================================
+// Simulation-wide ECS-to-body bridge. One instance owns every backend rigid
+// body for the unified runtime World. Storage partitions control backend
+// residency; they are not separate scenes or separate binding owners.
 class RigidBodyBinding
 {
 public:
@@ -58,45 +38,49 @@ public:
     RigidBodyBinding(const RigidBodyBinding&) = delete;
     RigidBodyBinding& operator=(const RigidBodyBinding&) = delete;
 
-    // Pre-step: reconcile body topology (gated on the structural version), then
-    // push kinematic transforms into the simulation.
-    void SyncToPhysics(World& world);
+    void SyncToPhysics(
+        World& world,
+        const StoragePartitionSet& partitions);
+    void SyncFromPhysics(
+        World& world,
+        const StoragePartitionSet& partitions);
 
-    // Post-step: write dynamic bodies' resolved transforms back to LocalTransform.
-    void SyncFromPhysics(World& world);
-
-    // Remove every body from the shared simulation after capturing its latest
-    // state into components, stripping links so the next SyncToPhysics
-    // reconcile recreates the bodies from component-authoritative state.
-    // Called when the registry leaves the physics domain or detaches: dormant
-    // means zero backend presence — no contacts, no query hits, no solver
-    // cost. Restore needs no dedicated path; the link strips bump the
-    // structural version, making the ordinary reconcile the restore.
-    void Evict(World& world);
+    // Final owner-thread residency action for one partition. Dynamic state is
+    // captured before bodies are removed and PhysicsBodyLink components are
+    // stripped, so re-entry recreates from component-authoritative state.
+    void EvictPartition(
+        World& world,
+        StoragePartitionId partition);
+    void EvictAll(World& world);
 
     [[nodiscard]] size_t BodyCount() const { return Owned.size(); }
-
-    // Times the topology reconcile pass has run. A steady frame (no structural
-    // change in this zone) does not advance it; tests and profiling use it to
-    // confirm the gate holds.
-    [[nodiscard]] uint64_t ReconcilePasses() const { return ReconcileCount; }
+    [[nodiscard]] uint64_t ReconcilePasses() const
+    {
+        return ReconcileCount;
+    }
 
 private:
     struct BodyRecord
     {
-        EntityId      Entity;
+        EntityId Entity;
         PhysicsBodyId Body;
     };
 
-    struct SceneState; // PIMPL: cached queries + reusable command buffer (ECS-side)
+    struct SceneState;
 
-    bool        Ready(const World& world) const;
+    bool Ready(const World& world) const;
     SceneState& EnsureState(World& world);
-    void        Reconcile(World& world, SceneState& state);
+    void Reconcile(
+        World& world,
+        SceneState& state,
+        const StoragePartitionSet& partitions);
+    void CaptureDynamicState(
+        World& world,
+        const BodyRecord& record);
 
-    PhysicsWorld*               Simulation; // not owned; outlives this scene (see above)
-    std::vector<BodyRecord>     Owned;
+    PhysicsWorld* Simulation;
+    std::vector<BodyRecord> Owned;
     std::unique_ptr<SceneState> State;
-    uint64_t                    LastStructuralVersion = 0;
-    uint64_t                    ReconcileCount = 0;
+    uint64_t LastStructuralVersion = 0;
+    uint64_t ReconcileCount = 0;
 };
