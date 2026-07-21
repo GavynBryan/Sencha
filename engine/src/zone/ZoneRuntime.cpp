@@ -303,8 +303,13 @@ void ZoneRuntime::SetParticipation(ZoneId zone, ZoneParticipation participation)
 {
     assert(!ResidencyProcessing_
            && "SetParticipation during RegistryResidency: queue lifecycle work for a later drain point");
-    assert(!FrameViewLive_
-           && "SetParticipation with a live frame view: zone lifecycle is drain-point-only");
+
+    // Unlike structural lifecycle (create/attach/destroy), a participation
+    // change is legal while a frame view is live: no span pointer dangles, the
+    // built spans simply reflect the old sets for the rest of the frame, and
+    // the recorded change reaches a residency phase before the next view is
+    // built — so backends are corrected before any frame observes the new
+    // participation. The seamless dormant-preload activation relies on this.
 
     LoadedZone* loaded = FindLoadedZone(zone);
     assert(loaded && "ZoneRuntime::SetParticipation: zone must be loaded");

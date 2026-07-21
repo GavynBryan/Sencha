@@ -60,6 +60,7 @@ TEST(ZoneRuntimeAttach, DetachedRegistryAttachesAndIsVisible)
     FrameRegistryView view = zones.BuildFrameView();
     ASSERT_EQ(view.Logic.size(), 2u);   // the global registry rides every span
     EXPECT_EQ(view.Logic[1], &attached);
+    zones.EndFrameView();
 }
 
 TEST(ZoneRuntimeAttach, ReservedIdsNeverCollideWithCreateZone)
@@ -189,11 +190,15 @@ TEST(AsyncZoneLoad, DormantPreloadAttachesSeamlessly)
     ASSERT_EQ(dormantView.Logic.size(), 1u);
     EXPECT_EQ(dormantView.Logic[0], &zones.Global());
 
-    // The player crosses the doorway: the game flips the room live.
+    // The player crosses the doorway: the game flips the room live mid-frame
+    // (legal for participation — no span pointer dangles; the change reaches
+    // the next residency phase before the next view reflects it).
     zones.SetParticipation(nextRoom, ZoneParticipation{ .Visible = true, .Logic = true });
+    zones.EndFrameView(); // the frame ends; the next view sees the live room
     FrameRegistryView liveView = zones.BuildFrameView();
     ASSERT_EQ(liveView.Logic.size(), 2u);
     EXPECT_EQ(liveView.Logic[1], zones.FindZone(nextRoom));
+    zones.EndFrameView();
 }
 
 TEST(AsyncZoneLoad, CancelBeforeWorkDropsTheLoad)
