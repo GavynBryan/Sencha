@@ -123,6 +123,73 @@ TEST(UnifiedRuntimeWorld, AttachAllocatesDenseZonePartitionsAndRecordsTransition
     EXPECT_EQ(changes[1].Zone, ZoneId{ 20 });
 }
 
+TEST(UnifiedRuntimeWorld, ImportingZoneIsHiddenUntilAtomicPublication)
+{
+    const WorldComponentSchema schema = MakeRuntimeSchema();
+    RuntimeWorld runtime(schema);
+
+    RuntimeZoneRecord& importing = runtime.BeginZoneImport(ZoneId{ 10 });
+    const StoragePartitionId partition = importing.Partition;
+    const EntityId entity = runtime.Entities().CreateEntity(partition);
+    runtime.Entities().AddComponent<RuntimeWorldValue>(entity, { 12 });
+
+    EXPECT_EQ(importing.State, RuntimeZoneLoadState::Importing);
+    EXPECT_FALSE(runtime.IsZoneResident(ZoneId{ 10 }));
+    EXPECT_EQ(runtime.ZoneCount(), 0u);
+    EXPECT_TRUE(runtime.PendingResidencyChanges().empty());
+
+    const FrameZoneView& hidden = runtime.BuildFrameView();
+    EXPECT_FALSE(hidden.Resident.Contains(partition));
+    EXPECT_FALSE(hidden.Logic.Contains(partition));
+    EXPECT_FALSE(hidden.Visible.Contains(partition));
+    runtime.EndFrameView();
+
+    ASSERT_TRUE(runtime.PublishZone(ZoneId{ 10 }, LogicOnly()));
+    EXPECT_TRUE(runtime.IsZoneResident(ZoneId{ 10 }));
+    EXPECT_EQ(runtime.ZoneCount(), 1u);
+
+    const auto changes = runtime.PendingResidencyChanges();
+    ASSERT_EQ(changes.size(), 1u);
+    EXPECT_EQ(changes[0].Kind, ZoneResidencyChangeKind::Attached);
+    EXPECT_EQ(changes[0].Zone, ZoneId{ 10 });
+    EXPECT_EQ(changes[0].Partition, partition);
+    EXPECT_EQ(changes[0].Current, LogicOnly());
+    ProcessResidency(runtime);
+
+    const FrameZoneView& published = runtime.BuildFrameView();
+    EXPECT_TRUE(published.Resident.Contains(partition));
+    EXPECT_TRUE(published.Logic.Contains(partition));
+    EXPECT_TRUE(runtime.Entities().IsAlive(entity));
+    runtime.EndFrameView();
+}
+
+TEST(UnifiedRuntimeWorld, CancellingImportDestroysPartialStateWithoutResidency)
+{
+    const WorldComponentSchema schema = MakeRuntimeSchema();
+    RuntimeWorld runtime(schema);
+    RuntimeWorldHookResource& hookResource =
+        runtime.Entities().AddResource<RuntimeWorldHookResource>();
+
+    RuntimeZoneRecord& importing = runtime.BeginZoneImport(ZoneId{ 10 });
+    const StoragePartitionId partition = importing.Partition;
+    int zoneResourceDestructions = 0;
+    importing.Resources.Register<RuntimeZoneResourceProbe>(
+        &zoneResourceDestructions);
+
+    const EntityId entity = runtime.Entities().CreateEntity(partition);
+    runtime.Entities().AddComponent<RuntimeWorldTracked>(entity, { 1 });
+
+    ASSERT_TRUE(runtime.CancelZoneImport(ZoneId{ 10 }));
+    EXPECT_EQ(runtime.FindZone(ZoneId{ 10 }), nullptr);
+    EXPECT_FALSE(runtime.Entities().IsAlive(entity));
+    EXPECT_EQ(hookResource.RemoveCalls, 1);
+    EXPECT_EQ(zoneResourceDestructions, 1);
+    EXPECT_TRUE(runtime.PendingResidencyChanges().empty());
+
+    RuntimeZoneRecord& reused = runtime.BeginZoneImport(ZoneId{ 20 });
+    EXPECT_EQ(reused.Partition, partition);
+}
+
 TEST(UnifiedRuntimeWorld, FrameViewContainsPersistentAndParticipatingPartitions)
 {
     const WorldComponentSchema schema = MakeRuntimeSchema();
