@@ -4,7 +4,6 @@
 #include <attributes/AttributeSet.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
-#include <camera/CameraRegistration.h>
 #include <camera/CameraRig.h>
 #include <components/CameraComponent.h>
 #include <core/metadata/Field.h>
@@ -17,9 +16,7 @@
 #include <movement/MovementIntent.h>
 #include <movement/MovementModes.h>
 #include <movement/MovementProfile.h>
-#include <movement/MovementRegistration.h>
 #include <movement/MovementState.h>
-#include <physics/PhysicsRegistration.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
@@ -29,11 +26,9 @@
 #include <render/StaticMeshComponent.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
-#include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/DefaultZoneBuilder.h>
 
 #include <gtest/gtest.h>
 #include <SDL3/SDL.h>
@@ -75,8 +70,10 @@ struct ComponentTraits<StartupGameComponent>
 template <>
 struct TypeSchema<StartupGameComponent>
 {
-    static constexpr std::string_view Name = "startup_game_component";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('S', 'G', 'A', 'M');
+    static constexpr std::string_view Name =
+        "startup_game_component";
+    static constexpr std::uint32_t SceneChunkId =
+        MakeFourCC('S', 'G', 'A', 'M');
 
     static auto Fields()
     {
@@ -89,8 +86,10 @@ struct TypeSchema<StartupGameComponent>
 template <>
 struct TypeSchema<MissingRuntimeComponent>
 {
-    static constexpr std::string_view Name = "missing_runtime_component";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('M', 'I', 'S', 'S');
+    static constexpr std::string_view Name =
+        "missing_runtime_component";
+    static constexpr std::uint32_t SceneChunkId =
+        MakeFourCC('M', 'I', 'S', 'S');
 
     static auto Fields()
     {
@@ -103,11 +102,10 @@ struct TypeSchema<MissingRuntimeComponent>
 namespace
 {
 template <typename T>
-void ExpectSameComponentId(const World& current, const World& unified)
+void ExpectComponentId(const World& world, ComponentId expected)
 {
-    ASSERT_TRUE(current.IsRegistered<T>());
-    ASSERT_TRUE(unified.IsRegistered<T>());
-    EXPECT_EQ(current.GetComponentId<T>(), unified.GetComponentId<T>());
+    ASSERT_TRUE(world.IsRegistered<T>());
+    EXPECT_EQ(world.GetComponentId<T>(), expected);
 }
 
 class RuntimeSchemaGame final : public Game
@@ -119,44 +117,53 @@ public:
         ctx.Config.Debug.ConsoleLogging = false;
     }
 
-    void OnRegisterComponents(ComponentSerializerRegistry&) override
+    void OnRegisterComponents(
+        ComponentSerializerRegistry&) override
     {
         InitSceneSerializer();
         RegisterComponent<StartupGameComponent>();
     }
 
-    void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
+    void OnUnregisterComponents(
+        ComponentSerializerRegistry& serializers) override
     {
-        serializers.Remove(ResolveComponentTypeId<StartupGameComponent>());
+        serializers.Remove(
+            ResolveComponentTypeId<StartupGameComponent>());
     }
 
-    void OnRegisterRuntimeComponents(WorldComponentSchema& schema) override
+    void OnRegisterRuntimeComponents(
+        WorldComponentSchema& schema) override
     {
         ++RegistrationCalls;
         EXPECT_FALSE(schema.IsSealed());
-        EXPECT_TRUE(schema.Contains(ResolveComponentTypeId<LocalTransform>()));
+        EXPECT_TRUE(schema.Contains(
+            ResolveComponentTypeId<LocalTransform>()));
         EXPECT_TRUE(schema.Add<StartupGameComponent>());
     }
 
     void OnStart(GameStartupContext&) override
     {
         ++StartCalls;
-        const WorldComponentSchema& schema = GetEngine().RuntimeComponents();
+        const WorldComponentSchema& schema =
+            GetEngine().RuntimeComponents();
         SawSealedSchema = schema.IsSealed();
-        SawEngineComponent =
-            schema.Contains(ResolveComponentTypeId<RigidBody>());
-        SawGameComponent =
-            schema.Contains(ResolveComponentTypeId<StartupGameComponent>());
+        SawEngineComponent = schema.Contains(
+            ResolveComponentTypeId<RigidBody>());
+        SawGameComponent = schema.Contains(
+            ResolveComponentTypeId<StartupGameComponent>());
         SchemaSize = schema.Size();
 
         World world;
         schema.Apply(world);
-        AppliedGameComponent = world.IsRegistered<StartupGameComponent>();
-        AppliedGameComponentId = world.GetComponentId<StartupGameComponent>();
+        AppliedGameComponent =
+            world.IsRegistered<StartupGameComponent>();
+        AppliedGameComponentId =
+            world.GetComponentId<StartupGameComponent>();
 
         RuntimeWorld& runtime = GetEngine().World();
         World& live = runtime.Entities();
-        SawEngineOwnedWorld = live.IsRegistered<StartupGameComponent>();
+        SawEngineOwnedWorld =
+            live.IsRegistered<StartupGameComponent>();
         EngineOwnedGameComponentId =
             live.GetComponentId<StartupGameComponent>();
 
@@ -165,7 +172,8 @@ public:
             entity,
             StartupGameComponent{ 42 });
         EngineOwnedEntityWasPersistent =
-            live.GetEntityPartition(entity) == PersistentStoragePartition;
+            live.GetEntityPartition(entity)
+            == PersistentStoragePartition;
     }
 
     int RegistrationCalls = 0;
@@ -190,16 +198,19 @@ public:
         ctx.Config.Debug.ConsoleLogging = false;
     }
 
-    void OnRegisterComponents(ComponentSerializerRegistry&) override
+    void OnRegisterComponents(
+        ComponentSerializerRegistry&) override
     {
         InitSceneSerializer();
         RegisterComponent<MissingRuntimeComponent>();
     }
 
-    void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
+    void OnUnregisterComponents(
+        ComponentSerializerRegistry& serializers) override
     {
         ++UnregisterCalls;
-        serializers.Remove(ResolveComponentTypeId<MissingRuntimeComponent>());
+        serializers.Remove(
+            ResolveComponentTypeId<MissingRuntimeComponent>());
     }
 
     void OnStart(GameStartupContext&) override
@@ -212,7 +223,7 @@ public:
 };
 } // namespace
 
-TEST(RuntimeComponentSchema, EnginePrefixMatchesCurrentZoneRegistrationOrder)
+TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
 {
     WorldComponentSchema schema;
     RegisterEngineRuntimeComponents(schema);
@@ -220,45 +231,33 @@ TEST(RuntimeComponentSchema, EnginePrefixMatchesCurrentZoneRegistrationOrder)
 
     EXPECT_EQ(schema.Size(), 24u);
 
-    World unified;
-    schema.Apply(unified);
+    World world;
+    schema.Apply(world);
 
-    Registry current = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
-    InitializeDefault3DRegistry(
-        current,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr);
-    RegisterPhysicsComponents(current.Components);
-    RegisterMovementComponents(current.Components);
-    RegisterCameraComponents(current.Components);
-
-    ExpectSameComponentId<LocalTransform>(current.Components, unified);
-    ExpectSameComponentId<WorldTransform>(current.Components, unified);
-    ExpectSameComponentId<Parent>(current.Components, unified);
-    ExpectSameComponentId<CameraComponent>(current.Components, unified);
-    ExpectSameComponentId<StaticMeshComponent>(current.Components, unified);
-    ExpectSameComponentId<PointLightComponent>(current.Components, unified);
-    ExpectSameComponentId<AudioSourceComponent>(current.Components, unified);
-    ExpectSameComponentId<AudioCaptionComponent>(current.Components, unified);
-    ExpectSameComponentId<Collider>(current.Components, unified);
-    ExpectSameComponentId<RigidBody>(current.Components, unified);
-    ExpectSameComponentId<CharacterController>(current.Components, unified);
-    ExpectSameComponentId<PhysicsBodyLink>(current.Components, unified);
-    ExpectSameComponentId<CharacterMoverLink>(current.Components, unified);
-    ExpectSameComponentId<GameplayTagContainer>(current.Components, unified);
-    ExpectSameComponentId<AttributeSet>(current.Components, unified);
-    ExpectSameComponentId<AbilitySet>(current.Components, unified);
-    ExpectSameComponentId<ActiveEffect>(current.Components, unified);
-    ExpectSameComponentId<MovementIntent>(current.Components, unified);
-    ExpectSameComponentId<MovementState>(current.Components, unified);
-    ExpectSameComponentId<MovementProfile>(current.Components, unified);
-    ExpectSameComponentId<OnGround>(current.Components, unified);
-    ExpectSameComponentId<InAir>(current.Components, unified);
-    ExpectSameComponentId<LocomotionModeRequest>(current.Components, unified);
-    ExpectSameComponentId<CameraRig>(current.Components, unified);
+    ExpectComponentId<LocalTransform>(world, 0);
+    ExpectComponentId<WorldTransform>(world, 1);
+    ExpectComponentId<Parent>(world, 2);
+    ExpectComponentId<CameraComponent>(world, 3);
+    ExpectComponentId<StaticMeshComponent>(world, 4);
+    ExpectComponentId<PointLightComponent>(world, 5);
+    ExpectComponentId<AudioSourceComponent>(world, 6);
+    ExpectComponentId<AudioCaptionComponent>(world, 7);
+    ExpectComponentId<Collider>(world, 8);
+    ExpectComponentId<RigidBody>(world, 9);
+    ExpectComponentId<CharacterController>(world, 10);
+    ExpectComponentId<PhysicsBodyLink>(world, 11);
+    ExpectComponentId<CharacterMoverLink>(world, 12);
+    ExpectComponentId<GameplayTagContainer>(world, 13);
+    ExpectComponentId<AttributeSet>(world, 14);
+    ExpectComponentId<AbilitySet>(world, 15);
+    ExpectComponentId<ActiveEffect>(world, 16);
+    ExpectComponentId<MovementIntent>(world, 17);
+    ExpectComponentId<MovementState>(world, 18);
+    ExpectComponentId<MovementProfile>(world, 19);
+    ExpectComponentId<OnGround>(world, 20);
+    ExpectComponentId<InAir>(world, 21);
+    ExpectComponentId<LocomotionModeRequest>(world, 22);
+    ExpectComponentId<CameraRig>(world, 23);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -282,10 +281,6 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_EQ(game.SchemaSize, 25u);
     EXPECT_EQ(game.AppliedGameComponentId, 24u);
     EXPECT_EQ(game.EngineOwnedGameComponentId, 24u);
-
-    // Application::Run owns Engine by value. Its return proves the engine-owned
-    // RuntimeWorld was destroyed while the game's concrete hook code was still
-    // mapped and callable.
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 
