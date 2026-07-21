@@ -5,6 +5,7 @@
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
+#include <world/RuntimeWorld.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -116,9 +117,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     });
 
     driver.Register(FramePhase::DrainAsyncTasks, [&engine, &config](PhaseContext&) {
-        // The config's 0.0 = unbudgeted convention is translated to the
-        // API's explicit "unlimited" here, at the config boundary, so the
-        // queue itself never carries a magic value.
         AsyncDrainBudget budget;
         if (config.Runtime.AsyncCommitBudgetMs > 0.0)
         {
@@ -126,30 +124,40 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
                 std::chrono::duration<double, std::milli>(config.Runtime.AsyncCommitBudgetMs));
         }
         engine.Tasks().DrainCompletions(budget);
+
+        // Gameplay and streaming policy may queue participation while the prior
+        // frame view is live. This is the only point where those requests become
+        // current, before retained backends and the next view observe them.
+        engine.World().FlushLifecycleRequests();
     });
 
-    driver.Register(FramePhase::RegistryResidency, [&engine, &config](PhaseContext&) {
-        RegistryResidencyContext residency{
+    driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext&) {
+        RuntimeWorld& runtimeWorld = engine.World();
+        ZoneResidencyContext residency{
             .Config = config,
-            .Changes = engine.Zones().BeginResidencyProcessing(),
+            .Entities = runtimeWorld.Entities(),
+            .Changes = runtimeWorld.BeginResidencyProcessing(),
         };
-        engine.Schedule().RunRegistryResidency(residency);
-        engine.Zones().FinalizeResidencyProcessing();
+        engine.Schedule().RunZoneResidency(residency);
+        runtimeWorld.FinalizeResidencyProcessing();
     });
 
     driver.Register(FramePhase::ScheduleTicks, [&engine](PhaseContext& ctx) {
-        ctx.Registries = engine.Schedule().BuildFrameView(engine.Zones());
+        ctx.Zones = &engine.World().BuildFrameView();
         ctx.Runtime->ScheduleFixedTicks();
     });
 
     driver.Register(FramePhase::Simulate, [&engine, &config](PhaseContext& ctx) {
+        const FrameZoneView& zones = *ctx.Zones;
+        World& entities = *zones.Entities;
+
         FixedLogicContext logic{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Logic,
+            .Entities = entities,
+            .Partitions = zones.Logic,
         };
         engine.Schedule().RunFixedLogic(logic);
 
@@ -158,43 +166,40 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Physics,
+            .Entities = entities,
+            .Partitions = zones.Physics,
         };
         engine.Schedule().RunPhysics(physics);
 
-        // Config-selected axis. Serial default: the primary target streams a
-        // handful of room-sized zones, whose whole Logic span costs far less
-        // than the ~300 us pool dispatch floor (measured: 2 heavy zones
-        // already lose, 0.74x; see parallelization.md Stage C). Games holding
-        // many heavy zones live flip ZoneParallelPropagation; both paths are
-        // bit-identical.
-        if (config.Runtime.ZoneParallelPropagation)
-            PropagateTransforms(engine.Jobs(), ctx.Registries.Logic);
-        else
-            PropagateTransforms(ctx.Registries.Logic);
+        PropagateTransforms(
+            entities,
+            zones.Logic,
+            TransformPropagationDomain::Simulation);
 
         PostFixedContext postFixed{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Logic,
+            .Entities = entities,
+            .Partitions = zones.Logic,
         };
         engine.Schedule().RunPostFixed(postFixed);
     });
 
     driver.Register(FramePhase::Update, [&engine, &config](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+        const FrameZoneView& zones = *ctx.Zones;
+        World& entities = *zones.Entities;
+
         FrameUpdateContext update{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
             .Presentation = rf.Presentation,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Logic,
+            .Entities = entities,
+            .Partitions = zones.Logic,
         };
         engine.Schedule().RunFrameUpdate(update);
 
@@ -203,8 +208,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .Presentation = rf.Presentation,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Audio,
+            .Entities = entities,
+            .Partitions = zones.Audio,
         };
         engine.Schedule().RunAudio(audio);
     });
@@ -214,6 +219,14 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         // sees exactly one profile mode.
         engine.ApplyPendingRenderProfileMode();
 
+        const FrameZoneView& zones = *ctx.Zones;
+        World& entities = *zones.Entities;
+
+        PropagateTransforms(
+            entities,
+            zones.Visible,
+            TransformPropagationDomain::Presentation);
+
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
@@ -221,10 +234,9 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             .PacketWrite = *ctx.PacketWrite,
             .PacketRead = *ctx.PacketRead,
             .Presentation = ctx.PacketWrite->Presentation,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Visible,
+            .Entities = entities,
+            .Partitions = zones.Visible,
         };
-        PropagateTransforms(ctx.Registries.Visible);
         engine.Schedule().RunExtractRender(extract);
     });
 
@@ -257,19 +269,20 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
 
     driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+        const FrameZoneView& zones = *ctx.Zones;
         EndFrameContext endFrame{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
             .Presentation = rf.Presentation,
-            .Registries = ctx.Registries,
-            .ActiveRegistries = ctx.Registries.Logic,
+            .Entities = *zones.Entities,
+            .Partitions = zones.Logic,
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
-        // The frame view dies with the frame; the drain phase mutates zone
-        // lifecycle before the next one is built.
-        engine.Zones().EndFrameView();
+
+        engine.World().EndFrameView();
+        ctx.Zones = nullptr;
 
         if (!rf.LifecycleOnly)
             return;
