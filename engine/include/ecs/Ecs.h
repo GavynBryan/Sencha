@@ -16,3 +16,4 @@
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <ecs/WorldComponentSchema.h>
