@@ -36,13 +36,15 @@ class IDebugPanel;
 class ImGuiDebugOverlay;
 class JobSystem;
 struct PlatformServices;
+class RuntimeWorld;
 class ThreadPoolJobSystem;
 
 //=============================================================================
 // Engine
 //
-// Owns the runtime services, frame loop, world zones, schedule, and timing state.
-// Initializes, runs, and shuts down the core engine around a Game instance.
+// Owns the runtime services, frame loop, unified entity world, schedule, and
+// timing state. Initializes, runs, and shuts down the core engine around a Game
+// instance.
 //=============================================================================
 class Engine
 {
@@ -108,10 +110,9 @@ public:
     [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
 
     // Complete engine-plus-game runtime component vocabulary for this run.
-    // Valid after Game::OnRegisterRuntimeComponents and before that game module
-    // is detached. The future unified World applies this schema before its first
-    // entity; current registry Worlds remain on their existing setup path while
-    // the migration is staged.
+    // Valid after Game::OnRegisterRuntimeComponents and before the game module
+    // is detached. The unified runtime world applies it exactly once before its
+    // first entity is created.
     [[nodiscard]] WorldComponentSchema& RuntimeComponents()
     {
         return RuntimeComponentSchemaState;
@@ -121,6 +122,13 @@ public:
         return RuntimeComponentSchemaState;
     }
 
+    // One runtime entity universe for the current simulation. Constructed after
+    // the schema is sealed and valid through game/system shutdown.
+    [[nodiscard]] RuntimeWorld& World();
+    [[nodiscard]] const RuntimeWorld& World() const;
+
+    // Legacy runtime zone registry owner. This remains only while PR #130 ports
+    // its callers and is deleted before the cutover can merge.
     [[nodiscard]] ZoneRuntime& Zones() { return ZoneRuntimeState; }
     [[nodiscard]] const ZoneRuntime& Zones() const { return ZoneRuntimeState; }
 
@@ -214,6 +222,7 @@ private:
 #endif
     EngineSchedule EngineSystems;
     WorldComponentSchema RuntimeComponentSchemaState;
+    std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
@@ -256,7 +265,7 @@ private:
     std::vector<std::unique_ptr<IDebugPanel>> PendingDebugPanels;
 #endif
     // Declared last: destroyed first, so task/worker threads are joined (and
-    // pending commits dropped) before the zones and services they reference.
+    // pending commits dropped) before the worlds and services they reference.
     std::unique_ptr<AsyncTaskQueue> TaskQueueInstance;
     std::unique_ptr<ThreadPoolJobSystem> FramePoolInstance;
     bool Initialized = false;
