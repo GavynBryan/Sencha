@@ -9,9 +9,11 @@
 // world partition maps resident zones to these ids; editor documents and tests
 // may use them for other disjoint storage lanes. Value zero is the default
 // partition used by every existing unqualified World API during migration.
+// The 16-bit representation bounds all partition-indexed tables and matches the
+// intended resident-zone slot model; authored ZoneId values are never stored here.
 struct StoragePartitionId
 {
-    uint32_t Value = 0;
+    std::uint16_t Value = 0;
 
     [[nodiscard]] static constexpr StoragePartitionId Default()
     {
