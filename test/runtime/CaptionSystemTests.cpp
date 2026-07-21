@@ -432,19 +432,19 @@ TEST(CaptionGate, ThreeContextsRouteFilterAndOrderDeterministically)
     AudioClipCache cache(logging);
     AudioClipHandle clip = cache.Register("asset://audio/world.wav", MakeClip());
 
-    // World SFX: scene-authored closed caption.
-    Registry registry;
-    SetupRegistry(registry, &cache, &audio, &captions);
-    EntityId door = registry.Entities.Create();
-    registry.Components.AddComponent(door, AudioSourceComponent{
+    // World SFX: scene-authored closed caption in the active audio partition.
+    World world;
+    SetupWorld(world, &cache, &audio, &captions);
+    EntityId door = world.CreateEntity();
+    world.AddComponent(door, AudioSourceComponent{
         .Clip = clip, .Bus = "Sfx", .Looping = true });
-    registry.Components.AddComponent(door, WorldCC("cc.door.slam"));
+    world.AddComponent(door, WorldCC("cc.door.slam"));
 
     AudioSystem audioSystem;
     CaptionSystem captionSystem;
-    std::vector<Registry*> active{ &registry };
-    audioSystem.Update(&audio, active);
-    captionSystem.Update(&captions, &audio, active, 0.016f);
+    const StoragePartitionSet active = ActivePartitions();
+    audioSystem.Update(&audio, world, active);
+    captionSystem.Update(&captions, &audio, world, active, 0.016f);
 
     // Radio subtitle: imperative voice-bound caption on a game-defined
     // channel — channels-as-config end to end.
