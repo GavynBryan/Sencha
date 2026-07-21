@@ -54,6 +54,10 @@ public:
         std::vector<PointShadowRequest>& pointShadowRequests,
         LightExtractionCounts* counts = nullptr);
 
+    // Test/tool convenience for an isolated World where every live partition is
+    // intentionally visible. Runtime rendering must pass FrameZoneView::Visible.
+    void Extract(const World& world, RenderLightSet& lights);
+
 private:
     const World* LastWorld = nullptr;
     std::optional<Query<Read<WorldTransform>, Read<PointLightComponent>>> PointQuery;
