@@ -50,12 +50,24 @@ add_test(NAME physics_isolation
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")
 
+if(SENCHA_ENABLE_TSAN AND SENCHA_ENABLE_ASAN)
+    message(FATAL_ERROR "SENCHA_ENABLE_TSAN and SENCHA_ENABLE_ASAN are mutually exclusive")
+endif()
+
 if(SENCHA_ENABLE_TSAN)
     if(MSVC)
         message(FATAL_ERROR "SENCHA_ENABLE_TSAN requires GCC or Clang")
     endif()
     add_compile_options(-fsanitize=thread -g)
     add_link_options(-fsanitize=thread)
+endif()
+
+if(SENCHA_ENABLE_ASAN)
+    if(MSVC)
+        message(FATAL_ERROR "SENCHA_ENABLE_ASAN requires GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
 endif()
 
 # Static link the C++ runtime so executables don't depend on MinGW DLLs at runtime.

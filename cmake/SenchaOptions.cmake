@@ -34,6 +34,10 @@ option(SENCHA_ENABLE_TSAN
     "Build with ThreadSanitizer (GCC/Clang only). Used to run the test suites against the job system's concurrent core; see docs/ecs/parallelization.md."
     OFF)
 
+option(SENCHA_ENABLE_ASAN
+    "Build with AddressSanitizer (GCC/Clang only). Catches use-after-free, double-free, and heap corruption with symbolized allocation/free stacks. Mutually exclusive with SENCHA_ENABLE_TSAN."
+    OFF)
+
 option(SENCHA_BUILD_TEMPLATE
     "Build the template game module in-tree against the engine being built. Engine-dev convenience: the module rebuilds with the engine in one build, so the host/module ABI fingerprint can never skew (no SDK install/rebuild dance). Writes template/build/game.so; the standalone SDK build of template/ is unaffected."
     ON)

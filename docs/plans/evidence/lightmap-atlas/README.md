@@ -58,11 +58,18 @@ scripted tile mesh with [0,1] lightmap UVs fake the instanced-placement leg
 - Formal render A/B bench (p50/p99 vs main via `scripts/bench_render_ab.sh`)
   runs at the Phase 1+2 merge gate; the spike's raster load is far below the
   measured 49.7k-tris-at-0.041ms precedent, so perf was not the spike risk.
-- One non-reproducible shutdown segfault after a capture run: TextureCache
-  freeing a live entry into a destroyed VulkanDescriptorCache during game.so
-  static teardown. The spike deliberately leaks one atlas ref (no
-  ZoneLightmapComponent release traits yet); Phase 1's traits remove the leak.
-  Revisit if it recurs after that.
+- Shutdown segfault after a capture run: RESOLVED 2026-07-21. It was not a
+  descriptor-cache double-free but a heap-use-after-free, caught under
+  AddressSanitizer and root-caused across the module boundary. The
+  SceneViewer game module's `OnShutdown` tore down zones but never released
+  its `RuntimeAssets` (the GPU-backed `StaticMeshCache`/`TextureCache`).
+  Those caches live inside the module-static `Game` instance, whose
+  destructor runs at `__cxa_finalize` (process exit) after `Engine::~Engine`
+  has already freed `GraphicsServices`, so `~StaticMeshCache` called
+  `VulkanBufferService::Destroy` on a freed buffer service. Fix: release the
+  caches in `OnShutdown` while the device is up (`Preloader.reset();
+  Assets.reset();`), matching the template game's teardown. CubeDemo carried
+  the identical latent defect and was fixed the same way.
 - In-engine debug-view screenshots (baked_direct / lightmap_texels) owed: the
   SceneViewer free-cam pose depends on cursor position, so unattended captures
   drift; the decoded-atlas PNGs cover the same diagnostic for the spike.

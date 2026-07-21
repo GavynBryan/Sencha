@@ -151,7 +151,8 @@ namespace
 
             const double angle = static_cast<double>(FrameCounter) * kAngularStep;
             transform->Value.Position = Vec3d{
-                std::cos(angle) * kRadius, kHeight, std::sin(angle) * kRadius };
+                static_cast<float>(std::cos(angle) * kRadius), kHeight,
+                static_cast<float>(std::sin(angle) * kRadius) };
             const float yaw = static_cast<float>(angle) + kPi; // face the orbit center
             transform->Value.Rotation =
                 Quatf::FromAxisAngle(Vec3d::Up(), yaw)
@@ -365,6 +366,15 @@ void SceneViewerGame::OnShutdown(GameShutdownContext&)
 
     GetEngine().Zones().DestroyZone(kPlayZone);
     ActiveZoneRegistry = nullptr;
+
+    // Release the GPU-backed asset caches while OnShutdown still runs with the
+    // engine (device, allocators, descriptor pools) up. DestroyZone above
+    // returned the zone's mesh and texture handles to these caches; freeing
+    // them now, rather than at the module-static Game's own destruction (which
+    // runs at process exit after the device is gone), is what keeps a clean
+    // window close from freeing GPU handles into dead graphics services.
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& SceneViewerGame::RuntimeAssetState()

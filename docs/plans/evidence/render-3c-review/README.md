@@ -61,7 +61,12 @@ per-shadow-view budget rows are not meaningfully exercised; the scripted
 orbit culls lights behind the camera, so the stress median sees ~25 lights
 with peaks at the full 64.
 
-Also observed: the known shutdown segfault (TextureCache teardown during
-game.so static destruction) reproduced on 3 of 9 runs, always after the
-capture file was fully written. Previously recorded as non-reproducible;
-these odds make it worth a dedicated chase.
+Also observed during these runs: the shutdown segfault (reproduced on 3 of 9
+runs, always after the capture file was written) was chased down and fixed
+2026-07-21. AddressSanitizer showed a heap-use-after-free, not the
+descriptor-cache double-free previously guessed: the SceneViewer module's
+`OnShutdown` never released its GPU-backed `RuntimeAssets`, so the caches
+freed their handles at process-exit static destruction after the graphics
+services were already gone. Fixed by releasing the caches in `OnShutdown`
+(the template game's pattern); CubeDemo had the same latent defect. See the
+lightmap-atlas evidence README for the full write-up.

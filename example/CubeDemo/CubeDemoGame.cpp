@@ -387,6 +387,18 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 
     GetEngine().Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
+
+    // Release the GPU-backed asset caches while OnShutdown still runs with the
+    // engine (device, allocators, descriptor pools) up. DestroyZone above
+    // returned the zone's mesh and texture handles to these caches; the hot
+    // reloader and preloader hold references into the asset system, so they
+    // drop first. Left to the module-static Game's own destruction (process
+    // exit, after the device is gone), the caches would free GPU handles into
+    // dead graphics services and corrupt the heap on a clean window close.
+    Watcher.reset();
+    Reloader.reset();
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& CubeDemoGame::RuntimeAssetState()
