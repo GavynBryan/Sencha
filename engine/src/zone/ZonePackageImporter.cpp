@@ -28,7 +28,6 @@ bool SeedDerivedTransform(
 {
     if (component.Type != ResolveComponentTypeId<LocalTransform>())
         return true;
-
     if (component.RuntimeBytes.size() != sizeof(LocalTransform))
         return false;
 
@@ -59,7 +58,7 @@ bool ImportComponent(
     if (entry == nullptr)
     {
         failure =
-            "Zone package contains a component absent from the runtime schema.";
+            "Package contains a component absent from the runtime schema.";
         return false;
     }
 
@@ -68,15 +67,16 @@ bool ImportComponent(
         if (serializers == nullptr || sceneContext == nullptr)
         {
             failure =
-                "Zone package contains serialized data without an import context.";
+                "Package contains serialized data without an import context.";
             return false;
         }
 
-        IComponentSerializer* serializer = serializers->FindByType(component.Type);
+        IComponentSerializer* serializer =
+            serializers->FindByType(component.Type);
         if (serializer == nullptr)
         {
             failure =
-                "Zone package serialized component has no registered decoder.";
+                "Package serialized component has no registered decoder.";
             return false;
         }
 
@@ -88,7 +88,7 @@ bool ImportComponent(
                 *sceneContext)
             || !archive.Ok())
         {
-            failure = "Zone package serialized component decode failed.";
+            failure = "Package serialized component decode failed.";
             return false;
         }
         return true;
@@ -97,7 +97,7 @@ bool ImportComponent(
     if (entry->Size != component.RuntimeBytes.size())
     {
         failure =
-            "Zone package component byte size does not match the runtime schema.";
+            "Package component byte size does not match the runtime schema.";
         return false;
     }
     if (!schema.ImportComponent(
@@ -106,54 +106,41 @@ bool ImportComponent(
             component.Type,
             component.RuntimeBytes))
     {
-        failure = "Zone package component import failed.";
+        failure = "Package component import failed.";
         return false;
     }
     if (!SeedDerivedTransform(world, entity, component))
     {
-        failure = "Zone package LocalTransform payload is invalid.";
+        failure = "Package LocalTransform payload is invalid.";
         return false;
     }
     return true;
 }
 
-bool ImportZonePackageImpl(
-    RuntimeWorld& runtime,
+bool ImportPackageIntoPartitionImpl(
+    World& world,
     const WorldComponentSchema& schema,
     const ZoneLoadPackage& package,
+    StoragePartitionId partition,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
-    bool publish,
-    ZoneParticipation participation,
     ZoneImportError* error)
 {
-    if (!package.Zone().IsValid())
-    {
-        SetError(error, "Zone package has an invalid ZoneId.");
-        return false;
-    }
-    if (runtime.FindZone(package.Zone()) != nullptr)
-    {
-        SetError(error, "Zone package targets an already loaded or importing zone.");
-        return false;
-    }
-
-    RuntimeZoneRecord& importing = runtime.BeginZoneImport(package.Zone());
-    World& world = runtime.Entities();
-
     std::vector<EntityId> entities;
     entities.reserve(package.EntityCount());
 
-    const auto fail = [&](std::string message) {
-        const bool cancelled = runtime.CancelZoneImport(package.Zone());
-        (void)cancelled;
+    const auto fail = [&](std::string message)
+    {
+        for (auto it = entities.rbegin(); it != entities.rend(); ++it)
+            if (world.IsAlive(*it))
+                world.DestroyEntity(*it);
         SetError(error, std::move(message));
         return false;
     };
 
     for (const ZonePackageEntity& packageEntity : package.Entities())
     {
-        const EntityId entity = world.CreateEntity(importing.Partition);
+        const EntityId entity = world.CreateEntity(partition);
         entities.push_back(entity);
 
         for (const ZonePackageComponent& component : packageEntity.Components)
@@ -178,7 +165,7 @@ bool ImportZonePackageImpl(
         if (!package.ContainsEntity(relation.Child)
             || !package.ContainsEntity(relation.Parent))
         {
-            return fail("Zone package hierarchy references an unknown entity.");
+            return fail("Package hierarchy references an unknown entity.");
         }
 
         const EntityId child = entities[relation.Child.Value];
@@ -189,14 +176,102 @@ bool ImportZonePackageImpl(
             world.AddComponent<Parent>(child, Parent{ parent });
     }
 
-    if (publish && !runtime.PublishZone(package.Zone(), participation))
-        return fail("Zone package could not publish its hidden import partition.");
+    if (error != nullptr)
+        error->Message.clear();
+    return true;
+}
+
+bool ImportZonePackageImpl(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    const ComponentSerializerRegistry* serializers,
+    SceneSerializationContext* sceneContext,
+    bool publish,
+    ZoneParticipation participation,
+    ZoneImportError* error)
+{
+    if (!package.Zone().IsValid())
+    {
+        SetError(error, "Zone package has an invalid ZoneId.");
+        return false;
+    }
+    if (runtime.FindZone(package.Zone()) != nullptr)
+    {
+        SetError(
+            error,
+            "Zone package targets an already loaded or importing zone.");
+        return false;
+    }
+
+    RuntimeZoneRecord& importing =
+        runtime.BeginZoneImport(package.Zone());
+    if (!ImportPackageIntoPartitionImpl(
+            runtime.Entities(),
+            schema,
+            package,
+            importing.Partition,
+            serializers,
+            sceneContext,
+            error))
+    {
+        const bool cancelled = runtime.CancelZoneImport(package.Zone());
+        (void)cancelled;
+        return false;
+    }
+
+    if (publish
+        && !runtime.PublishZone(package.Zone(), participation))
+    {
+        const bool cancelled = runtime.CancelZoneImport(package.Zone());
+        (void)cancelled;
+        SetError(
+            error,
+            "Zone package could not publish its hidden import partition.");
+        return false;
+    }
 
     if (error != nullptr)
         error->Message.clear();
     return true;
 }
 } // namespace
+
+bool ImportPackageIntoPartition(
+    World& world,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    StoragePartitionId partition,
+    ZoneImportError* error)
+{
+    return ImportPackageIntoPartitionImpl(
+        world,
+        schema,
+        package,
+        partition,
+        nullptr,
+        nullptr,
+        error);
+}
+
+bool ImportPackageIntoPartition(
+    World& world,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    StoragePartitionId partition,
+    const ComponentSerializerRegistry& serializers,
+    SceneSerializationContext& sceneContext,
+    ZoneImportError* error)
+{
+    return ImportPackageIntoPartitionImpl(
+        world,
+        schema,
+        package,
+        partition,
+        &serializers,
+        &sceneContext,
+        error);
+}
 
 bool ImportZonePackageHidden(
     RuntimeWorld& runtime,
