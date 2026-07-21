@@ -1,0 +1,29 @@
+name: Port partition policy to RuntimeWorld
+
+on:
+  push:
+    paths:
+      - '.github/workflows/port-partition-policy-runtime-world.yml'
+      - 'tools/temporary/port_partition_policy_runtime_world.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out cutover branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply partition policy cutover
+        run: python3 tools/temporary/port_partition_policy_runtime_world.py
+      - name: Commit clean source
+        run: |
+          git config user.name "sencha-unified-runtime"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor(zone): drive streaming policy through RuntimeWorld"
+          git push origin HEAD:${GITHUB_REF_NAME}
