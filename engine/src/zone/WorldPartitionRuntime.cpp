@@ -1,5 +1,6 @@
 #include <zone/WorldPartitionRuntime.h>
 
+#include <world/RuntimeWorld.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/WorldPartitionValidation.h>
 
@@ -211,7 +212,7 @@ void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
 }
 
 void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
-                                   ZoneRuntime& zones)
+                                   RuntimeWorld& world)
 {
     std::vector<ZoneDemandRecord> demand;
     std::vector<ZoneHopRank> ranks;
@@ -251,7 +252,7 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 
     std::vector<const ZoneDemandRecord*> toLoad;
     for (const ZoneDemandRecord& record : demand)
-        if (!zones.IsZoneLoaded(record.Zone) && !loader.IsLoading(record.Zone))
+        if (!world.IsZoneResident(record.Zone) && !loader.IsLoading(record.Zone))
             toLoad.push_back(&record);
     std::sort(toLoad.begin(), toLoad.end(),
               [&](const ZoneDemandRecord* a, const ZoneDemandRecord* b)
@@ -283,10 +284,14 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 
     for (const ZoneDemandRecord& record : demand)
     {
-        if (!zones.IsZoneLoaded(record.Zone))
+        if (!world.IsZoneResident(record.Zone))
             continue;
-        if (!SameParticipation(zones.GetParticipation(record.Zone), record.Desired))
-            zones.SetParticipation(record.Zone, record.Desired);
+        const RuntimeZoneRecord* resident = world.FindZone(record.Zone);
+        if (resident != nullptr
+            && !SameParticipation(resident->Participation, record.Desired))
+        {
+            (void)world.RequestParticipation(record.Zone, record.Desired);
+        }
     }
 
     std::vector<ZoneId> stillPending;
@@ -301,11 +306,11 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     Issued_ = std::move(stillPending);
 
     std::erase_if(PendingDestroys_,
-                  [&](ZoneId zone) { return !zones.IsZoneLoaded(zone); });
+                  [&](ZoneId zone) { return !world.IsZoneResident(zone); });
 
     std::vector<const ZoneHeader*> loadedHeaders;
     for (const ZoneHeader& header : Manifest_.Zones)
-        if (zones.IsZoneLoaded(header.Id))
+        if (world.IsZoneResident(header.Id))
             loadedHeaders.push_back(&header);
     std::sort(loadedHeaders.begin(), loadedHeaders.end(),
               [](const ZoneHeader* a, const ZoneHeader* b)
@@ -336,8 +341,9 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 PendingDestroys_.push_back(zone);
             }
         }
-        if (zones.GetParticipation(zone).Any())
-            zones.SetParticipation(zone, ZoneParticipation{});
+        const RuntimeZoneRecord* resident = world.FindZone(zone);
+        if (resident != nullptr && resident->Participation.Any())
+            (void)world.RequestParticipation(zone, ZoneParticipation{});
         lingering.push_back(state);
         lingerRecords.push_back(zone);
     }
