@@ -1,18 +1,18 @@
 #pragma once
 
 #include <assets/probes/ProbeVolumeFormat.h>
+#include <ecs/StoragePartitionId.h>
+#include <ecs/StoragePartitionSet.h>
 #include <render/LightBindings.h>
 #include <render/RenderLight.h>
-#include <world/registry/RegistryId.h>
 
 #include <cstdint>
 #include <memory>
-#include <span>
 #include <vector>
 
 class LoggingProvider;
 class VulkanImageService;
-struct Registry;
+struct RuntimeZoneRecord;
 
 //=============================================================================
 // ProbeVolumeSet
@@ -28,8 +28,9 @@ struct Registry;
 //
 // Threading: Add/Release run on the owner thread at the async drain point,
 // extraction on the same thread later in the frame; there is no concurrent
-// access. GPU teardown ordering rides zone destruction: registries die before
-// graphics services, and image destruction defers through the deletion queue.
+// access. GPU teardown ordering rides zone destruction: zone records die
+// before graphics services, and image destruction defers through the deletion
+// queue.
 //=============================================================================
 class ProbeVolumeSet
 {
@@ -38,15 +39,15 @@ public:
                LoggingProvider* logging);
 
     // Uploads every volume in `file` and assigns binding slots. Re-adding a
-    // registry releases its previous volumes first (zone reload). Returns the
+    // partition releases its previous volumes first (zone reload). Returns the
     // number of volumes made resident.
-    std::size_t AddZoneVolumes(RegistryId registry, const ProbeVolumeFile& file);
-    void ReleaseZone(RegistryId registry);
+    std::size_t AddZoneVolumes(StoragePartitionId zone, const ProbeVolumeFile& file);
+    void ReleaseZone(StoragePartitionId zone);
     void ReleaseAll();
 
-    // Appends the resident volume headers of every listed registry to the
+    // Appends the resident volume headers of every visible partition to the
     // frame's light set (bounded by the light set's own cap).
-    void AppendActive(std::span<Registry* const> registries,
+    void AppendActive(const StoragePartitionSet& partitions,
                       RenderLightSet& lights) const;
 
     [[nodiscard]] std::size_t ResidentVolumeCount() const;
@@ -60,7 +61,7 @@ private:
     };
     struct ZoneRecord
     {
-        RegistryId Registry;
+        StoragePartitionId Partition;
         std::vector<ResidentVolume> Volumes;
     };
 
@@ -76,15 +77,15 @@ private:
 //=============================================================================
 // ZoneProbeResidency
 //
-// Registry resource tying a zone's probe residency to the registry's
+// Zone-record resource tying a zone's probe residency to the record's
 // lifetime: zone destruction (streaming unload or shutdown) releases the
 // volumes without any explicit hook in the host game.
 //=============================================================================
 struct ZoneProbeResidency
 {
-    ZoneProbeResidency(ProbeVolumeSet* set, RegistryId registry)
+    ZoneProbeResidency(ProbeVolumeSet* set, StoragePartitionId zone)
         : Set(set)
-        , Registry(registry)
+        , Zone(zone)
     {
     }
     ZoneProbeResidency(const ZoneProbeResidency&) = delete;
@@ -92,11 +93,11 @@ struct ZoneProbeResidency
     ~ZoneProbeResidency()
     {
         if (Set != nullptr)
-            Set->ReleaseZone(Registry);
+            Set->ReleaseZone(Zone);
     }
 
     ProbeVolumeSet* Set = nullptr;
-    RegistryId Registry;
+    StoragePartitionId Zone;
 };
 
 // Reads the probe payload cooked beside a scene: for
@@ -105,7 +106,7 @@ struct ZoneProbeResidency
 // false with `out` empty). Pure file IO, safe on a zone build task thread.
 bool ReadZoneProbeFile(const std::string& cookedScenePath, ProbeVolumeFile& out);
 
-// Makes a decoded payload resident and ties it to the registry's lifetime via
-// a ZoneProbeResidency resource. Owner thread only (descriptor writes).
-void AttachZoneProbes(ProbeVolumeSet& set, Registry& registry,
+// Makes a decoded payload resident and ties it to the zone record's lifetime
+// via a ZoneProbeResidency resource. Owner thread only (descriptor writes).
+void AttachZoneProbes(ProbeVolumeSet& set, RuntimeZoneRecord& zone,
                       const ProbeVolumeFile& file);

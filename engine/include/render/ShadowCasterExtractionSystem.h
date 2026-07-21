@@ -1,5 +1,8 @@
 #pragma once
 
+#include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <math/Mat.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <render/MaterialCache.h>
@@ -7,11 +10,11 @@
 #include <render/ShadowCasterSet.h>
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
+#include <world/transform/TransformComponents.h>
 
 #include <cstdint>
+#include <optional>
 #include <span>
-
-struct Registry;
 
 // Per-instance gather summary, feeding the caster diff: which sections
 // actually cast after material filtering, the shadow-relevant material state
@@ -59,10 +62,15 @@ public:
     // feed the caster diff. Building and sorting it costs one entry per caster
     // per frame, so it is skipped while no on-change shadow slot is asking for
     // events. Draw items are always extracted.
-    void Extract(std::span<Registry*> registries,
+    void Extract(const World& world,
+                 const StoragePartitionSet& partitions,
                  const StaticMeshCache& meshes,
                  const MaterialCache& materials,
                  const MaterialSetCache& materialSets,
                  ShadowCasterSet& casters,
-                 bool emitRecords = true) const;
+                 bool emitRecords = true);
+
+private:
+    const World* LastWorld = nullptr;
+    std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> CachedQuery;
 };

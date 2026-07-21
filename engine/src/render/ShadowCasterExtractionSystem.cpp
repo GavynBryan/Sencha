@@ -1,7 +1,6 @@
 #include <render/ShadowCasterExtractionSystem.h>
 
-#include <world/registry/Registry.h>
-#include <world/transform/TransformComponents.h>
+#include <render/RenderEntityKey.h>
 
 namespace
 {
@@ -103,56 +102,61 @@ ShadowCasterGatherResult AppendShadowCasters(
 }
 
 void ShadowCasterExtractionSystem::Extract(
-    std::span<Registry*> registries,
+    const World& world,
+    const StoragePartitionSet& partitions,
     const StaticMeshCache& meshes,
     const MaterialCache& materials,
     const MaterialSetCache& materialSets,
     ShadowCasterSet& casters,
-    bool emitRecords) const
+    bool emitRecords)
 {
     casters.Reset();
 
-    for (Registry* registry : registries)
+    if (!world.IsRegistered<WorldTransform>()
+        || !world.IsRegistered<StaticMeshComponent>())
     {
-        if (registry == nullptr)
-            continue;
-
-        const World& world = registry->Components;
-        if (!world.IsRegistered<WorldTransform>()
-            || !world.IsRegistered<StaticMeshComponent>())
-        {
-            continue;
-        }
-
-        world.ForEachComponent<StaticMeshComponent>(
-            [&](EntityId entity, const StaticMeshComponent& renderer)
-            {
-                if (!renderer.Visible || !renderer.CastShadows)
-                    return;
-
-                const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
-                const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
-                const std::vector<MaterialHandle>* sectionMaterials =
-                    materialSets.Get(renderer.Materials);
-                if (transform == nullptr || mesh == nullptr || sectionMaterials == nullptr)
-                    return;
-
-                const ShadowCasterGatherResult gathered = AppendShadowCasters(
-                    renderer, *mesh, *sectionMaterials, materials,
-                    transform->Value.ToMat4(), casters);
-                if (gathered.EffectiveSectionMask == 0 || !emitRecords)
-                    return;
-
-                casters.Records.push_back(ShadowCasterRecord{
-                    .Key = MakeRenderEntityKey(*registry, entity),
-                    .State = ShadowCasterState{
-                        .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                        .Mesh = renderer.Mesh,
-                        .Materials = renderer.Materials,
-                        .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                        .ShadowMaterialStateHash = gathered.MaterialStateHash,
-                    },
-                });
-            });
+        return;
     }
+
+    if (LastWorld != &world || !CachedQuery.has_value())
+    {
+        CachedQuery.emplace(world);
+        LastWorld = &world;
+    }
+
+    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto transforms = view.template Read<WorldTransform>();
+        const auto renderers = view.template Read<StaticMeshComponent>();
+
+        for (uint32_t i = 0; i < view.Count(); ++i)
+        {
+            const StaticMeshComponent& renderer = renderers[i];
+            if (!renderer.Visible || !renderer.CastShadows)
+                continue;
+
+            const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
+            const std::vector<MaterialHandle>* sectionMaterials =
+                materialSets.Get(renderer.Materials);
+            if (mesh == nullptr || sectionMaterials == nullptr)
+                continue;
+
+            const ShadowCasterGatherResult gathered = AppendShadowCasters(
+                renderer, *mesh, *sectionMaterials, materials,
+                transforms[i].Value.ToMat4(), casters);
+            if (gathered.EffectiveSectionMask == 0 || !emitRecords)
+                continue;
+
+            casters.Records.push_back(ShadowCasterRecord{
+                .Key = RenderEntityKey{ .Entity = view.Entity(i) },
+                .State = ShadowCasterState{
+                    .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                    .Mesh = renderer.Mesh,
+                    .Materials = renderer.Materials,
+                    .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                    .ShadowMaterialStateHash = gathered.MaterialStateHash,
+                },
+            });
+        }
+    });
 }
