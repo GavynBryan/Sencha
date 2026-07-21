@@ -124,10 +124,6 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
                 std::chrono::duration<double, std::milli>(config.Runtime.AsyncCommitBudgetMs));
         }
         engine.Tasks().DrainCompletions(budget);
-
-        // Gameplay and streaming policy may queue participation while the prior
-        // frame view is live. This is the only point where those requests become
-        // current, before retained backends and the next view observe them.
         engine.World().FlushLifecycleRequests();
     });
 
@@ -269,6 +265,12 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
 
     driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+
+        // PumpPlatform may request exit before lifecycle drain and frame-view
+        // construction. That path has no simulation work to finalize.
+        if (ctx.Zones == nullptr)
+            return;
+
         const FrameZoneView& zones = *ctx.Zones;
         EndFrameContext endFrame{
             .Config = config,
