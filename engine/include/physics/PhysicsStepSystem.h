@@ -1,34 +1,40 @@
 #pragma once
 
+#include <physics/CharacterMoverPool.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsWorld.h>
+#include <physics/RigidBodyBinding.h>
 
 struct PhysicsContext;
-struct RegistryResidencyContext;
+struct ZoneResidencyContext;
 
-//=============================================================================
-// PhysicsStepSystem
-//
-// Owns the one shared PhysicsWorld and orchestrates registry-local backend
-// bindings. RegistryResidency runs once per rendered frame before the frame view:
-// it evicts registries leaving physics, restores registries entering physics,
-// and performs unconditional final teardown for Detaching registries. Physics
-// then synchronizes every active registry, steps once, and pulls results back.
-//=============================================================================
+// Owns the single retained physics scene for one simulation. Rigid bodies and
+// character movers are simulation-wide backend records keyed by ordinary
+// EntityId; storage partitions only control residency inside that scene.
 class PhysicsStepSystem
 {
 public:
     PhysicsStepSystem();
     ~PhysicsStepSystem();
 
-    void RegistryResidency(RegistryResidencyContext& ctx);
+    void ZoneResidency(ZoneResidencyContext& ctx);
     void Physics(PhysicsContext& ctx);
 
     [[nodiscard]] PhysicsWorld& GetSimulation() { return Simulation; }
     [[nodiscard]] CollisionShapeCache& GetShapeCache() { return Shapes; }
+    [[nodiscard]] CharacterMoverPool& GetCharacterMovers()
+    {
+        return Characters;
+    }
+    [[nodiscard]] RigidBodyBinding& GetRigidBodies()
+    {
+        return Bodies;
+    }
 
 private:
     CollisionShapeCache Shapes;
     PhysicsWorld Simulation;
+    RigidBodyBinding Bodies;
+    CharacterMoverPool Characters;
     int CollisionSteps = 1;
 };
