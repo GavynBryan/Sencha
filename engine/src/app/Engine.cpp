@@ -13,6 +13,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/ThreadPoolJobSystem.h>
 #include <runtime/FrameDriver.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -354,7 +355,16 @@ int Engine::Run(Game& game)
         return 1;
 
     game.AttachEngine(*this);
+
+    // Serializers and runtime storage share stable component identities but are
+    // independent registries. The editor calls only the serializer hook; the
+    // runtime additionally composes and seals the complete World vocabulary.
     game.OnRegisterComponents(DefaultComponentSerializerRegistry());
+
+    RuntimeComponentSchemaState = WorldComponentSchema{};
+    RegisterEngineRuntimeComponents(RuntimeComponentSchemaState);
+    game.OnRegisterRuntimeComponents(RuntimeComponentSchemaState);
+    RuntimeComponentSchemaState.Seal();
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);
@@ -418,6 +428,11 @@ int Engine::Run(Game& game)
     };
     game.OnShutdown(shutdown);
     game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
+
+    // Game component entries contain concrete registration function pointers
+    // instantiated in the game module. Clear them before Engine::Run returns and
+    // the host is allowed to unmap that module.
+    RuntimeComponentSchemaState = WorldComponentSchema{};
     return 0;
 }
 
