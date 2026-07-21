@@ -2,14 +2,17 @@
 
 #include <app/GameContexts.h>
 #include <ecs/ComponentId.h>
+#include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <world/registry/Registry.h>
 
 #include <utility>
 #include <vector>
 
-void LocomotionModeRegistry::Register(ComponentTypeId marker, GameplayTagId activeTag)
+void LocomotionModeRegistry::Register(
+    ComponentTypeId marker,
+    GameplayTagId activeTag)
 {
     for (LocomotionModeEntry& entry : Modes)
     {
@@ -22,7 +25,8 @@ void LocomotionModeRegistry::Register(ComponentTypeId marker, GameplayTagId acti
     Modes.push_back({ marker, activeTag });
 }
 
-GameplayTagId LocomotionModeRegistry::TagFor(ComponentTypeId marker) const
+GameplayTagId LocomotionModeRegistry::TagFor(
+    ComponentTypeId marker) const
 {
     for (const LocomotionModeEntry& entry : Modes)
         if (entry.Marker == marker)
@@ -30,90 +34,136 @@ GameplayTagId LocomotionModeRegistry::TagFor(ComponentTypeId marker) const
     return GameplayTagId{};
 }
 
-void RequestLocomotionMode(World& world, EntityId entity, ComponentTypeId marker, int priority)
+void RequestLocomotionMode(
+    World& world,
+    EntityId entity,
+    ComponentTypeId marker,
+    int priority)
 {
-    LocomotionModeRequest* request = world.TryGet<LocomotionModeRequest>(entity);
-    if (request == nullptr)
-        return;
-    if (priority > request->Priority)
+    LocomotionModeRequest* request =
+        world.TryGet<LocomotionModeRequest>(entity);
+    if (request != nullptr && priority > request->Priority)
     {
         request->Priority = priority;
         request->Marker = marker;
     }
 }
 
-void ApplyLocomotionModes(World& world)
+namespace
+{
+struct ResolvedMode
+{
+    EntityId Entity;
+    ComponentId Current;
+    ComponentId Desired;
+    ComponentTypeId DesiredType;
+};
+
+void ApplyLocomotionModesImpl(
+    World& world,
+    const StoragePartitionSet* partitions)
 {
     if (!world.IsRegistered<LocomotionModeRequest>())
         return;
-    const LocomotionModeRegistry* registry = std::as_const(world).TryGetResource<LocomotionModeRegistry>();
+    const LocomotionModeRegistry* registry =
+        std::as_const(world).TryGetResource<LocomotionModeRegistry>();
     if (registry == nullptr)
         return;
 
-    // Marker swaps are structural, so collect during iteration and apply after
-    // (World type-erased ops assert no active query). We record every requesting
-    // entity (not just the ones that change marker) so the projected tag is kept
-    // consistent each tick, including the spawn-bootstrap case.
-    struct Resolved
+    std::vector<ResolvedMode> resolved;
+    Query<Write<LocomotionModeRequest>> query(world);
+    const auto visit = [&](auto& view)
     {
-        EntityId Entity;
-        ComponentId Current; // marker id the entity holds now, or invalid
-        ComponentId Desired; // marker id the winning request wants
-        ComponentTypeId DesiredType;
-    };
-    std::vector<Resolved> resolved;
-
-    world.ForEachComponent<LocomotionModeRequest>([&](EntityId entity, LocomotionModeRequest& request)
-    {
-        if (request.Priority <= 0)
-            return;
-        const ComponentTypeId desiredType = request.Marker;
-        request.Priority = 0;              // consume the request this tick
-        request.Marker = ComponentTypeId{};
-
-        const ComponentId desired = world.GetComponentIdByType(desiredType);
-        if (desired == InvalidComponentId)
-            return; // marker not registered in this World
-
-        ComponentId current = InvalidComponentId;
-        for (const LocomotionModeEntry& entry : registry->Entries())
+        auto requests = view.template Write<LocomotionModeRequest>();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            const ComponentId id = world.GetComponentIdByType(entry.Marker);
-            if (id != InvalidComponentId && world.HasComponent(entity, id))
+            LocomotionModeRequest& request = requests[i];
+            if (request.Priority <= 0)
+                continue;
+
+            const EntityId entity = view.Entity(i);
+            const ComponentTypeId desiredType = request.Marker;
+            request.Priority = 0;
+            request.Marker = ComponentTypeId{};
+
+            const ComponentId desired =
+                world.GetComponentIdByType(desiredType);
+            if (desired == InvalidComponentId)
+                continue;
+
+            ComponentId current = InvalidComponentId;
+            for (const LocomotionModeEntry& entry : registry->Entries())
             {
-                current = id;
-                break;
+                const ComponentId id =
+                    world.GetComponentIdByType(entry.Marker);
+                if (id != InvalidComponentId
+                    && world.HasComponent(entity, id))
+                {
+                    current = id;
+                    break;
+                }
+            }
+            resolved.push_back(
+                { entity, current, desired, desiredType });
+        }
+    };
+
+    if (partitions != nullptr)
+        query.ForEachChunkIn(*partitions, visit);
+    else
+        query.ForEachChunk(visit);
+
+    for (const ResolvedMode& mode : resolved)
+    {
+        if (mode.Current != mode.Desired)
+        {
+            if (mode.Current != InvalidComponentId)
+                world.RemoveComponentRaw(mode.Entity, mode.Current, nullptr);
+            if (!world.HasComponent(mode.Entity, mode.Desired))
+            {
+                world.AddComponentRaw(
+                    mode.Entity,
+                    mode.Desired,
+                    nullptr,
+                    0,
+                    1,
+                    nullptr);
             }
         }
-        resolved.push_back({ entity, current, desired, desiredType });
-    });
 
-    for (const Resolved& r : resolved)
-    {
-        if (r.Current != r.Desired)
+        if (GameplayTagContainer* tags =
+                world.TryGet<GameplayTagContainer>(mode.Entity))
         {
-            if (r.Current != InvalidComponentId)
-                world.RemoveComponentRaw(r.Entity, r.Current, nullptr);
-            if (!world.HasComponent(r.Entity, r.Desired))
-                world.AddComponentRaw(r.Entity, r.Desired, nullptr, 0, 1, nullptr);
-        }
-
-        // Project exactly the current mode's gameplay tag (mutual exclusion),
-        // idempotently -- so gating tags are correct even without a marker change.
-        if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(r.Entity))
-        {
-            const GameplayTagId desiredTag = registry->TagFor(r.DesiredType);
+            const GameplayTagId desiredTag =
+                registry->TagFor(mode.DesiredType);
             for (const LocomotionModeEntry& entry : registry->Entries())
-                if (entry.Marker != r.DesiredType && entry.ActiveTag.IsValid())
+            {
+                if (entry.Marker != mode.DesiredType
+                    && entry.ActiveTag.IsValid())
+                {
                     tags->Revoke(entry.ActiveTag);
+                }
+            }
             if (desiredTag.IsValid() && !tags->HasExact(desiredTag))
                 tags->Grant(desiredTag);
         }
     }
 }
+} // namespace
+
+void ApplyLocomotionModes(World& world)
+{
+    ApplyLocomotionModesImpl(world, nullptr);
+}
+
+void ApplyLocomotionModes(
+    World& world,
+    const StoragePartitionSet& partitions)
+{
+    ApplyLocomotionModesImpl(world, &partitions);
+}
 
 void LocomotionModeArbiter::FixedLogic(FixedLogicContext& ctx)
 {
-    for (Registry* reg : ctx.ActiveRegistries)
-        ApplyLocomotionModes(reg->Components);
+    ApplyLocomotionModes(ctx.Entities, ctx.Partitions);
 }
