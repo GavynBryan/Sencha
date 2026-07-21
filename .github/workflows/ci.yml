@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -26,42 +26,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Apply one-shot partition transformation
-        id: partition_patch
-        continue-on-error: true
-        run: |
-          python3 tools/temporary/fix_partition_patch_script.py
-          python3 tools/temporary/apply_partition_world_patch.py > partition-patch.log 2>&1
-
-      - name: Publish patch diagnostic
-        if: steps.partition_patch.outcome == 'failure'
-        run: |
-          cat partition-patch.log || true
-          git config user.name "sencha-partition-migration"
-          git config user.email "actions@users.noreply.github.com"
-          git add -f partition-patch.log tools/temporary/apply_partition_world_patch.py
-          git commit -m "chore(dev): capture partition patch failure"
-          git push origin HEAD:${GITHUB_HEAD_REF}
-          exit 1
-
-      - name: Restore normal CI and commit transformed source
-        if: steps.partition_patch.outcome == 'success'
-        run: |
-          git fetch origin "${{ github.base_ref }}"
-          git checkout "origin/${{ github.base_ref }}" -- .github/workflows/ci.yml
-          rm -f tools/temporary/fix_partition_patch_script.py partition-patch.log
-          git config user.name "sencha-partition-migration"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "feat(ecs): add partition-aware world operations"
-          git push origin HEAD:${GITHUB_HEAD_REF}
 
       - name: Install build and Vulkan dependencies
-        if: steps.partition_patch.outcome == 'success'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
@@ -70,7 +36,6 @@ jobs:
             ninja-build
 
       - name: Build and install SDL3
-        if: steps.partition_patch.outcome == 'success'
         id: sdl
         uses: libsdl-org/setup-sdl@a966470e7d9b6a5c93eec3f08d5dac370325c860
         with:
@@ -78,13 +43,11 @@ jobs:
           install-linux-dependencies: true
 
       - name: Configure
-        if: steps.partition_patch.outcome == 'success'
         run: >-
           cmake --preset ci
           -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}"
 
       - name: Build
-        if: steps.partition_patch.outcome == 'success'
         run: |
           set -o pipefail
           cmake --build --preset ci --parallel 2 2>&1 | tee build-ci.log
@@ -95,11 +58,10 @@ jobs:
         with:
           name: linux-build-log
           path: build-ci.log
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
       - name: Test
-        if: steps.partition_patch.outcome == 'success'
         run: |
           set -o pipefail
           ctest --preset ci 2>&1 | tee test-ci.log
@@ -110,5 +72,5 @@ jobs:
         with:
           name: linux-test-log
           path: test-ci.log
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
