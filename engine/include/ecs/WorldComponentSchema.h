@@ -6,19 +6,20 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstring>
 #include <span>
 #include <string_view>
 #include <type_traits>
 #include <vector>
 
-// Frozen registration recipe for the complete component vocabulary of one
-// runtime World.
+// Frozen registration and import recipe for the complete component vocabulary
+// of one runtime World.
 //
 // Engine and game code add concrete component types during module setup, then
 // seal the schema. Any runtime World created from that game applies the same
 // ordered recipe before its first entity exists. Streamed content resolves
-// stable ComponentTypeId values against the resulting World; it never registers
-// storage on a worker or during import.
+// stable ComponentTypeId values against this schema; it never registers storage
+// on a worker or during import.
 class WorldComponentSchema
 {
 public:
@@ -32,7 +33,13 @@ public:
 
     private:
         using RegisterFn = ComponentId (*)(World&);
+        using ImportFn = bool (*)(
+            World&,
+            EntityId,
+            std::span<const std::byte>);
+
         RegisterFn Register = nullptr;
+        ImportFn Import = nullptr;
 
         friend class WorldComponentSchema;
     };
@@ -70,6 +77,28 @@ public:
         entry.Register = [](World& world) {
             return world.RegisterComponent<T>();
         };
+        entry.Import = [](World& world,
+                          EntityId entity,
+                          std::span<const std::byte> bytes) {
+            if (world.HasComponent<T>(entity))
+                return false;
+
+            if constexpr (std::is_empty_v<T>)
+            {
+                if (!bytes.empty())
+                    return false;
+                world.AddComponent<T>(entity);
+            }
+            else
+            {
+                if (bytes.size() != sizeof(T))
+                    return false;
+                T value{};
+                std::memcpy(&value, bytes.data(), sizeof(T));
+                world.AddComponent<T>(entity, value);
+            }
+            return true;
+        };
         Entries_.push_back(entry);
         return true;
     }
@@ -94,6 +123,22 @@ public:
             assert(assigned == static_cast<ComponentId>(index)
                    && "World component registration order differs from sealed schema");
         }
+    }
+
+    // Imports one package component through the concrete component type that was
+    // registered during startup. This preserves typed AddComponent semantics,
+    // including OnAdd hooks, without putting function pointers in detached data.
+    bool ImportComponent(
+        World& world,
+        EntityId entity,
+        ComponentTypeId type,
+        std::span<const std::byte> bytes) const
+    {
+        assert(Sealed_ && "ImportComponent requires a sealed schema");
+        const Entry* entry = Find(type);
+        return entry != nullptr
+            && entry->Import != nullptr
+            && entry->Import(world, entity, bytes);
     }
 
     [[nodiscard]] const Entry* Find(ComponentTypeId type) const
