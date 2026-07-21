@@ -32,7 +32,10 @@ void main()
     vec3 ambientColor = mix(frame.AmbientGround.rgb, frame.AmbientSky.rgb, hemi);
     ambientColor = SampleProbeAmbient(inWorldPos, normal, ambientColor);
     ambientColor = max(ambientColor, vec3(max(frame.StyleParams.y, 0.0)));
-    vec3 lit = baseColor.rgb * ambientColor * clamp(orm.r, 0.0, 1.0);
+    // Baked AO joins the material's own occlusion channel on the ambient
+    // term only; direct light, baked direct, and emission stay untouched.
+    vec3 lit = baseColor.rgb * ambientColor * clamp(orm.r, 0.0, 1.0)
+        * SampleBakedAo();
 
     float roughness = clamp(pushData.RoughnessFactor * orm.g, 0.0, 1.0);
     float metallic = clamp(pushData.MetallicFactor * orm.b, 0.0, 1.0);

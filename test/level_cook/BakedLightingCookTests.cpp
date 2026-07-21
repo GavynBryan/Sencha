@@ -393,6 +393,82 @@ TEST_F(BakedLightingCookTest, NonBakedLightLeavesNoAtlas)
     EXPECT_FALSE(AnyCellVertexHasLightmapUv());
 }
 
+TEST_F(BakedLightingCookTest, AoPlaneBakesBesideTheAtlas)
+{
+    // The seam-wall fixture stands a wall on the floor: its base darkens the
+    // nearby floor texels while open floor stays fully visible.
+    const DocumentCookResult result =
+        CookDocument(AuthorSeamWall("test"), Root, 16.0);
+    ASSERT_TRUE(result.Success) << result.Error;
+
+    TextureData ao;
+    std::string error;
+    ASSERT_TRUE(LoadStexFromBytes(
+        ReadBytes(Root / ".cooked/levels/test/ao.stex"), ao, &error)) << error;
+    EXPECT_EQ(ao.Format, TexturePixelFormat::R8);
+    EXPECT_EQ(ao.Width, result.LightmapAtlasWidth);
+    EXPECT_EQ(ao.Height, result.LightmapAtlasHeight);
+    ASSERT_EQ(ao.Blob.size(),
+              static_cast<std::size_t>(ao.Width) * ao.Height);
+
+    std::uint8_t darkest = 255;
+    std::size_t fullyOpen = 0;
+    for (const std::uint8_t texel : ao.Blob)
+    {
+        darkest = std::min(darkest, texel);
+        if (texel == 255)
+            ++fullyOpen;
+    }
+    EXPECT_LT(darkest, 200u);   // contact darkening near the wall base
+    EXPECT_GT(fullyOpen, 0u);   // open floor and untouched fill stay white
+
+    std::ifstream scene(Root / ".cooked/levels/test.cooked.json");
+    std::ostringstream buffer;
+    buffer << scene.rdbuf();
+    EXPECT_NE(buffer.str().find("\"ao\""), std::string::npos);
+}
+
+TEST_F(BakedLightingCookTest, AoDisabledCooksNoPlane)
+{
+    LightingCookParams noAo{};
+    noAo.Ao.Enabled = false;
+    const DocumentCookResult result = CookDocument(
+        AuthorFloorWithLight(LightBakeContribution::Direct), Root, 16.0,
+        nullptr, nullptr, noAo);
+    ASSERT_TRUE(result.Success) << result.Error;
+
+    EXPECT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+    EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/ao.stex"));
+
+    std::ifstream scene(Root / ".cooked/levels/test.cooked.json");
+    std::ostringstream buffer;
+    buffer << scene.rdbuf();
+    EXPECT_EQ(buffer.str().find("\"ao\""), std::string::npos);
+}
+
+TEST_F(BakedLightingCookTest, RestalesOnAoTuningOnlyWhenLightsExist)
+{
+    LightingCookParams base{};
+    LightingCookParams widerReach{};
+    widerReach.Ao.MaxDistance = 2.0f;
+    LightingCookParams disabled{};
+    disabled.Ao.Enabled = false;
+
+    const fs::path lit = AuthorFloorWithLight(LightBakeContribution::Direct);
+    const uint64_t litBase = CookDocument(lit, Root, 16.0, nullptr, nullptr, base).ContentHash;
+    const uint64_t litReach = CookDocument(lit, Root, 16.0, nullptr, nullptr, widerReach).ContentHash;
+    const uint64_t litOff = CookDocument(lit, Root, 16.0, nullptr, nullptr, disabled).ContentHash;
+    EXPECT_NE(litBase, litReach);
+    EXPECT_NE(litBase, litOff);
+
+    const fs::path unlit = AuthorFloorWithLight(LightBakeContribution::None);
+    const uint64_t unlitBase = CookDocument(unlit, Root, 16.0, nullptr, nullptr, base).ContentHash;
+    const uint64_t unlitReach = CookDocument(unlit, Root, 16.0, nullptr, nullptr, widerReach).ContentHash;
+    const uint64_t unlitOff = CookDocument(unlit, Root, 16.0, nullptr, nullptr, disabled).ContentHash;
+    EXPECT_EQ(unlitBase, unlitReach);
+    EXPECT_EQ(unlitBase, unlitOff);
+}
+
 TEST_F(BakedLightingCookTest, RestalesOnLightMove)
 {
     const uint64_t before = CookDocument(

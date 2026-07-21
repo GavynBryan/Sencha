@@ -5,6 +5,7 @@
 #include <assets/cook/BakeBvh.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/LightmapRaster.h>
+#include <assets/cook/ProbeBake.h>
 
 #include <algorithm>
 #include <array>
@@ -477,6 +478,48 @@ TEST(LightmapRaster, IsDeterministic)
     BakeChartLuxels(MakeQuadChart(), rect, lights, empty,
                     DirectLightBakeParams{}, width, b);
     EXPECT_EQ(a, b);
+}
+
+TEST(LightmapRaster, AoPlaneDarkensUnderCoverDilatesAndKeepsWhiteOutside)
+{
+    const LightmapChartRect rect{ 1, 1, 5 + 2 * kLightmapGutter, 5 + 2 * kLightmapGutter };
+    const std::uint32_t width = 16;
+    const auto lights = MakeLight();
+
+    // A low slab over the chart's x < 2 half: samples under it are heavily
+    // occluded, the open half stays fully visible.
+    std::vector<BakeTriangle> slab;
+    slab.push_back({ Vec3d{ -10, 0.3f, -10 }, Vec3d{ 2, 0.3f, -10 },
+                     Vec3d{ 2, 0.3f, 10 } });
+    slab.push_back({ Vec3d{ -10, 0.3f, -10 }, Vec3d{ 2, 0.3f, 10 },
+                     Vec3d{ -10, 0.3f, 10 } });
+    BakeBvh bvh;
+    bvh.Build(std::move(slab));
+
+    const std::vector<Vec3d> rayTable = BuildProbeRayTable(64);
+    AmbientOcclusionBakeParams aoParams;
+    aoParams.MaxDistance = 1.0f;
+    aoParams.RayTable = rayTable;
+
+    std::vector<std::uint32_t> atlas(width * 16, 0u);
+    std::vector<std::uint8_t> ao(width * 16, 255u);
+    BakeChartLuxels(MakeQuadChart(), rect, lights, bvh,
+                    DirectLightBakeParams{}, width, atlas, &aoParams, ao);
+
+    const auto at = [&](std::uint32_t gridX, std::uint32_t gridY)
+    {
+        return ao[static_cast<std::size_t>(rect.Y + kLightmapGutter + gridY) * width
+                  + rect.X + kLightmapGutter + gridX];
+    };
+    // Covered half under the slab is dark; the open half is fully visible.
+    EXPECT_LT(at(0, 2), 100u);
+    EXPECT_EQ(at(4, 2), 255u);
+    // The gutter beside the dark edge dilates from covered texels rather
+    // than staying at the white fill.
+    EXPECT_LT(ao[static_cast<std::size_t>(rect.Y + kLightmapGutter + 2) * width
+                 + rect.X + kLightmapGutter - 1], 255u);
+    // Texels outside the chart's padded rect keep the caller's fill.
+    EXPECT_EQ(ao[0], 255u);
 }
 
 #endif // SENCHA_ENABLE_COOK

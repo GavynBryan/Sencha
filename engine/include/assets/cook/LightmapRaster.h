@@ -4,6 +4,7 @@
 #include <span>
 #include <vector>
 
+#include <assets/cook/AmbientOcclusionBake.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/LightmapAtlasPack.h>
 #include <math/Vec.h>
@@ -41,10 +42,17 @@ struct LightmapRasterTriangle
 
 // Rasterizes and bakes one chart into `atlasPixels` (row-major RGB9E5,
 // atlasWidth texels per row). Touches only the chart's padded rect.
+//
+// With `aoParams` set, the same resolved samples also evaluate ambient
+// occlusion into `aoPixels` (row-major R8 unorm, same atlas layout): covered
+// and dilated texels are written, everything else keeps the caller's fill
+// (white, so texels no chart reaches never darken the ambient term).
 void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                      const LightmapChartRect& rect,
                      std::span<const BakeDirectLight> lights,
                      const BakeBvh& occluders,
                      const DirectLightBakeParams& params,
                      std::uint32_t atlasWidth,
-                     std::span<std::uint32_t> atlasPixels);
+                     std::span<std::uint32_t> atlasPixels,
+                     const AmbientOcclusionBakeParams* aoParams = nullptr,
+                     std::span<std::uint8_t> aoPixels = {});

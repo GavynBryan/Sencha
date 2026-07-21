@@ -210,8 +210,11 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                      const BakeBvh& occluders,
                      const DirectLightBakeParams& params,
                      std::uint32_t atlasWidth,
-                     std::span<std::uint32_t> atlasPixels)
+                     std::span<std::uint32_t> atlasPixels,
+                     const AmbientOcclusionBakeParams* aoParams,
+                     std::span<std::uint8_t> aoPixels)
 {
+    const bool bakeAo = aoParams != nullptr && !aoPixels.empty();
     if (rect.Width <= 2 * kLightmapGutter || rect.Height <= 2 * kLightmapGutter)
         return;
     const std::uint32_t gridW = rect.Width - 2 * kLightmapGutter;
@@ -274,6 +277,7 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
     struct Texel
     {
         Vec3d Radiance{ 0.0f, 0.0f, 0.0f };
+        float Ao = 0.0f;
         bool Covered = false;
     };
     std::vector<Texel> texels(static_cast<std::size_t>(rect.Width) * rect.Height);
@@ -297,6 +301,8 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                 continue;
 
             Vec3d radiance{ 0.0f, 0.0f, 0.0f };
+            float occlusion = 1.0f;
+            bool occlusionSampled = false;
             int contributors = 0;
             for (const Vec2d& offset : kSubsamples)
             {
@@ -337,6 +343,16 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
 
                 radiance += EvaluateBakedDirectRadiance(
                     position, normal, lights, occluders, params);
+                // AO is a smooth field at luxel scale, so one hemisphere
+                // estimate per luxel suffices; the 2x2 supersampling exists
+                // for razor-sharp direct shadow boundaries. The first
+                // contributing subsample is the deterministic choice.
+                if (bakeAo && !occlusionSampled)
+                {
+                    occlusion = EvaluateAmbientOcclusion(position, normal,
+                                                         occluders, *aoParams);
+                    occlusionSampled = true;
+                }
                 ++contributors;
             }
             if (contributors == 0)
@@ -345,6 +361,7 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
             Texel& texel = texels[static_cast<std::size_t>(y + kLightmapGutter) * rect.Width
                 + x + kLightmapGutter];
             texel.Radiance = radiance / static_cast<float>(contributors);
+            texel.Ao = occlusion;
             texel.Covered = true;
         }
 
@@ -360,6 +377,7 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                 if (out.Covered)
                     continue;
                 Vec3d sum{ 0.0f, 0.0f, 0.0f };
+                float aoSum = 0.0f;
                 int count = 0;
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx)
@@ -376,11 +394,13 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
                         if (!neighbor.Covered)
                             continue;
                         sum += neighbor.Radiance;
+                        aoSum += neighbor.Ao;
                         ++count;
                     }
                 if (count > 0)
                 {
                     out.Radiance = sum / static_cast<float>(count);
+                    out.Ao = aoSum / static_cast<float>(count);
                     out.Covered = true;
                 }
             }
@@ -391,7 +411,13 @@ void BakeChartLuxels(std::span<const LightmapRasterTriangle> triangles,
         for (std::uint32_t x = 0; x < rect.Width; ++x)
         {
             const Texel& texel = texels[static_cast<std::size_t>(y) * rect.Width + x];
-            atlasPixels[static_cast<std::size_t>(rect.Y + y) * atlasWidth + rect.X + x] =
-                EncodeBakedDirectRgb9e5(texel.Radiance);
+            const std::size_t atlasIndex =
+                static_cast<std::size_t>(rect.Y + y) * atlasWidth + rect.X + x;
+            atlasPixels[atlasIndex] = EncodeBakedDirectRgb9e5(texel.Radiance);
+            // Texels dilation never reached keep the caller's white fill: an
+            // AO of 0 there would darken, not disappear, under filtering.
+            if (bakeAo && texel.Covered)
+                aoPixels[atlasIndex] = static_cast<std::uint8_t>(
+                    std::lround(std::clamp(texel.Ao, 0.0f, 1.0f) * 255.0f));
         }
 }

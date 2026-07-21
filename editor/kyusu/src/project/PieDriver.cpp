@@ -70,6 +70,13 @@ std::string PieDriver::Cook(const std::string& levelName)
         static_cast<float>(readDouble("render.ambient.ground_r", 0.04)),
         static_cast<float>(readDouble("render.ambient.ground_g", 0.03)),
         static_cast<float>(readDouble("render.ambient.ground_b", 0.02)));
+    lightmapParams.Ao.Enabled =
+        readDouble("editor.cook.ao_enabled", lightmapParams.Ao.Enabled ? 1.0 : 0.0)
+        != 0.0;
+    lightmapParams.Ao.MaxDistance = static_cast<float>(
+        readDouble("editor.cook.ao_radius", lightmapParams.Ao.MaxDistance));
+    lightmapParams.Ao.RayCount = static_cast<std::uint32_t>(
+        readDouble("editor.cook.ao_rays", lightmapParams.Ao.RayCount));
 
     if (Assets_ == nullptr)
     {
@@ -301,6 +308,18 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
                        "Constant surface reflectance for the irradiance-probe bounce: "
                        "how much of a surface's direct lighting probes pick up.",
                        0.0, 1.0);
+    registerBakeDouble("editor.cook.ao_enabled", 1.0,
+                       "Bake an ambient-occlusion plane into the zone's lightmap atlas "
+                       "layout (0 disables). AO modulates the runtime ambient term only.",
+                       0.0, 1.0);
+    registerBakeDouble("editor.cook.ao_radius", 1.0,
+                       "Contact-darkening reach in world units: AO rays unblocked "
+                       "within this distance count as open.",
+                       0.1, 8.0);
+    registerBakeDouble("editor.cook.ao_rays", 64.0,
+                       "AO hemisphere ray-table size per sample. More rays smooth the "
+                       "gradient at cook-time cost.",
+                       8.0, 512.0);
 
     ConsoleCommandMetadata cook;
     cook.Name = "cook";

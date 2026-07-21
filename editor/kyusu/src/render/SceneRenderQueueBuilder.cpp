@@ -336,6 +336,7 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     const World& world = PreviewRegistry->Components;
 
     std::uint32_t lightmapIndex = UINT32_MAX;
+    std::uint32_t aoIndex = UINT32_MAX;
     if (Textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
         world.ForEachComponent<ZoneLightmapComponent>(
             [&](EntityId, const ZoneLightmapComponent& lightmap)
@@ -344,6 +345,10 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
                     Textures->GetBindlessIndex(lightmap.Texture);
                 if (index.IsValid())
                     lightmapIndex = index.Value;
+                const BindlessImageIndex ao =
+                    Textures->GetBindlessIndex(lightmap.Ao);
+                if (ao.IsValid())
+                    aoIndex = ao.Value;
             });
 
     if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
@@ -381,6 +386,7 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
                     item.WorldMatrix = worldMatrix;
                     item.WorldBounds = worldBounds;
                     item.LightmapTextureIndex = lightmapIndex;
+                    item.AoTextureIndex = aoIndex;
                     item.LightmapScaleBias = renderer.LightmapScaleBias;
                     Brushes.AddOpaque(item);
                 }

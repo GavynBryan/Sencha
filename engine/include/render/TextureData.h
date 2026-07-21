@@ -30,6 +30,7 @@ enum class TexturePixelFormat : uint16_t
     BC7 = 5,         // 16 B per 4x4 block, linear
     BC7_SRGB = 6,    // 16 B per 4x4 block, sRGB sampled
     RGB9E5 = 7,      // 4 B/px, shared-exponent HDR, linear (decodes pre-filter)
+    R8 = 8,          // 1 B/px, single channel, linear
 };
 
 // What the texture is *for* (Decision L). Usage determines colorspace and
@@ -109,6 +110,8 @@ struct TextureData
     case TexturePixelFormat::RGBA8_SRGB:
     case TexturePixelFormat::RGB9E5:
         return uint64_t(width) * height * 4;
+    case TexturePixelFormat::R8:
+        return uint64_t(width) * height;
     case TexturePixelFormat::BC4:
         return uint64_t((width + 3) / 4) * ((height + 3) / 4) * 8;
     case TexturePixelFormat::BC5:

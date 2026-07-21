@@ -48,6 +48,10 @@ struct RenderQueueItem
     // item has none. Uniform per draw, so it joins the run-merge equality test
     // (the same mesh resident in two zones must not share one run).
     uint32_t LightmapTextureIndex = UINT32_MAX;
+    // The zone's baked ambient-occlusion plane (same layout and UVs as the
+    // atlas); UINT32_MAX leaves the ambient term unmodulated. Uniform per
+    // draw, run-merge identity like the atlas index.
+    uint32_t AoTextureIndex = UINT32_MAX;
     // Per-instance remap from the mesh's lightmap UVs into its atlas rect;
     // identity for cooked cells (their UVs are absolute atlas coordinates).
     // Varies freely within a run: per-instance data, never merge criteria.

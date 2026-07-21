@@ -28,6 +28,7 @@ static_assert(offsetof(MeshPushConstants, OrmTextureIndex) == 56);
 static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
 static_assert(offsetof(MeshPushConstants, ReceiveShadows) == 64);
 static_assert(offsetof(MeshPushConstants, LightmapTextureIndex) == 68);
+static_assert(offsetof(MeshPushConstants, AoTextureIndex) == 72);
 static_assert(sizeof(MeshPushConstants) == 80);
 
 static_assert(offsetof(MeshInstanceData, World) == 0);
@@ -283,6 +284,7 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
     uniforms.ShadowDarkness = lights.ShadowDarkness;
     uniforms.BakedDirectEnabled = lights.BakedDirectEnabled ? 1u : 0u;
+    uniforms.BakedAoEnabled = lights.BakedAoEnabled ? 1u : 0u;
 
     const std::uint32_t lightCount =
         lights.Count < kMaxForwardLights ? lights.Count : kMaxForwardLights;
@@ -451,6 +453,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.EmissiveTextureIndex = material->EmissiveTextureIndex;
         push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
         push.LightmapTextureIndex = item.LightmapTextureIndex;
+        push.AoTextureIndex = item.AoTextureIndex;
 
         if (vertexBuffer != lastVertexBuffer)
         {

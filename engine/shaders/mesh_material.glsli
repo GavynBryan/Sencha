@@ -19,7 +19,7 @@ layout(push_constant) uniform MeshPush
     uint EmissiveTextureIndex;
     uint ReceiveShadows;
     uint LightmapTextureIndex;
-    uint Pad1;
+    uint AoTextureIndex;
     uint Pad2;
 } pushData;
 
@@ -33,6 +33,16 @@ vec3 SampleBakedDirect()
     if (pushData.LightmapTextureIndex == 0xFFFFFFFFu)
         return vec3(0.0);
     return texture(BindlessTextures[pushData.LightmapTextureIndex], inLightmapUv).rgb;
+}
+
+// The baked ambient-occlusion factor: one bilinear fetch of the zone's R8
+// plane, addressed by the same lightmap UVs as the atlas. 1.0 (no darkening)
+// when the item has no plane or the runtime toggle is off.
+float SampleBakedAo()
+{
+    if (pushData.AoTextureIndex == 0xFFFFFFFFu || frame.BakedAoEnabled == 0u)
+        return 1.0;
+    return texture(BindlessTextures[pushData.AoTextureIndex], inLightmapUv).r;
 }
 
 vec4 SampleBaseColor()

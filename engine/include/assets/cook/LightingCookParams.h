@@ -30,4 +30,20 @@ struct LightingCookParams
     // replaces at runtime.
     ProbeBakeParams Probe;
     std::uint32_t ProbeRayCount = 128;
+
+    // Baked ambient occlusion: an R8 plane sharing the lightmap atlas layout
+    // (charts, gutters, dilation), sampled with the lightmap UVs and
+    // modulating the runtime ambient term only. Bakes only when the zone
+    // bakes direct lighting (the charts exist for the lightmap); its tuning
+    // folds into the cook hash only then.
+    struct AoParams
+    {
+        bool Enabled = true;
+        // Contact-darkening reach in world units (editor.cook.ao_radius).
+        float MaxDistance = 1.0f;
+        // Hemisphere ray-table size (editor.cook.ao_rays); ~half contribute
+        // per sample after the horizon cut.
+        std::uint32_t RayCount = 64;
+    };
+    AoParams Ao;
 };

@@ -459,6 +459,19 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         geometryHash = HashBytes64(
             std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
             geometryHash);
+        const std::uint8_t aoEnabled = lightmapParams.Ao.Enabled ? 1 : 0;
+        geometryHash = HashBytes64(std::as_bytes(
+            std::span<const std::uint8_t>{ &aoEnabled, 1 }), geometryHash);
+        if (lightmapParams.Ao.Enabled)
+        {
+            const float aoTuning[] = {
+                lightmapParams.Ao.MaxDistance,
+                static_cast<float>(lightmapParams.Ao.RayCount),
+            };
+            geometryHash = HashBytes64(std::as_bytes(
+                std::span<const float>{ aoTuning, std::size(aoTuning) }),
+                geometryHash);
+        }
     }
     // Neighbor-zone halo: read-only occluder geometry other zones offered.
     // Only zones within probe-ray reach of this zone's bake inputs
@@ -759,10 +772,28 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
         std::vector<std::uint32_t> atlasPixels(
             static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
+        // The AO plane initializes white: texels no chart covers (including
+        // the reserved border and the (0, 0) texel unbaked items sample)
+        // must never darken the ambient term.
+        const bool bakeAo = lightmapParams.Ao.Enabled;
+        std::vector<std::uint8_t> aoPixels;
+        std::vector<Vec3d> aoRayTable;
+        AmbientOcclusionBakeParams aoBake;
+        if (bakeAo)
+        {
+            aoPixels.assign(
+                static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height,
+                255u);
+            aoRayTable = BuildProbeRayTable(lightmapParams.Ao.RayCount);
+            aoBake.MaxDistance = lightmapParams.Ao.MaxDistance;
+            aoBake.NormalOffset = lightmapParams.Shading.NormalOffset;
+            aoBake.RayTable = aoRayTable;
+        }
         for (std::size_t c = 0; c < chartTriangles.size(); ++c)
             BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], bakeLights,
                             occlusionBvh, lightmapParams.Shading,
-                            atlasLayout.Width, atlasPixels);
+                            atlasLayout.Width, atlasPixels,
+                            bakeAo ? &aoBake : nullptr, aoPixels);
 
         // Emit the atlas as a cooked texture artifact plus the zone component
         // that binds it at runtime.
@@ -790,11 +821,40 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             atlasAssetPath, ".cooked/" + atlasRel, AssetType::Texture });
         generatedMeshPaths.insert(atlasAssetPath);
         materialRefs.push_back(atlasAssetPath);
+
+        JsonValue::Object lightmapFields{
+            { "texture", JsonValue(atlasAssetPath) },
+        };
+        if (bakeAo)
+        {
+            TextureData aoAtlas;
+            aoAtlas.Format = TexturePixelFormat::R8;
+            aoAtlas.Usage = TextureUsage::LinearData;
+            aoAtlas.Filter = TextureFilter::Linear;
+            aoAtlas.Width = atlasLayout.Width;
+            aoAtlas.Height = atlasLayout.Height;
+            aoAtlas.Mips = { TextureMipLevel{ atlasLayout.Width,
+                                              atlasLayout.Height, 0,
+                                              aoPixels.size() } };
+            aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
+
+            const std::string aoRel = "levels/" + stemStr + "/ao.stex";
+            const std::string aoAssetPath = "asset://" + aoRel;
+            if (!textureSerializer.WriteToFile(
+                    (assetsRoot / ".cooked" / aoRel).generic_string(), aoAtlas))
+            {
+                result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
+                return result;
+            }
+            artifacts.push_back(CookedArtifact{
+                aoAssetPath, ".cooked/" + aoRel, AssetType::Texture });
+            generatedMeshPaths.insert(aoAssetPath);
+            materialRefs.push_back(aoAssetPath);
+            lightmapFields.push_back({ "ao", JsonValue(aoAssetPath) });
+        }
         cellEntities.push_back(JsonValue(JsonValue::Object{
             { "components", JsonValue(JsonValue::Object{
-                { "ZoneLightmap", JsonValue(JsonValue::Object{
-                    { "texture", JsonValue(atlasAssetPath) },
-                }) },
+                { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
             }) },
         }));
     }

@@ -22,6 +22,7 @@ const uint DEBUG_SHADOW_RAW = 10u;
 const uint DEBUG_OVERDRAW = 11u;
 const uint DEBUG_BAKED_DIRECT = 12u;
 const uint DEBUG_LIGHTMAP_TEXELS = 13u;
+const uint DEBUG_BAKED_AO = 14u;
 
 vec3 HeatColor(float value)
 {
@@ -91,6 +92,17 @@ void main()
             * vec2(textureSize(BindlessTextures[pushData.LightmapTextureIndex], 0));
         float checker = mod(floor(texel.x) + floor(texel.y), 2.0);
         outColor = vec4(mix(0.25, 1.0, checker) * vec3(inLightmapUv, 1.0), 1.0);
+        return;
+    }
+    if (frame.DebugView == DEBUG_BAKED_AO)
+    {
+        // The baked ambient-occlusion factor as grayscale (1 = open, ignores
+        // the render.ao.enabled toggle so the plane can be inspected while
+        // its lighting effect is off). Surfaces without a plane read white.
+        float ao = pushData.AoTextureIndex == 0xFFFFFFFFu
+            ? 1.0
+            : texture(BindlessTextures[pushData.AoTextureIndex], inLightmapUv).r;
+        outColor = vec4(vec3(ao), 1.0);
         return;
     }
 

@@ -34,13 +34,16 @@ Scope summary of the standing decisions:
   harmonics, baked in the editor against static render geometry (with a
   read-only neighbor halo), dilated at bake time so runtime sampling is plain
   hardware trilinear, streamed with zones.
-- Baked ambient occlusion: room-scale enclosure is already carried by the
+- Baked ambient occlusion (shipped as an atlas channel, superseding the
+  per-vertex sketch below): room-scale enclosure is already carried by the
   probe irradiance (no separate probe visibility payload, no bent normal in
-  v1); the one new baked datum is a per-vertex AO scalar packed into the
-  `.smesh` vertex, produced by the same bake, welded across duplicate render
-  vertices, made seamless across zones by the halo, and densified only near
-  occluders by occluder-gated adaptive tessellation. AO modulates the ambient
-  term only and is never a substitute for a shadow map (Section 7A).
+  v1); the one new baked datum is an R8 occlusion plane sharing the lightmap
+  atlas parameterization (charts, gutters, dilation, the same lightmap UVs),
+  baked by cosine-weighted hemisphere rays against the same occlusion BVH
+  (neighbor halo included) at one estimate per luxel. Texel space dissolves
+  the density question that forced the occluder-gated adaptive tessellation
+  in the vertex design, so that machinery was never built. AO modulates the
+  ambient term only and is never a substitute for a shadow map (Section 7A).
 - Baked static direct lighting (shipped, revision 4): a light authored
   `LightBakeContribution::Direct` has its diffuse baked into the zone's
   lightmap atlas (charts grown across authored soft edges over brush
@@ -2601,12 +2604,25 @@ single-level cook still passes no halo (it has no world context). The
 probe-sampling GPU cost is measured and inside budget: 0.04-0.06 ms
 paired-delta on an RTX 4060 at ~1080p, roughly 0.12-0.17 ms scaled to the
 reference tier against the 0.3 ms Section 14 row
-(docs/plans/evidence/probe-sampling-cost/). 3B.2 is complete; 3B.3 and 3C
-remain in this phase. 3B.3 carries one
-amendment: per the re-amended 7A.6, weigh AO as a zone-atlas channel first
-(the density question that forced adaptive tessellation dissolves in texel
-space); if it lands as vertex data instead, the slot is offset 52, location
-10, `.smesh` v6.
+(docs/plans/evidence/probe-sampling-cost/). 3B.2 is complete. 3B.3 shipped
+as the zone-atlas channel the re-amended 7A.6 favored (owner-ratified): an
+R8 plane beside the lightmap atlas (`ao.stex`, same layout and UVs, white
+where nothing bakes so unbaked samplers never darken), evaluated by
+cosine-weighted hemisphere visibility (`assets/cook/AmbientOcclusionBake`)
+against the shared occlusion BVH with the neighbor halo, one estimate per
+luxel (the 2x2 supersampling stays reserved for razor-sharp direct shadow
+boundaries). Runtime: `ZoneLightmapComponent.Ao` (schema-defaulted so
+older cooked scenes load), a second bindless index in the push constants
+and the run-merge identity, `SampleBakedAo()` multiplying only the ambient
+term beside the material's ORM occlusion, `render.ao.enabled` (off is
+exactly 1.0: byte-identical direct lighting), the `baked_ao` debug view,
+and cook cvars editor.cook.ao_{enabled,radius,rays}. AO tuning folds into
+the cook hash only for zones that bake direct lighting; the vertex-data
+path (offset 52, location 10, `.smesh` v6) was not taken and the adaptive
+tessellation machinery was never built. Deferred with triggers: AO for
+zones with no baked direct light (charts currently gate on bake lights;
+trigger: an all-dynamic-lit zone wanting baked AO), and 7A.8's prop
+self-AO. Only 3C remains in this phase.
 
 #### 3B.1: Shared bake core, grid math, probe format (M)
 

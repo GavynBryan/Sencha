@@ -56,7 +56,7 @@ layout(set = 0, binding = 0) uniform MeshFrame
     uint BakedDirectEnabled; // 1 = add the baked-static-direct vertex term.
     GpuLight Lights[MAX_LIGHTS];
     uint SpotShadowCount;
-    uint ShadowPad0;
+    uint BakedAoEnabled; // 1 = baked AO modulates the ambient term.
     uint ShadowPad1;
     uint ShadowPad2;
     GpuSpotShadow SpotShadows[MAX_SPOT_SHADOWS];

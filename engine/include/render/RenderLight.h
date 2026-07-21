@@ -348,6 +348,7 @@ struct RenderLightSet
     float ShadowBiasConstant = 4.0f;
     float ShadowBiasSlope = 2.0f;
     bool BakedDirectEnabled = true;
+    bool BakedAoEnabled = true;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView DebugView = RenderDebugView::None;
 #endif

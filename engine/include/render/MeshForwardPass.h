@@ -40,7 +40,7 @@ struct MeshFrameUniforms
     std::uint32_t BakedDirectEnabled = 1;
     GpuLight Lights[kMaxForwardLights];
     std::uint32_t SpotShadowCount = 0;
-    std::uint32_t ShadowPad0 = 0;
+    std::uint32_t BakedAoEnabled = 1;
     std::uint32_t ShadowPad1 = 0;
     std::uint32_t ShadowPad2 = 0;
     GpuSpotShadow SpotShadows[kMaxSpotShadows];
@@ -76,7 +76,9 @@ struct MeshPushConstants
     // Bindless slot of the zone's baked-lighting atlas; UINT32_MAX skips the
     // baked term. Uniform per run (part of the run-merge identity).
     std::uint32_t LightmapTextureIndex = UINT32_MAX;
-    std::uint32_t Pad1 = 0;
+    // Bindless slot of the zone's baked-AO plane (lightmap UVs); UINT32_MAX
+    // leaves ambient unmodulated. Uniform per run, merge identity too.
+    std::uint32_t AoTextureIndex = UINT32_MAX;
     std::uint32_t Pad2 = 0;
 };
 

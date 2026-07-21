@@ -24,6 +24,7 @@ namespace
         { RenderDebugView::Overdraw, "overdraw", "Overdraw" },
         { RenderDebugView::BakedDirect, "baked_direct", "Baked direct" },
         { RenderDebugView::LightmapTexels, "lightmap_texels", "Lightmap texels" },
+        { RenderDebugView::BakedAo, "baked_ao", "Baked AO" },
     };
 
     static_assert(sizeof(kNames) / sizeof(kNames[0]) == kRenderDebugViewCount);

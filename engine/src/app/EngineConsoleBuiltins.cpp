@@ -162,6 +162,18 @@ namespace EngineConsoleBuiltins
         });
 
         registry.RegisterCVar({
+            .Name = "render.ao.enabled",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = true,
+            .CurrentValue = true,
+            .Flags = CVarFlags::Archive,
+            .Help = "Modulates the ambient term by the zone's baked AO plane. "
+                    "Off yields byte-identical direct lighting and shadows.",
+            .Source = { "renderer defaults" },
+        });
+
+        registry.RegisterCVar({
             .Name = "time.timescale",
             .Owner = "engine",
             .Type = CVarType::Double,

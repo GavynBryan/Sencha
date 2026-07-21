@@ -36,8 +36,10 @@ void RenderExtractionSystem::Extract(const World& world,
         return;
     }
 
-    // The zone's baked-lighting atlas, resolved once per registry pass.
+    // The zone's baked-lighting atlas and AO plane, resolved once per
+    // registry pass.
     uint32_t lightmapIndex = UINT32_MAX;
+    uint32_t aoIndex = UINT32_MAX;
     if (textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
     {
         world.ForEachComponent<ZoneLightmapComponent>(
@@ -47,6 +49,10 @@ void RenderExtractionSystem::Extract(const World& world,
                     textures->GetBindlessIndex(lightmap.Texture);
                 if (index.IsValid())
                     lightmapIndex = index.Value;
+                const BindlessImageIndex ao =
+                    textures->GetBindlessIndex(lightmap.Ao);
+                if (ao.IsValid())
+                    aoIndex = ao.Value;
             });
     }
 
@@ -109,6 +115,7 @@ void RenderExtractionSystem::Extract(const World& world,
                 item.Pass = material->Pass;
                 item.Pipeline = SelectOpaquePipeline(*material);
                 item.LightmapTextureIndex = lightmapIndex;
+                item.AoTextureIndex = aoIndex;
                 item.LightmapScaleBias = renderer.LightmapScaleBias;
                 queue.AddOpaque(item);
             }
