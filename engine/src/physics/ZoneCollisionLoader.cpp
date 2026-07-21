@@ -102,8 +102,8 @@ int LoadZoneCollision(
         transform.Position = ReadOrigin(entry);
 
         const EntityId entity = world.CreateEntityWithSignature(
-            colliderSignature,
-            partition);
+            partition,
+            colliderSignature);
         *world.TryGet<LocalTransform>(entity) =
             LocalTransform{ transform };
         Collider collider;
