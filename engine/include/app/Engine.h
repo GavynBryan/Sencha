@@ -12,7 +12,6 @@
 #include <runtime/FrameTrace.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
-#include <zone/ZoneRuntime.h>
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <profiling/RenderCapture.h>
@@ -39,13 +38,8 @@ struct PlatformServices;
 class RuntimeWorld;
 class ThreadPoolJobSystem;
 
-//=============================================================================
-// Engine
-//
 // Owns the runtime services, frame loop, unified entity world, schedule, and
-// timing state. Initializes, runs, and shuts down the core engine around a Game
-// instance.
-//=============================================================================
+// timing state. There is exactly one runtime entity universe per Engine run.
 class Engine
 {
 public:
@@ -61,19 +55,24 @@ public:
     void Shutdown();
     int Run(Game& game);
     void RequestExit() { Running = false; }
-    void SetStartupScript(ConsoleStartupScript script) { StartupScript = std::move(script); }
+    void SetStartupScript(ConsoleStartupScript script)
+    {
+        StartupScript = std::move(script);
+    }
     [[nodiscard]] bool IsInitialized() const { return Initialized; }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
-    [[nodiscard]] const EngineConfig& Config() const { return Configuration; }
+    [[nodiscard]] const EngineConfig& Config() const
+    {
+        return Configuration;
+    }
 
-    // Foundation: owned before any service or system so it outlives everything
-    // that logs during teardown. Injected by reference into the things that
-    // need it; never registered as a service.
     [[nodiscard]] LoggingProvider& Logging() { return LoggingState; }
-    [[nodiscard]] const LoggingProvider& Logging() const { return LoggingState; }
+    [[nodiscard]] const LoggingProvider& Logging() const
+    {
+        return LoggingState;
+    }
 
-    // Always-present singleton services. Valid between Initialize and Shutdown.
     [[nodiscard]] DebugService& Debug();
     [[nodiscard]] const DebugService& Debug() const;
     [[nodiscard]] AudioService& Audio();
@@ -83,36 +82,25 @@ public:
     [[nodiscard]] ConsoleService& Console();
     [[nodiscard]] const ConsoleService& Console() const;
 
-    // SDL platform services. Present only when the engine runs windowed
-    // (GraphicsApi != None); valid between Initialize and Shutdown.
     [[nodiscard]] PlatformServices& Platform();
     [[nodiscard]] const PlatformServices& Platform() const;
-
-    // Nullable form for code paths that must work headless: returns nullptr
-    // when platform services are absent instead of asserting. Prefer Platform()
-    // on the required path; use this only where headless is a valid state.
     [[nodiscard]] PlatformServices* TryPlatform();
     [[nodiscard]] const PlatformServices* TryPlatform() const;
 
 #ifdef SENCHA_ENABLE_VULKAN
-    // Vulkan backend services. Present when running windowed; valid between
-    // Initialize and Shutdown.
     [[nodiscard]] GraphicsServices& Graphics();
     [[nodiscard]] const GraphicsServices& Graphics() const;
-
-    // Nullable form; returns nullptr when graphics services are absent
-    // (headless / no Vulkan device) instead of asserting.
     [[nodiscard]] GraphicsServices* TryGraphics();
     [[nodiscard]] const GraphicsServices* TryGraphics() const;
 #endif
 
     [[nodiscard]] EngineSchedule& Schedule() { return EngineSystems; }
-    [[nodiscard]] const EngineSchedule& Schedule() const { return EngineSystems; }
+    [[nodiscard]] const EngineSchedule& Schedule() const
+    {
+        return EngineSystems;
+    }
 
     // Complete engine-plus-game runtime component vocabulary for this run.
-    // Valid after Game::OnRegisterRuntimeComponents and before the game module
-    // is detached. The unified runtime world applies it exactly once before its
-    // first entity is created.
     [[nodiscard]] WorldComponentSchema& RuntimeComponents()
     {
         return RuntimeComponentSchemaState;
@@ -122,35 +110,37 @@ public:
         return RuntimeComponentSchemaState;
     }
 
-    // One runtime entity universe for the current simulation. Constructed after
-    // the schema is sealed and valid through game/system shutdown.
+    // The sole runtime entity universe for this simulation. Persistent entities
+    // live in partition zero and streamed zones occupy storage partitions inside
+    // the same World.
     [[nodiscard]] RuntimeWorld& World();
     [[nodiscard]] const RuntimeWorld& World() const;
 
-    // Legacy runtime zone registry owner. This remains only while PR #130 ports
-    // its callers and is deleted before the cutover can merge.
-    [[nodiscard]] ZoneRuntime& Zones() { return ZoneRuntimeState; }
-    [[nodiscard]] const ZoneRuntime& Zones() const { return ZoneRuntimeState; }
-
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
-    [[nodiscard]] const RuntimeFrameLoop& Runtime() const { return RuntimeLoop; }
+    [[nodiscard]] const RuntimeFrameLoop& Runtime() const
+    {
+        return RuntimeLoop;
+    }
 
-    [[nodiscard]] FrameDriver* Driver() { return FrameDriverInstance.get(); }
-    [[nodiscard]] const FrameDriver* Driver() const { return FrameDriverInstance.get(); }
+    [[nodiscard]] FrameDriver* Driver()
+    {
+        return FrameDriverInstance.get();
+    }
+    [[nodiscard]] const FrameDriver* Driver() const
+    {
+        return FrameDriverInstance.get();
+    }
 
-    // Async (cross-frame) task lane. Valid after Initialize. Commits run on
-    // the main thread each frame in FramePhase::DrainAsyncTasks.
     [[nodiscard]] AsyncTaskQueue& Tasks();
     [[nodiscard]] const AsyncTaskQueue& Tasks() const;
-
-    // Frame-lane fork-join pool. Valid after Initialize. Sized by
-    // EngineRuntimeConfig::JobWorkerCount (0 = single-threaded, the
-    // engine-wide bisect/determinism switch).
     [[nodiscard]] JobSystem& Jobs();
     [[nodiscard]] const JobSystem& Jobs() const;
 
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
-    [[nodiscard]] const TimingHistory& Timing() const { return TimingData; }
+    [[nodiscard]] const TimingHistory& Timing() const
+    {
+        return TimingData;
+    }
 
     // The renderer instrumentation bundle. Always present; its members are
     // non-null exactly while their render.profile.mode tier is active (all
@@ -199,31 +189,18 @@ private:
     void CreateDebugOverlay();
 
     EngineConfig Configuration;
-    // Foundation: declared before every service and system so that -- members
-    // destroy in reverse declaration order -- logging outlives everything whose
-    // destructor may log.
     LoggingProvider LoggingState;
-    // Always-present services, valid between Initialize and Shutdown. Declared
-    // after LoggingState (they may log on teardown) and before the SDL/Vulkan
-    // groups (they do not depend on those, so they tear down after them).
     std::unique_ptr<DebugService> DebugState;
-    // Console after Debug: its built-in cvars reference DebugState, so it must
-    // tear down (reverse declaration order) before the service it points at.
     std::unique_ptr<ConsoleService> ConsoleState;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
-    // SDL platform group. Declared before the Vulkan group so the window
-    // outlives the surface/swapchain that depend on it. Null when headless.
     std::unique_ptr<PlatformServices> PlatformState;
 #ifdef SENCHA_ENABLE_VULKAN
-    // Vulkan group. Declared after PlatformState so it tears down first
-    // (surface/swapchain reference the window). Null when headless.
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif
     EngineSchedule EngineSystems;
     WorldComponentSchema RuntimeComponentSchemaState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
-    ZoneRuntime ZoneRuntimeState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
