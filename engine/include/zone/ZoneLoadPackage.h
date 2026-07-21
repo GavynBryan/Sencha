@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
 #include <zone/ZoneId.h>
 
@@ -8,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -29,7 +31,18 @@ struct ZoneLocalEntityId
 struct ZonePackageComponent
 {
     ComponentTypeId Type;
-    std::vector<std::byte> Bytes;
+
+    // Exactly one payload form is populated. RuntimeBytes are useful for
+    // generated/package-native content. SerializedJson is parsed on a worker but
+    // decoded on the owner thread, where asset resolution and other explicit
+    // SceneSerializationContext dependencies are legal.
+    std::vector<std::byte> RuntimeBytes;
+    std::optional<JsonValue> SerializedJson;
+
+    [[nodiscard]] bool HasRuntimeBytes() const
+    {
+        return !SerializedJson.has_value();
+    }
 };
 
 struct ZonePackageEntity
@@ -90,23 +103,30 @@ public:
         ComponentTypeId type,
         std::span<const std::byte> bytes)
     {
-        if (!ContainsEntity(entity) || !type.IsValid())
-            return false;
-
-        ZonePackageEntity& target = Entities_[entity.Value];
-        const bool duplicate = std::any_of(
-            target.Components.begin(),
-            target.Components.end(),
-            [type](const ZonePackageComponent& component) {
-                return component.Type == type;
-            });
-        if (duplicate)
+        ZonePackageEntity* target = FindInsertTarget(entity, type);
+        if (target == nullptr)
             return false;
 
         ZonePackageComponent component;
         component.Type = type;
-        component.Bytes.assign(bytes.begin(), bytes.end());
-        target.Components.push_back(std::move(component));
+        component.RuntimeBytes.assign(bytes.begin(), bytes.end());
+        target->Components.push_back(std::move(component));
+        return true;
+    }
+
+    bool AddSerializedJson(
+        ZoneLocalEntityId entity,
+        ComponentTypeId type,
+        JsonValue value)
+    {
+        ZonePackageEntity* target = FindInsertTarget(entity, type);
+        if (target == nullptr)
+            return false;
+
+        ZonePackageComponent component;
+        component.Type = type;
+        component.SerializedJson = std::move(value);
+        target->Components.push_back(std::move(component));
         return true;
     }
 
@@ -147,6 +167,23 @@ public:
     [[nodiscard]] std::size_t EntityCount() const { return Entities_.size(); }
 
 private:
+    ZonePackageEntity* FindInsertTarget(
+        ZoneLocalEntityId entity,
+        ComponentTypeId type)
+    {
+        if (!ContainsEntity(entity) || !type.IsValid())
+            return nullptr;
+
+        ZonePackageEntity& target = Entities_[entity.Value];
+        const bool duplicate = std::any_of(
+            target.Components.begin(),
+            target.Components.end(),
+            [type](const ZonePackageComponent& component) {
+                return component.Type == type;
+            });
+        return duplicate ? nullptr : &target;
+    }
+
     ZoneId Zone_;
     std::vector<ZonePackageEntity> Entities_;
     std::vector<ZonePackageParent> Parents_;
