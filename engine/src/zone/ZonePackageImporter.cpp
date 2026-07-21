@@ -1,7 +1,10 @@
 #include <zone/ZonePackageImporter.h>
 
+#include <core/serialization/JsonArchive.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneLoadPackage.h>
 
@@ -26,11 +29,14 @@ bool SeedDerivedTransform(
     if (component.Type != ResolveComponentTypeId<LocalTransform>())
         return true;
 
-    if (component.Bytes.size() != sizeof(LocalTransform))
+    if (component.RuntimeBytes.size() != sizeof(LocalTransform))
         return false;
 
     LocalTransform local{};
-    std::memcpy(&local, component.Bytes.data(), sizeof(LocalTransform));
+    std::memcpy(
+        &local,
+        component.RuntimeBytes.data(),
+        sizeof(LocalTransform));
     if (!world.HasComponent<WorldTransform>(entity))
     {
         world.AddComponent<WorldTransform>(
@@ -39,12 +45,84 @@ bool SeedDerivedTransform(
     }
     return true;
 }
-} // namespace
 
-bool ImportZonePackage(
+bool ImportComponent(
+    World& world,
+    EntityId entity,
+    const WorldComponentSchema& schema,
+    const ZonePackageComponent& component,
+    const ComponentSerializerRegistry* serializers,
+    SceneSerializationContext* sceneContext,
+    std::string& failure)
+{
+    const WorldComponentSchema::Entry* entry = schema.Find(component.Type);
+    if (entry == nullptr)
+    {
+        failure =
+            "Zone package contains a component absent from the runtime schema.";
+        return false;
+    }
+
+    if (component.SerializedJson.has_value())
+    {
+        if (serializers == nullptr || sceneContext == nullptr)
+        {
+            failure =
+                "Zone package contains serialized data without an import context.";
+            return false;
+        }
+
+        IComponentSerializer* serializer = serializers->FindByType(component.Type);
+        if (serializer == nullptr)
+        {
+            failure =
+                "Zone package serialized component has no registered decoder.";
+            return false;
+        }
+
+        JsonReadArchive archive(*component.SerializedJson);
+        if (!serializer->LoadIntoWorld(
+                archive,
+                entity,
+                world,
+                *sceneContext)
+            || !archive.Ok())
+        {
+            failure = "Zone package serialized component decode failed.";
+            return false;
+        }
+        return true;
+    }
+
+    if (entry->Size != component.RuntimeBytes.size())
+    {
+        failure =
+            "Zone package component byte size does not match the runtime schema.";
+        return false;
+    }
+    if (!schema.ImportComponent(
+            world,
+            entity,
+            component.Type,
+            component.RuntimeBytes))
+    {
+        failure = "Zone package component import failed.";
+        return false;
+    }
+    if (!SeedDerivedTransform(world, entity, component))
+    {
+        failure = "Zone package LocalTransform payload is invalid.";
+        return false;
+    }
+    return true;
+}
+
+bool ImportZonePackageImpl(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
     const ZoneLoadPackage& package,
+    const ComponentSerializerRegistry* serializers,
+    SceneSerializationContext* sceneContext,
     ZoneParticipation participation,
     ZoneImportError* error)
 {
@@ -79,28 +157,17 @@ bool ImportZonePackage(
 
         for (const ZonePackageComponent& component : packageEntity.Components)
         {
-            const WorldComponentSchema::Entry* entry = schema.Find(component.Type);
-            if (entry == nullptr)
-            {
-                return fail(
-                    "Zone package contains a component absent from the runtime schema.");
-            }
-            if (entry->Size != component.Bytes.size())
-            {
-                return fail(
-                    "Zone package component byte size does not match the runtime schema.");
-            }
-            if (!schema.ImportComponent(
+            std::string failure;
+            if (!ImportComponent(
                     world,
                     entity,
-                    component.Type,
-                    component.Bytes))
+                    schema,
+                    component,
+                    serializers,
+                    sceneContext,
+                    failure))
             {
-                return fail("Zone package component import failed.");
-            }
-            if (!SeedDerivedTransform(world, entity, component))
-            {
-                return fail("Zone package LocalTransform payload is invalid.");
+                return fail(std::move(failure));
             }
         }
     }
@@ -127,4 +194,41 @@ bool ImportZonePackage(
     if (error != nullptr)
         error->Message.clear();
     return true;
+}
+} // namespace
+
+bool ImportZonePackage(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    ZoneParticipation participation,
+    ZoneImportError* error)
+{
+    return ImportZonePackageImpl(
+        runtime,
+        schema,
+        package,
+        nullptr,
+        nullptr,
+        participation,
+        error);
+}
+
+bool ImportZonePackage(
+    RuntimeWorld& runtime,
+    const WorldComponentSchema& schema,
+    const ZoneLoadPackage& package,
+    const ComponentSerializerRegistry& serializers,
+    SceneSerializationContext& sceneContext,
+    ZoneParticipation participation,
+    ZoneImportError* error)
+{
+    return ImportZonePackageImpl(
+        runtime,
+        schema,
+        package,
+        &serializers,
+        &sceneContext,
+        participation,
+        error);
 }
