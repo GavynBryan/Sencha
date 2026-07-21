@@ -5,8 +5,6 @@
 #include <utility>
 #include <vector>
 
-namespace
-{
 struct PartitionPosition
 {
     float X = 0.0f;
@@ -24,12 +22,11 @@ struct PartitionTracked
     int Value = 0;
 };
 
-int gPartitionRemoveCount = 0;
+static int gPartitionRemoveCount = 0;
 
 SENCHA_DECLARE_COMPONENT_TYPE(PartitionPosition, "test.partition_position");
 SENCHA_DECLARE_COMPONENT_TYPE(PartitionVelocity, "test.partition_velocity");
 SENCHA_DECLARE_COMPONENT_TYPE(PartitionTracked, "test.partition_tracked");
-} // namespace
 
 template <>
 struct ComponentTraits<PartitionTracked>
