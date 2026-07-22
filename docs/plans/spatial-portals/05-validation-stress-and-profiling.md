@@ -1,17 +1,21 @@
 # Validation, Stress, and Profiling
 
-Status: proposed execution specification.
+Status: proposed execution specification, revised for the unified runtime world.
 
-This document defines how the implementation is challenged. Happy-path screenshots are insufficient.
+This document defines how the implementation is challenged. Happy-path screenshots are not
+sufficient.
 
-The goal is to falsify the design early, especially the assumptions that:
+The goal is to falsify the assumptions that:
 
-- one transform is shared correctly by every subsystem;
-- clipping prevents cross-domain leakage;
+- durable relationships resolve correctly through unload and reload;
+- one rigid transform is shared by every subsystem;
+- clipping prevents spatial-domain leakage;
+- portal traversal preserves live entity identity;
+- storage partition migration is coherent and occurs exactly once;
 - a coupled rigid body behaves as one mass and inertia;
-- work remains bounded;
-- cache identities and invalidation are stable;
-- the no-feature path remains unchanged.
+- remote destination zones add work only when explicitly demanded;
+- caches survive lifecycle changes without stale identity;
+- the zero-portal path remains unchanged.
 
 ## 1. Verification discipline
 
@@ -26,34 +30,35 @@ ctest --preset dev
 git diff --check
 ```
 
-Run focused tests first while iterating.
+Run focused tests first while iterating. Do not run CTest in parallel by default.
 
-Do not run CTest in parallel by default.
+Additional workflows:
 
-Additional required workflows by stage:
-
+- unified-runtime dependencies: lifecycle, migration, partition, package, reference, and
+  shutdown suites;
 - rendering: Release profiling build with scripted capture;
 - physics: physics isolation plus ASAN;
 - concurrency changes: serial reference, worker path, and TSAN where supported;
-- public boundary changes: ABI, layout, and isolation tests;
-- cook changes: deterministic repeated output and old/new fixture behavior;
-- editor changes: undo, redo, cancel, focus loss, document close, and shutdown;
-- teardown changes: repeat clean window close and process exit under ASAN.
+- public boundary changes: ABI, layout, component schema, and isolation tests;
+- cook changes: repeated deterministic output, reference fixups, old and new fixtures;
+- editor changes: undo, redo, cancel, focus change, document close, zone unload, and shutdown;
+- teardown changes: repeated clean close and process exit under ASAN.
 
 A command not run is reported as unverified. It is not described as passing.
 
 ### 1.2 Regression standard
 
-A bug regression test must fail before the fix for the intended reason.
+A regression test fails before the fix for the intended reason.
 
 Do not:
 
-- loosen a tolerance merely to pass;
-- add a timing sleep;
-- hide a failure behind a snapshot update;
-- skip an adversarial configuration;
-- average away a catastrophic outlier;
-- call a visual result correct without numeric state where numeric invariants exist.
+- loosen tolerance merely to pass;
+- add synchronization sleeps;
+- hide failure behind snapshot replacement;
+- skip adversarial lifecycle states;
+- average away catastrophic outliers;
+- call a visual result correct when numeric invariants exist;
+- retain an obsolete compatibility path because the new test is difficult.
 
 ## 2. Evidence layout
 
@@ -61,67 +66,83 @@ Use:
 
 ```text
 docs/plans/evidence/spatial-portals/
-    baseline/
+    unified-runtime-baseline/
+    relationship-resolution/
     view-rendering/
     character-traversal/
+    entity-migration/
     rigid-body-coupling/
     static-light-transport/
     dynamic-light-transport/
+    remote-zone-scale/
     final/
 ```
 
-Each evidence directory contains:
+Each directory contains:
 
-- `README.md` with question, hardware, build, scene, method, commands, warmup, sample count, result, and verdict;
+- `README.md` with question, dependency commits, hardware, build, scene, method, commands,
+  warmup, sample count, result, and verdict;
 - reduced JSON or CSV summaries;
-- selected screenshots or diagrams;
-- no large regenerable raw frame captures unless they are needed to preserve a failure.
+- selected screenshots, state traces, or diagrams;
+- no large regenerable frame captures unless needed to preserve a failure.
 
-Every verdict names the acceptance rubric before presenting the result.
+The acceptance rubric is written before the result.
 
-## 3. Deterministic acceptance scenes
+## 3. Deterministic fixtures
 
-### 3.1 View scene
+### 3.1 Relationship world
 
 Contains:
 
-- two disconnected rooms;
-- strongly asymmetric landmarks;
-- grid lines crossing the exit plane;
-- different source and destination colors and probe environments;
-- one horizontal and one rotated link;
+- persistent world-scene portal relationship entities;
+- endpoint entities across several zone documents;
+- same-zone and cross-zone pairs;
+- invalid, disabled, duplicate-owner, and unresolved fixtures;
+- zone unload and reload controls;
+- deterministic package import orders;
+- partition-slot reuse pressure.
+
+### 3.2 View world
+
+Contains:
+
+- two disconnected rooms with asymmetric landmarks;
+- different source and destination lighting and probes;
+- horizontal and rotated relationships;
 - narrow and wide apertures;
-- scripted camera track;
+- grid geometry touching exit planes;
+- scripted camera path;
 - moving kinematic marker;
-- no random animation or input.
+- no random input or animation.
 
-### 3.2 Character scene
+### 3.3 Character world
 
 Contains:
 
-- level floor, wall, and ceiling links;
+- persistent player and zone-owned test character;
+- floor, wall, and ceiling portals;
 - rim thickness variations;
 - ledges immediately after exits;
-- high-speed launch path;
+- high-speed launch paths;
 - edge and corner approach rails;
-- destination unavailable toggle;
-- fixed input replay.
+- destination participation controls;
+- fixed input replay;
+- migration-journal trace export.
 
-### 3.3 Physics scene
+### 3.4 Physics world
 
 Contains:
 
-- sphere, box, capsule, convex, compound, and long pole;
-- source and destination floors;
-- walls immediately beside both apertures;
+- sphere, box, capsule, convex, compound, long pole, and wide plate;
+- source and destination floors and walls;
 - dynamic collision partners;
-- a stack;
-- sleep platform;
+- stacks and sleep platforms;
 - linear and angular launchers;
-- link disable and destroy triggers;
-- fixed tick count and state trace export.
+- relationship disable and endpoint detach controls;
+- fixed tick count;
+- state, contact, impulse, coupling, body-handle, and partition trace export.
 
-### 3.4 Lighting scene
+### 3.5 Lighting world
 
 Contains:
 
@@ -130,20 +151,64 @@ Contains:
 - narrow aperture;
 - crossing caster;
 - baked static surfaces;
-- irradiance volume on both sides;
+- irradiance volumes on both sides;
 - moving dynamic light;
 - cached shadow policies;
 - scripted camera and light paths.
 
-### 3.5 Scale scene
+### 3.6 Remote-zone world
 
-Contains many portals and content that is not relevant to the visible apertures. It proves work depends on active relevance rather than total world size.
+Contains:
 
-## 4. Adversarial geometry matrix
+- ordinary world zone group;
+- spatially remote alternate-environment zone group;
+- enclosing environment mesh or mesh-based sky treatment hiding unrelated world geometry;
+- portal relationship as the only relevance path between groups;
+- unrelated dormant zones and relationships;
+- no first-class dimension or space metadata.
 
-Test every applicable subsystem against:
+This fixture proves that remote destination behavior is ordinary portal and zone behavior.
 
-### 4.1 Orientation
+### 3.7 Scale world
+
+Contains many loaded and unloaded relationships, endpoints, lights, and entities that are not
+relevant to the active view or nearby bodies. It proves work scales with active relevance,
+not total world content.
+
+## 4. Relationship and lifecycle matrix
+
+Test:
+
+- world scene loads before both endpoint zones;
+- endpoint zones load before world scene;
+- A loads before B and B before A;
+- endpoint unload and reload;
+- both endpoints unload while relationship remains persistent;
+- relationship delete and recreate;
+- endpoint persistent identity preserved across save and reload;
+- live `EntityId` changes after reload but durable resolution remains correct;
+- partition slot reused by an unrelated zone;
+- duplicate endpoint ownership introduced by hand-edited fixture;
+- endpoint moved between authored zones;
+- endpoint target missing permanently;
+- package import canceled before publication;
+- forced detach after participation leases are denied or overridden;
+- engine shutdown with resolved and unresolved relationships.
+
+Assertions:
+
+- no runtime id is persisted;
+- no stale live id or partition slot resolves;
+- relationship ordering is stable;
+- unresolved state is distinct from invalid content;
+- diagnostics emit once per state transition;
+- invalid relationships remain inert;
+- endpoint uniqueness conflicts resolve deterministically;
+- no partial imported zone becomes active.
+
+## 5. Adversarial geometry matrix
+
+### 5.1 Orientation
 
 - identity-facing pair;
 - 90-degree yaw;
@@ -154,147 +219,178 @@ Test every applicable subsystem against:
 - upside-down destination;
 - nearly parallel endpoint planes;
 - physically overlapping endpoint regions;
-- same-zone and cross-zone pairs.
+- same-zone, cross-zone, and spatially remote pairs.
 
-### 4.2 Viewpoint
+### 5.2 Viewpoint
 
 - far away;
 - grazing angle;
-- aperture fills one pixel;
-- aperture fills the whole screen;
+- one-pixel projection;
+- fullscreen projection;
 - eye on plane;
 - eye partly through;
-- eye at aperture edge;
+- eye at edge and corner;
 - camera behind endpoint;
 - near plane intersecting rim;
-- rapid alternating view between two links.
+- rapid alternation between two visible links.
 
-### 4.3 Aperture
+### 5.3 Aperture
 
 - minimum valid extent;
-- very wide;
-- very tall;
-- near-square;
-- thin rim;
-- thick rim;
+- very wide and very tall;
+- square;
+- thin and thick rim;
 - exact edge and corner;
-- invalid zero or negative extent;
-- scale just within and outside validation tolerance.
+- invalid zero and negative extent;
+- scale just inside and outside validation tolerance.
 
-### 4.4 Motion
+### 5.4 Motion
 
 - stationary overlap;
 - slow crossing;
 - high-speed crossing;
 - reverse before center crossing;
-- reverse immediately after crossing;
+- reverse immediately after clear;
 - repeated oscillation;
 - rotating long body with stationary center;
-- linear and angular velocity together;
-- collision on the transfer tick.
+- simultaneous linear and angular velocity;
+- contact on spatial-authority transfer tick;
+- partition migration pending while shape remains straddled.
 
-## 5. Character steelman cases
+## 6. Character steelman cases
 
 Required:
 
-1. Stand with capsule center on source side and nose through the aperture.
-2. Stop with center exactly on the plane.
-3. Back out after several fixed ticks.
-4. Slide along the rim without crossing.
-5. Jump diagonally through a corner.
-6. Fall through a floor link and land immediately after the exit.
-7. Enter a wall link while grounded and exit over empty space.
-8. Cross while destination moves from visible to unavailable before commit.
-9. Disable the link while overlapping.
-10. Run at a speed greater than slab thickness per tick.
-11. Replay at different render frame rates with the same fixed ticks.
-12. Minimize and restore the window while overlapping.
-13. Cross on the same fixed tick that a zone attaches.
-14. Attempt two links in one tick.
+1. Persistent player crosses without storage migration.
+2. Zone-owned character crosses with one partition migration and the same `EntityId`.
+3. Stop with capsule center on source side and head through aperture.
+4. Stop with center exactly on plane.
+5. Back out after several fixed ticks.
+6. Slide along rim without crossing.
+7. Jump diagonally through a corner.
+8. Fall through a floor portal and land immediately after exit.
+9. Exit over empty space and re-evaluate grounded state.
+10. Destination transitions from loading to active while character waits.
+11. Destination loses required participation before commit.
+12. Relationship disables while overlapping.
+13. Endpoint detaches while not overlapping.
+14. Forced detach attempts while overlapping.
+15. Move faster than aperture slab thickness per fixed tick.
+16. Replay at different render frame rates with identical fixed ticks.
+17. Cross on the same lifecycle epoch that destination publishes.
+18. Attempt two portal crossings in one tick.
+19. Remote destination has no Euclidean proximity demand.
+20. Partition slot is reused after the previous destination unloads.
 
 Assertions:
 
 - finite state;
-- deterministic selected link;
-- no tunneling through the rim;
+- deterministic relationship choice;
+- no rim tunneling;
 - no duplicate crossing;
-- no stale grounded state;
 - transformed velocity and facing;
+- stale grounded state cleared;
 - bounded exit separation;
+- migration exactly once when required;
+- live entity identity preserved;
+- backend mover handle preserved when the contract supports it;
+- required leases held until clear and migration completion;
 - identical fixed-simulation result across render rates.
 
-## 6. Render steelman cases
+## 7. Render steelman cases
 
 Required:
 
 1. Portal view at every orientation and distance class.
-2. Destination geometry touching the exit plane.
-3. Geometry behind the exit plane.
-4. Portal surface visible inside the portal view.
-5. More visible portals than the cap.
-6. Equal projected priorities with reversed zone order.
-7. Resize every frame across retained size classes.
+2. Destination geometry touching and crossing the exit plane.
+3. Geometry behind exit plane.
+4. Portal surface visible inside destination view.
+5. More visible portals than cap.
+6. Equal priorities with reversed package import and partition-slot order.
+7. Resize every frame across target size classes.
 8. Swapchain recreation with live targets.
-9. Zone unload after extraction but before a later frame.
-10. Material and mesh hot reload while visible.
-11. Crossing opaque, double-sided, unlit, normal-mapped, and skinned meshes.
-12. Crossing mesh casts a shadow on each side.
-13. Fullscreen portal plus maximum ordinary lights and shadows.
-14. Profiling Off, Counters, Gpu, and Capture transitions.
+9. Destination unload after one frame's extraction.
+10. Endpoint reload with new live `EntityId`.
+11. Material and mesh hot reload while visible.
+12. Crossing opaque, double-sided, unlit, normal-mapped, and skinned meshes.
+13. Crossing mesh casts shadows on both sides.
+14. Fullscreen portal with maximum ordinary lights and shadows.
+15. Remote destination zone group with unrelated ordinary-world geometry nearby in numeric
+    coordinates.
+16. Profiling Off, Counters, Gpu, and Capture transitions.
+17. Destination Visible lease denied or delayed.
+18. One portal visible through another.
 
 Assertions:
 
 - no recursion;
 - no wrong-side geometry;
-- no stale target;
+- no stale target after endpoint resolution change;
 - no invalid descriptor;
 - deterministic cap result;
-- no target leak;
-- no ordinary opaque shader cost when no crossing representations exist;
-- main and portal views use correct zone light and probe data.
+- no target or lease leak;
+- no ordinary opaque shader cost without crossing representations;
+- destination extraction visits only approved partition sets;
+- source and destination representations use correct lighting domains;
+- partition migration timing does not cause a one-frame missing or duplicate mesh.
 
-## 7. Rigid-body steelman cases
+## 8. Rigid-body steelman cases
 
-### 7.1 Shape coverage
+### 8.1 Shape coverage
 
 - sphere;
 - box;
 - capsule;
 - convex hull;
-- compound with separated children;
+- separated-child compound;
 - long thin pole;
 - wide plate;
-- center of mass outside shape center where supported.
+- offset center of mass where supported.
 
-### 7.2 Contact coverage
+### 8.2 Contact coverage
 
-- no contacts;
+- free flight;
 - source contact only;
 - destination contact only;
-- simultaneous source and destination contacts;
+- simultaneous contacts on both sides;
 - static friction on both sides;
-- dynamic body collision on destination side;
-- source and destination contacts producing opposing torque;
+- dynamic collision partner on destination side;
+- opposing source and destination torque;
 - rim jam;
-- stacked bodies through aperture;
+- stacked bodies across aperture;
 - character push;
-- held controller;
-- link disable during contact.
+- held-object controller;
+- relationship disable during contact;
+- endpoint detach request during contact.
 
-### 7.3 Lifecycle coverage
+### 8.3 Migration coverage
+
+- persistent body with no migration;
+- zone-owned body source-to-destination migration;
+- back-and-forth migration;
+- migration journal updates backend secondary index;
+- body handle remains stable;
+- storage ownership changes while proxy remains active;
+- migration commits before next destination-zone logic requirement;
+- source active to destination active;
+- source active to destination dormant refusal;
+- dormant restoration after later participation;
+- migration followed by entity destruction.
+
+### 8.4 Lifecycle coverage
 
 - wake near aperture;
-- fall asleep while straddling;
+- sleep while straddling;
 - wake from destination contact;
 - destroy entity while coupled;
 - remove collider;
-- unload source zone;
-- unload destination zone;
-- unlink endpoints;
-- recook and reload;
-- engine shutdown with active proxy.
+- relationship deletion;
+- source and destination detach after clear;
+- forced detach while coupled;
+- package reload;
+- engine shutdown with active proxy and leases.
 
-### 7.4 Long-run coverage
+### 8.5 Long-run coverage
 
 For at least 10,000 fixed ticks:
 
@@ -302,26 +398,32 @@ For at least 10,000 fixed ticks:
 - repeated gravity fall;
 - repeated rim contact;
 - resting coupled body;
-- moving collision partner.
+- moving collision partner;
+- repeated partition migration;
+- repeated endpoint zone unload and reload between completed traversals.
 
 Record:
 
-- position and orientation error;
+- pose and orientation error;
 - linear and angular velocity;
-- kinetic and potential energy where meaningful;
-- contact and impulse counts;
-- proxy count;
+- energy where meaningful;
+- contacts and impulses;
+- proxy and constraint counts;
+- body handles;
+- current and pending partitions;
+- lease counts;
 - allocations;
 - sleep transitions.
 
-The acceptable envelope is established against a geometrically equivalent no-portal control. It is not selected after seeing the portal result.
+The acceptable envelope is established against equivalent no-portal controls before portal
+results are reviewed.
 
-## 8. Lighting steelman cases
+## 9. Lighting steelman cases
 
-### 8.1 Static direct
+### 9.1 Static direct
 
 - point and spot;
-- aperture centered and edge-clipped;
+- centered and edge-clipped aperture;
 - source blocker;
 - destination blocker;
 - both blockers;
@@ -330,23 +432,25 @@ The acceptable envelope is established against a geometrically equivalent no-por
 - range ending at aperture;
 - spot cone tangent to aperture;
 - repeated cook;
-- reversed zone order;
-- unrelated distant link edit.
+- reversed zone and document order;
+- unrelated remote relationship edit;
+- endpoint persistent identity stable across authoring reload.
 
-### 8.2 Probe transport
+### 9.2 Probe transport
 
-- ray misses environment;
-- ray hits source geometry after crossing;
-- ray hits destination geometry before crossing;
-- ray reaches a second portal after one hop;
+- environment miss;
+- source geometry hit after crossing;
+- destination geometry hit before crossing;
+- second portal encountered after one hop;
 - probe inside geometry;
 - aperture edge tie;
 - serial and parallel jobs;
-- low and high ray counts.
+- low and high ray count;
+- spatially remote source environment.
 
-### 8.3 Dynamic light
+### 9.3 Dynamic light
 
-- light enters and leaves source-aperture influence;
+- source light enters and leaves aperture influence;
 - destination aperture offscreen;
 - many source lights near one aperture;
 - one light near many visible apertures;
@@ -354,83 +458,123 @@ The acceptable envelope is established against a geometrically equivalent no-por
 - moving light with cached shadow;
 - point cube and spot shadow;
 - crossing caster;
-- link disable and zone unload.
+- relationship disable;
+- endpoint unload and reload;
+- destination Visible lease delay;
+- dormant remote zones.
 
 Assertions:
 
 - zero leakage outside aperture;
-- both-side occlusion;
-- stable keys and cache behavior;
+- independent source and destination occlusion;
+- stable identity and cache behavior across endpoint reload;
 - deterministic drop order;
-- no invalid descriptor;
-- no stale shadow;
-- bounded light image count;
-- exact cook staleness.
+- no stale shadow or descriptor;
+- bounded image and view count;
+- exact cook staleness;
+- no recursive light demand.
 
-## 9. Profiling counters
+## 10. Profiling counters
 
-Add a field only with the stage that writes it.
+Add a field only with its live producer.
 
-### 9.1 Rendering
+### 10.1 Relationship and participation
 
-- `PortalViewsRequested`
-- `PortalViewsRendered`
-- `PortalViewsDropped`
-- `PortalTargetPixels`
-- `PortalQueueItems`
-- `PortalDrawCalls`
-- `PortalCompositeDraws`
-- `PortalCrossingRenderItems`
+- resolved, unresolved, invalid, and disabled relationships;
+- resolution updates;
+- stale resolution rejects;
+- endpoint ownership conflicts;
+- portal lease acquisitions and releases by reason;
+- destination residency requests;
+- forced teardown outcomes.
 
-### 9.2 Physics
+### 10.2 Rendering
 
-Use a physics-specific stats record rather than forcing solver counters into `RenderStats`:
+- views requested, rendered, and dropped;
+- target pixels and bytes;
+- queue items, draw calls, and triangles;
+- composite draws;
+- crossing render items;
+- destination partition count visited;
+- unresolved visible fallbacks.
 
-- candidates;
-- exact overlaps;
-- active coupled bodies;
-- proxies;
+### 10.3 Traversal and migration
+
+- character and body overlap starts;
+- committed spatial transfers;
+- backed-out overlaps;
+- refused crossings by reason;
+- queued and committed partition moves;
+- migration latency in fixed-tick boundaries;
+- duplicate migration rejects;
+- backend zone-index repairs.
+
+### 10.4 Physics
+
+Use a physics-specific stats record:
+
+- candidates and exact overlaps;
+- active coupled bodies and proxies;
 - accepted and rejected contacts;
 - impulse relays or constraint rows;
-- transfers;
-- maximum position and angular error;
+- authority transfers;
+- maximum coupling position and angular error;
 - CCD sweeps;
-- proxy allocations and releases.
+- proxy and constraint allocation and release;
+- body recreations, which must remain zero for migration.
 
-### 9.3 Lighting
+### 10.5 Lighting
 
-- light image candidates;
-- light images packed and dropped;
+- light-image candidates, packed, and dropped;
 - transmitted shadow requests and rendered views;
 - transmitted caster draws;
-- portal bake paths;
+- static portal paths;
 - source and destination BVH tests;
-- probe rays reaching and crossing apertures.
+- probe rays reaching and crossing apertures;
+- lighting lease counts.
 
-### 9.4 GPU scopes
+### 10.6 GPU scopes
 
 Add fixed scopes with their producer:
 
 - portal offscreen views;
 - portal composite;
-- transmitted shadow views only if the existing aggregate shadow scope cannot answer the measured question.
+- transmitted shadow views only when the aggregate shadow scope cannot answer the measured
+  question.
 
-Do not add dynamic per-portal timestamp registration.
+Do not add dynamic timestamp registration per relationship.
 
-## 10. Benchmark sweeps
+## 11. Benchmark sweeps
 
-### 10.1 Render sweep
+### 11.1 Unified-runtime control
 
-Control variables:
+Before portal product code, measure:
+
+- one active zone;
+- several active zones;
+- many resident but dormant zones;
+- persistent entities plus active zones;
+- zone import and detach;
+- stable-reference resolution;
+- entity partition migration;
+- physics backend migration reconciliation;
+- render extraction across partition sets;
+- memory by world, partition, archetype, and backend record family.
+
+This baseline establishes normal unified-runtime cost.
+
+### 11.2 Render sweep
+
+Control:
 
 - Release build;
-- fixed scripted camera;
+- scripted camera;
 - immediate present mode;
-- fixed output resolution;
-- fixed geometry and local lights;
+- fixed resolution;
+- fixed geometry and local lighting;
 - warmup discarded;
 - enough frames for median, p95, and p99;
-- same process startup pattern.
+- same startup pattern.
 
 Sweep:
 
@@ -440,125 +584,142 @@ Sweep:
 - destination objects: low, medium, stress;
 - crossing renderables: 0, 1, 8, 32;
 - transmitted lights: 0, 1, 8, 32;
-- shadowed images: 0, 1, cap pressure.
+- shadowed images: 0, 1, cap pressure;
+- destination type: same zone, nearby zone, spatially remote zone;
+- unrelated resident dormant zones: 0, 8, 32.
 
-Record:
+Record CPU extraction and recording, GPU scopes, target memory, scratch high water, partition
+visits, queue items, draw calls, light iterations, shadows, and leases.
 
-- CPU extraction and recording;
-- GPU portal-view and main-color times;
-- target memory;
-- scratch high water;
-- queue items, draw calls, triangles;
-- light iterations and drops;
-- shadow views and cache hits.
-
-### 10.2 Physics sweep
+### 11.3 Physics sweep
 
 Sweep:
 
-- near portals: 0, 1, 8, 32;
-- total far portals: constant high count to prove irrelevance;
+- nearby relationships: 0, 1, 8, 32;
+- unrelated far relationships: constant high count;
 - candidate bodies: 0, 1, 16, 64;
 - active coupled bodies: 0, 1, 8, 32;
-- contact manifolds: free flight, one side, both sides, stack;
-- fixed substeps and any portal-specific sweep policy.
+- contact mode: free, one side, both sides, stack;
+- migrations: none, one-way, repeated;
+- unrelated dormant partitions: 0, 8, 32.
 
-Record fixed-step CPU distribution, broadphase candidates, contact work, proxy count, allocations, and coupling error.
+Record fixed-step CPU distribution, broadphase candidates, contact work, proxies, constraints,
+allocations, coupling error, migration journal cost, backend index repairs, and body handle
+stability.
 
-### 10.3 Cook sweep
+### 11.4 Cook sweep
 
 Sweep:
 
-- portal links: 0, 1, 8, 32;
+- relationships: 0, 1, 8, 32;
+- endpoint zones: local, adjacent, remote;
 - lights reaching apertures: 0, 8, 32, 128;
 - atlas samples and probe counts;
-- aperture hit ratio;
-- serial and worker count.
+- aperture-hit ratio;
+- serial and worker count;
+- unrelated world relationships and zones.
 
-Record total cook time, BVH tests, portal path tests, peak memory, output hashes, and unchanged-zone cache hits.
+Record total cook time, stable-reference resolution, BVH tests, portal path tests, peak memory,
+output hashes, and unchanged-zone cache hits.
 
-## 11. Performance acceptance laws
+### 11.5 Lifecycle sweep
 
-The final numeric budgets are written after Stage 0 baselines. The following scaling laws are already binding.
+Repeatedly:
 
-### 11.1 No-feature path
+- attach and detach endpoint zones;
+- resolve and unresolve relationships;
+- reuse partition slots;
+- acquire and release portal leases;
+- migrate entities through portals;
+- recreate render targets;
+- create and destroy physics proxies;
+- shut down cleanly.
 
-With no active spatial portals:
+Record retained memory, stale-resolution rejects, resource counts, and teardown latency.
 
-- no portal offscreen pass;
-- no portal target acquisition;
-- no crossing proxy table work beyond an empty-state check;
-- no portal light loop;
-- no portal shadow request;
-- no cook work for absent components;
-- CPU, GPU, and allocation deltas remain inside measured run-to-run noise.
+## 12. Performance acceptance laws
 
-### 11.2 Render path
+Final numeric budgets are written after baseline measurement. These scaling laws are binding.
 
-Cost is proportional to:
+### 12.1 Zero-portal path
 
-- selected portal target pixels;
-- visible destination queue items;
-- packed destination lights;
-- crossing representations;
-- transmitted shadow views.
+With no portal relationship components:
 
-It is not proportional to every portal or every entity in loaded registries.
+- no link resolution work beyond an empty query or epoch check;
+- no portal leases;
+- no offscreen portal pass;
+- no portal targets;
+- no portal light loop or shadow request;
+- no physics proxy table work beyond an empty-state check;
+- no cook work for absent relationships;
+- CPU, GPU, and allocation deltas remain inside measured noise.
 
-### 11.3 Physics path
+### 12.2 Relationship resolution
 
-Cost is proportional to:
+Cost is proportional to relationship changes, endpoint lifecycle changes, and affected
+reference fixups. It is not a complete world scan per frame.
 
-- bodies in portal broadphase regions;
-- active coupled bodies;
-- valid contacts.
+### 12.3 Rendering
 
-Far bodies and far portals do not appear in per-body inner loops.
+Cost is proportional to selected target pixels, visible destination content, packed lights,
+crossing representations, and transmitted shadows. Unrelated resident or dormant partitions
+do not enter inner loops.
 
-### 11.4 Lighting path
+### 12.4 Physics
 
-Dynamic image generation is proportional to relevant source lights near active source apertures. Static bake work is proportional to relevant paths after coarse culling. Probe continuation occurs only for rays that reach an aperture.
+Cost is proportional to bodies near active endpoint broadphase regions, active coupled bodies,
+and valid contacts. Unrelated bodies, partitions, and relationships do not appear per body.
 
-### 11.5 Memory
+### 12.5 Lighting
 
-Portal target memory is bounded by:
+Dynamic candidates scale with visible relationships and source lights reaching apertures.
+Static bake scales with relevant paths after coarse culling. Probe continuation occurs only
+for rays reaching an aperture.
 
-```text
-sum(selected target width * height * color bytes)
-+ sum(selected target width * height * depth bytes)
-+ fixed retained metadata
-```
+### 12.6 Migration
 
-Physics proxy memory is bounded by active crossing bodies, not historical crossings.
+Portal partition migration cost matches ordinary `MoveEntityToZone` plus bounded portal
+bookkeeping. It does not reconstruct entities or backend bodies.
 
-Every retained resource has a teardown test.
+### 12.7 Memory
 
-## 12. Final review checklist
+Portal target memory is bounded by selected target extents and formats. Physics proxy memory
+is bounded by active coupled bodies. Relationship resolution memory is bounded by persistent
+relationship count. Lease memory is bounded by active portal needs.
 
-Before v0.1 or v1.0 is declared complete:
+Every retained resource has detach and shutdown tests.
 
-- [ ] `CLAUDE.md` reread against the final diff.
-- [ ] Invariant owner is identifiable.
-- [ ] No other-engine or gameplay vocabulary entered engine identifiers.
+## 13. Completion checklist
+
+Before v0.1 or v1.0 completion:
+
+- [ ] `CLAUDE.md` reread against final diff.
+- [ ] Unified runtime dependency commit recorded.
+- [ ] Lighting integration dependency commit recorded.
+- [ ] No per-zone runtime registry path added.
+- [ ] No first-class dimension, space, or alternate-world engine concept added.
+- [ ] Canonical relationship has exactly two durable endpoint references.
+- [ ] No duplicated partner state on endpoints.
+- [ ] No runtime id or partition slot persisted.
 - [ ] Components remain data-only.
-- [ ] No duplicate canonical state.
-- [ ] No Vulkan or Jolt type leaked across its firewall.
-- [ ] No backend traversal of ECS.
-- [ ] No public ABI change is unacknowledged.
-- [ ] No persisted or cooked format change is unversioned.
+- [ ] Vulkan and Jolt types remain behind their boundaries.
+- [ ] Render backend never queries ECS.
+- [ ] Storage migration preserves `EntityId` and backend handles.
+- [ ] Spatial authority is independent of storage ownership while straddling.
+- [ ] Participation leases are one hop and release correctly.
+- [ ] Remote zones become relevant only through explicit portal demand.
 - [ ] Serial and worker paths match where applicable.
-- [ ] Zero, one, and many resource cases pass.
-- [ ] Resize, unload, destroy, and shutdown pass.
-- [ ] ASAN passes the full lifecycle.
+- [ ] Zero, one, and many relationship cases pass.
+- [ ] Load, unload, reload, slot reuse, migrate, destroy, and shutdown pass.
+- [ ] ASAN passes full lifecycle.
 - [ ] TSAN passes when concurrency changed.
-- [ ] Focused tests pass.
-- [ ] Complete suite passes serially.
+- [ ] Focused and complete suites pass serially.
 - [ ] `git diff --check` passes.
-- [ ] Reproduction scenes pass.
-- [ ] Profiling control and feature captures are recorded.
+- [ ] Reproduction worlds pass.
+- [ ] Control and feature captures are recorded.
 - [ ] Median, p95, and p99 are reported.
-- [ ] Counters prove bounded work.
+- [ ] Counters prove bounded relevance.
 - [ ] Evidence commands are reproducible.
-- [ ] Rejected design candidates are removed.
+- [ ] Rejected coupling candidate is removed.
 - [ ] Deferred limitations are explicit.
 - [ ] Nothing partial is called finished.
