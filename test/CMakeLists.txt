@@ -170,6 +170,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/LightmapSurfaceCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushCookInput.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
