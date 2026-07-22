@@ -18,6 +18,7 @@
 #include "DocumentImportPublisher.h"
 #include "DocumentLightmapBake.h"
 #include "DocumentProbeBake.h"
+#include "DocumentPublication.h"
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
@@ -241,210 +242,22 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                                    result))
         return result;
 
-    std::string cookError;
-
-    // Referenced-asset imports were prepared before the fast path; publish their
-    // staged bytes and index deltas through the document transaction here so
-    // they commit atomically with the rest of the publication.
-
-    // Record source -> artifacts (source key = caller-supplied rel path, hash key
-    // = brush-geometry hash). The index loads active (prepare left it untouched);
-    // the prepared imports, their index deltas, and the level entry then publish
-    // through this one staged index and the transaction, committing together.
-    CookedCacheIndex index;
-    (void)CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), index); // cold cache is fine
-    if (runReferencedAssets)
-    {
-        std::unordered_set<std::string> documentArtifactPaths;
-        for (const CookedArtifact& artifact : catalog.Artifacts())
-            documentArtifactPaths.insert(artifact.FileRelPath);
-        for (const PreparedCookedArtifact& prepared : pendingImports.Artifacts)
-            if (documentArtifactPaths.count(prepared.Artifact.FileRelPath) != 0)
-            {
-                result.Error = "CookDocument: referenced import collides with "
-                    "generated artifact '" + prepared.Artifact.FileRelPath + "'";
-                return result;
-            }
-        DocumentImportPublisher publisher(transaction, assetsRoot, index);
-        if (!PublishAssetImport(std::move(pendingImports), publisher, &cookError))
-        {
-            result.Error = "CookDocument: " + cookError;
-            return result;
-        }
-    }
-    if (!runCollision)
-    {
-        if (const CookedSourceEntry* previous = index.Find(sourceRel))
-            for (const CookedArtifact& artifact : previous->Artifacts)
-                if (artifact.Type == AssetType::Collision)
-                    catalog.AddExisting(artifact);
-    }
-    CookedSourceEntry entry;
-    entry.SourceRelPath = std::string(sourceRel);
-    entry.InputFingerprint = geometryHash;
-    for (CookedArtifact& artifact : catalog.Artifacts())
-    {
-        const std::filesystem::path active = assetsRoot / artifact.FileRelPath;
-        const std::filesystem::path contentPath =
-            !runCollision && artifact.Type == AssetType::Collision
-            ? active
-            : transaction.Stage(active);
-        std::uint64_t hash = 0;
-        if (HashFileContents(contentPath.generic_string(), hash))
-            artifact.ContentHash = hash;
-    }
-    entry.Artifacts = catalog.Artifacts();
-    index.Put(std::move(entry));
-    if (!transaction.Seed(paths.Index, &cookError)
-        || !index.SaveToFile(transaction.Stage(paths.Index).generic_string()))
-    {
-        result.Error = "CookDocument: could not stage cooked cache index";
+    if (!StageDocumentIndex(sourceRel, geometryHash, runReferencedAssets, runCollision,
+                            std::move(pendingImports), catalog, paths, assetsRoot,
+                            transaction, result))
         return result;
-    }
 
-    DocumentCookReceipt receipt = hasCachedReceipt
-        ? cachedReceipt : DocumentCookReceipt{};
     result.CellCount = cells.size();
-    receipt.Target = std::string(sourceRel);
-    receipt.PublishedProfileId = profile.Id;
-    receipt.PublishedFingerprint = geometryHash;
-    receipt.PublishedOutputFamilies = {
-        std::string(CookOutputFamilies::Structure),
-    };
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::Collision)
-        != CookOutputDisposition::Withdraw)
-        receipt.PublishedOutputFamilies.push_back(
-            std::string(CookOutputFamilies::Collision));
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::ReferencedAssets)
-        != CookOutputDisposition::Withdraw)
-        receipt.PublishedOutputFamilies.push_back(
-            std::string(CookOutputFamilies::ReferencedAssets));
-    if (!bakeLights.empty())
-    {
-        receipt.PublishedOutputFamilies.push_back(
-            std::string(CookOutputFamilies::DirectLightmap));
-        if (lightmapParams.Ao.Enabled)
-            receipt.PublishedOutputFamilies.push_back(
-                std::string(CookOutputFamilies::AmbientOcclusion));
-    }
-    if (!probeVolumes.empty())
-        receipt.PublishedOutputFamilies.push_back(
-            std::string(CookOutputFamilies::IrradianceProbes));
-
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::DirectLightmap)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "lightmap.stex");
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::AmbientOcclusion)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "ao.stex");
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::IrradianceProbes)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "probes.sprobe");
-
-    PutCookStepReceipt(receipt, CookStepReceipt{
-        .StepId = std::string(DocumentCookStepIds::BrushCells),
-        .Version = FindDocumentCookStep(DocumentCookStepIds::BrushCells)->Version,
-        .InputFingerprint = fingerprints.Brush,
-    });
-    PutCookStepReceipt(receipt, CookStepReceipt{
-        .StepId = std::string(DocumentCookStepIds::LightmapSurfaces),
-        .Version = FindDocumentCookStep(DocumentCookStepIds::LightmapSurfaces)->Version,
-        .InputFingerprint = fingerprints.LightmapSurfaces,
-        .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
-        },
-    });
-    PutCookStepReceipt(receipt, CookStepReceipt{
-        .StepId = std::string(DocumentCookStepIds::OcclusionGeometry),
-        .Version = FindDocumentCookStep(DocumentCookStepIds::OcclusionGeometry)->Version,
-        .InputFingerprint = fingerprints.Occlusion,
-        .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
-        },
-    });
-
-    if (directLightmapArtifact.has_value() && !reuse.ReuseLighting)
-    {
-        CookedArtifact cached = CacheCookStepArtifact(
-            *directLightmapArtifact, sourceRel, CookStepIds::DirectLightmap,
-            fingerprints.Direct, assetsRoot, transaction, &cookError);
-        if (cached.Path.empty())
-        {
-            result.Error = "CookDocument: " + cookError;
-            return result;
-        }
-        PutCookStepReceipt(receipt, CookStepReceipt{
-            .StepId = std::string(CookStepIds::DirectLightmap),
-            .Version = FindDocumentCookStep(CookStepIds::DirectLightmap)->Version,
-            .InputFingerprint = fingerprints.Direct,
-            .Dependencies = {
-                { std::string(DocumentCookStepIds::LightmapSurfaces),
-                  fingerprints.LightmapSurfaces },
-                { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  fingerprints.Occlusion },
-            },
-            .Artifacts = { std::move(cached) },
-            .Metadata = DocumentCookResultMetadata(result),
-        });
-    }
-    if (ambientOcclusionArtifact.has_value() && !reuse.ReuseLighting)
-    {
-        CookedArtifact cached = CacheCookStepArtifact(
-            *ambientOcclusionArtifact, sourceRel, CookStepIds::AmbientOcclusion,
-            fingerprints.Ao, assetsRoot, transaction, &cookError);
-        if (cached.Path.empty())
-        {
-            result.Error = "CookDocument: " + cookError;
-            return result;
-        }
-        PutCookStepReceipt(receipt, CookStepReceipt{
-            .StepId = std::string(CookStepIds::AmbientOcclusion),
-            .Version = FindDocumentCookStep(CookStepIds::AmbientOcclusion)->Version,
-            .InputFingerprint = fingerprints.Ao,
-            .Dependencies = {
-                { std::string(CookStepIds::DirectLightmap), fingerprints.Direct },
-            },
-            .Artifacts = { std::move(cached) },
-            .Metadata = DocumentCookResultMetadata(result),
-        });
-    }
-    if (probeArtifact.has_value() && reuse.Probes == nullptr)
-    {
-        CookedArtifact cached = CacheCookStepArtifact(
-            *probeArtifact, sourceRel, CookStepIds::IrradianceProbes,
-            fingerprints.Probe, assetsRoot, transaction, &cookError);
-        if (cached.Path.empty())
-        {
-            result.Error = "CookDocument: " + cookError;
-            return result;
-        }
-        PutCookStepReceipt(receipt, CookStepReceipt{
-            .StepId = std::string(CookStepIds::IrradianceProbes),
-            .Version = FindDocumentCookStep(CookStepIds::IrradianceProbes)->Version,
-            .InputFingerprint = fingerprints.Probe,
-            .Dependencies = {
-                { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  fingerprints.Occlusion },
-            },
-            .Artifacts = { std::move(cached) },
-            .Metadata = DocumentCookResultMetadata(result),
-        });
-    }
-    PutCookStepReceipt(receipt, CookStepReceipt{
-        .StepId = std::string(DocumentCookStepIds::Publication),
-        .Version = FindDocumentCookStep(DocumentCookStepIds::Publication)->Version,
-        .InputFingerprint = geometryHash,
-        .Artifacts = std::move(catalog.Artifacts()),
-        .Metadata = DocumentCookResultMetadata(result),
-    });
-    if (!SaveDocumentCookReceipt(transaction.Stage(paths.Receipt), receipt, &cookError))
-    {
-        result.Error = "CookDocument: " + cookError;
+    if (!StageDocumentReceipt(sourceRel, geometryHash, profile, snapshot, fingerprints,
+                              reuse, catalog, directLightmapArtifact,
+                              ambientOcclusionArtifact, probeArtifact, paths, assetsRoot,
+                              stemStr, hasCachedReceipt, cachedReceipt, transaction, result))
         return result;
-    }
+
     progress.Begin(DocumentCookStepIds::Publication);
     if (progress.Cancelled(result))
         return result;
+    std::string cookError;
     if (!transaction.Commit(&cookError))
     {
         result.Error = "CookDocument: " + cookError;
