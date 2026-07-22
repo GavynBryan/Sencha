@@ -255,12 +255,31 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     const std::filesystem::path activeReceipt =
         DocumentCookReceiptPath(assetsRoot, sourceRel);
     const std::filesystem::path activeIndex = assetsRoot / ".cooked/index.json";
+
+    // Referenced-asset freshness runs before the whole-document fast path: a
+    // changed or missing referenced import produces a non-empty prepared set,
+    // which defeats the cache hit so the import re-publishes this cook. The
+    // prepared bytes publish through the transaction below (or are discarded on
+    // a hit). The scan is cheap when every source is fresh (stat checks).
+    PendingAssetImport pendingImports;
+    if (runReferencedAssets)
+    {
+        beginStep(CookStepIds::ReferencedAssets);
+        PngTextureImporter textureImporter;
+        AssetImporterRegistry importers;
+        importers.Register(textureImporter);
+        (void)PrepareAssetsOnDemand(assetsRoot, importers, logging, pendingImports);
+        completeStep();
+    }
+    const bool referencedAssetsFresh = pendingImports.Artifacts.empty();
+
     CookedCacheIndex cachedIndex;
     DocumentCookReceipt cachedReceipt;
     const bool hasCachedReceipt = !request.ForceRebuild
         && LoadDocumentCookReceipt(activeReceipt, cachedReceipt);
     std::error_code cacheEc;
     if (!request.ForceRebuild
+        && referencedAssetsFresh
         && CookedCacheIndex::LoadFromFile(activeIndex.generic_string(), cachedIndex)
         && hasCachedReceipt
         && cachedReceipt.PublishedProfileId == profile.Id
@@ -863,21 +882,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         return result;
     }
 
-    // Prepare source textures the level's materials reference (.png -> .stex)
-    // into private staging without touching active state. The bytes and their
-    // cooked-index deltas publish through the document transaction below, so a
-    // failed cook leaves no orphaned imports. Idempotent: unchanged sources are
-    // served from the cooked cache.
-    PendingAssetImport pendingImports;
-    if (runReferencedAssets)
-    {
-        beginStep(CookStepIds::ReferencedAssets);
-        PngTextureImporter textureImporter;
-        AssetImporterRegistry importers;
-        importers.Register(textureImporter);
-        (void)PrepareAssetsOnDemand(assetsRoot, importers, logging, pendingImports);
-        completeStep();
-    }
+    // Referenced-asset imports were prepared before the fast path; publish their
+    // staged bytes and index deltas through the document transaction here so
+    // they commit atomically with the rest of the publication.
 
     // Record source -> artifacts (source key = caller-supplied rel path, hash key
     // = brush-geometry hash). The index loads active (prepare left it untouched);

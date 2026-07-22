@@ -222,11 +222,9 @@ TEST_F(BrushCollisionCookTest, FailedPublicationLeavesImportedAssetsAndIndexUnto
         << "a failed cook must not mutate the active cooked index";
 }
 
-// Characterization of a known defect (deferred to the prepare-before-fast-path
-// work, plan Stage 6): a whole-document cache hit returns before the
-// referenced-asset step, so a missing or stale referenced artifact is not
-// refreshed. Named for the desired behavior; enable when Stage 6 lands.
-TEST_F(BrushCollisionCookTest, DISABLED_FullCacheHitRefreshesMissingReferencedArtifact)
+// Referenced-asset freshness runs before the whole-document fast path: a missing
+// or stale referenced artifact defeats the cache hit and is re-published.
+TEST_F(BrushCollisionCookTest, FullCacheHitRefreshesMissingReferencedArtifact)
 {
     const fs::path levelPath = AuthorTexturedLevel("cached");
     const fs::path stex = Root / ".cooked/textures/dev/checker.png.stex";
