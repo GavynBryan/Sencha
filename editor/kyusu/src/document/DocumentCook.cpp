@@ -264,24 +264,26 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                                   LoggingProvider& logging)
 {
     DocumentCookResult result;
-    const CookProfile& profile = input.Profile;
+    const DocumentCookRequest& request = input.Request;
+    DocumentCookSnapshot& snapshot = input.Snapshot;
+    const CookProfile& profile = request.Profile;
     result.ProfileId = profile.Id;
-    const std::shared_ptr<CookControl>& control = input.Control;
+    const std::shared_ptr<CookControl>& control = request.Control;
     if (control != nullptr)
     {
-        control->TotalSteps.store(static_cast<std::uint32_t>(input.Graph.OrderedSteps.size()));
+        control->TotalSteps.store(static_cast<std::uint32_t>(request.Graph.OrderedSteps.size()));
         control->CompletedSteps.store(0);
         control->CurrentStep.store(0);
     }
-    const auto beginStep = [&input, &control](std::string_view step)
+    const auto beginStep = [&request, &control](std::string_view step)
     {
         if (control == nullptr)
             return;
-        const auto found = std::find(input.Graph.OrderedSteps.begin(),
-                                     input.Graph.OrderedSteps.end(), step);
-        if (found != input.Graph.OrderedSteps.end())
+        const auto found = std::find(request.Graph.OrderedSteps.begin(),
+                                     request.Graph.OrderedSteps.end(), step);
+        if (found != request.Graph.OrderedSteps.end())
             control->CurrentStep.store(static_cast<std::uint32_t>(
-                std::distance(input.Graph.OrderedSteps.begin(), found)));
+                std::distance(request.Graph.OrderedSteps.begin(), found)));
     };
     const auto completeStep = [&control]
     {
@@ -298,17 +300,17 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     };
     if (cancelled())
         return result;
-    const bool runCollisionTarget = input.RunCollisionTarget;
-    const bool runReferencedAssets = input.RunReferencedAssets;
-    const LightingCookParams& lightmapParams = input.Lighting;
-    const double cellSize = input.CellSize;
-    std::vector<BakeDirectLight>& bakeLights = input.BakeLights;
-    std::vector<ProbeVolumeInput>& probeVolumes = input.ProbeVolumes;
-    std::vector<BakeDirectLight>& bounceLights = input.BounceLights;
-    CookChartSet& charts = input.Charts;
-    std::vector<CookBrushGeometry>& brushes = input.Brushes;
-    std::vector<LightmapPlacement>& placements = input.Placements;
-    const std::span<const ProbeHaloZone> halo = input.Halo;
+    const bool runCollisionTarget = request.Selects(CookStepIds::Collision);
+    const bool runReferencedAssets = request.Selects(CookStepIds::ReferencedAssets);
+    const LightingCookParams& lightmapParams = snapshot.Lighting;
+    const double cellSize = request.CellSize;
+    std::vector<BakeDirectLight>& bakeLights = snapshot.BakeLights;
+    std::vector<ProbeVolumeInput>& probeVolumes = snapshot.ProbeVolumes;
+    std::vector<BakeDirectLight>& bounceLights = snapshot.BounceLights;
+    CookChartSet& charts = snapshot.Charts;
+    std::vector<CookBrushGeometry>& brushes = snapshot.Brushes;
+    std::vector<LightmapPlacement>& placements = snapshot.Placements;
+    const std::span<const ProbeHaloZone> halo = snapshot.Halo;
     CookArtifactTransaction transaction(assetsRoot, sourceRel);
     const std::uint64_t brushFingerprint = HashBrushInputs(brushes, cellSize);
     CookFingerprint placementFingerprint("lightmap_placements", 2);
@@ -395,7 +397,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         .AddDependency("placements", placementFingerprint.Value())
         .AddDependency("direct_lights", HashDirectLights(bakeLights))
         .AddU64("passthrough_scene",
-                HashBytes64(JsonStringify(input.PassthroughScene, false)));
+                HashBytes64(JsonStringify(snapshot.PassthroughScene, false)));
     if (!bakeLights.empty())
     {
         documentFingerprint.AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
@@ -429,9 +431,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             .AddU32("probe_ray_count", lightmapParams.ProbeRayCount);
     }
     const std::uint64_t geometryHash = documentFingerprint.Value();
-    const std::string stemStr = input.OutputNamespace.empty()
+    const std::string stemStr = request.OutputNamespace.empty()
         ? std::string(stem)
-        : input.OutputNamespace + "/" + std::format("{:016x}", geometryHash);
+        : request.OutputNamespace + "/" + std::format("{:016x}", geometryHash);
 
     const std::filesystem::path activeCookedDir = assetsRoot / ".cooked/levels";
     const std::filesystem::path activeScene = activeCookedDir / (stemStr + ".cooked.json");
@@ -442,10 +444,10 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     const std::filesystem::path activeIndex = assetsRoot / ".cooked/index.json";
     CookedCacheIndex cachedIndex;
     DocumentCookReceipt cachedReceipt;
-    const bool hasCachedReceipt = !input.ForceRebuild
+    const bool hasCachedReceipt = !request.ForceRebuild
         && LoadDocumentCookReceipt(activeReceipt, cachedReceipt);
     std::error_code cacheEc;
-    if (!input.ForceRebuild
+    if (!request.ForceRebuild
         && CookedCacheIndex::LoadFromFile(activeIndex.generic_string(), cachedIndex)
         && hasCachedReceipt
         && cachedReceipt.PublishedProfileId == profile.Id
@@ -460,7 +462,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         {
             result.Success = true;
             result.CacheHit = true;
-            result.ReusedSteps = input.Graph.OrderedSteps;
+            result.ReusedSteps = request.Graph.OrderedSteps;
             result.ProfileId = profile.Id;
             result.ContentHash = geometryHash;
             result.CookedScenePath = activeScene;
@@ -536,7 +538,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                     / static_cast<float>(atlasLayout.Width),
                 (static_cast<float>(rect.Y + kLightmapGutter) + 0.5f)
                     / static_cast<float>(atlasLayout.Height) };
-            if (!SetLightmapScaleBias(input.PassthroughScene,
+            if (!SetLightmapScaleBias(snapshot.PassthroughScene,
                                       placement.SceneEntityIndex, scaleBias))
             {
                 result.Error = "CookDocument: could not apply placement lightmap layout";
@@ -1007,7 +1009,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         }
     }
 
-    JsonValue cooked = std::move(input.PassthroughScene);
+    JsonValue cooked = std::move(snapshot.PassthroughScene);
     beginStep(DocumentCookStepIds::CookedScene);
     bool appended = false;
     if (cooked.IsObject())

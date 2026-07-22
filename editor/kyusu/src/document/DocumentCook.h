@@ -66,6 +66,8 @@ struct DocumentCookOptions
 class EditorDocument;
 class LoggingProvider;
 struct RuntimeAssets;
+struct DocumentCookRequest;
+struct DocumentCookSnapshot;
 
 // Immutable, move-only snapshot consumed by the long-running cook backend.
 // Collection resolves editor registry state and asset handles on the caller's
@@ -81,6 +83,11 @@ public:
 
     DocumentCookInput(const DocumentCookInput&) = delete;
     DocumentCookInput& operator=(const DocumentCookInput&) = delete;
+
+    // The resolved policy and captured document state. Exposed so collection is
+    // testable without executing a cook.
+    [[nodiscard]] const DocumentCookRequest& Request() const;
+    [[nodiscard]] const DocumentCookSnapshot& Snapshot() const;
 
 private:
     explicit DocumentCookInput(std::unique_ptr<Data> data);

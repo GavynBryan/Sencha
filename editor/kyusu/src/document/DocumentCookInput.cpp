@@ -289,6 +289,9 @@ DocumentCookInput::DocumentCookInput(DocumentCookInput&&) noexcept = default;
 DocumentCookInput& DocumentCookInput::operator=(DocumentCookInput&&) noexcept = default;
 DocumentCookInput::~DocumentCookInput() = default;
 
+const DocumentCookRequest& DocumentCookInput::Request() const { return Input->Request; }
+const DocumentCookSnapshot& DocumentCookInput::Snapshot() const { return Input->Snapshot; }
+
 std::optional<DocumentCookInput> CollectDocumentCookInput(
     const EditorDocument& document,
     const std::filesystem::path& assetsRoot,
@@ -307,64 +310,65 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
         return std::nullopt;
     };
 
-    auto input = std::make_unique<DocumentCookInput::Data>();
-    input->Profile = options.Profile != nullptr
+    auto data = std::make_unique<DocumentCookInput::Data>();
+    DocumentCookRequest& request = data->Request;
+    DocumentCookSnapshot& snapshot = data->Snapshot;
+
+    request.Profile = options.Profile != nullptr
         ? *options.Profile
         : BuiltInCookProfiles().front();
-    input->Graph = ResolveDocumentCookGraph(input->Profile);
-    if (!input->Graph.Valid)
-        return fail("invalid cook profile: " + input->Graph.Error);
-    const auto targets = [&input](std::string_view step)
+    request.Graph = ResolveDocumentCookGraph(request.Profile);
+    if (!request.Graph.Valid)
+        return fail("invalid cook profile: " + request.Graph.Error);
+    request.ForceRebuild = options.ForceRebuild;
+    request.OutputNamespace = options.OutputNamespace;
+    request.Control = options.Control;
+    request.CellSize = cellSize;
+
+    // Local selection flags drive lazy collection: gather only what the resolved
+    // graph runs and the profile publishes. Selection itself lives in the graph
+    // (request.Selects), never in a stored Run* boolean.
+    const auto selected = [&request](std::string_view step, std::string_view family)
     {
-        return std::find(input->Graph.OrderedSteps.begin(),
-                         input->Graph.OrderedSteps.end(), step)
-            != input->Graph.OrderedSteps.end();
+        return request.Selects(step)
+            && request.Disposition(family) != CookOutputDisposition::Withdraw;
     };
-    input->RunDirectLightmap = targets(CookStepIds::DirectLightmap)
-        && CookProfileOutputDisposition(input->Profile,
-            CookOutputFamilies::DirectLightmap) != CookOutputDisposition::Withdraw;
-    input->RunAmbientOcclusion = targets(CookStepIds::AmbientOcclusion)
-        && CookProfileOutputDisposition(input->Profile,
-            CookOutputFamilies::AmbientOcclusion) != CookOutputDisposition::Withdraw;
-    input->RunProbeBake = targets(CookStepIds::IrradianceProbes)
-        && CookProfileOutputDisposition(input->Profile,
-            CookOutputFamilies::IrradianceProbes) != CookOutputDisposition::Withdraw;
-    input->RunCollisionTarget = targets(CookStepIds::Collision);
-    input->RunReferencedAssets = targets(CookStepIds::ReferencedAssets);
-    input->ForceRebuild = options.ForceRebuild;
-    input->OutputNamespace = options.OutputNamespace;
-    input->Control = options.Control;
-    input->CellSize = cellSize;
-    input->Lighting = lightmapParams;
-    input->Lighting.Ao.Enabled = input->Lighting.Ao.Enabled
-        && input->RunAmbientOcclusion;
-    input->Halo.assign(halo.begin(), halo.end());
+    const bool selectDirect =
+        selected(CookStepIds::DirectLightmap, CookOutputFamilies::DirectLightmap);
+    const bool selectAo =
+        selected(CookStepIds::AmbientOcclusion, CookOutputFamilies::AmbientOcclusion);
+    const bool selectProbe =
+        selected(CookStepIds::IrradianceProbes, CookOutputFamilies::IrradianceProbes);
+
+    snapshot.Lighting = lightmapParams;
+    snapshot.Lighting.Ao.Enabled = lightmapParams.Ao.Enabled && selectAo;
+    snapshot.Halo.assign(halo.begin(), halo.end());
 
     AssetSystem* assetSystem = assets != nullptr ? &assets->Assets : nullptr;
     std::unordered_map<EntityIndex, std::uint32_t> sceneIndices;
-    input->PassthroughScene = BuildPassthroughScene(
+    snapshot.PassthroughScene = BuildPassthroughScene(
         document, logging, assetSystem, sceneIndices);
-    if (!input->PassthroughScene.IsObject())
+    if (!snapshot.PassthroughScene.IsObject())
         return fail("could not serialize passthrough scene");
 
-    input->BakeLights = (input->RunDirectLightmap || input->RunAmbientOcclusion)
+    snapshot.BakeLights = (selectDirect || selectAo)
         ? CollectBakeLights(document.GetRegistry().Components, false)
         : std::vector<BakeDirectLight>{};
-    input->ProbeVolumes = input->RunProbeBake
+    snapshot.ProbeVolumes = selectProbe
         ? CollectProbeVolumes(document.GetRegistry().Components)
         : std::vector<ProbeVolumeInput>{};
-    input->BounceLights = input->ProbeVolumes.empty()
+    snapshot.BounceLights = snapshot.ProbeVolumes.empty()
         ? std::vector<BakeDirectLight>{}
         : CollectBakeLights(document.GetRegistry().Components, true);
-    input->Brushes = CollectCookBrushes(
+    snapshot.Brushes = CollectCookBrushes(
         document.GetScene(), document.GetDefaultMaterial(),
-        input->BakeLights.empty() ? nullptr : &input->Charts,
-        input->Lighting.ConeDegrees, input->Lighting.LuxelSize);
-    input->Placements = (input->BakeLights.empty() && input->ProbeVolumes.empty())
+        snapshot.BakeLights.empty() ? nullptr : &snapshot.Charts,
+        snapshot.Lighting.ConeDegrees, snapshot.Lighting.LuxelSize);
+    snapshot.Placements = (snapshot.BakeLights.empty() && snapshot.ProbeVolumes.empty())
         ? std::vector<LightmapPlacement>{}
         : CollectLightmapPlacements(document.GetRegistry().Components, assetSystem,
                                     assetsRoot, logging);
-    for (LightmapPlacement& placement : input->Placements)
+    for (LightmapPlacement& placement : snapshot.Placements)
     {
         const auto found = sceneIndices.find(placement.Entity.Index);
         if (found == sceneIndices.end())
@@ -372,7 +376,7 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
         placement.SceneEntityIndex = found->second;
     }
 
-    return DocumentCookInput(std::move(input));
+    return DocumentCookInput(std::move(data));
 }
 
 std::optional<ProbeHaloZone> CollectZoneBakeHalo(
