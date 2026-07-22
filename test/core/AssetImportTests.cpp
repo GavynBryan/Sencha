@@ -459,6 +459,185 @@ TEST(ImportOnDemand, RegistryRejectsDuplicateExtensionClaims)
     EXPECT_EQ(importers.FindByExtension(".src"), &first);
 }
 
+// -- Prepare / publish / register split ---------------------------------------
+
+namespace
+{
+    // Captures what a prepared import forwards, so a test can prove publication
+    // routes only through the publisher and never touches active state itself.
+    class RecordingPublisher final : public IImportPublisher
+    {
+    public:
+        bool WriteBytes(std::string_view fileRelPath,
+                        std::span<const std::byte> bytes) override
+        {
+            Writes.emplace_back(
+                std::string(fileRelPath),
+                std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+            return true;
+        }
+
+        void PutIndexEntry(CookedSourceEntry entry) override
+        {
+            Entries.push_back(std::move(entry));
+        }
+
+        std::vector<std::pair<std::string, std::string>> Writes;
+        std::vector<CookedSourceEntry> Entries;
+    };
+} // namespace
+
+TEST(ImportPrepare, LeavesActiveStateUntouched)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+
+    LoggingProvider logging;
+    PendingAssetImport pending;
+    ASSERT_TRUE(PrepareAssetsOnDemand(root.Path(), importers, logging, pending));
+
+    EXPECT_EQ(importer.ImportCount, 1);
+    EXPECT_EQ(pending.Stats.Imported, 1u);
+    ASSERT_EQ(pending.Artifacts.size(), 1u);
+    ASSERT_EQ(pending.Registrations.size(), 1u);
+    ASSERT_EQ(pending.IndexDelta.Puts.size(), 1u);
+
+    // The cooked bytes exist in private staging, not at the active path, and no
+    // active index was written.
+    EXPECT_TRUE(std::filesystem::is_regular_file(pending.Artifacts[0].PreparedFile));
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/meshes/rock.smesh"));
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/index.json"));
+}
+
+TEST(ImportPrepare, AbandonedPendingCleansStagingAndLeavesActiveUntouched)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    std::filesystem::path staged;
+    {
+        PendingAssetImport pending;
+        ASSERT_TRUE(PrepareAssetsOnDemand(root.Path(), importers, logging, pending));
+        ASSERT_EQ(pending.Artifacts.size(), 1u);
+        staged = pending.Artifacts[0].PreparedFile;
+        ASSERT_TRUE(std::filesystem::is_regular_file(staged));
+    }
+
+    EXPECT_FALSE(std::filesystem::exists(staged));
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/meshes/rock.smesh"));
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/index.json"));
+}
+
+TEST(ImportPublish, RoutesBytesAndDeltaThroughPublisherOnly)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    PendingAssetImport pending;
+    ASSERT_TRUE(PrepareAssetsOnDemand(root.Path(), importers, logging, pending));
+    ASSERT_EQ(importer.ImportCount, 1);
+
+    RecordingPublisher publisher;
+    ASSERT_TRUE(PublishAssetImport(std::move(pending), publisher));
+
+    // Publish runs no importer, and writes only through the publisher: the
+    // active tree stays empty.
+    EXPECT_EQ(importer.ImportCount, 1);
+    ASSERT_EQ(publisher.Writes.size(), 1u);
+    EXPECT_EQ(publisher.Writes[0].first, ".cooked/meshes/rock.smesh");
+    EXPECT_EQ(publisher.Writes[0].second, "cooked:rock source bytes");
+    ASSERT_EQ(publisher.Entries.size(), 1u);
+    EXPECT_EQ(publisher.Entries[0].SourceRelPath, "meshes/rock.src");
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/meshes/rock.smesh"));
+}
+
+TEST(ImportPublish, RejectsDuplicateDestinationBeforeWriting)
+{
+    PendingAssetImport pending;
+    CookedArtifact artifact{ "asset://meshes/dup.smesh", ".cooked/meshes/dup.smesh",
+                             AssetType::StaticMesh, 1 };
+    pending.Artifacts.push_back(PreparedCookedArtifact{ artifact, "/nonexistent/a" });
+    pending.Artifacts.push_back(PreparedCookedArtifact{ artifact, "/nonexistent/b" });
+
+    RecordingPublisher publisher;
+    std::string error;
+    EXPECT_FALSE(PublishAssetImport(std::move(pending), publisher, &error));
+    EXPECT_TRUE(publisher.Writes.empty()) << "collision must be caught before any write";
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(ImportPublish, FilesystemWriterCommitsIndexLast)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    PendingAssetImport pending;
+    ASSERT_TRUE(PrepareAssetsOnDemand(root.Path(), importers, logging, pending));
+
+    FilesystemImportArtifactWriter writer(root.Path());
+    ASSERT_TRUE(PublishAssetImport(std::move(pending), writer));
+
+    // Bytes land in the active tree during publish; index membership only flips
+    // when the owner saves, last.
+    EXPECT_TRUE(std::filesystem::is_regular_file(root.Path() / ".cooked/meshes/rock.smesh"));
+    EXPECT_FALSE(std::filesystem::exists(root.Path() / ".cooked/index.json"));
+
+    ASSERT_TRUE(writer.Save());
+    EXPECT_TRUE(std::filesystem::is_regular_file(root.Path() / ".cooked/index.json"));
+
+    CookedCacheIndex index;
+    ASSERT_TRUE(CookedCacheIndex::LoadFromFile(
+        (root.Path() / ".cooked/index.json").generic_string(), index));
+    EXPECT_NE(index.Find("meshes/rock.src"), nullptr);
+}
+
+TEST(ImportRegister, BindsProducedRecordsIntoRegistry)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+
+    PendingAssetImport pending;
+    ASSERT_TRUE(PrepareAssetsOnDemand(root.Path(), importers, logging, pending));
+    const std::vector<CookedArtifact> records = pending.Registrations;
+
+    FilesystemImportArtifactWriter writer(root.Path());
+    ASSERT_TRUE(PublishAssetImport(std::move(pending), writer));
+    ASSERT_TRUE(writer.Save());
+
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(RegisterImportedAssets(records, root.Path(), registry, logging));
+
+    const AssetRecord* record = registry.FindByPath("asset://meshes/rock.smesh");
+    ASSERT_NE(record, nullptr);
+    EXPECT_EQ(record->Type, AssetType::StaticMesh);
+    EXPECT_TRUE(record->FilePath.ends_with(".cooked/meshes/rock.smesh"));
+    EXPECT_NE(record->ContentHash, 0u);
+}
+
 #endif // SENCHA_ENABLE_COOK
 
 TEST(ImportOnDemand, EditedImportSettingsSidecarRecooks)

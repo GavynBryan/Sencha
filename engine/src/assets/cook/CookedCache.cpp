@@ -7,10 +7,12 @@
 
 #include <algorithm>
 #include <charconv>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <optional>
 #include <sstream>
+#include <system_error>
 
 namespace
 {
@@ -221,10 +223,30 @@ bool CookedCacheIndex::LoadFromFile(std::string_view path, CookedCacheIndex& out
 
 bool CookedCacheIndex::SaveToFile(std::string_view path) const
 {
-    std::ofstream file{ std::string(path), std::ios::trunc };
-    if (!file.is_open())
-        return false;
+    // Write a sibling temp then rename over the target so a reader (or a crash)
+    // never sees a half-written index: membership flips as one rename.
+    const std::filesystem::path target{ std::string(path) };
+    std::error_code ec;
+    if (target.has_parent_path())
+        std::filesystem::create_directories(target.parent_path(), ec);
 
-    file << JsonStringify(ToJson(), /*pretty*/ true);
-    return file.good();
+    std::filesystem::path temporary = target;
+    temporary += ".tmp";
+    {
+        std::ofstream file{ temporary, std::ios::trunc };
+        if (!file.is_open())
+            return false;
+        file << JsonStringify(ToJson(), /*pretty*/ true);
+        if (!file.good())
+            return false;
+    }
+
+    std::filesystem::rename(temporary, target, ec);
+    if (ec)
+    {
+        std::filesystem::remove(target, ec);
+        ec.clear();
+        std::filesystem::rename(temporary, target, ec);
+    }
+    return !ec;
 }
