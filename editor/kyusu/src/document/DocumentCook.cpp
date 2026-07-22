@@ -6,6 +6,7 @@
 #include "CookGraph.h"
 #include "CookReceipt.h"
 #include "CookStepCache.h"
+#include "DocumentArtifactCatalog.h"
 #include "DocumentCookFingerprints.h"
 #include "DocumentImportPublisher.h"
 #include "EditorDocument.h"
@@ -391,10 +392,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     MeshSerializer serializer(logging);
 
     JsonValue::Array cellEntities;
-    std::vector<CookedArtifact> artifacts;
-    std::vector<std::string> materialRefs; // distinct face materials, in cook order
-    std::unordered_set<std::string> seenMaterial;
-    std::unordered_set<std::string> generatedMeshPaths;
+    DocumentArtifactCatalog catalog;
     std::vector<CollisionEntry> collisionEntries;
     std::optional<CookedArtifact> directLightmapArtifact;
     std::optional<CookedArtifact> ambientOcclusionArtifact;
@@ -438,12 +436,10 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             meshStaged, std::move(geometry), cell.Origin });
 
         cellEntities.push_back(BuildCellEntity(cell.Origin, meshAssetPath, order));
-        artifacts.push_back(CookedArtifact{ meshAssetPath, meshRelPath, AssetType::StaticMesh });
+        catalog.AddMesh(meshAssetPath, meshRelPath);
         result.GeneratedMeshPaths.push_back(meshAssetPath);
-        generatedMeshPaths.insert(meshAssetPath);
         for (const AssetRef& material : order)
-            if (seenMaterial.insert(material.Path).second)
-                materialRefs.push_back(material.Path);
+            catalog.AddMaterial(material.Path);
 
         // Collision: bake the same cell triangles into a pre-baked Jolt blob, a
         // sibling of the cell mesh. Authored brushes become collidable with no
@@ -467,9 +463,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                 if (colFile.good())
                 {
                     collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
-                    artifacts.push_back(CookedArtifact{
-                        "asset://" + colRel, ".cooked/" + colRel,
-                        AssetType::Collision });
+                    catalog.AddCollision("asset://" + colRel, ".cooked/" + colRel);
                 }
             }
         }
@@ -538,14 +532,14 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         {
             std::string restoreError;
             beginStep(CookStepIds::DirectLightmap);
-            if (!RestoreCookStepArtifacts(*reusableDirect, assetsRoot, transaction,
-                                      artifacts, generatedMeshPaths, materialRefs,
-                                      true, &restoreError))
+            CookedArtifact restoredDirect;
+            if (!catalog.RestoreStep(*reusableDirect, assetsRoot, transaction,
+                                     true, restoredDirect, &restoreError))
             {
                 result.Error = "CookDocument: " + restoreError;
                 return result;
             }
-            directLightmapArtifact = artifacts.back();
+            directLightmapArtifact = restoredDirect;
             result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
             RestoreDocumentCookResultMetadata(reusableDirect->Metadata, result);
             completeStep();
@@ -556,14 +550,14 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             if (lightmapParams.Ao.Enabled)
             {
                 beginStep(CookStepIds::AmbientOcclusion);
-                if (!RestoreCookStepArtifacts(*reusableAo, assetsRoot, transaction,
-                                          artifacts, generatedMeshPaths, materialRefs,
-                                          true, &restoreError))
+                CookedArtifact restoredAo;
+                if (!catalog.RestoreStep(*reusableAo, assetsRoot, transaction,
+                                         true, restoredAo, &restoreError))
                 {
                     result.Error = "CookDocument: " + restoreError;
                     return result;
                 }
-                ambientOcclusionArtifact = artifacts.back();
+                ambientOcclusionArtifact = restoredAo;
                 result.ReusedSteps.push_back(
                     std::string(CookStepIds::AmbientOcclusion));
                 lightmapFields.push_back({
@@ -688,11 +682,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
             return result;
         }
-        artifacts.push_back(CookedArtifact{
-            atlasAssetPath, ".cooked/" + atlasRel, AssetType::Texture });
-        directLightmapArtifact = artifacts.back();
-        generatedMeshPaths.insert(atlasAssetPath);
-        materialRefs.push_back(atlasAssetPath);
+        directLightmapArtifact = catalog.AddSceneTexture(atlasAssetPath, ".cooked/" + atlasRel);
 
         JsonValue::Object lightmapFields{
             { "texture", JsonValue(atlasAssetPath) },
@@ -719,11 +709,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                 result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
                 return result;
             }
-            artifacts.push_back(CookedArtifact{
-                aoAssetPath, ".cooked/" + aoRel, AssetType::Texture });
-            ambientOcclusionArtifact = artifacts.back();
-            generatedMeshPaths.insert(aoAssetPath);
-            materialRefs.push_back(aoAssetPath);
+            ambientOcclusionArtifact = catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
             lightmapFields.push_back({ "ao", JsonValue(aoAssetPath) });
         }
         cellEntities.push_back(JsonValue(JsonValue::Object{
@@ -749,14 +735,14 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         if (reusableProbes != nullptr)
         {
             std::string restoreError;
-            if (!RestoreCookStepArtifacts(*reusableProbes, assetsRoot, transaction,
-                                      artifacts, generatedMeshPaths, materialRefs,
-                                      false, &restoreError))
+            CookedArtifact restoredProbe;
+            if (!catalog.RestoreStep(*reusableProbes, assetsRoot, transaction,
+                                     false, restoredProbe, &restoreError))
             {
                 result.Error = "CookDocument: " + restoreError;
                 return result;
             }
-            probeArtifact = artifacts.back();
+            probeArtifact = restoredProbe;
             result.ReusedSteps.push_back(
                 std::string(CookStepIds::IrradianceProbes));
             RestoreDocumentCookResultMetadata(reusableProbes->Metadata, result);
@@ -801,9 +787,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             result.Error = "CookDocument: could not write probe volumes '" + probeRel + "'";
             return result;
         }
-        artifacts.push_back(CookedArtifact{
-            "asset://" + probeRel, ".cooked/" + probeRel, AssetType::ProbeVolume });
-        probeArtifact = artifacts.back();
+        probeArtifact = catalog.AddProbeVolume("asset://" + probeRel, ".cooked/" + probeRel);
         result.ProbeVolumeCount = probeVolumes.size();
         result.ProbeCount = probeCount;
         completeStep();
@@ -875,11 +859,11 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // asset:// resolution: Generated cell meshes live under .cooked/; every other
     // ref (materials, their textures) is an authored asset under the root.
     const auto physicalPathFor =
-        [&assetsRoot, &generatedMeshPaths, &transaction](
+        [&assetsRoot, &catalog, &transaction](
             std::string_view assetPath) -> std::filesystem::path {
             constexpr std::string_view prefix = "asset://";
             const std::string rel(assetPath.substr(prefix.size()));
-            if (generatedMeshPaths.count(std::string(assetPath)) != 0)
+            if (catalog.IsGenerated(assetPath))
                 return transaction.Stage(assetsRoot / ".cooked" / rel);
             return assetsRoot / rel;
         };
@@ -893,7 +877,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     }
     const std::filesystem::path stagedManifest = transaction.Stage(manifestPath);
     const std::filesystem::path stagedScene = transaction.Stage(cookedScenePath);
-    if (!WriteCookedScene(cooked, materialRefs, physicalPathFor,
+    if (!WriteCookedScene(cooked, catalog.SceneRefs(), physicalPathFor,
             transaction.Stage(idMapPath), stagedManifest, stagedScene, &cookError))
     {
         result.Error = "CookDocument: " + cookError;
@@ -926,7 +910,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     if (runReferencedAssets)
     {
         std::unordered_set<std::string> documentArtifactPaths;
-        for (const CookedArtifact& artifact : artifacts)
+        for (const CookedArtifact& artifact : catalog.Artifacts())
             documentArtifactPaths.insert(artifact.FileRelPath);
         for (const PreparedCookedArtifact& prepared : pendingImports.Artifacts)
             if (documentArtifactPaths.count(prepared.Artifact.FileRelPath) != 0)
@@ -947,12 +931,12 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         if (const CookedSourceEntry* previous = index.Find(sourceRel))
             for (const CookedArtifact& artifact : previous->Artifacts)
                 if (artifact.Type == AssetType::Collision)
-                    artifacts.push_back(artifact);
+                    catalog.AddExisting(artifact);
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRel);
     entry.InputFingerprint = geometryHash;
-    for (CookedArtifact& artifact : artifacts)
+    for (CookedArtifact& artifact : catalog.Artifacts())
     {
         const std::filesystem::path active = assetsRoot / artifact.FileRelPath;
         const std::filesystem::path contentPath =
@@ -963,7 +947,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         if (HashFileContents(contentPath.generic_string(), hash))
             artifact.ContentHash = hash;
     }
-    entry.Artifacts = artifacts;
+    entry.Artifacts = catalog.Artifacts();
     index.Put(std::move(entry));
     if (!transaction.Seed(indexPath, &cookError)
         || !index.SaveToFile(transaction.Stage(indexPath).generic_string()))
@@ -1104,7 +1088,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         .StepId = std::string(DocumentCookStepIds::Publication),
         .Version = FindDocumentCookStep(DocumentCookStepIds::Publication)->Version,
         .InputFingerprint = geometryHash,
-        .Artifacts = std::move(artifacts),
+        .Artifacts = std::move(catalog.Artifacts()),
         .Metadata = DocumentCookResultMetadata(result),
     });
     if (!SaveDocumentCookReceipt(transaction.Stage(activeReceipt), receipt, &cookError))
