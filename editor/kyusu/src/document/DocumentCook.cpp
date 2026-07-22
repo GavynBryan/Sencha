@@ -15,6 +15,7 @@
 #include "DocumentCookPaths.h"
 #include "DocumentCookReuse.h"
 #include "DocumentImportPublisher.h"
+#include "DocumentLightmapBake.h"
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
@@ -207,18 +208,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     if (needsOcclusion)
     {
         progress.Begin(DocumentCookStepIds::OcclusionGeometry);
-        std::vector<BakeTriangle> occluders;
-        for (const PendingCellMesh& pending : pendingMeshes)
-            GatherWorldTriangles(pending.Geometry,
-                                 Mat4::MakeTranslation(pending.Origin), occluders);
-        // Placed meshes occlude too (and shadow each other) unless authored
-        // out via AffectsBakedLighting.
-        for (const LightmapPlacement& placement : placements)
-            if (placement.CastsIntoBake)
-                GatherWorldTriangles(placement.Geometry, placement.ToWorld, occluders);
-        occlusionBvh.Build(AssembleProbeBakeTriangles(
-            std::move(occluders), bakeExtent.Bounds, halo,
-            lightmapParams.Probe.MaxRayDistance));
+        occlusionBvh = BuildDocumentOcclusionBvh(pendingMeshes, snapshot, bakeExtent);
         progress.Complete();
         if (progress.Cancelled(result))
             return result;
@@ -228,206 +218,11 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // were collected up front (folded into the cook hash).
     if (!bakeLights.empty())
     {
-        result.DirectLightCount = bakeLights.size();
-        result.LightmapAtlasWidth = atlasLayout.Width;
-        result.LightmapAtlasHeight = atlasLayout.Height;
-        result.EffectiveLuxelSize = atlasLayout.EffectiveLuxelSize;
-        if (reuse.ReuseLighting)
-        {
-            std::string restoreError;
-            progress.Begin(CookStepIds::DirectLightmap);
-            CookedArtifact restoredDirect;
-            if (!catalog.RestoreStep(*reuse.Direct, assetsRoot, transaction,
-                                     true, restoredDirect, &restoreError))
-            {
-                result.Error = "CookDocument: " + restoreError;
-                return result;
-            }
-            directLightmapArtifact = restoredDirect;
-            result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
-            RestoreDocumentCookResultMetadata(reuse.Direct->Metadata, result);
-            progress.Complete();
-
-            JsonValue::Object lightmapFields{
-                { "texture", JsonValue(directLightmapArtifact->Path) },
-            };
-            if (lightmapParams.Ao.Enabled)
-            {
-                progress.Begin(CookStepIds::AmbientOcclusion);
-                CookedArtifact restoredAo;
-                if (!catalog.RestoreStep(*reuse.Ao, assetsRoot, transaction,
-                                         true, restoredAo, &restoreError))
-                {
-                    result.Error = "CookDocument: " + restoreError;
-                    return result;
-                }
-                ambientOcclusionArtifact = restoredAo;
-                result.ReusedSteps.push_back(
-                    std::string(CookStepIds::AmbientOcclusion));
-                lightmapFields.push_back({
-                    "ao", JsonValue(ambientOcclusionArtifact->Path) });
-                progress.Complete();
-            }
-            cellEntities.push_back(JsonValue(JsonValue::Object{
-                { "components", JsonValue(JsonValue::Object{
-                    { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
-                }) },
-            }));
-        }
-        else
-        {
-        progress.Begin(CookStepIds::DirectLightmap);
-
-        // Gather each chart's triangles (world positions + smoothed normals +
-        // chart grid UVs) from the pre-weld cell faces, then rasterize and
-        // bake chart by chart. Each chart's span holds only its own surface:
-        // a boundary luxel bakes the one-sided limit of its own chart, so an
-        // illumination step that lies exactly on a chart seam (a wall base, a
-        // shadow plane through a light) stays crisp instead of averaging both
-        // sides into the shared boundary texels.
-        std::vector<std::vector<LightmapRasterTriangle>> chartTriangles(
-            atlasLayout.Rects.size());
-        const float luxel = atlasLayout.EffectiveLuxelSize;
-        for (const BrushCell& cell : cells)
-            for (const CookFace& face : cell.Faces)
-            {
-                if (face.Chart >= chartTriangles.size())
-                    continue;
-                for (std::size_t i = 0; i + 2 < face.Triangles.size()
-                     && i + 2 < face.ChartUv.size(); i += 3)
-                {
-                    LightmapRasterTriangle tri;
-                    for (int k = 0; k < 3; ++k)
-                    {
-                        tri.Uv[k] = Vec2d{ face.ChartUv[i + k].X / luxel,
-                                           face.ChartUv[i + k].Y / luxel };
-                        tri.Position[k] = face.Triangles[i + k].Position + cell.Origin;
-                        tri.Normal[k] = face.Triangles[i + k].Normal;
-                    }
-                    chartTriangles[face.Chart].push_back(tri);
-                }
-            }
-
-        // Placement charts: sheet UVs scale into the rect's grid points; the
-        // luxel bake then runs on the placed world triangles like any chart.
-        for (const LightmapPlacement& placement : placements)
-        {
-            const float pointsU = std::ceil(placement.WorldExtent.X / luxel);
-            const float pointsV = std::ceil(placement.WorldExtent.Y / luxel);
-            const MeshGeometry& geometry = placement.Geometry;
-            if (placement.Chart >= chartTriangles.size())
-                continue;
-            std::vector<LightmapRasterTriangle>& out = chartTriangles[placement.Chart];
-            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
-            {
-                LightmapRasterTriangle tri;
-                for (int k = 0; k < 3; ++k)
-                {
-                    const StaticMeshVertex& vertex = geometry.Vertices[geometry.Indices[i + k]];
-                    tri.Uv[k] = Vec2d{ vertex.LightmapU / 65535.0f * pointsU,
-                                       vertex.LightmapV / 65535.0f * pointsV };
-                    tri.Position[k] = placement.ToWorld.TransformPoint(vertex.Position);
-                    tri.Normal[k] =
-                        placement.ToWorld.TransformVector(vertex.Normal).Normalized();
-                }
-                out.push_back(tri);
-            }
-        }
-
-        std::vector<std::uint32_t> atlasPixels(
-            static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
-        // The AO plane initializes white: texels no chart covers (including
-        // the reserved border and the (0, 0) texel unbaked items sample)
-        // must never darken the ambient term.
-        const bool bakeAo = lightmapParams.Ao.Enabled;
-        std::vector<std::uint8_t> aoPixels;
-        std::vector<Vec3d> aoRayTable;
-        AmbientOcclusionBakeParams aoBake;
-        if (bakeAo)
-        {
-            aoPixels.assign(
-                static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height,
-                255u);
-            aoRayTable = BuildProbeRayTable(lightmapParams.Ao.RayCount);
-            aoBake.MaxDistance = lightmapParams.Ao.MaxDistance;
-            aoBake.NormalOffset = lightmapParams.Shading.NormalOffset;
-            aoBake.RayTable = aoRayTable;
-        }
-        for (std::size_t c = 0; c < chartTriangles.size(); ++c)
-        {
-            if (progress.Cancelled(result))
-                return result;
-            BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], bakeLights,
-                            occlusionBvh, lightmapParams.Shading,
-                            atlasLayout.Width, atlasPixels,
-                            bakeAo ? &aoBake : nullptr, aoPixels);
-        }
-
-        // Emit the atlas as a cooked texture artifact plus the zone component
-        // that binds it at runtime.
-        TextureData atlas;
-        atlas.Format = TexturePixelFormat::RGB9E5;
-        atlas.Usage = TextureUsage::LinearData;
-        atlas.Filter = TextureFilter::Linear;
-        atlas.Width = atlasLayout.Width;
-        atlas.Height = atlasLayout.Height;
-        atlas.Mips = { TextureMipLevel{ atlasLayout.Width, atlasLayout.Height, 0,
-                                        atlasPixels.size() * sizeof(std::uint32_t) } };
-        atlas.Blob.resize(atlasPixels.size() * sizeof(std::uint32_t));
-        std::memcpy(atlas.Blob.data(), atlasPixels.data(), atlas.Blob.size());
-
-        const std::string atlasRel = "levels/" + stemStr + "/lightmap.stex";
-        const std::string atlasAssetPath = "asset://" + atlasRel;
-        TextureSerializer textureSerializer(logging);
-        const std::filesystem::path atlasPhysical = assetsRoot / ".cooked" / atlasRel;
-        if (!textureSerializer.WriteToFile(
-                transaction.Stage(atlasPhysical).generic_string(), atlas))
-        {
-            result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
+        if (!BakeDocumentLightmap(snapshot, cells, atlasLayout, occlusionBvh, reuse,
+                                  assetsRoot, stemStr, transaction, catalog, progress,
+                                  logging, cellEntities, directLightmapArtifact,
+                                  ambientOcclusionArtifact, result))
             return result;
-        }
-        directLightmapArtifact = catalog.AddSceneTexture(atlasAssetPath, ".cooked/" + atlasRel);
-
-        JsonValue::Object lightmapFields{
-            { "texture", JsonValue(atlasAssetPath) },
-        };
-        if (bakeAo)
-        {
-            TextureData aoAtlas;
-            aoAtlas.Format = TexturePixelFormat::R8;
-            aoAtlas.Usage = TextureUsage::LinearData;
-            aoAtlas.Filter = TextureFilter::Linear;
-            aoAtlas.Width = atlasLayout.Width;
-            aoAtlas.Height = atlasLayout.Height;
-            aoAtlas.Mips = { TextureMipLevel{ atlasLayout.Width,
-                                              atlasLayout.Height, 0,
-                                              aoPixels.size() } };
-            aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
-
-            const std::string aoRel = "levels/" + stemStr + "/ao.stex";
-            const std::string aoAssetPath = "asset://" + aoRel;
-            if (!textureSerializer.WriteToFile(
-                    transaction.Stage(assetsRoot / ".cooked" / aoRel).generic_string(),
-                    aoAtlas))
-            {
-                result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
-                return result;
-            }
-            ambientOcclusionArtifact = catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
-            lightmapFields.push_back({ "ao", JsonValue(aoAssetPath) });
-        }
-        cellEntities.push_back(JsonValue(JsonValue::Object{
-            { "components", JsonValue(JsonValue::Object{
-                { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
-            }) },
-        }));
-        progress.Complete();
-        if (bakeAo)
-        {
-            progress.Begin(CookStepIds::AmbientOcclusion);
-            progress.Complete();
-        }
-        }
     }
 
     // Bake authored irradiance-probe volumes into the zone's .sprobe. Bounce
