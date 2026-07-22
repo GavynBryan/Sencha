@@ -76,6 +76,13 @@ bool ProjectDescriptor::Load(const std::string& path, ProjectDescriptor& out, st
             if (entry.IsString())
                 out.ContentRoots.push_back(ResolveAgainst(dir, entry.AsString()));
 
+    if (const JsonValue* profiles = json->Find("cookProfiles"); profiles != nullptr)
+    {
+        std::string profileError;
+        if (!ReadCookProfiles(*profiles, out.CookProfiles, &profileError))
+            return setError("project cook profiles: " + profileError);
+    }
+
     return true;
 }
 
@@ -100,6 +107,7 @@ bool ProjectDescriptor::Save(const std::string& path, std::string* error)
         { "name", JsonValue(Name) },
         { "gameModule", JsonValue(RelativeTo(dir, GameModulePath)) },
         { "contentRoots", JsonValue(std::move(roots)) },
+        { "cookProfiles", WriteCookProfiles(CookProfiles) },
     });
 
     std::ofstream file(path, std::ios::trunc);

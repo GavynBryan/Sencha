@@ -130,7 +130,7 @@ JsonValue CookedCacheIndex::ToJson() const
 
         JsonValue::Object source;
         source.emplace_back("source", JsonValue(entry->SourceRelPath));
-        source.emplace_back("hash", JsonValue(HashToHex(entry->SourceHash)));
+        source.emplace_back("input_fingerprint", JsonValue(HashToHex(entry->InputFingerprint)));
         source.emplace_back("size", JsonValue(DecimalToString(entry->SourceSize)));
         source.emplace_back("mtime", JsonValue(DecimalToString(entry->SourceMTime)));
         source.emplace_back("meta_size", JsonValue(DecimalToString(entry->MetaSize)));
@@ -171,10 +171,11 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
         if (source == nullptr || !source->IsString() || source->AsString().empty())
             return Fail(error, "source 'source' must be a non-empty string");
 
-        const JsonValue* hash = item.Find("hash");
+        const JsonValue* hash = item.Find("input_fingerprint");
         CookedSourceEntry entry;
-        if (hash == nullptr || !hash->IsString() || !HashFromHex(hash->AsString(), entry.SourceHash))
-            return Fail(error, "source 'hash' must be a 16-digit hex string");
+        if (hash == nullptr || !hash->IsString()
+            || !HashFromHex(hash->AsString(), entry.InputFingerprint))
+            return Fail(error, "source 'input_fingerprint' must be a 16-digit hex string");
 
         const JsonValue* artifacts = item.Find("artifacts");
         if (artifacts == nullptr || !artifacts->IsArray())

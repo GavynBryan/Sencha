@@ -53,8 +53,10 @@ struct CookedSourceEntry
     // Source file, relative to the assets root, generic separators.
     std::string SourceRelPath;
 
-    // HashBytes64 of the source file contents the artifacts were cooked from.
-    uint64_t SourceHash = 0;
+    // Producer-owned identity of every input that affects these artifacts.
+    // File importers use the source and meta content hash; document cooks also
+    // include resolved assets, cook settings, and dependency fingerprints.
+    uint64_t InputFingerprint = 0;
 
     // Size and last-write time (filesystem clock ticks) of the source file
     // when it was cooked. A freshness accelerator only: when both match the
@@ -82,7 +84,7 @@ struct CookedSourceEntry
 // multiplier, so older atlases would render wrong). A per-importer cook
 // version is the finer-grained eventual replacement if bumps become
 // frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 6;
+inline constexpr uint32_t kCookedCacheIndexVersion = 7;
 
 class CookedCacheIndex
 {

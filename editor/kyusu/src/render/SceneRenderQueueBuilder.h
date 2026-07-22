@@ -1,10 +1,11 @@
 #pragma once
 
 #include <render/MaterialCache.h>   // MaterialHandle
+#include <render/LightSelection.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/ShadowCasterSet.h>
-#include <render/ShadowResidency.h>
+#include <render/ShadowResidencyTypes.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
@@ -113,33 +114,6 @@ private:
         std::vector<MaterialHandle> SlotMaterials;
     };
 
-    // One shadow-casting spot light gathered by BuildLights, scored and
-    // emitted by BuildShadowRequests once the frame's view origin is known.
-    struct SpotShadowCandidate
-    {
-        RenderEntityKey Key;
-        std::uint32_t LightIndex = UINT32_MAX;
-        Vec<3> Position;
-        float Range = 0.0f;
-        float Intensity = 0.0f;
-        SpotShadowView View;
-        Sphere Bounds;
-        std::uint32_t TileSize = 0;
-        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
-    };
-
-    struct PointShadowCandidate
-    {
-        RenderEntityKey Key;
-        std::uint32_t LightIndex = UINT32_MAX;
-        Vec<3> Position;
-        float Range = 0.0f;
-        float Intensity = 0.0f;
-        PointShadowView View;
-        Sphere Bounds;
-        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
-    };
-
     void RebuildBrushMeshes(const EditorDocument& document);
     void EmitBrushQueue();
     void EmitPreviewQueue();
@@ -177,8 +151,8 @@ private:
     RenderQueue PlacedMeshes;
     RenderLightSet SceneLights;
     ShadowCasterSet SceneCasters;
-    std::vector<SpotShadowCandidate> ShadowCandidates;
-    std::vector<PointShadowCandidate> PointShadowCandidates;
+    std::vector<ForwardLightCandidate> LightCandidates;
+    bool LightSelectionCurrent = false;
     std::vector<SpotShadowRequest> ShadowRequests;
     std::vector<PointShadowRequest> PointShadowRequests;
 };

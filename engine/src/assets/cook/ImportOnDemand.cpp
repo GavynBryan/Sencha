@@ -322,7 +322,7 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         std::vector<std::byte> metaBytes;
         const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
 
-        if (cached != nullptr && cached->SourceHash == sourceHash
+        if (cached != nullptr && cached->InputFingerprint == sourceHash
             && ArtifactFilesExist(root, *cached))
         {
             ++stats.CookedFresh;
@@ -350,7 +350,7 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
-        entry.SourceHash = sourceHash;
+        entry.InputFingerprint = sourceHash;
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
         index.Put(std::move(entry));
@@ -436,7 +436,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
-    entry.SourceHash = sourceHash;
+    entry.InputFingerprint = sourceHash;
     std::filesystem::path metaPath = sourcePath;
     metaPath += std::string(kImportSettingsSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));

@@ -159,7 +159,13 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${LEVEL_COOK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushBake.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookArtifactTransaction.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookGraph.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookReceipt.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookStepCache.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
@@ -219,6 +225,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/TransitionConnect.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/EditorLightGather.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
@@ -236,6 +243,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp

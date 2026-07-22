@@ -207,22 +207,22 @@ TEST_F(ProbeCookTest, RestalesOnVolumeMoveAndProbeTuningOnlyWhenVolumesExist)
     EXPECT_EQ(plainDefault, plainSky);
 }
 
-TEST_F(ProbeCookTest, IndirectLightMoveRestalesOnlyWhenVolumesExist)
+TEST_F(ProbeCookTest, IndirectLightMoveRestalesCookedSceneAndProbeBounce)
 {
     const Vec3d volumeAt{ 0, 2, 0 };
     const Vec3d lightA{ 0, 4, 0 };
     const Vec3d lightB{ 2, 4, 0 };
 
-    // Without a volume an Indirect light is runtime-only state: moving it
-    // changes no baked output, so the cook must NOT restale. The light rides
-    // the cooked scene as a passthrough component, not the content hash.
+    // Without a volume an Indirect light changes only passthrough scene state.
+    // That still changes the published generation so a cache hit cannot return
+    // a cooked scene containing the light's previous transform.
     const uint64_t noVolA = CookDocument(
         AuthorLevel(LightBakeContribution::Indirect, false, volumeAt, lightA),
         Root, 16.0).ContentHash;
     const uint64_t noVolB = CookDocument(
         AuthorLevel(LightBakeContribution::Indirect, false, volumeAt, lightB),
         Root, 16.0).ContentHash;
-    EXPECT_EQ(noVolA, noVolB);
+    EXPECT_NE(noVolA, noVolB);
 
     // With a volume its bounce is baked, so the same move must restale.
     const uint64_t volA = CookDocument(

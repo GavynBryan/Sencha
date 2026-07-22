@@ -3,6 +3,7 @@
 #include "document/BrushCookInput.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "render/EditorLightGather.h"
 
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
@@ -403,141 +404,31 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
     // shadow-view gather below reads ShadowSoftness, which is why the stamp
     // has to happen first.
     SceneLights.Reset();
-    ShadowCandidates.clear();
-    PointShadowCandidates.clear();
-    LightsHash = kFnvOffset;
-
-    const EditorScene& scene = document.GetScene();
-    const Registry& registry = scene.GetRegistry();
-    const World& world = registry.Components;
-    for (const EntityId entity : scene.GetAllEntities())
-    {
-        if (!scene.IsEntityVisible(entity))
-            continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
-        if (transform == nullptr)
-            continue;
-
-        if (const PointLightComponent* point = world.TryGet<PointLightComponent>(entity);
-            point != nullptr && point->Enabled
-            && std::isfinite(point->Intensity) && std::isfinite(point->Range)
-            && point->Intensity > 0.0f && point->Range > 0.0f)
-        {
-            HashBytes(LightsHash, &transform->Position, sizeof(transform->Position));
-            HashBytes(LightsHash, point, sizeof(*point));
-            // Lights baked into the previewed atlas must not double-light it.
-            const bool baked = skipDirectLights
-                && point->BakeContribution == LightBakeContribution::Direct;
-            const std::uint32_t lightIndex = baked
-                ? UINT32_MAX
-                : SceneLights.Add(MakePointGpuLight(transform->Position, *point));
-            if (lightIndex != UINT32_MAX && point->CastShadows)
-            {
-                PointShadowCandidates.push_back(PointShadowCandidate{
-                    .Key = MakeRenderEntityKey(registry, entity),
-                    .LightIndex = lightIndex,
-                    .Position = transform->Position,
-                    .Range = point->Range,
-                    .Intensity = point->Intensity,
-                    .View = MakePointShadowView(
-                        transform->Position, *point, SceneLights.ShadowSoftness),
-                    .Bounds = Sphere(transform->Position, point->Range),
-                    .Policy = point->ShadowUpdate,
-                });
-            }
-        }
-
-        const SpotLightComponent* spot = world.TryGet<SpotLightComponent>(entity);
-        if (spot == nullptr || !spot->Enabled
-            || !std::isfinite(spot->Intensity) || !std::isfinite(spot->Range)
-            || spot->Intensity <= 0.0f || spot->Range <= 0.0f)
-        {
-            continue;
-        }
-
-        HashBytes(LightsHash, &transform->Position, sizeof(transform->Position));
-        HashBytes(LightsHash, spot, sizeof(*spot));
-        if (skipDirectLights
-            && spot->BakeContribution == LightBakeContribution::Direct)
-            continue;
-
-        const Vec<3> direction = transform->Forward();
-        const std::uint32_t lightIndex = SceneLights.Add(
-            MakeSpotGpuLight(transform->Position, direction, *spot));
-        if (lightIndex != UINT32_MAX && spot->CastShadows)
-        {
-            ShadowCandidates.push_back(SpotShadowCandidate{
-                .Key = MakeRenderEntityKey(registry, entity),
-                .LightIndex = lightIndex,
-                .Position = transform->Position,
-                .Range = spot->Range,
-                .Intensity = spot->Intensity,
-                .View = MakeSpotShadowView(*transform, *spot, SceneLights.ShadowSoftness),
-                .Bounds = MakeSpotBoundingSphere(
-                    transform->Position, direction, spot->Range,
-                    spot->OuterAngleDegrees),
-                .TileSize = static_cast<std::uint32_t>(spot->ShadowResolution),
-                .Policy = spot->ShadowUpdate,
-            });
-        }
-    }
+    LightSelectionCurrent = false;
+    EditorLightGather gathered = GatherEditorLights(
+        document, skipDirectLights, SceneLights.ShadowSoftness);
+    LightCandidates = std::move(gathered.Candidates);
+    LightsHash = gathered.ContentHash;
 }
 
 std::span<const SpotShadowRequest> SceneRenderQueueBuilder::BuildShadowRequests(
     const Vec<3>& viewOrigin)
 {
-    ShadowRequests.clear();
-    ShadowRequests.reserve(ShadowCandidates.size());
-    for (const SpotShadowCandidate& candidate : ShadowCandidates)
-    {
-        ShadowRequests.push_back(SpotShadowRequest{
-            .Key = candidate.Key,
-            .LightIndex = candidate.LightIndex,
-            .Score = LightImportanceScore(
-                candidate.Position, candidate.Range, candidate.Intensity, viewOrigin),
-            .TileSize = candidate.TileSize,
-            .Policy = candidate.Policy,
-            .StateHash = HashSpotShadowState(candidate.View, candidate.TileSize),
-            .ViewProjection = candidate.View.ViewProjection,
-            .SamplingParams = candidate.View.SamplingParams,
-            .Bounds = candidate.Bounds,
-        });
-    }
-    std::sort(ShadowRequests.begin(), ShadowRequests.end(),
-        [](const SpotShadowRequest& a, const SpotShadowRequest& b)
-        {
-            if (a.Score != b.Score)
-                return a.Score > b.Score;
-            return a.Key < b.Key;
-        });
+    SelectForwardLights(LightCandidates, viewOrigin, SceneLights,
+                        ShadowRequests, PointShadowRequests);
+    LightSelectionCurrent = true;
     return ShadowRequests;
 }
 
 std::span<const PointShadowRequest> SceneRenderQueueBuilder::BuildPointShadowRequests(
     const Vec<3>& viewOrigin)
 {
-    PointShadowRequests.clear();
-    PointShadowRequests.reserve(PointShadowCandidates.size());
-    for (const PointShadowCandidate& candidate : PointShadowCandidates)
+    if (!LightSelectionCurrent)
     {
-        PointShadowRequests.push_back(PointShadowRequest{
-            .Key = candidate.Key,
-            .LightIndex = candidate.LightIndex,
-            .Score = LightImportanceScore(
-                candidate.Position, candidate.Range, candidate.Intensity, viewOrigin),
-            .Policy = candidate.Policy,
-            .StateHash = HashPointShadowState(candidate.View),
-            .View = candidate.View,
-            .Bounds = candidate.Bounds,
-        });
+        SelectForwardLights(LightCandidates, viewOrigin, SceneLights,
+                            ShadowRequests, PointShadowRequests);
+        LightSelectionCurrent = true;
     }
-    std::sort(PointShadowRequests.begin(), PointShadowRequests.end(),
-        [](const PointShadowRequest& a, const PointShadowRequest& b)
-        {
-            if (a.Score != b.Score)
-                return a.Score > b.Score;
-            return a.Key < b.Key;
-        });
     return PointShadowRequests;
 }
 

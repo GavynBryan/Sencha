@@ -327,15 +327,51 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 
 void EditorToolbar::DrawPlayGroup(float buttonSize)
 {
-    // Author -> cook -> play loop. Cook bakes the live level; Play launches it
-    // out-of-process (PIE); Stop ends the session. Play flips to a lit state
-    // while a session runs.
     const bool playing = Play.IsPlaying && Play.IsPlaying();
+    const bool cooking = Play.IsCooking && Play.IsCooking();
 
-    if (Play.Cook)
+    if (Play.RunCook)
     {
-        if (ToolButton("cook", ICON_FA_HAMMER, "Cook level", false, buttonSize))
-            Play.Cook();
+        std::string tooltip = cooking ? "Cancel cook" : "Cook selected profile";
+        if (Play.CookStatus)
+        {
+            const std::string status = Play.CookStatus();
+            if (!status.empty())
+                tooltip += "\n" + status;
+        }
+        if (ToolButton("cook", cooking ? ICON_FA_XMARK : ICON_FA_HAMMER,
+                       tooltip.c_str(), cooking, buttonSize))
+        {
+            if (cooking && Play.CancelCook)
+                Play.CancelCook();
+            else
+                Play.RunCook();
+        }
+    }
+    ImGui::SameLine(0.0f, 1.0f);
+    if (ImGui::ArrowButton("##cook_profiles", ImGuiDir_Down))
+        ImGui::OpenPopup("##cook_profile_menu");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Cook profiles");
+    if (ImGui::BeginPopup("##cook_profile_menu"))
+    {
+        const std::string selected = Play.SelectedProfileId
+            ? Play.SelectedProfileId() : std::string{};
+        if (Play.Profiles)
+            for (const PlayControls::ProfileChoice& profile : Play.Profiles())
+            {
+                if (ImGui::MenuItem(profile.Name.c_str(), nullptr,
+                                    profile.Id == selected) && Play.SelectProfile)
+                    Play.SelectProfile(profile.Id);
+            }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Rebuild selected profile", nullptr, false,
+                            bool(Play.RebuildCook) && !cooking))
+            Play.RebuildCook();
+        if (ImGui::MenuItem("Edit profiles...", nullptr, false,
+                            bool(Play.OpenProfiles)))
+            Play.OpenProfiles();
+        ImGui::EndPopup();
     }
     ImGui::SameLine();
     if (Play.Play)

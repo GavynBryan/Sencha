@@ -30,6 +30,8 @@ class Engine;
 class EngineSchedule;
 class SdlWindow;
 class PieDriver;
+class CookSession;
+class CookProfilesPanel;
 class DocumentFileActions;
 
 //=============================================================================
@@ -157,10 +159,12 @@ private:
     std::optional<std::string> ProjectPath;
     std::optional<ProjectDescriptor> Project;
 
-    // Declared last so they are torn down before the state they reference: Pie
-    // holds the document and project; Files holds the document, command stack,
-    // selection, and material library.
+    // Declared last so they are torn down before the state they reference.
+    std::unique_ptr<CookSession>        Cook;
     std::unique_ptr<PieDriver>          Pie;
+    CookProfilesPanel*                  CookProfiles = nullptr;
+    std::string                         SelectedCookProfileId = "full";
+    std::uint64_t                       AppliedCookSerial = 0;
     // Serial of the cook the baked-lighting preview last loaded; a newer cook
     // refreshes an enabled preview in ProcessFrame.
     std::uint64_t                       PreviewCookSerial = 0;

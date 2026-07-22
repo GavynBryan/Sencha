@@ -2,7 +2,7 @@
 
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanImageService.h>
-#include <render/RenderLight.h>
+#include <render/LightGpuTypes.h>
 
 #include <cstdint>
 #include <vulkan/vulkan.h>

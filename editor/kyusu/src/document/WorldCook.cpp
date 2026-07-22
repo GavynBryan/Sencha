@@ -1,48 +1,75 @@
 #include "WorldCook.h"
 
-#include "DocumentCook.h"
+#include "CookArtifactTransaction.h"
+#include "EditorDocument.h"
 #include "WorldDocument.h"
 
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <zone/WorldPartitionIds.h>
 
-#include <cstddef>
 #include <fstream>
-#include <optional>
 #include <span>
 #include <system_error>
 #include <utility>
 #include <vector>
 
-WorldCookResult CookWorld(WorldDocument& world,
-                          const std::filesystem::path& assetsRoot,
-                          double cellSize,
-                          LoggingProvider& logging,
-                          RuntimeAssets* assets,
-                          const LightingCookParams& lightmapParams)
+struct WorldCookInput::Data
+{
+    struct Document
+    {
+        std::size_t ZoneIndex = static_cast<std::size_t>(-1);
+        std::string Label;
+        std::string LevelName;
+        std::string SourceRel;
+        DocumentCookInput Input;
+    };
+
+    WorldPartitionManifest Manifest;
+    std::string WorldStem;
+    std::vector<Document> Documents;
+};
+
+WorldCookInput::WorldCookInput(std::unique_ptr<Data> data)
+    : Input(std::move(data))
+{
+}
+
+WorldCookInput::WorldCookInput(WorldCookInput&&) noexcept = default;
+WorldCookInput& WorldCookInput::operator=(WorldCookInput&&) noexcept = default;
+WorldCookInput::~WorldCookInput() = default;
+
+std::optional<WorldCookInput> CollectWorldCookInput(
+    WorldDocument& world,
+    const std::filesystem::path& assetsRoot,
+    double cellSize,
+    LoggingProvider& logging,
+    RuntimeAssets* assets,
+    const LightingCookParams& lightmapParams,
+    const DocumentCookOptions& options,
+    std::string* error)
 {
     namespace fs = std::filesystem;
-    WorldCookResult result;
-    auto& log = logging.GetLogger<WorldDocument>();
+    const auto fail = [error](std::string message) -> std::optional<WorldCookInput>
+    {
+        if (error != nullptr)
+            *error = std::move(message);
+        return std::nullopt;
+    };
 
     if (!world.IsWorld())
-    {
-        result.Error = "CookWorld: no world is open";
-        return result;
-    }
+        return fail("CookWorld: no world is open");
 
-    // Saved files only: a dirty document or an unresolved scene means the
-    // authored files on disk do not describe the world the designer sees.
     std::string blocked;
     world.VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
-                         {
-                             if (!document.IsDirty())
-                                 return;
-                             if (!blocked.empty())
-                                 blocked += ", ";
-                             blocked += document.GetDisplayName();
-                         });
+    {
+        if (!document.IsDirty())
+            return;
+        if (!blocked.empty())
+            blocked += ", ";
+        blocked += document.GetDisplayName();
+    });
     if (world.WorldSceneDocument().IsDirty())
     {
         if (!blocked.empty())
@@ -50,127 +77,200 @@ WorldCookResult CookWorld(WorldDocument& world,
         blocked += "world scene";
     }
     if (!blocked.empty())
-    {
-        result.Error = "CookWorld: unsaved zone documents: " + blocked;
-        return result;
-    }
-    for (const ZoneHeader& zone : world.Manifest().Zones)
-    {
-        std::error_code ec;
-        if (!zone.SceneRef.empty() && fs::exists(world.ResolveScenePath(zone.SceneRef), ec))
-            continue;
-        if (!blocked.empty())
-            blocked += ", ";
-        blocked += zone.Name;
-    }
-    if (!blocked.empty())
-    {
-        result.Error = "CookWorld: zones without a saved scene: " + blocked;
-        return result;
-    }
+        return fail("CookWorld: unsaved zone documents: " + blocked);
 
-    // The cooked manifest starts as the authored records; each zone cook fills
-    // the cooked-only fields.
-    WorldPartitionManifest cooked = world.Manifest();
+    auto data = std::make_unique<WorldCookInput::Data>();
+    data->Manifest = world.Manifest();
+    data->WorldStem = fs::path(std::string(world.WorldPath())).stem().string();
 
-    // Every zone's occluder geometry is collected up front so each zone cook
-    // can fold the neighbors within bake-ray reach into its occlusion set
-    // (and its cook hash). The kernel selects by reach; far zones cost one
-    // hash comparison and nothing else.
+    std::vector<fs::path> scenePaths;
+    std::vector<std::unique_ptr<EditorDocument>> documents;
     std::vector<ProbeHaloZone> halos;
-    halos.reserve(cooked.Zones.size());
-    for (const ZoneHeader& zone : cooked.Zones)
+    scenePaths.reserve(data->Manifest.Zones.size());
+    documents.reserve(data->Manifest.Zones.size());
+    halos.reserve(data->Manifest.Zones.size());
+    for (const ZoneHeader& zone : data->Manifest.Zones)
     {
         const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
-        std::optional<ProbeHaloZone> haloZone =
-            CollectZoneBakeHalo(scenePath, assetsRoot, &logging, assets);
-        if (!haloZone.has_value())
-        {
-            result.Error = "CookWorld: zone '" + zone.Name
-                + "': could not load '" + scenePath.generic_string() + "'";
-            return result;
-        }
-        halos.push_back(std::move(*haloZone));
-    }
-
-    for (std::size_t zoneIndex = 0; zoneIndex < cooked.Zones.size(); ++zoneIndex)
-    {
-        ZoneHeader& zone = cooked.Zones[zoneIndex];
-        // The zone's own record swaps to the back so the span holds exactly
-        // the neighbors (vector swaps move buffers, not triangles).
-        std::swap(halos[zoneIndex], halos.back());
-        const std::span<const ProbeHaloZone> neighborHalo(
-            halos.data(), halos.size() - 1);
-
-        const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
-        const DocumentCookResult zoneCook =
-            CookDocument(scenePath, assetsRoot, cellSize, &logging, assets,
-                         lightmapParams, neighborHalo);
-        std::swap(halos[zoneIndex], halos.back());
-        if (!zoneCook.Success)
-        {
-            result.Error = "CookWorld: zone '" + zone.Name + "': " + zoneCook.Error;
-            return result;
-        }
-
         std::error_code ec;
-        zone.CookedSceneRef = fs::relative(zoneCook.CookedScenePath, assetsRoot, ec).generic_string();
-        zone.CookedCollisionRef =
-            fs::relative(zoneCook.CollisionSidecarPath, assetsRoot, ec).generic_string();
-        zone.CookedContentHash = zoneCook.ContentHash;
+        if (zone.SceneRef.empty() || !fs::exists(scenePath, ec))
+            return fail("CookWorld: zone '" + zone.Name
+                + "' has no saved scene; save the world first");
+
+        auto document = std::make_unique<EditorDocument>(logging);
+        if (assets != nullptr)
+            document->SetAssetEnvironment(*assets);
+        if (!document->Load(scenePath.generic_string()))
+            return fail("CookWorld: zone '" + zone.Name
+                + "': could not load '" + scenePath.generic_string() + "'");
+        std::optional<ProbeHaloZone> halo =
+            CollectZoneBakeHalo(scenePath, assetsRoot, &logging, assets);
+        if (!halo.has_value())
+            return fail("CookWorld: zone '" + zone.Name
+                + "': could not collect bake halo");
+        scenePaths.push_back(scenePath);
+        documents.push_back(std::move(document));
+        halos.push_back(std::move(*halo));
     }
 
-    // The world scene cooks through the same level-cook path as a zone scene;
-    // its cooked refs land at the manifest's top level. A world saved before
-    // the world scene existed has no ref and cooks without one.
-    if (!cooked.WorldSceneRef.empty())
+    for (std::size_t zoneIndex = 0;
+         zoneIndex < data->Manifest.Zones.size(); ++zoneIndex)
     {
-        const fs::path scenePath = world.ResolveScenePath(cooked.WorldSceneRef);
+        std::swap(halos[zoneIndex], halos.back());
+        const std::span<const ProbeHaloZone> neighbors(
+            halos.data(), halos.size() - 1);
+        std::error_code ec;
+        const std::string sourceRel =
+            fs::relative(scenePaths[zoneIndex], assetsRoot, ec).generic_string();
+        std::string inputError;
+        DocumentCookOptions documentOptions = options;
+        documentOptions.OutputNamespace = "_world-generations/"
+            + data->WorldStem + "/"
+            + ZoneIdToString(data->Manifest.Zones[zoneIndex].Id);
+        std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+            *documents[zoneIndex], assetsRoot, cellSize, logging, assets,
+            lightmapParams, neighbors, documentOptions, &inputError);
+        std::swap(halos[zoneIndex], halos.back());
+        if (!input.has_value())
+            return fail("CookWorld: zone '" + data->Manifest.Zones[zoneIndex].Name
+                + "': " + inputError);
+        data->Documents.push_back(WorldCookInput::Data::Document{
+            .ZoneIndex = zoneIndex,
+            .Label = data->Manifest.Zones[zoneIndex].Name,
+            .LevelName = scenePaths[zoneIndex].stem().generic_string(),
+            .SourceRel = sourceRel,
+            .Input = std::move(*input),
+        });
+    }
+
+    if (!data->Manifest.WorldSceneRef.empty())
+    {
+        const fs::path scenePath = world.ResolveScenePath(data->Manifest.WorldSceneRef);
         std::error_code ec;
         if (!fs::exists(scenePath, ec))
-        {
-            result.Error = "CookWorld: world scene '" + cooked.WorldSceneRef
-                + "' has no saved file; save the world first";
-            return result;
-        }
-        const DocumentCookResult sceneCook =
-            CookDocument(scenePath, assetsRoot, cellSize, &logging, assets,
-                         lightmapParams);
-        if (!sceneCook.Success)
-        {
-            result.Error = "CookWorld: world scene: " + sceneCook.Error;
-            return result;
-        }
-        cooked.CookedWorldSceneRef =
-            fs::relative(sceneCook.CookedScenePath, assetsRoot, ec).generic_string();
-        cooked.CookedWorldCollisionRef =
-            fs::relative(sceneCook.CollisionSidecarPath, assetsRoot, ec).generic_string();
-        cooked.CookedWorldContentHash = sceneCook.ContentHash;
+            return fail("CookWorld: world scene '" + data->Manifest.WorldSceneRef
+                + "' has no saved file; save the world first");
+        EditorDocument document(logging);
+        if (assets != nullptr)
+            document.SetAssetEnvironment(*assets);
+        if (!document.Load(scenePath.generic_string()))
+            return fail("CookWorld: could not load world scene '"
+                + scenePath.generic_string() + "'");
+        std::string inputError;
+        DocumentCookOptions documentOptions = options;
+        documentOptions.OutputNamespace =
+            "_world-generations/" + data->WorldStem + "/world_scene";
+        std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+            document, assetsRoot, cellSize, logging, assets, lightmapParams,
+            {}, documentOptions, &inputError);
+        if (!input.has_value())
+            return fail("CookWorld: world scene: " + inputError);
+        data->Documents.push_back(WorldCookInput::Data::Document{
+            .Label = "world scene",
+            .LevelName = scenePath.stem().generic_string(),
+            .SourceRel = fs::relative(scenePath, assetsRoot, ec).generic_string(),
+            .Input = std::move(*input),
+        });
     }
+    return WorldCookInput(std::move(data));
+}
 
-    const std::string worldStem = fs::path(std::string(world.WorldPath())).stem().string();
-    const fs::path cookedDir = assetsRoot / ".cooked/worlds";
-    std::error_code ec;
-    fs::create_directories(cookedDir, ec);
-    const fs::path manifestPath = cookedDir / (worldStem + ".sworld.json");
-
-    std::ofstream file(manifestPath, std::ios::binary | std::ios::trunc);
-    if (!file.is_open())
+WorldCookResult ExecuteWorldCook(WorldCookInput input,
+                                 const std::filesystem::path& assetsRoot,
+                                 LoggingProvider& logging)
+{
+    namespace fs = std::filesystem;
+    WorldCookResult result;
+    if (input.Input == nullptr)
     {
-        result.Error = "CookWorld: cannot write '" + manifestPath.generic_string() + "'";
+        result.Error = "CookWorld: empty cook input";
         return result;
     }
-    file << JsonStringify(WriteWorldPartitionManifest(cooked), /*pretty*/ true);
+
+    WorldPartitionManifest& cooked = input.Input->Manifest;
+    for (WorldCookInput::Data::Document& document : input.Input->Documents)
+    {
+        DocumentCookResult cookedDocument = ExecuteDocumentCook(
+            std::move(document.Input), document.LevelName, document.SourceRel,
+            assetsRoot, logging);
+        if (!cookedDocument.Success)
+        {
+            result.Error = "CookWorld: " + document.Label + ": "
+                + cookedDocument.Error;
+            return result;
+        }
+
+        std::error_code ec;
+        const std::string sceneRef = fs::relative(
+            cookedDocument.CookedScenePath, assetsRoot, ec).generic_string();
+        const std::string collisionRef = fs::relative(
+            cookedDocument.CollisionSidecarPath, assetsRoot, ec).generic_string();
+        if (document.ZoneIndex != static_cast<std::size_t>(-1))
+        {
+            ZoneHeader& zone = cooked.Zones[document.ZoneIndex];
+            zone.CookedSceneRef = sceneRef;
+            zone.CookedCollisionRef = collisionRef;
+            zone.CookedContentHash = cookedDocument.ContentHash;
+        }
+        else
+        {
+            cooked.CookedWorldSceneRef = sceneRef;
+            cooked.CookedWorldCollisionRef = collisionRef;
+            cooked.CookedWorldContentHash = cookedDocument.ContentHash;
+        }
+    }
+
+    const fs::path manifestPath = assetsRoot / ".cooked/worlds"
+        / (input.Input->WorldStem + ".sworld.json");
+    CookArtifactTransaction publication(assetsRoot,
+        "worlds/" + input.Input->WorldStem);
+    std::ofstream file(publication.Stage(manifestPath),
+                       std::ios::binary | std::ios::trunc);
+    if (!file.is_open())
+    {
+        result.Error = "CookWorld: cannot stage '" + manifestPath.generic_string() + "'";
+        return result;
+    }
+    file << JsonStringify(WriteWorldPartitionManifest(cooked), true);
+    file.close();
     if (!file.good())
     {
         result.Error = "CookWorld: write failed for '" + manifestPath.generic_string() + "'";
         return result;
     }
+    std::string publishError;
+    if (!publication.Commit(&publishError))
+    {
+        result.Error = "CookWorld: " + publishError;
+        return result;
+    }
 
-    log.Info("cooked world '{}': {} zones -> {}", cooked.Name, cooked.Zones.size(),
-             manifestPath.generic_string());
+    logging.GetLogger<WorldDocument>().Info(
+        "cooked world '{}': {} zones -> {}", cooked.Name, cooked.Zones.size(),
+        manifestPath.generic_string());
     result.Success = true;
     result.CookedManifestPath = manifestPath;
     result.ZoneCount = cooked.Zones.size();
     return result;
+}
+
+WorldCookResult CookWorld(WorldDocument& world,
+                          const std::filesystem::path& assetsRoot,
+                          double cellSize,
+                          LoggingProvider& logging,
+                          RuntimeAssets* assets,
+                          const LightingCookParams& lightmapParams,
+                          const DocumentCookOptions& options)
+{
+    std::string error;
+    std::optional<WorldCookInput> input = CollectWorldCookInput(
+        world, assetsRoot, cellSize, logging, assets, lightmapParams, options,
+        &error);
+    if (!input.has_value())
+    {
+        WorldCookResult result;
+        result.Error = std::move(error);
+        return result;
+    }
+    return ExecuteWorldCook(std::move(*input), assetsRoot, logging);
 }

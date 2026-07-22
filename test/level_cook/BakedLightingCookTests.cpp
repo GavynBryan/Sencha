@@ -446,6 +446,64 @@ TEST_F(BakedLightingCookTest, AoDisabledCooksNoPlane)
     EXPECT_EQ(buffer.str().find("\"ao\""), std::string::npos);
 }
 
+TEST_F(BakedLightingCookTest, NoLightingProfileWithdrawsPublishedLighting)
+{
+    const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
+    const DocumentCookResult full = CookDocument(level, Root, 16.0);
+    ASSERT_TRUE(full.Success) << full.Error;
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/ao.stex"));
+
+    const CookProfile& noLighting = BuiltInCookProfiles()[2];
+    const DocumentCookResult unlit = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &noLighting });
+    ASSERT_TRUE(unlit.Success) << unlit.Error;
+    EXPECT_EQ(unlit.ProfileId, "no_lighting");
+    EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+    EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/ao.stex"));
+
+    std::ifstream scene(unlit.CookedScenePath);
+    std::ostringstream buffer;
+    buffer << scene.rdbuf();
+    EXPECT_EQ(buffer.str().find("ZoneLightmap"), std::string::npos);
+}
+
+TEST_F(BakedLightingCookTest, LightingProfileRestoresWithdrawnStepArtifacts)
+{
+    const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
+    const DocumentCookResult full = CookDocument(level, Root, 16.0);
+    ASSERT_TRUE(full.Success) << full.Error;
+    const std::vector<std::byte> originalLightmap =
+        ReadBytes(Root / ".cooked/levels/test/lightmap.stex");
+    const std::vector<std::byte> originalAo =
+        ReadBytes(Root / ".cooked/levels/test/ao.stex");
+
+    const CookProfile& noLighting = BuiltInCookProfiles()[2];
+    const DocumentCookResult unlit = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &noLighting });
+    ASSERT_TRUE(unlit.Success) << unlit.Error;
+    ASSERT_FALSE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+
+    const CookProfile& lightingOnly = BuiltInCookProfiles()[1];
+    const DocumentCookResult restored = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &lightingOnly });
+    ASSERT_TRUE(restored.Success) << restored.Error;
+    EXPECT_FALSE(restored.CacheHit);
+    EXPECT_NE(std::find(restored.ReusedSteps.begin(), restored.ReusedSteps.end(),
+                        CookStepIds::DirectLightmap),
+              restored.ReusedSteps.end());
+    EXPECT_NE(std::find(restored.ReusedSteps.begin(), restored.ReusedSteps.end(),
+                        CookStepIds::AmbientOcclusion),
+              restored.ReusedSteps.end());
+    EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"),
+              originalLightmap);
+    EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/ao.stex"), originalAo);
+    EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+}
+
 TEST_F(BakedLightingCookTest, RestalesOnAoTuningOnlyWhenLightsExist)
 {
     LightingCookParams base{};

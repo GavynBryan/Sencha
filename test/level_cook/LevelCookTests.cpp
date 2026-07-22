@@ -10,6 +10,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
+#include <jobs/AsyncTaskQueue.h>
 
 #include <gtest/gtest.h>
 
@@ -18,6 +19,8 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <memory>
+#include <optional>
 
 namespace
 {
@@ -156,6 +159,72 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
     EXPECT_EQ(cameras, 1);
     EXPECT_EQ(staticMeshes, 1);
     EXPECT_EQ(brushes, 0);
+}
+
+TEST_F(LevelCookTest, ImmutableCookInputRunsThroughAsyncTaskHandoff)
+{
+    EditorDocument document(Logging);
+    document.SetDefaultMaterial(
+        AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
+    document.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+
+    std::string error;
+    std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+        document, Root, 16.0, Logging, nullptr, {}, {}, {}, &error);
+    ASSERT_TRUE(input.has_value()) << error;
+
+    auto inputBox = std::make_shared<std::optional<DocumentCookInput>>(
+        std::move(*input));
+    std::optional<DocumentCookResult> committed;
+    AsyncTaskQueue tasks(0);
+    const AsyncTaskHandle handle = tasks.Submit<DocumentCookResult>(
+        [inputBox, this]() mutable
+        {
+            LoggingProvider workerLogging;
+            DocumentCookInput value = std::move(inputBox->value());
+            inputBox->reset();
+            return ExecuteDocumentCook(std::move(value), "async",
+                                       "levels/async.level.json", Root,
+                                       workerLogging);
+        },
+        [&committed](DocumentCookResult result)
+        {
+            committed = std::move(result);
+        });
+    EXPECT_TRUE(handle.IsValid());
+
+    // The worker owns a snapshot. Later authoring cannot leak into its output.
+    document.GetScene().CreateBrush(Vec3d{ 100, 0, 0 });
+    EXPECT_EQ(tasks.PumpWork(), 1u);
+    EXPECT_EQ(tasks.DrainCompletions(), 1u);
+    ASSERT_TRUE(committed.has_value());
+    ASSERT_TRUE(committed->Success) << committed->Error;
+    EXPECT_EQ(committed->CellCount, 1u);
+}
+
+TEST_F(LevelCookTest, ReusesMatchingCookAndRecooksWhenArtifactIsMissing)
+{
+    const fs::path levelPath = AuthorTwoBrushLevel();
+    const DocumentCookResult first = CookDocument(levelPath, Root, 16.0);
+    ASSERT_TRUE(first.Success) << first.Error;
+    EXPECT_FALSE(first.CacheHit);
+
+    const DocumentCookResult cached = CookDocument(levelPath, Root, 16.0);
+    ASSERT_TRUE(cached.Success) << cached.Error;
+    EXPECT_TRUE(cached.CacheHit);
+    EXPECT_EQ(cached.ContentHash, first.ContentHash);
+    EXPECT_EQ(cached.CellCount, first.CellCount);
+    EXPECT_EQ(cached.GeneratedMeshPaths, first.GeneratedMeshPaths);
+
+    ASSERT_FALSE(cached.GeneratedMeshPaths.empty());
+    const std::string rel = cached.GeneratedMeshPaths.front().substr(
+        std::string("asset://").size());
+    fs::remove(Root / ".cooked" / rel);
+
+    const DocumentCookResult repaired = CookDocument(levelPath, Root, 16.0);
+    ASSERT_TRUE(repaired.Success) << repaired.Error;
+    EXPECT_FALSE(repaired.CacheHit);
+    EXPECT_TRUE(fs::exists(Root / ".cooked" / rel));
 }
 
 TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)

@@ -3,7 +3,6 @@
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
-#include <render/RenderLight.h>
 
 namespace
 {

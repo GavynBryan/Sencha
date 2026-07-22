@@ -1,6 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 class ManipulatorSession;
 class ToolRegistry;
@@ -23,11 +26,25 @@ struct WorldViewSettings;
 class EditorToolbar
 {
 public:
-    // Host wiring for the Cook/Play/Stop group. Any callback may be empty (the
-    // button is then disabled); IsPlaying gates Play vs Stop.
+    // Host wiring for the cook profile split button and Play/Stop group.
     struct PlayControls
     {
-        std::function<void()> Cook;
+        struct ProfileChoice
+        {
+            std::string Id;
+            std::string Name;
+            bool BuiltIn = false;
+        };
+
+        std::function<void()> RunCook;
+        std::function<void()> CancelCook;
+        std::function<void()> RebuildCook;
+        std::function<bool()> IsCooking;
+        std::function<std::vector<ProfileChoice>()> Profiles;
+        std::function<std::string()> SelectedProfileId;
+        std::function<void(std::string_view)> SelectProfile;
+        std::function<void()> OpenProfiles;
+        std::function<std::string()> CookStatus;
         std::function<void()> Play;
         std::function<void()> Stop;
         std::function<bool()> IsPlaying;

@@ -142,7 +142,7 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
 {
     CookedSourceEntry entry;
     entry.SourceRelPath = "textures/dev/checker.png";
-    entry.SourceHash = 0xDEADBEEFCAFEF00DULL; // high bits must survive JSON
+    entry.InputFingerprint = 0xDEADBEEFCAFEF00DULL; // high bits must survive JSON
     entry.SourceSize = 0xFFFFFFFF12345678ULL; // > 2^53: doubles would mangle it
     entry.SourceMTime = -1234567890123456789LL;
     entry.MetaSize = 42;
@@ -164,7 +164,7 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
 
     const CookedSourceEntry* found = parsed.Find("textures/dev/checker.png");
     ASSERT_NE(found, nullptr);
-    EXPECT_EQ(found->SourceHash, 0xDEADBEEFCAFEF00DULL);
+    EXPECT_EQ(found->InputFingerprint, 0xDEADBEEFCAFEF00DULL);
     EXPECT_EQ(found->SourceSize, 0xFFFFFFFF12345678ULL);
     EXPECT_EQ(found->SourceMTime, -1234567890123456789LL);
     EXPECT_EQ(found->MetaSize, 42u);
@@ -180,13 +180,13 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
 TEST(CookedCacheIndex, PutReplacesEntryForSameSource)
 {
     CookedCacheIndex index;
-    index.Put({ .SourceRelPath = "a.src", .SourceHash = 1,
+    index.Put({ .SourceRelPath = "a.src", .InputFingerprint = 1,
                 .Artifacts = { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
-    index.Put({ .SourceRelPath = "a.src", .SourceHash = 2,
+    index.Put({ .SourceRelPath = "a.src", .InputFingerprint = 2,
                 .Artifacts = { { "asset://a.smesh", ".cooked/a.smesh", AssetType::StaticMesh } } });
 
     ASSERT_EQ(index.Size(), 1u);
-    EXPECT_EQ(index.Find("a.src")->SourceHash, 2u);
+    EXPECT_EQ(index.Find("a.src")->InputFingerprint, 2u);
 }
 
 TEST(CookedCacheIndex, FromJsonRejectsBadDocuments)

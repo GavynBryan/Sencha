@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CookProfile.h"
+
 #include <string>
 #include <vector>
 
@@ -21,6 +23,7 @@ struct ProjectDescriptor
     std::string Directory;                  // absolute dir containing the .senchaproj
     std::string GameModulePath;             // absolute path to the built game module
     std::vector<std::string> ContentRoots;  // absolute content roots
+    std::vector<CookProfile> CookProfiles;  // project-defined profiles; built-ins are implicit
 
     // Loads and resolves a descriptor. Returns false and sets *error on a missing
     // file, malformed JSON, or a missing required field.

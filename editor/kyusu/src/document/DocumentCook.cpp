@@ -1,12 +1,18 @@
 #include "DocumentCook.h"
+#include "DocumentCookInputData.h"
 
 #include "BrushCookInput.h"
+#include "CookArtifactTransaction.h"
+#include "CookGraph.h"
+#include "CookReceipt.h"
+#include "CookStepCache.h"
 #include "EditorDocument.h"
 
 #include <assets/cook/BakeBvh.h>
 #include <assets/cook/BrushClustering.h>
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
+#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ImportOnDemand.h>
@@ -16,34 +22,23 @@
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
 #include <assets/probes/ProbeVolumeFormat.h>
-#include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureSerializer.h>
-#include <core/assets/AssetSystem.h>
-#include <math/spatial/GridTransform3d.h>
-#include <render/IrradianceVolumeComponent.h>
-#include <render/StaticMeshComponent.h>
-#include <render/LightComponentTypes.h>
-#include <render/PointLightComponent.h>
-#include <render/RenderLight.h>
-#include <render/SpotLightComponent.h>
-#include <world/transform/TransformComponents.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/RuntimeAssets.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
-#include <core/assets/RuntimeAssets.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/MeshGeometry.h>
-#include <world/registry/Registry.h>
-#include <world/serialization/SceneSerializationContext.h>
-#include <world/serialization/SceneSerializer.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_set>
@@ -51,30 +46,65 @@
 
 namespace
 {
-    // The bake-input fingerprint: exactly the data that reaches the bake (each
-    // face's resolved material plus its world-space triangles) and the cell
-    // size. Non-geometry component edits don't touch it, so they don't force a
-    // re-bake (05-§3); a real geometry/material/transform change does, because
-    // the collected triangles are post-transform.
+    void AddVec2(CookFingerprint& fingerprint, std::string_view field, const Vec2d& value)
+    {
+        fingerprint.AddFloat(std::string(field) + ".x", value.X)
+            .AddFloat(std::string(field) + ".y", value.Y);
+    }
+
+    void AddVec3(CookFingerprint& fingerprint, std::string_view field, const Vec3d& value)
+    {
+        fingerprint.AddFloat(std::string(field) + ".x", value.X)
+            .AddFloat(std::string(field) + ".y", value.Y)
+            .AddFloat(std::string(field) + ".z", value.Z);
+    }
+
+    void AddVertex(CookFingerprint& fingerprint, const StaticMeshVertex& vertex)
+    {
+        AddVec3(fingerprint, "position", vertex.Position);
+        AddVec3(fingerprint, "normal", vertex.Normal);
+        AddVec2(fingerprint, "uv0", vertex.Uv0);
+        fingerprint.AddFloat("tangent.x", vertex.Tangent.X)
+            .AddFloat("tangent.y", vertex.Tangent.Y)
+            .AddFloat("tangent.z", vertex.Tangent.Z)
+            .AddFloat("tangent.w", vertex.Tangent.W)
+            .AddU32("lightmap_u", vertex.LightmapU)
+            .AddU32("lightmap_v", vertex.LightmapV);
+    }
+
+    void AddMat4(CookFingerprint& fingerprint, std::string_view field, const Mat4& value)
+    {
+        for (int row = 0; row < 4; ++row)
+            for (int column = 0; column < 4; ++column)
+                fingerprint.AddFloat(
+                    std::string(field) + "." + std::to_string(row)
+                        + "." + std::to_string(column),
+                    value[row][column]);
+    }
+
+    // The brush identity covers resolved materials, post-transform triangles,
+    // chart topology, and chart coordinates. Editor-only state never enters it.
     uint64_t HashBrushInputs(std::span<const CookBrushGeometry> brushes, double cellSize)
     {
-        uint64_t h = HashBytes64(std::as_bytes(std::span<const double>{ &cellSize, 1 }));
+        CookFingerprint fingerprint("brush_cells", 2);
+        fingerprint.AddDouble("cell_size", cellSize)
+            .AddU64("brush_count", brushes.size());
         for (const CookBrushGeometry& brush : brushes)
+        {
+            fingerprint.AddU64("face_count", brush.Faces.size());
             for (const CookFace& face : brush.Faces)
             {
-                h = HashBytes64(face.Material.Path, h);
-                h = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
-                    face.Triangles.data(), face.Triangles.size() }), h);
-                // Chart identity and chart-space UVs are hashed explicitly: a
-                // soft-edge toggle between coplanar faces changes charts (so
-                // the lightmap layout) without moving a single vertex byte.
-                h = HashBytes64(std::as_bytes(std::span<const std::uint32_t>{
-                    &face.Chart, 1 }), h);
-                if (!face.ChartUv.empty())
-                    h = HashBytes64(std::as_bytes(std::span<const Vec2d>{
-                        face.ChartUv.data(), face.ChartUv.size() }), h);
+                fingerprint.AddString("material", face.Material.Path)
+                    .AddU32("chart", face.Chart)
+                    .AddU64("vertex_count", face.Triangles.size());
+                for (const StaticMeshVertex& vertex : face.Triangles)
+                    AddVertex(fingerprint, vertex);
+                fingerprint.AddU64("chart_uv_count", face.ChartUv.size());
+                for (const Vec2d& uv : face.ChartUv)
+                    AddVec2(fingerprint, "chart_uv", uv);
             }
-        return h;
+        }
+        return fingerprint.Value();
     }
 
     // Unorm16 lightmap UV component (texel-center convention).
@@ -84,25 +114,22 @@ namespace
         return static_cast<std::uint16_t>(std::lround(clamped * 65535.0f));
     }
 
-    // Fold the baked-direct light set into the cook hash so moving, recoloring,
-    // or retuning a Direct light restales the level and re-bakes the vertices.
-    uint64_t HashDirectLights(std::span<const BakeDirectLight> lights, uint64_t seed)
+    uint64_t HashDirectLights(std::span<const BakeDirectLight> lights)
     {
-        uint64_t h = seed;
+        CookFingerprint fingerprint("bake_direct_lights", 2);
+        fingerprint.AddU64("light_count", lights.size());
         for (const BakeDirectLight& light : lights)
         {
-            const float values[] = {
-                light.Position.X, light.Position.Y, light.Position.Z,
-                light.Color.X, light.Color.Y, light.Color.Z,
-                light.Intensity, light.Range,
-                light.Direction.X, light.Direction.Y, light.Direction.Z,
-                light.ConeScale, light.ConeOffset,
-            };
-            h = HashBytes64(std::as_bytes(std::span<const float>{ values, std::size(values) }), h);
-            const std::uint8_t kind = static_cast<std::uint8_t>(light.Kind);
-            h = HashBytes64(std::as_bytes(std::span<const std::uint8_t>{ &kind, 1 }), h);
+            fingerprint.AddU32("kind", static_cast<std::uint32_t>(light.Kind));
+            AddVec3(fingerprint, "position", light.Position);
+            AddVec3(fingerprint, "color", light.Color);
+            fingerprint.AddFloat("intensity", light.Intensity)
+                .AddFloat("range", light.Range);
+            AddVec3(fingerprint, "direction", light.Direction);
+            fingerprint.AddFloat("cone_scale", light.ConeScale)
+                .AddFloat("cone_offset", light.ConeOffset);
         }
-        return h;
+        return fingerprint.Value();
     }
 
     std::string CellBase(const Vec3i& coord)
@@ -175,303 +202,127 @@ JsonValue BuildCellEntity(const Vec3d& origin,
 
 namespace
 {
-// Lights resolved to world-space bake inputs. Direct lights feed the lightmap
-// (their diffuse bakes there and they leave the runtime forward set, so a
-// bake is the only thing that makes them visible); with includeIndirect the
-// set widens to Indirect lights, whose direct stays dynamic but whose bounce
-// feeds the probe bake. Spot cone parameters reuse the runtime packing so the
-// baked cone matches the shader cone exactly.
-std::vector<BakeDirectLight> CollectBakeLights(const World& world, bool includeIndirect)
+uint64_t HashProbeVolumes(std::span<const ProbeVolumeInput> volumes)
 {
-    const auto contributes = [includeIndirect](LightBakeContribution bake)
-    {
-        return bake == LightBakeContribution::Direct
-            || (includeIndirect && bake == LightBakeContribution::Indirect);
-    };
-
-    std::vector<BakeDirectLight> lights;
-    if (!world.IsRegistered<LocalTransform>())
-        return lights;
-
-    if (world.IsRegistered<PointLightComponent>())
-    {
-        world.ForEachComponent<PointLightComponent>(
-            [&](EntityId entity, const PointLightComponent& light)
-            {
-                if (!contributes(light.BakeContribution))
-                    return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
-                if (transform == nullptr)
-                    return;
-                BakeDirectLight baked{};
-                baked.Kind = BakeLightKind::Point;
-                baked.Position = transform->Value.Position;
-                baked.Color = light.Color;
-                baked.Intensity = light.Intensity;
-                baked.Range = light.Range;
-                lights.push_back(baked);
-            });
-    }
-
-    if (world.IsRegistered<SpotLightComponent>())
-    {
-        world.ForEachComponent<SpotLightComponent>(
-            [&](EntityId entity, const SpotLightComponent& light)
-            {
-                if (!contributes(light.BakeContribution))
-                    return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
-                if (transform == nullptr)
-                    return;
-                const Vec<3> direction = transform->Value.Forward();
-                const GpuLight packed =
-                    MakeSpotGpuLight(transform->Value.Position, direction, light);
-                BakeDirectLight baked{};
-                baked.Kind = BakeLightKind::Spot;
-                baked.Position = transform->Value.Position;
-                baked.Color = light.Color;
-                baked.Intensity = light.Intensity;
-                baked.Range = light.Range;
-                baked.Direction = Vec3d(packed.DirectionCone.X,
-                                        packed.DirectionCone.Y,
-                                        packed.DirectionCone.Z);
-                baked.ConeScale = packed.ConeScale;
-                baked.ConeOffset = packed.ConeOffset;
-                lights.push_back(baked);
-            });
-    }
-
-    return lights;
-}
-
-// An authored probe volume resolved to its world lattice. StableIndex is the
-// collection order (entity iteration order, deterministic per document), the
-// runtime's overlap tiebreaker.
-struct ProbeVolumeInput
-{
-    GridTransform3d Grid;
-    std::int32_t Priority = 0;
-};
-
-std::vector<ProbeVolumeInput> CollectProbeVolumes(const World& world)
-{
-    std::vector<ProbeVolumeInput> volumes;
-    if (!world.IsRegistered<LocalTransform>()
-        || !world.IsRegistered<IrradianceVolumeComponent>())
-        return volumes;
-
-    world.ForEachComponent<IrradianceVolumeComponent>(
-        [&](EntityId entity, const IrradianceVolumeComponent& volume)
-        {
-            const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
-            if (transform == nullptr || volume.CellSize <= 0.0f)
-                return;
-            ProbeVolumeInput input;
-            input.Grid = GridTransform3d::FromBounds(
-                Aabb3d::FromCenterHalfExtent(transform->Value.Position,
-                                             volume.HalfExtents),
-                volume.CellSize);
-            input.Priority = volume.Priority;
-            volumes.push_back(input);
-        });
-    return volumes;
-}
-
-uint64_t HashProbeVolumes(std::span<const ProbeVolumeInput> volumes, uint64_t seed)
-{
-    uint64_t h = seed;
+    CookFingerprint fingerprint("probe_volumes", 2);
+    fingerprint.AddU64("volume_count", volumes.size());
     for (const ProbeVolumeInput& volume : volumes)
     {
-        const float values[] = {
-            volume.Grid.Origin.X, volume.Grid.Origin.Y, volume.Grid.Origin.Z,
-            volume.Grid.CellSize,
-            static_cast<float>(volume.Grid.DimsX),
-            static_cast<float>(volume.Grid.DimsY),
-            static_cast<float>(volume.Grid.DimsZ),
-            static_cast<float>(volume.Priority),
-        };
-        h = HashBytes64(std::as_bytes(std::span<const float>{ values, std::size(values) }), h);
+        AddVec3(fingerprint, "origin", volume.Grid.Origin);
+        fingerprint.AddFloat("cell_size", volume.Grid.CellSize)
+            .AddU32("dims_x", volume.Grid.DimsX)
+            .AddU32("dims_y", volume.Grid.DimsY)
+            .AddU32("dims_z", volume.Grid.DimsZ)
+            .AddI32("priority", volume.Priority);
     }
-    return h;
+    return fingerprint.Value();
 }
 
-// A placed instanceable mesh joining the zone's lightmap: its cook-document
-// entity (for the scale/bias writeback), placement transform, CPU geometry
-// (sheet UVs in LightmapU/V), and the atlas rect sizing derived from it.
-struct LightmapPlacement
+JsonValue* FindMutable(JsonValue& value, std::string_view key)
 {
-    EntityId Entity;
-    Mat4 ToWorld = Mat4::Identity();
-    MeshGeometry Geometry;
-    Vec2d WorldExtent;               // world size the [0,1] sheet spans, per axis
-    std::uint32_t Chart = 0;         // index into the shared atlas layout
-    bool CastsIntoBake = true;       // AffectsBakedLighting: occludes others
-};
-
-// Gathers placed StaticMesh entities whose mesh asset carries lightmap sheet
-// UVs. Needs the asset system (handle -> path) and disk access (the cook
-// loads CPU geometry; the runtime caches hold none); a null assetSystem cooks
-// brush-only and bakes no placements. Deterministic: entity iteration order.
-std::vector<LightmapPlacement> CollectLightmapPlacements(
-    const World& world, AssetSystem* assetSystem,
-    const std::filesystem::path& assetsRoot, LoggingProvider& logging)
-{
-    std::vector<LightmapPlacement> placements;
-    if (assetSystem == nullptr || !world.IsRegistered<StaticMeshComponent>()
-        || !world.IsRegistered<LocalTransform>())
-        return placements;
-
-    MeshLoader loader(logging);
-    world.ForEachComponent<StaticMeshComponent>(
-        [&](EntityId entity, const StaticMeshComponent& renderer)
-        {
-            const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
-            if (transform == nullptr)
-                return;
-            const std::string_view assetPath =
-                assetSystem->GetPathForStaticMesh(renderer.Mesh);
-            constexpr std::string_view prefix = "asset://";
-            if (assetPath.size() <= prefix.size())
-                return;
-            const std::string rel(assetPath.substr(prefix.size()));
-
-            // Authored meshes live under the root; generated ones under
-            // .cooked (the same split physicalPathFor uses for refs).
-            std::filesystem::path physical = assetsRoot / rel;
-            std::error_code ec;
-            if (!std::filesystem::exists(physical, ec))
-                physical = assetsRoot / ".cooked" / rel;
-
-            LightmapPlacement placement;
-            if (!loader.LoadFromFile(physical.generic_string(), placement.Geometry))
-                return;
-
-            bool hasSheet = false;
-            for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
-                if (vertex.LightmapU != 0 || vertex.LightmapV != 0)
-                {
-                    hasSheet = true;
-                    break;
-                }
-            if (!hasSheet)
-                return;
-
-            placement.Entity = entity;
-            placement.ToWorld = transform->Value.ToMat4();
-            placement.CastsIntoBake = renderer.AffectsBakedLighting;
-
-            // World density of the sheet: the steepest world-per-sheet-unit
-            // ratio over the indexed edges, per axis, measured on the PLACED
-            // triangles so instance scale is included.
-            float du = 0.0f;
-            float dv = 0.0f;
-            const std::vector<StaticMeshVertex>& verts = placement.Geometry.Vertices;
-            const std::vector<uint32_t>& indices = placement.Geometry.Indices;
-            for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
-                for (int e = 0; e < 3; ++e)
-                {
-                    const StaticMeshVertex& a = verts[indices[i + e]];
-                    const StaticMeshVertex& b = verts[indices[i + (e + 1) % 3]];
-                    const float world =
-                        (placement.ToWorld.TransformPoint(b.Position)
-                         - placement.ToWorld.TransformPoint(a.Position)).Magnitude();
-                    const float su = std::abs(b.LightmapU - a.LightmapU) / 65535.0f;
-                    const float sv = std::abs(b.LightmapV - a.LightmapV) / 65535.0f;
-                    if (su > 1e-5f)
-                        du = std::max(du, world / su);
-                    if (sv > 1e-5f)
-                        dv = std::max(dv, world / sv);
-                }
-            if (du <= 0.0f && dv <= 0.0f)
-                return;
-            placement.WorldExtent = Vec2d{ std::max(du, 1e-3f), std::max(dv, 1e-3f) };
-            placements.push_back(std::move(placement));
-        });
-    return placements;
+    if (!value.IsObject())
+        return nullptr;
+    for (auto& [field, child] : value.AsObject())
+        if (field == key)
+            return &child;
+    return nullptr;
 }
 
-// The cook kernel. Operates on a mutable document it is free to mutate
-// destructively (it drops brush entities before serializing the passthrough
-// scene), so both callers hand it a throwaway: the file cook loads one from
-// disk, the live cook snapshots the editor's document. stem names the level's
-// artifacts; sourceRel is the cooked-cache source key.
-DocumentCookResult CookDocumentKernel(EditorDocument& doc,
+bool SetLightmapScaleBias(JsonValue& scene, std::uint32_t entityIndex,
+                          const Vec4& value)
+{
+    JsonValue* entities = FindMutable(scene, "entities");
+    if (entities == nullptr || !entities->IsArray()
+        || entityIndex >= entities->AsArray().size())
+        return false;
+    JsonValue* components = FindMutable(entities->AsArray()[entityIndex], "components");
+    if (components == nullptr || !components->IsObject())
+        return false;
+    JsonValue* mesh = FindMutable(*components, "StaticMesh");
+    if (mesh == nullptr || !mesh->IsObject())
+        return false;
+
+    JsonValue scaleBias(JsonValue::Array{
+        JsonValue(value.X), JsonValue(value.Y), JsonValue(value.Z), JsonValue(value.W)
+    });
+    if (JsonValue* existing = FindMutable(*mesh, "lightmap_scale_bias"))
+        *existing = std::move(scaleBias);
+    else
+        mesh->AsObject().emplace_back("lightmap_scale_bias", std::move(scaleBias));
+    return true;
+}
+
+} // namespace
+
+namespace
+{
+
+DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                                   std::string_view stem,
                                   std::string_view sourceRel,
                                   const std::filesystem::path& assetsRoot,
-                                  double cellSize,
-                                  LoggingProvider& logging,
-                                  AssetSystem* assetSystem,
-                                  const LightingCookParams& lightmapParams,
-                                  std::span<const ProbeHaloZone> halo)
+                                  LoggingProvider& logging)
 {
     DocumentCookResult result;
-
-    // Lights first: charts are generated only when something will bake into
-    // them. Collect -> hash -> cluster; the hash is taken on the collected
-    // input (including chart identity) so it reflects exactly what gets
-    // baked. Each bake's tuning is hashed only when its inputs exist, since
-    // the output is otherwise independent of it.
-    const std::vector<BakeDirectLight> bakeLights =
-        CollectBakeLights(doc.GetRegistry().Components, false);
-    const std::vector<ProbeVolumeInput> probeVolumes =
-        CollectProbeVolumes(doc.GetRegistry().Components);
-    // Probes bounce off surfaces lit by Direct AND Indirect lights: Indirect
-    // is the authoring contract for "dynamic direct, baked mood".
-    const std::vector<BakeDirectLight> bounceLights = probeVolumes.empty()
-        ? std::vector<BakeDirectLight>{}
-        : CollectBakeLights(doc.GetRegistry().Components, true);
-    CookChartSet charts;
-    std::vector<CookBrushGeometry> brushes = CollectCookBrushes(
-        doc.GetScene(), doc.GetDefaultMaterial(),
-        bakeLights.empty() ? nullptr : &charts,
-        lightmapParams.ConeDegrees, lightmapParams.LuxelSize);
-    // Placements matter to the lightmap (they receive rects) and to probes
-    // (they occlude rays), so they are collected when either bake runs.
-    std::vector<LightmapPlacement> placements =
-        (bakeLights.empty() && probeVolumes.empty())
-        ? std::vector<LightmapPlacement>{}
-        : CollectLightmapPlacements(doc.GetRegistry().Components, assetSystem,
-                                    assetsRoot, logging);
-    uint64_t geometryHash =
-        HashDirectLights(bakeLights, HashBrushInputs(brushes, cellSize));
-    if (!bakeLights.empty() || !probeVolumes.empty())
+    const CookProfile& profile = input.Profile;
+    result.ProfileId = profile.Id;
+    const std::shared_ptr<CookControl>& control = input.Control;
+    if (control != nullptr)
     {
-        for (const LightmapPlacement& placement : placements)
-        {
-            geometryHash = HashBytes64(std::as_bytes(std::span<const Mat4>{
-                &placement.ToWorld, 1 }), geometryHash);
-            geometryHash = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
-                placement.Geometry.Vertices.data(),
-                placement.Geometry.Vertices.size() }), geometryHash);
-            const std::uint8_t casts = placement.CastsIntoBake ? 1 : 0;
-            geometryHash = HashBytes64(std::as_bytes(std::span<const std::uint8_t>{
-                &casts, 1 }), geometryHash);
-        }
+        control->TotalSteps.store(static_cast<std::uint32_t>(input.Graph.OrderedSteps.size()));
+        control->CompletedSteps.store(0);
+        control->CurrentStep.store(0);
     }
-    if (!bakeLights.empty())
+    const auto beginStep = [&input, &control](std::string_view step)
     {
-        const float tuning[] = {
-            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
-            lightmapParams.LuxelSize, static_cast<float>(lightmapParams.MaxAtlasSize),
-            lightmapParams.ConeDegrees,
-        };
-        geometryHash = HashBytes64(
-            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
-            geometryHash);
-        const std::uint8_t aoEnabled = lightmapParams.Ao.Enabled ? 1 : 0;
-        geometryHash = HashBytes64(std::as_bytes(
-            std::span<const std::uint8_t>{ &aoEnabled, 1 }), geometryHash);
-        if (lightmapParams.Ao.Enabled)
-        {
-            const float aoTuning[] = {
-                lightmapParams.Ao.MaxDistance,
-                static_cast<float>(lightmapParams.Ao.RayCount),
-            };
-            geometryHash = HashBytes64(std::as_bytes(
-                std::span<const float>{ aoTuning, std::size(aoTuning) }),
-                geometryHash);
-        }
+        if (control == nullptr)
+            return;
+        const auto found = std::find(input.Graph.OrderedSteps.begin(),
+                                     input.Graph.OrderedSteps.end(), step);
+        if (found != input.Graph.OrderedSteps.end())
+            control->CurrentStep.store(static_cast<std::uint32_t>(
+                std::distance(input.Graph.OrderedSteps.begin(), found)));
+    };
+    const auto completeStep = [&control]
+    {
+        if (control != nullptr)
+            control->CompletedSteps.fetch_add(1);
+    };
+    const auto cancelled = [&control, &result]
+    {
+        if (control == nullptr || !control->IsCancellationRequested())
+            return false;
+        result.Cancelled = true;
+        result.Error = "CookDocument: cancelled";
+        return true;
+    };
+    if (cancelled())
+        return result;
+    const bool runCollisionTarget = input.RunCollisionTarget;
+    const bool runReferencedAssets = input.RunReferencedAssets;
+    const LightingCookParams& lightmapParams = input.Lighting;
+    const double cellSize = input.CellSize;
+    std::vector<BakeDirectLight>& bakeLights = input.BakeLights;
+    std::vector<ProbeVolumeInput>& probeVolumes = input.ProbeVolumes;
+    std::vector<BakeDirectLight>& bounceLights = input.BounceLights;
+    CookChartSet& charts = input.Charts;
+    std::vector<CookBrushGeometry>& brushes = input.Brushes;
+    std::vector<LightmapPlacement>& placements = input.Placements;
+    const std::span<const ProbeHaloZone> halo = input.Halo;
+    CookArtifactTransaction transaction(assetsRoot, sourceRel);
+    const std::uint64_t brushFingerprint = HashBrushInputs(brushes, cellSize);
+    CookFingerprint placementFingerprint("lightmap_placements", 2);
+    placementFingerprint.AddU64("placement_count", placements.size());
+    for (const LightmapPlacement& placement : placements)
+    {
+        AddMat4(placementFingerprint, "to_world", placement.ToWorld);
+        placementFingerprint.AddBool("casts_into_bake", placement.CastsIntoBake)
+            .AddU64("vertex_count", placement.Geometry.Vertices.size());
+        for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
+            AddVertex(placementFingerprint, vertex);
+        placementFingerprint.AddU64("index_count", placement.Geometry.Indices.size());
+        for (std::uint32_t index : placement.Geometry.Indices)
+            placementFingerprint.AddU32("index", index);
     }
     // Neighbor-zone halo: read-only occluder geometry other zones offered.
     // Only zones within probe-ray reach of this zone's bake inputs
@@ -492,32 +343,163 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             bakeBounds.ExpandToInclude(volume.Grid.Bounds());
         reachableHalo = SelectProbeHaloZones(bakeBounds, halo,
                                              lightmapParams.Probe.MaxRayDistance);
-        for (const ProbeHaloZone* zone : reachableHalo)
-            geometryHash = HashBytes64(std::as_bytes(
-                std::span<const std::uint64_t>{ &zone->ContentHash, 1 }),
-                geometryHash);
     }
+
+    CookFingerprint lightmapSurfaceIdentity("lightmap_surfaces", 1);
+    lightmapSurfaceIdentity.AddDependency("brush_cells", brushFingerprint)
+        .AddDependency("placements", placementFingerprint.Value())
+        .AddFloat("luxel_size", lightmapParams.LuxelSize)
+        .AddU32("max_atlas_size", lightmapParams.MaxAtlasSize)
+        .AddFloat("cone_degrees", lightmapParams.ConeDegrees);
+    const std::uint64_t lightmapSurfaceFingerprint = lightmapSurfaceIdentity.Value();
+
+    CookFingerprint occlusionIdentity("occlusion_geometry", 1);
+    occlusionIdentity.AddDependency("brush_cells", brushFingerprint)
+        .AddDependency("placements", placementFingerprint.Value())
+        .AddU64("reachable_halo_count", reachableHalo.size());
+    for (const ProbeHaloZone* zone : reachableHalo)
+        occlusionIdentity.AddU64("reachable_halo", zone->ContentHash);
+    const std::uint64_t occlusionFingerprint = occlusionIdentity.Value();
+
+    CookFingerprint directIdentity("direct_lightmap", 1);
+    directIdentity.AddDependency("lightmap_surfaces", lightmapSurfaceFingerprint)
+        .AddDependency("occlusion_geometry", occlusionFingerprint)
+        .AddDependency("direct_lights", HashDirectLights(bakeLights))
+        .AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
+        .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset);
+    const std::uint64_t directFingerprint = directIdentity.Value();
+
+    CookFingerprint aoIdentity("ambient_occlusion", 1);
+    aoIdentity.AddDependency("direct_lightmap", directFingerprint)
+        .AddFloat("max_distance", lightmapParams.Ao.MaxDistance)
+        .AddU32("ray_count", lightmapParams.Ao.RayCount);
+    const std::uint64_t aoFingerprint = aoIdentity.Value();
+
+    CookFingerprint probeIdentity("irradiance_probes", 1);
+    probeIdentity.AddDependency("occlusion_geometry", occlusionFingerprint)
+        .AddDependency("bounce_lights", HashDirectLights(bounceLights))
+        .AddDependency("probe_volumes", HashProbeVolumes(probeVolumes))
+        .AddFloat("bounce_albedo", lightmapParams.Probe.BounceAlbedo)
+        .AddFloat("max_ray_distance", lightmapParams.Probe.MaxRayDistance)
+        .AddFloat("classify_ray_distance", lightmapParams.Probe.ClassifyRayDistance)
+        .AddFloat("classify_backface_ratio", lightmapParams.Probe.ClassifyBackfaceRatio)
+        .AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
+        .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset)
+        .AddU32("ray_count", lightmapParams.ProbeRayCount);
+    AddVec3(probeIdentity, "sky", lightmapParams.Probe.SkyColor);
+    AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
+    const std::uint64_t probeFingerprint = probeIdentity.Value();
+
+    CookFingerprint documentFingerprint("document_cook", 8);
+    documentFingerprint.AddDependency("brush_cells", brushFingerprint)
+        .AddDependency("placements", placementFingerprint.Value())
+        .AddDependency("direct_lights", HashDirectLights(bakeLights))
+        .AddU64("passthrough_scene",
+                HashBytes64(JsonStringify(input.PassthroughScene, false)));
+    if (!bakeLights.empty())
+    {
+        documentFingerprint.AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
+            .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset)
+            .AddFloat("luxel_size", lightmapParams.LuxelSize)
+            .AddU32("max_atlas_size", lightmapParams.MaxAtlasSize)
+            .AddFloat("cone_degrees", lightmapParams.ConeDegrees)
+            .AddBool("ao_enabled", lightmapParams.Ao.Enabled);
+        if (lightmapParams.Ao.Enabled)
+            documentFingerprint.AddFloat("ao_max_distance", lightmapParams.Ao.MaxDistance)
+                .AddU32("ao_ray_count", lightmapParams.Ao.RayCount);
+    }
+    documentFingerprint.AddU64("reachable_halo_count", reachableHalo.size());
+    for (const ProbeHaloZone* zone : reachableHalo)
+        documentFingerprint.AddU64("reachable_halo", zone->ContentHash);
     if (!probeVolumes.empty())
     {
-        geometryHash = HashDirectLights(bounceLights, geometryHash);
-        geometryHash = HashProbeVolumes(probeVolumes, geometryHash);
-        const float tuning[] = {
-            lightmapParams.Probe.BounceAlbedo,
-            lightmapParams.Probe.SkyColor.X, lightmapParams.Probe.SkyColor.Y,
-            lightmapParams.Probe.SkyColor.Z,
-            lightmapParams.Probe.GroundColor.X, lightmapParams.Probe.GroundColor.Y,
-            lightmapParams.Probe.GroundColor.Z,
-            lightmapParams.Probe.MaxRayDistance,
-            lightmapParams.Probe.ClassifyRayDistance,
-            lightmapParams.Probe.ClassifyBackfaceRatio,
-            lightmapParams.Shading.DiffuseWrap, lightmapParams.Shading.NormalOffset,
-            static_cast<float>(lightmapParams.ProbeRayCount),
-        };
-        geometryHash = HashBytes64(
-            std::as_bytes(std::span<const float>{ tuning, std::size(tuning) }),
-            geometryHash);
+        documentFingerprint.AddDependency("bounce_lights", HashDirectLights(bounceLights))
+            .AddDependency("probe_volumes", HashProbeVolumes(probeVolumes))
+            .AddFloat("probe_bounce_albedo", lightmapParams.Probe.BounceAlbedo);
+        AddVec3(documentFingerprint, "probe_sky", lightmapParams.Probe.SkyColor);
+        AddVec3(documentFingerprint, "probe_ground", lightmapParams.Probe.GroundColor);
+        documentFingerprint.AddFloat("probe_max_ray_distance",
+                                     lightmapParams.Probe.MaxRayDistance)
+            .AddFloat("probe_classify_ray_distance",
+                      lightmapParams.Probe.ClassifyRayDistance)
+            .AddFloat("probe_classify_backface_ratio",
+                      lightmapParams.Probe.ClassifyBackfaceRatio)
+            .AddFloat("probe_diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
+            .AddFloat("probe_normal_offset", lightmapParams.Shading.NormalOffset)
+            .AddU32("probe_ray_count", lightmapParams.ProbeRayCount);
     }
+    const std::uint64_t geometryHash = documentFingerprint.Value();
+    const std::string stemStr = input.OutputNamespace.empty()
+        ? std::string(stem)
+        : input.OutputNamespace + "/" + std::format("{:016x}", geometryHash);
+
+    const std::filesystem::path activeCookedDir = assetsRoot / ".cooked/levels";
+    const std::filesystem::path activeScene = activeCookedDir / (stemStr + ".cooked.json");
+    const std::filesystem::path activeManifest = activeCookedDir / (stemStr + ".manifest.json");
+    const std::filesystem::path activeCollision = activeCookedDir / (stemStr + ".collision.json");
+    const std::filesystem::path activeReceipt =
+        DocumentCookReceiptPath(assetsRoot, sourceRel);
+    const std::filesystem::path activeIndex = assetsRoot / ".cooked/index.json";
+    CookedCacheIndex cachedIndex;
+    DocumentCookReceipt cachedReceipt;
+    const bool hasCachedReceipt = !input.ForceRebuild
+        && LoadDocumentCookReceipt(activeReceipt, cachedReceipt);
+    std::error_code cacheEc;
+    if (!input.ForceRebuild
+        && CookedCacheIndex::LoadFromFile(activeIndex.generic_string(), cachedIndex)
+        && hasCachedReceipt
+        && cachedReceipt.PublishedProfileId == profile.Id
+        && cachedReceipt.PublishedFingerprint == geometryHash
+        && std::filesystem::exists(activeScene, cacheEc)
+        && std::filesystem::exists(activeManifest, cacheEc)
+        && std::filesystem::exists(activeCollision, cacheEc))
+    {
+        const CookedSourceEntry* cached = cachedIndex.Find(sourceRel);
+        if (cached != nullptr && cached->InputFingerprint == geometryHash
+            && CookedSourceArtifactsMatch(assetsRoot, *cached))
+        {
+            result.Success = true;
+            result.CacheHit = true;
+            result.ReusedSteps = input.Graph.OrderedSteps;
+            result.ProfileId = profile.Id;
+            result.ContentHash = geometryHash;
+            result.CookedScenePath = activeScene;
+            result.ManifestPath = activeManifest;
+            result.CollisionSidecarPath = activeCollision;
+            if (const CookStepReceipt* publication =
+                    FindCookStepReceipt(cachedReceipt, DocumentCookStepIds::Publication))
+                RestoreDocumentCookResultMetadata(publication->Metadata, result);
+            for (const CookedArtifact& artifact : cached->Artifacts)
+                if (artifact.Type == AssetType::StaticMesh)
+                    result.GeneratedMeshPaths.push_back(artifact.Path);
+            if (control != nullptr)
+                control->CompletedSteps.store(control->TotalSteps.load());
+            return result;
+        }
+    }
+
+    const DocumentCookReceipt* priorReceipt = hasCachedReceipt ? &cachedReceipt : nullptr;
+    const CookStepReceipt* reusableDirect = !bakeLights.empty()
+        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::DirectLightmap,
+                       directFingerprint)
+        : nullptr;
+    const CookStepReceipt* reusableAo = lightmapParams.Ao.Enabled
+        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::AmbientOcclusion,
+                       aoFingerprint)
+        : nullptr;
+    const bool reuseLighting = reusableDirect != nullptr
+        && (!lightmapParams.Ao.Enabled || reusableAo != nullptr);
+    const CookStepReceipt* reusableProbes = !probeVolumes.empty()
+        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::IrradianceProbes,
+                       probeFingerprint)
+        : nullptr;
+    beginStep(DocumentCookStepIds::BrushCells);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
+    completeStep();
+    if (cancelled())
+        return result;
+    const bool runCollision = runCollisionTarget
+        || !std::filesystem::exists(activeCollision, cacheEc);
 
     // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
     // the per-cell mesh bake: the weld compares whole vertices, so identical
@@ -526,6 +508,7 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     LightmapAtlasLayout atlasLayout;
     if (!bakeLights.empty())
     {
+        beginStep(DocumentCookStepIds::LightmapSurfaces);
         // Placements pack into the same zone atlas as the brush charts: one
         // rect per placement, sized by the world span its [0,1] sheet covers.
         std::vector<Vec2d> extents = charts.Extents;
@@ -546,18 +529,19 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             const LightmapChartRect& rect = atlasLayout.Rects[placement.Chart];
             const float pointsU = std::ceil(placement.WorldExtent.X / luxel);
             const float pointsV = std::ceil(placement.WorldExtent.Y / luxel);
-            StaticMeshComponent* renderer =
-                doc.GetScene().GetRegistry().Components.TryGet<StaticMeshComponent>(
-                    placement.Entity);
-            if (renderer == nullptr)
-                continue;
-            renderer->LightmapScaleBias = Vec4{
+            const Vec4 scaleBias{
                 pointsU / static_cast<float>(atlasLayout.Width),
                 pointsV / static_cast<float>(atlasLayout.Height),
                 (static_cast<float>(rect.X + kLightmapGutter) + 0.5f)
                     / static_cast<float>(atlasLayout.Width),
                 (static_cast<float>(rect.Y + kLightmapGutter) + 0.5f)
                     / static_cast<float>(atlasLayout.Height) };
+            if (!SetLightmapScaleBias(input.PassthroughScene,
+                                      placement.SceneEntityIndex, scaleBias))
+            {
+                result.Error = "CookDocument: could not apply placement lightmap layout";
+                return result;
+            }
         }
         for (BrushCell& cell : cells)
             for (CookFace& face : cell.Faces)
@@ -586,9 +570,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                 "cook: lightmap atlas overflowed {}x{}; luxel size clamped {} -> {}",
                 lightmapParams.MaxAtlasSize, lightmapParams.MaxAtlasSize,
                 lightmapParams.LuxelSize, luxel);
+        completeStep();
+        if (cancelled())
+            return result;
     }
 
-    const std::string stemStr(stem);
     MeshSerializer serializer(logging);
 
     JsonValue::Array cellEntities;
@@ -597,6 +583,9 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     std::unordered_set<std::string> seenMaterial;
     std::unordered_set<std::string> generatedMeshPaths;
     std::vector<CollisionEntry> collisionEntries;
+    std::optional<CookedArtifact> directLightmapArtifact;
+    std::optional<CookedArtifact> ambientOcclusionArtifact;
+    std::optional<CookedArtifact> probeArtifact;
 
     // Cell meshes are written after the lighting bake, not inline: the bake
     // needs every cell's geometry (for the shared occlusion BVH) before any
@@ -609,8 +598,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     };
     std::vector<PendingCellMesh> pendingMeshes;
 
+    beginStep(CookStepIds::RenderMeshes);
     for (const BrushCell& cell : cells)
     {
+        if (cancelled())
+            return result;
         std::vector<AssetRef> order = CollectMaterialOrder(cell.Faces);
 
         MeshGeometry geometry;
@@ -625,11 +617,12 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         const std::string meshAssetPath = "asset://levels/" + stemStr + "/" + cellName;
         const std::string meshRelPath = ".cooked/levels/" + stemStr + "/" + cellName;
         const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
+        const std::filesystem::path meshStaged = transaction.Stage(meshPhysical);
 
         std::error_code ec;
-        std::filesystem::create_directories(meshPhysical.parent_path(), ec);
+        std::filesystem::create_directories(meshStaged.parent_path(), ec);
         pendingMeshes.push_back(PendingCellMesh{
-            meshPhysical, std::move(geometry), cell.Origin });
+            meshStaged, std::move(geometry), cell.Origin });
 
         cellEntities.push_back(BuildCellEntity(cell.Origin, meshAssetPath, order));
         artifacts.push_back(CookedArtifact{ meshAssetPath, meshRelPath, AssetType::StaticMesh });
@@ -642,33 +635,45 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         // Collision: bake the same cell triangles into a pre-baked Jolt blob, a
         // sibling of the cell mesh. Authored brushes become collidable with no
         // collider authoring; the runtime loads these from the sidecar at map load.
-        std::vector<Vec3d> collisionPositions;
-        std::vector<uint32_t> collisionIndices;
-        CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
-        const std::vector<std::byte> collisionBlob =
-            BakeCollisionBlob(collisionPositions, collisionIndices);
-        if (!collisionBlob.empty())
+        if (runCollision)
         {
-            const std::string colRel = "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
-            const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
-            std::ofstream colFile(colPhysical, std::ios::binary);
-            colFile.write(reinterpret_cast<const char*>(collisionBlob.data()),
-                          static_cast<std::streamsize>(collisionBlob.size()));
-            if (colFile.good())
+            std::vector<Vec3d> collisionPositions;
+            std::vector<uint32_t> collisionIndices;
+            CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
+            const std::vector<std::byte> collisionBlob =
+                BakeCollisionBlob(collisionPositions, collisionIndices);
+            if (!collisionBlob.empty())
             {
-                collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
-                artifacts.push_back(
-                    CookedArtifact{ "asset://" + colRel, ".cooked/" + colRel, AssetType::Collision });
+                const std::string colRel =
+                    "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
+                const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
+                const std::filesystem::path colStaged = transaction.Stage(colPhysical);
+                std::ofstream colFile(colStaged, std::ios::binary);
+                colFile.write(reinterpret_cast<const char*>(collisionBlob.data()),
+                              static_cast<std::streamsize>(collisionBlob.size()));
+                if (colFile.good())
+                {
+                    collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
+                    artifacts.push_back(CookedArtifact{
+                        "asset://" + colRel, ".cooked/" + colRel,
+                        AssetType::Collision });
+                }
             }
         }
     }
+    completeStep();
+    if (runCollision)
+        completeStep();
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
     // a light in one cell shadows onto its neighbors, and probe rays see the
     // whole document plus any neighbor-zone halo within reach.
     BakeBvh occlusionBvh;
-    if (!bakeLights.empty() || !probeVolumes.empty())
+    const bool needsOcclusion = (!bakeLights.empty() && !reuseLighting)
+        || (!probeVolumes.empty() && reusableProbes == nullptr);
+    if (needsOcclusion)
     {
+        beginStep(DocumentCookStepIds::OcclusionGeometry);
         std::vector<BakeTriangle> occluders;
         for (const PendingCellMesh& pending : pendingMeshes)
         {
@@ -703,6 +708,9 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         occlusionBvh.Build(AssembleProbeBakeTriangles(
             std::move(occluders), bakeBounds, halo,
             lightmapParams.Probe.MaxRayDistance));
+        completeStep();
+        if (cancelled())
+            return result;
     }
 
     // Bake static direct lighting into the zone's lightmap atlas. The lights
@@ -713,6 +721,51 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         result.LightmapAtlasWidth = atlasLayout.Width;
         result.LightmapAtlasHeight = atlasLayout.Height;
         result.EffectiveLuxelSize = atlasLayout.EffectiveLuxelSize;
+        if (reuseLighting)
+        {
+            std::string restoreError;
+            beginStep(CookStepIds::DirectLightmap);
+            if (!RestoreCookStepArtifacts(*reusableDirect, assetsRoot, transaction,
+                                      artifacts, generatedMeshPaths, materialRefs,
+                                      true, &restoreError))
+            {
+                result.Error = "CookDocument: " + restoreError;
+                return result;
+            }
+            directLightmapArtifact = artifacts.back();
+            result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
+            RestoreDocumentCookResultMetadata(reusableDirect->Metadata, result);
+            completeStep();
+
+            JsonValue::Object lightmapFields{
+                { "texture", JsonValue(directLightmapArtifact->Path) },
+            };
+            if (lightmapParams.Ao.Enabled)
+            {
+                beginStep(CookStepIds::AmbientOcclusion);
+                if (!RestoreCookStepArtifacts(*reusableAo, assetsRoot, transaction,
+                                          artifacts, generatedMeshPaths, materialRefs,
+                                          true, &restoreError))
+                {
+                    result.Error = "CookDocument: " + restoreError;
+                    return result;
+                }
+                ambientOcclusionArtifact = artifacts.back();
+                result.ReusedSteps.push_back(
+                    std::string(CookStepIds::AmbientOcclusion));
+                lightmapFields.push_back({
+                    "ao", JsonValue(ambientOcclusionArtifact->Path) });
+                completeStep();
+            }
+            cellEntities.push_back(JsonValue(JsonValue::Object{
+                { "components", JsonValue(JsonValue::Object{
+                    { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
+                }) },
+            }));
+        }
+        else
+        {
+        beginStep(CookStepIds::DirectLightmap);
 
         // Gather each chart's triangles (world positions + smoothed normals +
         // chart grid UVs) from the pre-weld cell faces, then rasterize and
@@ -790,10 +843,14 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             aoBake.RayTable = aoRayTable;
         }
         for (std::size_t c = 0; c < chartTriangles.size(); ++c)
+        {
+            if (cancelled())
+                return result;
             BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], bakeLights,
                             occlusionBvh, lightmapParams.Shading,
                             atlasLayout.Width, atlasPixels,
                             bakeAo ? &aoBake : nullptr, aoPixels);
+        }
 
         // Emit the atlas as a cooked texture artifact plus the zone component
         // that binds it at runtime.
@@ -811,14 +868,16 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         const std::string atlasRel = "levels/" + stemStr + "/lightmap.stex";
         const std::string atlasAssetPath = "asset://" + atlasRel;
         TextureSerializer textureSerializer(logging);
+        const std::filesystem::path atlasPhysical = assetsRoot / ".cooked" / atlasRel;
         if (!textureSerializer.WriteToFile(
-                (assetsRoot / ".cooked" / atlasRel).generic_string(), atlas))
+                transaction.Stage(atlasPhysical).generic_string(), atlas))
         {
             result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
             return result;
         }
         artifacts.push_back(CookedArtifact{
             atlasAssetPath, ".cooked/" + atlasRel, AssetType::Texture });
+        directLightmapArtifact = artifacts.back();
         generatedMeshPaths.insert(atlasAssetPath);
         materialRefs.push_back(atlasAssetPath);
 
@@ -841,13 +900,15 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
             const std::string aoRel = "levels/" + stemStr + "/ao.stex";
             const std::string aoAssetPath = "asset://" + aoRel;
             if (!textureSerializer.WriteToFile(
-                    (assetsRoot / ".cooked" / aoRel).generic_string(), aoAtlas))
+                    transaction.Stage(assetsRoot / ".cooked" / aoRel).generic_string(),
+                    aoAtlas))
             {
                 result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
                 return result;
             }
             artifacts.push_back(CookedArtifact{
                 aoAssetPath, ".cooked/" + aoRel, AssetType::Texture });
+            ambientOcclusionArtifact = artifacts.back();
             generatedMeshPaths.insert(aoAssetPath);
             materialRefs.push_back(aoAssetPath);
             lightmapFields.push_back({ "ao", JsonValue(aoAssetPath) });
@@ -857,6 +918,13 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                 { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
             }) },
         }));
+        completeStep();
+        if (bakeAo)
+        {
+            beginStep(CookStepIds::AmbientOcclusion);
+            completeStep();
+        }
+        }
     }
 
     // Bake authored irradiance-probe volumes into the zone's .sprobe. Bounce
@@ -864,6 +932,25 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     // the runtime locates the file by the cooked-scene path convention.
     if (!probeVolumes.empty())
     {
+        beginStep(CookStepIds::IrradianceProbes);
+        if (reusableProbes != nullptr)
+        {
+            std::string restoreError;
+            if (!RestoreCookStepArtifacts(*reusableProbes, assetsRoot, transaction,
+                                      artifacts, generatedMeshPaths, materialRefs,
+                                      false, &restoreError))
+            {
+                result.Error = "CookDocument: " + restoreError;
+                return result;
+            }
+            probeArtifact = artifacts.back();
+            result.ReusedSteps.push_back(
+                std::string(CookStepIds::IrradianceProbes));
+            RestoreDocumentCookResultMetadata(reusableProbes->Metadata, result);
+            completeStep();
+        }
+        else
+        {
         ProbeBakeParams probeParams = lightmapParams.Probe;
         probeParams.Shading = lightmapParams.Shading;
         const std::vector<Vec3d> rayTable =
@@ -873,6 +960,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         std::size_t probeCount = 0;
         for (std::size_t i = 0; i < probeVolumes.size(); ++i)
         {
+            if (cancelled())
+                return result;
             const ProbeVolumeInput& input = probeVolumes[i];
             const ProbeVolumeBakeResult baked = BakeProbeVolume(
                 input.Grid, occlusionBvh, bounceLights, rayTable, probeParams);
@@ -889,9 +978,10 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
 
         const std::string probeRel = "levels/" + stemStr + "/probes.sprobe";
         const std::filesystem::path probePhysical = assetsRoot / ".cooked" / probeRel;
+        const std::filesystem::path probeStaged = transaction.Stage(probePhysical);
         std::error_code makeDirs;
-        std::filesystem::create_directories(probePhysical.parent_path(), makeDirs);
-        std::ofstream probeStream(probePhysical, std::ios::binary | std::ios::trunc);
+        std::filesystem::create_directories(probeStaged.parent_path(), makeDirs);
+        std::ofstream probeStream(probeStaged, std::ios::binary | std::ios::trunc);
         BinaryWriter probeWriter(probeStream);
         if (!probeStream.is_open() || !WriteProbeVolumeFile(probeWriter, probeFile))
         {
@@ -900,8 +990,11 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         }
         artifacts.push_back(CookedArtifact{
             "asset://" + probeRel, ".cooked/" + probeRel, AssetType::ProbeVolume });
+        probeArtifact = artifacts.back();
         result.ProbeVolumeCount = probeVolumes.size();
         result.ProbeCount = probeCount;
+        completeStep();
+        }
     }
 
     for (const PendingCellMesh& pending : pendingMeshes)
@@ -914,34 +1007,8 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         }
     }
 
-    // Drop the brush entities so SaveSceneJson emits only passthrough game
-    // components (the cook is the one and only StaticMeshComponent emitter), then
-    // append the cell entities. Baked entities pass through as ordinary props,
-    // but their editor-only dormant-source annotation is stripped: the cooked
-    // scene never carries editor data.
-    {
-        EditorScene& scene = doc.GetScene();
-        std::vector<EntityId> brushEntities;
-        for (EntityId entity : scene.GetAllEntities())
-        {
-            if (scene.TryGetBrush(entity) != nullptr)
-            {
-                brushEntities.push_back(entity);
-                continue;
-            }
-            if (scene.TryGetBakedBrush(entity) != nullptr)
-                scene.GetRegistry().Components.RemoveComponent<BakedBrushComponent>(entity);
-        }
-        for (EntityId entity : brushEntities)
-            scene.DestroyEntity(entity);
-    }
-
-    // Serialize passthrough entities through the shared asset system so prop
-    // StaticMesh handles emit asset:// paths (the cell entities are raw JSON and
-    // bypass the codec, but authored props go through it). A null assetSystem is
-    // the brush-only cook (no asset fields to resolve).
-    SceneSerializationContext context(logging, assetSystem);
-    JsonValue cooked = SaveSceneJson(doc.GetRegistry(), context);
+    JsonValue cooked = std::move(input.PassthroughScene);
+    beginStep(DocumentCookStepIds::CookedScene);
     bool appended = false;
     if (cooked.IsObject())
         for (auto& [key, value] : cooked.AsObject())
@@ -957,15 +1024,21 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
         result.Error = "CookDocument: assembled scene has no entities array";
         return result;
     }
+    completeStep();
+    if (cancelled())
+        return result;
 
     std::error_code ec;
     const std::filesystem::path cookedDir = assetsRoot / ".cooked/levels";
     std::filesystem::create_directories(cookedDir, ec);
     const std::filesystem::path cookedScenePath = cookedDir / (stemStr + ".cooked.json");
     const std::filesystem::path manifestPath = cookedDir / (stemStr + ".manifest.json");
+    const std::filesystem::path collisionSidecarPath =
+        cookedDir / (stemStr + ".collision.json");
 
     // Collision sidecar: the runtime loads this at map load (LoadZoneCollision)
     // to spawn the level's static brush colliders. Empty array if no brushes.
+    if (runCollision)
     {
         JsonValue::Array sidecar;
         sidecar.reserve(collisionEntries.size());
@@ -977,24 +1050,38 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
                     JsonValue(static_cast<double>(entry.Origin.Y)),
                     JsonValue(static_cast<double>(entry.Origin.Z)) }) },
             }));
-        std::ofstream sidecarFile(cookedDir / (stemStr + ".collision.json"));
+        std::ofstream sidecarFile(transaction.Stage(collisionSidecarPath));
         sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
+        if (!sidecarFile.good())
+        {
+            result.Error = "CookDocument: could not write collision sidecar";
+            return result;
+        }
     }
 
     // asset:// resolution: Generated cell meshes live under .cooked/; every other
     // ref (materials, their textures) is an authored asset under the root.
     const auto physicalPathFor =
-        [&assetsRoot, &generatedMeshPaths](std::string_view assetPath) -> std::filesystem::path {
+        [&assetsRoot, &generatedMeshPaths, &transaction](
+            std::string_view assetPath) -> std::filesystem::path {
             constexpr std::string_view prefix = "asset://";
             const std::string rel(assetPath.substr(prefix.size()));
             if (generatedMeshPaths.count(std::string(assetPath)) != 0)
-                return assetsRoot / ".cooked" / rel;
+                return transaction.Stage(assetsRoot / ".cooked" / rel);
             return assetsRoot / rel;
         };
 
+    const std::filesystem::path idMapPath = assetsRoot / kAssetIdMapFileName;
     std::string cookError;
+    if (!transaction.Seed(idMapPath, &cookError))
+    {
+        result.Error = "CookDocument: " + cookError;
+        return result;
+    }
+    const std::filesystem::path stagedManifest = transaction.Stage(manifestPath);
+    const std::filesystem::path stagedScene = transaction.Stage(cookedScenePath);
     if (!WriteCookedScene(cooked, materialRefs, physicalPathFor,
-            assetsRoot / kAssetIdMapFileName, manifestPath, cookedScenePath, &cookError))
+            transaction.Stage(idMapPath), stagedManifest, stagedScene, &cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return result;
@@ -1005,12 +1092,15 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     // the cooked index keyed by source path; the index.Put below loads that
     // updated index and adds the level entry, so both survive. Idempotent:
     // unchanged sources are served from the cooked cache.
+    if (runReferencedAssets)
     {
+        beginStep(CookStepIds::ReferencedAssets);
         PngTextureImporter textureImporter;
         AssetImporterRegistry importers;
         importers.Register(textureImporter);
         AssetRegistry scratch(logging); // we want the on-disk artifacts + index, not a live registry
         (void)ImportAssetsOnDemand(assetsRoot.generic_string(), importers, scratch, logging);
+        completeStep();
     }
 
     // Record source -> artifacts (source key = caller-supplied rel path, hash key
@@ -1018,22 +1108,212 @@ DocumentCookResult CookDocumentKernel(EditorDocument& doc,
     const std::filesystem::path indexPath = assetsRoot / ".cooked/index.json";
     CookedCacheIndex index;
     (void)CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index); // cold cache is fine
+    if (!runCollision)
+    {
+        if (const CookedSourceEntry* previous = index.Find(sourceRel))
+            for (const CookedArtifact& artifact : previous->Artifacts)
+                if (artifact.Type == AssetType::Collision)
+                    artifacts.push_back(artifact);
+    }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRel);
-    entry.SourceHash = geometryHash;
-    entry.Artifacts = std::move(artifacts);
+    entry.InputFingerprint = geometryHash;
+    for (CookedArtifact& artifact : artifacts)
+    {
+        const std::filesystem::path active = assetsRoot / artifact.FileRelPath;
+        const std::filesystem::path contentPath =
+            !runCollision && artifact.Type == AssetType::Collision
+            ? active
+            : transaction.Stage(active);
+        std::uint64_t hash = 0;
+        if (HashFileContents(contentPath.generic_string(), hash))
+            artifact.ContentHash = hash;
+    }
+    entry.Artifacts = artifacts;
     index.Put(std::move(entry));
-    (void)index.SaveToFile(indexPath.generic_string());
+    if (!transaction.Seed(indexPath, &cookError)
+        || !index.SaveToFile(transaction.Stage(indexPath).generic_string()))
+    {
+        result.Error = "CookDocument: could not stage cooked cache index";
+        return result;
+    }
+
+    DocumentCookReceipt receipt = hasCachedReceipt
+        ? cachedReceipt : DocumentCookReceipt{};
+    result.CellCount = cells.size();
+    receipt.Target = std::string(sourceRel);
+    receipt.PublishedProfileId = profile.Id;
+    receipt.PublishedFingerprint = geometryHash;
+    receipt.PublishedOutputFamilies = {
+        std::string(CookOutputFamilies::Structure),
+    };
+    if (CookProfileOutputDisposition(profile, CookOutputFamilies::Collision)
+        != CookOutputDisposition::Withdraw)
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::Collision));
+    if (CookProfileOutputDisposition(profile, CookOutputFamilies::ReferencedAssets)
+        != CookOutputDisposition::Withdraw)
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::ReferencedAssets));
+    if (!bakeLights.empty())
+    {
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::DirectLightmap));
+        if (lightmapParams.Ao.Enabled)
+            receipt.PublishedOutputFamilies.push_back(
+                std::string(CookOutputFamilies::AmbientOcclusion));
+    }
+    if (!probeVolumes.empty())
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::IrradianceProbes));
+
+    if (CookProfileOutputDisposition(profile, CookOutputFamilies::DirectLightmap)
+        == CookOutputDisposition::Withdraw)
+        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "lightmap.stex");
+    if (CookProfileOutputDisposition(profile, CookOutputFamilies::AmbientOcclusion)
+        == CookOutputDisposition::Withdraw)
+        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "ao.stex");
+    if (CookProfileOutputDisposition(profile, CookOutputFamilies::IrradianceProbes)
+        == CookOutputDisposition::Withdraw)
+        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "probes.sprobe");
+
+    PutCookStepReceipt(receipt, CookStepReceipt{
+        .StepId = std::string(DocumentCookStepIds::BrushCells),
+        .Version = FindDocumentCookStep(DocumentCookStepIds::BrushCells)->Version,
+        .InputFingerprint = brushFingerprint,
+    });
+    PutCookStepReceipt(receipt, CookStepReceipt{
+        .StepId = std::string(DocumentCookStepIds::LightmapSurfaces),
+        .Version = FindDocumentCookStep(DocumentCookStepIds::LightmapSurfaces)->Version,
+        .InputFingerprint = lightmapSurfaceFingerprint,
+        .Dependencies = {
+            { std::string(DocumentCookStepIds::BrushCells), brushFingerprint },
+        },
+    });
+    PutCookStepReceipt(receipt, CookStepReceipt{
+        .StepId = std::string(DocumentCookStepIds::OcclusionGeometry),
+        .Version = FindDocumentCookStep(DocumentCookStepIds::OcclusionGeometry)->Version,
+        .InputFingerprint = occlusionFingerprint,
+        .Dependencies = {
+            { std::string(DocumentCookStepIds::BrushCells), brushFingerprint },
+        },
+    });
+
+    if (directLightmapArtifact.has_value() && !reuseLighting)
+    {
+        CookedArtifact cached = CacheCookStepArtifact(
+            *directLightmapArtifact, sourceRel, CookStepIds::DirectLightmap,
+            directFingerprint, assetsRoot, transaction, &cookError);
+        if (cached.Path.empty())
+        {
+            result.Error = "CookDocument: " + cookError;
+            return result;
+        }
+        PutCookStepReceipt(receipt, CookStepReceipt{
+            .StepId = std::string(CookStepIds::DirectLightmap),
+            .Version = FindDocumentCookStep(CookStepIds::DirectLightmap)->Version,
+            .InputFingerprint = directFingerprint,
+            .Dependencies = {
+                { std::string(DocumentCookStepIds::LightmapSurfaces),
+                  lightmapSurfaceFingerprint },
+                { std::string(DocumentCookStepIds::OcclusionGeometry),
+                  occlusionFingerprint },
+            },
+            .Artifacts = { std::move(cached) },
+            .Metadata = DocumentCookResultMetadata(result),
+        });
+    }
+    if (ambientOcclusionArtifact.has_value() && !reuseLighting)
+    {
+        CookedArtifact cached = CacheCookStepArtifact(
+            *ambientOcclusionArtifact, sourceRel, CookStepIds::AmbientOcclusion,
+            aoFingerprint, assetsRoot, transaction, &cookError);
+        if (cached.Path.empty())
+        {
+            result.Error = "CookDocument: " + cookError;
+            return result;
+        }
+        PutCookStepReceipt(receipt, CookStepReceipt{
+            .StepId = std::string(CookStepIds::AmbientOcclusion),
+            .Version = FindDocumentCookStep(CookStepIds::AmbientOcclusion)->Version,
+            .InputFingerprint = aoFingerprint,
+            .Dependencies = {
+                { std::string(CookStepIds::DirectLightmap), directFingerprint },
+            },
+            .Artifacts = { std::move(cached) },
+            .Metadata = DocumentCookResultMetadata(result),
+        });
+    }
+    if (probeArtifact.has_value() && reusableProbes == nullptr)
+    {
+        CookedArtifact cached = CacheCookStepArtifact(
+            *probeArtifact, sourceRel, CookStepIds::IrradianceProbes,
+            probeFingerprint, assetsRoot, transaction, &cookError);
+        if (cached.Path.empty())
+        {
+            result.Error = "CookDocument: " + cookError;
+            return result;
+        }
+        PutCookStepReceipt(receipt, CookStepReceipt{
+            .StepId = std::string(CookStepIds::IrradianceProbes),
+            .Version = FindDocumentCookStep(CookStepIds::IrradianceProbes)->Version,
+            .InputFingerprint = probeFingerprint,
+            .Dependencies = {
+                { std::string(DocumentCookStepIds::OcclusionGeometry),
+                  occlusionFingerprint },
+            },
+            .Artifacts = { std::move(cached) },
+            .Metadata = DocumentCookResultMetadata(result),
+        });
+    }
+    PutCookStepReceipt(receipt, CookStepReceipt{
+        .StepId = std::string(DocumentCookStepIds::Publication),
+        .Version = FindDocumentCookStep(DocumentCookStepIds::Publication)->Version,
+        .InputFingerprint = geometryHash,
+        .Artifacts = std::move(artifacts),
+        .Metadata = DocumentCookResultMetadata(result),
+    });
+    if (!SaveDocumentCookReceipt(transaction.Stage(activeReceipt), receipt, &cookError))
+    {
+        result.Error = "CookDocument: " + cookError;
+        return result;
+    }
+    beginStep(DocumentCookStepIds::Publication);
+    if (cancelled())
+        return result;
+    if (!transaction.Commit(&cookError))
+    {
+        result.Error = "CookDocument: " + cookError;
+        return result;
+    }
+    completeStep();
 
     result.Success = true;
     result.CookedScenePath = cookedScenePath;
     result.ManifestPath = manifestPath;
-    result.CollisionSidecarPath = cookedDir / (stemStr + ".collision.json");
+    result.CollisionSidecarPath = collisionSidecarPath;
     result.ContentHash = geometryHash;
     result.CellCount = cells.size();
+    if (control != nullptr)
+        control->CompletedSteps.store(control->TotalSteps.load());
     return result;
 }
 } // namespace
+
+DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
+                                       std::string_view levelName,
+                                       std::string_view sourceRel,
+                                       const std::filesystem::path& assetsRoot,
+                                       LoggingProvider& logging)
+{
+    if (input.Input == nullptr)
+    {
+        DocumentCookResult result;
+        result.Error = "CookDocument: empty cook input";
+        return result;
+    }
+    return CookDocumentKernel(*input.Input, levelName, sourceRel, assetsRoot, logging);
+}
 
 DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
@@ -1041,7 +1321,8 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           LoggingProvider* logging,
                           RuntimeAssets* assets,
                           const LightingCookParams& lightmapParams,
-                          std::span<const ProbeHaloZone> halo)
+                          std::span<const ProbeHaloZone> halo,
+                          const DocumentCookOptions& options)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -1059,67 +1340,19 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     std::error_code ec;
     const std::string sourceRel =
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
-    return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
-                             assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr,
-                             lightmapParams, halo);
-}
-
-std::optional<ProbeHaloZone> CollectZoneBakeHalo(
-    const std::filesystem::path& authoredLevelPath,
-    const std::filesystem::path& assetsRoot,
-    LoggingProvider* logging,
-    RuntimeAssets* assets)
-{
-    LoggingProvider silent;
-    LoggingProvider& log = logging != nullptr ? *logging : silent;
-    EditorDocument doc(log);
-    if (assets != nullptr)
-        doc.SetAssetEnvironment(*assets);
-    if (!doc.Load(authoredLevelPath.generic_string()))
-        return std::nullopt;
-
-    // Pre-weld brush face triangles are geometrically the surfaces the zone's
-    // own cook bakes into cell meshes (the weld dedupes vertices, it does not
-    // move them), so neighbors occlude against the same geometry the zone
-    // renders.
-    const std::vector<CookBrushGeometry> brushes =
-        CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
-    const std::vector<LightmapPlacement> placements = CollectLightmapPlacements(
-        doc.GetRegistry().Components,
-        assets != nullptr ? &assets->Assets : nullptr, assetsRoot, log);
-
-    ProbeHaloZone zone;
-    for (const CookBrushGeometry& brush : brushes)
-        for (const CookFace& face : brush.Faces)
-            for (std::size_t i = 0; i + 2 < face.Triangles.size(); i += 3)
-                zone.Triangles.push_back(BakeTriangle{
-                    face.Triangles[i].Position,
-                    face.Triangles[i + 1].Position,
-                    face.Triangles[i + 2].Position });
-    for (const LightmapPlacement& placement : placements)
+    std::string inputError;
+    std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+        doc, assetsRoot, cellSize, log, assets, lightmapParams, halo, options,
+        &inputError);
+    if (!input.has_value())
     {
-        if (!placement.CastsIntoBake)
-            continue;
-        const MeshGeometry& geometry = placement.Geometry;
-        for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
-            zone.Triangles.push_back(BakeTriangle{
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i]].Position),
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i + 1]].Position),
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i + 2]].Position) });
+        DocumentCookResult result;
+        result.Error = "CookDocument: " + inputError;
+        return result;
     }
-
-    for (const BakeTriangle& triangle : zone.Triangles)
-    {
-        zone.Bounds.ExpandToInclude(triangle.V0);
-        zone.Bounds.ExpandToInclude(triangle.V1);
-        zone.Bounds.ExpandToInclude(triangle.V2);
-    }
-    zone.ContentHash = HashBytes64(std::as_bytes(std::span<const BakeTriangle>{
-        zone.Triangles.data(), zone.Triangles.size() }));
-    return zone;
+    return ExecuteDocumentCook(std::move(*input),
+                               authoredLevelPath.stem().generic_string(), sourceRel,
+                               assetsRoot, log);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -1128,23 +1361,21 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
                           double cellSize,
                           LoggingProvider& logging,
                           RuntimeAssets* assets,
-                          const LightingCookParams& lightmapParams)
+                          const LightingCookParams& lightmapParams,
+                          const DocumentCookOptions& options)
 {
-    // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
-    // free to mutate, leaving the editor's document untouched. The snapshot shares
-    // the same asset system so its prop handles round-trip through ToJson/LoadFromJson.
-    EditorDocument snapshot(logging);
-    if (assets != nullptr)
-        snapshot.SetAssetEnvironment(*assets);
-    if (!snapshot.LoadFromJson(liveDocument.ToJson()))
+    std::string inputError;
+    std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+        liveDocument, assetsRoot, cellSize, logging, assets, lightmapParams, {},
+        options, &inputError);
+    if (!input.has_value())
     {
         DocumentCookResult result;
-        result.Error = "CookDocument: could not snapshot the live document";
+        result.Error = "CookDocument: " + inputError;
         return result;
     }
 
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
-    return CookDocumentKernel(snapshot, levelName, sourceRel, assetsRoot, cellSize,
-                             logging, assets != nullptr ? &assets->Assets : nullptr,
-                             lightmapParams, {});
+    return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
+                               assetsRoot, logging);
 }

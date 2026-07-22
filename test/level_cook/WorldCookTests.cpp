@@ -127,6 +127,7 @@ TEST_F(WorldCookTest, RecookWithoutEditsIsByteIdenticalAndEditsChangeOneHash)
     for (size_t i = 0; i < unchanged.Zones.size(); ++i)
     {
         EXPECT_EQ(unchanged.Zones[i].CookedContentHash, before.Zones[i].CookedContentHash);
+        EXPECT_EQ(unchanged.Zones[i].CookedSceneRef, before.Zones[i].CookedSceneRef);
         EXPECT_EQ(ReadFile(Root / unchanged.Zones[i].CookedSceneRef), artifactsBefore[i]);
     }
 
@@ -142,6 +143,8 @@ TEST_F(WorldCookTest, RecookWithoutEditsIsByteIdenticalAndEditsChangeOneHash)
 
     EXPECT_EQ(edited.Zones[0].CookedContentHash, before.Zones[0].CookedContentHash);
     EXPECT_NE(edited.Zones[1].CookedContentHash, before.Zones[1].CookedContentHash);
+    EXPECT_EQ(edited.Zones[0].CookedSceneRef, before.Zones[0].CookedSceneRef);
+    EXPECT_NE(edited.Zones[1].CookedSceneRef, before.Zones[1].CookedSceneRef);
     EXPECT_EQ(ReadFile(Root / edited.Zones[0].CookedSceneRef), artifactsBefore[0]);
 }
 
@@ -304,11 +307,13 @@ TEST_F(WorldCookTest, NeighborZoneGeometryOccludesTheProbeBake)
     const double open = ProbeC0Sum(standalone.CookedScenePath);
     ASSERT_GT(open, 0.0);
 
-    // Same scene, same artifact path; the halo changes the cook hash, so the
-    // cooked cache re-bakes rather than serving the standalone result.
+    // The halo changes the cook hash, so the world manifest switches this zone
+    // to a different content-addressed artifact generation.
     const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr, params);
     ASSERT_TRUE(cooked.Success) << cooked.Error;
-    const double blocked = ProbeC0Sum(standalone.CookedScenePath);
+    const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
+    ASSERT_FALSE(manifest.Zones[0].CookedSceneRef.empty());
+    const double blocked = ProbeC0Sum(Root / manifest.Zones[0].CookedSceneRef);
 
     EXPECT_GT(blocked, 0.0);
     EXPECT_LT(blocked, open * 0.9);
