@@ -6,6 +6,7 @@
 #include "CookGraph.h"
 #include "CookReceipt.h"
 #include "CookStepCache.h"
+#include "DocumentCookFingerprints.h"
 #include "DocumentImportPublisher.h"
 #include "EditorDocument.h"
 
@@ -13,7 +14,6 @@
 #include <assets/cook/BrushClustering.h>
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
-#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ImportOnDemand.h>
@@ -46,90 +46,11 @@
 
 namespace
 {
-    void AddVec2(CookFingerprint& fingerprint, std::string_view field, const Vec2d& value)
-    {
-        fingerprint.AddFloat(std::string(field) + ".x", value.X)
-            .AddFloat(std::string(field) + ".y", value.Y);
-    }
-
-    void AddVec3(CookFingerprint& fingerprint, std::string_view field, const Vec3d& value)
-    {
-        fingerprint.AddFloat(std::string(field) + ".x", value.X)
-            .AddFloat(std::string(field) + ".y", value.Y)
-            .AddFloat(std::string(field) + ".z", value.Z);
-    }
-
-    void AddVertex(CookFingerprint& fingerprint, const StaticMeshVertex& vertex)
-    {
-        AddVec3(fingerprint, "position", vertex.Position);
-        AddVec3(fingerprint, "normal", vertex.Normal);
-        AddVec2(fingerprint, "uv0", vertex.Uv0);
-        fingerprint.AddFloat("tangent.x", vertex.Tangent.X)
-            .AddFloat("tangent.y", vertex.Tangent.Y)
-            .AddFloat("tangent.z", vertex.Tangent.Z)
-            .AddFloat("tangent.w", vertex.Tangent.W)
-            .AddU32("lightmap_u", vertex.LightmapU)
-            .AddU32("lightmap_v", vertex.LightmapV);
-    }
-
-    void AddMat4(CookFingerprint& fingerprint, std::string_view field, const Mat4& value)
-    {
-        for (int row = 0; row < 4; ++row)
-            for (int column = 0; column < 4; ++column)
-                fingerprint.AddFloat(
-                    std::string(field) + "." + std::to_string(row)
-                        + "." + std::to_string(column),
-                    value[row][column]);
-    }
-
-    // The brush identity covers resolved materials, post-transform triangles,
-    // chart topology, and chart coordinates. Editor-only state never enters it.
-    uint64_t HashBrushInputs(std::span<const CookBrushGeometry> brushes, double cellSize)
-    {
-        CookFingerprint fingerprint("brush_cells", 2);
-        fingerprint.AddDouble("cell_size", cellSize)
-            .AddU64("brush_count", brushes.size());
-        for (const CookBrushGeometry& brush : brushes)
-        {
-            fingerprint.AddU64("face_count", brush.Faces.size());
-            for (const CookFace& face : brush.Faces)
-            {
-                fingerprint.AddString("material", face.Material.Path)
-                    .AddU32("chart", face.Chart)
-                    .AddU64("vertex_count", face.Triangles.size());
-                for (const StaticMeshVertex& vertex : face.Triangles)
-                    AddVertex(fingerprint, vertex);
-                fingerprint.AddU64("chart_uv_count", face.ChartUv.size());
-                for (const Vec2d& uv : face.ChartUv)
-                    AddVec2(fingerprint, "chart_uv", uv);
-            }
-        }
-        return fingerprint.Value();
-    }
-
     // Unorm16 lightmap UV component (texel-center convention).
     std::uint16_t PackLightmapUv16(float value)
     {
         const float clamped = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
         return static_cast<std::uint16_t>(std::lround(clamped * 65535.0f));
-    }
-
-    uint64_t HashDirectLights(std::span<const BakeDirectLight> lights)
-    {
-        CookFingerprint fingerprint("bake_direct_lights", 2);
-        fingerprint.AddU64("light_count", lights.size());
-        for (const BakeDirectLight& light : lights)
-        {
-            fingerprint.AddU32("kind", static_cast<std::uint32_t>(light.Kind));
-            AddVec3(fingerprint, "position", light.Position);
-            AddVec3(fingerprint, "color", light.Color);
-            fingerprint.AddFloat("intensity", light.Intensity)
-                .AddFloat("range", light.Range);
-            AddVec3(fingerprint, "direction", light.Direction);
-            fingerprint.AddFloat("cone_scale", light.ConeScale)
-                .AddFloat("cone_offset", light.ConeOffset);
-        }
-        return fingerprint.Value();
     }
 
     std::string CellBase(const Vec3i& coord)
@@ -202,22 +123,6 @@ JsonValue BuildCellEntity(const Vec3d& origin,
 
 namespace
 {
-uint64_t HashProbeVolumes(std::span<const ProbeVolumeInput> volumes)
-{
-    CookFingerprint fingerprint("probe_volumes", 2);
-    fingerprint.AddU64("volume_count", volumes.size());
-    for (const ProbeVolumeInput& volume : volumes)
-    {
-        AddVec3(fingerprint, "origin", volume.Grid.Origin);
-        fingerprint.AddFloat("cell_size", volume.Grid.CellSize)
-            .AddU32("dims_x", volume.Grid.DimsX)
-            .AddU32("dims_y", volume.Grid.DimsY)
-            .AddU32("dims_z", volume.Grid.DimsZ)
-            .AddI32("priority", volume.Priority);
-    }
-    return fingerprint.Value();
-}
-
 JsonValue* FindMutable(JsonValue& value, std::string_view key)
 {
     if (!value.IsObject())
@@ -312,24 +217,11 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     std::vector<LightmapPlacement>& placements = snapshot.Placements;
     const std::span<const ProbeHaloZone> halo = snapshot.Halo;
     CookArtifactTransaction transaction(assetsRoot, sourceRel);
-    const std::uint64_t brushFingerprint = HashBrushInputs(brushes, cellSize);
-    CookFingerprint placementFingerprint("lightmap_placements", 2);
-    placementFingerprint.AddU64("placement_count", placements.size());
-    for (const LightmapPlacement& placement : placements)
-    {
-        AddMat4(placementFingerprint, "to_world", placement.ToWorld);
-        placementFingerprint.AddBool("casts_into_bake", placement.CastsIntoBake)
-            .AddU64("vertex_count", placement.Geometry.Vertices.size());
-        for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
-            AddVertex(placementFingerprint, vertex);
-        placementFingerprint.AddU64("index_count", placement.Geometry.Indices.size());
-        for (std::uint32_t index : placement.Geometry.Indices)
-            placementFingerprint.AddU32("index", index);
-    }
     // Neighbor-zone halo: read-only occluder geometry other zones offered.
     // Only zones within probe-ray reach of this zone's bake inputs
     // participate; the selected set folds into the cook hash, so a neighbor
-    // edit within reach restales this zone and one beyond reach does not.
+    // edit within reach restales this zone and one beyond reach does not. The
+    // occlusion BVH below consumes the same reachable set.
     std::vector<const ProbeHaloZone*> reachableHalo;
     Aabb3d bakeBounds = Aabb3d::Empty();
     if ((!bakeLights.empty() || !probeVolumes.empty()) && !halo.empty())
@@ -347,90 +239,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                                              lightmapParams.Probe.MaxRayDistance);
     }
 
-    CookFingerprint lightmapSurfaceIdentity("lightmap_surfaces", 1);
-    lightmapSurfaceIdentity.AddDependency("brush_cells", brushFingerprint)
-        .AddDependency("placements", placementFingerprint.Value())
-        .AddFloat("luxel_size", lightmapParams.LuxelSize)
-        .AddU32("max_atlas_size", lightmapParams.MaxAtlasSize)
-        .AddFloat("cone_degrees", lightmapParams.ConeDegrees);
-    const std::uint64_t lightmapSurfaceFingerprint = lightmapSurfaceIdentity.Value();
-
-    CookFingerprint occlusionIdentity("occlusion_geometry", 1);
-    occlusionIdentity.AddDependency("brush_cells", brushFingerprint)
-        .AddDependency("placements", placementFingerprint.Value())
-        .AddU64("reachable_halo_count", reachableHalo.size());
-    for (const ProbeHaloZone* zone : reachableHalo)
-        occlusionIdentity.AddU64("reachable_halo", zone->ContentHash);
-    const std::uint64_t occlusionFingerprint = occlusionIdentity.Value();
-
-    CookFingerprint directIdentity("direct_lightmap", 1);
-    directIdentity.AddDependency("lightmap_surfaces", lightmapSurfaceFingerprint)
-        .AddDependency("occlusion_geometry", occlusionFingerprint)
-        .AddDependency("direct_lights", HashDirectLights(bakeLights))
-        .AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
-        .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset);
-    const std::uint64_t directFingerprint = directIdentity.Value();
-
-    CookFingerprint aoIdentity("ambient_occlusion", 1);
-    aoIdentity.AddDependency("direct_lightmap", directFingerprint)
-        .AddFloat("max_distance", lightmapParams.Ao.MaxDistance)
-        .AddU32("ray_count", lightmapParams.Ao.RayCount);
-    const std::uint64_t aoFingerprint = aoIdentity.Value();
-
-    CookFingerprint probeIdentity("irradiance_probes", 1);
-    probeIdentity.AddDependency("occlusion_geometry", occlusionFingerprint)
-        .AddDependency("bounce_lights", HashDirectLights(bounceLights))
-        .AddDependency("probe_volumes", HashProbeVolumes(probeVolumes))
-        .AddFloat("bounce_albedo", lightmapParams.Probe.BounceAlbedo)
-        .AddFloat("max_ray_distance", lightmapParams.Probe.MaxRayDistance)
-        .AddFloat("classify_ray_distance", lightmapParams.Probe.ClassifyRayDistance)
-        .AddFloat("classify_backface_ratio", lightmapParams.Probe.ClassifyBackfaceRatio)
-        .AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
-        .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset)
-        .AddU32("ray_count", lightmapParams.ProbeRayCount);
-    AddVec3(probeIdentity, "sky", lightmapParams.Probe.SkyColor);
-    AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
-    const std::uint64_t probeFingerprint = probeIdentity.Value();
-
-    CookFingerprint documentFingerprint("document_cook", 8);
-    documentFingerprint.AddDependency("brush_cells", brushFingerprint)
-        .AddDependency("placements", placementFingerprint.Value())
-        .AddDependency("direct_lights", HashDirectLights(bakeLights))
-        .AddU64("passthrough_scene",
-                HashBytes64(JsonStringify(snapshot.PassthroughScene, false)));
-    if (!bakeLights.empty())
-    {
-        documentFingerprint.AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
-            .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset)
-            .AddFloat("luxel_size", lightmapParams.LuxelSize)
-            .AddU32("max_atlas_size", lightmapParams.MaxAtlasSize)
-            .AddFloat("cone_degrees", lightmapParams.ConeDegrees)
-            .AddBool("ao_enabled", lightmapParams.Ao.Enabled);
-        if (lightmapParams.Ao.Enabled)
-            documentFingerprint.AddFloat("ao_max_distance", lightmapParams.Ao.MaxDistance)
-                .AddU32("ao_ray_count", lightmapParams.Ao.RayCount);
-    }
-    documentFingerprint.AddU64("reachable_halo_count", reachableHalo.size());
-    for (const ProbeHaloZone* zone : reachableHalo)
-        documentFingerprint.AddU64("reachable_halo", zone->ContentHash);
-    if (!probeVolumes.empty())
-    {
-        documentFingerprint.AddDependency("bounce_lights", HashDirectLights(bounceLights))
-            .AddDependency("probe_volumes", HashProbeVolumes(probeVolumes))
-            .AddFloat("probe_bounce_albedo", lightmapParams.Probe.BounceAlbedo);
-        AddVec3(documentFingerprint, "probe_sky", lightmapParams.Probe.SkyColor);
-        AddVec3(documentFingerprint, "probe_ground", lightmapParams.Probe.GroundColor);
-        documentFingerprint.AddFloat("probe_max_ray_distance",
-                                     lightmapParams.Probe.MaxRayDistance)
-            .AddFloat("probe_classify_ray_distance",
-                      lightmapParams.Probe.ClassifyRayDistance)
-            .AddFloat("probe_classify_backface_ratio",
-                      lightmapParams.Probe.ClassifyBackfaceRatio)
-            .AddFloat("probe_diffuse_wrap", lightmapParams.Shading.DiffuseWrap)
-            .AddFloat("probe_normal_offset", lightmapParams.Shading.NormalOffset)
-            .AddU32("probe_ray_count", lightmapParams.ProbeRayCount);
-    }
-    const std::uint64_t geometryHash = documentFingerprint.Value();
+    const DocumentCookFingerprints fingerprints =
+        ComputeDocumentCookFingerprints(snapshot, cellSize, reachableHalo);
+    const std::uint64_t geometryHash = fingerprints.Document;
     const std::string stemStr = request.OutputNamespace.empty()
         ? std::string(stem)
         : request.OutputNamespace + "/" + std::format("{:016x}", geometryHash);
@@ -483,17 +294,17 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     const DocumentCookReceipt* priorReceipt = hasCachedReceipt ? &cachedReceipt : nullptr;
     const CookStepReceipt* reusableDirect = !bakeLights.empty()
         ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::DirectLightmap,
-                       directFingerprint)
+                       fingerprints.Direct)
         : nullptr;
     const CookStepReceipt* reusableAo = lightmapParams.Ao.Enabled
         ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::AmbientOcclusion,
-                       aoFingerprint)
+                       fingerprints.Ao)
         : nullptr;
     const bool reuseLighting = reusableDirect != nullptr
         && (!lightmapParams.Ao.Enabled || reusableAo != nullptr);
     const CookStepReceipt* reusableProbes = !probeVolumes.empty()
         ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::IrradianceProbes,
-                       probeFingerprint)
+                       fingerprints.Probe)
         : nullptr;
     beginStep(DocumentCookStepIds::BrushCells);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
@@ -1203,22 +1014,22 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::BrushCells),
         .Version = FindDocumentCookStep(DocumentCookStepIds::BrushCells)->Version,
-        .InputFingerprint = brushFingerprint,
+        .InputFingerprint = fingerprints.Brush,
     });
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::LightmapSurfaces),
         .Version = FindDocumentCookStep(DocumentCookStepIds::LightmapSurfaces)->Version,
-        .InputFingerprint = lightmapSurfaceFingerprint,
+        .InputFingerprint = fingerprints.LightmapSurfaces,
         .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), brushFingerprint },
+            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
         },
     });
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::OcclusionGeometry),
         .Version = FindDocumentCookStep(DocumentCookStepIds::OcclusionGeometry)->Version,
-        .InputFingerprint = occlusionFingerprint,
+        .InputFingerprint = fingerprints.Occlusion,
         .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), brushFingerprint },
+            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
         },
     });
 
@@ -1226,7 +1037,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *directLightmapArtifact, sourceRel, CookStepIds::DirectLightmap,
-            directFingerprint, assetsRoot, transaction, &cookError);
+            fingerprints.Direct, assetsRoot, transaction, &cookError);
         if (cached.Path.empty())
         {
             result.Error = "CookDocument: " + cookError;
@@ -1235,12 +1046,12 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         PutCookStepReceipt(receipt, CookStepReceipt{
             .StepId = std::string(CookStepIds::DirectLightmap),
             .Version = FindDocumentCookStep(CookStepIds::DirectLightmap)->Version,
-            .InputFingerprint = directFingerprint,
+            .InputFingerprint = fingerprints.Direct,
             .Dependencies = {
                 { std::string(DocumentCookStepIds::LightmapSurfaces),
-                  lightmapSurfaceFingerprint },
+                  fingerprints.LightmapSurfaces },
                 { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  occlusionFingerprint },
+                  fingerprints.Occlusion },
             },
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),
@@ -1250,7 +1061,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *ambientOcclusionArtifact, sourceRel, CookStepIds::AmbientOcclusion,
-            aoFingerprint, assetsRoot, transaction, &cookError);
+            fingerprints.Ao, assetsRoot, transaction, &cookError);
         if (cached.Path.empty())
         {
             result.Error = "CookDocument: " + cookError;
@@ -1259,9 +1070,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         PutCookStepReceipt(receipt, CookStepReceipt{
             .StepId = std::string(CookStepIds::AmbientOcclusion),
             .Version = FindDocumentCookStep(CookStepIds::AmbientOcclusion)->Version,
-            .InputFingerprint = aoFingerprint,
+            .InputFingerprint = fingerprints.Ao,
             .Dependencies = {
-                { std::string(CookStepIds::DirectLightmap), directFingerprint },
+                { std::string(CookStepIds::DirectLightmap), fingerprints.Direct },
             },
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),
@@ -1271,7 +1082,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *probeArtifact, sourceRel, CookStepIds::IrradianceProbes,
-            probeFingerprint, assetsRoot, transaction, &cookError);
+            fingerprints.Probe, assetsRoot, transaction, &cookError);
         if (cached.Path.empty())
         {
             result.Error = "CookDocument: " + cookError;
@@ -1280,10 +1091,10 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         PutCookStepReceipt(receipt, CookStepReceipt{
             .StepId = std::string(CookStepIds::IrradianceProbes),
             .Version = FindDocumentCookStep(CookStepIds::IrradianceProbes)->Version,
-            .InputFingerprint = probeFingerprint,
+            .InputFingerprint = fingerprints.Probe,
             .Dependencies = {
                 { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  occlusionFingerprint },
+                  fingerprints.Occlusion },
             },
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),

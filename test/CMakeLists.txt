@@ -164,6 +164,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookReceipt.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookStepCache.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookFingerprints.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookInput.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
