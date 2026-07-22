@@ -9,6 +9,7 @@
 #include "CookReceipt.h"
 #include "CookStepCache.h"
 #include "CookStepProgress.h"
+#include "CookedSceneAssembly.h"
 #include "DocumentArtifactCatalog.h"
 #include "DocumentBakeOcclusion.h"
 #include "DocumentCookFingerprints.h"
@@ -185,8 +186,6 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             return result;
     }
 
-    MeshSerializer serializer(logging);
-
     JsonValue::Array cellEntities;
     DocumentArtifactCatalog catalog;
     std::vector<CellCollisionEntry> collisionEntries;
@@ -236,90 +235,13 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             return result;
     }
 
-    for (const PendingCellMesh& pending : pendingMeshes)
-    {
-        if (!serializer.WriteToFile(pending.Physical.generic_string(), pending.Geometry))
-        {
-            result.Error = "CookDocument: could not write mesh '"
-                + pending.Physical.generic_string() + "'";
-            return result;
-        }
-    }
-
-    JsonValue cooked = std::move(snapshot.PassthroughScene);
-    progress.Begin(DocumentCookStepIds::CookedScene);
-    bool appended = false;
-    if (cooked.IsObject())
-        for (auto& [key, value] : cooked.AsObject())
-            if (key == "entities" && value.IsArray())
-            {
-                for (JsonValue& cellEntity : cellEntities)
-                    value.AsArray().push_back(std::move(cellEntity));
-                appended = true;
-                break;
-            }
-    if (!appended)
-    {
-        result.Error = "CookDocument: assembled scene has no entities array";
-        return result;
-    }
-    progress.Complete();
-    if (progress.Cancelled(result))
+    if (!WriteCookedSceneArtifacts(std::move(snapshot.PassthroughScene), pendingMeshes,
+                                   cellEntities, collisionEntries, runCollision, catalog,
+                                   paths, assetsRoot, transaction, progress, logging,
+                                   result))
         return result;
 
-    std::error_code ec;
-    std::filesystem::create_directories(paths.CookedDir, ec);
-
-    // Collision sidecar: the runtime loads this at map load (LoadZoneCollision)
-    // to spawn the level's static brush colliders. Empty array if no brushes.
-    if (runCollision)
-    {
-        JsonValue::Array sidecar;
-        sidecar.reserve(collisionEntries.size());
-        for (const CellCollisionEntry& entry : collisionEntries)
-            sidecar.push_back(JsonValue(JsonValue::Object{
-                { "blob", JsonValue(entry.BlobRelPath) },
-                { "origin", JsonValue(JsonValue::Array{
-                    JsonValue(static_cast<double>(entry.Origin.X)),
-                    JsonValue(static_cast<double>(entry.Origin.Y)),
-                    JsonValue(static_cast<double>(entry.Origin.Z)) }) },
-            }));
-        std::ofstream sidecarFile(transaction.Stage(paths.Collision));
-        sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
-        if (!sidecarFile.good())
-        {
-            result.Error = "CookDocument: could not write collision sidecar";
-            return result;
-        }
-    }
-
-    // asset:// resolution: Generated cell meshes live under .cooked/; every other
-    // ref (materials, their textures) is an authored asset under the root.
-    const auto physicalPathFor =
-        [&assetsRoot, &catalog, &transaction](
-            std::string_view assetPath) -> std::filesystem::path {
-            constexpr std::string_view prefix = "asset://";
-            const std::string rel(assetPath.substr(prefix.size()));
-            if (catalog.IsGenerated(assetPath))
-                return transaction.Stage(assetsRoot / ".cooked" / rel);
-            return assetsRoot / rel;
-        };
-
-    const std::filesystem::path idMapPath = assetsRoot / kAssetIdMapFileName;
     std::string cookError;
-    if (!transaction.Seed(idMapPath, &cookError))
-    {
-        result.Error = "CookDocument: " + cookError;
-        return result;
-    }
-    const std::filesystem::path stagedManifest = transaction.Stage(paths.Manifest);
-    const std::filesystem::path stagedScene = transaction.Stage(paths.Scene);
-    if (!WriteCookedScene(cooked, catalog.SceneRefs(), physicalPathFor,
-            transaction.Stage(idMapPath), stagedManifest, stagedScene, &cookError))
-    {
-        result.Error = "CookDocument: " + cookError;
-        return result;
-    }
 
     // Referenced-asset imports were prepared before the fast path; publish their
     // staged bytes and index deltas through the document transaction here so
