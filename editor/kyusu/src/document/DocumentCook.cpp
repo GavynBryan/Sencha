@@ -3,6 +3,7 @@
 
 #include "BakeTriangleGather.h"
 #include "BrushCookInput.h"
+#include "CellArtifactCook.h"
 #include "CookArtifactTransaction.h"
 #include "CookGraph.h"
 #include "CookReceipt.h"
@@ -49,40 +50,6 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-
-namespace
-{
-    std::string CellBase(const Vec3i& coord)
-    {
-        return "cell_" + std::to_string(coord.X) + "_" + std::to_string(coord.Y)
-            + "_" + std::to_string(coord.Z);
-    }
-
-    std::string CellName(const Vec3i& coord) { return CellBase(coord) + ".smesh"; }
-
-    // Flatten a cell's already-triangulated faces into a position/index soup for
-    // the collision bake (cell-local, the same triangles the render mesh uses).
-    void CollectCellTriangles(const std::vector<CookFace>& faces,
-                              std::vector<Vec3d>& positions,
-                              std::vector<uint32_t>& indices)
-    {
-        for (const CookFace& face : faces)
-            for (const StaticMeshVertex& vertex : face.Triangles)
-            {
-                indices.push_back(static_cast<uint32_t>(positions.size()));
-                positions.push_back(vertex.Position);
-            }
-    }
-
-    // One cell's cooked collision: the blob's path (relative to the cooked root)
-    // and the cell origin the runtime places the static collider at.
-    struct CollisionEntry
-    {
-        std::string BlobRelPath;
-        Vec3d Origin;
-    };
-
-} // namespace
 
 JsonValue BuildCellEntity(const Vec3d& origin,
                           std::string_view meshPath,
@@ -220,84 +187,16 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
 
     JsonValue::Array cellEntities;
     DocumentArtifactCatalog catalog;
-    std::vector<CollisionEntry> collisionEntries;
+    std::vector<CellCollisionEntry> collisionEntries;
     std::optional<CookedArtifact> directLightmapArtifact;
     std::optional<CookedArtifact> ambientOcclusionArtifact;
     std::optional<CookedArtifact> probeArtifact;
-
-    // Cell meshes are written after the lighting bake, not inline: the bake
-    // needs every cell's geometry (for the shared occlusion BVH) before any
-    // cell's channel is final. Origin is the cell's world translation.
-    struct PendingCellMesh
-    {
-        std::filesystem::path Physical;
-        MeshGeometry Geometry;
-        Vec3d Origin;
-    };
     std::vector<PendingCellMesh> pendingMeshes;
 
-    progress.Begin(CookStepIds::RenderMeshes);
-    for (const BrushCell& cell : cells)
-    {
-        if (progress.Cancelled(result))
-            return result;
-        std::vector<AssetRef> order = CollectMaterialOrder(cell.Faces);
-
-        MeshGeometry geometry;
-        std::string bakeError;
-        if (!BakeBrushFacesToStaticMesh(cell.Faces, order, geometry, &bakeError))
-        {
-            result.Error = "CookDocument: " + bakeError;
-            return result;
-        }
-
-        const std::string cellName = CellName(cell.Coord);
-        const std::string meshAssetPath = "asset://levels/" + stemStr + "/" + cellName;
-        const std::string meshRelPath = ".cooked/levels/" + stemStr + "/" + cellName;
-        const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
-        const std::filesystem::path meshStaged = transaction.Stage(meshPhysical);
-
-        std::error_code ec;
-        std::filesystem::create_directories(meshStaged.parent_path(), ec);
-        pendingMeshes.push_back(PendingCellMesh{
-            meshStaged, std::move(geometry), cell.Origin });
-
-        cellEntities.push_back(BuildCellEntity(cell.Origin, meshAssetPath, order));
-        catalog.AddMesh(meshAssetPath, meshRelPath);
-        result.GeneratedMeshPaths.push_back(meshAssetPath);
-        for (const AssetRef& material : order)
-            catalog.AddMaterial(material.Path);
-
-        // Collision: bake the same cell triangles into a pre-baked Jolt blob, a
-        // sibling of the cell mesh. Authored brushes become collidable with no
-        // collider authoring; the runtime loads these from the sidecar at map load.
-        if (runCollision)
-        {
-            std::vector<Vec3d> collisionPositions;
-            std::vector<uint32_t> collisionIndices;
-            CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
-            const std::vector<std::byte> collisionBlob =
-                BakeCollisionBlob(collisionPositions, collisionIndices);
-            if (!collisionBlob.empty())
-            {
-                const std::string colRel =
-                    "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
-                const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
-                const std::filesystem::path colStaged = transaction.Stage(colPhysical);
-                std::ofstream colFile(colStaged, std::ios::binary);
-                colFile.write(reinterpret_cast<const char*>(collisionBlob.data()),
-                              static_cast<std::streamsize>(collisionBlob.size()));
-                if (colFile.good())
-                {
-                    collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
-                    catalog.AddCollision("asset://" + colRel, ".cooked/" + colRel);
-                }
-            }
-        }
-    }
-    progress.Complete();
-    if (runCollision)
-        progress.Complete();
+    if (!EmitCellArtifacts(cells, assetsRoot, stemStr, runCollision, transaction,
+                           catalog, progress, pendingMeshes, cellEntities,
+                           collisionEntries, result))
+        return result;
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
     // a light in one cell shadows onto its neighbors, and probe rays see the
@@ -639,7 +538,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     {
         JsonValue::Array sidecar;
         sidecar.reserve(collisionEntries.size());
-        for (const CollisionEntry& entry : collisionEntries)
+        for (const CellCollisionEntry& entry : collisionEntries)
             sidecar.push_back(JsonValue(JsonValue::Object{
                 { "blob", JsonValue(entry.BlobRelPath) },
                 { "origin", JsonValue(JsonValue::Array{
