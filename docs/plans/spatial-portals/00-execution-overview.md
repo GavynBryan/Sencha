@@ -1,382 +1,529 @@
 # Spatial Portal Execution Suite
 
-Status: proposed execution plan.
+Status: proposed execution plan, revised for the unified runtime world.
 
-Base: `lightmap-spike` at `061e610baf338a5b47cd270a88496f42a04b850a`.
+Planning branch origin: `lightmap-spike` at `061e610baf338a5b47cd270a88496f42a04b850a`.
 
-This suite defines the implementation path for linked planar apertures that render and traverse discontinuous spaces. It is written against the current lighting branch because that branch owns the renderer, lightmap, probe, shadow-residency, capture, and evidence systems this work must extend.
+Implementation dependency: the unified runtime cutover represented by
+`feature/unified-runtime-container`, or its merged successor, plus the current lighting
+architecture integrated onto that runtime.
 
-`CLAUDE.md` was read in full before this plan was written. Its repository constraints apply to every stage. In particular:
+This suite defines linked planar apertures that render and traverse discontinuous spaces.
+It does not introduce dimensions, spaces, alternate worlds, or any other first-class
+simulation category. A spatial portal connects two authored endpoint entities inside one
+runtime simulation world. The endpoints may belong to the same zone, adjacent zones, or
+spatially remote zone groups.
 
-- names describe mechanisms, not a game or genre;
+`CLAUDE.md` and the unified runtime plan are binding. In particular:
+
+- one gameplay simulation owns one ECS `World`;
+- streamed zones are storage partitions, not entity identity universes;
+- live cross-zone relationships use ordinary `EntityId` values;
+- durable authored and saved relationships use `StableEntityRef`;
+- runtime `EntityId` values are never persisted;
 - components contain data only;
-- renderer backends consume extracted render-domain data, never live ECS state;
-- Jolt remains behind the physics firewall;
-- no speculative interfaces, service locator, raw threads, locks, or third concurrency lane;
+- render backends consume extracted render-domain data and never query ECS;
+- retained physics state belongs to one simulation-scoped backend scene;
+- portal operations use the existing partition migration and participation mechanisms;
+- no compatibility architecture is added for per-zone runtime registries;
 - serial behavior is the deterministic reference;
-- tests and measurements ship with each mechanism;
-- no stage is called complete while required verification is unrun;
-- no em dash is used in code, comments, documentation, or commit messages.
+- tests, adversarial cases, and measurements ship with each mechanism;
+- no stage is complete while required verification remains unrun;
+- no em dash is used in code, comments, docs, or commit messages.
 
 ## 1. Product boundary
 
 ### 1.1 v0.1
 
-v0.1 reproduces the current browser prototype in Sencha:
+v0.1 reproduces the browser prototype inside Sencha:
 
 1. Two linked, static, rectangular planar apertures.
-2. A nonrecursive view through each aperture.
-3. Viewpoint-correct perspective at arbitrary viewing angle and distance.
+2. A nonrecursive destination view through each aperture.
+3. Perspective-correct rendering at arbitrary viewing angle and distance.
 4. Destination-side clipping at the exit plane.
 5. First-person character traversal.
 6. Position, facing, and velocity transformed through the link.
-7. Continuous crossing detection using previous and current capsule-center positions.
-8. Predictable straddling. A capsule may overlap the aperture, stop, and back out. Authority changes only when the capsule center crosses the plane.
-9. Debug visualization, counters, deterministic tests, and reproducible profiling scenes.
+7. Continuous crossing detection from previous and current capsule-center positions.
+8. Predictable straddling. A capsule may overlap the aperture, stop, and back out.
+9. Same-zone and cross-zone endpoints.
+10. Explicit destination participation requests and safe refusal when unavailable.
+11. Debug visualization, counters, deterministic tests, and reproducible profiling scenes.
 
 v0.1 does not include:
 
 - recursive views;
 - runtime cutting of arbitrary wall collision;
-- moving apertures;
+- moving endpoints;
 - rigid bodies spanning both sides;
 - portal-transmitted lights;
 - portal-aware shadows;
 - scale-changing links;
 - one body crossing two links simultaneously.
 
-A portal must be aligned with an authored opening in render and collision geometry. Runtime geometry carving is a separate capability and is not smuggled into this project.
+The wall opening is authored in render and collision geometry. Runtime geometry carving is
+a separate capability and is not hidden inside this project.
 
 ### 1.2 v1.0
 
 v1.0 adds:
 
-1. Static and kinematic mesh entities crossing an aperture with clipped source and destination render representations.
+1. Static, kinematic, skinned, and dynamic meshes crossing an aperture with clipped source
+   and destination render representations.
 2. Dynamic rigid bodies occupying both coordinate spaces while remaining one logical body.
-3. Full-shape aperture overlap, rim collision, and contact filtering.
-4. Long and wide colliders that can enter by one end, jam on the rim, rotate, fall through, or back out.
-5. Direct baked-light transport through static links.
-6. One-hop probe-ray transport so indirect lighting does not treat an open link as a sealed wall.
-7. Dynamic point and spot light images transmitted through visible links.
-8. Shadowed dynamic-light transport with source and destination occluders.
-9. Stable light and shadow identities, bounded work, diagnostics, captures, and evidence.
+3. Full-shape aperture overlap, rim collision, and contact-domain filtering.
+4. Long and wide colliders that can enter by one end, jam, rotate, fall through, or back out.
+5. Entity partition migration after committed traversal without changing `EntityId`.
+6. Direct baked-light transport through static links.
+7. One-hop probe-ray transport through static links.
+8. Dynamic point and spot light images transmitted through visible links.
+9. Shadowed dynamic-light transport with source and destination occluders.
+10. Stable render, light, shadow, and physics identities with bounded work.
 
-v1.0 remains nonrecursive. A light, view, trace, or body crosses at most one link per operation unless a later plan explicitly expands the contract.
+v1.0 remains nonrecursive. One operation crosses at most one link unless a later plan
+expands that contract.
 
 ## 2. Owning invariant
 
 The central invariant is:
 
-> A linked aperture is one rigid mapping between two planar frames. Every participating mechanism uses the same mapping, aperture test, plane-side convention, stable link identity, and one-hop limit.
+> A spatial portal relationship owns exactly two durable endpoint references. When both
+> endpoints are resident, every portal subsystem consumes one resolved rigid mapping,
+> aperture test, plane-side convention, stable relationship identity, and one-hop limit.
 
-The invariant is not owned by the renderer, player controller, physics backend, editor, or lighting cooker individually.
+The canonical authored relationship is not duplicated on the endpoint components.
 
-The proposed owner is a concrete `SpatialPortalRuntime` object created by the spatial-portal registration path and passed explicitly to the systems that need it. It owns resolved endpoint pairs and transient crossing records. It does not own ECS entities, GPU resources, Jolt bodies, editor documents, or cooked assets.
+The relationship entity is world-lifetime content, normally authored in the world scene and
+imported into the persistent storage partition. Its component is mechanically equivalent to:
 
-The core values and pure operations live below that runtime:
+```cpp
+struct SpatialPortalLinkComponent
+{
+    StableEntityRef EndpointA;
+    StableEntityRef EndpointB;
+    bool Enabled = true;
+};
+```
 
-- `SpatialPortalLinkId`
-- `SpatialPortalFrame`
-- `SpatialPortalTransform`
-- `SpatialPortalAperture`
-- plane classification
-- aperture projection
-- pose and vector transformation
-- continuous crossing
-- one-hop ray mapping
+Each endpoint entity carries only endpoint-local data:
 
-The exact filenames are chosen during Stage 1 after the existing math and strong-id conventions are inspected again. The names above describe responsibilities, not a requirement to create one type per bullet.
+```cpp
+struct SpatialPortalEndpointComponent
+{
+    Vec2d HalfExtents = Vec2d(1.0f, 2.0f);
+    bool Enabled = true;
+};
+```
 
-## 3. Current architecture facts that shape the plan
+A concrete world-scoped `SpatialPortalLinkState` resolves durable references to live
+`EntityId` values and publishes immutable resolved records. It owns derived relationship
+state and participation leases. It does not own ECS entities, Vulkan objects, Jolt bodies,
+editor documents, or cooked assets.
 
-### 3.1 Rendering
+The exact type name may change during implementation. The ownership boundary may not.
 
-The current render path already has the correct major boundary:
+## 3. Unified runtime consequences
 
-- simulation state is extracted into render-domain queues;
-- `MeshForwardPass` draws a supplied camera, light set, and queue;
-- offscreen features own their own render targets and passes;
-- main-color features are ordered;
-- profiling has Off, Counters, Gpu, and Capture tiers;
-- the production mesh shader has no generic clipping path.
+### 3.1 One live identity universe
 
-The current pipeline is centered on one active camera, one render queue, and one light set. Portal views must reuse the extraction and pass mechanisms without making the Vulkan backend query ECS.
+Resident endpoint entities share one runtime `World`. A resolved relationship contains:
 
-The preferred shape is:
+- the persistent link entity `EntityId`;
+- endpoint A and B `EntityId` values;
+- endpoint storage partitions;
+- endpoint transforms and apertures;
+- A-to-B and B-to-A rigid transforms;
+- reference-resolution epochs;
+- link validity and participation state.
 
-- main-view extraction remains the existing path;
-- portal-view extraction produces transient render-domain view records;
-- an offscreen feature renders those records;
-- a main-color feature composites the resulting images onto aperture surfaces;
-- a small shared render state object owns the target pool and per-frame view records;
-- crossing entities use a dedicated clipped draw path so the ordinary opaque shader does not pay a portal branch.
+No portal runtime type contains `RegistryId`, a span of registries, registry attachment
+order, or cross-registry lookup state.
 
-Do not widen `RenderPacket` or a public module boundary unless inspection proves it is necessary. The current pipeline-owned render state may be sufficient and avoids an ABI change.
+### 3.2 Zone partitions remain meaningful
 
-### 3.2 Physics
+A zone remains the authored, cooked, streamed, resident, and participation atom. Portal
+logic must therefore coordinate:
 
-The current physics module has one shared `PhysicsWorld` across active registries, which is favorable for linked-space interaction. The public engine facade currently exposes:
+- endpoint reference resolution;
+- destination residency;
+- Visible, Physics, Logic, and Audio participation;
+- entity storage migration after committed traversal;
+- endpoint detach and reload;
+- partition-slot reuse without stale aliasing.
 
-- body creation and removal;
-- body transform;
-- linear velocity.
+The destination may be spatially remote. No portal subsystem may infer destination
+relevance from ordinary world-space proximity.
 
-The current `RigidBody` component explicitly describes the physics phase as linear-only. v1.0 cannot be built honestly on that contract. Angular velocity, impulses, torque, mass properties, contact information, and portal-specific contact filtering must become first-class backend-free mechanisms before coupled rigid bodies are attempted.
+### 3.3 Portal transfer and partition migration are distinct facts
 
-The first physics work is therefore not portal code. It is a narrow completion of the existing rigid-body contract with focused tests.
+A portal crossing changes spatial state immediately at a deterministic simulation boundary.
+A nonpersistent entity may also need to move from its source zone partition to the
+destination zone partition.
 
-### 3.3 Lighting
+The portal transfer mechanism therefore records:
 
-The lighting branch already provides:
+- transformed pose;
+- transformed linear and angular velocity;
+- source and destination endpoint sides;
+- source and destination storage partitions;
+- whether storage migration is required;
+- the legal structural drain at which migration commits.
 
-- point and spot extraction;
-- dynamic forward lighting;
+The entity keeps the same `EntityId`, component signature, component values, gameplay
+relationships, and retained backend record.
+
+Partition ownership does not decide which portal representation is physically valid while a
+body is straddling. The crossing record and contact-domain rules do.
+
+### 3.4 Participation leases are part of correctness
+
+One-hop portal demand uses the unified runtime's caller-held participation leases:
+
+- a visible portal requests destination Visible participation;
+- a nearby traversable portal requests destination Physics and, when needed, Logic;
+- a straddling body pins source and destination Physics participation;
+- a transfer keeps required participation until migration and clear hysteresis complete;
+- portal audio requests destination Audio participation only when implemented;
+- portal demand never recursively activates a connected portal graph.
+
+If a required destination cannot become resident or participate, traversal refuses safely
+and rendering uses a defined fallback.
+
+## 4. Architecture facts that shape the plan
+
+### 4.1 Rendering
+
+The correct boundary remains simulation extraction into render-domain queues. Portal views
+extend that boundary:
+
+- one `World` is queried through explicit partition sets;
+- destination view extraction receives the destination-visible partitions;
+- an offscreen feature renders transient portal-view records;
+- a main-color feature composites targets onto aperture surfaces;
+- crossing entities emit transient clipped source and destination representations;
+- the Vulkan backend never resolves links or queries ECS.
+
+Do not widen a public module boundary unless current source proves it necessary.
+
+### 4.2 Physics
+
+The unified runtime owns one simulation-scoped physics scene with separate retained record
+families. Portal rigid-body state belongs in a dedicated physics record family, not in ECS
+components or a per-zone service.
+
+The physics prerequisite is no longer creation of a shared scene. It is completion and use
+of the unified scene contracts for:
+
+- angular state and impulses;
+- constraints and contact modification;
+- zone secondary indices;
+- entity partition migration journals;
+- participation eviction and restoration;
+- body lifetime across partition migration.
+
+### 4.3 Lighting
+
+The current lighting architecture remains the foundation:
+
+- dynamic point and spot lights;
 - RGB9E5 per-zone direct-light atlases;
 - R8 baked ambient occlusion;
 - L1 irradiance probes;
 - deterministic bake BVHs;
 - cached point and spot shadow residency;
-- GPU timestamps, captures, and evidence conventions.
+- profiling captures and evidence.
 
-Portal lighting must extend those mechanisms. It must not create a second renderer, second cooker, or side-channel asset path.
+Portal lighting extends these mechanisms. It does not create a second renderer, cooker,
+light representation, or world concept.
 
-### 3.4 World partition and authoring
+### 4.4 Editor and cook
 
-Earlier partition plans used the word portal for transition markers and later retired those markers. This project is a runtime spatial mapping and must not revive the retired transition-marker architecture.
+Editor documents remain isolated ownership domains. Runtime unification does not unify
+editor registries.
 
-A spatial portal may connect endpoints in one zone or two zones. The link does not automatically become world-partition topology. Cross-zone residency is an explicit integration stage with its own tests and stop conditions.
+World-scene link entities therefore use durable endpoint references. World cook resolves
+those references across zone documents before individual zone lighting cooks. The runtime
+imports the link entity into the persistent partition and resolves the same references as
+zones attach.
 
-The editor has stable partition identities but does not provide a stable persisted entity reference suitable for cross-zone pairing. The plan therefore uses a new editor-minted strong link identity stored on both endpoints. It does not put an entity reference in the world manifest.
-
-## 4. Document map
+## 5. Document map
 
 | Document | Owns |
 | --- | --- |
-| `00-execution-overview.md` | Scope, invariants, stage order, global decisions, and stop conditions. |
-| `01-link-data-and-authoring.md` | Link identity, component data, validation, serialization, cook inputs, editor behavior, and zone participation. |
-| `02-view-rendering-and-character-traversal.md` | Pure geometry, v0.1 character traversal, portal-view extraction, offscreen rendering, compositing, and renderer lifecycle. |
-| `03-crossing-entities-and-rigid-bodies.md` | Clipped entity rendering, angular-physics prerequisites, coupled-body investigation, contact filtering, long-collider behavior, and transfer authority. |
-| `04-light-transport.md` | Static direct bake, probe transport, dynamic light images, shadow transport, cache invalidation, and bounded work. |
-| `05-validation-stress-and-profiling.md` | Test matrix, adversarial scenarios, benchmarks, counters, capture evidence, sanitizer runs, and completion gates. |
+| `00-execution-overview.md` | Scope, dependency order, invariants, stage order, decisions, and stop conditions. |
+| `01-link-data-and-authoring.md` | Persistent relationship entities, endpoint data, stable references, validation, serialization, cook resolution, and leases. |
+| `02-view-rendering-and-character-traversal.md` | Geometry kernel, v0.1 traversal, transfer staging, partition-aware portal views, offscreen rendering, and compositing. |
+| `03-crossing-entities-and-rigid-bodies.md` | Crossing render records, unified physics record family, coupled-body investigation, contact filtering, and migration. |
+| `04-light-transport.md` | World-cook link resolution, static direct bake, probes, dynamic light images, shadow transport, and bounded work. |
+| `05-validation-stress-and-profiling.md` | Unified-world test matrix, adversarial scenarios, migration and unload tests, benchmarks, counters, sanitizers, and evidence. |
 
-## 5. Pinned decisions
+## 6. Pinned decisions
 
-These decisions are binding unless owner review changes them on the record.
+### D1. Unified runtime is a prerequisite
 
-### D1. Rectangular rigid apertures first
+Runtime portal code does not land on the per-zone-registry architecture. Pure geometry,
+shader experiments, cook experiments, and fixture design may proceed earlier.
 
-v0.1 and v1.0 support a rectangular aperture in a rigid transform with unit scale. Translation and rotation are allowed. Nonuniform, negative, or animated scale is rejected by validation and runtime diagnostics.
+No adapter, fallback, feature flag, or dual path preserves old runtime registry ownership.
 
-This keeps position, direction, velocity, angular velocity, distance attenuation, inertia, and shadow transforms physically coherent.
+### D2. Explicit binary relationship
 
-### D2. Static endpoints through v1.0
+A persistent relationship entity owns exactly two `StableEntityRef` values. Endpoint
+components do not store a partner or shared grouping id.
 
-Both endpoints are statically placed. Entities and lights may move. Moving endpoints are deferred.
+The relationship entity's durable identity is the stable portal identity used by cook,
+render, physics, light, shadow, diagnostics, and deterministic ordering.
 
-Static placement makes bake hashes, world-collision assumptions, render-target relevance, shadow invalidation, and coupled-body transfer tractable.
+### D3. Endpoint uniqueness is validated globally
 
-### D3. Authored openings, not runtime collision carving
+The binary record structurally guarantees two endpoint slots. World validation additionally
+requires that one endpoint is not owned by two enabled portal relationships.
 
-The surrounding wall and opening are authored geometry. The portal surface fills the opening visually, but the collision cook already contains the physical hole and rim.
+Normal editor commands preserve this rule. Cook and runtime validation still reject hand-edited,
+stale, or conflicting data.
 
-Runtime wall cutting is not required for v0.1 or v1.0.
+### D4. Rectangular rigid apertures first
 
-### D4. One-hop transport
+v0.1 and v1.0 support rectangular endpoints under translation and rotation with unit scale.
+Nonuniform, negative, animated, or nonfinite scale is rejected.
 
-Views, rays, lights, probes, traces, and crossing state traverse one link. Portal surfaces encountered inside a portal view render a defined fallback and do not schedule another view.
+### D5. Static endpoints through v1.0
 
-### D5. One active link per body
+Entities, characters, rigid bodies, and lights may move. Portal endpoints do not.
 
-A character or rigid body may straddle one link at a time. If a body overlaps a second link while coupled, the first active link wins by stable identity and crossing time. The second link remains nontraversable for that body until it clears the first.
+### D6. Authored openings
 
-The behavior must be safe, deterministic, visible in diagnostics, and tested. Supporting one body across multiple links is a separate solver problem.
+The surrounding wall and opening are authored geometry. Runtime wall cutting is not required.
 
-### D6. No persistent duplicate entities
+### D7. One-hop transport
 
-Crossing render representations are transient render-domain records. Physics proxies are physics-owned bodies recorded in a physics-owned table. Neither becomes a second gameplay entity or a serialized ECS entity.
+Views, rays, lights, probes, traces, leases, and traversal cross at most one link per
+operation. A portal visible through a portal uses fallback presentation and does not schedule
+another destination.
 
-### D7. Exact aperture constraints
+### D8. One active link per body
 
-A portal view, light image, ray, or body representation is valid only through the rectangular aperture. A broadphase volume may find candidates, but final behavior uses the exact plane and aperture test.
+A character or rigid body may straddle one link at a time. A second overlapping link behaves
+as solid or nontraversable according to the tested safe rule.
 
-### D8. Source and destination lighting remain distinct
+### D9. No duplicate gameplay entities
 
-A crossing mesh uses source lighting on the source representation and destination lighting on the destination representation. Mesh, material, animation, and skinning data are shared. Lighting is not copied as an object property.
+Crossing render representations are transient render-domain data. Physics proxies are
+backend-owned retained records. Neither is another gameplay entity or serialized ECS entity.
 
-### D9. Measurements define budgets
+### D10. Exact aperture constraints
 
-No unmeasured millisecond budget is invented in this plan. Each performance stage first records a control and a feature baseline on the same hardware, build, resolution, scene, and scripted camera. Acceptance limits are then expressed as a documented delta and scaling law.
+Broadphase bounds find candidates. Final rendering, traversal, light, ray, and contact
+behavior uses the exact plane and rectangular aperture.
 
-### D10. Stage-sized commits
+### D11. Source and destination lighting remain distinct
 
-Each implementation stage is independently buildable, tested, reviewable, and revertible. The complete suite is green at every merge gate. A stage that cannot remain green is too large or has an unresolved contract.
+Source and destination render representations use lighting, probes, baked data, and shadows
+from their own spatial domain. Lighting is not copied as object state.
 
-## 6. Stage order
+### D12. Storage migration preserves identity
 
-### Stage 0. Baseline and reproduction harness
+A completed traversal may move a nonpersistent entity to the destination storage partition.
+The move uses the unified runtime migration mechanism and preserves `EntityId`, component
+state, and retained backend identity.
 
-Before product code:
+### D13. Measurements define budgets
 
-1. Record branch commit, compiler, configuration, GPU, driver, resolution, and present mode.
-2. Build the deterministic two-room scene with authored openings.
-3. Add a scripted camera and repeatable character path.
-4. Capture no-portal render and physics baselines.
-5. Confirm the existing profiling Off path remains inert.
-6. Confirm the canonical build and test workflow is green.
+No arbitrary millisecond or memory budget is invented. Each stage records a control and
+feature baseline on the same hardware, build, resolution, scene, and scripted path.
 
-Output:
+### D14. Stage-sized commits
 
-- baseline evidence README;
-- reduced capture summaries;
-- no portal runtime code.
+Each stage is independently buildable, tested, reviewable, and revertible. The complete suite
+is green at every merge gate.
 
-### Stage 1. Link data and pure geometry
+## 7. Stage order
 
-Implement:
+### Stage U. Unified runtime dependency gate
 
-- strong link identity;
-- component registration and serialization;
-- endpoint resolver;
-- rigid portal transform;
-- signed distance and aperture projection;
-- continuous segment crossing;
-- one-hop point, direction, orientation, and velocity mapping;
-- validation and debug drawing.
+Required before runtime portal code:
 
-No renderer or physics integration beyond pure tests.
+1. One shipping runtime `World`.
+2. Zone storage partitions and domain partition sets.
+3. Persistent partition.
+4. Durable `StableEntityRef` encoding and resolution.
+5. Detached package fixups for stable references.
+6. Entity partition migration preserving `EntityId`.
+7. Participation leases.
+8. One simulation-scoped physics scene with zone-indexed record families.
+9. Current lighting architecture integrated onto the unified runtime.
+10. Legacy runtime registry paths deleted.
 
-### Stage 2. v0.1 character traversal
+If any contract differs when merged, revise this suite before implementation.
 
-Implement character candidate collection, overlap state, center-plane crossing, velocity and facing transfer, hysteresis, and backing out.
+### Stage 0. Baseline and fixtures
 
-The stage must pass headless character tests before rendering begins.
+Record compiler, build, GPU, driver, resolution, present mode, worker count, unified-runtime
+commit, and lighting commit. Build deterministic portal, character, physics, lighting, and
+remote-zone fixtures. Capture zero-portal baselines.
+
+### Stage 1. Relationship data and pure geometry
+
+Implement endpoint and relationship components, durable reference resolution, editor commands,
+validation, rigid transforms, aperture math, continuous crossing, and debug visualization.
+
+No renderer or physics integration beyond pure and resolution tests.
+
+### Stage 2. Destination demand and v0.1 character traversal
+
+Implement one-hop participation leases, destination availability, overlap state, center-plane
+crossing, pose and velocity transfer, transfer staging, optional partition migration, and
+backing out.
+
+Headless tests pass before portal rendering begins.
 
 ### Stage 3. v0.1 view rendering
 
-Implement visible-aperture ranking, portal cameras, offscreen targets, destination clipping, surface compositing, resize and teardown, counters, GPU scopes, and captures.
+Implement partition-aware destination extraction, visible-aperture ranking, portal cameras,
+offscreen targets, destination clipping, surface compositing, resize and teardown, counters,
+GPU scopes, and captures.
 
-v0.1 is complete only after the combined character and render acceptance scene passes.
+### Stage 4. Crossing render representations
 
-### Stage 4. General rigid-body foundation
+Implement clipped source and destination records for static, kinematic, skinned, and scripted
+dynamic meshes. Integrate stable synthetic identity and shadow-caster extraction.
 
-Complete angular state and force/contact mechanisms in the physics facade, component bridge, and tests. No portal body is introduced until this stage is complete and independently useful.
+### Stage 5. Unified physics portal record foundation
 
-### Stage 5. Coupled-body investigation spike
+Add the dedicated portal body record family and the contact, constraint, angular-state,
+partition-index, lifecycle, and diagnostic mechanisms required by the coupling spike.
 
-Implement two isolated candidates behind test-only or physics-internal code:
+### Stage 6. Coupled-body investigation
 
-1. a canonical body plus transformed collision proxy with contact impulse relay;
-2. two dynamic bodies coupled by a portal transform constraint with corrected effective mass.
+Implement and measure:
 
-Run the adversarial matrix in `03-` and `05-`. Choose one based on evidence. Delete the rejected candidate from production code.
+1. canonical body plus transformed collision proxy with impulse relay;
+2. transform-constrained dynamic pair with corrected effective mass.
 
-### Stage 6. Crossing render representations
+Choose by evidence. Delete the rejected production candidate.
 
-Implement clipped source and destination representations for static, kinematic, dynamic, and skinned meshes. Integrate shadow-caster extraction and stable synthetic render identity.
+### Stage 7. Coupled rigid bodies and migration
 
-This stage may land before final coupled-body physics if it consumes scripted crossing state.
-
-### Stage 7. Coupled rigid bodies
-
-Implement full-shape overlap, source and destination contact filtering, proxy lifetime, impulse transfer, authority swap, sleeping, CCD policy, rim collision, and diagnostics.
+Implement full-shape overlap, source and destination contact filtering, proxy lifetime,
+authority swap, partition migration, sleep, wake, CCD policy, rim collision, leases, unload
+handling, and diagnostics.
 
 ### Stage 8. Static light transport
 
-Implement one-hop direct-light atlas baking and portal-aware probe rays. Extend cook hashes and deterministic world-cook assembly.
+Resolve links at world-cook scope. Implement one-hop direct-light atlas transport and
+portal-aware probe rays with deterministic hashes.
 
 ### Stage 9. Dynamic light transport
 
-Implement unshadowed point and spot images with exact aperture constraints, then portal-aware shadow maps and residency invalidation.
+Implement unshadowed point and spot images, then portal-aware shadow maps, stable residency,
+and invalidation across both endpoint partitions.
 
 ### Stage 10. Integration hardening
 
-Complete cross-zone residency behavior, editor visualization, content validation, many-portal caps, unload and teardown, sanitizers, profiling sweeps, evidence, and documentation.
+Complete remote-zone demand, editor tooling, forced teardown policies, caps, sanitizers,
+profiling sweeps, evidence, and documentation.
 
-## 7. Merge gates
+## 8. Merge gates
 
-Every stage must satisfy all applicable gates.
+### Relationship gate
 
-### Geometry gate
-
-- pure table-driven tests cover all frame and crossing math;
-- no NaN, infinity, or undefined orientation for valid inputs;
-- invalid scale and degenerate aperture are rejected;
-- serial output is byte-stable where serialized.
+- a relationship stores exactly two durable references;
+- A and B are distinct valid endpoints;
+- an endpoint is owned by at most one enabled relationship;
+- unresolved streaming state is distinct from malformed content;
+- stale resolution caches are rejected by epoch or validity checks;
+- partition-slot reuse cannot alias a former endpoint;
+- no runtime id is persisted.
 
 ### Rendering gate
 
-- Vulkan backend does not traverse ECS;
-- zero active portals allocates no portal targets and records no portal pass;
-- target count and pixel count are bounded;
-- resize, minimize, device teardown, and zone unload release resources;
-- nonrecursive behavior is explicit and tested;
-- profiling Off adds no capture, timestamp, history, or label work.
+- extraction consumes one `World` and explicit partition sets;
+- the backend never queries ECS;
+- zero active portals schedule no portal pass or target work;
+- view and target counts are bounded;
+- resize, minimize, unload, hot reload, and teardown release resources;
+- nonrecursive behavior is explicit and tested.
+
+### Transfer gate
+
+- spatial transfer and storage migration have one documented phase contract;
+- `EntityId` and component values survive migration;
+- migration happens at most once per committed crossing;
+- required partitions remain participating until transfer and clear complete;
+- a forced destination teardown produces an explicit safe outcome;
+- render and physics never reconstruct the gameplay entity.
 
 ### Physics gate
 
-- Jolt types remain inside the physics module;
+- one simulation-scoped backend owns canonical and proxy bodies;
+- Jolt types remain behind the physics boundary;
 - mass and inertia are not counted twice;
-- source and proxy never collide with one another;
-- contact forces on either side affect one canonical motion state;
+- contacts on either side affect one logical motion state;
 - no persistent penetration or unbounded correction impulse;
-- angular and linear state survive authority transfer;
-- sanitizer and long-run tests pass.
+- migration updates backend zone indices without body recreation;
+- sleep, wake, CCD, detach, and shutdown pass.
 
 ### Lighting gate
 
 - illumination cannot leak around the aperture;
-- occlusion on either side blocks the path;
-- portal images have stable identities;
-- light and shadow work is capped and deterministically prioritized;
-- static bake output is byte-identical for identical inputs;
-- link, light, geometry, and bake-setting changes restale exactly the affected outputs.
+- source and destination occlusion independently block transport;
+- stable request identity derives from the persistent relationship and source object;
+- work is bounded and deterministically prioritized;
+- bake output is byte-identical for identical inputs;
+- link, endpoint, light, geometry, and setting changes restale exactly affected outputs.
 
 ### Performance gate
 
-- control scenario remains within measured run-to-run noise;
-- cost scales with visible portal pixels, extracted visible content, active crossing bodies, and transmitted lights, not total world content;
-- peak target and proxy memory stays within documented formulas and caps;
-- median, p95, and p99 deltas are recorded;
-- no performance claim is made without a reproducible method.
+- the zero-portal path remains inside measured noise;
+- cost scales with selected target pixels, visible destination content, active crossing bodies,
+  and transmitted lights rather than total resident world content;
+- remote dormant zones add no per-entity hot-path work;
+- target, proxy, lease, and cache memory obey documented caps;
+- median, p95, and p99 deltas are recorded.
 
-## 8. Stop conditions
+## 9. Stop conditions
 
-Stop and request owner review before implementation proceeds when:
+Stop and request owner review when:
 
-1. The clean design requires a public SDK or game-module ABI change.
-2. A persisted or cooked format needs migration rather than an additive field.
-3. A portal must cut arbitrary runtime collision to satisfy the intended content workflow.
-4. A moving endpoint becomes required.
-5. One body must occupy more than two spaces simultaneously.
-6. Jolt cannot expose the contact or constraint information needed without leaking backend types.
-7. The coupled-body spike cannot conserve motion within the control-scene error envelope.
-8. Portal light shadows require an unbounded caster expansion or recursive render path.
-9. Cross-zone traversal would require policy inside `ZoneRuntime` rather than an explicit demand source above it.
-10. A proposed interface has only one implementation and no real module, backend, or test boundary.
-11. A stage requires a lock, raw thread, `std::async`, or third worker lane.
-12. The no-feature path gains measurable allocation, GPU work, or broad registry scans.
-13. A test failure is being hidden by tolerance inflation, sleeps, snapshots, or disabled coverage.
-14. A plan assumption disagrees with current source or tests.
+1. Durable stable-reference support is not complete enough for world-scene relationship data.
+2. The unified runtime or lighting integration changes a relied-on ownership contract.
+3. A public SDK or game-module ABI change becomes necessary.
+4. A persisted or cooked format needs nonadditive migration.
+5. Runtime collision carving becomes required.
+6. Moving endpoints become required.
+7. One body must occupy more than two portal-related coordinate spaces.
+8. Jolt cannot provide the required contact or constraint mechanism without leaking types.
+9. A portal relationship would need to become topology policy inside `ZoneRuntime`.
+10. Destination participation cannot be expressed through existing lease mechanisms.
+11. A new interface has one implementation and no real module or backend boundary.
+12. A stage requires a lock, raw thread, `std::async`, or third worker lane.
+13. The zero-portal path gains measurable allocations, GPU work, or broad world scans.
+14. A test is being hidden by tolerance inflation, sleeps, snapshots, or disabled coverage.
+15. A plan assumption disagrees with merged source or tests.
 
-## 9. Definition of done
+## 10. Definition of done
 
 v0.1 is done when:
 
-- the authored acceptance scene renders both links correctly from arbitrary angles;
-- the player traverses in both directions with transformed view and velocity;
+- two persistent relationships resolve same-zone and cross-zone endpoint pairs;
+- a spatially remote destination is requested explicitly and never by proximity inference;
+- portal views render correctly from arbitrary angles;
+- the player traverses both directions with transformed view and velocity;
+- a zone-owned test entity migrates partitions without changing `EntityId`;
 - the player may stop halfway, back out, graze an edge, and cross at high speed;
-- no recursive view is scheduled;
-- zero, one, and many visible-portal cases are bounded and diagnosed;
-- focused tests, complete tests, validation, and profiling evidence pass.
+- unavailable destination behavior is safe and diagnosed;
+- no recursive destination is scheduled;
+- focused tests, complete tests, sanitizers, captures, and profiling evidence pass.
 
 v1.0 is done when:
 
 - renderable entities split cleanly across the plane;
 - a long dynamic collider behaves as one body across both spaces;
 - source and destination contacts produce coherent translation and torque;
-- direct atlas lighting and probe transport cross static links;
+- storage migration and backend zone indices remain correct;
+- unload and reload restore durable endpoint resolution;
+- direct atlases and probes transport light through static links;
 - dynamic point and spot lights cross links without aperture leakage;
 - shadowed lights respect occluders on both sides;
-- cross-zone unload, sleep, wake, CCD, resize, and teardown paths are proven;
+- remote zones, caps, sleep, wake, CCD, resize, teardown, and forced detach pass;
 - the adversarial matrix and profiling gates pass;
-- all deferred limitations are explicit and none are described as implemented.
+- every deferred limitation is explicit.
