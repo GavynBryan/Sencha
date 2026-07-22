@@ -9,8 +9,10 @@
 #include "CookStepCache.h"
 #include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
+#include "DocumentBakeOcclusion.h"
 #include "DocumentCookFingerprints.h"
 #include "DocumentCookPaths.h"
+#include "DocumentCookReuse.h"
 #include "DocumentImportPublisher.h"
 #include "EditorDocument.h"
 
@@ -191,30 +193,10 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     std::vector<LightmapPlacement>& placements = snapshot.Placements;
     const std::span<const ProbeHaloZone> halo = snapshot.Halo;
     CookArtifactTransaction transaction(assetsRoot, sourceRel);
-    // Neighbor-zone halo: read-only occluder geometry other zones offered.
-    // Only zones within probe-ray reach of this zone's bake inputs
-    // participate; the selected set folds into the cook hash, so a neighbor
-    // edit within reach restales this zone and one beyond reach does not. The
-    // occlusion BVH below consumes the same reachable set.
-    std::vector<const ProbeHaloZone*> reachableHalo;
-    Aabb3d bakeBounds = Aabb3d::Empty();
-    if ((!bakeLights.empty() || !probeVolumes.empty()) && !halo.empty())
-    {
-        for (const CookBrushGeometry& brush : brushes)
-            bakeBounds.ExpandToInclude(brush.WorldBounds);
-        for (const LightmapPlacement& placement : placements)
-            if (placement.CastsIntoBake)
-                for (const StaticMeshVertex& vertex : placement.Geometry.Vertices)
-                    bakeBounds.ExpandToInclude(
-                        placement.ToWorld.TransformPoint(vertex.Position));
-        for (const ProbeVolumeInput& volume : probeVolumes)
-            bakeBounds.ExpandToInclude(volume.Grid.Bounds());
-        reachableHalo = SelectProbeHaloZones(bakeBounds, halo,
-                                             lightmapParams.Probe.MaxRayDistance);
-    }
+    const DocumentBakeExtent bakeExtent = SelectDocumentBakeExtent(snapshot);
 
     const DocumentCookFingerprints fingerprints =
-        ComputeDocumentCookFingerprints(snapshot, cellSize, reachableHalo);
+        ComputeDocumentCookFingerprints(snapshot, cellSize, bakeExtent.ReachableHalo);
     const std::uint64_t geometryHash = fingerprints.Document;
     const DocumentCookPaths paths = DeriveDocumentCookPaths(
         assetsRoot, sourceRel, stem, request.OutputNamespace, geometryHash);
@@ -237,59 +219,18 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     }
     const bool referencedAssetsFresh = pendingImports.Artifacts.empty();
 
-    CookedCacheIndex cachedIndex;
     DocumentCookReceipt cachedReceipt;
     const bool hasCachedReceipt = !request.ForceRebuild
         && LoadDocumentCookReceipt(paths.Receipt, cachedReceipt);
     std::error_code cacheEc;
-    if (!request.ForceRebuild
-        && referencedAssetsFresh
-        && CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), cachedIndex)
-        && hasCachedReceipt
-        && cachedReceipt.PublishedProfileId == profile.Id
-        && cachedReceipt.PublishedFingerprint == geometryHash
-        && std::filesystem::exists(paths.Scene, cacheEc)
-        && std::filesystem::exists(paths.Manifest, cacheEc)
-        && std::filesystem::exists(paths.Collision, cacheEc))
-    {
-        const CookedSourceEntry* cached = cachedIndex.Find(sourceRel);
-        if (cached != nullptr && cached->InputFingerprint == geometryHash
-            && CookedSourceArtifactsMatch(assetsRoot, *cached))
-        {
-            result.Success = true;
-            result.CacheHit = true;
-            result.ReusedSteps = request.Graph.OrderedSteps;
-            result.ProfileId = profile.Id;
-            result.ContentHash = geometryHash;
-            result.CookedScenePath = paths.Scene;
-            result.ManifestPath = paths.Manifest;
-            result.CollisionSidecarPath = paths.Collision;
-            if (const CookStepReceipt* publication =
-                    FindCookStepReceipt(cachedReceipt, DocumentCookStepIds::Publication))
-                RestoreDocumentCookResultMetadata(publication->Metadata, result);
-            for (const CookedArtifact& artifact : cached->Artifacts)
-                if (artifact.Type == AssetType::StaticMesh)
-                    result.GeneratedMeshPaths.push_back(artifact.Path);
-            progress.Finish();
-            return result;
-        }
-    }
+    if (std::optional<DocumentCookResult> hit = TryDocumentCookCacheHit(
+            request, paths, assetsRoot, sourceRel, geometryHash,
+            referencedAssetsFresh, hasCachedReceipt, cachedReceipt, progress))
+        return *hit;
 
     const DocumentCookReceipt* priorReceipt = hasCachedReceipt ? &cachedReceipt : nullptr;
-    const CookStepReceipt* reusableDirect = !bakeLights.empty()
-        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::DirectLightmap,
-                       fingerprints.Direct)
-        : nullptr;
-    const CookStepReceipt* reusableAo = lightmapParams.Ao.Enabled
-        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::AmbientOcclusion,
-                       fingerprints.Ao)
-        : nullptr;
-    const bool reuseLighting = reusableDirect != nullptr
-        && (!lightmapParams.Ao.Enabled || reusableAo != nullptr);
-    const CookStepReceipt* reusableProbes = !probeVolumes.empty()
-        ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::IrradianceProbes,
-                       fingerprints.Probe)
-        : nullptr;
+    const DocumentCookReuse reuse =
+        ResolveDocumentCookReuse(priorReceipt, assetsRoot, snapshot, fingerprints);
     progress.Begin(DocumentCookStepIds::BrushCells);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
     progress.Complete();
@@ -459,8 +400,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // a light in one cell shadows onto its neighbors, and probe rays see the
     // whole document plus any neighbor-zone halo within reach.
     BakeBvh occlusionBvh;
-    const bool needsOcclusion = (!bakeLights.empty() && !reuseLighting)
-        || (!probeVolumes.empty() && reusableProbes == nullptr);
+    const bool needsOcclusion = (!bakeLights.empty() && !reuse.ReuseLighting)
+        || (!probeVolumes.empty() && reuse.Probes == nullptr);
     if (needsOcclusion)
     {
         progress.Begin(DocumentCookStepIds::OcclusionGeometry);
@@ -474,7 +415,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             if (placement.CastsIntoBake)
                 GatherWorldTriangles(placement.Geometry, placement.ToWorld, occluders);
         occlusionBvh.Build(AssembleProbeBakeTriangles(
-            std::move(occluders), bakeBounds, halo,
+            std::move(occluders), bakeExtent.Bounds, halo,
             lightmapParams.Probe.MaxRayDistance));
         progress.Complete();
         if (progress.Cancelled(result))
@@ -489,12 +430,12 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         result.LightmapAtlasWidth = atlasLayout.Width;
         result.LightmapAtlasHeight = atlasLayout.Height;
         result.EffectiveLuxelSize = atlasLayout.EffectiveLuxelSize;
-        if (reuseLighting)
+        if (reuse.ReuseLighting)
         {
             std::string restoreError;
             progress.Begin(CookStepIds::DirectLightmap);
             CookedArtifact restoredDirect;
-            if (!catalog.RestoreStep(*reusableDirect, assetsRoot, transaction,
+            if (!catalog.RestoreStep(*reuse.Direct, assetsRoot, transaction,
                                      true, restoredDirect, &restoreError))
             {
                 result.Error = "CookDocument: " + restoreError;
@@ -502,7 +443,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             }
             directLightmapArtifact = restoredDirect;
             result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
-            RestoreDocumentCookResultMetadata(reusableDirect->Metadata, result);
+            RestoreDocumentCookResultMetadata(reuse.Direct->Metadata, result);
             progress.Complete();
 
             JsonValue::Object lightmapFields{
@@ -512,7 +453,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             {
                 progress.Begin(CookStepIds::AmbientOcclusion);
                 CookedArtifact restoredAo;
-                if (!catalog.RestoreStep(*reusableAo, assetsRoot, transaction,
+                if (!catalog.RestoreStep(*reuse.Ao, assetsRoot, transaction,
                                          true, restoredAo, &restoreError))
                 {
                     result.Error = "CookDocument: " + restoreError;
@@ -693,11 +634,11 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     if (!probeVolumes.empty())
     {
         progress.Begin(CookStepIds::IrradianceProbes);
-        if (reusableProbes != nullptr)
+        if (reuse.Probes != nullptr)
         {
             std::string restoreError;
             CookedArtifact restoredProbe;
-            if (!catalog.RestoreStep(*reusableProbes, assetsRoot, transaction,
+            if (!catalog.RestoreStep(*reuse.Probes, assetsRoot, transaction,
                                      false, restoredProbe, &restoreError))
             {
                 result.Error = "CookDocument: " + restoreError;
@@ -706,7 +647,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             probeArtifact = restoredProbe;
             result.ReusedSteps.push_back(
                 std::string(CookStepIds::IrradianceProbes));
-            RestoreDocumentCookResultMetadata(reusableProbes->Metadata, result);
+            RestoreDocumentCookResultMetadata(reuse.Probes->Metadata, result);
             progress.Complete();
         }
         else
@@ -960,7 +901,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         },
     });
 
-    if (directLightmapArtifact.has_value() && !reuseLighting)
+    if (directLightmapArtifact.has_value() && !reuse.ReuseLighting)
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *directLightmapArtifact, sourceRel, CookStepIds::DirectLightmap,
@@ -984,7 +925,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             .Metadata = DocumentCookResultMetadata(result),
         });
     }
-    if (ambientOcclusionArtifact.has_value() && !reuseLighting)
+    if (ambientOcclusionArtifact.has_value() && !reuse.ReuseLighting)
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *ambientOcclusionArtifact, sourceRel, CookStepIds::AmbientOcclusion,
@@ -1005,7 +946,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             .Metadata = DocumentCookResultMetadata(result),
         });
     }
-    if (probeArtifact.has_value() && reusableProbes == nullptr)
+    if (probeArtifact.has_value() && reuse.Probes == nullptr)
     {
         CookedArtifact cached = CacheCookStepArtifact(
             *probeArtifact, sourceRel, CookStepIds::IrradianceProbes,
