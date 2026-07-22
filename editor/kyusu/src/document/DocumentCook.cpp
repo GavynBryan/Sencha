@@ -7,8 +7,10 @@
 #include "CookGraph.h"
 #include "CookReceipt.h"
 #include "CookStepCache.h"
+#include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
 #include "DocumentCookFingerprints.h"
+#include "DocumentCookPaths.h"
 #include "DocumentImportPublisher.h"
 #include "EditorDocument.h"
 
@@ -39,7 +41,6 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <format>
 #include <optional>
 #include <span>
 #include <string>
@@ -175,37 +176,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     DocumentCookSnapshot& snapshot = input.Snapshot;
     const CookProfile& profile = request.Profile;
     result.ProfileId = profile.Id;
-    const std::shared_ptr<CookControl>& control = request.Control;
-    if (control != nullptr)
-    {
-        control->TotalSteps.store(static_cast<std::uint32_t>(request.Graph.OrderedSteps.size()));
-        control->CompletedSteps.store(0);
-        control->CurrentStep.store(0);
-    }
-    const auto beginStep = [&request, &control](std::string_view step)
-    {
-        if (control == nullptr)
-            return;
-        const auto found = std::find(request.Graph.OrderedSteps.begin(),
-                                     request.Graph.OrderedSteps.end(), step);
-        if (found != request.Graph.OrderedSteps.end())
-            control->CurrentStep.store(static_cast<std::uint32_t>(
-                std::distance(request.Graph.OrderedSteps.begin(), found)));
-    };
-    const auto completeStep = [&control]
-    {
-        if (control != nullptr)
-            control->CompletedSteps.fetch_add(1);
-    };
-    const auto cancelled = [&control, &result]
-    {
-        if (control == nullptr || !control->IsCancellationRequested())
-            return false;
-        result.Cancelled = true;
-        result.Error = "CookDocument: cancelled";
-        return true;
-    };
-    if (cancelled())
+    CookStepProgress progress(request.Control, request.Graph.OrderedSteps);
+    if (progress.Cancelled(result))
         return result;
     const bool runCollisionTarget = request.Selects(CookStepIds::Collision);
     const bool runReferencedAssets = request.Selects(CookStepIds::ReferencedAssets);
@@ -244,17 +216,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     const DocumentCookFingerprints fingerprints =
         ComputeDocumentCookFingerprints(snapshot, cellSize, reachableHalo);
     const std::uint64_t geometryHash = fingerprints.Document;
-    const std::string stemStr = request.OutputNamespace.empty()
-        ? std::string(stem)
-        : request.OutputNamespace + "/" + std::format("{:016x}", geometryHash);
-
-    const std::filesystem::path activeCookedDir = assetsRoot / ".cooked/levels";
-    const std::filesystem::path activeScene = activeCookedDir / (stemStr + ".cooked.json");
-    const std::filesystem::path activeManifest = activeCookedDir / (stemStr + ".manifest.json");
-    const std::filesystem::path activeCollision = activeCookedDir / (stemStr + ".collision.json");
-    const std::filesystem::path activeReceipt =
-        DocumentCookReceiptPath(assetsRoot, sourceRel);
-    const std::filesystem::path activeIndex = assetsRoot / ".cooked/index.json";
+    const DocumentCookPaths paths = DeriveDocumentCookPaths(
+        assetsRoot, sourceRel, stem, request.OutputNamespace, geometryHash);
+    const std::string& stemStr = paths.Stem;
 
     // Referenced-asset freshness runs before the whole-document fast path: a
     // changed or missing referenced import produces a non-empty prepared set,
@@ -264,29 +228,29 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     PendingAssetImport pendingImports;
     if (runReferencedAssets)
     {
-        beginStep(CookStepIds::ReferencedAssets);
+        progress.Begin(CookStepIds::ReferencedAssets);
         PngTextureImporter textureImporter;
         AssetImporterRegistry importers;
         importers.Register(textureImporter);
         (void)PrepareAssetsOnDemand(assetsRoot, importers, logging, pendingImports);
-        completeStep();
+        progress.Complete();
     }
     const bool referencedAssetsFresh = pendingImports.Artifacts.empty();
 
     CookedCacheIndex cachedIndex;
     DocumentCookReceipt cachedReceipt;
     const bool hasCachedReceipt = !request.ForceRebuild
-        && LoadDocumentCookReceipt(activeReceipt, cachedReceipt);
+        && LoadDocumentCookReceipt(paths.Receipt, cachedReceipt);
     std::error_code cacheEc;
     if (!request.ForceRebuild
         && referencedAssetsFresh
-        && CookedCacheIndex::LoadFromFile(activeIndex.generic_string(), cachedIndex)
+        && CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), cachedIndex)
         && hasCachedReceipt
         && cachedReceipt.PublishedProfileId == profile.Id
         && cachedReceipt.PublishedFingerprint == geometryHash
-        && std::filesystem::exists(activeScene, cacheEc)
-        && std::filesystem::exists(activeManifest, cacheEc)
-        && std::filesystem::exists(activeCollision, cacheEc))
+        && std::filesystem::exists(paths.Scene, cacheEc)
+        && std::filesystem::exists(paths.Manifest, cacheEc)
+        && std::filesystem::exists(paths.Collision, cacheEc))
     {
         const CookedSourceEntry* cached = cachedIndex.Find(sourceRel);
         if (cached != nullptr && cached->InputFingerprint == geometryHash
@@ -297,17 +261,16 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             result.ReusedSteps = request.Graph.OrderedSteps;
             result.ProfileId = profile.Id;
             result.ContentHash = geometryHash;
-            result.CookedScenePath = activeScene;
-            result.ManifestPath = activeManifest;
-            result.CollisionSidecarPath = activeCollision;
+            result.CookedScenePath = paths.Scene;
+            result.ManifestPath = paths.Manifest;
+            result.CollisionSidecarPath = paths.Collision;
             if (const CookStepReceipt* publication =
                     FindCookStepReceipt(cachedReceipt, DocumentCookStepIds::Publication))
                 RestoreDocumentCookResultMetadata(publication->Metadata, result);
             for (const CookedArtifact& artifact : cached->Artifacts)
                 if (artifact.Type == AssetType::StaticMesh)
                     result.GeneratedMeshPaths.push_back(artifact.Path);
-            if (control != nullptr)
-                control->CompletedSteps.store(control->TotalSteps.load());
+            progress.Finish();
             return result;
         }
     }
@@ -327,13 +290,13 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         ? FindReusableCookStep(priorReceipt, assetsRoot, CookStepIds::IrradianceProbes,
                        fingerprints.Probe)
         : nullptr;
-    beginStep(DocumentCookStepIds::BrushCells);
+    progress.Begin(DocumentCookStepIds::BrushCells);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
-    completeStep();
-    if (cancelled())
+    progress.Complete();
+    if (progress.Cancelled(result))
         return result;
     const bool runCollision = runCollisionTarget
-        || !std::filesystem::exists(activeCollision, cacheEc);
+        || !std::filesystem::exists(paths.Collision, cacheEc);
 
     // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
     // the per-cell mesh bake: the weld compares whole vertices, so identical
@@ -342,7 +305,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     LightmapAtlasLayout atlasLayout;
     if (!bakeLights.empty())
     {
-        beginStep(DocumentCookStepIds::LightmapSurfaces);
+        progress.Begin(DocumentCookStepIds::LightmapSurfaces);
         // Placements pack into the same zone atlas as the brush charts: one
         // rect per placement, sized by the world span its [0,1] sheet covers.
         std::vector<Vec2d> extents = charts.Extents;
@@ -404,8 +367,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                 "cook: lightmap atlas overflowed {}x{}; luxel size clamped {} -> {}",
                 lightmapParams.MaxAtlasSize, lightmapParams.MaxAtlasSize,
                 lightmapParams.LuxelSize, luxel);
-        completeStep();
-        if (cancelled())
+        progress.Complete();
+        if (progress.Cancelled(result))
             return result;
     }
 
@@ -429,10 +392,10 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     };
     std::vector<PendingCellMesh> pendingMeshes;
 
-    beginStep(CookStepIds::RenderMeshes);
+    progress.Begin(CookStepIds::RenderMeshes);
     for (const BrushCell& cell : cells)
     {
-        if (cancelled())
+        if (progress.Cancelled(result))
             return result;
         std::vector<AssetRef> order = CollectMaterialOrder(cell.Faces);
 
@@ -488,9 +451,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             }
         }
     }
-    completeStep();
+    progress.Complete();
     if (runCollision)
-        completeStep();
+        progress.Complete();
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
     // a light in one cell shadows onto its neighbors, and probe rays see the
@@ -500,7 +463,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         || (!probeVolumes.empty() && reusableProbes == nullptr);
     if (needsOcclusion)
     {
-        beginStep(DocumentCookStepIds::OcclusionGeometry);
+        progress.Begin(DocumentCookStepIds::OcclusionGeometry);
         std::vector<BakeTriangle> occluders;
         for (const PendingCellMesh& pending : pendingMeshes)
             GatherWorldTriangles(pending.Geometry,
@@ -513,8 +476,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         occlusionBvh.Build(AssembleProbeBakeTriangles(
             std::move(occluders), bakeBounds, halo,
             lightmapParams.Probe.MaxRayDistance));
-        completeStep();
-        if (cancelled())
+        progress.Complete();
+        if (progress.Cancelled(result))
             return result;
     }
 
@@ -529,7 +492,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         if (reuseLighting)
         {
             std::string restoreError;
-            beginStep(CookStepIds::DirectLightmap);
+            progress.Begin(CookStepIds::DirectLightmap);
             CookedArtifact restoredDirect;
             if (!catalog.RestoreStep(*reusableDirect, assetsRoot, transaction,
                                      true, restoredDirect, &restoreError))
@@ -540,14 +503,14 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             directLightmapArtifact = restoredDirect;
             result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
             RestoreDocumentCookResultMetadata(reusableDirect->Metadata, result);
-            completeStep();
+            progress.Complete();
 
             JsonValue::Object lightmapFields{
                 { "texture", JsonValue(directLightmapArtifact->Path) },
             };
             if (lightmapParams.Ao.Enabled)
             {
-                beginStep(CookStepIds::AmbientOcclusion);
+                progress.Begin(CookStepIds::AmbientOcclusion);
                 CookedArtifact restoredAo;
                 if (!catalog.RestoreStep(*reusableAo, assetsRoot, transaction,
                                          true, restoredAo, &restoreError))
@@ -560,7 +523,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                     std::string(CookStepIds::AmbientOcclusion));
                 lightmapFields.push_back({
                     "ao", JsonValue(ambientOcclusionArtifact->Path) });
-                completeStep();
+                progress.Complete();
             }
             cellEntities.push_back(JsonValue(JsonValue::Object{
                 { "components", JsonValue(JsonValue::Object{
@@ -570,7 +533,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         }
         else
         {
-        beginStep(CookStepIds::DirectLightmap);
+        progress.Begin(CookStepIds::DirectLightmap);
 
         // Gather each chart's triangles (world positions + smoothed normals +
         // chart grid UVs) from the pre-weld cell faces, then rasterize and
@@ -649,7 +612,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         }
         for (std::size_t c = 0; c < chartTriangles.size(); ++c)
         {
-            if (cancelled())
+            if (progress.Cancelled(result))
                 return result;
             BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], bakeLights,
                             occlusionBvh, lightmapParams.Shading,
@@ -715,11 +678,11 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                 { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
             }) },
         }));
-        completeStep();
+        progress.Complete();
         if (bakeAo)
         {
-            beginStep(CookStepIds::AmbientOcclusion);
-            completeStep();
+            progress.Begin(CookStepIds::AmbientOcclusion);
+            progress.Complete();
         }
         }
     }
@@ -729,7 +692,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // the runtime locates the file by the cooked-scene path convention.
     if (!probeVolumes.empty())
     {
-        beginStep(CookStepIds::IrradianceProbes);
+        progress.Begin(CookStepIds::IrradianceProbes);
         if (reusableProbes != nullptr)
         {
             std::string restoreError;
@@ -744,7 +707,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
             result.ReusedSteps.push_back(
                 std::string(CookStepIds::IrradianceProbes));
             RestoreDocumentCookResultMetadata(reusableProbes->Metadata, result);
-            completeStep();
+            progress.Complete();
         }
         else
         {
@@ -757,7 +720,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         std::size_t probeCount = 0;
         for (std::size_t i = 0; i < probeVolumes.size(); ++i)
         {
-            if (cancelled())
+            if (progress.Cancelled(result))
                 return result;
             const ProbeVolumeInput& input = probeVolumes[i];
             const ProbeVolumeBakeResult baked = BakeProbeVolume(
@@ -788,7 +751,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         probeArtifact = catalog.AddProbeVolume("asset://" + probeRel, ".cooked/" + probeRel);
         result.ProbeVolumeCount = probeVolumes.size();
         result.ProbeCount = probeCount;
-        completeStep();
+        progress.Complete();
         }
     }
 
@@ -803,7 +766,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     }
 
     JsonValue cooked = std::move(snapshot.PassthroughScene);
-    beginStep(DocumentCookStepIds::CookedScene);
+    progress.Begin(DocumentCookStepIds::CookedScene);
     bool appended = false;
     if (cooked.IsObject())
         for (auto& [key, value] : cooked.AsObject())
@@ -819,17 +782,12 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         result.Error = "CookDocument: assembled scene has no entities array";
         return result;
     }
-    completeStep();
-    if (cancelled())
+    progress.Complete();
+    if (progress.Cancelled(result))
         return result;
 
     std::error_code ec;
-    const std::filesystem::path cookedDir = assetsRoot / ".cooked/levels";
-    std::filesystem::create_directories(cookedDir, ec);
-    const std::filesystem::path cookedScenePath = cookedDir / (stemStr + ".cooked.json");
-    const std::filesystem::path manifestPath = cookedDir / (stemStr + ".manifest.json");
-    const std::filesystem::path collisionSidecarPath =
-        cookedDir / (stemStr + ".collision.json");
+    std::filesystem::create_directories(paths.CookedDir, ec);
 
     // Collision sidecar: the runtime loads this at map load (LoadZoneCollision)
     // to spawn the level's static brush colliders. Empty array if no brushes.
@@ -845,7 +803,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
                     JsonValue(static_cast<double>(entry.Origin.Y)),
                     JsonValue(static_cast<double>(entry.Origin.Z)) }) },
             }));
-        std::ofstream sidecarFile(transaction.Stage(collisionSidecarPath));
+        std::ofstream sidecarFile(transaction.Stage(paths.Collision));
         sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
         if (!sidecarFile.good())
         {
@@ -873,8 +831,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         result.Error = "CookDocument: " + cookError;
         return result;
     }
-    const std::filesystem::path stagedManifest = transaction.Stage(manifestPath);
-    const std::filesystem::path stagedScene = transaction.Stage(cookedScenePath);
+    const std::filesystem::path stagedManifest = transaction.Stage(paths.Manifest);
+    const std::filesystem::path stagedScene = transaction.Stage(paths.Scene);
     if (!WriteCookedScene(cooked, catalog.SceneRefs(), physicalPathFor,
             transaction.Stage(idMapPath), stagedManifest, stagedScene, &cookError))
     {
@@ -890,9 +848,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // = brush-geometry hash). The index loads active (prepare left it untouched);
     // the prepared imports, their index deltas, and the level entry then publish
     // through this one staged index and the transaction, committing together.
-    const std::filesystem::path indexPath = assetsRoot / ".cooked/index.json";
     CookedCacheIndex index;
-    (void)CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index); // cold cache is fine
+    (void)CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), index); // cold cache is fine
     if (runReferencedAssets)
     {
         std::unordered_set<std::string> documentArtifactPaths;
@@ -935,8 +892,8 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     }
     entry.Artifacts = catalog.Artifacts();
     index.Put(std::move(entry));
-    if (!transaction.Seed(indexPath, &cookError)
-        || !index.SaveToFile(transaction.Stage(indexPath).generic_string()))
+    if (!transaction.Seed(paths.Index, &cookError)
+        || !index.SaveToFile(transaction.Stage(paths.Index).generic_string()))
     {
         result.Error = "CookDocument: could not stage cooked cache index";
         return result;
@@ -1077,29 +1034,28 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         .Artifacts = std::move(catalog.Artifacts()),
         .Metadata = DocumentCookResultMetadata(result),
     });
-    if (!SaveDocumentCookReceipt(transaction.Stage(activeReceipt), receipt, &cookError))
+    if (!SaveDocumentCookReceipt(transaction.Stage(paths.Receipt), receipt, &cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return result;
     }
-    beginStep(DocumentCookStepIds::Publication);
-    if (cancelled())
+    progress.Begin(DocumentCookStepIds::Publication);
+    if (progress.Cancelled(result))
         return result;
     if (!transaction.Commit(&cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return result;
     }
-    completeStep();
+    progress.Complete();
 
     result.Success = true;
-    result.CookedScenePath = cookedScenePath;
-    result.ManifestPath = manifestPath;
-    result.CollisionSidecarPath = collisionSidecarPath;
+    result.CookedScenePath = paths.Scene;
+    result.ManifestPath = paths.Manifest;
+    result.CollisionSidecarPath = paths.Collision;
     result.ContentHash = geometryHash;
     result.CellCount = cells.size();
-    if (control != nullptr)
-        control->CompletedSteps.store(control->TotalSteps.load());
+    progress.Finish();
     return result;
 }
 } // namespace
