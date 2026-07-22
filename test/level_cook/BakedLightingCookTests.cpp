@@ -469,6 +469,39 @@ TEST_F(BakedLightingCookTest, NoLightingProfileWithdrawsPublishedLighting)
     EXPECT_EQ(buffer.str().find("ZoneLightmap"), std::string::npos);
 }
 
+// Characterization of the Preserve defect (deferred to the publication-plan
+// work, plan Stage 6). A profile that recooks structure and preserves lighting
+// (does not target it and does not withdraw it) leaves lightmap.stex on disk
+// but rebuilds the cooked scene without the ZoneLightmap component, so the
+// preserved atlas is orphaned: an effective withdrawal. Preserve should keep
+// the scene referencing the prior lighting output. Named for the desired
+// behavior; enable when the publication plan lands.
+TEST_F(BakedLightingCookTest, DISABLED_PreserveLightingKeepsSceneReferencingTheAtlas)
+{
+    const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+    ASSERT_TRUE(CookedSceneNamesZoneLightmap());
+
+    // Recook structure only. Lighting is neither targeted nor withdrawn, so its
+    // disposition stays the default Preserve.
+    CookProfile preserveLighting;
+    preserveLighting.Id = "preserve_lighting_test";
+    preserveLighting.Name = "Preserve Lighting Test";
+    preserveLighting.TargetSteps = { std::string(CookStepIds::RenderMeshes) };
+
+    const DocumentCookResult preserved = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &preserveLighting });
+    ASSERT_TRUE(preserved.Success) << preserved.Error;
+
+    // The atlas is preserved on disk today...
+    EXPECT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+    // ...but the rebuilt scene should still reference it. Currently it does not.
+    EXPECT_TRUE(CookedSceneNamesZoneLightmap())
+        << "a preserved lighting output must stay referenced by the cooked scene";
+}
+
 TEST_F(BakedLightingCookTest, LightingProfileRestoresWithdrawnStepArtifacts)
 {
     const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
