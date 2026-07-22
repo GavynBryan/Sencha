@@ -1,7 +1,6 @@
 #include "DocumentCook.h"
 #include "DocumentCookInputData.h"
 
-#include "BakeTriangleGather.h"
 #include "BrushCookInput.h"
 #include "CellArtifactCook.h"
 #include "CookArtifactTransaction.h"
@@ -24,35 +23,19 @@
 
 #include <assets/cook/BakeBvh.h>
 #include <assets/cook/BrushClustering.h>
-#include <assets/cook/BrushGeometryCook.h>
-#include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/LightmapAtlasPack.h>
-#include <assets/cook/LightmapRaster.h>
-#include <assets/cook/ProbeBake.h>
-#include <assets/cook/SceneCookOutput.h>
 #include <assets/cook/TextureCook.h>
-#include <assets/probes/ProbeVolumeFormat.h>
-#include <assets/static_mesh/MeshSerializer.h>
-#include <assets/texture/TextureSerializer.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/assets/RuntimeAssets.h>
-#include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
-#include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/MeshGeometry.h>
 
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <fstream>
 #include <optional>
 #include <span>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 JsonValue BuildCellEntity(const Vec3d& origin,
@@ -91,18 +74,21 @@ JsonValue BuildCellEntity(const Vec3d& origin,
     });
 }
 
-namespace
-{
-
-DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
-                                  std::string_view stem,
-                                  std::string_view sourceRel,
-                                  const std::filesystem::path& assetsRoot,
-                                  LoggingProvider& logging)
+DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
+                                       std::string_view levelName,
+                                       std::string_view sourceRel,
+                                       const std::filesystem::path& assetsRoot,
+                                       LoggingProvider& logging)
 {
     DocumentCookResult result;
-    const DocumentCookRequest& request = input.Request;
-    DocumentCookSnapshot& snapshot = input.Snapshot;
+    if (input.Input == nullptr)
+    {
+        result.Error = "CookDocument: empty cook input";
+        return result;
+    }
+    DocumentCookInput::Data& data = *input.Input;
+    const DocumentCookRequest& request = data.Request;
+    DocumentCookSnapshot& snapshot = data.Snapshot;
     const CookProfile& profile = request.Profile;
     result.ProfileId = profile.Id;
     CookStepProgress progress(request.Control, request.Graph.OrderedSteps);
@@ -114,11 +100,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     const double cellSize = request.CellSize;
     std::vector<BakeDirectLight>& bakeLights = snapshot.BakeLights;
     std::vector<ProbeVolumeInput>& probeVolumes = snapshot.ProbeVolumes;
-    std::vector<BakeDirectLight>& bounceLights = snapshot.BounceLights;
     CookChartSet& charts = snapshot.Charts;
     std::vector<CookBrushGeometry>& brushes = snapshot.Brushes;
     std::vector<LightmapPlacement>& placements = snapshot.Placements;
-    const std::span<const ProbeHaloZone> halo = snapshot.Halo;
     CookArtifactTransaction transaction(assetsRoot, sourceRel);
     const DocumentBakeExtent bakeExtent = SelectDocumentBakeExtent(snapshot);
 
@@ -126,7 +110,7 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         ComputeDocumentCookFingerprints(snapshot, cellSize, bakeExtent.ReachableHalo);
     const std::uint64_t geometryHash = fingerprints.Document;
     const DocumentCookPaths paths = DeriveDocumentCookPaths(
-        assetsRoot, sourceRel, stem, request.OutputNamespace, geometryHash);
+        assetsRoot, sourceRel, levelName, request.OutputNamespace, geometryHash);
     const std::string& stemStr = paths.Stem;
 
     // Referenced-asset freshness runs before the whole-document fast path: a
@@ -273,22 +257,6 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     result.CellCount = cells.size();
     progress.Finish();
     return result;
-}
-} // namespace
-
-DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
-                                       std::string_view levelName,
-                                       std::string_view sourceRel,
-                                       const std::filesystem::path& assetsRoot,
-                                       LoggingProvider& logging)
-{
-    if (input.Input == nullptr)
-    {
-        DocumentCookResult result;
-        result.Error = "CookDocument: empty cook input";
-        return result;
-    }
-    return CookDocumentKernel(*input.Input, levelName, sourceRel, assetsRoot, logging);
 }
 
 DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
