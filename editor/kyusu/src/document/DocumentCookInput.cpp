@@ -1,5 +1,6 @@
 #include "DocumentCookInputData.h"
 
+#include "BakeTriangleGather.h"
 #include "EditorDocument.h"
 
 #include <assets/static_mesh/MeshLoader.h>
@@ -412,19 +413,8 @@ std::optional<ProbeHaloZone> CollectZoneBakeHalo(
                     face.Triangles[i + 1].Position,
                     face.Triangles[i + 2].Position });
     for (const LightmapPlacement& placement : placements)
-    {
-        if (!placement.CastsIntoBake)
-            continue;
-        const MeshGeometry& geometry = placement.Geometry;
-        for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
-            zone.Triangles.push_back(BakeTriangle{
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i]].Position),
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i + 1]].Position),
-                placement.ToWorld.TransformPoint(
-                    geometry.Vertices[geometry.Indices[i + 2]].Position) });
-    }
+        if (placement.CastsIntoBake)
+            GatherWorldTriangles(placement.Geometry, placement.ToWorld, zone.Triangles);
 
     for (const BakeTriangle& triangle : zone.Triangles)
     {

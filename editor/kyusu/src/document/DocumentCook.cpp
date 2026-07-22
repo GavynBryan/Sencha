@@ -1,6 +1,7 @@
 #include "DocumentCook.h"
 #include "DocumentCookInputData.h"
 
+#include "BakeTriangleGather.h"
 #include "BrushCookInput.h"
 #include "CookArtifactTransaction.h"
 #include "CookGraph.h"
@@ -483,35 +484,13 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         beginStep(DocumentCookStepIds::OcclusionGeometry);
         std::vector<BakeTriangle> occluders;
         for (const PendingCellMesh& pending : pendingMeshes)
-        {
-            const Mat4 toWorld = Mat4::MakeTranslation(pending.Origin);
-            const MeshGeometry& geometry = pending.Geometry;
-            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
-            {
-                occluders.push_back(BakeTriangle{
-                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i]].Position),
-                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i + 1]].Position),
-                    toWorld.TransformPoint(geometry.Vertices[geometry.Indices[i + 2]].Position) });
-            }
-        }
+            GatherWorldTriangles(pending.Geometry,
+                                 Mat4::MakeTranslation(pending.Origin), occluders);
         // Placed meshes occlude too (and shadow each other) unless authored
         // out via AffectsBakedLighting.
         for (const LightmapPlacement& placement : placements)
-        {
-            if (!placement.CastsIntoBake)
-                continue;
-            const MeshGeometry& geometry = placement.Geometry;
-            for (std::size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
-            {
-                occluders.push_back(BakeTriangle{
-                    placement.ToWorld.TransformPoint(
-                        geometry.Vertices[geometry.Indices[i]].Position),
-                    placement.ToWorld.TransformPoint(
-                        geometry.Vertices[geometry.Indices[i + 1]].Position),
-                    placement.ToWorld.TransformPoint(
-                        geometry.Vertices[geometry.Indices[i + 2]].Position) });
-            }
-        }
+            if (placement.CastsIntoBake)
+                GatherWorldTriangles(placement.Geometry, placement.ToWorld, occluders);
         occlusionBvh.Build(AssembleProbeBakeTriangles(
             std::move(occluders), bakeBounds, halo,
             lightmapParams.Probe.MaxRayDistance));
