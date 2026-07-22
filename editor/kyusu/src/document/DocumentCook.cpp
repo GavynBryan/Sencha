@@ -6,6 +6,7 @@
 #include "CookGraph.h"
 #include "CookReceipt.h"
 #include "CookStepCache.h"
+#include "DocumentImportPublisher.h"
 #include "EditorDocument.h"
 
 #include <assets/cook/BakeBvh.h>
@@ -25,7 +26,6 @@
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureSerializer.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetRegistry.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
@@ -1087,27 +1087,48 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
         return result;
     }
 
-    // Cook source textures the level's materials reference (.png -> .stex) into
-    // .cooked/ so the COOK=OFF player can load them. The import driver maintains
-    // the cooked index keyed by source path; the index.Put below loads that
-    // updated index and adds the level entry, so both survive. Idempotent:
-    // unchanged sources are served from the cooked cache.
+    // Prepare source textures the level's materials reference (.png -> .stex)
+    // into private staging without touching active state. The bytes and their
+    // cooked-index deltas publish through the document transaction below, so a
+    // failed cook leaves no orphaned imports. Idempotent: unchanged sources are
+    // served from the cooked cache.
+    PendingAssetImport pendingImports;
     if (runReferencedAssets)
     {
         beginStep(CookStepIds::ReferencedAssets);
         PngTextureImporter textureImporter;
         AssetImporterRegistry importers;
         importers.Register(textureImporter);
-        AssetRegistry scratch(logging); // we want the on-disk artifacts + index, not a live registry
-        (void)ImportAssetsOnDemand(assetsRoot.generic_string(), importers, scratch, logging);
+        (void)PrepareAssetsOnDemand(assetsRoot, importers, logging, pendingImports);
         completeStep();
     }
 
     // Record source -> artifacts (source key = caller-supplied rel path, hash key
-    // = brush-geometry hash).
+    // = brush-geometry hash). The index loads active (prepare left it untouched);
+    // the prepared imports, their index deltas, and the level entry then publish
+    // through this one staged index and the transaction, committing together.
     const std::filesystem::path indexPath = assetsRoot / ".cooked/index.json";
     CookedCacheIndex index;
     (void)CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index); // cold cache is fine
+    if (runReferencedAssets)
+    {
+        std::unordered_set<std::string> documentArtifactPaths;
+        for (const CookedArtifact& artifact : artifacts)
+            documentArtifactPaths.insert(artifact.FileRelPath);
+        for (const PreparedCookedArtifact& prepared : pendingImports.Artifacts)
+            if (documentArtifactPaths.count(prepared.Artifact.FileRelPath) != 0)
+            {
+                result.Error = "CookDocument: referenced import collides with "
+                    "generated artifact '" + prepared.Artifact.FileRelPath + "'";
+                return result;
+            }
+        DocumentImportPublisher publisher(transaction, assetsRoot, index);
+        if (!PublishAssetImport(std::move(pendingImports), publisher, &cookError))
+        {
+            result.Error = "CookDocument: " + cookError;
+            return result;
+        }
+    }
     if (!runCollision)
     {
         if (const CookedSourceEntry* previous = index.Find(sourceRel))
