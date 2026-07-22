@@ -1,349 +1,398 @@
 # Light Transport
 
-Status: proposed execution specification.
+Status: proposed execution specification, revised for the unified runtime world.
 
-This document extends the current direct-light atlas, probe bake, dynamic light extraction, and shadow-residency mechanisms through one static spatial link.
+This document extends the existing direct-light atlas, probe bake, dynamic light extraction,
+and shadow-residency mechanisms through one static spatial portal relationship.
 
-## 1. Shared optical model
+It does not introduce another world, space, dimension, renderer, cooker, or light system.
 
-A rigid unit-scale link creates a virtual image of a source light in destination space.
+## 1. Unified-world assumptions
+
+Light transport depends on:
+
+- persistent world-scene relationship entities;
+- endpoint entities in zone documents and runtime storage partitions;
+- durable endpoint references resolved at world-cook and runtime lifecycle boundaries;
+- one runtime ECS `World` queried through visible partition sets;
+- one-hop participation leases for remote destination zones;
+- the current RGB9E5 direct atlas, R8 AO, L1 probe, dynamic forward-light, and shadow-cache
+  architecture;
+- stable persistent relationship identity independent of runtime `EntityId` and partition slot.
+
+Portal lighting never infers destination relevance from ordinary world-space proximity between
+endpoint zones.
+
+## 2. Shared optical model
+
+A rigid unit-scale relationship creates a virtual image of a source light in destination
+space.
 
 For a destination sample:
 
-1. transform the real light position and direction through the source-to-destination link;
+1. transform the real light pose through the source-to-destination portal transform;
 2. trace from the sample toward the virtual light;
-3. require the ray to intersect the destination aperture;
-4. transform the aperture intersection to the source endpoint;
-5. require the source segment to reach the real light;
-6. test occlusion on the destination segment and source segment;
-7. evaluate the existing point or spot attenuation and diffuse model using the virtual light;
-8. stop after one link.
+3. require that segment to intersect the destination aperture;
+4. require the intersection to lie inside the rectangular aperture;
+5. map the intersection to the source endpoint;
+6. test source-endpoint-to-real-light visibility;
+7. test destination-sample-to-aperture visibility;
+8. evaluate the existing point or spot attenuation and diffuse model using the virtual light;
+9. stop after one relationship traversal.
 
-The aperture test is mandatory. A transformed light without an aperture constraint leaks through the wall and is incorrect.
+The aperture constraint is mandatory. A transformed light without it illuminates around the
+wall and is incorrect.
 
-Rigid unit scale preserves distance and energy under the virtual-light transform. Scale-changing portals remain unsupported.
+Unit scale preserves distance, attenuation, and angular velocity relationships. Scale-changing
+portals remain unsupported.
 
-## 2. Static direct-light bake
+## 3. Stable identity
 
-### 2.1 Existing evaluator reuse
+All portal light and shadow identity derives from stable authored data:
 
-The current direct bake combines light evaluation and a single-BVH visibility test.
+- persistent relationship identity;
+- endpoint side;
+- stable source light identity;
+- light kind;
+- shadow face where applicable.
 
-Before portal transport, split the reusable math at a concrete function boundary:
+Runtime `EntityId`, storage partition id, import order, visible-list index, and raw pointers are
+never stable request identity.
+
+When a source light has no durable authored identity, its live render identity may be used for
+the current runtime session, combined with persistent relationship identity. That path is not
+serialized and is invalidated on entity destruction.
+
+## 4. Static direct-light bake
+
+### 4.1 World-level relationship resolution
+
+World cook resolves portal relationships before cooking individual zones:
+
+1. load persistent relationship records from the world scene;
+2. collect endpoint records and stable identities from all authored zone scenes;
+3. validate both durable references and endpoint uniqueness;
+4. build deterministic resolved relationship inputs;
+5. collect source lights and source and destination occluder identities;
+6. pass only relevant relationships into each zone cook.
+
+There is no shared-id endpoint grouping and no dependence on editor registry order.
+
+### 4.2 Evaluator split
+
+The current direct bake combines light evaluation with ordinary single-segment visibility.
+Refactor only as much as required into concrete cook operations:
 
 - unoccluded point or spot contribution;
 - ordinary single-segment visibility;
 - portal two-segment visibility.
 
-Do not introduce a runtime strategy interface. These are cook-only concrete operations with one present algorithm each.
+Do not introduce a strategy interface or second bake pipeline.
 
-### 2.2 World-cook assembly
+### 4.3 Relevant light-image assembly
 
-World cook already gathers every zone's bake halo before individual cooks. Extend that collection with resolved static link and light records.
+For one destination zone:
 
-For each destination zone:
+1. collect local direct lights as today;
+2. find active relationships whose destination endpoint belongs to the zone;
+3. find source lights whose range or spot cone can reach the source aperture;
+4. coarse-cull by aperture and light bounds before per-sample work;
+5. create deterministic one-hop light-image inputs;
+6. include relevant source and destination BVH domains;
+7. bake local and transmitted direct contributions into the same RGB9E5 atlas.
 
-1. collect ordinary local direct lights;
-2. find active links whose destination endpoint belongs to the zone;
-3. find source lights whose range or cone can reach the source aperture;
-4. create deterministic one-hop light-image records;
-5. include only source and destination occluder sets within the relevant path bounds;
-6. bake local and transmitted direct contributions into the same RGB9E5 atlas.
+Remote source zones participate because of the relationship, not because their Euclidean
+bounds are near the destination zone.
 
-No second atlas or side-channel texture is introduced.
+### 4.4 Two-segment visibility
 
-### 2.3 Two-segment visibility
-
-A transmitted direct-light sample is visible only when:
+A transmitted sample is visible only when:
 
 - sample-to-destination-aperture segment is clear in destination geometry;
-- intersection lies inside the rectangle with the bake edge tolerance;
+- aperture intersection lies strictly inside the opening under the bake tolerance;
 - source-aperture-to-real-light segment is clear in source geometry;
-- the source light range and spot cone include the path;
-- neither segment begins inside invalid geometry.
+- source light range and spot cone include the transformed path;
+- neither segment begins inside invalid solid geometry;
+- one-hop transport has not already been consumed.
 
-The existing bake BVH remains the triangle authority. Physics collision is not used for lighting.
+The bake uses render geometry BVHs, not physics collision.
 
-### 2.4 Hashing and determinism
+### 4.5 Hashing and determinism
 
-The destination bake hash includes only links and source inputs that can affect it:
+The destination lighting hash includes only relevant inputs:
 
-- both endpoint frames and extents;
-- source light state;
-- source and destination relevant geometry content hashes;
-- direct-light shading parameters;
-- aperture tolerance and one-hop policy version.
+- persistent relationship identity;
+- both stable endpoint references;
+- endpoint frames and extents;
+- relationship and endpoint enabled state;
+- stable source light state;
+- relevant source and destination geometry hashes;
+- direct-light shading settings;
+- aperture tolerances;
+- portal light-transport policy version.
 
-Stable sort order:
+Stable ordering:
 
-1. destination link id;
-2. source endpoint ownership;
-3. source light stable cook identity;
+1. persistent relationship identity;
+2. destination endpoint side;
+3. stable source light identity;
 4. light kind.
 
-Identical input produces byte-identical atlas output.
+Identical authored input produces byte-identical atlas output regardless of zone manifest,
+document load, or package import order.
 
-Tests reverse zone manifest order and halo collection order.
+## 5. Probe transport
 
-## 3. Probe transport
+The existing probe bake traces a fixed deterministic ray table. A ray that reaches a portal
+aperture may continue in the linked zone's geometry domain.
 
-The current probe bake traces a fixed deterministic ray table against one assembled BVH. A portal is an opening into another spatial domain, so a ray that reaches the aperture must continue from the linked endpoint.
-
-### 3.1 One-hop ray state
+### 5.1 One-hop ray state
 
 A probe ray carries:
 
-- current point and direction;
+- current world point and direction;
 - remaining distance;
-- current zone or geometry domain;
-- whether one link has already been crossed.
+- current authored zone or geometry domain;
+- whether one portal traversal has occurred;
+- persistent relationship identity used for deterministic tie breaking.
 
-When the nearest event is:
+The nearest event is one of:
 
-- geometry: evaluate the existing front-face, back-face, bounce, or invalid-probe behavior;
+- geometry hit: preserve existing front-face, back-face, bounce, and invalid-probe behavior;
 - environment miss: use sky or ground;
-- portal aperture before geometry: transform point and direction, subtract traveled distance, continue in the linked domain;
-- a second portal after one crossing: treat it as nontransmitting under the one-hop rule.
+- portal aperture before geometry: transform point and direction, subtract distance, continue
+  in the linked domain;
+- second portal after one hop: use the pinned nontransmitting fallback.
 
-### 3.2 Deterministic event ordering
+### 5.2 Event ordering
 
-Exact hit ties use a pinned order and epsilon:
+Exact hit ties use a documented rule:
 
-1. geometry before portal when the geometry is the authored rim or surface boundary;
-2. portal before geometry only for a point strictly inside the open rectangle;
-3. stable link identity breaks multiple-aperture ties.
+1. authored rim or surface geometry wins at the aperture boundary;
+2. portal wins only when the projected point is strictly inside the opening;
+3. persistent relationship identity breaks multiple-aperture ties.
 
-The fixed ray table and per-probe accumulation order remain unchanged. Serial and job paths remain bit-identical.
+The fixed ray table and accumulation order remain unchanged. Serial and job paths stay
+bit-identical.
 
-### 3.3 Probe bake input
+### 5.3 Domain BVHs
 
-World cook provides domain-specific BVHs and resolved link records to the probe kernel.
+World cook provides domain-specific BVHs and resolved relationships to the probe kernel.
 
-Do not flatten all transformed source geometry permanently into every destination BVH. That can grow without bound and obscures domain ownership. One-hop traversal selects the linked BVH only when a ray reaches an aperture.
+Do not permanently flatten every transformed remote zone into every destination BVH. A ray
+selects the linked geometry domain only when it actually reaches an aperture.
 
-### 3.4 Probe acceptance
+### 5.4 Probe acceptance
 
 Tests prove:
 
-- bright source room contributes directional SH through the aperture;
-- closing or disabling the link restores the sealed-wall result;
-- the wall around the aperture remains dark;
-- a source occluder blocks transport;
-- a destination occluder blocks transport;
-- identical inputs are byte-identical;
+- bright remote room contributes directional SH through the aperture;
+- disabling or deleting the relationship restores sealed-wall output;
+- wall regions outside the aperture remain dark;
+- source and destination occluders independently block transport;
+- identical input is byte-identical;
 - serial and worker paths match;
-- ray count scales with actual aperture hits, not all links per ray.
+- work scales with rays reaching apertures rather than all relationships per ray;
+- unrelated remote relationship edits do not restale this zone.
 
-## 4. Dynamic light images
+## 6. Dynamic light images
 
-### 4.1 Extraction
+### 6.1 Extraction ownership
 
-Dynamic light extraction creates a transmitted image only when:
+Dynamic light extraction consumes one `World`, explicit visible partition sets, and immutable
+resolved portal relationships.
 
-- the source light is active;
-- its sphere or spot cone can reach the source aperture;
-- the destination endpoint is active and visible for the current camera;
-- the one-hop light-image cap has room after deterministic ranking.
+A transmitted image is created only when:
 
-A transmitted record contains:
+- source light is active in a participating source partition;
+- source light sphere or cone can reach the source aperture;
+- destination endpoint is resolved and its partition is Visible for the current view;
+- destination relationship survives deterministic cap ranking;
+- one-hop context has not already been consumed.
 
-- virtual point or spot light data;
+The image is render-domain data, not another ECS light entity.
+
+### 6.2 Transmitted record
+
+A transmitted light record contains:
+
+- virtual point or spot light parameters;
 - destination aperture frame and extents;
-- real source light stable identity;
-- source and destination endpoint identity;
+- persistent relationship identity;
+- endpoint side;
+- source light stable render identity;
+- source and destination partition information for this extraction frame;
 - shadow request identity when applicable.
 
-The real light remains in its ordinary source view. The image is a render-domain light, not an ECS light entity.
+The source light remains ordinary in source views.
 
-### 4.2 Fragment aperture constraint
+### 6.3 Fragment aperture constraint
 
-For a destination fragment and virtual light:
+For each destination fragment and transmitted image:
 
-1. intersect fragment-to-light ray with the destination portal plane;
-2. reject parallel rays and intersections outside the segment;
-3. reject intersection outside the rectangle;
+1. intersect fragment-to-virtual-light segment with the destination plane;
+2. reject parallel or out-of-segment intersections;
+3. reject points outside the aperture;
 4. evaluate ordinary point or spot contribution only when valid.
 
-Pack aperture data in a dedicated transmitted-light structure. Do not add unused portal fields to every ordinary `GpuLight` if a separate bounded array is clearer.
+Use a dedicated bounded transmitted-light representation unless measurements prove a unified
+record is better. Do not add unused portal data to every ordinary light for symmetry.
 
-The shader path is measured before deciding between:
-
-- a separate transmitted-light loop;
-- a unified light record with a local kind switch;
-- per-object transmitted-light lists.
-
-No option is chosen solely for symmetry.
-
-### 4.3 Culling and caps
+### 6.4 Culling and caps
 
 Rank images by:
 
 1. destination aperture visible;
-2. light reaches source aperture;
+2. source light reaches source aperture;
 3. projected affected area;
 4. estimated contribution;
-5. previous-frame residency;
-6. stable link and light identity.
+5. prior-frame shadow or image residency;
+6. persistent relationship and source light identity.
 
-Expose:
+Expose packed, dropped, and candidate counts. Portal images must not silently consume the
+ordinary forward-light cap.
 
-- image cap;
-- dropped image count;
-- aperture-test fragment iterations in profiling builds;
-- per-view transmitted light count.
+A remote destination may acquire a Visible lease because a portal is visible. A light image
+does not recursively acquire another portal destination.
 
-The current ordinary light cap and its known correctness wall are part of the baseline. Portal images must not silently consume the cap without counters.
+## 7. Dynamic shadow transport
 
-## 5. Dynamic shadow transport
+Unshadowed transport lands first. v1.0 is incomplete until shadow-casting transmitted lights
+preserve source and destination occlusion.
 
-Unshadowed light transport lands first. v1.0 is not complete until shadow-casting transmitted lights preserve occlusion.
+### 7.1 Virtual shadow view
 
-### 5.1 Virtual shadow view
-
-A transmitted shadow view is built from the virtual light in destination space.
+A transmitted shadow view uses the virtual light in destination coordinates.
 
 Caster input includes:
 
-- destination casters between receiver region and destination aperture;
-- source casters transformed through the link;
-- source and destination representations clipped to their valid half-spaces;
-- the aperture constraint.
+- destination-domain casters between receivers and destination aperture;
+- source-domain casters transformed through the relationship;
+- crossing entities represented and clipped in their valid domain;
+- exact aperture constraint;
+- one-hop context preventing recursive portal shadow views.
 
-The result is one shadow image in destination light space. It does not recursively render another portal.
+The result uses the existing shadow atlas and scheduler.
 
-### 5.2 Point and spot lights
+### 7.2 Spot and point lights
 
-Spot lights use one virtual shadow view.
+A spot light requests one virtual shadow view.
 
-Point lights use the existing cube-face model. Only faces whose frusta can contribute through the aperture are requested when that optimization is proven correct. The initial correct path may request all six faces, then profile.
+A point light follows the existing cube-face model. The first correct implementation may
+request all six faces. Face culling is a measured follow-up only when correctness is preserved.
 
-### 5.3 Stable residency identity
+### 7.3 Residency and invalidation
 
-A transmitted shadow request key derives from:
+A transmitted shadow key derives from:
 
-- real light `RenderEntityKey`;
-- link id;
+- source light stable render identity;
+- persistent relationship identity;
 - destination endpoint side;
-- light kind and face.
+- light kind and point face.
 
 Invalidation includes:
 
-- real light transform or shadow-relevant state;
-- either endpoint transform or extent;
+- source light transform or shadow-relevant state;
+- endpoint frame, aperture, enabled state, or resolution change;
 - source caster changes;
 - destination caster changes;
 - crossing representation changes;
-- link activation and unload.
+- source or destination partition detach;
+- relationship deletion;
+- stale stable-reference resolution;
+- shadow settings.
 
-The bounded-fair scheduler remains authoritative. Portal requests do not bypass fairness or allocate a private atlas.
+Portal shadow requests participate in existing fairness and budgets. They do not own a private
+atlas or bypass denial counters.
 
-### 5.4 Shadow leakage tests
+## 8. Crossing entities and lighting
 
-Required captures:
+A crossing entity has two clipped render representations while remaining one ECS entity.
 
-- source blocker only;
-- destination blocker only;
-- blocker crossing the source aperture;
-- blocker crossing the destination aperture;
-- narrow aperture with bright point light;
-- spot cone partly intersecting aperture;
-- light moving across aperture edge;
-- caster moving while shadow slot is cached;
-- link disable and re-enable;
-- source or destination zone unload.
+Rules:
 
-No lit pixels may appear outside the projected aperture path beyond the documented PCF edge tolerance.
+- source representation uses source dynamic lights, probes, atlas, AO, and shadow domain;
+- destination representation uses destination-domain inputs;
+- destination representation does not wait for storage partition migration to commit;
+- crossing records explicitly provide its spatial domain;
+- movable objects normally have no direct-light atlas allocation and sample destination probes;
+- shadow-caster identity derives from the canonical entity and persistent relationship;
+- clip planes prevent duplicate silhouettes;
+- lighting is never copied from source object state.
 
-## 6. Crossing entities and lighting
+## 9. Partition participation and detach
 
-A crossing entity has two clipped render representations.
+Portal lighting uses domain participation explicitly:
 
-For direct and probe lighting:
+- ordinary main-view extraction sees Visible partitions;
+- a visible portal acquires one-hop destination Visible participation;
+- shadow extraction sees only participating source and destination domains required by the
+  selected transmitted request;
+- dormant remote zones perform no normal lighting extraction;
+- source or destination detaching invalidates images and shadow requests before entity rows or
+  backend resources disappear;
+- unresolved relationships emit no light image.
 
-- source representation uses source view light and probe data;
-- destination representation uses destination view light and probe data;
-- baked lightmap and AO bindings follow the representation's spatial domain;
-- a movable object normally has no static lightmap and samples destination probes naturally;
-- no light value is copied from the source representation.
+Static bake is independent of runtime participation and resolves authored world content.
 
-For shadows:
+## 10. Diagnostics
 
-- each clipped representation enters the caster set for its valid domain;
-- stable synthetic caster keys derive from the canonical entity;
-- a transformed source caster may also participate in a transmitted virtual-light shadow view;
-- duplicate silhouettes are prevented by clip planes and caster identity.
+Counters include:
 
-## 7. Lighting diagnostics
-
-Counters:
-
-- portal light-image candidates;
-- portal light images packed;
-- portal light images dropped;
-- portal aperture tests;
-- static portal light paths evaluated;
-- destination segment occlusion tests;
-- source segment occlusion tests;
-- probe rays reaching an aperture;
-- probe rays crossing;
+- resolved lighting relationships;
+- portal light-image candidates, packed, and dropped;
+- portal aperture fragment tests;
+- static transmitted paths evaluated;
+- source and destination BVH tests;
+- probe rays reaching and crossing apertures;
 - probe rays stopped by one-hop limit;
-- transmitted shadow requests;
-- transmitted shadow views rendered;
+- transmitted shadow requests and rendered views;
 - transmitted caster draws;
-- portal-driven shadow invalidations.
+- portal-driven shadow invalidations;
+- destination Visible leases held for lighting;
+- unresolved or detaching light paths rejected.
 
-Debug views:
+Debug views include:
 
-- virtual light positions and cones;
+- virtual point and spot lights;
 - source and destination aperture frusta;
-- transmitted-light affected bounds;
+- stable relationship and light keys;
+- source and destination geometry domain;
 - aperture rejection;
-- source and destination occlusion segment;
-- transmitted shadow slot and face;
-- probe ray domain and one-hop state.
+- two-segment visibility;
+- shadow slot and point face;
+- probe ray domain and one-hop state;
+- partition and lease state.
 
-## 8. Performance shape
+## 11. Performance shape
 
-Expected complexity:
+### 11.1 Static direct bake
 
-### Static direct bake
+Work is proportional to destination samples and relevant local or transmitted lights after
+coarse culling. It is not all zones times all links times all lights.
 
-```text
-O(destination samples * relevant local lights)
-+ O(destination samples * relevant transmitted light paths)
-```
+### 11.2 Probe bake
 
-Relevance filtering must happen before per-sample evaluation.
+Normal work remains probes times fixed rays times BVH traversal. Added work is proportional to
+rays that actually hit an aperture.
 
-### Probe bake
+### 11.3 Dynamic extraction
 
-```text
-O(probes * fixed rays * BVH traversal)
-```
+Candidate generation is proportional to active visible relationships and source lights that
+can reach their source aperture. Avoid all-lights times all-relationships in steady state.
 
-Additional work is proportional to rays that hit an aperture. It is not proportional to every link for every bounce step.
+### 11.4 Dynamic shading
 
-### Dynamic extraction
+Cost is proportional to ordinary visible lights plus packed transmitted images. Record actual
+fragment iterations. Do not hide a correctness cap by increasing it without a measured
+lighting-list plan.
 
-```text
-O(visible or relevant links * source lights near their aperture)
-```
+### 11.5 Shadows
 
-Avoid all-lights times all-links in normal frames. Use source aperture bounds and existing light spatial tests.
+Work is bounded by existing per-frame shadow-view and atlas budgets. Portal requests obey the
+same scheduler and denial diagnostics.
 
-### Dynamic shading
-
-```text
-O(ordinary visible lights + packed transmitted light images)
-```
-
-Record fragment iteration evidence. If portal images push the forward loop beyond the measured gate, a per-object or tiled light-list plan may become a prerequisite. Do not hide the cost by raising caps.
-
-### Shadows
-
-Work is bounded by the existing per-frame shadow-view budget and atlas residency. Portal requests participate in the same fairness rules.
-
-## 9. Tests
+## 12. Tests
 
 Add focused coverage equivalent to:
 
@@ -355,15 +404,33 @@ Add focused coverage equivalent to:
 
 Required cases:
 
-1. virtual point and spot transforms match ordinary rigid transforms;
-2. fragment ray outside aperture receives zero transmitted light;
-3. both occlusion segments independently block;
-4. edge tolerance is symmetric and pinned;
-5. source light range and cone cull correctly;
-6. manifest and zone order do not affect bake bytes or runtime ranking;
-7. link edits restale affected zones only;
-8. probe serial and job paths are bit-identical;
-9. shadow request keys remain stable across registry attachment order;
-10. cache invalidation covers both domains;
-11. cap pressure drops deterministically and reports counts;
-12. disabled, incomplete, invalid, and unloaded links emit no image.
+1. virtual point and spot transforms match the shared rigid mapping;
+2. fragment path outside aperture receives zero transmitted light;
+3. source and destination occlusion independently block;
+4. aperture edge tolerance is symmetric and pinned;
+5. source range and spot cone cull correctly;
+6. same-zone, cross-zone, and spatially remote endpoints produce equivalent optical results;
+7. manifest, document, package import, and partition order do not affect bake bytes or runtime
+   ranking;
+8. relationship and endpoint edits restale affected zones only;
+9. probe serial and worker paths are bit-identical;
+10. shadow request keys survive endpoint unload and reload through stable relationship identity;
+11. cache invalidation covers both partitions and crossing casters;
+12. cap pressure drops deterministically and reports counts;
+13. disabled, invalid, unresolved, and detaching relationships emit no image;
+14. dormant remote zones add no dynamic extraction work;
+15. one portal visible through another cannot schedule recursive light transport.
+
+## 13. Stop conditions
+
+Stop when:
+
+- durable relationship resolution is unavailable to world cook;
+- the current lighting architecture has not been reconciled onto the unified runtime;
+- relevant source lights cannot be coarse-culled without global scans;
+- shadow transport requires recursive portal views;
+- a transmitted request must bypass existing shadow fairness or atlas ownership;
+- portal light data must become another ECS light entity;
+- remote-zone participation cannot be expressed through existing leases;
+- deterministic bake hashes would require runtime partition ids;
+- the zero-portal lighting path gains measurable work.
