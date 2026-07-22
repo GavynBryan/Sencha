@@ -16,6 +16,7 @@
 #include "DocumentCookReuse.h"
 #include "DocumentImportPublisher.h"
 #include "DocumentLightmapBake.h"
+#include "DocumentProbeBake.h"
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
@@ -230,67 +231,9 @@ DocumentCookResult CookDocumentKernel(DocumentCookInput::Data& input,
     // the runtime locates the file by the cooked-scene path convention.
     if (!probeVolumes.empty())
     {
-        progress.Begin(CookStepIds::IrradianceProbes);
-        if (reuse.Probes != nullptr)
-        {
-            std::string restoreError;
-            CookedArtifact restoredProbe;
-            if (!catalog.RestoreStep(*reuse.Probes, assetsRoot, transaction,
-                                     false, restoredProbe, &restoreError))
-            {
-                result.Error = "CookDocument: " + restoreError;
-                return result;
-            }
-            probeArtifact = restoredProbe;
-            result.ReusedSteps.push_back(
-                std::string(CookStepIds::IrradianceProbes));
-            RestoreDocumentCookResultMetadata(reuse.Probes->Metadata, result);
-            progress.Complete();
-        }
-        else
-        {
-        ProbeBakeParams probeParams = lightmapParams.Probe;
-        probeParams.Shading = lightmapParams.Shading;
-        const std::vector<Vec3d> rayTable =
-            BuildProbeRayTable(lightmapParams.ProbeRayCount);
-
-        ProbeVolumeFile probeFile;
-        std::size_t probeCount = 0;
-        for (std::size_t i = 0; i < probeVolumes.size(); ++i)
-        {
-            if (progress.Cancelled(result))
-                return result;
-            const ProbeVolumeInput& input = probeVolumes[i];
-            const ProbeVolumeBakeResult baked = BakeProbeVolume(
-                input.Grid, occlusionBvh, bounceLights, rayTable, probeParams);
-
-            ProbeVolumeRecord record;
-            record.Grid = input.Grid;
-            record.Priority = input.Priority;
-            record.StableIndex = static_cast<std::uint32_t>(i);
-            record.ShHalf = PackProbeShHalf(baked.Sh);
-            record.ValidityBits = PackValidityBits(baked.Valid);
-            probeCount += baked.Sh.size();
-            probeFile.Volumes.push_back(std::move(record));
-        }
-
-        const std::string probeRel = "levels/" + stemStr + "/probes.sprobe";
-        const std::filesystem::path probePhysical = assetsRoot / ".cooked" / probeRel;
-        const std::filesystem::path probeStaged = transaction.Stage(probePhysical);
-        std::error_code makeDirs;
-        std::filesystem::create_directories(probeStaged.parent_path(), makeDirs);
-        std::ofstream probeStream(probeStaged, std::ios::binary | std::ios::trunc);
-        BinaryWriter probeWriter(probeStream);
-        if (!probeStream.is_open() || !WriteProbeVolumeFile(probeWriter, probeFile))
-        {
-            result.Error = "CookDocument: could not write probe volumes '" + probeRel + "'";
+        if (!BakeDocumentProbes(snapshot, occlusionBvh, reuse, assetsRoot, stemStr,
+                                transaction, catalog, progress, probeArtifact, result))
             return result;
-        }
-        probeArtifact = catalog.AddProbeVolume("asset://" + probeRel, ".cooked/" + probeRel);
-        result.ProbeVolumeCount = probeVolumes.size();
-        result.ProbeCount = probeCount;
-        progress.Complete();
-        }
     }
 
     for (const PendingCellMesh& pending : pendingMeshes)
