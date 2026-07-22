@@ -1,6 +1,27 @@
 # Document Cook Pipeline Refactor
 
-Status: proposed implementation plan.
+Status: in progress.
+
+- Stages 0-4, 7, and 8 are landed on `lightmap-spike`. `CookDocumentKernel` no
+  longer exists: `ExecuteDocumentCook` is a readable orchestrator over concrete
+  mechanisms (`CookStepProgress`, `DocumentCookPaths`, `DocumentBakeOcclusion`,
+  `DocumentCookReuse`, `LightmapSurfaceCook`, `CellArtifactCook`,
+  `DocumentLightmapBake`, `DocumentProbeBake`, `CookedSceneAssembly`,
+  `DocumentPublication`). `DocumentCook.cpp` is 325 lines; the mechanisms carry
+  focused tests and the suite is green.
+- Stage 8 was landed as a behavior-preserving structural decomposition ahead of
+  Stages 5 and 6. The extracted seams hold the current (fused) behavior: the
+  lightmap bake still resolves direct and AO together behind
+  `BakeDocumentLightmap`, and publication is still a single-hash cache decision
+  plus `StageDocumentIndex`/`StageDocumentReceipt` rather than a
+  `DocumentPublicationPlan`.
+- Stages 5 (engine lightmap surface-sample split with independent direct/AO
+  cache) and 6 (cumulative publication plan) remain. They are the two intended
+  behavior changes; each now slots behind an established seam rather than into
+  the monolith. Two disabled characterizations pin them:
+  `DocumentCookFingerprints.DirectLightMovesDirectNotSurfaces` asserts the
+  current direct/AO coupling (flip to `EXPECT_EQ` at Stage 5), and
+  `DISABLED_PreserveLightingKeepsSceneReferencingTheAtlas` awaits Stage 6.
 
 Scope: the editor-side document cook beginning in
 [`DocumentCook.cpp`](../../editor/kyusu/src/document/DocumentCook.cpp), the
