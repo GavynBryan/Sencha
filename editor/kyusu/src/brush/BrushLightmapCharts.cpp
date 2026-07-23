@@ -133,23 +133,30 @@ BrushChartSet BuildBrushLightmapCharts(const BrushMesh& mesh,
     // inside the cone around the chart's running area-weighted normal. A face
     // rejected for one chart seeds or joins a later one.
     std::vector<bool> assigned(faceCount, false);
+    // A face counts as considered by the current seed's scan when its stamp
+    // matches that seed. Versioning the marks avoids clearing a per-face bitset
+    // once per chart, which is quadratic when charts approach the face count.
+    // The frontier always drains before the next seed, so it is reused as is.
+    std::vector<std::uint32_t> consideredStamp(faceCount, 0);
+    std::vector<std::uint32_t> members;
+    std::priority_queue<std::uint32_t, std::vector<std::uint32_t>, std::greater<>> frontier;
     for (std::uint32_t seed = 0; seed < faceCount; ++seed)
     {
         if (assigned[seed])
             continue;
 
-        std::vector<std::uint32_t> members{ seed };
+        const std::uint32_t stamp = seed + 1;
+        members.clear();
+        members.push_back(seed);
         assigned[seed] = true;
         Vec3d normalSum = newell[seed];
 
-        std::priority_queue<std::uint32_t, std::vector<std::uint32_t>, std::greater<>> frontier;
-        std::vector<bool> considered(faceCount, false);
-        considered[seed] = true;
+        consideredStamp[seed] = stamp;
         for (const std::uint32_t n : softNeighbors[seed])
-            if (!assigned[n] && !considered[n])
+            if (!assigned[n] && consideredStamp[n] != stamp)
             {
                 frontier.push(n);
-                considered[n] = true;
+                consideredStamp[n] = stamp;
             }
 
         while (!frontier.empty())
@@ -172,10 +179,10 @@ BrushChartSet BuildBrushLightmapCharts(const BrushMesh& mesh,
             members.push_back(candidate);
             normalSum += candidateNewell;
             for (const std::uint32_t n : softNeighbors[candidate])
-                if (!assigned[n] && !considered[n])
+                if (!assigned[n] && consideredStamp[n] != stamp)
                 {
                     frontier.push(n);
-                    considered[n] = true;
+                    consideredStamp[n] = stamp;
                 }
         }
 

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <vector>
 
 namespace
@@ -117,7 +118,7 @@ namespace
     }
 
     ResolvedSample ResolveSample(const Vec2d& p,
-                                 const std::vector<std::uint32_t>& candidates,
+                                 std::span<const std::uint32_t> candidates,
                                  const std::vector<RasterTriangle>& rasterTriangles)
     {
         ResolvedSample nearest;
@@ -245,8 +246,21 @@ LightmapSurfaceSamples ResolveLightmapSurfaceSamples(
     // Each luxel keeps every triangle that any of its four offsets could
     // resolve. The extra quarter-texel accounts for the subsample displacement
     // before applying the existing half-diagonal edge reach.
-    std::vector<std::vector<std::uint32_t>> candidates(
-        static_cast<std::size_t>(gridW) * gridH);
+    // CSR candidate lists: one flat index buffer plus per-luxel offsets, rather
+    // than a separately allocated vector per luxel. Each triangle's cell range
+    // is resolved once and replayed by both passes, so the counted and the
+    // scattered cells cannot disagree, and scattering in ascending triangle
+    // order leaves every luxel's list in the order a per-luxel append produced.
+    struct CandidateRange
+    {
+        std::uint32_t Index = 0;
+        std::uint32_t X0 = 0;
+        std::uint32_t Y0 = 0;
+        std::uint32_t X1 = 0;
+        std::uint32_t Y1 = 0;
+    };
+    std::vector<CandidateRange> ranges;
+    ranges.reserve(rasterTriangles.size());
     constexpr float kCandidateReach = kEdgeReach + 0.25f;
     for (std::uint32_t index = 0; index < rasterTriangles.size(); ++index)
     {
@@ -263,24 +277,43 @@ LightmapSurfaceSamples ResolveLightmapSurfaceSamples(
             || minX > static_cast<float>(gridW - 1)
             || minY > static_cast<float>(gridH - 1))
             continue;
-        const std::uint32_t x0 = static_cast<std::uint32_t>(std::max(0.0f, std::floor(minX)));
-        const std::uint32_t y0 = static_cast<std::uint32_t>(std::max(0.0f, std::floor(minY)));
-        const std::uint32_t x1 = static_cast<std::uint32_t>(
-            std::clamp(std::ceil(maxX), 0.0f, static_cast<float>(gridW - 1)));
-        const std::uint32_t y1 = static_cast<std::uint32_t>(
-            std::clamp(std::ceil(maxY), 0.0f, static_cast<float>(gridH - 1)));
-
-        for (std::uint32_t y = y0; y <= y1 && y < gridH; ++y)
-            for (std::uint32_t x = x0; x <= x1 && x < gridW; ++x)
-                candidates[static_cast<std::size_t>(y) * gridW + x].push_back(index);
+        ranges.push_back(CandidateRange{
+            index,
+            static_cast<std::uint32_t>(std::max(0.0f, std::floor(minX))),
+            static_cast<std::uint32_t>(std::max(0.0f, std::floor(minY))),
+            static_cast<std::uint32_t>(
+                std::clamp(std::ceil(maxX), 0.0f, static_cast<float>(gridW - 1))),
+            static_cast<std::uint32_t>(
+                std::clamp(std::ceil(maxY), 0.0f, static_cast<float>(gridH - 1))),
+        });
     }
+
+    const std::size_t cellCount = static_cast<std::size_t>(gridW) * gridH;
+    std::vector<std::uint32_t> candidateOffsets(cellCount + 1, 0u);
+    for (const CandidateRange& range : ranges)
+        for (std::uint32_t y = range.Y0; y <= range.Y1 && y < gridH; ++y)
+            for (std::uint32_t x = range.X0; x <= range.X1 && x < gridW; ++x)
+                ++candidateOffsets[static_cast<std::size_t>(y) * gridW + x + 1];
+    for (std::size_t cell = 0; cell < cellCount; ++cell)
+        candidateOffsets[cell + 1] += candidateOffsets[cell];
+
+    std::vector<std::uint32_t> candidateIndices(candidateOffsets[cellCount]);
+    std::vector<std::uint32_t> cursor(
+        candidateOffsets.begin(), candidateOffsets.begin() + cellCount);
+    for (const CandidateRange& range : ranges)
+        for (std::uint32_t y = range.Y0; y <= range.Y1 && y < gridH; ++y)
+            for (std::uint32_t x = range.X0; x <= range.X1 && x < gridW; ++x)
+                candidateIndices[cursor[static_cast<std::size_t>(y) * gridW + x]++] =
+                    range.Index;
 
     out.Offsets.assign(static_cast<std::size_t>(gridW) * gridH + 1, 0u);
     for (std::uint32_t y = 0; y < gridH; ++y)
         for (std::uint32_t x = 0; x < gridW; ++x)
         {
             const std::size_t gi = static_cast<std::size_t>(y) * gridW + x;
-            const std::vector<std::uint32_t>& luxelCandidates = candidates[gi];
+            const std::span<const std::uint32_t> luxelCandidates(
+                candidateIndices.data() + candidateOffsets[gi],
+                candidateOffsets[gi + 1] - candidateOffsets[gi]);
             for (const Vec2d& offset : kSubsamples)
             {
                 if (luxelCandidates.empty())
