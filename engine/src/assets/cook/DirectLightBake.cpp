@@ -28,9 +28,11 @@ Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
     for (const BakeDirectLight& light : lights)
     {
         const Vec3d toLight = light.Position - worldPosition;
-        const float distance = toLight.Magnitude();
-        if (distance >= light.Range)
+        // Cull on squared distance so an out-of-range light costs no sqrt.
+        const float distanceSquared = toLight.SqrMagnitude();
+        if (distanceSquared >= light.Range * light.Range)
             continue;
+        const float distance = std::sqrt(distanceSquared);
         const Vec3d lightDir = toLight / std::max(distance, 1e-4f);
 
         const float diffuse = Clamp01(
@@ -48,8 +50,11 @@ Vec3d EvaluateBakedDirectRadiance(const Vec3d& worldPosition,
                 continue;
         }
 
-        const float window = Clamp01(
-            1.0f - std::pow(distance / std::max(light.Range, 1e-4f), 4.0f));
+        // (d/r)^4 as two multiplies: std::pow with a runtime exponent lowers to
+        // exp2(4*log2(x)), a transcendental pair in the innermost bake loop.
+        const float rangeRatio = distance / std::max(light.Range, 1e-4f);
+        const float ratioSquared = rangeRatio * rangeRatio;
+        const float window = Clamp01(1.0f - ratioSquared * ratioSquared);
         const float attenuation =
             cone * (window * window) / (distance * distance + 1e-4f);
         if (attenuation <= 0.0f)
