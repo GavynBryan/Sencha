@@ -176,12 +176,17 @@ ProbeVolumeBakeResult BakeProbeVolume(const GridTransform3d& grid,
     // synchronized round at a time (reads the previous round's fill set, so
     // fill order within a round cannot matter).
     std::vector<std::uint8_t> filled = result.Valid;
+    // Ping-pong the round buffers: a round still commits from the previous
+    // round's fill set, but the two buffers are reused across rounds instead of
+    // being reallocated for each one.
+    std::vector<std::uint8_t> nextFilled;
+    std::vector<ProbeShL1> nextSh;
     bool progressed = true;
     while (progressed)
     {
         progressed = false;
-        std::vector<std::uint8_t> nextFilled = filled;
-        std::vector<ProbeShL1> nextSh = result.Sh;
+        nextFilled = filled;
+        nextSh = result.Sh;
         for (std::uint32_t z = 0; z < grid.DimsZ; ++z)
             for (std::uint32_t y = 0; y < grid.DimsY; ++y)
                 for (std::uint32_t x = 0; x < grid.DimsX; ++x)
@@ -219,8 +224,8 @@ ProbeVolumeBakeResult BakeProbeVolume(const GridTransform3d& grid,
                     nextFilled[index] = 1;
                     progressed = true;
                 }
-        filled = std::move(nextFilled);
-        result.Sh = std::move(nextSh);
+        std::swap(filled, nextFilled);
+        std::swap(result.Sh, nextSh);
     }
 
     // A fully enclosed region no dilation reached holds the hemispheric
