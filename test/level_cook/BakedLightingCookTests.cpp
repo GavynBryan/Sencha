@@ -503,6 +503,55 @@ TEST_F(BakedLightingCookTest, PreserveLightingKeepsSceneReferencingTheAtlas)
         << "a preserved lighting output must stay referenced by the cooked scene";
 }
 
+// A preserved output the plan promises but whose file has gone missing fails the
+// cook before it stages anything, with a precise diagnostic and no mutation.
+TEST_F(BakedLightingCookTest, MissingPreservedLightmapFailsBeforeCommit)
+{
+    const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
+
+    // The index still lists the atlas, but its file is gone.
+    fs::remove(Root / ".cooked/levels/test/lightmap.stex");
+
+    CookProfile preserveLighting;
+    preserveLighting.Id = "preserve_lighting_test";
+    preserveLighting.Name = "Preserve Lighting Test";
+    preserveLighting.TargetSteps = { std::string(CookStepIds::RenderMeshes) };
+
+    const DocumentCookResult preserved = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &preserveLighting });
+    EXPECT_FALSE(preserved.Success);
+    EXPECT_NE(preserved.Error.find("preserved cook artifact is missing"),
+              std::string::npos) << preserved.Error;
+}
+
+// Preserve is cumulative: repeated structure-only recooks each keep the prior
+// lightmap referenced and byte-identical, never orphaning it.
+TEST_F(BakedLightingCookTest, PreserveLightingIsCumulativeAcrossStructureCooks)
+{
+    const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    const std::vector<std::byte> baseLightmap =
+        ReadBytes(Root / ".cooked/levels/test/lightmap.stex");
+
+    CookProfile structureOnly;
+    structureOnly.Id = "structure_only_test";
+    structureOnly.Name = "Structure Only Test";
+    structureOnly.TargetSteps = { std::string(CookStepIds::RenderMeshes) };
+
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const DocumentCookResult preserved = CookDocument(
+            level, Root, 16.0, nullptr, nullptr, {}, {},
+            DocumentCookOptions{ .Profile = &structureOnly });
+        ASSERT_TRUE(preserved.Success) << preserved.Error;
+        EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+        EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"), baseLightmap);
+    }
+}
+
 TEST_F(BakedLightingCookTest, LightingProfileRestoresWithdrawnStepArtifacts)
 {
     const fs::path level = AuthorFloorWithLight(LightBakeContribution::Direct);

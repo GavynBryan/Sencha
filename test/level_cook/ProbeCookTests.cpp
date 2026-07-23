@@ -133,6 +133,34 @@ TEST_F(ProbeCookTest, AuthoredVolumeBakesSprobeArtifact)
     EXPECT_TRUE(AnyNonZero(volume.ShHalf));
 }
 
+// A structure-only recook neither targets nor withdraws probes, so they are
+// preserved: the .sprobe stays on disk at the stem the reassembled scene locates
+// it by. A structure-only cook cannot bake probes, so its presence proves the
+// carry-forward.
+TEST_F(ProbeCookTest, StructureOnlyRecookPreservesProbes)
+{
+    const fs::path level = AuthorLevel(LightBakeContribution::Direct, true);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/probes.sprobe"));
+    ProbeVolumeFile before;
+    ASSERT_TRUE(LoadCookedProbes(before));
+
+    CookProfile structureOnly;
+    structureOnly.Id = "structure_only_test";
+    structureOnly.Name = "Structure Only Test";
+    structureOnly.TargetSteps = { std::string(CookStepIds::RenderMeshes) };
+
+    const DocumentCookResult preserved = CookDocument(
+        level, Root, 16.0, nullptr, nullptr, {}, {},
+        DocumentCookOptions{ .Profile = &structureOnly });
+    ASSERT_TRUE(preserved.Success) << preserved.Error;
+
+    ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/probes.sprobe"));
+    ProbeVolumeFile after;
+    ASSERT_TRUE(LoadCookedProbes(after));
+    EXPECT_EQ(after.Volumes.size(), before.Volumes.size());
+}
+
 TEST_F(ProbeCookTest, NoVolumeCooksNoSprobe)
 {
     const fs::path levelPath = AuthorLevel(LightBakeContribution::Direct, false);
