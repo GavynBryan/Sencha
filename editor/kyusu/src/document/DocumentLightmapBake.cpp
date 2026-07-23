@@ -24,59 +24,6 @@
 
 namespace
 {
-    // Restore a reusable prior lightmap bake: the direct atlas and, when enabled,
-    // the AO plane, both re-staged through the transaction. Appends the
-    // ZoneLightmap entity referencing the restored artifacts.
-    bool RestoreLightmap(const DocumentCookSnapshot& snapshot,
-                         const DocumentCookReuse& reuse,
-                         const std::filesystem::path& assetsRoot,
-                         CookArtifactTransaction& transaction,
-                         DocumentArtifactCatalog& catalog, CookStepProgress& progress,
-                         JsonValue::Array& cellEntities,
-                         std::optional<CookedArtifact>& directArtifact,
-                         std::optional<CookedArtifact>& aoArtifact,
-                         DocumentCookResult& result)
-    {
-        std::string restoreError;
-        progress.Begin(CookStepIds::DirectLightmap);
-        CookedArtifact restoredDirect;
-        if (!catalog.RestoreStep(*reuse.Direct, assetsRoot, transaction, true,
-                                 restoredDirect, &restoreError))
-        {
-            result.Error = "CookDocument: " + restoreError;
-            return false;
-        }
-        directArtifact = restoredDirect;
-        result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
-        RestoreDocumentCookResultMetadata(reuse.Direct->Metadata, result);
-        progress.Complete();
-
-        JsonValue::Object lightmapFields{
-            { "texture", JsonValue(directArtifact->Path) },
-        };
-        if (snapshot.Lighting.Ao.Enabled)
-        {
-            progress.Begin(CookStepIds::AmbientOcclusion);
-            CookedArtifact restoredAo;
-            if (!catalog.RestoreStep(*reuse.Ao, assetsRoot, transaction, true,
-                                     restoredAo, &restoreError))
-            {
-                result.Error = "CookDocument: " + restoreError;
-                return false;
-            }
-            aoArtifact = restoredAo;
-            result.ReusedSteps.push_back(std::string(CookStepIds::AmbientOcclusion));
-            lightmapFields.push_back({ "ao", JsonValue(aoArtifact->Path) });
-            progress.Complete();
-        }
-        cellEntities.push_back(JsonValue(JsonValue::Object{
-            { "components", JsonValue(JsonValue::Object{
-                { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
-            }) },
-        }));
-        return true;
-    }
-
     // Gather each chart's world triangles (positions + smoothed normals + chart
     // grid UVs) from the pre-weld cell faces, then the placement charts. Each
     // chart's span holds only its own surface: a boundary luxel bakes the
@@ -137,56 +84,58 @@ namespace
         return chartTriangles;
     }
 
-    // Bake the direct atlas and, when enabled, the AO plane fresh, write both as
-    // cooked textures, and append the ZoneLightmap entity referencing them.
-    bool BakeFreshLightmap(const DocumentCookSnapshot& snapshot,
-                           const std::vector<BrushCell>& cells,
-                           const LightmapAtlasLayout& atlasLayout,
-                           const BakeBvh& occlusionBvh,
-                           const std::filesystem::path& assetsRoot, std::string_view stem,
-                           CookArtifactTransaction& transaction,
-                           DocumentArtifactCatalog& catalog, CookStepProgress& progress,
-                           LoggingProvider& logging, JsonValue::Array& cellEntities,
-                           std::optional<CookedArtifact>& directArtifact,
-                           std::optional<CookedArtifact>& aoArtifact,
-                           DocumentCookResult& result)
+    // Resolve one sample map per chart. Direct and AO both bake over these, so
+    // the expensive rasterization runs once even when both channels are fresh.
+    std::vector<LightmapSurfaceSamples> ResolveChartSampleMaps(
+        const DocumentCookSnapshot& snapshot, const std::vector<BrushCell>& cells,
+        const LightmapAtlasLayout& atlasLayout, const BakeBvh& occluders)
     {
-        const LightingCookParams& params = snapshot.Lighting;
-        const std::string stemStr(stem);
-        progress.Begin(CookStepIds::DirectLightmap);
-
-        std::vector<std::vector<LightmapRasterTriangle>> chartTriangles =
+        const std::vector<std::vector<LightmapRasterTriangle>> chartTriangles =
             GatherChartTriangles(snapshot, cells, atlasLayout);
+        std::vector<LightmapSurfaceSamples> maps;
+        maps.reserve(chartTriangles.size());
+        for (std::size_t c = 0; c < chartTriangles.size(); ++c)
+            maps.push_back(ResolveLightmapSurfaceSamples(
+                chartTriangles[c], atlasLayout.Rects[c], occluders,
+                snapshot.Lighting.Shading.NormalOffset));
+        return maps;
+    }
 
+    // Restore a reusable channel's cached .stex through the transaction.
+    bool RestoreChannel(const CookStepReceipt& reusable,
+                        const std::filesystem::path& assetsRoot,
+                        CookArtifactTransaction& transaction,
+                        DocumentArtifactCatalog& catalog,
+                        std::optional<CookedArtifact>& artifact, std::string* error)
+    {
+        CookedArtifact restored;
+        if (!catalog.RestoreStep(reusable, assetsRoot, transaction, true, restored, error))
+            return false;
+        artifact = restored;
+        return true;
+    }
+
+    bool BakeFreshDirect(const std::vector<LightmapSurfaceSamples>& sampleMaps,
+                         const LightmapAtlasLayout& atlasLayout,
+                         const DocumentCookSnapshot& snapshot, const BakeBvh& occluders,
+                         std::string_view stem, const std::filesystem::path& assetsRoot,
+                         CookArtifactTransaction& transaction,
+                         DocumentArtifactCatalog& catalog, CookStepProgress& progress,
+                         LoggingProvider& logging,
+                         std::optional<CookedArtifact>& directArtifact,
+                         DocumentCookResult& result)
+    {
         std::vector<std::uint32_t> atlasPixels(
             static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
-        // The AO plane initializes white: texels no chart covers (including the
-        // reserved border and the (0, 0) texel unbaked items sample) must never
-        // darken the ambient term.
-        const bool bakeAo = params.Ao.Enabled;
-        std::vector<std::uint8_t> aoPixels;
-        std::vector<Vec3d> aoRayTable;
-        AmbientOcclusionBakeParams aoBake;
-        if (bakeAo)
-        {
-            aoPixels.assign(
-                static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 255u);
-            aoRayTable = BuildProbeRayTable(params.Ao.RayCount);
-            aoBake.MaxDistance = params.Ao.MaxDistance;
-            aoBake.NormalOffset = params.Shading.NormalOffset;
-            aoBake.RayTable = aoRayTable;
-        }
-        for (std::size_t c = 0; c < chartTriangles.size(); ++c)
+        for (std::size_t c = 0; c < sampleMaps.size(); ++c)
         {
             if (progress.Cancelled(result))
                 return false;
-            BakeChartLuxels(chartTriangles[c], atlasLayout.Rects[c], snapshot.BakeLights,
-                            occlusionBvh, params.Shading, atlasLayout.Width, atlasPixels,
-                            bakeAo ? &aoBake : nullptr, aoPixels);
+            BakeDirectLightmapChart(sampleMaps[c], atlasLayout.Rects[c], snapshot.BakeLights,
+                                    occluders, snapshot.Lighting.Shading, atlasLayout.Width,
+                                    atlasPixels);
         }
 
-        // Emit the atlas as a cooked texture artifact plus the zone component that
-        // binds it at runtime.
         TextureData atlas;
         atlas.Format = TexturePixelFormat::RGB9E5;
         atlas.Usage = TextureUsage::LinearData;
@@ -198,56 +147,66 @@ namespace
         atlas.Blob.resize(atlasPixels.size() * sizeof(std::uint32_t));
         std::memcpy(atlas.Blob.data(), atlasPixels.data(), atlas.Blob.size());
 
-        const std::string atlasRel = "levels/" + stemStr + "/lightmap.stex";
+        const std::string atlasRel = "levels/" + std::string(stem) + "/lightmap.stex";
         const std::string atlasAssetPath = "asset://" + atlasRel;
         TextureSerializer textureSerializer(logging);
-        const std::filesystem::path atlasPhysical = assetsRoot / ".cooked" / atlasRel;
         if (!textureSerializer.WriteToFile(
-                transaction.Stage(atlasPhysical).generic_string(), atlas))
+                transaction.Stage(assetsRoot / ".cooked" / atlasRel).generic_string(), atlas))
         {
             result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
             return false;
         }
         directArtifact = catalog.AddSceneTexture(atlasAssetPath, ".cooked/" + atlasRel);
+        return true;
+    }
 
-        JsonValue::Object lightmapFields{
-            { "texture", JsonValue(atlasAssetPath) },
-        };
-        if (bakeAo)
+    bool BakeFreshAo(const std::vector<LightmapSurfaceSamples>& sampleMaps,
+                     const LightmapAtlasLayout& atlasLayout,
+                     const DocumentCookSnapshot& snapshot, const BakeBvh& occluders,
+                     std::string_view stem, const std::filesystem::path& assetsRoot,
+                     CookArtifactTransaction& transaction, DocumentArtifactCatalog& catalog,
+                     CookStepProgress& progress, LoggingProvider& logging,
+                     std::optional<CookedArtifact>& aoArtifact, DocumentCookResult& result)
+    {
+        const LightingCookParams& params = snapshot.Lighting;
+        // The AO plane initializes white: texels no chart covers (including the
+        // reserved border and the (0, 0) texel unbaked items sample) must never
+        // darken the ambient term.
+        std::vector<std::uint8_t> aoPixels(
+            static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 255u);
+        const std::vector<Vec3d> rayTable = BuildProbeRayTable(params.Ao.RayCount);
+        AmbientOcclusionBakeParams aoBake;
+        aoBake.MaxDistance = params.Ao.MaxDistance;
+        aoBake.NormalOffset = params.Shading.NormalOffset;
+        aoBake.RayTable = rayTable;
+        for (std::size_t c = 0; c < sampleMaps.size(); ++c)
         {
-            TextureData aoAtlas;
-            aoAtlas.Format = TexturePixelFormat::R8;
-            aoAtlas.Usage = TextureUsage::LinearData;
-            aoAtlas.Filter = TextureFilter::Linear;
-            aoAtlas.Width = atlasLayout.Width;
-            aoAtlas.Height = atlasLayout.Height;
-            aoAtlas.Mips = { TextureMipLevel{ atlasLayout.Width, atlasLayout.Height, 0,
-                                              aoPixels.size() } };
-            aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
-
-            const std::string aoRel = "levels/" + stemStr + "/ao.stex";
-            const std::string aoAssetPath = "asset://" + aoRel;
-            if (!textureSerializer.WriteToFile(
-                    transaction.Stage(assetsRoot / ".cooked" / aoRel).generic_string(),
-                    aoAtlas))
-            {
-                result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
+            if (progress.Cancelled(result))
                 return false;
-            }
-            aoArtifact = catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
-            lightmapFields.push_back({ "ao", JsonValue(aoAssetPath) });
+            BakeAmbientOcclusionChart(sampleMaps[c], atlasLayout.Rects[c], occluders, aoBake,
+                                      atlasLayout.Width, aoPixels);
         }
-        cellEntities.push_back(JsonValue(JsonValue::Object{
-            { "components", JsonValue(JsonValue::Object{
-                { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
-            }) },
-        }));
-        progress.Complete();
-        if (bakeAo)
+
+        TextureData aoAtlas;
+        aoAtlas.Format = TexturePixelFormat::R8;
+        aoAtlas.Usage = TextureUsage::LinearData;
+        aoAtlas.Filter = TextureFilter::Linear;
+        aoAtlas.Width = atlasLayout.Width;
+        aoAtlas.Height = atlasLayout.Height;
+        aoAtlas.Mips = { TextureMipLevel{ atlasLayout.Width, atlasLayout.Height, 0,
+                                          aoPixels.size() } };
+        aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
+
+        const std::string aoRel = "levels/" + std::string(stem) + "/ao.stex";
+        const std::string aoAssetPath = "asset://" + aoRel;
+        TextureSerializer textureSerializer(logging);
+        if (!textureSerializer.WriteToFile(
+                transaction.Stage(assetsRoot / ".cooked" / aoRel).generic_string(), aoAtlas))
         {
-            progress.Begin(CookStepIds::AmbientOcclusion);
-            progress.Complete();
+            result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
+            return false;
         }
+        aoArtifact = catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
         return true;
     }
 } // namespace
@@ -268,11 +227,62 @@ bool BakeDocumentLightmap(const DocumentCookSnapshot& snapshot,
     result.LightmapAtlasWidth = atlasLayout.Width;
     result.LightmapAtlasHeight = atlasLayout.Height;
     result.EffectiveLuxelSize = atlasLayout.EffectiveLuxelSize;
-    if (reuse.ReuseLighting)
-        return RestoreLightmap(snapshot, reuse, assetsRoot, transaction, catalog,
-                               progress, cellEntities, directArtifact, aoArtifact,
-                               result);
-    return BakeFreshLightmap(snapshot, cells, atlasLayout, occlusionBvh, assetsRoot,
-                             stem, transaction, catalog, progress, logging, cellEntities,
-                             directArtifact, aoArtifact, result);
+
+    const bool aoEnabled = snapshot.Lighting.Ao.Enabled;
+    const bool directReuse = reuse.Direct != nullptr;
+    const bool aoReuse = aoEnabled && reuse.Ao != nullptr;
+
+    // Direct and AO share one sample map, so resolve it once when either channel
+    // bakes fresh; both reused means no rasterization at all.
+    std::vector<LightmapSurfaceSamples> sampleMaps;
+    if (!directReuse || (aoEnabled && !aoReuse))
+        sampleMaps = ResolveChartSampleMaps(snapshot, cells, atlasLayout, occlusionBvh);
+
+    std::string error;
+    progress.Begin(CookStepIds::DirectLightmap);
+    if (directReuse)
+    {
+        if (!RestoreChannel(*reuse.Direct, assetsRoot, transaction, catalog, directArtifact,
+                            &error))
+        {
+            result.Error = "CookDocument: " + error;
+            return false;
+        }
+        result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
+        RestoreDocumentCookResultMetadata(reuse.Direct->Metadata, result);
+    }
+    else if (!BakeFreshDirect(sampleMaps, atlasLayout, snapshot, occlusionBvh, stem, assetsRoot,
+                              transaction, catalog, progress, logging, directArtifact, result))
+        return false;
+    progress.Complete();
+
+    if (aoEnabled)
+    {
+        progress.Begin(CookStepIds::AmbientOcclusion);
+        if (aoReuse)
+        {
+            if (!RestoreChannel(*reuse.Ao, assetsRoot, transaction, catalog, aoArtifact, &error))
+            {
+                result.Error = "CookDocument: " + error;
+                return false;
+            }
+            result.ReusedSteps.push_back(std::string(CookStepIds::AmbientOcclusion));
+        }
+        else if (!BakeFreshAo(sampleMaps, atlasLayout, snapshot, occlusionBvh, stem, assetsRoot,
+                              transaction, catalog, progress, logging, aoArtifact, result))
+            return false;
+        progress.Complete();
+    }
+
+    JsonValue::Object lightmapFields{
+        { "texture", JsonValue(directArtifact->Path) },
+    };
+    if (aoEnabled)
+        lightmapFields.push_back({ "ao", JsonValue(aoArtifact->Path) });
+    cellEntities.push_back(JsonValue(JsonValue::Object{
+        { "components", JsonValue(JsonValue::Object{
+            { "ZoneLightmap", JsonValue(std::move(lightmapFields)) },
+        }) },
+    }));
+    return true;
 }

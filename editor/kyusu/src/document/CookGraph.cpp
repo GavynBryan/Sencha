@@ -10,11 +10,11 @@ namespace
     constexpr std::array kBrushCellsDependencies{
         DocumentCookStepIds::BrushCells,
     };
-    constexpr std::array kLightmapSurfaceDependencies{
+    // Direct light and AO both consume the surface samples and the occlusion
+    // geometry, and nothing else across steps; neither depends on the other.
+    constexpr std::array kLightmapEvaluationDependencies{
         DocumentCookStepIds::LightmapSurfaces,
-    };
-    constexpr std::array kAmbientOcclusionDependencies{
-        CookStepIds::DirectLightmap,
+        DocumentCookStepIds::OcclusionGeometry,
     };
     constexpr std::array kOcclusionDependencies{
         DocumentCookStepIds::OcclusionGeometry,
@@ -41,12 +41,12 @@ namespace
             DocumentCookStepIds::OcclusionGeometry, kBrushCellsDependencies, {}, 1, false },
         CookStepDefinition{
             CookStepIds::DirectLightmap,
-            std::span<const std::string_view>(kLightmapSurfaceDependencies),
+            std::span<const std::string_view>(kLightmapEvaluationDependencies),
             CookOutputFamilies::DirectLightmap, 1, true },
         CookStepDefinition{
             CookStepIds::AmbientOcclusion,
-            std::span<const std::string_view>(kAmbientOcclusionDependencies),
-            CookOutputFamilies::AmbientOcclusion, 1, true },
+            std::span<const std::string_view>(kLightmapEvaluationDependencies),
+            CookOutputFamilies::AmbientOcclusion, 2, true },
         CookStepDefinition{
             CookStepIds::IrradianceProbes,
             std::span<const std::string_view>(kOcclusionDependencies),
@@ -133,9 +133,6 @@ ResolvedCookGraph ResolveDocumentCookGraph(const CookProfile& profile)
         for (std::string_view dependency : definition->Dependencies)
             if (!self(self, dependency))
                 return false;
-        if ((id == CookStepIds::DirectLightmap || id == CookStepIds::AmbientOcclusion)
-            && !self(self, DocumentCookStepIds::OcclusionGeometry))
-            return false;
         included.insert(std::string(id));
         result.OrderedSteps.push_back(std::string(id));
         return true;

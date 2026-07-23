@@ -62,7 +62,8 @@ protected:
     // A floor slab at the origin plus a point light above it, authored with the
     // given bake contribution. Returns the saved level path.
     fs::path AuthorFloorWithLight(LightBakeContribution contribution,
-                                  Vec3d lightPosition = Vec3d{ 0, 4, 0 })
+                                  Vec3d lightPosition = Vec3d{ 0, 4, 0 },
+                                  float intensity = 40.0f)
     {
         EditorDocument doc(Logging);
         doc.SetDefaultMaterial(
@@ -72,7 +73,7 @@ protected:
         const EntityId lightEntity = doc.GetScene().CreateEntity(lightPosition);
         PointLightComponent light{};
         light.Color = Vec3d(1.0f, 1.0f, 1.0f);
-        light.Intensity = 40.0f;
+        light.Intensity = intensity;
         light.Range = 12.0f;
         light.BakeContribution = contribution;
         doc.GetScene().GetRegistry().Components.AddComponent(lightEntity, light);
@@ -535,6 +536,66 @@ TEST_F(BakedLightingCookTest, LightingProfileRestoresWithdrawnStepArtifacts)
               originalLightmap);
     EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/ao.stex"), originalAo);
     EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+}
+
+// Direct and AO cache independently: an AO-only parameter change reuses the
+// direct atlas byte-for-byte and rebakes only AO. The seam-wall fixture has real
+// occlusion, so a wider AO reach genuinely moves the AO plane.
+TEST_F(BakedLightingCookTest, AoParameterChangeReusesDirectAtlas)
+{
+    const fs::path level = AuthorSeamWall("test");
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    const std::vector<std::byte> baseLightmap =
+        ReadBytes(Root / ".cooked/levels/test/lightmap.stex");
+    const std::vector<std::byte> baseAo =
+        ReadBytes(Root / ".cooked/levels/test/ao.stex");
+
+    LightingCookParams widerAo{};
+    widerAo.Ao.MaxDistance = 2.0f;
+    const DocumentCookResult again =
+        CookDocument(level, Root, 16.0, nullptr, nullptr, widerAo);
+    ASSERT_TRUE(again.Success) << again.Error;
+    EXPECT_FALSE(again.CacheHit);
+    EXPECT_NE(std::find(again.ReusedSteps.begin(), again.ReusedSteps.end(),
+                        CookStepIds::DirectLightmap),
+              again.ReusedSteps.end())
+        << "an AO-only change must reuse the direct atlas";
+    EXPECT_EQ(std::find(again.ReusedSteps.begin(), again.ReusedSteps.end(),
+                        CookStepIds::AmbientOcclusion),
+              again.ReusedSteps.end())
+        << "an AO-only change must rebake AO";
+    EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"), baseLightmap);
+    EXPECT_NE(ReadBytes(Root / ".cooked/levels/test/ao.stex"), baseAo);
+}
+
+// The mirror: a direct-light change (same geometry, brighter light) reuses the
+// AO plane byte-for-byte and rebakes only the direct atlas.
+TEST_F(BakedLightingCookTest, DirectLightChangeReusesAoPlane)
+{
+    const fs::path level =
+        AuthorFloorWithLight(LightBakeContribution::Direct, Vec3d{ 0, 4, 0 }, 40.0f);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    const std::vector<std::byte> baseLightmap =
+        ReadBytes(Root / ".cooked/levels/test/lightmap.stex");
+    const std::vector<std::byte> baseAo =
+        ReadBytes(Root / ".cooked/levels/test/ao.stex");
+
+    // Re-author the same floor and light position with a brighter light: the
+    // surface samples and occlusion are unchanged, so AO reuses.
+    AuthorFloorWithLight(LightBakeContribution::Direct, Vec3d{ 0, 4, 0 }, 80.0f);
+    const DocumentCookResult again = CookDocument(level, Root, 16.0);
+    ASSERT_TRUE(again.Success) << again.Error;
+    EXPECT_FALSE(again.CacheHit);
+    EXPECT_NE(std::find(again.ReusedSteps.begin(), again.ReusedSteps.end(),
+                        CookStepIds::AmbientOcclusion),
+              again.ReusedSteps.end())
+        << "a direct-light change must reuse the AO plane";
+    EXPECT_EQ(std::find(again.ReusedSteps.begin(), again.ReusedSteps.end(),
+                        CookStepIds::DirectLightmap),
+              again.ReusedSteps.end())
+        << "a direct-light change must rebake the direct atlas";
+    EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/ao.stex"), baseAo);
+    EXPECT_NE(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"), baseLightmap);
 }
 
 TEST_F(BakedLightingCookTest, RestalesOnAoTuningOnlyWhenLightsExist)

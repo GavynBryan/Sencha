@@ -191,7 +191,10 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
             .Version = FindDocumentCookStep(CookStepIds::AmbientOcclusion)->Version,
             .InputFingerprint = fingerprints.Ao,
             .Dependencies = {
-                { std::string(CookStepIds::DirectLightmap), fingerprints.Direct },
+                { std::string(DocumentCookStepIds::LightmapSurfaces),
+                  fingerprints.LightmapSurfaces },
+                { std::string(DocumentCookStepIds::OcclusionGeometry),
+                  fingerprints.Occlusion },
             },
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),

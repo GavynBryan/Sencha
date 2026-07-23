@@ -161,10 +161,16 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
         .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset);
     fp.Direct = directIdentity.Value();
 
-    CookFingerprint aoIdentity("ambient_occlusion", 1);
-    aoIdentity.AddDependency("direct_lightmap", fp.Direct)
+    // AO's mechanical inputs are the surface samples and the occlusion geometry,
+    // not the direct-light texture: changing a light must not restale AO, and
+    // changing an AO parameter must not restale direct. normal_offset folds in
+    // because it lifts both the AO ray origin and the sample map's buried probe.
+    CookFingerprint aoIdentity("ambient_occlusion", 2);
+    aoIdentity.AddDependency("lightmap_surfaces", fp.LightmapSurfaces)
+        .AddDependency("occlusion_geometry", fp.Occlusion)
         .AddFloat("max_distance", lightmapParams.Ao.MaxDistance)
-        .AddU32("ray_count", lightmapParams.Ao.RayCount);
+        .AddU32("ray_count", lightmapParams.Ao.RayCount)
+        .AddFloat("normal_offset", lightmapParams.Shading.NormalOffset);
     fp.Ao = aoIdentity.Value();
 
     CookFingerprint probeIdentity("irradiance_probes", 1);

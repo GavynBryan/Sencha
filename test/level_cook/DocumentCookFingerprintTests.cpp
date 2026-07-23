@@ -66,8 +66,7 @@ TEST(DocumentCookFingerprints, DirectLightMovesDirectNotSurfaces)
     EXPECT_NE(base.Direct, after.Direct);
     EXPECT_EQ(base.LightmapSurfaces, after.LightmapSurfaces);
     EXPECT_EQ(base.Occlusion, after.Occlusion);
-    // AO currently folds in the direct identity (pre-Stage-5 coupling): a
-    // direct-light change still moves AO. Stage 5 separates them, at which point
-    // this becomes EXPECT_EQ.
-    EXPECT_NE(base.Ao, after.Ao);
+    // AO's identity is surfaces + occlusion + AO params, never the direct-light
+    // texture, so moving a light reuses AO unchanged.
+    EXPECT_EQ(base.Ao, after.Ao);
 }
