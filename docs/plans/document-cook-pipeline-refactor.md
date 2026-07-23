@@ -10,18 +10,24 @@ Status: in progress.
   `DocumentPublication`). `DocumentCook.cpp` is 325 lines; the mechanisms carry
   focused tests and the suite is green.
 - Stage 8 was landed as a behavior-preserving structural decomposition ahead of
-  Stages 5 and 6. The extracted seams hold the current (fused) behavior: the
-  lightmap bake still resolves direct and AO together behind
-  `BakeDocumentLightmap`, and publication is still a single-hash cache decision
-  plus `StageDocumentIndex`/`StageDocumentReceipt` rather than a
-  `DocumentPublicationPlan`.
-- Stages 5 (engine lightmap surface-sample split with independent direct/AO
-  cache) and 6 (cumulative publication plan) remain. They are the two intended
-  behavior changes; each now slots behind an established seam rather than into
-  the monolith. Two disabled characterizations pin them:
-  `DocumentCookFingerprints.DirectLightMovesDirectNotSurfaces` asserts the
-  current direct/AO coupling (flip to `EXPECT_EQ` at Stage 5), and
-  `DISABLED_PreserveLightingKeepsSceneReferencingTheAtlas` awaits Stage 6.
+  Stages 5 and 6. The extracted seams hold the behavior; Stage 5's core then
+  landed behind them without re-monolithing.
+- Stage 5 core is landed: the engine lightmap bake is split around
+  `LightmapSurfaceSamples` (`ResolveLightmapSurfaceSamples` +
+  `BakeDirectLightmapChart` + `BakeAmbientOcclusionChart`, byte-identical, pinned
+  by `LightmapRasterTests` and the level-cook byte-identical recook), and direct
+  and AO now cache independently: AO's identity is surfaces + occlusion + AO
+  params (never the direct texture), so an AO-only change reuses the direct atlas
+  and a direct-light change reuses the AO plane (two new lighting tests pin this;
+  the coupling test flipped to `EXPECT_EQ`).
+- Stage 5 remainder (deferred): the AO-only path (a profile baking AO with no
+  direct light) still needs the paired runtime change: `ZoneLightmap` must accept
+  an AO plane with no direct texture (loader + shader), and collection must key
+  surface inputs on the graph requiring surfaces rather than on bake lights
+  existing. This is a bundled cook + runtime unit whose shader half needs GPU
+  pixel-diff validation, and it has no current consumer, so it is not built here.
+- Stage 6 (cumulative publication plan) remains, pinned by
+  `DISABLED_PreserveLightingKeepsSceneReferencingTheAtlas`.
 
 Scope: the editor-side document cook beginning in
 [`DocumentCook.cpp`](../../editor/kyusu/src/document/DocumentCook.cpp), the
