@@ -68,8 +68,9 @@ private:
         Aabb3d Bounds = Aabb3d::Empty();
         std::uint32_t Start = 0;  // first entry in Order (leaf only)
         std::uint32_t Count = 0;  // triangle count (0 => internal node)
-        std::uint32_t Left = 0;
-        std::uint32_t Right = 0;
+        std::uint32_t Left = 0;   // lower-centroid child along Axis
+        std::uint32_t Right = 0;  // higher-centroid child along Axis
+        std::uint8_t Axis = 0;    // split axis (internal node): near-child order
     };
 
     std::uint32_t BuildRange(std::uint32_t start, std::uint32_t count);

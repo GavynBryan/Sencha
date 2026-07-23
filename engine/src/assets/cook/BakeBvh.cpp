@@ -142,6 +142,7 @@ std::uint32_t BakeBvh::BuildRange(std::uint32_t start, std::uint32_t count)
     Nodes[nodeIndex].Bounds = bounds;
     Nodes[nodeIndex].Left = left;
     Nodes[nodeIndex].Right = right;
+    Nodes[nodeIndex].Axis = static_cast<std::uint8_t>(axis);
     return nodeIndex;
 }
 
@@ -211,8 +212,14 @@ bool BakeBvh::FirstHit(const Vec3d& origin, const Vec3d& direction,
 
         if (depth + 2 <= stack.size())
         {
-            stack[depth++] = node.Left;
-            stack[depth++] = node.Right;
+            // Push far child first so the near child pops first: a nearest-hit
+            // query tightens nearestT sooner and prunes more far subtrees. The
+            // near side is the lower-centroid (Left) child when the ray advances
+            // along +Axis. Reordering never changes the nearest hit; only the
+            // measure-zero coincident-front-face tie keeps its build-order rule.
+            const bool nearIsLeft = direction[node.Axis] >= 0.0;
+            stack[depth++] = nearIsLeft ? node.Right : node.Left;
+            stack[depth++] = nearIsLeft ? node.Left : node.Right;
         }
     }
 
