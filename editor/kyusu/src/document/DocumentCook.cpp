@@ -18,6 +18,7 @@
 #include "DocumentLightmapBake.h"
 #include "DocumentProbeBake.h"
 #include "DocumentPublication.h"
+#include "DocumentPublicationPlan.h"
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
@@ -199,6 +200,23 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
             return result;
     }
 
+    // Resolve the publication plan: what this cook produces, and what a Preserve
+    // disposition carries forward from the active published entry so a preserved
+    // output stays referenced instead of orphaned on disk.
+    CookedCacheIndex priorIndex;
+    (void)CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), priorIndex);
+    const DocumentPublicationPlan plan = ResolveDocumentPublicationPlan(
+        request, /*directProduced*/ !bakeLights.empty(),
+        /*aoProduced*/ !bakeLights.empty() && lightmapParams.Ao.Enabled,
+        /*probesProduced*/ !probeVolumes.empty(), runCollision,
+        priorIndex.Find(sourceRel));
+    std::string preserveError;
+    if (!plan.ValidatePreserved(assetsRoot, &preserveError))
+    {
+        result.Error = "CookDocument: " + preserveError;
+        return result;
+    }
+
     // Bake static direct lighting into the zone's lightmap atlas. The lights
     // were collected up front (folded into the cook hash).
     if (!bakeLights.empty())
@@ -220,20 +238,24 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
             return result;
     }
 
+    // Families the profile keeps but this cook does not rebake: re-emit their
+    // references and carry the prior published artifacts forward.
+    ApplyPreservedPublication(plan, catalog, cellEntities);
+
     if (!WriteCookedSceneArtifacts(std::move(snapshot.PassthroughScene), pendingMeshes,
                                    cellEntities, collisionEntries, runCollision, catalog,
                                    paths, assetsRoot, transaction, progress, logging,
                                    result))
         return result;
 
-    if (!StageDocumentIndex(sourceRel, geometryHash, runReferencedAssets, runCollision,
+    if (!StageDocumentIndex(sourceRel, geometryHash, runReferencedAssets,
                             std::move(pendingImports), catalog, paths, assetsRoot,
                             transaction, result))
         return result;
 
     result.CellCount = cells.size();
     if (!StageDocumentReceipt(sourceRel, geometryHash, profile, snapshot, fingerprints,
-                              reuse, catalog, directLightmapArtifact,
+                              reuse, plan, catalog, directLightmapArtifact,
                               ambientOcclusionArtifact, probeArtifact, paths, assetsRoot,
                               stemStr, hasCachedReceipt, cachedReceipt, transaction, result))
         return result;

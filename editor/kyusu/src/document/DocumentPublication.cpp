@@ -15,8 +15,7 @@
 #include <utility>
 
 bool StageDocumentIndex(std::string_view sourceRel, std::uint64_t documentHash,
-                        bool runReferencedAssets, bool emitCollision,
-                        PendingAssetImport pendingImports,
+                        bool runReferencedAssets, PendingAssetImport pendingImports,
                         DocumentArtifactCatalog& catalog, const DocumentCookPaths& paths,
                         const std::filesystem::path& assetsRoot,
                         CookArtifactTransaction& transaction, DocumentCookResult& result)
@@ -47,23 +46,16 @@ bool StageDocumentIndex(std::string_view sourceRel, std::uint64_t documentHash,
             return false;
         }
     }
-    if (!emitCollision)
-    {
-        if (const CookedSourceEntry* previous = index.Find(sourceRel))
-            for (const CookedArtifact& artifact : previous->Artifacts)
-                if (artifact.Type == AssetType::Collision)
-                    catalog.AddExisting(artifact);
-    }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRel);
     entry.InputFingerprint = documentHash;
     for (CookedArtifact& artifact : catalog.Artifacts())
     {
+        // Preserved artifacts already exist in the active tree, so hash them in
+        // place; produced ones are staged and hashed from staging.
         const std::filesystem::path active = assetsRoot / artifact.FileRelPath;
         const std::filesystem::path contentPath =
-            !emitCollision && artifact.Type == AssetType::Collision
-            ? active
-            : transaction.Stage(active);
+            catalog.IsPreserved(artifact.FileRelPath) ? active : transaction.Stage(active);
         std::uint64_t hash = 0;
         if (HashFileContents(contentPath.generic_string(), hash))
             artifact.ContentHash = hash;
@@ -82,7 +74,9 @@ bool StageDocumentIndex(std::string_view sourceRel, std::uint64_t documentHash,
 bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash,
                           const CookProfile& profile, const DocumentCookSnapshot& snapshot,
                           const DocumentCookFingerprints& fingerprints,
-                          const DocumentCookReuse& reuse, DocumentArtifactCatalog& catalog,
+                          const DocumentCookReuse& reuse,
+                          const DocumentPublicationPlan& plan,
+                          DocumentArtifactCatalog& catalog,
                           const std::optional<CookedArtifact>& directArtifact,
                           const std::optional<CookedArtifact>& aoArtifact,
                           const std::optional<CookedArtifact>& probeArtifact,
@@ -97,26 +91,29 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
     receipt.Target = std::string(sourceRel);
     receipt.PublishedProfileId = profile.Id;
     receipt.PublishedFingerprint = documentHash;
+    // A family is published if this cook produced it or preserved a prior output.
+    const auto published = [](FamilyPublication state)
+    {
+        return state == FamilyPublication::Produced
+            || state == FamilyPublication::Preserved;
+    };
     receipt.PublishedOutputFamilies = {
         std::string(CookOutputFamilies::Structure),
     };
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::Collision)
-        != CookOutputDisposition::Withdraw)
+    if (published(plan.Collision))
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::Collision));
     if (CookProfileOutputDisposition(profile, CookOutputFamilies::ReferencedAssets)
         != CookOutputDisposition::Withdraw)
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::ReferencedAssets));
-    if (!snapshot.BakeLights.empty())
-    {
+    if (published(plan.DirectLightmap))
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::DirectLightmap));
-        if (snapshot.Lighting.Ao.Enabled)
-            receipt.PublishedOutputFamilies.push_back(
-                std::string(CookOutputFamilies::AmbientOcclusion));
-    }
-    if (!snapshot.ProbeVolumes.empty())
+    if (published(plan.AmbientOcclusion))
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::AmbientOcclusion));
+    if (published(plan.IrradianceProbes))
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::IrradianceProbes));
 

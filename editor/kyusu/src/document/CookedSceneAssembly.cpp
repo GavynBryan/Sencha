@@ -92,7 +92,13 @@ bool WriteCookedSceneArtifacts(JsonValue passthroughScene,
             constexpr std::string_view prefix = "asset://";
             const std::string rel(assetPath.substr(prefix.size()));
             if (catalog.IsGenerated(assetPath))
+            {
+                // A preserved generated asset already exists in the active tree;
+                // staging it would register an unwritten file the commit rejects.
+                if (catalog.IsPreserved(".cooked/" + rel))
+                    return assetsRoot / ".cooked" / rel;
                 return transaction.Stage(assetsRoot / ".cooked" / rel);
+            }
             return assetsRoot / rel;
         };
 

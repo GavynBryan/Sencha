@@ -64,9 +64,34 @@ public:
         return Artifacts_.back();
     }
 
-    // Pull a prior artifact forward unchanged (preserved collision on a cook that
-    // does not refresh it). Not generated and not scene-referenced this cook.
-    void AddExisting(const CookedArtifact& artifact) { Artifacts_.push_back(artifact); }
+    // A generated texture the scene references, preserved from a prior cook (a
+    // Preserve disposition on a cook that does not rebake lighting): scene
+    // referenced and path-located under .cooked like a produced atlas, but its
+    // bytes already exist, so the transaction must not re-stage it.
+    void AddPreservedTexture(std::string assetPath, std::string relPath)
+    {
+        Generated_.insert(assetPath);
+        SceneRefs_.push_back(assetPath);
+        Preserved_.insert(relPath);
+        Artifacts_.push_back(CookedArtifact{
+            std::move(assetPath), std::move(relPath), AssetType::Texture });
+    }
+
+    // Pull a prior artifact forward unchanged (preserved collision or probes on a
+    // cook that does not refresh them). Not scene-referenced; its bytes already
+    // exist, so the transaction records but does not re-stage it.
+    void AddPreserved(const CookedArtifact& artifact)
+    {
+        Preserved_.insert(artifact.FileRelPath);
+        Artifacts_.push_back(artifact);
+    }
+
+    // True for an artifact carried forward from a prior cook: its active bytes are
+    // reused as-is, so publication content-hashes them in place instead of staging.
+    [[nodiscard]] bool IsPreserved(std::string_view fileRelPath) const
+    {
+        return Preserved_.count(std::string(fileRelPath)) != 0;
+    }
 
     // Restore a cached step's artifacts through the transaction, returning the
     // primary (last) restored artifact. `sceneReferenced` re-enters them into the
@@ -99,5 +124,6 @@ private:
     std::vector<CookedArtifact> Artifacts_;
     std::unordered_set<std::string> Generated_;
     std::unordered_set<std::string> SeenMaterial_;
+    std::unordered_set<std::string> Preserved_;
     std::vector<std::string> SceneRefs_;
 };
