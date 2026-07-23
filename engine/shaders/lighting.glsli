@@ -41,8 +41,11 @@ DirectLightTerms EvaluateDirectLight(
         coneAttenuation *= coneAttenuation;
     }
 
-    float window = clamp(
-        1.0 - pow(distanceToLight / max(range, 1e-4), 4.0), 0.0, 1.0);
+    // (d/r)^4 as two multiplies: pow with a non-constant base lowers to
+    // exp2(4*log2(x)), a transcendental pair per light per fragment.
+    float rangeRatio = distanceToLight / max(range, 1e-4);
+    float ratioSquared = rangeRatio * rangeRatio;
+    float window = clamp(1.0 - ratioSquared * ratioSquared, 0.0, 1.0);
     result.Attenuation = coneAttenuation
                        * (window * window)
                        / (distanceToLight * distanceToLight + 1e-4);

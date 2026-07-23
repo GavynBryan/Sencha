@@ -72,15 +72,17 @@ vec3 SampleTangentNormal()
     return normalize(vec3(mappedXy, mappedZ));
 }
 
-vec3 ResolveWorldNormal()
+// `geometricNormal` is the already-normalized interpolated normal, passed in so
+// the common unmapped case costs no second normalize.
+vec3 ResolveWorldNormal(vec3 geometricNormal)
 {
-    vec3 normal = normalize(inWorldNormal);
     if (pushData.NormalTextureIndex == 0xFFFFFFFFu)
-        return normal;
+        return geometricNormal;
 
     vec3 tangent = normalize(inWorldTangent);
-    vec3 bitangent = normalize(cross(normal, tangent)) * inTangentSign;
-    return normalize(mat3(tangent, bitangent, normal) * SampleTangentNormal());
+    vec3 bitangent = normalize(cross(geometricNormal, tangent)) * inTangentSign;
+    return normalize(
+        mat3(tangent, bitangent, geometricNormal) * SampleTangentNormal());
 }
 
 vec3 ResolveEmission()

@@ -25,7 +25,7 @@ void main()
 
     vec3 orm = SampleOrm();
     vec3 geometricNormal = normalize(inWorldNormal);
-    vec3 normal = ResolveWorldNormal();
+    vec3 normal = ResolveWorldNormal(geometricNormal);
     vec3 viewDirection = normalize(frame.ViewPositionTime.xyz - inWorldPos);
 
     float hemi = 0.5 + 0.5 * normal.y;
@@ -48,6 +48,16 @@ void main()
     {
         GpuLight light = frame.Lights[i];
         if (light.Type > 1u)
+            continue;
+
+        // Past its range a light contributes exactly zero: the r^4 window
+        // clamps to 0, which zeroes Radiance and so both the diffuse and the
+        // specular term. Cull here so an unreachable light never pays for the
+        // shadow filter's texture taps. The epsilon matches the window's own
+        // denominator so a sub-epsilon range is not culled early.
+        vec3 toLight = light.PositionRange.xyz - inWorldPos;
+        float lightRange = max(light.PositionRange.w, 1e-4);
+        if (dot(toLight, toLight) >= lightRange * lightRange)
             continue;
 
         float shadowVisibility = ResolveFilteredShadowVisibility(

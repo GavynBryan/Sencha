@@ -36,7 +36,7 @@ void main()
     vec4 baseColor = SampleBaseColor();
     vec3 orm = SampleOrm();
     vec3 geometricNormal = normalize(inWorldNormal);
-    vec3 normal = ResolveWorldNormal();
+    vec3 normal = ResolveWorldNormal(geometricNormal);
 
     if (frame.DebugView == DEBUG_WORLD_NORMALS)
     {

@@ -12,8 +12,9 @@ float SampleSpotShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNorma
         return 1.0;
 
     GpuSpotShadow shadow = frame.SpotShadows[shadowIndex];
+    // geometricNormal arrives normalized from every caller.
     vec3 receiverPosition = worldPosition
-        + normalize(geometricNormal) * shadow.SamplingParams.x * shadow.SamplingParams.z;
+        + geometricNormal * shadow.SamplingParams.x * shadow.SamplingParams.z;
     vec4 clipPosition = shadow.ViewProjection * vec4(receiverPosition, 1.0);
     if (clipPosition.w <= 0.0)
         return 1.0;
@@ -62,10 +63,11 @@ float SamplePointShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNorm
     GpuPointShadow shadow = frame.PointShadows[shadowIndex];
     float nearPlane = shadow.Params.x;
     float farPlane = shadow.PositionFar.w;
-    float worldTexelSize = (2.0 * farPlane)
-                         / float(textureSize(PointShadowCubes, 0).x);
+    float cubeExtent = float(textureSize(PointShadowCubes, 0).x);
+    float worldTexelSize = (2.0 * farPlane) / cubeExtent;
+    // geometricNormal arrives normalized from every caller.
     vec3 receiverPosition = worldPosition
-        + normalize(geometricNormal) * worldTexelSize * shadow.Params.z;
+        + geometricNormal * worldTexelSize * shadow.Params.z;
     vec3 fromLight = receiverPosition - shadow.PositionFar.xyz;
     float majorAxisDistance = max(abs(fromLight.x), max(abs(fromLight.y), abs(fromLight.z)));
     if (majorAxisDistance <= nearPlane || majorAxisDistance >= farPlane)
