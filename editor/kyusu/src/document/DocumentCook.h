@@ -55,14 +55,6 @@ struct DocumentCookOptions
     std::string OutputNamespace;
 };
 
-// Builds the cooked StaticMesh entity JSON for one cell: a Transform at the
-// cell origin plus a StaticMesh referencing the cell mesh and its per-section
-// materials (bare asset:// paths; WriteCookedScene stamps the ones the id map
-// knows). Exposed so the JSON shape can be pinned against the runtime loader.
-[[nodiscard]] JsonValue BuildCellEntity(const Vec3d& origin,
-                                        std::string_view meshPath,
-                                        std::span<const AssetRef> materials);
-
 class EditorDocument;
 class LoggingProvider;
 struct RuntimeAssets;

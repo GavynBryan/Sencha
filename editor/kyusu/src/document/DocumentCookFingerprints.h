@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 // One named identity per cook step plus the document publication identity.
 // Constructed once, before cache resolution; execution reads these values and
@@ -29,3 +30,9 @@ struct DocumentCookFingerprints
     const DocumentCookSnapshot& snapshot,
     double cellSize,
     std::span<const ProbeHaloZone* const> reachableHalo);
+
+// The named fingerprint for a cook step, so a receipt can pair a graph
+// dependency edge with the input hash that gates its reuse. Steps without a
+// named fingerprint (structure, collision, scene, publication) return 0.
+[[nodiscard]] std::uint64_t DocumentCookStepFingerprint(
+    const DocumentCookFingerprints& fingerprints, std::string_view stepId);

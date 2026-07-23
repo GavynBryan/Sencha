@@ -12,9 +12,7 @@
 #include <string_view>
 #include <vector>
 
-class CookArtifactTransaction;
-class CookStepProgress;
-class DocumentArtifactCatalog;
+struct DocumentCookContext;
 
 // A cell mesh staged but not yet written: the lighting bake needs every cell's
 // geometry (for the shared occlusion BVH) before any cell mesh is finalized on
@@ -38,18 +36,14 @@ struct CellCollisionEntry
 // Bakes each clustered cell into a render mesh (staged, held in `meshes`) and its
 // scene StaticMesh entity (`entities`), and, when `emitCollision`, a pre-baked
 // collision blob (`collision`). Records mesh, material, and collision membership
-// in `catalog` and mesh asset paths on `result`. Owns the RenderMeshes (and,
-// when emitting, Collision) progress steps and the per-cell cancellation check.
-// Returns false with `result` carrying the error or cancellation.
+// in the context's catalog and mesh asset paths on its result. Owns the
+// RenderMeshes (and, when emitting, Collision) progress steps and the per-cell
+// cancellation check. Returns false with the context result carrying the error
+// or cancellation.
 [[nodiscard]] bool EmitCellArtifacts(
+    const DocumentCookContext& ctx,
     const std::vector<BrushCell>& cells,
-    const std::filesystem::path& assetsRoot,
-    std::string_view stem,
     bool emitCollision,
-    CookArtifactTransaction& transaction,
-    DocumentArtifactCatalog& catalog,
-    CookStepProgress& progress,
     std::vector<PendingCellMesh>& meshes,
     JsonValue::Array& entities,
-    std::vector<CellCollisionEntry>& collision,
-    DocumentCookResult& result);
+    std::vector<CellCollisionEntry>& collision);

@@ -11,6 +11,7 @@
 #include "CookedSceneAssembly.h"
 #include "DocumentArtifactCatalog.h"
 #include "DocumentBakeOcclusion.h"
+#include "DocumentCookContext.h"
 #include "DocumentCookFingerprints.h"
 #include "DocumentCookPaths.h"
 #include "DocumentCookReuse.h"
@@ -38,42 +39,6 @@
 #include <span>
 #include <string>
 #include <vector>
-
-JsonValue BuildCellEntity(const Vec3d& origin,
-                          std::string_view meshPath,
-                          std::span<const AssetRef> materials)
-{
-    JsonValue::Object local{
-        { "position", JsonValue(JsonValue::Array{
-            JsonValue(static_cast<double>(origin.X)),
-            JsonValue(static_cast<double>(origin.Y)),
-            JsonValue(static_cast<double>(origin.Z)) }) },
-        { "rotation", JsonValue(JsonValue::Array{
-            JsonValue(0.0), JsonValue(0.0), JsonValue(0.0), JsonValue(1.0) }) },
-        { "scale", JsonValue(JsonValue::Array{
-            JsonValue(1.0), JsonValue(1.0), JsonValue(1.0) }) },
-    };
-
-    JsonValue::Array materialPaths;
-    materialPaths.reserve(materials.size());
-    for (const AssetRef& material : materials)
-        materialPaths.push_back(JsonValue(material.Path));
-
-    JsonValue::Object staticMesh{
-        { "mesh", JsonValue(std::string(meshPath)) },
-        { "materials", JsonValue(std::move(materialPaths)) },
-        { "visible", JsonValue(true) },
-        { "layer_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
-        { "section_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
-    };
-
-    return JsonValue(JsonValue::Object{
-        { "components", JsonValue(JsonValue::Object{
-            { "Transform", JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } }) },
-            { "StaticMesh", JsonValue(std::move(staticMesh)) },
-        }) },
-    });
-}
 
 DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
                                        std::string_view levelName,
@@ -112,7 +77,6 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     const std::uint64_t geometryHash = fingerprints.Document;
     const DocumentCookPaths paths = DeriveDocumentCookPaths(
         assetsRoot, sourceRel, levelName, request.OutputNamespace, geometryHash);
-    const std::string& stemStr = paths.Stem;
 
     // Referenced-asset freshness runs before the whole-document fast path: a
     // changed or missing referenced import produces a non-empty prepared set,
@@ -180,9 +144,18 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     std::optional<CookedArtifact> probeArtifact;
     std::vector<PendingCellMesh> pendingMeshes;
 
-    if (!EmitCellArtifacts(cells, assetsRoot, stemStr, runCollision, transaction,
-                           catalog, progress, pendingMeshes, cellEntities,
-                           collisionEntries, result))
+    const DocumentCookContext ctx{
+        .AssetsRoot = assetsRoot,
+        .Paths = paths,
+        .Transaction = transaction,
+        .Catalog = catalog,
+        .Progress = progress,
+        .Logging = logging,
+        .Result = result,
+    };
+
+    if (!EmitCellArtifacts(ctx, cells, runCollision, pendingMeshes, cellEntities,
+                           collisionEntries))
         return result;
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
@@ -221,10 +194,9 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     // were collected up front (folded into the cook hash).
     if (!bakeLights.empty())
     {
-        if (!BakeDocumentLightmap(snapshot, cells, atlasLayout, occlusionBvh, reuse,
-                                  assetsRoot, stemStr, transaction, catalog, progress,
-                                  logging, cellEntities, directLightmapArtifact,
-                                  ambientOcclusionArtifact, result))
+        if (!BakeDocumentLightmap(ctx, snapshot, cells, atlasLayout, occlusionBvh,
+                                  reuse, cellEntities, directLightmapArtifact,
+                                  ambientOcclusionArtifact))
             return result;
     }
 
@@ -233,8 +205,7 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     // the runtime locates the file by the cooked-scene path convention.
     if (!probeVolumes.empty())
     {
-        if (!BakeDocumentProbes(snapshot, occlusionBvh, reuse, assetsRoot, stemStr,
-                                transaction, catalog, progress, probeArtifact, result))
+        if (!BakeDocumentProbes(ctx, snapshot, occlusionBvh, reuse, probeArtifact))
             return result;
     }
 
@@ -242,22 +213,20 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     // references and carry the prior published artifacts forward.
     ApplyPreservedPublication(plan, catalog, cellEntities);
 
-    if (!WriteCookedSceneArtifacts(std::move(snapshot.PassthroughScene), pendingMeshes,
-                                   cellEntities, collisionEntries, runCollision, catalog,
-                                   paths, assetsRoot, transaction, progress, logging,
-                                   result))
+    if (!WriteCookedSceneArtifacts(ctx, std::move(snapshot.PassthroughScene),
+                                   pendingMeshes, cellEntities, collisionEntries,
+                                   runCollision))
         return result;
 
-    if (!StageDocumentIndex(sourceRel, geometryHash, runReferencedAssets,
-                            std::move(pendingImports), catalog, paths, assetsRoot,
-                            transaction, result))
+    if (!StageDocumentIndex(ctx, sourceRel, geometryHash, runReferencedAssets,
+                            std::move(pendingImports)))
         return result;
 
     result.CellCount = cells.size();
-    if (!StageDocumentReceipt(sourceRel, geometryHash, profile, snapshot, fingerprints,
-                              reuse, plan, catalog, directLightmapArtifact,
-                              ambientOcclusionArtifact, probeArtifact, paths, assetsRoot,
-                              stemStr, hasCachedReceipt, cachedReceipt, transaction, result))
+    if (!StageDocumentReceipt(ctx, sourceRel, geometryHash, profile, fingerprints,
+                              reuse, plan, directLightmapArtifact,
+                              ambientOcclusionArtifact, probeArtifact, hasCachedReceipt,
+                              cachedReceipt))
         return result;
 
     progress.Begin(DocumentCookStepIds::Publication);

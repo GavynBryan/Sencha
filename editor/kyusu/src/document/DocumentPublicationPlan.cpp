@@ -1,5 +1,6 @@
 #include "DocumentPublicationPlan.h"
 
+#include "CookArtifactPaths.h"
 #include "CookGraph.h"
 #include "DocumentArtifactCatalog.h"
 
@@ -15,7 +16,7 @@ namespace
         if (produced)
             return FamilyPublication::Produced;
         if (request.Disposition(family) == CookOutputDisposition::Withdraw)
-            return FamilyPublication::Withdrawn;
+            return FamilyPublication::Absent;
         return prior != nullptr ? FamilyPublication::Preserved : FamilyPublication::Absent;
     }
 }
@@ -62,9 +63,9 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
         {
             if (artifact.Type == AssetType::Texture)
             {
-                if (artifact.Path.ends_with("/lightmap.stex"))
+                if (PathHasArtifactFile(artifact.Path, kLightmapAtlasFile))
                     priorDirect = &artifact;
-                else if (artifact.Path.ends_with("/ao.stex"))
+                else if (PathHasArtifactFile(artifact.Path, kAoAtlasFile))
                     priorAo = &artifact;
             }
             else if (artifact.Type == AssetType::ProbeVolume)
@@ -92,11 +93,17 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
              && request.Disposition(CookOutputFamilies::AmbientOcclusion)
                 != CookOutputDisposition::Withdraw)
         plan.AmbientOcclusion = FamilyPublication::Preserved;
-    else if (request.Disposition(CookOutputFamilies::AmbientOcclusion)
-             == CookOutputDisposition::Withdraw)
-        plan.AmbientOcclusion = FamilyPublication::Withdrawn;
     else
         plan.AmbientOcclusion = FamilyPublication::Absent;
+
+    // Withdrawal is a profile disposition, resolved here so the publisher reads
+    // one value instead of re-querying the profile per family.
+    plan.WithdrawDirect = request.Disposition(CookOutputFamilies::DirectLightmap)
+        == CookOutputDisposition::Withdraw;
+    plan.WithdrawAo = request.Disposition(CookOutputFamilies::AmbientOcclusion)
+        == CookOutputDisposition::Withdraw;
+    plan.WithdrawProbe = request.Disposition(CookOutputFamilies::IrradianceProbes)
+        == CookOutputDisposition::Withdraw;
 
     if (plan.DirectLightmap == FamilyPublication::Preserved)
         plan.PreservedDirect = *priorDirect;

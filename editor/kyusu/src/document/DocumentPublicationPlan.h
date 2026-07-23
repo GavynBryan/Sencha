@@ -16,14 +16,14 @@ class DocumentArtifactCatalog;
 //  Produced  - this cook baked (or step-reused) it: a fresh artifact + reference.
 //  Preserved - not produced, disposition Preserve, a prior artifact exists: the
 //              prior published artifact is carried forward and re-referenced.
-//  Withdrawn - disposition Withdraw: no reference; the prior artifact is removed.
 //  Absent    - never produced and nothing to preserve.
+// Withdrawal is orthogonal (see the Withdraw* flags): a family can publish
+// nothing (Absent) while a superseded prior artifact is still removed on commit.
 enum class FamilyPublication
 {
     Absent,
     Produced,
     Preserved,
-    Withdrawn,
 };
 
 // The per-family publication decision for one document cook, resolved before
@@ -37,6 +37,13 @@ struct DocumentPublicationPlan
     FamilyPublication DirectLightmap = FamilyPublication::Absent;
     FamilyPublication AmbientOcclusion = FamilyPublication::Absent;
     FamilyPublication IrradianceProbes = FamilyPublication::Absent;
+
+    // Prior baked artifacts to remove because the profile withdraws the family.
+    // Independent of the publication state above: withdrawal deletes a stale
+    // output whether or not this cook publishes anything for that family.
+    bool WithdrawDirect = false;
+    bool WithdrawAo = false;
+    bool WithdrawProbe = false;
 
     std::optional<CookedArtifact> PreservedDirect;   // .../lightmap.stex
     std::optional<CookedArtifact> PreservedAo;        // .../ao.stex

@@ -1,9 +1,11 @@
 #include "DocumentLightmapBake.h"
 
+#include "CookArtifactPaths.h"
 #include "CookArtifactTransaction.h"
 #include "CookStepCache.h"
 #include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
+#include "DocumentCookContext.h"
 #include "DocumentCookReuse.h"
 
 #include <assets/cook/AmbientOcclusionBake.h>
@@ -147,7 +149,7 @@ namespace
         atlas.Blob.resize(atlasPixels.size() * sizeof(std::uint32_t));
         std::memcpy(atlas.Blob.data(), atlasPixels.data(), atlas.Blob.size());
 
-        const std::string atlasRel = "levels/" + std::string(stem) + "/lightmap.stex";
+        const std::string atlasRel = LightmapAtlasRel(stem);
         const std::string atlasAssetPath = "asset://" + atlasRel;
         TextureSerializer textureSerializer(logging);
         if (!textureSerializer.WriteToFile(
@@ -197,7 +199,7 @@ namespace
                                           aoPixels.size() } };
         aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
 
-        const std::string aoRel = "levels/" + std::string(stem) + "/ao.stex";
+        const std::string aoRel = AoAtlasRel(stem);
         const std::string aoAssetPath = "asset://" + aoRel;
         TextureSerializer textureSerializer(logging);
         if (!textureSerializer.WriteToFile(
@@ -211,18 +213,23 @@ namespace
     }
 } // namespace
 
-bool BakeDocumentLightmap(const DocumentCookSnapshot& snapshot,
+bool BakeDocumentLightmap(const DocumentCookContext& ctx,
+                          const DocumentCookSnapshot& snapshot,
                           const std::vector<BrushCell>& cells,
                           const LightmapAtlasLayout& atlasLayout,
                           const BakeBvh& occlusionBvh, const DocumentCookReuse& reuse,
-                          const std::filesystem::path& assetsRoot, std::string_view stem,
-                          CookArtifactTransaction& transaction,
-                          DocumentArtifactCatalog& catalog, CookStepProgress& progress,
-                          LoggingProvider& logging, JsonValue::Array& cellEntities,
+                          JsonValue::Array& cellEntities,
                           std::optional<CookedArtifact>& directArtifact,
-                          std::optional<CookedArtifact>& aoArtifact,
-                          DocumentCookResult& result)
+                          std::optional<CookedArtifact>& aoArtifact)
 {
+    const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
+    const std::string_view stem = ctx.Stem();
+    CookArtifactTransaction& transaction = ctx.Transaction;
+    DocumentArtifactCatalog& catalog = ctx.Catalog;
+    CookStepProgress& progress = ctx.Progress;
+    LoggingProvider& logging = ctx.Logging;
+    DocumentCookResult& result = ctx.Result;
+
     result.DirectLightCount = snapshot.BakeLights.size();
     result.LightmapAtlasWidth = atlasLayout.Width;
     result.LightmapAtlasHeight = atlasLayout.Height;

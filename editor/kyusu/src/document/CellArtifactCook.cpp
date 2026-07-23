@@ -3,6 +3,7 @@
 #include "CookArtifactTransaction.h"
 #include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
+#include "DocumentCookContext.h"
 
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <span>
 #include <system_error>
 
 namespace
@@ -23,6 +25,45 @@ namespace
     }
 
     std::string CellName(const Vec3i& coord) { return CellBase(coord) + ".smesh"; }
+
+    // The cooked StaticMesh entity JSON for one cell: a Transform at the cell
+    // origin plus a StaticMesh referencing the cell mesh and its per-section
+    // materials (bare asset:// paths; WriteCookedScene stamps the ones the id
+    // map knows).
+    JsonValue BuildCellEntity(const Vec3d& origin, std::string_view meshPath,
+                              std::span<const AssetRef> materials)
+    {
+        JsonValue::Object local{
+            { "position", JsonValue(JsonValue::Array{
+                JsonValue(static_cast<double>(origin.X)),
+                JsonValue(static_cast<double>(origin.Y)),
+                JsonValue(static_cast<double>(origin.Z)) }) },
+            { "rotation", JsonValue(JsonValue::Array{
+                JsonValue(0.0), JsonValue(0.0), JsonValue(0.0), JsonValue(1.0) }) },
+            { "scale", JsonValue(JsonValue::Array{
+                JsonValue(1.0), JsonValue(1.0), JsonValue(1.0) }) },
+        };
+
+        JsonValue::Array materialPaths;
+        materialPaths.reserve(materials.size());
+        for (const AssetRef& material : materials)
+            materialPaths.push_back(JsonValue(material.Path));
+
+        JsonValue::Object staticMesh{
+            { "mesh", JsonValue(std::string(meshPath)) },
+            { "materials", JsonValue(std::move(materialPaths)) },
+            { "visible", JsonValue(true) },
+            { "layer_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
+            { "section_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
+        };
+
+        return JsonValue(JsonValue::Object{
+            { "components", JsonValue(JsonValue::Object{
+                { "Transform", JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } }) },
+                { "StaticMesh", JsonValue(std::move(staticMesh)) },
+            }) },
+        });
+    }
 
     // Flatten a cell's already-triangulated faces into a position/index soup for
     // the collision bake (cell-local, the same triangles the render mesh uses).
@@ -39,19 +80,19 @@ namespace
     }
 } // namespace
 
-bool EmitCellArtifacts(const std::vector<BrushCell>& cells,
-                       const std::filesystem::path& assetsRoot,
-                       std::string_view stem,
+bool EmitCellArtifacts(const DocumentCookContext& ctx,
+                       const std::vector<BrushCell>& cells,
                        bool emitCollision,
-                       CookArtifactTransaction& transaction,
-                       DocumentArtifactCatalog& catalog,
-                       CookStepProgress& progress,
                        std::vector<PendingCellMesh>& meshes,
                        JsonValue::Array& entities,
-                       std::vector<CellCollisionEntry>& collision,
-                       DocumentCookResult& result)
+                       std::vector<CellCollisionEntry>& collision)
 {
-    const std::string stemStr(stem);
+    const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
+    CookArtifactTransaction& transaction = ctx.Transaction;
+    DocumentArtifactCatalog& catalog = ctx.Catalog;
+    CookStepProgress& progress = ctx.Progress;
+    DocumentCookResult& result = ctx.Result;
+    const std::string stemStr(ctx.Stem());
     progress.Begin(CookStepIds::RenderMeshes);
     for (const BrushCell& cell : cells)
     {
@@ -112,6 +153,9 @@ bool EmitCellArtifacts(const std::vector<BrushCell>& cells,
     }
     progress.Complete();
     if (emitCollision)
+    {
+        progress.Begin(CookStepIds::Collision);
         progress.Complete();
+    }
     return true;
 }

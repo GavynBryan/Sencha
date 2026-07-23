@@ -1,6 +1,8 @@
 #include "DocumentPublication.h"
 
+#include "CookArtifactPaths.h"
 #include "CookArtifactTransaction.h"
+#include "DocumentCookContext.h"
 #include "CookGraph.h"
 #include "CookStepCache.h"
 #include "DocumentArtifactCatalog.h"
@@ -13,13 +15,37 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
-bool StageDocumentIndex(std::string_view sourceRel, std::uint64_t documentHash,
-                        bool runReferencedAssets, PendingAssetImport pendingImports,
-                        DocumentArtifactCatalog& catalog, const DocumentCookPaths& paths,
-                        const std::filesystem::path& assetsRoot,
-                        CookArtifactTransaction& transaction, DocumentCookResult& result)
+namespace
 {
+    // A step's receipt dependency edges, sourced from the cook graph so the
+    // topology has one home. Each graph edge is paired with the input
+    // fingerprint that gates its reuse.
+    std::vector<std::pair<std::string, std::uint64_t>> StepDependencies(
+        std::string_view stepId, const DocumentCookFingerprints& fingerprints)
+    {
+        std::vector<std::pair<std::string, std::uint64_t>> dependencies;
+        const CookStepDefinition* step = FindDocumentCookStep(stepId);
+        if (step != nullptr)
+            for (std::string_view dependency : step->Dependencies)
+                dependencies.emplace_back(
+                    std::string(dependency),
+                    DocumentCookStepFingerprint(fingerprints, dependency));
+        return dependencies;
+    }
+}
+
+bool StageDocumentIndex(const DocumentCookContext& ctx, std::string_view sourceRel,
+                        std::uint64_t documentHash, bool runReferencedAssets,
+                        PendingAssetImport pendingImports)
+{
+    DocumentArtifactCatalog& catalog = ctx.Catalog;
+    const DocumentCookPaths& paths = ctx.Paths;
+    const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
+    CookArtifactTransaction& transaction = ctx.Transaction;
+    DocumentCookResult& result = ctx.Result;
+
     // The index loads active (prepare left it untouched); the prepared imports,
     // their index deltas, and the level entry then publish through this one staged
     // index and the transaction, committing together.
@@ -71,21 +97,22 @@ bool StageDocumentIndex(std::string_view sourceRel, std::uint64_t documentHash,
     return true;
 }
 
-bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash,
-                          const CookProfile& profile, const DocumentCookSnapshot& snapshot,
+bool StageDocumentReceipt(const DocumentCookContext& ctx, std::string_view sourceRel,
+                          std::uint64_t documentHash, const CookProfile& profile,
                           const DocumentCookFingerprints& fingerprints,
                           const DocumentCookReuse& reuse,
                           const DocumentPublicationPlan& plan,
-                          DocumentArtifactCatalog& catalog,
                           const std::optional<CookedArtifact>& directArtifact,
                           const std::optional<CookedArtifact>& aoArtifact,
                           const std::optional<CookedArtifact>& probeArtifact,
-                          const DocumentCookPaths& paths,
-                          const std::filesystem::path& assetsRoot, std::string_view stem,
-                          bool hasCachedReceipt, const DocumentCookReceipt& cachedReceipt,
-                          CookArtifactTransaction& transaction, DocumentCookResult& result)
+                          bool hasCachedReceipt, const DocumentCookReceipt& cachedReceipt)
 {
-    const std::string stemStr(stem);
+    DocumentArtifactCatalog& catalog = ctx.Catalog;
+    const DocumentCookPaths& paths = ctx.Paths;
+    const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
+    CookArtifactTransaction& transaction = ctx.Transaction;
+    DocumentCookResult& result = ctx.Result;
+    const std::string stemStr(ctx.Stem());
     std::string cookError;
     DocumentCookReceipt receipt = hasCachedReceipt ? cachedReceipt : DocumentCookReceipt{};
     receipt.Target = std::string(sourceRel);
@@ -117,15 +144,12 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::IrradianceProbes));
 
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::DirectLightmap)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "lightmap.stex");
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::AmbientOcclusion)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "ao.stex");
-    if (CookProfileOutputDisposition(profile, CookOutputFamilies::IrradianceProbes)
-        == CookOutputDisposition::Withdraw)
-        transaction.Withdraw(assetsRoot / ".cooked/levels" / stemStr / "probes.sprobe");
+    if (plan.WithdrawDirect)
+        transaction.Withdraw(assetsRoot / ".cooked" / LightmapAtlasRel(stemStr));
+    if (plan.WithdrawAo)
+        transaction.Withdraw(assetsRoot / ".cooked" / AoAtlasRel(stemStr));
+    if (plan.WithdrawProbe)
+        transaction.Withdraw(assetsRoot / ".cooked" / ProbeVolumeRel(stemStr));
 
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::BrushCells),
@@ -136,17 +160,15 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
         .StepId = std::string(DocumentCookStepIds::LightmapSurfaces),
         .Version = FindDocumentCookStep(DocumentCookStepIds::LightmapSurfaces)->Version,
         .InputFingerprint = fingerprints.LightmapSurfaces,
-        .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
-        },
+        .Dependencies = StepDependencies(
+            DocumentCookStepIds::LightmapSurfaces, fingerprints),
     });
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::OcclusionGeometry),
         .Version = FindDocumentCookStep(DocumentCookStepIds::OcclusionGeometry)->Version,
         .InputFingerprint = fingerprints.Occlusion,
-        .Dependencies = {
-            { std::string(DocumentCookStepIds::BrushCells), fingerprints.Brush },
-        },
+        .Dependencies = StepDependencies(
+            DocumentCookStepIds::OcclusionGeometry, fingerprints),
     });
 
     if (directArtifact.has_value() && !reuse.ReuseLighting)
@@ -163,12 +185,7 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
             .StepId = std::string(CookStepIds::DirectLightmap),
             .Version = FindDocumentCookStep(CookStepIds::DirectLightmap)->Version,
             .InputFingerprint = fingerprints.Direct,
-            .Dependencies = {
-                { std::string(DocumentCookStepIds::LightmapSurfaces),
-                  fingerprints.LightmapSurfaces },
-                { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  fingerprints.Occlusion },
-            },
+            .Dependencies = StepDependencies(CookStepIds::DirectLightmap, fingerprints),
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),
         });
@@ -187,12 +204,7 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
             .StepId = std::string(CookStepIds::AmbientOcclusion),
             .Version = FindDocumentCookStep(CookStepIds::AmbientOcclusion)->Version,
             .InputFingerprint = fingerprints.Ao,
-            .Dependencies = {
-                { std::string(DocumentCookStepIds::LightmapSurfaces),
-                  fingerprints.LightmapSurfaces },
-                { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  fingerprints.Occlusion },
-            },
+            .Dependencies = StepDependencies(CookStepIds::AmbientOcclusion, fingerprints),
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),
         });
@@ -211,10 +223,7 @@ bool StageDocumentReceipt(std::string_view sourceRel, std::uint64_t documentHash
             .StepId = std::string(CookStepIds::IrradianceProbes),
             .Version = FindDocumentCookStep(CookStepIds::IrradianceProbes)->Version,
             .InputFingerprint = fingerprints.Probe,
-            .Dependencies = {
-                { std::string(DocumentCookStepIds::OcclusionGeometry),
-                  fingerprints.Occlusion },
-            },
+            .Dependencies = StepDependencies(CookStepIds::IrradianceProbes, fingerprints),
             .Artifacts = { std::move(cached) },
             .Metadata = DocumentCookResultMetadata(result),
         });

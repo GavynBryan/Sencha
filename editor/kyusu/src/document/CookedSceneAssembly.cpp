@@ -5,6 +5,7 @@
 #include "CookStepCache.h"
 #include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
+#include "DocumentCookContext.h"
 
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -16,18 +17,21 @@
 #include <string_view>
 #include <system_error>
 
-bool WriteCookedSceneArtifacts(JsonValue passthroughScene,
+bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
+                               JsonValue passthroughScene,
                                const std::vector<PendingCellMesh>& meshes,
                                JsonValue::Array& cellEntities,
                                const std::vector<CellCollisionEntry>& collisionEntries,
-                               bool emitCollision,
-                               const DocumentArtifactCatalog& catalog,
-                               const DocumentCookPaths& paths,
-                               const std::filesystem::path& assetsRoot,
-                               CookArtifactTransaction& transaction,
-                               CookStepProgress& progress, LoggingProvider& logging,
-                               DocumentCookResult& result)
+                               bool emitCollision)
 {
+    const DocumentArtifactCatalog& catalog = ctx.Catalog;
+    const DocumentCookPaths& paths = ctx.Paths;
+    const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
+    CookArtifactTransaction& transaction = ctx.Transaction;
+    CookStepProgress& progress = ctx.Progress;
+    LoggingProvider& logging = ctx.Logging;
+    DocumentCookResult& result = ctx.Result;
+
     MeshSerializer serializer(logging);
     for (const PendingCellMesh& pending : meshes)
         if (!serializer.WriteToFile(pending.Physical.generic_string(), pending.Geometry))

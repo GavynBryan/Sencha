@@ -1,5 +1,7 @@
 #include "DocumentCookFingerprints.h"
 
+#include "CookGraph.h"
+
 #include <assets/cook/CookFingerprint.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonStringify.h>
@@ -229,4 +231,22 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
     fp.Document = documentFingerprint.Value();
 
     return fp;
+}
+
+std::uint64_t DocumentCookStepFingerprint(const DocumentCookFingerprints& fingerprints,
+                                          std::string_view stepId)
+{
+    if (stepId == DocumentCookStepIds::BrushCells)
+        return fingerprints.Brush;
+    if (stepId == DocumentCookStepIds::LightmapSurfaces)
+        return fingerprints.LightmapSurfaces;
+    if (stepId == DocumentCookStepIds::OcclusionGeometry)
+        return fingerprints.Occlusion;
+    if (stepId == CookStepIds::DirectLightmap)
+        return fingerprints.Direct;
+    if (stepId == CookStepIds::AmbientOcclusion)
+        return fingerprints.Ao;
+    if (stepId == CookStepIds::IrradianceProbes)
+        return fingerprints.Probe;
+    return 0;
 }
