@@ -34,7 +34,8 @@ void RenderQueue::SortOpaque()
 {
     OpaqueOrderIndices.resize(OpaqueItems.size());
 
-    std::vector<std::pair<uint64_t, uint32_t>> order;
+    std::vector<std::pair<uint64_t, uint32_t>>& order = OpaqueSortScratch;
+    order.clear();
     order.reserve(OpaqueItems.size());
     for (uint32_t i = 0; i < OpaqueItems.size(); ++i)
         order.emplace_back(OpaqueItems[i].SortKey, i);

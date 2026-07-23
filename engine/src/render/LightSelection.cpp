@@ -76,16 +76,14 @@ void SelectForwardLights(
     lights.Reset();
     spotRequests.clear();
     pointRequests.clear();
+    for (ForwardLightCandidate& candidate : candidates)
+        candidate.Score = LightImportanceScore(
+            candidate.Position, candidate.Range, candidate.Intensity, viewOrigin);
     std::sort(candidates.begin(), candidates.end(),
-        [&viewOrigin](const ForwardLightCandidate& a,
-                      const ForwardLightCandidate& b)
+        [](const ForwardLightCandidate& a, const ForwardLightCandidate& b)
         {
-            const float aScore = LightImportanceScore(
-                a.Position, a.Range, a.Intensity, viewOrigin);
-            const float bScore = LightImportanceScore(
-                b.Position, b.Range, b.Intensity, viewOrigin);
-            if (aScore != bScore)
-                return aScore > bScore;
+            if (a.Score != b.Score)
+                return a.Score > b.Score;
             return a.Key < b.Key;
         });
 
@@ -94,8 +92,7 @@ void SelectForwardLights(
     for (std::size_t index = 0; index < count; ++index)
     {
         const ForwardLightCandidate& candidate = candidates[index];
-        const float score = LightImportanceScore(
-            candidate.Position, candidate.Range, candidate.Intensity, viewOrigin);
+        const float score = candidate.Score;
         const std::uint32_t lightIndex = lights.Add(candidate.Light);
         if (lightIndex == UINT32_MAX)
             continue;

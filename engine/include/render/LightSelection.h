@@ -20,6 +20,9 @@ struct ForwardLightCandidate
     Sphere ShadowBounds;
     std::uint32_t ShadowTileSize = 0;
     ShadowUpdatePolicy ShadowPolicy = ShadowUpdatePolicy::OnChange;
+    // Importance rank against the view, filled by SelectForwardLights so the
+    // sort and the shadow-request score read it instead of recomputing it.
+    float Score = 0.0f;
 };
 
 struct ForwardLightSelectionCounts

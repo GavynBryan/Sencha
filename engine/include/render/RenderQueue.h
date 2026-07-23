@@ -6,6 +6,7 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 enum class OpaquePipelineId : uint8_t
@@ -93,4 +94,7 @@ private:
     std::vector<RenderQueueItem> OpaqueItems;
     std::vector<uint32_t> OpaqueOrderIndices;
     std::vector<RenderQueueRun> OpaqueRunList;
+    // Reused (key, index) scratch for SortOpaque, kept across frames so the
+    // per-frame sort does not reallocate.
+    std::vector<std::pair<uint64_t, uint32_t>> OpaqueSortScratch;
 };
