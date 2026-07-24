@@ -44,6 +44,9 @@ struct RenderStats
     std::uint32_t ShadowCastersVisible = 0;
     // Casters the frame scratch could not carry into any view.
     std::uint32_t ShadowCastersDropped = 0;
+    // Instanced shadow draws. Compared against ShadowCasterDraws this says
+    // whether batching is collapsing casters or drawing them one at a time.
+    std::uint32_t ShadowInstanceRuns = 0;
     std::uint32_t ShadowSlotsHeld = 0;
     std::uint32_t ShadowCacheHits = 0;
     std::uint32_t ShadowRequestsDenied = 0;

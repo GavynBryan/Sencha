@@ -9,6 +9,7 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <span>
+#include <vector>
 
 //=============================================================================
 // ShadowDepthPass
@@ -51,8 +52,12 @@ public:
         // six times: the pair measures how much work culling is avoiding.
         std::uint32_t CastersTested = 0;
         std::uint32_t CastersVisible = 0;
-        // Casters the frame scratch could not carry, so no view drew them.
+        // Casters the frame scratch could not carry, summed over views.
         std::uint32_t CastersDropped = 0;
+        // Instanced draws emitted. Casters sharing a pipeline, mesh, and
+        // section collapse into one, so this scales with distinct draws times
+        // views rather than with caster count.
+        std::uint32_t InstanceRuns = 0;
         // Set when the pass had views to render and abandoned all of them
         // (missing pipelines, or a frame-scratch request it could not serve).
         bool Skipped = false;
@@ -68,10 +73,13 @@ private:
     };
 
     [[nodiscard]] bool EnsurePipelines(const RenderLightSet& lights);
-    // Uploads and binds the caster transforms, returning how many casters the
-    // stream covers. Zero means the slice had no room at all.
-    [[nodiscard]] std::uint32_t BindInstanceStream(const FrameContext& frame,
-                                                   const ShadowCasterSet& casters);
+    // Fills VisibleCasters with the casters this view can see, in draw-run
+    // order. `lightSphere` (xyz = position, w = range) rejects casters the
+    // light cannot reach at all before the frustum test; null skips it.
+    void GatherVisibleCasters(const Mat4& viewProjection,
+                              const ShadowCasterSet& casters,
+                              StaticMeshCache& meshes,
+                              const Vec4* lightSphere);
     [[nodiscard]] VkDeviceSize UploadView(const Mat4& viewProjection);
     void BindView(const FrameContext& frame, VkDeviceSize uniformOffset);
     // Returns false only when the view uniform cannot be uploaded; the
@@ -81,7 +89,7 @@ private:
                     const Mat4& viewProjection,
                     const ShadowCasterSet& casters,
                     StaticMeshCache& meshes,
-                    std::uint32_t streamedCasters,
+                    const Vec4* lightSphere,
                     bool flipFrontFace);
 
     LightBindings* Bindings = nullptr;
@@ -103,7 +111,11 @@ private:
     float CachedBiasSlope = -1.0f;
     DrawStats LastStats;
 
-    // Bind-state dedup across the views of one Draw.
+    // Per-view visible set, in draw-run order. Held across frames so a view
+    // walk does not allocate.
+    std::vector<std::uint32_t> VisibleCasters;
+
+    // Bind-state dedup within one view.
     VkPipeline LastPipeline = VK_NULL_HANDLE;
     VkBuffer LastVertexBuffer = VK_NULL_HANDLE;
     VkBuffer LastIndexBuffer = VK_NULL_HANDLE;

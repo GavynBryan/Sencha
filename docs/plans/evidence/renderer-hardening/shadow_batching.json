@@ -1,0 +1,23 @@
+{
+  "what": "Per-view shadow batching, Gate 2 evidence.",
+  "scene": "levels/bench_stress, scripted orbit, 400 frames",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "build_type": "Debug",
+  "build_sha": "404caa13",
+  "before": {
+    "shadow_rendering_frames": 7,
+    "peak_scratch_used_bytes": 7312,
+    "caster_draws_first_shadow_frame": 35,
+    "views_first_shadow_frame": 11
+  },
+  "after": {
+    "shadow_rendering_frames": 7,
+    "peak_scratch_used_bytes": 8592,
+    "caster_draws_first_shadow_frame": 29,
+    "views_first_shadow_frame": 11
+  },
+  "reading": "Caster draws on the first shadow frame fall from 35 to 29: some casters share a mesh and section and now collapse into one instanced run. Most do not, because brush-built content gives every surface its own mesh section, so runs equal draws on this scene. The batching win is real only for repeated mesh+section content, which this bench does not contain.",
+  "scratch_note": "Peak per-frame scratch use rises from 7312 to 8592 bytes of a 1 MiB slice. The shared upload was one block of every caster regardless of visibility; per-view uploads are the sum of what each view actually draws. On a scene with few casters and eleven views that sum is larger. The change is in the scaling, not this number: the old cost grew with total casters (640 KiB at the 10k casters the audit measured, which is what starved the forward pass), the new cost grows with casters actually drawn.",
+  "not_demonstrated": "No checked-in scene has thousands of casters sharing one mesh, so the draws-collapse-to-runs claim and the 9.5 ms CPU record the audit measured are not reproduced here. Both need a caster-stress scene that does not exist yet; the counters (shadow_casters_tested/visible, shadow_instance_runs) are in place to measure it when it does.",
+  "validation": "Clean on bench_stress and bench_hub with validation enabled."
+}

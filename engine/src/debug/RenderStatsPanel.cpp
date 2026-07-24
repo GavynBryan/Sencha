@@ -105,8 +105,9 @@ void RenderStatsPanel::Draw()
 	            static_cast<float>(stats->ShadowTileBytes) / (1024.0f * 1024.0f));
 	ImGui::Text("  point cubes %u  faces rendered %u",
 	            stats->PointShadowCubesHeld, stats->PointShadowFacesRendered);
-	ImGui::Text("  casters tested %u  visible %u",
-	            stats->ShadowCastersTested, stats->ShadowCastersVisible);
+	ImGui::Text("  casters tested %u  visible %u  runs %u",
+	            stats->ShadowCastersTested, stats->ShadowCastersVisible,
+	            stats->ShadowInstanceRuns);
 
 	ImGui::Separator();
 	ImGui::Text("Frame services");
