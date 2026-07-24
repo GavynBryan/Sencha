@@ -26,7 +26,7 @@ namespace
     {
         std::error_code ec;
         const std::filesystem::path rel = std::filesystem::relative(absolute, dir, ec);
-        if (ec || rel.empty() || rel.native().rfind("..", 0) == 0)
+        if (ec || rel.empty() || *rel.begin() == "..")
             return std::filesystem::path(absolute).generic_string();
         return rel.generic_string();
     }

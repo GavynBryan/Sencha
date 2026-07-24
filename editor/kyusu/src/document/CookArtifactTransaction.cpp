@@ -58,7 +58,7 @@ std::filesystem::path CookArtifactTransaction::Stage(
         std::filesystem::absolute(activePath).lexically_normal();
     std::error_code ec;
     std::filesystem::path relative = std::filesystem::relative(active, Root, ec);
-    if (ec || relative.empty() || relative.native().rfind("..", 0) == 0)
+    if (ec || relative.empty() || *relative.begin() == "..")
         relative = std::filesystem::path("external") / SafeTarget(active.generic_string());
     const std::filesystem::path staged = Staging / "files" / relative;
     const std::filesystem::path backup = Staging / "backups" / relative;
