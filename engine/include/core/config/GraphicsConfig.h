@@ -10,6 +10,15 @@ struct EngineGraphicsConfig
 {
     uint32_t FramesInFlight = 2;
     bool EnableValidation = true;
+    // Validation layer checks beyond the core object/parameter set. The core
+    // checks do not detect missing barriers or image layout races, so a run
+    // that is clean without these has not been checked for the hazard class
+    // that differs most between drivers. Off by default: each costs CPU time
+    // in every frame, and GpuAssisted also consumes descriptor and buffer
+    // resources on the device.
+    bool ValidateSynchronization = false;
+    bool ValidateGpuAssisted = false;
+    bool ValidateBestPractices = false;
     // Per-frame-in-flight scratch budget for transient vertex/uniform uploads. The game
     // needs little; the editor raises this since it re-uploads the scene for every
     // viewport into one slice each frame.

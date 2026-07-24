@@ -35,6 +35,11 @@ struct VulkanBootstrapPolicy
     uint32_t ApiVersion = VK_API_VERSION_1_3;
 
     bool EnableValidation = true;
+    // Extra validation checks, each requesting a VkValidationFeatureEnableEXT
+    // on the layer. They have no effect unless EnableValidation is on.
+    bool ValidateSynchronization = false;
+    bool ValidateGpuAssisted = false;
+    bool ValidateBestPractices = false;
     bool PreferDiscreteGpu = true;
     // Index into the enumeration order, overriding scoring. Comparing the same
     // scene across the adapters in one machine is otherwise not expressible:

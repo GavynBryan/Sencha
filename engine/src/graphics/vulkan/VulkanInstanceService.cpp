@@ -22,6 +22,21 @@ namespace
             extensions.push_back(extension);
         }
     }
+
+    const char* ValidationFeatureName(VkValidationFeatureEnableEXT feature)
+    {
+        switch (feature)
+        {
+        case VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT:
+            return "synchronization";
+        case VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT:
+            return "gpu-assisted";
+        case VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT:
+            return "best-practices";
+        default:
+            return "?";
+        }
+    }
 }
 
 VulkanInstanceService::VulkanInstanceService(LoggingProvider& logging,
@@ -54,6 +69,9 @@ VulkanInstanceService::VulkanInstanceService(LoggingProvider& logging,
     createInfo.ppEnabledExtensionNames = extensions.data();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    // Outlives vkCreateInstance because the chain below points into it.
+    std::vector<VkValidationFeatureEnableEXT> enabledValidationFeatures;
+    VkValidationFeaturesEXT validationFeatures{};
     if (ValidationEnabled)
     {
         createInfo.enabledLayerCount   = 1;
@@ -61,6 +79,39 @@ VulkanInstanceService::VulkanInstanceService(LoggingProvider& logging,
 
         debugCreateInfo = MakeDebugCreateInfo(this);
         createInfo.pNext = &debugCreateInfo;
+
+        if (policy.ValidateSynchronization)
+        {
+            enabledValidationFeatures.push_back(
+                VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+        }
+        if (policy.ValidateGpuAssisted)
+        {
+            enabledValidationFeatures.push_back(
+                VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
+        }
+        if (policy.ValidateBestPractices)
+        {
+            enabledValidationFeatures.push_back(
+                VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+        }
+
+        if (!enabledValidationFeatures.empty())
+        {
+            validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+            validationFeatures.enabledValidationFeatureCount =
+                static_cast<uint32_t>(enabledValidationFeatures.size());
+            validationFeatures.pEnabledValidationFeatures =
+                enabledValidationFeatures.data();
+            validationFeatures.pNext = &debugCreateInfo;
+            createInfo.pNext = &validationFeatures;
+
+            for (VkValidationFeatureEnableEXT feature : enabledValidationFeatures)
+            {
+                Log.Info("Validation feature enabled: {}",
+                         ValidationFeatureName(feature));
+            }
+        }
     }
 
     VkResult result = vkCreateInstance(&createInfo, nullptr, &Instance);

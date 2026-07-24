@@ -146,7 +146,13 @@ std::optional<EngineGraphicsConfig> DeserializeGraphicsConfig(
             config.DeviceIndex, sectionError)
         || !ReadU64Either(root, "frameScratchBytesPerFrame",
             "frame_scratch_bytes_per_frame",
-            config.FrameScratchBytesPerFrame, sectionError, 1))
+            config.FrameScratchBytesPerFrame, sectionError, 1)
+        || !ReadBoolEither(root, "validateSynchronization", "validate_synchronization",
+            config.ValidateSynchronization, sectionError)
+        || !ReadBoolEither(root, "validateGpuAssisted", "validate_gpu_assisted",
+            config.ValidateGpuAssisted, sectionError)
+        || !ReadBoolEither(root, "validateBestPractices", "validate_best_practices",
+            config.ValidateBestPractices, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

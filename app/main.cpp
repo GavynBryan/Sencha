@@ -123,6 +123,16 @@ int main(int argc, char** argv)
         // SENCHA_VALIDATION=0; unset leaves the config default.
         if (const char* validation = std::getenv("SENCHA_VALIDATION"))
             config.Graphics.EnableValidation = std::strcmp(validation, "0") != 0;
+        // The core checks catch object and parameter misuse, not missing
+        // barriers or layout races, so these select the hazard class a
+        // correctness pass is actually looking for. Each costs frame time,
+        // which is why they are opt-in per run rather than on with validation.
+        if (const char* sync = std::getenv("SENCHA_VALIDATE_SYNC"))
+            config.Graphics.ValidateSynchronization = std::strcmp(sync, "0") != 0;
+        if (const char* gpuAssisted = std::getenv("SENCHA_VALIDATE_GPU_ASSISTED"))
+            config.Graphics.ValidateGpuAssisted = std::strcmp(gpuAssisted, "0") != 0;
+        if (const char* practices = std::getenv("SENCHA_VALIDATE_BEST_PRACTICES"))
+            config.Graphics.ValidateBestPractices = std::strcmp(practices, "0") != 0;
         // Frame-scratch budget override for measurement: shrinking it forces
         // the partial-grant path on a small scene, which is otherwise only
         // reachable at scene scale.

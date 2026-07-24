@@ -11,6 +11,9 @@ VulkanBootstrapPolicy GraphicsServices::BuildPolicy(const EngineConfig& config,
     VulkanBootstrapPolicy policy;
     policy.AppName = config.App.Name;
     policy.EnableValidation = config.Graphics.EnableValidation;
+    policy.ValidateSynchronization = config.Graphics.ValidateSynchronization;
+    policy.ValidateGpuAssisted = config.Graphics.ValidateGpuAssisted;
+    policy.ValidateBestPractices = config.Graphics.ValidateBestPractices;
     policy.DeviceIndex = config.Graphics.DeviceIndex;
     policy.RequiredQueues.Present = true;
     policy.RequiredInstanceExtensions = windows.GetRequiredVulkanInstanceExtensions();
