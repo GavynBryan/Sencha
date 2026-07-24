@@ -32,6 +32,9 @@ namespace
 			{ "total_frame_ms", timing.TotalFrameSeconds * kToMs },
 			{ "fixed_ticks_count", static_cast<double>(timing.FixedTicks) },
 			{ "presented_bool", timing.Presented ? 1.0 : 0.0 },
+			{ "swapchain_width_px", static_cast<double>(timing.SwapchainWidth) },
+			{ "swapchain_height_px", static_cast<double>(timing.SwapchainHeight) },
+			{ "present_mode_enum", static_cast<double>(timing.PresentMode) },
 			{ "visible_objects_count", static_cast<double>(stats.VisibleObjects) },
 			{ "draw_calls_count", static_cast<double>(stats.DrawCalls) },
 			{ "submitted_triangles_count", static_cast<double>(stats.SubmittedTriangles) },
@@ -143,6 +146,11 @@ std::string RenderCapture::SerializeJson(
 	envelope.emplace_back("schema_version",
 	                      JsonValue(static_cast<double>(kSchemaVersion)));
 	envelope.emplace_back("frame_count", JsonValue(static_cast<double>(Count)));
+
+	JsonValue::Object environment;
+	for (const MetadataPair& pair : Environment)
+		environment.emplace_back(pair.first, JsonValue(pair.second));
+	envelope.emplace_back("environment", JsonValue(std::move(environment)));
 
 	JsonValue::Object cvars;
 	for (const MetadataPair& pair : cvarSnapshot)

@@ -51,6 +51,20 @@ public:
 	// snapshots the cvar registry through this shape).
 	using MetadataPair = std::pair<std::string, std::string>;
 
+	// The machine and build a run was recorded on: device, driver, validation
+	// state, build identity. Set once by the composition root, which is what
+	// keeps this type free of graphics and build headers. Without it a capture
+	// cannot be compared against one from another machine, because nothing in
+	// it says which machine it came from.
+	void SetEnvironment(std::vector<MetadataPair> environment)
+	{
+		Environment = std::move(environment);
+	}
+	[[nodiscard]] const std::vector<MetadataPair>& GetEnvironment() const
+	{
+		return Environment;
+	}
+
 	[[nodiscard]] std::string SerializeJson(
 		const std::vector<MetadataPair>& cvarSnapshot) const;
 	[[nodiscard]] std::string SerializeCsv() const;
@@ -59,6 +73,7 @@ private:
 	[[nodiscard]] const FrameRecord& GetChronological(std::size_t index) const;
 
 	std::vector<FrameRecord> Records;
+	std::vector<MetadataPair> Environment;
 	std::size_t Head = 0;
 	std::size_t Count = 0;
 	std::size_t RemainingFrames = 0;

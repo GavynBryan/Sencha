@@ -149,6 +149,7 @@ bool Engine::Initialize()
         GraphicsState->PhysicalDevice.GetProperties().limits.timestampPeriod,
         GraphicsState->Frames.GetFramesInFlight());
     VulkanDebugLabels::Load(GraphicsState->Instance.GetInstance());
+    PublishCaptureEnvironment();
 #endif
 
     RuntimeLoop.SetSurfaceExtent(window->GetExtent());
@@ -399,6 +400,8 @@ int Engine::Run(Game& game)
                          FrameTraceOutputPath.c_str());
         }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Re-stamped here because the map is not known at graphics init.
+        PublishCaptureEnvironment();
         if (!RenderCaptureOutputPath.empty()
             && !EngineConsoleBuiltins::WriteRenderCapture(
                    RenderCaptureStore, Console().Registry(), RenderCaptureOutputPath,
@@ -435,6 +438,40 @@ void Engine::ApplyPendingRenderProfileMode()
         FrameRenderStats.FrameIndex = ++RenderStatsFrameIndex;
         FrameCpuScopes.ResetFrame();
     }
+#endif
+}
+
+void Engine::PublishCaptureEnvironment()
+{
+#if defined(SENCHA_ENABLE_RENDER_PROFILING) && defined(SENCHA_ENABLE_VULKAN)
+    if (GraphicsState == nullptr)
+        return;
+
+    const VkPhysicalDeviceProperties& device =
+        GraphicsState->PhysicalDevice.GetProperties();
+    const auto version = [](std::uint32_t packed) {
+        return std::to_string(VK_API_VERSION_MAJOR(packed)) + "."
+             + std::to_string(VK_API_VERSION_MINOR(packed)) + "."
+             + std::to_string(VK_API_VERSION_PATCH(packed));
+    };
+
+    RenderCaptureStore.SetEnvironment({
+        { "gpu_name", device.deviceName },
+        { "gpu_vendor_id", std::to_string(device.vendorID) },
+        { "gpu_device_id", std::to_string(device.deviceID) },
+        { "gpu_device_type", std::to_string(static_cast<int>(device.deviceType)) },
+        { "gpu_driver_version", std::to_string(device.driverVersion) },
+        { "vulkan_api_version", version(device.apiVersion) },
+        { "validation_enabled",
+          Configuration.Graphics.EnableValidation ? "true" : "false" },
+        { "frames_in_flight",
+          std::to_string(Configuration.Graphics.FramesInFlight) },
+        { "scratch_bytes_per_frame",
+          std::to_string(Configuration.Graphics.FrameScratchBytesPerFrame) },
+        { "build_sha", SENCHA_BUILD_SHA },
+        { "build_type", SENCHA_BUILD_TYPE },
+        { "map", ConsoleState != nullptr ? ConsoleState->CurrentMap() : std::string{} },
+    });
 #endif
 }
 

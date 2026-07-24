@@ -380,7 +380,10 @@ void ConsoleService::RegisterBuiltIns()
                 result.Error("map command has no host handler");
                 return result;
             }
-            return MapHandler(args[0]);
+            ConsoleResult result = MapHandler(args[0]);
+            if (result.Status == ConsoleStatus::Ok)
+                LoadedMap = args[0];
+            return result;
         },
     });
 

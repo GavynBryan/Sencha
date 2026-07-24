@@ -30,6 +30,10 @@ struct TimingFrameSample
     uint64_t SwapchainRecreateCount = 0;
     uint32_t SwapchainImageIndex = 0;
     uint32_t SwapchainImageCount = 0;
+    // The drawable size this frame rendered at. Per frame rather than in the
+    // capture envelope because a resize mid-capture changes it.
+    uint32_t SwapchainWidth = 0;
+    uint32_t SwapchainHeight = 0;
     int PresentMode = 0;
     bool SwapchainRecreated = false;
     bool PresentationReset = false;

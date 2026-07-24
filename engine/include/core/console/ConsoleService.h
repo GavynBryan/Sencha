@@ -40,6 +40,11 @@ public:
         ClearOutputHandler = std::move(handler);
     }
 
+    // The map name the last successful `map` command requested. Empty until
+    // one succeeds. Identifies what a profiling capture was measuring, which
+    // no other engine-owned state records.
+    [[nodiscard]] const std::string& CurrentMap() const { return LoadedMap; }
+
     [[nodiscard]] const std::vector<ConsoleCommandLine>& DeferredCommands() const
     {
         return Deferred;
@@ -62,5 +67,6 @@ private:
     std::function<void()> QuitHandler;
     std::function<ConsoleResult(std::string_view)> MapHandler;
     std::function<void()> ClearOutputHandler;
+    std::string LoadedMap;
     int ExecRecursionLimit = 8;
 };

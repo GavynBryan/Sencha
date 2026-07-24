@@ -21,6 +21,8 @@ namespace
             .SwapchainGeneration = swapchain.Generation,
             .SwapchainRecreateCount = swapchainRecreateCount,
             .SwapchainImageCount = swapchain.ImageCount,
+            .SwapchainWidth = swapchain.Extent.width,
+            .SwapchainHeight = swapchain.Extent.height,
             .PresentMode = static_cast<int>(swapchain.PresentMode),
             .SwapchainRecreated = HasRuntimeFrameEvent(
                 frame.Events, RuntimeFrameEventFlags::SwapchainRecreated),

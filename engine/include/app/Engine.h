@@ -147,6 +147,9 @@ public:
     // Pushes the finished frame's stats into the history ring; called after
     // the render phase so pass publishes are included. No-op below Counters.
     void PushRenderStatsFrame();
+    // Stamps the capture envelope with the device, driver, and build a run
+    // was recorded on. Called once graphics exist, before any frame runs.
+    void PublishCaptureEnvironment();
 
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;

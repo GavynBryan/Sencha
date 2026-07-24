@@ -436,6 +436,22 @@ if(SENCHA_ENABLE_RENDER_PROFILING)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_RENDER_PROFILING)
 endif()
 
+# Build identity for render captures: a measurement that cannot name the build
+# it came from cannot be compared against another one. Resolved at configure
+# time, so a capture taken after later commits reports the configured SHA;
+# reconfigure (or touch the cache) when that distinction matters.
+execute_process(
+    COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+    OUTPUT_VARIABLE SENCHA_BUILD_SHA_VALUE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if(NOT SENCHA_BUILD_SHA_VALUE)
+    set(SENCHA_BUILD_SHA_VALUE "unknown")
+endif()
+target_compile_definitions(sencha_engine PRIVATE
+    SENCHA_BUILD_SHA="${SENCHA_BUILD_SHA_VALUE}"
+    SENCHA_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
+
 add_library(engine ALIAS sencha_engine)
 
 # --- Install / export the SDK (engine-roadmap.md: SDK boundary, shipped) ---
