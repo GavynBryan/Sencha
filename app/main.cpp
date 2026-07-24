@@ -118,6 +118,11 @@ int main(int argc, char** argv)
                 config.Window.Height = static_cast<std::uint32_t>(h);
             }
         }
+        // Validation costs CPU time in every build, so a measurement taken
+        // with it on is not a shipping-configuration measurement. Off with
+        // SENCHA_VALIDATION=0; unset leaves the config default.
+        if (const char* validation = std::getenv("SENCHA_VALIDATION"))
+            config.Graphics.EnableValidation = std::strcmp(validation, "0") != 0;
         config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
         config.Runtime.ExitOnEscape = true;
         config.Runtime.TogglePauseOnF1 = true;
