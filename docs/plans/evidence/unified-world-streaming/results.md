@@ -233,6 +233,30 @@ world-global and a hierarchy change in any partition must still rebuild it. It
 exists so scoped invalidation cannot satisfy its own bound by invalidating less
 than correctness requires.
 
+## Sanitizers
+
+Both sanitizer presets were unbuildable on this machine through Phases 2 to 4 —
+neither `libasan` nor `libtsan` was installed, so neither could link — and both
+legs were reported as owed. With the runtimes installed they run clean over all
+four phases' work: ASan over the full suite (1824 tests) and over
+`StreamingBench.Generate`, which is where the import, ten-cycle load/unload, and
+propagation paths actually run at scale; ASan with LeakSanitizer over the
+reclamation and partition suites; tsan over `jobs_tests`, `ecs_tests`,
+`runtime_tests`, and `physics_tests` (523 tests) and over the bench, which
+exercises the async commit boundary.
+
+A clean sanitizer run proves nothing on its own, so both were checked against a
+negative control: a standalone two-thread increment race is reported by tsan, a
+standalone heap-use-after-free by ASan, under the same flags; and the instrumented
+engine libraries import 41 `__asan_*` and 38 `__tsan_*` symbols. Leak detection is
+off for the suite runs, since the engine holds intentional process-lifetime
+allocations, and on for the reclamation paths, where the free list's retained slabs
+are the thing worth checking.
+
+Note for anyone repeating this: valgrind writes a core dump for every
+intentional-abort test, so a memcheck run over the suite leaves several 73 MB files
+in the working tree. `.gitignore` covers `vgcore.*` now.
+
 ## Artifacts
 
 - [`streaming.json`](streaming.json) — the recorded run.

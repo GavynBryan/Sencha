@@ -45,6 +45,28 @@ how much world is loaded" into "the hitch scales with the zone being streamed."
 | Phase 6 | editor layering and mesh-edit dependency fitness |
 | Phase 7 | live frame capture, long traversal, full matrix |
 
+### Sanitizer results
+
+Both presets went unbuilt through Phases 2 to 4 because this machine had neither
+`libasan` nor `libtsan` installed, so neither could link. With the runtimes in
+place, both legs ran clean over the work of all four phases:
+
+| Run | Result |
+|---|---|
+| ASan, full suite | 1824/1824, no reports |
+| ASan, `StreamingBench.Generate` (imports, ten load/unload cycles, propagation) | no reports |
+| ASan with LeakSanitizer, reclamation and partition suites | no reports |
+| tsan, `jobs_tests`, `ecs_tests`, `runtime_tests`, `physics_tests` | 523 tests, zero warnings |
+| tsan, `StreamingBench.Generate` (async commit boundary) | no warnings |
+
+A clean sanitizer run is worth nothing without a negative control, so both were
+checked: a standalone two-thread increment race is reported by tsan and a standalone
+heap-use-after-free by ASan under the same flags, and the instrumented engine
+libraries import 41 `__asan_*` and 38 `__tsan_*` symbols respectively. Leak
+detection is off for the suite runs — the engine holds intentional process-lifetime
+allocations — and enabled only for the reclamation paths, where the free list's
+retained slabs are the thing worth checking.
+
 The phase-boundary local build is deliberate. The pre-rebase tip of this branch
 was iterated through remote CI patch runs and never built locally: it carried
 orphaned tests including deleted headers and a duplicate symbol definition. The
@@ -128,7 +150,8 @@ preference.
 **Gate:** criterion 1; enable
 `StreamingCostBounds.DISABLED_ImportPerformsNoRowMigrationsPerEntity`; full
 suite; `worker_count == 0` and the parallel path, since this sits on the async
-commit boundary; `tsan`.
+commit boundary; `tsan` — deferred at the time for want of the runtime, run clean
+since (see Sanitizer results).
 
 **Conditional follow-on:** if the largest real zone still exceeds 2 ms, add the
 bulk chunk blit — prebuilt column blocks memcpy'd into the archetype, EntityIds
@@ -185,6 +208,11 @@ nothing dirty, 0.420 -> 0.0029 ms; a sweep with everything dirty, 0.768 -> 0.292
 ms. Criterion 2 asked for under 1.0 ms at 320 000 and what remains scales with
 chunk count. Iteration and import unchanged within noise.
 
+Scoping invalidation also made a latent change-detection hole reachable: a row
+appearing in a chunk was invisible to `Changed<T>`, which cost an entity spawned
+after the first sweep its world transform. Blanket invalidation had been hiding it.
+Fixed in Phase 4, where the same mechanism was needed for reclamation.
+
 **Gate:** criterion 2 met; `SpawnInOneZoneDoesNotRebuildTransformOrder` enabled
 and passing, joined by `FlatSpawnResolvesAddressesWithoutRebuildingOrder`;
 `CrossPartitionParentChangeRebuildsTransformOrder` still green;
@@ -238,13 +266,7 @@ covers it and fails without it.
 
 **Gate:** criterion 3 met; `StreamingChurnDoesNotGrowChunkCount` enabled and
 passing, plus four `ChunkReclamationTest` bounds on the storage mechanism itself;
-criterion 4 unchanged; full suite 1824/1824.
-
-ASan could not run: this machine has no `libasan` (nor `libtsan`), so neither
-sanitizer preset links. Valgrind memcheck was run instead over the ECS, streaming,
-propagation, and physics suites and reported nothing, which covers the
-use-after-free shape slab reuse risks. Installing the sanitizer runtimes still
-needs owner sudo, and the ASan leg of this gate remains owed.
+criterion 4 unchanged; full suite 1824/1824; ASan clean (see below).
 
 ## Phase 5 — Partition-targeted deferred creation
 
