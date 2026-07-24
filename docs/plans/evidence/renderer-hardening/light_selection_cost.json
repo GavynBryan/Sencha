@@ -1,0 +1,43 @@
+{
+  "what": "Gate 3.1: is CPU light selection worth optimizing? Measured before changing it.",
+  "scene": "levels/bench_stress, scripted orbit, 400 frames, 1280x720, validation off",
+  "build_type": "Debug",
+  "build_sha": "404caa13",
+  "discrete": {
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "lights_visible": 25,
+    "light_selection_cpu_ms": {
+      "p50": 0.0683,
+      "p95": 0.0948,
+      "p99": 0.0996
+    },
+    "mesh_extraction_cpu_ms": {
+      "p50": 0.0384
+    },
+    "total_frame_ms": {
+      "p50": 6.7248,
+      "p95": 7.1295,
+      "p99": 7.2043
+    }
+  },
+  "integrated": {
+    "gpu": "Intel(R) Graphics (RPL-P)",
+    "lights_visible": 25,
+    "light_selection_cpu_ms": {
+      "p50": 0.0888,
+      "p95": 0.1615,
+      "p99": 0.1775
+    },
+    "mesh_extraction_cpu_ms": {
+      "p50": 0.0487
+    },
+    "total_frame_ms": {
+      "p50": 13.434,
+      "p95": 13.7547,
+      "p99": 13.9409
+    }
+  },
+  "verdict": "Light selection costs 0.068 ms p50 on the discrete GPU and 0.089 ms on the integrated one, against frames of 6.7 ms and 13.4 ms. It is not a bottleneck, so the scoring and sorting path is left alone. This is the measurement the plan required before touching it.",
+  "open": "The per-fragment light loop is a separate question and is not answered here: this scene shows 25 lights at the scripted camera, not the 64 the audit stressed, and it is nearly empty of fill. Deciding on per-tile light lists needs the fill-heavy bench (Gate 3.2), which does not exist yet, plus the owner's low-tier budget number.",
+  "observation": "The integrated GPU takes 2.0x the frame time of the discrete one on a scene of 8 draws and 108 triangles, so the fixed per-frame cost there is already material before any production content exists."
+}
