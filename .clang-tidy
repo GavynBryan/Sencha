@@ -1,0 +1,13 @@
+# Defect and pessimization checks only. The style families are deliberately
+# absent: this file exists to find bugs, not to reformat the tree.
+Checks: >
+  bugprone-*,
+  performance-*,
+  clang-analyzer-*,
+  cppcoreguidelines-narrowing-conversions,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -clang-analyzer-optin.core.EnumCastOutOfRange
+WarningsAsErrors: ''
+HeaderFilterRegex: 'engine/include/(render|graphics|profiling)/.*'
+FormatStyle: none
