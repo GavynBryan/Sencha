@@ -404,7 +404,7 @@ if(SENCHA_ENABLE_VULKAN)
         set(IMGUI_DIR "${imgui_SOURCE_DIR}")
     endif()
 
-    add_library(sencha_imgui_support STATIC
+    add_library(sencha_imgui_support OBJECT
         "${IMGUI_DIR}/imgui.cpp"
         "${IMGUI_DIR}/imgui_draw.cpp"
         "${IMGUI_DIR}/imgui_tables.cpp"
@@ -426,11 +426,14 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    # PRIVATE link: imgui is compiled into sencha_imgui_support and statically
-    # linked into the engine .so, which re-exports the ImGui symbols (the editor
-    # links only sencha::engine yet calls ImGui). A consumer therefore needs the
-    # imgui headers (leaked by public debug/ and serialization headers) but not
-    # the static lib, so only the header dirs go on the public interface.
+    # The engine is the single ImGui provider: the editors link only
+    # sencha::engine yet call ImGui, so the engine has to carry those symbols on
+    # its exported surface. Hence an OBJECT library rather than a static one.
+    # The Windows export table is generated from the shared library's own object
+    # files, and symbols that arrive from a linked static library are not in it,
+    # which leaves every editor with unresolved ImGui symbols. A consumer needs
+    # the imgui headers (leaked by public debug/ and serialization headers) but
+    # not the objects, so only the header dirs go on the public interface.
     target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)
     target_include_directories(sencha_engine SYSTEM PUBLIC
         "$<BUILD_INTERFACE:${IMGUI_DIR}>"

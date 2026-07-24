@@ -268,7 +268,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
         ${CMAKE_SOURCE_DIR}/editor/kettle/src)
-    target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 
