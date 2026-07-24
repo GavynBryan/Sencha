@@ -1,6 +1,6 @@
-// The offset arithmetic that decides whether a frame renders. These cases are
-// the ones that used to blank the scene: an instance stream one element past
-// what the slice holds, and a stream that cannot fit whole at all.
+// The offset arithmetic that decides whether a frame renders. The cases that
+// matter are the boundaries: an instance stream one element past what the
+// slice holds, and a stream that cannot fit whole at all.
 
 #include <graphics/FrameScratchRing.h>
 

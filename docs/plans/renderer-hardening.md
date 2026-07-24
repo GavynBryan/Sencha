@@ -1,8 +1,45 @@
 # Renderer Hardening
 
-Status: not started. Derived from an external renderer audit (2026-07-23),
+Status: Gates 0, 1, 2, and 5 landed. Gate 3 stopped at its measurement step by
+design. Gate 4 landed three of four items; the upload staging ring is the one
+outstanding piece. Derived from an external renderer audit (2026-07-23),
 re-verified against the tree before adoption. Findings that did not survive
 verification are listed below and carry no work items.
+
+Evidence for every claim below is under
+[`evidence/renderer-hardening/`](evidence/renderer-hardening/). All numbers
+were taken on a Debug build unless stated; the ratios are the point, not the
+absolute values.
+
+## Outcomes
+
+- **Gate 0 (done).** SceneViewer mounts the cooked index, so the bench stopped
+  measuring fallback materials. The committed cube mesh is current-format and
+  a test now fails on any stale one. Captures carry device, driver, build,
+  validation state, map, and per-frame resolution. Scratch use, allocation
+  failures, skipped passes, dropped instances, and shadow caster counts are
+  live counters; CPU scopes attribute extraction, light selection, shadow
+  gather, and both record paths. The bench refuses runs with fallback assets,
+  dropped work, or too few recorded frames. Validation costs 4.8x on CPU
+  render recording, so runs default to it off.
+- **Gate 1 (done).** Meshes over 32 sections are rejected at cook, serialize,
+  load, and upload. The frame scratch grants partial allocations and both
+  passes render the prefix that fits and count the rest, so the 13,035
+  instance boundary no longer blanks a frame. The scratch budget is real
+  configuration, which is what makes the path testable.
+- **Gate 2 (done).** Shadow views gather their own visible sets, sort them
+  into instanced runs, and upload only what they draw; point faces reject
+  out-of-range casters with one sphere test for all six. The caster record
+  table is built only when an on-change slot consumes it.
+- **Gate 3 (measured, then stopped).** Light selection costs 0.068 ms p50
+  discrete / 0.089 ms integrated against 6.7 ms / 13.4 ms frames, so the
+  selection path was left alone. The per-fragment loop question is unanswered
+  and needs the fill bench that does not exist yet.
+- **Gate 4 (three of four).** Pipelines compile at load: first-frame CPU
+  recording fell from 6.78 ms to 0.16 ms. Swapchain recreation hands the old
+  chain over as `oldSwapchain` and the duplicate device idle is gone. Feature
+  setup failure is expressible and acted on.
+- **Gate 5 (done).** `Renderer::DrawFrame` deleted.
 
 Scope: the Vulkan renderer's correctness cliffs, measurement pipeline, shadow
 CPU cost, per-pixel light cost, and startup/resize/upload hitches. The forward
@@ -366,6 +403,44 @@ failed setup.
   caster stress) are the tracked set; grow it when content exists to demand
   it.
 
+## Outstanding
+
+**Gate 4.2, the upload staging ring, is not built.** Every buffer and image
+upload still allocates staging memory, submits, and waits on its fence with
+no timeout, on the graphics queue. Nothing here demonstrated it as a
+bottleneck (the audit called it a grounded risk, not a measured regression),
+and the plan's own order puts profiling streaming hitches before the rewrite.
+It needs a streaming benchmark first: a zone load/unload loop with the upload
+path scoped. The unchecked `vkWaitForFences` is the part worth fixing
+regardless of the batching question, since an infinite wait on a lost device
+hangs the process rather than reporting.
+
+**Gate 3.2 and 3.3 need content and a number.** The fill-heavy bench scene is
+not authored, so nothing here can say whether per-tile light lists are
+warranted. Blocked on the low-tier budget question below.
+
+**Gate 2.4 was not needed and not built.** Coarse spatial binning was
+conditional on the shadow record time still exceeding 2 ms after batching. No
+checked-in scene reaches the caster counts that would show it, so the
+condition could not be evaluated either way; the counters to evaluate it are
+in place.
+
+**The pipeline cache's disk persistence is still unwired.** `LoadFromDisk` and
+`SaveToDisk` have no call sites. Prewarming moved compilation to load, so what
+persistence would buy is shorter loads. Wiring it means choosing where the
+cache file lives, and the engine has no user- or cache-directory convention to
+follow; inventing one is an owner decision, not a mechanical cleanup. The
+capability is real, so it was not deleted either. See the question below.
+
+**Testability gaps found while working.** `VulkanFrameScratch`,
+`ShadowDepthPass`, `Renderer::AddFeature`, and `StaticMeshCache` all need a
+live device to construct, so their contracts cannot be tested headlessly. One
+was worth fixing here: the scratch's offset arithmetic moved into
+`FrameScratchRing`, which owns no memory and is fully tested. The others were
+left alone rather than restructured on the way past. The shadow record
+gating and the feature-setup contract therefore rest on code review and live
+runs, not tests.
+
 ## Open questions for the owner
 
 1. The Intel 720p GPU p99 budget (Gate 3 exit): 12.5 ms is the audit's
@@ -376,3 +451,12 @@ failed setup.
    classification deserves an explicit yes.
 3. Is AMD (RADV) hardware available anywhere for the owed cross-hardware
    column, or should that stay parked until it is?
+4. Where should a driver pipeline cache file live? That is the only thing
+   blocking the unwired persistence API from being wired (or, if the answer
+   is that the driver's own on-disk cache is enough on every target, from
+   being deleted).
+5. Should `EngineGraphicsConfig::EnableValidation` still default to true? It
+   costs 4.8x on CPU render recording and is on in every build unless a run
+   opts out, which is how the audit came to measure a non-shipping
+   configuration. Flipping the default is a one-line change but it changes
+   what a developer gets by default, so it is not made here.
