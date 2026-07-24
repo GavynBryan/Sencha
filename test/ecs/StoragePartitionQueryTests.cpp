@@ -244,3 +244,67 @@ TEST_F(StoragePartitionQueryTest, ChangedAndPartitionFiltersCompose)
         0);
     EXPECT_EQ(count, 1);
 }
+
+// A system iterating a streamed zone can defer a creation into that zone. The
+// partition comes from the chunk being iterated, so the spawn belongs to the same
+// zone as the entity that asked for it rather than to the persistent partition.
+//
+// The created entity carries no components, so no query can observe it; what can
+// be observed is the thing that matters for streaming — it is owned by the zone,
+// and it dies when the zone is destroyed.
+TEST_F(StoragePartitionQueryTest, DeferredCreationLandsInTheIteratedPartition)
+{
+    constexpr StoragePartitionId zone{ 4 };
+    constexpr StoragePartitionId other{ 5 };
+
+    Add(zone, 1);
+    Add(other, 2);
+
+    StoragePartitionSet active;
+    active.Add(zone);
+
+    const size_t before = World_.GetAliveEntities().size();
+
+    CommandBuffer commands(World_);
+    Query<Read<PartitionQueryValue>> query(World_);
+    query.ForEachChunkIn(active, [&](auto& view)
+    {
+        commands.CreateEntity(view.Partition());
+    });
+    commands.Flush();
+
+    ASSERT_EQ(World_.GetAliveEntities().size(), before + 1);
+
+    const auto countIn = [this](StoragePartitionId partition)
+    {
+        size_t count = 0;
+        for (const EntityId entity : World_.GetAliveEntities())
+            count += World_.GetEntityPartition(entity) == partition ? 1 : 0;
+        return count;
+    };
+
+    EXPECT_EQ(countIn(zone), 2u) << "the deferred creation belongs to the zone";
+    EXPECT_EQ(countIn(other), 1u);
+    EXPECT_EQ(countIn(StoragePartitionId::Default()), 0u)
+        << "and not to the persistent partition";
+
+    // Unloading the zone takes it with it, which is what partition ownership has
+    // to mean for a streamed spawn.
+    EXPECT_EQ(World_.DestroyPartition(zone), 2u);
+    EXPECT_EQ(countIn(zone), 0u);
+    EXPECT_EQ(countIn(other), 1u);
+}
+
+// The no-partition overload still means the persistent partition, matching
+// World::CreateEntity().
+TEST_F(StoragePartitionQueryTest, DeferredCreationWithoutAPartitionIsPersistent)
+{
+    CommandBuffer commands(World_);
+    commands.CreateEntity();
+    commands.Flush();
+
+    ASSERT_EQ(World_.GetAliveEntities().size(), 1u);
+    EXPECT_EQ(
+        World_.GetEntityPartition(World_.GetAliveEntities()[0]),
+        StoragePartitionId::Default());
+}

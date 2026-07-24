@@ -268,22 +268,53 @@ covers it and fails without it.
 passing, plus four `ChunkReclamationTest` bounds on the storage mechanism itself;
 criterion 4 unchanged; full suite 1824/1824; ASan clean (see below).
 
-## Phase 5 — Partition-targeted deferred creation
+## Phase 5 — Partition-targeted deferred creation (done)
 
 **Invariant:** a system processing a zone can defer-create entities into that
 zone. **Owner:** `CommandBuffer`.
 
-`CommandBuffer::CreateEntity()` takes no partition, so deferred creations land in
-the persistent partition and a system iterating a streamed zone cannot spawn into
-it. Add an explicit `CreateEntity(StoragePartitionId)` overload; callers pass the
-chunk's partition from the view.
+`CommandBuffer::CreateEntity()` took no partition, so deferred creations landed in
+the persistent partition and a system iterating a streamed zone could not spawn
+into it. There is now a `CreateEntity(StoragePartitionId)` overload; callers pass
+the partition from the chunk they are iterating (`ChunkView::Partition()`), and the
+no-argument form still means the persistent partition, matching
+`World::CreateEntity()`.
 
 Explicitly not an implicit "current partition" context: that is lifecycle state
 derived from ambient context, and the partition is data that can be passed.
 
-**Gate:** a test that spawns into a streamed partition from inside
-`ForEachChunkIn`, asserting the entity lands in that partition and is skipped
-when the zone goes dormant.
+**Gate:** `StoragePartitionQueryTest.DeferredCreationLandsInTheIteratedPartition`
+spawns from inside `ForEachChunkIn` and asserts the entity is owned by the
+iterated zone and not by the persistent partition; it fails without the wiring.
+The second half of the original gate — "skipped when the zone goes dormant" — is
+not observable as written, because a deferred creation carries no components and
+therefore matches no query, dormant or not. The test asserts the property that
+actually matters for streaming instead: the entity dies with
+`DestroyPartition`, so zone ownership is real.
+
+### What this does not deliver, and the decision it needs
+
+Deferred creation does not expose the created `EntityId`, so a system still cannot
+give the entity it just spawned any components — which is most of what "spawn into
+this zone" means in practice. The partition overload makes the destination correct;
+it does not make the mechanism usable for a projectile or a spawned enemy.
+
+`CommandBuffer::CreateEntity` has no consumers anywhere in the tree — engine,
+editor, tests, examples — and its own comment directs real spawns elsewhere ("create
+directly outside query scope, or a higher-level spawn request realized at a safe
+scheduler boundary"). So this phase made a correct parameter out of an API nobody
+calls. Two honest ways forward, and the choice is the owner's:
+
+- **Make it usable.** Return a provisional `EntityId` from `CreateEntity` that later
+  commands in the same buffer can name, resolved to the real id during `Flush`
+  (the standard pattern: Bevy's `Commands::spawn`, Unity's
+  `EntityCommandBuffer.CreateEntity`). Roughly a provisional-id namespace plus
+  remapping in `Flush`, and it turns the whole command set coherent.
+- **Delete it.** If the intended spawn path really is the higher-level request at a
+  scheduler boundary, then deferred creation is a dead seam and should go, with the
+  spawn-request mechanism named and anchored instead.
+
+Left as-is for now, with the gap recorded rather than papered over.
 
 ## Phase 6 — Completion and hygiene
 

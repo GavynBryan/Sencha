@@ -109,7 +109,7 @@ void CommandBuffer::Flush()
         }
         case CommandKind::CreateEntity:
         {
-            W->CreateEntity();
+            W->CreateEntity(cmd.Partition);
             break;
         }
         }

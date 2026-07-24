@@ -3,6 +3,7 @@
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionId.h>
 #include <ecs/World.h>
 
 #include <cassert>
@@ -40,6 +41,9 @@ struct Command
     CommandKind      Kind;
     EntityId         Entity;
     ComponentPayload Payload;
+
+    // CreateEntity only: which storage partition the new row belongs to.
+    StoragePartitionId Partition = StoragePartitionId::Default();
 
     std::vector<ComponentPayload> InitialComponents; // for CreateEntity
 
@@ -121,16 +125,27 @@ public:
         Commands.push_back(std::move(cmd));
     }
 
-    // Creates an entity with no initial components (empty archetype) at flush.
-    // This does not expose the created EntityId. For fully initialized spawns,
-    // create directly outside query scope or use a higher-level spawn request
-    // that is realized at a safe scheduler boundary.
-    void CreateEntity()
+    // Creates an entity with no initial components (empty archetype) at flush,
+    // in the given storage partition — so a system iterating a streamed zone can
+    // defer a creation into that zone rather than into the persistent partition.
+    // Callers pass the partition from the chunk they are iterating
+    // (`ChunkView::Partition()`); there is deliberately no ambient "current
+    // partition", because the partition is data that can be passed.
+    //
+    // This does not expose the created EntityId, so the new entity cannot be given
+    // components through this buffer. For fully initialized spawns, create
+    // directly outside query scope or use a higher-level spawn request that is
+    // realized at a safe scheduler boundary.
+    void CreateEntity(StoragePartitionId partition)
     {
         Command cmd;
         cmd.Kind = CommandKind::CreateEntity;
+        cmd.Partition = partition;
         Commands.push_back(std::move(cmd));
     }
+
+    // The persistent partition, matching World::CreateEntity().
+    void CreateEntity() { CreateEntity(StoragePartitionId::Default()); }
 
     // Flush all recorded commands to the world.
     // Must be called outside any active query.
