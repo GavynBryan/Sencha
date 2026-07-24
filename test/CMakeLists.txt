@@ -67,6 +67,8 @@ file(GLOB_RECURSE EDITOR_TEST_SOURCES CONFIGURE_DEPENDS
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
+# Committed content lives in the source tree, not beside the test binary.
+target_compile_definitions(core_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 add_executable(math_geometry_tests ${MATH_GEOMETRY_TEST_SOURCES})
 target_link_libraries(math_geometry_tests PRIVATE sencha_engine GTest::gtest_main)
