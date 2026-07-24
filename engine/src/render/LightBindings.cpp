@@ -328,23 +328,44 @@ void LightBindings::WriteBinding(std::uint32_t binding, std::uint32_t arrayEleme
 
 // Parks a fresh depth target in the sampled layout so its descriptor stays
 // valid to bind even on frames that render no shadow views (zero shadowed
-// lights, or viewports with no shadow pass at all).
+// lights, or viewports with no shadow pass at all). Cleared to the far plane
+// on the way, matching the dummy images: a tile that no view has rendered
+// into yet is sampled on those frames, and undefined image memory reads
+// differently on different drivers.
 bool LightBindings::ParkDepthImage(VkImage image, std::uint32_t layerCount)
 {
     VkCommandBuffer cmd = Upload->Begin();
     if (cmd == VK_NULL_HANDLE)
         return false;
+
     VulkanBarriers::ImageTransition transition{};
     transition.Image = image;
     transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    transition.NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     transition.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-    transition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.DstStage = VK_PIPELINE_STAGE_2_CLEAR_BIT;
     transition.SrcAccess = 0;
-    transition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    transition.DstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     transition.LayerCount = layerCount;
     VulkanBarriers::TransitionImage(cmd, transition);
+
+    VkImageSubresourceRange depthRange{};
+    depthRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depthRange.levelCount = 1;
+    depthRange.layerCount = layerCount;
+    const VkClearDepthStencilValue depthClear{ 1.0f, 0 };
+    vkCmdClearDepthStencilImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                &depthClear, 1, &depthRange);
+
+    transition.OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    transition.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    transition.SrcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    transition.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    VulkanBarriers::TransitionImage(cmd, transition);
+
     return Upload->Submit(cmd);
 }
 
