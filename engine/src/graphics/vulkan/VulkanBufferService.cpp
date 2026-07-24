@@ -107,6 +107,12 @@ BufferHandle VulkanBufferService::Create(const BufferCreateInfo& info)
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
                         | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        // The frame scratch writes through its mapped pointer and submits
+        // without flushing, which is only correct on coherent memory.
+        // SEQUENTIAL_WRITE asks for write-combine-friendly memory and says
+        // nothing about coherency, so require it: the spec guarantees at
+        // least one HOST_VISIBLE|HOST_COHERENT type exists.
+        allocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         break;
     case BufferMemory::Readback:
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;

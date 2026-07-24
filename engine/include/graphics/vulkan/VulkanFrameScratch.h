@@ -17,8 +17,9 @@ class VulkanPhysicalDeviceService;
 // ring buffer. Carves the buffer into `FramesInFlight` equal slices; at the
 // start of each frame `BeginFrame()` rotates to the next slice and resets
 // its bump cursor. Callers write directly through the returned mapped
-// pointer -- there is no staging, no flush (allocation is
-// HOST_ACCESS_SEQUENTIAL_WRITE), no fence on the scratch itself.
+// pointer -- there is no staging, no flush, no fence on the scratch itself.
+// The no-flush part rests on the buffer being coherent, which
+// VulkanBufferService requires for host-visible allocations.
 //
 // Typical uses:
 //   - Per-draw UBOs surfaced to VulkanDescriptorCache's dynamic UBO binding
