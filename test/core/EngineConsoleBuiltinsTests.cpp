@@ -124,11 +124,18 @@ TEST(EngineConsoleBuiltins, DebugViewCVarAcceptsOnlyCompiledDiagnosticModes)
         ConsolePhase::EngineReady).Succeeded());
     EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "shadow_raw");
 
+    // Every compiled diagnostic channel must be selectable, including the
+    // baked-lighting trio at the end of the enum.
+    EXPECT_TRUE(registry.SetCVar(
+        "render.debug.view", std::string{ "baked_ao" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "baked_ao");
+
     const ConsoleResult invalid = registry.SetCVar(
         "render.debug.view", std::string{ "probe_selection" }, { "test" },
         ConsolePhase::EngineReady);
     EXPECT_EQ(invalid.Status, ConsoleStatus::ValidationFailed);
-    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "shadow_raw");
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "baked_ao");
 }
 
 TEST(EngineConsoleBuiltins, CaptureCommandsGateOnModeAndWriteParseableJson)

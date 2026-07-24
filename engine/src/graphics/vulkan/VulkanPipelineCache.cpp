@@ -2,9 +2,6 @@
 
 #include <graphics/vulkan/VulkanDeviceService.h>
 
-#include <fstream>
-#include <system_error>
-
 namespace
 {
     struct Fnv1a
@@ -299,81 +296,4 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
         return VK_NULL_HANDLE;
     }
     return pipeline;
-}
-
-bool VulkanPipelineCache::LoadFromDisk(const std::filesystem::path& path)
-{
-    if (!Valid)
-        return false;
-
-    std::error_code error;
-    if (!std::filesystem::exists(path, error))
-        return false;
-
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open())
-    {
-        Log.Warn("PipelineCache: failed to open {} for reading", path.generic_string());
-        return false;
-    }
-
-    const std::streamsize byteCount = file.tellg();
-    if (byteCount <= 0)
-        return false;
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> blob(static_cast<size_t>(byteCount));
-    file.read(reinterpret_cast<char*>(blob.data()), byteCount);
-    if (!file.good() && !file.eof())
-    {
-        Log.Warn("PipelineCache: short read from {}", path.generic_string());
-        return false;
-    }
-
-    VkPipelineCache newCache = VK_NULL_HANDLE;
-    VkPipelineCacheCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    info.initialDataSize = blob.size();
-    info.pInitialData = blob.data();
-    const VkResult result = vkCreatePipelineCache(Device, &info, nullptr, &newCache);
-    if (result != VK_SUCCESS)
-    {
-        Log.Warn("PipelineCache: driver rejected blob from {} ({})",
-                 path.generic_string(), static_cast<int>(result));
-        return false;
-    }
-
-    if (DriverCache != VK_NULL_HANDLE)
-        vkDestroyPipelineCache(Device, DriverCache, nullptr);
-    DriverCache = newCache;
-    return true;
-}
-
-bool VulkanPipelineCache::SaveToDisk(const std::filesystem::path& path) const
-{
-    if (!Valid || DriverCache == VK_NULL_HANDLE)
-        return false;
-
-    size_t byteCount = 0;
-    VkResult result = vkGetPipelineCacheData(Device, DriverCache, &byteCount, nullptr);
-    if (result != VK_SUCCESS || byteCount == 0)
-        return false;
-
-    std::vector<uint8_t> blob(byteCount);
-    result = vkGetPipelineCacheData(Device, DriverCache, &byteCount, blob.data());
-    if (result != VK_SUCCESS)
-        return false;
-
-    std::error_code error;
-    std::filesystem::create_directories(path.parent_path(), error);
-
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file.is_open())
-    {
-        Log.Warn("PipelineCache: failed to open {} for writing", path.generic_string());
-        return false;
-    }
-    file.write(reinterpret_cast<const char*>(blob.data()),
-               static_cast<std::streamsize>(blob.size()));
-    return file.good();
 }

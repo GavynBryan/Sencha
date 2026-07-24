@@ -1,7 +1,9 @@
 # Probe sampling cost: measurement evidence
 
-Confirms the Section 14 budget row "Probe sampling added cost (fragment,
-volumes resident) <= 0.3 ms full-screen" for the shipped 3B.2 runtime
+Confirms the budget row "Probe sampling added fragment cost <= 0.3 ms full
+screen" (see
+[`docs/renderer/constraints.md`](../../../renderer/constraints.md#performance-budgets))
+for the shipped probe runtime
 (`probe_sampling.glsli` volume selection + trilinear L1 evaluation over
 three RGBA16F 3D textures, headers in the frame UBO).
 

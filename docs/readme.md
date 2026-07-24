@@ -41,7 +41,22 @@ test/       GoogleTest-based engine tests.
 
 - `docs/core-systems-map.md` is the first broad map of the engine: core
   systems, ownership, dependency directions, frame flow, and constraints.
-  
+
+## Renderer Docs
+
+`docs/renderer/` is the reference for the render layer as it exists in the
+tree: `render/`, `graphics/vulkan/`, `profiling/`, and `engine/shaders/`.
+
+- `docs/renderer/readme.md` is the index and the fast-orientation table.
+- `docs/renderer/architecture.md` and `frame.md` cover topology, ownership,
+  dependency graphs, and the frame from extraction to present.
+- `docs/renderer/vulkan-backend.md` covers the Vulkan setup: bootstrap policy,
+  device floor, memory, descriptors, caches, scratch, and barriers.
+- `docs/renderer/lighting.md`, `shadows.md`, and `baked-lighting.md` cover the
+  shading model, shadow residency, and the baked products.
+- `docs/renderer/constraints.md` is the limits, invariants, and traps list;
+  `extending.md` is the recipe book; `open-work.md` tracks the gaps.
+
 ## ECS Docs
 
 The ECS docs describe the implementation currently in the tree:

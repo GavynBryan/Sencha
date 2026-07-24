@@ -2,10 +2,10 @@
 
 Measures the forward renderer's per-frame cost of many small static point lights, to
 decide whether to build a static-light optimization. Question and rubric are from the
-plan `~/.claude/plans/1-point-light-scalable-truffle.md`; the trigger is
-`docs/plans/renderer-phase-3-lighting.md:2555` (build per-object light lists only when
-MainColor > 8 ms at 1080p AND avg per-fragment light iterations > 16), plus the separate
-64-light cap correctness wall.
+plan `~/.claude/plans/1-point-light-scalable-truffle.md`; the trigger is recorded in
+[`docs/renderer/constraints.md`](../../../renderer/constraints.md#escalation-triggers)
+(build per-object light lists only when MainColor > 8 ms at 1080p AND avg per-fragment
+light iterations > 16), plus the separate 64-light cap correctness wall.
 
 ## Method
 

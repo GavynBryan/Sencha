@@ -5,7 +5,6 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
-#include <filesystem>
 #include <vector>
 
 class VulkanDeviceService;
@@ -107,9 +106,6 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
     [[nodiscard]] VkPipeline GetGraphicsPipeline(const GraphicsPipelineDesc& desc);
-
-    [[nodiscard]] bool LoadFromDisk(const std::filesystem::path& path);
-    [[nodiscard]] bool SaveToDisk(const std::filesystem::path& path) const;
 
 private:
     struct Entry

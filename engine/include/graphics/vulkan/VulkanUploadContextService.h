@@ -54,8 +54,10 @@ public:
     [[nodiscard]] VkCommandBuffer Begin();
 
     // End, submit on the upload queue, wait on the fence, free the command
-    // buffer. Returns true on success. Safe to call even if Begin() failed —
-    // passing VK_NULL_HANDLE is a no-op returning false.
+    // buffer. Returns true on success. The fence wait is bounded, so a lost
+    // or wedged device reports failure instead of hanging the process. Safe
+    // to call even if Begin() failed: passing VK_NULL_HANDLE is a no-op
+    // returning false.
     bool Submit(VkCommandBuffer cmd);
 
 private:

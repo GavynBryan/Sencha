@@ -57,7 +57,7 @@ class VulkanDeviceService;
 // Hot reload: after replacing a module via LoadFromFile the caller is
 // responsible for broadcasting the change to VulkanPipelineCache so stale
 // VkPipeline entries referencing the old ShaderHandle are invalidated and
-// re-created next frame.  See docs/shaders.md §Hot Reload for the wiring.
+// re-created next frame.
 //=============================================================================
 
 enum class ShaderStage : uint8_t

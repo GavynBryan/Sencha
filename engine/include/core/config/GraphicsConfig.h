@@ -9,7 +9,17 @@
 struct EngineGraphicsConfig
 {
     uint32_t FramesInFlight = 2;
+    // Validation is a development instrument, so the default follows the
+    // build type: on in debug builds so errors surface without opt-in, off in
+    // optimized builds so a release or profiling run never silently pays the
+    // layer cost (~4.8x on CPU render recording when the layer is installed).
+    // Config overrides in either direction; on machines without the layer a
+    // true value warns and continues without it.
+#ifdef NDEBUG
+    bool EnableValidation = false;
+#else
     bool EnableValidation = true;
+#endif
     // Validation layer checks beyond the core object/parameter set. The core
     // checks do not detect missing barriers or image layout races, so a run
     // that is clean without these has not been checked for the hazard class

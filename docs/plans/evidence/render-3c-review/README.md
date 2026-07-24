@@ -1,9 +1,10 @@
 # Phase 3C review: capture evidence
 
-The renderer plan's evidence-based review (Section 11, Phase 3C): three
-benchmark scenes captured across resolutions, reduced against the Section 14
-budget table. Findings and the budget verdict live in the plan document
-(Section 16); this directory holds the method and the reduced numbers.
+The renderer's evidence-based budget review: three benchmark scenes captured
+across resolutions, reduced against the budget table now kept in
+[`docs/renderer/constraints.md`](../../../renderer/constraints.md#performance-budgets).
+The verdict and the caveats are summarized there under "Measured state"; this
+directory holds the method and the reduced numbers.
 
 ## Method
 
@@ -41,8 +42,8 @@ Reproduce:
           +set render.profile.mode capture \
           +set render.capture.output out/${map}_${size}.json +map levels/$map
       done; done
-    # reduce with the script inlined in the plan's Section 16 notes (medians,
-    # p95, counter maxima; per-frame JSONs ~1.5 MB each, not committed).
+    # reduce with scripts/capture_stats.py (medians, p95, counter maxima;
+    # per-frame JSONs ~1.5 MB each, not committed).
 
 ## Reduced results
 

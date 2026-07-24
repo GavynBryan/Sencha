@@ -23,10 +23,13 @@ struct ShadowAtlasAllocation
 //
 // Quadtree allocator over the fixed spot shadow atlas: power-of-two tiles
 // from kSpotShadowAtlasExtent down to kSpotShadowMinTileExtent. Allocation is
-// first-fit in row-major node order at each level, so identical request
-// sequences produce identical placements. Pure CPU bookkeeping: the atlas
-// image itself lives in LightBindings, and tier-downgrade policy lives in
-// the residency arbiter (this class only satisfies or rejects an exact size).
+// first-fit in Morton node order at each level, which fills an already-split
+// parent's remaining children before opening a fresh parent, so small tiles
+// pack together instead of fragmenting every large-tier node; identical
+// request sequences produce identical placements. Pure CPU bookkeeping: the
+// atlas image itself lives in LightBindings, and tier-downgrade policy lives
+// in the residency arbiter (this class only satisfies or rejects an exact
+// size).
 //=============================================================================
 class ShadowAtlasAllocator
 {

@@ -320,12 +320,14 @@ namespace EngineConsoleBuiltins
             .Flags = CVarFlags::Transient | CVarFlags::Developer,
             .Help = "Development forward view: none, world_normals, normal_map, "
                     "normal_delta, diffuse, specular, emission, roughness, "
-                    "light_complexity, shadow, shadow_raw, or overdraw.",
+                    "light_complexity, shadow, shadow_raw, overdraw, "
+                    "baked_direct, lightmap_texels, or baked_ao.",
             .Source = { "renderer defaults" },
             .EnumValues = {
                 "none", "world_normals", "normal_map", "normal_delta",
                 "diffuse", "specular", "emission", "roughness",
                 "light_complexity", "shadow", "shadow_raw", "overdraw",
+                "baked_direct", "lightmap_texels", "baked_ao",
             },
         });
 #endif

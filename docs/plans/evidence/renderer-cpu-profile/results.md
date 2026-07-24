@@ -2,8 +2,10 @@
 
 Run 2026-07-23/24 on the development laptop (Raptor Lake-P, 12 P-cores +
 4 E-cores; RTX 4060 Laptop; Intel RPL-P iGPU; llvmpipe; Fedora 43, Mesa
-25.3, NVIDIA 580.159, validation layer 1.4.341). Executes
-[`renderer-cpu-profile-portability-and-vulkan-audit.md`](../../renderer-cpu-profile-portability-and-vulkan-audit.md).
+25.3, NVIDIA 580.159, validation layer 1.4.341). What the renderer looks like
+after these changes is documented in [`docs/renderer/`](../../../renderer/readme.md);
+what remains undone is tracked in
+[`docs/renderer/open-work.md`](../../../renderer/open-work.md).
 
 The full toolchain was installed partway through (perf, valgrind, heaptrack,
 clang-tidy, cppcheck, mingw, spirv-tools), so every stage ran. An earlier

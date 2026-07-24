@@ -324,12 +324,13 @@ split is also what keeps the second-RHI decision cheap to revisit (Section 11).
    skinned character renders and animates in a cooked level.
 
 2. **Shadows (spot and point shipped 2026-07; directional cascaded deferred).** The
-   renderer phase-3 plan (`docs/plans/renderer-phase-3-lighting.md`) superseded this
-   row's ordering and shipped spot and point shadows first: a shared depth atlas, a
-   depth cube array, and renderer-owned residency with budgets and caster-diff
-   invalidation. There are no directional lights yet; directional plus CSM lands with
-   the outdoor/sun need, and the rule that AO never contains sunlight is already
-   recorded against that future work (phase-3 plan Section 15).
+   renderer lighting work superseded this row's ordering and shipped spot and point
+   shadows first: a shared depth atlas, a depth cube array, and renderer-owned
+   residency with budgets and caster-diff invalidation
+   ([`docs/renderer/shadows.md`](../renderer/shadows.md)). There are no directional
+   lights yet; directional plus CSM lands with the outdoor/sun need, and the rule that
+   AO never contains sunlight is recorded against that future work
+   ([`docs/renderer/baked-lighting.md`](../renderer/baked-lighting.md)).
 
 3. **Transparency pass (v1.0).** A sorted blended pass filling the reserved pipeline
    slot; retires the opaque-fallback warning in `MaterialAssetLoader`. Also the
