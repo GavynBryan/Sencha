@@ -1,0 +1,19 @@
+{
+  "what": "Gate 4.1: first visible frame cost, before and after pipeline prewarm.",
+  "scene": "levels/bench_stress, scripted orbit, 400 frames, validation off",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "build_type": "Debug",
+  "build_sha": "404caa13",
+  "before": {
+    "first_frame_render_record_ms": 6.779,
+    "max_render_record_ms": 6.779,
+    "p50_render_record_ms": 0.0227
+  },
+  "after": {
+    "first_frame_render_record_ms": 0.164,
+    "max_render_record_ms": 0.164,
+    "p50_render_record_ms": 0.0218
+  },
+  "reading": "The first visible frame drops from 6.78 ms to 0.16 ms of CPU recording, and it is no longer the worst frame of the run. Steady state is unchanged, as expected: the same pipelines are built either way, just at load instead of on the frame that first needs them.",
+  "caveat": "Debug build, and this scene compiles only the four forward variants plus three shadow ones. The audit saw 18-38 ms on heavier scenes; the direction is what this confirms."
+}

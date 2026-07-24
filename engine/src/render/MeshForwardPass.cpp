@@ -7,6 +7,7 @@
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
+#include <graphics/vulkan/VulkanSwapchainService.h>
 #include <shaders/kMeshForwardFragSpv.h>
 #include <shaders/kMeshForwardVertSpv.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -113,6 +114,23 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
         PipelineLayout = VK_NULL_HANDLE;
 
     Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
+
+    // Build the pipeline set now rather than inside the first Draw. Both
+    // formats are already known here, and driver compilation of the four
+    // variants costs tens of milliseconds: paid at load it is invisible, paid
+    // on the first visible frame it is a hitch. A later format change still
+    // falls back to the rebuild inside EnsurePipelines.
+    if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
+    {
+        FrameContext prewarm{};
+        prewarm.TargetFormat = services.Swapchain->GetFormat();
+        prewarm.DepthFormat = services.DepthFormat;
+        if (prewarm.TargetFormat != VK_FORMAT_UNDEFINED
+            && prewarm.DepthFormat != VK_FORMAT_UNDEFINED)
+        {
+            (void)EnsurePipelines(prewarm);
+        }
+    }
 }
 
 bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
