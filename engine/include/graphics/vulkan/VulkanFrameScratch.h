@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/FrameScratchRing.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <vulkan/vulkan.h>
 
@@ -41,6 +42,9 @@ class VulkanPhysicalDeviceService;
 class VulkanFrameScratch
 {
 public:
+    // Vertex and instance streams bind at this alignment.
+    static constexpr VkDeviceSize kVertexAlignment = 16;
+
     struct Config
     {
         uint32_t FramesInFlight = 2;
@@ -85,20 +89,44 @@ public:
     // 16-byte aligned, suitable for vertex / instance streams.
     [[nodiscard]] Allocation AllocateVertex(VkDeviceSize size);
 
+    // A partial grant: `Count` elements were served, which may be fewer than
+    // asked for. Zero means the slice had no room at all.
+    struct ElementAllocation
+    {
+        Allocation Grant;
+        uint32_t Count = 0;
+
+        [[nodiscard]] bool IsValid() const { return Count > 0 && Grant.IsValid(); }
+    };
+
+    // Grants room for as many `stride`-sized elements as the current slice can
+    // still serve, up to `maxElements`. An instance stream that does not fit
+    // whole is the normal case at scene scale, and an all-or-nothing request
+    // there means the caller drops the entire pass; this lets it draw what fits
+    // and come back for the rest. Only a zero grant counts as a failure.
+    [[nodiscard]] ElementAllocation AllocateVertexElements(uint32_t maxElements,
+                                                           VkDeviceSize stride);
+
     // -- Accessors ----------------------------------------------------------
 
     [[nodiscard]] BufferHandle GetBuffer() const { return RingBuffer; }
-    [[nodiscard]] VkDeviceSize GetBytesPerFrame() const { return BytesPerFrame; }
+    [[nodiscard]] VkDeviceSize GetBytesPerFrame() const { return Ring.GetBytesPerFrame(); }
     [[nodiscard]] VkDeviceSize GetUniformAlignment() const { return UniformAlignment; }
-    [[nodiscard]] uint32_t GetFramesInFlight() const { return FramesInFlight; }
+    [[nodiscard]] uint32_t GetFramesInFlight() const { return Ring.GetFramesInFlight(); }
     // Largest per-frame cursor ever reached, for sizing BytesPerFrame.
-    [[nodiscard]] VkDeviceSize GetHighWaterBytes() const { return HighWater; }
+    [[nodiscard]] VkDeviceSize GetHighWaterBytes() const { return Ring.GetHighWaterBytes(); }
     // This frame's slice use, and the requests it could not serve. Both
     // reset in BeginFrame, so they describe the frame being recorded.
-    [[nodiscard]] VkDeviceSize GetUsedBytes() const { return Cursor; }
-    [[nodiscard]] uint32_t GetFailedAllocationCount() const { return FailedAllocations; }
+    [[nodiscard]] VkDeviceSize GetUsedBytes() const { return Ring.GetUsedBytes(); }
+    [[nodiscard]] uint32_t GetFailedAllocationCount() const
+    {
+        return Ring.GetFailedAllocationCount();
+    }
 
 private:
+    // Turns a ring offset into a binding plus a writable pointer.
+    [[nodiscard]] Allocation MakeAllocation(const FrameScratchRing::Grant& grant) const;
+
     Logger& Log;
     VulkanBufferService* Buffers = nullptr;
     bool Valid = false;
@@ -106,12 +134,7 @@ private:
     BufferHandle RingBuffer;
     void* MappedBase = nullptr;
 
-    uint32_t FramesInFlight = 0;
-    VkDeviceSize BytesPerFrame = 0;
+    // Slice geometry and cursors; this type owns only the memory behind them.
+    FrameScratchRing Ring;
     VkDeviceSize UniformAlignment = 256;
-
-    uint32_t CurrentFrame = 0;
-    VkDeviceSize Cursor = 0; // Offset within the current slice.
-    VkDeviceSize HighWater = 0;
-    uint32_t FailedAllocations = 0; // This frame only.
 };
