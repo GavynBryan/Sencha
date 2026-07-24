@@ -274,10 +274,16 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
         t.Image = DepthTarget->GetImage();
         t.OldLayout = DepthLayout;
         t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        // One depth image serves every frame in flight, and a frame only
+        // waits on the fence of the frame two slots back, so this barrier is
+        // what orders these depth writes after the previous frame's. That
+        // needs a first scope naming those writes: TOP_OF_PIPE names no
+        // stage, which would leave the dependency empty.
+        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                   | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                    | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.SrcAccess = 0;
+        t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                     | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
