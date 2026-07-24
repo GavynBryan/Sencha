@@ -85,6 +85,12 @@ public:
         return true;
     }
 
+    // Insertion order, which is not a stable property of a zone. RuntimeWorld
+    // recycles partition slots most-recently-freed first, so which id a zone gets
+    // depends on the load/unload history before it. Fine for membership tests and
+    // per-chunk work; an accumulation whose result depends on visit order is not
+    // reproducible across differing streaming histories. Order by ZoneId when the
+    // result has to be stable.
     [[nodiscard]] std::span<const StoragePartitionId> Members() const
     {
         return { Members_.data(), Members_.size() };

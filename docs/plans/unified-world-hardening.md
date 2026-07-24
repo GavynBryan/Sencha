@@ -328,22 +328,32 @@ would be speculative.
 `Command::InitialComponents`, an unused placeholder for exactly this capability, is
 deleted — the handle plus `AddComponent` is the mechanism it was standing in for.
 
-## Phase 6 — Completion and hygiene
+## Phase 6 — Completion and hygiene (done)
 
-| Item | Action |
+| Item | Outcome |
 |---|---|
-| `docs/ecs/parallelization.md` | Remove `ForEachRegistryParallel`, `FrameRegistryView`, and the zone-parallel `PropagateTransforms` overload from the live-surface list — all three are deleted. Restate the partition model. |
-| `docs/core-systems-map.md` | Rewrite the registry and `ZoneRuntime` ownership sections for `RuntimeWorld` and partitions. |
-| `docs/plans/phase1-implementation-notes.md` | Mark superseded by the cutover. |
-| `ZoneParallelPropagation` cvar | Delete: parsed and validated, zero readers, and the overload it gated is gone. |
-| `world/registry/EntityRef.h` | Delete: zero consumers. |
-| `Engine::Jobs()` | Decide. No runtime ECS consumer exists (editor and cook only). Either record the absence of intra-frame ECS parallelism as intentional, or anchor the pool to a declared consumer. Not left half-wired. |
-| `RenderEntityKey` | Stop populating the vestigial `Kind`/`RuntimeRegistry` fields at runtime and document that the editor supplies document-registry identity while the runtime keys on `EntityId`. |
-| `StoragePartitionSet::Members()` | Comment the LIFO-recycle ordering caveat: partition ids depend on load/unload history, so ordered cross-partition accumulation is not reproducible across differing streaming histories. |
-| Registry isolation | `Registry` is behaviourally editor-only but still compiled into the shipping engine through render and serialization headers. Scope as its own follow-up against `unified-runtime-world.md` Phase 6. |
+| `docs/ecs/parallelization.md` | Live-surface list rewritten around `FrameZoneView`, `ForEachChunkIn`, and the single filtered `PropagateTransforms`. A "Zone-level parallelism, retired" section now maps each retired name to what replaced it, so the preserved history below it reads as history instead of as instructions. |
+| `docs/core-systems-map.md` | Registry and `ZoneRuntime` ownership sections rewritten for `RuntimeWorld`, one entity namespace, and five partition-set domains; the ownership tree, the async zone flow ("detached `Registry`" -> detached `ZoneLoadPackage`), and the audio-domain sweep corrected with them. |
+| `docs/ecs/storage-partition-queries.md` | Status changed from "Phase 2 substrate" to live, and the stale scope boundary ("does not yet replace `FrameRegistryView`") replaced by the `Members()` ordering caveat. |
+| `docs/action-adventure-core-runtime.md` | Not in the original list. Its "Current Foundation" section asserted per-registry mechanisms as existing; corrected, with a note at the top that the product reasoning is unaffected. |
+| `docs/ecs/decisions.md` | Not in the original list, and the most important correction here. D3.1 mandated an order over *every* transform entity and D3.2 explicitly rejected the chunk pass that Phase 3 went on to implement. Both are amended with the measurements, not overwritten: the ordering constraint they cite is real but binds only parented entities. |
+| `docs/plans/phase1-implementation-notes.md` | Marked superseded, with what it introduced that is still live. |
+| `ZoneParallelPropagation` cvar | Deleted — field, JSON parse, and its three test expectations. Unknown keys are ignored by the parser, so a config file still carrying it loads unchanged. |
+| `world/registry/EntityRef.h` | Deleted. Verified genuinely unincluded: the editor hits a grep finds are `EntityRefGroup`, a different type. The concept is obsolete anyway — one World means an `EntityId` alone identifies an entity. |
+| `Engine::Jobs()` | Not half-wired after all: the pool has real consumers (source watching, project content mount, texture recook), all editor and asset-side. Recorded at the declaration, along with why the runtime frame has none. |
+| `RenderEntityKey` | Nothing to remove: the runtime already fills in `Entity` alone, and `MakeRenderEntityKey` is live in the editor, where documents really are separate registries. Documented the split at the type. |
+| `StoragePartitionSet::Members()` | Ordering caveat commented at the accessor and in the partition-query doc. |
+| Registry isolation | Still open, still scoped as its own follow-up against `unified-runtime-world.md` Phase 6. |
 
-**Gate:** `git diff --check`; every referenced path, name, and command verified;
-editor layering and module ABI fitness; full suite.
+Three of the plan's own claims did not survive checking, which is the reason the
+gate says "every referenced name verified": the stale-doc list was incomplete
+(`decisions.md` and `action-adventure-core-runtime.md` also asserted the old model),
+and two items filed as deletions turned out to be documentation because the
+mechanisms have live consumers.
+
+**Gate:** `git diff --check` clean; every referenced path, name, and link verified
+(the only two link-check hits are C++ lambda syntax inside code fences); editor
+layering, mesh-edit dependency, and module ABI fitness green; full suite 1829/1829.
 
 ## Phase 7 — Live validation and the game-module port
 

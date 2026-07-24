@@ -11,15 +11,16 @@ The shortest version:
 
 - `app/Engine` is the integration root. It owns services, the frame loop, the
   schedule, zone runtime, timing, and the two worker lanes.
-- `World` is the ECS storage unit. `Registry` wraps a `World` plus
-  registry-local resources. `ZoneRuntime` owns the global registry and loaded
-  zone registries.
+- `World` is the ECS storage unit, and the runtime has exactly one. `RuntimeWorld`
+  owns it; a streamed zone is a `StoragePartitionId` tagging that zone's chunks.
+  `Registry` (a `World` plus registry-local resources) survives as the editor's
+  document container, not as a runtime shape.
 - A frame is built by a fixed phase pipeline in `FrameDriver`. Game systems
   are ordinary C++ objects registered into `EngineSchedule` by the methods
   they implement.
-- Zone streaming uses publish-by-handoff: build a detached registry on an
-  async task thread, then attach/finalize it on the main thread during
-  `DrainAsyncTasks`.
+- Zone streaming uses publish-by-handoff: build a detached `ZoneLoadPackage` — plain
+  data — on an async task thread, then import and finalize it on the main thread
+  during `DrainAsyncTasks`.
 - Assets use the same split: stage bytes/decoded CPU data off-thread, commit
   into caches and GPU resources on the owner thread.
 - Render extraction copies simulation state into transient render-domain data:
@@ -67,9 +68,9 @@ Application
       AudioSystem
       CaptionSystem
       game systems
-    ZoneRuntime
-      global Registry
-      zone Registries
+    RuntimeWorld
+      World                      (one; zones are storage partitions in it)
+      per-zone RuntimeZoneRecord (partition, state, participation, resources)
     RuntimeFrameLoop
     FrameDriver
     AsyncTaskQueue
@@ -117,7 +118,7 @@ compile time, not by runtime type lookup.
 | `ResolveLifecycle` | Apply window resize/minimize/restore to `RuntimeFrameLoop`. |
 | `RebuildGraphics` | Recreate swapchain/frame/render resources when needed. |
 | `DrainAsyncTasks` | Run ready async commits on the owner thread, within `AsyncCommitBudgetMs`. Zone attaches and asset publishes happen here. |
-| `ScheduleTicks` | Build `FrameRegistryView` from zone participation and decide whether fixed simulation runs this frame. |
+| `ScheduleTicks` | Build `FrameZoneView` from zone participation and decide whether fixed simulation runs this frame. |
 | `Simulate` | Run fixed-phase systems, physics systems, transform propagation, then post-fixed systems. |
 | `Update` | Run presentation-rate systems and then audio systems. |
 | `ExtractRenderPacket` | Propagate visible transforms, extract camera and render queue data. |
@@ -169,29 +170,27 @@ Game systems are registered from `Game::OnRegisterSystems`.
 - Change detection is chunk-conservative, based on per-column last-written
   frame counters.
 
-`Registry` wraps a `World` as `registry.Components`, a migration-only
-`registry.Entities` facade, and a `ResourceRegistry`. A registry is the unit of
-isolation for zones and zone-parallel work.
+`RuntimeWorld` owns:
 
-`ZoneRuntime` owns:
+- one `World`, holding every entity in the runtime — one entity namespace, so an
+  entity in one zone can reference an entity in another with a plain `EntityId`
+- a `RuntimeZoneRecord` per loaded zone: its `ZoneId`, its `StoragePartitionId`,
+  its state, its `ZoneParticipation`, and its zone-scoped resources
+- the persistent partition, which is what non-zone entities live in
 
-- one global registry, addressable as `FrameRegistryView::Global`
-- N loaded zone registries, each with a `ZoneId`
-- per-zone `ZoneParticipation`
+`BuildFrameView()` produces a `FrameZoneView` of five `StoragePartitionSet`
+domains — `Visible`, `Physics`, `Logic`, `Audio`, `Resident` — each holding the
+partitions that participate in it, plus the persistent partition in all of them.
+Systems iterate with `Query::ForEachChunkIn(domain, fn)`, which tests membership
+once per 16 KB chunk.
 
-`BuildFrameView()` creates four zone spans:
+A zone with no participation is dormant. Its rows stay resident and queryable by
+tools or game code, but its partition is absent from every frame domain, so the
+per-chunk test skips it and it cannot affect simulation, render, physics, or audio.
+Cost tracks the active set, not the resident set.
 
-- `Visible`
-- `Physics`
-- `Logic`
-- `Audio`
-
-These spans contain only participating zone registries. The global registry is
-separate. Systems that want global state need to read `view.Global` explicitly.
-
-A zone with no participation is dormant. It is attached and queryable by tools
-or game code, but absent from all frame spans, so it cannot affect simulation,
-render, physics, or audio.
+`Registry` still wraps a `World` as `registry.Components` plus a `ResourceRegistry`,
+and the editor's documents use it. It is no longer a runtime isolation unit.
 
 ## ECS Constraints
 
@@ -331,20 +330,21 @@ schemas.
 
 Flow:
 
-1. Main thread reserves a `RegistryId`.
-2. Async work creates a detached `Registry` with that ID and calls the build
-   callback.
+1. Main thread reserves the zone's identity.
+2. Async work builds a detached `ZoneLoadPackage` — plain data, no ECS storage —
+   and calls the build callback.
 3. Commit runs at `DrainAsyncTasks`.
-4. If an `AssetPreload` is attached and not complete, the registry attach is
-   deferred until the preload's final commit.
-5. The registry is attached to `ZoneRuntime`.
+4. If an `AssetPreload` is attached and not complete, the import is deferred until
+   the preload's final commit.
+5. The package is imported into the World's partition for that zone, hidden, then
+   published.
 6. Finalize runs on the owner thread.
 7. Preload scaffolding handles are released.
 8. `ZoneLoad` discontinuity is marked only if initial participation is nonzero.
 
 Build callback rules:
 
-- may mutate only the detached registry it was given
+- may mutate only the detached package it was given
 - must not touch service host, asset caches, Vulkan, audio service, or live
   zones
 - may store plain cache/service pointers as registry resources if they are not
@@ -428,10 +428,10 @@ copies data into SDL streams and returns a generational `VoiceId`.
 
 The invariant is: a voice never outlives the clip reference that feeds it.
 
-`AudioSystem` runs during `FramePhase::Update` over `FrameRegistryView::Audio`:
+`AudioSystem` runs during `FramePhase::Update` over `FrameZoneView::Audio`:
 
 1. tick `AudioService` to retire drained voices
-2. sweep voices for registries no longer in the audio view
+2. sweep voices for partitions no longer in the audio domain
 3. visit active `AudioSourceComponent`s and apply start rules
 
 Dormant zones are silent because they are absent from the audio span. There is
@@ -472,9 +472,13 @@ There are two worker lanes. Do not mix their contracts.
 - jobs must not throw
 - jobs must not touch ambient mutable engine state
 
-`ForEachRegistryParallel` is the safe current helper because registries are
-disjoint. It runs one job per registry and falls back to inline for zero or one
-registry.
+There is no intra-frame ECS parallelism in the runtime frame. The former
+one-job-per-zone helper was retired with the per-registry storage it depended on,
+and nothing replaced it: a room-shaped span costs tens of microseconds against a
+dispatch floor of roughly 300 µs. Disjoint storage partitions remain a valid axis
+if a workload ever clears the floor — see
+[`ecs/parallelization.md`](ecs/parallelization.md). The pool's consumers today are
+editor and asset-side.
 
 `AsyncTaskQueue` is the cross-frame lane:
 
@@ -495,7 +499,6 @@ Runtime knobs in `EngineRuntimeConfig`:
 | `JobWorkerCount` | `-1` auto, `0` deterministic inline, positive fixed worker count. |
 | `AsyncTaskThreadCount` | Dedicated async task threads. Engine config requires at least one. |
 | `AsyncCommitBudgetMs` | Soft owner-thread commit budget. First ready commit always runs. |
-| `ZoneParallelPropagation` | Optional zone-axis transform propagation. Off by default. |
 | `FixedTickRate` | Simulation tick rate. |
 | `TargetFps` | Optional wall-frame pacing cap. |
 

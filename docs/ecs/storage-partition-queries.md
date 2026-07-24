@@ -1,6 +1,8 @@
 # Storage-partition query filtering
 
-Status: Phase 2 substrate for domain participation in the unified runtime world.
+Status: live. The mechanism behind domain participation in the unified runtime
+world — `FrameZoneView` builds the Visible/Physics/Logic/Audio/Resident sets and
+every frame domain iterates through the filtered path below.
 
 `StoragePartitionSet` is a dense membership table over 16-bit
 `StoragePartitionId` values. It combines:
@@ -44,8 +46,11 @@ participation changes do not create archetypes or force query cache rebuilds.
 `Changed<T>` and partition filtering compose: an inactive changed chunk is not
 visited, and an active unchanged chunk is not visited.
 
-## Scope boundary
+## Ordering caveat
 
-This phase provides the ECS query mechanism only. It does not yet replace
-`FrameRegistryView` or build Visible/Physics/Logic/Audio partition sets from
-`ZoneRuntime`; that integration belongs to the unified runtime-world phase.
+`Members()` is insertion-ordered, and partition ids are recycled: `RuntimeWorld`
+hands out the most recently freed slot first, so which id a zone receives depends
+on the load/unload history that preceded it. Membership tests and per-chunk work
+are unaffected, but an accumulation that depends on the order partitions are
+visited in is not reproducible across differing streaming histories. Order by
+something authored — `ZoneId` — when the result has to be stable.

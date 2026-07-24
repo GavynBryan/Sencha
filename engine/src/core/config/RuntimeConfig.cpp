@@ -97,8 +97,6 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
             config.JobWorkerCount, sectionError)
         || !ReadIntEither(root, "asyncTaskThreadCount", "async_task_thread_count",
             config.AsyncTaskThreadCount, sectionError)
-        || !ReadBoolEither(root, "zoneParallelPropagation", "zone_parallel_propagation",
-            config.ZoneParallelPropagation, sectionError)
         || !ReadIntEither(root, "streamingHopCount", "streaming_hop_count",
             config.StreamingHopCount, sectionError)
         || !ReadDoubleEither(root, "streamingLingerSeconds", "streaming_linger_seconds",

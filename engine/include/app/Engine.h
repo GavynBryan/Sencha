@@ -133,6 +133,13 @@ public:
 
     [[nodiscard]] AsyncTaskQueue& Tasks();
     [[nodiscard]] const AsyncTaskQueue& Tasks() const;
+
+    // The frame-lane fork/join pool. Its consumers are editor and asset-side —
+    // source watching, project content mount, texture recook — and the runtime
+    // frame deliberately has none: the zone-axis parallelism it was sized for was
+    // measured not to pay at room scale and was retired with per-registry storage.
+    // Disjoint storage partitions remain a valid axis if a workload ever clears the
+    // dispatch floor. See docs/ecs/parallelization.md.
     [[nodiscard]] JobSystem& Jobs();
     [[nodiscard]] const JobSystem& Jobs() const;
 

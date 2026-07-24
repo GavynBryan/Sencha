@@ -7,16 +7,20 @@ to execute top-to-bottom.
 If you are wiring gameplay or engine systems, the current surfaces are:
 
 - `JobSystem` / `ThreadPoolJobSystem`: frame-lane fork/join work. The engine owns
-  one pool and exposes it as `Engine::Jobs()`.
+  one pool and exposes it as `Engine::Jobs()`. Its consumers today are editor and
+  asset-side: source watching, project content mount, texture recook. The runtime
+  frame has no intra-frame ECS parallelism, which is a measurement, not an
+  oversight — see "Zone-level parallelism, retired" below.
 - `AsyncTaskQueue`: cross-frame work lane. Work runs on task threads; commit
   callbacks run on the owner thread from `FramePhase::DrainAsyncTasks`.
-- `AsyncZoneLoader`: first consumer of the async lane. It builds detached
-  registries off-thread and attaches them during the drain phase.
-- `PropagateTransforms(...)`: serial and zone-parallel overloads. The Simulate
-  phase uses the serial overload by default because the target game shape keeps
-  only a few room-sized zones live.
-- `ForEachRegistryParallel`: helper for one-job-per-registry work over disjoint
-  registries.
+- `AsyncZoneLoader`: first consumer of the async lane. It builds a detached
+  `ZoneLoadPackage` off-thread — plain data, no ECS storage — and imports it into
+  the World during the drain phase.
+- `PropagateTransforms(world, partitions, domain)`: one serial sweep, filtered by
+  the phase's active storage partitions.
+- `Query::ForEachChunkIn(partitions, fn)`: partition-filtered iteration. Membership
+  is tested once per 16 KB chunk, so a dormant zone costs one word load per chunk
+  and no per-entity work.
 
 The important runtime knobs live in `EngineRuntimeConfig`:
 
@@ -25,7 +29,6 @@ The important runtime knobs live in `EngineRuntimeConfig`:
 | `JobWorkerCount` | `-1` | `-1` auto-sizes the frame pool, `0` runs jobs inline in deterministic index order, positive values pin worker count. |
 | `AsyncTaskThreadCount` | `1` | Number of async-lane task threads. Must be at least one in engine runtime. |
 | `AsyncCommitBudgetMs` | `2.0` | Wall-time budget for the async drain phase. `0.0` means unbudgeted. The first ready commit always runs. |
-| `ZoneParallelPropagation` | `false` | Runs transform propagation one zone per job in Simulate when enabled. Off by default for room-scale workloads. |
 
 What is intentionally not available yet:
 
@@ -36,8 +39,30 @@ What is intentionally not available yet:
 - No shared mutable output queues from jobs. Use per-worker buffers or explicit
   merge slots when you add a parallel consumer.
 
+## Zone-level parallelism, retired
+
+Runtime storage moved from one `Registry` per zone to one `World` whose zones are
+storage partitions ([`unified-runtime-world.md`](../plans/unified-runtime-world.md)),
+and the zone-parallel machinery went with it. These names appear throughout the
+history below and no longer exist:
+
+| Retired | What replaced it |
+|---|---|
+| `FrameRegistryView` (global registry + N zone registries) | `FrameZoneView`, five `StoragePartitionSet` domains over one `World` |
+| `ForEachRegistryParallel`, `world/registry/RegistryParallel.h` | nothing; the axis it parallelized is gone |
+| `PropagateTransforms(JobSystem&, span)`, one job per zone | the single filtered sweep above |
+| `EngineRuntimeConfig::ZoneParallelPropagation` | nothing; it had no readers by the time it was deleted |
+
+The reasoning that retired it is unchanged and is why nothing replaced it: a
+room-shaped span costs tens of microseconds against a dispatch floor of roughly
+300 µs, so one-job-per-zone lost to the serial path at the target scale. Disjoint
+partitions remain a valid parallelism axis if a workload ever clears the floor —
+chunks carry their partition, so the isolation argument survives the storage
+change intact.
+
 The rest of this document preserves the design rationale, measurements, and staged
-status that led to the current shape.
+status that led to the current shape. Read it as history: the surfaces above are
+what exists.
 
 ---
 

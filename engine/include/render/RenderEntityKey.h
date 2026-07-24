@@ -5,8 +5,18 @@
 
 #include <cstdint>
 
-// Stable ordering identity for renderer-owned state. Zone-owned entities key on
-// persistent ZoneId; other registry kinds use their runtime registry identity.
+// Stable ordering identity for renderer-owned state, keyed differently by its two
+// producers.
+//
+// The runtime fills in Entity alone. One World means one entity namespace, so an
+// EntityId already distinguishes entities across every streamed zone, and Kind,
+// Zone, and RuntimeRegistry stay at their defaults — identical for every runtime
+// key, so the comparison below reduces to EntityId order.
+//
+// The editor fills in all of them through MakeRenderEntityKey, because its
+// documents really are separate registries: zone-owned entities key on the
+// persistent ZoneId so identity survives a reload, and other registry kinds key on
+// their runtime registry identity.
 struct RenderEntityKey
 {
     RegistryKind Kind = RegistryKind::Transient;

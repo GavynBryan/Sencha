@@ -30,13 +30,6 @@ struct EngineRuntimeConfig
     // engine never pumps work inline, so zero threads would strand every load.
     int AsyncTaskThreadCount = 1;
 
-    // Propagate transforms one-zone-per-job in the Simulate phase. Off by
-    // default: the primary target streams 2-4 room-sized zones, whose whole
-    // span costs less than the pool dispatch floor (parallelization.md,
-    // Stage C measurements). Games holding many heavy zones live — open-world
-    // streaming — turn this on. Both paths produce bit-identical results.
-    bool ZoneParallelPropagation = false;
-
     // World partition streaming policy (WorldPartitionRuntime). HopCount is the
     // neighbor graph distance kept resident around the focus zone; LingerSeconds is
     // how long an undemanded zone stays attached before DestroyZone; ResidentZoneCap
