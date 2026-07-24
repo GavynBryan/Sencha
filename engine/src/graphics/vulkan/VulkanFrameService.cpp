@@ -391,11 +391,9 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
 
 void VulkanFrameService::ResetAfterSwapchainRecreate()
 {
-    if (Device != VK_NULL_HANDLE)
-    {
-        vkDeviceWaitIdle(Device);
-    }
-
+    // No device wait here: this runs immediately after
+    // VulkanSwapchainService::Recreate, which already idled the device before
+    // touching the old chain. A second full-device stall buys nothing.
     DestroyImageSyncObjects();
     ImageInFlightFences.assign(Swapchain.GetImageCount(), SwapchainImageFrameState{
         .Generation = Swapchain.GetGeneration(),
