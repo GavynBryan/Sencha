@@ -47,7 +47,10 @@ TEST(StoragePartition, ExistingCallersRemainInDefaultPartition)
     EXPECT_EQ(archetype.Chunks[chunk]->Partition, StoragePartitionId::Default());
 }
 
-TEST(StoragePartition, EmptyChunkRemainsOwnedByItsPartition)
+// An emptied slab is not held by the partition that emptied it — it returns to
+// the archetype's free list, where any partition can claim it. Here there is only
+// one claimant, so the same partition gets the same slab back at the same index.
+TEST(StoragePartition, EmptiedChunkIsReclaimedAtTheSameIndex)
 {
     Archetype archetype;
     archetype.BuildLayout({});

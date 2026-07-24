@@ -111,16 +111,25 @@ is almost always the previous one.
 Ten load/unload cycles of one 1 000-entity zone through a recycled partition
 slot:
 
-| Metric | Value |
-|---|---|
-| Chunks after 1 cycle | 8 |
-| Chunks after 10 cycles | 71 |
-| Empty chunks retained | 71 |
+| Metric | Before Phase 4 | After |
+|---|---|---|
+| Chunks after 1 cycle | 8 | 8 |
+| Chunks after 10 cycles | 71 | 8 |
+| Empty chunks retained | 71 | 8 |
 
-`Archetype::RemoveRow` leaves emptied chunks in place and only the last chunk
-per (archetype, partition) is reused, so each unload of a multi-chunk zone
-orphans slabs. The free list recycles the partition *index*; the memory is not
-returned. Every retained slab is also walked and skipped by every query.
+`Archetype::RemoveRow` used to leave an emptied chunk in place, and only the last
+chunk per (archetype, partition) was ever reused, so each unload of a multi-chunk
+zone orphaned every slab but one — 71 held for a zone that needs 8, all empty, and
+each one still walked and skipped by every query. A slab that loses its last row
+now returns to a per-archetype free list, so the census is the concurrent
+high-water mark. That is criterion 3.
+
+The 8 retained after the final unload are that high-water mark waiting to be
+claimed again; reclamation makes memory reusable rather than returning it to the
+allocator. Resident chunk count for the 160 000-entity iteration shape also fell
+from 1 240 to 1 219: transient slabs — the empty-signature archetype every
+`CreateEntity` passes through on its way to its first component — are now shared
+across partitions instead of one being held per partition.
 
 ## Transform propagation: the streaming hitch, and its removal
 
@@ -191,6 +200,17 @@ twice, on the same machine state; the controls agree within 2.5% and the two
 rounds agree within a few percent. Contamination inflates both sides, so each
 improvement above is a lower bound, and the absolute after-numbers are upper
 bounds. Re-record on an idle machine to tighten them.
+
+**The attach metrics are now microsecond-scale, and percentages on them mislead.**
+After Phase 4 the 40 000-entity attach reads 0.0019 ms against 0.0013 ms recorded
+for Phase 3 — flagged by the compare script as a 42% regression, and it is a real
+0.6 microseconds, reproducible within 7% across four runs. The cause is Phase 4's
+change-detection fix: `Archetype::AddRow` reads a version per column per row, and
+this scenario spawns through the incremental path, so 100 entities cost four rows
+each. Per entity it is about 6 ns. It does not appear in `import_*` because the
+batch importer builds one row per entity, and because skipping a fresh 16 KB
+zero-filled slab pays for it. Judge these three metrics on their absolute values
+against a frame budget, not on their percentages.
 
 ## Bounds derived from these numbers
 

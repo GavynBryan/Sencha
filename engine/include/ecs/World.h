@@ -210,7 +210,7 @@ public:
         BumpStructural(partition);
         EntityId id = Entities.Create();
         Archetype* empty = GetOrCreateArchetype(ArchetypeSignature{});
-        auto [ci, ri] = empty->AddRow(id.Index, partition);
+        auto [ci, ri] = empty->AddRow(id.Index, partition, FrameCounter);
         Entities.SetLocation(id, EntityLocation{ empty->Id, ci, ri, partition });
         return id;
     }
@@ -232,7 +232,7 @@ public:
         BumpStructural(partition);
         EntityId id = Entities.Create();
         Archetype* arch = GetOrCreateArchetype(sig);
-        auto [ci, ri] = arch->AddRow(id.Index, partition);
+        auto [ci, ri] = arch->AddRow(id.Index, partition, FrameCounter);
         Entities.SetLocation(id, EntityLocation{ arch->Id, ci, ri, partition });
         return id;
     }
@@ -333,7 +333,7 @@ public:
         assert(archetype.Chunks[source.ChunkIndex]->Partition == source.Partition);
 
         auto [destinationChunk, destinationRow] =
-            archetype.AddRow(entity.Index, destination);
+            archetype.AddRow(entity.Index, destination, FrameCounter);
         MigrateRow(
             archetype,
             destinationChunk,
@@ -341,7 +341,6 @@ public:
             archetype,
             source.ChunkIndex,
             source.RowIndex);
-        archetype.Chunks[destinationChunk]->BumpAllColumnVersions(FrameCounter);
 
         EntityIndex moved = archetype.RemoveRow(source.ChunkIndex, source.RowIndex);
         if (moved != InvalidEntityIndex)
@@ -419,7 +418,7 @@ public:
         newSig.set(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
         MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if constexpr (!std::is_empty_v<T>)
@@ -469,7 +468,7 @@ public:
         newSig.reset(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
         MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
@@ -896,7 +895,7 @@ public:
         newSig.set(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
         MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if (size > 0 && blob)
@@ -954,7 +953,7 @@ public:
         newSig.reset(id);
         Archetype* dst = GetOrCreateArchetype(newSig);
 
-        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+        auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
         MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
@@ -998,7 +997,7 @@ public:
             newSig.set(id);
             Archetype* dst = GetOrCreateArchetype(newSig);
 
-            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
             MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             if (size > 0 && items[i].Blob)
@@ -1054,7 +1053,7 @@ public:
             newSig.reset(id);
             Archetype* dst = GetOrCreateArchetype(newSig);
 
-            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
+            auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition, FrameCounter);
             MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             moves.push_back(Move{

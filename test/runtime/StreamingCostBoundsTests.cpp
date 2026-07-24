@@ -5,11 +5,11 @@
 // work: how many row migrations an import pays, whether unload returns its
 // chunk slabs, and how far a structural change's cache invalidation reaches.
 //
-// A bound below is DISABLED because the current implementation does not meet it
-// yet. It names the phase of docs/plans/unified-world-hardening.md that makes it
-// pass; enabling it is that phase's gate, and it must fail before the fix for
-// the reason its comment states. It is disabled rather than failing so a red
-// suite always means a new regression.
+// Every bound here is live. Each was written against a cost the implementation
+// did not yet meet, disabled with the phase of
+// docs/plans/unified-world-hardening.md that would reach it, and enabled as that
+// phase landed — after confirming it failed beforehand for the reason its comment
+// states.
 
 #include <gtest/gtest.h>
 
@@ -228,11 +228,12 @@ TEST(StreamingCostBounds, FlatSpawnResolvesAddressesWithoutRebuildingOrder)
     EXPECT_FLOAT_EQ(world.TryGet<WorldTransform>(child)->Value.Position.X, 7.0f);
 }
 
-// Phase 4 (chunk reclamation). Today Archetype::RemoveRow leaves emptied chunks
-// in place and only the last chunk per (archetype, partition) is ever reused,
-// so each unload of a multi-chunk zone orphans slabs and the census climbs with
-// streaming history. Enabling this test is Phase 4's gate.
-TEST(StreamingCostBounds, DISABLED_StreamingChurnDoesNotGrowChunkCount)
+// Phase 4 (chunk reclamation). A slab that loses its last row returns to the
+// archetype's free list, so ten load/unload cycles hold the memory of one. Before
+// that, only the last chunk per (archetype, partition) was ever reused and every
+// other slab of an unloaded zone was orphaned, so the census climbed with
+// streaming history.
+TEST(StreamingCostBounds, StreamingChurnDoesNotGrowChunkCount)
 {
     const WorldComponentSchema schema = RuntimeSchema();
     RuntimeWorld runtime(schema);

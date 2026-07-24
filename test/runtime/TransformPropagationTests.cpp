@@ -276,6 +276,38 @@ TEST(TransformPropagation, NewEntityInExistingArchetypeIsPropagated)
     EXPECT_EQ(world.TryGet<WorldTransform>(b)->Value.Position, Vec3d(7.0f, 0.0f, 0.0f));
 }
 
+// A row that appears in a chunk after that chunk has already been swept has to be
+// found. Adding a component is a write to the destination chunk, so it must read
+// as one to change detection, or an entity spawned mid-session never receives a
+// world transform.
+TEST(TransformPropagation, EntitySpawnedAfterAnEarlierSweepIsPropagated)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
+
+    const EntityId first = world.CreateEntity();
+    world.AddComponent(first, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(first, WorldTransform{});
+
+    world.AdvanceFrame();
+    PropagateTransforms(world);
+    ASSERT_EQ(world.TryGet<WorldTransform>(first)->Value.Position,
+              Vec3d(1.0f, 0.0f, 0.0f));
+
+    // Lands in the chunk the sweep above already visited.
+    world.AdvanceFrame();
+    const EntityId second = world.CreateEntity();
+    world.AddComponent(second, LocalTransform{ Transform3f(Vec3d(7.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(second, WorldTransform{});
+
+    PropagateTransforms(world);
+
+    EXPECT_EQ(world.TryGet<WorldTransform>(second)->Value.Position,
+              Vec3d(7.0f, 0.0f, 0.0f));
+}
+
 TEST(TransformPropagation, TryGetLocalMutationIsRepropagated)
 {
     World world;

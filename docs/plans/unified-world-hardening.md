@@ -26,8 +26,8 @@ Two findings frame everything below:
 |---|---|---|---|---|
 | 1 | Owner-thread import, 20 000-entity zone | 6.49 ms | <= 2.0 ms (fits `AsyncCommitBudgetMs`) | met, 1.19 ms (Phase 2) |
 | 2 | First propagation after attaching a 100-entity zone into a 320 000-entity world | ~24 ms (extrapolated from 12.05 ms at 160 000) | < 1.0 ms | met, 0.0048 ms at 160 000 and no longer entity-proportional (Phase 3) |
-| 3 | Chunk census after 10 load/unload cycles vs after 1 | 71 vs 8 | equal | open (Phase 4) |
-| 4 | Steady-state iteration, 160 000 entities all active | 0.195 ms | no regression beyond 10% | holding, within noise through Phase 3 |
+| 3 | Chunk census after 10 load/unload cycles vs after 1 | 71 vs 8 | equal | met, 8 vs 8 (Phase 4) |
+| 4 | Steady-state iteration, 160 000 entities all active | 0.195 ms | no regression beyond 10% | holding, within noise through Phase 4 |
 | 5 | Worst frame during a live streaming event | unmeasured | no frame over budget | open (Phase 7) |
 
 Criterion 2 is the load-bearing one: it converts "the streaming hitch scales with
@@ -194,7 +194,7 @@ whose entity slot had been recycled was inherited by index alone, ignoring the
 generation, and the chunk-conservative dirty test needed a guard for a child
 sitting in a clean chunk under a moved parent.
 
-## Phase 4 — Chunk reclamation
+## Phase 4 — Chunk reclamation (done)
 
 **Invariant:** resident chunk memory is bounded by the concurrent high-water
 mark, not by cumulative streaming history. **Owner:** `Archetype` free list plus
@@ -216,10 +216,35 @@ chunk swap-remove.
 all-archetypes-by-all-chunks scan in `DestroyPartition`. Cheap today precisely
 because the leak fix bounds the census; measure before adding structure.
 
-**Gate:** criterion 3; enable
-`StreamingCostBounds.DISABLED_StreamingChurnDoesNotGrowChunkCount`; criterion 4
-unchanged; ASan, since slab reuse is the shape that produced the last
-use-after-free in this tree; full suite.
+**Result:** the free list lives on `Archetype`, and `RemoveRow` returns a slab the
+moment it loses its last row — which also covers ordinary entity churn, not only
+zone unload, since both leak the same way. Chunk census after ten load/unload
+cycles fell from 71 to 8, equal to one cycle, and the resident count for the
+160 000-entity iteration shape fell from 1 240 to 1 219 because the transient
+empty-signature slabs are now shared rather than held per partition. Iteration,
+import, and propagation are unchanged or slightly better.
+
+**Reclamation exposed a change-detection hole that had to be fixed with it.**
+`AddComponent` never marked the destination chunk's columns as written, so a row
+appearing in a chunk was invisible to `Changed<T>`. Nothing depended on that while
+every structural change invalidated every cache — Phase 3's scoped invalidation is
+what made it reachable, and it cost an entity spawned after the first sweep its
+world transform entirely. Every path that creates a row now funnels through
+`Archetype::AddRow`, which stamps the destination chunk's columns as this frame's
+write; `MoveEntityToPartition`'s separate bump became redundant and was removed.
+Measured cost: about 6 ns per entity on the incremental spawn path, and none on the
+batch importer. `TransformPropagation.EntitySpawnedAfterAnEarlierSweepIsPropagated`
+covers it and fails without it.
+
+**Gate:** criterion 3 met; `StreamingChurnDoesNotGrowChunkCount` enabled and
+passing, plus four `ChunkReclamationTest` bounds on the storage mechanism itself;
+criterion 4 unchanged; full suite 1824/1824.
+
+ASan could not run: this machine has no `libasan` (nor `libtsan`), so neither
+sanitizer preset links. Valgrind memcheck was run instead over the ECS, streaming,
+propagation, and physics suites and reported nothing, which covers the
+use-after-free shape slab reuse risks. Installing the sanitizer runtimes still
+needs owner sudo, and the ASan leg of this gate remains owed.
 
 ## Phase 5 — Partition-targeted deferred creation
 
