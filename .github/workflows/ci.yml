@@ -90,15 +90,36 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
 
+    env:
+      VULKAN_SDK_VERSION: 1.4.350.0
+      VULKAN_SDK: C:\VulkanSDK
+
     steps:
       - name: Check out source
         uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
 
+      # LunarG ships the Windows SDK as a Qt Installer Framework executable.
+      # Unpacking it with an archiver yields Bin/ and nothing else, so glslc
+      # appears while the headers and vulkan-1.lib do not and find_package
+      # (Vulkan) fails. Run the installer unattended, which is the only way to
+      # get Include/ and Lib/.
       - name: Install the Vulkan SDK
-        uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff
-        with:
-          version: latest
-          cache: true
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\vulkan_sdk.exe"
+          curl.exe --fail --location --silent --show-error --output $installer `
+            "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $install = Start-Process -FilePath $installer -Wait -PassThru -NoNewWindow -ArgumentList `
+            '--root', $env:VULKAN_SDK, '--accept-licenses', '--default-answer', '--confirm-command', 'install'
+          if ($install.ExitCode -ne 0) { exit $install.ExitCode }
+          # Fail here rather than inside CMake if the layout is not what the build needs.
+          foreach ($path in "$env:VULKAN_SDK\Include\vulkan\vulkan.h",
+                            "$env:VULKAN_SDK\Lib\vulkan-1.lib",
+                            "$env:VULKAN_SDK\Bin\glslc.exe") {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Vulkan SDK is missing $path" }
+          }
+          "$env:VULKAN_SDK\Bin" >> $env:GITHUB_PATH
 
       - name: Install SDL3
         shell: pwsh
@@ -112,11 +133,14 @@ jobs:
             -DSENCHA_ENABLE_VULKAN=ON `
             -DSENCHA_ENABLE_COOK=ON `
             -DSENCHA_ENABLE_DEBUG_UI=OFF `
-            -DSENCHA_ENABLE_HOT_RELOAD=OFF
+            -DSENCHA_ENABLE_HOT_RELOAD=OFF 2>&1 | Tee-Object build-windows.log
+          exit $LASTEXITCODE
 
       - name: Build
         shell: pwsh
-        run: cmake --build build --config Debug --parallel 2 2>&1 | Tee-Object build-windows.log
+        run: |
+          cmake --build build --config Debug --parallel 2 2>&1 | Tee-Object -Append build-windows.log
+          exit $LASTEXITCODE
 
       - name: Upload failed build log
         if: failure()
@@ -124,12 +148,15 @@ jobs:
         with:
           name: windows-build-log
           path: build-windows.log
-          if-no-files-found: error
+          # A failure before the configure step legitimately leaves no log.
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: Test
         shell: pwsh
-        run: ctest --test-dir build -C Debug --output-on-failure 2>&1 | Tee-Object test-windows.log
+        run: |
+          ctest --test-dir build -C Debug --output-on-failure 2>&1 | Tee-Object test-windows.log
+          exit $LASTEXITCODE
 
       - name: Upload failed test log
         if: failure()
@@ -137,5 +164,5 @@ jobs:
         with:
           name: windows-test-log
           path: test-windows.log
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 7
