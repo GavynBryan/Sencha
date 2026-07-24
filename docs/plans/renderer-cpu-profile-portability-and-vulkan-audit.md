@@ -1,6 +1,25 @@
 # Renderer CPU Profile, Windows Portability, and Vulkan Audit
 
-Status: proposed, 2026-07-23. Nothing here is built.
+Status: partially executed 2026-07-23. Results, including what did not run
+and why, are in
+[`evidence/renderer-cpu-profile/results.md`](evidence/renderer-cpu-profile/results.md).
+
+Landed: P0.2 through P0.5, V0 (wiring, with the instrument caveat below),
+W0, W4 (authored, not enabled), and the memory and lifetime hazard classes
+of V1. Three defects fixed: host-visible memory was not required to be
+coherent, the depth barrier's first synchronization scope was empty, and a
+fresh shadow atlas was sampleable with undefined contents.
+
+Blocked on tools this machine cannot install without sudo (perf, valgrind,
+heaptrack, clang-tidy, cppcheck, mingw, spirv-tools): P2, P3, P4, P5, W1,
+W2.
+
+**Read this before trusting a synchronization result here.** Sync
+validation does not report on this machine's validation layer build. A
+negative control (a deliberately deleted barrier) produced core-validation
+layout errors and zero `SYNC-HAZARD` lines across three enabling paths. Any
+future "syncval clean" claim needs the instrument re-proven with that same
+control first.
 
 Scope: the render layer only (`engine/src/render`, `engine/src/graphics`,
 `engine/src/profiling`, and the SDL WSI glue in `engine/src/platform`).
