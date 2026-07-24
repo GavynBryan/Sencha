@@ -20,7 +20,10 @@
 // for use by the subsequent culling pass.
 //
 // The query is cached per instance to avoid rebuild-from-scratch every frame;
-// a World* sentinel detects world changes (relevant in multi-registry loops).
+// a World* sentinel detects world changes. One slot, so a loop over several
+// active registries rebuilds on each. Measured at 0.038 ms per frame for the
+// whole mesh walk, which is not worth keying a cache on world addresses that
+// a streamed-out zone can free and a new one reuse.
 //=============================================================================
 class TextureCache;
 

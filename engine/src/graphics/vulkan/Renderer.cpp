@@ -226,23 +226,6 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     return RenderFrameResult::Presented;
 }
 
-Renderer::DrawStatus Renderer::DrawFrame()
-{
-    switch (DrawFrameScheduled())
-    {
-    case RenderFrameResult::Presented:
-        return DrawStatus::Ok;
-    case RenderFrameResult::SwapchainOutOfDate:
-    case RenderFrameResult::SurfaceSuboptimal:
-        return DrawStatus::SwapchainOutOfDate;
-    case RenderFrameResult::SkippedMinimized:
-        return DrawStatus::Skipped;
-    case RenderFrameResult::Failed:
-    default:
-        return DrawStatus::Error;
-    }
-}
-
 void Renderer::NotifySwapchainRecreated()
 {
     ImageLayouts.assign(Swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);

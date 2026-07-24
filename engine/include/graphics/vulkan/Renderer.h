@@ -143,14 +143,6 @@ public:
 class Renderer
 {
 public:
-    enum class DrawStatus
-    {
-        Ok,
-        SwapchainOutOfDate, // caller should recreate the swapchain
-        Skipped,            // frame wasn't renderable (e.g. minimized)
-        Error
-    };
-
     Renderer(LoggingProvider& logging,
              VulkanDeviceService& device,
              VulkanPhysicalDeviceService& physicalDevice,
@@ -195,8 +187,6 @@ public:
     // results so RuntimeFrameLoop can keep render instability out of game time.
     RenderFrameResult DrawFrameScheduled();
 
-    // Legacy one-call frame driver kept as a narrow compatibility wrapper.
-    DrawStatus DrawFrame();
     [[nodiscard]] const RendererFrameTiming& GetLastTiming() const { return LastTiming; }
 
     // Reset per-swapchain-image tracking after VulkanSwapchainService::Recreate.
