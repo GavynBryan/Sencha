@@ -3,8 +3,15 @@
 #include <graphics/vulkan/TextureCache.h>
 #include <render/ZoneLightmapComponent.h>
 
+#include <algorithm>
+
 namespace
 {
+std::size_t TableSlot(StoragePartitionId partition)
+{
+    return static_cast<std::size_t>(partition.Value);
+}
+
 Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
 {
     Aabb3d result = Aabb3d::Empty();
@@ -22,6 +29,54 @@ Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
 }
 } // namespace
 
+void CollectZoneLightmaps(
+    const World& world,
+    const StoragePartitionSet& partitions,
+    std::vector<ZoneLightmapBinding>& out)
+{
+    out.clear();
+    if (!world.IsRegistered<ZoneLightmapComponent>())
+        return;
+
+    world.ForEachComponent<ZoneLightmapComponent>(
+        [&](EntityId entity, const ZoneLightmapComponent& lightmap)
+        {
+            const StoragePartitionId partition = world.GetEntityPartition(entity);
+            if (!partitions.Contains(partition))
+                return;
+            out.push_back(ZoneLightmapBinding{
+                .Partition = partition,
+                .Texture = lightmap.Texture,
+                .Ao = lightmap.Ao,
+            });
+        });
+}
+
+void BuildZoneLightmapTable(
+    std::span<const std::pair<StoragePartitionId, ZoneLightmapIndices>> resolved,
+    std::vector<ZoneLightmapIndices>& table)
+{
+    table.clear();
+    if (resolved.empty())
+        return;
+
+    std::size_t highest = 0;
+    for (const auto& [partition, indices] : resolved)
+        highest = std::max(highest, TableSlot(partition));
+
+    table.resize(highest + 1, ZoneLightmapIndices{});
+    for (const auto& [partition, indices] : resolved)
+        table[TableSlot(partition)] = indices;
+}
+
+ZoneLightmapIndices LookupZoneLightmap(
+    std::span<const ZoneLightmapIndices> table,
+    StoragePartitionId partition)
+{
+    const std::size_t slot = TableSlot(partition);
+    return slot < table.size() ? table[slot] : ZoneLightmapIndices{};
+}
+
 void RenderExtractionSystem::Extract(
     const World& world,
     const StoragePartitionSet& partitions,
@@ -38,24 +93,30 @@ void RenderExtractionSystem::Extract(
         return;
     }
 
-    // The zone's baked-lighting atlas and AO plane, resolved once per
-    // extraction pass.
-    uint32_t lightmapIndex = UINT32_MAX;
-    uint32_t aoIndex = UINT32_MAX;
-    if (textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+    // Each resident zone owns its own baked atlas, so the indices are resolved
+    // per partition and looked up per chunk. Resolving one atlas for the whole
+    // world would stamp whichever zone happened to be visited last onto every
+    // other zone's meshes.
+    LightmapTable.clear();
+    if (textures != nullptr)
     {
-        world.ForEachComponent<ZoneLightmapComponent>(
-            [&](EntityId, const ZoneLightmapComponent& lightmap)
-            {
-                const BindlessImageIndex index =
-                    textures->GetBindlessIndex(lightmap.Texture);
-                if (index.IsValid())
-                    lightmapIndex = index.Value;
-                const BindlessImageIndex ao =
-                    textures->GetBindlessIndex(lightmap.Ao);
-                if (ao.IsValid())
-                    aoIndex = ao.Value;
-            });
+        CollectZoneLightmaps(world, partitions, LightmapBindings);
+        ResolvedLightmaps.clear();
+        ResolvedLightmaps.reserve(LightmapBindings.size());
+        for (const ZoneLightmapBinding& binding : LightmapBindings)
+        {
+            ZoneLightmapIndices indices;
+            const BindlessImageIndex lightmap =
+                textures->GetBindlessIndex(binding.Texture);
+            if (lightmap.IsValid())
+                indices.Lightmap = lightmap.Value;
+            const BindlessImageIndex ao =
+                textures->GetBindlessIndex(binding.Ao);
+            if (ao.IsValid())
+                indices.Ao = ao.Value;
+            ResolvedLightmaps.emplace_back(binding.Partition, indices);
+        }
+        BuildZoneLightmapTable(ResolvedLightmaps, LightmapTable);
     }
 
     if (LastWorld != &world || !CachedQuery.has_value())
@@ -68,6 +129,8 @@ void RenderExtractionSystem::Extract(
     {
         const auto transforms = view.template Read<WorldTransform>();
         const auto renderers = view.template Read<StaticMeshComponent>();
+        const ZoneLightmapIndices lightmap =
+            LookupZoneLightmap(LightmapTable, view.Partition());
 
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
@@ -123,8 +186,8 @@ void RenderExtractionSystem::Extract(
                 item.CameraDepth = cameraDepth;
                 item.Pass = material->Pass;
                 item.Pipeline = SelectOpaquePipeline(*material);
-                item.LightmapTextureIndex = lightmapIndex;
-                item.AoTextureIndex = aoIndex;
+                item.LightmapTextureIndex = lightmap.Lightmap;
+                item.AoTextureIndex = lightmap.Ao;
                 item.LightmapScaleBias = renderer.LightmapScaleBias;
                 queue.AddOpaque(item);
             }
