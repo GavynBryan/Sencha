@@ -9,6 +9,22 @@ void CommandBuffer::Flush()
     assert(!W->InQueryScope()
            && "CommandBuffer::Flush called while a query is active.");
 
+    // Entities created during this flush, in the order their CreateEntity commands
+    // were recorded, so a command addressing a PendingEntity can name one. A
+    // handle can only be obtained from an earlier CreateEntity call and commands
+    // execute in record order, so the creation an ordinal names has always run by
+    // the time something addresses it.
+    std::vector<EntityId> created;
+    const auto resolve = [&created](const Command& command)
+    {
+        if (command.PendingOrdinal == PendingEntity::InvalidOrdinal)
+            return command.Entity;
+
+        assert(command.PendingOrdinal < created.size()
+               && "a command addressed a creation that has not run yet");
+        return created[command.PendingOrdinal];
+    };
+
     for (size_t i = 0; i < Commands.size();)
     {
         Command& cmd = Commands[i];
@@ -36,9 +52,10 @@ void CommandBuffer::Flush()
                 items.reserve(end - i);
                 for (size_t j = i; j < end; ++j)
                 {
-                    if (!W->IsAlive(Commands[j].Entity)) continue;
+                    const EntityId entity = resolve(Commands[j]);
+                    if (!W->IsAlive(entity)) continue;
                     items.push_back(ComponentBatchItem{
-                        Commands[j].Entity,
+                        entity,
                         PayloadData(Commands[j].Payload)
                     });
                 }
@@ -68,8 +85,9 @@ void CommandBuffer::Flush()
                 entities.reserve(end - i);
                 for (size_t j = i; j < end; ++j)
                 {
-                    if (!W->IsAlive(Commands[j].Entity)) continue;
-                    entities.push_back(Commands[j].Entity);
+                    const EntityId entity = resolve(Commands[j]);
+                    if (!W->IsAlive(entity)) continue;
+                    entities.push_back(entity);
                 }
                 if (!entities.empty())
                     W->RemoveComponentsRawBatch(id, entities.data(), entities.size());
@@ -82,9 +100,10 @@ void CommandBuffer::Flush()
         {
         case CommandKind::AddComponent:
         {
-            if (!W->IsAlive(cmd.Entity)) break;
+            const EntityId entity = resolve(cmd);
+            if (!W->IsAlive(entity)) break;
             W->AddComponentRaw(
-                cmd.Entity,
+                entity,
                 cmd.Payload.Id,
                 PayloadData(cmd.Payload),
                 cmd.Payload.Size,
@@ -94,22 +113,26 @@ void CommandBuffer::Flush()
         }
         case CommandKind::RemoveComponent:
         {
-            if (!W->IsAlive(cmd.Entity)) break;
+            const EntityId entity = resolve(cmd);
+            if (!W->IsAlive(entity)) break;
             W->RemoveComponentRaw(
-                cmd.Entity,
+                entity,
                 cmd.Payload.Id,
                 cmd.Payload.OnRemoveHook);
             break;
         }
         case CommandKind::DestroyEntity:
         {
-            if (!W->IsAlive(cmd.Entity)) break;
-            W->DestroyEntity(cmd.Entity);
+            const EntityId entity = resolve(cmd);
+            if (!W->IsAlive(entity)) break;
+            W->DestroyEntity(entity);
             break;
         }
         case CommandKind::CreateEntity:
         {
-            W->CreateEntity(cmd.Partition);
+            assert(cmd.PendingOrdinal == created.size()
+                   && "creation ordinals must match their execution order");
+            created.push_back(W->CreateEntity(cmd.Partition));
             break;
         }
         }
@@ -119,4 +142,5 @@ void CommandBuffer::Flush()
 
     Commands.clear();
     PayloadArena.clear();
+    EndRecording();
 }

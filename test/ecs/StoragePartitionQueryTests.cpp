@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -293,6 +294,77 @@ TEST_F(StoragePartitionQueryTest, DeferredCreationLandsInTheIteratedPartition)
     EXPECT_EQ(World_.DestroyPartition(zone), 2u);
     EXPECT_EQ(countIn(zone), 0u);
     EXPECT_EQ(countIn(other), 1u);
+}
+
+// The whole point of the handle: a system inside query scope can spawn an entity
+// into the zone it is iterating AND give it components, in one recording.
+TEST_F(StoragePartitionQueryTest, DeferredCreationCanBeGivenComponents)
+{
+    constexpr StoragePartitionId zone{ 7 };
+    Add(zone, 5);
+
+    StoragePartitionSet active;
+    active.Add(zone);
+
+    CommandBuffer commands(World_);
+    Query<Read<PartitionQueryValue>> query(World_);
+    query.ForEachChunkIn(active, [&](auto& view)
+    {
+        const auto values = view.template Read<PartitionQueryValue>();
+        for (uint32_t row = 0; row < view.Count(); ++row)
+        {
+            const PendingEntity spawned = commands.CreateEntity(view.Partition());
+            commands.AddComponent(
+                spawned,
+                PartitionQueryValue{ values[row].Value * 2 });
+        }
+    });
+    commands.Flush();
+
+    // The spawn is a full entity: it carries its component and it is in the zone,
+    // so the very next query over that zone sees it.
+    std::vector<int> seen;
+    query.ForEachChunkIn(active, [&](auto& view)
+    {
+        const auto values = view.template Read<PartitionQueryValue>();
+        for (uint32_t row = 0; row < view.Count(); ++row)
+            seen.push_back(values[row].Value);
+    });
+    std::sort(seen.begin(), seen.end());
+    EXPECT_EQ(seen, (std::vector<int>{ 5, 10 }));
+}
+
+// Several creations in one recording stay distinct, and each keeps the components
+// addressed to it — the ordinal has to survive the flush's batching of like
+// commands.
+TEST_F(StoragePartitionQueryTest, ManyDeferredCreationsKeepTheirOwnComponents)
+{
+    constexpr StoragePartitionId zone{ 8 };
+
+    CommandBuffer commands(World_);
+    std::vector<PendingEntity> spawned;
+    for (int index = 0; index < 4; ++index)
+        spawned.push_back(commands.CreateEntity(zone));
+
+    // Recorded after all four creations, so the flush groups them into one batch.
+    for (int index = 0; index < 4; ++index)
+        commands.AddComponent(spawned[static_cast<size_t>(index)], PartitionQueryValue{ index });
+
+    commands.Flush();
+
+    StoragePartitionSet active;
+    active.Add(zone);
+
+    std::vector<int> seen;
+    Query<Read<PartitionQueryValue>> query(World_);
+    query.ForEachChunkIn(active, [&](auto& view)
+    {
+        const auto values = view.template Read<PartitionQueryValue>();
+        for (uint32_t row = 0; row < view.Count(); ++row)
+            seen.push_back(values[row].Value);
+    });
+    std::sort(seen.begin(), seen.end());
+    EXPECT_EQ(seen, (std::vector<int>{ 0, 1, 2, 3 }));
 }
 
 // The no-partition overload still means the persistent partition, matching

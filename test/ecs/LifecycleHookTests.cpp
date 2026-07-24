@@ -10,11 +10,13 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <utility>
 #include <vector>
 
 // ─── Test components ─────────────────────────────────────────────────────────
 
 static int              g_FirstAdds    = 0;
+static EntityId         g_FirstAddEntity{};   // entity OnAdd was handed
 static int              g_FirstRemoves = 0;
 static int              g_SecondRemoves = 0;
 static std::vector<int> g_RemoveOrder; // .Tag values in hook-fire order
@@ -26,9 +28,10 @@ struct PlainData  { float Value = 0.f; };
 template <>
 struct ComponentTraits<HookFirst>
 {
-    static void OnAdd(HookFirst& /*c*/, World& /*w*/, EntityId /*e*/)
+    static void OnAdd(HookFirst& /*c*/, World& /*w*/, EntityId e)
     {
         ++g_FirstAdds;
+        g_FirstAddEntity = e;
     }
     static void OnRemove(const HookFirst& c, World& /*w*/, EntityId /*e*/)
     {
@@ -99,6 +102,7 @@ protected:
     void SetUp() override
     {
         g_FirstAdds     = 0;
+        g_FirstAddEntity = EntityId{};
         g_FirstRemoves  = 0;
         g_SecondRemoves = 0;
         g_MissedResource = 0;
@@ -197,6 +201,33 @@ TEST_F(LifecycleHookTest, CommandBufferDestroyFiresOnRemoveAtFlush)
 
     EXPECT_EQ(g_FirstRemoves, 1);
     EXPECT_FALSE(world.IsAlive(e));
+}
+
+// A component added to an entity the buffer has not created yet still fires OnAdd,
+// and the hook must be handed the entity that now exists. A hook is where external
+// handles are retained against an id, so being given one that is not alive would
+// leak or corrupt them.
+TEST_F(LifecycleHookTest, CommandBufferAddToAPendingEntityFiresOnAddWithALiveEntity)
+{
+    CommandBuffer cmds(world);
+    const PendingEntity spawned = cmds.CreateEntity();
+    cmds.AddComponent<HookFirst>(spawned, { 9 });
+    EXPECT_EQ(g_FirstAdds, 0); // recorded, not yet executed
+
+    cmds.Flush();
+
+    EXPECT_EQ(g_FirstAdds, 1);
+    EXPECT_TRUE(world.IsAlive(g_FirstAddEntity))
+        << "OnAdd was handed an entity that does not exist";
+
+    const std::vector<EntityId> alive = world.GetAliveEntities();
+    ASSERT_EQ(alive.size(), 1u);
+    EXPECT_EQ(g_FirstAddEntity, alive[0]);
+
+    const HookFirst* component =
+        std::as_const(world).TryGet<HookFirst>(g_FirstAddEntity);
+    ASSERT_NE(component, nullptr);
+    EXPECT_EQ(component->Tag, 9);
 }
 
 // ─── World teardown ──────────────────────────────────────────────────────────

@@ -284,37 +284,49 @@ Explicitly not an implicit "current partition" context: that is lifecycle state
 derived from ambient context, and the partition is data that can be passed.
 
 **Gate:** `StoragePartitionQueryTest.DeferredCreationLandsInTheIteratedPartition`
-spawns from inside `ForEachChunkIn` and asserts the entity is owned by the
-iterated zone and not by the persistent partition; it fails without the wiring.
-The second half of the original gate — "skipped when the zone goes dormant" — is
-not observable as written, because a deferred creation carries no components and
-therefore matches no query, dormant or not. The test asserts the property that
-actually matters for streaming instead: the entity dies with
-`DestroyPartition`, so zone ownership is real.
+spawns from inside `ForEachChunkIn` and asserts the entity is owned by the iterated
+zone rather than the persistent partition, and dies with `DestroyPartition`; it
+fails without the wiring. `DeferredCreationCanBeGivenComponents` spawns and
+initializes in one recording and finds the result in the very next query over that
+zone. `ManyDeferredCreationsKeepTheirOwnComponents` covers the flush's batching of
+like commands, where an unresolved ordinal loses every component rather than one.
+`LifecycleHookTest.CommandBufferAddToAPendingEntityFiresOnAddWithALiveEntity` covers
+the hook contract: `OnAdd` is where external handles are retained against an id, so
+it must be handed the entity that now exists.
 
-### What this does not deliver, and the decision it needs
+The original gate also asked for "skipped when the zone goes dormant". A spawn with
+components would now be observable that way, but dying with `DestroyPartition` is
+the stronger statement about ownership, so that is what the test asserts.
 
-Deferred creation does not expose the created `EntityId`, so a system still cannot
-give the entity it just spawned any components — which is most of what "spawn into
-this zone" means in practice. The partition overload makes the destination correct;
-it does not make the mechanism usable for a projectile or a spawned enemy.
+### Deferred creation made usable
 
-`CommandBuffer::CreateEntity` has no consumers anywhere in the tree — engine,
-editor, tests, examples — and its own comment directs real spawns elsewhere ("create
-directly outside query scope, or a higher-level spawn request realized at a safe
-scheduler boundary"). So this phase made a correct parameter out of an API nobody
-calls. Two honest ways forward, and the choice is the owner's:
+A partition alone was not enough. `CreateEntity` did not expose what it created, so
+a system could not give the entity it just spawned any components — most of what
+"spawn into this zone" means — and the method had no consumers anywhere in the tree.
+A correct parameter on an API nobody can use is not a phase, so `CreateEntity` now
+returns a handle:
 
-- **Make it usable.** Return a provisional `EntityId` from `CreateEntity` that later
-  commands in the same buffer can name, resolved to the real id during `Flush`
-  (the standard pattern: Bevy's `Commands::spawn`, Unity's
-  `EntityCommandBuffer.CreateEntity`). Roughly a provisional-id namespace plus
-  remapping in `Flush`, and it turns the whole command set coherent.
-- **Delete it.** If the intended spawn path really is the higher-level request at a
-  scheduler boundary, then deferred creation is a dead seam and should go, with the
-  spawn-request mechanism named and anchored instead.
+```cpp
+const PendingEntity spawned = commands.CreateEntity(view.Partition());
+commands.AddComponent(spawned, Projectile{ ... });
+```
 
-Left as-is for now, with the gap recorded rather than papered over.
+`PendingEntity` names a creation the buffer has not performed yet. It is
+deliberately not an `EntityId` — no row exists until `Flush`, so there is nothing
+the World could be asked about it, and the type makes that a compile error rather
+than a runtime surprise. `Flush` records each created id in command order and
+substitutes it wherever a command addresses an ordinal, including inside the
+batching paths that group like commands. This mirrors `ZoneLocalEntityId`, which
+already solves the same problem for a zone package built off the owner thread.
+
+A handle also carries the recording it belongs to, and `Flush`/`Clear` end one, so a
+handle held across either asserts instead of silently resolving to whatever entity
+later takes its ordinal. Only `AddComponent` accepts a handle: removing a component
+from, or destroying, an entity the same buffer is about to create has no caller and
+would be speculative.
+
+`Command::InitialComponents`, an unused placeholder for exactly this capability, is
+deleted — the handle plus `AddComponent` is the mechanism it was standing in for.
 
 ## Phase 6 — Completion and hygiene
 
