@@ -13,6 +13,7 @@
 #include <shaders/kMeshDebugViewFragSpv.h>
 #endif
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 
@@ -338,26 +339,31 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     return allocation.Offset;
 }
 
-bool MeshForwardPass::BindInstanceStream(const FrameContext& frame, const RenderQueue& queue)
+uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
+                                             const RenderQueue& queue)
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
 
-    auto stream = Scratch->AllocateVertex(order.size() * sizeof(MeshInstanceData));
+    // A short grant is a prefix of the draw order, not a gap in it: draws
+    // index instances by queue position, and every run left over would need
+    // slice space that the short grant just proved is gone.
+    auto stream = Scratch->AllocateVertexElements(
+        static_cast<uint32_t>(order.size()), sizeof(MeshInstanceData));
     if (!stream.IsValid())
-        return false;
+        return 0;
 
-    MeshInstanceData* instances = static_cast<MeshInstanceData*>(stream.Mapped);
-    for (size_t i = 0; i < order.size(); ++i)
+    MeshInstanceData* instances = static_cast<MeshInstanceData*>(stream.Grant.Mapped);
+    for (uint32_t i = 0; i < stream.Count; ++i)
     {
         const RenderQueueItem& item = items[order[i]];
         instances[i].World = item.WorldMatrix.Transposed();
         instances[i].LightmapScaleBias = item.LightmapScaleBias;
     }
 
-    VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Buffer);
-    vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Offset);
-    return true;
+    VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Grant.Buffer);
+    vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Grant.Offset);
+    return stream.Count;
 }
 
 void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset)
@@ -387,7 +393,8 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
 }
 
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                               StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint)
+                               StaticMeshCache& meshes, MaterialCache& materials,
+                               Vec4 tint, uint32_t streamedInstances)
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
@@ -397,6 +404,10 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 
     for (const RenderQueueRun& run : queue.OpaqueRuns())
     {
+        if (run.First >= streamedInstances)
+            continue;
+        const uint32_t drawCount =
+            std::min(run.Count, streamedInstances - run.First);
         const RenderQueueItem& item = items[order[run.First]];
         const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
         const Material* material = materials.Get(item.Material);
@@ -470,10 +481,10 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
         ++LastStats.MaterialSwitches;
-        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, run.Count,
+        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, drawCount,
                          section.IndexOffset, 0, run.First);
         ++LastStats.DrawCalls;
-        LastStats.Triangles += section.IndexCount / 3u * run.Count;
+        LastStats.Triangles += section.IndexCount / 3u * drawCount;
     }
 }
 
@@ -521,8 +532,12 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
     if (!uniformOffset.has_value())
         return giveUp();
-    if (!BindInstanceStream(frame, queue))
+    const uint32_t streamed = BindInstanceStream(frame, queue);
+    if (streamed == 0)
         return giveUp();
+    // Whatever the slice could not carry goes unrendered this frame, and is
+    // counted rather than silently missing from the image.
+    LastStats.InstancesDropped = LastStats.QueueItems - streamed;
 
     BindFrameState(frame, *uniformOffset);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -538,7 +553,7 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         vkCmdClearAttachments(frame.Cmd, 1, &clear, 1, &rect);
     }
 #endif
-    DrawRuns(frame, queue, meshes, materials, tint);
+    DrawRuns(frame, queue, meshes, materials, tint, streamed);
 }
 
 void MeshForwardPass::Teardown()

@@ -51,6 +51,8 @@ public:
         // six times: the pair measures how much work culling is avoiding.
         std::uint32_t CastersTested = 0;
         std::uint32_t CastersVisible = 0;
+        // Casters the frame scratch could not carry, so no view drew them.
+        std::uint32_t CastersDropped = 0;
         // Set when the pass had views to render and abandoned all of them
         // (missing pipelines, or a frame-scratch request it could not serve).
         bool Skipped = false;
@@ -66,8 +68,10 @@ private:
     };
 
     [[nodiscard]] bool EnsurePipelines(const RenderLightSet& lights);
-    [[nodiscard]] bool BindInstanceStream(const FrameContext& frame,
-                                          const ShadowCasterSet& casters);
+    // Uploads and binds the caster transforms, returning how many casters the
+    // stream covers. Zero means the slice had no room at all.
+    [[nodiscard]] std::uint32_t BindInstanceStream(const FrameContext& frame,
+                                                   const ShadowCasterSet& casters);
     [[nodiscard]] VkDeviceSize UploadView(const Mat4& viewProjection);
     void BindView(const FrameContext& frame, VkDeviceSize uniformOffset);
     // Returns false only when the view uniform cannot be uploaded; the
@@ -77,7 +81,7 @@ private:
                     const Mat4& viewProjection,
                     const ShadowCasterSet& casters,
                     StaticMeshCache& meshes,
-                    bool canDrawCasters,
+                    std::uint32_t streamedCasters,
                     bool flipFrontFace);
 
     LightBindings* Bindings = nullptr;

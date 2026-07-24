@@ -49,6 +49,7 @@ namespace
 			{ "shadow_caster_draws_count", static_cast<double>(stats.ShadowCasterDraws) },
 			{ "shadow_casters_tested_count", static_cast<double>(stats.ShadowCastersTested) },
 			{ "shadow_casters_visible_count", static_cast<double>(stats.ShadowCastersVisible) },
+			{ "shadow_casters_dropped_count", static_cast<double>(stats.ShadowCastersDropped) },
 			{ "shadow_slots_held_count", static_cast<double>(stats.ShadowSlotsHeld) },
 			{ "shadow_cache_hits_count", static_cast<double>(stats.ShadowCacheHits) },
 			{ "shadow_requests_denied_count", static_cast<double>(stats.ShadowRequestsDenied) },

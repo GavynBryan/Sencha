@@ -106,20 +106,24 @@ bool ShadowDepthPass::EnsurePipelines(const RenderLightSet& lights)
     return true;
 }
 
-bool ShadowDepthPass::BindInstanceStream(const FrameContext& frame,
-                                         const ShadowCasterSet& casters)
+std::uint32_t ShadowDepthPass::BindInstanceStream(const FrameContext& frame,
+                                                  const ShadowCasterSet& casters)
 {
-    auto allocation = Scratch->AllocateVertex(casters.Items.size() * sizeof(Mat4));
+    // A short grant is a prefix of the caster set: draws index transforms by
+    // caster position, and the views share one slice, so what does not fit
+    // here has nowhere else to go this frame.
+    auto allocation = Scratch->AllocateVertexElements(
+        static_cast<std::uint32_t>(casters.Items.size()), sizeof(Mat4));
     if (!allocation.IsValid())
-        return false;
+        return 0;
 
-    auto* transforms = static_cast<Mat4*>(allocation.Mapped);
-    for (std::size_t index = 0; index < casters.Items.size(); ++index)
+    auto* transforms = static_cast<Mat4*>(allocation.Grant.Mapped);
+    for (std::uint32_t index = 0; index < allocation.Count; ++index)
         transforms[index] = casters.Items[index].WorldMatrix.Transposed();
 
-    const VkBuffer buffer = Buffers->GetBuffer(allocation.Buffer);
-    vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &buffer, &allocation.Offset);
-    return true;
+    const VkBuffer buffer = Buffers->GetBuffer(allocation.Grant.Buffer);
+    vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &buffer, &allocation.Grant.Offset);
+    return allocation.Count;
 }
 
 VkDeviceSize ShadowDepthPass::UploadView(const Mat4& viewProjection)
@@ -145,9 +149,10 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
                                  const Mat4& viewProjection,
                                  const ShadowCasterSet& casters,
                                  StaticMeshCache& meshes,
-                                 bool canDrawCasters,
+                                 std::uint32_t streamedCasters,
                                  bool flipFrontFace)
 {
+    const bool canDrawCasters = streamedCasters > 0;
     VkDeviceSize uniformOffset = VK_WHOLE_SIZE;
     if (canDrawCasters)
     {
@@ -189,9 +194,7 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
     vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
 
     const Frustum shadowFrustum = Frustum::FromViewProjection(viewProjection);
-    for (std::uint32_t casterIndex = 0;
-         casterIndex < static_cast<std::uint32_t>(casters.Items.size());
-         ++casterIndex)
+    for (std::uint32_t casterIndex = 0; casterIndex < streamedCasters; ++casterIndex)
     {
         const ShadowCasterItem& caster = casters.Items[casterIndex];
         ++LastStats.CastersTested;
@@ -253,9 +256,14 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
 
     // Only a recording failure leaves targets untouched, reported so cached
     // content is not sampled as fresh.
-    const bool canDrawCasters = !casters.Items.empty();
-    if (canDrawCasters
-        && (!EnsurePipelines(lights) || !BindInstanceStream(frame, casters)))
+    std::uint32_t streamedCasters = 0;
+    const bool wantsCasters = !casters.Items.empty();
+    if (wantsCasters)
+    {
+        if (EnsurePipelines(lights))
+            streamedCasters = BindInstanceStream(frame, casters);
+    }
+    if (wantsCasters && streamedCasters == 0)
     {
         for (const SpotShadowViewJob& view : views)
         {
@@ -272,6 +280,9 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
         LastStats.Skipped = true;
         return;
     }
+
+    LastStats.CastersDropped =
+        static_cast<std::uint32_t>(casters.Items.size()) - streamedCasters;
 
     LastPipeline = VK_NULL_HANDLE;
     LastVertexBuffer = VK_NULL_HANDLE;
@@ -300,7 +311,7 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
             target.Viewport.maxDepth = 1.0f;
 
             if (!RecordView(frame, target, view.ViewProjection, casters, meshes,
-                            canDrawCasters, false))
+                            streamedCasters, false))
             {
                 if (residency != nullptr)
                     residency->MarkViewFailed(view.SlotIndex);
@@ -328,7 +339,7 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
 
             if (target.Attachment == VK_NULL_HANDLE
                 || !RecordView(frame, target, face.ViewProjection, casters, meshes,
-                               canDrawCasters, true))
+                               streamedCasters, true))
             {
                 if (residency != nullptr)
                     residency->MarkPointFaceFailed(face.SlotIndex, face.Face);

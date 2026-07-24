@@ -42,6 +42,8 @@ struct RenderStats
     // the two is what says whether culling is doing any work.
     std::uint32_t ShadowCastersTested = 0;
     std::uint32_t ShadowCastersVisible = 0;
+    // Casters the frame scratch could not carry into any view.
+    std::uint32_t ShadowCastersDropped = 0;
     std::uint32_t ShadowSlotsHeld = 0;
     std::uint32_t ShadowCacheHits = 0;
     std::uint32_t ShadowRequestsDenied = 0;

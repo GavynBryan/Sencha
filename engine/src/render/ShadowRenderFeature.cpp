@@ -81,6 +81,7 @@ void ShadowRenderFeature::OnDraw(const FrameContext& frame)
         Instrumentation->Stats->ShadowCasterDraws = stats.CasterDraws;
         Instrumentation->Stats->ShadowCastersTested = stats.CastersTested;
         Instrumentation->Stats->ShadowCastersVisible = stats.CastersVisible;
+        Instrumentation->Stats->ShadowCastersDropped = stats.CastersDropped;
         if (stats.Skipped)
             ++Instrumentation->Stats->PassesSkipped;
     }

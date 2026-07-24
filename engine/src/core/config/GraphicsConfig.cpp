@@ -58,6 +58,37 @@ namespace
         return true;
     }
 
+    bool ReadU64Either(const JsonValue& root,
+                       const char* a,
+                       const char* b,
+                       uint64_t& out,
+                       std::string& error,
+                       uint64_t minValue)
+    {
+        const JsonValue* value = FindEither(root, a, b);
+        if (!value)
+            return true;
+        if (!value->IsNumber())
+        {
+            error = std::string("graphics config: '") + a + "' must be a number";
+            return false;
+        }
+
+        const double number = value->AsNumber();
+        const uint64_t converted = static_cast<uint64_t>(number);
+        if (number < static_cast<double>(minValue)
+            || number > 9007199254740992.0
+            || static_cast<double>(converted) != number)
+        {
+            error = std::string("graphics config: '") + a
+                  + "' must be an unsigned integer";
+            return false;
+        }
+
+        out = converted;
+        return true;
+    }
+
     bool ReadU32Either(const JsonValue& root,
                        const char* a,
                        const char* b,
@@ -112,7 +143,10 @@ std::optional<EngineGraphicsConfig> DeserializeGraphicsConfig(
         || !ReadBoolEither(root, "enableValidation", "enable_validation",
             config.EnableValidation, sectionError)
         || !ReadI32Either(root, "deviceIndex", "device_index",
-            config.DeviceIndex, sectionError))
+            config.DeviceIndex, sectionError)
+        || !ReadU64Either(root, "frameScratchBytesPerFrame",
+            "frame_scratch_bytes_per_frame",
+            config.FrameScratchBytesPerFrame, sectionError, 1))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

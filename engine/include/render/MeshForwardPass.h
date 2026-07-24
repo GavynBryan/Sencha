@@ -137,10 +137,16 @@ private:
 #endif
     [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(
         const CameraRenderData& camera, const RenderLightSet& lights);
-    [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
+    // Uploads and binds the instance stream, returning how many draw-order
+    // entries it covers. Zero means the slice had no room at all.
+    [[nodiscard]] uint32_t BindInstanceStream(const FrameContext& frame,
+                                             const RenderQueue& queue);
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
+    // Draws are clipped to `streamedInstances`: a run past the stream has no
+    // instance data to read.
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint);
+                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint,
+                  uint32_t streamedInstances);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;

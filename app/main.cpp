@@ -123,6 +123,15 @@ int main(int argc, char** argv)
         // SENCHA_VALIDATION=0; unset leaves the config default.
         if (const char* validation = std::getenv("SENCHA_VALIDATION"))
             config.Graphics.EnableValidation = std::strcmp(validation, "0") != 0;
+        // Frame-scratch budget override for measurement: shrinking it forces
+        // the partial-grant path on a small scene, which is otherwise only
+        // reachable at scene scale.
+        if (const char* scratch = std::getenv("SENCHA_FRAME_SCRATCH_BYTES"))
+        {
+            unsigned long long bytes = 0;
+            if (std::sscanf(scratch, "%llu", &bytes) == 1 && bytes > 0)
+                config.Graphics.FrameScratchBytesPerFrame = bytes;
+        }
         // Adapter override for measurement: SENCHA_DEVICE_INDEX=1 compares the
         // same scene across the adapters in one machine, which device scoring
         // alone cannot express. The startup log lists the enumeration order.

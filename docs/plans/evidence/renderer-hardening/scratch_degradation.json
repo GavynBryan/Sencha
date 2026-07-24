@@ -1,0 +1,52 @@
+{
+  "what": "Frame-scratch degradation ladder, Gate 1 exit evidence.",
+  "scene": "levels/bench_stress (8 visible instances, 108 triangles)",
+  "method": "SENCHA_FRAME_SCRATCH_BYTES shrinks the per-frame slice so the partial-grant path is reachable on a small scene. 250 frames per run, last recorded frame reported.",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "build_type": "Debug",
+  "build_sha": "1b9f2860",
+  "ladder": [
+    {
+      "scratch_bytes_per_frame": 4096,
+      "draw_calls": 0,
+      "submitted_triangles": 0,
+      "instances_dropped": 8,
+      "passes_skipped": 1,
+      "scratch_alloc_failures": 1
+    },
+    {
+      "scratch_bytes_per_frame": 5760,
+      "draw_calls": 0,
+      "submitted_triangles": 0,
+      "instances_dropped": 8,
+      "passes_skipped": 1,
+      "scratch_alloc_failures": 1
+    },
+    {
+      "scratch_bytes_per_frame": 6000,
+      "draw_calls": 3,
+      "submitted_triangles": 36,
+      "instances_dropped": 5,
+      "passes_skipped": 0,
+      "scratch_alloc_failures": 0
+    },
+    {
+      "scratch_bytes_per_frame": 6352,
+      "draw_calls": 8,
+      "submitted_triangles": 108,
+      "instances_dropped": 0,
+      "passes_skipped": 0,
+      "scratch_alloc_failures": 0
+    },
+    {
+      "scratch_bytes_per_frame": 1048576,
+      "draw_calls": 8,
+      "submitted_triangles": 108,
+      "instances_dropped": 0,
+      "passes_skipped": 0,
+      "scratch_alloc_failures": 0
+    }
+  ],
+  "reading": "Below the 5712-byte frame uniform block the forward pass still cannot run, and now reports it (passes_skipped, instances_dropped, scratch_alloc_failures all nonzero) instead of logging and vanishing. Between that and a full fit the pass renders the prefix that fits and counts the rest: at 6000 bytes 3 of 8 instances draw where the all-or-nothing path drew none.",
+  "caveat": "The shadow pass allocates from the same slice first, which is why 5760 bytes is not enough for the forward uniforms."
+}
