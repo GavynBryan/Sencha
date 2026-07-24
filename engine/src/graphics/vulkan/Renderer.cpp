@@ -119,7 +119,12 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
         return nullptr;
     }
 
-    feature->Setup(Services);
+    if (!feature->Setup(Services))
+    {
+        Log.Error("Renderer::AddFeature: feature setup failed; not registered");
+        feature->Teardown();
+        return nullptr;
+    }
 
     IRenderFeature* raw = feature.get();
     PhaseBuckets[phaseIdx].push_back(raw);

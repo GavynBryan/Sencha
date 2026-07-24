@@ -24,10 +24,14 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
 {
 }
 
-void MeshRenderFeature::Setup(const RendererServices& services)
+bool MeshRenderFeature::Setup(const RendererServices& services)
 {
     Instrumentation = services.Instrumentation;
     Pass.Setup(services, *Bindings);
+    // The pass degrades to inert when the lighting bindings are unusable,
+    // which is a deliberate policy: the frame still presents. That is not a
+    // setup failure.
+    return true;
 }
 
 void MeshRenderFeature::OnDraw(const FrameContext& frame)

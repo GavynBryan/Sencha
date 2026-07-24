@@ -125,8 +125,10 @@ public:
     virtual void Contribute(VulkanBootstrapPolicy& /*policy*/) {}
 
     // Runs once, inside Renderer::AddFeature. Cache service pointers here.
-    // Do any up-front GPU resource creation here too.
-    virtual void Setup(const RendererServices& services) = 0;
+    // Do any up-front GPU resource creation here too. Returning false means
+    // the feature is not usable: AddFeature tears it down and refuses to
+    // register it, rather than leaving an inert feature in a phase bucket.
+    [[nodiscard]] virtual bool Setup(const RendererServices& services) = 0;
 
     // Per-frame record. For MainColor features the command buffer is
     // already inside vkCmdBeginRendering on the swapchain image. Features

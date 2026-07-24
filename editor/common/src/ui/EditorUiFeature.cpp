@@ -221,12 +221,15 @@ EditorUiFeature::~EditorUiFeature()
     Teardown();
 }
 
-void EditorUiFeature::Setup(const RendererServices& services)
+bool EditorUiFeature::Setup(const RendererServices& services)
 {
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
     if (Log != nullptr)
         Log->Info("EditorUiFeature setup {}", Valid ? "succeeded" : "failed");
+    // The editor shell is its panels: without an ImGui context there is
+    // nothing for this feature to draw.
+    return Valid;
 }
 
 void EditorUiFeature::OnDraw(const FrameContext& frame)

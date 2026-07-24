@@ -32,7 +32,7 @@ MaterialPreviewRenderFeature::MaterialPreviewRenderFeature(RuntimeAssets& assets
 {
 }
 
-void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
+bool MaterialPreviewRenderFeature::Setup(const RendererServices& services)
 {
     Services = services;
     Targets.Setup(services);
@@ -50,6 +50,9 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
         Meshes[i] = Assets.StaticMeshes.CreateFromData(PreviewPrimitiveName(kind),
                                                        BuildPreviewPrimitive(kind));
     }
+    // A failed lighting set disables the preview's forward pass, not the
+    // feature: the backdrop still renders.
+    return true;
 }
 
 void MaterialPreviewRenderFeature::Teardown()

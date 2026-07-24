@@ -25,7 +25,7 @@ public:
                       std::shared_ptr<LightBindings> bindings);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
-    void Setup(const RendererServices& services) override;
+    [[nodiscard]] bool Setup(const RendererServices& services) override;
     void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 

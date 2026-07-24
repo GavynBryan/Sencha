@@ -52,12 +52,15 @@ ImGuiDebugOverlay::~ImGuiDebugOverlay()
 	Teardown();
 }
 
-void ImGuiDebugOverlay::Setup(const RendererServices& services)
+bool ImGuiDebugOverlay::Setup(const RendererServices& services)
 {
 	Log = services.Logging ? &services.Logging->GetLogger<ImGuiDebugOverlay>() : nullptr;
 	Valid = InitImGui(services);
 	if (Valid && Log)
 		Log->Info("ImGui debug overlay ready - press ` to toggle");
+	// Nothing this feature does works without an ImGui context, so a failed
+	// init leaves nothing worth registering.
+	return Valid;
 }
 
 void ImGuiDebugOverlay::OnDraw(const FrameContext& frame)

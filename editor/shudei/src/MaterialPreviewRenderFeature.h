@@ -29,7 +29,7 @@ public:
     explicit MaterialPreviewRenderFeature(RuntimeAssets& assets);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    void Setup(const RendererServices& services) override;
+    [[nodiscard]] bool Setup(const RendererServices& services) override;
     void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 

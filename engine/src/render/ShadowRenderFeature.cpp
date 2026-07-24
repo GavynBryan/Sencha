@@ -24,7 +24,7 @@ ShadowRenderFeature::ShadowRenderFeature(
 {
 }
 
-void ShadowRenderFeature::Setup(const RendererServices& services)
+bool ShadowRenderFeature::Setup(const RendererServices& services)
 {
     Logger* log = services.Logging != nullptr
         ? &services.Logging->GetLogger<ShadowRenderFeature>()
@@ -35,7 +35,9 @@ void ShadowRenderFeature::Setup(const RendererServices& services)
     {
         if (log != nullptr)
             log->Warn("Lighting bindings failed to set up; lit rendering disabled");
-        return;
+        // Deliberate degradation, not a failed feature: the frame still
+        // presents without lit shadows.
+        return true;
     }
     if (!Bindings->CreateAtlas() && log != nullptr)
         log->Warn("Spot shadow atlas creation failed; spot shadows disabled");
@@ -43,6 +45,7 @@ void ShadowRenderFeature::Setup(const RendererServices& services)
         log->Warn("Point shadow cube pool creation failed; point shadows disabled");
 
     Pass.Setup(services, *Bindings);
+    return true;
 }
 
 void ShadowRenderFeature::OnDraw(const FrameContext& frame)

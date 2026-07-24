@@ -80,7 +80,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     }
 }
 
-void EditorRenderFeature::Setup(const RendererServices& services)
+bool EditorRenderFeature::Setup(const RendererServices& services)
 {
     Services = services;
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
@@ -110,6 +110,10 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Bloom.Setup(services);
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
+    // Each viewport renderer degrades on its own (a failed lighting set
+    // disables the forward pass, not the viewport), so the feature itself is
+    // usable whenever it got this far.
+    return true;
 }
 
 void EditorRenderFeature::OnDraw(const FrameContext& frame)
