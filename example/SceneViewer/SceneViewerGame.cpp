@@ -190,10 +190,13 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins). Same
-    // resolution path proven headless (the cook's CookedSceneFullyResolves test).
+    // Mount: authored assets, then the cooked overlay (cooked wins), then the
+    // cooked index. The index adds artifacts the physical scan cannot key,
+    // notably cooked textures (asset://...png serving cooked .stex bytes);
+    // without it a material's texture refs fall back to the neutral default.
     ScanAssetsDirectory(std::string(kAuthoredRoot), runtimeAssets.Registry);
     ScanAssetsDirectory(std::string(kCookedScanRoot), runtimeAssets.Registry);
+    RegisterCookedAssets(std::string(kAuthoredRoot), runtimeAssets.Registry);
 
     {
         AssetIdMap idMap;
