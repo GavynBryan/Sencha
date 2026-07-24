@@ -97,12 +97,13 @@ PMU differences do not smear the numbers. The pinning goes into
 any `CpuScope` bracket. Add a scope so the coarse map is complete before
 anything is measured against it.
 
-**P0.5 Reconcile the query-cache state.** `renderer-hardening.md` Gate 5
-records a per-registry extraction query cache as landed; the header still
-shows a single `CachedQuery` keyed on one `LastWorld` sentinel
-(`RenderExtractionSystem.h:45-46`). Establish which is true before P2
-measures the multi-registry workload, and correct whichever artifact is
-stale (the code or the doc).
+**P0.5 Reconcile the query-cache state.** Done. The code is the truth: a
+single `CachedQuery` behind one `LastWorld` sentinel, with the header
+stating the reason (0.038 ms for the whole walk, and a map keyed on world
+addresses can alias after a streamed-out zone is freed). The hardening
+plan's Gate 5 line implied the per-registry cache had landed; it was
+corrected to record the rejection and its reason. H-E stays live: the
+multi-registry rebuild is real, just never measured under streaming.
 
 Exit: tools present, profile preset builds, all five plus one CPU scopes
 report, bench pinned and green on the profile preset.

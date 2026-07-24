@@ -378,13 +378,15 @@ failed setup.
 
 - Delete `Renderer::DrawFrame` (no callers).
   Commit: `Delete the unused Renderer::DrawFrame wrapper`
-- Key `RenderExtractionSystem`'s cached query per registry (small map keyed
-  by the world sentinel) so multi-registry frames stop rebuilding queries
-  every frame. This restores the "cached Query objects" rule in the
-  multi-zone case the current single-sentinel cache defeats.
-  Verify: a two-registry extraction test asserts the query build count stays
-  flat across frames.
-  Commit: `Cache extraction queries per world`
+- Keying `RenderExtractionSystem`'s cached query per registry was proposed
+  and **not** done. The single `World*` sentinel stands, and
+  [`RenderExtractionSystem.h`](../../engine/include/render/RenderExtractionSystem.h)
+  now carries the reason: the whole mesh walk measures 0.038 ms per frame,
+  and a map keyed on world addresses can alias when a streamed-out zone is
+  freed and its address reused. The multi-registry rebuild cost is
+  therefore accepted, not fixed, and stays unmeasured under streaming; it
+  is hypothesis H-E in
+  [`renderer-cpu-profile-portability-and-vulkan-audit.md`](renderer-cpu-profile-portability-and-vulkan-audit.md).
 - `IRenderFeature::Contribute` stays: documented game-bootstrap seam,
   classified as planned infrastructure. If the owner decides the capability
   is no longer intended, that is a separate decision, not this plan.
