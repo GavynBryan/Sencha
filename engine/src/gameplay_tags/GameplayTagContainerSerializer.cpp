@@ -100,15 +100,20 @@ public:
     {
         GameplayTagRegistry* tagRegistry =
             world.TryGetResource<GameplayTagRegistry>();
-        if (tagRegistry == nullptr
-            || world.HasComponent<GameplayTagContainer>(entity))
-        {
+        if (tagRegistry == nullptr)
             return false;
-        }
+
+        // A batch importer creates the entity at its final archetype signature,
+        // so the column may already be present. Presence is then expected rather
+        // than a duplicate, and the value is written in place.
+        const bool preallocated = world.HasComponent<GameplayTagContainer>(entity);
 
         GameplayTagContainer tags{};
         if (!ReadGameplayTags(archive, tags, *tagRegistry))
             return false;
+
+        if (preallocated)
+            return world.InitializeComponent<GameplayTagContainer>(entity, tags);
 
         world.AddComponent<GameplayTagContainer>(entity, tags);
         return true;

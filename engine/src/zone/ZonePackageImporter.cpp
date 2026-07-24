@@ -8,6 +8,7 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneLoadPackage.h>
 
+#include <cstddef>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -21,27 +22,68 @@ void SetError(ZoneImportError* error, std::string message)
         error->Message = std::move(message);
 }
 
-bool SeedDerivedTransform(
-    World& world,
-    EntityId entity,
-    const ZonePackageComponent& component)
+// WorldTransform is derived, never authored: a package declares LocalTransform
+// and the imported entity gets a matching world transform to propagate from.
+// Both payload forms land here, and the column is already in the signature the
+// entity was created with, so this writes in place.
+//
+// Whether the destination world even has the two transform types is a property
+// of the world, not of an entity, so it is resolved once per import rather than
+// re-looked-up per entity.
+void SeedDerivedTransform(World& world, EntityId entity, bool worldHasTransforms)
 {
-    if (component.Type != ResolveComponentTypeId<LocalTransform>())
-        return true;
-    if (component.RuntimeBytes.size() != sizeof(LocalTransform))
-        return false;
+    if (!worldHasTransforms)
+        return;
 
-    LocalTransform local{};
-    std::memcpy(
-        &local,
-        component.RuntimeBytes.data(),
-        sizeof(LocalTransform));
-    if (!world.HasComponent<WorldTransform>(entity))
+    const LocalTransform* local = world.TryGet<LocalTransform>(entity);
+    if (local == nullptr)
+        return;
+    (void)world.InitializeComponent<WorldTransform>(
+        entity,
+        WorldTransform{ local->Value });
+}
+
+// Every column the entity will carry, so its row is built once. Declared
+// component types, plus the derived WorldTransform, plus Parent only when this
+// entity actually has a parent — an unwritten Parent column would silently
+// reparent the entity to a null id.
+bool BuildEntitySignature(
+    const World& world,
+    const WorldComponentSchema& schema,
+    const ZonePackageEntity& packageEntity,
+    bool parented,
+    ArchetypeSignature& signature,
+    std::string& failure)
+{
+    signature.reset();
+    bool hasLocalTransform = false;
+
+    for (const ZonePackageComponent& component : packageEntity.Components)
     {
-        world.AddComponent<WorldTransform>(
-            entity,
-            WorldTransform{ local.Value });
+        if (schema.Find(component.Type) == nullptr)
+        {
+            failure =
+                "Package contains a component absent from the runtime schema.";
+            return false;
+        }
+
+        const ComponentId id = world.GetComponentIdByType(component.Type);
+        if (id == InvalidComponentId)
+        {
+            failure =
+                "Package component is not registered in the destination world.";
+            return false;
+        }
+        signature.set(id);
+        hasLocalTransform =
+            hasLocalTransform
+            || component.Type == ResolveComponentTypeId<LocalTransform>();
     }
+
+    if (hasLocalTransform && world.IsRegistered<WorldTransform>())
+        signature.set(world.GetComponentId<WorldTransform>());
+    if (parented && world.IsRegistered<Parent>())
+        signature.set(world.GetComponentId<Parent>());
     return true;
 }
 
@@ -100,18 +142,13 @@ bool ImportComponent(
             "Package component byte size does not match the runtime schema.";
         return false;
     }
-    if (!schema.ImportComponent(
+    if (!schema.InitializeComponent(
             world,
             entity,
             component.Type,
             component.RuntimeBytes))
     {
         failure = "Package component import failed.";
-        return false;
-    }
-    if (!SeedDerivedTransform(world, entity, component))
-    {
-        failure = "Package LocalTransform payload is invalid.";
         return false;
     }
     return true;
@@ -138,14 +175,52 @@ bool ImportPackageIntoPartitionImpl(
         return false;
     };
 
+    // Which entities are parented has to be known before any row is built, so
+    // Parent joins the initial signature instead of costing a later archetype
+    // transition per child.
+    std::vector<bool> parented(package.EntityCount(), false);
+    for (const ZonePackageParent& relation : package.Parents())
+    {
+        if (!package.ContainsEntity(relation.Child)
+            || !package.ContainsEntity(relation.Parent))
+        {
+            return fail("Package hierarchy references an unknown entity.");
+        }
+        parented[relation.Child.Value] = true;
+    }
+
+    // Resolved once: per entity these are two hash lookups that cannot change
+    // mid-import, because component registration is sealed before any entity
+    // exists.
+    const bool worldHasTransforms =
+        world.IsRegistered<LocalTransform>() && world.IsRegistered<WorldTransform>();
+
+    ArchetypeSignature signature;
+    std::size_t packageIndex = 0;
     for (const ZonePackageEntity& packageEntity : package.Entities())
     {
-        const EntityId entity = world.CreateEntity(partition);
+        std::string failure;
+        if (!BuildEntitySignature(
+                world,
+                schema,
+                packageEntity,
+                parented[packageIndex],
+                signature,
+                failure))
+        {
+            return fail(std::move(failure));
+        }
+        ++packageIndex;
+
+        // One row at its final archetype, then every column written in place.
+        // Growing the entity component by component would migrate its row once
+        // per component, each migration copying the columns added before it.
+        const EntityId entity =
+            world.CreateEntityWithSignature(partition, signature);
         entities.push_back(entity);
 
         for (const ZonePackageComponent& component : packageEntity.Components)
         {
-            std::string failure;
             if (!ImportComponent(
                     world,
                     entity,
@@ -158,22 +233,21 @@ bool ImportPackageIntoPartitionImpl(
                 return fail(std::move(failure));
             }
         }
+
+        SeedDerivedTransform(world, entity, worldHasTransforms);
     }
 
     for (const ZonePackageParent& relation : package.Parents())
     {
-        if (!package.ContainsEntity(relation.Child)
-            || !package.ContainsEntity(relation.Parent))
-        {
-            return fail("Package hierarchy references an unknown entity.");
-        }
-
         const EntityId child = entities[relation.Child.Value];
         const EntityId parent = entities[relation.Parent.Value];
-        if (Parent* existing = world.TryGet<Parent>(child))
-            existing->Entity = parent;
-        else
+        // Pre-created by BuildEntitySignature whenever Parent is registered;
+        // the add is the path for a world that registered it later.
+        if (!world.IsRegistered<Parent>()
+            || !world.InitializeComponent<Parent>(child, Parent{ parent }))
+        {
             world.AddComponent<Parent>(child, Parent{ parent });
+        }
     }
 
     if (error != nullptr)

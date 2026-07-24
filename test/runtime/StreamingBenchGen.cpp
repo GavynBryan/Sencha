@@ -348,6 +348,38 @@ void MeasurePropagation(int zones, int perZone, int reps)
            static_cast<double>(attachRebuilds) / static_cast<double>(reps));
 }
 
+// ── Drift control ────────────────────────────────────────────────────────────
+
+// A fixed memory-streaming loop over a buffer sized like the iteration
+// scenario's working set, touching no engine code. Nothing in the engine can
+// change what this measures, so the ratio between it and a real metric isolates
+// code change from machine state — clock and thermal drift move both together.
+//
+// It earns its place: two measurements during this harness's own development
+// looked like large regressions and were the machine. A run whose control moved
+// is a run whose millisecond numbers cannot be compared raw.
+void MeasureControl(int reps)
+{
+    constexpr std::size_t kElements = 20u * 1024u * 1024u / sizeof(std::uint32_t);
+    std::vector<std::uint32_t> buffer(kElements);
+    for (std::size_t index = 0; index < kElements; ++index)
+        buffer[index] = static_cast<std::uint32_t>(index);
+
+    std::uint64_t checksum = 0;
+    std::vector<double> samples;
+    for (int rep = 0; rep < reps; ++rep)
+    {
+        const auto start = Clock::now();
+        std::uint64_t sum = 0;
+        for (std::size_t index = 0; index < kElements; index += 16)
+            sum += buffer[index];
+        samples.push_back(MillisecondsSince(start));
+        checksum += sum;
+    }
+    Record("control_memory_stream_ms", "ms", Median(samples));
+    EXPECT_GT(checksum, 0u);
+}
+
 // ── Output ───────────────────────────────────────────────────────────────────
 
 const char* BuildConfiguration()
@@ -407,8 +439,12 @@ TEST(StreamingBench, Generate)
     const int streamingReps = RepsFromEnvironment(30);
     const int propagationReps = std::max(1, RepsFromEnvironment(30) / 2);
 
+    // First, so every later metric can be read against the machine state that
+    // produced it.
+    MeasureControl(iterationReps);
+
     // 8 zones x 20k: the iteration shape the review measured, so the recorded
-    // baseline is comparable to docs/evidence/streaming-baseline.md.
+    // baseline is comparable to the evidence doc.
     MeasureIteration(8, 20000, 8, false, iterationReps, "all_active_160k");
     MeasureIteration(8, 20000, 2, false, iterationReps, "two_of_eight_160k");
     MeasureIteration(8, 20000, 8, true, iterationReps, "interleaved_160k");

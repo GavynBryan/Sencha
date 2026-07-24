@@ -32,6 +32,15 @@ Two questions are separated on purpose:
   its timing (0.2196 ms for the all-active shape) rather than with the recorded
   median below; the two differ by run-to-run drift, not by workload.
 
+**Millisecond numbers are only comparable drift-normalized.** Every run records
+`control_memory_stream_ms`, a fixed memory-streaming loop over a 20 MB buffer
+that touches no engine code. The ratio between it and a real metric cancels
+clock and thermal state; `bench_streaming_compare.py` reports both raw and
+normalized change and judges regressions on the normalized figure. This was not
+theoretical: partway through Phase 2 an untouched iteration metric read 33%
+slower purely because the machine had been building for an hour, and an
+independent binary running unchanged code confirmed the drift.
+
 **The machine must be otherwise idle.** This is not boilerplate: the first
 attempt at these numbers ran while a 16-way parallel build was in flight and
 reported iteration at 1.01 ms with 37.8 M cache misses, against 0.22 ms and
@@ -79,16 +88,23 @@ budget — it runs to completion on the owner thread whatever the budget says.
 
 | Zone entities | Import (ms) | Row migrations | Chunks | Detach (ms) |
 |---|---|---|---|---|
-| 1 000 | 0.327 | 3 000 | 11 | 0.013 |
-| 5 000 | 1.622 | 15 000 | 41 | 0.063 |
-| 20 000 | 6.489 | 60 000 | 155 | 0.257 |
+| 1 000 | 0.059 | 0 | 8 | 0.013 |
+| 5 000 | 0.298 | 0 | 38 | 0.065 |
+| 20 000 | 1.189 | 0 | 152 | 0.291 |
 
-Migrations are exactly three per entity — one per declared component plus the
-derived transform. The importer creates each entity empty and adds components
-one at a time, so every addition copies the columns added before it. Building
-the row at its final signature costs zero migrations, which
-`StreamingCostBounds.FinalSignatureCreationCostsNoRowMigrations` asserts
-directly on `World`.
+Recorded after Phase 2. The first measurement of this path, before the importer
+built rows at their final signature, was 0.327 / 1.622 / 6.489 ms with exactly
+three row migrations per entity — one per declared component plus the derived
+transform, each copying the columns added before it. Normalized against the
+drift control, the change is 5.7x; raw, 5.5x. `import_20000_ms` at 1.19 ms now
+fits inside the 2.0 ms `AsyncCommitBudgetMs`, which is criterion 1.
+
+Two changes produced it, in this order: building each row once at its final
+archetype signature (6.489 -> 2.480 ms), then a one-entry memo on archetype
+lookup plus hoisting the transform-type lookups out of the per-entity path
+(2.480 -> 1.189 ms). The second pair was worth more than the profile suggested
+because hashing a 256-bit signature and probing dominates a lookup whose answer
+is almost always the previous one.
 
 ### Chunk reclamation
 
@@ -117,9 +133,9 @@ rather than the new zone's own work.
 
 | World entities | Steady sweep (ms) | First sweep after a 100-entity zone attaches (ms) |
 |---|---|---|
-| 40 000 | 0.113 | 2.289 |
-| 80 000 | 0.255 | 4.812 |
-| 160 000 | 0.651 | 12.048 |
+| 40 000 | 0.107 | 1.926 |
+| 80 000 | 0.234 | 4.076 |
+| 160 000 | 0.638 | 10.069 |
 
 The hitch scales with total world size, not with the streamed zone: about
 20x the steady sweep, and growing linearly with everything loaded. The prior
@@ -136,11 +152,11 @@ are disabled because the current implementation does not meet them; each names
 the phase that enables it, and each fails today for the reason its comment
 states:
 
-| Bound | Today | Target |
+| Bound | State | Target |
 |---|---|---|
-| `ImportPerformsNoRowMigrationsPerEntity` | 3 per entity | 0 |
-| `StreamingChurnDoesNotGrowChunkCount` | 74 after 10 cycles vs 11 | equal |
-| `SpawnInOneZoneDoesNotRebuildTransformOrder` | rebuilds | no rebuild |
+| `ImportPerformsNoRowMigrationsPerEntity` | live, passing (Phase 2) | 0 |
+| `StreamingChurnDoesNotGrowChunkCount` | disabled, 74 after 10 cycles vs 11 | equal |
+| `SpawnInOneZoneDoesNotRebuildTransformOrder` | disabled, rebuilds | no rebuild |
 
 `CrossPartitionParentChangeRebuildsTransformOrder` is live from the start and
 must stay live: cross-partition parenting is legal, so the order is genuinely

@@ -161,10 +161,10 @@ TEST(StreamingCostBounds, CrossPartitionParentChangeRebuildsTransformOrder)
 
 // ── Bounds the hardening phases must reach ──────────────────────────────────
 
-// Phase 2 (batch import). Today the importer creates each entity empty and adds
-// components one at a time, so a C-component entity pays C row migrations, each
-// copying every column added before it. Enabling this test is Phase 2's gate.
-TEST(StreamingCostBounds, DISABLED_ImportPerformsNoRowMigrationsPerEntity)
+// Phase 2 (batch import). The importer builds each entity's row once at its
+// final archetype signature and writes every column in place, so no row
+// migrates during import.
+TEST(StreamingCostBounds, ImportPerformsNoRowMigrationsPerEntity)
 {
     const WorldComponentSchema schema = RuntimeSchema();
     RuntimeWorld runtime(schema);

@@ -100,15 +100,20 @@ public:
     {
         AttributeRegistry* attributes =
             world.TryGetResource<AttributeRegistry>();
-        if (attributes == nullptr
-            || world.HasComponent<AttributeSet>(entity))
-        {
+        if (attributes == nullptr)
             return false;
-        }
+
+        // A batch importer creates the entity at its final archetype signature,
+        // so the column may already be present. Presence is then expected rather
+        // than a duplicate, and the value is written in place.
+        const bool preallocated = world.HasComponent<AttributeSet>(entity);
 
         AttributeSet set{};
         if (!ReadAttributes(archive, set, *attributes))
             return false;
+
+        if (preallocated)
+            return world.InitializeComponent<AttributeSet>(entity, set);
 
         world.AddComponent<AttributeSet>(entity, set);
         return true;

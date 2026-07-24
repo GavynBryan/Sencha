@@ -236,6 +236,48 @@ public:
         return id;
     }
 
+    // Writes a component into a row whose archetype already carries its column,
+    // and fires OnAdd exactly as AddComponent would. The counterpart to
+    // CreateEntityWithSignature: together they build an entity at its final
+    // signature for the cost of one row, instead of one archetype transition per
+    // component. Returns false when the row does not carry T's column, which is
+    // the caller's cue that the ordinary AddComponent path is required.
+    //
+    // A row created by signature is uninitialized storage — every column placed
+    // in the signature must be written before the entity is observed, or it
+    // carries whatever the reused slab held.
+    template <typename T>
+    bool InitializeComponent(EntityId entity, const T& value = T{})
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "InitializeComponent called while a query/lifecycle hook is active.");
+        assert(Entities.IsAlive(entity));
+
+        if constexpr (std::is_empty_v<T>)
+        {
+            // Tag presence is the signature; there is no column to write and
+            // AddComponent fires no hook for tags either.
+            const EntityLocation loc = Entities.GetLocation(entity);
+            return ArchetypeList[loc.ArchetypeId]->Signature.test(GetComponentId<T>());
+        }
+        else
+        {
+            // Non-const TryGet bumps the column version, so a freshly imported
+            // entity reads as Changed<T> for this frame.
+            T* slot = TryGet<T>(entity);
+            if (slot == nullptr)
+                return false;
+
+            *slot = value;
+            if constexpr (ComponentHasOnAdd<T>)
+            {
+                ScopedLifecycleHook hookScope(*this);
+                ComponentTraits<T>::OnAdd(*slot, *this, entity);
+            }
+            return true;
+        }
+    }
+
     void DestroyEntity(EntityId entity)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
@@ -1059,6 +1101,9 @@ private:
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;
     uint64_t RowMigrationCounter = 0;
+    // One-entry memo for GetOrCreateArchetype; see the comment there.
+    ArchetypeSignature LastArchetypeSignature;
+    Archetype* LastArchetype = nullptr;
     std::vector<uint64_t> PartitionStructuralCounters{ 0 };
     std::vector<EntityPartitionMove> PartitionMoves;
     bool     EntityCreated = false;
@@ -1090,6 +1135,12 @@ private:
         FrameCounter = other.FrameCounter;
         StructuralCounter = other.StructuralCounter;
         RowMigrationCounter = other.RowMigrationCounter;
+        // Dropped rather than moved: the memo is pure acceleration, and a fresh
+        // world must not answer from the moved-from world's last lookup.
+        LastArchetypeSignature.reset();
+        LastArchetype = nullptr;
+        other.LastArchetypeSignature.reset();
+        other.LastArchetype = nullptr;
         PartitionStructuralCounters = std::move(other.PartitionStructuralCounters);
         PartitionMoves = std::move(other.PartitionMoves);
         EntityCreated = other.EntityCreated;
@@ -1207,9 +1258,22 @@ private:
 
     Archetype* GetOrCreateArchetype(const ArchetypeSignature& sig)
     {
+        // Hashing a 256-bit signature and probing costs more than comparing it
+        // to the last one resolved, and callers arrive in runs of equal
+        // signature: a zone import builds thousands of entities that share an
+        // archetype, and an archetype graph walk revisits the same destination.
+        // One slot, so an alternating pattern simply misses and falls through.
+        if (LastArchetype != nullptr && LastArchetypeSignature == sig)
+            return LastArchetype;
+
         auto it = SignatureToArchetype.find(sig);
         if (it != SignatureToArchetype.end())
-            return ArchetypeList[it->second].get();
+        {
+            Archetype* found = ArchetypeList[it->second].get();
+            LastArchetypeSignature = sig;
+            LastArchetype = found;
+            return found;
+        }
 
         const uint32_t id = static_cast<uint32_t>(ArchetypeList.size());
         auto arch = std::make_unique<Archetype>();
@@ -1231,6 +1295,10 @@ private:
         SignatureToArchetype[sig] = id;
         ArchetypeList.push_back(std::move(arch));
         HookedRemoveIdsByArchetype.push_back(std::move(hooked));
-        return ArchetypeList.back().get();
+        // Archetypes are held by unique_ptr, so growing the list does not move
+        // the object this remembers.
+        LastArchetypeSignature = sig;
+        LastArchetype = ArchetypeList.back().get();
+        return LastArchetype;
     }
 };

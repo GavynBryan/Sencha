@@ -40,6 +40,9 @@ public:
 
         RegisterFn Register = nullptr;
         ImportFn Import = nullptr;
+        // Same decode, but into a row that already carries the column. Null for
+        // no entry; see WorldComponentSchema::InitializeComponent.
+        ImportFn Initialize = nullptr;
 
         friend class WorldComponentSchema;
     };
@@ -99,6 +102,24 @@ public:
             }
             return true;
         };
+        entry.Initialize = [](World& world,
+                              EntityId entity,
+                              std::span<const std::byte> bytes) {
+            if constexpr (std::is_empty_v<T>)
+            {
+                if (!bytes.empty())
+                    return false;
+                return world.InitializeComponent<T>(entity);
+            }
+            else
+            {
+                if (bytes.size() != sizeof(T))
+                    return false;
+                T value{};
+                std::memcpy(&value, bytes.data(), sizeof(T));
+                return world.InitializeComponent<T>(entity, value);
+            }
+        };
         Entries_.push_back(entry);
         return true;
     }
@@ -139,6 +160,22 @@ public:
         return entry != nullptr
             && entry->Import != nullptr
             && entry->Import(world, entity, bytes);
+    }
+
+    // Decodes into a row created at its final signature, firing OnAdd exactly as
+    // ImportComponent would. Returns false when the row does not carry the
+    // column, so the caller can fall back to ImportComponent.
+    bool InitializeComponent(
+        World& world,
+        EntityId entity,
+        ComponentTypeId type,
+        std::span<const std::byte> bytes) const
+    {
+        assert(Sealed_ && "InitializeComponent requires a sealed schema");
+        const Entry* entry = Find(type);
+        return entry != nullptr
+            && entry->Initialize != nullptr
+            && entry->Initialize(world, entity, bytes);
     }
 
     [[nodiscard]] const Entry* Find(ComponentTypeId type) const

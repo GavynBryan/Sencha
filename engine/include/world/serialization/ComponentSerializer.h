@@ -162,6 +162,14 @@ public:
         if (!SceneComponentSerialization::LoadFields(archive, component, context))
             return false;
 
+        // A batch importer creates the entity at its final archetype signature,
+        // so the column is already there and Traits::Add would read the presence
+        // as a duplicate. Write in place instead; OnAdd still fires exactly once.
+        // Rows the editor's document path loads into are never pre-created, so
+        // that path always takes the branch below.
+        if (world.HasComponent<Component>(entity))
+            return world.InitializeComponent<Component>(entity, component);
+
         return Traits::Add(world, entity, component);
     }
 
