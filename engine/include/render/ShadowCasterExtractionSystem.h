@@ -55,9 +55,14 @@ ShadowCasterGatherResult AppendShadowCasters(
 class ShadowCasterExtractionSystem
 {
 public:
+    // `emitRecords` controls the per-entity change table, which only exists to
+    // feed the caster diff. Building and sorting it costs one entry per caster
+    // per frame, so it is skipped while no on-change shadow slot is asking for
+    // events. Draw items are always extracted.
     void Extract(std::span<Registry*> registries,
                  const StaticMeshCache& meshes,
                  const MaterialCache& materials,
                  const MaterialSetCache& materialSets,
-                 ShadowCasterSet& casters) const;
+                 ShadowCasterSet& casters,
+                 bool emitRecords = true) const;
 };

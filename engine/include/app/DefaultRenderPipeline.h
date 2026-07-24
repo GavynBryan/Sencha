@@ -73,6 +73,10 @@ private:
     ShadowResidency Residency;
     ShadowCasterDiff CasterDiff;
     std::vector<ShadowCasterEvent> CasterEvents;
+    // Whether last frame built the per-entity record table. A frame that did
+    // not leaves the diff's retained table older than the gap, so the next one
+    // that does must reseed rather than emit.
+    bool CasterRecordsWereBuilt = false;
     std::vector<SpotShadowRequest> ShadowRequests;
     std::vector<PointShadowRequest> PointShadowRequests;
     CameraRenderData Camera;

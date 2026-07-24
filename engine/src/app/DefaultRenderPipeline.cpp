@@ -260,13 +260,21 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     {
         CpuScopeTimer timer(scopes, CpuScope::ShadowGather);
+        const bool wantsCasterEvents = Residency.HasOnChangeSlots();
         ShadowCasterExtractor.Extract(
-            ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
+            ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters,
+            wantsCasterEvents);
 
-        // The diff always swaps its tables so a later OnChange acquisition sees
-        // current history; events are only worth emitting while someone caches.
         CasterEvents.clear();
-        CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
+        if (wantsCasterEvents)
+        {
+            // The retained table is only as fresh as the last frame that built
+            // records, so the first frame after a gap adopts the current set as
+            // the baseline instead of reporting every caster as new. Events
+            // resume the frame after.
+            CasterDiff.Apply(ShadowCasters.Records, CasterRecordsWereBuilt, CasterEvents);
+        }
+        CasterRecordsWereBuilt = wantsCasterEvents;
     }
 
     Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,

@@ -107,7 +107,8 @@ void ShadowCasterExtractionSystem::Extract(
     const StaticMeshCache& meshes,
     const MaterialCache& materials,
     const MaterialSetCache& materialSets,
-    ShadowCasterSet& casters) const
+    ShadowCasterSet& casters,
+    bool emitRecords) const
 {
     casters.Reset();
 
@@ -139,7 +140,7 @@ void ShadowCasterExtractionSystem::Extract(
                 const ShadowCasterGatherResult gathered = AppendShadowCasters(
                     renderer, *mesh, *sectionMaterials, materials,
                     transform->Value.ToMat4(), casters);
-                if (gathered.EffectiveSectionMask == 0)
+                if (gathered.EffectiveSectionMask == 0 || !emitRecords)
                     return;
 
                 casters.Records.push_back(ShadowCasterRecord{
