@@ -240,7 +240,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             swapchain.GetState(),
             swapchain.GetRecreateCount(),
             renderResult,
-            engine.Instrumentation().GpuTimestamps);
+            engine.Instrumentation().GpuTimestamps,
+            engine.Instrumentation().CpuScopes);
         // After the render phase, so pass-exit publishes are in the frame.
         engine.PushRenderStatsFrame();
     });

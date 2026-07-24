@@ -84,6 +84,25 @@ namespace
 		}
 		return key + "_gpu_ms";
 	}
+
+	// CPU scope columns append after the GPU ones: "<scope>_cpu_ms", negative
+	// when the scope was not measured that frame.
+	double CpuScopeValue(const TimingFrameSample& timing, std::uint32_t index)
+	{
+		return static_cast<double>(
+			timing.CpuScopes.Get(static_cast<CpuScope>(index)));
+	}
+
+	std::string CpuScopeKey(std::uint32_t index)
+	{
+		std::string key = ToString(static_cast<CpuScope>(index));
+		for (char& c : key)
+		{
+			if (c == '/')
+				c = '_';
+		}
+		return key + "_cpu_ms";
+	}
 }
 
 void RenderCapture::Start(std::size_t frameLimit)
@@ -141,6 +160,9 @@ std::string RenderCapture::SerializeJson(
 		for (std::uint32_t scope = 0; scope < kGpuScopeCount; ++scope)
 			frame.emplace_back(GpuScopeKey(scope),
 			                   JsonValue(GpuScopeValue(record.Timing, scope)));
+		for (std::uint32_t scope = 0; scope < kCpuScopeCount; ++scope)
+			frame.emplace_back(CpuScopeKey(scope),
+			                   JsonValue(CpuScopeValue(record.Timing, scope)));
 		frames.push_back(JsonValue(std::move(frame)));
 	}
 	envelope.emplace_back("frames", JsonValue(std::move(frames)));
@@ -167,6 +189,8 @@ std::string RenderCapture::SerializeCsv() const
 			column(field.Key);
 		for (std::uint32_t scope = 0; scope < kGpuScopeCount; ++scope)
 			column(GpuScopeKey(scope));
+		for (std::uint32_t scope = 0; scope < kCpuScopeCount; ++scope)
+			column(CpuScopeKey(scope));
 	}
 	out << '\n';
 
@@ -178,6 +202,8 @@ std::string RenderCapture::SerializeCsv() const
 			column(std::to_string(field.Value));
 		for (std::uint32_t scope = 0; scope < kGpuScopeCount; ++scope)
 			column(std::to_string(GpuScopeValue(record.Timing, scope)));
+		for (std::uint32_t scope = 0; scope < kCpuScopeCount; ++scope)
+			column(std::to_string(CpuScopeValue(record.Timing, scope)));
 		out << '\n';
 	}
 	return out.str();

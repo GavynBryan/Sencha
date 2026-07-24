@@ -427,12 +427,13 @@ void Engine::ApplyPendingRenderProfileMode()
     gpuTimestamps = GpuTimestampsPool.get();
 #endif
     InstrumentationBundle = ResolveInstrumentationBundle(
-        ActiveProfileMode, &FrameRenderStats, &RenderStatsRing, gpuTimestamps,
-        &RenderCaptureStore);
+        ActiveProfileMode, &FrameRenderStats, &RenderStatsRing, &FrameCpuScopes,
+        gpuTimestamps, &RenderCaptureStore);
     if (InstrumentationBundle.Stats != nullptr)
     {
         FrameRenderStats = RenderStats{};
         FrameRenderStats.FrameIndex = ++RenderStatsFrameIndex;
+        FrameCpuScopes.ResetFrame();
     }
 #endif
 }

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <core/json/JsonParser.h>
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderCapture.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -71,6 +72,43 @@ TEST(RenderStatsHistory, RingRetainsChronologyAndVersionCountsWrites)
     EXPECT_EQ(history.GetChronological(2).FrameIndex, 5u);
 }
 
+TEST(CpuScopeTimings, UnmeasuredScopesStayNegativeAndMeasuredOnesAccumulate)
+{
+    // Not-measured has to be distinguishable from measured-as-free, or a
+    // scope that never ran reads as a scope that cost nothing.
+    CpuScopeTimings timings;
+    for (std::uint32_t index = 0; index < kCpuScopeCount; ++index)
+        EXPECT_LT(timings.Get(static_cast<CpuScope>(index)), 0.0f);
+
+    timings.Add(CpuScope::Extraction, 0.0);
+    EXPECT_FLOAT_EQ(timings.Get(CpuScope::Extraction), 0.0f);
+
+    // A scope running once per registry or per view reports its frame total.
+    timings.Add(CpuScope::Extraction, 1.5);
+    timings.Add(CpuScope::Extraction, 2.5);
+    EXPECT_FLOAT_EQ(timings.Get(CpuScope::Extraction), 4.0f);
+    EXPECT_LT(timings.Get(CpuScope::ForwardRecord), 0.0f);
+
+    timings.ResetFrame();
+    EXPECT_LT(timings.Get(CpuScope::Extraction), 0.0f);
+}
+
+TEST(CpuScopeTimings, ATimerWithNoSinkRecordsNothing)
+{
+    // The instrumentation-off path: the bundle hands out a null sink and the
+    // timer must not touch anything.
+    CpuScopeTimings timings;
+    {
+        CpuScopeTimer timer(nullptr, CpuScope::LightSelection);
+    }
+    EXPECT_LT(timings.Get(CpuScope::LightSelection), 0.0f);
+
+    {
+        CpuScopeTimer timer(&timings, CpuScope::LightSelection);
+    }
+    EXPECT_GE(timings.Get(CpuScope::LightSelection), 0.0f);
+}
+
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 namespace
 {
@@ -90,6 +128,7 @@ namespace
         record.Stats.ShadowCastersVisible = static_cast<std::uint32_t>(frame * 4);
         record.Timing.RawDtSeconds = 0.016;
         record.Timing.GpuScopes[0] = GpuScopeSpan{ .Milliseconds = 1.5f, .Valid = true };
+        record.Timing.CpuScopes.Add(CpuScope::Extraction, 0.25);
         return record;
     }
 }
@@ -164,6 +203,11 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     // Uncollected scopes read -1, never a fake zero duration.
     ASSERT_NE(first.Find("Forward_Opaque_gpu_ms"), nullptr);
     EXPECT_EQ(first.Find("Forward_Opaque_gpu_ms")->AsNumber(), -1.0);
+    // CPU scopes follow the same rule in their own columns.
+    ASSERT_NE(first.Find("Extract_Meshes_cpu_ms"), nullptr);
+    EXPECT_NEAR(first.Find("Extract_Meshes_cpu_ms")->AsNumber(), 0.25, 1.0e-6);
+    ASSERT_NE(first.Find("Record_ForwardOpaque_cpu_ms"), nullptr);
+    EXPECT_EQ(first.Find("Record_ForwardOpaque_cpu_ms")->AsNumber(), -1.0);
 }
 
 TEST(RenderCapture, FramesCarryTheWorkDroppedAndTheBudgetItWasDroppedAgainst)

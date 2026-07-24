@@ -53,6 +53,7 @@ bool ParseRenderProfileMode(std::string_view name, RenderProfileMode& mode)
 RenderInstrumentation ResolveInstrumentationBundle(RenderProfileMode active,
                                                    RenderStats* stats,
                                                    RenderStatsHistory* statsHistory,
+                                                   CpuScopeTimings* cpuScopes,
                                                    GpuTimestampPool* gpuTimestamps,
                                                    RenderCapture* capture)
 {
@@ -60,6 +61,7 @@ RenderInstrumentation ResolveInstrumentationBundle(RenderProfileMode active,
     RenderInstrumentation bundle;
     bundle.Stats = counters ? stats : nullptr;
     bundle.StatsHistory = counters ? statsHistory : nullptr;
+    bundle.CpuScopes = counters ? cpuScopes : nullptr;
     bundle.GpuTimestamps =
         active >= RenderProfileMode::Gpu ? gpuTimestamps : nullptr;
     bundle.Capture = active >= RenderProfileMode::Capture ? capture : nullptr;

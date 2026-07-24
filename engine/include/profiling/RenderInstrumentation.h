@@ -5,6 +5,7 @@
 
 struct RenderStats;
 class RenderStatsHistory;
+class CpuScopeTimings;
 class GpuTimestampPool;
 class RenderCapture;
 
@@ -63,6 +64,7 @@ struct RenderInstrumentation
 {
     RenderStats* Stats = nullptr;
     RenderStatsHistory* StatsHistory = nullptr;
+    CpuScopeTimings* CpuScopes = nullptr;
     GpuTimestampPool* GpuTimestamps = nullptr;
     RenderCapture* Capture = nullptr;
 };
@@ -76,5 +78,6 @@ struct RenderInstrumentation
     RenderProfileMode active,
     RenderStats* stats,
     RenderStatsHistory* statsHistory,
+    CpuScopeTimings* cpuScopes,
     GpuTimestampPool* gpuTimestamps,
     RenderCapture* capture);

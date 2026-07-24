@@ -1,5 +1,6 @@
 #pragma once
 
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 
 #include <cstddef>
@@ -35,6 +36,9 @@ struct TimingFrameSample
     // GPU scope spans collected for this slot's previous submission; all
     // invalid while render.profile.mode is below Gpu.
     GpuScopeSpan GpuScopes[kGpuScopeCount] = {};
+    // This frame's CPU scope milliseconds; every scope reads not-measured
+    // while render.profile.mode is below Counters.
+    CpuScopeTimings CpuScopes;
 };
 
 class TimingHistory

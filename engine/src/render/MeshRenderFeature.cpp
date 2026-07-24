@@ -1,5 +1,6 @@
 #include <render/MeshRenderFeature.h>
 
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 
@@ -42,7 +43,12 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         gpuScopes->BeginScope(frame.Cmd, GpuScope::ForwardOpaque);
     }
 #endif
-    Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials);
+    {
+        CpuScopeTimer timer(
+            Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
+            CpuScope::ForwardRecord);
+        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials);
+    }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     if (gpuScopes != nullptr)
     {

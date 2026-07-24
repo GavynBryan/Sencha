@@ -37,7 +37,8 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
                                     const SwapchainState& swapchain,
                                     uint64_t swapchainRecreateCount,
                                     RenderFrameResult renderResult,
-                                    const GpuTimestampPool* gpuTimestamps)
+                                    const GpuTimestampPool* gpuTimestamps,
+                                    const CpuScopeTimings* cpuScopes)
 {
     TimingFrameSample sample =
         BuildBaseSample(frame, swapchain, swapchainRecreateCount);
@@ -47,6 +48,8 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
         for (std::uint32_t index = 0; index < kGpuScopeCount; ++index)
             sample.GpuScopes[index] = scopes[index];
     }
+    if (cpuScopes != nullptr)
+        sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
     sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;

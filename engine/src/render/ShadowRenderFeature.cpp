@@ -1,6 +1,7 @@
 #include <render/ShadowRenderFeature.h>
 
 #include <core/logging/Logger.h>
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 
@@ -56,8 +57,13 @@ void ShadowRenderFeature::OnDraw(const FrameContext& frame)
         gpuScopes->BeginScope(frame.Cmd, GpuScope::ShadowViews);
     }
 #endif
-    Pass.Draw(frame, Lights, Residency.ScheduledViews(),
-              Residency.ScheduledPointFaces(), Casters, Meshes, &Residency);
+    {
+        CpuScopeTimer timer(
+            Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
+            CpuScope::ShadowRecord);
+        Pass.Draw(frame, Lights, Residency.ScheduledViews(),
+                  Residency.ScheduledPointFaces(), Casters, Meshes, &Residency);
+    }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     if (gpuScopes != nullptr)
     {

@@ -5,6 +5,7 @@
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 #include <runtime/FrameTrace.h>
@@ -214,6 +215,7 @@ private:
     RenderInstrumentation InstrumentationBundle;
     RenderStats FrameRenderStats;
     RenderStatsHistory RenderStatsRing;
+    CpuScopeTimings FrameCpuScopes;
     RenderProfileMode ActiveProfileMode = RenderProfileMode::Off;
     // Written by the render.profile.mode cvar; consumed by the frame latch.
     RenderProfileMode PendingProfileMode = RenderProfileMode::Off;

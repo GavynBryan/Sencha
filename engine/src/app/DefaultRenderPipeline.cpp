@@ -2,6 +2,7 @@
 
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
+#include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderStats.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -226,34 +227,47 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         return;
     }
 
-    for (Registry* registry : ctx.ActiveRegistries)
+    CpuScopeTimings* scopes =
+        Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr;
+
     {
-        if (!registry->Components.IsRegistered<WorldTransform>()
-            || !registry->Components.IsRegistered<StaticMeshComponent>())
+        CpuScopeTimer timer(scopes, CpuScope::Extraction);
+        for (Registry* registry : ctx.ActiveRegistries)
         {
-            continue;
+            if (!registry->Components.IsRegistered<WorldTransform>()
+                || !registry->Components.IsRegistered<StaticMeshComponent>())
+            {
+                continue;
+            }
+
+            RenderExtractor.Extract(
+                registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue,
+                Textures);
         }
 
-        RenderExtractor.Extract(
-            registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue,
-            Textures);
+        Queue.SortOpaque();
     }
 
-    Queue.SortOpaque();
-
-    Lights.Reset();
-    ApplyRendererCVars(Console, Lights);
     LightExtractionCounts lightCounts;
-    LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
-                           PointShadowRequests, &lightCounts);
-    ProbeVolumes.AppendActive(ctx.ActiveRegistries, Lights);
-    ShadowCasterExtractor.Extract(
-        ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
+    {
+        CpuScopeTimer timer(scopes, CpuScope::LightSelection);
+        Lights.Reset();
+        ApplyRendererCVars(Console, Lights);
+        LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
+                               PointShadowRequests, &lightCounts);
+        ProbeVolumes.AppendActive(ctx.ActiveRegistries, Lights);
+    }
 
-    // The diff always swaps its tables so a later OnChange acquisition sees
-    // current history; events are only worth emitting while someone caches.
-    CasterEvents.clear();
-    CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
+    {
+        CpuScopeTimer timer(scopes, CpuScope::ShadowGather);
+        ShadowCasterExtractor.Extract(
+            ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters);
+
+        // The diff always swaps its tables so a later OnChange acquisition sees
+        // current history; events are only worth emitting while someone caches.
+        CasterEvents.clear();
+        CasterDiff.Apply(ShadowCasters.Records, Residency.HasOnChangeSlots(), CasterEvents);
+    }
 
     Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,
                      EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
