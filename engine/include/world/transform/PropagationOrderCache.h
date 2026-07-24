@@ -53,7 +53,14 @@ public:
         Dirty = false;
         LastStructuralVersion = structuralVersion;
         FullSweepPending = true;
+        ++RebuildCounter;
     }
+
+    // Rebuilds since construction. The order is world-global, so this is the
+    // signal for how far a structural change's invalidation blast radius
+    // reaches: work unrelated to the changed partition still pays for a bump
+    // here. Tests bound it; the bench reports it.
+    uint64_t RebuildCount() const { return RebuildCounter; }
 
     bool ConsumeFullSweepPending()
     {
@@ -77,6 +84,7 @@ private:
     std::vector<PropagationEntry> Order;
     std::vector<uint8_t> Scratch;
     uint64_t LastStructuralVersion = 0;
+    uint64_t RebuildCounter = 0;
     PropagationSweepState SimulationSweep;
     PropagationSweepState PresentationSweep;
     bool FullSweepPending = true;

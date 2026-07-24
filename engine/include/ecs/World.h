@@ -291,7 +291,8 @@ public:
 
         auto [destinationChunk, destinationRow] =
             archetype.AddRow(entity.Index, destination);
-        archetype.CopySharedComponents(
+        MigrateRow(
+            archetype,
             destinationChunk,
             destinationRow,
             archetype,
@@ -376,7 +377,7 @@ public:
         Archetype* dst = GetOrCreateArchetype(newSig);
 
         auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+        MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if constexpr (!std::is_empty_v<T>)
             dst->WriteComponent(dci, dri, id, value);
@@ -426,7 +427,7 @@ public:
         Archetype* dst = GetOrCreateArchetype(newSig);
 
         auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+        MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
@@ -635,6 +636,35 @@ public:
             : 0;
     }
 
+    // ── Storage diagnostics ──────────────────────────────────────────────────
+    //
+    // Counts the work storage actually performed, so tests can bound it without
+    // asserting on wall-clock time. Building a row at its final signature costs
+    // zero migrations; adding the same components one at a time costs one per
+    // component, each copying every column added before it.
+
+    uint64_t RowMigrationCount() const { return RowMigrationCounter; }
+
+    // Chunk census, walked on demand — diagnostics and bench only, never per
+    // frame. EmptyChunkCount is the reclamation signal: slabs retained past the
+    // last row that needed them.
+    size_t ChunkCount() const
+    {
+        size_t count = 0;
+        for (const auto& archetype : ArchetypeList)
+            count += archetype->Chunks.size();
+        return count;
+    }
+
+    size_t EmptyChunkCount() const
+    {
+        size_t count = 0;
+        for (const auto& archetype : ArchetypeList)
+            for (const auto& chunk : archetype->Chunks)
+                count += chunk->IsEmpty() ? 1 : 0;
+        return count;
+    }
+
     // ── Entity chunk location ────────────────────────────────────────────────
     //
     // Resolves the chunk and row currently holding an entity, for systems that
@@ -806,7 +836,7 @@ public:
         Archetype* dst = GetOrCreateArchetype(newSig);
 
         auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+        MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         if (size > 0 && blob)
         {
@@ -864,7 +894,7 @@ public:
         Archetype* dst = GetOrCreateArchetype(newSig);
 
         auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-        dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+        MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
         EntityIndex moved = src.RemoveRow(loc.ChunkIndex, loc.RowIndex);
         if (moved != InvalidEntityIndex)
@@ -908,7 +938,7 @@ public:
             Archetype* dst = GetOrCreateArchetype(newSig);
 
             auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-            dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+            MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             if (size > 0 && items[i].Blob)
             {
@@ -964,7 +994,7 @@ public:
             Archetype* dst = GetOrCreateArchetype(newSig);
 
             auto [dci, dri] = dst->AddRow(entity.Index, loc.Partition);
-            dst->CopySharedComponents(dci, dri, src, loc.ChunkIndex, loc.RowIndex);
+            MigrateRow(*dst, dci, dri, src, loc.ChunkIndex, loc.RowIndex);
 
             moves.push_back(Move{
                 entity,
@@ -1028,6 +1058,7 @@ private:
     uint32_t LifecycleHookDepth = 0;
     uint32_t FrameCounter = 0;
     uint64_t StructuralCounter = 0;
+    uint64_t RowMigrationCounter = 0;
     std::vector<uint64_t> PartitionStructuralCounters{ 0 };
     std::vector<EntityPartitionMove> PartitionMoves;
     bool     EntityCreated = false;
@@ -1058,6 +1089,7 @@ private:
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
         StructuralCounter = other.StructuralCounter;
+        RowMigrationCounter = other.RowMigrationCounter;
         PartitionStructuralCounters = std::move(other.PartitionStructuralCounters);
         PartitionMoves = std::move(other.PartitionMoves);
         EntityCreated = other.EntityCreated;
@@ -1072,6 +1104,26 @@ private:
     uint32_t GenerationForIndex(EntityIndex index) const
     {
         return Entities.GenerationForIndex(index);
+    }
+
+    // Every row copy between archetype rows funnels through here so the
+    // migration count cannot drift from the operations that actually pay for
+    // it. The copy is O(shared columns); the count is one increment.
+    void MigrateRow(
+        Archetype& destination,
+        uint32_t destinationChunk,
+        uint32_t destinationRow,
+        Archetype& source,
+        uint32_t sourceChunk,
+        uint32_t sourceRow)
+    {
+        destination.CopySharedComponents(
+            destinationChunk,
+            destinationRow,
+            source,
+            sourceChunk,
+            sourceRow);
+        ++RowMigrationCounter;
     }
 
     void BumpPartitionStructural(StoragePartitionId partition)
