@@ -195,8 +195,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     if (Services.Instrumentation != nullptr
         && Services.Instrumentation->Stats != nullptr)
     {
-        Services.Instrumentation->Stats->ScratchHighWaterBytes =
-            Services.Scratch->GetHighWaterBytes();
+        RenderStats& stats = *Services.Instrumentation->Stats;
+        stats.ScratchHighWaterBytes = Services.Scratch->GetHighWaterBytes();
+        stats.ScratchUsedBytes = Services.Scratch->GetUsedBytes();
+        stats.ScratchBytesPerFrame = Services.Scratch->GetBytesPerFrame();
+        stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
     }
 
     const VulkanFrameStatus end = Frames.EndFrame(frame);

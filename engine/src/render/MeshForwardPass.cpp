@@ -493,28 +493,36 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         return;
     if (queue.OpaqueOrder().empty())
         return;
+
+    // Past this point the pass has work, so every early return is a frame
+    // that renders none of it.
+    const auto giveUp = [this]
+    {
+        LastStats.Skipped = true;
+        LastStats.InstancesDropped = LastStats.QueueItems;
+    };
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ActiveDebugView = lights.DebugView;
     if (ActiveDebugView == RenderDebugView::None)
     {
         if (!EnsurePipelines(frame))
-            return;
+            return giveUp();
     }
     else if (!EnsureDebugPipelines(
                  frame, ActiveDebugView == RenderDebugView::Overdraw))
     {
-        return;
+        return giveUp();
     }
 #else
     if (!EnsurePipelines(frame))
-        return;
+        return giveUp();
 #endif
 
     const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
     if (!uniformOffset.has_value())
-        return;
+        return giveUp();
     if (!BindInstanceStream(frame, queue))
-        return;
+        return giveUp();
 
     BindFrameState(frame, *uniformOffset);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING

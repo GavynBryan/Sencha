@@ -46,6 +46,14 @@ public:
         std::uint32_t ViewsRendered = 0;
         std::uint32_t PointFacesRendered = 0;
         std::uint32_t CasterDraws = 0;
+        // Frustum tests across every rendered view, and the survivors. Both
+        // accumulate over views, so a caster tested by six cube faces counts
+        // six times: the pair measures how much work culling is avoiding.
+        std::uint32_t CastersTested = 0;
+        std::uint32_t CastersVisible = 0;
+        // Set when the pass had views to render and abandoned all of them
+        // (missing pipelines, or a frame-scratch request it could not serve).
+        bool Skipped = false;
     };
     [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
 

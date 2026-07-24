@@ -93,6 +93,10 @@ public:
     [[nodiscard]] uint32_t GetFramesInFlight() const { return FramesInFlight; }
     // Largest per-frame cursor ever reached, for sizing BytesPerFrame.
     [[nodiscard]] VkDeviceSize GetHighWaterBytes() const { return HighWater; }
+    // This frame's slice use, and the requests it could not serve. Both
+    // reset in BeginFrame, so they describe the frame being recorded.
+    [[nodiscard]] VkDeviceSize GetUsedBytes() const { return Cursor; }
+    [[nodiscard]] uint32_t GetFailedAllocationCount() const { return FailedAllocations; }
 
 private:
     Logger& Log;
@@ -109,4 +113,5 @@ private:
     uint32_t CurrentFrame = 0;
     VkDeviceSize Cursor = 0; // Offset within the current slice.
     VkDeviceSize HighWater = 0;
+    uint32_t FailedAllocations = 0; // This frame only.
 };

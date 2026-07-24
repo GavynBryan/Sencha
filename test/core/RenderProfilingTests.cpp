@@ -81,6 +81,13 @@ namespace
         record.Stats.DrawCalls = static_cast<std::uint32_t>(frame * 10);
         record.Stats.PointShadowFacesRendered = static_cast<std::uint32_t>(frame * 2);
         record.Stats.PointShadowCubesHeld = static_cast<std::uint32_t>(frame);
+        record.Stats.ScratchUsedBytes = frame * 1024;
+        record.Stats.ScratchBytesPerFrame = 1024 * 1024;
+        record.Stats.ScratchAllocFailures = static_cast<std::uint32_t>(frame);
+        record.Stats.PassesSkipped = static_cast<std::uint32_t>(frame);
+        record.Stats.InstancesDropped = static_cast<std::uint32_t>(frame * 3);
+        record.Stats.ShadowCastersTested = static_cast<std::uint32_t>(frame * 100);
+        record.Stats.ShadowCastersVisible = static_cast<std::uint32_t>(frame * 4);
         record.Timing.RawDtSeconds = 0.016;
         record.Timing.GpuScopes[0] = GpuScopeSpan{ .Milliseconds = 1.5f, .Valid = true };
         return record;
@@ -134,7 +141,7 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 2.0);
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 3.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);
@@ -157,6 +164,35 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     // Uncollected scopes read -1, never a fake zero duration.
     ASSERT_NE(first.Find("Forward_Opaque_gpu_ms"), nullptr);
     EXPECT_EQ(first.Find("Forward_Opaque_gpu_ms")->AsNumber(), -1.0);
+}
+
+TEST(RenderCapture, FramesCarryTheWorkDroppedAndTheBudgetItWasDroppedAgainst)
+{
+    // A frame that dropped its scene must be distinguishable from a frame
+    // that was genuinely cheap, or capture percentiles reward failure.
+    RenderCapture capture;
+    capture.Start(0);
+    const RenderCapture::FrameRecord record = MakeRecord(1);
+    capture.Append(record.Timing, record.Stats);
+
+    const std::optional<JsonValue> parsed = JsonParse(capture.SerializeJson({}));
+    ASSERT_TRUE(parsed.has_value());
+    const JsonValue& frame = parsed->Find("frames")->AsArray().front();
+
+    ASSERT_NE(frame.Find("scratch_alloc_failures_count"), nullptr);
+    EXPECT_EQ(frame.Find("scratch_alloc_failures_count")->AsNumber(), 1.0);
+    ASSERT_NE(frame.Find("passes_skipped_count"), nullptr);
+    EXPECT_EQ(frame.Find("passes_skipped_count")->AsNumber(), 1.0);
+    ASSERT_NE(frame.Find("instances_dropped_count"), nullptr);
+    EXPECT_EQ(frame.Find("instances_dropped_count")->AsNumber(), 3.0);
+    ASSERT_NE(frame.Find("scratch_used_bytes"), nullptr);
+    EXPECT_EQ(frame.Find("scratch_used_bytes")->AsNumber(), 1024.0);
+    ASSERT_NE(frame.Find("scratch_bytes_per_frame"), nullptr);
+    EXPECT_EQ(frame.Find("scratch_bytes_per_frame")->AsNumber(), 1048576.0);
+    ASSERT_NE(frame.Find("shadow_casters_tested_count"), nullptr);
+    EXPECT_EQ(frame.Find("shadow_casters_tested_count")->AsNumber(), 100.0);
+    ASSERT_NE(frame.Find("shadow_casters_visible_count"), nullptr);
+    EXPECT_EQ(frame.Find("shadow_casters_visible_count")->AsNumber(), 4.0);
 }
 
 TEST(RenderCapture, CsvHasOneHeaderAndOneRowPerFrame)

@@ -60,6 +60,9 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         out.SubmittedTriangles = stats.Triangles;
         out.PipelineSwitches = stats.PipelineSwitches;
         out.MaterialSwitches = stats.MaterialSwitches;
+        out.InstancesDropped = stats.InstancesDropped;
+        if (stats.Skipped)
+            ++out.PassesSkipped;
     }
 }
 

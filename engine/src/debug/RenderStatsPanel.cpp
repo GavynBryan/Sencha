@@ -74,6 +74,11 @@ void RenderStatsPanel::Draw()
 	            stats->VisibleObjects, stats->DrawCalls, stats->SubmittedTriangles);
 	ImGui::Text("  pipeline switches %u  material switches %u",
 	            stats->PipelineSwitches, stats->MaterialSwitches);
+	if (stats->InstancesDropped > 0)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+		                   "  instances dropped %u", stats->InstancesDropped);
+	}
 
 	ImGui::Separator();
 	ImGui::Text("Lights");
@@ -100,11 +105,21 @@ void RenderStatsPanel::Draw()
 	            static_cast<float>(stats->ShadowTileBytes) / (1024.0f * 1024.0f));
 	ImGui::Text("  point cubes %u  faces rendered %u",
 	            stats->PointShadowCubesHeld, stats->PointShadowFacesRendered);
+	ImGui::Text("  casters tested %u  visible %u",
+	            stats->ShadowCastersTested, stats->ShadowCastersVisible);
 
 	ImGui::Separator();
 	ImGui::Text("Frame services");
-	ImGui::Text("  scratch high water %.1f KiB",
+	ImGui::Text("  scratch %.1f / %.1f KiB (high water %.1f KiB)",
+	            static_cast<float>(stats->ScratchUsedBytes) / 1024.0f,
+	            static_cast<float>(stats->ScratchBytesPerFrame) / 1024.0f,
 	            static_cast<float>(stats->ScratchHighWaterBytes) / 1024.0f);
+	if (stats->ScratchAllocFailures > 0 || stats->PassesSkipped > 0)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+		                   "  scratch failures %u  passes skipped %u",
+		                   stats->ScratchAllocFailures, stats->PassesSkipped);
+	}
 
 	ImGui::End();
 }

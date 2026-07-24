@@ -22,6 +22,10 @@ struct RenderStats
     std::uint32_t SubmittedTriangles = 0;
     std::uint32_t PipelineSwitches = 0;
     std::uint32_t MaterialSwitches = 0;
+    // Instances the pass wanted to draw but could not, because the frame
+    // scratch could not carry them. Nonzero means the frame is missing
+    // geometry it was asked to render.
+    std::uint32_t InstancesDropped = 0;
 
     // Light extraction.
     std::uint32_t LightsVisible = 0;
@@ -33,6 +37,11 @@ struct RenderStats
     std::uint32_t ShadowViewsRendered = 0;
     std::uint32_t PointShadowFacesRendered = 0;
     std::uint32_t ShadowCasterDraws = 0;
+    // Frustum tests performed across every rendered view, and the casters
+    // that survived them. Tested grows with casters x views; the ratio of
+    // the two is what says whether culling is doing any work.
+    std::uint32_t ShadowCastersTested = 0;
+    std::uint32_t ShadowCastersVisible = 0;
     std::uint32_t ShadowSlotsHeld = 0;
     std::uint32_t ShadowCacheHits = 0;
     std::uint32_t ShadowRequestsDenied = 0;
@@ -48,8 +57,18 @@ struct RenderStats
     // an unload is a leak.
     std::uint32_t ProbeVolumesResident = 0;
 
-    // Frame services.
+    // Frame services. HighWater is the largest slice use ever reached, for
+    // sizing the budget; UsedBytes is this frame alone. AllocFailures counts
+    // the requests the slice could not serve and PassesSkipped the passes
+    // that gave up as a result: without those two a frame that dropped its
+    // scene reads as a fast frame.
     std::uint64_t ScratchHighWaterBytes = 0;
+    std::uint64_t ScratchUsedBytes = 0;
+    // The per-frame slice budget the two above are measured against, so a
+    // capture carries the limit it was recorded under.
+    std::uint64_t ScratchBytesPerFrame = 0;
+    std::uint32_t ScratchAllocFailures = 0;
+    std::uint32_t PassesSkipped = 0;
 };
 
 // Ring of finished frames' stats, pushed once per rendered frame while the

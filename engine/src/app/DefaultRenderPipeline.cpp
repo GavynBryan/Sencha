@@ -264,13 +264,15 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     if (Log != nullptr)
     {
-        if (Lights.Count == kMaxForwardLights && !LightCapWarned)
+        // Filling the cap exactly drops nothing; only candidates beyond it do.
+        const std::uint32_t dropped = lightCounts.DroppedAtCap();
+        if (dropped > 0 && !LightCapWarned)
         {
-            Log->Warn("Light cap ({}) reached; lights beyond cap dropped this frame",
-                      kMaxForwardLights);
+            Log->Warn("Light cap ({}) reached; {} light(s) dropped this frame",
+                      kMaxForwardLights, dropped);
             LightCapWarned = true;
         }
-        else if (Lights.Count < kMaxForwardLights)
+        else if (dropped == 0)
         {
             LightCapWarned = false;
         }

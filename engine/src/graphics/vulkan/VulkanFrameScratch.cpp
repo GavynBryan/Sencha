@@ -87,6 +87,7 @@ void VulkanFrameScratch::BeginFrame()
     if (!Valid) return;
     CurrentFrame = (CurrentFrame + 1) % FramesInFlight;
     Cursor = 0;
+    FailedAllocations = 0;
 }
 
 VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment)
@@ -96,6 +97,7 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, V
     const VkDeviceSize alignedCursor = AlignUp(Cursor, alignment == 0 ? 1 : alignment);
     if (alignedCursor > BytesPerFrame || size > BytesPerFrame - alignedCursor)
     {
+        ++FailedAllocations;
         Log.Error("VulkanFrameScratch: allocation of {} bytes at cursor {} exceeds frame slice capacity ({})",
                   static_cast<uint64_t>(size),
                   static_cast<uint64_t>(alignedCursor),

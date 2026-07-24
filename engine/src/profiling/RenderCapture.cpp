@@ -37,12 +37,15 @@ namespace
 			{ "submitted_triangles_count", static_cast<double>(stats.SubmittedTriangles) },
 			{ "pipeline_switches_count", static_cast<double>(stats.PipelineSwitches) },
 			{ "material_switches_count", static_cast<double>(stats.MaterialSwitches) },
+			{ "instances_dropped_count", static_cast<double>(stats.InstancesDropped) },
 			{ "lights_visible_count", static_cast<double>(stats.LightsVisible) },
 			{ "lights_dropped_at_cap_count", static_cast<double>(stats.LightsDroppedAtCap) },
 			{ "shadow_casting_lights_count", static_cast<double>(stats.ShadowCastingLights) },
 			{ "shadow_views_rendered_count", static_cast<double>(stats.ShadowViewsRendered) },
 			{ "point_shadow_faces_rendered_count", static_cast<double>(stats.PointShadowFacesRendered) },
 			{ "shadow_caster_draws_count", static_cast<double>(stats.ShadowCasterDraws) },
+			{ "shadow_casters_tested_count", static_cast<double>(stats.ShadowCastersTested) },
+			{ "shadow_casters_visible_count", static_cast<double>(stats.ShadowCastersVisible) },
 			{ "shadow_slots_held_count", static_cast<double>(stats.ShadowSlotsHeld) },
 			{ "shadow_cache_hits_count", static_cast<double>(stats.ShadowCacheHits) },
 			{ "shadow_requests_denied_count", static_cast<double>(stats.ShadowRequestsDenied) },
@@ -54,6 +57,10 @@ namespace
 			{ "caster_diff_events_count", static_cast<double>(stats.CasterDiffEvents) },
 			{ "probe_volumes_resident_count", static_cast<double>(stats.ProbeVolumesResident) },
 			{ "scratch_high_water_bytes", static_cast<double>(stats.ScratchHighWaterBytes) },
+			{ "scratch_used_bytes", static_cast<double>(stats.ScratchUsedBytes) },
+			{ "scratch_bytes_per_frame", static_cast<double>(stats.ScratchBytesPerFrame) },
+			{ "scratch_alloc_failures_count", static_cast<double>(stats.ScratchAllocFailures) },
+			{ "passes_skipped_count", static_cast<double>(stats.PassesSkipped) },
 		};
 		return fields;
 	}

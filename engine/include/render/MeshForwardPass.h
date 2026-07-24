@@ -120,6 +120,12 @@ public:
         // Push-constant uploads. Equal to DrawCalls until the pass skips
         // redundant material state; the counter exists to show exactly that.
         uint32_t MaterialSwitches = 0;
+        // Set when the pass had queue items and recorded no draws at all:
+        // missing pipelines, or a frame-scratch request it could not serve.
+        // The instances that went unrendered as a result are counted too, so
+        // a frame that dropped its scene cannot read as a cheap frame.
+        bool Skipped = false;
+        uint32_t InstancesDropped = 0;
     };
     [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
 

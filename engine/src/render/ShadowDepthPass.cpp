@@ -194,8 +194,10 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
          ++casterIndex)
     {
         const ShadowCasterItem& caster = casters.Items[casterIndex];
+        ++LastStats.CastersTested;
         if (!shadowFrustum.IntersectsAabb(caster.WorldBounds))
             continue;
+        ++LastStats.CastersVisible;
 
         const GpuStaticMesh* mesh = meshes.Get(caster.Mesh);
         if (mesh == nullptr || caster.SectionIndex >= mesh->Sections.size())
@@ -267,6 +269,7 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
                 residency->MarkPointFaceFailed(face.SlotIndex, face.Face);
             RevokeGrant(lights, GpuLightType::Point, face.SlotIndex);
         }
+        LastStats.Skipped = true;
         return;
     }
 
