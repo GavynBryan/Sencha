@@ -3,61 +3,102 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
+#include <render/LightBindings.h>
 #include <render/MaterialCache.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 
-// Per-frame uniform data uploaded to set 0, binding 0 each draw call. Layout is
-// std140 (the GLSL side mirrors it field for field); the static_asserts in the
-// .cpp lock the offsets the shader assumes.
+struct GpuSpotShadow
+{
+    Mat4 ViewProjection;
+    Vec4 AtlasScaleBias;
+    Vec4 SamplingParams;
+};
+
+struct GpuPointShadow
+{
+    Vec4 PositionFar;
+    Vec4 Params;
+};
+
 struct MeshFrameUniforms
 {
     Mat4 ViewProjection;
     Vec4 ViewPositionTime;
-    Vec4 AmbientSky;     // rgb sky tint, w unused
-    Vec4 AmbientGround;  // rgb ground tint, w unused
+    Vec4 AmbientSky;
+    Vec4 AmbientGround;
+    Vec4 StyleParams;
     std::uint32_t LightCount = 0;
-    std::uint32_t Pad0 = 0;
-    std::uint32_t Pad1 = 0;
-    std::uint32_t Pad2 = 0;
+    std::uint32_t TonemapEnabled = 1;
+    float ShadowDarkness = 1.0f;
+    std::uint32_t BakedDirectEnabled = 1;
     GpuLight Lights[kMaxForwardLights];
+    std::uint32_t SpotShadowCount = 0;
+    std::uint32_t BakedAoEnabled = 1;
+    std::uint32_t ShadowPad1 = 0;
+    std::uint32_t ShadowPad2 = 0;
+    GpuSpotShadow SpotShadows[kMaxSpotShadows];
+    std::uint32_t PointShadowCount = 0;
+    std::uint32_t PointShadowPad0 = 0;
+    std::uint32_t PointShadowPad1 = 0;
+    std::uint32_t PointShadowPad2 = 0;
+    GpuPointShadow PointShadows[kMaxPointShadows];
+    std::uint32_t ProbeVolumeCount = 0;
+    std::uint32_t ProbePad0 = 0;
+    std::uint32_t ProbePad1 = 0;
+    std::uint32_t ProbePad2 = 0;
+    GpuProbeVolume ProbeVolumes[kMaxActiveProbeVolumes];
+    std::uint32_t DebugView = 0;
+    std::uint32_t DebugViewPad0 = 0;
+    std::uint32_t DebugViewPad1 = 0;
+    std::uint32_t DebugViewPad2 = 0;
 };
 
-// Per-run push constants: base-color material inputs. The world matrix rides a
-// per-instance vertex stream (see Draw), so one push covers an instanced run.
 struct MeshPushConstants
 {
     Vec4 BaseColor;
-    uint32_t BaseColorTextureIndex = UINT32_MAX;
+    Vec4 EmissiveFactor;
+    float NormalScale = 1.0f;
+    float RoughnessFactor = 1.0f;
+    float MetallicFactor = 0.0f;
+    float SpecularIntensity = 0.5f;
+    std::uint32_t BaseColorTextureIndex = UINT32_MAX;
+    std::uint32_t NormalTextureIndex = UINT32_MAX;
+    std::uint32_t OrmTextureIndex = UINT32_MAX;
+    std::uint32_t EmissiveTextureIndex = UINT32_MAX;
+    std::uint32_t ReceiveShadows = 1;
+    // Bindless slot of the zone's baked-lighting atlas; UINT32_MAX skips the
+    // baked term. Uniform per run (part of the run-merge identity).
+    std::uint32_t LightmapTextureIndex = UINT32_MAX;
+    // Bindless slot of the zone's baked-AO plane (lightmap UVs); UINT32_MAX
+    // leaves ambient unmodulated. Uniform per run, merge identity too.
+    std::uint32_t AoTextureIndex = UINT32_MAX;
+    std::uint32_t Pad2 = 0;
 };
 
-//=============================================================================
-// MeshForwardPass
-//
-// The opaque forward mesh draw, factored out of MeshRenderFeature so the game
-// feature and the editor viewports drive the same code. Draw() records into the
-// caller's already-open frame scope (it opens no pass of its own): it uploads a
-// per-frame camera uniform, binds the frame + bindless sets, and walks the
-// queue's OpaqueOrder() drawing GpuStaticMesh sections with the mesh_forward
-// shader.
-//
-// The pipeline is lazily created (or recreated) on the first Draw() and
-// whenever the target color or depth format changes. One pass instance per
-// output format stays cheap (the game's swapchain vs the editor's offscreen
-// target), so each owner keeps its own.
-//=============================================================================
+// Binding 1 of the mesh vertex input: one entry per drawn instance, written
+// into per-frame scratch by BindInstanceStream.
+struct MeshInstanceData
+{
+    Mat4 World;
+    // Remaps the mesh's lightmap UVs into its atlas rect (uv * xy + zw);
+    // identity for cooked cells, whose UVs are absolute atlas coordinates.
+    Vec4 LightmapScaleBias;
+};
+
 class MeshForwardPass
 {
 public:
-    void Setup(const RendererServices& services);
-    // tint multiplies every material's BaseColor for this draw (the shader
-    // already folds BaseColor into the texture): white is a no-op, the editor
-    // dims context zones with it. One value per Draw call by design.
+    // `bindings` backs set 2 of the pipeline layout; it must be set up (at
+    // least dummy-backed) before this call, or the pass stays inert and
+    // draws nothing.
+    void Setup(const RendererServices& services, LightBindings& bindings);
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
               const RenderLightSet& lights,
@@ -67,38 +108,70 @@ public:
               Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
     void Teardown();
 
-    // Last Draw()'s measurements: queue items in vs instanced draw calls out
-    // (the draw-call reduction instancing bought). For profiling and tests.
+    // Pass-local totals, maintained unconditionally at run granularity (the
+    // 9.2 cost policy) and copied into RenderStats by the owning feature
+    // when counters are active. Also a consumed test seam.
     struct DrawStats
     {
         uint32_t QueueItems = 0;
         uint32_t DrawCalls = 0;
+        uint32_t Triangles = 0;
+        uint32_t PipelineSwitches = 0;
+        // Push-constant uploads. Equal to DrawCalls until the pass skips
+        // redundant material state; the counter exists to show exactly that.
+        uint32_t MaterialSwitches = 0;
+        // Set when the pass had queue items and recorded no draws at all:
+        // missing pipelines, or a frame-scratch request it could not serve.
+        // The instances that went unrendered as a result are counted too, so
+        // a frame that dropped its scene cannot read as a cheap frame.
+        bool Skipped = false;
+        uint32_t InstancesDropped = 0;
     };
     [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
 
 private:
-    // Draw() stages, in call order: (re)build the pipeline for the target
-    // formats, upload the per-frame uniform block, write + bind the per-instance
-    // world-matrix stream in draw order, then record the per-run draws.
-    [[nodiscard]] bool EnsurePipeline(const FrameContext& frame);
-    [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(const CameraRenderData& camera,
-                                                                  const RenderLightSet& lights);
-    [[nodiscard]] bool BindInstanceStream(const FrameContext& frame, const RenderQueue& queue);
+    [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    [[nodiscard]] bool EnsureDebugPipelines(const FrameContext& frame,
+                                            bool overdraw);
+#endif
+    [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(
+        const CameraRenderData& camera, const RenderLightSet& lights);
+    // Uploads and binds the instance stream, returning how many draw-order
+    // entries it covers. Zero means the slice had no room at all.
+    [[nodiscard]] uint32_t BindInstanceStream(const FrameContext& frame,
+                                             const RenderQueue& queue);
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
+    // Draws are clipped to `streamedInstances`: a run past the stream has no
+    // instance data to read.
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint);
+                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint,
+                  uint32_t streamedInstances);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
     VulkanFrameScratch* Scratch = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
+    LightBindings* Bindings = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ShaderHandle DebugFragmentShader;
+#endif
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline Pipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 4> OpaquePipelines{};
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    std::array<VkPipeline, 2> DebugPipelines{};
+    std::array<VkPipeline, 2> OverdrawPipelines{};
+    RenderDebugView ActiveDebugView = RenderDebugView::None;
+    VkFormat CachedDebugColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedDebugDepthFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedOverdrawColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat CachedOverdrawDepthFormat = VK_FORMAT_UNDEFINED;
+#endif
     VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat CachedDepthFormat = VK_FORMAT_UNDEFINED;
     DrawStats LastStats;

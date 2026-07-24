@@ -11,7 +11,6 @@
 #include <optional>
 #include <string_view>
 
-class ImGuiDebugOverlay;
 class Registry;
 
 //=============================================================================
@@ -44,5 +43,6 @@ private:
     std::optional<AssetPreloader> Preloader;
     std::optional<AsyncZoneLoader> ZoneLoader;
     FreeCamera FreeCam;
-    ImGuiDebugOverlay* DebugOverlay = nullptr;
+    // Armed by sceneviewer.camera.scripted; read by the scripted-path system.
+    bool ScriptedCameraEnabled = false;
 };

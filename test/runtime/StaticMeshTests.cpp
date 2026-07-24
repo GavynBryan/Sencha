@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstring>
+
 #include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
+#include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/StaticMeshPrimitives.h>
 #include <render/static_mesh/MeshValidation.h>
@@ -82,6 +86,50 @@ TEST(StaticMeshValidation, SectionVertexRangeMustContainSectionIndices)
     EXPECT_FALSE(result.IsValid());
 }
 
+namespace
+{
+    // One triangle per section, all over the same three vertices: the section
+    // count is what is under test, not the geometry.
+    MeshGeometry MakeMeshWithSections(std::size_t sectionCount)
+    {
+        MeshGeometry mesh;
+        const Vec4 tangent{ 1.0f, 0.0f, 0.0f, 1.0f };
+        mesh.Vertices = {
+            { Vec3d(0.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 0.0), tangent },
+            { Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(1.0, 0.0), tangent },
+            { Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 1.0), tangent },
+        };
+        for (std::size_t index = 0; index < sectionCount; ++index)
+        {
+            mesh.Indices.insert(mesh.Indices.end(), { 0u, 1u, 2u });
+            mesh.Sections.push_back({
+                .IndexOffset = static_cast<uint32_t>(index * 3),
+                .IndexCount = 3,
+                .VertexOffset = 0,
+                .VertexCount = 3,
+                .MaterialSlot = 0,
+            });
+        }
+        RecomputeMeshBounds(mesh);
+        return mesh;
+    }
+}
+
+TEST(StaticMeshValidation, SectionCountIsCappedAtTheSectionMaskWidth)
+{
+    // Extraction tests section membership with `1u << sectionIndex` against a
+    // 32-bit mask, so a 33rd section shifts past the mask's width. Rejecting
+    // it here is what keeps that shift defined.
+    EXPECT_TRUE(ValidateMeshGeometry(MakeMeshWithSections(31)).IsValid());
+    EXPECT_TRUE(ValidateMeshGeometry(MakeMeshWithSections(kMaxMeshSections)).IsValid());
+
+    const MeshValidationResult tooMany =
+        ValidateMeshGeometry(MakeMeshWithSections(kMaxMeshSections + 1));
+    ASSERT_FALSE(tooMany.IsValid());
+    EXPECT_NE(tooMany.Errors.front().Message.find("section mask limit"),
+              std::string::npos);
+}
+
 TEST(StaticMeshValidation, RecomputeStaticMeshBoundsUpdatesMeshAndSections)
 {
     MeshGeometry mesh = MakeValidMesh();
@@ -124,6 +172,71 @@ TEST(StaticMeshSerialization, BadMagicFails)
     std::vector<std::byte> bytes;
     ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
     bytes[0] = std::byte{'B'};
+
+    MeshGeometry loaded;
+    EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
+}
+
+TEST(StaticMeshSerialization, WritesVersion5AndStride52)
+{
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
+    ASSERT_GE(bytes.size(), sizeof(SmeshFileHeader));
+
+    SmeshFileHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    EXPECT_EQ(header.Version, kSmeshFormatVersion);
+    EXPECT_EQ(header.Version, 5u);
+    EXPECT_EQ(header.VertexStride, sizeof(StaticMeshVertex));
+    EXPECT_EQ(header.VertexStride, 52u);
+}
+
+TEST(StaticMeshSerialization, PreservesLightmapUvChannel)
+{
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
+
+    MeshGeometry source = MakeValidMesh();
+    for (std::size_t i = 0; i < source.Vertices.size(); ++i)
+    {
+        source.Vertices[i].LightmapU = static_cast<std::uint16_t>(0x1122u + i);
+        source.Vertices[i].LightmapV = static_cast<std::uint16_t>(0x3344u + i);
+    }
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(source, bytes));
+    SmeshFileHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    EXPECT_NE(header.Flags & kSmeshFlagLightmapUv, 0u);
+
+    MeshGeometry loaded;
+    ASSERT_TRUE(loader.LoadFromBytes(bytes, loaded));
+    ASSERT_EQ(loaded.Vertices.size(), source.Vertices.size());
+    for (std::size_t i = 0; i < source.Vertices.size(); ++i)
+    {
+        EXPECT_EQ(loaded.Vertices[i].LightmapU, source.Vertices[i].LightmapU);
+        EXPECT_EQ(loaded.Vertices[i].LightmapV, source.Vertices[i].LightmapV);
+    }
+}
+
+TEST(StaticMeshSerialization, RejectsPriorVersion)
+{
+    // One version is live at a time: a v4 file (the baked-direct vertex
+    // channel that the lightmap UVs replaced) must fail rather than load
+    // with reinterpreted channel bytes.
+    LoggingProvider logging;
+    MeshSerializer serializer(logging);
+    MeshLoader loader(logging);
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(serializer.WriteToBytes(MakeValidMesh(), bytes));
+    const std::uint32_t priorVersion = 4;
+    std::memcpy(bytes.data() + offsetof(SmeshFileHeader, Version),
+                &priorVersion, sizeof(priorVersion));
 
     MeshGeometry loaded;
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));

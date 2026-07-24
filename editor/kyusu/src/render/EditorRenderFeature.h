@@ -9,12 +9,14 @@
 #include "EditorBloomPass.h"
 #include "EditorWideLinePipeline.h"
 #include "GpuGridRenderer.h"
+#include "IrradianceVolumeRenderer.h"
 #include "render/ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
 #include "SceneRenderQueueBuilder.h"
 #include "SceneSolidRenderer.h"
 #include "SelectionRenderer.h"
+#include "ShadowResidencyReadout.h"
 #include "StaticMeshRenderer.h"
 #include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
@@ -24,12 +26,17 @@
 
 #include <graphics/vulkan/Renderer.h>
 #include <render/MeshForwardPass.h>
+#include <render/ShadowCasterSet.h>
+#include <render/ShadowResidency.h>
+#include <render/ShadowDepthPass.h>
+#include <world/registry/RegistryId.h>
 
 #include <array>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 class EditorScene;
 class EditorDocument;
@@ -76,7 +83,7 @@ public:
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    void Setup(const RendererServices& services) override;
+    [[nodiscard]] bool Setup(const RendererServices& services) override;
     void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 
@@ -90,11 +97,35 @@ public:
     // system, mirroring how the document's StaticMeshComponents release first.
     void ReleaseSceneResources();
 
+    // The frame's shadow arbitration snapshot, read by the lighting panel.
+    [[nodiscard]] const ShadowResidencyReadout& ShadowReadout() const
+    {
+        return ShadowFrame;
+    }
+    // Re-renders every cached shadow tile (panel button; edits that bypass
+    // extracted state, like the depth-bias cvars, invalidate automatically).
+    void InvalidateShadows() { Residency.InvalidateAll(); }
+
+    // The focus document's queue builder, for the baked-lighting preview
+    // controls (lighting panel). Null before Setup or without asset stores.
+    [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
+    {
+        return QueueBuilder.has_value() ? &*QueueBuilder : nullptr;
+    }
+
 private:
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.
     void RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
                                  const ViewportTargetCache::RenderView& target);
+    // Runs the focus scene's shadow arbitration and records the scheduled
+    // depth views, then publishes the panel snapshot. Called once per frame
+    // before any viewport renders.
+    void UpdateShadowResidency(const FrameContext& frame);
+    // The camera position shadow scores rank against: the active viewport if
+    // it is perspective, else the first perspective viewport, else the active
+    // viewport of any orientation. Ortho positions still rank deterministically.
+    [[nodiscard]] Vec<3> ShadowScoreOrigin() const;
     // Renders the active wireframe glow source and composites the bloom onto the scene
     // color (no-op when the viewport has no bloom target). Runs after the scene pass.
     void RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
@@ -119,6 +150,25 @@ private:
     // materials. Active whenever an asset environment is present (essentially always);
     // BrushSolid/Meshes above are the procedural-checker fallback, kept until the
     // owner's pixel-diff confirms the editor composite is gamma-correct (then removed).
+    // Lighting owns the set-2 bindings plus the spot shadow atlas; ShadowPass
+    // records the focus scene's scheduled tiles once per frame before the
+    // viewport loop, so every Solid viewport samples the same atlas the game
+    // would render. Context zones draw with shadow-free light sets.
+    LightBindings          Lighting;
+    ShadowDepthPass        ShadowPass;
+    // The same arbiter the game pipeline runs, scored against the focus
+    // viewport's camera; the caster diff feeds its OnChange invalidation.
+    ShadowResidency        Residency;
+    ShadowCasterDiff       CasterDiff;
+    std::vector<ShadowCasterEvent> CasterEvents;
+    ShadowResidencyReadout ShadowFrame;
+    // Slot state describes one scene's lights; a focus or document switch
+    // (new scene registry) resets the arbiter instead of letting stale
+    // holders age out through steal hysteresis.
+    RegistryId             ShadowSceneRegistry;
+    // Depth-bias cvars bake into rendered tiles, so a change re-renders them.
+    float                  ShadowBiasConstant = -1.0f;
+    float                  ShadowBiasSlope = -1.0f;
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
     std::optional<SceneSolidRenderer>      SceneSolid;
@@ -145,6 +195,7 @@ private:
     SelectionRenderer      Highlight;
     BrushFillRenderer      BrushFills;
     ZoneBoundsRenderer     ZoneBounds;
+    IrradianceVolumeRenderer IrradianceVolumes;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.

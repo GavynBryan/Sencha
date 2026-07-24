@@ -15,7 +15,10 @@
 #include <render/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/IrradianceVolumeComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
@@ -78,7 +81,10 @@ namespace
         registry.Components.RegisterComponent<WorldTransform>();
         registry.Components.RegisterComponent<Parent>();
         registry.Components.RegisterComponent<StaticMeshComponent>();
+        registry.Components.RegisterComponent<ZoneLightmapComponent>();
+        registry.Components.RegisterComponent<IrradianceVolumeComponent>();
         registry.Components.RegisterComponent<PointLightComponent>();
+        registry.Components.RegisterComponent<SpotLightComponent>();
         registry.Components.RegisterComponent<CameraComponent>();
         registry.Components.RegisterComponent<AudioSourceComponent>();
         registry.Components.RegisterComponent<AudioCaptionComponent>();
@@ -324,6 +330,80 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
     EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
     EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
     EXPECT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
+}
+
+TEST(SceneSerializer, LoadsLightRecordsCookedBeforeShadowFieldsExisted)
+{
+    // Scenes cooked before the shadow and bake fields existed carry only the
+    // original light keys; the schema defaults must fill the rest instead of
+    // rejecting the component.
+    ResetSceneSerializers();
+    auto parsed = JsonParse(R"({
+        "version": 1,
+        "entities": [
+            {
+                "components": {
+                    "Transform": {
+                        "local": {
+                            "position": [0, 4, 8],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
+                    },
+                    "PointLight": {
+                        "color": [1, 0.7, 0.3],
+                        "intensity": 8,
+                        "range": 10,
+                        "enabled": true
+                    }
+                }
+            },
+            {
+                "components": {
+                    "Transform": {
+                        "local": {
+                            "position": [0, 6, 8],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
+                    },
+                    "SpotLight": {
+                        "color": [1, 1, 1],
+                        "intensity": 2,
+                        "range": 12,
+                        "inner_angle_degrees": 20,
+                        "outer_angle_degrees": 35,
+                        "enabled": true
+                    }
+                }
+            }
+        ]
+    })");
+    ASSERT_TRUE(parsed.has_value());
+
+    Registry loaded;
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+
+    ASSERT_EQ(loaded.Components.CountComponents<PointLightComponent>(), 1u);
+    ASSERT_EQ(loaded.Components.CountComponents<SpotLightComponent>(), 1u);
+    loaded.Components.ForEachComponent<PointLightComponent>(
+        [](EntityId, const PointLightComponent& light)
+    {
+        EXPECT_FLOAT_EQ(light.Intensity, 8.0f);
+        EXPECT_FALSE(light.CastShadows);
+        EXPECT_EQ(light.ShadowResolution, ShadowResolutionTier::Medium);
+        EXPECT_EQ(light.ShadowUpdate, ShadowUpdatePolicy::OnChange);
+        EXPECT_EQ(light.BakeContribution, LightBakeContribution::None);
+    });
+    loaded.Components.ForEachComponent<SpotLightComponent>(
+        [](EntityId, const SpotLightComponent& light)
+    {
+        EXPECT_FLOAT_EQ(light.Range, 12.0f);
+        EXPECT_FALSE(light.CastShadows);
+        EXPECT_EQ(light.ShadowUpdate, ShadowUpdatePolicy::OnChange);
+        EXPECT_FLOAT_EQ(light.ShadowSoftness, 1.5f);
+        EXPECT_EQ(light.BakeContribution, LightBakeContribution::None);
+    });
 }
 
 TEST(SceneSerializer, RegistersStaticMeshThroughGenericSerializer)

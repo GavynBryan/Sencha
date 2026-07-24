@@ -1,31 +1,38 @@
 #pragma once
 
-#include <ecs/Query.h>
-#include <ecs/World.h>
-#include <render/PointLightComponent.h>
+#include <render/Camera.h>
 #include <render/RenderLight.h>
-#include <world/transform/TransformComponents.h>
+#include <render/ShadowResidency.h>
 
-#include <optional>
+#include <span>
+#include <vector>
 
-//=============================================================================
-// LightExtractionSystem
-//
-// Walks all enabled PointLightComponents and packs them into a RenderLightSet
-// for the forward pass. The lighting counterpart of RenderExtractionSystem:
-// world position comes from WorldTransform (the same source the mesh extractor
-// reads), so a light and the meshes it lights share one transform pipeline.
-// Camera-independent; the same set serves every view.
-//
-// The query is cached per instance to avoid rebuild-from-scratch every frame;
-// a World* sentinel detects world changes (relevant in multi-registry loops).
-//=============================================================================
+struct Registry;
+
+// Aggregates the extraction already tracks, exposed for the frame counters.
+struct LightExtractionCounts
+{
+    std::uint32_t FrustumCandidates = 0;
+    std::uint32_t Packed = 0;
+
+    [[nodiscard]] std::uint32_t DroppedAtCap() const
+    {
+        return FrustumCandidates - Packed;
+    }
+};
+
+// Gathers visible point and spot lights across the active registry set, ranks
+// them deterministically, and packs the fixed forward-light budget. Every
+// packed light that asks for a shadow emits one request into its kind's list,
+// in pack order (score descending, stable key ties): the residency arbiter's
+// input order.
 class LightExtractionSystem
 {
 public:
-    void Extract(const World& world, RenderLightSet& lights);
-
-private:
-    const World* LastWorld = nullptr;
-    std::optional<Query<Read<WorldTransform>, Read<PointLightComponent>>> CachedQuery;
+    void Extract(std::span<Registry*> registries,
+                 const CameraRenderData& camera,
+                 RenderLightSet& lights,
+                 std::vector<SpotShadowRequest>& shadowRequests,
+                 std::vector<PointShadowRequest>& pointShadowRequests,
+                 LightExtractionCounts* counts = nullptr) const;
 };

@@ -19,20 +19,31 @@ option(SENCHA_ENABLE_HOT_RELOAD
     OFF)
 
 option(SENCHA_ENABLE_DEBUG_UI
-    "Build the ImGui-based debug overlay frontend (ConsolePanel, ImGuiDebugOverlay). Requires SENCHA_ENABLE_VULKAN."
-    OFF)
+    "Build the ImGui-based runtime debug overlay (console + timing panels, grave-key toggle). ON by default: game builds ship it so the runtime is tunable in the field; a host opts out per-process via EngineConfig.Console.UiEnabled. Requires SENCHA_ENABLE_VULKAN."
+    ON)
 
 option(SENCHA_ENABLE_COOK
     "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
+    ON)
+
+option(SENCHA_ENABLE_RENDER_PROFILING
+    "Build the renderer instrumentation ladder (render.profile.mode counters/gpu/capture: GPU timestamp pools, debug labels, capture export, stats panel). OFF removes those bodies entirely; the pass-local counter accumulation and RenderStats stay compiled as a test seam. OFF in the shipping preset."
     ON)
 
 option(SENCHA_ENABLE_TSAN
     "Build with ThreadSanitizer (GCC/Clang only). Used to run the test suites against the job system's concurrent core; see docs/ecs/parallelization.md."
     OFF)
 
+option(SENCHA_ENABLE_ASAN
+    "Build with AddressSanitizer (GCC/Clang only). Catches use-after-free, double-free, and heap corruption with symbolized allocation/free stacks. Mutually exclusive with SENCHA_ENABLE_TSAN."
+    OFF)
+
 option(SENCHA_BUILD_TEMPLATE
     "Build the template game module in-tree against the engine being built. Engine-dev convenience: the module rebuilds with the engine in one build, so the host/module ABI fingerprint can never skew (no SDK install/rebuild dance). Writes template/build/game.so; the standalone SDK build of template/ is unaffected."
     ON)
+
+set(SENCHA_GAME_PROJECT_DIR "" CACHE PATH
+    "Optional external game project to build against the in-tree engine. The project must provide a CMakeLists.txt that supports being added as a subdirectory.")
 
 # Cross-option invariants.
 if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)

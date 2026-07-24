@@ -1,0 +1,167 @@
+layout(set = 2, binding = 0) uniform sampler2DShadow SpotShadowAtlas;
+layout(set = 2, binding = 1) uniform samplerCubeArrayShadow PointShadowCubes;
+
+#ifdef SENCHA_DEBUG_VIEWS
+layout(set = 2, binding = 3) uniform sampler2D SpotShadowAtlasRaw;
+layout(set = 2, binding = 4) uniform samplerCubeArray PointShadowCubesRaw;
+#endif
+
+float SampleSpotShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.SpotShadowCount)
+        return 1.0;
+
+    GpuSpotShadow shadow = frame.SpotShadows[shadowIndex];
+    // geometricNormal arrives normalized from every caller.
+    vec3 receiverPosition = worldPosition
+        + geometricNormal * shadow.SamplingParams.x * shadow.SamplingParams.z;
+    vec4 clipPosition = shadow.ViewProjection * vec4(receiverPosition, 1.0);
+    if (clipPosition.w <= 0.0)
+        return 1.0;
+
+    vec3 projected = clipPosition.xyz / clipPosition.w;
+    vec2 logicalUv = projected.xy * 0.5 + 0.5;
+    if (projected.z < 0.0 || projected.z > 1.0
+        || any(lessThan(logicalUv, vec2(0.0)))
+        || any(greaterThan(logicalUv, vec2(1.0))))
+    {
+        return 1.0;
+    }
+
+    vec2 atlasUv = logicalUv * shadow.AtlasScaleBias.xy
+                 + shadow.AtlasScaleBias.zw;
+    float softness = clamp(shadow.SamplingParams.y, 0.5, 4.0);
+    vec2 atlasTexel = 1.0 / vec2(textureSize(SpotShadowAtlas, 0));
+    const float offsets[3] = float[](-1.5, 0.0, 1.5);
+    const float weights[3] = float[](1.0, 2.0, 1.0);
+
+    float visibility = 0.0;
+    for (int y = 0; y < 3; ++y)
+    {
+        for (int x = 0; x < 3; ++x)
+        {
+            vec2 offset = vec2(offsets[x], offsets[y]) * softness * atlasTexel;
+            visibility += weights[x] * weights[y]
+                        * texture(SpotShadowAtlas, vec3(atlasUv + offset, projected.z));
+        }
+    }
+    return visibility * (1.0 / 16.0);
+}
+
+float PointShadowDepthReference(float majorAxisDistance, float nearPlane, float farPlane)
+{
+    float distance = max(majorAxisDistance, nearPlane);
+    return farPlane * (distance - nearPlane)
+         / max((farPlane - nearPlane) * distance, 1e-6);
+}
+
+float SamplePointShadow(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.PointShadowCount)
+        return 1.0;
+
+    GpuPointShadow shadow = frame.PointShadows[shadowIndex];
+    float nearPlane = shadow.Params.x;
+    float farPlane = shadow.PositionFar.w;
+    float cubeExtent = float(textureSize(PointShadowCubes, 0).x);
+    float worldTexelSize = (2.0 * farPlane) / cubeExtent;
+    // geometricNormal arrives normalized from every caller.
+    vec3 receiverPosition = worldPosition
+        + geometricNormal * worldTexelSize * shadow.Params.z;
+    vec3 fromLight = receiverPosition - shadow.PositionFar.xyz;
+    float majorAxisDistance = max(abs(fromLight.x), max(abs(fromLight.y), abs(fromLight.z)));
+    if (majorAxisDistance <= nearPlane || majorAxisDistance >= farPlane)
+        return 1.0;
+
+    float reference = PointShadowDepthReference(
+        majorAxisDistance, nearPlane, farPlane);
+    vec3 direction = normalize(fromLight);
+    vec3 basisAxis = abs(direction.y) < 0.99
+        ? vec3(0.0, 1.0, 0.0)
+        : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(direction, basisAxis));
+    vec3 bitangent = cross(direction, tangent);
+    float filterOffset = clamp(shadow.Params.y, 0.5, 4.0)
+                       * 2.0 / float(textureSize(PointShadowCubes, 0).x);
+
+    vec4 cubeCoordinate = vec4(direction, float(shadowIndex));
+    float visibility = texture(PointShadowCubes, cubeCoordinate, reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction + tangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction - tangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction + bitangent * filterOffset), float(shadowIndex)),
+        reference);
+    visibility += texture(
+        PointShadowCubes,
+        vec4(normalize(direction - bitangent * filterOffset), float(shadowIndex)),
+        reference);
+    return visibility * 0.2;
+}
+
+#ifdef SENCHA_DEBUG_VIEWS
+float SampleSpotShadowRaw(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.SpotShadowCount)
+        return 1.0;
+
+    GpuSpotShadow shadow = frame.SpotShadows[shadowIndex];
+    vec3 receiverPosition = worldPosition
+        + normalize(geometricNormal) * shadow.SamplingParams.x * shadow.SamplingParams.z;
+    vec4 clipPosition = shadow.ViewProjection * vec4(receiverPosition, 1.0);
+    if (clipPosition.w <= 0.0)
+        return 1.0;
+
+    vec3 projected = clipPosition.xyz / clipPosition.w;
+    vec2 logicalUv = projected.xy * 0.5 + 0.5;
+    if (projected.z < 0.0 || projected.z > 1.0
+        || any(lessThan(logicalUv, vec2(0.0)))
+        || any(greaterThan(logicalUv, vec2(1.0))))
+    {
+        return 1.0;
+    }
+
+    vec2 atlasUv = logicalUv * shadow.AtlasScaleBias.xy
+                 + shadow.AtlasScaleBias.zw;
+    ivec2 atlasSize = textureSize(SpotShadowAtlasRaw, 0);
+    ivec2 tileMin = ivec2(shadow.AtlasScaleBias.zw * vec2(atlasSize));
+    ivec2 tileMax = ivec2(
+        (shadow.AtlasScaleBias.zw + shadow.AtlasScaleBias.xy)
+        * vec2(atlasSize)) - ivec2(1);
+    ivec2 texel = clamp(ivec2(atlasUv * vec2(atlasSize)), tileMin, tileMax);
+    float storedDepth = texelFetch(SpotShadowAtlasRaw, texel, 0).r;
+    return projected.z <= storedDepth ? 1.0 : 0.0;
+}
+
+float SamplePointShadowRaw(uint shadowIndex, vec3 worldPosition, vec3 geometricNormal)
+{
+    if (shadowIndex >= frame.PointShadowCount)
+        return 1.0;
+
+    GpuPointShadow shadow = frame.PointShadows[shadowIndex];
+    float nearPlane = shadow.Params.x;
+    float farPlane = shadow.PositionFar.w;
+    float worldTexelSize = (2.0 * farPlane)
+                         / float(textureSize(PointShadowCubesRaw, 0).x);
+    vec3 receiverPosition = worldPosition
+        + normalize(geometricNormal) * worldTexelSize * shadow.Params.z;
+    vec3 fromLight = receiverPosition - shadow.PositionFar.xyz;
+    float majorAxisDistance = max(
+        abs(fromLight.x), max(abs(fromLight.y), abs(fromLight.z)));
+    if (majorAxisDistance <= nearPlane || majorAxisDistance >= farPlane)
+        return 1.0;
+
+    float reference = PointShadowDepthReference(
+        majorAxisDistance, nearPlane, farPlane);
+    float storedDepth = textureLod(
+        PointShadowCubesRaw,
+        vec4(normalize(fromLight), float(shadowIndex)), 0.0).r;
+    return reference <= storedDepth ? 1.0 : 0.0;
+}
+#endif

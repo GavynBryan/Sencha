@@ -67,6 +67,8 @@ file(GLOB_RECURSE EDITOR_TEST_SOURCES CONFIGURE_DEPENDS
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
+# Committed content lives in the source tree, not beside the test binary.
+target_compile_definitions(core_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 add_executable(math_geometry_tests ${MATH_GEOMETRY_TEST_SOURCES})
 target_link_libraries(math_geometry_tests PRIVATE sencha_engine GTest::gtest_main)
@@ -112,6 +114,7 @@ if(BRUSH_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
@@ -158,10 +161,24 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${LEVEL_COOK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushBake.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CellArtifactCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookArtifactTransaction.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookedSceneAssembly.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookGraph.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookReceipt.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookStepCache.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCook.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookFingerprints.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookInput.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentLightmapBake.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentProbeBake.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentPublication.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentPublicationPlan.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/LightmapSurfaceCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushCookInput.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldCook.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
@@ -178,6 +195,7 @@ if(LEVEL_COOK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
@@ -217,10 +235,12 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/TransitionConnect.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/EditorLightGather.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
@@ -233,6 +253,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
@@ -247,7 +268,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/common/src
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
         ${CMAKE_SOURCE_DIR}/editor/kettle/src)
-    target_link_libraries(editor_tests PRIVATE sencha_engine sencha_imgui_support GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

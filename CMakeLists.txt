@@ -29,6 +29,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # imgui, …) link cleanly into the shared engine, and game modules stay PIC.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Windows searches an executable's own directory for a DLL and has no rpath
+# equivalent, so a test or tool built into its own subdirectory cannot find
+# sencha_engine.dll. Collect the runtime artifacts in one directory there. The
+# per-target layout stays on the platforms where rpath already resolves this,
+# because scripts and docs address those paths.
+if(WIN32)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()
+
 # Emit compile_commands.json for clangd and other tooling. It lands in the
 # build dir; symlink the chosen one to the repo root if your editor needs it.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json" FORCE)
@@ -50,12 +59,24 @@ add_test(NAME physics_isolation
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")
 
+if(SENCHA_ENABLE_TSAN AND SENCHA_ENABLE_ASAN)
+    message(FATAL_ERROR "SENCHA_ENABLE_TSAN and SENCHA_ENABLE_ASAN are mutually exclusive")
+endif()
+
 if(SENCHA_ENABLE_TSAN)
     if(MSVC)
         message(FATAL_ERROR "SENCHA_ENABLE_TSAN requires GCC or Clang")
     endif()
     add_compile_options(-fsanitize=thread -g)
     add_link_options(-fsanitize=thread)
+endif()
+
+if(SENCHA_ENABLE_ASAN)
+    if(MSVC)
+        message(FATAL_ERROR "SENCHA_ENABLE_ASAN requires GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
 endif()
 
 # Static link the C++ runtime so executables don't depend on MinGW DLLs at runtime.
@@ -75,6 +96,22 @@ add_subdirectory(example)
 # the editor/app, which require it.
 if(SENCHA_ENABLE_VULKAN AND SENCHA_BUILD_TEMPLATE)
     add_subdirectory(template)
+endif()
+
+# During joint engine and game development, an external game can join this
+# build so its module always uses the host's exact ABI fingerprint. The game
+# remains a standalone project and can still build against an installed SDK.
+if(SENCHA_GAME_PROJECT_DIR)
+    get_filename_component(SENCHA_GAME_PROJECT_DIR_ABSOLUTE
+        "${SENCHA_GAME_PROJECT_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    if(NOT EXISTS "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "SENCHA_GAME_PROJECT_DIR does not contain CMakeLists.txt: "
+            "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}")
+    endif()
+    add_subdirectory(
+        "${SENCHA_GAME_PROJECT_DIR_ABSOLUTE}"
+        "${CMAKE_BINARY_DIR}/game-project")
 endif()
 
 add_subdirectory(test)

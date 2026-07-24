@@ -89,13 +89,35 @@ bool VulkanPhysicalDeviceService::PickPhysicalDevice(const VulkanBootstrapPolicy
     int bestScore = -1;
     VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
 
-    for (auto device : devices)
+    if (policy.DeviceIndex >= 0)
     {
-        int score = RateDevice(device, policy);
-        if (score > bestScore)
+        const auto requested = static_cast<std::uint32_t>(policy.DeviceIndex);
+        if (requested >= deviceCount)
         {
-            bestScore = score;
-            bestDevice = device;
+            Log.Error("Requested device index {} but only {} device(s) exist",
+                      policy.DeviceIndex, deviceCount);
+            return false;
+        }
+        bestScore = RateDevice(devices[requested], policy);
+        if (bestScore < 0)
+        {
+            Log.Error("Requested device index {} does not meet the renderer's "
+                      "device requirements",
+                      policy.DeviceIndex);
+            return false;
+        }
+        bestDevice = devices[requested];
+    }
+    else
+    {
+        for (auto device : devices)
+        {
+            int score = RateDevice(device, policy);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestDevice = device;
+            }
         }
     }
 

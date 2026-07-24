@@ -31,6 +31,8 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
+    // Shares the lower-right node with the lighting panel (tabbed).
+    int GetDockTabGroup() const override { return 0; }
 
 private:
     void DrawComponent(IComponentSerializer& serializer, EntityId entity);

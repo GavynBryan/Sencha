@@ -17,6 +17,19 @@
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <graphics/vulkan/GpuTimestampPool.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
+#endif
+#endif
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/ConsolePanel.h>
+#include <debug/ImGuiDebugOverlay.h>
+#include <debug/TimingPanel.h>
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <debug/RenderStatsPanel.h>
+#endif
 #endif
 
 #include <platform/PlatformServices.h>
@@ -52,18 +65,16 @@ bool Engine::Initialize()
     RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
     if (Configuration.Console.OpenOnStart)
         DebugState->Open();
-    EngineSystems.Register<DefaultRenderPipeline>(&LoggingState);
+    EngineSystems.Register<DefaultRenderPipeline>(
+        &LoggingState, &ConsoleState->Registry());
+    EngineConsoleBuiltins::RegisterRenderCommands(
+        ConsoleState->Registry(), *EngineSystems.Get<DefaultRenderPipeline>());
+    EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
+        &InstrumentationBundle);
 
-    // Audio backend + the system that drives scene AudioSourceComponents
-    // (docs/audio/runtime.md). An invalid service (no device — CI, headless)
-    // is non-fatal: the system no-ops, the engine runs silent.
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
     EngineSystems.Register<AudioSystem>(AudioState.get());
 
-    // Caption state above raw playback (docs/audio/captions-and-dialogue.md).
-    // No device dependency — always valid, headless included. CaptionSystem
-    // registers after AudioSystem so voices started or swept this frame are
-    // captioned/retired the same frame.
     CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
@@ -88,8 +99,6 @@ bool Engine::Initialize()
     RuntimeLoop.SetResizeSettleSeconds(Configuration.Runtime.ResizeSettleSeconds);
     RuntimeLoop.GetSimulationClock().SetFixedTickRate(Configuration.Runtime.FixedTickRate);
 
-    // Task threads block on IO, so they never compete with the frame. The
-    // count is config: 1 suits room-scale streaming, open worlds raise it.
     TaskQueueInstance = std::make_unique<AsyncTaskQueue>(
         static_cast<uint32_t>(Configuration.Runtime.AsyncTaskThreadCount));
 
@@ -129,12 +138,30 @@ bool Engine::Initialize()
         std::fprintf(stderr, "Failed to initialize Vulkan engine services.\n");
         return failInitialize();
     }
+    // Before any feature is added, so every feature Setup sees the bundle.
+    GraphicsState->MainRenderer.SetInstrumentation(&InstrumentationBundle);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // A zero timestampPeriod means the device cannot timestamp; the pool
+    // stays permanently inert and Gpu mode degrades to Counters behavior.
+    GpuTimestampsPool = std::make_unique<GpuTimestampPool>();
+    GpuTimestampsPool->Configure(
+        GraphicsState->Device.GetDevice(),
+        GraphicsState->PhysicalDevice.GetProperties().limits.timestampPeriod,
+        GraphicsState->Frames.GetFramesInFlight());
+    VulkanDebugLabels::Load(GraphicsState->Instance.GetInstance());
+    PublishCaptureEnvironment();
+#endif
 
     RuntimeLoop.SetSurfaceExtent(window->GetExtent());
     FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
     FrameDriverInstance->SetTimingHistory(&TimingData);
     FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
-    FrameDriverInstance->SetShouldExit([this] { return !Running; });
+    FrameDriverInstance->SetShouldExit([this] {
+        if (!Running)
+            return true;
+        return ExitAfterFrames != 0
+            && RuntimeLoop.GetCurrentFrame().WallTime.FrameIndex >= ExitAfterFrames;
+    });
 
     Initialized = true;
     return true;
@@ -150,7 +177,27 @@ void Engine::Shutdown()
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // The renderer owns the feature; only the borrowed view is cleared here.
+    DebugOverlayFeature = nullptr;
+    PendingDebugPanels.clear();
+#endif
 #ifdef SENCHA_ENABLE_VULKAN
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    // Query pools die before the device they were created from. ~Renderer
+    // has already waited for device idle by the time GraphicsState resets,
+    // but the pools are engine members, so their teardown is explicit.
+    if (GpuTimestampsPool != nullptr && GraphicsState != nullptr
+        && GraphicsState->Device.GetDevice() != VK_NULL_HANDLE)
+    {
+        vkDeviceWaitIdle(GraphicsState->Device.GetDevice());
+        GpuTimestampsPool->Destroy();
+    }
+    GpuTimestampsPool.reset();
+    InstrumentationBundle = RenderInstrumentation{};
+    ActiveProfileMode = RenderProfileMode::Off;
+    PendingProfileMode = RenderProfileMode::Off;
+#endif
     GraphicsState.reset();
 #endif
     PlatformState.reset();
@@ -298,7 +345,6 @@ void Engine::RegisterFramePhases(Game& game)
         return;
 
     RegisterDefaultEngineFramePhases(*this, game, *FrameDriverInstance);
-
     FramePhasesRegistered = true;
 }
 
@@ -307,12 +353,7 @@ int Engine::Run(Game& game)
     if (!Initialize())
         return 1;
 
-    // Bind once, before any hook, so lifecycle contexts carry data only.
     game.AttachEngine(*this);
-
-    // Components before content: register the game's serializers (a module game
-    // registers its own here) so the first scene load resolves them. Same hook
-    // the editor calls standalone to edit scenes without running the game.
     game.OnRegisterComponents(DefaultComponentSerializerRegistry());
 
     ConsoleService& console = Console();
@@ -333,32 +374,180 @@ int Engine::Run(Game& game)
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
+    CreateDebugOverlay();
+
     if (FrameDriverInstance != nullptr)
     {
         RegisterFramePhases(game);
+        if (!FrameTraceOutputPath.empty())
+        {
+            FrameTraceStore = std::make_unique<ChromeJsonFrameTrace>();
+            FrameDriverInstance->SetTrace(FrameTraceStore.get());
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Arm the render capture for the whole run; records only append once the
+        // mode latch makes Capture active (render.profile.mode capture), so this
+        // is inert unless both the path and the mode are set.
+        if (!RenderCaptureOutputPath.empty())
+            RenderCaptureStore.Start(0);
+#endif
         Running = true;
         FrameDriverInstance->Run();
+        if (FrameTraceStore != nullptr
+            && !FrameTraceStore->WriteTo(FrameTraceOutputPath))
+        {
+            std::fprintf(stderr, "Failed to write frame trace to '%s'.\n",
+                         FrameTraceOutputPath.c_str());
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Re-stamped here because the map is not known at graphics init.
+        PublishCaptureEnvironment();
+        if (!RenderCaptureOutputPath.empty()
+            && !EngineConsoleBuiltins::WriteRenderCapture(
+                   RenderCaptureStore, Console().Registry(), RenderCaptureOutputPath,
+                   nullptr))
+        {
+            std::fprintf(stderr, "Failed to write render capture to '%s'.\n",
+                         RenderCaptureOutputPath.c_str());
+        }
+#endif
     }
 
     GameShutdownContext shutdown{
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
-
-    // Symmetric teardown of OnRegisterComponents above: retract the game's
-    // serializers while the module is still mapped (the host unloads it after Run
-    // returns). A module-owned serializer left in the registry would be freed at
-    // exit, after dlclose, against unmapped code.
     game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
     return 0;
 }
+
+void Engine::ApplyPendingRenderProfileMode()
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    ActiveProfileMode = PendingProfileMode;
+    GpuTimestampPool* gpuTimestamps = nullptr;
+#ifdef SENCHA_ENABLE_VULKAN
+    gpuTimestamps = GpuTimestampsPool.get();
+#endif
+    InstrumentationBundle = ResolveInstrumentationBundle(
+        ActiveProfileMode, &FrameRenderStats, &RenderStatsRing, &FrameCpuScopes,
+        gpuTimestamps, &RenderCaptureStore);
+    if (InstrumentationBundle.Stats != nullptr)
+    {
+        FrameRenderStats = RenderStats{};
+        FrameRenderStats.FrameIndex = ++RenderStatsFrameIndex;
+        FrameCpuScopes.ResetFrame();
+    }
+#endif
+}
+
+void Engine::PublishCaptureEnvironment()
+{
+#if defined(SENCHA_ENABLE_RENDER_PROFILING) && defined(SENCHA_ENABLE_VULKAN)
+    if (GraphicsState == nullptr)
+        return;
+
+    const VkPhysicalDeviceProperties& device =
+        GraphicsState->PhysicalDevice.GetProperties();
+    const auto version = [](std::uint32_t packed) {
+        return std::to_string(VK_API_VERSION_MAJOR(packed)) + "."
+             + std::to_string(VK_API_VERSION_MINOR(packed)) + "."
+             + std::to_string(VK_API_VERSION_PATCH(packed));
+    };
+
+    RenderCaptureStore.SetEnvironment({
+        { "gpu_name", device.deviceName },
+        { "gpu_vendor_id", std::to_string(device.vendorID) },
+        { "gpu_device_id", std::to_string(device.deviceID) },
+        { "gpu_device_type", std::to_string(static_cast<int>(device.deviceType)) },
+        { "gpu_driver_version", std::to_string(device.driverVersion) },
+        { "vulkan_api_version", version(device.apiVersion) },
+        { "validation_enabled",
+          Configuration.Graphics.EnableValidation ? "true" : "false" },
+        { "frames_in_flight",
+          std::to_string(Configuration.Graphics.FramesInFlight) },
+        { "scratch_bytes_per_frame",
+          std::to_string(Configuration.Graphics.FrameScratchBytesPerFrame) },
+        { "build_sha", SENCHA_BUILD_SHA },
+        { "build_type", SENCHA_BUILD_TYPE },
+        { "map", ConsoleState != nullptr ? ConsoleState->CurrentMap() : std::string{} },
+    });
+#endif
+}
+
+void Engine::PushRenderStatsFrame()
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (InstrumentationBundle.Stats != nullptr
+        && InstrumentationBundle.StatsHistory != nullptr)
+    {
+        InstrumentationBundle.StatsHistory->Push(FrameRenderStats);
+    }
+    if (InstrumentationBundle.Capture != nullptr
+        && InstrumentationBundle.Capture->IsRecording())
+    {
+        // The timing sample for this frame was pushed just before this call.
+        if (const TimingFrameSample* timing = TimingData.Latest())
+            InstrumentationBundle.Capture->Append(*timing, FrameRenderStats);
+    }
+#endif
+}
+
+void Engine::CreateDebugOverlay()
+{
+#if defined(SENCHA_ENABLE_DEBUG_UI) && defined(SENCHA_ENABLE_VULKAN)
+    // Opt-out for hosts that own their own ImGui frontend (the editors); one
+    // process can hold only one ImGui context over a window.
+    if (!Configuration.Console.UiEnabled)
+        return;
+    if (GraphicsState == nullptr || PlatformState == nullptr)
+        return;
+    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    if (window == nullptr)
+        return;
+
+    auto overlay = std::make_unique<ImGuiDebugOverlay>(
+        *DebugState, *window, GraphicsState->Instance, GraphicsState->Frames);
+    overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
+    overlay->AddPanel<TimingPanel>(TimingData);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    overlay->AddPanel<RenderStatsPanel>(
+        ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());
+#endif
+    for (auto& panel : PendingDebugPanels)
+        overlay->AddPanel(std::move(panel));
+    PendingDebugPanels.clear();
+    DebugOverlayFeature = static_cast<ImGuiDebugOverlay*>(
+        GraphicsState->MainRenderer.AddFeature(std::move(overlay)));
+#endif
+}
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+void Engine::AddDebugPanel(std::unique_ptr<IDebugPanel> panel)
+{
+    if (panel == nullptr)
+        return;
+    if (DebugOverlayFeature != nullptr)
+        DebugOverlayFeature->AddPanel(std::move(panel));
+    else
+        PendingDebugPanels.push_back(std::move(panel));
+}
+#endif
 
 void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug)
 {
     ConsoleRegistry& registry = console.Registry();
     EngineConsoleBuiltins::RegisterConsoleCVars(registry, debug, Configuration.Console);
     EngineConsoleBuiltins::RegisterRuntimeCVars(registry, RuntimeLoop, Configuration.Runtime);
-    EngineConsoleBuiltins::RegisterFramePacingCVars(registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterFramePacingCVars(
+        registry, Configuration.Runtime, FrameDriverInstance);
+    EngineConsoleBuiltins::RegisterRunControlCVars(
+        registry, ExitAfterFrames, FrameTraceOutputPath);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, PendingProfileMode);
+    EngineConsoleBuiltins::RegisterCaptureCommands(
+        registry, RenderCaptureStore, PendingProfileMode, RenderCaptureOutputPath);
+#endif
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }

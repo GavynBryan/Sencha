@@ -29,7 +29,7 @@ public:
     explicit MaterialPreviewRenderFeature(RuntimeAssets& assets);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    void Setup(const RendererServices& services) override;
+    [[nodiscard]] bool Setup(const RendererServices& services) override;
     void OnDraw(const FrameContext& frame) override;
     void Teardown() override;
 
@@ -58,6 +58,11 @@ private:
     RuntimeAssets& Assets;
     ViewportTargetCache Targets;
     PreviewBackdropRenderer Backdrop;
+    // The forward pass requires the lighting bindings for its descriptor
+    // layout. The preview never renders shadow tiles, so it skips atlas
+    // creation entirely: the set stays dummy-backed and the preview light
+    // set carries a zero spot-shadow count.
+    LightBindings Lighting;
     MeshForwardPass Forward;
     RenderQueue Queue;
     RenderLightSet Lights;

@@ -439,7 +439,7 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     for (const std::string& root : Project->ContentRoots)
     {
         const auto rel = oldFile.lexically_relative(root);
-        if (!rel.empty() && rel.native().rfind("..", 0) != 0)
+        if (!rel.empty() && *rel.begin() != "..")
         {
             owningRoot = root;
             break;

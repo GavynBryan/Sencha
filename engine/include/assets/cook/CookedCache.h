@@ -53,8 +53,10 @@ struct CookedSourceEntry
     // Source file, relative to the assets root, generic separators.
     std::string SourceRelPath;
 
-    // HashBytes64 of the source file contents the artifacts were cooked from.
-    uint64_t SourceHash = 0;
+    // Producer-owned identity of every input that affects these artifacts.
+    // File importers use the source and meta content hash; document cooks also
+    // include resolved assets, cook settings, and dependency fingerprints.
+    uint64_t InputFingerprint = 0;
 
     // Size and last-write time (filesystem clock ticks) of the source file
     // when it was cooked. A freshness accelerator only: when both match the
@@ -75,9 +77,14 @@ struct CookedSourceEntry
 // cache, so every source recooks. Version 2: texture cook output changed
 // from RGBA8 to BC-compressed (Decision L format table). Version 3: .smesh
 // moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
-// .sanim artifacts (Decisions J, M, N). A per-importer cook version is the
-// finer-grained eventual replacement if bumps become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 3;
+// .sanim artifacts (Decisions J, M, N). Version 5: .smesh moved to v5
+// (lightmap UVs replaced the baked-direct vertex channel; per-zone atlas
+// artifacts). Version 6: lightmap atlases moved from RGBM RGBA8 to RGB9E5
+// (texels decode before filtering; the shader no longer applies a
+// multiplier, so older atlases would render wrong). A per-importer cook
+// version is the finer-grained eventual replacement if bumps become
+// frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 7;
 
 class CookedCacheIndex
 {

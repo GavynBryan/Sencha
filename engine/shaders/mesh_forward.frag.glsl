@@ -1,79 +1,80 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
 
-// Keep in sync with kMaxForwardLights in engine/include/render/RenderLight.h.
-const uint MAX_LIGHTS = 64u;
+#include "mesh_frame.glsli"
+#include "shadow_sampling.glsli"
+#include "probe_sampling.glsli"
+#include "mesh_material.glsli"
+#include "lighting.glsli"
 
-struct GpuLight
-{
-    vec4 PositionRange;  // xyz world position, w range
-    vec4 DirectionCone;  // xyz direction, w cos(outer) - reserved
-    vec4 ColorIntensity; // rgb linear color, w intensity
-    uvec4 TypeShadow;    // x type, y shadow index (reserved), zw pad
-};
-
-layout(location = 0) in vec3 inWorldNormal;
-layout(location = 1) in vec2 inUv0;
-layout(location = 2) in vec3 inWorldPos;
-
-layout(set = 0, binding = 0) uniform MeshFrame
-{
-    mat4 ViewProjection;
-    vec4 ViewPositionTime;
-    vec4 AmbientSky;
-    vec4 AmbientGround;
-    uint LightCount;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
-    GpuLight Lights[MAX_LIGHTS];
-} frame;
-
-layout(push_constant) uniform MeshPush
-{
-    vec4 BaseColor;
-    uint BaseColorTextureIndex;
-} pushData;
-
-layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
+layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
 
 layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    vec4 baseColor = pushData.BaseColor;
-    if (pushData.BaseColorTextureIndex != 0xFFFFFFFFu)
+    vec4 baseColor = SampleBaseColor();
+    vec3 emission = ResolveEmission();
+
+    if (MATERIAL_UNLIT)
     {
-        baseColor *= texture(BindlessTextures[pushData.BaseColorTextureIndex], inUv0);
+        outColor = vec4(ResolveOutput(baseColor.rgb + emission), baseColor.a);
+        return;
     }
 
-    vec3 N = normalize(inWorldNormal);
+    vec3 orm = SampleOrm();
+    vec3 geometricNormal = normalize(inWorldNormal);
+    vec3 normal = ResolveWorldNormal(geometricNormal);
+    vec3 viewDirection = normalize(frame.ViewPositionTime.xyz - inWorldPos);
 
-    // Hemispheric ambient: the cheap no-bake indirect fill. Sky tint when the
-    // surface faces up, ground tint when it faces down.
-    float hemi = 0.5 + 0.5 * N.y;
-    vec3 lit = baseColor.rgb * mix(frame.AmbientGround.rgb, frame.AmbientSky.rgb, hemi);
+    float hemi = 0.5 + 0.5 * normal.y;
+    vec3 ambientColor = mix(frame.AmbientGround.rgb, frame.AmbientSky.rgb, hemi);
+    ambientColor = SampleProbeAmbient(inWorldPos, normal, ambientColor);
+    ambientColor = max(ambientColor, vec3(max(frame.StyleParams.y, 0.0)));
+    // Baked AO joins the material's own occlusion channel on the ambient
+    // term only; direct light, baked direct, and emission stay untouched.
+    vec3 lit = baseColor.rgb * ambientColor * clamp(orm.r, 0.0, 1.0)
+        * SampleBakedAo();
+
+    float roughness = clamp(pushData.RoughnessFactor * orm.g, 0.0, 1.0);
+    float metallic = clamp(pushData.MetallicFactor * orm.b, 0.0, 1.0);
+    float specularExponent = exp2(mix(11.0, 1.0, roughness));
+    vec3 specularTint = mix(vec3(1.0), baseColor.rgb, metallic);
+    float diffuseWrap = max(frame.StyleParams.x, 0.0);
 
     uint count = min(frame.LightCount, MAX_LIGHTS);
     for (uint i = 0u; i < count; ++i)
     {
-        GpuLight L = frame.Lights[i];
-        if (L.TypeShadow.x == 0u) // POINT (switch grows for spot/directional)
-        {
-            vec3 toLight = L.PositionRange.xyz - inWorldPos;
-            float dist = length(toLight);
-            float range = L.PositionRange.w;
-            vec3 lightDir = toLight / max(dist, 1e-4);
-            float ndl = max(dot(N, lightDir), 0.0);
+        GpuLight light = frame.Lights[i];
+        if (light.Type > 1u)
+            continue;
 
-            // Windowed inverse-square: physical 1/d^2 falloff multiplied by a
-            // smooth window that reaches zero at the range, so a light stays
-            // local (no infinite tail) without a hard popping edge.
-            float window = clamp(1.0 - pow(dist / max(range, 1e-4), 4.0), 0.0, 1.0);
-            float attenuation = (window * window) / (dist * dist + 1e-4);
+        // Past its range a light contributes exactly zero: the r^4 window
+        // clamps to 0, which zeroes Radiance and so both the diffuse and the
+        // specular term. Cull here so an unreachable light never pays for the
+        // shadow filter's texture taps. The epsilon matches the window's own
+        // denominator so a sub-epsilon range is not culled early.
+        vec3 toLight = light.PositionRange.xyz - inWorldPos;
+        float lightRange = max(light.PositionRange.w, 1e-4);
+        if (dot(toLight, toLight) >= lightRange * lightRange)
+            continue;
 
-            lit += baseColor.rgb * L.ColorIntensity.rgb * (L.ColorIntensity.w * ndl * attenuation);
-        }
+        float shadowVisibility = ResolveFilteredShadowVisibility(
+            light, inWorldPos, geometricNormal);
+        DirectLightTerms terms = EvaluateDirectLight(
+            light, inWorldPos, normal, viewDirection, diffuseWrap,
+            specularExponent, shadowVisibility);
+
+        lit += baseColor.rgb * terms.Diffuse * terms.Radiance;
+        lit += specularTint * terms.Specular * terms.Radiance;
     }
 
-    outColor = vec4(lit, baseColor.a);
+    // Baked static direct diffuse (diffuse only, no specular). The lights that
+    // fed this term are excluded from the runtime set above, so it does not
+    // double-count. Zero on unbaked meshes.
+    if (frame.BakedDirectEnabled != 0u)
+        lit += baseColor.rgb * SampleBakedDirect();
+
+    outColor = vec4(ResolveOutput(lit + emission), baseColor.a);
 }

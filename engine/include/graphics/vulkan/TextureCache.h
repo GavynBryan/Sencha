@@ -102,6 +102,9 @@ public:
     // or an invalid handle if none exists.
     [[nodiscard]] TextureHandle Find(std::string_view name) const;
 
+    // The path the handle was registered under (empty for unnamed textures).
+    [[nodiscard]] std::string_view GetName(TextureHandle handle) const;
+
     // -- Hot reload (Stage 6, Decision H) -------------------------------------
     //
     // Swaps a resident texture's GPU image in place: builds the new image,

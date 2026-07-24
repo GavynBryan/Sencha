@@ -35,6 +35,12 @@ struct CookFace
 {
     AssetRef                      Material;  // resolved: the level default is already applied
     std::vector<StaticMeshVertex> Triangles; // world space, 3 per triangle
+    // Lightmap chart identity, present only when the cook bakes lighting:
+    // Chart is a document-global chart index and ChartUv holds one chart-space
+    // UV (world units) per Triangles entry. Chart-space UVs are computed from
+    // world positions before cells rebase them, so they survive clustering.
+    std::uint32_t                 Chart = 0xFFFFFFFFu;
+    std::vector<Vec2d>            ChartUv;
 };
 
 // The distinct materials across `faces`, in first-seen order. This is the

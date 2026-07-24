@@ -79,6 +79,30 @@ protected:
         return levelPath;
     }
 
+    // A brush level whose default material references a source PNG, so the cook
+    // has a referenced-asset import to publish.
+    fs::path AuthorTexturedLevel(std::string_view stem)
+    {
+        const fs::path checkerMat = Root / "materials/dev/checker.smat";
+        std::ofstream(checkerMat, std::ios::trunc)
+            << R"({"version":1,"base_color_texture":"asset://textures/dev/checker.png"})";
+        const fs::path checkerPng = Root / "textures/dev/checker.png";
+        fs::create_directories(checkerPng.parent_path());
+        {
+            std::ofstream png(checkerPng, std::ios::binary | std::ios::trunc);
+            png.write(reinterpret_cast<const char*>(kCheckerPng), sizeof(kCheckerPng));
+        }
+
+        EditorDocument doc(Logging);
+        doc.SetDefaultMaterial(
+            AssetRef{ AssetType::Material, "asset://materials/dev/checker.smat" });
+        doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+        const fs::path levelPath = Root / "levels" / (std::string(stem) + ".json");
+        fs::create_directories(levelPath.parent_path());
+        EXPECT_TRUE(doc.SaveAs(levelPath.generic_string()));
+        return levelPath;
+    }
+
     fs::path Root;
     LoggingProvider Logging;
 };
@@ -168,4 +192,52 @@ TEST_F(BrushCollisionCookTest, MaterialTextureCooksAndRegistersUnderSourcePath)
     ASSERT_NE(texture, nullptr);
     EXPECT_EQ(texture->Type, AssetType::Texture);
     EXPECT_TRUE(fs::exists(texture->FilePath));
+}
+
+// Characterization: a cook that fails at publication leaves the active cooked
+// tree and index exactly as they were. Referenced-asset imports stage through
+// the document transaction, so a rolled-back cook publishes none of them.
+TEST_F(BrushCollisionCookTest, FailedPublicationLeavesImportedAssetsAndIndexUntouched)
+{
+    const fs::path levelPath = AuthorTexturedLevel("failing");
+
+    // Sabotage the commit: a read-only .cooked/levels blocks every rename into
+    // it, so the transaction stages everything then rolls back at commit. All
+    // cook output (including the texture import) stages elsewhere first, so the
+    // cook reaches commit before failing.
+    const fs::path cookedLevels = Root / ".cooked/levels";
+    fs::create_directories(cookedLevels);
+    fs::permissions(cookedLevels, fs::perms::owner_read | fs::perms::owner_exec,
+                    fs::perm_options::replace);
+
+    const DocumentCookResult result = CookDocument(levelPath, Root, /*cellSize*/ 16.0);
+
+    // Restore before asserting so TearDown can clean up regardless of outcome.
+    fs::permissions(cookedLevels, fs::perms::owner_all, fs::perm_options::replace);
+
+    EXPECT_FALSE(result.Success);
+    EXPECT_FALSE(fs::exists(Root / ".cooked/textures/dev/checker.png.stex"))
+        << "a failed cook must not publish the referenced-texture import";
+    EXPECT_FALSE(fs::exists(Root / ".cooked/index.json"))
+        << "a failed cook must not mutate the active cooked index";
+}
+
+// Referenced-asset freshness runs before the whole-document fast path: a missing
+// or stale referenced artifact defeats the cache hit and is re-published.
+TEST_F(BrushCollisionCookTest, FullCacheHitRefreshesMissingReferencedArtifact)
+{
+    const fs::path levelPath = AuthorTexturedLevel("cached");
+    const fs::path stex = Root / ".cooked/textures/dev/checker.png.stex";
+
+    ASSERT_TRUE(CookDocument(levelPath, Root, /*cellSize*/ 16.0).Success);
+    ASSERT_TRUE(fs::exists(stex));
+
+    // Remove the cooked referenced artifact; every other input is unchanged, so
+    // the second cook takes the whole-document cache hit.
+    fs::remove(stex);
+
+    const DocumentCookResult second = CookDocument(levelPath, Root, /*cellSize*/ 16.0);
+    ASSERT_TRUE(second.Success) << second.Error;
+    EXPECT_TRUE(fs::exists(stex))
+        << "the recook should restore the missing referenced artifact";
 }

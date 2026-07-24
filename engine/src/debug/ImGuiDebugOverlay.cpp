@@ -52,12 +52,15 @@ ImGuiDebugOverlay::~ImGuiDebugOverlay()
 	Teardown();
 }
 
-void ImGuiDebugOverlay::Setup(const RendererServices& services)
+bool ImGuiDebugOverlay::Setup(const RendererServices& services)
 {
 	Log = services.Logging ? &services.Logging->GetLogger<ImGuiDebugOverlay>() : nullptr;
 	Valid = InitImGui(services);
 	if (Valid && Log)
 		Log->Info("ImGui debug overlay ready - press ` to toggle");
+	// Nothing this feature does works without an ImGui context, so a failed
+	// init leaves nothing worth registering.
+	return Valid;
 }
 
 void ImGuiDebugOverlay::OnDraw(const FrameContext& frame)
@@ -126,6 +129,9 @@ bool ImGuiDebugOverlay::InitImGui(const RendererServices& services)
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	// No layout persistence: the overlay ships in every game build and must
+	// not shed an imgui.ini into the game's working directory.
+	io.IniFilename = nullptr;
 	ImGui::StyleColorsDark();
 
 	const std::array<VkDescriptorPoolSize, 11> poolSizes{{

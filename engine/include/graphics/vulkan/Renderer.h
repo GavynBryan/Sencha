@@ -24,6 +24,7 @@ class VulkanDescriptorCache;
 class VulkanFrameScratch;
 class VulkanUploadContextService;
 class VulkanDepthTarget;
+struct RenderInstrumentation;
 
 //=============================================================================
 // Renderer
@@ -83,6 +84,10 @@ struct RendererServices
     VulkanFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
+    // The engine's instrumentation bundle. The pointer is stable for the
+    // renderer's life; the members flip with render.profile.mode, so cache
+    // the bundle and re-read its members per frame, never the members.
+    const RenderInstrumentation* Instrumentation = nullptr;
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to
@@ -120,8 +125,10 @@ public:
     virtual void Contribute(VulkanBootstrapPolicy& /*policy*/) {}
 
     // Runs once, inside Renderer::AddFeature. Cache service pointers here.
-    // Do any up-front GPU resource creation here too.
-    virtual void Setup(const RendererServices& services) = 0;
+    // Do any up-front GPU resource creation here too. Returning false means
+    // the feature is not usable: AddFeature tears it down and refuses to
+    // register it, rather than leaving an inert feature in a phase bucket.
+    [[nodiscard]] virtual bool Setup(const RendererServices& services) = 0;
 
     // Per-frame record. For MainColor features the command buffer is
     // already inside vkCmdBeginRendering on the swapchain image. Features
@@ -136,14 +143,6 @@ public:
 class Renderer
 {
 public:
-    enum class DrawStatus
-    {
-        Ok,
-        SwapchainOutOfDate, // caller should recreate the swapchain
-        Skipped,            // frame wasn't renderable (e.g. minimized)
-        Error
-    };
-
     Renderer(LoggingProvider& logging,
              VulkanDeviceService& device,
              VulkanPhysicalDeviceService& physicalDevice,
@@ -188,12 +187,17 @@ public:
     // results so RuntimeFrameLoop can keep render instability out of game time.
     RenderFrameResult DrawFrameScheduled();
 
-    // Legacy one-call frame driver kept as a narrow compatibility wrapper.
-    DrawStatus DrawFrame();
     [[nodiscard]] const RendererFrameTiming& GetLastTiming() const { return LastTiming; }
 
     // Reset per-swapchain-image tracking after VulkanSwapchainService::Recreate.
     void NotifySwapchainRecreated();
+
+    // Installs the engine's instrumentation bundle. Must run before any
+    // AddFeature so every feature Setup sees it in RendererServices.
+    void SetInstrumentation(const RenderInstrumentation* instrumentation)
+    {
+        Services.Instrumentation = instrumentation;
+    }
 
 private:
     Logger& Log;

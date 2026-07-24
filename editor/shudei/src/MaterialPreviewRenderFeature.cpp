@@ -32,12 +32,17 @@ MaterialPreviewRenderFeature::MaterialPreviewRenderFeature(RuntimeAssets& assets
 {
 }
 
-void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
+bool MaterialPreviewRenderFeature::Setup(const RendererServices& services)
 {
     Services = services;
     Targets.Setup(services);
     Backdrop.Setup(services);
-    Forward.Setup(services);
+    if (!Lighting.Setup(services) && services.Logging != nullptr)
+    {
+        services.Logging->GetLogger<MaterialPreviewRenderFeature>().Warn(
+            "Lighting bindings failed to set up; preview forward pass disabled");
+    }
+    Forward.Setup(services, Lighting);
 
     for (std::size_t i = 0; i < Meshes.size(); ++i)
     {
@@ -45,11 +50,15 @@ void MaterialPreviewRenderFeature::Setup(const RendererServices& services)
         Meshes[i] = Assets.StaticMeshes.CreateFromData(PreviewPrimitiveName(kind),
                                                        BuildPreviewPrimitive(kind));
     }
+    // A failed lighting set disables the preview's forward pass, not the
+    // feature: the backdrop still renders.
+    return true;
 }
 
 void MaterialPreviewRenderFeature::Teardown()
 {
     Forward.Teardown();
+    Lighting.Teardown();
     Backdrop.Teardown();
     Targets.Teardown();
 }

@@ -240,7 +240,7 @@ bool MeshLoader::LoadFromReader(BinaryReader& reader,
         return false;
     }
     const bool skinned = (header.Flags & kSmeshFlagSkinned) != 0;
-    if ((header.Flags & ~kSmeshFlagSkinned) != 0)
+    if ((header.Flags & ~(kSmeshFlagSkinned | kSmeshFlagLightmapUv)) != 0)
     {
         Log.Error("MeshLoader: failed to load '{}': unsupported flags", sourceName);
         return false;

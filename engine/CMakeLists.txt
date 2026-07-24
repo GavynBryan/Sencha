@@ -50,6 +50,22 @@ if(NOT SENCHA_ENABLE_COOK)
     endforeach()
 endif()
 
+if(NOT SENCHA_ENABLE_RENDER_PROFILING)
+    # The mode enum, RenderInstrumentation (always-null when disabled), the
+    # RenderStats aggregate, and the pass-local counter accumulation stay
+    # compiled in every build; only the instrumentation bodies are removed.
+    foreach(_pattern
+        "[/\\\\]graphics[/\\\\]vulkan[/\\\\]GpuTimestampPool\\."
+        "[/\\\\]graphics[/\\\\]vulkan[/\\\\]VulkanDebugLabels\\."
+        "[/\\\\]profiling[/\\\\]RenderCapture\\."
+        "[/\\\\]debug[/\\\\]RenderStatsPanel\\."
+        "[/\\\\]render[/\\\\]RenderDebugView\\."
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
 set(SENCHA_ENGINE_GENERATED_HEADERS)
 
 if(SENCHA_ENABLE_VULKAN)
@@ -73,10 +89,49 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kMeshForwardFragSpv
         OUT_HEADER _mesh_forward_frag_header
     )
+    if(SENCHA_ENABLE_RENDER_PROFILING)
+        sencha_compile_shader(
+            SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_debug_view.frag.glsl"
+            STAGE frag
+            OUTPUT_SPV _mesh_debug_view_frag_spv
+        )
+        sencha_embed_spirv(
+            SOURCE_SPV "${_mesh_debug_view_frag_spv}"
+            VAR_NAME kMeshDebugViewFragSpv
+            OUT_HEADER _mesh_debug_view_frag_header
+        )
+    endif()
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_depth.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _shadow_depth_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_shadow_depth_vert_spv}"
+        VAR_NAME kShadowDepthVertSpv
+        OUT_HEADER _shadow_depth_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_depth.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _shadow_depth_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_shadow_depth_frag_spv}"
+        VAR_NAME kShadowDepthFragSpv
+        OUT_HEADER _shadow_depth_frag_header
+    )
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"
+        "${_shadow_depth_vert_header}"
+        "${_shadow_depth_frag_header}"
     )
+    if(SENCHA_ENABLE_RENDER_PROFILING)
+        list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+            "${_mesh_debug_view_frag_header}"
+        )
+    endif()
 endif()
 
 # --- Game-module ABI fingerprint (docs/plans/sencha-level-editor/09-module-abi-hardening.md) ---
@@ -153,6 +208,13 @@ add_library(sencha_engine SHARED
     ${SENCHA_ENGINE_GENERATED_HEADERS}
 )
 add_library(sencha::engine ALIAS sencha_engine)
+
+# The ELF and MinGW builds export every non-hidden symbol from the shared
+# engine, and consumers are built against that surface. MSVC exports nothing
+# without a declspec or a module definition file, so let CMake generate the
+# export table and keep one surface across toolchains. Game modules are a
+# separate case: they export one factory through SENCHA_GAME_EXPORT.
+set_target_properties(sencha_engine PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # Mirror the on-disk src/ and include/ layout in IDE project trees (Visual
 # Studio, Xcode, Qt Creator). Cosmetic for Ninja/Make. Generated headers live
@@ -261,6 +323,9 @@ target_include_directories(sencha_engine SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 # reproducible on one build, no CROSS_PLATFORM_DETERMINISTIC cost. The sample,
 # viewer, and test apps are off (library only); OVERRIDE_CXX_FLAGS/ENABLE_ALL_WARNINGS
 # off so Jolt does not clobber our flags or fail our build on its own warnings.
+# Jolt defaults to the static MSVC runtime while everything else here uses the
+# dynamic one, which links as an LNK2038 runtime-library mismatch.
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(TARGET_UNIT_TESTS            OFF CACHE BOOL "" FORCE)
 set(TARGET_HELLO_WORLD           OFF CACHE BOOL "" FORCE)
 set(TARGET_PERFORMANCE_TEST      OFF CACHE BOOL "" FORCE)
@@ -294,10 +359,6 @@ if(SENCHA_ENABLE_VULKAN)
         GIT_TAG v3.2.1
     )
     FetchContent_MakeAvailable(VulkanMemoryAllocator)
-    # PRIVATE link: the VMA implementation is compiled into the engine .so. Its
-    # header leaks through public graphics/vulkan headers, so the header dir
-    # (not the link) goes onto the public interface, mapped to the install tree
-    # for an out-of-tree module. vk_mem_alloc.h itself is installed below.
     target_link_libraries(sencha_engine PRIVATE GPUOpen::VulkanMemoryAllocator)
     target_include_directories(sencha_engine SYSTEM PUBLIC
         "$<BUILD_INTERFACE:${vulkanmemoryallocator_SOURCE_DIR}/include>"
@@ -343,7 +404,7 @@ if(SENCHA_ENABLE_VULKAN)
         set(IMGUI_DIR "${imgui_SOURCE_DIR}")
     endif()
 
-    add_library(sencha_imgui_support STATIC
+    add_library(sencha_imgui_support OBJECT
         "${IMGUI_DIR}/imgui.cpp"
         "${IMGUI_DIR}/imgui_draw.cpp"
         "${IMGUI_DIR}/imgui_tables.cpp"
@@ -365,21 +426,65 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    # PRIVATE link: imgui is compiled into sencha_imgui_support and statically
-    # linked into the engine .so, which re-exports the ImGui symbols (the editor
-    # links only sencha::engine yet calls ImGui). A consumer therefore needs the
-    # imgui headers (leaked by public debug/ and serialization headers) but not
-    # the static lib, so only the header dirs go on the public interface.
+    # The engine is the single ImGui provider: the editors link only
+    # sencha::engine yet call ImGui, so the engine has to carry those symbols on
+    # its exported surface. Hence an OBJECT library rather than a static one.
+    # The Windows export table is generated from the shared library's own object
+    # files, and symbols that arrive from a linked static library are not in it,
+    # which leaves every editor with unresolved ImGui symbols. A consumer needs
+    # the imgui headers (leaked by public debug/ and serialization headers) but
+    # not the objects, so only the header dirs go on the public interface.
     target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)
     target_include_directories(sencha_engine SYSTEM PUBLIC
         "$<BUILD_INTERFACE:${IMGUI_DIR}>"
         "$<BUILD_INTERFACE:${IMGUI_DIR}/backends>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
+    # The generated export table resolves imported functions on its own, but a
+    # consumer reaching imported DATA (GImGui, via the imgui_internal.h inline
+    # helpers) must compile against a dllimport declaration or the reference
+    # never targets the import table. ImGui anticipates DLL hosting with its
+    # IMGUI_API macro on every function and on GImGui: export while compiling
+    # into the engine, import everywhere else.
+    if(WIN32)
+        target_compile_definitions(sencha_imgui_support
+            PRIVATE "IMGUI_API=__declspec(dllexport)")
+        target_compile_definitions(sencha_engine
+            PRIVATE   "IMGUI_API=__declspec(dllexport)"
+            INTERFACE "IMGUI_API=__declspec(dllimport)")
+        # binutils ld stops auto-exporting a DLL's symbols the moment any
+        # symbol is explicitly dllexported, so without this the MinGW engine
+        # would export ImGui and nothing else. MSVC has no equivalent problem:
+        # its export table comes from the generated def file either way.
+        if(NOT MSVC)
+            target_link_options(sencha_engine PRIVATE "-Wl,--export-all-symbols")
+        endif()
+    endif()
+
     if(SENCHA_ENABLE_DEBUG_UI)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
     endif()
 endif()
+
+if(SENCHA_ENABLE_RENDER_PROFILING)
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_RENDER_PROFILING)
+endif()
+
+# Build identity for render captures: a measurement that cannot name the build
+# it came from cannot be compared against another one. Resolved at configure
+# time, so a capture taken after later commits reports the configured SHA;
+# reconfigure (or touch the cache) when that distinction matters.
+execute_process(
+    COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+    OUTPUT_VARIABLE SENCHA_BUILD_SHA_VALUE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if(NOT SENCHA_BUILD_SHA_VALUE)
+    set(SENCHA_BUILD_SHA_VALUE "unknown")
+endif()
+target_compile_definitions(sencha_engine PRIVATE
+    SENCHA_BUILD_SHA="${SENCHA_BUILD_SHA_VALUE}"
+    SENCHA_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
 
 add_library(engine ALIAS sencha_engine)
 

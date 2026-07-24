@@ -133,13 +133,19 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
 {
     Material material;
     material.Pass = ShaderPassId::ForwardOpaque;
+    material.Shading = desc.Shading;
     material.BaseColor = desc.BaseColorFactor;
     material.EmissiveFactor = desc.EmissiveFactor;
     material.NormalScale = desc.NormalScale;
     material.RoughnessFactor = desc.RoughnessFactor;
     material.MetallicFactor = desc.MetallicFactor;
+    material.SpecularIntensity = desc.SpecularIntensity;
+    material.EmissiveStrength = desc.EmissiveStrength;
     material.AlphaMode = desc.AlphaMode;
     material.AlphaCutoff = desc.AlphaCutoff;
+    material.DoubleSided = desc.DoubleSided;
+    material.ReceiveShadows = desc.ReceiveShadows;
+    material.CastShadows = desc.CastShadows;
 
     if (material.AlphaMode == MaterialAlphaMode::Blend)
     {
@@ -193,6 +199,6 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     }
 
     outIndex = bindless.Value;
-    // LoadTexture already incremented the refcount -- wrap without attaching.
+    // LoadTexture already incremented the refcount. Wrap without attaching.
     owned.emplace_back(Textures, handle, TextureCacheHandle::NoAttachTag{});
 }

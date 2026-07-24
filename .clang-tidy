@@ -1,0 +1,8 @@
+Checks: >
+  bugprone-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions
+WarningsAsErrors: ''
+HeaderFilterRegex: 'engine/(src|include)/(render|graphics|profiling)/'
+FormatStyle: none

@@ -3,20 +3,38 @@
 #include "document/BrushCookInput.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "render/EditorLightGather.h"
 
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <core/assets/AssetSystem.h>
+#include <core/json/JsonParser.h>
+#include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
+#include <render/ShadowCasterExtractionSystem.h>
+#include <render/SpotLightComponent.h>
+#include <render/RenderEntityKey.h>
 #include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/SceneSerializationContext.h>
+#include <world/serialization/SceneSerializer.h>
+#include <world/transform/TransformComponents.h>
+#include <zone/DefaultZoneBuilder.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <fstream>
+#include <optional>
+#include <sstream>
 #include <utility>
 
 namespace
@@ -75,11 +93,16 @@ namespace
 
 SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  StaticMeshCache& meshes,
+                                                 MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
-                                                 LoggingProvider& logging)
+                                                 LoggingProvider& logging,
+                                                 TextureCache* textures)
     : Assets(assets)
     , Meshes(meshes)
+    , Materials(materials)
     , MaterialSets(materialSets)
+    , Textures(textures)
+    , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
 }
@@ -92,9 +115,47 @@ SceneRenderQueueBuilder::~SceneRenderQueueBuilder()
 void SceneRenderQueueBuilder::Build(const EditorDocument& document)
 {
     RebuildBrushMeshes(document);
-    EmitBrushQueue();
-    BuildMeshQueue(document);
-    BuildLights(document);
+    const bool preview = PreviewEnabled && PreviewRegistry != nullptr;
+    if (preview)
+    {
+        // The cooked snapshot replaces both solid queues: cells carry the
+        // atlas, and placements carry their cooked scale/bias. Live geometry
+        // still feeds the shadow casters below (it is the same geometry).
+        EmitPreviewQueue();
+        PlacedMeshes.Reset();
+        PlacedMeshes.SortOpaque();
+    }
+    else
+    {
+        EmitBrushQueue();
+        BuildMeshQueue(document);
+    }
+    BuildLights(document, /*skipDirectLights*/ preview);
+    BuildShadowCasters(document);
+
+    // Probe volumes are cook inputs (they select the .sprobe lattice), so
+    // editing one restales the badge like a brush or light edit does. No
+    // visibility filter: the cook bakes hidden volumes too.
+    uint64_t probeVolumesHash = kFnvOffset;
+    const EditorScene& scene = document.GetScene();
+    const World& world = scene.GetRegistry().Components;
+    if (world.IsRegistered<IrradianceVolumeComponent>())
+    {
+        world.ForEachComponent<IrradianceVolumeComponent>(
+            [&](EntityId entity, const IrradianceVolumeComponent& volume)
+            {
+                const Transform3f* transform = scene.TryGetTransform(entity);
+                if (transform == nullptr)
+                    return;
+                HashBytes(probeVolumesHash, &transform->Position,
+                          sizeof(transform->Position));
+                HashBytes(probeVolumesHash, &volume, sizeof(volume));
+            });
+    }
+
+    CurrentDocHash = BrushHash ^ (LightsHash * 0x9E3779B97F4A7C15ull)
+        ^ (probeVolumesHash * 0xC2B2AE3D27D4EB4Full);
+    PreviewStale = PreviewRegistry != nullptr && CurrentDocHash != PreviewDocHash;
 }
 
 void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
@@ -231,27 +292,218 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     PlacedMeshes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
+void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& source)
 {
-    // Reset() clears only the light count; the ambient tints are owned by the
-    // caller (EditorRenderFeature sets them from render.ambient.* cvars), so we
-    // leave them untouched here.
+    PreviewRegistry.reset();
+
+    std::ifstream file(source.CookedScenePath);
+    if (!file.is_open())
+    {
+        Log.Error("lightmap preview: cannot open '{}'",
+                  source.CookedScenePath.generic_string());
+        return;
+    }
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    JsonParseError parseError;
+    const std::optional<JsonValue> json = JsonParse(buffer.str(), &parseError);
+    if (!json)
+    {
+        Log.Error("lightmap preview: parse error in '{}': {}",
+                  source.CookedScenePath.generic_string(), parseError.Message);
+        return;
+    }
+
+    auto registry = std::make_unique<Registry>();
+    InitializeDefault3DRegistry(*registry, &Meshes, &MaterialSets,
+                                nullptr, nullptr, nullptr, Textures);
+    SceneSerializationContext context(Logging, &Assets);
+    SceneLoadError loadError;
+    if (!LoadSceneJson(*json, *registry, context, &loadError))
+    {
+        Log.Error("lightmap preview: scene load error: {}", loadError.Message);
+        return;
+    }
+
+    PreviewRegistry = std::move(registry);
+    PreviewDocHash = CurrentDocHash;
+    PreviewStale = false;
+    Log.Info("lightmap preview: loaded '{}'", source.CookedScenePath.generic_string());
+}
+
+void SceneRenderQueueBuilder::EmitPreviewQueue()
+{
+    Brushes.Reset();
+    const World& world = PreviewRegistry->Components;
+
+    std::uint32_t lightmapIndex = UINT32_MAX;
+    std::uint32_t aoIndex = UINT32_MAX;
+    if (Textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+        world.ForEachComponent<ZoneLightmapComponent>(
+            [&](EntityId, const ZoneLightmapComponent& lightmap)
+            {
+                const BindlessImageIndex index =
+                    Textures->GetBindlessIndex(lightmap.Texture);
+                if (index.IsValid())
+                    lightmapIndex = index.Value;
+                const BindlessImageIndex ao =
+                    Textures->GetBindlessIndex(lightmap.Ao);
+                if (ao.IsValid())
+                    aoIndex = ao.Value;
+            });
+
+    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
+        world.ForEachComponent<StaticMeshComponent>(
+            [&](EntityId entity, const StaticMeshComponent& renderer)
+            {
+                if (!renderer.Visible)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const GpuStaticMesh* mesh = Meshes.Get(renderer.Mesh);
+                const std::vector<MaterialHandle>* sectionMaterials =
+                    MaterialSets.Get(renderer.Materials);
+                if (transform == nullptr || mesh == nullptr
+                    || sectionMaterials == nullptr || sectionMaterials->empty())
+                    return;
+
+                const Mat4 worldMatrix = transform->Value.ToMat4();
+                const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
+                for (uint32_t section = 0;
+                     section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
+                {
+                    if ((renderer.SectionMask & (1u << section)) == 0)
+                        continue;
+                    const uint32_t slot = mesh->Sections[section].MaterialSlot;
+                    const MaterialHandle material = slot < sectionMaterials->size()
+                        ? (*sectionMaterials)[slot]
+                        : sectionMaterials->back();
+                    if (!material.IsValid())
+                        continue;
+
+                    RenderQueueItem item{};
+                    item.Mesh = renderer.Mesh;
+                    item.Material = material;
+                    item.SectionIndex = section;
+                    item.WorldMatrix = worldMatrix;
+                    item.WorldBounds = worldBounds;
+                    item.LightmapTextureIndex = lightmapIndex;
+                    item.AoTextureIndex = aoIndex;
+                    item.LightmapScaleBias = renderer.LightmapScaleBias;
+                    Brushes.AddOpaque(item);
+                }
+            });
+    Brushes.SortOpaque();
+}
+
+void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
+                                          bool skipDirectLights)
+{
+    // Reset() clears only the packed counts; the ambient tints and shadow
+    // tunables are owned by the caller (EditorRenderFeature stamps them from
+    // render.* cvars before Build), so we leave them untouched here. The
+    // shadow-view gather below reads ShadowSoftness, which is why the stamp
+    // has to happen first.
     SceneLights.Reset();
+    LightSelectionCurrent = false;
+    EditorLightGather gathered = GatherEditorLights(
+        document, skipDirectLights, SceneLights.ShadowSoftness);
+    LightCandidates = std::move(gathered.Candidates);
+    LightsHash = gathered.ContentHash;
+}
+
+std::span<const SpotShadowRequest> SceneRenderQueueBuilder::BuildShadowRequests(
+    const Vec<3>& viewOrigin)
+{
+    SelectForwardLights(LightCandidates, viewOrigin, SceneLights,
+                        ShadowRequests, PointShadowRequests);
+    LightSelectionCurrent = true;
+    return ShadowRequests;
+}
+
+std::span<const PointShadowRequest> SceneRenderQueueBuilder::BuildPointShadowRequests(
+    const Vec<3>& viewOrigin)
+{
+    if (!LightSelectionCurrent)
+    {
+        SelectForwardLights(LightCandidates, viewOrigin, SceneLights,
+                            ShadowRequests, PointShadowRequests);
+        LightSelectionCurrent = true;
+    }
+    return PointShadowRequests;
+}
+
+void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
+{
+    SceneCasters.Reset();
 
     const EditorScene& scene = document.GetScene();
-    const World& world = scene.GetRegistry().Components;
+    const Registry& registry = scene.GetRegistry();
+
+    // Brush geometry is baked in world space at identity, so its mesh bounds
+    // are already world bounds. Every section is offered; the engine caster
+    // policy drops sections whose material opts out. Cooked brushes have no
+    // entity, so their diff records key on the bake ordinal in a high-bit
+    // index namespace real entities cannot reach; a rebake recreates every
+    // brush mesh handle, so any brush edit reads as changed records over the
+    // affected bounds.
+    std::uint32_t brushOrdinal = 0;
+    for (const CachedBrushMesh& entry : BrushMeshes)
+    {
+        const GpuStaticMesh* mesh = Meshes.Get(entry.Mesh);
+        if (mesh == nullptr)
+            continue;
+        const ShadowCasterGatherResult gathered = AppendShadowCasterSections(
+            entry.Mesh, *mesh, entry.SlotMaterials, Materials,
+            ~0u, Mat4::Identity(), mesh->LocalBounds, SceneCasters);
+        const std::uint32_t ordinal = brushOrdinal++;
+        if (gathered.EffectiveSectionMask == 0)
+            continue;
+
+        RenderEntityKey key = MakeRenderEntityKey(
+            registry, EntityId{ .Index = 0x80000000u | ordinal, .Generation = 0 });
+        SceneCasters.Records.push_back(ShadowCasterRecord{
+            .Key = key,
+            .State = ShadowCasterState{
+                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                .Mesh = entry.Mesh,
+                .Materials = MaterialSetHandle{},
+                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                .ShadowMaterialStateHash = gathered.MaterialStateHash,
+            },
+        });
+    }
+
+    const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))
             continue;
-        const PointLightComponent* light = world.TryGet<PointLightComponent>(entity);
-        if (light == nullptr || !light->Enabled)
+        const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
+        if (renderer == nullptr)
             continue;
+        const GpuStaticMesh* mesh = Meshes.Get(renderer->Mesh);
+        const std::vector<MaterialHandle>* sectionMaterials =
+            MaterialSets.Get(renderer->Materials);
         const Transform3f* transform = scene.TryGetTransform(entity);
-        if (transform == nullptr)
+        if (mesh == nullptr || sectionMaterials == nullptr || transform == nullptr)
             continue;
 
-        SceneLights.AddPoint(transform->Position, *light);
+        const ShadowCasterGatherResult gathered = AppendShadowCasters(
+            *renderer, *mesh, *sectionMaterials, Materials,
+            transform->ToMat4(), SceneCasters);
+        if (gathered.EffectiveSectionMask == 0)
+            continue;
+
+        SceneCasters.Records.push_back(ShadowCasterRecord{
+            .Key = MakeRenderEntityKey(registry, entity),
+            .State = ShadowCasterState{
+                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+                .Mesh = renderer->Mesh,
+                .Materials = renderer->Materials,
+                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+                .ShadowMaterialStateHash = gathered.MaterialStateHash,
+            },
+        });
     }
 }
 

@@ -10,27 +10,30 @@ class ConsoleRegistry;
 struct ProjectDescriptor;
 struct RuntimeAssets;
 
-// Drives the editor's author -> cook -> play loop: cooks the live document into
-// the project's assets and launches/stops an out-of-process play session (PIE)
-// bound to a cooked map. Owns the PieSession and registers the cook/play/stop/
-// project console commands and the cook cell-size cvar. The toolbar Cook/Play/
-// Stop buttons route here too.
+// Launches and stops an out-of-process play session against the most recently
+// published cook. Cooking is owned independently by CookSession.
 class PieDriver
 {
 public:
     PieDriver(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets);
 
-    // Cooks the live document into the project's assets root, returning the cooked
-    // map name ("levels/<name>") or empty on failure. An empty name defaults to the
-    // document's file stem, else "untitled".
-    std::string Cook(const std::string& levelName);
     // Launches a PIE session for `map`; an empty map errors (cook a level first).
     void Play(const std::string& map);
     void Stop();
     [[nodiscard]] bool IsPlaying();
     [[nodiscard]] const std::string& LastCookedMap() const { return LastCookedMap_; }
+    void UseCookedLevel(std::string map) {
+        LastCookedMap_ = std::move(map);
+        LastCookedWorld_.clear();
+        LastCookedZone_.clear();
+    }
+    void UseCookedWorld(std::string world, std::string zone) {
+        LastCookedMap_.clear();
+        LastCookedWorld_ = std::move(world);
+        LastCookedZone_ = std::move(zone);
+    }
 
-    // Registers `cook`/`play`/`stop`/`project` and the editor.cook.cell_size cvar.
+    // Registers play/stop/project. CookSession owns cook commands and settings.
     void RegisterCommands(ConsoleRegistry& registry);
 
 private:

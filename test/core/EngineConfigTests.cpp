@@ -31,6 +31,8 @@ TEST(EngineConfig, DefaultsDescribeLaunchableEngine)
     EXPECT_FALSE(config.Runtime.ExitOnEscape);
     EXPECT_FALSE(config.Runtime.TogglePauseOnF1);
     EXPECT_EQ(config.Graphics.FramesInFlight, 2u);
+    // Negative scores adapters normally; only an explicit index overrides it.
+    EXPECT_EQ(config.Graphics.DeviceIndex, -1);
     EXPECT_TRUE(config.Debug.ConsoleLogging);
     EXPECT_FALSE(config.Debug.DebugUi);
     EXPECT_TRUE(config.Console.UiEnabled);
@@ -62,7 +64,8 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
         },
         "graphics": {
             "frames_in_flight": 3,
-            "enable_validation": false
+            "enable_validation": false,
+            "device_index": 1
         },
         "debug": {
             "console_logging": false,
@@ -104,6 +107,7 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
     EXPECT_TRUE(loaded->Runtime.TogglePauseOnF1);
     EXPECT_EQ(loaded->Graphics.FramesInFlight, 3u);
     EXPECT_FALSE(loaded->Graphics.EnableValidation);
+    EXPECT_EQ(loaded->Graphics.DeviceIndex, 1);
     EXPECT_FALSE(loaded->Debug.ConsoleLogging);
     EXPECT_TRUE(loaded->Debug.DebugUi);
     EXPECT_TRUE(loaded->Console.UiEnabled);

@@ -97,7 +97,14 @@ private:
         WindowExtent desiredExtent) const;
     [[nodiscard]] uint32_t ChooseImageCount(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
-    bool CreateSwapchain(WindowExtent desiredExtent);
+    // `oldSwapchain` lets the driver reuse the outgoing chain's resources; it
+    // is retired by this call whether or not creation succeeds, so the caller
+    // still owns destroying it.
+    bool CreateSwapchain(WindowExtent desiredExtent,
+                         VkSwapchainKHR oldSwapchain = VK_NULL_HANDLE);
     bool CreateImageViews();
     void DestroySwapchain();
+    // Views and images only. Recreation releases these before creating the
+    // replacement but keeps the chain handle to hand over as oldSwapchain.
+    void DestroySwapchainResources();
 };

@@ -15,6 +15,13 @@
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
+#include <profiling/RenderInstrumentation.h>
+#include <profiling/RenderStats.h>
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+#include <graphics/vulkan/GpuTimestampPool.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
+#endif
 
 #include <chrono>
 
@@ -84,6 +91,10 @@ Renderer::~Renderer()
     // Tear features down before any Vulkan service in our dependency list
     // starts unwinding. Order matters: features hold handles into the caches,
     // the caches own the VkDevice objects, and the device service outlives us.
+    // Features destroy some Vulkan objects directly (descriptor pools,
+    // samplers), so no submitted frame may still be executing when they do.
+    if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
+        vkDeviceWaitIdle(Services.Device->GetDevice());
     for (auto& feature : OwnedFeatures)
     {
         if (feature) feature->Teardown();
@@ -108,7 +119,12 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
         return nullptr;
     }
 
-    feature->Setup(Services);
+    if (!feature->Setup(Services))
+    {
+        Log.Error("Renderer::AddFeature: feature setup failed; not registered");
+        feature->Teardown();
+        return nullptr;
+    }
 
     IRenderFeature* raw = feature.get();
     PhaseBuckets[phaseIdx].push_back(raw);
@@ -143,10 +159,53 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     // any feature draws -- feature code allocates transient UBOs from it.
     Services.Scratch->BeginFrame();
 
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    GpuTimestampPool* gpuScopes = Services.Instrumentation != nullptr
+        ? Services.Instrumentation->GpuTimestamps
+        : nullptr;
+    if (gpuScopes != nullptr)
+        gpuScopes->BeginFrame(frame.CommandBuffer, frame.FrameIndex);
+#endif
+
     const auto recordStart = RendererClock::now();
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
+                                      ToString(GpuScope::PhaseOffscreen));
+        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
+    }
+#endif
     RecordOffscreenPhase(frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
+        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
+                                      ToString(GpuScope::PhaseMainColor));
+        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
+    }
+#endif
     RecordMainColorPhase(frame);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    if (gpuScopes != nullptr)
+    {
+        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
+        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+    }
+#endif
     LastTiming.RecordSeconds = SecondsSince(recordStart);
+
+    if (Services.Instrumentation != nullptr
+        && Services.Instrumentation->Stats != nullptr)
+    {
+        RenderStats& stats = *Services.Instrumentation->Stats;
+        stats.ScratchHighWaterBytes = Services.Scratch->GetHighWaterBytes();
+        stats.ScratchUsedBytes = Services.Scratch->GetUsedBytes();
+        stats.ScratchBytesPerFrame = Services.Scratch->GetBytesPerFrame();
+        stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
+    }
 
     const VulkanFrameStatus end = Frames.EndFrame(frame);
     LastTiming.TotalSeconds = SecondsSince(totalStart);
@@ -165,23 +224,6 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         return RenderFrameResult::Failed;
     }
     return RenderFrameResult::Presented;
-}
-
-Renderer::DrawStatus Renderer::DrawFrame()
-{
-    switch (DrawFrameScheduled())
-    {
-    case RenderFrameResult::Presented:
-        return DrawStatus::Ok;
-    case RenderFrameResult::SwapchainOutOfDate:
-    case RenderFrameResult::SurfaceSuboptimal:
-        return DrawStatus::SwapchainOutOfDate;
-    case RenderFrameResult::SkippedMinimized:
-        return DrawStatus::Skipped;
-    case RenderFrameResult::Failed:
-    default:
-        return DrawStatus::Error;
-    }
 }
 
 void Renderer::NotifySwapchainRecreated()
@@ -232,10 +274,16 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
         t.Image = DepthTarget->GetImage();
         t.OldLayout = DepthLayout;
         t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        // One depth image serves every frame in flight, and a frame only
+        // waits on the fence of the frame two slots back, so this barrier is
+        // what orders these depth writes after the previous frame's. That
+        // needs a first scope naming those writes: TOP_OF_PIPE names no
+        // stage, which would leave the dependency empty.
+        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                   | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                    | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.SrcAccess = 0;
+        t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                     | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;

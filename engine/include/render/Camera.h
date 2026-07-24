@@ -16,7 +16,7 @@
 // Built by CameraRenderDataSystem::Build() before extraction and passed
 // read-only to render features and extraction systems.
 //
-// Matrices use Vulkan conventions: Y-flip and reversed-Z (near=1, far=0).
+// Matrices use Vulkan conventions: Y-flip and standard [0,1] depth.
 //=============================================================================
 struct CameraRenderData
 {

@@ -362,6 +362,10 @@ participation, then later flip participation live in game code.
 
 ## Render And Graphics
 
+This section is the map. `docs/renderer/` is the reference: topology and
+dependency graphs, the Vulkan setup, lighting and shadows, constraints, and
+recipes for extending the renderer.
+
 The render path has three layers:
 
 1. Scene/render-domain data in `render/`: camera components, mesh components,

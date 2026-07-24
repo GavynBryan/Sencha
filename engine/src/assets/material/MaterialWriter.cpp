@@ -23,6 +23,16 @@ namespace
         return a.X == b.X && a.Y == b.Y && a.Z == b.Z && a.W == b.W;
     }
 
+    const char* ShadingName(MaterialShading shading)
+    {
+        switch (shading)
+        {
+        case MaterialShading::Unlit: return "unlit";
+        case MaterialShading::StandardLit:
+        default: return "standard_lit";
+        }
+    }
+
     const char* AlphaModeName(MaterialAlphaMode mode)
     {
         switch (mode)
@@ -41,6 +51,9 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
     JsonValue::Object root;
     root.emplace_back("version", JsonValue(static_cast<int>(kSmatVersion)));
 
+    if (description.Shading != defaults.Shading)
+        root.emplace_back("shading", JsonValue(ShadingName(description.Shading)));
+
     if (!SameVec4(description.BaseColorFactor, defaults.BaseColorFactor))
         root.emplace_back("base_color_factor", FactorArray(description.BaseColorFactor, 4));
     if (!description.BaseColorTexture.Path.empty())
@@ -57,16 +70,26 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
         root.emplace_back("roughness_factor", JsonValue(static_cast<double>(description.RoughnessFactor)));
     if (description.MetallicFactor != defaults.MetallicFactor)
         root.emplace_back("metallic_factor", JsonValue(static_cast<double>(description.MetallicFactor)));
+    if (description.SpecularIntensity != defaults.SpecularIntensity)
+        root.emplace_back("specular_factor", JsonValue(static_cast<double>(description.SpecularIntensity)));
 
     if (!SameVec4(description.EmissiveFactor, defaults.EmissiveFactor))
         root.emplace_back("emissive_factor", FactorArray(description.EmissiveFactor, 3));
     if (!description.EmissiveTexture.Path.empty())
         root.emplace_back("emissive_texture", JsonValue(description.EmissiveTexture.Path));
+    if (description.EmissiveStrength != defaults.EmissiveStrength)
+        root.emplace_back("emissive_strength", JsonValue(static_cast<double>(description.EmissiveStrength)));
 
     if (description.AlphaMode != defaults.AlphaMode)
         root.emplace_back("alpha_mode", JsonValue(AlphaModeName(description.AlphaMode)));
     if (description.AlphaCutoff != defaults.AlphaCutoff)
         root.emplace_back("alpha_cutoff", JsonValue(static_cast<double>(description.AlphaCutoff)));
+    if (description.DoubleSided != defaults.DoubleSided)
+        root.emplace_back("double_sided", JsonValue(description.DoubleSided));
+    if (description.ReceiveShadows != defaults.ReceiveShadows)
+        root.emplace_back("receive_shadows", JsonValue(description.ReceiveShadows));
+    if (description.CastShadows != defaults.CastShadows)
+        root.emplace_back("cast_shadows", JsonValue(description.CastShadows));
 
     return JsonValue(std::move(root));
 }

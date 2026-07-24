@@ -103,7 +103,13 @@ void EditorStatusBar::Draw()
             // Wall clock, right-aligned.
             std::time_t now = std::time(nullptr);
             std::tm tm{};
+            // The reentrant local-time call is spelled differently per platform,
+            // and the two take their arguments in opposite orders.
+#if defined(_WIN32)
+            localtime_s(&tm, &now);
+#else
             localtime_r(&now, &tm);
+#endif
             char clock[16];
             std::strftime(clock, sizeof(clock), ICON_FA_CLOCK "  %H:%M", &tm);
             const float clockWidth = ImGui::CalcTextSize(clock).x;

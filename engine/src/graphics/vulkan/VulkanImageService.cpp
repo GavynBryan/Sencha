@@ -3,6 +3,7 @@
 #include <graphics/vulkan/VulkanAllocatorService.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
+#include <graphics/vulkan/VulkanDebugLabels.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanUploadContextService.h>
 
@@ -102,6 +103,33 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
         return {};
     }
 
+    const bool is3d = info.ViewType == VK_IMAGE_VIEW_TYPE_3D;
+    const bool isCubeArray = info.ViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    if (!is3d && !isCubeArray && info.ViewType != VK_IMAGE_VIEW_TYPE_2D)
+    {
+        Log.Error("ImageCreateInfo view type {} is not supported",
+                  static_cast<int>(info.ViewType));
+        return {};
+    }
+    if (is3d && (info.Depth == 0 || info.ArrayLayers != 1))
+    {
+        Log.Error("3D images need a nonzero depth and a single array layer");
+        return {};
+    }
+    if (isCubeArray
+        && (info.ArrayLayers == 0 || info.ArrayLayers % 6 != 0
+            || info.Extent.width != info.Extent.height))
+    {
+        Log.Error("Cube-array images need square extents and a multiple of six layers");
+        return {};
+    }
+    if (info.ViewType != VK_IMAGE_VIEW_TYPE_2D
+        && (info.GenerateMips || info.MipLevels > 1))
+    {
+        Log.Error("Mip chains are supported for 2D images only");
+        return {};
+    }
+
     uint32_t mipLevels = info.MipLevels == 0 ? 1u : info.MipLevels;
     if (info.GenerateMips)
     {
@@ -118,11 +146,12 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.imageType = is3d ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+    imageInfo.flags = isCubeArray ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0u;
     imageInfo.format = info.Format;
-    imageInfo.extent = { info.Extent.width, info.Extent.height, 1 };
+    imageInfo.extent = { info.Extent.width, info.Extent.height, is3d ? info.Depth : 1u };
     imageInfo.mipLevels = mipLevels;
-    imageInfo.arrayLayers = 1;
+    imageInfo.arrayLayers = info.ArrayLayers;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = usage;
@@ -146,6 +175,9 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     if (info.DebugName != nullptr)
     {
         vmaSetAllocationName(Allocator, allocation, info.DebugName);
+        VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_IMAGE,
+                                      reinterpret_cast<std::uint64_t>(image),
+                                      info.DebugName);
     }
 
     uint32_t index;
@@ -165,9 +197,12 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     entry.Allocation = allocation;
     entry.Format = info.Format;
     entry.Extent = info.Extent;
+    entry.Depth = info.ViewType == VK_IMAGE_VIEW_TYPE_3D ? info.Depth : 1;
     entry.AspectMask = info.AspectMask;
     entry.MipLevels = mipLevels;
     entry.GenerateMips = info.GenerateMips;
+    entry.ViewType = info.ViewType;
+    entry.ArrayLayers = info.ArrayLayers;
     entry.Generation = entry.Generation + 1;
     if (entry.Generation == 0)
     {
@@ -191,13 +226,13 @@ bool VulkanImageService::CreateDefaultView(ImageEntry& entry)
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = entry.Image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType = entry.ViewType;
     viewInfo.format = entry.Format;
     viewInfo.subresourceRange.aspectMask = entry.AspectMask;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = entry.MipLevels;
     viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    viewInfo.subresourceRange.layerCount = entry.ArrayLayers;
 
     const VkResult result = vkCreateImageView(Device, &viewInfo, nullptr, &entry.View);
     if (result != VK_SUCCESS)
@@ -272,6 +307,19 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
         Log.Error("Upload: invalid ImageHandle");
         return false;
     }
+    // 3D images upload as one region spanning every depth slice (they are a
+    // single array layer); cube/array images still have no upload path.
+    const bool is3d = entry->ViewType == VK_IMAGE_VIEW_TYPE_3D;
+    if ((entry->ViewType != VK_IMAGE_VIEW_TYPE_2D && !is3d) || entry->ArrayLayers != 1)
+    {
+        Log.Error("Upload supports 2D and 3D single-layer images only");
+        return false;
+    }
+    if (is3d && entry->GenerateMips)
+    {
+        Log.Error("Upload: mip generation is not supported for 3D images");
+        return false;
+    }
 
     // Staging buffer.
     VkBufferCreateInfo bufferInfo{};
@@ -332,7 +380,7 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = { entry->Extent.width, entry->Extent.height, 1 };
+    region.imageExtent = { entry->Extent.width, entry->Extent.height, entry->Depth };
 
     vkCmdCopyBufferToImage(
         cmd, staging, entry->Image,
@@ -374,6 +422,11 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
     if (entry == nullptr)
     {
         Log.Error("UploadMips: invalid ImageHandle");
+        return false;
+    }
+    if (entry->ViewType != VK_IMAGE_VIEW_TYPE_2D || entry->ArrayLayers != 1)
+    {
+        Log.Error("UploadMips supports 2D single-layer images only");
         return false;
     }
 

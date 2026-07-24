@@ -103,8 +103,22 @@ bool VulkanSwapchainService::Recreate(WindowExtent desiredExtent)
     }
 
     vkDeviceWaitIdle(Device);
-    DestroySwapchain();
-    const bool created = CreateSwapchain(desiredExtent);
+
+    // Hand the outgoing chain to the new one instead of destroying it first:
+    // the driver can reuse its resources, and there is no window where no
+    // swapchain exists. Its views and images go now (they belong to it), but
+    // the handle survives until creation has had its chance at them.
+    const VkSwapchainKHR retiring = Swapchain;
+    DestroySwapchainResources();
+    Swapchain = VK_NULL_HANDLE;
+
+    const bool created = CreateSwapchain(desiredExtent, retiring);
+    if (retiring != VK_NULL_HANDLE)
+    {
+        // Retired by the create call whether or not it succeeded, so this is
+        // the only place it can be released.
+        vkDestroySwapchainKHR(Device, retiring, nullptr);
+    }
     if (created)
         ++RecreateCount;
     return created;
@@ -321,7 +335,8 @@ uint32_t VulkanSwapchainService::ChooseImageCount(
     return imageCount;
 }
 
-bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent)
+bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent,
+                                             VkSwapchainKHR oldSwapchain)
 {
     if (desiredExtent.Width == 0 || desiredExtent.Height == 0)
     {
@@ -361,7 +376,7 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent)
     createInfo.compositeAlpha = compositeAlpha;
     createInfo.presentMode = presentMode;
     createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
+    createInfo.oldSwapchain = oldSwapchain;
 
     const auto& families = Queues.GetQueueFamilies();
     uint32_t queueFamilyIndices[] = { *families.Graphics, *families.Present };
@@ -466,6 +481,18 @@ bool VulkanSwapchainService::CreateImageViews()
 
 void VulkanSwapchainService::DestroySwapchain()
 {
+    DestroySwapchainResources();
+
+    if (Swapchain != VK_NULL_HANDLE)
+    {
+        vkDestroySwapchainKHR(Device, Swapchain, nullptr);
+        Swapchain = VK_NULL_HANDLE;
+        Log.Info("Vulkan swapchain destroyed");
+    }
+}
+
+void VulkanSwapchainService::DestroySwapchainResources()
+{
     for (auto view : ImageViews)
     {
         if (view != VK_NULL_HANDLE)
@@ -476,13 +503,6 @@ void VulkanSwapchainService::DestroySwapchain()
 
     ImageViews.clear();
     Images.clear();
-
-    if (Swapchain != VK_NULL_HANDLE)
-    {
-        vkDestroySwapchainKHR(Device, Swapchain, nullptr);
-        Swapchain = VK_NULL_HANDLE;
-        Log.Info("Vulkan swapchain destroyed");
-    }
 
     Format = VK_FORMAT_UNDEFINED;
     ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;

@@ -167,6 +167,11 @@ std::string_view AssetSystem::GetPathForStaticMesh(StaticMeshHandle handle) cons
     return StaticMeshes ? StaticMeshes->GetName(handle) : std::string_view{};
 }
 
+std::string_view AssetSystem::GetPathForTexture(TextureHandle handle) const
+{
+    return Textures ? Textures->GetName(handle) : std::string_view{};
+}
+
 std::string_view AssetSystem::GetPathForMaterial(MaterialHandle handle) const
 {
     return Materials ? Materials->GetName(handle) : std::string_view{};

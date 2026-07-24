@@ -30,9 +30,12 @@ struct BrushTriVertex
     Vec2d Uv;       // from the face's UV projection
 };
 
-// Invoked once per face with that face's material and its triangle vertices
-// (at most 3 * (loop - 2) of them; collinear loop vertices emit no triangle).
-using BrushFaceEmit = std::function<void(const FaceMaterial&, std::span<const BrushTriVertex>)>;
+// Invoked once per face with that face's index, material, and triangle
+// vertices (at most 3 * (loop - 2) of them; collinear loop vertices emit no
+// triangle). The index is explicit rather than a call-count contract because
+// degenerate faces emit nothing.
+using BrushFaceEmit = std::function<void(
+    std::uint32_t faceIndex, const FaceMaterial&, std::span<const BrushTriVertex>)>;
 
 void BrushTessellate(const BrushMesh& mesh, const Transform3f& transform, const BrushFaceEmit& emit);
 void BrushTessellateFace(const BrushMesh& mesh, const Transform3f& transform,

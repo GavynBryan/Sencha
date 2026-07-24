@@ -60,6 +60,18 @@ public:
                                           std::span<const std::byte> bytes) = 0;
 };
 
+// Destination for a prepared import: the byte sink plus the cooked index it
+// belongs to, so a prepared import publishes artifact bytes and index entries
+// through one owner. The owner (a standalone filesystem writer, or a document
+// cook's transaction) commits its index as its own final act; PublishAssetImport
+// never loads or saves index.json itself.
+class IImportPublisher : public ICookOutputWriter
+{
+public:
+    // Upsert one source entry into the index this publisher owns.
+    virtual void PutIndexEntry(CookedSourceEntry entry) = 0;
+};
+
 struct ImportResult
 {
     std::vector<CookedArtifact> Artifacts{};

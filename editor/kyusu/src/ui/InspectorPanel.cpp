@@ -82,6 +82,71 @@ namespace
         bool Committed = false; // edit finished this frame
     };
 
+    // Enum leaves store the underlying integer at the field's offset; these
+    // read/write it through the declared size and signedness so a combo edit
+    // never over/under-writes the component's bytes.
+    std::int64_t ReadEnumUnderlying(const void* ptr, const RuntimeField& field)
+    {
+        const bool isSigned = field.Scalar == FieldScalar::Int32;
+        switch (field.Size)
+        {
+        case 1: return isSigned ? static_cast<std::int64_t>(*static_cast<const std::int8_t*>(ptr))
+                                : static_cast<std::int64_t>(*static_cast<const std::uint8_t*>(ptr));
+        case 2: return isSigned ? static_cast<std::int64_t>(*static_cast<const std::int16_t*>(ptr))
+                                : static_cast<std::int64_t>(*static_cast<const std::uint16_t*>(ptr));
+        case 8: return *static_cast<const std::int64_t*>(ptr);
+        default: return isSigned ? static_cast<std::int64_t>(*static_cast<const std::int32_t*>(ptr))
+                                 : static_cast<std::int64_t>(*static_cast<const std::uint32_t*>(ptr));
+        }
+    }
+
+    void WriteEnumUnderlying(void* ptr, const RuntimeField& field, std::int64_t value)
+    {
+        switch (field.Size)
+        {
+        case 1: *static_cast<std::uint8_t*>(ptr) = static_cast<std::uint8_t>(value); break;
+        case 2: *static_cast<std::uint16_t*>(ptr) = static_cast<std::uint16_t>(value); break;
+        case 8: *static_cast<std::int64_t*>(ptr) = value; break;
+        default: *static_cast<std::uint32_t*>(ptr) = static_cast<std::uint32_t>(value); break;
+        }
+    }
+
+    // A combo edit is atomic: selecting an option both begins and commits the
+    // edit in one frame, unlike a drag's activate/deactivate pair.
+    FieldEdit DrawEnumField(const RuntimeField& field, void* ptr, const std::string& id)
+    {
+        FieldEdit edit;
+        const std::int64_t current = ReadEnumUnderlying(ptr, field);
+
+        std::string preview;
+        for (const EnumOption& option : field.Enum)
+            if (option.Value == current)
+                preview = HumanizeFieldLabel(std::string(option.Name));
+        // A value outside the schema's table (hand-edited data, removed
+        // enumerator) shows as its raw number rather than pretending.
+        if (preview.empty())
+            preview = std::to_string(current);
+
+        if (ImGui::BeginCombo(id.c_str(), preview.c_str()))
+        {
+            for (const EnumOption& option : field.Enum)
+            {
+                const bool selected = option.Value == current;
+                if (ImGui::Selectable(HumanizeFieldLabel(std::string(option.Name)).c_str(), selected)
+                    && !selected)
+                {
+                    WriteEnumUnderlying(ptr, field, option.Value);
+                    edit.Activated = true;
+                    edit.Committed = true;
+                }
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        return edit;
+    }
+
     // Lays out one row as [label column | widget column], the widget filling the
     // rest of the width — the two-column inspector look. The widget uses a hidden
     // ("##") label so only the left-column text shows.
@@ -106,6 +171,14 @@ namespace
         // widget never reports activation, so it stays out of the edit/commit path.
         if (field.ReadOnly)
             ImGui::BeginDisabled();
+
+        if (!field.Enum.empty())
+        {
+            edit = DrawEnumField(field, ptr, id);
+            if (field.ReadOnly)
+                ImGui::EndDisabled();
+            return edit;
+        }
 
         if (field.Scalar == FieldScalar::Bool)
             ImGui::Checkbox(id.c_str(), reinterpret_cast<bool*>(ptr));

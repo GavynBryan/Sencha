@@ -7,6 +7,7 @@
 #include <ecs/World.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
+#include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <ecs/EntityId.h>
@@ -25,22 +26,22 @@
 struct StaticMeshComponent
 {
     StaticMeshHandle Mesh;
-    // Per-section material binding, instance-level: the mesh's sections index
-    // this set by MaterialSlot (a section beyond the set falls back to the last
-    // member). One handle keeps the component trivially copyable; the variable-
-    // length list lives in MaterialSetCache.
     MaterialSetHandle Materials;
     bool Visible = true;
+    bool CastShadows = true;
+    bool AffectsBakedLighting = true;
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SectionMask = 0xFFFFFFFFu;
+    static_assert(kMaxMeshSections <= sizeof(decltype(SectionMask)) * 8,
+                  "SectionMask must hold one bit per section that "
+                  "ValidateMeshGeometry accepts, or extraction shifts past "
+                  "its width");
+    // Remaps the mesh's lightmap UVs into this placement's atlas rect
+    // (uv * xy + zw). Identity for cooked cell meshes (absolute atlas UVs);
+    // the cook assigns per-placement rects to instanceable meshes.
+    Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
 };
 
-//=============================================================================
-// StaticMeshComponentAssets
-//
-// Registry-local asset-cache pointers used by StaticMeshComponent lifecycle
-// hooks. A zone without render asset caches may leave either pointer null.
-//=============================================================================
 struct StaticMeshComponentAssets
 {
     StaticMeshComponentAssets() = default;
@@ -51,8 +52,6 @@ struct StaticMeshComponentAssets
     }
 
     StaticMeshCache* Meshes = nullptr;
-    // The set owns references to its member materials, so retaining the set is
-    // all the component lifecycle needs to do for material lifetime.
     MaterialSetCache* MaterialSets = nullptr;
 };
 
@@ -92,13 +91,22 @@ struct TypeSchema<StaticMeshComponent>
 
     static auto Fields()
     {
+        // The shadow and bake fields default so scenes cooked before they
+        // existed keep loading.
+        const StaticMeshComponent defaults;
         return std::tuple{
             MakeField("mesh", &StaticMeshComponent::Mesh).AsAsset(AssetType::StaticMesh),
             MakeField("materials", &StaticMeshComponent::Materials)
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &StaticMeshComponent::Visible),
+            MakeField("cast_shadows", &StaticMeshComponent::CastShadows)
+                .Default(defaults.CastShadows),
+            MakeField("affects_baked_lighting", &StaticMeshComponent::AffectsBakedLighting)
+                .Default(defaults.AffectsBakedLighting),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),
+            MakeField("lightmap_scale_bias", &StaticMeshComponent::LightmapScaleBias)
+                .Default(defaults.LightmapScaleBias),
         };
     }
 };

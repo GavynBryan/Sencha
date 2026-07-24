@@ -1,0 +1,120 @@
+layout(location = 0) in vec3 inWorldNormal;
+layout(location = 1) in vec2 inUv0;
+layout(location = 2) in vec3 inWorldPos;
+layout(location = 3) in vec3 inWorldTangent;
+layout(location = 4) in float inTangentSign;
+layout(location = 5) in vec2 inLightmapUv;
+
+layout(push_constant) uniform MeshPush
+{
+    vec4 BaseColor;
+    vec4 EmissiveFactor;
+    float NormalScale;
+    float RoughnessFactor;
+    float MetallicFactor;
+    float SpecularIntensity;
+    uint BaseColorTextureIndex;
+    uint NormalTextureIndex;
+    uint OrmTextureIndex;
+    uint EmissiveTextureIndex;
+    uint ReceiveShadows;
+    uint LightmapTextureIndex;
+    uint AoTextureIndex;
+    uint Pad2;
+} pushData;
+
+layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
+
+// The baked static direct diffuse term: one bilinear fetch of the zone's
+// RGB9E5 lightmap atlas. The format decodes per texel before filtering, so
+// the filtered result is linear in radiance. Zero when the item has no atlas.
+vec3 SampleBakedDirect()
+{
+    if (pushData.LightmapTextureIndex == 0xFFFFFFFFu)
+        return vec3(0.0);
+    return texture(BindlessTextures[pushData.LightmapTextureIndex], inLightmapUv).rgb;
+}
+
+// The baked ambient-occlusion factor: one bilinear fetch of the zone's R8
+// plane, addressed by the same lightmap UVs as the atlas. 1.0 (no darkening)
+// when the item has no plane or the runtime toggle is off.
+float SampleBakedAo()
+{
+    if (pushData.AoTextureIndex == 0xFFFFFFFFu || frame.BakedAoEnabled == 0u)
+        return 1.0;
+    return texture(BindlessTextures[pushData.AoTextureIndex], inLightmapUv).r;
+}
+
+vec4 SampleBaseColor()
+{
+    vec4 color = pushData.BaseColor;
+    if (pushData.BaseColorTextureIndex != 0xFFFFFFFFu)
+        color *= texture(BindlessTextures[pushData.BaseColorTextureIndex], inUv0);
+    return color;
+}
+
+vec3 SampleOrm()
+{
+    if (pushData.OrmTextureIndex == 0xFFFFFFFFu)
+        return vec3(1.0, 1.0, 0.0);
+    return texture(BindlessTextures[pushData.OrmTextureIndex], inUv0).rgb;
+}
+
+vec3 SampleTangentNormal()
+{
+    if (pushData.NormalTextureIndex == 0xFFFFFFFFu)
+        return vec3(0.0, 0.0, 1.0);
+
+    vec2 mappedXy = texture(
+        BindlessTextures[pushData.NormalTextureIndex], inUv0).xy * 2.0 - 1.0;
+    mappedXy *= pushData.NormalScale;
+    float mappedZ = sqrt(max(1.0 - dot(mappedXy, mappedXy), 0.0));
+    return normalize(vec3(mappedXy, mappedZ));
+}
+
+// `geometricNormal` is the already-normalized interpolated normal, passed in so
+// the common unmapped case costs no second normalize.
+vec3 ResolveWorldNormal(vec3 geometricNormal)
+{
+    if (pushData.NormalTextureIndex == 0xFFFFFFFFu)
+        return geometricNormal;
+
+    vec3 tangent = normalize(inWorldTangent);
+    vec3 bitangent = normalize(cross(geometricNormal, tangent)) * inTangentSign;
+    return normalize(
+        mat3(tangent, bitangent, geometricNormal) * SampleTangentNormal());
+}
+
+vec3 ResolveEmission()
+{
+    vec3 emissiveTexture = vec3(1.0);
+    if (pushData.EmissiveTextureIndex != 0xFFFFFFFFu)
+        emissiveTexture = texture(
+            BindlessTextures[pushData.EmissiveTextureIndex], inUv0).rgb;
+    return pushData.EmissiveFactor.rgb
+         * max(pushData.EmissiveFactor.a, 0.0)
+         * emissiveTexture;
+}
+
+vec3 ApplyShoulder(vec3 color, float knee)
+{
+    float clampedKnee = clamp(knee, 0.0, 0.999);
+    float shoulderRange = 1.0 - clampedKnee;
+    vec3 result = color;
+    for (int channel = 0; channel < 3; ++channel)
+    {
+        if (result[channel] <= clampedKnee)
+            continue;
+        float s = (result[channel] - clampedKnee) / shoulderRange;
+        result[channel] = clampedKnee + shoulderRange * s / (1.0 + s);
+    }
+    return result;
+}
+
+vec3 ResolveOutput(vec3 color)
+{
+    color *= max(frame.StyleParams.z, 0.0);
+    if (frame.TonemapEnabled != 0u)
+        return ApplyShoulder(color, frame.StyleParams.w);
+    return clamp(color, 0.0, 1.0);
+}

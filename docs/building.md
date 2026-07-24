@@ -58,6 +58,21 @@ All `SENCHA_ENABLE_*` options are declared in
 
 Override any of them on a classic configure with `-DSENCHA_ENABLE_FOO=ON/OFF`.
 
+## Joint engine and game development
+
+An external game project can join the engine source build without moving into
+the Sencha repository or installing a new SDK after each engine change:
+
+```sh
+cmake --preset dev -DSENCHA_GAME_PROJECT_DIR=../my-game
+cmake --build build --target my_game_module --parallel
+```
+
+The external project must support `add_subdirectory()` and build its module
+with `sencha_game_module()`. It links the in-tree `sencha::engine`, so the host
+and module always receive the same ABI fingerprint. Leaving
+`SENCHA_GAME_PROJECT_DIR` empty preserves the normal engine-only build.
+
 ## Without presets (CMake < 3.23)
 
 ```sh

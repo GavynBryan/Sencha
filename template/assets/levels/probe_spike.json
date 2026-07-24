@@ -1,0 +1,2399 @@
+{
+  "version": 1,
+  "entities": [
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              -0.25,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 1
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              4.25,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 2
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -12.25,
+              2,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 3
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              12.25,
+              2,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 4
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              2,
+              -6.25
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 5
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              2,
+              6.25
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 6
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              2,
+              -3.75
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 7
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              3.5,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 8
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              2,
+              3.75
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 9
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -6,
+              3,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            1,
+            0.800000011920929,
+            0.5
+          ],
+          "intensity": 25,
+          "range": 18,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "direct"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              6,
+              3,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "PointLight": {
+          "color": [
+            0.44999998807907104,
+            0.6499999761581421,
+            1
+          ],
+          "intensity": 25,
+          "range": 18,
+          "enabled": true,
+          "cast_shadows": false,
+          "shadow_resolution": "medium",
+          "shadow_update": "on_change",
+          "shadow_softness": 1.5,
+          "shadow_bias_scale": 1,
+          "bake_contribution": "indirect"
+        }
+      }
+    },
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              2,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "IrradianceVolume": {
+          "half_extents": [
+            12,
+            2,
+            6
+          ],
+          "cell_size": 1,
+          "priority": 0
+        }
+      }
+    }
+  ],
+  "hierarchy": [],
+  "brush_meshes": {
+    "9": {
+      "vertices": [
+        [
+          -0.25,
+          -2,
+          -2.75
+        ],
+        [
+          0.25,
+          -2,
+          -2.75
+        ],
+        [
+          0.25,
+          2,
+          -2.75
+        ],
+        [
+          -0.25,
+          2,
+          -2.75
+        ],
+        [
+          -0.25,
+          -2,
+          2.75
+        ],
+        [
+          0.25,
+          -2,
+          2.75
+        ],
+        [
+          0.25,
+          2,
+          2.75
+        ],
+        [
+          -0.25,
+          2,
+          2.75
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "8": {
+      "vertices": [
+        [
+          -0.25,
+          -0.5,
+          -1.25
+        ],
+        [
+          0.25,
+          -0.5,
+          -1.25
+        ],
+        [
+          0.25,
+          0.5,
+          -1.25
+        ],
+        [
+          -0.25,
+          0.5,
+          -1.25
+        ],
+        [
+          -0.25,
+          -0.5,
+          1.25
+        ],
+        [
+          0.25,
+          -0.5,
+          1.25
+        ],
+        [
+          0.25,
+          0.5,
+          1.25
+        ],
+        [
+          -0.25,
+          0.5,
+          1.25
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "7": {
+      "vertices": [
+        [
+          -0.25,
+          -2,
+          -2.75
+        ],
+        [
+          0.25,
+          -2,
+          -2.75
+        ],
+        [
+          0.25,
+          2,
+          -2.75
+        ],
+        [
+          -0.25,
+          2,
+          -2.75
+        ],
+        [
+          -0.25,
+          -2,
+          2.75
+        ],
+        [
+          0.25,
+          -2,
+          2.75
+        ],
+        [
+          0.25,
+          2,
+          2.75
+        ],
+        [
+          -0.25,
+          2,
+          2.75
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "6": {
+      "vertices": [
+        [
+          -12.5,
+          -2,
+          -0.25
+        ],
+        [
+          12.5,
+          -2,
+          -0.25
+        ],
+        [
+          12.5,
+          2,
+          -0.25
+        ],
+        [
+          -12.5,
+          2,
+          -0.25
+        ],
+        [
+          -12.5,
+          -2,
+          0.25
+        ],
+        [
+          12.5,
+          -2,
+          0.25
+        ],
+        [
+          12.5,
+          2,
+          0.25
+        ],
+        [
+          -12.5,
+          2,
+          0.25
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "5": {
+      "vertices": [
+        [
+          -12.5,
+          -2,
+          -0.25
+        ],
+        [
+          12.5,
+          -2,
+          -0.25
+        ],
+        [
+          12.5,
+          2,
+          -0.25
+        ],
+        [
+          -12.5,
+          2,
+          -0.25
+        ],
+        [
+          -12.5,
+          -2,
+          0.25
+        ],
+        [
+          12.5,
+          -2,
+          0.25
+        ],
+        [
+          12.5,
+          2,
+          0.25
+        ],
+        [
+          -12.5,
+          2,
+          0.25
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "4": {
+      "vertices": [
+        [
+          -0.25,
+          -2,
+          -6.5
+        ],
+        [
+          0.25,
+          -2,
+          -6.5
+        ],
+        [
+          0.25,
+          2,
+          -6.5
+        ],
+        [
+          -0.25,
+          2,
+          -6.5
+        ],
+        [
+          -0.25,
+          -2,
+          6.5
+        ],
+        [
+          0.25,
+          -2,
+          6.5
+        ],
+        [
+          0.25,
+          2,
+          6.5
+        ],
+        [
+          -0.25,
+          2,
+          6.5
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "3": {
+      "vertices": [
+        [
+          -0.25,
+          -2,
+          -6.5
+        ],
+        [
+          0.25,
+          -2,
+          -6.5
+        ],
+        [
+          0.25,
+          2,
+          -6.5
+        ],
+        [
+          -0.25,
+          2,
+          -6.5
+        ],
+        [
+          -0.25,
+          -2,
+          6.5
+        ],
+        [
+          0.25,
+          -2,
+          6.5
+        ],
+        [
+          0.25,
+          2,
+          6.5
+        ],
+        [
+          -0.25,
+          2,
+          6.5
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "2": {
+      "vertices": [
+        [
+          -12.5,
+          -0.25,
+          -6.5
+        ],
+        [
+          12.5,
+          -0.25,
+          -6.5
+        ],
+        [
+          12.5,
+          0.25,
+          -6.5
+        ],
+        [
+          -12.5,
+          0.25,
+          -6.5
+        ],
+        [
+          -12.5,
+          -0.25,
+          6.5
+        ],
+        [
+          12.5,
+          -0.25,
+          6.5
+        ],
+        [
+          12.5,
+          0.25,
+          6.5
+        ],
+        [
+          -12.5,
+          0.25,
+          6.5
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "1": {
+      "vertices": [
+        [
+          -12.5,
+          -0.25,
+          -6.5
+        ],
+        [
+          12.5,
+          -0.25,
+          -6.5
+        ],
+        [
+          12.5,
+          0.25,
+          -6.5
+        ],
+        [
+          -12.5,
+          0.25,
+          -6.5
+        ],
+        [
+          -12.5,
+          -0.25,
+          6.5
+        ],
+        [
+          12.5,
+          -0.25,
+          6.5
+        ],
+        [
+          12.5,
+          0.25,
+          6.5
+        ],
+        [
+          -12.5,
+          0.25,
+          6.5
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    }
+  },
+  "default_material": "asset://materials/dev/gray.smat"
+}

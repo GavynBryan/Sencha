@@ -29,7 +29,7 @@ namespace
     {
     public:
         TempMaterialAsset(AssetRegistry& registry, std::string_view name,
-                          std::string_view contents = R"({"version": 1})")
+                          std::string_view contents = R"({"version": 2})")
         {
             static int counter = 0;
             File = std::filesystem::temp_directory_path() /
@@ -56,9 +56,8 @@ namespace
         std::filesystem::path File;
     };
 
-    // One temp .sclip on disk plus its registry record — the audio analogue
-    // of TempMaterialAsset, and like materials the whole round trip is
-    // CPU-side, so the preload path runs headless.
+    // One temp .sclip on disk plus its registry record. This is the audio
+    // analogue of TempMaterialAsset, and the whole round trip is CPU-side.
     class TempAudioClipAsset
     {
     public:
@@ -119,7 +118,7 @@ namespace
     };
 }
 
-// -- Manifest -------------------------------------------------------------------
+// -- Manifest ----------------------------------------------------------------
 
 TEST(AssetManifest, CollectFindsNestedUniquePathsInOrder)
 {
@@ -176,7 +175,7 @@ TEST(AssetManifest, ParseRejectsBadVersionAndShape)
     ASSERT_TRUE(badEntry.has_value());
     EXPECT_FALSE(ParseAssetManifestJson(*badEntry, parsed));
 
-    // String entries belong to version 1, objects to version 2 — mixing
+    // String entries belong to version 1, objects to version 2. Mixing
     // shape and version is a malformed manifest, not a best-effort parse.
     const std::optional<JsonValue> v2String =
         JsonParse(R"({"version": 2, "assets": ["asset://a/b.smesh"]})");
@@ -211,9 +210,9 @@ TEST(AssetManifest, ResolvePathsPrefersIdOverStalePath)
 
     const std::vector<std::string> paths = ResolveManifestPaths(manifest, registry);
     ASSERT_EQ(paths.size(), 3u);
-    EXPECT_EQ(paths[0], "asset://meshes/renamed.smesh");   // id wins over the stale path
-    EXPECT_EQ(paths[1], "asset://meshes/unknown_id.smesh"); // unknown id falls back
-    EXPECT_EQ(paths[2], "asset://meshes/no_id.smesh");      // no id, path as before
+    EXPECT_EQ(paths[0], "asset://meshes/renamed.smesh");
+    EXPECT_EQ(paths[1], "asset://meshes/unknown_id.smesh");
+    EXPECT_EQ(paths[2], "asset://meshes/no_id.smesh");
 }
 
 TEST(AssetManifest, LoadFileReportsMissing)
@@ -224,12 +223,12 @@ TEST(AssetManifest, LoadFileReportsMissing)
     EXPECT_FALSE(error.empty());
 }
 
-// -- AssetPreloader, zero-thread --------------------------------------------------
+// -- AssetPreloader, zero-thread ---------------------------------------------
 
 TEST(AssetPreload, MaterialsStreamToResidencyHeadless)
 {
     PreloadHarness h;
-    TempMaterialAsset red(h.Registry, "red", R"({"version": 1, "base_color_factor": [1, 0, 0, 1]})");
+    TempMaterialAsset red(h.Registry, "red", R"({"version": 2, "base_color_factor": [1, 0, 0, 1]})");
     TempMaterialAsset blue(h.Registry, "blue");
 
     const std::vector<std::string> paths{ red.Path, blue.Path };
@@ -247,8 +246,8 @@ TEST(AssetPreload, MaterialsStreamToResidencyHeadless)
     EXPECT_EQ(preload->HeldHandleCount(), 2u);
     EXPECT_TRUE(h.Materials.Find(red.Path).IsValid());
 
-    // The preload's handles are the only references: releasing them frees
-    // the entries — proof the refcount accounting is exact.
+    // The preload's handles are the only references. Releasing them frees
+    // the entries, proving the refcount accounting is exact.
     preload->ReleaseAll();
     EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
     EXPECT_FALSE(h.Materials.Find(blue.Path).IsValid());
@@ -277,8 +276,6 @@ TEST(AssetPreload, AudioClipsStreamInWaveOne)
     EXPECT_EQ(preload->FailureCount(), 0u);
     EXPECT_EQ(preload->HeldHandleCount(), 2u);
 
-    // The preload's handles are the only references: releasing them frees
-    // the whole batch.
     preload->ReleaseAll();
     EXPECT_FALSE(h.AudioClips.Find(blip.Path).IsValid());
     EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
@@ -293,7 +290,6 @@ TEST(AssetPreload, TwoPreloadsCoalesceOnOneLoad)
     auto first = h.Preloader.Begin(paths);
     auto second = h.Preloader.Begin(paths);
 
-    // One task serves both: the second preload joined the in-flight load.
     EXPECT_EQ(h.Tasks.PumpWork(), 1u);
     EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
 
@@ -302,7 +298,6 @@ TEST(AssetPreload, TwoPreloadsCoalesceOnOneLoad)
     EXPECT_EQ(first->HeldHandleCount(), 1u);
     EXPECT_EQ(second->HeldHandleCount(), 1u);
 
-    // Exactly two references exist: releasing both frees the entry.
     first->ReleaseAll();
     EXPECT_TRUE(h.Materials.Find(shared.Path).IsValid());
     second->ReleaseAll();
@@ -335,25 +330,24 @@ TEST(AssetPreload, MissingRecordsAndFilesCountAsFailuresNotDeadlocks)
     PreloadHarness h;
     TempMaterialAsset good(h.Registry, "good");
 
-    // A path with no registry record, and a record whose file is gone.
     TempMaterialAsset doomed(h.Registry, "doomed");
     std::filesystem::remove(doomed.File);
 
     const std::vector<std::string> paths{ "asset://materials/test/unregistered.smat",
                                           good.Path, doomed.Path };
     auto preload = h.Preloader.Begin(paths);
-    EXPECT_EQ(preload->FailureCount(), 1u); // unregistered, known at Begin
+    EXPECT_EQ(preload->FailureCount(), 1u);
 
     (void)h.Tasks.PumpWork();
     (void)h.Tasks.DrainCompletions();
 
     EXPECT_TRUE(preload->IsComplete());
-    EXPECT_EQ(preload->FailureCount(), 2u); // + the missing file
+    EXPECT_EQ(preload->FailureCount(), 2u);
     EXPECT_EQ(preload->HeldHandleCount(), 1u);
     preload->ReleaseAll();
 }
 
-// -- Zone attach gating, zero-thread ----------------------------------------------
+// -- Zone attach gating, zero-thread -----------------------------------------
 
 namespace
 {
@@ -374,8 +368,8 @@ TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
 {
     ZoneHarness h;
 
-    // Wave 1: a mesh record whose file is missing (fails, still counts) so
-    // the material is deferred to wave 2 — two drain rounds total.
+    // Wave 1: a mesh record whose file is missing still counts, so the
+    // material is deferred to wave 2 and requires two drain rounds.
     ASSERT_TRUE(h.Registry.Register(AssetRecord{
         .Type = AssetType::StaticMesh,
         .SourceKind = AssetSourceKind::File,
@@ -396,20 +390,14 @@ TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
         ZoneParticipation{ .Logic = true },
         preload);
 
-    // Run the mesh work and the zone build.
     EXPECT_EQ(h.Tasks.PumpWork(), 2u);
 
-    // Drain both commits: the mesh commit fails (wave 1 done, material
-    // submitted), then the zone commit runs — and must defer the attach.
     EXPECT_EQ(h.Tasks.DrainCompletions(), 2u);
     EXPECT_FALSE(h.Zones.IsZoneLoaded(zone));
     EXPECT_FALSE(finalized);
     EXPECT_TRUE(h.Loader.IsLoading(zone));
     EXPECT_FALSE(preload->IsComplete());
 
-    // The material (wave 2) lands: its commit completes the preload, which
-    // fires the deferred attach — zone visible, finalize ran, scaffolding
-    // handles released.
     EXPECT_EQ(h.Tasks.PumpWork(), 1u);
     EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
     EXPECT_TRUE(h.Zones.IsZoneLoaded(zone));
@@ -431,7 +419,6 @@ TEST(ZoneAssetGating, CompletePreloadAttachesInline)
     const std::vector<std::string> paths{ material.Path };
     auto preload = h.Preloader.Begin(paths);
 
-    // Let the asset land before the zone build is even submitted.
     (void)h.Tasks.PumpWork();
     (void)h.Tasks.DrainCompletions();
     ASSERT_TRUE(preload->IsComplete());
@@ -464,12 +451,10 @@ TEST(ZoneAssetGating, CancelledPreloadNeverBlocksAttach)
 
     EXPECT_TRUE(h.Zones.IsZoneLoaded(zone));
     EXPECT_EQ(preload->HeldHandleCount(), 0u);
-    // The cancelled preload's late commit released its reference instead of
-    // storing it: nothing keeps the material alive.
     EXPECT_FALSE(h.Materials.Find(material.Path).IsValid());
 }
 
-// -- Threaded smoke (the one non-deterministic test, per the house pattern) ---------
+// -- Threaded smoke -----------------------------------------------------------
 
 #include <chrono>
 #include <thread>

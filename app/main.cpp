@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -105,6 +106,51 @@ int main(int argc, char** argv)
         config.Window.Title = "Sencha";
         config.Window.Width = 1280;
         config.Window.Height = 720;
+        // Optional resolution override for measurement/testing, e.g.
+        // SENCHA_WINDOW_SIZE=1920x1080. Ignored when unset or malformed.
+        if (const char* size = std::getenv("SENCHA_WINDOW_SIZE"))
+        {
+            int w = 0;
+            int h = 0;
+            if (std::sscanf(size, "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
+            {
+                config.Window.Width = static_cast<std::uint32_t>(w);
+                config.Window.Height = static_cast<std::uint32_t>(h);
+            }
+        }
+        // Validation costs CPU time in every build, so a measurement taken
+        // with it on is not a shipping-configuration measurement. Off with
+        // SENCHA_VALIDATION=0; unset leaves the config default.
+        if (const char* validation = std::getenv("SENCHA_VALIDATION"))
+            config.Graphics.EnableValidation = std::strcmp(validation, "0") != 0;
+        // The core checks catch object and parameter misuse, not missing
+        // barriers or layout races, so these select the hazard class a
+        // correctness pass is actually looking for. Each costs frame time,
+        // which is why they are opt-in per run rather than on with validation.
+        if (const char* sync = std::getenv("SENCHA_VALIDATE_SYNC"))
+            config.Graphics.ValidateSynchronization = std::strcmp(sync, "0") != 0;
+        if (const char* gpuAssisted = std::getenv("SENCHA_VALIDATE_GPU_ASSISTED"))
+            config.Graphics.ValidateGpuAssisted = std::strcmp(gpuAssisted, "0") != 0;
+        if (const char* practices = std::getenv("SENCHA_VALIDATE_BEST_PRACTICES"))
+            config.Graphics.ValidateBestPractices = std::strcmp(practices, "0") != 0;
+        // Frame-scratch budget override for measurement: shrinking it forces
+        // the partial-grant path on a small scene, which is otherwise only
+        // reachable at scene scale.
+        if (const char* scratch = std::getenv("SENCHA_FRAME_SCRATCH_BYTES"))
+        {
+            unsigned long long bytes = 0;
+            if (std::sscanf(scratch, "%llu", &bytes) == 1 && bytes > 0)
+                config.Graphics.FrameScratchBytesPerFrame = bytes;
+        }
+        // Adapter override for measurement: SENCHA_DEVICE_INDEX=1 compares the
+        // same scene across the adapters in one machine, which device scoring
+        // alone cannot express. The startup log lists the enumeration order.
+        if (const char* device = std::getenv("SENCHA_DEVICE_INDEX"))
+        {
+            int index = -1;
+            if (std::sscanf(device, "%d", &index) == 1)
+                config.Graphics.DeviceIndex = index;
+        }
         config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
         config.Runtime.ExitOnEscape = true;
         config.Runtime.TogglePauseOnF1 = true;

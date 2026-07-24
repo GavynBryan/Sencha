@@ -17,6 +17,15 @@ namespace
         return false;
     }
 
+    bool ReadBool(const JsonValue& value, std::string_view key,
+                  bool& out, MaterialParseError* error)
+    {
+        if (!value.IsBool())
+            return Fail(error, std::format("'{}' must be a boolean", key));
+        out = value.AsBool();
+        return true;
+    }
+
     bool ReadFloat(const JsonValue& value, std::string_view key,
                    float& out, MaterialParseError* error)
     {
@@ -58,6 +67,18 @@ namespace
         return true;
     }
 
+    bool ReadShading(const JsonValue& value, MaterialShading& out, MaterialParseError* error)
+    {
+        if (!value.IsString())
+            return Fail(error, "'shading' must be a string");
+
+        const std::string& shading = value.AsString();
+        if (shading == "standard_lit") { out = MaterialShading::StandardLit; return true; }
+        if (shading == "unlit")        { out = MaterialShading::Unlit; return true; }
+        return Fail(error, std::format(
+            "unknown shading '{}' (expected standard_lit or unlit)", shading));
+    }
+
     bool ReadAlphaMode(const JsonValue& value, MaterialAlphaMode& out, MaterialParseError* error)
     {
         if (!value.IsString())
@@ -65,9 +86,10 @@ namespace
 
         const std::string& mode = value.AsString();
         if (mode == "opaque") { out = MaterialAlphaMode::Opaque; return true; }
-        if (mode == "mask")   { out = MaterialAlphaMode::Mask;   return true; }
-        if (mode == "blend")  { out = MaterialAlphaMode::Blend;  return true; }
-        return Fail(error, std::format("unknown alpha_mode '{}' (expected opaque, mask, or blend)", mode));
+        if (mode == "mask")   { out = MaterialAlphaMode::Mask; return true; }
+        if (mode == "blend")  { out = MaterialAlphaMode::Blend; return true; }
+        return Fail(error, std::format(
+            "unknown alpha_mode '{}' (expected opaque, mask, or blend)", mode));
     }
 } // namespace
 
@@ -76,12 +98,14 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
     if (!root.IsObject())
         return Fail(error, "material root must be a JSON object");
 
-    const JsonValue* version = root.Find("version");
-    if (version == nullptr || !version->IsNumber())
+    const JsonValue* versionValue = root.Find("version");
+    if (versionValue == nullptr || !versionValue->IsNumber())
         return Fail(error, "missing or non-numeric 'version'");
-    if (static_cast<uint32_t>(version->AsNumber()) != kSmatVersion)
+
+    const uint32_t version = static_cast<uint32_t>(versionValue->AsNumber());
+    if (version != kSmatVersion)
         return Fail(error, std::format("unsupported material version {} (expected {})",
-                                       version->AsNumber(), kSmatVersion));
+                                       versionValue->AsNumber(), kSmatVersion));
 
     MaterialDescription desc;
     for (const auto& [key, value] : root.AsObject())
@@ -89,6 +113,8 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         bool ok = true;
         if (key == "version")
             continue;
+        else if (key == "shading")
+            ok = ReadShading(value, desc.Shading, error);
         else if (key == "base_color_factor")
             ok = ReadFactor(value, key, 4, desc.BaseColorFactor, error);
         else if (key == "base_color_texture")
@@ -103,20 +129,35 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
             ok = ReadFloat(value, key, desc.RoughnessFactor, error);
         else if (key == "metallic_factor")
             ok = ReadFloat(value, key, desc.MetallicFactor, error);
+        else if (key == "specular_factor")
+            ok = ReadFloat(value, key, desc.SpecularIntensity, error);
         else if (key == "emissive_factor")
             ok = ReadFactor(value, key, 3, desc.EmissiveFactor, error);
         else if (key == "emissive_texture")
             ok = ReadTextureRef(value, key, desc.EmissiveTexture, error);
+        else if (key == "emissive_strength")
+            ok = ReadFloat(value, key, desc.EmissiveStrength, error);
         else if (key == "alpha_mode")
             ok = ReadAlphaMode(value, desc.AlphaMode, error);
         else if (key == "alpha_cutoff")
             ok = ReadFloat(value, key, desc.AlphaCutoff, error);
+        else if (key == "double_sided")
+            ok = ReadBool(value, key, desc.DoubleSided, error);
+        else if (key == "receive_shadows")
+            ok = ReadBool(value, key, desc.ReceiveShadows, error);
+        else if (key == "cast_shadows")
+            ok = ReadBool(value, key, desc.CastShadows, error);
         else
             return Fail(error, std::format("unknown material key '{}'", key));
 
         if (!ok)
             return false;
     }
+
+    if (desc.SpecularIntensity < 0.0f || desc.SpecularIntensity > 1.0f)
+        return Fail(error, "'specular_factor' must be between 0 and 1");
+    if (desc.EmissiveStrength < 0.0f)
+        return Fail(error, "'emissive_strength' must be non-negative");
 
     out = desc;
     return true;

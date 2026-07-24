@@ -51,6 +51,12 @@ MeshValidationResult ValidateMeshGeometry(const MeshGeometry& mesh)
         AddError(result, "index count must be divisible by 3");
     if (mesh.Sections.empty())
         AddError(result, "at least one section must exist");
+    if (mesh.Sections.size() > kMaxMeshSections)
+    {
+        AddError(result, "section count " + std::to_string(mesh.Sections.size())
+                             + " exceeds the " + std::to_string(kMaxMeshSections)
+                             + "-section mask limit");
+    }
 
     for (size_t vertexIndex = 0; vertexIndex < mesh.Vertices.size(); ++vertexIndex)
     {

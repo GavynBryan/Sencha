@@ -3,6 +3,7 @@
 #include "PreviewBuffer.h"
 
 #include "document/EditorDocument.h"
+#include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 
 #include "EditorTheme.h"
@@ -10,9 +11,11 @@
 #include "viewport/WorldViewSettings.h"
 #include "viewport/ViewportShading.h"
 
+#include <app/EngineConsoleBuiltins.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
+#include <world/registry/Registry.h>
 
 #include <graphics/vulkan/VulkanBarriers.h>
 
@@ -46,6 +49,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
     , ZoneBounds(WideLines)
+    , IrradianceVolumes(selection, WideLines, Lines)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -62,7 +66,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         MeshCache = &runtimeAssets->StaticMeshes;
         MaterialStore = &runtimeAssets->Materials;
         QueueBuilder.emplace(runtimeAssets->Assets, runtimeAssets->StaticMeshes,
-                             runtimeAssets->MaterialSets, logging);
+                             runtimeAssets->Materials, runtimeAssets->MaterialSets,
+                             logging, &runtimeAssets->Textures);
         SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
@@ -75,14 +80,29 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     }
 }
 
-void EditorRenderFeature::Setup(const RendererServices& services)
+bool EditorRenderFeature::Setup(const RendererServices& services)
 {
     Services = services;
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Backdrop.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
-    Forward.Setup(services);
+    if (!Lighting.Setup(services))
+    {
+        if (Log != nullptr)
+            Log->Warn("Lighting bindings failed to set up; forward pass disabled");
+    }
+    else
+    {
+        if (!Lighting.CreateAtlas() && Log != nullptr)
+            Log->Warn("Spot shadow atlas creation failed; viewport shadows disabled");
+        if (!Lighting.CreateCubePool() && Log != nullptr)
+            Log->Warn("Point shadow cube pool creation failed; viewport shadows disabled");
+        ShadowPass.Setup(services, Lighting);
+    }
+    // After ShadowPass: the forward pass's frame-UBO range write must be the
+    // last one so every dynamic-offset bind covers the largest block.
+    Forward.Setup(services, Lighting);
     Lines.Setup(services);
     WideLines.Setup(services);
     Fills.Setup(services);
@@ -90,6 +110,10 @@ void EditorRenderFeature::Setup(const RendererServices& services)
     Bloom.Setup(services);
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
+    // Each viewport renderer degrades on its own (a failed lighting set
+    // disables the forward pass, not the viewport), so the feature itself is
+    // usable whenever it got this far.
+    return true;
 }
 
 void EditorRenderFeature::OnDraw(const FrameContext& frame)
@@ -137,6 +161,25 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
     if (MaterialPath)
     {
+        // Stamp the live render.* tunables before Build: the shadow-view
+        // gather multiplies in ShadowSoftness, so it must be current when the
+        // lights are packed. Reset() inside Build preserves these fields.
+        // Defaults match RenderLightSet's neutral cool fill.
+        RenderLightSet& lights = QueueBuilder->Lights();
+        lights.AmbientSky = Vec<3>(readFloatCvar("render.ambient.sky_r", 0.10f),
+                                   readFloatCvar("render.ambient.sky_g", 0.12f),
+                                   readFloatCvar("render.ambient.sky_b", 0.15f));
+        lights.AmbientGround = Vec<3>(readFloatCvar("render.ambient.ground_r", 0.04f),
+                                      readFloatCvar("render.ambient.ground_g", 0.03f),
+                                      readFloatCvar("render.ambient.ground_b", 0.02f));
+        lights.ShadowDarkness = readFloatCvar("render.shadow.darkness", 1.0f);
+        lights.ShadowSoftness = readFloatCvar("render.shadow.softness", 1.0f);
+        lights.ShadowBiasConstant = readFloatCvar("render.shadow.bias_const", 4.0f);
+        lights.ShadowBiasSlope = readFloatCvar("render.shadow.bias_slope", 2.0f);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        lights.DebugView = WorldView.DebugViewMode;
+#endif
+
         QueueBuilder->Build(World.FocusDocument());
 
         // Context zones build their own queues so they render real materials.
@@ -152,21 +195,14 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                 if (builder == nullptr)
                     builder = std::make_unique<SceneRenderQueueBuilder>(
                         RuntimeAssetsRef->Assets, RuntimeAssetsRef->StaticMeshes,
-                        RuntimeAssetsRef->MaterialSets, *LoggingRef);
+                        RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
+                        *LoggingRef);
                 builder->Build(document);
             });
-        // Hemispheric ambient is live-tunable in the dev console, same path as the
-        // grid/bloom knobs above. BuildLights() leaves the tints alone, so set them
-        // after. Defaults match RenderLightSet's neutral cool fill.
-        const float skyR    = readFloatCvar("render.ambient.sky_r", 0.10f);
-        const float skyG    = readFloatCvar("render.ambient.sky_g", 0.12f);
-        const float skyB    = readFloatCvar("render.ambient.sky_b", 0.15f);
-        const float groundR = readFloatCvar("render.ambient.ground_r", 0.04f);
-        const float groundG = readFloatCvar("render.ambient.ground_g", 0.03f);
-        const float groundB = readFloatCvar("render.ambient.ground_b", 0.02f);
-        RenderLightSet& lights = QueueBuilder->Lights();
-        lights.AmbientSky    = Vec<3>(skyR, skyG, skyB);
-        lights.AmbientGround = Vec<3>(groundR, groundG, groundB);
+        // Arbitrate and record the focus scene's shadow atlas once per frame,
+        // before any viewport rendering scope opens. Every Solid viewport
+        // then samples the same tiles.
+        UpdateShadowResidency(frame);
     }
 
     // Render every viewport that is actually on screen. A hidden panel zeroes its
@@ -190,6 +226,122 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     // Drop targets for viewports the layout no longer shows.
     Targets.Prune(liveIds);
+}
+
+void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
+{
+    RenderLightSet& lights = QueueBuilder->Lights();
+
+    // A different focus scene means different entity keys; reset instead of
+    // aging the old scene's slot holders out through steal hysteresis.
+    const RegistryId sceneRegistry = World.FocusDocument().GetScene().GetRegistry().Id;
+    if (!(sceneRegistry == ShadowSceneRegistry))
+    {
+        Residency.Reset();
+        ShadowSceneRegistry = sceneRegistry;
+    }
+
+    // Depth bias bakes into tiles at record time, so cached tiles keep an old
+    // bias until re-rendered; a bias cvar edit invalidates them all.
+    if (lights.ShadowBiasConstant != ShadowBiasConstant
+        || lights.ShadowBiasSlope != ShadowBiasSlope)
+    {
+        Residency.InvalidateAll();
+        ShadowBiasConstant = lights.ShadowBiasConstant;
+        ShadowBiasSlope = lights.ShadowBiasSlope;
+    }
+
+    const std::span<const SpotShadowRequest> requests =
+        QueueBuilder->BuildShadowRequests(ShadowScoreOrigin());
+    const std::span<const PointShadowRequest> pointRequests =
+        QueueBuilder->BuildPointShadowRequests(ShadowScoreOrigin());
+
+    // The diff always swaps its tables so a later OnChange acquisition sees
+    // current history; events are only worth emitting while someone caches.
+    CasterEvents.clear();
+    CasterDiff.Apply(QueueBuilder->Casters().Records,
+                     Residency.HasOnChangeSlots(), CasterEvents);
+
+    const ShadowResidencyBudgets budgets =
+        EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console);
+    Residency.Update(requests, pointRequests, CasterEvents, budgets);
+    Residency.ApplyGrants(lights);
+
+    ShadowPass.Draw(frame, lights, Residency.ScheduledViews(),
+                    Residency.ScheduledPointFaces(),
+                    QueueBuilder->Casters(), *MeshCache, &Residency);
+
+    ShadowFrame.Active = Lighting.HasAtlas() || Lighting.HasCubePool();
+    ShadowFrame.FocusRegistry = sceneRegistry;
+    ShadowFrame.Stats = Residency.FrameStats();
+    ShadowFrame.Budgets = budgets;
+    for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
+        ShadowFrame.Slots[slot] = Residency.SlotInfo(slot);
+    for (std::uint32_t slot = 0; slot < kMaxPointShadows; ++slot)
+        ShadowFrame.PointSlots[slot] = Residency.PointSlotInfo(slot);
+    ShadowFrame.Rows.clear();
+    ShadowFrame.Rows.reserve(requests.size() + pointRequests.size());
+    for (const SpotShadowRequest& request : requests)
+    {
+        ShadowResidencyReadout::LightRow row;
+        row.Entity = request.Key.Entity;
+        row.Type = GpuLightType::Spot;
+        row.Score = request.Score;
+        row.TileSize = request.TileSize;
+        row.Policy = request.Policy;
+        for (std::uint32_t slot = 0; slot < kMaxSpotShadows; ++slot)
+        {
+            const SpotShadowSlotInfo& info = ShadowFrame.Slots[slot];
+            if (info.Live && info.Owner == request.Key)
+            {
+                row.Held = true;
+                row.Slot = slot;
+                break;
+            }
+        }
+        ShadowFrame.Rows.push_back(row);
+    }
+    for (const PointShadowRequest& request : pointRequests)
+    {
+        ShadowResidencyReadout::LightRow row;
+        row.Entity = request.Key.Entity;
+        row.Type = GpuLightType::Point;
+        row.Score = request.Score;
+        row.TileSize = kPointShadowFaceExtent;
+        row.Policy = request.Policy;
+        for (std::uint32_t slot = 0; slot < kMaxPointShadows; ++slot)
+        {
+            const PointShadowSlotInfo& info = ShadowFrame.PointSlots[slot];
+            if (info.Live && info.Owner == request.Key)
+            {
+                row.Held = true;
+                row.Slot = slot;
+                break;
+            }
+        }
+        ShadowFrame.Rows.push_back(row);
+    }
+}
+
+Vec<3> EditorRenderFeature::ShadowScoreOrigin() const
+{
+    const EditorViewport* reference = Layout.Active();
+    if (reference == nullptr
+        || reference->Orientation != ViewportOrientation::Perspective)
+    {
+        for (const auto& viewport : Layout.All())
+        {
+            if (viewport != nullptr
+                && viewport->Orientation == ViewportOrientation::Perspective)
+            {
+                reference = &*viewport;
+                break;
+            }
+        }
+    }
+    if (reference == nullptr)
+        return Vec<3>(0.0f, 0.0f, 0.0f);
+    return reference->Camera.Position;
 }
 
 void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
@@ -309,6 +461,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                     RenderLightSet contextLights;
                     contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
                     contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+                    contextLights.DebugView = WorldView.DebugViewMode;
+#endif
                     Forward.Draw(local, viewport.BuildRenderData(), contextLights,
                                  it->second->BrushQueue(), *MeshCache, *MaterialStore);
                     // Placed meshes cannot receive the brush-triangle wash, so
@@ -349,6 +504,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     else
         Meshes.DrawViewport(local, viewport, scene);
     Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    IrradianceVolumes.DrawViewport(local, viewport, scene);
     Highlight.DrawViewport(local, viewport, scene, *Session());
     if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
         ZoneBounds.DrawViewport(local, viewport, World, WorldView);
@@ -471,6 +627,8 @@ void EditorRenderFeature::Teardown()
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();
+    ShadowPass.Teardown();
+    Lighting.Teardown();
     Lines.Teardown();
     WideLines.Teardown();
     Fills.Teardown();

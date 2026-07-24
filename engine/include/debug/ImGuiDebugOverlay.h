@@ -34,7 +34,7 @@ public:
 	ImGuiDebugOverlay& operator=(ImGuiDebugOverlay&&) = delete;
 
 	[[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
-	void Setup(const RendererServices& services) override;
+	[[nodiscard]] bool Setup(const RendererServices& services) override;
 	void OnDraw(const FrameContext& frame) override;
 	void Teardown() override;
 
@@ -44,6 +44,13 @@ public:
 	T& AddPanel(Args&&... args)
 	{
 		auto panel = std::make_unique<T>(std::forward<Args>(args)...);
+		auto* raw = panel.get();
+		Panels.push_back(std::move(panel));
+		return *raw;
+	}
+
+	IDebugPanel& AddPanel(std::unique_ptr<IDebugPanel> panel)
+	{
 		auto* raw = panel.get();
 		Panels.push_back(std::move(panel));
 		return *raw;

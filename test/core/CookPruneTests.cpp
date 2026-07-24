@@ -38,7 +38,7 @@ namespace
             Touch(artifactRel);
             CookedSourceEntry entry;
             entry.SourceRelPath = sourceRel;
-            entry.SourceHash = 1;
+            entry.InputFingerprint = 1;
             entry.Artifacts.push_back(CookedArtifact{
                 "asset://" + artifactRel, artifactRel, AssetType::StaticMesh });
             Index.Put(std::move(entry));

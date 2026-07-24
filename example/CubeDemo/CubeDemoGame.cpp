@@ -33,10 +33,7 @@
 #include <platform/SdlWindowService.h>
 #include <zone/DefaultZoneBuilder.h>
 
-#include <debug/ConsolePanel.h>
 #include <debug/IDebugPanel.h>
-#include <debug/ImGuiDebugOverlay.h>
-#include <debug/TimingPanel.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
 #include <imgui.h>
@@ -313,29 +310,22 @@ void CubeDemoGame::OnStart(GameStartupContext& ctx)
     DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
     if (pipeline != nullptr)
     {
-        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets);
+        pipeline->SetAssetStores(runtimeAssets.StaticMeshes, runtimeAssets.Materials,
+                                 runtimeAssets.MaterialSets, &runtimeAssets.Textures);
         pipeline->AddMeshRenderFeature(graphics);
     }
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
-    ConsoleService& console = engine.Console();
-    auto& windows = engine.Platform().Windows;
-    SdlWindow* window = windows.GetPrimaryWindow();
-    auto& instance = graphics.Instance;
-    auto& frames = graphics.Frames;
-
-    auto debugOverlay =
-        std::make_unique<ImGuiDebugOverlay>(debug, *window, instance, frames);
-    debugOverlay->AddPanel<ConsolePanel>(debugLog, console);
-    debugOverlay->AddPanel<TimingPanel>(engine.Timing());
+    // The engine creates the overlay itself (console + timing + render
+    // stats); only the demo's own panel is added, queued until the overlay
+    // exists.
+    (void)debugLog;
     if (pipeline != nullptr)
     {
-        debugOverlay->AddPanel<CubeDemoPanel>(
-            pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam, DemoRegistry, Demo);
+        engine.AddDebugPanel(std::make_unique<CubeDemoPanel>(
+            pipeline->GetRenderQueue(), pipeline->GetCameraData(), FreeCam,
+            DemoRegistry, Demo));
     }
-    DebugOverlay = debugOverlay.get();
-    auto& renderer = graphics.MainRenderer;
-    renderer.AddFeature(std::move(debugOverlay));
 #else
     (void)debugLog;
     debug.Open();
@@ -362,10 +352,7 @@ void CubeDemoGame::OnRegisterSystems(SystemRegisterContext& ctx)
 
 void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    if (DebugOverlay != nullptr && DebugOverlay->ProcessSdlEvent(ctx.Event))
-        ctx.Handled = true;
-#else
+#ifndef SENCHA_ENABLE_DEBUG_UI
     (void)ctx;
 #endif
     if (ctx.Handled)
@@ -389,9 +376,6 @@ void CubeDemoGame::OnPlatformEvent(PlatformEventContext& ctx)
 
 void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    DebugOverlay = nullptr;
-#endif
     SetRelativeMouseMode(GetEngine(), false);
 
     // Best-effort cancel if the load is still in flight; if the build is
@@ -403,6 +387,18 @@ void CubeDemoGame::OnShutdown(GameShutdownContext& ctx)
 
     GetEngine().Zones().DestroyZone(ZoneId{ 1 });
     DemoRegistry = nullptr;
+
+    // Release the GPU-backed asset caches while OnShutdown still runs with the
+    // engine (device, allocators, descriptor pools) up. DestroyZone above
+    // returned the zone's mesh and texture handles to these caches; the hot
+    // reloader and preloader hold references into the asset system, so they
+    // drop first. Left to the module-static Game's own destruction (process
+    // exit, after the device is gone), the caches would free GPU handles into
+    // dead graphics services and corrupt the heap on a clean window close.
+    Watcher.reset();
+    Reloader.reset();
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& CubeDemoGame::RuntimeAssetState()

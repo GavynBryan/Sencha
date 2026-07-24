@@ -50,6 +50,58 @@ TEST(BrushBake, BakesLocalSpaceGeometryWithSectionsPerMaterial)
         EXPECT_NEAR(std::abs(v.Tangent.W), 1.0f, 1e-4f);
 }
 
+TEST(BrushBake, EmitsLightmapSheetUvsWithDisjointFaceRects)
+{
+    // A baked (instanceable) mesh carries a [0,1] lightmap sheet: per-face
+    // charts on a hard-edged box must land in disjoint sheet rects, so no
+    // two faces of the box share the same UV rectangle.
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    MeshGeometry geometry;
+    std::vector<AssetRef> materials;
+    std::string error;
+    ASSERT_TRUE(BakeBrushToGeometry(
+        box, AssetRef{ AssetType::Material, "asset://materials/d.smat" },
+        geometry, materials, &error)) << error;
+
+    bool anyNonzero = false;
+    for (const StaticMeshVertex& v : geometry.Vertices)
+        anyNonzero = anyNonzero || v.LightmapU != 0 || v.LightmapV != 0;
+    EXPECT_TRUE(anyNonzero);
+
+    // Group vertices by face normal axis (a box face = one chart) and check
+    // the six UV bounding boxes are pairwise disjoint.
+    struct Rect { float MinU = 2, MinV = 2, MaxU = -1, MaxV = -1; };
+    Rect rects[6];
+    for (const StaticMeshVertex& v : geometry.Vertices)
+    {
+        int axis = 0;
+        float best = 0.0f;
+        const float components[3] = { v.Normal.X, v.Normal.Y, v.Normal.Z };
+        for (int i = 0; i < 3; ++i)
+            if (std::abs(components[i]) > best)
+            {
+                best = std::abs(components[i]);
+                axis = i * 2 + (components[i] < 0 ? 1 : 0);
+            }
+        Rect& rect = rects[axis];
+        const float u = v.LightmapU / 65535.0f;
+        const float uvV = v.LightmapV / 65535.0f;
+        rect.MinU = std::min(rect.MinU, u);
+        rect.MinV = std::min(rect.MinV, uvV);
+        rect.MaxU = std::max(rect.MaxU, u);
+        rect.MaxV = std::max(rect.MaxV, uvV);
+    }
+    for (int a = 0; a < 6; ++a)
+        for (int b = a + 1; b < 6; ++b)
+        {
+            const bool overlaps = rects[a].MinU < rects[b].MaxU
+                && rects[b].MinU < rects[a].MaxU
+                && rects[a].MinV < rects[b].MaxV
+                && rects[b].MinV < rects[a].MaxV;
+            EXPECT_FALSE(overlaps) << "faces " << a << " and " << b;
+        }
+}
+
 TEST(BrushBake, EmptyBrushFailsWithError)
 {
     BrushMesh empty;

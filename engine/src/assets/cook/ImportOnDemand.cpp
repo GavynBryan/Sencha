@@ -5,10 +5,14 @@
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -19,6 +23,13 @@ namespace
     };
 
     constexpr std::string_view kIndexFileName = "index.json";
+
+    bool SetError(std::string* error, std::string message)
+    {
+        if (error != nullptr)
+            *error = std::move(message);
+        return false;
+    }
 
     class FileCookOutputWriter final : public ICookOutputWriter
     {
@@ -69,6 +80,30 @@ namespace
     {
         for (CookedArtifact& artifact : artifacts)
             artifact.ContentHash = writer.WrittenHash(artifact.FileRelPath);
+    }
+
+    // Fills any zero content hash from the active artifact file (a pre-hash
+    // cached entry), reporting whether anything changed so the caller can carry
+    // the refreshed entry into the index delta. False if a file cannot be hashed.
+    bool ResolveArtifactHashes(const std::filesystem::path& root,
+                               std::vector<CookedArtifact>& artifacts,
+                               Logger& log, bool& upgraded)
+    {
+        bool ok = true;
+        for (CookedArtifact& artifact : artifacts)
+        {
+            if (artifact.ContentHash != 0)
+                continue;
+            const std::string file = (root / artifact.FileRelPath).generic_string();
+            if (HashFileContents(file, artifact.ContentHash))
+                upgraded = true;
+            else
+            {
+                log.Warn("ImportOnDemand: could not hash cooked artifact '{}'", file);
+                ok = false;
+            }
+        }
+        return ok;
     }
 
     // Size + last-write time, the cheap freshness signal. {0, 0} doubles as
@@ -180,64 +215,72 @@ namespace
         return true;
     }
 
-    // Registers the artifacts using their stored content hashes. An artifact
-    // without one (a pre-hash index entry) is hashed from disk once and the
-    // entry upgraded in place; `outHashesUpgraded` tells the caller to
-    // re-save the index so the read never repeats.
-    bool RegisterArtifacts(const std::filesystem::path& root,
-                           std::vector<CookedArtifact>& artifacts,
-                           AssetRegistry& registry,
-                           Logger& log,
-                           bool& outHashesUpgraded)
+    // Private staging root for prepared bytes, unique per prepare run and under
+    // .cooked so the source scan skips it.
+    std::filesystem::path MakeStagingDir(const std::filesystem::path& root)
     {
-        bool ok = true;
-        for (CookedArtifact& artifact : artifacts)
-        {
-            AssetRecord record;
-            record.Type = artifact.Type;
-            record.SourceKind = AssetSourceKind::File;
-            record.Path = artifact.Path;
-            record.FilePath = (root / artifact.FileRelPath).generic_string();
-            if (artifact.ContentHash == 0)
-            {
-                if (HashFileContents(record.FilePath, artifact.ContentHash))
-                {
-                    outHashesUpgraded = true;
-                }
-                else
-                {
-                    log.Warn("ImportOnDemand: could not hash cooked artifact '{}'", record.FilePath);
-                    ok = false;
-                }
-            }
-            record.ContentHash = artifact.ContentHash;
-            ok = registry.RegisterOrVerify(record) && ok;
-        }
-        return ok;
+        const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+        return root / kCookedCacheDirName / ".staging"
+            / ("import_" + std::to_string(nonce));
     }
 } // namespace
 
-bool ImportAssetsOnDemand(std::string_view rootDirectory,
-                          const AssetImporterRegistry& importers,
-                          AssetRegistry& registry,
-                          LoggingProvider& logging,
-                          ImportOnDemandStats* outStats)
+PendingAssetImport::PendingAssetImport(PendingAssetImport&& other) noexcept
+    : Artifacts(std::move(other.Artifacts)),
+      IndexDelta(std::move(other.IndexDelta)),
+      Registrations(std::move(other.Registrations)),
+      Stats(other.Stats),
+      TempRoot(std::move(other.TempRoot))
+{
+    other.TempRoot.clear();
+}
+
+PendingAssetImport& PendingAssetImport::operator=(PendingAssetImport&& other) noexcept
+{
+    if (this != &other)
+    {
+        Cleanup();
+        Artifacts = std::move(other.Artifacts);
+        IndexDelta = std::move(other.IndexDelta);
+        Registrations = std::move(other.Registrations);
+        Stats = other.Stats;
+        TempRoot = std::move(other.TempRoot);
+        other.TempRoot.clear();
+    }
+    return *this;
+}
+
+PendingAssetImport::~PendingAssetImport()
+{
+    Cleanup();
+}
+
+void PendingAssetImport::Cleanup() noexcept
+{
+    if (TempRoot.empty())
+        return;
+    std::error_code ec;
+    std::filesystem::remove_all(TempRoot, ec);
+    TempRoot.clear();
+}
+
+bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
+                           const AssetImporterRegistry& importers,
+                           LoggingProvider& logging,
+                           PendingAssetImport& out)
 {
     Logger& log = logging.GetLogger<ImportOnDemandDriver>();
 
     ImportOnDemandStats stats;
-    if (outStats)
-        *outStats = stats;
-
-    const std::filesystem::path root{ std::string(rootDirectory) };
     std::error_code ec;
-    if (!std::filesystem::is_directory(root, ec))
+    if (!std::filesystem::is_directory(assetsRoot, ec))
     {
-        log.Warn("ImportOnDemand: asset root '{}' is not a directory", root.generic_string());
+        log.Warn("ImportOnDemand: asset root '{}' is not a directory",
+            assetsRoot.generic_string());
         return false;
     }
 
-    const std::filesystem::path cookedDir = root / kCookedCacheDirName;
+    const std::filesystem::path cookedDir = assetsRoot / kCookedCacheDirName;
     const std::filesystem::path indexPath = cookedDir / kIndexFileName;
 
     CookedCacheIndex index;
@@ -253,16 +296,20 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         }
     }
 
-    FileCookOutputWriter writer(root);
-    bool ok = true;
-    bool indexDirty = false;
+    // Imported bytes stage here and publish later; the pending owns and cleans
+    // this directory. The writer creates it lazily, so an all-fresh run leaves
+    // nothing behind.
+    out.TempRoot = MakeStagingDir(assetsRoot);
+    FileCookOutputWriter stagingWriter(out.TempRoot);
 
-    for (std::filesystem::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec))
+    bool ok = true;
+    for (std::filesystem::recursive_directory_iterator it(assetsRoot, ec), end;
+         it != end; it.increment(ec))
     {
         if (ec)
         {
             log.Warn("ImportOnDemand: scan skipped entry under '{}': {}",
-                root.generic_string(), ec.message());
+                assetsRoot.generic_string(), ec.message());
             ok = false;
             ec.clear();
             continue;
@@ -282,7 +329,7 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
 
         ++stats.SourcesSeen;
         const std::string sourceRel =
-            std::filesystem::relative(it->path(), root).generic_string();
+            std::filesystem::relative(it->path(), assetsRoot).generic_string();
 
         std::filesystem::path metaPath = it->path();
         metaPath += std::string(kImportSettingsSuffix);
@@ -292,22 +339,21 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         const CookedSourceEntry* cached = index.Find(sourceRel);
 
         // Freshness fast path: unchanged size + mtime for the source and its
-        // sidecar means the source bytes are never read. Any mismatch falls
-        // through to the content hash, which stays the ground truth.
+        // sidecar means the source bytes are never read. Resolve any pre-hash
+        // artifact hash so registration and the delta both carry it.
         if (cached != nullptr && sourceStat.MTime != 0
             && FileStat{ cached->SourceSize, cached->SourceMTime } == sourceStat
             && FileStat{ cached->MetaSize, cached->MetaMTime } == metaStat
-            && ArtifactFilesExist(root, *cached))
+            && ArtifactFilesExist(assetsRoot, *cached))
         {
             ++stats.CookedFresh;
             CookedSourceEntry entry = *cached;
-            bool hashesUpgraded = false;
-            ok = RegisterArtifacts(root, entry.Artifacts, registry, log, hashesUpgraded) && ok;
-            if (hashesUpgraded)
-            {
-                index.Put(std::move(entry));
-                indexDirty = true;
-            }
+            bool upgraded = false;
+            ok = ResolveArtifactHashes(assetsRoot, entry.Artifacts, log, upgraded) && ok;
+            out.Registrations.insert(out.Registrations.end(),
+                entry.Artifacts.begin(), entry.Artifacts.end());
+            if (upgraded)
+                out.IndexDelta.Puts.push_back(std::move(entry));
             continue;
         }
 
@@ -322,22 +368,24 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
         std::vector<std::byte> metaBytes;
         const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
 
-        if (cached != nullptr && cached->SourceHash == sourceHash
-            && ArtifactFilesExist(root, *cached))
+        if (cached != nullptr && cached->InputFingerprint == sourceHash
+            && ArtifactFilesExist(assetsRoot, *cached))
         {
             ++stats.CookedFresh;
             // Content unchanged under changed stats (a touch, a copy): stamp
             // the new stats so the next launch takes the fast path.
             CookedSourceEntry entry = *cached;
             StampSourceStats(entry, sourceStat, metaStat);
-            bool hashesUpgraded = false;
-            ok = RegisterArtifacts(root, entry.Artifacts, registry, log, hashesUpgraded) && ok;
-            index.Put(std::move(entry));
-            indexDirty = true;
+            bool upgraded = false;
+            ok = ResolveArtifactHashes(assetsRoot, entry.Artifacts, log, upgraded) && ok;
+            out.Registrations.insert(out.Registrations.end(),
+                entry.Artifacts.begin(), entry.Artifacts.end());
+            out.IndexDelta.Puts.push_back(std::move(entry));
             continue;
         }
 
-        ImportResult result = importer->Import(ImportInput{ sourceRel, bytes, metaBytes }, writer);
+        ImportResult result =
+            importer->Import(ImportInput{ sourceRel, bytes, metaBytes }, stagingWriter);
         std::string whyNot = result.Error;
         if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
         {
@@ -346,37 +394,161 @@ bool ImportAssetsOnDemand(std::string_view rootDirectory,
             ok = false;
             continue;
         }
-        StampArtifactHashes(writer, result.Artifacts);
+        StampArtifactHashes(stagingWriter, result.Artifacts);
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
-        entry.SourceHash = sourceHash;
+        entry.InputFingerprint = sourceHash;
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
-        index.Put(std::move(entry));
-        indexDirty = true;
+
+        for (const CookedArtifact& artifact : result.Artifacts)
+        {
+            out.Artifacts.push_back(PreparedCookedArtifact{
+                artifact, out.TempRoot / artifact.FileRelPath });
+            out.Registrations.push_back(artifact);
+        }
+        out.IndexDelta.Puts.push_back(std::move(entry));
         ++stats.Imported;
         log.Info("ImportOnDemand: cooked '{}' ({} artifact{})",
             sourceRel, result.Artifacts.size(), result.Artifacts.size() == 1 ? "" : "s");
-
-        bool hashesUpgraded = false;
-        ok = RegisterArtifacts(root, result.Artifacts, registry, log, hashesUpgraded) && ok;
     }
 
-    if (indexDirty)
-    {
-        std::filesystem::create_directories(cookedDir, ec);
-        if (ec || !index.SaveToFile(indexPath.generic_string()))
-        {
-            log.Warn("ImportOnDemand: could not write cooked index '{}'",
-                indexPath.generic_string());
-            ok = false;
-        }
-    }
-
-    if (outStats)
-        *outStats = stats;
+    out.Stats = stats;
     return ok;
+}
+
+bool PublishAssetImport(PendingAssetImport pending,
+                        IImportPublisher& publisher,
+                        std::string* error)
+{
+    // Reject a destination claimed twice before writing anything: the caller
+    // (or the transaction behind a composed publisher) would otherwise coalesce
+    // two writers onto one file.
+    std::unordered_set<std::string> destinations;
+    for (const PreparedCookedArtifact& prepared : pending.Artifacts)
+        if (!destinations.insert(prepared.Artifact.FileRelPath).second)
+            return SetError(error, "duplicate cooked artifact destination '"
+                + prepared.Artifact.FileRelPath + "'");
+
+    for (const PreparedCookedArtifact& prepared : pending.Artifacts)
+    {
+        std::vector<std::byte> bytes;
+        if (!ReadFileBytes(prepared.PreparedFile, bytes))
+            return SetError(error, "could not read staged import '"
+                + prepared.PreparedFile.generic_string() + "'");
+        if (!publisher.WriteBytes(prepared.Artifact.FileRelPath, bytes))
+            return SetError(error, "could not publish cooked artifact '"
+                + prepared.Artifact.FileRelPath + "'");
+    }
+
+    for (CookedSourceEntry& entry : pending.IndexDelta.Puts)
+        publisher.PutIndexEntry(std::move(entry));
+
+    return true;
+}
+
+bool RegisterImportedAssets(std::span<const CookedArtifact> records,
+                            const std::filesystem::path& assetsRoot,
+                            AssetRegistry& registry,
+                            LoggingProvider& logging)
+{
+    Logger& log = logging.GetLogger<ImportOnDemandDriver>();
+    bool ok = true;
+    for (const CookedArtifact& artifact : records)
+    {
+        AssetRecord record;
+        record.Type = artifact.Type;
+        record.SourceKind = AssetSourceKind::File;
+        record.Path = artifact.Path;
+        record.FilePath = (assetsRoot / artifact.FileRelPath).generic_string();
+        record.ContentHash = artifact.ContentHash;
+        // Preparation resolves hashes up front; a zero here means a file could
+        // not be hashed then, so fall back to disk rather than register 0.
+        if (record.ContentHash == 0 && !HashFileContents(record.FilePath, record.ContentHash))
+            log.Warn("ImportOnDemand: could not hash cooked artifact '{}'", record.FilePath);
+        ok = registry.RegisterOrVerify(record) && ok;
+    }
+    return ok;
+}
+
+FilesystemImportArtifactWriter::FilesystemImportArtifactWriter(std::filesystem::path assetsRoot)
+    : Root(std::move(assetsRoot))
+{
+    const std::filesystem::path indexPath = Root / kCookedCacheDirName / kIndexFileName;
+    std::error_code ec;
+    if (std::filesystem::exists(indexPath, ec))
+    {
+        std::string indexError;
+        if (!CookedCacheIndex::LoadFromFile(indexPath.generic_string(), Index, &indexError))
+            Index = {}; // a corrupt index is a cold cache, preserved entries recook
+    }
+}
+
+bool FilesystemImportArtifactWriter::WriteBytes(std::string_view fileRelPath,
+                                                std::span<const std::byte> bytes)
+{
+    const std::filesystem::path full = Root / fileRelPath;
+    std::error_code ec;
+    std::filesystem::create_directories(full.parent_path(), ec);
+    if (ec)
+        return false;
+
+    std::ofstream file(full, std::ios::binary | std::ios::trunc);
+    if (!file.is_open())
+        return false;
+    if (!bytes.empty())
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    return file.good();
+}
+
+void FilesystemImportArtifactWriter::PutIndexEntry(CookedSourceEntry entry)
+{
+    Index.Put(std::move(entry));
+    Dirty = true;
+}
+
+bool FilesystemImportArtifactWriter::Save()
+{
+    if (!Dirty)
+        return true;
+    const std::filesystem::path indexPath = Root / kCookedCacheDirName / kIndexFileName;
+    return Index.SaveToFile(indexPath.generic_string());
+}
+
+bool ImportAssetsOnDemand(std::string_view rootDirectory,
+                          const AssetImporterRegistry& importers,
+                          AssetRegistry& registry,
+                          LoggingProvider& logging,
+                          ImportOnDemandStats* outStats)
+{
+    Logger& log = logging.GetLogger<ImportOnDemandDriver>();
+    const std::filesystem::path root{ std::string(rootDirectory) };
+
+    PendingAssetImport pending;
+    const bool prepared = PrepareAssetsOnDemand(root, importers, logging, pending);
+    if (outStats != nullptr)
+        *outStats = pending.Stats;
+
+    // Publication consumes the pending by move, so copy the records to register
+    // out first; a failed publish then registers nothing.
+    const std::vector<CookedArtifact> registrations = pending.Registrations;
+
+    FilesystemImportArtifactWriter writer(root);
+    std::string publishError;
+    const bool published = PublishAssetImport(std::move(pending), writer, &publishError);
+    if (!published)
+        log.Warn("ImportOnDemand: publish failed: {}", publishError);
+
+    const bool saved = writer.Save();
+    if (!saved)
+        log.Warn("ImportOnDemand: could not write cooked index under '{}'", rootDirectory);
+
+    const bool registered =
+        published && RegisterImportedAssets(registrations, root, registry, logging);
+
+    return prepared && published && saved && registered;
 }
 
 bool ReimportOneSource(std::string_view rootDirectory,
@@ -436,7 +608,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
-    entry.SourceHash = sourceHash;
+    entry.InputFingerprint = sourceHash;
     std::filesystem::path metaPath = sourcePath;
     metaPath += std::string(kImportSettingsSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));

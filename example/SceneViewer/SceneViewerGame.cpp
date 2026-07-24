@@ -1,44 +1,40 @@
 #include "SceneViewerGame.h"
 
 #include <app/DefaultRenderPipeline.h>
+#include <render/ProbeVolumeSet.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
+#include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/Camera.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <world/transform/TransformComponents.h>
 #include <zone/DefaultZoneBuilder.h>
-
-#ifdef SENCHA_ENABLE_DEBUG_UI
-#include <debug/ConsolePanel.h>
-#include <debug/DebugLogSink.h>
-#include <debug/DebugService.h>
-#include <debug/ImGuiDebugOverlay.h>
-#include <debug/TimingPanel.h>
-#include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanFrameService.h>
-#include <graphics/vulkan/VulkanInstanceService.h>
-#endif
 
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace
@@ -128,6 +124,53 @@ namespace
         Registry*& RegistryInstance;
         FreeCamera& FreeCam;
     };
+
+    // Drives the active camera along a fixed orbit as a pure function of an
+    // internal frame counter, so every run of a given build renders the exact
+    // same view sequence. Runs in FrameUpdate (after the fixed-tick free-cam),
+    // so it wins for the presented frame whenever armed. Off by default; free
+    // fly-cam is untouched unless sceneviewer.camera.scripted is set.
+    struct ScriptedCameraPathSystem
+    {
+        ScriptedCameraPathSystem(Registry*& registry, FreeCamera& freeCamera,
+                                 const bool& enabled)
+            : RegistryInstance(registry)
+            , FreeCam(freeCamera)
+            , Enabled(enabled)
+        {
+        }
+
+        void FrameUpdate(FrameUpdateContext&)
+        {
+            if (!Enabled || RegistryInstance == nullptr)
+                return;
+            LocalTransform* transform =
+                RegistryInstance->Components.TryGet<LocalTransform>(FreeCam.Entity);
+            if (transform == nullptr)
+                return;
+
+            const double angle = static_cast<double>(FrameCounter) * kAngularStep;
+            transform->Value.Position = Vec3d{
+                static_cast<float>(std::cos(angle) * kRadius), kHeight,
+                static_cast<float>(std::sin(angle) * kRadius) };
+            const float yaw = static_cast<float>(angle) + kPi; // face the orbit center
+            transform->Value.Rotation =
+                Quatf::FromAxisAngle(Vec3d::Up(), yaw)
+                * Quatf::FromAxisAngle(Vec3d::Right(), kPitch);
+            ++FrameCounter;
+        }
+
+        Registry*& RegistryInstance;
+        FreeCamera& FreeCam;
+        const bool& Enabled;
+        std::uint64_t FrameCounter = 0;
+
+        static constexpr double kAngularStep = 0.012;
+        static constexpr double kRadius = 8.0;
+        static constexpr double kHeight = 3.0;
+        static constexpr float kPitch = -0.35f;
+        static constexpr float kPi = 3.14159265358979323846f;
+    };
 } // namespace
 
 void SceneViewerGame::OnRegisterComponents(ComponentSerializerRegistry&)
@@ -147,10 +190,13 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins). Same
-    // resolution path proven headless (the cook's CookedSceneFullyResolves test).
+    // Mount: authored assets, then the cooked overlay (cooked wins), then the
+    // cooked index. The index adds artifacts the physical scan cannot key,
+    // notably cooked textures (asset://...png serving cooked .stex bytes);
+    // without it a material's texture refs fall back to the neutral default.
     ScanAssetsDirectory(std::string(kAuthoredRoot), runtimeAssets.Registry);
     ScanAssetsDirectory(std::string(kCookedScanRoot), runtimeAssets.Registry);
+    RegisterCookedAssets(std::string(kAuthoredRoot), runtimeAssets.Registry);
 
     {
         AssetIdMap idMap;
@@ -170,7 +216,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     if (DefaultRenderPipeline* pipeline = engine.GetRenderPipeline())
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets);
+            runtimeAssets.StaticMeshes, runtimeAssets.Materials, runtimeAssets.MaterialSets,
+            &runtimeAssets.Textures);
         pipeline->AddMeshRenderFeature(graphics);
     }
 
@@ -179,16 +226,20 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     engine.Console().SetMapHandler(
         [this](std::string_view mapName) { return LoadMap(mapName); });
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    DebugService& debug = engine.Debug();
-    SdlWindow* window = engine.Platform().Windows.GetPrimaryWindow();
-    auto overlay = std::make_unique<ImGuiDebugOverlay>(
-        debug, *window, graphics.Instance, graphics.Frames);
-    overlay->AddPanel<ConsolePanel>(debug.GetLogSink(), engine.Console());
-    overlay->AddPanel<TimingPanel>(engine.Timing());
-    DebugOverlay = overlay.get();
-    graphics.MainRenderer.AddFeature(std::move(overlay));
-#endif
+    engine.Console().Registry().RegisterCVar({
+        .Name = "sceneviewer.camera.scripted",
+        .Owner = "sceneviewer",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        .Flags = CVarFlags::Transient,
+        .Help = "Drive the camera along a fixed deterministic orbit instead of "
+                "free-fly, so a run renders an identical view sequence.",
+        .Source = { "sceneviewer" },
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            ScriptedCameraEnabled = std::get<bool>(ctx.NewValue);
+        },
+    });
 
     std::printf("Sencha scene viewer\n");
     std::printf("  Load a map: +map levels/<name> (cooked under assets/.cooked/)\n");
@@ -229,16 +280,20 @@ ConsoleResult SceneViewerGame::LoadMap(std::string_view mapName)
                  std::string(mapName), manifestError);
 
     auto parsed = std::make_shared<SceneParse>();
+    auto probes = std::make_shared<ProbeVolumeFile>();
     StaticMeshCache* meshes = &runtimeAssets.StaticMeshes;
     MaterialSetCache* materialSets = &runtimeAssets.MaterialSets;
+    TextureCache* textures = &runtimeAssets.Textures;
 
     ZoneLoader->BeginLoad(
         kPlayZone,
-        [parsed, meshes, materialSets, scenePath](Registry& registry) {
-            InitializeDefault3DRegistry(registry, meshes, materialSets);
+        [parsed, probes, meshes, materialSets, textures, scenePath](Registry& registry) {
+            InitializeDefault3DRegistry(registry, meshes, materialSets,
+                                        nullptr, nullptr, nullptr, textures);
             *parsed = ParseSceneFile(scenePath);
+            (void)ReadZoneProbeFile(scenePath, *probes);
         },
-        [this, parsed, &logging](Registry& registry) {
+        [this, parsed, probes, &logging](Registry& registry) {
             Logger& finalizeLog = logging.GetLogger<SceneViewerGame>();
             if (!parsed->Json)
             {
@@ -253,6 +308,8 @@ ConsoleResult SceneViewerGame::LoadMap(std::string_view mapName)
                 finalizeLog.Error("SceneViewer: scene load error: {}", loadError.Message);
                 return;
             }
+            if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
+                AttachZoneProbes(pipeline->GetProbeVolumes(), registry, *probes);
 
             // Use the scene's camera if it authored one; a cooked level is pure
             // geometry, so spawn a fly-cam to make it viewable.
@@ -286,17 +343,12 @@ void SceneViewerGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     ctx.Schedule.Register<FreeCameraLookSystem>(ActiveZoneRegistry, FreeCam);
     ctx.Schedule.Register<FreeCameraMovementSystem>(ActiveZoneRegistry, FreeCam);
+    ctx.Schedule.Register<ScriptedCameraPathSystem>(
+        ActiveZoneRegistry, FreeCam, ScriptedCameraEnabled);
 }
 
 void SceneViewerGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    if (DebugOverlay != nullptr && DebugOverlay->ProcessSdlEvent(ctx.Event))
-        ctx.Handled = true;
-#endif
-    if (ctx.Handled)
-        return;
-
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
         SetRelativeMouseMode(true);
@@ -309,9 +361,6 @@ void SceneViewerGame::OnPlatformEvent(PlatformEventContext& ctx)
 
 void SceneViewerGame::OnShutdown(GameShutdownContext&)
 {
-#ifdef SENCHA_ENABLE_DEBUG_UI
-    DebugOverlay = nullptr;
-#endif
     SetRelativeMouseMode(false);
 
     if (ZoneLoader && ZoneLoader->IsLoading(kPlayZone))
@@ -320,6 +369,15 @@ void SceneViewerGame::OnShutdown(GameShutdownContext&)
 
     GetEngine().Zones().DestroyZone(kPlayZone);
     ActiveZoneRegistry = nullptr;
+
+    // Release the GPU-backed asset caches while OnShutdown still runs with the
+    // engine (device, allocators, descriptor pools) up. DestroyZone above
+    // returned the zone's mesh and texture handles to these caches; freeing
+    // them now, rather than at the module-static Game's own destruction (which
+    // runs at process exit after the device is gone), is what keeps a clean
+    // window close from freeing GPU handles into dead graphics services.
+    Preloader.reset();
+    Assets.reset();
 }
 
 RuntimeAssets& SceneViewerGame::RuntimeAssetState()

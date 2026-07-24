@@ -3,6 +3,7 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace
@@ -41,11 +42,11 @@ VulkanFrameScratch::VulkanFrameScratch(LoggingProvider& logging,
 
     // Pad the per-frame slice up to the UBO alignment so slice boundaries
     // themselves land on a legal dynamic-offset boundary.
-    BytesPerFrame = AlignUp(config.BytesPerFrame, UniformAlignment);
-    FramesInFlight = config.FramesInFlight;
+    Ring = FrameScratchRing(config.FramesInFlight,
+                            AlignUp(config.BytesPerFrame, UniformAlignment));
 
     BufferCreateInfo info{};
-    info.Size = BytesPerFrame * FramesInFlight;
+    info.Size = Ring.GetTotalBytes();
     info.Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -68,9 +69,6 @@ VulkanFrameScratch::VulkanFrameScratch(LoggingProvider& logging,
         return;
     }
 
-    // Start on frame 0 with a clean cursor.
-    CurrentFrame = 0;
-    Cursor = 0;
     Valid = true;
 }
 
@@ -85,31 +83,37 @@ VulkanFrameScratch::~VulkanFrameScratch()
 void VulkanFrameScratch::BeginFrame()
 {
     if (!Valid) return;
-    CurrentFrame = (CurrentFrame + 1) % FramesInFlight;
-    Cursor = 0;
+    Ring.BeginFrame();
 }
 
 VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment)
 {
-    if (!Valid || size == 0) return {};
+    if (!Valid) return {};
 
-    const VkDeviceSize alignedCursor = AlignUp(Cursor, alignment == 0 ? 1 : alignment);
-    if (alignedCursor > BytesPerFrame || size > BytesPerFrame - alignedCursor)
+    const FrameScratchRing::Grant grant =
+        Ring.Allocate(size, alignment == 0 ? 1 : alignment);
+    if (!grant.IsValid())
     {
-        Log.Error("VulkanFrameScratch: allocation of {} bytes at cursor {} exceeds frame slice capacity ({})",
-                  static_cast<uint64_t>(size),
-                  static_cast<uint64_t>(alignedCursor),
-                  static_cast<uint64_t>(BytesPerFrame));
+        if (size != 0)
+        {
+            Log.Error("VulkanFrameScratch: allocation of {} bytes at cursor {} exceeds "
+                      "frame slice capacity ({})",
+                      static_cast<uint64_t>(size),
+                      static_cast<uint64_t>(Ring.GetUsedBytes()),
+                      static_cast<uint64_t>(Ring.GetBytesPerFrame()));
+        }
         return {};
     }
+    return MakeAllocation(grant);
+}
 
-    const VkDeviceSize globalOffset = static_cast<VkDeviceSize>(CurrentFrame) * BytesPerFrame + alignedCursor;
-    Cursor = alignedCursor + size;
-
+VulkanFrameScratch::Allocation VulkanFrameScratch::MakeAllocation(
+    const FrameScratchRing::Grant& grant) const
+{
     Allocation out;
     out.Buffer = RingBuffer;
-    out.Offset = globalOffset;
-    out.Mapped = static_cast<uint8_t*>(MappedBase) + globalOffset;
+    out.Offset = grant.Offset;
+    out.Mapped = static_cast<uint8_t*>(MappedBase) + grant.Offset;
     return out;
 }
 
@@ -120,5 +124,31 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::AllocateUniform(VkDeviceSize 
 
 VulkanFrameScratch::Allocation VulkanFrameScratch::AllocateVertex(VkDeviceSize size)
 {
-    return Allocate(size, 16);
+    return Allocate(size, kVertexAlignment);
+}
+
+VulkanFrameScratch::ElementAllocation VulkanFrameScratch::AllocateVertexElements(
+    uint32_t maxElements, VkDeviceSize stride)
+{
+    if (!Valid) return {};
+
+    const FrameScratchRing::Grant grant =
+        Ring.AllocateElements(maxElements, stride, kVertexAlignment);
+    if (!grant.IsValid())
+    {
+        if (maxElements != 0 && stride != 0)
+        {
+            Log.Error("VulkanFrameScratch: no room for a {}-byte element at cursor {} "
+                      "of frame slice capacity ({})",
+                      static_cast<uint64_t>(stride),
+                      static_cast<uint64_t>(Ring.GetUsedBytes()),
+                      static_cast<uint64_t>(Ring.GetBytesPerFrame()));
+        }
+        return {};
+    }
+
+    ElementAllocation out;
+    out.Grant = MakeAllocation(grant);
+    out.Count = static_cast<uint32_t>(grant.Bytes / stride);
+    return out;
 }

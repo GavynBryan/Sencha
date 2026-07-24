@@ -1,339 +1,263 @@
 #include "DocumentCook.h"
+#include "DocumentCookInputData.h"
 
 #include "BrushCookInput.h"
+#include "CellArtifactCook.h"
+#include "CookArtifactTransaction.h"
+#include "CookGraph.h"
+#include "CookReceipt.h"
+#include "CookStepCache.h"
+#include "CookStepProgress.h"
+#include "CookedSceneAssembly.h"
+#include "DocumentArtifactCatalog.h"
+#include "DocumentBakeOcclusion.h"
+#include "DocumentCookContext.h"
+#include "DocumentCookFingerprints.h"
+#include "DocumentCookPaths.h"
+#include "DocumentCookReuse.h"
+#include "DocumentImportPublisher.h"
+#include "DocumentLightmapBake.h"
+#include "DocumentProbeBake.h"
+#include "DocumentPublication.h"
+#include "DocumentPublicationPlan.h"
 #include "EditorDocument.h"
+#include "LightmapSurfaceCook.h"
 
+#include <assets/cook/BakeBvh.h>
 #include <assets/cook/BrushClustering.h>
-#include <assets/cook/BrushGeometryCook.h>
-#include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/CookedCache.h>
+#include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ImportOnDemand.h>
-#include <assets/cook/SceneCookOutput.h>
+#include <assets/cook/LightmapAtlasPack.h>
 #include <assets/cook/TextureCook.h>
-#include <assets/static_mesh/MeshSerializer.h>
-#include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/json/JsonStringify.h>
-#include <core/json/JsonValue.h>
 #include <core/assets/RuntimeAssets.h>
-#include <core/hash/ContentHash.h>
+#include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/MeshGeometry.h>
-#include <world/registry/Registry.h>
-#include <world/serialization/SceneSerializationContext.h>
-#include <world/serialization/SceneSerializer.h>
 
-#include <cstddef>
 #include <cstdint>
-#include <fstream>
+#include <optional>
 #include <span>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
-namespace
-{
-    // The bake-input fingerprint: exactly the data that reaches the bake (each
-    // face's resolved material plus its world-space triangles) and the cell
-    // size. Non-geometry component edits don't touch it, so they don't force a
-    // re-bake (05-§3); a real geometry/material/transform change does, because
-    // the collected triangles are post-transform.
-    uint64_t HashBrushInputs(std::span<const CookBrushGeometry> brushes, double cellSize)
-    {
-        uint64_t h = HashBytes64(std::as_bytes(std::span<const double>{ &cellSize, 1 }));
-        for (const CookBrushGeometry& brush : brushes)
-            for (const CookFace& face : brush.Faces)
-            {
-                h = HashBytes64(face.Material.Path, h);
-                h = HashBytes64(std::as_bytes(std::span<const StaticMeshVertex>{
-                    face.Triangles.data(), face.Triangles.size() }), h);
-            }
-        return h;
-    }
-
-    std::string CellBase(const Vec3i& coord)
-    {
-        return "cell_" + std::to_string(coord.X) + "_" + std::to_string(coord.Y)
-            + "_" + std::to_string(coord.Z);
-    }
-
-    std::string CellName(const Vec3i& coord) { return CellBase(coord) + ".smesh"; }
-
-    // Flatten a cell's already-triangulated faces into a position/index soup for
-    // the collision bake (cell-local, the same triangles the render mesh uses).
-    void CollectCellTriangles(const std::vector<CookFace>& faces,
-                              std::vector<Vec3d>& positions,
-                              std::vector<uint32_t>& indices)
-    {
-        for (const CookFace& face : faces)
-            for (const StaticMeshVertex& vertex : face.Triangles)
-            {
-                indices.push_back(static_cast<uint32_t>(positions.size()));
-                positions.push_back(vertex.Position);
-            }
-    }
-
-    // One cell's cooked collision: the blob's path (relative to the cooked root)
-    // and the cell origin the runtime places the static collider at.
-    struct CollisionEntry
-    {
-        std::string BlobRelPath;
-        Vec3d Origin;
-    };
-} // namespace
-
-JsonValue BuildCellEntity(const Vec3d& origin,
-                          std::string_view meshPath,
-                          std::span<const AssetRef> materials)
-{
-    JsonValue::Object local{
-        { "position", JsonValue(JsonValue::Array{
-            JsonValue(static_cast<double>(origin.X)),
-            JsonValue(static_cast<double>(origin.Y)),
-            JsonValue(static_cast<double>(origin.Z)) }) },
-        { "rotation", JsonValue(JsonValue::Array{
-            JsonValue(0.0), JsonValue(0.0), JsonValue(0.0), JsonValue(1.0) }) },
-        { "scale", JsonValue(JsonValue::Array{
-            JsonValue(1.0), JsonValue(1.0), JsonValue(1.0) }) },
-    };
-
-    JsonValue::Array materialPaths;
-    materialPaths.reserve(materials.size());
-    for (const AssetRef& material : materials)
-        materialPaths.push_back(JsonValue(material.Path));
-
-    JsonValue::Object staticMesh{
-        { "mesh", JsonValue(std::string(meshPath)) },
-        { "materials", JsonValue(std::move(materialPaths)) },
-        { "visible", JsonValue(true) },
-        { "layer_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
-        { "section_mask", JsonValue(static_cast<double>(0xFFFFFFFFu)) },
-    };
-
-    return JsonValue(JsonValue::Object{
-        { "components", JsonValue(JsonValue::Object{
-            { "Transform", JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } }) },
-            { "StaticMesh", JsonValue(std::move(staticMesh)) },
-        }) },
-    });
-}
-
-namespace
-{
-// The cook kernel. Operates on a mutable document it is free to mutate
-// destructively (it drops brush entities before serializing the passthrough
-// scene), so both callers hand it a throwaway: the file cook loads one from
-// disk, the live cook snapshots the editor's document. stem names the level's
-// artifacts; sourceRel is the cooked-cache source key.
-DocumentCookResult CookDocumentKernel(EditorDocument& doc,
-                                  std::string_view stem,
-                                  std::string_view sourceRel,
-                                  const std::filesystem::path& assetsRoot,
-                                  double cellSize,
-                                  LoggingProvider& logging,
-                                  AssetSystem* assetSystem)
+DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
+                                       std::string_view levelName,
+                                       std::string_view sourceRel,
+                                       const std::filesystem::path& assetsRoot,
+                                       LoggingProvider& logging)
 {
     DocumentCookResult result;
+    if (input.Input == nullptr)
+    {
+        result.Error = "CookDocument: empty cook input";
+        return result;
+    }
+    DocumentCookInput::Data& data = *input.Input;
+    const DocumentCookRequest& request = data.Request;
+    DocumentCookSnapshot& snapshot = data.Snapshot;
+    const CookProfile& profile = request.Profile;
+    result.ProfileId = profile.Id;
+    CookStepProgress progress(request.Control, request.Graph.OrderedSteps);
+    if (progress.Cancelled(result))
+        return result;
+    const bool runCollisionTarget = request.Selects(CookStepIds::Collision);
+    const bool runReferencedAssets = request.Selects(CookStepIds::ReferencedAssets);
+    const LightingCookParams& lightmapParams = snapshot.Lighting;
+    const double cellSize = request.CellSize;
+    std::vector<BakeDirectLight>& bakeLights = snapshot.BakeLights;
+    std::vector<ProbeVolumeInput>& probeVolumes = snapshot.ProbeVolumes;
+    CookChartSet& charts = snapshot.Charts;
+    std::vector<CookBrushGeometry>& brushes = snapshot.Brushes;
+    std::vector<LightmapPlacement>& placements = snapshot.Placements;
+    CookArtifactTransaction transaction(assetsRoot, sourceRel);
+    const DocumentBakeExtent bakeExtent = SelectDocumentBakeExtent(snapshot);
 
-    // Collect -> hash -> cluster. The hash is taken on the collected input so it
-    // reflects exactly what gets baked.
-    std::vector<CookBrushGeometry> brushes = CollectCookBrushes(doc.GetScene(), doc.GetDefaultMaterial());
-    const uint64_t geometryHash = HashBrushInputs(brushes, cellSize);
+    const DocumentCookFingerprints fingerprints =
+        ComputeDocumentCookFingerprints(snapshot, cellSize, bakeExtent.ReachableHalo);
+    const std::uint64_t geometryHash = fingerprints.Document;
+    const DocumentCookPaths paths = DeriveDocumentCookPaths(
+        assetsRoot, sourceRel, levelName, request.OutputNamespace, geometryHash);
+
+    // Referenced-asset freshness runs before the whole-document fast path: a
+    // changed or missing referenced import produces a non-empty prepared set,
+    // which defeats the cache hit so the import re-publishes this cook. The
+    // prepared bytes publish through the transaction below (or are discarded on
+    // a hit). The scan is cheap when every source is fresh (stat checks).
+    PendingAssetImport pendingImports;
+    if (runReferencedAssets)
+    {
+        progress.Begin(CookStepIds::ReferencedAssets);
+        PngTextureImporter textureImporter;
+        AssetImporterRegistry importers;
+        importers.Register(textureImporter);
+        (void)PrepareAssetsOnDemand(assetsRoot, importers, logging, pendingImports);
+        progress.Complete();
+    }
+    const bool referencedAssetsFresh = pendingImports.Artifacts.empty();
+
+    DocumentCookReceipt cachedReceipt;
+    const bool hasCachedReceipt = !request.ForceRebuild
+        && LoadDocumentCookReceipt(paths.Receipt, cachedReceipt);
+    std::error_code cacheEc;
+    if (std::optional<DocumentCookResult> hit = TryDocumentCookCacheHit(
+            request, paths, assetsRoot, sourceRel, geometryHash,
+            referencedAssetsFresh, hasCachedReceipt, cachedReceipt, progress))
+        return *hit;
+
+    const DocumentCookReceipt* priorReceipt = hasCachedReceipt ? &cachedReceipt : nullptr;
+    const DocumentCookReuse reuse =
+        ResolveDocumentCookReuse(priorReceipt, assetsRoot, snapshot, fingerprints);
+    progress.Begin(DocumentCookStepIds::BrushCells);
     std::vector<BrushCell> cells = ClusterBrushesIntoCells(brushes, cellSize);
+    progress.Complete();
+    if (progress.Cancelled(result))
+        return result;
+    const bool runCollision = runCollisionTarget
+        || !std::filesystem::exists(paths.Collision, cacheEc);
 
-    const std::string stemStr(stem);
-    MeshSerializer serializer(logging);
+    // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
+    // the per-cell mesh bake: the weld compares whole vertices, so identical
+    // UVs weld chart interiors and differing UVs split chart borders, with no
+    // dedicated chart-splitting logic.
+    LightmapAtlasLayout atlasLayout;
+    if (!bakeLights.empty())
+    {
+        progress.Begin(DocumentCookStepIds::LightmapSurfaces);
+        std::string surfaceError;
+        if (!LayoutLightmapSurfaces(cells, placements, charts, lightmapParams,
+                                    snapshot.PassthroughScene, logging, atlasLayout,
+                                    &surfaceError))
+        {
+            result.Error = "CookDocument: " + surfaceError;
+            return result;
+        }
+        progress.Complete();
+        if (progress.Cancelled(result))
+            return result;
+    }
 
     JsonValue::Array cellEntities;
-    std::vector<CookedArtifact> artifacts;
-    std::vector<std::string> materialRefs; // distinct face materials, in cook order
-    std::unordered_set<std::string> seenMaterial;
-    std::unordered_set<std::string> generatedMeshPaths;
-    std::vector<CollisionEntry> collisionEntries;
+    DocumentArtifactCatalog catalog;
+    std::vector<CellCollisionEntry> collisionEntries;
+    std::optional<CookedArtifact> directLightmapArtifact;
+    std::optional<CookedArtifact> ambientOcclusionArtifact;
+    std::optional<CookedArtifact> probeArtifact;
+    std::vector<PendingCellMesh> pendingMeshes;
 
-    for (const BrushCell& cell : cells)
+    const DocumentCookContext ctx{
+        .AssetsRoot = assetsRoot,
+        .Paths = paths,
+        .Transaction = transaction,
+        .Catalog = catalog,
+        .Progress = progress,
+        .Logging = logging,
+        .Result = result,
+    };
+
+    if (!EmitCellArtifacts(ctx, cells, runCollision, pendingMeshes, cellEntities,
+                           collisionEntries))
+        return result;
+
+    // One occlusion BVH over every cell's world triangles serves both bakes:
+    // a light in one cell shadows onto its neighbors, and probe rays see the
+    // whole document plus any neighbor-zone halo within reach.
+    BakeBvh occlusionBvh;
+    const bool needsOcclusion = (!bakeLights.empty() && !reuse.ReuseLighting)
+        || (!probeVolumes.empty() && reuse.Probes == nullptr);
+    if (needsOcclusion)
     {
-        std::vector<AssetRef> order = CollectMaterialOrder(cell.Faces);
-
-        MeshGeometry geometry;
-        std::string bakeError;
-        if (!BakeBrushFacesToStaticMesh(cell.Faces, order, geometry, &bakeError))
-        {
-            result.Error = "CookDocument: " + bakeError;
+        progress.Begin(DocumentCookStepIds::OcclusionGeometry);
+        occlusionBvh = BuildDocumentOcclusionBvh(pendingMeshes, snapshot, bakeExtent);
+        progress.Complete();
+        if (progress.Cancelled(result))
             return result;
-        }
-
-        const std::string cellName = CellName(cell.Coord);
-        const std::string meshAssetPath = "asset://levels/" + stemStr + "/" + cellName;
-        const std::string meshRelPath = ".cooked/levels/" + stemStr + "/" + cellName;
-        const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
-
-        std::error_code ec;
-        std::filesystem::create_directories(meshPhysical.parent_path(), ec);
-        if (!serializer.WriteToFile(meshPhysical.generic_string(), geometry))
-        {
-            result.Error = "CookDocument: could not write mesh '" + meshPhysical.generic_string() + "'";
-            return result;
-        }
-
-        cellEntities.push_back(BuildCellEntity(cell.Origin, meshAssetPath, order));
-        artifacts.push_back(CookedArtifact{ meshAssetPath, meshRelPath, AssetType::StaticMesh });
-        result.GeneratedMeshPaths.push_back(meshAssetPath);
-        generatedMeshPaths.insert(meshAssetPath);
-        for (const AssetRef& material : order)
-            if (seenMaterial.insert(material.Path).second)
-                materialRefs.push_back(material.Path);
-
-        // Collision: bake the same cell triangles into a pre-baked Jolt blob, a
-        // sibling of the cell mesh. Authored brushes become collidable with no
-        // collider authoring; the runtime loads these from the sidecar at map load.
-        std::vector<Vec3d> collisionPositions;
-        std::vector<uint32_t> collisionIndices;
-        CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
-        const std::vector<std::byte> collisionBlob =
-            BakeCollisionBlob(collisionPositions, collisionIndices);
-        if (!collisionBlob.empty())
-        {
-            const std::string colRel = "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
-            const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
-            std::ofstream colFile(colPhysical, std::ios::binary);
-            colFile.write(reinterpret_cast<const char*>(collisionBlob.data()),
-                          static_cast<std::streamsize>(collisionBlob.size()));
-            if (colFile.good())
-            {
-                collisionEntries.push_back(CollisionEntry{ colRel, cell.Origin });
-                artifacts.push_back(
-                    CookedArtifact{ "asset://" + colRel, ".cooked/" + colRel, AssetType::Collision });
-            }
-        }
     }
 
-    // Drop the brush entities so SaveSceneJson emits only passthrough game
-    // components (the cook is the one and only StaticMeshComponent emitter), then
-    // append the cell entities. Baked entities pass through as ordinary props,
-    // but their editor-only dormant-source annotation is stripped: the cooked
-    // scene never carries editor data.
+    // Resolve the publication plan: what this cook produces, and what a Preserve
+    // disposition carries forward from the active published entry so a preserved
+    // output stays referenced instead of orphaned on disk.
+    CookedCacheIndex priorIndex;
+    (void)CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), priorIndex);
+    const DocumentPublicationPlan plan = ResolveDocumentPublicationPlan(
+        request, /*directProduced*/ !bakeLights.empty(),
+        /*aoProduced*/ !bakeLights.empty() && lightmapParams.Ao.Enabled,
+        /*probesProduced*/ !probeVolumes.empty(), runCollision,
+        priorIndex.Find(sourceRel));
+    std::string preserveError;
+    if (!plan.ValidatePreserved(assetsRoot, &preserveError))
     {
-        EditorScene& scene = doc.GetScene();
-        std::vector<EntityId> brushEntities;
-        for (EntityId entity : scene.GetAllEntities())
-        {
-            if (scene.TryGetBrush(entity) != nullptr)
-            {
-                brushEntities.push_back(entity);
-                continue;
-            }
-            if (scene.TryGetBakedBrush(entity) != nullptr)
-                scene.GetRegistry().Components.RemoveComponent<BakedBrushComponent>(entity);
-        }
-        for (EntityId entity : brushEntities)
-            scene.DestroyEntity(entity);
-    }
-
-    // Serialize passthrough entities through the shared asset system so prop
-    // StaticMesh handles emit asset:// paths (the cell entities are raw JSON and
-    // bypass the codec, but authored props go through it). A null assetSystem is
-    // the brush-only cook (no asset fields to resolve).
-    SceneSerializationContext context(logging, assetSystem);
-    JsonValue cooked = SaveSceneJson(doc.GetRegistry(), context);
-    bool appended = false;
-    if (cooked.IsObject())
-        for (auto& [key, value] : cooked.AsObject())
-            if (key == "entities" && value.IsArray())
-            {
-                for (JsonValue& cellEntity : cellEntities)
-                    value.AsArray().push_back(std::move(cellEntity));
-                appended = true;
-                break;
-            }
-    if (!appended)
-    {
-        result.Error = "CookDocument: assembled scene has no entities array";
+        result.Error = "CookDocument: " + preserveError;
         return result;
     }
 
-    std::error_code ec;
-    const std::filesystem::path cookedDir = assetsRoot / ".cooked/levels";
-    std::filesystem::create_directories(cookedDir, ec);
-    const std::filesystem::path cookedScenePath = cookedDir / (stemStr + ".cooked.json");
-    const std::filesystem::path manifestPath = cookedDir / (stemStr + ".manifest.json");
-
-    // Collision sidecar: the runtime loads this at map load (LoadZoneCollision)
-    // to spawn the level's static brush colliders. Empty array if no brushes.
+    // Bake static direct lighting into the zone's lightmap atlas. The lights
+    // were collected up front (folded into the cook hash).
+    if (!bakeLights.empty())
     {
-        JsonValue::Array sidecar;
-        sidecar.reserve(collisionEntries.size());
-        for (const CollisionEntry& entry : collisionEntries)
-            sidecar.push_back(JsonValue(JsonValue::Object{
-                { "blob", JsonValue(entry.BlobRelPath) },
-                { "origin", JsonValue(JsonValue::Array{
-                    JsonValue(static_cast<double>(entry.Origin.X)),
-                    JsonValue(static_cast<double>(entry.Origin.Y)),
-                    JsonValue(static_cast<double>(entry.Origin.Z)) }) },
-            }));
-        std::ofstream sidecarFile(cookedDir / (stemStr + ".collision.json"));
-        sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
+        if (!BakeDocumentLightmap(ctx, snapshot, cells, atlasLayout, occlusionBvh,
+                                  reuse, cellEntities, directLightmapArtifact,
+                                  ambientOcclusionArtifact))
+            return result;
     }
 
-    // asset:// resolution: Generated cell meshes live under .cooked/; every other
-    // ref (materials, their textures) is an authored asset under the root.
-    const auto physicalPathFor =
-        [&assetsRoot, &generatedMeshPaths](std::string_view assetPath) -> std::filesystem::path {
-            constexpr std::string_view prefix = "asset://";
-            const std::string rel(assetPath.substr(prefix.size()));
-            if (generatedMeshPaths.count(std::string(assetPath)) != 0)
-                return assetsRoot / ".cooked" / rel;
-            return assetsRoot / rel;
-        };
+    // Bake authored irradiance-probe volumes into the zone's .sprobe. Bounce
+    // comes from Direct and Indirect lights against the same occlusion BVH;
+    // the runtime locates the file by the cooked-scene path convention.
+    if (!probeVolumes.empty())
+    {
+        if (!BakeDocumentProbes(ctx, snapshot, occlusionBvh, reuse, probeArtifact))
+            return result;
+    }
 
+    // Families the profile keeps but this cook does not rebake: re-emit their
+    // references and carry the prior published artifacts forward.
+    ApplyPreservedPublication(plan, catalog, cellEntities);
+
+    if (!WriteCookedSceneArtifacts(ctx, std::move(snapshot.PassthroughScene),
+                                   pendingMeshes, cellEntities, collisionEntries,
+                                   runCollision))
+        return result;
+
+    if (!StageDocumentIndex(ctx, sourceRel, geometryHash, runReferencedAssets,
+                            std::move(pendingImports)))
+        return result;
+
+    result.CellCount = cells.size();
+    if (!StageDocumentReceipt(ctx, sourceRel, geometryHash, profile, fingerprints,
+                              reuse, plan, directLightmapArtifact,
+                              ambientOcclusionArtifact, probeArtifact, hasCachedReceipt,
+                              cachedReceipt))
+        return result;
+
+    progress.Begin(DocumentCookStepIds::Publication);
+    if (progress.Cancelled(result))
+        return result;
     std::string cookError;
-    if (!WriteCookedScene(cooked, materialRefs, physicalPathFor,
-            assetsRoot / kAssetIdMapFileName, manifestPath, cookedScenePath, &cookError))
+    if (!transaction.Commit(&cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return result;
     }
-
-    // Cook source textures the level's materials reference (.png -> .stex) into
-    // .cooked/ so the COOK=OFF player can load them. The import driver maintains
-    // the cooked index keyed by source path; the index.Put below loads that
-    // updated index and adds the level entry, so both survive. Idempotent:
-    // unchanged sources are served from the cooked cache.
-    {
-        PngTextureImporter textureImporter;
-        AssetImporterRegistry importers;
-        importers.Register(textureImporter);
-        AssetRegistry scratch(logging); // we want the on-disk artifacts + index, not a live registry
-        (void)ImportAssetsOnDemand(assetsRoot.generic_string(), importers, scratch, logging);
-    }
-
-    // Record source -> artifacts (source key = caller-supplied rel path, hash key
-    // = brush-geometry hash).
-    const std::filesystem::path indexPath = assetsRoot / ".cooked/index.json";
-    CookedCacheIndex index;
-    (void)CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index); // cold cache is fine
-    CookedSourceEntry entry;
-    entry.SourceRelPath = std::string(sourceRel);
-    entry.SourceHash = geometryHash;
-    entry.Artifacts = std::move(artifacts);
-    index.Put(std::move(entry));
-    (void)index.SaveToFile(indexPath.generic_string());
+    progress.Complete();
 
     result.Success = true;
-    result.CookedScenePath = cookedScenePath;
-    result.ManifestPath = manifestPath;
-    result.CollisionSidecarPath = cookedDir / (stemStr + ".collision.json");
+    result.CookedScenePath = paths.Scene;
+    result.ManifestPath = paths.Manifest;
+    result.CollisionSidecarPath = paths.Collision;
     result.ContentHash = geometryHash;
     result.CellCount = cells.size();
+    progress.Finish();
     return result;
 }
-} // namespace
 
 DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
                           double cellSize,
                           LoggingProvider* logging,
-                          RuntimeAssets* assets)
+                          RuntimeAssets* assets,
+                          const LightingCookParams& lightmapParams,
+                          std::span<const ProbeHaloZone> halo,
+                          const DocumentCookOptions& options)
 {
     // A sink-less local logger keeps the no-logging call headless and silent.
     LoggingProvider silent;
@@ -351,8 +275,19 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     std::error_code ec;
     const std::string sourceRel =
         std::filesystem::relative(authoredLevelPath, assetsRoot, ec).generic_string();
-    return CookDocumentKernel(doc, authoredLevelPath.stem().generic_string(), sourceRel,
-                             assetsRoot, cellSize, log, assets != nullptr ? &assets->Assets : nullptr);
+    std::string inputError;
+    std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+        doc, assetsRoot, cellSize, log, assets, lightmapParams, halo, options,
+        &inputError);
+    if (!input.has_value())
+    {
+        DocumentCookResult result;
+        result.Error = "CookDocument: " + inputError;
+        return result;
+    }
+    return ExecuteDocumentCook(std::move(*input),
+                               authoredLevelPath.stem().generic_string(), sourceRel,
+                               assetsRoot, log);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -360,22 +295,22 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
                           const std::filesystem::path& assetsRoot,
                           double cellSize,
                           LoggingProvider& logging,
-                          RuntimeAssets* assets)
+                          RuntimeAssets* assets,
+                          const LightingCookParams& lightmapParams,
+                          const DocumentCookOptions& options)
 {
-    // Snapshot the live (possibly unsaved) document into a throwaway the kernel is
-    // free to mutate, leaving the editor's document untouched. The snapshot shares
-    // the same asset system so its prop handles round-trip through ToJson/LoadFromJson.
-    EditorDocument snapshot(logging);
-    if (assets != nullptr)
-        snapshot.SetAssetEnvironment(*assets);
-    if (!snapshot.LoadFromJson(liveDocument.ToJson()))
+    std::string inputError;
+    std::optional<DocumentCookInput> input = CollectDocumentCookInput(
+        liveDocument, assetsRoot, cellSize, logging, assets, lightmapParams, {},
+        options, &inputError);
+    if (!input.has_value())
     {
         DocumentCookResult result;
-        result.Error = "CookDocument: could not snapshot the live document";
+        result.Error = "CookDocument: " + inputError;
         return result;
     }
 
     const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
-    return CookDocumentKernel(snapshot, levelName, sourceRel, assetsRoot, cellSize,
-                             logging, assets != nullptr ? &assets->Assets : nullptr);
+    return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
+                               assetsRoot, logging);
 }

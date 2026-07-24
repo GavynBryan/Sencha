@@ -75,7 +75,9 @@ bool WriteGlbFile(const MeshGeometry& geometry,
     { return JsonValue(JsonValue::Array{ JsonValue(double(v.X)), JsonValue(double(v.Y)), JsonValue(double(v.Z)) }); };
     const auto obj = [](JsonValue::Object o) { return JsonValue(std::move(o)); };
 
-    // Buffer views: 0 = interleaved vertex stream (stride 48), 1 = index stream.
+    // Buffer views: 0 = interleaved vertex stream (full StaticMeshVertex
+    // stride; the trailing baked-direct bytes are unreferenced by any accessor
+    // and ignored by importers), 1 = index stream.
     JsonValue::Array bufferViews;
     bufferViews.push_back(obj({ { "buffer", JsonValue(0) },
                                 { "byteOffset", JsonValue(0) },

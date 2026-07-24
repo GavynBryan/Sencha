@@ -14,7 +14,7 @@ namespace
                          const Transform3f& transform, const Vec4& fill)
     {
         BrushTessellate(mesh, transform,
-            [&](const FaceMaterial&, std::span<const BrushTriVertex> triangles)
+            [&](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> triangles)
             {
                 for (const BrushTriVertex& v : triangles)
                     vertices.push_back(EditorLineVertex{ .Position = v.Position,

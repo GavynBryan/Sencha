@@ -6,20 +6,35 @@ Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face)
 {
     // Newell's method: robust for non-planar / concave polygons, and orientation
     // follows the loop winding (CCW → outward by right-hand rule).
-    Vec3d normal{ 0.0f, 0.0f, 0.0f };
     const std::size_t n = face.Loop.size();
     if (n < 3)
-        return normal;
+        return Vec3d{};
 
+    // A cyclic loop rotation is the same polygon. Start at its lowest vertex
+    // index so choosing another tessellation fan cannot alter the normal via a
+    // different floating-point reduction order, and accumulate products in
+    // double so exactly axis-aligned faces stay exactly axis-aligned.
+    std::size_t start = 0;
+    for (std::size_t i = 1; i < n; ++i)
+        if (face.Loop[i] < face.Loop[start])
+            start = i;
+
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
     for (std::size_t i = 0; i < n; ++i)
     {
-        const Vec3d& a = mesh.Vertices[face.Loop[i]].Position;
-        const Vec3d& b = mesh.Vertices[face.Loop[(i + 1) % n]].Position;
-        normal.X += (a.Y - b.Y) * (a.Z + b.Z);
-        normal.Y += (a.Z - b.Z) * (a.X + b.X);
-        normal.Z += (a.X - b.X) * (a.Y + b.Y);
+        const std::size_t current = (start + i) % n;
+        const std::size_t next = (start + i + 1) % n;
+        const Vec3d& a = mesh.Vertices[face.Loop[current]].Position;
+        const Vec3d& b = mesh.Vertices[face.Loop[next]].Position;
+        x += (static_cast<double>(a.Y) - b.Y) * (static_cast<double>(a.Z) + b.Z);
+        y += (static_cast<double>(a.Z) - b.Z) * (static_cast<double>(a.X) + b.X);
+        z += (static_cast<double>(a.X) - b.X) * (static_cast<double>(a.Y) + b.Y);
     }
 
+    const Vec3d normal{ static_cast<float>(x), static_cast<float>(y),
+                        static_cast<float>(z) };
     if (normal.SqrMagnitude() <= 0.0f)
         return Vec3d{ 0.0f, 0.0f, 0.0f };
     return normal.Normalized();

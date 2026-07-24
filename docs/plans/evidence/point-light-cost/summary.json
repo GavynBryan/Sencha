@@ -1,0 +1,57 @@
+{
+  "warmup": 400,
+  "runs": [
+    {
+      "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/lightcost/lights_16.json",
+      "frames": 1006,
+      "lights_visible": 16,
+      "lights_dropped": 0,
+      "visible_objects": 23,
+      "draw_calls": 1,
+      "triangles": 2116,
+      "main_color_median_ms": 1.2534719705581665,
+      "main_color_p95_ms": 1.2542719841003418,
+      "main_color_p99_ms": 1.2547199726104736,
+      "forward_opaque_median_ms": 1.2462079524993896
+    },
+    {
+      "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/lightcost/lights_32.json",
+      "frames": 1005,
+      "lights_visible": 32,
+      "lights_dropped": 0,
+      "visible_objects": 23,
+      "draw_calls": 1,
+      "triangles": 2116,
+      "main_color_median_ms": 2.400223970413208,
+      "main_color_p95_ms": 2.401247978210449,
+      "main_color_p99_ms": 2.402911901473999,
+      "forward_opaque_median_ms": 2.3930881023406982
+    },
+    {
+      "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/lightcost/lights_64.json",
+      "frames": 1006,
+      "lights_visible": 64,
+      "lights_dropped": 0,
+      "visible_objects": 23,
+      "draw_calls": 1,
+      "triangles": 2116,
+      "main_color_median_ms": 5.014672040939331,
+      "main_color_p95_ms": 7.067808151245117,
+      "main_color_p99_ms": 7.334464073181152,
+      "forward_opaque_median_ms": 5.007359981536865
+    },
+    {
+      "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/lightcost/lights_96.json",
+      "frames": 1007,
+      "lights_visible": 64,
+      "lights_dropped": 32,
+      "visible_objects": 23,
+      "draw_calls": 1,
+      "triangles": 2116,
+      "main_color_median_ms": 5.084288120269775,
+      "main_color_p95_ms": 7.278592109680176,
+      "main_color_p99_ms": 7.608543872833252,
+      "forward_opaque_median_ms": 5.075967788696289
+    }
+  ]
+}

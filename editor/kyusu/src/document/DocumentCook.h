@@ -1,52 +1,116 @@
 #pragma once
 
+#include <assets/cook/LightingCookParams.h>
+#include <assets/cook/CookControl.h>
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <math/Vec.h>
+#include <project/CookProfile.h>
 
 #include <filesystem>
+#include <optional>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// Level cook (docs/plans/sencha-level-editor/05-level-cook.md §5, §6, S6).
-// Dev-only — editor-side because it consumes editor brush types (EditorScene /
-// BrushTessellate); the engine layer must not depend on the editor, so the
-// orchestration lives here while the reusable, brush-agnostic pieces
-// (WriteCookedScene, prune, the bake, the clustering) stay in the engine.
-//
-// Authored level (.json scene + brush_meshes sidecar + default_material) ->
-// per-cell Generated .smesh + a cooked scene (one StaticMeshComponent per cell,
-// game components passed through) + manifest + AssetId stamping + cooked-cache
-// participation. The "one path, two schedulings" PIE counterpart (S7) reuses
-// the same collect -> cluster -> bake kernel without touching disk.
-//=============================================================================
+// Editor-side level cook. Collection snapshots editor and asset state on the
+// owner thread. Execution consumes only that immutable snapshot and publishes
+// staged artifacts, so the same kernel supports synchronous tools and the
+// editor's background CookSession.
 
 struct DocumentCookResult
 {
     bool                     Success = false;
+    bool                     CacheHit = false;
+    bool                     Cancelled = false;
+    std::string              ProfileId;
     std::string              Error;
+    std::vector<std::string> ReusedSteps;
     std::vector<std::string> GeneratedMeshPaths; // asset:// per cell, in cook order
     std::filesystem::path    CookedScenePath;
     std::filesystem::path    ManifestPath;
     std::filesystem::path    CollisionSidecarPath;
     uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
+    std::size_t              DirectLightCount = 0;   // lights baked this cook
+    std::size_t              ProbeVolumeCount = 0;   // authored volumes baked
+    std::size_t              ProbeCount = 0;         // total probes across them
+    std::uint32_t            LightmapAtlasWidth = 0; // 0 when nothing baked
+    std::uint32_t            LightmapAtlasHeight = 0;
+    // The luxel size the atlas actually packed at; differs from the requested
+    // size only when MaxAtlasSize forced a density clamp (worth a log line).
+    float                    EffectiveLuxelSize = 0.0f;
 };
 
-// Builds the cooked StaticMesh entity JSON for one cell: a Transform at the
-// cell origin plus a StaticMesh referencing the cell mesh and its per-section
-// materials (bare asset:// paths; WriteCookedScene stamps the ones the id map
-// knows). Exposed so the JSON shape can be pinned against the runtime loader.
-[[nodiscard]] JsonValue BuildCellEntity(const Vec3d& origin,
-                                        std::string_view meshPath,
-                                        std::span<const AssetRef> materials);
+struct DocumentCookOptions
+{
+    // Null selects the protected Full profile.
+    const CookProfile* Profile = nullptr;
+    bool ForceRebuild = false;
+    std::shared_ptr<CookControl> Control;
+    // Optional prefix for content-addressed publication. World cooks use this
+    // so the manifest switches generations only after every zone succeeds.
+    std::string OutputNamespace;
+};
 
 class EditorDocument;
 class LoggingProvider;
 struct RuntimeAssets;
+struct DocumentCookRequest;
+struct DocumentCookSnapshot;
+
+// Immutable, move-only snapshot consumed by the long-running cook backend.
+// Collection resolves editor registry state and asset handles on the caller's
+// thread; execution never touches the live document or AssetSystem.
+class DocumentCookInput
+{
+public:
+    struct Data;
+
+    DocumentCookInput(DocumentCookInput&&) noexcept;
+    DocumentCookInput& operator=(DocumentCookInput&&) noexcept;
+    ~DocumentCookInput();
+
+    DocumentCookInput(const DocumentCookInput&) = delete;
+    DocumentCookInput& operator=(const DocumentCookInput&) = delete;
+
+    // The resolved policy and captured document state. Exposed so collection is
+    // testable without executing a cook.
+    [[nodiscard]] const DocumentCookRequest& Request() const;
+    [[nodiscard]] const DocumentCookSnapshot& Snapshot() const;
+
+private:
+    explicit DocumentCookInput(std::unique_ptr<Data> data);
+    std::unique_ptr<Data> Input;
+
+    friend std::optional<DocumentCookInput> CollectDocumentCookInput(
+        const EditorDocument&, const std::filesystem::path&, double,
+        LoggingProvider&, RuntimeAssets*, const LightingCookParams&,
+        std::span<const ProbeHaloZone>, const DocumentCookOptions&, std::string*);
+    friend DocumentCookResult ExecuteDocumentCook(
+        DocumentCookInput, std::string_view, std::string_view,
+        const std::filesystem::path&, LoggingProvider&);
+};
+
+[[nodiscard]] std::optional<DocumentCookInput> CollectDocumentCookInput(
+    const EditorDocument& document,
+    const std::filesystem::path& assetsRoot,
+    double cellSize,
+    LoggingProvider& logging,
+    RuntimeAssets* assets = nullptr,
+    const LightingCookParams& lightmapParams = {},
+    std::span<const ProbeHaloZone> halo = {},
+    const DocumentCookOptions& options = {},
+    std::string* error = nullptr);
+
+[[nodiscard]] DocumentCookResult ExecuteDocumentCook(
+    DocumentCookInput input,
+    std::string_view levelName,
+    std::string_view sourceRel,
+    const std::filesystem::path& assetsRoot,
+    LoggingProvider& logging);
 
 // Cooks the authored level at `authoredLevelPath` into `assetsRoot`. cellSize is
 // the spatial grid size (a cvar at the call site). Requires
@@ -57,11 +121,29 @@ struct RuntimeAssets;
 // `logging` and `assets` are optional: null logging cooks silently (headless),
 // null assets cooks brush-only (passthrough asset-handle components need the
 // shared asset system to resolve their refs).
+// `halo` is neighbor-zone occluder geometry (CollectZoneBakeHalo records):
+// zones within probe-ray reach join the bake's occlusion set and the cook
+// hash. A world cook passes the sibling zones; a standalone level cook has
+// none.
 [[nodiscard]] DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider* logging = nullptr,
-                                        RuntimeAssets* assets = nullptr);
+                                        RuntimeAssets* assets = nullptr,
+                                        const LightingCookParams& lightmapParams = {},
+                                        std::span<const ProbeHaloZone> halo = {},
+                                        const DocumentCookOptions& options = {});
+
+// Collects the saved level's bake-occluding world geometry (brush faces plus
+// placements that cast into the bake) as one halo record for NEIGHBOR zone
+// cooks: triangles, their bounds, and a content hash over them. Null return
+// means the level failed to load. `assets` as for CookDocument (placements
+// need it to resolve their mesh refs).
+[[nodiscard]] std::optional<ProbeHaloZone> CollectZoneBakeHalo(
+    const std::filesystem::path& authoredLevelPath,
+    const std::filesystem::path& assetsRoot,
+    LoggingProvider* logging = nullptr,
+    RuntimeAssets* assets = nullptr);
 
 // Cooks the live (possibly unsaved) editor document, named `levelName` (the
 // artifact stem). The document is snapshotted internally, so the caller's
@@ -76,4 +158,6 @@ struct RuntimeAssets;
                                         const std::filesystem::path& assetsRoot,
                                         double cellSize,
                                         LoggingProvider& logging,
-                                        RuntimeAssets* assets = nullptr);
+                                        RuntimeAssets* assets = nullptr,
+                                        const LightingCookParams& lightmapParams = {},
+                                        const DocumentCookOptions& options = {});

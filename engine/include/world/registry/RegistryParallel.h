@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-class Registry;
+struct Registry;
 
 //=============================================================================
 // ForEachRegistryParallel

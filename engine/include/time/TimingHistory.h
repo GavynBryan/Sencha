@@ -1,5 +1,8 @@
 #pragma once
 
+#include <profiling/CpuScopeTimings.h>
+#include <profiling/RenderInstrumentation.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -27,9 +30,19 @@ struct TimingFrameSample
     uint64_t SwapchainRecreateCount = 0;
     uint32_t SwapchainImageIndex = 0;
     uint32_t SwapchainImageCount = 0;
+    // The drawable size this frame rendered at. Per frame rather than in the
+    // capture envelope because a resize mid-capture changes it.
+    uint32_t SwapchainWidth = 0;
+    uint32_t SwapchainHeight = 0;
     int PresentMode = 0;
     bool SwapchainRecreated = false;
     bool PresentationReset = false;
+    // GPU scope spans collected for this slot's previous submission; all
+    // invalid while render.profile.mode is below Gpu.
+    GpuScopeSpan GpuScopes[kGpuScopeCount] = {};
+    // This frame's CPU scope milliseconds; every scope reads not-measured
+    // while render.profile.mode is below Counters.
+    CpuScopeTimings CpuScopes;
 };
 
 class TimingHistory

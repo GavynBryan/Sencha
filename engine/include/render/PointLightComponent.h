@@ -4,30 +4,27 @@
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <math/Vec.h>
+#include <render/LightComponentTypes.h>
 
 #include <cstdint>
 #include <string_view>
 #include <tuple>
 
-//=============================================================================
-// PointLightComponent
-//
-// A scene-resident point light: an omni emitter at the entity's world
-// position. Color is linear RGB; Intensity scales brightness; Range is the
-// attenuation cutoff in world units (the falloff is windowed so the light
-// contributes nothing past Range, keeping it local). Authored in scene JSON
-// and gathered each frame by LightExtractionSystem into the forward pass.
-//
-// Point is the only light type today. Spot and directional lights are
-// roadmapped; when they land they add their own component and feed the same
-// per-frame light list, so this stays the omni case, not a tagged union.
-//=============================================================================
+// An omnidirectional emitter at the entity's world position. Range is the
+// attenuation cutoff in world units.
 struct PointLightComponent
 {
-    Vec<3> Color    = Vec<3>(1.0f, 1.0f, 1.0f); // linear RGB
-    float  Intensity = 1.0f;                    // brightness multiplier
-    float  Range     = 10.0f;                   // attenuation cutoff (world units)
-    bool   Enabled   = true;
+    Vec<3> Color = Vec<3>(1.0f, 1.0f, 1.0f);
+    float Intensity = 1.0f;
+    float Range = 10.0f;
+    bool Enabled = true;
+
+    bool CastShadows = false;
+    ShadowResolutionTier ShadowResolution = ShadowResolutionTier::Medium;
+    ShadowUpdatePolicy ShadowUpdate = ShadowUpdatePolicy::OnChange;
+    float ShadowSoftness = 1.5f;
+    float ShadowBiasScale = 1.0f;
+    LightBakeContribution BakeContribution = LightBakeContribution::None;
 };
 
 template <>
@@ -38,13 +35,29 @@ struct TypeSchema<PointLightComponent>
 
     static auto Fields()
     {
+        const PointLightComponent defaults;
         return std::tuple{
             MakeField("color", &PointLightComponent::Color)
                 .AsColor()
-                .Default(Vec<3>(1.0f, 1.0f, 1.0f)),
-            MakeField("intensity", &PointLightComponent::Intensity).Default(1.0f),
-            MakeField("range", &PointLightComponent::Range).Default(10.0f),
-            MakeField("enabled", &PointLightComponent::Enabled).Default(true),
+                .Default(defaults.Color),
+            MakeField("intensity", &PointLightComponent::Intensity)
+                .Default(defaults.Intensity),
+            MakeField("range", &PointLightComponent::Range)
+                .Default(defaults.Range),
+            MakeField("enabled", &PointLightComponent::Enabled)
+                .Default(defaults.Enabled),
+            MakeField("cast_shadows", &PointLightComponent::CastShadows)
+                .Default(defaults.CastShadows),
+            MakeField("shadow_resolution", &PointLightComponent::ShadowResolution)
+                .Default(defaults.ShadowResolution),
+            MakeField("shadow_update", &PointLightComponent::ShadowUpdate)
+                .Default(defaults.ShadowUpdate),
+            MakeField("shadow_softness", &PointLightComponent::ShadowSoftness)
+                .Default(defaults.ShadowSoftness),
+            MakeField("shadow_bias_scale", &PointLightComponent::ShadowBiasScale)
+                .Default(defaults.ShadowBiasScale),
+            MakeField("bake_contribution", &PointLightComponent::BakeContribution)
+                .Default(defaults.BakeContribution),
         };
     }
 };

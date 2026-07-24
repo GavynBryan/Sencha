@@ -1,5 +1,8 @@
 #include <math/geometry/3d/Sphere.h>
 
+#include <math/geometry/3d/Aabb3d.h>
+
+#include <algorithm>
 #include <cmath>
 #include <ostream>
 
@@ -19,6 +22,15 @@ bool Sphere::Intersects(const Sphere& other) const
 {
 	const float combinedRadius = Radius + other.Radius;
 	return Vec3d::SqrDistance(Center, other.Center) <= combinedRadius * combinedRadius;
+}
+
+bool Sphere::Intersects(const Aabb3d& box) const
+{
+	const Vec3d closest(
+		std::clamp(Center.X, box.Min.X, box.Max.X),
+		std::clamp(Center.Y, box.Min.Y, box.Max.Y),
+		std::clamp(Center.Z, box.Min.Z, box.Max.Z));
+	return Vec3d::SqrDistance(Center, closest) <= Radius * Radius;
 }
 
 void Sphere::ExpandToInclude(const Vec3d& point)

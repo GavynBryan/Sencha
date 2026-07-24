@@ -1,0 +1,260 @@
+{
+  "warmup": 400,
+  "arms": {
+    "on": {
+      "pooled": {
+        "frames": 16000,
+        "mean_ms": 2.20482525,
+        "median_ms": 0.888,
+        "stdev_ms": 3.237403317836293,
+        "p95_ms": 10.705149999999998,
+        "p99_ms": 12.330140000000004,
+        "min_ms": 0.002,
+        "max_ms": 16.14
+      },
+      "runs": [
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_01.json",
+          "frames": 1600,
+          "mean_ms": 2.393736875,
+          "median_ms": 0.9444999999999999,
+          "stdev_ms": 3.4269466207383847,
+          "p95_ms": 11.044899999999998,
+          "p99_ms": 12.533769999999997,
+          "min_ms": 0.004,
+          "max_ms": 15.847
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_02.json",
+          "frames": 1600,
+          "mean_ms": 1.969475625,
+          "median_ms": 0.811,
+          "stdev_ms": 2.901142606483842,
+          "p95_ms": 9.9032,
+          "p99_ms": 11.255560000000001,
+          "min_ms": 0.003,
+          "max_ms": 13.974
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_03.json",
+          "frames": 1600,
+          "mean_ms": 2.541539375,
+          "median_ms": 1.018,
+          "stdev_ms": 3.570743370217133,
+          "p95_ms": 11.3768,
+          "p99_ms": 13.06899,
+          "min_ms": 0.004,
+          "max_ms": 15.535
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_04.json",
+          "frames": 1600,
+          "mean_ms": 2.416664375,
+          "median_ms": 0.961,
+          "stdev_ms": 3.4948043790720047,
+          "p95_ms": 11.272649999999995,
+          "p99_ms": 13.027809999999997,
+          "min_ms": 0.004,
+          "max_ms": 15.835
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_05.json",
+          "frames": 1600,
+          "mean_ms": 1.9772762499999998,
+          "median_ms": 0.748,
+          "stdev_ms": 2.987517250567089,
+          "p95_ms": 10.030349999999999,
+          "p99_ms": 11.819010000000002,
+          "min_ms": 0.003,
+          "max_ms": 13.871
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_06.json",
+          "frames": 1600,
+          "mean_ms": 2.232835625,
+          "median_ms": 0.9045000000000001,
+          "stdev_ms": 3.2692153165715254,
+          "p95_ms": 10.8507,
+          "p99_ms": 12.277919999999998,
+          "min_ms": 0.002,
+          "max_ms": 14.354
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_07.json",
+          "frames": 1600,
+          "mean_ms": 2.000331875,
+          "median_ms": 0.817,
+          "stdev_ms": 2.9624474082646572,
+          "p95_ms": 10.0854,
+          "p99_ms": 11.38047,
+          "min_ms": 0.002,
+          "max_ms": 14.389
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_08.json",
+          "frames": 1600,
+          "mean_ms": 2.399688125,
+          "median_ms": 0.945,
+          "stdev_ms": 3.5125114292851753,
+          "p95_ms": 11.18675,
+          "p99_ms": 13.0967,
+          "min_ms": 0.002,
+          "max_ms": 16.14
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_09.json",
+          "frames": 1600,
+          "mean_ms": 1.9280475000000001,
+          "median_ms": 0.7765,
+          "stdev_ms": 2.8848408758532504,
+          "p95_ms": 9.87445,
+          "p99_ms": 11.520959999999999,
+          "min_ms": 0.003,
+          "max_ms": 13.483
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/on/run_10.json",
+          "frames": 1600,
+          "mean_ms": 2.188656875,
+          "median_ms": 0.886,
+          "stdev_ms": 3.1899263324785783,
+          "p95_ms": 10.540599999999998,
+          "p99_ms": 12.210709999999999,
+          "min_ms": 0.003,
+          "max_ms": 14.949
+        }
+      ]
+    },
+    "off": {
+      "pooled": {
+        "frames": 16000,
+        "mean_ms": 2.102733625,
+        "median_ms": 0.8485,
+        "stdev_ms": 3.113817475169243,
+        "p95_ms": 10.375299999999996,
+        "p99_ms": 12.145090000000001,
+        "min_ms": 0.002,
+        "max_ms": 16.77
+      },
+      "runs": [
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_01.json",
+          "frames": 1600,
+          "mean_ms": 2.221056875,
+          "median_ms": 0.864,
+          "stdev_ms": 3.2813451747934463,
+          "p95_ms": 10.7072,
+          "p99_ms": 12.758019999999998,
+          "min_ms": 0.002,
+          "max_ms": 14.604
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_02.json",
+          "frames": 1600,
+          "mean_ms": 1.9101,
+          "median_ms": 0.7965,
+          "stdev_ms": 2.8167458591431354,
+          "p95_ms": 9.78595,
+          "p99_ms": 11.092080000000001,
+          "min_ms": 0.002,
+          "max_ms": 13.681
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_03.json",
+          "frames": 1600,
+          "mean_ms": 1.84289375,
+          "median_ms": 0.734,
+          "stdev_ms": 2.7932815148514725,
+          "p95_ms": 9.72495,
+          "p99_ms": 11.21421,
+          "min_ms": 0.002,
+          "max_ms": 14.66
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_04.json",
+          "frames": 1600,
+          "mean_ms": 1.8961768749999999,
+          "median_ms": 0.7665,
+          "stdev_ms": 2.8380872990167574,
+          "p95_ms": 9.78505,
+          "p99_ms": 11.28823,
+          "min_ms": 0.003,
+          "max_ms": 15.041
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_05.json",
+          "frames": 1600,
+          "mean_ms": 2.365053125,
+          "median_ms": 0.931,
+          "stdev_ms": 3.4025364017601243,
+          "p95_ms": 10.979449999999998,
+          "p99_ms": 12.710849999999999,
+          "min_ms": 0.002,
+          "max_ms": 14.897
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_06.json",
+          "frames": 1600,
+          "mean_ms": 2.20023,
+          "median_ms": 0.8925000000000001,
+          "stdev_ms": 3.213506142572315,
+          "p95_ms": 10.69105,
+          "p99_ms": 12.15702,
+          "min_ms": 0.004,
+          "max_ms": 15.597
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_07.json",
+          "frames": 1600,
+          "mean_ms": 1.9699712500000002,
+          "median_ms": 0.7695000000000001,
+          "stdev_ms": 2.9440062901891766,
+          "p95_ms": 10.0517,
+          "p99_ms": 11.55105,
+          "min_ms": 0.002,
+          "max_ms": 14.604
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_08.json",
+          "frames": 1600,
+          "mean_ms": 1.9494725,
+          "median_ms": 0.7815000000000001,
+          "stdev_ms": 2.9264149546405327,
+          "p95_ms": 10.017049999999998,
+          "p99_ms": 11.749509999999999,
+          "min_ms": 0.004,
+          "max_ms": 13.67
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_09.json",
+          "frames": 1600,
+          "mean_ms": 2.742585625,
+          "median_ms": 1.046,
+          "stdev_ms": 3.7941004642297442,
+          "p95_ms": 11.8032,
+          "p99_ms": 14.4088,
+          "min_ms": 0.002,
+          "max_ms": 16.77
+        },
+        {
+          "path": "/tmp/claude-1000/-home-gavyn-projects-Sencha/1e2cfe63-8616-450d-8f7c-fe11569b4b8b/scratchpad/ab/off/run_10.json",
+          "frames": 1600,
+          "mean_ms": 1.9297962499999999,
+          "median_ms": 0.808,
+          "stdev_ms": 2.8548128221892126,
+          "p95_ms": 9.75505,
+          "p99_ms": 11.238059999999999,
+          "min_ms": 0.005,
+          "max_ms": 14.163
+        }
+      ]
+    }
+  },
+  "compare": {
+    "baseline": "on",
+    "other": "off",
+    "delta_mean_ms": -0.10209162499999991,
+    "delta_median_ms": -0.03949999999999998,
+    "delta_mean_pct": -4.630372633840252
+  }
+}

@@ -3,7 +3,7 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanQueueService.h>
 
-#include <climits>
+#include <cstdint>
 
 VulkanUploadContextService::VulkanUploadContextService(
     LoggingProvider& logging,
@@ -139,7 +139,23 @@ bool VulkanUploadContextService::Submit(VkCommandBuffer cmd)
         return false;
     }
 
-    vkWaitForFences(Device, 1, &UploadFence, VK_TRUE, ULLONG_MAX);
+    // Bounded wait: a lost device can leave the fence unsignalled forever,
+    // and not every driver returns DEVICE_LOST from an infinite wait, so an
+    // unbounded wait hangs the process instead of reporting. No healthy
+    // upload approaches this bound; hitting it means the device is wedged.
+    constexpr uint64_t kUploadFenceTimeoutNs = 10'000'000'000ull;
+    result = vkWaitForFences(Device, 1, &UploadFence, VK_TRUE, kUploadFenceTimeoutNs);
+    if (result != VK_SUCCESS)
+    {
+        Log.Error("upload: vkWaitForFences failed ({})", static_cast<int>(result));
+        // On timeout the submission may still be executing, and freeing a
+        // pending command buffer is invalid use, so the buffer is leaked
+        // deliberately. Device loss retires the submission, so the free is
+        // legal there.
+        if (result != VK_TIMEOUT)
+            vkFreeCommandBuffers(Device, UploadPool, 1, &cmd);
+        return false;
+    }
     vkFreeCommandBuffers(Device, UploadPool, 1, &cmd);
     return true;
 }

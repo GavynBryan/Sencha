@@ -9,18 +9,21 @@
 #include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
 #include "document/DocumentSerialization.h"
+#include "project/CookSession.h"
 #include "project/MaterialLibrary.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
 #include "export/GltfMeshExport.h"
 #include "project/PieDriver.h"
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
+#include "ui/CookProfilesPanel.h"
 #include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/InspectorPanel.h"
+#include "ui/LightingPanel.h"
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
@@ -37,6 +40,10 @@
 #include <app/Game.h>
 #include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
 #include <assets/cook/TextureCook.h>
+#include <render/LightComponentTypes.h>
+#include <render/IrradianceVolumeComponent.h>
+#include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
 #include <core/assets/AssetRegistry.h>
@@ -96,6 +103,7 @@ EditorServices::~EditorServices()
     // before that state goes away.
     Files.reset();
     Pie.reset();
+    Cook.reset();
     UnloadGameModule();
     Workspace.reset();
     Commands.reset();
@@ -132,12 +140,14 @@ void EditorServices::BuildDocument()
 
 void EditorServices::BuildPlayLoop()
 {
-    // The author -> cook -> play loop: cook the live document, launch/stop PIE, and
-    // the cook/play/stop/project console commands all run through here.
     Engine& engine = *EnginePtr;
+    Cook = std::make_unique<CookSession>(engine, Workspace->World,
+                                         Project ? &*Project : nullptr,
+                                         Assets ? &*Assets : nullptr);
     Pie = std::make_unique<PieDriver>(engine, Workspace->World,
                                       Project ? &*Project : nullptr,
                                       Assets ? &*Assets : nullptr);
+    Cook->RegisterCommands(engine.Console().Registry());
     Pie->RegisterCommands(engine.Console().Registry());
 }
 
@@ -326,14 +336,9 @@ void EditorServices::BuildViewportRendering()
     registerGridFloat("editor.bloom.intensity", 1.0, "Editor bloom: additive strength of the glow.");
     registerGridFloat("editor.bloom.radius", 2.0, "Editor bloom: blur spread (larger = wider, softer glow).");
 
-    // Hemispheric ambient (the no-bake indirect fill), read per frame by
-    // EditorRenderFeature. Linear RGB: sky tint above, ground tint below.
-    registerGridFloat("render.ambient.sky_r", 0.10, "Ambient sky tint (linear) red.");
-    registerGridFloat("render.ambient.sky_g", 0.12, "Ambient sky tint (linear) green.");
-    registerGridFloat("render.ambient.sky_b", 0.15, "Ambient sky tint (linear) blue.");
-    registerGridFloat("render.ambient.ground_r", 0.04, "Ambient ground tint (linear) red.");
-    registerGridFloat("render.ambient.ground_g", 0.03, "Ambient ground tint (linear) green.");
-    registerGridFloat("render.ambient.ground_b", 0.02, "Ambient ground tint (linear) blue.");
+    // The render.ambient.* cvars EditorRenderFeature polls are the engine's
+    // own registrations (EngineConsoleBuiltins); the editor registers nothing
+    // for them.
 
     auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
@@ -404,7 +409,43 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
     Toolbar->SetPlayControls({
-        .Cook = [this] { if (Pie) Pie->Cook(""); },
+        .RunCook = [this] {
+            if (Cook) (void)Cook->StartById(SelectedCookProfileId);
+        },
+        .CancelCook = [this] { if (Cook) Cook->Cancel(); },
+        .RebuildCook = [this] {
+            if (Cook) (void)Cook->StartById(SelectedCookProfileId, true);
+        },
+        .IsCooking = [this] { return Cook != nullptr && Cook->IsActive(); },
+        .Profiles = [this] {
+            std::vector<EditorToolbar::PlayControls::ProfileChoice> choices;
+            if (Cook)
+                for (const CookProfile& profile : Cook->AvailableProfiles())
+                    choices.push_back({ profile.Id, profile.Name, profile.BuiltIn });
+            return choices;
+        },
+        .SelectedProfileId = [this] { return SelectedCookProfileId; },
+        .SelectProfile = [this](std::string_view id) {
+            SelectedCookProfileId = id;
+        },
+        .OpenProfiles = [this] {
+            if (CookProfiles != nullptr)
+                CookProfiles->SetVisible(true);
+        },
+        .CookStatus = [this] {
+            if (!Cook)
+                return std::string{};
+            const CookSession::Status status = Cook->GetStatus();
+            if (!status.Active)
+                return status.LastError;
+            std::string text = status.ProfileName;
+            if (!status.StepName.empty())
+                text += ": " + status.StepName;
+            if (status.TotalSteps > 0)
+                text += " (" + std::to_string(status.CompletedSteps) + "/" +
+                        std::to_string(status.TotalSteps) + ")";
+            return text;
+        },
         .Play = [this] { if (Pie) Pie->Play(Pie->LastCookedMap()); },
         .Stop = [this] { if (Pie) Pie->Stop(); },
         .IsPlaying = [this] { return Pie != nullptr && Pie->IsPlaying(); },
@@ -471,6 +512,81 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands));
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands));
+    auto cookProfiles = std::make_unique<CookProfilesPanel>(
+        Project ? &*Project : nullptr);
+    CookProfiles = cookProfiles.get();
+    CookProfiles->SetVisible(false);
+    UiFeature->AddPanel(std::move(cookProfiles));
+    const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
+        return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
+    };
+    UiFeature->AddPanel(std::make_unique<LightingPanel>(
+        RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
+        [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
+        [this]() -> std::uint32_t {
+            const World& world =
+                Workspace->World.FocusDocument().GetRegistry().Components;
+            std::uint32_t count = 0;
+            if (world.IsRegistered<PointLightComponent>())
+                world.ForEachComponent<PointLightComponent>(
+                    [&](EntityId, const PointLightComponent& light) {
+                        if (light.BakeContribution == LightBakeContribution::Direct)
+                            ++count;
+                    });
+            if (world.IsRegistered<SpotLightComponent>())
+                world.ForEachComponent<SpotLightComponent>(
+                    [&](EntityId, const SpotLightComponent& light) {
+                        if (light.BakeContribution == LightBakeContribution::Direct)
+                            ++count;
+                    });
+            return count;
+        },
+        [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
+            SceneRenderQueueBuilder* builder = previewBuilder();
+            const CookSession::Record* record =
+                Cook != nullptr ? Cook->LastRecord() : nullptr;
+            if (builder == nullptr || record == nullptr)
+                return LightingPanel::BakedPreviewState::Unavailable;
+            if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
+                return LightingPanel::BakedPreviewState::Off;
+            return builder->LightmapPreviewStale()
+                ? LightingPanel::BakedPreviewState::Stale
+                : LightingPanel::BakedPreviewState::Fresh;
+        },
+        [this, previewBuilder](bool enabled) {
+            SceneRenderQueueBuilder* builder = previewBuilder();
+            if (builder == nullptr)
+                return;
+            if (enabled)
+            {
+                if (const CookSession::Record* record =
+                        Cook != nullptr ? Cook->LastRecord() : nullptr)
+                {
+                    builder->SetLightmapPreview({ record->CookedScenePath,
+                                                  record->ContentHash });
+                    PreviewCookSerial = record->Serial;
+                }
+            }
+            builder->SetLightmapPreviewEnabled(enabled);
+        },
+        [this]() -> LightingPanel::ProbeSummary {
+            LightingPanel::ProbeSummary summary;
+            const World& world =
+                Workspace->World.FocusDocument().GetRegistry().Components;
+            if (world.IsRegistered<IrradianceVolumeComponent>())
+                world.ForEachComponent<IrradianceVolumeComponent>(
+                    [&](EntityId, const IrradianceVolumeComponent&) {
+                        ++summary.AuthoredVolumes;
+                    });
+            if (const CookSession::Record* record =
+                    Cook != nullptr ? Cook->LastRecord() : nullptr)
+            {
+                summary.HasCook = true;
+                summary.CookedVolumes = record->ProbeVolumeCount;
+                summary.CookedProbes = record->ProbeCount;
+            }
+            return summary;
+        }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Tools.get(); },
@@ -655,6 +771,28 @@ void EditorServices::ProcessFrame()
         Files->ProcessPending();
         Files->UpdateTitle();
     }
+
+    if (Cook != nullptr && Pie != nullptr &&
+        Cook->PublicationSerial() != AppliedCookSerial)
+    {
+        AppliedCookSerial = Cook->PublicationSerial();
+        if (!Cook->LastCookedWorld().empty())
+            Pie->UseCookedWorld(Cook->LastCookedWorld(), Cook->LastCookedZone());
+        else if (const CookSession::Record* record = Cook->LastRecord())
+            Pie->UseCookedLevel(record->Map);
+    }
+
+    // A newer cook refreshes an enabled baked-lighting preview in place.
+    if (RenderFeature != nullptr && Cook != nullptr)
+        if (SceneRenderQueueBuilder* builder = RenderFeature->FocusQueueBuilder();
+            builder != nullptr && builder->LightmapPreviewEnabled())
+            if (const CookSession::Record* record = Cook->LastRecord();
+                record != nullptr && record->Serial != PreviewCookSerial)
+            {
+                builder->SetLightmapPreview({ record->CookedScenePath,
+                                              record->ContentHash });
+                PreviewCookSerial = record->Serial;
+            }
 
     // Poll watched sources on an interval, not per frame: the watcher is a
     // content-hash-confirmed mtime scan over the content roots. A save from

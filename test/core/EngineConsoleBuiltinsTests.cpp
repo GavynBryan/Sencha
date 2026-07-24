@@ -3,13 +3,20 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
+#include <profiling/RenderCapture.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/RuntimeFrameLoop.h>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
 
 namespace
 {
@@ -40,7 +47,151 @@ TEST(EngineConsoleBuiltins, RegistersExpectedEngineCVars)
     EXPECT_NE(registry.FindCVar("r.target_fps"), nullptr);
     EXPECT_NE(registry.FindCVar("time.timescale"), nullptr);
     EXPECT_NE(registry.FindCVar("time.fixed_tick_rate"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.darkness"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.softness"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.bias_const"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.bias_slope"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_spot"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_point"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.max_views_per_frame"), nullptr);
+    EXPECT_NE(registry.FindCVar("render.shadow.min_invalidated_views_per_frame"), nullptr);
 }
+
+TEST(EngineConsoleBuiltins, ShadowBudgetsReadCVarsAndDefaultWithoutARegistry)
+{
+    const ShadowResidencyBudgets defaults =
+        EngineConsoleBuiltins::ReadShadowResidencyBudgets(nullptr);
+    EXPECT_EQ(defaults.MaxSlots, 8u);
+    EXPECT_EQ(defaults.MaxPointSlots, 4u);
+    EXPECT_EQ(defaults.MaxViewsPerFrame, 12u);
+    EXPECT_EQ(defaults.MinInvalidatedViewsPerFrame, 1u);
+
+    ConsoleRegistry registry;
+    RuntimeFrameLoop loop;
+    EngineRuntimeConfig runtime;
+    EngineConsoleBuiltins::RegisterRuntimeCVars(registry, loop, runtime);
+
+    EXPECT_TRUE(registry.SetCVar("render.shadow.max_spot", 3.0, { "test" },
+                                 ConsolePhase::EngineReady).Succeeded());
+    EXPECT_TRUE(registry.SetCVar("render.shadow.max_point", 2.0, { "test" },
+                                 ConsolePhase::EngineReady).Succeeded());
+    EXPECT_TRUE(registry.SetCVar("render.shadow.max_views_per_frame", 0.0, { "test" },
+                                 ConsolePhase::EngineReady).Succeeded());
+    EXPECT_TRUE(registry.SetCVar("render.shadow.min_invalidated_views_per_frame", 2.0,
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+
+    const ShadowResidencyBudgets budgets =
+        EngineConsoleBuiltins::ReadShadowResidencyBudgets(&registry);
+    EXPECT_EQ(budgets.MaxSlots, 3u);
+    EXPECT_EQ(budgets.MaxPointSlots, 2u);
+    EXPECT_EQ(budgets.MaxViewsPerFrame, 0u);
+    EXPECT_EQ(budgets.MinInvalidatedViewsPerFrame, 2u);
+}
+
+TEST(EngineConsoleBuiltins, ProfileModeCVarWritesThePendingModeAndIgnoresUnknowns)
+{
+    ConsoleRegistry registry;
+    RenderProfileMode pending = RenderProfileMode::Off;
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, pending);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "gpu" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Gpu);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "bogus" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Gpu);
+
+    EXPECT_TRUE(registry.SetCVar("render.profile.mode", std::string{ "off" },
+                                 { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(pending, RenderProfileMode::Off);
+#ifndef SENCHA_ENABLE_RENDER_PROFILING
+    EXPECT_EQ(registry.FindCVar("render.debug.view"), nullptr);
+#endif
+}
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+TEST(EngineConsoleBuiltins, DebugViewCVarAcceptsOnlyCompiledDiagnosticModes)
+{
+    ConsoleRegistry registry;
+    RenderProfileMode pending = RenderProfileMode::Off;
+    EngineConsoleBuiltins::RegisterProfilingCVars(registry, pending);
+
+    const CVarMetadata* debug = registry.FindCVar("render.debug.view");
+    ASSERT_NE(debug, nullptr);
+    EXPECT_TRUE(registry.SetCVar(
+        "render.debug.view", std::string{ "shadow_raw" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "shadow_raw");
+
+    // Every compiled diagnostic channel must be selectable, including the
+    // baked-lighting trio at the end of the enum.
+    EXPECT_TRUE(registry.SetCVar(
+        "render.debug.view", std::string{ "baked_ao" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "baked_ao");
+
+    const ConsoleResult invalid = registry.SetCVar(
+        "render.debug.view", std::string{ "probe_selection" }, { "test" },
+        ConsolePhase::EngineReady);
+    EXPECT_EQ(invalid.Status, ConsoleStatus::ValidationFailed);
+    EXPECT_EQ(std::get<std::string>(debug->CurrentValue), "baked_ao");
+}
+
+TEST(EngineConsoleBuiltins, CaptureCommandsGateOnModeAndWriteParseableJson)
+{
+    ConsoleService console;
+    console.AdvancePhase(ConsolePhase::EngineReady);
+    RenderCapture capture;
+    RenderProfileMode pendingMode = RenderProfileMode::Off;
+    std::string captureOutput;
+    EngineConsoleBuiltins::RegisterCaptureCommands(
+        console.Registry(), capture, pendingMode, captureOutput);
+
+    // render.capture.output stores the shutdown-flush path.
+    EXPECT_TRUE(captureOutput.empty());
+    EXPECT_TRUE(console.Registry().SetCVar(
+        "render.capture.output", std::string{ "run.json" }, { "test" },
+        ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(captureOutput, "run.json");
+
+    ConsoleResult denied = console.ExecuteTokens(
+        { "render.capture.start" }, { "test" });
+    EXPECT_NE(denied.Status, ConsoleStatus::Ok);
+    EXPECT_FALSE(capture.IsRecording());
+
+    pendingMode = RenderProfileMode::Capture;
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.start", "8" }, { "test" }).Succeeded());
+    EXPECT_TRUE(capture.IsRecording());
+
+    TimingFrameSample timing;
+    timing.RawDtSeconds = 0.008;
+    RenderStats stats;
+    stats.FrameIndex = 42;
+    capture.Append(timing, stats);
+
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.stop" }, { "test" }).Succeeded());
+    EXPECT_FALSE(capture.IsRecording());
+    EXPECT_EQ(capture.Size(), 1u);
+
+    const std::string path = (std::filesystem::temp_directory_path()
+        / "sencha_capture_test.json").string();
+    EXPECT_TRUE(console.ExecuteTokens(
+        { "render.capture.write", path }, { "test" }).Succeeded());
+
+    std::ifstream file(path);
+    ASSERT_TRUE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    JsonParseError error;
+    const std::optional<JsonValue> parsed = JsonParse(buffer.str(), &error);
+    ASSERT_TRUE(parsed.has_value()) << error.Message;
+    EXPECT_EQ(parsed->Find("frame_count")->AsNumber(), 1.0);
+    std::filesystem::remove(path);
+}
+#endif
 
 TEST(EngineConsoleBuiltins, ConfigAssignmentsSetRegisteredAndQueueUnknownCVars)
 {

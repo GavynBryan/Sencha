@@ -1,0 +1,41 @@
+{
+  "what": "Validation on/off A/B on the render bench, Gate 0 exit evidence.",
+  "harness": "scripts/bench_render_ab.sh, 3 runs x 400 frames, first 30 recorded frames dropped as warmup",
+  "map": "levels/bench_stress",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "driver_version": "2435301632",
+  "vulkan_api": "1.4.312",
+  "build_type": "Debug",
+  "build_sha": "de051407",
+  "present_mode": "IMMEDIATE",
+  "caveat": "Debug build: absolute numbers are not shipping numbers. The ratio is the point. bench_stress is also tiny (8 draws, 108 triangles), so this measures fixed per-frame cost, not scene cost.",
+  "validation_off": {
+    "render_record_ms": {
+      "samples": 844,
+      "p50": 0.0199,
+      "p95": 0.0423,
+      "p99": 0.0557
+    },
+    "total_frame_ms": {
+      "samples": 844,
+      "p50": 6.728,
+      "p95": 7.0838,
+      "p99": 7.223
+    }
+  },
+  "validation_on": {
+    "render_record_ms": {
+      "samples": 843,
+      "p50": 0.0954,
+      "p95": 0.1501,
+      "p99": 0.1836
+    },
+    "total_frame_ms": {
+      "samples": 843,
+      "p50": 6.7034,
+      "p95": 6.9604,
+      "p99": 7.2008
+    }
+  },
+  "finding": "Validation multiplies CPU render recording by 4.8x at p50. Every CPU timing recorded with validation on is unusable as a shipping number."
+}

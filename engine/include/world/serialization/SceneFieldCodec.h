@@ -8,6 +8,7 @@
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
+#include <render/TextureHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cassert>
@@ -87,6 +88,20 @@ struct SceneFieldCodec<MaterialSetHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      MaterialSetHandle& value,
+                     SceneSerializationContext& context);
+};
+
+template<>
+struct SceneFieldCodec<TextureHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     TextureHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     TextureHandle& value,
                      SceneSerializationContext& context);
 };
 

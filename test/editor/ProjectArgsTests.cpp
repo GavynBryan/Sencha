@@ -10,6 +10,27 @@
 
 namespace
 {
+    // Neither the C nor the C++ library can write the environment: setenv is
+    // POSIX, and the MSVC runtime spells it _putenv_s, where an empty value
+    // removes the entry.
+    void SetEnvVar(const char* name, const char* value)
+    {
+#if defined(_WIN32)
+        _putenv_s(name, value);
+#else
+        setenv(name, value, 1);
+#endif
+    }
+
+    void ClearEnvVar(const char* name)
+    {
+#if defined(_WIN32)
+        _putenv_s(name, "");
+#else
+        unsetenv(name);
+#endif
+    }
+
     // Restores SENCHA_PROJECT around each test so the suite is order-independent
     // and does not inherit the invoking shell's environment.
     class ProjectArgsTest : public ::testing::Test
@@ -20,15 +41,15 @@ namespace
             const char* existing = std::getenv("SENCHA_PROJECT");
             if (existing != nullptr)
                 Saved = existing;
-            unsetenv("SENCHA_PROJECT");
+            ClearEnvVar("SENCHA_PROJECT");
         }
 
         void TearDown() override
         {
             if (Saved)
-                setenv("SENCHA_PROJECT", Saved->c_str(), 1);
+                SetEnvVar("SENCHA_PROJECT", Saved->c_str());
             else
-                unsetenv("SENCHA_PROJECT");
+                ClearEnvVar("SENCHA_PROJECT");
         }
 
         static std::optional<std::string> Resolve(std::vector<const char*> args)
@@ -61,7 +82,7 @@ TEST_F(ProjectArgsTest, FlagWithoutValueIsIgnored)
 
 TEST_F(ProjectArgsTest, EnvironmentIsFallback)
 {
-    setenv("SENCHA_PROJECT", "/tmp/env/project.senchaproj", 1);
+    SetEnvVar("SENCHA_PROJECT", "/tmp/env/project.senchaproj");
     const auto path = Resolve({});
     ASSERT_TRUE(path.has_value());
     EXPECT_EQ(*path, "/tmp/env/project.senchaproj");
@@ -69,7 +90,7 @@ TEST_F(ProjectArgsTest, EnvironmentIsFallback)
 
 TEST_F(ProjectArgsTest, FlagWinsOverEnvironment)
 {
-    setenv("SENCHA_PROJECT", "/tmp/env/project.senchaproj", 1);
+    SetEnvVar("SENCHA_PROJECT", "/tmp/env/project.senchaproj");
     const auto path = Resolve({"--project", "/tmp/flag/project.senchaproj"});
     ASSERT_TRUE(path.has_value());
     EXPECT_EQ(*path, "/tmp/flag/project.senchaproj");

@@ -7,6 +7,10 @@
 #include <runtime/FrameDriver.h>
 #include <world/transform/TransformPropagation.h>
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/ImGuiDebugOverlay.h>
+#endif
+
 #include <SDL3/SDL.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -29,13 +33,24 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     auto& renderer = engine.Graphics().MainRenderer;
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
-    driver.Register(FramePhase::PumpPlatform, [&game, &config, &windows, windowId](PhaseContext& ctx) {
+    driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             windows.HandleEvent(event);
             SdlInputCapture::Accept(*ctx.Input, event);
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+            // The overlay claims input first: the grave toggle always, and
+            // keyboard/mouse while the console is open, so an open console
+            // never leaks its keystrokes into gameplay handlers.
+            if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+                overlay != nullptr && overlay->ProcessSdlEvent(event))
+            {
+                continue;
+            }
+#endif
 
             PlatformEventContext eventCtx{
                 .Config = config,
@@ -186,6 +201,10 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     });
 
     driver.Register(FramePhase::ExtractRenderPacket, [&engine, &config](PhaseContext& ctx) {
+        // Before any extraction or recording reads the bundle, so one frame
+        // sees exactly one profile mode.
+        engine.ApplyPendingRenderProfileMode();
+
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
@@ -220,7 +239,11 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             frames.GetLastTiming(),
             swapchain.GetState(),
             swapchain.GetRecreateCount(),
-            renderResult);
+            renderResult,
+            engine.Instrumentation().GpuTimestamps,
+            engine.Instrumentation().CpuScopes);
+        // After the render phase, so pass-exit publishes are in the frame.
+        engine.PushRenderStatsFrame();
     });
 
     driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {

@@ -27,6 +27,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
 
+      # Reads source only, so it runs before either leg spends time compiling.
+      - name: Render layer portability checks
+        run: ./scripts/check_render_portability.sh
+
       - name: Install build and Vulkan dependencies
         run: |
           sudo apt-get update
@@ -73,4 +77,106 @@ jobs:
           name: linux-test-log
           path: test-ci.log
           if-no-files-found: error
+          retention-days: 7
+
+  # The renderer has only ever been compiled by GCC on Linux. MSVC is a
+  # different front end with different defaults (LLP64, no GCC pragmas, no
+  # implicit export of shared-library symbols), so this leg exists to find
+  # those differences by compiling, not by reading code. No GPU is required:
+  # the suite is non-graphical, and the engine only needs the Vulkan SDK
+  # headers and the loader import library to build.
+  windows:
+    name: Windows / MSVC / Vulkan
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    env:
+      VULKAN_SDK_VERSION: 1.4.350.0
+      VULKAN_SDK: C:\VulkanSDK
+      # vcpkg builds SDL3 from source, which is most of this job's setup time.
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ github.workspace }}\vcpkg-cache
+          key: vcpkg-x64-windows-sdl3-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-x64-windows-sdl3-
+
+      # LunarG ships the Windows SDK as a Qt Installer Framework executable.
+      # Unpacking it with an archiver yields Bin/ and nothing else, so glslc
+      # appears while the headers and vulkan-1.lib do not and find_package
+      # (Vulkan) fails. Run the installer unattended, which is the only way to
+      # get Include/ and Lib/.
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\vulkan_sdk.exe"
+          curl.exe --fail --location --silent --show-error --output $installer `
+            "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $install = Start-Process -FilePath $installer -Wait -PassThru -NoNewWindow -ArgumentList `
+            '--root', $env:VULKAN_SDK, '--accept-licenses', '--default-answer', '--confirm-command', 'install'
+          if ($install.ExitCode -ne 0) { exit $install.ExitCode }
+          # Fail here rather than inside CMake if the layout is not what the build needs.
+          foreach ($path in "$env:VULKAN_SDK\Include\vulkan\vulkan.h",
+                            "$env:VULKAN_SDK\Lib\vulkan-1.lib",
+                            "$env:VULKAN_SDK\Bin\glslc.exe") {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Vulkan SDK is missing $path" }
+          }
+          # The engine DLL imports the loader, so every test process needs it at
+          # load time even though none of them touch a GPU.
+          $loader = @("$env:VULKAN_SDK\Bin\vulkan-1.dll", "$env:SystemRoot\System32\vulkan-1.dll") |
+            Where-Object { Test-Path -LiteralPath $_ }
+          if ($loader) { "Vulkan loader: $loader" } else { "::warning::no vulkan-1.dll found" }
+          "$env:VULKAN_SDK\Bin" >> $env:GITHUB_PATH
+
+      - name: Install SDL3
+        shell: pwsh
+        run: vcpkg install sdl3:x64-windows
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DSENCHA_ENABLE_VULKAN=ON `
+            -DSENCHA_ENABLE_COOK=ON `
+            -DSENCHA_ENABLE_DEBUG_UI=OFF `
+            -DSENCHA_ENABLE_HOT_RELOAD=OFF 2>&1 | Tee-Object build-windows.log
+          exit $LASTEXITCODE
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build build --config Debug --parallel 4 2>&1 | Tee-Object -Append build-windows.log
+          exit $LASTEXITCODE
+
+      - name: Upload failed build log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-build-log
+          path: build-windows.log
+          # A failure before the configure step legitimately leaves no log.
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Test
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Debug --output-on-failure 2>&1 | Tee-Object test-windows.log
+          exit $LASTEXITCODE
+
+      - name: Upload failed test log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-test-log
+          path: test-windows.log
+          if-no-files-found: ignore
           retention-days: 7

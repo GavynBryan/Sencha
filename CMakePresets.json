@@ -53,6 +53,23 @@
       }
     },
     {
+      "name": "profile",
+      "inherits": "base",
+      "displayName": "Profiling (Release codegen + symbols)",
+      "description": "Release optimization with symbols and frame pointers, so profiler attribution maps to shipping code shape. Cycle and cache counts taken from a Debug build do not describe the shipping binary.",
+      "binaryDir": "${sourceDir}/build-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-omit-frame-pointer",
+        "SENCHA_ENABLE_VULKAN": "ON",
+        "SENCHA_ENABLE_COOK": "ON",
+        "SENCHA_ENABLE_DEBUG_UI": "OFF",
+        "SENCHA_ENABLE_HOT_RELOAD": "OFF",
+        "SENCHA_ENABLE_RENDER_PROFILING": "ON"
+      }
+    },
+    {
       "name": "tsan",
       "inherits": "dev",
       "displayName": "ThreadSanitizer",
@@ -74,6 +91,7 @@
     { "name": "dev", "configurePreset": "dev" },
     { "name": "dev-ui", "configurePreset": "dev-ui" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "profile", "configurePreset": "profile" },
     { "name": "tsan", "configurePreset": "tsan" },
     { "name": "ci", "configurePreset": "ci" }
   ],

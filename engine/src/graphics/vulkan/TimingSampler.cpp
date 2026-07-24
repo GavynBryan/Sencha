@@ -1,5 +1,7 @@
 #include <graphics/vulkan/TimingSampler.h>
 
+#include <graphics/vulkan/GpuTimestampPool.h>
+
 namespace
 {
     TimingFrameSample BuildBaseSample(const RuntimeFrameSnapshot& frame,
@@ -19,6 +21,8 @@ namespace
             .SwapchainGeneration = swapchain.Generation,
             .SwapchainRecreateCount = swapchainRecreateCount,
             .SwapchainImageCount = swapchain.ImageCount,
+            .SwapchainWidth = swapchain.Extent.width,
+            .SwapchainHeight = swapchain.Extent.height,
             .PresentMode = static_cast<int>(swapchain.PresentMode),
             .SwapchainRecreated = HasRuntimeFrameEvent(
                 frame.Events, RuntimeFrameEventFlags::SwapchainRecreated),
@@ -34,10 +38,20 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
                                     const VulkanFrameTiming& vulkanTiming,
                                     const SwapchainState& swapchain,
                                     uint64_t swapchainRecreateCount,
-                                    RenderFrameResult renderResult)
+                                    RenderFrameResult renderResult,
+                                    const GpuTimestampPool* gpuTimestamps,
+                                    const CpuScopeTimings* cpuScopes)
 {
     TimingFrameSample sample =
         BuildBaseSample(frame, swapchain, swapchainRecreateCount);
+    if (gpuTimestamps != nullptr)
+    {
+        const auto& scopes = gpuTimestamps->LastScopes();
+        for (std::uint32_t index = 0; index < kGpuScopeCount; ++index)
+            sample.GpuScopes[index] = scopes[index];
+    }
+    if (cpuScopes != nullptr)
+        sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
     sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;

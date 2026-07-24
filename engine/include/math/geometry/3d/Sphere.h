@@ -4,6 +4,8 @@
 
 #include <math/Vec.h>
 
+struct Aabb3d;
+
 // 3D float center + radius bounded region.
 struct Sphere
 {
@@ -16,6 +18,7 @@ struct Sphere
 	bool IsValid() const;
 	bool Contains(const Vec3d& point) const;
 	bool Intersects(const Sphere& other) const;
+	bool Intersects(const Aabb3d& box) const;
 	void ExpandToInclude(const Vec3d& point);
 	void ExpandToInclude(const Sphere& other);
 
