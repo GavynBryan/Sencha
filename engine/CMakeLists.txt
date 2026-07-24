@@ -440,6 +440,27 @@ if(SENCHA_ENABLE_VULKAN)
         "$<BUILD_INTERFACE:${IMGUI_DIR}/backends>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
+    # The generated export table resolves imported functions on its own, but a
+    # consumer reaching imported DATA (GImGui, via the imgui_internal.h inline
+    # helpers) must compile against a dllimport declaration or the reference
+    # never targets the import table. ImGui anticipates DLL hosting with its
+    # IMGUI_API macro on every function and on GImGui: export while compiling
+    # into the engine, import everywhere else.
+    if(WIN32)
+        target_compile_definitions(sencha_imgui_support
+            PRIVATE "IMGUI_API=__declspec(dllexport)")
+        target_compile_definitions(sencha_engine
+            PRIVATE   "IMGUI_API=__declspec(dllexport)"
+            INTERFACE "IMGUI_API=__declspec(dllimport)")
+        # binutils ld stops auto-exporting a DLL's symbols the moment any
+        # symbol is explicitly dllexported, so without this the MinGW engine
+        # would export ImGui and nothing else. MSVC has no equivalent problem:
+        # its export table comes from the generated def file either way.
+        if(NOT MSVC)
+            target_link_options(sencha_engine PRIVATE "-Wl,--export-all-symbols")
+        endif()
+    endif()
+
     if(SENCHA_ENABLE_DEBUG_UI)
         target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_DEBUG_UI)
     endif()
