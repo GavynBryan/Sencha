@@ -7,6 +7,7 @@
 #include <ecs/World.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
+#include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <ecs/EntityId.h>
@@ -31,6 +32,10 @@ struct StaticMeshComponent
     bool AffectsBakedLighting = true;
     uint32_t LayerMask = 0xFFFFFFFFu;
     uint32_t SectionMask = 0xFFFFFFFFu;
+    static_assert(kMaxMeshSections <= sizeof(decltype(SectionMask)) * 8,
+                  "SectionMask must hold one bit per section that "
+                  "ValidateMeshGeometry accepts, or extraction shifts past "
+                  "its width");
     // Remaps the mesh's lightmap UVs into this placement's atlas rect
     // (uv * xy + zw). Identity for cooked cell meshes (absolute atlas UVs);
     // the cook assigns per-placement rects to instanceable meshes.

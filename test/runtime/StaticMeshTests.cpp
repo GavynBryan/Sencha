@@ -86,6 +86,50 @@ TEST(StaticMeshValidation, SectionVertexRangeMustContainSectionIndices)
     EXPECT_FALSE(result.IsValid());
 }
 
+namespace
+{
+    // One triangle per section, all over the same three vertices: the section
+    // count is what is under test, not the geometry.
+    MeshGeometry MakeMeshWithSections(std::size_t sectionCount)
+    {
+        MeshGeometry mesh;
+        const Vec4 tangent{ 1.0f, 0.0f, 0.0f, 1.0f };
+        mesh.Vertices = {
+            { Vec3d(0.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 0.0), tangent },
+            { Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(1.0, 0.0), tangent },
+            { Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec2d(0.0, 1.0), tangent },
+        };
+        for (std::size_t index = 0; index < sectionCount; ++index)
+        {
+            mesh.Indices.insert(mesh.Indices.end(), { 0u, 1u, 2u });
+            mesh.Sections.push_back({
+                .IndexOffset = static_cast<uint32_t>(index * 3),
+                .IndexCount = 3,
+                .VertexOffset = 0,
+                .VertexCount = 3,
+                .MaterialSlot = 0,
+            });
+        }
+        RecomputeMeshBounds(mesh);
+        return mesh;
+    }
+}
+
+TEST(StaticMeshValidation, SectionCountIsCappedAtTheSectionMaskWidth)
+{
+    // Extraction tests section membership with `1u << sectionIndex` against a
+    // 32-bit mask, so a 33rd section shifts past the mask's width. Rejecting
+    // it here is what keeps that shift defined.
+    EXPECT_TRUE(ValidateMeshGeometry(MakeMeshWithSections(31)).IsValid());
+    EXPECT_TRUE(ValidateMeshGeometry(MakeMeshWithSections(kMaxMeshSections)).IsValid());
+
+    const MeshValidationResult tooMany =
+        ValidateMeshGeometry(MakeMeshWithSections(kMaxMeshSections + 1));
+    ASSERT_FALSE(tooMany.IsValid());
+    EXPECT_NE(tooMany.Errors.front().Message.find("section mask limit"),
+              std::string::npos);
+}
+
 TEST(StaticMeshValidation, RecomputeStaticMeshBoundsUpdatesMeshAndSections)
 {
     MeshGeometry mesh = MakeValidMesh();
