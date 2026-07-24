@@ -1,18 +1,20 @@
 # Renderer CPU Profile, Windows Portability, and Vulkan Audit
 
-Status: partially executed 2026-07-23. Results, including what did not run
-and why, are in
+Status: executed 2026-07-23/24. Full results, including the measurements
+and what was deliberately not changed, are in
 [`evidence/renderer-cpu-profile/results.md`](evidence/renderer-cpu-profile/results.md).
 
-Landed: P0.2 through P0.5, V0 (wiring, with the instrument caveat below),
-W0, W4 (authored, not enabled), and the memory and lifetime hazard classes
-of V1. Three defects fixed: host-visible memory was not required to be
-coherent, the depth barrier's first synchronization scope was empty, and a
-fresh shadow atlas was sampleable with undefined contents.
+Ran: P0 through P5, V0 and the memory/synchronization classes of V1, W0
+through W4. **Four defects fixed**: host-visible memory not required
+coherent, an empty-scope depth barrier, an undefined-contents shadow atlas,
+and a Windows-build AVX stack-alignment crash. **No CPU changes made**: the
+render path is 0.55% of cycles at normal complexity and allocation-free in
+steady state, so nothing is armed against the budget. **No bloat**: the
+draw path is flat, confirmed by profile.
 
-Blocked on tools this machine cannot install without sudo (perf, valgrind,
-heaptrack, clang-tidy, cppcheck, mingw, spirv-tools): P2, P3, P4, P5, W1,
-W2.
+Not done: H-A (shadow recording vs caster count, needs scenes whose casters
+draw), V1's feature/descriptor/queue classes, and a real Windows hardware
+run. See the results doc.
 
 **Read this before trusting a synchronization result here.** Sync
 validation does not report on this machine's validation layer build. A
