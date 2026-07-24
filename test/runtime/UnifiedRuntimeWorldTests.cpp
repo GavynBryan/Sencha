@@ -338,6 +338,7 @@ TEST(UnifiedRuntimeWorld, AttachThenDetachBeforeFirstResidencyStillGetsFinalVisi
 {
     const WorldComponentSchema schema = MakeRuntimeSchema();
     RuntimeWorld runtime(schema);
+    runtime.Entities().AddResource<RuntimeWorldHookResource>();
 
     RuntimeZoneRecord& zone = runtime.AttachZone(
         ZoneId{ 1 },

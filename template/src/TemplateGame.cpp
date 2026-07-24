@@ -490,13 +490,6 @@ void TemplateGame::OnUnregisterComponents(
     serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
 }
 
-void TemplateGame::OnRegisterRuntimeComponents(
-    WorldComponentSchema& schema)
-{
-    schema.Add<SpinComponent>();
-    schema.Add<PlayerStartComponent>();
-}
-
 void TemplateGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();

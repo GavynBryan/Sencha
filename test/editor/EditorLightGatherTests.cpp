@@ -9,6 +9,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/Camera.h>
 #include <render/LightExtractionSystem.h>
+#include <ecs/StoragePartitionSet.h>
 #include <render/PointLightComponent.h>
 #include <world/transform/TransformComponents.h>
 
@@ -69,9 +70,13 @@ TEST(EditorLightGather, MatchesRuntimeSelectionBeyondForwardBudget)
     RenderLightSet runtimeLights;
     std::vector<SpotShadowRequest> runtimeSpots;
     std::vector<PointShadowRequest> runtimePoints;
-    std::vector<Registry*> registries{ &registry };
-    LightExtractionSystem{}.Extract(registries, camera, runtimeLights,
-                                    runtimeSpots, runtimePoints);
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    for (EntityId entity : world.GetAliveEntities())
+        partitions.Add(world.GetEntityPartition(entity));
+    LightExtractionSystem extractor;
+    extractor.Extract(world, partitions, camera, runtimeLights,
+                      runtimeSpots, runtimePoints);
 
     ASSERT_EQ(editorLights.Count, kMaxForwardLights);
     ASSERT_EQ(runtimeLights.Count, editorLights.Count);
@@ -85,7 +90,10 @@ TEST(EditorLightGather, MatchesRuntimeSelectionBeyondForwardBudget)
     ASSERT_EQ(runtimePoints.size(), editorPoints.size());
     for (std::size_t index = 0; index < editorPoints.size(); ++index)
     {
-        EXPECT_EQ(runtimePoints[index].Key, editorPoints[index].Key);
+        // Editor keys carry document-registry identity; unified runtime keys
+        // are entity-only. The shared selection policy must still rank the
+        // same entities into the same packed slots.
+        EXPECT_EQ(runtimePoints[index].Key.Entity, editorPoints[index].Key.Entity);
         EXPECT_EQ(runtimePoints[index].LightIndex, editorPoints[index].LightIndex);
     }
 }

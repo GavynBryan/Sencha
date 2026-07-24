@@ -22,8 +22,11 @@
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -229,7 +232,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 24u);
+    EXPECT_EQ(schema.Size(), 27u);
 
     World world;
     schema.Apply(world);
@@ -239,25 +242,28 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<Parent>(world, 2);
     ExpectComponentId<CameraComponent>(world, 3);
     ExpectComponentId<StaticMeshComponent>(world, 4);
-    ExpectComponentId<PointLightComponent>(world, 5);
-    ExpectComponentId<AudioSourceComponent>(world, 6);
-    ExpectComponentId<AudioCaptionComponent>(world, 7);
-    ExpectComponentId<Collider>(world, 8);
-    ExpectComponentId<RigidBody>(world, 9);
-    ExpectComponentId<CharacterController>(world, 10);
-    ExpectComponentId<PhysicsBodyLink>(world, 11);
-    ExpectComponentId<CharacterMoverLink>(world, 12);
-    ExpectComponentId<GameplayTagContainer>(world, 13);
-    ExpectComponentId<AttributeSet>(world, 14);
-    ExpectComponentId<AbilitySet>(world, 15);
-    ExpectComponentId<ActiveEffect>(world, 16);
-    ExpectComponentId<MovementIntent>(world, 17);
-    ExpectComponentId<MovementState>(world, 18);
-    ExpectComponentId<MovementProfile>(world, 19);
-    ExpectComponentId<OnGround>(world, 20);
-    ExpectComponentId<InAir>(world, 21);
-    ExpectComponentId<LocomotionModeRequest>(world, 22);
-    ExpectComponentId<CameraRig>(world, 23);
+    ExpectComponentId<ZoneLightmapComponent>(world, 5);
+    ExpectComponentId<IrradianceVolumeComponent>(world, 6);
+    ExpectComponentId<PointLightComponent>(world, 7);
+    ExpectComponentId<SpotLightComponent>(world, 8);
+    ExpectComponentId<AudioSourceComponent>(world, 9);
+    ExpectComponentId<AudioCaptionComponent>(world, 10);
+    ExpectComponentId<Collider>(world, 11);
+    ExpectComponentId<RigidBody>(world, 12);
+    ExpectComponentId<CharacterController>(world, 13);
+    ExpectComponentId<PhysicsBodyLink>(world, 14);
+    ExpectComponentId<CharacterMoverLink>(world, 15);
+    ExpectComponentId<GameplayTagContainer>(world, 16);
+    ExpectComponentId<AttributeSet>(world, 17);
+    ExpectComponentId<AbilitySet>(world, 18);
+    ExpectComponentId<ActiveEffect>(world, 19);
+    ExpectComponentId<MovementIntent>(world, 20);
+    ExpectComponentId<MovementState>(world, 21);
+    ExpectComponentId<MovementProfile>(world, 22);
+    ExpectComponentId<OnGround>(world, 23);
+    ExpectComponentId<InAir>(world, 24);
+    ExpectComponentId<LocomotionModeRequest>(world, 25);
+    ExpectComponentId<CameraRig>(world, 26);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -278,9 +284,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 25u);
-    EXPECT_EQ(game.AppliedGameComponentId, 24u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 24u);
+    EXPECT_EQ(game.SchemaSize, 28u);
+    EXPECT_EQ(game.AppliedGameComponentId, 27u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 27u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 

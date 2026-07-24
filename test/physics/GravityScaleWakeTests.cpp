@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
@@ -10,6 +11,20 @@
 #include <world/transform/TransformComponents.h>
 
 #include <utility>
+
+namespace
+{
+const StoragePartitionSet& DefaultPartitions()
+{
+    static const StoragePartitionSet partitions = []
+    {
+        StoragePartitionSet value;
+        value.Add(StoragePartitionId::Default());
+        return value;
+    }();
+    return partitions;
+}
+} // namespace
 
 TEST(RigidBodyBinding, GravityEditWakesSleepingBody)
 {
@@ -34,7 +49,7 @@ TEST(RigidBodyBinding, GravityEditWakesSleepingBody)
     body.GravityScale = 0.0f;
     world.AddComponent<RigidBody>(entity, body);
 
-    binding.SyncToPhysics(world);
+    binding.SyncToPhysics(world, DefaultPartitions());
     const PhysicsBodyLink* link = std::as_const(world).TryGet<PhysicsBodyLink>(entity);
     ASSERT_NE(link, nullptr);
 
@@ -42,7 +57,7 @@ TEST(RigidBodyBinding, GravityEditWakesSleepingBody)
     for (int i = 0; i < 600 && physics.IsBodyActive(link->Body); ++i)
     {
         physics.Step(dt);
-        binding.SyncFromPhysics(world);
+        binding.SyncFromPhysics(world, DefaultPartitions());
     }
     ASSERT_FALSE(physics.IsBodyActive(link->Body));
 
@@ -50,10 +65,10 @@ TEST(RigidBodyBinding, GravityEditWakesSleepingBody)
     ASSERT_NE(edited, nullptr);
     edited->GravityScale = 1.0f;
 
-    binding.SyncToPhysics(world);
+    binding.SyncToPhysics(world, DefaultPartitions());
     EXPECT_TRUE(physics.IsBodyActive(link->Body));
 
     physics.Step(dt);
-    binding.SyncFromPhysics(world);
+    binding.SyncFromPhysics(world, DefaultPartitions());
     EXPECT_LT(std::as_const(world).TryGet<RigidBody>(entity)->LinearVelocity.Y, 0.0f);
 }

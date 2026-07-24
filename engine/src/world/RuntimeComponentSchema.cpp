@@ -19,8 +19,11 @@
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
+#include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/ZoneLightmapComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -34,7 +37,10 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     schema.Add<Parent>();
     schema.Add<CameraComponent>();
     schema.Add<StaticMeshComponent>();
+    schema.Add<ZoneLightmapComponent>();
+    schema.Add<IrradianceVolumeComponent>();
     schema.Add<PointLightComponent>();
+    schema.Add<SpotLightComponent>();
     schema.Add<AudioSourceComponent>();
     schema.Add<AudioCaptionComponent>();
 

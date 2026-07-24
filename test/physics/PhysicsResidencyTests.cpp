@@ -1,5 +1,5 @@
 // The physics residency contract: dormant means zero backend presence. A
-// registry leaving the physics domain evicts its bodies and movers from the
+// partition leaving the physics domain evicts its bodies and movers from the
 // shared simulation (no contacts, no solver cost), state is captured into
 // components, and returning restores through the ordinary reconcile with no
 // dedicated path. Headless; no Jolt headers.
@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <app/GameContexts.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
@@ -18,12 +19,15 @@
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
-#include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
+
+#include <span>
 
 namespace
 {
 constexpr float kFixedDt = 1.0f / 60.0f;
+constexpr StoragePartitionId kFloorPartition{ 1 };
+constexpr StoragePartitionId kBallPartition{ 2 };
 
 void SetUpPhysics(World& world)
 {
@@ -31,30 +35,44 @@ void SetUpPhysics(World& world)
     RegisterPhysicsComponents(world);
 }
 
-EntityId SpawnAt(World& world, const Vec3d& position)
+const StoragePartitionSet& DefaultPartitions()
+{
+    static const StoragePartitionSet partitions = []
+    {
+        StoragePartitionSet value;
+        value.Add(StoragePartitionId::Default());
+        return value;
+    }();
+    return partitions;
+}
+
+EntityId SpawnAt(World& world, const Vec3d& position,
+                 StoragePartitionId partition = StoragePartitionId::Default())
 {
     Transform3f t;
     t.Position = position;
-    const EntityId e = world.CreateEntity();
+    const EntityId e = world.CreateEntity(partition);
     world.AddComponent<LocalTransform>(e, LocalTransform{ t });
     return e;
 }
 
-EntityId SpawnDynamicBall(World& world, const Vec3d& position)
+EntityId SpawnDynamicBall(World& world, const Vec3d& position,
+                          StoragePartitionId partition = StoragePartitionId::Default())
 {
-    const EntityId e = SpawnAt(world, position);
+    const EntityId e = SpawnAt(world, position, partition);
     world.AddComponent<Collider>(e, Collider{ CollisionShape::MakeSphere(0.5f) });
     world.AddComponent<RigidBody>(e, RigidBody{ BodyMotion::Dynamic, 1.0f, Vec3d::Zero(), 1.0f });
     return e;
 }
 
-void Tick(RigidBodyBinding& binding, World& ecs, PhysicsWorld& physics, int steps)
+void Tick(RigidBodyBinding& binding, World& ecs, PhysicsWorld& physics, int steps,
+          const StoragePartitionSet& partitions = DefaultPartitions())
 {
     for (int i = 0; i < steps; ++i)
     {
-        binding.SyncToPhysics(ecs);
+        binding.SyncToPhysics(ecs, partitions);
         physics.Step(kFixedDt);
-        binding.SyncFromPhysics(ecs);
+        binding.SyncFromPhysics(ecs, partitions);
     }
 }
 } // namespace
@@ -69,7 +87,7 @@ TEST(PhysicsResidency, EvictRemovesBodiesAndCapturesState)
     const EntityId ball = SpawnDynamicBall(ecs, Vec3d(0.0f, 50.0f, 0.0f));
     Tick(binding, ecs, physics, 30); // fall a while
 
-    binding.Evict(ecs);
+    binding.EvictAll(ecs);
 
     EXPECT_EQ(physics.BodyCount(), 0u);
     EXPECT_EQ(binding.BodyCount(), 0u);
@@ -98,7 +116,7 @@ TEST(PhysicsResidency, ReconcileRestoresEvictedBodiesFaithfully)
 
         if (interrupt)
         {
-            binding.Evict(ecs);
+            binding.EvictAll(ecs);
             EXPECT_EQ(physics.BodyCount(), 0u);
             // The next sync's reconcile is the restore path.
         }
@@ -117,43 +135,36 @@ TEST(PhysicsResidency, ReconcileRestoresEvictedBodiesFaithfully)
 
 TEST(PhysicsResidency, DormantGeometryStopsColliding)
 {
-    // Two registries sharing one simulation: a ball rests on a dormant-able
-    // zone's floor. Evicting the floor's registry must drop the ball —
-    // "cannot affect simulation" includes being stood on.
+    // Two zone partitions in one World, one simulation: a ball rests on a
+    // dormant-able zone's floor. Evicting the floor's partition must drop the
+    // ball — "cannot affect simulation" includes being stood on.
     PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    RigidBodyBinding binding(physics);
 
-    World floorZone;
-    SetUpPhysics(floorZone);
-    RigidBodyBinding floorBinding(physics);
-    const EntityId floor = SpawnAt(floorZone, Vec3d(0.0f, 0.0f, 0.0f));
-    floorZone.AddComponent<Collider>(
+    const EntityId floor = SpawnAt(ecs, Vec3d(0.0f, 0.0f, 0.0f), kFloorPartition);
+    ecs.AddComponent<Collider>(
         floor, Collider{ CollisionShape::MakeBox(Vec3d(50.0f, 0.5f, 50.0f)) });
 
-    World ballZone;
-    SetUpPhysics(ballZone);
-    RigidBodyBinding ballBinding(physics);
-    const EntityId ball = SpawnDynamicBall(ballZone, Vec3d(0.0f, 2.0f, 0.0f));
+    const EntityId ball =
+        SpawnDynamicBall(ecs, Vec3d(0.0f, 2.0f, 0.0f), kBallPartition);
 
-    for (int i = 0; i < 240; ++i)
-    {
-        floorBinding.SyncToPhysics(floorZone);
-        ballBinding.SyncToPhysics(ballZone);
-        physics.Step(kFixedDt);
-        ballBinding.SyncFromPhysics(ballZone);
-    }
-    const float restY = ballZone.TryGet<LocalTransform>(ball)->Value.Position.Y;
+    StoragePartitionSet bothZones;
+    bothZones.Add(kFloorPartition);
+    bothZones.Add(kBallPartition);
+
+    Tick(binding, ecs, physics, 240, bothZones);
+    const float restY = ecs.TryGet<LocalTransform>(ball)->Value.Position.Y;
     EXPECT_NEAR(restY, 1.0f, 0.05f); // resting on the floor
 
-    floorBinding.Evict(floorZone); // the floor's zone goes dormant
+    binding.EvictPartition(ecs, kFloorPartition); // the floor's zone goes dormant
 
-    for (int i = 0; i < 60; ++i)
-    {
-        ballBinding.SyncToPhysics(ballZone);
-        physics.Step(kFixedDt);
-        ballBinding.SyncFromPhysics(ballZone);
-    }
+    StoragePartitionSet ballOnly;
+    ballOnly.Add(kBallPartition);
+    Tick(binding, ecs, physics, 60, ballOnly);
 
-    EXPECT_LT(ballZone.TryGet<LocalTransform>(ball)->Value.Position.Y, restY - 1.0f);
+    EXPECT_LT(ecs.TryGet<LocalTransform>(ball)->Value.Position.Y, restY - 1.0f);
 }
 
 TEST(PhysicsResidency, MoverPoolEvictReleasesMoversAndReconcileRestores)
@@ -169,14 +180,14 @@ TEST(PhysicsResidency, MoverPoolEvictReleasesMoversAndReconcileRestores)
     ecs.AddComponent<LocalTransform>(player, LocalTransform{ t });
     ecs.AddComponent<CharacterController>(player, CharacterController{});
 
-    pool.Reconcile(ecs);
+    pool.Reconcile(ecs, DefaultPartitions());
     EXPECT_EQ(pool.MoverCount(), 1u);
 
-    pool.Evict(ecs);
+    pool.EvictAll(ecs);
     EXPECT_EQ(pool.MoverCount(), 0u);
     EXPECT_FALSE(ecs.HasComponent<CharacterMoverLink>(player));
 
-    pool.Reconcile(ecs); // return: the ordinary reconcile is the restore
+    pool.Reconcile(ecs, DefaultPartitions()); // return: the ordinary reconcile is the restore
     EXPECT_EQ(pool.MoverCount(), 1u);
     EXPECT_TRUE(ecs.HasComponent<CharacterMoverLink>(player));
 }
@@ -186,31 +197,32 @@ TEST(PhysicsResidency, StepSystemEvictsOnPhysicsDomainExit)
     PhysicsStepSystem step;
     EngineConfig config;
 
-    Registry registry = MakeZoneRegistry(RegistryId{ 2, 1 }, ZoneId{ 1 });
-    SetUpPhysics(registry.Components);
-    SpawnDynamicBall(registry.Components, Vec3d(0.0f, 5.0f, 0.0f));
+    World ecs;
+    SetUpPhysics(ecs);
+    SpawnDynamicBall(ecs, Vec3d(0.0f, 5.0f, 0.0f), kBallPartition);
 
-    RigidBodyBinding& binding =
-        registry.Resources.Ensure<RigidBodyBinding>(step.GetSimulation());
-    binding.SyncToPhysics(registry.Components);
+    StoragePartitionSet zone;
+    zone.Add(kBallPartition);
+    step.GetRigidBodies().SyncToPhysics(ecs, zone);
     ASSERT_EQ(step.GetSimulation().BodyCount(), 1u);
 
     // The zone leaves the physics domain (dormancy — and Detaching arrives
     // with the same Previous/Current shape).
     ZoneParticipation previous;
     previous.Physics = true;
-    RegistryResidencyChange change{
-        RegistryResidencyChangeKind::ParticipationChanged,
-        registry.Id,
-        &registry,
+    const ZoneResidencyChange change{
+        ZoneResidencyChangeKind::ParticipationChanged,
+        ZoneId{ 1 },
+        kBallPartition,
         previous,
         ZoneParticipation{},
     };
-    RegistryResidencyContext ctx{ config, std::span<const RegistryResidencyChange>{ &change, 1 } };
-    step.RegistryResidency(ctx);
+    ZoneResidencyContext ctx{
+        config, ecs, std::span<const ZoneResidencyChange>{ &change, 1 } };
+    step.ZoneResidency(ctx);
 
     EXPECT_EQ(step.GetSimulation().BodyCount(), 0u);
-    EXPECT_EQ(binding.BodyCount(), 0u);
+    EXPECT_EQ(step.GetRigidBodies().BodyCount(), 0u);
 }
 
 TEST(PhysicsResidency, EvictRestoreCyclesAreStable)
@@ -227,7 +239,7 @@ TEST(PhysicsResidency, EvictRestoreCyclesAreStable)
     {
         Tick(binding, ecs, physics, 5);
         EXPECT_EQ(physics.BodyCount(), 1u);
-        binding.Evict(ecs);
+        binding.EvictAll(ecs);
         EXPECT_EQ(physics.BodyCount(), 0u);
     }
 

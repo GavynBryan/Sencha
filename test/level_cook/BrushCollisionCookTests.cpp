@@ -12,6 +12,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
@@ -143,7 +144,9 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
 
     // The collider entity becomes a static body, and the brush is there to hit.
     RigidBodyBinding scene(world);
-    scene.SyncToPhysics(ecs);
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    scene.SyncToPhysics(ecs, partitions);
     EXPECT_EQ(scene.BodyCount(), 1u);
 
     PhysicsQueries queries(world);

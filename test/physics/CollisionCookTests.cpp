@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <assets/cook/CollisionShapeCook.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsQueries.h>
@@ -98,11 +99,13 @@ TEST(CollisionCook, DynamicBodyRestsOnCookedFloorThroughScene)
     ecs.AddComponent<Collider>(ball, Collider{ CollisionShape::MakeSphere(0.5f) });
     ecs.AddComponent<RigidBody>(ball, RigidBody{ BodyMotion::Dynamic, 1.0f, Vec3d::Zero(), 1.0f });
 
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
     for (int i = 0; i < 240; ++i)
     {
-        scene.SyncToPhysics(ecs);
+        scene.SyncToPhysics(ecs, partitions);
         world.Step(kFixedDt);
-        scene.SyncFromPhysics(ecs);
+        scene.SyncFromPhysics(ecs, partitions);
     }
 
     const LocalTransform* rest = ecs.TryGet<LocalTransform>(ball);
