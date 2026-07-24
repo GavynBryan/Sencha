@@ -26,6 +26,23 @@ frames=$5
 map=$6
 
 mkdir -p "$out"
+
+# On a hybrid CPU the same code runs at different clocks and with a different
+# cache hierarchy depending on which core class it lands on, so an unpinned run
+# reports the scheduler's choices as if they were the renderer's cost. Pin to
+# the performance cores, which sysfs names directly on hybrid parts. Override
+# with SENCHA_BENCH_CPUS; empty disables pinning.
+default_cpus=""
+if [ -r /sys/devices/cpu_core/cpus ]; then
+    default_cpus=$(cat /sys/devices/cpu_core/cpus)
+fi
+bench_cpus="${SENCHA_BENCH_CPUS-$default_cpus}"
+pin=()
+if [ -n "$bench_cpus" ] && command -v taskset >/dev/null 2>&1; then
+    pin=(taskset -c "$bench_cpus")
+    echo "  pinned to CPUs $bench_cpus"
+fi
+
 for i in $(seq 1 "$runs"); do
     run=$(printf 'run_%02d.json' "$i")
     capture=$(printf 'capture_%02d.json' "$i")
@@ -35,7 +52,7 @@ for i in $(seq 1 "$runs"); do
         cd "$content"
         SENCHA_PRESENT_MODE=IMMEDIATE \
         SENCHA_VALIDATION="${SENCHA_VALIDATION:-0}" \
-        "$app" \
+        "${pin[@]}" "$app" \
             +set r.target_fps 0 \
             +set sceneviewer.camera.scripted 1 \
             +set app.exit_after_frames "$frames" \
