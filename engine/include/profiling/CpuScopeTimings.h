@@ -25,6 +25,8 @@ enum class CpuScope : std::uint8_t
     LightSelection,
     // Gathering shadow casters and diffing them against the previous frame.
     ShadowGather,
+    // Resolving shadow slot residency and stamping the grants onto the lights.
+    ShadowResidency,
     // Recording shadow depth views: per-view culling and draw submission.
     ShadowRecord,
     // Recording the forward opaque pass.

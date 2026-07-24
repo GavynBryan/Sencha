@@ -24,7 +24,7 @@ class RenderCapture
 {
 public:
 	static constexpr std::size_t kDefaultCapacityFrames = 4096;
-	static constexpr std::uint32_t kSchemaVersion = 3;
+	static constexpr std::uint32_t kSchemaVersion = 4;
 
 	struct FrameRecord
 	{

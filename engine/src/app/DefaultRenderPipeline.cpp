@@ -277,9 +277,12 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         CasterRecordsWereBuilt = wantsCasterEvents;
     }
 
-    Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,
-                     EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
-    Residency.ApplyGrants(Lights);
+    {
+        CpuScopeTimer timer(scopes, CpuScope::ShadowResidency);
+        Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,
+                         EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
+        Residency.ApplyGrants(Lights);
+    }
 
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
         PublishExtractionStats(*Instrumentation->Stats, lightCounts);
