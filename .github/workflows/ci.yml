@@ -1,0 +1,73 @@
+name: CI
+
+# The renderer has only ever been compiled by GCC on Linux. MSVC is a
+# different front end with different defaults (LLP64, no GCC pragmas, no
+# implicit export of shared-library symbols), so the Windows leg exists to
+# find those differences by compiling, not by reading code. No GPU is
+# required: the suite is non-graphical, and the engine only needs the Vulkan
+# SDK headers and loader import library to build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build vulkan-sdk libsdl3-dev || {
+            sudo apt-get install -y ninja-build libvulkan-dev vulkan-validationlayers \
+              glslc libsdl3-dev
+          }
+
+      - name: Configure
+        run: cmake --preset ci
+
+      - name: Build
+        run: cmake --build --preset ci -j 4
+
+      - name: Test
+        run: ctest --preset ci -j 4
+
+      # Cheap on Linux and the whole point is to fail before the Windows leg
+      # spends ten minutes finding the same regression.
+      - name: Render layer portability checks
+        run: ./scripts/check_render_portability.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: latest
+          cache: true
+
+      - name: Install SDL3
+        shell: pwsh
+        run: vcpkg install sdl3:x64-windows
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DSENCHA_ENABLE_VULKAN=ON `
+            -DSENCHA_ENABLE_COOK=ON `
+            -DSENCHA_ENABLE_DEBUG_UI=OFF `
+            -DSENCHA_ENABLE_HOT_RELOAD=OFF
+
+      - name: Build
+        run: cmake --build build --config Debug -j 4
+
+      - name: Test
+        run: ctest --test-dir build -C Debug -j 4 --output-on-failure
