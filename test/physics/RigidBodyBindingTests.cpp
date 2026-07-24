@@ -33,15 +33,23 @@ void SetUpPhysics(World& world)
     RegisterPhysicsComponents(world);
 }
 
-EntityId SpawnAt(World& world, const Vec3d& position)
+EntityId SpawnAtIn(
+    World& world,
+    StoragePartitionId partition,
+    const Vec3d& position)
 {
     Transform3f transform;
     transform.Position = position;
-    const EntityId entity = world.CreateEntity();
+    const EntityId entity = world.CreateEntity(partition);
     world.AddComponent<LocalTransform>(
         entity,
         LocalTransform{ transform });
     return entity;
+}
+
+EntityId SpawnAt(World& world, const Vec3d& position)
+{
+    return SpawnAtIn(world, StoragePartitionId::Default(), position);
 }
 
 void Tick(
@@ -200,6 +208,54 @@ TEST(RigidBodyBinding, ReconcileSkipsWhenNothingStructuralChanged)
     binding.SyncToPhysics(ecs, ActivePartitions());
     EXPECT_EQ(binding.ReconcilePasses(), 2u);
     EXPECT_EQ(binding.BodyCount(), 2u);
+}
+
+// Bodies exist only for entities in the active set, so reconciliation is gated
+// on that set's structural version rather than the world's. Streaming a zone in
+// or out of a resident-but-dormant state must not force a rescan of every
+// collider in the world.
+TEST(RigidBodyBinding, ChurnOutsideTheActiveSetDoesNotReconcile)
+{
+    constexpr StoragePartitionId kDormant{ 1 };
+
+    PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    RigidBodyBinding binding(physics);
+
+    const EntityId box = SpawnAt(ecs, Vec3d(0.0f, 1.0f, 0.0f));
+    ecs.AddComponent<Collider>(
+        box,
+        Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
+
+    binding.SyncToPhysics(ecs, ActivePartitions());
+    ASSERT_EQ(binding.ReconcilePasses(), 1u);
+    ASSERT_EQ(binding.BodyCount(), 1u);
+
+    const EntityId sleeper =
+        SpawnAtIn(ecs, kDormant, Vec3d(0.0f, 8.0f, 0.0f));
+    ecs.AddComponent<Collider>(
+        sleeper,
+        Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
+
+    binding.SyncToPhysics(ecs, ActivePartitions());
+    EXPECT_EQ(binding.ReconcilePasses(), 1u)
+        << "a spawn outside the active set must not rescan the world";
+    EXPECT_EQ(binding.BodyCount(), 1u);
+
+    // The inverse: the entity was skipped, not lost. When its partition joins
+    // the active set the body appears.
+    StoragePartitionSet widened = ActivePartitions();
+    widened.Add(kDormant);
+    binding.SyncToPhysics(ecs, widened);
+    EXPECT_EQ(binding.ReconcilePasses(), 2u);
+    EXPECT_EQ(binding.BodyCount(), 2u);
+
+    // And churn inside the active set is still noticed.
+    ecs.DestroyEntity(sleeper);
+    binding.SyncToPhysics(ecs, widened);
+    EXPECT_EQ(binding.ReconcilePasses(), 3u);
+    EXPECT_EQ(binding.BodyCount(), 1u);
 }
 
 TEST(RigidBodyBinding, BodyLinkTracksColliderLifetime)

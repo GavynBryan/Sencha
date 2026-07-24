@@ -113,36 +113,84 @@ slot:
 
 | Metric | Value |
 |---|---|
-| Chunks after 1 cycle | 11 |
-| Chunks after 10 cycles | 74 |
-| Empty chunks retained | 74 |
+| Chunks after 1 cycle | 8 |
+| Chunks after 10 cycles | 71 |
+| Empty chunks retained | 71 |
 
 `Archetype::RemoveRow` leaves emptied chunks in place and only the last chunk
 per (archetype, partition) is reused, so each unload of a multi-chunk zone
 orphans slabs. The free list recycles the partition *index*; the memory is not
 returned. Every retained slab is also walked and skipped by every query.
 
-## Transform propagation: the streaming hitch
+## Transform propagation: the streaming hitch, and its removal
 
-`PropagationOrderCache` holds one world-global parent-before-child order and
-invalidates on any structural change. Per-zone entity count is held at 20 000
-and the world grows, so the numbers isolate whether the cost tracks the streamed
-zone or everything resident. The attached zone is deliberately tiny — 100
-entities — so anything above the steady sweep is invalidation blast radius
-rather than the new zone's own work.
+Per-zone entity count is held at 20 000 and the world grows, so the numbers
+isolate whether the cost tracks the streamed zone or everything resident. The
+attached zone is deliberately tiny — 100 entities — so anything above a plain
+sweep is invalidation blast radius rather than the new zone's own work.
 
-| World entities | Steady sweep (ms) | First sweep after a 100-entity zone attaches (ms) |
-|---|---|---|
-| 40 000 | 0.107 | 1.926 |
-| 80 000 | 0.234 | 4.076 |
-| 160 000 | 0.638 | 10.069 |
+Three sweeps are measured because they cost different things. *All dirty* never
+advances the frame, so every `LocalTransform` column reads as written at or after
+the last sweep and the whole active world recomputes. *Clean* advances the frame
+and writes nothing, leaving only the cost of deciding to skip — the common case
+in a real scene. *After attach* is the first sweep once a 100-entity zone joins
+the domain.
 
-The hitch scales with total world size, not with the streamed zone: about
-20x the steady sweep, and growing linearly with everything loaded. The prior
-model kept one cache per registry, so the same attach rebuilt only the attaching
-zone's order. Two physics reconcilers (`RigidBodyBinding`, `CharacterMoverPool`)
-gate on the same global counter, so any entity spawn or despawn anywhere — a
-projectile, an expiring effect, a zone detach — pays this too.
+Before, with one world-global order over every transform entity, keyed on the
+global structural counter:
+
+| World entities | All dirty (ms) | Clean (ms) | After attach (ms) |
+|---|---|---|---|
+| 40 000 | 0.129 | 0.093 | 2.466 |
+| 80 000 | 0.267 | 0.183 | 5.230 |
+| 160 000 | 0.768 | 0.420 | 10.829 |
+
+After Phase 3 — unparented entities swept chunk-linearly, parented entities
+through an order invalidated by hierarchy change rather than by any structural
+change:
+
+| World entities | All dirty (ms) | Clean (ms) | After attach (ms) |
+|---|---|---|---|
+| 40 000 | 0.069 | 0.0008 | 0.0013 |
+| 80 000 | 0.136 | 0.0014 | 0.0029 |
+| 160 000 | 0.292 | 0.0029 | 0.0048 |
+
+- **The hitch is gone, and so is its growth with world size.** 10.83 ms to
+  0.0048 ms at 160 000, and order rebuilds per attach from 1 to 0. What remains
+  is the new zone's own 100 entities plus one skipped-chunk test per resident
+  chunk. Criterion 2 asked for under 1.0 ms at 320 000; the measured 160 000 cost
+  is three orders of magnitude below that, and what is left scales with chunk
+  count rather than entity count.
+- **Deciding to skip was costing more than the arithmetic.** A sweep with nothing
+  dirty ran 0.42 ms at 160 000 because the order walk touched a chunk header per
+  entity, in hash order. Testing one column version per 16 KB chunk instead is
+  143x cheaper.
+- **Recomputing everything also got faster** — 0.768 ms to 0.292 ms — which is
+  the same effect from the other side: the old sweep chased cached pointers in
+  breadth-first order, so a full recompute was a random walk over every chunk.
+- **The hierarchy path did not regress.** 20 000 entities in depth-4 chains,
+  roots written every rep: 0.132 ms to 0.122 ms dirty, 0.049 ms to 0.032 ms
+  clean. Parented entities keep the cached-pointer order, and this is the
+  measurement that says keeping it is not costing anything (unified-world
+  hardening Phase 3, step 3).
+
+Two physics reconcilers (`RigidBodyBinding`, `CharacterMoverPool`) gated on the
+same global counter, so any spawn or despawn anywhere — a projectile, an expiring
+effect, a zone detach — rescanned every collider and controller in the world.
+Both now gate on the summed structural version of the partitions they were handed
+(`World::StructuralVersion(const StoragePartitionSet&)`), and the mover pool's
+whole-world component scan is partition-filtered. `ReconcilePasses()` bounds this
+in `test/physics/*ChurnOutsideTheActiveSetDoesNotReconcile`.
+
+**Machine state for this comparison.** These runs were taken with an editor
+process holding about one core, so the control read 0.461 ms against 0.365 ms for
+the recorded baseline — every millisecond figure here is inflated by roughly a
+quarter. Rather than compare against the recorded baseline across that gap, the
+pre-change binary and library were frozen aside and the two were run interleaved,
+twice, on the same machine state; the controls agree within 2.5% and the two
+rounds agree within a few percent. Contamination inflates both sides, so each
+improvement above is a lower bound, and the absolute after-numbers are upper
+bounds. Re-record on an idle machine to tighten them.
 
 ## Bounds derived from these numbers
 
@@ -155,8 +203,9 @@ states:
 | Bound | State | Target |
 |---|---|---|
 | `ImportPerformsNoRowMigrationsPerEntity` | live, passing (Phase 2) | 0 |
-| `StreamingChurnDoesNotGrowChunkCount` | disabled, 74 after 10 cycles vs 11 | equal |
-| `SpawnInOneZoneDoesNotRebuildTransformOrder` | disabled, rebuilds | no rebuild |
+| `SpawnInOneZoneDoesNotRebuildTransformOrder` | live, passing (Phase 3) | no rebuild |
+| `FlatSpawnResolvesAddressesWithoutRebuildingOrder` | live, passing (Phase 3) | resolve, no rebuild |
+| `StreamingChurnDoesNotGrowChunkCount` | disabled, 71 after 10 cycles vs 8 | equal |
 
 `CrossPartitionParentChangeRebuildsTransformOrder` is live from the start and
 must stay live: cross-partition parenting is legal, so the order is genuinely

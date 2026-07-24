@@ -5,6 +5,7 @@
 
 #include <numbers>
 #include <utility>
+#include <vector>
 
 struct ExtraComponent
 {
@@ -323,6 +324,213 @@ TEST(TransformPropagation, ReparentViaTryGetRebuildsOrder)
 
     PropagateTransforms(world);
     EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position, Vec3d(101.0f, 0.0f, 0.0f));
+}
+
+// The dirty test for unparented entities is chunk-granular, but a hierarchy edge
+// does not respect chunk boundaries: a child sitting in an untouched chunk still
+// has to recompute when its parent moves. ExtraComponent forces the child into
+// its own archetype, so nothing about its own storage looks dirty.
+TEST(TransformPropagation, ChildInACleanChunkFollowsAMovedParent)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
+    world.RegisterComponent<ExtraComponent>();
+
+    const EntityId parent = world.CreateEntity();
+    world.AddComponent(parent, LocalTransform{ Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(parent, WorldTransform{});
+
+    const EntityId child = world.CreateEntity();
+    world.AddComponent(child, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(child, WorldTransform{});
+    world.AddComponent(child, Parent{ parent });
+    world.AddComponent(child, ExtraComponent{ 1 });
+
+    world.AdvanceFrame();
+    PropagateTransforms(world);
+    ASSERT_EQ(world.TryGet<WorldTransform>(child)->Value.Position,
+              Vec3d(11.0f, 0.0f, 0.0f));
+
+    world.AdvanceFrame();
+    world.TryGet<LocalTransform>(parent)->Value.Position = Vec3d(20.0f, 0.0f, 0.0f);
+    PropagateTransforms(world);
+
+    EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position,
+              Vec3d(21.0f, 0.0f, 0.0f));
+}
+
+// Entity slots are reused. A child whose parent died must fall back to its local
+// transform, not inherit whatever entity now occupies the parent's slot: index
+// equality is not identity.
+TEST(TransformPropagation, RecycledParentSlotIsNotInherited)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
+
+    const EntityId parent = world.CreateEntity();
+    world.AddComponent(parent, LocalTransform{ Transform3f(Vec3d(100.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(parent, WorldTransform{});
+
+    const EntityId child = world.CreateEntity();
+    world.AddComponent(child, LocalTransform{ Transform3f(Vec3d(1.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(child, WorldTransform{});
+    world.AddComponent(child, Parent{ parent });
+
+    world.AdvanceFrame();
+    PropagateTransforms(world);
+    ASSERT_EQ(world.TryGet<WorldTransform>(child)->Value.Position,
+              Vec3d(101.0f, 0.0f, 0.0f));
+
+    world.DestroyEntity(parent);
+
+    // Reuses the freed slot, and is itself parented so that it would land in the
+    // order beside the orphan if identity were compared by index alone.
+    const EntityId successor = world.CreateEntity();
+    ASSERT_EQ(successor.Index, parent.Index);
+    ASSERT_NE(successor.Generation, parent.Generation);
+    world.AddComponent(successor, LocalTransform{ Transform3f(Vec3d(7.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(successor, WorldTransform{});
+    world.AddComponent(successor, Parent{ child });
+
+    world.AdvanceFrame();
+    PropagateTransforms(world);
+
+    EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position,
+              Vec3d(1.0f, 0.0f, 0.0f))
+        << "an orphaned child must fall back to its local transform";
+    EXPECT_EQ(world.TryGet<WorldTransform>(successor)->Value.Position,
+              Vec3d(8.0f, 0.0f, 0.0f));
+}
+
+// Scoped invalidation must produce the same transforms as rebuilding everything
+// every sweep. Under-invalidation shows up as stale values rather than a crash,
+// so the two are run over the same churn script and compared.
+//
+// Every sweep is compared, not just the last one: a divergence introduced by one
+// step is routinely overwritten by the next, so a final-state comparison passes
+// while the frames in between were wrong. Recording per sweep also names the step
+// that broke.
+TEST(TransformPropagation, ScopedInvalidationMatchesForcedFullRebuild)
+{
+    const auto run = [](bool forceFull, std::vector<std::vector<Vec3d>>& out)
+    {
+        World world;
+        world.RegisterComponent<LocalTransform>();
+        world.RegisterComponent<WorldTransform>();
+        world.RegisterComponent<Parent>();
+        world.RegisterComponent<ExtraComponent>();
+
+        StoragePartitionSet active;
+        active.Add(StoragePartitionId::Default());
+        const StoragePartitionId zone{ 1 };
+        active.Add(zone);
+
+        std::vector<EntityId> entities;
+        const auto spawn = [&](StoragePartitionId partition, float x, EntityId parent)
+        {
+            const EntityId entity = world.CreateEntity(partition);
+            world.AddComponent(entity, LocalTransform{ Transform3f(Vec3d(x, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+            world.AddComponent(entity, WorldTransform{});
+            if (parent.IsValid())
+                world.AddComponent(entity, Parent{ parent });
+            entities.push_back(entity);
+            return entity;
+        };
+
+        // A three-level chain spanning two partitions, plus flat entities.
+        const EntityId root = spawn(StoragePartitionId::Default(), 10.0f, EntityId{});
+        const EntityId mid = spawn(zone, 2.0f, root);
+        const EntityId leaf = spawn(zone, 0.5f, mid);
+        const EntityId flat = spawn(zone, 3.0f, EntityId{});
+
+        out.clear();
+        const auto record = [&]
+        {
+            std::vector<Vec3d> positions;
+            for (const EntityId entity : entities)
+            {
+                const WorldTransform* transform =
+                    std::as_const(world).TryGet<WorldTransform>(entity);
+                positions.push_back(transform != nullptr
+                    ? transform->Value.Position
+                    : Vec3d::Zero());
+            }
+            out.push_back(std::move(positions));
+        };
+
+        const auto sweep = [&]
+        {
+            world.AdvanceFrame();
+            PropagateTransforms(
+                world,
+                active,
+                TransformPropagationDomain::Simulation,
+                forceFull);
+            record();
+        };
+
+        sweep();
+
+        // Move the root: dirtiness has to reach the leaf.
+        world.TryGet<LocalTransform>(root)->Value.Position = Vec3d(11.0f, 0.0f, 0.0f);
+        sweep();
+
+        // Spawn into the streamed partition, which changes nothing structural
+        // about the existing hierarchy.
+        const EntityId added = spawn(zone, 4.0f, EntityId{});
+        sweep();
+
+        // Re-parent across the partition boundary.
+        world.AdvanceFrame();
+        world.TryGet<Parent>(leaf)->Entity = root;
+        sweep();
+
+        // Grow an archetype under a parented entity, relocating rows.
+        world.AddComponent(mid, ExtraComponent{ 1 });
+        sweep();
+
+        // Drop the streamed partition out of the domain, move something inside
+        // it while it sleeps, then bring it back.
+        StoragePartitionSet defaultOnly;
+        defaultOnly.Add(StoragePartitionId::Default());
+        world.AdvanceFrame();
+        PropagateTransforms(
+            world,
+            defaultOnly,
+            TransformPropagationDomain::Simulation,
+            forceFull);
+        record();
+        world.AdvanceFrame();
+        world.TryGet<LocalTransform>(flat)->Value.Position = Vec3d(9.0f, 0.0f, 0.0f);
+        sweep();
+
+        // Destroy a parent and leave the child orphaned.
+        world.DestroyEntity(mid);
+        sweep();
+
+        (void)added;
+    };
+
+    std::vector<std::vector<Vec3d>> scoped;
+    std::vector<std::vector<Vec3d>> forced;
+    run(false, scoped);
+    run(true, forced);
+
+    ASSERT_EQ(scoped.size(), forced.size());
+    for (size_t sweep = 0; sweep < scoped.size(); ++sweep)
+    {
+        ASSERT_EQ(scoped[sweep].size(), forced[sweep].size());
+        for (size_t index = 0; index < scoped[sweep].size(); ++index)
+        {
+            EXPECT_EQ(scoped[sweep][index], forced[sweep][index])
+                << "sweep " << sweep << ", entity " << index
+                << " diverged from the forced-rebuild result";
+        }
+    }
 }
 
 TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)

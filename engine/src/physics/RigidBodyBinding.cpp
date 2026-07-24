@@ -49,26 +49,6 @@ BodyTransform ReadPose(const World& world, EntityId entity)
     return BodyTransform{ Vec3d::Zero(), Quatf::Identity() };
 }
 
-bool SamePartitions(
-    const StoragePartitionSet& a,
-    const StoragePartitionSet& b)
-{
-    if (a.Size() != b.Size())
-        return false;
-    for (StoragePartitionId partition : a.Members())
-        if (!b.Contains(partition))
-            return false;
-    return true;
-}
-
-void CopyPartitions(
-    StoragePartitionSet& destination,
-    const StoragePartitionSet& source)
-{
-    destination.Clear();
-    for (StoragePartitionId partition : source.Members())
-        destination.Add(partition);
-}
 } // namespace
 
 struct RigidBodyBinding::SceneState
@@ -226,7 +206,7 @@ void RigidBodyBinding::Reconcile(
     }
 
     state.Commands.Flush();
-    CopyPartitions(state.ActivePartitions, partitions);
+    state.ActivePartitions = partitions;
 }
 
 void RigidBodyBinding::SyncToPhysics(
@@ -240,13 +220,16 @@ void RigidBodyBinding::SyncToPhysics(
     if (!Ready(world))
         return;
 
+    // Bodies exist only for entities in the active set, so only that set's
+    // structural churn can change what needs binding. A spawn or despawn in a
+    // dormant zone leaves this scan skipped. The version is re-read after
+    // Reconcile because Reconcile's own PhysicsBodyLink writes bump it.
     SceneState& state = EnsureState(world);
-    const uint64_t version = world.StructuralVersion();
-    if (version != LastStructuralVersion
-        || !SamePartitions(state.ActivePartitions, partitions))
+    if (world.StructuralVersion(partitions) != LastStructuralVersion
+        || !(state.ActivePartitions == partitions))
     {
         Reconcile(world, state, partitions);
-        LastStructuralVersion = world.StructuralVersion();
+        LastStructuralVersion = world.StructuralVersion(partitions);
     }
 
     state.KinematicPush.ForEachChunkIn(partitions, [&](auto& view)
@@ -340,7 +323,7 @@ void RigidBodyBinding::EvictPartition(
     }
     state.Commands.Flush();
     state.ActivePartitions.Remove(partition);
-    LastStructuralVersion = world.StructuralVersion();
+    LastStructuralVersion = world.StructuralVersion(state.ActivePartitions);
 }
 
 void RigidBodyBinding::EvictAll(World& world)
@@ -363,5 +346,5 @@ void RigidBodyBinding::EvictAll(World& world)
     Owned.clear();
     state.Commands.Flush();
     state.ActivePartitions.Clear();
-    LastStructuralVersion = world.StructuralVersion();
+    LastStructuralVersion = world.StructuralVersion(state.ActivePartitions);
 }

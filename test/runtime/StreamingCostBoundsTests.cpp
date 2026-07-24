@@ -5,11 +5,11 @@
 // work: how many row migrations an import pays, whether unload returns its
 // chunk slabs, and how far a structural change's cache invalidation reaches.
 //
-// Three bounds below are DISABLED because the current implementation does not
-// meet them yet. Each names the phase of docs/plans/unified-world-hardening.md
-// that makes it pass; enabling it is that phase's gate, and it must fail before
-// the fix for the reason its comment states. They are disabled rather than
-// failing so a red suite always means a new regression.
+// A bound below is DISABLED because the current implementation does not meet it
+// yet. It names the phase of docs/plans/unified-world-hardening.md that makes it
+// pass; enabling it is that phase's gate, and it must fail before the fix for
+// the reason its comment states. It is disabled rather than failing so a red
+// suite always means a new regression.
 
 #include <gtest/gtest.h>
 
@@ -185,6 +185,49 @@ TEST(StreamingCostBounds, ImportPerformsNoRowMigrationsPerEntity)
     EXPECT_EQ(runtime.Entities().RowMigrationCount() - before, 0u);
 }
 
+// The split that makes the bound above reachable: a structural change relocates
+// rows, so cached row addresses must be re-resolved, but it does not change who
+// is whose parent. Re-resolving costs the order; rebuilding costs a full
+// traversal, so the two must not be driven by the same signal.
+TEST(StreamingCostBounds, FlatSpawnResolvesAddressesWithoutRebuildingOrder)
+{
+    constexpr StoragePartitionId zone{ 1 };
+
+    const WorldComponentSchema schema = RuntimeSchema();
+    RuntimeWorld runtime(schema);
+    World& world = runtime.Entities();
+    world.AddResource<PropagationOrderCache>();
+
+    const EntityId parent = SpawnTransformEntity(world, zone, Vec3d(5.0f, 0.0f, 0.0f));
+    const EntityId child = SpawnTransformEntity(world, zone, Vec3d(1.0f, 0.0f, 0.0f));
+    world.AddComponent<Parent>(child, Parent{ parent });
+
+    const StoragePartitionSet partitions = SetOf(zone);
+    world.AdvanceFrame();
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Simulation);
+
+    const PropagationOrderCache& cache =
+        world.GetResource<PropagationOrderCache>();
+    const uint64_t rebuilds = cache.RebuildCount();
+    const uint64_t resolves = cache.AddressResolveCount();
+
+    world.AdvanceFrame();
+    SpawnTransformEntity(world, zone, Vec3d(0.0f, 7.0f, 0.0f));
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Simulation);
+
+    EXPECT_EQ(cache.RebuildCount(), rebuilds)
+        << "a flat spawn changes no hierarchy";
+    EXPECT_GT(cache.AddressResolveCount(), resolves)
+        << "but it can relocate rows, so addresses must be re-resolved";
+
+    // The child still tracks its parent afterwards, so the addresses that were
+    // re-resolved are the right ones.
+    world.AdvanceFrame();
+    world.TryGet<LocalTransform>(parent)->Value.Position = Vec3d(6.0f, 0.0f, 0.0f);
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Simulation);
+    EXPECT_FLOAT_EQ(world.TryGet<WorldTransform>(child)->Value.Position.X, 7.0f);
+}
+
 // Phase 4 (chunk reclamation). Today Archetype::RemoveRow leaves emptied chunks
 // in place and only the last chunk per (archetype, partition) is ever reused,
 // so each unload of a multi-chunk zone orphans slabs and the census climbs with
@@ -222,11 +265,10 @@ TEST(StreamingCostBounds, DISABLED_StreamingChurnDoesNotGrowChunkCount)
         << runtime.Entities().EmptyChunkCount() << " empty chunks retained";
 }
 
-// Phase 3 (scoped invalidation). Today every cache keys off the global
-// structural counter, so a spawn in one zone rebuilds the whole world's
-// propagation order — cost proportional to everything resident rather than to
-// what changed. Enabling this test is Phase 3's gate.
-TEST(StreamingCostBounds, DISABLED_SpawnInOneZoneDoesNotRebuildTransformOrder)
+// Phase 3 (scoped invalidation). The order covers parented entities and is
+// invalidated by hierarchy change, not by the global structural counter, so a
+// flat spawn anywhere leaves it standing.
+TEST(StreamingCostBounds, SpawnInOneZoneDoesNotRebuildTransformOrder)
 {
     constexpr StoragePartitionId active{ 1 };
     constexpr StoragePartitionId dormant{ 2 };

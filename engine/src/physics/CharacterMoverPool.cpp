@@ -25,32 +25,13 @@ Vec3d ReadPosition(const World& world, EntityId entity)
     return Vec3d::Zero();
 }
 
-bool SamePartitions(
-    const StoragePartitionSet& a,
-    const StoragePartitionSet& b)
-{
-    if (a.Size() != b.Size())
-        return false;
-    for (StoragePartitionId partition : a.Members())
-        if (!b.Contains(partition))
-            return false;
-    return true;
-}
-
-void CopyPartitions(
-    StoragePartitionSet& destination,
-    const StoragePartitionSet& source)
-{
-    destination.Clear();
-    for (StoragePartitionId partition : source.Members())
-        destination.Add(partition);
-}
 } // namespace
 
 struct CharacterMoverPool::State
 {
     explicit State(World& world)
         : Commands(world)
+        , PendingQuery(world)
         , DriveQuery(world)
     {
     }
@@ -64,6 +45,10 @@ struct CharacterMoverPool::State
     std::vector<Slot> Slots;
     std::vector<uint32_t> Free;
     CommandBuffer Commands;
+    // Controllers still awaiting a mover. Without<CharacterMoverLink> is the
+    // archetype-level form of the per-entity presence test, so an already-bound
+    // controller costs nothing to skip.
+    Query<Read<CharacterController>, Without<CharacterMoverLink>> PendingQuery;
     Query<
         Write<CharacterController>,
         Write<LocalTransform>,
@@ -125,10 +110,11 @@ void CharacterMoverPool::Reconcile(
     if (!Ready(world))
         return;
 
+    // Movers exist only for controllers in the active set, so only that set's
+    // structural churn can change what needs a mover.
     State& state = EnsureState(world);
-    const uint64_t version = world.StructuralVersion();
-    if (version == LastStructuralVersion
-        && SamePartitions(state.ActivePartitions, partitions))
+    if (world.StructuralVersion(partitions) == LastStructuralVersion
+        && state.ActivePartitions == partitions)
     {
         return;
     }
@@ -136,29 +122,27 @@ void CharacterMoverPool::Reconcile(
     ++ReconcileCount;
     const World& readOnly = world;
 
-    readOnly.ForEachComponent<CharacterController>(
-        [&](EntityId entity, const CharacterController& controller)
+    state.PendingQuery.ForEachChunkIn(partitions, [&](auto& view)
     {
-        if (!partitions.Contains(world.GetEntityPartition(entity))
-            || world.HasComponent<CharacterMoverLink>(entity))
+        const auto controllers = view.template Read<CharacterController>();
+        for (uint32_t index = 0; index < view.Count(); ++index)
         {
-            return;
+            const EntityId entity = view.Entity(index);
+            const uint32_t slot = state.Allocate(entity);
+            const CharacterMoverConfig config{
+                controllers[index].Radius,
+                controllers[index].Height,
+                controllers[index].SlopeLimitDegrees,
+                70.0f,
+            };
+            state.Slots[slot].Mover.emplace(
+                *Simulation,
+                config,
+                ReadPosition(readOnly, entity));
+            state.Commands.AddComponent<CharacterMoverLink>(
+                entity,
+                CharacterMoverLink{ slot });
         }
-
-        const uint32_t slot = state.Allocate(entity);
-        const CharacterMoverConfig config{
-            controller.Radius,
-            controller.Height,
-            controller.SlopeLimitDegrees,
-            70.0f,
-        };
-        state.Slots[slot].Mover.emplace(
-            *Simulation,
-            config,
-            ReadPosition(readOnly, entity));
-        state.Commands.AddComponent<CharacterMoverLink>(
-            entity,
-            CharacterMoverLink{ slot });
     });
 
     for (uint32_t slot = 0; slot < state.Slots.size(); ++slot)
@@ -181,8 +165,8 @@ void CharacterMoverPool::Reconcile(
     }
 
     state.Commands.Flush();
-    CopyPartitions(state.ActivePartitions, partitions);
-    LastStructuralVersion = world.StructuralVersion();
+    state.ActivePartitions = partitions;
+    LastStructuralVersion = world.StructuralVersion(partitions);
 }
 
 void CharacterMoverPool::Drive(
@@ -251,7 +235,7 @@ void CharacterMoverPool::EvictPartition(
     }
     state.Commands.Flush();
     state.ActivePartitions.Remove(partition);
-    LastStructuralVersion = world.StructuralVersion();
+    LastStructuralVersion = world.StructuralVersion(state.ActivePartitions);
 }
 
 void CharacterMoverPool::EvictAll(World& world)
@@ -275,5 +259,5 @@ void CharacterMoverPool::EvictAll(World& world)
     }
     state.Commands.Flush();
     state.ActivePartitions.Clear();
-    LastStructuralVersion = world.StructuralVersion();
+    LastStructuralVersion = world.StructuralVersion(state.ActivePartitions);
 }

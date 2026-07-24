@@ -22,13 +22,13 @@ Two findings frame everything below:
 
 ## Success criteria
 
-| # | Criterion | Baseline | Target |
-|---|---|---|---|
-| 1 | Owner-thread import, 20 000-entity zone | 6.49 ms | <= 2.0 ms (fits `AsyncCommitBudgetMs`) |
-| 2 | First propagation after attaching a 100-entity zone into a 320 000-entity world | ~24 ms (extrapolated from 12.05 ms at 160 000) | < 1.0 ms |
-| 3 | Chunk census after 10 load/unload cycles vs after 1 | 74 vs 11 | equal |
-| 4 | Steady-state iteration, 160 000 entities all active | 0.195 ms | no regression beyond 10% |
-| 5 | Worst frame during a live streaming event | unmeasured | no frame over budget |
+| # | Criterion | Baseline | Target | State |
+|---|---|---|---|---|
+| 1 | Owner-thread import, 20 000-entity zone | 6.49 ms | <= 2.0 ms (fits `AsyncCommitBudgetMs`) | met, 1.19 ms (Phase 2) |
+| 2 | First propagation after attaching a 100-entity zone into a 320 000-entity world | ~24 ms (extrapolated from 12.05 ms at 160 000) | < 1.0 ms | met, 0.0048 ms at 160 000 and no longer entity-proportional (Phase 3) |
+| 3 | Chunk census after 10 load/unload cycles vs after 1 | 71 vs 8 | equal | open (Phase 4) |
+| 4 | Steady-state iteration, 160 000 entities all active | 0.195 ms | no regression beyond 10% | holding, within noise through Phase 3 |
+| 5 | Worst frame during a live streaming event | unmeasured | no frame over budget | open (Phase 7) |
 
 Criterion 2 is the load-bearing one: it converts "the streaming hitch scales with
 how much world is loaded" into "the hitch scales with the zone being streamed."
@@ -135,41 +135,64 @@ bulk chunk blit — prebuilt column blocks memcpy'd into the archetype, EntityId
 minted owner-side, `Parent` remapped. That approaches the prior model's O(1)
 attach. Triggered by the gate, not assumed.
 
-## Phase 3 — Scoped cache invalidation
+## Phase 3 — Scoped cache invalidation (done)
 
 **Invariant:** a structural change in one partition invalidates only what depends
 on that partition. **Owner:** `PropagationOrderCache`, `RigidBodyBinding`,
 `CharacterMoverPool`.
 
-All three key off the global structural counter, so any spawn or despawn anywhere
-rebuilds a world-global order and rescans both physics bindings. The
-per-partition counters needed to fix this already exist
-(`World::StructuralVersion(StoragePartitionId)`) and nothing reads them.
+All three keyed off the global structural counter, so any spawn or despawn
+anywhere rebuilt a world-global order and rescanned both physics bindings.
 
-1. The physics reconcilers already receive a partition set: gate them on the
-   summed structural version of that set, and make `CharacterMoverPool`'s
-   whole-world component scan partition-filtered at the same time.
-2. Transform order cannot go per-partition, because cross-partition parenting is
-   legal and the order is genuinely global. Split the cache instead: rebuild
-   topology only on hierarchy change (it already computes `Changed<Parent>`; add
-   a transform-entity add/remove signal), and on a plain structural bump
-   re-resolve the cached row pointers in O(order) without the BFS and maps.
-3. Measure whether the pointer cache earns its place at all. `PropagationEntry`
-   caching raw `LocalPtr`/`WorldPtr`/`ChunkPtr` is precisely why any structural
-   change forces invalidation, since swap-remove relocates rows. A/B it against
-   a query-driven parent-before-child sweep and take the winner.
+1. **Physics.** Both reconcilers already received a partition set, so they now
+   gate on `World::StructuralVersion(const StoragePartitionSet&)` — the summed
+   per-partition counters, which move only for churn inside the set they were
+   handed. `CharacterMoverPool`'s whole-world `ForEachComponent` scan became a
+   cached `Without<CharacterMoverLink>` query filtered by the same set. The
+   duplicated `SamePartitions`/`CopyPartitions` helpers in both files collapsed
+   into `StoragePartitionSet::operator==` and plain assignment.
+2. **Transform order.** Splitting the cache into topology and addresses was the
+   plan; what the measurements then showed is that the order should not have
+   covered unparented entities in the first place. An entity with no parent needs
+   no ordering, so those are now swept chunk-linearly by a partition-filtered
+   query with `Changed<LocalTransform>` doing the skipping, and only parented
+   entities enter the order. That makes both the order and every cost of
+   maintaining it proportional to the hierarchy instead of to the world:
+   topology rebuilds on hierarchy change, addresses re-resolve on a structural
+   bump in O(parented), and a flat spawn or zone attach does neither.
+3. **Whether the pointer cache earns its place** (plan step 3): measured, and it
+   does. A depth-4 hierarchy bench was added to the harness and recorded on the
+   pre-change binary first. Retaining cached row pointers for parented entities
+   costs nothing against the old behaviour (0.132 -> 0.122 ms dirty, 0.049 ->
+   0.032 ms clean at 20 000 entities), so no query-driven replacement was needed.
 
-Under-invalidation is the danger here — it produces stale transforms and
-un-reconciled bodies rather than a crash. Two mitigations: an equivalence check
-that runs a churn scenario under scoped and forced-global invalidation and
-asserts identical output, and a cvar that forces global invalidation so a field
-bug has a one-line bisect.
+Two mitigations against under-invalidation, which produces stale transforms
+rather than a crash: `ScopedInvalidationMatchesForcedFullRebuild` runs a churn
+script — root move, streamed spawn, cross-partition re-parent, archetype growth,
+partition sleep and wake, parent destruction — under both scoped and forced-full
+invalidation and compares **every sweep**, not just the final state; and
+`transform.force_full_propagation` forces the rebuild every sweep so a suspected
+field bug is one console line to bisect.
 
-**Gate:** criterion 2; enable
-`StreamingCostBounds.DISABLED_SpawnInOneZoneDoesNotRebuildTransformOrder`;
-`CrossPartitionParentChangeRebuildsTransformOrder` must stay green — it exists so
-this phase cannot satisfy its own bound by invalidating less than correctness
-requires; scoped-vs-global equivalence; full suite.
+Comparing only final state is what a first draft of that test did, and it passed
+while a deliberately sabotaged hierarchy probe was in the tree: the wrong value
+was overwritten by a later sweep. Per-sweep comparison catches it and names the
+step.
+
+**Result:** first sweep after attaching a 100-entity zone into a 160 000-entity
+world, 10.83 -> 0.0048 ms, with order rebuilds per attach 1 -> 0; a sweep with
+nothing dirty, 0.420 -> 0.0029 ms; a sweep with everything dirty, 0.768 -> 0.292
+ms. Criterion 2 asked for under 1.0 ms at 320 000 and what remains scales with
+chunk count. Iteration and import unchanged within noise.
+
+**Gate:** criterion 2 met; `SpawnInOneZoneDoesNotRebuildTransformOrder` enabled
+and passing, joined by `FlatSpawnResolvesAddressesWithoutRebuildingOrder`;
+`CrossPartitionParentChangeRebuildsTransformOrder` still green;
+scoped-vs-global equivalence green; two new physics reconcile bounds; full suite
+1818/1818; module ABI OK. Two latent bugs found and fixed on the way: a parent
+whose entity slot had been recycled was inherited by index alone, ignoring the
+generation, and the chunk-conservative dirty test needed a guard for a child
+sitting in a clean chunk under a moved parent.
 
 ## Phase 4 — Chunk reclamation
 
@@ -179,7 +202,7 @@ mark, not by cumulative streaming history. **Owner:** `Archetype` free list plus
 
 `Archetype::RemoveRow` leaves emptied chunks in place, and only the last chunk
 per (archetype, partition) is reused, so each unload of a multi-chunk zone
-orphans slabs: 74 chunks retained after ten cycles of a zone that needs 11, all
+orphans slabs: 71 chunks retained after ten cycles of a zone that needs 8, all
 empty. Every retained slab is also walked and skipped by every query, which
 slowly feeds iteration cost.
 

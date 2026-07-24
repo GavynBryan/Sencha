@@ -170,7 +170,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         PropagateTransforms(
             entities,
             zones.Logic,
-            TransformPropagationDomain::Simulation);
+            TransformPropagationDomain::Simulation,
+            config.Runtime.TransformForceFullPropagation);
 
         PostFixedContext postFixed{
             .Config = config,
@@ -221,7 +222,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         PropagateTransforms(
             entities,
             zones.Visible,
-            TransformPropagationDomain::Presentation);
+            TransformPropagationDomain::Presentation,
+            config.Runtime.TransformForceFullPropagation);
 
         RenderExtractContext extract{
             .Config = config,

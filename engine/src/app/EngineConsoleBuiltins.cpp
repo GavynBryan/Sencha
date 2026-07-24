@@ -204,6 +204,24 @@ namespace EngineConsoleBuiltins
                 runtimeLoop.GetSimulationClock().SetFixedTickRate(runtimeConfig.FixedTickRate);
             },
         });
+
+        registry.RegisterCVar({
+            .Name = "transform.force_full_propagation",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = runtimeConfig.TransformForceFullPropagation,
+            .CurrentValue = runtimeConfig.TransformForceFullPropagation,
+            .Flags = CVarFlags::Transient,
+            .Help = "Rebuild the transform propagation order every sweep instead "
+                    "of on hierarchy change. Diagnostic: if a wrong transform "
+                    "disappears when this is on, scoped invalidation is missing a "
+                    "change.",
+            .Source = { "engine defaults" },
+            .OnChange = [&runtimeConfig](const CVarChangeContext& ctx) {
+                runtimeConfig.TransformForceFullPropagation =
+                    std::get<bool>(ctx.NewValue);
+            },
+        });
     }
 
     void RegisterFramePacingCVars(ConsoleRegistry& registry,

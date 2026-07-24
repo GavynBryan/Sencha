@@ -33,11 +33,14 @@ void SetUpPhysics(World& world)
     RegisterPhysicsComponents(world);
 }
 
-EntityId SpawnCharacter(World& world, const Vec3d& position)
+EntityId SpawnCharacterIn(
+    World& world,
+    StoragePartitionId partition,
+    const Vec3d& position)
 {
     Transform3f transform;
     transform.Position = position;
-    const EntityId entity = world.CreateEntity();
+    const EntityId entity = world.CreateEntity(partition);
     world.AddComponent<LocalTransform>(
         entity,
         LocalTransform{ transform });
@@ -45,6 +48,14 @@ EntityId SpawnCharacter(World& world, const Vec3d& position)
         entity,
         CharacterController{});
     return entity;
+}
+
+EntityId SpawnCharacter(World& world, const Vec3d& position)
+{
+    return SpawnCharacterIn(
+        world,
+        StoragePartitionId::Default(),
+        position);
 }
 
 void AddStaticFloor(PhysicsWorld& world)
@@ -142,6 +153,41 @@ TEST(CharacterMoverPool, ReconcileGateHoldsWhenNothingStructuralChanged)
         pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
     }
     EXPECT_EQ(pool.ReconcilePasses(), 1u);
+}
+
+// Movers exist only for controllers in the active set, so reconciliation is
+// gated on that set's structural version rather than the world's.
+TEST(CharacterMoverPool, ChurnOutsideTheActiveSetDoesNotReconcile)
+{
+    constexpr StoragePartitionId kDormant{ 1 };
+
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+
+    SpawnCharacter(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+    pool.Reconcile(ecs, ActivePartitions());
+    ASSERT_EQ(pool.ReconcilePasses(), 1u);
+    ASSERT_EQ(pool.MoverCount(), 1u);
+
+    const EntityId sleeper =
+        SpawnCharacterIn(ecs, kDormant, Vec3d(20.0f, 5.0f, 0.0f));
+    pool.Reconcile(ecs, ActivePartitions());
+    EXPECT_EQ(pool.ReconcilePasses(), 1u)
+        << "a spawn outside the active set must not rescan the world";
+    EXPECT_EQ(pool.MoverCount(), 1u);
+    EXPECT_FALSE(ecs.HasComponent<CharacterMoverLink>(sleeper));
+
+    // The inverse: the controller was skipped, not lost.
+    StoragePartitionSet widened = ActivePartitions();
+    widened.Add(kDormant);
+    pool.Reconcile(ecs, widened);
+    EXPECT_EQ(pool.ReconcilePasses(), 2u);
+    EXPECT_EQ(pool.MoverCount(), 2u);
+    EXPECT_TRUE(ecs.HasComponent<CharacterMoverLink>(sleeper));
 }
 
 TEST(CharacterMoverPool, ReleasesMoverWhenControllerRemoved)

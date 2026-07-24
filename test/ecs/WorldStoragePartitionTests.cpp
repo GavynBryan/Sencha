@@ -163,6 +163,63 @@ TEST_F(WorldStoragePartitionTest, MigrationBumpsBothPartitionVersionsOnce)
         destinationBefore + 1);
 }
 
+// The digest a scoped cache keys its invalidation off. It must move for churn
+// inside the set and stay put for churn outside it — that asymmetry is the whole
+// mechanism behind not rebuilding an active zone's caches when a dormant zone
+// streams.
+TEST_F(WorldStoragePartitionTest, SetDigestTracksOnlyItsMemberPartitions)
+{
+    const StoragePartitionId watched{ 3 };
+    const StoragePartitionId ignored{ 7 };
+
+    StoragePartitionSet set;
+    set.Add(watched);
+
+    const uint64_t before = World_.StructuralVersion(set);
+
+    const EntityId outside = World_.CreateEntity(ignored);
+    World_.AddComponent<PartitionPosition>(outside, {});
+    EXPECT_EQ(World_.StructuralVersion(set), before);
+
+    const EntityId inside = World_.CreateEntity(watched);
+    EXPECT_GT(World_.StructuralVersion(set), before);
+
+    const uint64_t afterCreate = World_.StructuralVersion(set);
+    World_.AddComponent<PartitionPosition>(inside, {});
+    EXPECT_GT(World_.StructuralVersion(set), afterCreate);
+
+    // A migration out of the set still registers: the set lost a row.
+    const uint64_t afterAdd = World_.StructuralVersion(set);
+    ASSERT_TRUE(World_.MoveEntityToPartition(inside, ignored));
+    EXPECT_GT(World_.StructuralVersion(set), afterAdd);
+}
+
+TEST_F(WorldStoragePartitionTest, SetEqualityIgnoresInsertionOrderAndWordGrowth)
+{
+    StoragePartitionSet ascending;
+    ascending.Add(StoragePartitionId{ 1 });
+    ascending.Add(StoragePartitionId{ 70 });
+
+    StoragePartitionSet descending;
+    descending.Add(StoragePartitionId{ 70 });
+    descending.Add(StoragePartitionId{ 1 });
+
+    EXPECT_TRUE(ascending == descending);
+
+    // Removing the high member leaves a longer word vector whose tail is zero;
+    // a set that never held it is still the same membership.
+    ascending.Remove(StoragePartitionId{ 70 });
+    descending.Remove(StoragePartitionId{ 70 });
+
+    StoragePartitionSet narrow;
+    narrow.Add(StoragePartitionId{ 1 });
+    EXPECT_TRUE(ascending == narrow);
+    EXPECT_TRUE(narrow == descending);
+
+    narrow.Add(StoragePartitionId{ 2 });
+    EXPECT_FALSE(narrow == ascending);
+}
+
 TEST_F(WorldStoragePartitionTest, NoOpMigrationChangesNothing)
 {
     const StoragePartitionId partition{ 5 };

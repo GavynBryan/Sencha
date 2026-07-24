@@ -8,6 +8,7 @@
 #include <ecs/EntityId.h>
 #include <ecs/EntityRegistry.h>
 #include <ecs/StoragePartitionId.h>
+#include <ecs/StoragePartitionSet.h>
 
 #include <any>
 #include <cassert>
@@ -676,6 +677,24 @@ public:
         return partition.Value < PartitionStructuralCounters.size()
             ? PartitionStructuralCounters[partition.Value]
             : 0;
+    }
+
+    // Digest of one partition set's structural versions, for a consumer whose
+    // cached work covers exactly that set. Per-partition counters are monotonic,
+    // so the sum strictly increases when any member changes structurally and is
+    // unaffected by changes in partitions outside the set — which is the point:
+    // a spawn in a dormant zone must not invalidate an active zone's cache.
+    //
+    // Membership is deliberately not folded in. A consumer whose set changed has
+    // to reconcile the difference rather than merely notice it, so it compares
+    // the set itself; hashing membership here would let that comparison be
+    // skipped by accident.
+    uint64_t StructuralVersion(const StoragePartitionSet& partitions) const
+    {
+        uint64_t digest = 0;
+        for (const StoragePartitionId partition : partitions.Members())
+            digest += StructuralVersion(partition);
+        return digest;
     }
 
     // ── Storage diagnostics ──────────────────────────────────────────────────

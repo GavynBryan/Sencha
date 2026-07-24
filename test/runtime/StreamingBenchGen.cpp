@@ -17,8 +17,9 @@
 //   import_*     how long does the owner thread stall publishing a zone, and
 //                how many row migrations does it pay?
 //   detach_*     how long does unload stall, and are chunk slabs returned?
-//   propagate_*  steady-state sweep cost, and the cost of the first sweep after
-//                a zone attaches (the streaming-hitch number).
+//   propagate_*  sweep cost with every local transform dirty, with none dirty,
+//                over a hierarchy, and for the first sweep after a zone attaches
+//                (the streaming-hitch number).
 
 #include <gtest/gtest.h>
 
@@ -278,9 +279,16 @@ void MeasureChurn(int entities, int cycles)
 
 // ── Propagation ──────────────────────────────────────────────────────────────
 
-// Two numbers: the steady-state sweep, and the first sweep after a small zone
-// attaches. The gap between them is the streaming hitch, and its growth with
-// world size is the property Phase 3 has to remove.
+// Three numbers on a flat world: a sweep with every local transform dirty, a
+// sweep with none dirty, and the first sweep after a small zone attaches. The
+// gap between the last two is the streaming hitch, and its growth with world
+// size is the property Phase 3 has to remove.
+//
+// The dirty and clean cases are separated because they exercise different costs
+// and a real scene is mostly clean. Frames are never advanced during the dirty
+// loop, so every LocalTransform column still reads as written at or after the
+// last sweep and the whole world recomputes; the clean loop advances the frame
+// and writes nothing, leaving only the cost of deciding to skip.
 void MeasurePropagation(int zones, int perZone, int reps)
 {
     const WorldComponentSchema schema = RuntimeSchema();
@@ -319,11 +327,27 @@ void MeasurePropagation(int zones, int perZone, int reps)
     }
     Record("propagate_steady_" + label + "_ms", "ms", Median(steady));
 
+    // Nothing written and the frame advanced: the sweep should decide to skip
+    // and cost nothing proportional to the world.
+    std::vector<double> clean;
+    world.AdvanceFrame();
+    PropagateTransforms(world, active, TransformPropagationDomain::Simulation);
+    for (int rep = 0; rep < reps; ++rep)
+    {
+        world.AdvanceFrame();
+        const auto start = Clock::now();
+        PropagateTransforms(world, active, TransformPropagationDomain::Simulation);
+        clean.push_back(MillisecondsSince(start));
+    }
+    Record("propagate_clean_" + label + "_ms", "ms", Median(clean));
+
     // A deliberately tiny zone: any cost above the steady sweep is invalidation
     // blast radius, not the new zone's own work.
     constexpr int kAttachedZoneEntities = 100;
     const uint64_t rebuildsBeforeAttaching =
         world.GetResource<PropagationOrderCache>().RebuildCount();
+    const uint64_t resolvesBeforeAttaching =
+        world.GetResource<PropagationOrderCache>().AddressResolveCount();
     std::vector<double> afterAttach;
     for (int rep = 0; rep < reps; ++rep)
     {
@@ -346,6 +370,91 @@ void MeasurePropagation(int zones, int perZone, int reps)
         - rebuildsBeforeAttaching;
     Record("propagate_rebuilds_per_attach_" + label, "count",
            static_cast<double>(attachRebuilds) / static_cast<double>(reps));
+    // An attach relocates no existing row, but it does move the structural
+    // version, so the order's cached addresses are re-resolved. Recorded
+    // separately from the rebuild count because the two costs differ by orders
+    // of magnitude and only one of them is proportional to the world.
+    const uint64_t attachResolves =
+        world.GetResource<PropagationOrderCache>().AddressResolveCount()
+        - resolvesBeforeAttaching;
+    Record("propagate_address_resolves_per_attach_" + label, "count",
+           static_cast<double>(attachResolves) / static_cast<double>(reps));
+}
+
+// Propagation over parented entities, which is the part of the sweep that
+// genuinely needs parent-before-child ordering. Chains of `depth` are built
+// level by level, so each level occupies its own chunks: writing only the roots
+// leaves every descendant chunk clean while every descendant still has to
+// recompute. That is the case a chunk-granular dirty test cannot see on its own,
+// and the reason the sweep cannot be a plain filtered query.
+void MeasureHierarchyPropagation(int entities, int depth, int reps)
+{
+    const WorldComponentSchema schema = RuntimeSchema();
+    RuntimeWorld runtime(schema);
+    World& world = runtime.Entities();
+    world.AddResource<PropagationOrderCache>();
+
+    const StoragePartitionId partition =
+        runtime.AttachZone(ZoneId{ 1 }).Partition;
+    StoragePartitionSet active;
+    active.Add(StoragePartitionId::Default());
+    active.Add(partition);
+
+    const int chains = entities / depth;
+    int index = 0;
+    std::vector<EntityId> roots;
+    std::vector<EntityId> previousLevel;
+    for (int level = 0; level < depth; ++level)
+    {
+        std::vector<EntityId> current;
+        current.reserve(static_cast<size_t>(chains));
+        for (int chain = 0; chain < chains; ++chain)
+        {
+            const EntityId entity = world.CreateEntity(partition);
+            FillEntity(world, entity, index++);
+            if (level > 0)
+            {
+                world.AddComponent(
+                    entity,
+                    Parent{ previousLevel[static_cast<size_t>(chain)] });
+            }
+            current.push_back(entity);
+        }
+        if (level == 0)
+            roots = current;
+        previousLevel = std::move(current);
+    }
+
+    const std::string label = std::to_string(entities);
+
+    world.AdvanceFrame();
+    PropagateTransforms(world, active, TransformPropagationDomain::Simulation);
+
+    std::vector<double> dirty;
+    for (int rep = 0; rep < reps; ++rep)
+    {
+        world.AdvanceFrame();
+        for (const EntityId root : roots)
+        {
+            world.TryGet<LocalTransform>(root)->Value.Position.Y =
+                static_cast<float>(rep);
+        }
+
+        const auto start = Clock::now();
+        PropagateTransforms(world, active, TransformPropagationDomain::Simulation);
+        dirty.push_back(MillisecondsSince(start));
+    }
+    Record("propagate_hierarchy_dirty_" + label + "_ms", "ms", Median(dirty));
+
+    std::vector<double> clean;
+    for (int rep = 0; rep < reps; ++rep)
+    {
+        world.AdvanceFrame();
+        const auto start = Clock::now();
+        PropagateTransforms(world, active, TransformPropagationDomain::Simulation);
+        clean.push_back(MillisecondsSince(start));
+    }
+    Record("propagate_hierarchy_clean_" + label + "_ms", "ms", Median(clean));
 }
 
 // ── Drift control ────────────────────────────────────────────────────────────
@@ -458,6 +567,10 @@ TEST(StreamingBench, Generate)
     // tracks the streamed zone or everything resident.
     for (const int zones : { 2, 4, 8 })
         MeasurePropagation(zones, 20000, propagationReps);
+
+    // Depth 4: shallow enough to be representative of props and mounts rather
+    // than of a skeleton, and deep enough that dirtiness has to travel.
+    MeasureHierarchyPropagation(20000, 4, propagationReps);
 
     WriteJson(jsonPath);
     fs::path csvPath = jsonPath;
