@@ -14,6 +14,10 @@ struct EngineGraphicsConfig
     // needs little; the editor raises this since it re-uploads the scene for every
     // viewport into one slice each frame.
     uint64_t FrameScratchBytesPerFrame = 1024 * 1024;
+    // Adapter to use, by enumeration order. Negative scores devices normally
+    // (the shipping behavior); a value selects one explicitly so the same
+    // scene can be measured across the adapters in one machine.
+    int32_t DeviceIndex = -1;
 };
 
 struct GraphicsConfigError

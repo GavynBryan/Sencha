@@ -36,6 +36,13 @@ struct VulkanBootstrapPolicy
 
     bool EnableValidation = true;
     bool PreferDiscreteGpu = true;
+    // Index into the enumeration order, overriding scoring. Comparing the same
+    // scene across the adapters in one machine is otherwise not expressible:
+    // scoring always lands on the same device. A negative value scores
+    // normally; an out-of-range or unsuitable index fails selection rather
+    // than silently falling back to a different adapter than the one asked
+    // for, which would misattribute every measurement taken after it.
+    std::int32_t DeviceIndex = -1;
 
     std::vector<const char*> RequiredInstanceExtensions;
     std::vector<const char*> OptionalInstanceExtensions;

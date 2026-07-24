@@ -29,6 +29,35 @@ namespace
         return true;
     }
 
+    bool ReadI32Either(const JsonValue& root,
+                       const char* a,
+                       const char* b,
+                       int32_t& out,
+                       std::string& error)
+    {
+        const JsonValue* value = FindEither(root, a, b);
+        if (!value)
+            return true;
+        if (!value->IsNumber())
+        {
+            error = std::string("graphics config: '") + a + "' must be a number";
+            return false;
+        }
+
+        const double number = value->AsNumber();
+        const int32_t converted = static_cast<int32_t>(number);
+        if (number < static_cast<double>(std::numeric_limits<int32_t>::min())
+            || number > static_cast<double>(std::numeric_limits<int32_t>::max())
+            || static_cast<double>(converted) != number)
+        {
+            error = std::string("graphics config: '") + a + "' must be an integer";
+            return false;
+        }
+
+        out = converted;
+        return true;
+    }
+
     bool ReadU32Either(const JsonValue& root,
                        const char* a,
                        const char* b,
@@ -81,7 +110,9 @@ std::optional<EngineGraphicsConfig> DeserializeGraphicsConfig(
     if (!ReadU32Either(root, "framesInFlight", "frames_in_flight",
             config.FramesInFlight, sectionError, 1)
         || !ReadBoolEither(root, "enableValidation", "enable_validation",
-            config.EnableValidation, sectionError))
+            config.EnableValidation, sectionError)
+        || !ReadI32Either(root, "deviceIndex", "device_index",
+            config.DeviceIndex, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

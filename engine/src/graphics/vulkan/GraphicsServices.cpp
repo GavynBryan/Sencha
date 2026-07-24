@@ -11,6 +11,7 @@ VulkanBootstrapPolicy GraphicsServices::BuildPolicy(const EngineConfig& config,
     VulkanBootstrapPolicy policy;
     policy.AppName = config.App.Name;
     policy.EnableValidation = config.Graphics.EnableValidation;
+    policy.DeviceIndex = config.Graphics.DeviceIndex;
     policy.RequiredQueues.Present = true;
     policy.RequiredInstanceExtensions = windows.GetRequiredVulkanInstanceExtensions();
     policy.RequiredDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
