@@ -52,7 +52,7 @@ namespace
             const double closest = std::clamp(value,
                                               static_cast<double>(bounds.Min[axis]),
                                               static_cast<double>(bounds.Max[axis]));
-            delta[axis] = closest - value;
+            delta[axis] = static_cast<float>(closest - value);
         }
         const double range = static_cast<double>(sphere.W);
         return delta.SqrMagnitude() <= range * range;

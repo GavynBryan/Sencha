@@ -9,7 +9,7 @@
 #include <vector>
 
 class AssetPreload;
-class Registry;
+struct Registry;
 class RuntimeFrameLoop;
 class ZoneRuntime;
 

@@ -29,6 +29,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # imgui, …) link cleanly into the shared engine, and game modules stay PIC.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Windows searches an executable's own directory for a DLL and has no rpath
+# equivalent, so a test or tool built into its own subdirectory cannot find
+# sencha_engine.dll. Collect the runtime artifacts in one directory there. The
+# per-target layout stays on the platforms where rpath already resolves this,
+# because scripts and docs address those paths.
+if(WIN32)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()
+
 # Emit compile_commands.json for clangd and other tooling. It lands in the
 # build dir; symlink the chosen one to the repo root if your editor needs it.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json" FORCE)

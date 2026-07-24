@@ -8,7 +8,7 @@
 #include <span>
 
 class JobSystem;
-class Registry;
+struct Registry;
 
 //=============================================================================
 // TransformPropagationSystem

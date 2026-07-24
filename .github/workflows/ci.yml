@@ -119,6 +119,11 @@ jobs:
                             "$env:VULKAN_SDK\Bin\glslc.exe") {
             if (-not (Test-Path -LiteralPath $path)) { throw "Vulkan SDK is missing $path" }
           }
+          # The engine DLL imports the loader, so every test process needs it at
+          # load time even though none of them touch a GPU.
+          $loader = @("$env:VULKAN_SDK\Bin\vulkan-1.dll", "$env:SystemRoot\System32\vulkan-1.dll") |
+            Where-Object { Test-Path -LiteralPath $_ }
+          if ($loader) { "Vulkan loader: $loader" } else { "::warning::no vulkan-1.dll found" }
           "$env:VULKAN_SDK\Bin" >> $env:GITHUB_PATH
 
       - name: Install SDL3

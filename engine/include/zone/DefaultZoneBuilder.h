@@ -14,7 +14,7 @@
 class AudioClipCache;
 class AudioService;
 class CaptionRuntime;
-class Registry;
+struct Registry;
 class TextureCache;
 class ZoneRuntime;
 

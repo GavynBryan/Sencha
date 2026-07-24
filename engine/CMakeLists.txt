@@ -209,6 +209,13 @@ add_library(sencha_engine SHARED
 )
 add_library(sencha::engine ALIAS sencha_engine)
 
+# The ELF and MinGW builds export every non-hidden symbol from the shared
+# engine, and consumers are built against that surface. MSVC exports nothing
+# without a declspec or a module definition file, so let CMake generate the
+# export table and keep one surface across toolchains. Game modules are a
+# separate case: they export one factory through SENCHA_GAME_EXPORT.
+set_target_properties(sencha_engine PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 # Mirror the on-disk src/ and include/ layout in IDE project trees (Visual
 # Studio, Xcode, Qt Creator). Cosmetic for Ninja/Make. Generated headers live
 # under the binary dir and are intentionally left out of the source-tree group.
@@ -316,6 +323,9 @@ target_include_directories(sencha_engine SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 # reproducible on one build, no CROSS_PLATFORM_DETERMINISTIC cost. The sample,
 # viewer, and test apps are off (library only); OVERRIDE_CXX_FLAGS/ENABLE_ALL_WARNINGS
 # off so Jolt does not clobber our flags or fail our build on its own warnings.
+# Jolt defaults to the static MSVC runtime while everything else here uses the
+# dynamic one, which links as an LNK2038 runtime-library mismatch.
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(TARGET_UNIT_TESTS            OFF CACHE BOOL "" FORCE)
 set(TARGET_HELLO_WORLD           OFF CACHE BOOL "" FORCE)
 set(TARGET_PERFORMANCE_TEST      OFF CACHE BOOL "" FORCE)
