@@ -562,3 +562,28 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
 
     EXPECT_EQ(runtimeWorld.FindZone(kHallway), nullptr);
 }
+
+// Lease slots are recycled, so the generation is what stops an old token from
+// acting on the lease that took its index. WorldPartitionRuntime.h states the
+// guarantee outright: a stale token never releases a reused slot.
+TEST_F(WorldPartitionRuntimeTest, AStaleTokenCannotReleaseAReusedSlot)
+{
+    LoadFixture();
+
+    const ParticipationLeaseId first = Partition.AcquireParticipationLease(
+        kHallway, ZoneParticipation{ .Physics = true });
+    ASSERT_TRUE(Partition.ReleaseParticipationLease(first));
+
+    const ParticipationLeaseId second = Partition.AcquireParticipationLease(
+        kHallway, ZoneParticipation{ .Logic = true });
+    ASSERT_EQ(first.Index, second.Index) << "the slot was not recycled, so this "
+                                            "does not test aliasing";
+    EXPECT_NE(first.Generation, second.Generation);
+
+    EXPECT_FALSE(Partition.IsParticipationLeaseValid(first));
+    EXPECT_TRUE(Partition.IsParticipationLeaseValid(second));
+    EXPECT_FALSE(Partition.ReleaseParticipationLease(first))
+        << "a stale token released the lease that reused its slot";
+    EXPECT_TRUE(Partition.IsParticipationLeaseValid(second));
+    EXPECT_EQ(Partition.ParticipationLeaseCount(), 1u);
+}

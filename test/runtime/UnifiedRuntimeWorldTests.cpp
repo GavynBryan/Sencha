@@ -403,3 +403,91 @@ TEST(UnifiedRuntimeWorld, ZoneResourcesAreIndependent)
     EXPECT_EQ(firstDestroyed, 0);
     EXPECT_EQ(secondDestroyed, 0);
 }
+
+// A detach and a participation change can be requested in the same drain window.
+// Detach wins and the pair coalesces to one final Detaching visit, so a backend
+// owner never sees a zone gain participation on its way out.
+TEST(UnifiedRuntimeWorld, DetachWinsOverAParticipationRequestInTheSameDrain)
+{
+    WorldComponentSchema schema;
+    schema.Seal();
+    RuntimeWorld runtime(schema);
+
+    const ZoneId zone{ 0x51 };
+    runtime.AttachZone(zone, ZoneParticipation{ .Visible = true });
+    (void)runtime.BeginResidencyProcessing();
+    runtime.FinalizeResidencyProcessing();
+
+    ASSERT_TRUE(runtime.RequestParticipation(
+        zone, ZoneParticipation{ .Visible = true, .Logic = true }));
+    ASSERT_TRUE(runtime.RequestDetach(zone));
+    runtime.FlushLifecycleRequests();
+
+    const std::span<const ZoneResidencyChange> changes =
+        runtime.BeginResidencyProcessing();
+    ASSERT_EQ(changes.size(), 1u) << "the pair did not coalesce to one visit";
+    EXPECT_EQ(changes[0].Kind, ZoneResidencyChangeKind::Detaching);
+    EXPECT_EQ(changes[0].Zone, zone);
+    EXPECT_FALSE(changes[0].Current.Logic)
+        << "a departing zone was reported as gaining participation";
+    runtime.FinalizeResidencyProcessing();
+    EXPECT_FALSE(runtime.IsZoneResident(zone));
+}
+
+// Detach is idempotent at the request layer: the zone leaves Resident on the
+// first flush, so a second request has nothing to act on and says so.
+TEST(UnifiedRuntimeWorld, ASecondDetachRequestIsRefused)
+{
+    WorldComponentSchema schema;
+    schema.Seal();
+    RuntimeWorld runtime(schema);
+
+    const ZoneId zone{ 0x52 };
+    runtime.AttachZone(zone, ZoneParticipation{ .Visible = true });
+    (void)runtime.BeginResidencyProcessing();
+    runtime.FinalizeResidencyProcessing();
+
+    EXPECT_TRUE(runtime.RequestDetach(zone));
+    runtime.FlushLifecycleRequests();
+    EXPECT_FALSE(runtime.RequestDetach(zone))
+        << "a detaching zone accepted a second detach request";
+
+    (void)runtime.BeginResidencyProcessing();
+    runtime.FinalizeResidencyProcessing();
+    EXPECT_FALSE(runtime.RequestDetach(zone)) << "a destroyed zone accepted a detach";
+}
+
+// A zone on its way out must not appear in any frame domain, or a system would
+// iterate entities that are about to be destroyed.
+TEST(UnifiedRuntimeWorld, AFrameViewExcludesADetachingZone)
+{
+    WorldComponentSchema schema;
+    schema.Seal();
+    RuntimeWorld runtime(schema);
+
+    const ZoneId zone{ 0x53 };
+    const StoragePartitionId partition =
+        runtime.AttachZone(zone, ZoneParticipation{
+            .Visible = true, .Physics = true, .Logic = true, .Audio = true })
+            .Partition;
+    (void)runtime.BeginResidencyProcessing();
+    runtime.FinalizeResidencyProcessing();
+
+    {
+        const FrameZoneView& view = runtime.BuildFrameView();
+        ASSERT_TRUE(view.Visible.Contains(partition)) << "setup did not participate";
+        runtime.EndFrameView();
+    }
+
+    ASSERT_TRUE(runtime.RequestDetach(zone));
+    runtime.FlushLifecycleRequests();
+
+    const FrameZoneView& view = runtime.BuildFrameView();
+    EXPECT_FALSE(view.Visible.Contains(partition));
+    EXPECT_FALSE(view.Physics.Contains(partition));
+    EXPECT_FALSE(view.Logic.Contains(partition));
+    EXPECT_FALSE(view.Audio.Contains(partition));
+    EXPECT_FALSE(view.Resident.Contains(partition))
+        << "a detaching zone was still offered to frame systems";
+    runtime.EndFrameView();
+}
