@@ -56,6 +56,14 @@ struct PlatformEventContext
 // Retained backend owners consume the stable zone-lifecycle batch before a new
 // frame view is built. The World remains live, including importing/detaching
 // partitions named by the records.
+//
+// Every record names the partition it concerns, so a subscriber can act on a
+// departing zone's entities from Changes alone, and can move one out to
+// PersistentStoragePartition to let it outlive the zone. Resolving an arbitrary
+// ZoneId to its partition is deliberately absent: a subscriber that migrates
+// between named zones is a system with its own RuntimeWorld reference, the way
+// PhysicsStepSystem owns its PhysicsWorld, and widening this context would make
+// every focused residency test boot the zone runtime to get it.
 struct ZoneResidencyContext
 {
     EngineConfig& Config;

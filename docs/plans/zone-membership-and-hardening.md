@@ -173,22 +173,31 @@ Tests: existing suites plus the module ABI check, since `RenderEntityKey` layout
 changes. `scripts/check_module_abi.sh`, and `sizeof`/`offsetof` coverage where the
 key is reachable through installed headers.
 
-### A4. `ZoneResidencyContext` gives the wrong handle
+### A4. `ZoneResidencyContext` widening — examined and rejected
 
-The context hands a `World&`. From it a subscriber can migrate an entity to the
-persistent partition, because `PersistentStoragePartition` is a known constant,
-but it cannot move one into another zone: resolving `ZoneId` to a partition lives
-on `RuntimeWorld`. The loss-function game reaches around to its own `RuntimeWorld`
-pointer to compensate, which is a caller assembling another layer's internals to
-do the thing the context was built for.
+Withdrawn after checking it, 2026-07-25. The finding was that the context hands
+only a `World&`, so a subscriber cannot resolve a `ZoneId` to its partition and
+must reach for a `RuntimeWorld` elsewhere. Three facts make the widening a net
+loss:
 
-Shape: the residency context carries what a residency subscriber needs to act on
-zones — the runtime world, or at minimum the partition-to-zone resolution. This is
-a prerequisite for Track C's detach hook.
+- `ZoneResidencyChange` already carries `Partition`, so a subscriber can act on a
+  departing zone's entities from the batch alone.
+- `MoveEntityToPartition` is on plain `World` and `PersistentStoragePartition` is a
+  compile-time constant, so rescuing an entity so it outlives its zone — the case
+  Track C actually needs — already works.
+- The physics residency tests boot no `RuntimeWorld` at all. Requiring one in the
+  context would make every focused residency test start the zone runtime, which is
+  the "tests requiring unrelated systems to boot" trigger, to buy a capability
+  whose only plausible consumer gets it better from its own constructor: a
+  membership system holds a `RuntimeWorld&` the way `PhysicsStepSystem` holds its
+  `PhysicsWorld`.
 
-Tests: a residency subscriber migrates an entity out of a detaching partition into
-a named zone using only the context, and the entity keeps its generational
-identity.
+The original framing was also unfair to the game module. A game system holding a
+`RuntimeWorld*` for the partition runtime it drives is ownership, not reaching
+across a boundary.
+
+Kept instead: the context documents what is available and where zone resolution
+belongs, so the apparent gap is not rediscovered.
 
 ## 4. Track B — integrate the dock ontology with the unified runtime world
 
