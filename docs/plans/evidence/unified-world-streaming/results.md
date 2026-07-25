@@ -302,6 +302,42 @@ Note for anyone repeating this: valgrind writes a core dump for every
 intentional-abort test, so a memcheck run over the suite leaves several 73 MB files
 in the working tree. `.gitignore` covers `vgcore.*` now.
 
+## Frame cost with a renderer attached
+
+Everything above is owner-thread cost measured headlessly. The GPU half was taken
+through the ported game module, which is the only thing that drives
+`WorldPartitionRuntime` with a renderer: a game owns the focus position and the
+streaming policy, so no engine-side harness was needed.
+
+Scenario: a two-zone cooked world, RTX 4060, `SENCHA_PRESENT_MODE=IMMEDIATE`,
+300 frames captured through `frame.trace.output`. That manifest carries no world
+scene, so every drawn surface came from a streamed zone; draw calls tracked
+residency as the neighbour streamed in and out.
+
+| measure | value |
+|---|---|
+| mean frame | 4.82 ms |
+| p50 | 6.87 ms |
+| p99 | 7.79 ms |
+| max | 12.89 ms |
+| frames over a 16.67 ms budget | **0** |
+| worst `DrainAsyncTasks` | 3.497 ms, in a 3.605 ms frame |
+
+The worst frame was pure render work with no streaming in it. Exactly one frame in
+300 carried a zone-import commit above 0.5 ms.
+
+That 3.497 ms deserves attention more than the headline does. The synthetic 20k
+import in this document measures 1.19 ms; a real cooked zone costs more because its
+commit also resolves assets and loads collision on the owner thread. It fits inside
+a frame today, but it is above the 2.0 ms `AsyncCommitBudgetMs`, and that budget is
+checked *between* commits — one import is one uninterruptible commit. A
+substantially larger zone would need the chunk-blit follow-on held in reserve.
+
+Not exercised by this capture: the `player_start` lookup, since the cooked level
+authors none; interactive movement, input, and physics; and a world of genuinely
+distinct cooked zones, since the fixture reuses one level and therefore warmed the
+asset cache for the second zone.
+
 ## Artifacts
 
 - [`streaming.json`](streaming.json) — the recorded run.

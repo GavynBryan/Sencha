@@ -396,16 +396,35 @@ eight-zone chain with zones attaching ahead of the focus and unloading behind it
    `RestreamedZoneMatchesAFreshAttach` covers the composition the other three phases
    have to survive together: a zone unloaded and re-streamed several times, through
    reclaimed slabs and recycled partition ids, produces identical world transforms.
-4. **Port the game module repo off `ZoneRuntime`/`Registry`.** Outstanding. The
-   engine branch cannot merge while its only real consumer does not build.
+4. **Port the game module repo off `ZoneRuntime`/`Registry`.** Done. The module
+   builds against the unified world, passes `scripts/check_module_abi.sh`, and runs:
+   a `+map` run exited cleanly with 151/151 captured frames carrying draws and no
+   degraded frames.
 
-**Not measured, and it needs a venue.** GPU frame cost during a streaming event, and
-render extraction volume as zones come and go. Building that means either teaching
-SceneViewer to drive `WorldPartitionRuntime` with a multi-zone cooked world, or
-getting it for free from the game-module port — which is the natural place, since a
-game is the thing that legitimately owns a focus position and a streaming policy.
-Until then the renderer's behaviour under streaming rests on the Phase 1 lightmap
-tests and extraction's per-partition filtering, not on a capture.
+**GPU frame cost, measured through the ported game.** The venue turned out to
+already exist: a game module is the thing that owns a focus position and a
+streaming policy, so once ported it drives `WorldPartitionRuntime` with a renderer
+attached and no engine-side harness is needed.
+
+Over a two-zone cooked world, draw calls tracked residency as the neighbour
+streamed in and out, and every drawn surface came from a streamed zone because that
+manifest carries no world scene. A 300-frame trace gave mean 4.82 ms, p50 6.87 ms,
+p99 7.79 ms, max 12.89 ms, and **no frame over a 16.67 ms budget**. The worst frame
+was pure render work with no streaming in it. One frame in 300 carried a zone
+import commit above 0.5 ms, at 3.497 ms inside a 3.605 ms frame.
+
+That 3.497 ms is the number to watch rather than the headline. A synthetic 20k
+import measures 1.19 ms; a real cooked zone costs more because its commit also
+resolves assets and loads collision on the owner thread. It fits a frame today, but
+it exceeds the 2.0 ms `AsyncCommitBudgetMs`, and that budget is checked *between*
+commits — one import is one uninterruptible commit, which is the Phase 2 finding. A
+substantially larger zone would need the chunk-blit follow-on this plan holds in
+reserve.
+
+Untested in that run: the `player_start` lookup, since the cooked level authors
+none; interactive movement, input, and physics; and a world of genuinely distinct
+cooked zones, since the fixture reuses one level and so warmed the asset cache for
+the second zone.
 
 **Gate:** full suite 1832/1832 serially; the traversal green under ASan;
 `git diff --check` clean; evidence re-recorded.

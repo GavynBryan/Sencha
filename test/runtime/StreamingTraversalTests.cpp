@@ -7,11 +7,12 @@
 // machine and in any build; the wall-clock version of the same traversal lives in
 // StreamingBench.Generate and the evidence doc.
 //
-// What this does NOT cover: the GPU. Nothing in this repo drives multi-zone
+// What this does NOT cover: the GPU. Nothing in this repository drives multi-zone
 // streaming with a renderer attached — SceneViewer loads one zone and refuses a
-// second, and WorldPartitionRuntime has no application driver — so cost is measured
-// for the owner thread only. See the Phase 7 notes in
-// docs/plans/unified-world-hardening.md.
+// second — so cost here is the owner thread only. The application driver is a game
+// module, which owns the focus position and streaming policy that make a traversal
+// meaningful; frame cost with a renderer attached was measured there and is
+// recorded in docs/plans/unified-world-hardening.md.
 
 #include <gtest/gtest.h>
 
