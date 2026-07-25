@@ -6,11 +6,12 @@
 
 namespace
 {
-    RenderEntityKey MakeKey(std::uint32_t entityIndex, std::uint32_t zone = 1)
+    // Scope stands in for the editor's per-document space; the runtime leaves it
+    // zero. Varying it exercises ordering across documents.
+    RenderEntityKey MakeKey(std::uint32_t entityIndex, std::uint64_t scope = 1)
     {
         return RenderEntityKey{
-            .Kind = RegistryKind::Zone,
-            .Zone = ZoneId{ zone },
+            .Scope = scope,
             .Entity = EntityId{ entityIndex, 1 },
         };
     }

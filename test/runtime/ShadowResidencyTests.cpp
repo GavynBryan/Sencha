@@ -9,11 +9,7 @@ namespace
 {
     RenderEntityKey MakeKey(std::uint32_t entityIndex)
     {
-        return RenderEntityKey{
-            .Kind = RegistryKind::Zone,
-            .Zone = ZoneId{ 1 },
-            .Entity = EntityId{ entityIndex, 1 },
-        };
+        return RenderEntityKey{ .Entity = EntityId{ entityIndex, 1 } };
     }
 
     SpotShadowRequest MakeRequest(std::uint32_t entityIndex,

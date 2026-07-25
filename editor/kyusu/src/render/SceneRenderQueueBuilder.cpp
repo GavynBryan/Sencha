@@ -1,4 +1,5 @@
 #include "SceneRenderQueueBuilder.h"
+#include "EditorRenderEntityKey.h"
 
 #include "document/BrushCookInput.h"
 #include "document/EditorDocument.h"

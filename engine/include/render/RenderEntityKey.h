@@ -1,47 +1,30 @@
 #pragma once
 
 #include <ecs/EntityId.h>
-#include <world/registry/Registry.h>
 
 #include <cstdint>
 
 // Stable ordering identity for renderer-owned state, keyed differently by its two
 // producers.
 //
-// The runtime fills in Entity alone. One World means one entity namespace, so an
-// EntityId already distinguishes entities across every streamed zone, and Kind,
-// Zone, and RuntimeRegistry stay at their defaults — identical for every runtime
-// key, so the comparison below reduces to EntityId order.
+// The runtime leaves Scope zero. One World means one entity namespace, so an
+// EntityId already distinguishes entities across every streamed zone, and the
+// comparison below reduces to EntityId order.
 //
-// The editor fills in all of them through MakeRenderEntityKey, because its
-// documents really are separate registries: zone-owned entities key on the
-// persistent ZoneId so identity survives a reload, and other registry kinds key on
-// their runtime registry identity.
+// Editor documents really are separate entity worlds, whose EntityIds collide
+// with each other, so the editor supplies a per-document Scope. How one is
+// derived is the editor's concern: see MakeRenderEntityKey in the editor's render
+// layer. Scope is opaque here on purpose — the renderer only orders and compares
+// it, and giving this header a document vocabulary would point it at the editor.
 struct RenderEntityKey
 {
-    RegistryKind Kind = RegistryKind::Transient;
-    ZoneId Zone;
-    RegistryId RuntimeRegistry;
-    EntityId Entity;
+    std::uint64_t Scope = 0;
+    EntityId      Entity;
 
     [[nodiscard]] bool operator<(const RenderEntityKey& other) const
     {
-        if (Kind != other.Kind)
-            return static_cast<std::uint8_t>(Kind) < static_cast<std::uint8_t>(other.Kind);
-
-        if (Kind == RegistryKind::Zone)
-        {
-            if (Zone != other.Zone)
-                return Zone < other.Zone;
-        }
-        else
-        {
-            if (RuntimeRegistry.Index != other.RuntimeRegistry.Index)
-                return RuntimeRegistry.Index < other.RuntimeRegistry.Index;
-            if (RuntimeRegistry.Generation != other.RuntimeRegistry.Generation)
-                return RuntimeRegistry.Generation < other.RuntimeRegistry.Generation;
-        }
-
+        if (Scope != other.Scope)
+            return Scope < other.Scope;
         if (Entity.Index != other.Entity.Index)
             return Entity.Index < other.Entity.Index;
         return Entity.Generation < other.Entity.Generation;
@@ -49,14 +32,3 @@ struct RenderEntityKey
 
     bool operator==(const RenderEntityKey&) const = default;
 };
-
-[[nodiscard]] inline RenderEntityKey MakeRenderEntityKey(
-    const Registry& registry, EntityId entity)
-{
-    return RenderEntityKey{
-        .Kind = registry.Kind,
-        .Zone = registry.Kind == RegistryKind::Zone ? registry.Zone : ZoneId{},
-        .RuntimeRegistry = registry.Kind == RegistryKind::Zone ? RegistryId{} : registry.Id,
-        .Entity = entity,
-    };
-}
