@@ -20,8 +20,13 @@
 //   propagate_*  sweep cost with every local transform dirty, with none dirty,
 //                over a hierarchy, and for the first sweep after a zone attaches
 //                (the streaming-hitch number).
+//   traversal_*  a focus walking a chain of zones and back through the real
+//                streaming path, with frame work every step: the worst owner-thread
+//                frame a streaming event costs, which is criterion 5.
 
 #include <gtest/gtest.h>
+
+#include "StreamingTraversalFixture.h"
 
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
@@ -457,6 +462,99 @@ void MeasureHierarchyPropagation(int entities, int depth, int reps)
     Record("propagate_hierarchy_clean_" + label + "_ms", "ms", Median(clean));
 }
 
+// ── Traversal ────────────────────────────────────────────────────────────────
+
+// The worst owner-thread frame a streaming event costs, measured over a focus
+// walking a chain of zones and back through the real streaming path: partition
+// demand, async build and commit, residency processing, frame view, propagation.
+// Criterion 5.
+//
+// Frames are separated into those that carried a zone attach or unload and those
+// that did not, because they answer different questions: the quiet number is what
+// streaming costs when nothing is happening, and the event number is the hitch.
+//
+// This measures the owner thread only. Nothing in this repo drives multi-zone
+// streaming with a renderer attached, so GPU frame cost during a streaming event
+// remains unmeasured — see the Phase 7 notes in the hardening plan.
+void MeasureTraversal()
+{
+    using namespace StreamingTraversal;
+
+    Harness traversal;
+    const std::string error = traversal.LoadManifest();
+    if (!error.empty())
+    {
+        Record("traversal_manifest_ok", "count", 0.0);
+        return;
+    }
+    Record("traversal_manifest_ok", "count", 1.0);
+
+    // First lap warms the caches and pays the initial attaches.
+    traversal.WalkLap();
+
+    std::vector<double> quiet;
+    std::vector<double> eventful;
+    int attachesBefore = traversal.Attaches();
+    std::size_t chunksAfterFirstLap = traversal.World().Entities().ChunkCount();
+
+    constexpr int kLaps = 3;
+    for (int lap = 0; lap < kLaps; ++lap)
+    {
+        traversal.WalkLap([&]
+        {
+            const std::size_t chunksBefore =
+                traversal.World().Entities().ChunkCount();
+            const auto start = Clock::now();
+            traversal.StepFrame();
+            const double elapsed = MillisecondsSince(start);
+
+            // A frame that attached or unloaded a zone shows up either as a new
+            // finalize or as a change in the chunk census.
+            const bool eventFrame =
+                traversal.Attaches() != attachesBefore
+                || traversal.World().Entities().ChunkCount() != chunksBefore;
+            attachesBefore = traversal.Attaches();
+
+            (eventFrame ? eventful : quiet).push_back(elapsed);
+        });
+    }
+
+    const auto percentile = [](std::vector<double>& samples, double fraction)
+    {
+        if (samples.empty())
+            return 0.0;
+        std::sort(samples.begin(), samples.end());
+        const std::size_t index = static_cast<std::size_t>(
+            fraction * static_cast<double>(samples.size() - 1));
+        return samples[index];
+    };
+
+    const double worstEvent =
+        eventful.empty() ? 0.0 : *std::max_element(eventful.begin(), eventful.end());
+    const double worstQuiet =
+        quiet.empty() ? 0.0 : *std::max_element(quiet.begin(), quiet.end());
+
+    Record("traversal_worst_event_frame_ms", "ms", worstEvent);
+    Record("traversal_p50_event_frame_ms", "ms", percentile(eventful, 0.5));
+    Record("traversal_worst_quiet_frame_ms", "ms", worstQuiet);
+    Record("traversal_p50_quiet_frame_ms", "ms", percentile(quiet, 0.5));
+    Record("traversal_event_frames", "count",
+           static_cast<double>(eventful.size()));
+    Record("traversal_quiet_frames", "count", static_cast<double>(quiet.size()));
+    Record("traversal_zone_attaches", "count",
+           static_cast<double>(traversal.Attaches()));
+    // Equal to the census after the first lap, or streaming history is
+    // accumulating memory.
+    Record("traversal_chunks_after_first_lap", "count",
+           static_cast<double>(chunksAfterFirstLap));
+    Record("traversal_chunks_after_all_laps", "count",
+           static_cast<double>(traversal.World().Entities().ChunkCount()));
+    Record("traversal_order_rebuilds", "count",
+           static_cast<double>(traversal.Cache().RebuildCount()));
+    Record("traversal_address_resolves", "count",
+           static_cast<double>(traversal.Cache().AddressResolveCount()));
+}
+
 // ── Drift control ────────────────────────────────────────────────────────────
 
 // A fixed memory-streaming loop over a buffer sized like the iteration
@@ -571,6 +669,8 @@ TEST(StreamingBench, Generate)
     // Depth 4: shallow enough to be representative of props and mounts rather
     // than of a skeleton, and deep enough that dirtiness has to travel.
     MeasureHierarchyPropagation(20000, 4, propagationReps);
+
+    MeasureTraversal();
 
     WriteJson(jsonPath);
     fs::path csvPath = jsonPath;

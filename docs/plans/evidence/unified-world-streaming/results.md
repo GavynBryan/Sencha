@@ -233,6 +233,51 @@ world-global and a hierarchy change in any partition must still rebuild it. It
 exists so scoped invalidation cannot satisfy its own bound by invalidating less
 than correctness requires.
 
+## Traversal: what a streaming event costs a frame
+
+The bench scenarios above isolate one operation at a time. This one runs the whole
+path: a focus walks a chain of eight room-scale zones and back, four laps, through
+`WorldPartitionRuntime` demand, `AsyncZoneLoader` build and commit, `RuntimeWorld`
+residency processing, `BuildFrameView`, and a transform sweep — every frame. Zone
+budget is one hop of neighbours and a resident cap of four, so zones attach ahead of
+the focus and unload behind it continuously. 400 entities per zone, a quarter of
+them parented.
+
+| Measure | Value |
+|---|---|
+| Worst frame that attached or unloaded a zone | 0.116 ms |
+| Median frame that attached or unloaded a zone | 0.112 ms |
+| Worst frame that did not | 0.039 ms |
+| Median frame that did not | 0.002 ms |
+| Zone attaches over the traversal | 50 |
+| Resident chunks after lap 1 / after lap 4 | 16 / 16 |
+| Order rebuilds / address resolves over 720 frames | 106 / 106 |
+
+- **Criterion 5 is met on the owner thread.** The worst streaming frame costs
+  0.116 ms, which is 0.7% of a 16.7 ms budget. Nothing in the traversal comes near
+  a frame boundary.
+- **A quiet frame costs 2 microseconds.** That is the Phase 3 result seen from the
+  frame's side: when no zone event happens, the streaming machinery and the
+  transform sweep together are indistinguishable from nothing.
+- **Memory plateaus over a real traversal**, not just a synthetic load/unload loop:
+  50 attaches, and the chunk census after four laps equals the census after one.
+- **Cache invalidation tracks zone events, not frames.** 106 rebuilds over 720
+  frames — about one per zone event, which is the correct number, since a streamed
+  zone carries hierarchy and its arrival genuinely changes the order.
+
+Zone size here is room-scale on purpose, matching the target product shape. For a
+larger zone the import number bounds it: 20 000 entities import in 1.19 ms, so even
+that lands inside a frame with the rest of the traversal's per-frame cost being
+microseconds.
+
+**The GPU is not in this measurement.** Nothing in this repo drives multi-zone
+streaming with a renderer attached — SceneViewer loads exactly one zone and refuses
+a second, and `WorldPartitionRuntime` has no application driver at all, only its
+tests. So this is owner-thread cost: import, residency, propagation, frame-view
+construction. Render extraction volume changing as zones come and go is unmeasured,
+and closing that needs a streaming venue that does not exist yet — which the
+game-module port is the natural place to build.
+
 ## Sanitizers
 
 Both sanitizer presets were unbuildable on this machine through Phases 2 to 4 —

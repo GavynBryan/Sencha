@@ -28,7 +28,7 @@ Two findings frame everything below:
 | 2 | First propagation after attaching a 100-entity zone into a 320 000-entity world | ~24 ms (extrapolated from 12.05 ms at 160 000) | < 1.0 ms | met, 0.0048 ms at 160 000 and no longer entity-proportional (Phase 3) |
 | 3 | Chunk census after 10 load/unload cycles vs after 1 | 71 vs 8 | equal | met, 8 vs 8 (Phase 4) |
 | 4 | Steady-state iteration, 160 000 entities all active | 0.195 ms | no regression beyond 10% | holding, within noise through Phase 4 |
-| 5 | Worst frame during a live streaming event | unmeasured | no frame over budget | open (Phase 7) |
+| 5 | Worst frame during a live streaming event | unmeasured | no frame over budget | met on the owner thread, 0.116 ms of a 16.7 ms budget (Phase 7); GPU side has no venue, see below |
 
 Criterion 2 is the load-bearing one: it converts "the streaming hitch scales with
 how much world is loaded" into "the hitch scales with the zone being streamed."
@@ -357,12 +357,55 @@ layering, mesh-edit dependency, and module ABI fitness green; full suite 1829/18
 
 ## Phase 7 — Live validation and the game-module port
 
-1. Live frame capture across a streaming event (render bench harness plus chrome
-   trace, foreground, `SENCHA_PRESENT_MODE=IMMEDIATE`). Criterion 5. This decides
-   whether Phase 2's batching sufficed or the chunk blit is required.
-2. Structural-churn rate in a representative combat scene: how often each cache
-   actually invalidates, via the Phase 0 counters.
-3. Long-traversal resident chunk count and megabytes; must plateau.
-4. Port the game module repo off `ZoneRuntime`/`Registry`. The engine branch
-   cannot merge while its only real consumer does not build.
-5. Full matrix: dev suite, both CI legs, `tsan`, ASan.
+Items 1 to 3 are done; item 4 is the remaining work on this plan.
+
+### The venue problem, found on starting
+
+The plan assumed a live streaming venue existed to capture frames from. None does.
+`WorldPartitionRuntime` — the demand policy that decides which zones are resident —
+has no consumer outside its own unit tests, and SceneViewer loads exactly one zone
+and refuses a second (`a map is already loaded or loading`). No application in this
+repo has ever streamed more than one zone.
+
+So the live validation was built where it could be built and measured what could be
+measured honestly: a traversal harness driving the real streaming path headlessly
+(`test/runtime/StreamingTraversalFixture.h`), asserted two ways — counted work in
+`StreamingTraversalTests.cpp`, wall clock in `StreamingBench.Generate`. That is the
+whole owner-thread cost of a streaming event: demand, async build and commit,
+residency processing, frame view, transform sweep, every frame, over four laps of an
+eight-zone chain with zones attaching ahead of the focus and unloading behind it.
+
+| Measure | Value |
+|---|---|
+| Worst frame that attached or unloaded a zone | 0.116 ms |
+| Worst frame that did not | 0.039 ms |
+| Median frame that did not | 0.002 ms |
+| Resident chunks after lap 1 / lap 4 | 16 / 16 |
+| Order rebuilds over 720 frames | 106 (about one per zone event) |
+
+1. **Worst frame during a streaming event — criterion 5.** Met on the owner thread:
+   0.116 ms against a 16.7 ms budget. Room-scale zones, matching the product shape;
+   for a larger zone the Phase 2 import number bounds it at 1.19 ms for 20 000
+   entities.
+2. **Structural-churn rate.** 106 order rebuilds and 106 address resolves over 720
+   frames, tracking zone events rather than frames.
+   `OrderRebuildsTrackZoneEventsNotFrames` bounds it, and states the churn it needed
+   so it cannot pass by streaming nothing.
+3. **Long-traversal memory.** The chunk census after four laps equals the census
+   after one, across 50 attaches. `ResidentChunksPlateauAcrossLaps` bounds it.
+   `RestreamedZoneMatchesAFreshAttach` covers the composition the other three phases
+   have to survive together: a zone unloaded and re-streamed several times, through
+   reclaimed slabs and recycled partition ids, produces identical world transforms.
+4. **Port the game module repo off `ZoneRuntime`/`Registry`.** Outstanding. The
+   engine branch cannot merge while its only real consumer does not build.
+
+**Not measured, and it needs a venue.** GPU frame cost during a streaming event, and
+render extraction volume as zones come and go. Building that means either teaching
+SceneViewer to drive `WorldPartitionRuntime` with a multi-zone cooked world, or
+getting it for free from the game-module port — which is the natural place, since a
+game is the thing that legitimately owns a focus position and a streaming policy.
+Until then the renderer's behaviour under streaming rests on the Phase 1 lightmap
+tests and extraction's per-partition filtering, not on a capture.
+
+**Gate:** full suite 1832/1832 serially; the traversal green under ASan;
+`git diff --check` clean; evidence re-recorded.

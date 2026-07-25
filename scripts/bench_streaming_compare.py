@@ -153,6 +153,18 @@ def main():
 
     if regressions:
         print("\nREGRESSED:", file=sys.stderr)
+        if drift is not None and abs(drift - 1) > args.tolerance:
+            # Normalization assumes a metric scales with the control, which is a
+            # memory-bandwidth loop. Metrics that are not bandwidth-bound do not
+            # follow it, so a large control move — in either direction — pushes
+            # their normalized figures around on its own. A control that improved
+            # a lot makes everything that improved less look like a regression.
+            print(
+                f"  (the control moved {drift - 1:+.1%}, so these normalized "
+                "figures are unreliable; re-run both sides on an idle machine "
+                "before believing any of them)",
+                file=sys.stderr,
+            )
         for entry in regressions:
             print(f"  {entry}", file=sys.stderr)
     if unmet:
