@@ -1,6 +1,7 @@
 #include <zone/AsyncZoneLoader.h>
 
 #include <core/assets/AssetPreloader.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/RuntimeWorld.h>
@@ -26,6 +27,7 @@ AsyncZoneLoader::AsyncZoneLoader(
     , Serializers(serializers)
     , SceneContext(sceneContext)
     , Runtime(runtime)
+    , Log(sceneContext.Logging->GetLogger<AsyncZoneLoader>())
 {
 }
 
@@ -136,6 +138,11 @@ void AsyncZoneLoader::ImportAndFinalize(
             SceneContext,
             &importError))
     {
+        RecordFailure(
+            zone,
+            ZoneLoadStage::Import,
+            package == nullptr ? "package was not produced"
+                               : std::move(importError.Message));
         if (assets)
             assets->ReleaseAll();
         return;
@@ -148,6 +155,10 @@ void AsyncZoneLoader::ImportAndFinalize(
     if (finalize && !finalize(RuntimeWorldState, *record))
     {
         (void)RuntimeWorldState.CancelZoneImport(zone);
+        RecordFailure(
+            zone,
+            ZoneLoadStage::Finalize,
+            "finalize declined publication");
         if (assets)
             assets->ReleaseAll();
         return;
@@ -156,10 +167,18 @@ void AsyncZoneLoader::ImportAndFinalize(
     if (!RuntimeWorldState.PublishZone(zone, participation))
     {
         (void)RuntimeWorldState.CancelZoneImport(zone);
+        RecordFailure(
+            zone,
+            ZoneLoadStage::Publish,
+            "publication rejected the imported partition");
         if (assets)
             assets->ReleaseAll();
         return;
     }
+
+    // A zone that loads after a previous refusal is healthy again; leaving the
+    // record would suppress every future reload of a working zone.
+    (void)ClearFailure(zone);
 
     // The preload's handles were scaffolding: published entities and backend
     // records hold their own references now.
@@ -205,6 +224,45 @@ bool AsyncZoneLoader::CancelLoad(ZoneId zone)
 
     InFlight.erase(it);
     return true;
+}
+
+void AsyncZoneLoader::RecordFailure(
+    ZoneId zone,
+    ZoneLoadStage stage,
+    std::string message)
+{
+    for (ZoneLoadFailure& existing : Failures_)
+    {
+        if (existing.Zone != zone)
+            continue;
+        existing.Stage = stage;
+        existing.Message = std::move(message);
+        return;
+    }
+
+    Log.Error(
+        "zone {:016x} failed to load at {}: {}",
+        zone.Value,
+        ZoneLoadStageName(stage),
+        message);
+    Failures_.push_back(
+        ZoneLoadFailure{ zone, stage, std::move(message) });
+}
+
+const ZoneLoadFailure* AsyncZoneLoader::FindFailure(ZoneId zone) const
+{
+    for (const ZoneLoadFailure& failure : Failures_)
+        if (failure.Zone == zone)
+            return &failure;
+    return nullptr;
+}
+
+bool AsyncZoneLoader::ClearFailure(ZoneId zone)
+{
+    const std::size_t erased = std::erase_if(
+        Failures_,
+        [zone](const ZoneLoadFailure& failure) { return failure.Zone == zone; });
+    return erased > 0;
 }
 
 void AsyncZoneLoader::RemoveInFlight(ZoneId zone)

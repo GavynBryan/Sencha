@@ -81,11 +81,29 @@ public:
 
     [[nodiscard]] std::span<const ZoneDemandRecord> DemandRecords() const { return Records_; }
 
+    // True while a refused load is being withheld from reissue. Demand cannot
+    // express this on its own: a demanded, non-resident zone is indistinguishable
+    // from one that will never load, so reissuing from demand alone rebuilds a
+    // broken zone every frame. Suppression lifts when the zone's cooked content
+    // hash changes, so a recook recovers without restarting.
+    [[nodiscard]] bool IsZoneLoadSuppressed(ZoneId zone) const;
+    [[nodiscard]] std::size_t SuppressedLoadCount() const
+    {
+        return FailedLoads_.size();
+    }
+
 private:
     struct LingerState
     {
         ZoneId Zone;
         double Seconds = 0.0;
+    };
+
+    // A refusal plus the content identity it applies to.
+    struct FailedLoad
+    {
+        ZoneId   Zone;
+        uint64_t ContentHash = 0;
     };
 
     struct ParticipationLeaseSlot
@@ -97,6 +115,9 @@ private:
     };
 
     [[nodiscard]] const ZoneHeader* FindHeader(ZoneId zone) const;
+    // Adopts refusals the loader recorded, and lifts suppression for zones whose
+    // content changed or which left the manifest.
+    void ReconcileFailedLoads(AsyncZoneLoader& loader);
 
     ZoneLoadRecipeFn Recipe_;
     WorldPartitionStreamingConfig Config_;
@@ -115,4 +136,5 @@ private:
     std::vector<ZoneId> Issued_;
     std::vector<LingerState> Lingering_;
     std::vector<ZoneDemandRecord> Records_;
+    std::vector<FailedLoad> FailedLoads_;
 };

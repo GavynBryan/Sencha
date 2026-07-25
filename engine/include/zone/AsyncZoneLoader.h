@@ -1,12 +1,15 @@
 #pragma once
 
+#include <core/logging/Logger.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneLoadFailure.h>
 #include <zone/ZoneLoadPackage.h>
 #include <zone/ZoneParticipation.h>
 
 #include <functional>
 #include <memory>
+#include <span>
 #include <vector>
 
 class AssetPreload;
@@ -77,6 +80,19 @@ public:
     // after the explicit residency visit, not inside this callback.
     AsyncTaskHandle RequestDestroy(ZoneId zone);
 
+    // Loads that refused, newest last, one entry per zone. A caller that reissues
+    // purely from demand would retry a broken zone every frame, so the streaming
+    // policy consults these and diagnostics report them.
+    [[nodiscard]] std::span<const ZoneLoadFailure> Failures() const
+    {
+        return { Failures_.data(), Failures_.size() };
+    }
+    [[nodiscard]] const ZoneLoadFailure* FindFailure(ZoneId zone) const;
+    // True when the record existed. Call after the zone's content changes, so a
+    // recook recovers without restarting the process.
+    bool ClearFailure(ZoneId zone);
+    void ClearFailures() { Failures_.clear(); }
+
 private:
     struct InFlightLoad
     {
@@ -92,6 +108,9 @@ private:
         FinalizeFn& finalize,
         ZoneParticipation participation,
         const std::shared_ptr<AssetPreload>& assets);
+    // Coalesces to one record per zone and logs once per recorded failure, not
+    // once per attempt.
+    void RecordFailure(ZoneId zone, ZoneLoadStage stage, std::string message);
 
     AsyncTaskQueue& Tasks;
     RuntimeWorld& RuntimeWorldState;
@@ -99,5 +118,7 @@ private:
     const ComponentSerializerRegistry& Serializers;
     SceneSerializationContext& SceneContext;
     RuntimeFrameLoop& Runtime;
+    Logger Log;
     std::vector<InFlightLoad> InFlight;
+    std::vector<ZoneLoadFailure> Failures_;
 };

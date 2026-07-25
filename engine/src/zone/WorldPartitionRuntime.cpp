@@ -211,9 +211,50 @@ void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
     WorldTags_ = std::move(tags);
 }
 
+bool WorldPartitionRuntime::IsZoneLoadSuppressed(ZoneId zone) const
+{
+    for (const FailedLoad& record : FailedLoads_)
+        if (record.Zone == zone)
+            return true;
+    return false;
+}
+
+void WorldPartitionRuntime::ReconcileFailedLoads(AsyncZoneLoader& loader)
+{
+    // Lift first: a zone whose cooked content changed, or which left the
+    // manifest, is no longer described by the refusal that was recorded for it.
+    std::erase_if(FailedLoads_, [&](const FailedLoad& record)
+                  {
+                      const ZoneHeader* header = FindHeader(record.Zone);
+                      if (header == nullptr)
+                      {
+                          (void)loader.ClearFailure(record.Zone);
+                          return true;
+                      }
+                      if (header->CookedContentHash == record.ContentHash)
+                          return false;
+                      (void)loader.ClearFailure(record.Zone);
+                      return true;
+                  });
+
+    // Content identity is manifest policy rather than loader state, so the hash
+    // is stamped here instead of inside the failure record itself.
+    for (const ZoneLoadFailure& failure : loader.Failures())
+    {
+        if (IsZoneLoadSuppressed(failure.Zone))
+            continue;
+        const ZoneHeader* header = FindHeader(failure.Zone);
+        FailedLoads_.push_back(FailedLoad{
+            failure.Zone,
+            header != nullptr ? header->CookedContentHash : 0 });
+    }
+}
+
 void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                                    RuntimeWorld& world)
 {
+    ReconcileFailedLoads(loader);
+
     std::vector<ZoneDemandRecord> demand;
     std::vector<ZoneHopRank> ranks;
     if (HasManifest_ && Focus_.IsValid())
@@ -252,7 +293,8 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 
     std::vector<const ZoneDemandRecord*> toLoad;
     for (const ZoneDemandRecord& record : demand)
-        if (!world.IsZoneResident(record.Zone) && !loader.IsLoading(record.Zone))
+        if (!world.IsZoneResident(record.Zone) && !loader.IsLoading(record.Zone)
+            && !IsZoneLoadSuppressed(record.Zone))
             toLoad.push_back(&record);
     std::sort(toLoad.begin(), toLoad.end(),
               [&](const ZoneDemandRecord* a, const ZoneDemandRecord* b)
